@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -9,7 +10,10 @@ from langgraph.store.base import BaseStore
 
 from xhs_growth.agents.base import BaseAgent
 from xhs_growth.config.models import TaskType
-from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase
+from xhs_growth.config.settings import Settings
+from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase, EngagementAction
+
+logger = logging.getLogger("xhs_growth.agents.engagement")
 
 
 class EngagementAgent(BaseAgent):
@@ -19,21 +23,99 @@ class EngagementAgent(BaseAgent):
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         account_id = state.get("account_id", "default")
+        publish_result = state.get("publish_result", {})
 
-        # 召回受众偏好
-        audience_prefs = await self._recall_memory(
-            store, account_id, query="audience interaction style", namespace="audience_preferences", limit=3
+        # 获取配置
+        settings = Settings()
+        use_browser = settings.platform.use_browser
+
+        engagement_actions = []
+
+        if not publish_result.get("post_id"):
+            logger.info("无已发布帖子，跳过互动处理")
+            return {
+                "engagement_actions": engagement_actions,
+                "phase": WorkflowPhase.ENGAGING,
+            }
+
+        if not use_browser:
+            logger.warning("use_browser=False，跳过真实互动")
+            return {
+                "engagement_actions": engagement_actions,
+                "phase": WorkflowPhase.ENGAGING,
+            }
+
+        # 调用真实互动服务
+        from xhs_growth.services.xhs_client import XHSClient
+
+        client = XHSClient(
+            cookie=settings.platform.cookie,
+            user_id=settings.platform.user_id,
+            use_browser=True,
+            headless=settings.platform.headless,
         )
 
-        system_prompt = self._build_system_prompt(state)
+        try:
+            post_id = publish_result.get("post_id")
 
-        # TODO: 从 XHS API 获取真实互动
-        # client = XHSClient(...)
-        # comments = await client.get_comments(post_id)
-        # dms = await client.get_direct_messages()
+            # 1. 获取评论
+            comments = await client.get_comments(post_id=post_id, limit=20)
+            logger.info(f"获取 {len(comments)} 条评论")
 
-        # 模拟处理
-        engagement_actions = []
+            # 2. 获取私信
+            dms = await client.get_direct_messages(limit=10)
+            logger.info(f"获取 {len(dms)} 条私信")
+
+            # 3. 自动回复评论 (使用 LLM 生成回复)
+            for comment in comments:
+                if comment.like_count > 10:  # 只回复热门评论
+                    # 使用 LLM 生成回复
+                    reply_prompt = f"请回复这条评论：{comment.content}"
+                    response = await self.model.ainvoke([HumanMessage(content=reply_prompt)])
+                    reply_content = response.content[:100]  # 限制回复长度
+
+                    # 发送回复
+                    success = await client.reply_to_comment(
+                        comment_id=comment.comment_id,
+                        post_id=post_id,
+                        reply=reply_content,
+                    )
+
+                    if success:
+                        engagement_actions.append(EngagementAction(
+                            action_type="reply_comment",
+                            target_id=comment.comment_id,
+                            content=reply_content,
+                            timestamp=__import__("datetime").datetime.now().isoformat(),
+                        ))
+
+            # 4. 处理私信
+            for dm in dms[:5]:  # 只处理前5条
+                # 使用 LLM 生成回复
+                reply_prompt = f"请回复这条私信：{dm.content}"
+                response = await self.model.ainvoke([HumanMessage(content=reply_prompt)])
+                reply_content = response.content[:200]
+
+                success = await client.send_dm(
+                    user_id=dm.sender_id,
+                    message=reply_content,
+                )
+
+                if success:
+                    engagement_actions.append(EngagementAction(
+                        action_type="reply_dm",
+                        target_id=dm.message_id,
+                        content=reply_content,
+                        timestamp=__import__("datetime").datetime.now().isoformat(),
+                    ))
+
+            logger.info(f"完成 {len(engagement_actions)} 个互动操作")
+
+        except Exception as e:
+            logger.error(f"互动处理失败: {e}")
+
+        finally:
+            await client.close()
 
         return {
             "engagement_actions": engagement_actions,
