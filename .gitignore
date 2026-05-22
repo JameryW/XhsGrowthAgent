@@ -8,6 +8,8 @@ build/
 .eggs/
 *.egg
 .env
+.env.local
+.env.*.local
 .venv/
 venv/
 .idea/
@@ -17,3 +19,12 @@ venv/
 *~
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db

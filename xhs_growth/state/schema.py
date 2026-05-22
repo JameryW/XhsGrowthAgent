@@ -154,16 +154,8 @@ class RipplePMFResult(TypedDict, total=False):
 
 # ── Main state ─────────────────────────────────────────────────────────────
 
-
-def _merge_dict(left: dict, right: dict) -> dict:
-    """Reducer: 合并字典，right 覆盖 left"""
-    return {**left, **right}
-
-
-def _append_list(left: list, right: list) -> list:
-    """Reducer: 追加列表"""
-    return left + right
-
+# 从 reducers.py 导入 reducer 函数，使用别名保持兼容
+from xhs_growth.state.reducers import merge_dict as _merge_dict, append_list as _append_list
 
 class XHSGrowthState(TypedDict, total=False):
     """小红书增长引擎全局状态"""

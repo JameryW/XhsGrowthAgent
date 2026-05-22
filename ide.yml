@@ -1,0 +1,12 @@
+name: XhsGrowthAgent
+rows:
+  - size: 70%
+    panes:
+      - title: Claude 1
+        command: claude
+      - title: Claude 2
+        command: claude
+  - panes:
+      - title: FastAPI
+        command: uvicorn main:app --reload
+      - title: Shell

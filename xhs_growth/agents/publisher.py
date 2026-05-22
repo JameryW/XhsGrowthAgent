@@ -15,7 +15,7 @@ from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase
 class PublisherAgent(BaseAgent):
     task_type = TaskType.PUBLISHING
     agent_name = "publisher"
-    prompt_file = "orchestrator.yaml"  # 复用通用 prompt
+    prompt_file = "publisher.yaml"
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         copy = state.get("copy_content", {})
