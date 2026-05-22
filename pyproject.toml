@@ -1,0 +1,57 @@
+[project]
+name = "xhs-growth-engine"
+version = "0.1.0"
+description = "小红书增长引擎 Agent — 全链路自动化内容增长系统"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=0.4",
+    "langchain-core>=0.3",
+    "langchain-anthropic>=0.3",
+    "langchain-openai>=0.3",
+    "langchain-community>=0.3",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "typer>=0.15",
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "websockets>=14.0",
+    "httpx>=0.28",
+    "tenacity>=9.0",
+    "psycopg[binary]>=3.2",
+    "redis>=5.2",
+    "pyyaml>=6.0",
+    "rich>=13.9",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+browser = ["playwright>=1.49"]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[project.scripts]
+xhs-growth = "xhs_growth.cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
