@@ -7,6 +7,7 @@ Components:
 - xhs_publisher: Playwright 发布器
 - xhs_engagement: Playwright 互动器
 - visual_extractor: 视觉数据提取器
+- visual_analysis: 视觉分析服务 (场景分析、布局推荐、风格推荐)
 """
 
 from xhs_growth.services.xhs_client import (
@@ -27,6 +28,7 @@ from xhs_growth.services.xhs_signature import XHSSignature, XHSCookieParser
 from xhs_growth.services.xhs_publisher import XHSPublisher
 from xhs_growth.services.xhs_engagement import XHSEngagement
 from xhs_growth.services.visual_extractor import VisualDataExtractor
+from xhs_growth.services.visual_analysis import VisualAnalysisService
 
 __all__ = [
     # Main client
@@ -53,4 +55,5 @@ __all__ = [
     "XHSEngagement",
     # Visual analysis
     "VisualDataExtractor",
+    "VisualAnalysisService",
 ]
