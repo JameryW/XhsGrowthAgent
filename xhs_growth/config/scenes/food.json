@@ -1,93 +1,63 @@
 {
-  "scene": "food",
-  "sample_size": 100,
-  "style_distribution": {
-    "minimalist_clean": 0.35,
-    "vintage_warm": 0.25,
-    "bright_vibrant": 0.20,
-    "moody_dark": 0.10,
-    "other": 0.10
-  },
-  "layout_distribution": {
-    "carousel_3": 0.40,
-    "grid_3x3": 0.30,
-    "single_hero": 0.20,
-    "split_screen": 0.10
-  },
-  "color_palettes": [
-    {
-      "primary_colors": ["#FF6B6B", "#FFE66D"],
-      "secondary_colors": ["#4ECDC4", "#95E1D3"],
-      "color_ratios": {"warm": 0.6, "cool": 0.4}
-    }
-  ],
-  "visual_elements": {
-    "text_overlay": 45,
-    "icons": 30,
-    "branding": 25,
-    "people": 15
-  },
-  "trending_styles": ["minimalist_clean", "vintage_warm"],
-  "trending_layouts": ["carousel_3", "grid_3x3"],
-  "analyzed_at": "2025-05-23T12:00:00",
+  "scene": "美食",
+  "sample_size": 0,
+  "style_distribution": {},
+  "layout_distribution": {},
+  "color_palettes": [],
+  "visual_elements": {},
+  "trending_styles": [],
+  "trending_layouts": [],
+  "analyzed_at": null,
   "default_layouts": [
     {
-      "layout_type": "carousel_3",
-      "description": "3-image carousel showcasing food progression",
+      "layout_type": "上下结构",
+      "description": "Upper and lower section layout with image above and text below",
       "popularity_score": 0.85,
-      "pros": ["High engagement", "Storytelling capability", "Multiple product showcase"],
-      "cons": ["Requires quality images", "More planning needed"],
-      "reference_posts": [
-        {"post_id": "food_001", "engagement": 0.12}
-      ],
+      "pros": ["Clear visual hierarchy", "Easy to read", "Good for tutorials"],
+      "cons": ["Limited flexibility", "Fixed structure"],
+      "reference_posts": [],
       "suitable_for": ["recipe_tutorial", "food_review", "restaurant_showcase"],
       "image_sequence_strategy": "chronological",
-      "text_position": "overlay",
+      "text_position": "below",
       "avg_engagement": 0.12
     },
     {
-      "layout_type": "single_hero",
-      "description": "Single hero image with strong visual focus",
+      "layout_type": "网格布局",
+      "description": "Grid layout for multiple images with equal prominence",
       "popularity_score": 0.75,
-      "pros": ["Simple execution", "Strong visual impact", "Quick to create"],
-      "cons": ["Less storytelling", "Single focus point"],
-      "reference_posts": [
-        {"post_id": "food_002", "engagement": 0.08}
-      ],
-      "suitable_for": ["product_highlight", "aesthetic_shot", "branded_content"],
-      "image_sequence_strategy": "single",
-      "text_position": "below",
+      "pros": ["Multiple product showcase", "Comparison friendly", "Comprehensive view"],
+      "cons": ["Requires many images", "Less storytelling"],
+      "reference_posts": [],
+      "suitable_for": ["product_comparison", "menu_showcase", "collection_display"],
+      "image_sequence_strategy": "grid",
+      "text_position": "overlay",
       "avg_engagement": 0.08
     }
   ],
   "default_styles": [
     {
-      "style_name": "minimalist_clean",
+      "style_name": "温暖治愈",
       "trending_score": 0.90,
+      "color_palette": ["#FFE66D", "#FF6B6B", "#FFF8E7"],
+      "pros": ["Warm atmosphere", "Homey feel", "Emotional connection"],
+      "cons": ["May feel too casual", "Limited professional use"],
+      "description": "Warm and healing style with soft warm tones for comforting content",
+      "suitable_for": ["home_cooking", "comfort_food", "family_recipe"],
+      "usage_rate": 0.35,
+      "avg_engagement": 0.10,
+      "reference_posts": []
+    },
+    {
+      "style_name": "现代简约",
+      "trending_score": 0.85,
       "color_palette": ["#FFFFFF", "#F5F5F5", "#333333"],
       "pros": ["Modern aesthetic", "Clean look", "Professional appearance"],
       "cons": ["May feel cold", "Requires good lighting"],
-      "description": "Clean minimalist style with white background and subtle accents",
-      "suitable_for": ["product_photography", "recipe_display", "restaurant branding"],
-      "usage_rate": 0.35,
-      "avg_engagement": 0.10,
-      "reference_posts": [
-        {"post_id": "food_003", "engagement": 0.10}
-      ]
-    },
-    {
-      "style_name": "vintage_warm",
-      "trending_score": 0.85,
-      "color_palette": ["#D4A574", "#E8D5B7", "#8B7355"],
-      "pros": ["Warm atmosphere", "Homey feel", "Instagram-friendly"],
-      "cons": ["May look dated", "Color limitations"],
-      "description": "Warm vintage style with earth tones and nostalgic feel",
-      "suitable_for": ["home_cooking", "traditional_food", "cafe_content"],
+      "description": "Modern minimalist style with clean white background and subtle accents",
+      "suitable_for": ["product_photography", "recipe_display", "restaurant_branding"],
       "usage_rate": 0.25,
       "avg_engagement": 0.09,
-      "reference_posts": [
-        {"post_id": "food_004", "engagement": 0.09}
-      ]
+      "reference_posts": []
     }
   ]
 }

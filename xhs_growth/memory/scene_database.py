@@ -9,7 +9,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from xhs_growth.models.visual_types import LayoutOption, StyleOption
+from xhs_growth.models.visual_types import (
+    ColorPalette,
+    LayoutOption,
+    SceneAnalysisResult,
+    StyleOption,
+)
 
 
 class SceneDatabase:
@@ -43,29 +48,24 @@ class SceneDatabase:
         self._cache_expiry_hours = 24
         self._min_sample_size = 30
 
-    def save_scene_analysis(
-        self, scene: str, analysis_data: dict[str, Any]
-    ) -> Path:
+    def save_scene_analysis(self, result: SceneAnalysisResult) -> None:
         """Save scene analysis to JSON file.
 
         Args:
-            scene: Scene identifier (e.g., "food", "travel_outdoor")
-            analysis_data: Dictionary containing analysis results
-
-        Returns:
-            Path to the saved file
+            result: SceneAnalysisResult object to save
         """
         # Ensure data directory exists
         self._data_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save to JSON file
-        file_path = self._data_dir / f"{scene}.json"
+        # Convert result to dict for JSON serialization
+        data = result.to_dict()
+
+        # Save to JSON file using scene name from result
+        file_path = self._data_dir / f"{result.scene}.json"
         with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(analysis_data, f, indent=2, ensure_ascii=False)
+            json.dump(data, f, indent=2, ensure_ascii=False)
 
-        return file_path
-
-    def get_scene_analysis(self, scene: str) -> dict[str, Any] | None:
+    def get_scene_analysis(self, scene: str) -> SceneAnalysisResult | None:
         """Retrieve scene analysis from JSON file.
 
         Validates cache expiry (24 hours) and minimum sample size (30).
@@ -74,7 +74,7 @@ class SceneDatabase:
             scene: Scene identifier
 
         Returns:
-            Analysis data dictionary if valid, None if expired, insufficient,
+            SceneAnalysisResult if valid, None if expired, insufficient,
             or not found
         """
         file_path = self._data_dir / f"{scene}.json"
@@ -96,6 +96,7 @@ class SceneDatabase:
 
         # Check cache expiry
         analyzed_at_str = data.get("analyzed_at")
+        analyzed_at: datetime | None = None
         if analyzed_at_str:
             try:
                 analyzed_at = datetime.fromisoformat(analyzed_at_str)
@@ -106,7 +107,31 @@ class SceneDatabase:
                 # Invalid timestamp, treat as expired
                 return None
 
-        return data
+        # Convert color_palettes dicts to ColorPalette objects
+        color_palettes_data = data.get("color_palettes", [])
+        color_palettes: list[ColorPalette] = []
+        for palette_dict in color_palettes_data:
+            palette = ColorPalette(
+                primary_colors=palette_dict.get("primary_colors", []),
+                secondary_colors=palette_dict.get("secondary_colors", []),
+                color_ratios=palette_dict.get("color_ratios", {}),
+            )
+            color_palettes.append(palette)
+
+        # Build SceneAnalysisResult object
+        result = SceneAnalysisResult(
+            scene=data.get("scene", scene),
+            sample_size=data.get("sample_size", 0),
+            style_distribution=data.get("style_distribution", {}),
+            layout_distribution=data.get("layout_distribution", {}),
+            color_palettes=color_palettes,
+            visual_elements=data.get("visual_elements", {}),
+            trending_styles=data.get("trending_styles", []),
+            trending_layouts=data.get("trending_layouts", []),
+            analyzed_at=analyzed_at,
+        )
+
+        return result
 
     def get_default_layouts(self, scene: str) -> list[LayoutOption]:
         """Get default layouts for a scene from config.

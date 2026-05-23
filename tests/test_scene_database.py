@@ -16,7 +16,12 @@ from unittest.mock import patch
 import pytest
 
 from xhs_growth.memory.scene_database import SceneDatabase
-from xhs_growth.models.visual_types import LayoutOption, StyleOption, SceneAnalysisResult
+from xhs_growth.models.visual_types import (
+    ColorPalette,
+    LayoutOption,
+    SceneAnalysisResult,
+    StyleOption,
+)
 
 
 @pytest.fixture
@@ -34,60 +39,77 @@ def temp_data_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def sample_analysis_result() -> dict:
+def sample_analysis_result() -> SceneAnalysisResult:
     """Create a sample scene analysis result for testing."""
-    return {
-        "scene": "food",
-        "sample_size": 100,
-        "style_distribution": {
+    return SceneAnalysisResult(
+        scene="food",
+        sample_size=100,
+        style_distribution={
             "minimalist_clean": 0.35,
             "vintage_warm": 0.25,
         },
-        "layout_distribution": {
+        layout_distribution={
             "carousel_3": 0.40,
             "grid_3x3": 0.30,
         },
-        "color_palettes": [],
-        "visual_elements": {},
-        "trending_styles": ["minimalist_clean", "vintage_warm"],
-        "trending_layouts": ["carousel_3", "grid_3x3"],
-        "analyzed_at": datetime.now().isoformat(),
-    }
+        color_palettes=[
+            ColorPalette(
+                primary_colors=["#FF6B6B", "#FFE66D"],
+                secondary_colors=["#4ECDC4", "#95E1D3"],
+                color_ratios={"warm": 0.6, "cool": 0.4},
+            )
+        ],
+        visual_elements={"text_overlay": 45, "icons": 30},
+        trending_styles=["minimalist_clean", "vintage_warm"],
+        trending_layouts=["carousel_3", "grid_3x3"],
+        analyzed_at=datetime.now(),
+    )
 
 
 class TestSaveAndGetSceneAnalysis:
     """Tests for save_scene_analysis and get_scene_analysis methods."""
 
     def test_save_and_get_scene_analysis(
-        self, scene_db: SceneDatabase, sample_analysis_result: dict, temp_data_dir: Path
+        self, scene_db: SceneDatabase, sample_analysis_result: SceneAnalysisResult, temp_data_dir: Path
     ) -> None:
         """Test that a saved analysis can be retrieved."""
         # Patch the data directory
         with patch.object(scene_db, "_data_dir", temp_data_dir):
             # Save the analysis
-            scene_db.save_scene_analysis("food", sample_analysis_result)
+            scene_db.save_scene_analysis(sample_analysis_result)
 
             # Retrieve the analysis
             result = scene_db.get_scene_analysis("food")
 
             # Verify the result
             assert result is not None
-            assert result["scene"] == "food"
-            assert result["sample_size"] == 100
-            assert "minimalist_clean" in result["style_distribution"]
+            assert result.scene == "food"
+            assert result.sample_size == 100
+            assert "minimalist_clean" in result.style_distribution
+            assert len(result.color_palettes) == 1
+            assert result.color_palettes[0].primary_colors == ["#FF6B6B", "#FFE66D"]
 
     def test_get_scene_analysis_expired(
-        self, scene_db: SceneDatabase, sample_analysis_result: dict, temp_data_dir: Path
+        self, scene_db: SceneDatabase, temp_data_dir: Path
     ) -> None:
         """Test that expired analysis (older than 24 hours) returns None."""
         # Create an expired analysis (25 hours old)
         expired_time = datetime.now() - timedelta(hours=25)
-        expired_result = sample_analysis_result.copy()
-        expired_result["analyzed_at"] = expired_time.isoformat()
+        expired_result = SceneAnalysisResult(
+            scene="food",
+            sample_size=100,
+            style_distribution={"minimalist_clean": 0.35},
+            layout_distribution={"carousel_3": 0.40},
+            color_palettes=[],
+            visual_elements={},
+            trending_styles=["minimalist_clean"],
+            trending_layouts=["carousel_3"],
+            analyzed_at=expired_time,
+        )
 
         with patch.object(scene_db, "_data_dir", temp_data_dir):
             # Save the expired analysis
-            scene_db.save_scene_analysis("food", expired_result)
+            scene_db.save_scene_analysis(expired_result)
 
             # Try to retrieve - should return None due to expiry
             result = scene_db.get_scene_analysis("food")
@@ -98,20 +120,20 @@ class TestSaveAndGetSceneAnalysis:
         self, scene_db: SceneDatabase, temp_data_dir: Path
     ) -> None:
         """Test that analysis with sample_size < 30 returns None."""
-        insufficient_result = {
-            "scene": "food",
-            "sample_size": 15,  # Less than minimum threshold of 30
-            "style_distribution": {},
-            "layout_distribution": {},
-            "color_palettes": [],
-            "visual_elements": {},
-            "trending_styles": [],
-            "trending_layouts": [],
-            "analyzed_at": datetime.now().isoformat(),
-        }
+        insufficient_result = SceneAnalysisResult(
+            scene="food",
+            sample_size=15,  # Less than minimum threshold of 30
+            style_distribution={},
+            layout_distribution={},
+            color_palettes=[],
+            visual_elements={},
+            trending_styles=[],
+            trending_layouts=[],
+            analyzed_at=datetime.now(),
+        )
 
         with patch.object(scene_db, "_data_dir", temp_data_dir):
-            scene_db.save_scene_analysis("food", insufficient_result)
+            scene_db.save_scene_analysis(insufficient_result)
             result = scene_db.get_scene_analysis("food")
 
             assert result is None
@@ -138,8 +160,9 @@ class TestGetDefaultLayouts:
         assert layouts is not None
         assert len(layouts) >= 2
         assert all(isinstance(l, LayoutOption) for l in layouts)
-        assert any(l.layout_type == "carousel_3" for l in layouts)
-        assert any(l.layout_type == "single_hero" for l in layouts)
+        # Updated to match new Chinese layout names
+        assert any(l.layout_type == "上下结构" for l in layouts)
+        assert any(l.layout_type == "网格布局" for l in layouts)
 
     def test_get_default_layouts_scene_not_found(
         self, scene_db: SceneDatabase
@@ -162,8 +185,9 @@ class TestGetDefaultStyles:
         assert styles is not None
         assert len(styles) >= 2
         assert all(isinstance(s, StyleOption) for s in styles)
-        assert any(s.style_name == "minimalist_clean" for s in styles)
-        assert any(s.style_name == "vintage_warm" for s in styles)
+        # Updated to match new Chinese style names
+        assert any(s.style_name == "温暖治愈" for s in styles)
+        assert any(s.style_name == "现代简约" for s in styles)
 
     def test_get_default_styles_scene_not_found(
         self, scene_db: SceneDatabase
