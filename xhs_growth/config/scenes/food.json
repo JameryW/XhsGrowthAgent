@@ -1,0 +1,93 @@
+{
+  "scene": "food",
+  "sample_size": 100,
+  "style_distribution": {
+    "minimalist_clean": 0.35,
+    "vintage_warm": 0.25,
+    "bright_vibrant": 0.20,
+    "moody_dark": 0.10,
+    "other": 0.10
+  },
+  "layout_distribution": {
+    "carousel_3": 0.40,
+    "grid_3x3": 0.30,
+    "single_hero": 0.20,
+    "split_screen": 0.10
+  },
+  "color_palettes": [
+    {
+      "primary_colors": ["#FF6B6B", "#FFE66D"],
+      "secondary_colors": ["#4ECDC4", "#95E1D3"],
+      "color_ratios": {"warm": 0.6, "cool": 0.4}
+    }
+  ],
+  "visual_elements": {
+    "text_overlay": 45,
+    "icons": 30,
+    "branding": 25,
+    "people": 15
+  },
+  "trending_styles": ["minimalist_clean", "vintage_warm"],
+  "trending_layouts": ["carousel_3", "grid_3x3"],
+  "analyzed_at": "2025-05-23T12:00:00",
+  "default_layouts": [
+    {
+      "layout_type": "carousel_3",
+      "description": "3-image carousel showcasing food progression",
+      "popularity_score": 0.85,
+      "pros": ["High engagement", "Storytelling capability", "Multiple product showcase"],
+      "cons": ["Requires quality images", "More planning needed"],
+      "reference_posts": [
+        {"post_id": "food_001", "engagement": 0.12}
+      ],
+      "suitable_for": ["recipe_tutorial", "food_review", "restaurant_showcase"],
+      "image_sequence_strategy": "chronological",
+      "text_position": "overlay",
+      "avg_engagement": 0.12
+    },
+    {
+      "layout_type": "single_hero",
+      "description": "Single hero image with strong visual focus",
+      "popularity_score": 0.75,
+      "pros": ["Simple execution", "Strong visual impact", "Quick to create"],
+      "cons": ["Less storytelling", "Single focus point"],
+      "reference_posts": [
+        {"post_id": "food_002", "engagement": 0.08}
+      ],
+      "suitable_for": ["product_highlight", "aesthetic_shot", "branded_content"],
+      "image_sequence_strategy": "single",
+      "text_position": "below",
+      "avg_engagement": 0.08
+    }
+  ],
+  "default_styles": [
+    {
+      "style_name": "minimalist_clean",
+      "trending_score": 0.90,
+      "color_palette": ["#FFFFFF", "#F5F5F5", "#333333"],
+      "pros": ["Modern aesthetic", "Clean look", "Professional appearance"],
+      "cons": ["May feel cold", "Requires good lighting"],
+      "description": "Clean minimalist style with white background and subtle accents",
+      "suitable_for": ["product_photography", "recipe_display", "restaurant branding"],
+      "usage_rate": 0.35,
+      "avg_engagement": 0.10,
+      "reference_posts": [
+        {"post_id": "food_003", "engagement": 0.10}
+      ]
+    },
+    {
+      "style_name": "vintage_warm",
+      "trending_score": 0.85,
+      "color_palette": ["#D4A574", "#E8D5B7", "#8B7355"],
+      "pros": ["Warm atmosphere", "Homey feel", "Instagram-friendly"],
+      "cons": ["May look dated", "Color limitations"],
+      "description": "Warm vintage style with earth tones and nostalgic feel",
+      "suitable_for": ["home_cooking", "traditional_food", "cafe_content"],
+      "usage_rate": 0.25,
+      "avg_engagement": 0.09,
+      "reference_posts": [
+        {"post_id": "food_004", "engagement": 0.09}
+      ]
+    }
+  ]
+}
