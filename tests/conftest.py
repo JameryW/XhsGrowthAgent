@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+import sys
+from unittest.mock import MagicMock
+
+# Mock playwright before any imports
+playwright_mock = MagicMock()
+sys.modules["playwright"] = playwright_mock
+sys.modules["playwright.async_api"] = MagicMock()
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
