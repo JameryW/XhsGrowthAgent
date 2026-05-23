@@ -58,7 +58,7 @@ class LayoutOption:
     popularity_score: float
     pros: list[str] = field(default_factory=list)
     cons: list[str] = field(default_factory=list)
-    reference_posts: list[str] = field(default_factory=list)
+    reference_posts: list[dict] = field(default_factory=list)
     suitable_for: list[str] = field(default_factory=list)
     image_sequence_strategy: str = ""
     text_position: str = ""
@@ -103,7 +103,7 @@ class StyleOption:
 
     style_name: str
     trending_score: float
-    color_palette: ColorPalette | None = None
+    color_palette: list[str] = field(default_factory=list)
     pros: list[str] = field(default_factory=list)
     cons: list[str] = field(default_factory=list)
     description: str = ""
@@ -121,7 +121,7 @@ class StyleOption:
         return {
             "style_name": self.style_name,
             "trending_score": self.trending_score,
-            "color_palette": self.color_palette.to_dict() if self.color_palette else None,
+            "color_palette": self.color_palette,
             "pros": self.pros,
             "cons": self.cons,
             "description": self.description,

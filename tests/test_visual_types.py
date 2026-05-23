@@ -70,7 +70,10 @@ class TestLayoutOption:
             popularity_score=0.85,
             pros=["Clear organization", "Good for multiple products"],
             cons=["May look crowded", "Fixed structure"],
-            reference_posts=["post_id_1", "post_id_2"],
+            reference_posts=[
+                {"note_id": "note_1", "title": "Great post", "likes": 1000, "url": "https://xhs.com/note_1"},
+                {"note_id": "note_2", "title": "Another post", "likes": 500, "url": "https://xhs.com/note_2"},
+            ],
             suitable_for=["product_review", "comparison"],
             image_sequence_strategy="impact_first",
             text_position="overlay",
@@ -83,7 +86,10 @@ class TestLayoutOption:
         assert layout.popularity_score == 0.85
         assert layout.pros == ["Clear organization", "Good for multiple products"]
         assert layout.cons == ["May look crowded", "Fixed structure"]
-        assert layout.reference_posts == ["post_id_1", "post_id_2"]
+        assert layout.reference_posts == [
+            {"note_id": "note_1", "title": "Great post", "likes": 1000, "url": "https://xhs.com/note_1"},
+            {"note_id": "note_2", "title": "Another post", "likes": 500, "url": "https://xhs.com/note_2"},
+        ]
         assert layout.suitable_for == ["product_review", "comparison"]
         assert layout.image_sequence_strategy == "impact_first"
         assert layout.text_position == "overlay"
@@ -117,7 +123,7 @@ class TestLayoutOption:
             popularity_score=0.75,
             pros=["Interactive"],
             cons=["Requires engagement"],
-            reference_posts=["p1"],
+            reference_posts=[{"note_id": "p1", "title": "Test", "likes": 100, "url": "https://xhs.com/p1"}],
             suitable_for=["storytelling"],
             image_sequence_strategy="chronological",
             text_position="below",
@@ -132,7 +138,7 @@ class TestLayoutOption:
         assert result_dict["popularity_score"] == 0.75
         assert result_dict["pros"] == ["Interactive"]
         assert result_dict["cons"] == ["Requires engagement"]
-        assert result_dict["reference_posts"] == ["p1"]
+        assert result_dict["reference_posts"] == [{"note_id": "p1", "title": "Test", "likes": 100, "url": "https://xhs.com/p1"}]
         assert result_dict["suitable_for"] == ["storytelling"]
         assert result_dict["image_sequence_strategy"] == "chronological"
         assert result_dict["text_position"] == "below"
@@ -144,18 +150,12 @@ class TestStyleOption:
 
     def test_style_option_creation_all_fields(self):
         """Test StyleOption can be created with all 10 required fields."""
-        from xhs_growth.models.visual_types import StyleOption, ColorPalette
-
-        palette = ColorPalette(
-            primary_colors=["#FF6B6B", "#4ECDC4"],
-            secondary_colors=["#F7F7F7"],
-            color_ratios={"primary": 0.8, "secondary": 0.2},
-        )
+        from xhs_growth.models.visual_types import StyleOption
 
         style = StyleOption(
             style_name="minimalist_clean",
             trending_score=0.78,
-            color_palette=palette,
+            color_palette=["#FFE4E1", "#FFDAB9", "#FFFACD"],
             pros=["Modern look", "Easy to read"],
             cons=["May lack personality"],
             description="Clean minimalist style with muted colors",
@@ -171,7 +171,7 @@ class TestStyleOption:
         # Check all 10 fields
         assert style.style_name == "minimalist_clean"
         assert style.trending_score == 0.78
-        assert style.color_palette == palette
+        assert style.color_palette == ["#FFE4E1", "#FFDAB9", "#FFFACD"]
         assert style.pros == ["Modern look", "Easy to read"]
         assert style.cons == ["May lack personality"]
         assert style.description == "Clean minimalist style with muted colors"
@@ -183,19 +183,19 @@ class TestStyleOption:
             {"post_id": "post_2", "engagement": 0.08},
         ]
 
-    def test_style_option_with_none_palette(self):
-        """Test StyleOption can have None color_palette."""
+    def test_style_option_with_empty_palette(self):
+        """Test StyleOption can have empty color_palette."""
         from xhs_growth.models.visual_types import StyleOption
 
         style = StyleOption(
             style_name="vintage_warm",
             trending_score=0.65,
-            color_palette=None,
+            color_palette=[],
             pros=["Emotional appeal"],
             cons=["May not suit modern audience"],
         )
 
-        assert style.color_palette is None
+        assert style.color_palette == []
 
     def test_style_option_defaults(self):
         """Test StyleOption default values for optional fields."""
@@ -208,7 +208,7 @@ class TestStyleOption:
             cons=["May overwhelm"],
         )
 
-        assert style.color_palette is None
+        assert style.color_palette == []
         assert style.description == ""
         assert style.suitable_for == []
         assert style.usage_rate == 0.0
@@ -217,18 +217,12 @@ class TestStyleOption:
 
     def test_style_option_to_dict(self):
         """Test StyleOption has to_dict() method with all fields."""
-        from xhs_growth.models.visual_types import StyleOption, ColorPalette
-
-        palette = ColorPalette(
-            primary_colors=["#FF6B6B"],
-            secondary_colors=["#F7F7F7"],
-            color_ratios={"primary": 0.9},
-        )
+        from xhs_growth.models.visual_types import StyleOption
 
         style = StyleOption(
             style_name="minimalist_clean",
             trending_score=0.78,
-            color_palette=palette,
+            color_palette=["#FFE4E1", "#FFDAB9"],
             pros=["Modern"],
             cons=["Plain"],
             description="Minimalist aesthetic",
@@ -243,7 +237,7 @@ class TestStyleOption:
         assert isinstance(result_dict, dict)
         assert result_dict["style_name"] == "minimalist_clean"
         assert result_dict["trending_score"] == 0.78
-        assert result_dict["color_palette"] == palette.to_dict()
+        assert result_dict["color_palette"] == ["#FFE4E1", "#FFDAB9"]
         assert result_dict["pros"] == ["Modern"]
         assert result_dict["cons"] == ["Plain"]
         assert result_dict["description"] == "Minimalist aesthetic"
@@ -252,14 +246,14 @@ class TestStyleOption:
         assert result_dict["avg_engagement"] == 0.07
         assert result_dict["reference_posts"] == [{"post_id": "p1", "engagement": 0.07}]
 
-    def test_style_option_to_dict_with_none_palette(self):
-        """Test StyleOption to_dict() with None color_palette."""
+    def test_style_option_to_dict_with_empty_palette(self):
+        """Test StyleOption to_dict() with empty color_palette."""
         from xhs_growth.models.visual_types import StyleOption
 
         style = StyleOption(
             style_name="vintage",
             trending_score=0.6,
-            color_palette=None,
+            color_palette=[],
             pros=["Nostalgic"],
             cons=["Limited appeal"],
             description="Vintage style",
@@ -271,7 +265,7 @@ class TestStyleOption:
 
         result_dict = style.to_dict()
 
-        assert result_dict["color_palette"] is None
+        assert result_dict["color_palette"] == []
 
 
 class TestSceneAnalysisResult:
