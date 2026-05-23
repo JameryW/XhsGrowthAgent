@@ -6,6 +6,7 @@ Components:
 - xhs_signature: API 签名算法
 - xhs_publisher: Playwright 发布器
 - xhs_engagement: Playwright 互动器
+- visual_extractor: 视觉数据提取器
 """
 
 from xhs_growth.services.xhs_client import (
@@ -25,6 +26,7 @@ from xhs_growth.services.xhs_api import XHSApiEndpoints, XHSApiHeaders, XHSApiPa
 from xhs_growth.services.xhs_signature import XHSSignature, XHSCookieParser
 from xhs_growth.services.xhs_publisher import XHSPublisher
 from xhs_growth.services.xhs_engagement import XHSEngagement
+from xhs_growth.services.visual_extractor import VisualDataExtractor
 
 __all__ = [
     # Main client
@@ -49,4 +51,6 @@ __all__ = [
     # Playwright components
     "XHSPublisher",
     "XHSEngagement",
+    # Visual analysis
+    "VisualDataExtractor",
 ]
