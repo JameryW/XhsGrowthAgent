@@ -163,6 +163,52 @@ START → orchestrator → [trend_scout | content_strategist | analyst | engagem
 
 ---
 
+## Frontend Web UI
+
+Vue 3 前端界面，赛博朋克风格，包含三大模块：
+
+### Pages
+
+| 页面 | 路径 | 功能 |
+|------|------|------|
+| Dashboard | `/dashboard` | 工作流进度追踪、阶段输出展示 |
+| Review | `/review` | 人机审核、内容预览、通过/修改/拒绝 |
+| Analytics | `/analytics` | 数据统计、帖子表现、成本分析 |
+
+### Tech Stack
+
+- Vue 3.4 + Vite 5.0
+- Tailwind CSS 3.4 (赛博朋克主题)
+- Element Plus 2.5
+- Pinia 2.1 状态管理
+- axios 1.6 API 客户端
+
+### Development
+
+```bash
+# 前端开发
+cd frontend
+npm install
+npm run dev  # http://localhost:3000
+
+# 构建
+npm run build  # 生成 dist/
+
+# 后端托管
+xhs-growth serve --port 8000  # http://localhost:8000 同时托管前端
+```
+
+### Cyberpunk Design
+
+- 暗色渐变背景 (`#0a0a0a → #1a0a2e`)
+- 霓虹配色 (pink/cyan/purple)
+- 六边形流程节点
+- 毛玻璃卡片 (Glass-morphism)
+- 发光按钮和图标
+- Monospace 终端字体
+
+---
+
 ## 中文说明
 
 ### 项目简介
