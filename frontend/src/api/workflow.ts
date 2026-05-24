@@ -1,0 +1,22 @@
+import client from './client'
+import type { WorkflowStartRequest, WorkflowResponse, WorkflowState } from '@/types/workflow'
+
+// 启动工作流
+export async function startWorkflow(req: WorkflowStartRequest): Promise<WorkflowResponse> {
+  return client.post('/workflow/start', req)
+}
+
+// 获取工作流状态
+export async function getWorkflowStatus(threadId: string): Promise<WorkflowState> {
+  return client.get(`/workflow/status/${threadId}`)
+}
+
+// 暂停工作流
+export async function pauseWorkflow(threadId: string): Promise<{ thread_id: string; status: string }> {
+  return client.post(`/workflow/pause/${threadId}`)
+}
+
+// 恢复工作流
+export async function resumeWorkflow(threadId: string): Promise<WorkflowResponse> {
+  return client.post(`/workflow/resume/${threadId}`)
+}
