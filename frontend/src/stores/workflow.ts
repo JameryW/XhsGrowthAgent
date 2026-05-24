@@ -18,7 +18,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const nextNodes = computed(() => workflowState.value?.next || [])
 
   const isRunning = computed(() =>
-    workflowState.value?.next?.length > 0 && currentPhase.value !== 'completed'
+    (workflowState.value?.next?.length ?? 0) > 0 && currentPhase.value !== 'completed'
   )
 
   const trendData = computed(() => workflowState.value?.values?.trend_data || {})
