@@ -11,19 +11,19 @@ onMounted(() => {
 })
 
 const metrics = computed(() => [
-  { icon: '📤', title: 'POSTS_PUBLISHED', value: analyticsStore.posts.length, subtitle: '↑ +3 本周', variant: 'pink' },
-  { icon: '💬', title: 'TOTAL_ENGAGEMENT', value: analyticsStore.totalEngagement, subtitle: '↑ +18%', variant: 'cyan' },
-  { icon: '📈', title: 'AVG_ENGAGEMENT_RATE', value: `${analyticsStore.avgEngagementRate.toFixed(1)}%`, subtitle: '↑ +2.1%', variant: 'purple' },
-  { icon: '💰', title: 'AI_COST_USD', value: analyticsStore.costData?.today_cost_usd?.toFixed(2) || '$0.00', subtitle: '本周累计', variant: 'peach' },
+  { icon: '📤', title: 'POSTS_PUBLISHED', value: analyticsStore.posts.length, subtitle: '↑ +3 本周', variant: 'pink' as const },
+  { icon: '💬', title: 'TOTAL_ENGAGEMENT', value: analyticsStore.totalEngagement, subtitle: '↑ +18%', variant: 'cyan' as const },
+  { icon: '📈', title: 'AVG_ENGAGEMENT_RATE', value: `${analyticsStore.avgEngagementRate.toFixed(1)}%`, subtitle: '↑ +2.1%', variant: 'purple' as const },
+  { icon: '💰', title: 'AI_COST_USD', value: analyticsStore.costData?.today_cost_usd?.toFixed(2) || '$0.00', subtitle: '本周累计', variant: 'peach' as const },
 ])
 
 const tableColumns = [
-  { key: 'title', label: '标题', align: 'left' },
-  { key: 'likes', label: '点赞', align: 'center' },
-  { key: 'comments', label: '评论', align: 'center' },
-  { key: 'collects', label: '收藏', align: 'center' },
-  { key: 'engagement_rate', label: '互动率', align: 'center' },
-  { key: 'published_at', label: '发布时间', align: 'center' },
+  { key: 'title', label: '标题', align: 'left' as const },
+  { key: 'likes', label: '点赞', align: 'center' as const },
+  { key: 'comments', label: '评论', align: 'center' as const },
+  { key: 'collects', label: '收藏', align: 'center' as const },
+  { key: 'engagement_rate', label: '互动率', align: 'center' as const },
+  { key: 'published_at', label: '发布时间', align: 'center' as const },
 ]
 
 const tableData = computed(() => analyticsStore.posts.slice(0, 10))
