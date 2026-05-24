@@ -39,12 +39,12 @@ const currentPhase = computed(() => workflowStore.currentPhase)
 
     <!-- 导航项 -->
     <div class="space-y-2">
-      <div
+      <button
         v-for="item in navItems"
         :key="item.path"
         @click="navigateTo(item.path)"
         :class="[
-          'p-3 rounded-lg cursor-pointer transition-all duration-200',
+          'p-3 rounded-lg cursor-pointer transition-all duration-200 w-full text-left',
           currentPath === item.path
             ? 'bg-neon-pink/20 border border-neon-pink/50 shadow-neon-pink'
             : 'hover:bg-dark-card border border-transparent'
@@ -59,7 +59,7 @@ const currentPhase = computed(() => workflowStore.currentPhase)
             {{ item.label }}
           </span>
         </div>
-      </div>
+      </button>
     </div>
 
     <!-- 底部信息 -->

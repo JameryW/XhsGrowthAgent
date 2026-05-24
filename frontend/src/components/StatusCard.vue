@@ -34,7 +34,7 @@ const valueColorClasses = {
 </script>
 
 <template>
-  <div :class="['glass rounded-xl p-4', 'border border-' + variantClasses[props.variant].split(' ')[0]]">
+  <div :class="['glass rounded-xl p-4', variantClasses[props.variant]]">
     <div class="flex items-center gap-3 mb-3">
       <div
         v-if="props.icon"
