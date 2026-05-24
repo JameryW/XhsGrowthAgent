@@ -187,11 +187,87 @@ user_template: |
 - Use `pytest-asyncio` (auto mode) for async tests
 - Mock LLM responses with JSON content in `MagicMock().content`
 
+## Visual Design Tools (tools/visual/)
+
+### Architecture Overview
+
+The visual design tools implement a data-driven architecture:
+
+1. **VisualDataExtractor** (`extractor.py`): AI-powered extraction of visual patterns from XHS posts
+   - `extract_color_palette()`: Extracts primary, secondary, accent colors from images
+   - `detect_layout_type()`: Identifies layout patterns (grid, collage, single_focus, split, carousel)
+   - `identify_visual_elements()`: Extracts visual elements (text_overlay, product_shot, lifestyle_scene)
+   - `classify_visual_style()`: Classifies styles (minimalist, vibrant, warm, cool, editorial)
+
+2. **SceneDatabase** (`database.py`): Scene-based pattern storage with automatic expiry
+   - Stores analysis results per scene (food, travel, fashion, beauty, etc.)
+   - 7-day expiry for stale data (configurable via `SCENE_ANALYSIS_EXPIRY_DAYS`)
+   - Minimum 10 samples required before caching recommendations
+   - Provides default fallback recommendations for each scene
+
+3. **VisualAnalysisService** (`service.py`): Coordinates extraction and storage
+   - `analyze_scene()`: Fetches posts, extracts patterns, calculates distributions
+   - `get_layout_recommendations()`: Returns layout options filtered by content type, image count, style
+   - `get_style_recommendations()`: Returns style options filtered by category, with trending boost
+   - Uses LLM-based extraction with caching for performance
+
+4. **VisualTypes** (`types.py`): TypedDict models for type safety
+   - `ColorPalette`: RGB color values for design consistency
+   - `LayoutOption`: Complete layout recommendation with pros/cons, suitability
+   - `StyleOption`: Complete style recommendation with color palette
+   - `SceneAnalysisResult`: Aggregated analysis per scene with timestamp
+
+### Scene Keyword Mapping
+
+| Scene | XHS Search Keywords |
+|-------|---------------------|
+| `food` | 美食, 探店, 餐厅 |
+| `travel` | 旅游, 旅行攻略, 景点 |
+| `fashion` |穿搭, 时尚, OOTD |
+| `beauty` | 护肤, 化妆, 美妆 |
+| `lifestyle` | 生活, 日常, vlog |
+| `fitness` |健身, 运动, 瑜伽 |
+| `home_decor` | 家居, 装修, 室内设计 |
+
+### Default Recommendations
+
+**Layout Defaults** (per scene):
+- Grid layouts for product showcases
+- Collage for lifestyle content
+- Single focus for hero shots
+- Split for comparison content
+
+**Style Defaults** (per scene):
+- Scene-specific color palettes
+- Pro/cons based on content type
+- Trending scores from historical data
+
+### Integration Points
+
+The tools integrate with:
+- `layout_recommender` tool: Calls `VisualAnalysisService.get_layout_recommendations()`
+- `style_library` tool: Calls `VisualAnalysisService.get_style_recommendations()`
+- XHS API client: Fetches posts for scene analysis
+- LLM router: Uses `get_model(TaskType.VISUAL)` for extraction
+
+### Testing
+
+Visual tools have comprehensive test coverage:
+- `tests/test_visual_types.py`: Data structure validation
+- `tests/test_visual_extractor.py`: Extraction logic tests
+- `tests/test_scene_database.py`: Storage and expiry logic
+- `tests/test_visual_service.py`: Service coordination tests
+- `tests/test_layout_tool.py`: Tool integration tests
+- `tests/test_style_tool.py`: Tool integration tests
+- `tests/test_visual_integration.py`: Full workflow tests
+
+Run visual tests: `pytest tests/test_visual* tests/test_scene* tests/test_layout* tests/test_style* -v`
+
+---
+
 ## Placeholder Tools
 
-Some tools are placeholder implementations (return mock data with TODO notes):
-- `layout_recommender`: Layout recommendations
-- `style_library`: Visual style library
+Some tools remain as placeholder implementations (return mock data with TODO notes):
 - `topic_scorer`: Topic heat scoring
 - Various XHS platform tools (trending, publisher, engagement)
 
