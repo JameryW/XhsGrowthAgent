@@ -80,8 +80,8 @@ class XHSComment:
     comment_id: str
     post_id: str
     user_name: str
-    user_id: str = ""
     content: str
+    user_id: str = ""
     like_count: int = 0
     created_at: str = ""
     is_reply: bool = False

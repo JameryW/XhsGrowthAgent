@@ -5,8 +5,10 @@ Components:
 - content_history: 内容历史记录
 - account_knowledge: 账号知识库
 - audience_preferences: 受众偏好分析
+- scene_database: 场景分析数据存储
 """
 
 from xhs_growth.memory.store import MemoryManager
+from xhs_growth.memory.scene_database import SceneDatabase
 
-__all__ = ["MemoryManager"]
+__all__ = ["MemoryManager", "SceneDatabase"]

@@ -56,7 +56,7 @@ class XHSEngagement:
         browser = await self._ensure_browser()
         if self._page is None:
             context = await browser.new_context(
-                viewport={"width": 1280, height": 800"},
+                viewport={"width": 1280, "height": 800},
                 locale="zh-CN",
             )
             if self.cookie:

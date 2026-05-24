@@ -1,0 +1,63 @@
+{
+  "scene": "美食",
+  "sample_size": 0,
+  "style_distribution": {},
+  "layout_distribution": {},
+  "color_palettes": [],
+  "visual_elements": {},
+  "trending_styles": [],
+  "trending_layouts": [],
+  "analyzed_at": null,
+  "default_layouts": [
+    {
+      "layout_type": "上下结构",
+      "description": "Upper and lower section layout with image above and text below",
+      "popularity_score": 0.85,
+      "pros": ["Clear visual hierarchy", "Easy to read", "Good for tutorials"],
+      "cons": ["Limited flexibility", "Fixed structure"],
+      "reference_posts": [],
+      "suitable_for": ["recipe_tutorial", "food_review", "restaurant_showcase"],
+      "image_sequence_strategy": "chronological",
+      "text_position": "below",
+      "avg_engagement": 0.12
+    },
+    {
+      "layout_type": "网格布局",
+      "description": "Grid layout for multiple images with equal prominence",
+      "popularity_score": 0.75,
+      "pros": ["Multiple product showcase", "Comparison friendly", "Comprehensive view"],
+      "cons": ["Requires many images", "Less storytelling"],
+      "reference_posts": [],
+      "suitable_for": ["product_comparison", "menu_showcase", "collection_display"],
+      "image_sequence_strategy": "grid",
+      "text_position": "overlay",
+      "avg_engagement": 0.08
+    }
+  ],
+  "default_styles": [
+    {
+      "style_name": "温暖治愈",
+      "trending_score": 0.90,
+      "color_palette": ["#FFE66D", "#FF6B6B", "#FFF8E7"],
+      "pros": ["Warm atmosphere", "Homey feel", "Emotional connection"],
+      "cons": ["May feel too casual", "Limited professional use"],
+      "description": "Warm and healing style with soft warm tones for comforting content",
+      "suitable_for": ["home_cooking", "comfort_food", "family_recipe"],
+      "usage_rate": 0.35,
+      "avg_engagement": 0.10,
+      "reference_posts": []
+    },
+    {
+      "style_name": "现代简约",
+      "trending_score": 0.85,
+      "color_palette": ["#FFFFFF", "#F5F5F5", "#333333"],
+      "pros": ["Modern aesthetic", "Clean look", "Professional appearance"],
+      "cons": ["May feel cold", "Requires good lighting"],
+      "description": "Modern minimalist style with clean white background and subtle accents",
+      "suitable_for": ["product_photography", "recipe_display", "restaurant_branding"],
+      "usage_rate": 0.25,
+      "avg_engagement": 0.09,
+      "reference_posts": []
+    }
+  ]
+}
