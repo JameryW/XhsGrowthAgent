@@ -6,6 +6,7 @@ interface Props {
   size?: 'sm' | 'md' | 'lg'
   disabled?: boolean
   loading?: boolean
+  ariaLabel?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -13,6 +14,7 @@ const props = withDefaults(defineProps<Props>(), {
   size: 'md',
   disabled: false,
   loading: false,
+  ariaLabel: '',
 })
 
 const emit = defineEmits<{
@@ -50,9 +52,12 @@ const handleClick = () => {
   <button
     @click="handleClick"
     :disabled="disabled || loading"
+    :aria-label="ariaLabel || undefined"
+    :aria-busy="loading"
     :class="[
       'relative rounded-lg border-2 font-bold text-white transition-all duration-200',
       'disabled:opacity-50 disabled:cursor-not-allowed',
+      'focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50',
       variantClasses,
       sizeClasses,
     ]"
