@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import threading
 from collections import deque
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Callable
+from typing import Any
 
 from xhs_growth.realtime.events import Event, EventType
 
@@ -19,10 +21,11 @@ class EventBusService:
     _instance: EventBusService | None = None
     MAX_EVENTS = 100
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._events: deque[Event] = deque(maxlen=self.MAX_EVENTS)
         self._subscribers: list[Callable[[Event], None]] = []
         self._seq = 0
+        self._lock = threading.Lock()
 
     @classmethod
     def get_instance(cls) -> EventBusService:
@@ -35,7 +38,7 @@ class EventBusService:
         self,
         event_type: EventType,
         thread_id: str | None,
-        payload: dict[str, any],
+        payload: dict[str, Any],
     ) -> Event:
         """发送事件.
 
@@ -47,18 +50,20 @@ class EventBusService:
         Returns:
             创建的Event对象
         """
-        event = Event(
-            event_type=event_type,
-            thread_id=thread_id,
-            payload=payload,
-            timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            seq=self._seq,
-        )
-        self._seq += 1
-        self._events.append(event)
+        with self._lock:
+            event = Event(
+                event_type=event_type,
+                thread_id=thread_id,
+                payload=payload,
+                timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                seq=self._seq,
+            )
+            self._seq += 1
+            self._events.append(event)
+            handlers = self._subscribers.copy()
 
-        # 分发给所有订阅者
-        for handler in self._subscribers:
+        # 分发给所有订阅者（在锁外执行以避免阻塞）
+        for handler in handlers:
             handler(event)
 
         return event
@@ -69,12 +74,14 @@ class EventBusService:
         Args:
             handler: 事件处理函数，接收Event参数
         """
-        self._subscribers.append(handler)
+        with self._lock:
+            self._subscribers.append(handler)
 
     def unsubscribe(self, handler: Callable[[Event], None]) -> None:
         """取消订阅."""
-        if handler in self._subscribers:
-            self._subscribers.remove(handler)
+        with self._lock:
+            if handler in self._subscribers:
+                self._subscribers.remove(handler)
 
     def get_events_since(self, since_seq: int) -> list[Event]:
         """获取seq > since_seq的所有事件（用于补传）.
@@ -85,4 +92,5 @@ class EventBusService:
         Returns:
             事件列表（按seq排序）
         """
-        return [e for e in self._events if e.seq > since_seq]
+        with self._lock:
+            return [e for e in self._events if e.seq > since_seq]
