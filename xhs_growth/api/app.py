@@ -41,3 +41,14 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"]
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": "0.1.0"}
+
+
+# 托管前端静态文件（生产环境）
+import os
+from pathlib import Path
+
+frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    from fastapi.staticfiles import StaticFiles
+    # 注意：API 路由已注册，静态文件挂载在最后
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
