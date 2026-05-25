@@ -1,0 +1,1347 @@
+openapi: 3.1.0
+info:
+  title: XHS Growth Engine API
+  version: 1.0.0
+  description: |
+    API specification for XHS Growth Engine - a LangGraph-based multi-agent system
+    for automating content growth on Xiaohongshu (小红书). Orchestrates workflow:
+    trend scouting → content strategy → copywriting → visual design → human review
+    → publishing → analytics → engagement.
+
+servers:
+  - url: /api
+    description: API server base path
+
+tags:
+  - name: workflow
+    description: Workflow execution and state management
+  - name: review
+    description: Human-in-the-loop review operations
+  - name: analytics
+    description: Performance analytics and cost tracking
+
+paths:
+  /workflow/start:
+    post:
+      tags:
+        - workflow
+      summary: Start a new workflow
+      description: |
+        Initiates a new XHS Growth workflow for the specified account.
+        Optionally starts at a specific phase.
+      operationId: startWorkflow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowStartRequest'
+            example:
+              account_id: "account_001"
+              phase: "scouting"
+      responses:
+        '200':
+          description: Workflow started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_WorkflowResponse'
+              example:
+                success: true
+                data:
+                  thread_id: "thread_abc123"
+                  status: "running"
+                  phase: "scouting"
+                error: null
+                timestamp: "2026-05-25T10:30:00Z"
+                request_id: "req_001"
+        '400':
+          description: Bad request - invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalError'
+
+  /workflow/status/{thread_id}:
+    get:
+      tags:
+        - workflow
+      summary: Get workflow status
+      description: Retrieves the current state of a running workflow
+      operationId: getWorkflowStatus
+      parameters:
+        - name: thread_id
+          in: path
+          required: true
+          description: Unique workflow thread identifier
+          schema:
+            type: string
+            example: "thread_abc123"
+      responses:
+        '200':
+          description: Workflow status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_WorkflowState'
+              example:
+                success: true
+                data:
+                  thread_id: "thread_abc123"
+                  phase: "creating"
+                  current_agent: "copywriter"
+                  trend_data:
+                    hot_topics:
+                      - topic: "春季穿搭"
+                        heat_score: 85
+                        growth_rate: 0.23
+                        related_keywords: ["穿搭", "春季", "时尚"]
+                  content_plan:
+                    selected_topic: "春季穿搭"
+                    content_angle: "通勤穿搭"
+                    content_type: "note"
+                  error: null
+                  created_at: "2026-05-25T10:00:00Z"
+                  updated_at: "2026-05-25T10:30:00Z"
+                error: null
+                timestamp: "2026-05-25T10:35:00Z"
+                request_id: "req_002"
+        '404':
+          description: Workflow not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalError'
+
+  /workflow/pause/{thread_id}:
+    post:
+      tags:
+        - workflow
+      summary: Pause a workflow
+      description: Pauses execution of a running workflow
+      operationId: pauseWorkflow
+      parameters:
+        - name: thread_id
+          in: path
+          required: true
+          description: Unique workflow thread identifier
+          schema:
+            type: string
+            example: "thread_abc123"
+      responses:
+        '200':
+          description: Workflow paused successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_WorkflowPauseResult'
+              example:
+                success: true
+                data:
+                  thread_id: "thread_abc123"
+                  status: "paused"
+                error: null
+                timestamp: "2026-05-25T11:00:00Z"
+                request_id: "req_003"
+        '404':
+          description: Workflow not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalError'
+
+  /workflow/resume/{thread_id}:
+    post:
+      tags:
+        - workflow
+      summary: Resume a paused workflow
+      description: Resumes execution of a paused workflow
+      operationId: resumeWorkflow
+      parameters:
+        - name: thread_id
+          in: path
+          required: true
+          description: Unique workflow thread identifier
+          schema:
+            type: string
+            example: "thread_abc123"
+      responses:
+        '200':
+          description: Workflow resumed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_WorkflowResponse'
+              example:
+                success: true
+                data:
+                  thread_id: "thread_abc123"
+                  status: "running"
+                  phase: "creating"
+                error: null
+                timestamp: "2026-05-25T11:05:00Z"
+                request_id: "req_004"
+        '404':
+          description: Workflow not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalError'
+
+  /review/pending/{thread_id}:
+    get:
+      tags:
+        - review
+      summary: Get pending review content
+      description: |
+        Retrieves content awaiting human review for a workflow.
+        Returns the current content plan, copy content, and visual plan
+        for approval or revision.
+      operationId: getPendingReview
+      parameters:
+        - name: thread_id
+          in: path
+          required: true
+          description: Unique workflow thread identifier
+          schema:
+            type: string
+            example: "thread_abc123"
+      responses:
+        '200':
+          description: Pending review content retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_PendingReview'
+              example:
+                success: true
+                data:
+                  status: "awaiting_review"
+                  content_plan:
+                    selected_topic: "春季穿搭"
+                    content_angle: "通勤穿搭"
+                    content_type: "note"
+                    target_audience: "都市白领"
+                    key_points: ["简约", "舒适", "百搭"]
+                    hashtags: ["#穿搭", "#通勤"]
+                    urgency: "high"
+                  copy_content:
+                    selected_title: "通勤穿搭 | 春季必备5件单品"
+                    body_text: "春季通勤穿搭推荐..."
+                    hashtags: ["#穿搭", "#通勤", "#春季"]
+                    cta: "关注我获取更多穿搭灵感"
+                    emoji_usage: true
+                    tone: "friendly"
+                  visual_plan:
+                    cover_prompt: "简约风格穿搭展示"
+                    image_count: 5
+                    image_prompts:
+                      - "白色衬衫搭配"
+                      - "西装外套组合"
+                    layout_style: "grid"
+                    color_palette: ["#FFFFFF", "#F5F5F5", "#333333"]
+                    font_suggestion: "sans-serif"
+                    brand_elements: ["logo", "watermark"]
+                error: null
+                timestamp: "2026-05-25T12:00:00Z"
+                request_id: "req_005"
+        '404':
+          description: Workflow not found or no pending review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalError'
+
+  /review/submit/{thread_id}:
+    post:
+      tags:
+        - review
+      summary: Submit review decision
+      description: |
+        Submit human review decision for pending content.
+        Can approve, reject, or request revisions with specific feedback.
+      operationId: submitReview
+      parameters:
+        - name: thread_id
+          in: path
+          required: true
+          description: Unique workflow thread identifier
+          schema:
+            type: string
+            example: "thread_abc123"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewDecisionRequest'
+            examples:
+              approve:
+                value:
+                  decision: "approved"
+                  comments: "内容质量优秀，可直接发布"
+                  revisions: []
+              reject:
+                value:
+                  decision: "rejected"
+                  comments: "内容不符合品牌定位"
+                  revisions: []
+              needs_revision:
+                value:
+                  decision: "needs_revision"
+                  comments: "标题需要更吸引眼球"
+                  revisions:
+                    - field: "title"
+                      suggestion: "建议使用疑问句式标题"
+                    - field: "hashtags"
+                      suggestion: "增加热门标签"
+      responses:
+        '200':
+          description: Review submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_ReviewSubmitResponse'
+              example:
+                success: true
+                data:
+                  thread_id: "thread_abc123"
+                  status: "resumed"
+                  decision: "approved"
+                  next_phase: "publishing"
+                error: null
+                timestamp: "2026-05-25T12:05:00Z"
+                request_id: "req_006"
+        '400':
+          description: Invalid review decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        '404':
+          description: Workflow not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalError'
+
+  /analytics/report/{account_id}:
+    get:
+      tags:
+        - analytics
+      summary: Get growth report
+      description: Retrieves comprehensive growth analytics report for an account
+      operationId: getGrowthReport
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: Account identifier
+          schema:
+            type: string
+            example: "account_001"
+        - name: period
+          in: query
+          required: false
+          description: Report period (daily, weekly, monthly)
+          schema:
+            type: string
+            enum: [daily, weekly, monthly]
+            default: "weekly"
+      responses:
+        '200':
+          description: Growth report retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_GrowthReport'
+              example:
+                success: true
+                data:
+                  account_id: "account_001"
+                  period: "weekly"
+                  metrics:
+                    total_views: 150000
+                    total_likes: 8500
+                    total_comments: 1200
+                    engagement_rate: 6.53
+                    growth_rate: 0.15
+                  insights:
+                    - "穿搭类内容表现最佳"
+                    - "周末发布效果更好"
+                    - "视频内容增长明显"
+                error: null
+                timestamp: "2026-05-25T13:00:00Z"
+                request_id: "req_007"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalError'
+
+  /analytics/performance/{account_id}:
+    get:
+      tags:
+        - analytics
+      summary: Get performance records
+      description: Retrieves detailed performance records for published content
+      operationId: getPerformanceRecords
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          description: Account identifier
+          schema:
+            type: string
+            example: "account_001"
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of records to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          description: Number of records to skip
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Performance records retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_PerformanceList'
+              example:
+                success: true
+                data:
+                  - post_id: "post_001"
+                    title: "通勤穿搭 | 春季必备5件单品"
+                    views: 50000
+                    likes: 2800
+                    comments: 450
+                    published_at: "2026-05-20T08:00:00Z"
+                  - post_id: "post_002"
+                    title: "周末穿搭灵感"
+                    views: 35000
+                    likes: 1500
+                    comments: 220
+                    published_at: "2026-05-22T10:00:00Z"
+                error: null
+                timestamp: "2026-05-25T13:05:00Z"
+                request_id: "req_008"
+        '404':
+          description: Account not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalError'
+
+  /analytics/costs:
+    get:
+      tags:
+        - analytics
+      summary: Get cost report
+      description: Retrieves LLM API costs and usage statistics
+      operationId: getCostReport
+      parameters:
+        - name: account_id
+          in: query
+          required: false
+          description: Optional account filter
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cost report retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_CostReport'
+              example:
+                success: true
+                data:
+                  total_cost_usd: 45.67
+                  today_cost_usd: 5.23
+                  by_model:
+                    claude-sonnet-4-20250514: 15.00
+                    deepseek-chat: 8.50
+                    gpt-4o: 12.17
+                    qwen-plus: 10.00
+                  circuit_open: false
+                error: null
+                timestamp: "2026-05-25T14:00:00Z"
+                request_id: "req_009"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalError'
+
+components:
+  schemas:
+    # ============ Unified Response Wrapper ============
+    ApiResponse:
+      type: object
+      required:
+        - success
+        - timestamp
+        - request_id
+      properties:
+        success:
+          type: boolean
+          description: Indicates if the request was successful
+        data:
+          oneOf:
+            - type: object
+            - type: array
+          description: Response payload (type varies by endpoint)
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+        timestamp:
+          type: string
+          format: date-time
+          description: Response timestamp in ISO 8601 format
+        request_id:
+          type: string
+          description: Unique request identifier for tracing
+
+    ErrorDetail:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Error code identifier
+          example: "VALIDATION_ERROR"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Invalid request parameters"
+        details:
+          type: object
+          description: Additional error context
+          example:
+            field: "account_id"
+            reason: "required field missing"
+
+    # ============ Typed Response Wrappers ============
+    ApiResponse_WorkflowResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/WorkflowResponse'
+
+    ApiResponse_WorkflowState:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/WorkflowState'
+
+    ApiResponse_WorkflowPauseResult:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/WorkflowPauseResult'
+
+    ApiResponse_PendingReview:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/PendingReview'
+
+    ApiResponse_ReviewSubmitResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ReviewSubmitResponse'
+
+    ApiResponse_GrowthReport:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/GrowthReport'
+
+    ApiResponse_PerformanceList:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/PerformanceRecord'
+
+    ApiResponse_CostReport:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/CostReport'
+
+    # ============ Enums (CRITICAL - must match backend exactly) ============
+    WorkflowPhase:
+      type: string
+      enum:
+        - idle
+        - scouting
+        - planning
+        - creating
+        - reviewing
+        - publishing
+        - analyzing
+        - engaging
+        - completed
+        - error
+      description: Current phase of the workflow lifecycle
+
+    ContentStatus:
+      type: string
+      enum:
+        - approved
+        - needs_revision
+        - rejected
+        - draft
+        - pending_review
+        - published
+        - failed
+      description: Status of content in the review pipeline
+
+    ContentType:
+      type: string
+      enum:
+        - note
+        - video
+        - carousel
+      description: Type of content to be created
+
+    Urgency:
+      type: string
+      enum:
+        - low
+        - medium
+        - high
+        - trending
+      description: Urgency level for content scheduling
+
+    WorkflowStatus:
+      type: string
+      enum:
+        - running
+        - paused
+        - completed
+        - error
+      description: Execution status of a workflow
+
+    ReviewDecision:
+      type: string
+      enum:
+        - approved
+        - needs_revision
+        - rejected
+      description: Human review decision for content
+
+    # ============ Request Models ============
+    WorkflowStartRequest:
+      type: object
+      required:
+        - account_id
+      properties:
+        account_id:
+          type: string
+          description: Account identifier to run workflow for
+          example: "account_001"
+        phase:
+          $ref: '#/components/schemas/WorkflowPhase'
+          description: Optional starting phase (defaults to scouting)
+
+    ReviewDecisionRequest:
+      type: object
+      required:
+        - decision
+      properties:
+        decision:
+          $ref: '#/components/schemas/ReviewDecision'
+        comments:
+          type: string
+          default: ""
+          description: Reviewer comments explaining the decision
+          example: "内容质量优秀，可直接发布"
+        revisions:
+          type: array
+          default: []
+          description: Specific revision suggestions
+          items:
+            type: object
+            required:
+              - field
+              - suggestion
+            properties:
+              field:
+                type: string
+                description: Field requiring revision
+                example: "title"
+              suggestion:
+                type: string
+                description: Suggested improvement
+                example: "建议使用疑问句式标题"
+
+    # ============ Response Models ============
+    WorkflowResponse:
+      type: object
+      required:
+        - thread_id
+        - status
+        - phase
+      properties:
+        thread_id:
+          type: string
+          description: Unique workflow thread identifier
+          example: "thread_abc123"
+        status:
+          $ref: '#/components/schemas/WorkflowStatus'
+        phase:
+          $ref: '#/components/schemas/WorkflowPhase'
+
+    WorkflowState:
+      type: object
+      required:
+        - thread_id
+        - phase
+        - created_at
+        - updated_at
+      properties:
+        thread_id:
+          type: string
+          description: Unique workflow thread identifier
+          example: "thread_abc123"
+        phase:
+          $ref: '#/components/schemas/WorkflowPhase'
+        current_agent:
+          type: string
+          description: Currently executing agent name
+          example: "copywriter"
+        trend_data:
+          $ref: '#/components/schemas/TrendData'
+        content_plan:
+          $ref: '#/components/schemas/ContentPlan'
+        copy_content:
+          $ref: '#/components/schemas/CopyContent'
+        visual_plan:
+          $ref: '#/components/schemas/VisualPlan'
+        error:
+          type: string
+          nullable: true
+          description: Error message if workflow failed
+        created_at:
+          type: string
+          format: date-time
+          description: Workflow creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+
+    WorkflowPauseResult:
+      type: object
+      required:
+        - thread_id
+        - status
+      properties:
+        thread_id:
+          type: string
+          description: Unique workflow thread identifier
+          example: "thread_abc123"
+        status:
+          type: string
+          enum: [paused]
+          description: Workflow status after pause operation
+
+    PendingReview:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - awaiting_review
+            - no_pending_review
+          description: Review status indicator
+        content_plan:
+          $ref: '#/components/schemas/ContentPlan'
+        copy_content:
+          $ref: '#/components/schemas/CopyContent'
+        visual_plan:
+          $ref: '#/components/schemas/VisualPlan'
+
+    ReviewSubmitResponse:
+      type: object
+      required:
+        - thread_id
+        - status
+        - decision
+        - next_phase
+      properties:
+        thread_id:
+          type: string
+          description: Unique workflow thread identifier
+          example: "thread_abc123"
+        status:
+          type: string
+          enum: [resumed]
+          description: Workflow status after review submission
+        decision:
+          $ref: '#/components/schemas/ReviewDecision'
+        next_phase:
+          $ref: '#/components/schemas/WorkflowPhase'
+          description: Next workflow phase based on decision
+
+    GrowthReport:
+      type: object
+      required:
+        - account_id
+        - period
+        - metrics
+      properties:
+        account_id:
+          type: string
+          description: Account identifier
+          example: "account_001"
+        period:
+          type: string
+          enum: [daily, weekly, monthly]
+          description: Report period
+        metrics:
+          $ref: '#/components/schemas/GrowthMetrics'
+        insights:
+          type: array
+          description: AI-generated growth insights
+          items:
+            type: string
+          example:
+            - "穿搭类内容表现最佳"
+            - "周末发布效果更好"
+
+    GrowthMetrics:
+      type: object
+      required:
+        - total_views
+        - total_likes
+        - total_comments
+        - engagement_rate
+        - growth_rate
+      properties:
+        total_views:
+          type: integer
+          minimum: 0
+          description: Total content views
+          example: 150000
+        total_likes:
+          type: integer
+          minimum: 0
+          description: Total likes received
+          example: 8500
+        total_comments:
+          type: integer
+          minimum: 0
+          description: Total comments received
+          example: 1200
+        engagement_rate:
+          type: number
+          minimum: 0
+          description: Engagement rate percentage
+          example: 6.53
+        growth_rate:
+          type: number
+          minimum: 0
+          description: Growth rate compared to previous period
+          example: 0.15
+
+    PerformanceRecord:
+      type: object
+      required:
+        - post_id
+        - title
+        - views
+        - likes
+        - comments
+        - published_at
+      properties:
+        post_id:
+          type: string
+          description: Unique post identifier
+          example: "post_001"
+        title:
+          type: string
+          description: Post title
+          example: "通勤穿搭 | 春季必备5件单品"
+        views:
+          type: integer
+          minimum: 0
+          description: View count
+          example: 50000
+        likes:
+          type: integer
+          minimum: 0
+          description: Like count
+          example: 2800
+        comments:
+          type: integer
+          minimum: 0
+          description: Comment count
+          example: 450
+        published_at:
+          type: string
+          format: date-time
+          description: Publication timestamp
+          example: "2026-05-20T08:00:00Z"
+
+    CostReport:
+      type: object
+      required:
+        - total_cost_usd
+        - today_cost_usd
+        - by_model
+        - circuit_open
+      properties:
+        total_cost_usd:
+          type: number
+          minimum: 0
+          description: Total accumulated API costs
+          example: 45.67
+        today_cost_usd:
+          type: number
+          minimum: 0
+          description: Today's API costs
+          example: 5.23
+        by_model:
+          type: object
+          description: Cost breakdown by model
+          additionalProperties:
+            type: number
+          example:
+            claude-sonnet-4-20250514: 15.00
+            deepseek-chat: 8.50
+            gpt-4o: 12.17
+            qwen-plus: 10.00
+        circuit_open:
+          type: boolean
+          description: Whether cost circuit breaker is open
+          example: false
+
+    # ============ Sub-state Models ============
+    TrendData:
+      type: object
+      properties:
+        hot_topics:
+          type: array
+          description: List of trending topics
+          items:
+            $ref: '#/components/schemas/HotTopicItem'
+        trending_keywords:
+          type: array
+          description: Top trending keywords
+          items:
+            type: string
+          example: ["穿搭", "春季", "通勤"]
+        competitor_posts:
+          type: array
+          description: Notable competitor content
+          items:
+            $ref: '#/components/schemas/CompetitorPost'
+        niche_opportunities:
+          type: array
+          description: Identified niche opportunities
+          items:
+            $ref: '#/components/schemas/NicheOpportunity'
+        timestamp:
+          type: string
+          format: date-time
+          description: Data collection timestamp
+
+    HotTopicItem:
+      type: object
+      required:
+        - topic
+        - heat_score
+        - growth_rate
+        - related_keywords
+      properties:
+        topic:
+          type: string
+          description: Topic name
+          example: "春季穿搭"
+        heat_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Topic heat/popularity score
+          example: 85
+        growth_rate:
+          type: number
+          description: Growth rate percentage
+          example: 0.23
+        related_keywords:
+          type: array
+          description: Related keywords
+          items:
+            type: string
+          example: ["穿搭", "春季", "时尚"]
+
+    CompetitorPost:
+      type: object
+      required:
+        - title
+        - likes
+        - comments
+        - author
+      properties:
+        title:
+          type: string
+          description: Post title
+          example: "春季穿搭灵感"
+        likes:
+          type: integer
+          minimum: 0
+          description: Like count
+          example: 5000
+        comments:
+          type: integer
+          minimum: 0
+          description: Comment count
+          example: 300
+        author:
+          type: string
+          description: Author name/ID
+          example: "时尚达人"
+
+    NicheOpportunity:
+      type: object
+      required:
+        - topic
+        - potential_score
+        - audience_match
+        - entry_barrier
+      properties:
+        topic:
+          type: string
+          description: Niche topic name
+          example: "通勤穿搭"
+        potential_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Potential/opportunity score
+          example: 75
+        audience_match:
+          type: string
+          description: Target audience match description
+          example: "都市白领女性"
+        entry_barrier:
+          type: string
+          enum: [low, medium, high]
+          description: Entry barrier level
+          example: "low"
+
+    ContentPlan:
+      type: object
+      required:
+        - selected_topic
+        - content_angle
+        - content_type
+        - target_audience
+        - key_points
+        - suggested_timing
+        - hashtags
+        - urgency
+      properties:
+        selected_topic:
+          type: string
+          description: Selected content topic
+          example: "春季穿搭"
+        content_angle:
+          type: string
+          description: Unique angle/perspective
+          example: "通勤穿搭"
+        content_type:
+          $ref: '#/components/schemas/ContentType'
+        target_audience:
+          type: string
+          description: Target audience description
+          example: "都市白领"
+        key_points:
+          type: array
+          description: Key content points
+          items:
+            type: string
+          example: ["简约", "舒适", "百搭"]
+        suggested_timing:
+          type: string
+          format: date-time
+          description: Suggested publishing time
+        hashtags:
+          type: array
+          description: Recommended hashtags
+          items:
+            type: string
+          example: ["#穿搭", "#通勤"]
+        urgency:
+          $ref: '#/components/schemas/Urgency'
+
+    CopyContent:
+      type: object
+      required:
+        - title_candidates
+        - selected_title
+        - body_text
+        - hashtags
+        - cta
+        - emoji_usage
+        - tone
+      properties:
+        title_candidates:
+          type: array
+          description: Generated title candidates (3-5 options)
+          minItems: 3
+          maxItems: 5
+          items:
+            type: string
+          example:
+            - "通勤穿搭 | 春季必备5件单品"
+            - "5件单品搞定春季通勤穿搭"
+            - "春季通勤穿搭攻略"
+        selected_title:
+          type: string
+          description: Selected title for publication
+          example: "通勤穿搭 | 春季必备5件单品"
+        body_text:
+          type: string
+          description: Main content body text
+          example: "春季通勤穿搭推荐..."
+        hashtags:
+          type: array
+          description: Final hashtags to use
+          items:
+            type: string
+          example: ["#穿搭", "#通勤", "#春季"]
+        cta:
+          type: string
+          description: Call-to-action text
+          example: "关注我获取更多穿搭灵感"
+        emoji_usage:
+          type: array
+          description: Emoji usage in content
+          items:
+            type: string
+          example: ["✨", "💕", "🌸"]
+        tone:
+          type: string
+          enum: [professional, friendly, casual, enthusiastic]
+          description: Content tone/style
+          example: "friendly"
+
+    VisualPlan:
+      type: object
+      required:
+        - cover_prompt
+        - image_count
+        - image_prompts
+        - layout_style
+        - color_palette
+        - font_suggestion
+        - brand_elements
+      properties:
+        cover_prompt:
+          type: string
+          description: Cover image generation prompt
+          example: "简约风格穿搭展示"
+        image_count:
+          type: integer
+          minimum: 1
+          maximum: 9
+          description: Number of images in carousel
+          example: 5
+        image_prompts:
+          type: array
+          description: Prompts for each image
+          items:
+            type: string
+          example:
+            - "白色衬衫搭配"
+            - "西装外套组合"
+        layout_style:
+          type: string
+          description: Recommended layout style
+          example: "grid"
+        color_palette:
+          type: array
+          description: Color palette (hex format)
+          items:
+            type: string
+            pattern: "^#[A-Fa-f0-9]{6}$"
+          example: ["#FFFFFF", "#F5F5F5", "#333333"]
+        font_suggestion:
+          type: string
+          description: Font recommendation
+          example: "sans-serif"
+        brand_elements:
+          type: array
+          description: Brand elements to include
+          items:
+            type: string
+          example: ["logo", "watermark"]
+
+    # ============ Error Responses ============
+    BadRequest:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            success:
+              type: boolean
+              enum: [false]
+            error:
+              type: object
+              properties:
+                code:
+                  type: string
+                  enum: [BAD_REQUEST, VALIDATION_ERROR]
+                message:
+                  type: string
+          example:
+            success: false
+            data: null
+            error:
+              code: "VALIDATION_ERROR"
+              message: "Invalid request parameters"
+              details:
+                field: "account_id"
+                reason: "required field missing"
+            timestamp: "2026-05-25T10:00:00Z"
+            request_id: "req_error_001"
+
+    NotFound:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            success:
+              type: boolean
+              enum: [false]
+            error:
+              type: object
+              properties:
+                code:
+                  type: string
+                  enum: [NOT_FOUND]
+                message:
+                  type: string
+          example:
+            success: false
+            data: null
+            error:
+              code: "NOT_FOUND"
+              message: "Workflow not found"
+              details:
+                thread_id: "thread_invalid"
+            timestamp: "2026-05-25T10:00:00Z"
+            request_id: "req_error_002"
+
+    InternalError:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            success:
+              type: boolean
+              enum: [false]
+            error:
+              type: object
+              properties:
+                code:
+                  type: string
+                  enum: [INTERNAL_ERROR]
+                message:
+                  type: string
+          example:
+            success: false
+            data: null
+            error:
+              code: "INTERNAL_ERROR"
+              message: "An unexpected error occurred"
+              details:
+                trace_id: "trace_abc123"
+            timestamp: "2026-05-25T10:00:00Z"
+            request_id: "req_error_003"
