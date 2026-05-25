@@ -1,4 +1,5 @@
-"""Core utilities - dependency injection and configuration."""
-from xhs_growth.core.di import ServiceContainer, get_container, reset_container
+"""Core utilities."""
+# Note: ServiceContainer was removed as it was not used in the codebase.
+# Dependency injection is handled implicitly through model router and tool registry.
 
-__all__ = ["ServiceContainer", "get_container", "reset_container"]
+__all__ = []

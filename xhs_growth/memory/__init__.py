@@ -2,9 +2,6 @@
 
 Components:
 - store: MemoryManager 中心管理器
-- content_history: 内容历史记录
-- account_knowledge: 账号知识库
-- audience_preferences: 受众偏好分析
 - scene_database: 场景分析数据存储
 """
 
