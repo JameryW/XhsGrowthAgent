@@ -1,18 +1,25 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import { ref } from 'vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { useWorkflowStore } from '@/stores'
 
 const router = useRouter()
 const workflowStore = useWorkflowStore()
+const isStarting = ref(false)
 
 const goToDashboard = () => {
   router.push('/dashboard')
 }
 
 const startNewWorkflow = async () => {
-  await workflowStore.startWorkflow('default', 'scouting')
-  router.push('/dashboard')
+  isStarting.value = true
+  try {
+    await workflowStore.startWorkflow('default', 'scouting')
+    router.push('/dashboard')
+  } finally {
+    isStarting.value = false
+  }
 }
 </script>
 
@@ -32,11 +39,11 @@ const startNewWorkflow = async () => {
       </div>
 
       <div class="space-y-4">
-        <NeonButton variant="pink" size="lg" class="w-full" @click="startNewWorkflow">
+        <NeonButton variant="pink" size="lg" class="w-full" @click="startNewWorkflow" :loading="isStarting">
           🚀 启动新工作流
         </NeonButton>
 
-        <NeonButton variant="ghost" size="md" class="w-full" @click="goToDashboard">
+        <NeonButton variant="ghost" size="md" class="w-full" @click="goToDashboard" :disabled="isStarting">
           📊 查看现有工作流
         </NeonButton>
       </div>
