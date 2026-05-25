@@ -70,8 +70,10 @@ async def review_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
     # interrupt() 暂停执行，将 payload 发送给调用方
     decision = interrupt(review_payload)
 
-    # decision 是人工审核结果: {"decision": "approved/rejected", "comments": "...", "revisions": [...]}
-    if decision.get("decision") == ContentStatus.APPROVED:
+    # decision 是人工审核结果: {"decision": "approved/needs_revision/rejected", "comments": "...", "revisions": [...]}
+    # Handle both enum and string values for compatibility
+    decision_value = decision.get("decision")
+    if decision_value == ContentStatus.APPROVED or decision_value == "approved":
         return {
             "human_feedback": decision,
             "phase": WorkflowPhase.REVIEWING,
