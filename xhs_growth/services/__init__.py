@@ -1,4 +1,4 @@
-"""服务模块 — 外部平台客户端.
+"""服务模块 — 外部平台客户端和 LLM 增强.
 
 Components:
 - xhs_client: 小红书平台交互客户端 (混合架构)
@@ -8,6 +8,7 @@ Components:
 - xhs_engagement: Playwright 互动器
 - visual_extractor: 视觉数据提取器
 - visual_analysis: 视觉分析服务 (场景分析、布局推荐、风格推荐)
+- llm_enrichment: LLM 增强服务 (工具智能处理层)
 """
 
 from xhs_growth.services.xhs_client import (
@@ -29,6 +30,11 @@ from xhs_growth.services.xhs_publisher import XHSPublisher
 from xhs_growth.services.xhs_engagement import XHSEngagement
 from xhs_growth.services.visual_extractor import VisualDataExtractor
 from xhs_growth.services.visual_analysis import VisualAnalysisService
+from xhs_growth.services.llm_enrichment import (
+    LLMEnrichmentService,
+    LLMEnrichmentError,
+    get_llm_service,
+)
 
 __all__ = [
     # Main client
@@ -56,4 +62,8 @@ __all__ = [
     # Visual analysis
     "VisualDataExtractor",
     "VisualAnalysisService",
+    # LLM enrichment
+    "LLMEnrichmentService",
+    "LLMEnrichmentError",
+    "get_llm_service",
 ]
