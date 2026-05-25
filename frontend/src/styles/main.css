@@ -16,34 +16,6 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
-  /* 边框光带 */
-  .border-glow-pink {
-    border: 1px solid rgba(254, 44, 85, 0.3);
-    box-shadow: 0 0 30px rgba(254, 44, 85, 0.2), inset 0 0 20px rgba(254, 44, 85, 0.1);
-  }
-
-  .border-glow-cyan {
-    border: 1px solid rgba(78, 205, 196, 0.3);
-    box-shadow: 0 0 30px rgba(78, 205, 196, 0.2), inset 0 0 20px rgba(78, 205, 196, 0.1);
-  }
-
-  .border-glow-purple {
-    border: 1px solid rgba(102, 126, 234, 0.3);
-    box-shadow: 0 0 30px rgba(102, 126, 234, 0.2), inset 0 0 20px rgba(102, 126, 234, 0.1);
-  }
-
-  /* 扫描线 */
-  .scanline::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, rgba(254, 44, 85, 0.3), transparent);
-    animation: scan 4s linear infinite;
-  }
-
   /* Monospace 文字 */
   .mono {
     font-family: 'Monaco', 'Consolas', monospace;
