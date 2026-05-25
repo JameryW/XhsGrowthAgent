@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 interface Props {
   icon: string
   label: string
@@ -7,11 +9,21 @@ interface Props {
 
 const props = defineProps<Props>()
 
+// Pre-defined status styles
 const statusClasses = {
   completed: 'bg-gradient-to-br from-neon-pink to-neon-peach border-2 border-white shadow-neon-pink',
   running: 'bg-gradient-to-br from-neon-peach to-neon-gold border-2 border-neon-pink animate-pulse-glow shadow-neon-pink',
   pending: 'bg-white/20 border border-white/30 opacity-50',
 }
+
+// Memoize label color class
+const labelClass = computed(() => {
+  switch (props.status) {
+    case 'running': return 'text-neon-pink font-bold'
+    case 'completed': return 'text-white'
+    default: return 'text-white/40'
+  }
+})
 </script>
 
 <template>
@@ -24,13 +36,7 @@ const statusClasses = {
     >
       <span class="text-2xl">{{ props.icon }}</span>
     </div>
-    <div
-      :class="[
-        'mt-2 mono text-xs',
-        props.status === 'running' ? 'text-neon-pink font-bold' :
-        props.status === 'completed' ? 'text-white' : 'text-white/40'
-      ]"
-    >
+    <div :class="['mt-2 mono text-xs', labelClass]">
       {{ props.label }}
     </div>
     <div
