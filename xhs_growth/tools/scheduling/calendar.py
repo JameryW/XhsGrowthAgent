@@ -158,4 +158,4 @@ async def timing_optimizer(
         })
 
 
-__all__ = ["timing_optimizer", "calendar_manager"]
+__all__ = ["timing_optimizer"]

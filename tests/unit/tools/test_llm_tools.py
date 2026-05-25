@@ -308,14 +308,13 @@ def test_tool_registry_has_content_tools():
 
 
 def test_tool_registry_has_scheduling_tools():
-    """Tool registry contains scheduling tools"""
+    """Tool registry contains scheduling tools."""
     from xhs_growth.tools.registry import ToolRegistry
 
     ToolRegistry.register_scheduling_tools()
     names = ToolRegistry.available_tool_names()
 
     assert "timing_optimizer" in names
-    assert "calendar_manager" in names
 
 
 def test_content_strategist_has_timing_optimizer():

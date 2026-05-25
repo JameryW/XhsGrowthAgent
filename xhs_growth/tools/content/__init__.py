@@ -18,7 +18,8 @@ from xhs_growth.tools.content.image_prompt import image_prompt_generator
 from xhs_growth.tools.content.layout import layout_recommender, get_default_layouts
 from xhs_growth.tools.content.style import style_library, get_default_styles
 
-# Alias for backward compatibility
+# Alias for backward compatibility - research_hashtags was the original name
+# before hashtag_researcher was standardized following LangChain tool naming convention
 research_hashtags = hashtag_researcher
 
 __all__ = [
