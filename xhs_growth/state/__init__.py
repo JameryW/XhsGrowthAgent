@@ -3,14 +3,17 @@
 Components:
 - schema: TypedDict 状态模型
 - reducers: 状态更新器函数
+- enums: 统一枚举定义
 """
 
-from xhs_growth.state.schema import (
-    XHSGrowthState,
+from xhs_growth.state.enums import (
     WorkflowPhase,
     ContentStatus,
     ContentType,
     Urgency,
+)
+from xhs_growth.state.schema import (
+    XHSGrowthState,
     TrendData,
     ContentPlan,
     CopyContent,

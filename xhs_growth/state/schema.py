@@ -1,47 +1,12 @@
-from enum import Enum
 from typing import Annotated, Any, TypedDict
 
 from langgraph.graph.message import add_messages
 from typing_extensions import NotRequired
 
-
-# ── Enums ──────────────────────────────────────────────────────────────────
-
-
-class WorkflowPhase(str, Enum):
-    IDLE = "idle"
-    SCOUTING = "scouting"
-    PLANNING = "planning"
-    CREATING = "creating"
-    REVIEWING = "reviewing"
-    PUBLISHING = "publishing"
-    ANALYZING = "analyzing"
-    ENGAGING = "engaging"
-    COMPLETED = "completed"
-    ERROR = "error"
+from xhs_growth.state.enums import WorkflowPhase, ContentStatus, ContentType, Urgency
 
 
-class ContentStatus(str, Enum):
-    DRAFT = "draft"
-    PENDING_REVIEW = "pending_review"
-    APPROVED = "approved"
-    NEEDS_REVISION = "needs_revision"  # Added to match frontend
-    REJECTED = "rejected"
-    PUBLISHED = "published"
-    FAILED = "failed"
-
-
-class Urgency(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    TRENDING = "trending"
-
-
-class ContentType(str, Enum):
-    NOTE = "note"          # 图文笔记
-    VIDEO = "video"        # 视频笔记
-    CAROUSEL = "carousel"  # 轮播图
+# ── Enums (imported from enums.py) ────────────────────────────────────────
 
 
 # ── Sub-state models ───────────────────────────────────────────────────────
