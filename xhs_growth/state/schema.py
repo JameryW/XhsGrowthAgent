@@ -25,6 +25,7 @@ class ContentStatus(str, Enum):
     DRAFT = "draft"
     PENDING_REVIEW = "pending_review"
     APPROVED = "approved"
+    NEEDS_REVISION = "needs_revision"  # Added to match frontend
     REJECTED = "rejected"
     PUBLISHED = "published"
     FAILED = "failed"
