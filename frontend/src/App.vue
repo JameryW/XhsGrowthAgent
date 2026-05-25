@@ -1,9 +1,29 @@
 <script setup lang="ts">
-import Navbar from '@/components/Navbar.vue'
+import { onMounted, onUnmounted } from "vue"
+import ConnectionStatus from "@/components/ConnectionStatus.vue"
+import Toast from "@/components/Toast.vue"
+import Navbar from "@/components/Navbar.vue"
+import { useRealtimeStore } from "@/stores/realtime"
+
+const realtimeStore = useRealtimeStore()
+
+onMounted(() => {
+  // 应用启动时建立WebSocket连接
+  realtimeStore.connect()
+})
+
+onUnmounted(() => {
+  // 应用卸载时断开WebSocket
+  realtimeStore.disconnect()
+})
 </script>
 
 <template>
   <div class="min-h-screen bg-dark-bg flex">
+    <!-- Status indicators -->
+    <ConnectionStatus />
+    <Toast />
+
     <!-- 左侧导航 -->
     <Navbar />
 
