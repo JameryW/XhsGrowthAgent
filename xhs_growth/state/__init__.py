@@ -1,9 +1,10 @@
-"""状态模块 — LangGraph 状态定义.
+"""State module — LangGraph state definitions.
 
 Components:
-- schema: TypedDict 状态模型
-- reducers: 状态更新器函数
-- enums: 统一枚举定义
+- schema: Main state TypedDict (XHSGrowthState)
+- substates: Modular sub-state TypedDict definitions
+- reducers: State reducer functions
+- enums: Unified enum definitions
 """
 
 from xhs_growth.state.enums import (
@@ -12,8 +13,8 @@ from xhs_growth.state.enums import (
     ContentType,
     Urgency,
 )
-from xhs_growth.state.schema import (
-    XHSGrowthState,
+from xhs_growth.state.schema import XHSGrowthState
+from xhs_growth.state.substates import (
     TrendData,
     ContentPlan,
     CopyContent,
@@ -21,15 +22,24 @@ from xhs_growth.state.schema import (
     PublishResult,
     AnalyticsSnapshot,
     HumanFeedback,
+    EngagementAction,
+    RipplePrediction,
+    RipplePMFResult,
+    HotTopicItem,
+    NicheOpportunity,
+    CompetitorPost,
 )
 from xhs_growth.state.reducers import merge_dict, append_list, replace, max_value
 
 __all__ = [
+    # Main state
     "XHSGrowthState",
+    # Enums
     "WorkflowPhase",
     "ContentStatus",
     "ContentType",
     "Urgency",
+    # Sub-states
     "TrendData",
     "ContentPlan",
     "CopyContent",
@@ -37,6 +47,14 @@ __all__ = [
     "PublishResult",
     "AnalyticsSnapshot",
     "HumanFeedback",
+    "EngagementAction",
+    "RipplePrediction",
+    "RipplePMFResult",
+    # Nested items
+    "HotTopicItem",
+    "NicheOpportunity",
+    "CompetitorPost",
+    # Reducers
     "merge_dict",
     "append_list",
     "replace",
