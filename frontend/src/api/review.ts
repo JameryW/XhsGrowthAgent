@@ -1,5 +1,5 @@
 import client from './client'
-import type { PendingReview, ReviewDecision, ReviewSubmitResponse } from '@/types/review'
+import type { PendingReview, ReviewDecisionRequest, ReviewSubmitResponse } from '@/types/review'
 
 // 获取待审核内容
 export async function getPendingReview(threadId: string): Promise<PendingReview> {
@@ -9,7 +9,7 @@ export async function getPendingReview(threadId: string): Promise<PendingReview>
 // 提交审核决定
 export async function submitReview(
   threadId: string,
-  decision: ReviewDecision
+  request: ReviewDecisionRequest
 ): Promise<ReviewSubmitResponse> {
-  return client.post(`/review/submit/${threadId}`, decision)
+  return client.post(`/review/submit/${threadId}`, request)
 }

@@ -8,7 +8,8 @@
 """
 
 from xhs_growth.graph.builder import compile_graph_dev, compile_graph_prod, build_graph
-from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase, ContentStatus
+from xhs_growth.state.schema import XHSGrowthState
+from xhs_growth.state.enums import WorkflowPhase, ContentStatus
 
 __all__ = [
     "compile_graph_dev",

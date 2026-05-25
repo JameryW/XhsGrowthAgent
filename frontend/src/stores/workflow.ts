@@ -1,12 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import * as workflowApi from '@/api/workflow'
-import type { WorkflowState, WorkflowPhase } from '@/types/workflow'
+import type { WorkflowStateResponse, WorkflowPhase } from '@/types/workflow'
 
 export const useWorkflowStore = defineStore('workflow', () => {
   // State
   const currentThreadId = ref<string | null>(null)
-  const workflowState = ref<WorkflowState | null>(null)
+  const workflowState = ref<WorkflowStateResponse | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
 

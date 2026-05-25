@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import * as reviewApi from '@/api/review'
-import type { PendingReview, ContentStatus } from '@/types/review'
+import type { PendingReview, ContentStatus, ReviewDecision, Revision } from '@/types'
 
 export const useReviewStore = defineStore('review', () => {
   // State
@@ -11,16 +11,16 @@ export const useReviewStore = defineStore('review', () => {
   const error = ref<string | null>(null)
   const decision = ref<ContentStatus | null>(null)
   const comments = ref('')
-  const revisions = ref<string[]>([])
+  const revisions = ref<Revision[]>([])
 
   // Computed
   const hasPendingReview = computed(() =>
     pendingReview.value?.status === 'awaiting_review'
   )
 
-  const contentPlan = computed(() => pendingReview.value?.content_plan || {})
-  const copyContent = computed(() => pendingReview.value?.copy_content || {})
-  const visualPlan = computed(() => pendingReview.value?.visual_plan || {})
+  const contentPlan = computed(() => pendingReview.value?.content_plan)
+  const copyContent = computed(() => pendingReview.value?.copy_content)
+  const visualPlan = computed(() => pendingReview.value?.visual_plan)
 
   // Actions
   async function fetchPendingReview(tid: string) {
@@ -36,13 +36,13 @@ export const useReviewStore = defineStore('review', () => {
     }
   }
 
-  async function submitDecision(dec: ContentStatus, comment?: string, revs?: string[]) {
+  async function submitDecision(dec: ContentStatus, comment?: string, revs?: Revision[]) {
     if (!threadId.value) return
     isLoading.value = true
     error.value = null
     try {
       const result = await reviewApi.submitReview(threadId.value, {
-        decision: dec,
+        decision: dec as ReviewDecision,
         comments: comment || '',
         revisions: revs || [],
       })
@@ -61,7 +61,7 @@ export const useReviewStore = defineStore('review', () => {
     comments.value = comment
   }
 
-  function addRevision(rev: string) {
+  function addRevision(rev: Revision) {
     revisions.value.push(rev)
   }
 

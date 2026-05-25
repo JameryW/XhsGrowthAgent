@@ -33,6 +33,7 @@ dev = [
     "pytest-cov>=6.0",
     "ruff>=0.8",
     "mypy>=1.13",
+    "datamodel-code-generator>=0.25.0",
 ]
 
 [project.scripts]

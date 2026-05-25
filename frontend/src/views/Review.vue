@@ -3,7 +3,7 @@ import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import NeonButton from '@/components/NeonButton.vue'
 import { useWorkflowStore, useReviewStore } from '@/stores'
-import type { ContentStatus } from '@/types'
+import type { ContentStatus, CopyContent, VisualPlan } from '@/types'
 
 const router = useRouter()
 const workflowStore = useWorkflowStore()
@@ -20,8 +20,8 @@ onMounted(() => {
   }
 })
 
-const copyContent = computed(() => reviewStore.copyContent)
-const visualPlan = computed(() => reviewStore.visualPlan)
+const copyContent = computed<Partial<CopyContent>>(() => reviewStore.copyContent || {})
+const visualPlan = computed<Partial<VisualPlan>>(() => reviewStore.visualPlan || {})
 
 const handleDecision = async (decision: ContentStatus) => {
   selectedDecision.value = decision
@@ -71,15 +71,15 @@ const handleDecision = async (decision: ContentStatus) => {
         </div>
 
         <div class="bg-black/50 rounded-lg p-4 border-l-2 border-neon-pink">
-          <div v-if="copyContent.title" class="text-neon-pink font-bold text-lg mb-2">
-            {{ copyContent.title }}
+          <div v-if="copyContent.selected_title" class="text-neon-pink font-bold text-lg mb-2">
+            {{ copyContent.selected_title }}
           </div>
-          <div v-if="copyContent.body" class="text-white/70 text-sm mb-2">
-            {{ copyContent.body }}
+          <div v-if="copyContent.body_text" class="text-white/70 text-sm mb-2">
+            {{ copyContent.body_text }}
           </div>
-          <div v-if="copyContent.tags" class="flex gap-2">
-            <span v-for="tag in copyContent.tags" :key="tag" class="px-2 py-1 rounded bg-neon-pink/20 text-neon-pink mono text-xs">
-              #{{ tag }}
+          <div v-if="copyContent.hashtags" class="flex gap-2">
+            <span v-for="tag in copyContent.hashtags" :key="tag" class="px-2 py-1 rounded bg-neon-pink/20 text-neon-pink mono text-xs">
+              {{ tag }}
             </span>
           </div>
         </div>
@@ -95,14 +95,14 @@ const handleDecision = async (decision: ContentStatus) => {
         </div>
 
         <div class="bg-black/50 rounded-lg p-4 border-l-2 border-neon-cyan">
-          <div v-if="visualPlan.layout" class="text-neon-cyan font-bold mb-2">
-            {{ visualPlan.layout }}
+          <div v-if="visualPlan.layout_style" class="text-neon-cyan font-bold mb-2">
+            {{ visualPlan.layout_style }}
           </div>
-          <div v-if="visualPlan.style" class="text-white/70 text-sm mb-2">
-            {{ visualPlan.style }}
+          <div v-if="visualPlan.cover_prompt" class="text-white/70 text-sm mb-2">
+            {{ visualPlan.cover_prompt }}
           </div>
-          <div v-if="visualPlan.colors" class="flex gap-2 mt-2">
-            <div v-for="color in visualPlan.colors" :key="color" class="w-6 h-6 rounded" :style="{ background: color }" />
+          <div v-if="visualPlan.color_palette" class="flex gap-2 mt-2">
+            <div v-for="color in visualPlan.color_palette" :key="color" class="w-6 h-6 rounded" :style="{ background: color }" />
           </div>
         </div>
       </div>

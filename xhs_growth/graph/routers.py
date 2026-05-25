@@ -6,7 +6,8 @@ from typing import Literal
 
 from langgraph.graph import END
 
-from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase, ContentStatus
+from xhs_growth.state.enums import WorkflowPhase, ContentStatus
+from xhs_growth.state.schema import XHSGrowthState
 
 
 def orchestrator_router(state: XHSGrowthState) -> str:
@@ -39,8 +40,10 @@ def review_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_conten
     """人工审核路由 — 根据审核结果决定下一步"""
     feedback = state.get("human_feedback", {})
     decision = feedback.get("decision", ContentStatus.REJECTED)
-    if decision == ContentStatus.APPROVED:
+    # Handle both enum and string values for frontend compatibility
+    if decision == ContentStatus.APPROVED or decision == "approved":
         return "publisher"
+    # needs_revision and rejected both go to revise_content
     return "revise_content"
 
 
