@@ -1,25 +1,47 @@
-// 内容状态
-export type ContentStatus = 'approved' | 'needs_revision' | 'rejected'
+// Content status - matches backend ContentStatus enum
+export type ContentStatus =
+  | 'approved'
+  | 'needs_revision'
+  | 'rejected'
+  | 'draft'
+  | 'pending_review'
+  | 'published'
+  | 'failed'
 
-// 待审核内容
+// Review decision - subset of ContentStatus used for review decisions
+export type ReviewDecision = 'approved' | 'needs_revision' | 'rejected'
+
+// Review status indicator
+export type ReviewStatus = 'awaiting_review' | 'no_pending_review'
+
+// Revision suggestion
+export interface Revision {
+  field: string
+  suggestion: string
+}
+
+// Pending review content
 export interface PendingReview {
-  status: 'awaiting_review' | 'no_pending_review'
-  content_plan?: Record<string, any>
-  copy_content?: Record<string, any>
-  visual_plan?: Record<string, any>
+  status: ReviewStatus
+  content_plan?: ContentPlan
+  copy_content?: CopyContent
+  visual_plan?: VisualPlan
 }
 
-// 审核决定
-export interface ReviewDecision {
-  decision: ContentStatus
+// Review decision request
+export interface ReviewDecisionRequest {
+  decision: ReviewDecision
   comments?: string
-  revisions?: string[]
+  revisions?: Revision[]
 }
 
-// 审核提交响应
+// Review submit response
 export interface ReviewSubmitResponse {
   thread_id: string
   status: 'resumed'
-  decision: ContentStatus
+  decision: ReviewDecision
   next_phase: string
 }
+
+// Import related types from workflow
+import type { ContentPlan, CopyContent, VisualPlan } from './workflow'

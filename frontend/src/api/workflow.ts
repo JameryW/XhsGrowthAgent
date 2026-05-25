@@ -1,5 +1,5 @@
 import client from './client'
-import type { WorkflowStartRequest, WorkflowResponse, WorkflowState } from '@/types/workflow'
+import type { WorkflowStartRequest, WorkflowResponse, WorkflowStateResponse } from '@/types/workflow'
 
 // 启动工作流
 export async function startWorkflow(req: WorkflowStartRequest): Promise<WorkflowResponse> {
@@ -7,7 +7,7 @@ export async function startWorkflow(req: WorkflowStartRequest): Promise<Workflow
 }
 
 // 获取工作流状态
-export async function getWorkflowStatus(threadId: string): Promise<WorkflowState> {
+export async function getWorkflowStatus(threadId: string): Promise<WorkflowStateResponse> {
   return client.get(`/workflow/status/${threadId}`)
 }
 
