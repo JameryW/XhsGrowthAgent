@@ -7,7 +7,10 @@ import { useAnalyticsStore } from '@/stores'
 const analyticsStore = useAnalyticsStore()
 
 onMounted(() => {
-  analyticsStore.fetchAllData()
+  // Only fetch if data hasn't been loaded yet
+  if (!analyticsStore.posts.length && !analyticsStore.isLoading) {
+    analyticsStore.fetchAllData()
+  }
 })
 
 const metrics = computed(() => [
@@ -56,6 +59,8 @@ const setPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
             v-for="p in ['daily', 'weekly', 'monthly']"
             :key="p"
             @click="setPeriod(p as any)"
+            :aria-pressed="analyticsStore.period === p"
+            :aria-label="`切换到${p === 'daily' ? '本周' : p === 'weekly' ? '本月' : '全年'}数据`"
             :class="[
               'px-4 py-2 rounded-lg mono text-xs border transition-all',
               analyticsStore.period === p
