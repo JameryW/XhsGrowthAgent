@@ -265,6 +265,90 @@ See [CLAUDE.md](./CLAUDE.md) for detailed development guidelines.
 
 ---
 
+## Visual Design Tools Enhancement
+
+The visual design tools have been enhanced with a data-driven architecture that analyzes real XHS post patterns to generate intelligent recommendations.
+
+### Architecture Overview
+
+```
+XHS Platform Data
+       ↓
+VisualDataExtractor (AI-powered analysis)
+       ↓
+SceneDatabase (pattern storage with expiry)
+       ↓
+VisualAnalysisService (recommendation engine)
+       ↓
+layout_recommender / style_library (LangChain tools)
+```
+
+### Key Components
+
+| Component | Purpose | File |
+|-----------|---------|------|
+| `VisualDataExtractor` | AI-powered visual pattern extraction from posts | `tools/visual/extractor.py` |
+| `SceneDatabase` | Scene-based pattern storage with 7-day expiry | `tools/visual/database.py` |
+| `VisualAnalysisService` | Distribution analysis & recommendation generation | `tools/visual/service.py` |
+| `VisualTypes` | TypedDict models for all visual data structures | `tools/visual/types.py` |
+
+### Supported Scenes
+
+- `food` — Food photography and recipes
+- `travel` — Travel destinations and experiences
+- `fashion` — Fashion and outfit inspiration
+- `beauty` — Beauty and skincare products
+- `lifestyle` — Lifestyle and daily life content
+- `fitness` — Fitness and workout content
+- `home_decor` — Home decoration and interior design
+
+### Recommendation Features
+
+**Layout Recommendations:**
+- Content type filtering (single_image, carousel, video_cover)
+- Image count requirements (minimum/maximum)
+- Style compatibility matching
+- Popularity scoring based on analyzed posts
+
+**Style Recommendations:**
+- Color palette extraction (primary, secondary, accent colors)
+- Category filtering (minimalist, vibrant, warm, cool, editorial)
+- Trending style boosting
+- Pro/cons analysis for each style
+
+### Data Structures
+
+```python
+# Layout Option
+LayoutOption(
+    name="三图拼接",
+    description="Three images arranged horizontally",
+    pros=["视觉冲击力强", "信息量大"],
+    cons=["需要三张高质量图片"],
+    suitable_content_types=["carousel"],
+    min_images=3, max_images=3,
+    style_compatibility=["modern", "minimalist"],
+    popularity_score=0.85
+)
+
+# Style Option
+StyleOption(
+    name="清新简约",
+    description="Clean and minimalist aesthetic",
+    color_palette=ColorPalette(
+        primary="#F5F5F5",
+        secondary="#333333",
+        accent="#FF6B6B"
+    ),
+    pros=["干净利落", "易于模仿"],
+    cons=["可能显得单调"],
+    suitable_content_types=["single_image", "carousel"],
+    trending_score=0.92
+)
+```
+
+---
+
 ## License
 
 MIT License - See [LICENSE](./LICENSE) for details.
