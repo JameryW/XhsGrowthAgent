@@ -8,7 +8,7 @@ from langgraph.types import Command
 
 from xhs_growth.api.responses import success
 from xhs_growth.api.errors import ReviewNotPendingError
-from xhs_growth.state.schema import ContentStatus
+from xhs_growth.state.enums import ContentStatus
 
 router = APIRouter()
 

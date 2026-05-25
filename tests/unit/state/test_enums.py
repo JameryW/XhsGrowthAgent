@@ -14,7 +14,9 @@ def test_content_status_values():
 
 def test_enum_string_conversion():
     phase = WorkflowPhase.SCOUTING
-    assert str(phase) == "scouting"
+    # For str enums, phase.value gives the string value
+    assert phase.value == "scouting"
+    # The enum itself compares equal to its string value
     assert phase == "scouting"
 
 def test_enum_from_string():

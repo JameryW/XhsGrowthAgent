@@ -6,7 +6,8 @@ from typing import Literal
 
 from langgraph.graph import END
 
-from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase, ContentStatus
+from xhs_growth.state.enums import WorkflowPhase, ContentStatus
+from xhs_growth.state.schema import XHSGrowthState
 
 
 def orchestrator_router(state: XHSGrowthState) -> str:

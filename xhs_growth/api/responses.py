@@ -5,13 +5,6 @@ from pydantic import BaseModel
 
 T = TypeVar("T")
 
-class ApiResponse(BaseModel, Generic[T]):
-    """Unified API response envelope."""
-    success: bool
-    data: T | None = None
-    error: ErrorDetail | None = None
-    timestamp: datetime = datetime.now(timezone.utc)
-    request_id: str | None = None
 
 class ErrorDetail(BaseModel):
     """Error detail structure."""
@@ -21,6 +14,15 @@ class ErrorDetail(BaseModel):
 
     def __str__(self) -> str:
         return f"[{self.code}] {self.message}"
+
+
+class ApiResponse(BaseModel, Generic[T]):
+    """Unified API response envelope."""
+    success: bool
+    data: T | None = None
+    error: ErrorDetail | None = None
+    timestamp: datetime = datetime.now(timezone.utc)
+    request_id: str | None = None
 
 def success(data: Any, request_id: str | None = None) -> ApiResponse:
     """Create success response."""
