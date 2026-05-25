@@ -238,6 +238,8 @@ frontend/src/
 ### 6.2 WebSocketService
 
 ```typescript
+type WsStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting'
+
 export class WebSocketService {
   private ws: WebSocket | null = null
   private reconnectAttempts = 0
@@ -247,6 +249,7 @@ export class WebSocketService {
   private messageHandlers: Map<EventType, Function> = new Map()
   private statusCallbacks: Set<Function> = new Set()
   private status: WsStatus = 'disconnected'
+  private heartbeatInterval: number | null = null
   
   connect(url?: string) {
     this.status = 'connecting'
@@ -290,11 +293,26 @@ export class WebSocketService {
   }
   
   startHeartbeat() {
-    setInterval(() => {
+    this.heartbeatInterval = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.send({ action: 'ping' })
       }
     }, 25000)
+  }
+  
+  stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval)
+      this.heartbeatInterval = null
+    }
+  }
+  
+  disconnect() {
+    this.stopHeartbeat()
+    this.ws?.close()
+    this.ws = null
+    this.status = 'disconnected'
+    this.notifyStatusChange()
   }
   
   subscribe(threadId: string) {
