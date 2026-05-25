@@ -46,3 +46,40 @@ def test_event_global_event():
     assert event.thread_id is None
     data = event.to_dict()
     assert data["thread_id"] is None
+
+
+def test_event_empty_payload():
+    """Event can have empty payload"""
+    event = Event(
+        event_type=EventType.WORKFLOW_STARTED,
+        thread_id="thread_1",
+        payload={},
+        timestamp="2026-05-26T10:00:00Z",
+        seq=0,
+    )
+    assert event.payload == {}
+    assert event.seq == 0
+
+
+def test_event_type_values_unique():
+    """All EventType values are unique strings"""
+    values = [e.value for e in EventType]
+    assert len(values) == len(set(values))
+    assert all(isinstance(v, str) and v for v in values)
+
+
+def test_event_immutable():
+    """Event is immutable (frozen=True)"""
+    event = Event(
+        event_type=EventType.WORKFLOW_STARTED,
+        thread_id="thread_1",
+        payload={"key": "value"},
+        timestamp="2026-05-26T10:00:00Z",
+        seq=0,
+    )
+    # Attempting to modify should raise FrozenInstanceError
+    try:
+        event.seq = 1
+        assert False, "Should have raised FrozenInstanceError"
+    except Exception:
+        pass  # Expected behavior

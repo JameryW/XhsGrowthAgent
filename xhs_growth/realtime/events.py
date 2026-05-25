@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 
 class EventType(str, Enum):
@@ -31,13 +32,13 @@ class EventType(str, Enum):
     ANALYTICS_PERFORMANCE_NEW = "analytics.performance_new"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Event:
-    """Single event data structure."""
+    """Single event data structure (immutable)."""
 
     event_type: EventType
     thread_id: str | None
-    payload: dict
+    payload: dict[str, Any]
     timestamp: str
     seq: int
 
