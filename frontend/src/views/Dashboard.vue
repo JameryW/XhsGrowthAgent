@@ -10,14 +10,16 @@ const router = useRouter()
 const workflowStore = useWorkflowStore()
 const reviewStore = useReviewStore()
 
+// Memoized phase order for performance
+const phaseOrder = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'completed'] as const
+
 // 生命周期
 onMounted(() => {
-  if (!workflowStore.currentThreadId) {
-    workflowStore.startWorkflow('default', 'scouting')
-  } else {
+  // Only refresh status if thread exists - don't auto-start
+  if (workflowStore.currentThreadId) {
     workflowStore.refreshStatus()
+    workflowStore.startPolling(5000)
   }
-  workflowStore.startPolling(5000)
 })
 
 onUnmounted(() => {
@@ -34,11 +36,11 @@ const workflowNodes = computed(() => [
   { icon: '📤', label: '发布', phase: 'publishing' },
 ])
 
+// Use memoized phaseOrder for consistent lookup
 const getNodeStatus = (phase: string) => {
   const currentPhase = workflowStore.currentPhase
-  const phaseOrder = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'completed']
-  const currentIndex = phaseOrder.indexOf(currentPhase)
-  const nodeIndex = phaseOrder.indexOf(phase)
+  const currentIndex = phaseOrder.indexOf(currentPhase as any)
+  const nodeIndex = phaseOrder.indexOf(phase as any)
 
   if (nodeIndex < currentIndex) return 'completed'
   if (nodeIndex === currentIndex) return 'running'
