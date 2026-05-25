@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import * as analyticsApi from '@/api/analytics'
 import type { GrowthReport, PerformanceData, CostData, PostPerformance } from '@/types/analytics'
+import { useRealtimeStore } from './realtime'
+import { EventType } from '@/realtime/events'
 
 export const useAnalyticsStore = defineStore('analytics', () => {
   // State
@@ -30,6 +32,34 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     return posts.value.reduce((sum, post) =>
       sum + post.engagement_rate, 0
     ) / posts.value.length
+  })
+
+  // WebSocket event handlers
+  const realtimeStore = useRealtimeStore()
+
+  realtimeStore.wsService.onEvent(EventType.ANALYTICS_REPORT_UPDATED, (payload: unknown) => {
+    const p = payload as { report?: GrowthReport }
+    if (p.report) {
+      growthReport.value = p.report
+      // TODO: showToast("info", "分析报告已更新")
+    }
+  })
+
+  realtimeStore.wsService.onEvent(EventType.ANALYTICS_COST_ALERT, (payload: unknown) => {
+    const p = payload as { message?: string; level?: string }
+    // Log cost alert until toast component is available (Task 12)
+    console.warn(`Cost alert [${p.level || 'warning'}]: ${p.message || '成本预警'}`)
+    // TODO: showToast(p.level === 'critical' ? 'error' : 'warning', p.message || "成本预警")
+  })
+
+  realtimeStore.wsService.onEvent(EventType.ANALYTICS_PERFORMANCE_NEW, (payload: unknown) => {
+    const p = payload as { post?: PostPerformance }
+    if (p.post && performanceData.value) {
+      performanceData.value = {
+        ...performanceData.value,
+        posts: [...performanceData.value.posts, p.post],
+      }
+    }
   })
 
   // Actions
