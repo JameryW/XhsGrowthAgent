@@ -59,6 +59,9 @@ class WebSocketManager:
         """处理WebSocket连接生命周期."""
         await websocket.accept()
 
+        # Capture running event loop for thread-safe task scheduling
+        loop = asyncio.get_running_loop()
+
         session = WsSession(websocket)
         session_id = uuid.uuid4().hex
         self.sessions[session_id] = session
@@ -72,7 +75,11 @@ class WebSocketManager:
             await session.send_event(event)
 
         def sync_handler(event: Event) -> None:
-            asyncio.create_task(event_handler(event))
+            # Use call_soon_threadsafe to safely schedule async task
+            # from potentially non-async context (EventBusService.emit is sync)
+            loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(event_handler(event))
+            )
 
         event_bus.subscribe(sync_handler)
 
