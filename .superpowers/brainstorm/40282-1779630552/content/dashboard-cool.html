@@ -1,0 +1,176 @@
+<h2>工作流仪表盘 · 进阶版</h2>
+<p class="subtitle">渐变背景 · 光效卡片 · 动态视觉</p>
+
+<div class="mockup">
+  <div class="mockup-header">Preview: 酷炫仪表盘设计</div>
+  <div class="mockup-body" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); padding: 24px; border-radius: 16px;">
+
+    <!-- 顶部状态栏 -->
+    <div style="background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); border-radius: 16px; padding: 20px; margin-bottom: 24px; border: 1px solid rgba(255,255,255,0.2);">
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <div style="background: linear-gradient(135deg, #FE2C55, #FF6B6B); width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; box-shadow: 0 0 30px rgba(254,44,85,0.5);">
+          🚀
+        </div>
+        <div>
+          <div style="color: rgba(255,255,255,0.6); font-size: 12px;">工作流 ID: xhs_default_8a7b</div>
+          <div style="color: white; font-size: 20px; font-weight: bold;">内容创作中 · 视觉设计阶段</div>
+          <div style="color: #4ECDC4; font-size: 14px;">⚡ 预计 2 分钟完成</div>
+        </div>
+        <div style="flex: 1; text-align: right;">
+          <div style="background: linear-gradient(135deg, #4ECDC4, #44A08D); padding: 12px 24px; border-radius: 12px; color: white; font-weight: bold; display: inline-block;">
+            ✨ 运行中
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 流程时间轴 -->
+    <div style="position: relative; padding: 20px 0; margin-bottom: 24px;">
+      <div style="position: absolute; top: 50%; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, #FE2C55 0%, #FE2C55 40%, rgba(255,255,255,0.2) 40%); border-radius: 4px;"></div>
+      <div style="display: flex; justify-content: space-between; position: relative;">
+        <div style="text-align: center;">
+          <div style="background: linear-gradient(135deg, #FE2C55, #FF6B6B); width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 8px; box-shadow: 0 0 20px rgba(254,44,85,0.6); border: 2px solid white;">
+            🔍
+          </div>
+          <div style="color: white; font-size: 11px;">趋势发现</div>
+          <div style="color: #4ECDC4; font-size: 10px;">✓ 5min</div>
+        </div>
+        <div style="text-align: center;">
+          <div style="background: linear-gradient(135deg, #FE2C55, #FF6B6B); width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 8px; box-shadow: 0 0 20px rgba(254,44,85,0.6); border: 2px solid white;">
+            📋
+          </div>
+          <div style="color: white; font-size: 11px;">策略规划</div>
+          <div style="color: #4ECDC4; font-size: 10px;">✓ 3min</div>
+        </div>
+        <div style="text-align: center;">
+          <div style="background: linear-gradient(135deg, #FE2C55, #FF6B6B); width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 8px; box-shadow: 0 0 20px rgba(254,44,85,0.6); border: 2px solid white;">
+            ✍️
+          </div>
+          <div style="color: white; font-size: 11px;">文案创作</div>
+          <div style="color: #4ECDC4; font-size: 10px;">✓ 1min</div>
+        </div>
+        <div style="text-align: center;">
+          <div style="background: linear-gradient(135deg, #FFE4E1, #FFDAB9); width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 8px; animation: pulse 1s infinite; box-shadow: 0 0 40px rgba(254,44,85,0.8); border: 3px solid #FE2C55;">
+            🎨
+          </div>
+          <div style="color: #FE2C55; font-size: 12px; font-weight: bold;">视觉设计</div>
+          <div style="color: #FFE4E1; font-size: 10px;">⏳ 进行中</div>
+        </div>
+        <div style="text-align: center; opacity: 0.5;">
+          <div style="background: rgba(255,255,255,0.2); width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 8px;">
+            ⏳
+          </div>
+          <div style="color: rgba(255,255,255,0.5); font-size: 11px;">审核</div>
+        </div>
+        <div style="text-align: center; opacity: 0.5;">
+          <div style="background: rgba(255,255,255,0.2); width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 8px;">
+            📤
+          </div>
+          <div style="color: rgba(255,255,255,0.5); font-size: 11px;">发布</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 数据卡片网格 -->
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
+      <!-- 热门趋势卡片 -->
+      <div style="background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.1);">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+          <div style="background: linear-gradient(135deg, #FE2C55, #FF6B6B); width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px;">
+            🔥
+          </div>
+          <div style="color: white; font-weight: bold;">热门趋势</div>
+        </div>
+        <div style="color: rgba(255,255,255,0.8); font-size: 13px; line-height: 1.8;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="background: #FE2C55; padding: 4px 12px; border-radius: 6px; font-size: 11px;">美食探店</span>
+            <span style="color: #4ECDC4;">热度 ↑ 85%</span>
+          </div>
+          <div style="margin-top: 8px;">早餐分享 · brunch时光</div>
+        </div>
+      </div>
+
+      <!-- 内容策略卡片 -->
+      <div style="background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.1);">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+          <div style="background: linear-gradient(135deg, #4ECDC4, #44A08D); width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px;">
+            🎯
+          </div>
+          <div style="color: white; font-weight: bold;">内容策略</div>
+        </div>
+        <div style="color: rgba(255,255,255,0.8); font-size: 13px; line-height: 1.8;">
+          <div>角度: 温馨治愈早餐</div>
+          <div>受众: 25-35岁女性</div>
+          <div>时段: 早7-9点 🌅</div>
+        </div>
+      </div>
+
+      <!-- 文案输出卡片 -->
+      <div style="background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border-radius: 16px; padding: 20px; border: 1px solid rgba(255,255,255,0.1);">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+          <div style="background: linear-gradient(135deg, #667eea, #764ba2); width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px;">
+            ✨
+          </div>
+          <div style="color: white; font-weight: bold;">文案创作</div>
+        </div>
+        <div style="color: rgba(255,255,255,0.8); font-size: 13px; line-height: 1.8;">
+          <div style="color: #FE2C55; font-weight: bold;">「周末早午餐治愈时光」</div>
+          <div style="font-size: 12px; opacity: 0.7;">今天分享我的周末brunch...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部操作栏 -->
+    <div style="display: flex; gap: 16px; margin-top: 24px;">
+      <button style="background: linear-gradient(135deg, #FE2C55, #FF6B6B); color: white; padding: 16px 32px; border-radius: 12px; border: none; font-weight: bold; box-shadow: 0 4px 20px rgba(254,44,85,0.4);">
+        ⏸️ 暂停工作流
+      </button>
+      <button style="background: rgba(255,255,255,0.1); color: white; padding: 16px 32px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);">
+        📜 查看完整日志
+      </button>
+      <button style="background: rgba(255,255,255,0.1); color: white; padding: 16px 32px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);">
+        ⚙️ 工作流配置
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>设计升级要点</h3>
+  <ul>
+    <li><strong>暗色渐变背景</strong> — 深蓝渐变，科技感十足</li>
+    <li><strong>毛玻璃卡片</strong> — Glass-morphism 效果，半透明模糊</li>
+    <li><strong>发光图标</strong> — 当前阶段图标带光晕动画效果</li>
+    <li><strong>渐变按钮</strong> — 粉色渐变按钮，带阴影光效</li>
+    <li><strong>进度时间轴</strong> — 渐变进度线，节点带光效</li>
+  </ul>
+</div>
+
+<div class="pros-cons">
+  <div class="pros"><h4>优点</h4><ul><li>视觉冲击力强</li><li>现代感十足</li><li>状态一目了然</li></ul></div>
+  <div class="cons"><h4>注意</h4><ul><li>需要 CSS 动画支持</li><li>可能影响性能</li><li>需测试不同浏览器</li></ul></div>
+</div>
+
+<div class="options" data-multiselect>
+  <div class="option" data-choice="cool-ok" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>酷炫版满意</h3>
+      <p>可以继续展示内容审核页面</p>
+    </div>
+  </div>
+  <div class="option" data-choice="cool-more" onclick="toggleSelect(this)">
+    <div class="letter">+</div>
+    <div class="content">
+      <h3>还要更酷</h3>
+      <p>请描述想要的额外效果</p>
+    </div>
+  </div>
+  <div class="option" data-choice="cool-less" onclick="toggleSelect(this)">
+    <div class="letter">-</div>
+    <div class="content">
+      <h3>太炫了，简化些</h3>
+      <p>保持暗色但减少特效</p>
+    </div>
+  </div>
+</div>
