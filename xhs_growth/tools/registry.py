@@ -83,3 +83,39 @@ class ToolRegistry:
             ripple_get_simulation_log,
             ripple_generate_report,
         ])
+
+    @classmethod
+    def register_scheduling_tools(cls) -> None:
+        """注册所有调度工具"""
+        from xhs_growth.tools.scheduling import calendar_manager, timing_optimizer
+
+        cls.register_many([
+            calendar_manager,
+            timing_optimizer,
+        ])
+
+    @classmethod
+    def register_content_tools(cls) -> None:
+        """注册所有内容生成工具"""
+        from xhs_growth.tools.content import (
+            hashtag_researcher,
+            title_generator,
+            image_prompt_generator,
+            layout_recommender,
+            style_library,
+        )
+
+        cls.register_many([
+            hashtag_researcher,
+            title_generator,
+            image_prompt_generator,
+            layout_recommender,
+            style_library,
+        ])
+
+    @classmethod
+    def register_all_tools(cls) -> None:
+        """注册所有可用工具"""
+        cls.register_ripple_tools()
+        cls.register_scheduling_tools()
+        cls.register_content_tools()
