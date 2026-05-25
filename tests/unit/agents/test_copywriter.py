@@ -1,6 +1,6 @@
 """Unit tests for CopywriterAgent."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 import pytest
 
 from xhs_growth.agents.copywriter import CopywriterAgent
@@ -49,8 +49,10 @@ class TestCopywriterAgent:
 }
 ```"""
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             result = await agent.execute(mock_state, store=mock_store)
 
@@ -68,8 +70,10 @@ class TestCopywriterAgent:
         mock_response = MagicMock()
         mock_response.content = '{"title_candidates": [], "body_text": ""}'
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             result = await agent.execute(mock_state, store=mock_store)
 
@@ -86,8 +90,10 @@ class TestCopywriterAgent:
         mock_response = MagicMock()
         mock_response.content = '{"title_candidates": [], "body_text": ""}'
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             result = await agent.execute(mock_state, store=mock_store)
 
@@ -102,8 +108,10 @@ class TestCopywriterAgent:
         mock_response = MagicMock()
         mock_response.content = '{"title_candidates": ["默认标题"], "body_text": ""}'
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             result = await agent.execute(mock_state, store=mock_store)
 
@@ -115,8 +123,10 @@ class TestCopywriterAgent:
         mock_response = MagicMock()
         mock_response.content = "Not valid JSON"
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             result = await agent.execute(mock_state, store=mock_store)
 
@@ -138,8 +148,10 @@ class TestCopywriterAgent:
         mock_response = MagicMock()
         mock_response.content = '{"title_candidates": [], "body_text": ""}'
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             result = await agent.execute(mock_state, store=mock_store)
 

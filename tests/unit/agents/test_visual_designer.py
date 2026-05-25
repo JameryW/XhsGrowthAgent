@@ -1,6 +1,6 @@
 """Unit tests for VisualDesignerAgent."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 import pytest
 
 from xhs_growth.agents.visual_designer import VisualDesignerAgent
@@ -52,8 +52,10 @@ class TestVisualDesignerAgent:
 }
 ```"""
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             result = await agent.execute(mock_state, store=mock_store)
 
@@ -62,10 +64,11 @@ class TestVisualDesignerAgent:
         assert "cover_prompt" in result["visual_plan"]
 
     @pytest.mark.asyncio
-    async def test_execute_truncates_body_text(self, agent, mock_state, mock_store):
+    async def test_execute_truncates_body_text(self, agent, mock_store):
         """Execute truncates long body text to 200 chars."""
         long_body_state = {
-            **mock_state,
+            "account_id": "test",
+            "content_plan": {"selected_topic": "美食"},
             "copy_content": {
                 "body_text": "A" * 500,  # Very long text
             },
@@ -74,8 +77,10 @@ class TestVisualDesignerAgent:
         mock_response = MagicMock()
         mock_response.content = '{"cover_prompt": ""}'
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             # Check that body is truncated
             result = await agent.execute(long_body_state, store=mock_store)
@@ -94,8 +99,10 @@ class TestVisualDesignerAgent:
         mock_response = MagicMock()
         mock_response.content = '{"cover_prompt": "默认封面"}'
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             result = await agent.execute(mock_state, store=mock_store)
 
@@ -112,8 +119,10 @@ class TestVisualDesignerAgent:
         mock_response = MagicMock()
         mock_response.content = '{"cover_prompt": ""}'
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             result = await agent.execute(mock_state, store=mock_store)
 
@@ -125,8 +134,10 @@ class TestVisualDesignerAgent:
         mock_response = MagicMock()
         mock_response.content = "Not valid JSON"
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             result = await agent.execute(mock_state, store=mock_store)
 
@@ -139,8 +150,10 @@ class TestVisualDesignerAgent:
         mock_response = MagicMock()
         mock_response.content = '{"cover_prompt": ""}'
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             result = await agent.execute(mock_state, store=mock_store)
 

@@ -58,10 +58,11 @@ class TestMemoryManager:
         await manager.store_content_record(mock_store, "post_123", record)
 
         mock_store.aput.assert_called_once()
-        # Check namespace and key
+        # Check namespace, key, value - aput uses kwargs
         call_args = mock_store.aput.call_args
-        assert call_args[0][0] == manager.content_history_ns
-        assert call_args[0][1] == "post_123"
+        assert call_args.args[0] == manager.content_history_ns  # namespace
+        assert call_args.kwargs.get("key") == "post_123"
+        assert call_args.kwargs.get("value") == record
 
     @pytest.mark.asyncio
     async def test_store_insight(self, manager, mock_store):
@@ -70,7 +71,7 @@ class TestMemoryManager:
 
         mock_store.aput.assert_called_once()
         call_args = mock_store.aput.call_args
-        assert call_args[0][0] == manager.insights_ns
+        assert call_args.args[0] == manager.insights_ns
 
     @pytest.mark.asyncio
     async def test_store_audience_preference(self, manager, mock_store):
@@ -81,7 +82,7 @@ class TestMemoryManager:
 
         mock_store.aput.assert_called_once()
         call_args = mock_store.aput.call_args
-        assert call_args[0][0] == manager.audience_ns
+        assert call_args.args[0] == manager.audience_ns
 
     @pytest.mark.asyncio
     async def test_store_strategy_note(self, manager, mock_store):
@@ -90,7 +91,7 @@ class TestMemoryManager:
 
         mock_store.aput.assert_called_once()
         call_args = mock_store.aput.call_args
-        assert call_args[0][0] == manager.strategy_ns
+        assert call_args.args[0] == manager.strategy_ns
 
     @pytest.mark.asyncio
     async def test_recall_similar_content_empty(self, manager, mock_store):

@@ -1,6 +1,6 @@
 """Unit tests for AnalystAgent."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 import pytest
 
 from xhs_growth.agents.analyst import AnalystAgent
@@ -49,8 +49,10 @@ class TestAnalystAgent:
 }
 ```"""
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             result = await agent.execute(mock_state, store=mock_store)
 
@@ -68,8 +70,10 @@ class TestAnalystAgent:
         mock_response = MagicMock()
         mock_response.content = '{"insights": []}'
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             result = await agent.execute(mock_state, store=mock_store)
 
@@ -82,8 +86,10 @@ class TestAnalystAgent:
         mock_response = MagicMock()
         mock_response.content = '{"insights": ["美食效果好"], "recommendations": []}'
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             result = await agent.execute(mock_state, store=mock_store)
 
@@ -100,7 +106,7 @@ class TestAnalystAgent:
             },
         }
 
-        with patch("xhs_growth.agents.analyst.get_report") as mock_get_report:
+        with patch("xhs_growth.tools.ripple.integration.get_report") as mock_get_report:
             mock_get_report.return_value = {
                 "rounds": [{"content": "Report text"}],
             }
@@ -121,7 +127,7 @@ class TestAnalystAgent:
         """_ripple_report handles errors gracefully."""
         state = {"content_plan": {"ripple_prediction": {"ripple_job_id": "job_123"}}}
 
-        with patch("xhs_growth.agents.analyst.get_report") as mock_get_report:
+        with patch("xhs_growth.tools.ripple.integration.get_report") as mock_get_report:
             mock_get_report.side_effect = Exception("Ripple error")
 
             result = await agent._ripple_report(state)
@@ -157,8 +163,10 @@ class TestAnalystAgent:
         mock_response = MagicMock()
         mock_response.content = '{"insights": [], "recommendations": []}'
 
-        with patch.object(agent, "model") as mock_model:
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
 
             with patch.object(agent, "_ripple_report", AsyncMock(return_value="Report")):
                 result = await agent.execute(state_with_ripple, store=mock_store)
