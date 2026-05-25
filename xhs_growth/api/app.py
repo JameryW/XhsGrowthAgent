@@ -7,6 +7,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from xhs_growth.api.middleware import error_handler_middleware
+from xhs_growth.api.responses import success
 from xhs_growth.graph.builder import compile_graph_dev
 
 
@@ -31,6 +33,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.middleware("http")(error_handler_middleware)
+
 from xhs_growth.api.routes import workflow, review, analytics  # noqa: E402
 
 app.include_router(workflow.router, prefix="/api/workflow", tags=["workflow"])
@@ -40,7 +44,7 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"]
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "0.1.0"}
+    return success({"status": "ok", "version": "0.1.0"})
 
 
 # 托管前端静态文件（生产环境）
