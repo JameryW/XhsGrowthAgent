@@ -11,6 +11,8 @@ const reviewStore = useReviewStore()
 
 const comments = ref('')
 const selectedDecision = ref<ContentStatus | null>(null)
+const isSubmitting = ref(false)
+const error = ref<string | null>(null)
 
 onMounted(() => {
   if (workflowStore.currentThreadId) {
@@ -23,11 +25,15 @@ const visualPlan = computed(() => reviewStore.visualPlan)
 
 const handleDecision = async (decision: ContentStatus) => {
   selectedDecision.value = decision
+  error.value = null
+  isSubmitting.value = true
   try {
     await reviewStore.submitDecision(decision, comments.value)
     router.push('/dashboard')
-  } catch (e) {
-    console.error('Submit failed:', e)
+  } catch (e: any) {
+    error.value = e.message || '提交失败，请重试'
+  } finally {
+    isSubmitting.value = false
   }
 }
 </script>
@@ -106,18 +112,23 @@ const handleDecision = async (decision: ContentStatus) => {
     <div class="glass rounded-xl p-6 border border-neon-pink/30">
       <div class="mono text-neon-cyan text-xs mb-4">审核操作 // SELECT_ACTION</div>
 
+      <!-- Error display -->
+      <div v-if="error" class="mb-4 p-3 rounded-lg bg-neon-pink/20 border border-neon-pink/50 text-neon-pink mono text-sm">
+        ⚠️ {{ error }}
+      </div>
+
       <div class="grid grid-cols-3 gap-4 mb-6">
-        <NeonButton variant="cyan" size="lg" class="w-full" @click="handleDecision('approved')">
+        <NeonButton variant="cyan" size="lg" class="w-full" @click="handleDecision('approved')" :loading="isSubmitting" :disabled="isSubmitting">
           ✓ APPROVE
           <div class="text-xs opacity-70 mt-1">直接发布</div>
         </NeonButton>
 
-        <NeonButton variant="purple" size="lg" class="w-full" @click="handleDecision('needs_revision')">
+        <NeonButton variant="purple" size="lg" class="w-full" @click="handleDecision('needs_revision')" :loading="isSubmitting" :disabled="isSubmitting">
           ✎ REVISE
           <div class="text-xs opacity-70 mt-1">要求修改</div>
         </NeonButton>
 
-        <NeonButton variant="ghost" size="lg" class="w-full border-neon-pink text-neon-pink" @click="handleDecision('rejected')">
+        <NeonButton variant="ghost" size="lg" class="w-full border-neon-pink text-neon-pink" @click="handleDecision('rejected')" :disabled="isSubmitting">
           ✗ REJECT
           <div class="text-xs opacity-70 mt-1">放弃此内容</div>
         </NeonButton>
@@ -128,6 +139,7 @@ const handleDecision = async (decision: ContentStatus) => {
         <div class="mono text-neon-purple text-xs mb-2">FEEDBACK_INPUT // 修改建议</div>
         <textarea
           v-model="comments"
+          aria-label="审核意见输入框"
           class="w-full bg-transparent border-none text-white mono text-sm resize-none focus:outline-none"
           rows="3"
           placeholder="请输入审核意见或修改建议..."
