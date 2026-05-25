@@ -23,6 +23,11 @@ const router = createRouter({
       name: 'analytics',
       component: () => import('@/views/Analytics.vue'),
     },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: () => import('@/views/NotFound.vue'),
+    },
   ],
 })
 
