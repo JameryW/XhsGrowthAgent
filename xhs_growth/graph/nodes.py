@@ -15,6 +15,7 @@ from xhs_growth.agents.visual_designer import VisualDesignerAgent
 from xhs_growth.agents.publisher import PublisherAgent
 from xhs_growth.agents.analyst import AnalystAgent
 from xhs_growth.agents.engagement import EngagementAgent
+from xhs_growth.realtime import EventBusService, EventType
 from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase, ContentStatus
 
 logger = logging.getLogger("xhs_growth.graph.nodes")
@@ -31,23 +32,82 @@ _engagement = EngagementAgent()
 
 
 async def orchestrator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
-    return await _orchestrator(state, store=store)
+    result = await _orchestrator(state, store=store)
+
+    # Emit phase change event if phase changed
+    old_phase = state.get("phase")
+    new_phase = result.get("phase")
+    if new_phase and new_phase != old_phase:
+        EventBusService.get_instance().emit(
+            EventType.WORKFLOW_PHASE_CHANGED,
+            thread_id=state.get("thread_id"),
+            payload={
+                "old_phase": old_phase,
+                "new_phase": new_phase,
+            },
+        )
+
+    return result
 
 
 async def trend_scout_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
-    return await _trend_scout(state, store=store)
+    result = await _trend_scout(state, store=store)
+
+    # Emit data updated event for trend_data
+    thread_id = state.get("thread_id")
+    if result.get("trend_data"):
+        EventBusService.get_instance().emit(
+            EventType.WORKFLOW_DATA_UPDATED,
+            thread_id=thread_id,
+            payload={"data_type": "trend_data", "data": result.get("trend_data")},
+        )
+
+    return result
 
 
 async def content_strategist_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
-    return await _content_strategist(state, store=store)
+    result = await _content_strategist(state, store=store)
+
+    # Emit data updated event for content_plan
+    thread_id = state.get("thread_id")
+    if result.get("content_plan"):
+        EventBusService.get_instance().emit(
+            EventType.WORKFLOW_DATA_UPDATED,
+            thread_id=thread_id,
+            payload={"data_type": "content_plan", "data": result.get("content_plan")},
+        )
+
+    return result
 
 
 async def copywriter_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
-    return await _copywriter(state, store=store)
+    result = await _copywriter(state, store=store)
+
+    # Emit data updated event for copy_content
+    thread_id = state.get("thread_id")
+    if result.get("copy_content"):
+        EventBusService.get_instance().emit(
+            EventType.WORKFLOW_DATA_UPDATED,
+            thread_id=thread_id,
+            payload={"data_type": "copy_content", "data": result.get("copy_content")},
+        )
+
+    return result
 
 
 async def visual_designer_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
-    return await _visual_designer(state, store=store)
+    result = await _visual_designer(state, store=store)
+
+    # Emit data updated event for visual_plan
+    thread_id = state.get("thread_id")
+    if result.get("visual_plan"):
+        EventBusService.get_instance().emit(
+            EventType.WORKFLOW_DATA_UPDATED,
+            thread_id=thread_id,
+            payload={"data_type": "visual_plan", "data": result.get("visual_plan")},
+        )
+
+    return result
 
 
 async def review_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
@@ -58,6 +118,18 @@ async def review_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
     copy = state.get("copy_content", {})
     visual = state.get("visual_plan", {})
     plan = state.get("content_plan", {})
+
+    # Emit review pending event before interrupt
+    thread_id = state.get("thread_id")
+    EventBusService.get_instance().emit(
+        EventType.REVIEW_PENDING,
+        thread_id=thread_id,
+        payload={
+            "content_plan": plan,
+            "copy_content": copy,
+            "visual_plan": visual,
+        },
+    )
 
     review_payload = {
         "topic": plan.get("selected_topic", ""),
@@ -84,11 +156,33 @@ async def review_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
 
 
 async def publisher_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
-    return await _publisher(state, store=store)
+    result = await _publisher(state, store=store)
+
+    # Emit workflow completed event after publish
+    thread_id = state.get("thread_id")
+    if result.get("publish_result"):
+        EventBusService.get_instance().emit(
+            EventType.WORKFLOW_COMPLETED,
+            thread_id=thread_id,
+            payload={"publish_result": result.get("publish_result")},
+        )
+
+    return result
 
 
 async def analyst_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
-    return await _analyst(state, store=store)
+    result = await _analyst(state, store=store)
+
+    # Emit data updated event for analytics
+    thread_id = state.get("thread_id")
+    if result.get("analytics"):
+        EventBusService.get_instance().emit(
+            EventType.WORKFLOW_DATA_UPDATED,
+            thread_id=thread_id,
+            payload={"data_type": "analytics", "data": result.get("analytics")},
+        )
+
+    return result
 
 
 async def engagement_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
