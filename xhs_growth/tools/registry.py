@@ -16,7 +16,6 @@ class ToolRegistry:
         "content_strategist": [
             "topic_scorer",
             "timing_optimizer",
-            "calendar_manager",
             # Ripple — 传播预测 + PMF 验证
             "ripple_predict_content_spread",
             "ripple_validate_pmf",
@@ -87,10 +86,9 @@ class ToolRegistry:
     @classmethod
     def register_scheduling_tools(cls) -> None:
         """注册所有调度工具"""
-        from xhs_growth.tools.scheduling import calendar_manager, timing_optimizer
+        from xhs_growth.tools.scheduling import timing_optimizer
 
         cls.register_many([
-            calendar_manager,
             timing_optimizer,
         ])
 
