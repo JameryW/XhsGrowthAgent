@@ -53,7 +53,7 @@ class XHSGrowthState(TypedDict, total=False):
     ripple_pmf: RipplePMFResult
     ripple_job_ids: Annotated[list[str], _append_list]
 
-    # ── 发布前优化系统 ──
+# ── 发布前优化系统 ──
 
     # 用户原始草稿
     draft_content: DraftContent

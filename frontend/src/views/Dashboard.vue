@@ -19,8 +19,9 @@ const optimizationStore = useOptimizationStore()
 
 // Optimization flow state
 const showDraftInput = ref(false)
+const showVersionCompare = ref(false)
 
-// Memoized phase order for performance
+// Memoized phase order for performance (includes optimization sub-phases)
 const phaseOrder = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'completed'] as const
 
 // Progress calculation based on current phase
@@ -97,10 +98,13 @@ const startOptimization = () => {
 const handleDraftSubmit = (draft: DraftContent, viralLinks: string[]) => {
   optimizationStore.submitDraft(draft, viralLinks)
   showDraftInput.value = false
+  // Workflow continues to viral_matcher node automatically
 }
 
 const handleVersionSelect = (choice: VersionChoice) => {
   optimizationStore.selectVersion(choice)
+  showVersionCompare.value = false
+  // Workflow continues to visual_designer node automatically
 }
 </script>
 
