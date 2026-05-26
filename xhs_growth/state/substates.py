@@ -157,7 +157,7 @@ class ViralPost(TypedDict, total=False):
     comments: int
     engagement_rate: float
     visual_style: str
-    color_palette: dict
+    color_palette: dict[str, str]
 
 
 class GapItem(TypedDict, total=False):

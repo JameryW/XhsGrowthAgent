@@ -53,16 +53,6 @@ class XHSGrowthState(TypedDict, total=False):
     ripple_pmf: RipplePMFResult
     ripple_job_ids: Annotated[list[str], _append_list]
 
-    # History
-    content_history: Annotated[list[dict], _append_list]
-    performance_log: Annotated[list[dict], _append_list]
-
-    # Metadata
-    account_id: str
-    session_id: str
-    created_at: str
-    updated_at: str
-
     # ── 发布前优化系统 ──
 
     # 用户原始草稿
@@ -82,6 +72,16 @@ class XHSGrowthState(TypedDict, total=False):
 
     # 用户选择的版本ID
     selected_version: str
+
+    # History
+    content_history: Annotated[list[dict], _append_list]
+    performance_log: Annotated[list[dict], _append_list]
+
+    # Metadata
+    account_id: str
+    session_id: str
+    created_at: str
+    updated_at: str
 
 
 __all__ = ["XHSGrowthState"]

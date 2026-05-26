@@ -9,6 +9,7 @@ Agents:
 - PublisherAgent: 发布执行
 - AnalystAgent: 数据分析
 - EngagementAgent: 用户互动
+- ViralMatcherAgent: 爆款匹配 (发布前优化)
 """
 
 from xhs_growth.agents.base import BaseAgent
@@ -20,6 +21,7 @@ from xhs_growth.agents.visual_designer import VisualDesignerAgent
 from xhs_growth.agents.publisher import PublisherAgent
 from xhs_growth.agents.analyst import AnalystAgent
 from xhs_growth.agents.engagement import EngagementAgent
+from xhs_growth.agents.viral_matcher import ViralMatcherAgent
 
 __all__ = [
     "BaseAgent",
@@ -31,4 +33,5 @@ __all__ = [
     "PublisherAgent",
     "AnalystAgent",
     "EngagementAgent",
+    "ViralMatcherAgent",
 ]
