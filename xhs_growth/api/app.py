@@ -35,11 +35,12 @@ app.add_middleware(
 
 app.middleware("http")(error_handler_middleware)
 
-from xhs_growth.api.routes import workflow, review, analytics  # noqa: E402
+from xhs_growth.api.routes import workflow, review, analytics, realtime  # noqa: E402
 
 app.include_router(workflow.router, prefix="/api/workflow", tags=["workflow"])
 app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
+app.include_router(realtime.router, prefix="/api", tags=["realtime"])
 
 
 @app.get("/health")
