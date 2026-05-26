@@ -81,26 +81,45 @@ client.interceptors.response.use(
     // Return only the data payload for successful responses
     return apiResponse.data as AxiosResponse
   },
-  (error: AxiosError<ApiResponse>) => {
+  async (error: AxiosError<ApiResponse>) => {
     // Handle HTTP errors (404, 500, etc.)
+    let apiError: ApiError
+
     if (error.response?.data) {
       const apiResponse = error.response.data
       if (apiResponse.error) {
-        return Promise.reject(new ApiError(
+        apiError = new ApiError(
           apiResponse.error.message,
           apiResponse.error.code,
           apiResponse.error.details,
           apiResponse.request_id ?? undefined
-        ))
+        )
+      } else {
+        apiError = new ApiError(
+          'Unknown error occurred',
+          'UNKNOWN_ERROR',
+          undefined,
+          apiResponse.request_id ?? undefined
+        )
       }
+    } else {
+      // Handle network/timeout errors
+      const message = error.code === 'ECONNABORTED'
+        ? 'Request timeout'
+        : error.message || 'Network error'
+      apiError = new ApiError(message, 'NETWORK_ERROR')
     }
 
-    // Handle network/timeout errors
-    const message = error.code === 'ECONNABORTED'
-      ? 'Request timeout'
-      : error.message || 'Network error'
+    // Show toast notification for API errors
+    try {
+      const { useToastStore } = await import('@/stores/toast')
+      const toastStore = useToastStore()
+      toastStore.error(apiError.message)
+    } catch {
+      // Toast store not available, continue without toast
+    }
 
-    return Promise.reject(new ApiError(message, 'NETWORK_ERROR'))
+    return Promise.reject(apiError)
   }
 )
 
