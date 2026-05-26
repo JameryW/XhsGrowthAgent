@@ -1,55 +1,84 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import AppIcon from '@/components/AppIcon.vue'
 
 interface Props {
-  icon: string
+  icon: string // lucide icon name
   label: string
   status: 'completed' | 'running' | 'pending'
 }
 
 const props = defineProps<Props>()
 
-// Pre-defined status styles
-const statusClasses = {
-  completed: 'bg-gradient-to-br from-neon-pink to-neon-peach border-2 border-white shadow-neon-pink',
-  running: 'bg-gradient-to-br from-neon-peach to-neon-gold border-2 border-neon-pink animate-pulse-glow shadow-neon-pink',
-  pending: 'bg-white/20 border border-white/30 opacity-50',
+// Badge type definition
+interface BadgeConfig {
+  show: boolean
+  icon?: string
+  color?: string
+  animate?: boolean
 }
 
-// Memoize label color class
-const labelClass = computed(() => {
-  switch (props.status) {
-    case 'running': return 'text-neon-pink font-bold'
-    case 'completed': return 'text-white'
-    default: return 'text-white/40'
-  }
-})
+// Pre-defined status styles - refined light theme
+const statusStyles: Record<string, {
+  shape: string
+  iconVariant: 'pink' | 'cyan' | 'purple' | 'peach' | 'white'
+  animate: boolean
+  labelClass: string
+  badge: BadgeConfig
+}> = {
+  completed: {
+    shape: 'bg-gradient-to-br from-rose-400 to-amber-400 shadow-sm',
+    iconVariant: 'white',
+    animate: false,
+    labelClass: 'text-slate-800',
+    badge: { show: true, icon: 'Check', color: 'text-teal-600', animate: false },
+  },
+  running: {
+    shape: 'bg-gradient-to-br from-amber-300 to-amber-400 shadow-sm',
+    iconVariant: 'white',
+    animate: true,
+    labelClass: 'text-amber-600 font-semibold',
+    badge: { show: true, icon: 'Clock', color: 'text-amber-500', animate: true },
+  },
+  pending: {
+    shape: 'bg-slate-100 border border-slate-200',
+    iconVariant: 'cyan',
+    animate: false,
+    labelClass: 'text-slate-400',
+    badge: { show: false },
+  },
+}
+
+const currentStyle = computed(() => statusStyles[props.status])
 </script>
 
 <template>
-  <div class="text-center">
-    <div
-      :class="[
-        'w-20 h-20 hexagon flex items-center justify-center mx-auto',
-        statusClasses[props.status]
-      ]"
-    >
-      <span class="text-2xl">{{ props.icon }}</span>
+  <div class="text-center group relative">
+    <!-- Node shape -->
+    <div :class="[
+      'w-16 h-16 rounded-xl flex items-center justify-center mx-auto transition-all duration-300 ease-out group-hover:scale-105',
+      currentStyle.shape,
+    ]">
+      <AppIcon
+        :name="props.status === 'running' ? 'Loader2' : props.icon"
+        :size="props.status === 'running' ? 'lg' : 'lg'"
+        :variant="currentStyle.iconVariant"
+        :animate="currentStyle.animate"
+        :aria-label="props.label"
+      />
     </div>
-    <div :class="['mt-2 mono text-xs', labelClass]">
+
+    <!-- Label -->
+    <div :class="['mt-2 text-xs font-medium transition-colors duration-200', currentStyle.labelClass]">
       {{ props.label }}
     </div>
-    <div
-      v-if="props.status === 'completed'"
-      class="mono text-xs text-neon-cyan mt-1"
-    >
-      ✓ 完成
-    </div>
-    <div
-      v-else-if="props.status === 'running'"
-      class="mono text-xs text-neon-peach mt-1 animate-blink"
-    >
-      ⏳ 进行中
+
+    <!-- Status badge -->
+    <div v-if="currentStyle.badge.show && currentStyle.badge.icon" class="mt-1.5 flex items-center justify-center gap-1">
+      <AppIcon :name="currentStyle.badge.icon" size="sm" :variant="props.status === 'completed' ? 'cyan' : 'peach'" :animate="currentStyle.badge.animate" />
+      <span v-if="currentStyle.badge.color" :class="['text-xs', currentStyle.badge.color]">
+        {{ props.status === 'completed' ? '完成' : '进行中' }}
+      </span>
     </div>
   </div>
 </template>

@@ -1,28 +1,40 @@
 <script setup lang="ts">
 import { useToastStore } from "@/stores/toast"
 import type { ToastType } from "@/stores/toast"
+import AppIcon from "@/components/AppIcon.vue"
 
 const toastStore = useToastStore()
 
-const toastClasses: Record<ToastType, string> = {
-  info: "border-neon-blue bg-neon-blue/10",
-  success: "border-neon-green bg-neon-green/10",
-  warning: "border-neon-yellow bg-neon-yellow/10",
-  error: "border-neon-red bg-neon-red/10",
-}
-
-const iconColors: Record<ToastType, string> = {
-  info: "text-neon-blue",
-  success: "text-neon-green",
-  warning: "text-neon-yellow",
-  error: "text-neon-red",
-}
-
-const icons: Record<ToastType, string> = {
-  info: "ℹ",
-  success: "✓",
-  warning: "⚠",
-  error: "✕",
+const toastStyles: Record<ToastType, {
+  borderClass: string
+  bgClass: string
+  iconVariant: 'pink' | 'cyan' | 'purple' | 'peach' | 'white'
+  icon: string
+}> = {
+  info: {
+    borderClass: "border-neon-cyan/20",
+    bgClass: "bg-white",
+    iconVariant: 'cyan',
+    icon: "Info",
+  },
+  success: {
+    borderClass: "border-neon-green/20",
+    bgClass: "bg-white",
+    iconVariant: 'cyan',
+    icon: "CheckCircle",
+  },
+  warning: {
+    borderClass: "border-neon-peach/20",
+    bgClass: "bg-white",
+    iconVariant: 'peach',
+    icon: "AlertTriangle",
+  },
+  error: {
+    borderClass: "border-neon-pink/20",
+    bgClass: "bg-white",
+    iconVariant: 'pink',
+    icon: "XCircle",
+  },
 }
 
 function closeToast(id: string) {
@@ -31,37 +43,51 @@ function closeToast(id: string) {
 </script>
 
 <template>
-  <div class="fixed top-4 right-4 z-50 flex flex-col gap-3 max-w-sm">
+  <div class="fixed top-12 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
     <TransitionGroup name="toast">
       <div
         v-for="toast in toastStore.toasts"
         :key="toast.id"
-        class="p-4 rounded-lg border shadow-lg backdrop-blur-sm"
-        :class="toastClasses[toast.type]"
+        class="p-4 rounded-xl border backdrop-blur-sm bg-white/98 shadow-lg pointer-events-auto"
+        :class="[toastStyles[toast.type].borderClass]"
       >
         <div class="flex items-start gap-3">
           <!-- Icon -->
-          <span class="text-lg font-bold" :class="iconColors[toast.type]">
-            {{ icons[toast.type] }}
-          </span>
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center bg-slate-50">
+            <AppIcon
+              :name="toastStyles[toast.type].icon"
+              size="md"
+              :variant="toastStyles[toast.type].iconVariant"
+              :aria-label="toast.type"
+            />
+          </div>
 
           <!-- Content -->
           <div class="flex-1 min-w-0">
-            <h4 class="text-sm font-semibold text-white truncate">
+            <h4 class="text-sm font-semibold text-slate-800 truncate">
               {{ toast.title }}
             </h4>
-            <p v-if="toast.message" class="text-xs text-gray-400 mt-1 line-clamp-2">
+            <p v-if="toast.message" class="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
               {{ toast.message }}
             </p>
           </div>
 
           <!-- Close button -->
           <button
-            class="text-gray-500 hover:text-white transition-colors"
+            class="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-150"
             @click="closeToast(toast.id)"
+            aria-label="Close notification"
           >
-            ✕
+            <AppIcon name="X" size="sm" variant="cyan" />
           </button>
+        </div>
+
+        <!-- Progress bar for auto-dismiss -->
+        <div class="mt-3 h-1 bg-slate-100 rounded-full overflow-hidden">
+          <div
+            class="h-full rounded-full animate-progress"
+            :class="toast.type === 'error' ? 'bg-rose-400' : toast.type === 'warning' ? 'bg-amber-400' : toast.type === 'success' ? 'bg-teal-400' : 'bg-teal-500'"
+          />
         </div>
       </div>
     </TransitionGroup>
@@ -70,21 +96,21 @@ function closeToast(id: string) {
 
 <style scoped>
 .toast-enter-active {
-  transition: all 0.3s ease-out;
+  transition: all 0.4s ease-out;
 }
 
 .toast-leave-active {
-  transition: all 0.2s ease-in;
+  transition: all 0.3s ease-in;
 }
 
 .toast-enter-from {
   opacity: 0;
-  transform: translateX(100%);
+  transform: translateX(20px) scale(0.95);
 }
 
 .toast-leave-to {
   opacity: 0;
-  transform: translateX(100%);
+  transform: translateX(20px) scale(0.95);
 }
 
 .toast-move {
@@ -96,5 +122,14 @@ function closeToast(id: string) {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.animate-progress {
+  animation: progress-shrink 5s linear forwards;
+}
+
+@keyframes progress-shrink {
+  from { width: 100%; }
+  to { width: 0%; }
 }
 </style>

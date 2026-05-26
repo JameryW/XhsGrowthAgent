@@ -4,6 +4,9 @@ import { useRouter } from 'vue-router'
 import NeonButton from '@/components/NeonButton.vue'
 import WorkflowNode from '@/components/WorkflowNode.vue'
 import ContentCard from '@/components/ContentCard.vue'
+import AppIcon from '@/components/AppIcon.vue'
+import CircularProgress from '@/components/CircularProgress.vue'
+import MiniProgress from '@/components/MiniProgress.vue'
 import { useWorkflowStore, useReviewStore } from '@/stores'
 
 const router = useRouter()
@@ -12,6 +15,14 @@ const reviewStore = useReviewStore()
 
 // Memoized phase order for performance
 const phaseOrder = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'completed'] as const
+
+// Progress calculation based on current phase
+const workflowProgress = computed(() => {
+  const currentPhase = workflowStore.currentPhase
+  const currentIndex = phaseOrder.indexOf(currentPhase as any)
+  if (currentIndex === -1) return 0
+  return Math.round((currentIndex / (phaseOrder.length - 1)) * 100)
+})
 
 // 生命周期
 onMounted(() => {
@@ -28,12 +39,12 @@ onUnmounted(() => {
 
 // 计算属性
 const workflowNodes = computed(() => [
-  { icon: '🔍', label: '趋势发现', phase: 'scouting' },
-  { icon: '📋', label: '策略规划', phase: 'planning' },
-  { icon: '✍️', label: '文案创作', phase: 'creating' },
-  { icon: '🎨', label: '视觉设计', phase: 'creating' },
-  { icon: '⏳', label: '审核', phase: 'reviewing' },
-  { icon: '📤', label: '发布', phase: 'publishing' },
+  { icon: 'Search', label: '趋势发现', phase: 'scouting' },
+  { icon: 'ClipboardList', label: '策略规划', phase: 'planning' },
+  { icon: 'Pencil', label: '文案创作', phase: 'creating' },
+  { icon: 'Palette', label: '视觉设计', phase: 'creating' },
+  { icon: 'Clock', label: '审核', phase: 'reviewing' },
+  { icon: 'Upload', label: '发布', phase: 'publishing' },
 ])
 
 // Use memoized phaseOrder for consistent lookup
@@ -61,40 +72,61 @@ const goToReview = () => {
 </script>
 
 <template>
-  <div class="relative overflow-hidden">
-    <!-- 扫描线效果 -->
-    <div class="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-transparent via-neon-pink/30 to-transparent animate-scan pointer-events-none" />
-
+  <div class="relative space-y-6">
     <!-- 顶部状态栏 -->
-    <div class="glass rounded-xl p-4 mb-6 border border-neon-pink/30">
-      <div class="flex items-center gap-4">
-        <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-neon-pink to-neon-peach flex items-center justify-center shadow-neon-pink text-3xl">
-          🚀
+    <div class="rounded-2xl p-6 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+      <div class="flex items-center gap-5">
+        <!-- Progress & Logo -->
+        <div class="flex items-center gap-4">
+          <CircularProgress :value="workflowProgress" variant="cyan" size="lg" show-value />
+          <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-rose-400 via-rose-500 to-amber-400 flex items-center justify-center shadow-sm">
+            <AppIcon name="Rocket" size="xl" variant="white" aria-label="Workflow" />
+          </div>
         </div>
-        <div class="flex-1">
-          <div class="mono text-xs text-neon-cyan">WORKFLOW_ID: {{ workflowStore.currentThreadId }}</div>
-          <div class="text-lg font-bold text-white mt-1">
-            <span class="text-neon-pink">●</span>
+
+        <!-- Info -->
+        <div class="flex-1 space-y-2">
+          <div class="flex items-center gap-3">
+            <span class="px-2 py-1 rounded bg-teal-50 text-teal-600 text-xs uppercase tracking-wide font-medium">WORKFLOW</span>
+            <span class="text-xs text-slate-400">{{ workflowStore.currentThreadId || '—' }}</span>
+          </div>
+          <div class="text-xl font-semibold text-slate-800">
             {{ workflowStore.currentPhase === 'idle' ? '等待启动' : `${workflowStore.currentPhase} 阶段` }}
           </div>
-          <div class="flex gap-4 mt-2 mono text-xs">
-            <span class="text-neon-peach">⚡ 运行中</span>
-            <span class="text-neon-cyan">📊 进度 {{ workflowStore.isRunning ? '60%' : '100%' }}</span>
-          </div>
+          <MiniProgress :value="workflowProgress" variant="cyan" class="max-w-xs" />
         </div>
-        <div class="bg-gradient-to-br from-neon-cyan to-emerald-600 rounded-lg px-6 py-3 border border-neon-cyan shadow-neon-cyan mono font-bold">
-          <span class="animate-blink">●</span> RUNNING
+
+        <!-- Status Badge -->
+        <div :class="[
+          'px-4 py-2.5 rounded-lg border font-medium flex items-center gap-2 transition-all duration-200',
+          workflowStore.isRunning
+            ? 'bg-gradient-to-r from-teal-500 to-teal-400 border-teal-200 text-white shadow-sm'
+            : 'bg-slate-50 border-slate-200 text-slate-500'
+        ]">
+          <AppIcon :name="workflowStore.isRunning ? 'Circle' : 'Minus'" size="sm" :variant="workflowStore.isRunning ? 'white' : 'cyan'" :animate="workflowStore.isRunning" />
+          <span>{{ workflowStore.isRunning ? 'RUNNING' : 'IDLE' }}</span>
         </div>
       </div>
     </div>
 
     <!-- 流程节点时间轴 -->
-    <div class="relative py-8 mb-8">
-      <!-- 进度线 -->
-      <div class="absolute top-1/2 left-0 right-0 h-1 bg-gradient-to-r from-neon-pink via-neon-pink/50 to-transparent rounded-full shadow-neon-pink" />
+    <div class="bg-white/98 backdrop-blur-sm rounded-2xl p-6 border border-slate-200/50 shadow-sm">
+      <div class="flex items-center gap-2 mb-5">
+        <AppIcon name="GitBranch" size="md" variant="cyan" />
+        <span class="text-xs text-slate-500 uppercase tracking-wide font-medium">Workflow Pipeline</span>
+      </div>
 
-      <!-- 节点 -->
-      <div class="flex justify-around relative">
+      <!-- Progress line -->
+      <div class="relative py-4">
+        <div class="absolute top-1/2 left-0 right-0 h-1 bg-slate-100 rounded-full" />
+        <div
+          class="absolute top-1/2 left-0 h-1 bg-gradient-to-r from-rose-400 to-teal-400 rounded-full transition-all duration-500"
+          :style="{ width: `${workflowProgress}%` }"
+        />
+      </div>
+
+      <!-- Nodes -->
+      <div class="flex justify-between items-center relative px-4">
         <WorkflowNode
           v-for="node in workflowNodes"
           :key="node.phase"
@@ -106,24 +138,27 @@ const goToReview = () => {
     </div>
 
     <!-- 输出卡片 -->
-    <div class="grid grid-cols-3 gap-4 mb-6">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <ContentCard
         v-if="Object.keys(workflowStore.trendData).length > 0"
-        title="🔍 趋势发现"
+        title="趋势发现"
+        icon="Search"
         :content="workflowStore.trendData"
         variant="pink"
         :completed="getNodeStatus('scouting') === 'completed'"
       />
       <ContentCard
         v-if="Object.keys(workflowStore.contentPlan).length > 0"
-        title="📋 策略规划"
+        title="策略规划"
+        icon="ClipboardList"
         :content="workflowStore.contentPlan"
         variant="cyan"
         :completed="getNodeStatus('planning') === 'completed'"
       />
       <ContentCard
         v-if="Object.keys(workflowStore.copyContent).length > 0"
-        title="✍️ 文案创作"
+        title="文案创作"
+        icon="Pencil"
         :content="workflowStore.copyContent"
         variant="purple"
         :completed="true"
@@ -131,15 +166,24 @@ const goToReview = () => {
     </div>
 
     <!-- 操作按钮 -->
-    <div class="flex gap-4">
+    <div class="flex flex-wrap gap-3">
       <NeonButton variant="pink" @click="pauseWorkflow" :loading="workflowStore.isLoading">
-        ⏸️ 暂停工作流
+        <span class="inline-flex items-center gap-2">
+          <AppIcon name="Pause" size="sm" variant="white" />
+          <span>暂停工作流</span>
+        </span>
       </NeonButton>
       <NeonButton variant="cyan" @click="workflowStore.refreshStatus()">
-        🔄 刷新状态
+        <span class="inline-flex items-center gap-2">
+          <AppIcon name="RefreshCw" size="sm" variant="white" />
+          <span>刷新状态</span>
+        </span>
       </NeonButton>
       <NeonButton variant="purple" @click="goToReview">
-        ✅ 进入审核
+        <span class="inline-flex items-center gap-2">
+          <AppIcon name="CheckCircle" size="sm" variant="white" />
+          <span>进入审核</span>
+        </span>
       </NeonButton>
     </div>
   </div>

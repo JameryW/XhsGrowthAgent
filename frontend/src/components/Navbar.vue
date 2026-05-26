@@ -2,15 +2,16 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useWorkflowStore } from '@/stores'
+import AppIcon from '@/components/AppIcon.vue'
 
 const route = useRoute()
 const router = useRouter()
 const workflowStore = useWorkflowStore()
 
 const navItems = [
-  { path: '/dashboard', icon: '🏠', label: '工作流仪表盘' },
-  { path: '/review', icon: '✅', label: '内容审核' },
-  { path: '/analytics', icon: '📊', label: '数据分析' },
+  { path: '/dashboard', icon: 'Home', label: '工作流仪表盘', color: 'pink' },
+  { path: '/review', icon: 'CheckCircle', label: '内容审核', color: 'cyan' },
+  { path: '/analytics', icon: 'BarChart3', label: '数据分析', color: 'purple' },
 ]
 
 const currentPath = computed(() => route.path)
@@ -23,38 +24,57 @@ const currentPhase = computed(() => workflowStore.currentPhase)
 </script>
 
 <template>
-  <nav class="w-56 bg-dark-panel p-4 flex flex-col border-r border-dark-border">
+  <nav class="w-64 bg-white/80 backdrop-blur-xl p-6 flex flex-col border-r border-slate-200/60 relative overflow-hidden">
+    <!-- Animated glow border -->
+    <div class="absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-rose-300/30 to-transparent animate-pulse" style="animation-duration: 3s;" />
+
     <!-- Logo -->
-    <div class="mb-6">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-neon-pink to-neon-peach flex items-center justify-center shadow-neon-pink">
-          📚
+    <div class="mb-8 relative group">
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-400 via-rose-500 to-amber-400 flex items-center justify-center shadow-lg shadow-rose-500/20 transition-all duration-300 group-hover:shadow-rose-500/40 group-hover:scale-105">
+          <AppIcon name="BookOpen" size="lg" variant="white" aria-label="Logo" />
         </div>
-        <div class="text-white font-bold">增长引擎</div>
+        <div>
+          <div class="text-slate-800 font-semibold text-lg tracking-tight">增长引擎</div>
+          <div class="text-xs text-slate-400 mt-0.5">XHS Growth Agent</div>
+        </div>
       </div>
-      <div class="mt-2 text-xs mono text-neon-cyan">
-        Phase: {{ currentPhase }}
+      <div class="mt-4 bg-gradient-to-r from-slate-50 to-white rounded-lg px-3 py-2 flex items-center gap-2 border border-slate-100 transition-all duration-200 hover:border-slate-200 hover:shadow-sm">
+        <div class="w-2 h-2 rounded-full animate-pulse" :class="currentPhase === 'idle' ? 'bg-amber-400' : 'bg-teal-500'" />
+        <div class="text-xs text-slate-500">
+          Phase: <span class="text-teal-600 font-medium">{{ currentPhase }}</span>
+        </div>
       </div>
     </div>
 
     <!-- 导航项 -->
-    <div class="space-y-2">
+    <div class="space-y-1.5 relative">
       <button
         v-for="item in navItems"
         :key="item.path"
         @click="navigateTo(item.path)"
         :class="[
-          'p-3 rounded-lg cursor-pointer transition-all duration-200 w-full text-left',
+          'p-3 rounded-lg cursor-pointer transition-all duration-200 w-full text-left group relative overflow-hidden',
           currentPath === item.path
-            ? 'bg-neon-pink/20 border border-neon-pink/50 shadow-neon-pink'
-            : 'hover:bg-dark-card border border-transparent'
+            ? 'bg-gradient-to-r from-slate-100/80 to-white border border-slate-200 shadow-sm'
+            : 'hover:bg-slate-50/50 border border-transparent'
         ]"
       >
+        <!-- Active indicator -->
+        <div v-if="currentPath === item.path" class="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-full bg-gradient-to-b from-rose-400 to-teal-400" />
+
         <div class="flex items-center gap-3">
-          <span class="text-lg">{{ item.icon }}</span>
+          <div :class="[
+            'w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-200',
+            currentPath === item.path
+              ? 'bg-gradient-to-br from-slate-700 to-slate-600 shadow-md'
+              : 'bg-slate-100 group-hover:bg-slate-200'
+          ]">
+            <AppIcon :name="item.icon" size="md" :variant="currentPath === item.path ? 'white' : 'cyan'" :aria-label="item.label" />
+          </div>
           <span :class="[
-            'text-sm',
-            currentPath === item.path ? 'text-neon-pink font-bold' : 'text-white/70'
+            'text-sm font-medium transition-colors duration-200',
+            currentPath === item.path ? 'text-slate-800' : 'text-slate-500 group-hover:text-slate-600'
           ]">
             {{ item.label }}
           </span>
@@ -63,10 +83,16 @@ const currentPhase = computed(() => workflowStore.currentPhase)
     </div>
 
     <!-- 底部信息 -->
-    <div class="mt-auto pt-4 border-t border-dark-border">
-      <div class="text-xs mono text-white/40">
-        <div>Account: default</div>
-        <div>Version: v0.1.0</div>
+    <div class="mt-auto pt-6 border-t border-slate-100">
+      <div class="bg-gradient-to-r from-slate-50 to-white rounded-lg p-3 text-xs border border-slate-100 hover:border-slate-200 transition-all duration-200">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-slate-400">Account</span>
+          <span class="text-teal-600 font-medium bg-teal-50 px-2 py-0.5 rounded">default</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-slate-400">Version</span>
+          <span class="text-violet-600 font-medium bg-violet-50 px-2 py-0.5 rounded">v0.2.0</span>
+        </div>
       </div>
     </div>
   </nav>

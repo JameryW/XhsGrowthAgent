@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import AppIcon from '@/components/AppIcon.vue'
+
 interface Props {
-  icon: string
+  icon: string // lucide icon name
   title: string
   value: string | number
   subtitle?: string
@@ -12,26 +14,54 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const colors = {
-  pink: { bg: 'from-neon-pink to-neon-peach', text: 'text-neon-pink', border: 'border-neon-pink/30' },
-  cyan: { bg: 'from-neon-cyan to-emerald-600', text: 'text-neon-cyan', border: 'border-neon-cyan/30' },
-  purple: { bg: 'from-neon-purple to-purple-700', text: 'text-neon-purple', border: 'border-neon-purple/30' },
-  peach: { bg: 'from-neon-peach to-neon-gold', text: 'text-neon-peach', border: 'border-neon-peach/30' },
+  pink: {
+    bg: 'from-rose-400 via-rose-500 to-amber-400',
+    text: 'text-rose-600',
+    border: 'border-rose-100',
+    shadow: 'shadow-rose-500/10',
+    bgLight: 'bg-rose-50',
+  },
+  cyan: {
+    bg: 'from-teal-400 via-teal-500 to-emerald-400',
+    text: 'text-teal-600',
+    border: 'border-teal-100',
+    shadow: 'shadow-teal-500/10',
+    bgLight: 'bg-teal-50',
+  },
+  purple: {
+    bg: 'from-violet-400 via-violet-500 to-indigo-400',
+    text: 'text-violet-600',
+    border: 'border-violet-100',
+    shadow: 'shadow-violet-500/10',
+    bgLight: 'bg-violet-50',
+  },
+  peach: {
+    bg: 'from-amber-400 via-amber-500 to-orange-400',
+    text: 'text-amber-600',
+    border: 'border-amber-100',
+    shadow: 'shadow-amber-500/10',
+    bgLight: 'bg-amber-50',
+  },
 }
 </script>
 
 <template>
-  <div :class="['glass rounded-xl p-4 border', colors[props.variant].border]">
-    <div class="flex items-center gap-3 mb-3">
-      <div :class="['w-9 h-9 rounded-lg bg-gradient-to-br flex items-center justify-center', colors[props.variant].bg]">
-        <span class="text-lg">{{ props.icon }}</span>
+  <div :class="['rounded-xl p-5 relative overflow-hidden bg-white/80 backdrop-blur-sm border transition-all duration-300 hover:shadow-lg group', colors[props.variant].border, colors[props.variant].shadow]">
+    <!-- Hover glow -->
+    <div class="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" :style="{ background: `radial-gradient(circle at 50% 0%, ${props.variant === 'pink' ? 'rgba(244,63,94,0.08)' : props.variant === 'cyan' ? 'rgba(20,184,166,0.08)' : props.variant === 'purple' ? 'rgba(139,92,246,0.08)' : 'rgba(245,158,11,0.08)'} 0%, transparent 50%)` }" />
+
+    <div class="flex items-center gap-3 mb-4">
+      <div :class="['w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:-translate-y-0.5', colors[props.variant].bg, `shadow-${props.variant === 'pink' ? 'rose' : props.variant === 'cyan' ? 'teal' : props.variant === 'purple' ? 'violet' : 'amber'}-500/20`]">
+        <AppIcon :name="props.icon" size="md" variant="white" :aria-label="props.title" />
       </div>
-      <div class="mono text-xs text-white/50">{{ props.title }}</div>
+      <div class="text-xs text-slate-500 uppercase tracking-wide font-medium">{{ props.title }}</div>
     </div>
-    <div :class="['mono text-3xl font-bold', colors[props.variant].text]">
+    <div :class="['text-3xl font-bold tabular-nums transition-all duration-300 group-hover:translate-x-1', colors[props.variant].text]">
       {{ props.value }}
     </div>
-    <div v-if="props.subtitle" class="mono text-xs text-neon-cyan mt-2">
-      {{ props.subtitle }}
+    <div v-if="props.subtitle" class="mt-2 flex items-center gap-2 group/sub">
+      <AppIcon name="TrendingUp" size="sm" variant="cyan" class="transition-transform duration-200 group-hover/sub:scale-110" />
+      <span class="text-xs text-teal-600 font-medium bg-teal-50 px-2 py-0.5 rounded">{{ props.subtitle }}</span>
     </div>
   </div>
 </template>
