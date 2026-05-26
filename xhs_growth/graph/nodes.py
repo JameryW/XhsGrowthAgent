@@ -16,7 +16,8 @@ from xhs_growth.agents.publisher import PublisherAgent
 from xhs_growth.agents.analyst import AnalystAgent
 from xhs_growth.agents.engagement import EngagementAgent
 from xhs_growth.realtime import EventBusService, EventType
-from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase, ContentStatus
+from xhs_growth.state.schema import XHSGrowthState
+from xhs_growth.state.enums import WorkflowPhase, ContentStatus
 
 logger = logging.getLogger("xhs_growth.graph.nodes")
 
