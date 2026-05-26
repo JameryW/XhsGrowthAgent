@@ -15,6 +15,10 @@ class TaskType(str, Enum):
     ANALYSIS = "analysis"
     PUBLISHING = "publishing"
     ENGAGEMENT = "engagement"
+    # 新增
+    VIRAL_MATCHING = "viral_matching"
+    CONTENT_ANALYSIS = "content_analysis"
+    VERSION_GEN = "version_gen"
 
 
 class ModelProvider(str, Enum):
@@ -74,6 +78,10 @@ def resolve_model_id(task_type: TaskType, routing_overrides: dict[str, str] | No
         TaskType.ANALYSIS: "gpt-4o",
         TaskType.PUBLISHING: "qwen-plus",
         TaskType.ENGAGEMENT: "deepseek-chat",
+        # 新增
+        TaskType.VIRAL_MATCHING: "deepseek-chat",
+        TaskType.CONTENT_ANALYSIS: "claude-sonnet-4-20250514",
+        TaskType.VERSION_GEN: "gpt-4o",
     }
     if routing_overrides:
         for k, v in routing_overrides.items():

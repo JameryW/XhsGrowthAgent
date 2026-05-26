@@ -15,6 +15,11 @@ from xhs_growth.state.substates import (
     EngagementAction,
     RipplePrediction,
     RipplePMFResult,
+    # 发布前优化系统
+    DraftContent,
+    ViralPost,
+    OptimizationAnalysis,
+    ContentVersion,
 )
 from xhs_growth.state.reducers import merge_dict as _merge_dict, append_list as _append_list
 
@@ -47,6 +52,26 @@ class XHSGrowthState(TypedDict, total=False):
     ripple_prediction: RipplePrediction
     ripple_pmf: RipplePMFResult
     ripple_job_ids: Annotated[list[str], _append_list]
+
+    # ── 发布前优化系统 ──
+
+    # 用户原始草稿
+    draft_content: DraftContent
+
+    # 爆款参考笔记列表
+    viral_posts: Annotated[list[ViralPost], _append_list]
+
+    # 用户提供的爆款链接
+    user_viral_links: list[str]
+
+    # 优化分析报告
+    optimization_analysis: OptimizationAnalysis
+
+    # 生成的版本列表
+    content_versions: Annotated[list[ContentVersion], _append_list]
+
+    # 用户选择的版本ID
+    selected_version: str
 
     # History
     content_history: Annotated[list[dict], _append_list]

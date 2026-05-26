@@ -28,6 +28,13 @@ from xhs_growth.state.substates import (
     HotTopicItem,
     NicheOpportunity,
     CompetitorPost,
+    # 发布前优化子状态
+    DraftContent,
+    ViralPost,
+    GapItem,
+    SuggestionItem,
+    OptimizationAnalysis,
+    ContentVersion,
 )
 from xhs_growth.state.reducers import merge_dict, append_list, replace, max_value
 
@@ -54,6 +61,13 @@ __all__ = [
     "HotTopicItem",
     "NicheOpportunity",
     "CompetitorPost",
+    # 发布前优化子状态
+    "DraftContent",
+    "ViralPost",
+    "GapItem",
+    "SuggestionItem",
+    "OptimizationAnalysis",
+    "ContentVersion",
     # Reducers
     "merge_dict",
     "append_list",

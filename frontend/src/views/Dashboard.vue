@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed } from 'vue'
+import { onMounted, onUnmounted, computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import NeonButton from '@/components/NeonButton.vue'
 import WorkflowNode from '@/components/WorkflowNode.vue'
@@ -7,11 +7,18 @@ import ContentCard from '@/components/ContentCard.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import CircularProgress from '@/components/CircularProgress.vue'
 import MiniProgress from '@/components/MiniProgress.vue'
-import { useWorkflowStore, useReviewStore } from '@/stores'
+import DraftInput from '@/components/DraftInput.vue'
+import VersionCompare from '@/components/VersionCompare.vue'
+import { useWorkflowStore, useReviewStore, useOptimizationStore } from '@/stores'
+import type { DraftContent, VersionChoice } from '@/types/optimization'
 
 const router = useRouter()
 const workflowStore = useWorkflowStore()
 const reviewStore = useReviewStore()
+const optimizationStore = useOptimizationStore()
+
+// Optimization flow state
+const showDraftInput = ref(false)
 
 // Memoized phase order for performance
 const phaseOrder = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'completed'] as const
@@ -58,6 +65,19 @@ const getNodeStatus = (phase: string) => {
   return 'pending'
 }
 
+// Optimization flow computed
+const isOptimizationPending = computed(() =>
+  workflowStore.currentPhase === 'creating' &&
+  optimizationStore.contentVersions.length > 0 &&
+  !optimizationStore.selectedVersion
+)
+
+const isDraftInputPending = computed(() =>
+  workflowStore.currentPhase === 'creating' &&
+  !optimizationStore.draftContent &&
+  !isOptimizationPending.value
+)
+
 // 操作
 const pauseWorkflow = () => {
   workflowStore.pauseWorkflow()
@@ -68,6 +88,19 @@ const goToReview = () => {
     reviewStore.fetchPendingReview(workflowStore.currentThreadId)
     router.push('/review')
   }
+}
+
+const startOptimization = () => {
+  showDraftInput.value = true
+}
+
+const handleDraftSubmit = (draft: DraftContent, viralLinks: string[]) => {
+  optimizationStore.submitDraft(draft, viralLinks)
+  showDraftInput.value = false
+}
+
+const handleVersionSelect = (choice: VersionChoice) => {
+  optimizationStore.selectVersion(choice)
 }
 </script>
 
@@ -162,6 +195,42 @@ const goToReview = () => {
         :content="workflowStore.copyContent"
         variant="purple"
         :completed="true"
+      />
+    </div>
+
+    <!-- 发布前优化流程 -->
+    <div v-if="workflowStore.currentPhase === 'creating'" class="space-y-4">
+      <!-- Optimization prompt when draft input is pending -->
+      <div v-if="isDraftInputPending && !showDraftInput" class="rounded-xl p-5 bg-gradient-to-r from-neon-cyan/5 to-neon-purple/5 border border-neon-cyan/20">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <AppIcon name="Sparkles" size="md" variant="cyan" />
+            <div>
+              <span class="text-sm font-medium text-slate-700">发布前优化</span>
+              <span class="text-xs text-slate-400 ml-2">对比爆款笔记，一键优化</span>
+            </div>
+          </div>
+          <NeonButton variant="cyan" @click="startOptimization">
+            <AppIcon name="Wand2" size="sm" variant="white" />
+            <span>提交草稿优化</span>
+          </NeonButton>
+        </div>
+      </div>
+
+      <!-- Draft Input Component -->
+      <DraftInput
+        v-if="showDraftInput"
+        :is-loading="optimizationStore.isLoading"
+        @submit="handleDraftSubmit"
+      />
+
+      <!-- Version Compare Component (when versions are available) -->
+      <VersionCompare
+        v-if="isOptimizationPending"
+        :versions="optimizationStore.contentVersions"
+        :analysis="optimizationStore.optimizationAnalysis"
+        :is-loading="optimizationStore.isLoading"
+        @select="handleVersionSelect"
       />
     </div>
 

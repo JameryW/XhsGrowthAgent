@@ -132,9 +132,74 @@ class RipplePMFResult(TypedDict, total=False):
     confidence: float
 
 
+# ── 发布前优化系统子状态 ──
+
+
+class DraftContent(TypedDict, total=False):
+    """用户原始草稿."""
+    text: str
+    images: list[str]
+    title: str
+    hashtags: list[str]
+    provided_at: str
+
+
+class ViralPost(TypedDict, total=False):
+    """爆款参考笔记."""
+    note_id: str
+    title: str
+    body: str
+    hashtags: list[str]
+    cover_url: str
+    image_urls: list[str]
+    likes: int
+    collects: int
+    comments: int
+    engagement_rate: float
+    visual_style: str
+    color_palette: dict[str, str]
+
+
+class GapItem(TypedDict, total=False):
+    """差距项."""
+    dimension: str
+    description: str
+    severity: str
+
+
+class SuggestionItem(TypedDict, total=False):
+    """优化建议项."""
+    dimension: str
+    action: str
+    reasoning: str
+    priority: int
+
+
+class OptimizationAnalysis(TypedDict, total=False):
+    """优化分析报告."""
+    gaps: list[GapItem]
+    suggestions: list[SuggestionItem]
+    viral_patterns: list[str]
+
+
+class ContentVersion(TypedDict, total=False):
+    """内容版本."""
+    version_id: str
+    title: str
+    body: str
+    hashtags: list[str]
+    image_prompts: list[str]
+    style_suggestion: str
+    changes_summary: str
+    predicted_score: float
+
+
 __all__ = [
     "HotTopicItem", "NicheOpportunity", "CompetitorPost",
     "TrendData", "ContentPlan", "CopyContent", "VisualPlan",
     "PublishResult", "AnalyticsSnapshot", "HumanFeedback",
     "EngagementAction", "RipplePrediction", "RipplePMFResult",
+    # 发布前优化
+    "DraftContent", "ViralPost", "GapItem", "SuggestionItem",
+    "OptimizationAnalysis", "ContentVersion",
 ]
