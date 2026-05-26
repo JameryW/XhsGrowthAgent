@@ -20,8 +20,19 @@ from xhs_growth.graph.nodes import (
     analyst_node,
     engagement_node,
     revise_content_node,
+    viral_matcher_node,
+    content_analyzer_node,
+    version_generator_node,
+    choice_gate_node,
 )
-from xhs_growth.graph.routers import should_plan, should_continue, review_outcome, orchestrator_router
+from xhs_growth.graph.routers import (
+    should_plan,
+    should_continue,
+    review_outcome,
+    orchestrator_router,
+    should_optimize,
+    choice_outcome,
+)
 
 
 def build_graph() -> StateGraph:
@@ -39,6 +50,11 @@ def build_graph() -> StateGraph:
     builder.add_node("analyst", analyst_node)
     builder.add_node("engagement", engagement_node)
     builder.add_node("revise_content", revise_content_node)
+    # 发布前优化节点
+    builder.add_node("viral_matcher", viral_matcher_node)
+    builder.add_node("content_analyzer", content_analyzer_node)
+    builder.add_node("version_generator", version_generator_node)
+    builder.add_node("choice_gate", choice_gate_node)
 
     # ── 入口 ──
     builder.add_edge(START, "orchestrator")
@@ -68,7 +84,31 @@ def build_graph() -> StateGraph:
 
     # ── 内容创作流水线 ──
     builder.add_edge("content_strategist", "copywriter")
-    builder.add_edge("copywriter", "visual_designer")
+
+    # ── 发布前优化流程 ──
+    # copywriter → viral_matcher (搜索爆款参考)
+    builder.add_edge("copywriter", "viral_matcher")
+
+    # viral_matcher → [content_analyzer | visual_designer] (条件路由)
+    builder.add_conditional_edges(
+        "viral_matcher",
+        should_optimize,
+        {
+            "content_analyzer": "content_analyzer",
+            "visual_designer": "visual_designer",
+        },
+    )
+
+    # content_analyzer → version_generator (生成版本)
+    builder.add_edge("content_analyzer", "version_generator")
+
+    # version_generator → choice_gate (用户选择)
+    builder.add_edge("version_generator", "choice_gate")
+
+    # choice_gate → visual_designer (选择后进入视觉设计)
+    builder.add_edge("choice_gate", "visual_designer")
+
+    # visual_designer → review_gate
     builder.add_edge("visual_designer", "review_gate")
 
     # ── 人工审核路由 ──
@@ -110,7 +150,7 @@ def compile_graph_dev() -> CompiledStateGraph:
 
     graph = builder.compile(
         checkpointer=checkpointer,
-        interrupt_before=["review_gate"],  # human-in-the-loop 审核门
+        interrupt_before=["review_gate", "choice_gate"],  # human-in-the-loop 审核门 + 版本选择门
     )
     return graph
 
@@ -126,7 +166,7 @@ async def compile_graph_prod(db_uri: str) -> CompiledStateGraph:
             await checkpointer.setup()
             graph = builder.compile(
                 checkpointer=checkpointer,
-                interrupt_before=["review_gate"],
+                interrupt_before=["review_gate", "choice_gate"],
             )
             return graph
     except ImportError:

@@ -61,3 +61,27 @@ def should_continue(state: XHSGrowthState) -> Literal["orchestrator", "__end__"]
         return "orchestrator"
 
     return "__end__"
+
+
+# ── 发布前优化路由 ──
+
+
+def should_optimize(state: XHSGrowthState) -> Literal["content_analyzer", "visual_designer"]:
+    """判断是否进入优化流程."""
+    # 用户明确跳过优化 → 直接进入视觉设计
+    if state.get("skip_optimization"):
+        return "visual_designer"
+
+    # 有爆款参考 → 进入对比分析
+    viral_posts = state.get("viral_posts", [])
+    if viral_posts and len(viral_posts) > 0:
+        return "content_analyzer"
+
+    # 无爆款参考 → 直接进入视觉设计
+    return "visual_designer"
+
+
+def choice_outcome(state: XHSGrowthState) -> Literal["visual_designer"]:
+    """版本选择后路由 — 统一进入视觉设计."""
+    # 用户选择完成后，进入视觉设计节点
+    return "visual_designer"

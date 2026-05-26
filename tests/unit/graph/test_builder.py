@@ -19,7 +19,7 @@ class TestBuildGraph:
         """Graph contains all expected nodes."""
         graph = build_graph()
 
-        # Expected nodes
+        # Expected nodes (including optimization nodes)
         expected_nodes = [
             "orchestrator",
             "trend_scout",
@@ -31,6 +31,11 @@ class TestBuildGraph:
             "analyst",
             "engagement",
             "revise_content",
+            # 发布前优化节点
+            "viral_matcher",
+            "content_analyzer",
+            "version_generator",
+            "choice_gate",
         ]
 
         # Get node names from graph
@@ -65,10 +70,10 @@ class TestCompileGraphDev:
         assert graph.checkpointer is not None
 
     def test_compile_graph_dev_interrupts_at_review_gate(self):
-        """Dev graph interrupts before review_gate for human-in-the-loop."""
+        """Dev graph interrupts before review_gate and choice_gate for human-in-the-loop."""
         graph = compile_graph_dev()
 
-        # interrupt_before should include review_gate
+        # interrupt_before_nodes should include both gates
         # This is configured in compile_graph_dev
-        # The compiled graph should have this configuration
-        assert "review_gate" in graph.interrupt_before
+        assert "review_gate" in graph.interrupt_before_nodes
+        assert "choice_gate" in graph.interrupt_before_nodes

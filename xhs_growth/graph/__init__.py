@@ -19,6 +19,11 @@ from xhs_growth.graph.nodes import (
     analyst_node,
     engagement_node,
     revise_content_node,
+    # 发布前优化节点
+    viral_matcher_node,
+    content_analyzer_node,
+    version_generator_node,
+    choice_gate_node,
 )
 
 __all__ = [
@@ -35,4 +40,9 @@ __all__ = [
     "analyst_node",
     "engagement_node",
     "revise_content_node",
+    # 发布前优化节点
+    "viral_matcher_node",
+    "content_analyzer_node",
+    "version_generator_node",
+    "choice_gate_node",
 ]

@@ -15,6 +15,9 @@ from xhs_growth.agents.visual_designer import VisualDesignerAgent
 from xhs_growth.agents.publisher import PublisherAgent
 from xhs_growth.agents.analyst import AnalystAgent
 from xhs_growth.agents.engagement import EngagementAgent
+from xhs_growth.agents.viral_matcher import ViralMatcherAgent
+from xhs_growth.agents.content_analyzer import ContentAnalyzerAgent
+from xhs_growth.agents.version_generator import VersionGeneratorAgent
 from xhs_growth.realtime import EventBusService, EventType
 from xhs_growth.state.schema import XHSGrowthState
 from xhs_growth.state.enums import WorkflowPhase, ContentStatus
@@ -30,6 +33,9 @@ _visual_designer = VisualDesignerAgent()
 _publisher = PublisherAgent()
 _analyst = AnalystAgent()
 _engagement = EngagementAgent()
+_viral_matcher = ViralMatcherAgent()
+_content_analyzer = ContentAnalyzerAgent()
+_version_generator = VersionGeneratorAgent()
 
 
 async def orchestrator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
@@ -203,3 +209,140 @@ async def revise_content_node(state: XHSGrowthState, *, store: BaseStore) -> dic
         "visual_plan": {},   # 清空，触发重设计
         "phase": WorkflowPhase.CREATING,
     }
+
+
+# ── 发布前优化节点 ──
+
+
+async def viral_matcher_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
+    """爆款匹配节点 — 搜索和匹配爆款笔记."""
+    result = await _viral_matcher(state, store=store)
+
+    # Emit data updated event for viral_posts
+    thread_id = state.get("thread_id")
+    if result.get("viral_posts"):
+        EventBusService.get_instance().emit(
+            EventType.WORKFLOW_DATA_UPDATED,
+            thread_id=thread_id,
+            payload={"data_type": "viral_posts", "data": result.get("viral_posts")},
+        )
+
+    return result
+
+
+async def content_analyzer_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
+    """对比分析节点 — 分析草稿与爆款笔记的差距."""
+    result = await _content_analyzer(state, store=store)
+
+    # Emit data updated event for optimization_analysis
+    thread_id = state.get("thread_id")
+    if result.get("optimization_analysis"):
+        EventBusService.get_instance().emit(
+            EventType.WORKFLOW_DATA_UPDATED,
+            thread_id=thread_id,
+            payload={"data_type": "optimization_analysis", "data": result.get("optimization_analysis")},
+        )
+
+    return result
+
+
+async def version_generator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
+    """版本生成节点 — 生成 A/B/C 三版优化内容."""
+    result = await _version_generator(state, store=store)
+
+    # Emit data updated event for content_versions
+    thread_id = state.get("thread_id")
+    if result.get("content_versions"):
+        EventBusService.get_instance().emit(
+            EventType.WORKFLOW_DATA_UPDATED,
+            thread_id=thread_id,
+            payload={"data_type": "content_versions", "data": result.get("content_versions")},
+        )
+
+    return result
+
+
+async def choice_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
+    """版本选择门 — 用户选择 A/B/C 版本."""
+    from langgraph.types import interrupt
+
+    versions = state.get("content_versions", [])
+    draft = state.get("draft_content", {})
+    analysis = state.get("optimization_analysis", {})
+
+    # Emit choice pending event before interrupt
+    thread_id = state.get("thread_id")
+    EventBusService.get_instance().emit(
+        EventType.WORKFLOW_DATA_UPDATED,
+        thread_id=thread_id,
+        payload={
+            "data_type": "choice_pending",
+            "data": {
+                "versions": versions,
+                "draft": draft,
+                "analysis": analysis,
+            },
+        },
+    )
+
+    # Prepare choice payload for frontend
+    choice_payload = {
+        "versions": [
+            {
+                "version_id": v.get("version_id"),
+                "version_type": v.get("version_type"),
+                "title": v.get("title"),
+                "body_preview": v.get("body", "")[:200],
+                "hashtags": v.get("hashtags", []),
+                "style_suggestion": v.get("style_suggestion", ""),
+                "predicted_score": v.get("predicted_score", 0),
+            }
+            for v in versions
+        ],
+        "original_draft": {
+            "title": draft.get("title", ""),
+            "body_preview": draft.get("text", "")[:200],
+        },
+        "analysis_summary": {
+            "gaps_count": len(analysis.get("gaps", [])),
+            "suggestions_count": len(analysis.get("suggestions", [])),
+            "viral_patterns": analysis.get("viral_patterns", []),
+        },
+    }
+
+    # interrupt() 暂停执行，等待用户选择
+    decision = interrupt(choice_payload)
+
+    # decision 是用户选择结果: {"selected_version": "A/B/C", "version_id": "..."}
+    selected_version_id = decision.get("version_id")
+    selected_version_type = decision.get("selected_version")
+
+    # 从版本列表中找到选中版本
+    selected_version = next(
+        (v for v in versions if v.get("version_id") == selected_version_id),
+        None
+    )
+
+    if selected_version:
+        # 将选中版本内容写入 copy_content 和 visual_plan
+        return {
+            "selected_version": selected_version_id,
+            "copy_content": {
+                "title_candidates": [selected_version.get("title", "")],
+                "body_text": selected_version.get("body", ""),
+                "hashtags": selected_version.get("hashtags", []),
+                "tone": selected_version.get("tone", ""),
+            },
+            "visual_plan": {
+                "cover_prompt": selected_version.get("style_suggestion", ""),
+                "style": selected_version.get("visual_style", ""),
+                "color_palette": selected_version.get("color_palette", {}),
+            },
+            "phase": WorkflowPhase.CREATING,
+        }
+    else:
+        # 未找到选中版本，保持原状态
+        logger.warning(f"Selected version not found: {selected_version_id}")
+        return {
+            "phase": WorkflowPhase.CREATING,
+        }
