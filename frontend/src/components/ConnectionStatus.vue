@@ -2,58 +2,80 @@
 <script setup lang="ts">
 import { computed } from "vue"
 import { useRealtimeStore } from "@/stores/realtime"
+import AppIcon from "@/components/AppIcon.vue"
 
 const realtimeStore = useRealtimeStore()
 
-const statusConfig = {
+const statusStyles: Record<string, {
+  icon: string
+  iconVariant: 'pink' | 'cyan' | 'purple' | 'peach' | 'white'
+  animate?: boolean
+  text: string
+  borderClass: string
+  bgClass: string
+  textClass: string
+}> = {
   connected: {
-    icon: "🟢",
+    icon: "Wifi",
+    iconVariant: "cyan",
     text: "实时连接",
-    color: "neon-cyan",
+    borderClass: "border-neon-cyan/20",
+    bgClass: "bg-white",
+    textClass: "text-neon-cyan",
   },
   connecting: {
-    icon: "🟡",
+    icon: "Loader2",
+    iconVariant: "peach",
+    animate: true,
     text: "连接中...",
-    color: "neon-peach",
+    borderClass: "border-neon-peach/20",
+    bgClass: "bg-white",
+    textClass: "text-neon-peach",
   },
   reconnecting: {
-    icon: "🟡",
+    icon: "Loader2",
+    iconVariant: "peach",
+    animate: true,
     text: "重连中...",
-    color: "neon-peach",
+    borderClass: "border-neon-peach/20",
+    bgClass: "bg-white",
+    textClass: "text-neon-peach",
   },
   disconnected: {
-    icon: "🔴",
+    icon: "WifiOff",
+    iconVariant: "pink",
     text: "已断开",
-    color: "neon-pink",
+    borderClass: "border-neon-pink/20",
+    bgClass: "bg-white",
+    textClass: "text-neon-pink",
   },
-} as const
+}
 
-const currentConfig = computed(() => statusConfig[realtimeStore.connectionStatus])
+const currentStyle = computed(() => statusStyles[realtimeStore.connectionStatus])
 </script>
 
 <template>
   <div
-    class="fixed top-4 right-4 z-50 px-3 py-1.5 rounded-lg mono text-xs flex items-center gap-2 bg-black/80 border shadow-lg transition-colors"
-    :class="[
-      `border-${currentConfig.color}/50`,
-      `text-${currentConfig.color}`,
-    ]"
+    class="fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl flex items-center gap-3 backdrop-blur-sm bg-white/98 border border-slate-200/50 shadow-sm transition-all duration-200"
+    :class="[currentStyle.borderClass]"
   >
-    <span
-      v-if="realtimeStore.connectionStatus === 'connecting' || realtimeStore.connectionStatus === 'reconnecting'"
-      class="animate-pulse"
-    >
-      {{ currentConfig.icon }}
-    </span>
-    <span v-else>{{ currentConfig.icon }}</span>
+    <div class="w-6 h-6 rounded-lg flex items-center justify-center bg-slate-50">
+      <AppIcon
+        :name="currentStyle.icon"
+        size="sm"
+        :variant="currentStyle.iconVariant"
+        :animate="currentStyle.animate"
+        :aria-label="currentStyle.text"
+      />
+    </div>
 
-    <span>{{ currentConfig.text }}</span>
+    <span :class="currentStyle.textClass" class="text-xs font-medium">{{ currentStyle.text }}</span>
 
     <span
       v-if="realtimeStore.connectionStatus === 'connected'"
-      class="text-white/30"
+      class="px-2 py-0.5 rounded bg-teal-50 text-teal-600/80 text-xs font-medium"
     >
-      · seq: {{ realtimeStore.getLastSeq() }}
+      seq: {{ realtimeStore.getLastSeq() }}
     </span>
   </div>
 </template>

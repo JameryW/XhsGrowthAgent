@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
+import { onMounted, computed, ref } from 'vue'
 import MetricCard from '@/components/MetricCard.vue'
 import DataTable from '@/components/DataTable.vue'
+import AppIcon from '@/components/AppIcon.vue'
+import { TrendChart, EngagementChart } from '@/components/charts'
 import { useAnalyticsStore } from '@/stores'
 
 const analyticsStore = useAnalyticsStore()
@@ -14,10 +16,28 @@ onMounted(() => {
 })
 
 const metrics = computed(() => [
-  { icon: '📤', title: 'POSTS_PUBLISHED', value: analyticsStore.posts.length, subtitle: '↑ +3 本周', variant: 'pink' as const },
-  { icon: '💬', title: 'TOTAL_ENGAGEMENT', value: analyticsStore.totalEngagement, subtitle: '↑ +18%', variant: 'cyan' as const },
-  { icon: '📈', title: 'AVG_ENGAGEMENT_RATE', value: `${analyticsStore.avgEngagementRate.toFixed(1)}%`, subtitle: '↑ +2.1%', variant: 'purple' as const },
-  { icon: '💰', title: 'AI_COST_USD', value: analyticsStore.costData?.today_cost_usd?.toFixed(2) || '$0.00', subtitle: '本周累计', variant: 'peach' as const },
+  { icon: 'Upload', title: 'POSTS_PUBLISHED', value: analyticsStore.posts.length, subtitle: '↑ +3 本周', variant: 'pink' as const },
+  { icon: 'MessageCircle', title: 'TOTAL_ENGAGEMENT', value: analyticsStore.totalEngagement, subtitle: '↑ +18%', variant: 'cyan' as const },
+  { icon: 'TrendingUp', title: 'AVG_ENGAGEMENT_RATE', value: `${analyticsStore.avgEngagementRate.toFixed(1)}%`, subtitle: '↑ +2.1%', variant: 'purple' as const },
+  { icon: 'DollarSign', title: 'AI_COST_USD', value: analyticsStore.costData?.today_cost_usd?.toFixed(2) || '$0.00', subtitle: '本周累计', variant: 'peach' as const },
+])
+
+// Mock trend data for chart visualization
+const trendData = ref([
+  { date: '周一', value: 120 },
+  { date: '周二', value: 180 },
+  { date: '周三', value: 250 },
+  { date: '周四', value: 220 },
+  { date: '周五', value: 310 },
+  { date: '周六', value: 380 },
+  { date: '周日', value: 420 },
+])
+
+const engagementData = ref([
+  { category: '点赞', value: 1250 },
+  { category: '评论', value: 320 },
+  { category: '收藏', value: 180 },
+  { category: '分享', value: 95 },
 ])
 
 const tableColumns = [
@@ -37,24 +57,25 @@ const setPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
 </script>
 
 <template>
-  <div class="relative overflow-hidden">
-    <!-- 扫描线 -->
-    <div class="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-transparent via-neon-cyan/30 to-transparent animate-scan pointer-events-none" />
-
+  <div class="relative space-y-6">
     <!-- 顶部标题栏 -->
-    <div class="glass rounded-xl p-4 mb-6 border border-neon-cyan/30">
-      <div class="flex items-center gap-4">
-        <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-neon-cyan to-emerald-600 flex items-center justify-center shadow-neon-cyan text-3xl">
-          📊
+    <div class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+      <div class="flex items-center gap-5">
+        <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm">
+          <AppIcon name="BarChart3" size="xl" variant="white" aria-label="Analytics" />
         </div>
         <div class="flex-1">
-          <div class="mono text-xs text-neon-cyan">ANALYTICS_MODULE</div>
-          <div class="text-lg font-bold text-white mt-1">数据分析中心</div>
-          <div class="mono text-xs text-white/50">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="px-2 py-1 rounded bg-teal-50 text-teal-600 text-xs uppercase tracking-wide font-medium">Analytics</span>
+          </div>
+          <div class="text-xl font-semibold text-slate-800">数据分析中心</div>
+          <div class="text-xs text-slate-400 mt-1">
             Account: {{ analyticsStore.accountId }} | Period: {{ analyticsStore.period }}
           </div>
         </div>
-        <div class="flex gap-3">
+
+        <!-- Period selector -->
+        <div class="flex gap-2">
           <button
             v-for="p in ['daily', 'weekly', 'monthly']"
             :key="p"
@@ -62,20 +83,21 @@ const setPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
             :aria-pressed="analyticsStore.period === p"
             :aria-label="`切换到${p === 'daily' ? '本周' : p === 'weekly' ? '本月' : '全年'}数据`"
             :class="[
-              'px-4 py-2 rounded-lg mono text-xs border transition-all',
+              'px-3 py-2 rounded-lg text-xs border transition-all duration-200 flex items-center gap-1.5 font-medium',
               analyticsStore.period === p
-                ? 'bg-neon-cyan/20 border-neon-cyan text-neon-cyan'
-                : 'bg-transparent border-white/20 text-white/50 hover:bg-white/10'
+                ? 'bg-teal-50 border-teal-200 text-teal-600'
+                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300'
             ]"
           >
-            📅 {{ p === 'daily' ? '本周' : p === 'weekly' ? '本月' : '全年' }}
+            <AppIcon name="Calendar" size="sm" variant="cyan" />
+            {{ p === 'daily' ? '本周' : p === 'weekly' ? '本月' : '全年' }}
           </button>
         </div>
       </div>
     </div>
 
     <!-- 核心指标卡片 -->
-    <div class="grid grid-cols-4 gap-4 mb-6">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <MetricCard
         v-for="metric in metrics"
         :key="metric.title"
@@ -83,14 +105,31 @@ const setPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
       />
     </div>
 
+    <!-- 图表区域 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <TrendChart
+        :data="trendData"
+        title="互动趋势"
+        variant="cyan"
+        :height="280"
+      />
+      <EngagementChart
+        :data="engagementData"
+        variant="pink"
+        :height="280"
+      />
+    </div>
+
     <!-- 帖子表现列表 -->
-    <div class="glass rounded-xl p-4 border border-neon-purple/30">
+    <div class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
       <div class="flex items-center gap-3 mb-4">
-        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-neon-purple to-purple-700 flex items-center justify-center text-xl">
-          📝
+        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
+          <AppIcon name="FileText" size="md" variant="white" aria-label="Posts" />
         </div>
-        <div class="text-neon-purple mono font-bold">最近帖子表现</div>
-        <div class="mono text-xs text-white/50">TOP 10</div>
+        <div>
+          <div class="text-violet-600 font-semibold text-sm">最近帖子表现</div>
+          <div class="text-xs text-slate-400">TOP 10</div>
+        </div>
       </div>
 
       <DataTable :columns="tableColumns" :data="tableData" />
