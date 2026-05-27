@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import * as workflowApi from '@/api/workflow'
 import type { WorkflowStateResponse, WorkflowPhase } from '@/types/workflow'
 import { useRealtimeStore } from './realtime'
+import { useToastStore } from './toast'
 import { EventType } from '@/realtime/events'
 
 export const useWorkflowStore = defineStore('workflow', () => {
@@ -11,6 +12,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const workflowState = ref<WorkflowStateResponse | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
+  const progressPercent = ref(0)
 
   // Computed
   const currentPhase = computed<WorkflowPhase>(() =>
@@ -28,20 +30,41 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const copyContent = computed(() => workflowState.value?.values?.copy_content || {})
   const visualPlan = computed(() => workflowState.value?.values?.visual_plan || {})
 
-  // WebSocket event handlers
+  // Dependencies
   const realtimeStore = useRealtimeStore()
+  const toastStore = useToastStore()
 
+  // Phase progress mapping (synced with backend)
+  const PHASE_PROGRESS: Record<string, number> = {
+    idle: 0,
+    scouting: 10,
+    planning: 20,
+    creating: 40,
+    reviewing: 60,
+    publishing: 80,
+    analyzing: 90,
+    engaging: 95,
+    completed: 100,
+    error: 0,
+  }
+
+  // WebSocket event handlers
   realtimeStore.wsService.onEvent(EventType.WORKFLOW_PHASE_CHANGED, (payload: unknown) => {
     const p = payload as { thread_id?: string; old_phase?: string; new_phase?: string; current_agent?: string }
     if (p.thread_id === currentThreadId.value && workflowState.value) {
+      const newPhase = p.new_phase || workflowState.value.values.phase
       workflowState.value = {
         ...workflowState.value,
         values: {
           ...workflowState.value.values,
-          phase: (p.new_phase || workflowState.value.values.phase) as WorkflowPhase,
+          phase: newPhase as WorkflowPhase,
           current_agent: p.current_agent,
         },
       }
+      // Update progress
+      progressPercent.value = PHASE_PROGRESS[newPhase] || 0
+      // Show toast notification
+      toastStore.info(`阶段切换: ${p.old_phase} → ${newPhase}`, `当前 Agent: ${p.current_agent}`)
     }
   })
 
@@ -69,6 +92,24 @@ export const useWorkflowStore = defineStore('workflow', () => {
         },
         next: [],
       }
+      progressPercent.value = 100
+      toastStore.success('工作流完成', `Thread: ${p.thread_id}`)
+    }
+  })
+
+  realtimeStore.wsService.onEvent(EventType.WORKFLOW_ERROR, (payload: unknown) => {
+    const p = payload as { thread_id?: string; error?: string; agent?: string }
+    if (p.thread_id === currentThreadId.value && workflowState.value) {
+      workflowState.value = {
+        ...workflowState.value,
+        values: {
+          ...workflowState.value.values,
+          phase: 'error',
+          error: p.error,
+        },
+      }
+      progressPercent.value = 0
+      toastStore.error('工作流错误', `Agent: ${p.agent} - ${p.error}`)
     }
   })
 
@@ -79,13 +120,16 @@ export const useWorkflowStore = defineStore('workflow', () => {
     try {
       const result = await workflowApi.startWorkflow({ account_id: accountId, phase })
       currentThreadId.value = result.thread_id
+      progressPercent.value = PHASE_PROGRESS[phase] || 0
       await refreshStatus()
       // Connect WebSocket and subscribe
       realtimeStore.connect()
       realtimeStore.subscribeWorkflow(result.thread_id)
+      toastStore.success('工作流启动成功', `Thread: ${result.thread_id}`)
       return result
     } catch (e: any) {
       error.value = e.message
+      toastStore.error('启动失败', e.message)
       throw e
     } finally {
       isLoading.value = false
@@ -98,8 +142,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
     error.value = null
     try {
       workflowState.value = await workflowApi.getWorkflowStatus(currentThreadId.value)
+      // Update progress from state
+      const phase = workflowState.value?.values?.phase || 'idle'
+      progressPercent.value = PHASE_PROGRESS[phase] || 0
     } catch (e: any) {
       error.value = e.message
+      toastStore.warning('状态刷新失败', e.message)
     } finally {
       isLoading.value = false
     }
@@ -112,8 +160,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
       realtimeStore.unsubscribeWorkflow(currentThreadId.value)
       await workflowApi.pauseWorkflow(currentThreadId.value)
       await refreshStatus()
+      toastStore.info('工作流已暂停', `Thread: ${currentThreadId.value}`)
     } catch (e: any) {
       error.value = e.message
+      toastStore.error('暂停失败', e.message)
     } finally {
       isLoading.value = false
     }
@@ -125,9 +175,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
     try {
       const result = await workflowApi.resumeWorkflow(currentThreadId.value)
       await refreshStatus()
+      realtimeStore.subscribeWorkflow(currentThreadId.value)
+      toastStore.success('工作流已恢复', `当前阶段: ${workflowState.value?.values?.phase}`)
       return result
     } catch (e: any) {
       error.value = e.message
+      toastStore.error('恢复失败', e.message)
     } finally {
       isLoading.value = false
     }
@@ -163,6 +216,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     workflowState,
     isLoading,
     error,
+    progressPercent,
     currentPhase,
     nextNodes,
     isRunning,
