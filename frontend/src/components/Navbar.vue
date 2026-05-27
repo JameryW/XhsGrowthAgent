@@ -24,23 +24,23 @@ const currentPhase = computed(() => workflowStore.currentPhase)
 </script>
 
 <template>
-  <nav class="w-64 bg-white/80 backdrop-blur-xl p-6 flex flex-col border-r border-slate-200/60 relative overflow-hidden">
+  <nav class="w-64 bg-white/80 backdrop-blur-xl p-6 flex flex-col border-r border-slate-200/60 relative overflow-hidden" role="navigation" aria-label="主导航">
     <!-- Animated glow border -->
-    <div class="absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-rose-300/30 to-transparent animate-pulse" style="animation-duration: 3s;" />
+    <div class="absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-rose-300/30 to-transparent animate-pulse" style="animation-duration: 3s;" aria-hidden="true" />
 
     <!-- Logo -->
     <div class="mb-8 relative group">
       <div class="flex items-center gap-4">
-        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-400 via-rose-500 to-amber-400 flex items-center justify-center shadow-lg shadow-rose-500/20 transition-all duration-300 group-hover:shadow-rose-500/40 group-hover:scale-105">
-          <AppIcon name="BookOpen" size="lg" variant="white" aria-label="Logo" />
+        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-400 via-rose-500 to-amber-400 flex items-center justify-center shadow-lg shadow-rose-500/20 transition-all duration-300 group-hover:shadow-rose-500/40 group-hover:scale-105" aria-hidden="true">
+          <AppIcon name="BookOpen" size="lg" variant="white" />
         </div>
         <div>
           <div class="text-slate-800 font-semibold text-lg tracking-tight">增长引擎</div>
           <div class="text-xs text-slate-400 mt-0.5">XHS Growth Agent</div>
         </div>
       </div>
-      <div class="mt-4 bg-gradient-to-r from-slate-50 to-white rounded-lg px-3 py-2 flex items-center gap-2 border border-slate-100 transition-all duration-200 hover:border-slate-200 hover:shadow-sm">
-        <div class="w-2 h-2 rounded-full animate-pulse" :class="currentPhase === 'idle' ? 'bg-amber-400' : 'bg-teal-500'" />
+      <div class="mt-4 bg-gradient-to-r from-slate-50 to-white rounded-lg px-3 py-2 flex items-center gap-2 border border-slate-100 transition-all duration-200 hover:border-slate-200 hover:shadow-sm" role="status" aria-live="polite" aria-label="当前工作流阶段">
+        <div class="w-2 h-2 rounded-full animate-pulse" :class="currentPhase === 'idle' ? 'bg-amber-400' : 'bg-teal-500'" aria-hidden="true" />
         <div class="text-xs text-slate-500">
           Phase: <span class="text-teal-600 font-medium">{{ currentPhase }}</span>
         </div>
@@ -48,7 +48,7 @@ const currentPhase = computed(() => workflowStore.currentPhase)
     </div>
 
     <!-- 导航项 -->
-    <div class="space-y-1.5 relative">
+    <div class="space-y-1.5 relative" role="list" aria-label="导航链接">
       <button
         v-for="item in navItems"
         :key="item.path"
@@ -59,9 +59,11 @@ const currentPhase = computed(() => workflowStore.currentPhase)
             ? 'bg-gradient-to-r from-slate-100/80 to-white border border-slate-200 shadow-sm'
             : 'hover:bg-slate-50/50 border border-transparent'
         ]"
+        :aria-current="currentPath === item.path ? 'page' : undefined"
+        :aria-label="item.label"
       >
         <!-- Active indicator -->
-        <div v-if="currentPath === item.path" class="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-full bg-gradient-to-b from-rose-400 to-teal-400" />
+        <div v-if="currentPath === item.path" class="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-full bg-gradient-to-b from-rose-400 to-teal-400" aria-hidden="true" />
 
         <div class="flex items-center gap-3">
           <div :class="[
@@ -69,8 +71,8 @@ const currentPhase = computed(() => workflowStore.currentPhase)
             currentPath === item.path
               ? 'bg-gradient-to-br from-slate-700 to-slate-600 shadow-md'
               : 'bg-slate-100 group-hover:bg-slate-200'
-          ]">
-            <AppIcon :name="item.icon" size="md" :variant="currentPath === item.path ? 'white' : 'cyan'" :aria-label="item.label" />
+          ]" aria-hidden="true">
+            <AppIcon :name="item.icon" size="md" :variant="currentPath === item.path ? 'white' : 'cyan'" />
           </div>
           <span :class="[
             'text-sm font-medium transition-colors duration-200',
@@ -83,7 +85,7 @@ const currentPhase = computed(() => workflowStore.currentPhase)
     </div>
 
     <!-- 底部信息 -->
-    <div class="mt-auto pt-6 border-t border-slate-100">
+    <div class="mt-auto pt-6 border-t border-slate-100" aria-label="系统信息">
       <div class="bg-gradient-to-r from-slate-50 to-white rounded-lg p-3 text-xs border border-slate-100 hover:border-slate-200 transition-all duration-200">
         <div class="flex items-center justify-between mb-2">
           <span class="text-slate-400">Account</span>
