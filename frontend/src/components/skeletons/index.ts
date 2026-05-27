@@ -1,3 +1,4 @@
+export { default as SkeletonLoader } from '@/components/SkeletonLoader.vue'
 export { default as MetricCardSkeleton } from './MetricCardSkeleton.vue'
 export { default as ContentCardSkeleton } from './ContentCardSkeleton.vue'
 export { default as DataTableSkeleton } from './DataTableSkeleton.vue'
