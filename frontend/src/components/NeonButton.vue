@@ -9,6 +9,7 @@ interface Props {
   disabled?: boolean
   loading?: boolean
   ariaLabel?: string
+  title?: string // Tooltip text
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -17,6 +18,7 @@ const props = withDefaults(defineProps<Props>(), {
   disabled: false,
   loading: false,
   ariaLabel: '',
+  title: '',
 })
 
 const emit = defineEmits<{
@@ -64,6 +66,7 @@ const handleClick = () => {
     :disabled="disabled || loading"
     :aria-label="ariaLabel || undefined"
     :aria-busy="loading"
+    :title="title || undefined"
     :class="[
       'relative rounded-xl border font-semibold text-white overflow-hidden',
       'transition-all duration-200 ease-out',
