@@ -121,6 +121,8 @@ function toggleViralLinks() {
           @blur="textFocused = false"
           placeholder="输入您的笔记正文内容（至少50字）..."
           rows="6"
+          :aria-invalid="!isValidDraft && draftText.length > 0"
+          :aria-errormessage="!isValidDraft && draftText.length > 0 ? 'draft-text-error' : undefined"
           :class="[
             'w-full px-4 py-3 rounded-lg border text-slate-700 placeholder:text-slate-300 resize-none transition-all',
             validationState === 'valid' ? 'border-teal-300 focus:border-teal-400 focus:ring-1 focus:ring-teal-200' :
@@ -128,6 +130,11 @@ function toggleViralLinks() {
             'border-slate-200 focus:border-teal-300 focus:ring-1 focus:ring-teal-200'
           ]"
         />
+
+        <!-- Error message for accessibility -->
+        <div id="draft-text-error" class="sr-only" role="alert">
+          正文内容至少需要50字
+        </div>
 
         <!-- Validation feedback -->
         <div class="flex items-center justify-between mt-2">
