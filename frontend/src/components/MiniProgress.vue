@@ -27,7 +27,7 @@ const percentage = computed(() => Math.min(100, Math.max(0, props.value)))
 </script>
 
 <template>
-  <div class="w-full">
+  <div class="w-full" aria-live="polite" :aria-label="`进度 ${percentage}%`">
     <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden relative">
       <!-- Progress bar -->
       <div

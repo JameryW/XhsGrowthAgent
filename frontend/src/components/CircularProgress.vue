@@ -38,11 +38,12 @@ const offset = computed(() => circumference.value - (percentage.value / 100) * c
 </script>
 
 <template>
-  <div class="relative inline-flex items-center justify-center">
+  <div class="relative inline-flex items-center justify-center" aria-live="polite" :aria-label="`进度 ${Math.round(percentage)}%`">
     <svg
       :width="sizeConfig.width"
       :height="sizeConfig.width"
       class="transform -rotate-90"
+      aria-hidden="true"
     >
       <!-- Background circle -->
       <circle
