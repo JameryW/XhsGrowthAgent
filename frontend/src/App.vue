@@ -1,21 +1,42 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from "vue"
+import { onMounted, onUnmounted, ref } from "vue"
 import ConnectionStatus from "@/components/ConnectionStatus.vue"
 import Toast from "@/components/Toast.vue"
+import OfflineIndicator from "@/components/OfflineIndicator.vue"
+import KeyboardShortcutsHelp from "@/components/KeyboardShortcutsHelp.vue"
 import Navbar from "@/components/Navbar.vue"
-import { useRealtimeStore } from "@/stores/realtime"
+import { useRealtimeStore, useOfflineStore } from "@/stores"
 
 const realtimeStore = useRealtimeStore()
+const offlineStore = useOfflineStore()
+
+// Keyboard shortcuts help
+const showShortcutsHelp = ref(false)
+
+const handleGlobalKeyDown = (e: KeyboardEvent) => {
+  // Show shortcuts help with "?" key (Shift+/)
+  if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+    showShortcutsHelp.value = true
+  }
+}
 
 onMounted(() => {
   // 应用启动时建立WebSocket连接
   realtimeStore.connect()
+  // Add global keyboard listener
+  window.addEventListener("keydown", handleGlobalKeyDown)
 })
 
 onUnmounted(() => {
   // 应用卸载时断开WebSocket
   realtimeStore.disconnect()
+  // Remove keyboard listener
+  window.removeEventListener("keydown", handleGlobalKeyDown)
 })
+
+const handleCloseShortcutsHelp = () => {
+  showShortcutsHelp.value = false
+}
 </script>
 
 <template>
@@ -31,8 +52,12 @@ onUnmounted(() => {
     <div class="absolute inset-0 pointer-events-none" style="background-image: linear-gradient(rgba(0,0,0,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.02) 1px, transparent 1px); background-size: 40px 40px;" />
 
     <!-- Status indicators -->
+    <OfflineIndicator />
     <ConnectionStatus />
     <Toast />
+
+    <!-- Keyboard shortcuts help -->
+    <KeyboardShortcutsHelp :is-open="showShortcutsHelp" @close="handleCloseShortcutsHelp" />
 
     <!-- 左侧导航 -->
     <Navbar />

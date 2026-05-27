@@ -4,6 +4,7 @@ import MetricCard from '@/components/MetricCard.vue'
 import DataTable from '@/components/DataTable.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { TrendChart, EngagementChart } from '@/components/charts'
+import { AnalyticsSkeleton } from '@/components/skeletons'
 import { useAnalyticsStore } from '@/stores'
 
 const analyticsStore = useAnalyticsStore()
@@ -14,6 +15,8 @@ onMounted(() => {
     analyticsStore.fetchAllData()
   }
 })
+
+const isLoading = computed(() => analyticsStore.isLoading && !analyticsStore.posts.length)
 
 const metrics = computed(() => [
   { icon: 'Upload', title: 'POSTS_PUBLISHED', value: analyticsStore.posts.length, subtitle: '↑ +3 本周', variant: 'pink' as const },
@@ -57,7 +60,8 @@ const setPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
 </script>
 
 <template>
-  <div class="relative space-y-6">
+  <AnalyticsSkeleton v-if="isLoading" />
+  <div v-else class="relative space-y-6">
     <!-- 顶部标题栏 -->
     <div class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
       <div class="flex items-center gap-5">

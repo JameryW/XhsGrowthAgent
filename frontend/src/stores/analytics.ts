@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import * as analyticsApi from '@/api/analytics'
 import type { GrowthReport, PerformanceData, CostData, PostPerformance } from '@/types/analytics'
 import { useRealtimeStore } from './realtime'
+import { useToastStore } from './toast'
 import { EventType } from '@/realtime/events'
 
 export const useAnalyticsStore = defineStore('analytics', () => {
@@ -36,20 +37,24 @@ export const useAnalyticsStore = defineStore('analytics', () => {
 
   // WebSocket event handlers
   const realtimeStore = useRealtimeStore()
+  const toastStore = useToastStore()
 
   realtimeStore.wsService.onEvent(EventType.ANALYTICS_REPORT_UPDATED, (payload: unknown) => {
     const p = payload as { report?: GrowthReport }
     if (p.report) {
       growthReport.value = p.report
-      // TODO: showToast("info", "分析报告已更新")
+      toastStore.info('报告已更新', '数据分析报告已同步最新数据')
     }
   })
 
   realtimeStore.wsService.onEvent(EventType.ANALYTICS_COST_ALERT, (payload: unknown) => {
     const p = payload as { message?: string; level?: string }
-    // Log cost alert until toast component is available (Task 12)
-    console.warn(`Cost alert [${p.level || 'warning'}]: ${p.message || '成本预警'}`)
-    // TODO: showToast(p.level === 'critical' ? 'error' : 'warning', p.message || "成本预警")
+    const message = p.message || '成本预警'
+    if (p.level === 'critical') {
+      toastStore.error('成本预警', message)
+    } else {
+      toastStore.warning('成本提醒', message)
+    }
   })
 
   realtimeStore.wsService.onEvent(EventType.ANALYTICS_PERFORMANCE_NEW, (payload: unknown) => {
@@ -59,6 +64,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
         ...performanceData.value,
         posts: [...performanceData.value.posts, p.post],
       }
+      toastStore.info('新数据', `帖子 "${p.post.title?.slice(0, 20)}..." 有新互动数据`)
     }
   })
 
