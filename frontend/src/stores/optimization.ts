@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import * as workflowApi from '@/api/workflow'
 import type {
   DraftContent,
   ViralPost,
