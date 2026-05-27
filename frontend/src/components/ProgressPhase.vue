@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useLoading } from '@/composables/useLoading'
+import AnimatedCounter from '@/components/AnimatedCounter.vue'
 import type { WorkflowPhase } from '@/types'
 
 interface Props {
@@ -41,7 +42,7 @@ const progressWidth = computed(() => {
         {{ currentPhase }}
       </span>
       <span class="text-xs text-slate-600 font-semibold">
-        {{ percent }}%
+        <AnimatedCounter :value="percent" :duration="300" :format="(v: number) => `${v}%`" />
       </span>
     </div>
   </div>
