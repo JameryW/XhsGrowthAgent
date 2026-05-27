@@ -67,7 +67,6 @@ def run(
     async def _run():
         from backend.graph.builder import compile_graph_dev
         from backend.state.schema import WorkflowPhase
-        from backend.realtime.events import WorkflowEvent
 
         graph = compile_graph_dev()
         thread_id = f"xhs_{account_id}_{uuid.uuid4().hex[:8]}"
