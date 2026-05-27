@@ -3,8 +3,8 @@
 import json
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from xhs_growth.agents.content_analyzer import ContentAnalyzerAgent
-from xhs_growth.state.schema import XHSGrowthState
+from backend.agents.content_analyzer import ContentAnalyzerAgent
+from backend.state.schema import XHSGrowthState
 
 
 @pytest.fixture

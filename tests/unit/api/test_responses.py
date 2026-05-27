@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime
-from xhs_growth.api.responses import ApiResponse, success, error, ErrorDetail
+from backend.api.responses import ApiResponse, success, error, ErrorDetail
 
 def test_success_response():
     response = success({"thread_id": "test123"})

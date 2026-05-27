@@ -2,7 +2,7 @@
 
 import pytest
 
-from xhs_growth.config.models import (
+from backend.config.models import (
     TaskType,
     ModelProvider,
     ModelConfig,

@@ -3,8 +3,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 import pytest
 
-from xhs_growth.agents.analyst import AnalystAgent
-from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase
+from backend.agents.analyst import AnalystAgent
+from backend.state.schema import XHSGrowthState, WorkflowPhase
 
 
 class TestAnalystAgent:
@@ -106,7 +106,7 @@ class TestAnalystAgent:
             },
         }
 
-        with patch("xhs_growth.tools.ripple.integration.get_report") as mock_get_report:
+        with patch("backend.tools.ripple.integration.get_report") as mock_get_report:
             mock_get_report.return_value = {
                 "rounds": [{"content": "Report text"}],
             }
@@ -127,7 +127,7 @@ class TestAnalystAgent:
         """_ripple_report handles errors gracefully."""
         state = {"content_plan": {"ripple_prediction": {"ripple_job_id": "job_123"}}}
 
-        with patch("xhs_growth.tools.ripple.integration.get_report") as mock_get_report:
+        with patch("backend.tools.ripple.integration.get_report") as mock_get_report:
             mock_get_report.side_effect = Exception("Ripple error")
 
             result = await agent._ripple_report(state)

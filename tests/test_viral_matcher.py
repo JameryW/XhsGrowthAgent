@@ -2,8 +2,8 @@
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from xhs_growth.agents.viral_matcher import ViralMatcherAgent
-from xhs_growth.state.schema import XHSGrowthState
+from backend.agents.viral_matcher import ViralMatcherAgent
+from backend.state.schema import XHSGrowthState
 
 
 @pytest.fixture

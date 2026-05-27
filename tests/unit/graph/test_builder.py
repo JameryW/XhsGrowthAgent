@@ -2,7 +2,7 @@
 
 import pytest
 
-from xhs_growth.graph.builder import build_graph, compile_graph_dev
+from backend.graph.builder import build_graph, compile_graph_dev
 
 
 class TestBuildGraph:

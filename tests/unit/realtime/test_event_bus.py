@@ -1,6 +1,6 @@
 import pytest
-from xhs_growth.realtime.event_bus import EventBusService
-from xhs_growth.realtime.events import EventType, Event
+from backend.realtime.event_bus import EventBusService
+from backend.realtime.events import EventType, Event
 
 
 @pytest.fixture(autouse=True)

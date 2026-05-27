@@ -1,6 +1,6 @@
 """Tests for core.base_agent module."""
 import pytest
-from xhs_growth.core.base_agent import BaseAgent
+from backend.core.base_agent import BaseAgent
 
 
 def test_base_agent_import():

@@ -1,8 +1,8 @@
 """Tests for core.error_handling module."""
 import pytest
-from xhs_growth.core.error_handling import AgentError, handle_agent_error
-from xhs_growth.state.enums import WorkflowPhase
-from xhs_growth.state.schema import XHSGrowthState
+from backend.core.error_handling import AgentError, handle_agent_error
+from backend.state.enums import WorkflowPhase
+from backend.state.schema import XHSGrowthState
 
 
 def test_agent_error_creation():

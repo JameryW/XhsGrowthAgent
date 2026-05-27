@@ -9,18 +9,18 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from xhs_growth.services.visual_analysis import VisualAnalysisService
-from xhs_growth.services.xhs_client import XHSSearchResult, XHSClient
-from xhs_growth.memory.scene_database import SceneDatabase
-from xhs_growth.services.visual_extractor import VisualDataExtractor
-from xhs_growth.models.visual_types import (
+from backend.services.visual_analysis import VisualAnalysisService
+from backend.services.xhs_client import XHSSearchResult, XHSClient
+from backend.memory.scene_database import SceneDatabase
+from backend.services.visual_extractor import VisualDataExtractor
+from backend.models.visual_types import (
     ColorPalette,
     LayoutOption,
     SceneAnalysisResult,
     StyleOption,
 )
-from xhs_growth.tools.content.layout import layout_recommender, get_default_layouts
-from xhs_growth.tools.content.style import style_library, get_default_styles
+from backend.tools.content.layout import layout_recommender, get_default_layouts
+from backend.tools.content.style import style_library, get_default_styles
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
@@ -265,7 +265,7 @@ async def test_layout_tool_calls_service(
 
     # Patch tool to use our service
     with patch(
-        "xhs_growth.tools.content.layout.VisualAnalysisService",
+        "backend.tools.content.layout.VisualAnalysisService",
         return_value=service,
     ):
         result = await layout_recommender.ainvoke(
@@ -302,7 +302,7 @@ async def test_style_tool_calls_service(
 
     # Patch tool to use our service
     with patch(
-        "xhs_growth.tools.content.style.VisualAnalysisService",
+        "backend.tools.content.style.VisualAnalysisService",
         return_value=service,
     ):
         result = await style_library.ainvoke(
@@ -344,7 +344,7 @@ async def test_tool_chain_analyze_then_recommend(
 
     # Step 2: Get layout recommendations
     with patch(
-        "xhs_growth.tools.content.layout.VisualAnalysisService",
+        "backend.tools.content.layout.VisualAnalysisService",
         return_value=service,
     ):
         layouts = await layout_recommender.ainvoke(
@@ -353,7 +353,7 @@ async def test_tool_chain_analyze_then_recommend(
 
     # Step 3: Get style recommendations
     with patch(
-        "xhs_growth.tools.content.style.VisualAnalysisService",
+        "backend.tools.content.style.VisualAnalysisService",
         return_value=service,
     ):
         styles = await style_library.ainvoke(

@@ -1,8 +1,8 @@
 """State schema tests."""
 
-from xhs_growth.state.schema import XHSGrowthState
-from xhs_growth.state.enums import WorkflowPhase, ContentStatus, Urgency, ContentType
-from xhs_growth.state.reducers import merge_dict as _merge_dict, append_list as _append_list
+from backend.state.schema import XHSGrowthState
+from backend.state.enums import WorkflowPhase, ContentStatus, Urgency, ContentType
+from backend.state.reducers import merge_dict as _merge_dict, append_list as _append_list
 
 
 def test_workflow_phases():

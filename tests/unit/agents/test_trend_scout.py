@@ -3,8 +3,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
-from xhs_growth.agents.trend_scout import TrendScoutAgent
-from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase
+from backend.agents.trend_scout import TrendScoutAgent
+from backend.state.schema import XHSGrowthState, WorkflowPhase
 
 
 class TestTrendScoutAgent:

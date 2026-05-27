@@ -13,7 +13,7 @@ sys.modules["playwright.async_api"] = MagicMock()
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase
+from backend.state.schema import XHSGrowthState, WorkflowPhase
 
 
 @pytest.fixture

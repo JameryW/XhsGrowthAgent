@@ -3,8 +3,8 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
-from xhs_growth.agents.version_generator import VersionGeneratorAgent
-from xhs_growth.state.schema import WorkflowPhase
+from backend.agents.version_generator import VersionGeneratorAgent
+from backend.state.schema import WorkflowPhase
 
 
 @pytest.fixture
@@ -183,7 +183,7 @@ async def test_version_generator_handles_empty_analysis(mock_store):
 async def test_version_generator_task_type():
     """Should have correct task_type."""
     agent = VersionGeneratorAgent()
-    from xhs_growth.config.models import TaskType
+    from backend.config.models import TaskType
     assert agent.task_type == TaskType.VERSION_GEN
 
 

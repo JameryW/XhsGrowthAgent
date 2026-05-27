@@ -1,7 +1,7 @@
 """Tests for optimization-related state models."""
 
 import pytest
-from xhs_growth.state.substates import (
+from backend.state.substates import (
     DraftContent,
     ViralPost,
     GapItem,

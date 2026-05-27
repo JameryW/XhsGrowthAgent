@@ -10,9 +10,9 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
-from xhs_growth.api.app import app
-from xhs_growth.state.enums import WorkflowPhase, ContentStatus
-from xhs_growth.api.responses import ApiResponse
+from backend.api.app import app
+from backend.state.enums import WorkflowPhase, ContentStatus
+from backend.api.responses import ApiResponse
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────

@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from xhs_growth.models.visual_types import ColorPalette
-from xhs_growth.services.visual_extractor import VisualDataExtractor
+from backend.models.visual_types import ColorPalette
+from backend.services.visual_extractor import VisualDataExtractor
 
 
 class TestVisualDataExtractor:

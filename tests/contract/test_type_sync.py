@@ -5,7 +5,7 @@ These tests verify that:
 2. Frontend types match backend/OpenAPI definitions
 3. Generated models exist and are consistent
 
-Note: These tests avoid importing from xhs_growth to prevent
+Note: These tests avoid importing from backend to prevent
 langgraph dependency issues during isolated test runs.
 """
 
@@ -18,9 +18,9 @@ from pathlib import Path
 # Project paths (use absolute paths to main project, not worktree)
 PROJECT_ROOT = Path("/Users/jameryw/aiworks/XhsGrowthAgent")
 OPENAPI_SPEC_PATH = PROJECT_ROOT / "api" / "spec" / "openapi.yaml"
-BACKEND_ENUMS_PATH = PROJECT_ROOT / "xhs_growth" / "state" / "enums.py"
+BACKEND_ENUMS_PATH = PROJECT_ROOT / "backend" / "state" / "enums.py"
 FRONTEND_TYPES_PATH = PROJECT_ROOT / "frontend" / "src" / "types"
-BACKEND_SUBSTATES_PATH = PROJECT_ROOT / "xhs_growth" / "state" / "substates.py"
+BACKEND_SUBSTATES_PATH = PROJECT_ROOT / "backend" / "state" / "substates.py"
 
 
 def extract_python_enum_values(file_path: Path, enum_name: str) -> set[str]:

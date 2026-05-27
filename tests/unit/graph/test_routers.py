@@ -2,14 +2,14 @@
 
 import pytest
 
-from xhs_growth.graph.routers import (
+from backend.graph.routers import (
     orchestrator_router,
     should_plan,
     review_outcome,
     should_continue,
 )
-from xhs_growth.state.enums import WorkflowPhase, ContentStatus
-from xhs_growth.state.schema import XHSGrowthState
+from backend.state.enums import WorkflowPhase, ContentStatus
+from backend.state.schema import XHSGrowthState
 
 
 class TestOrchestratorRouter:

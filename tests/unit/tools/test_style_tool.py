@@ -4,8 +4,8 @@ import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime
 
-from xhs_growth.tools.content.style import style_library, get_default_styles, _map_category_to_content_type
-from xhs_growth.models.visual_types import StyleOption, SceneAnalysisResult
+from backend.tools.content.style import style_library, get_default_styles, _map_category_to_content_type
+from backend.models.visual_types import StyleOption, SceneAnalysisResult
 
 
 # ── get_default_styles Tests ────────────────────────────────────────────────
@@ -93,7 +93,7 @@ async def test_style_library_returns_list() -> None:
     ]
 
     with patch(
-        "xhs_growth.tools.content.style.VisualAnalysisService",
+        "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await style_library.ainvoke(
@@ -111,7 +111,7 @@ async def test_style_library_calls_service() -> None:
     mock_service.get_style_recommendations.return_value = []
 
     with patch(
-        "xhs_growth.tools.content.style.VisualAnalysisService",
+        "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
         await style_library.ainvoke(
@@ -140,7 +140,7 @@ async def test_style_library_converts_to_dict() -> None:
     mock_service.get_style_recommendations.return_value = [style]
 
     with patch(
-        "xhs_growth.tools.content.style.VisualAnalysisService",
+        "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await style_library.ainvoke({"scene": "test_scene"})
@@ -167,7 +167,7 @@ async def test_style_library_with_limit() -> None:
     mock_service.get_style_recommendations.return_value = styles
 
     with patch(
-        "xhs_growth.tools.content.style.VisualAnalysisService",
+        "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await style_library.ainvoke(
@@ -190,7 +190,7 @@ async def test_style_library_include_trending_sort() -> None:
     mock_service.get_style_recommendations.return_value = styles
 
     with patch(
-        "xhs_growth.tools.content.style.VisualAnalysisService",
+        "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await style_library.ainvoke(
@@ -215,7 +215,7 @@ async def test_style_library_exclude_trending_sort() -> None:
     mock_service.get_style_recommendations.return_value = styles
 
     with patch(
-        "xhs_growth.tools.content.style.VisualAnalysisService",
+        "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await style_library.ainvoke(
@@ -233,7 +233,7 @@ async def test_style_library_empty_recommendations() -> None:
     mock_service.get_style_recommendations.return_value = []
 
     with patch(
-        "xhs_growth.tools.content.style.VisualAnalysisService",
+        "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await style_library.ainvoke({"scene": "unknown_scene"})
@@ -250,7 +250,7 @@ async def test_style_library_default_parameters() -> None:
     ]
 
     with patch(
-        "xhs_growth.tools.content.style.VisualAnalysisService",
+        "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await style_library.ainvoke({})
@@ -268,7 +268,7 @@ async def test_style_library_with_category() -> None:
     ]
 
     with patch(
-        "xhs_growth.tools.content.style.VisualAnalysisService",
+        "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
         await style_library.ainvoke(
@@ -323,7 +323,7 @@ async def test_style_library_full_workflow() -> None:
     ]
 
     with patch(
-        "xhs_growth.tools.content.style.VisualAnalysisService",
+        "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await style_library.ainvoke(
@@ -349,7 +349,7 @@ async def test_style_library_zero_limit() -> None:
     mock_service.get_style_recommendations.return_value = styles
 
     with patch(
-        "xhs_growth.tools.content.style.VisualAnalysisService",
+        "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await style_library.ainvoke({"scene": "test", "limit": 0})
@@ -370,7 +370,7 @@ async def test_style_library_large_limit() -> None:
     mock_service.get_style_recommendations.return_value = styles
 
     with patch(
-        "xhs_growth.tools.content.style.VisualAnalysisService",
+        "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await style_library.ainvoke({"scene": "test", "limit": 100})

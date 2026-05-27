@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock
 import pytest
 
-from xhs_growth.memory.store import MemoryManager
+from backend.memory.store import MemoryManager
 
 
 class TestMemoryManager:

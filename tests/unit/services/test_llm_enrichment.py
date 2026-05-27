@@ -3,12 +3,12 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
-from xhs_growth.services.llm_enrichment import (
+from backend.services.llm_enrichment import (
     LLMEnrichmentService,
     LLMEnrichmentError,
     get_llm_service,
 )
-from xhs_growth.config.models import TaskType
+from backend.config.models import TaskType
 
 
 class TestLLMEnrichmentService:
@@ -176,7 +176,7 @@ class TestLLMEnrichmentService:
 
     def test_get_model_caches(self, service):
         """_get_model caches model instances."""
-        with patch("xhs_growth.services.llm_enrichment.get_model") as mock_get_model:
+        with patch("backend.services.llm_enrichment.get_model") as mock_get_model:
             mock_model = MagicMock()
             mock_get_model.return_value = mock_model
 

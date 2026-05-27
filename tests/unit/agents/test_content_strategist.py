@@ -3,8 +3,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
-from xhs_growth.agents.content_strategist import ContentStrategistAgent
-from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase
+from backend.agents.content_strategist import ContentStrategistAgent
+from backend.state.schema import XHSGrowthState, WorkflowPhase
 
 
 class TestContentStrategistAgent:
@@ -82,7 +82,7 @@ class TestContentStrategistAgent:
         with patch.object(agent, "model") as mock_model:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
 
-            with patch("xhs_growth.agents.content_strategist.predict_spread") as mock_predict:
+            with patch("backend.agents.content_strategist.predict_spread") as mock_predict:
                 mock_predict.return_value = {
                     "job_id": "test-job",
                     "output": {
@@ -106,7 +106,7 @@ class TestContentStrategistAgent:
         with patch.object(agent, "model") as mock_model:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
 
-            with patch("xhs_growth.agents.content_strategist.predict_spread") as mock_predict:
+            with patch("backend.agents.content_strategist.predict_spread") as mock_predict:
                 mock_predict.side_effect = Exception("Ripple unavailable")
 
                 result = await agent.execute(mock_state, store=mock_store)

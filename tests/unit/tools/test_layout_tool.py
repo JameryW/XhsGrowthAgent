@@ -4,8 +4,8 @@ import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime
 
-from xhs_growth.tools.content.layout import layout_recommender, get_default_layouts
-from xhs_growth.models.visual_types import LayoutOption, SceneAnalysisResult
+from backend.tools.content.layout import layout_recommender, get_default_layouts
+from backend.models.visual_types import LayoutOption, SceneAnalysisResult
 
 
 # ── get_default_layouts Tests ────────────────────────────────────────────────
@@ -66,7 +66,7 @@ async def test_layout_recommender_returns_list() -> None:
     ]
 
     with patch(
-        "xhs_growth.tools.content.layout.VisualAnalysisService",
+        "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await layout_recommender.ainvoke(
@@ -84,7 +84,7 @@ async def test_layout_recommender_calls_service() -> None:
     mock_service.get_layout_recommendations.return_value = []
 
     with patch(
-        "xhs_growth.tools.content.layout.VisualAnalysisService",
+        "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
         await layout_recommender.ainvoke(
@@ -116,7 +116,7 @@ async def test_layout_recommender_converts_to_dict() -> None:
     mock_service.get_layout_recommendations.return_value = [layout]
 
     with patch(
-        "xhs_growth.tools.content.layout.VisualAnalysisService",
+        "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await layout_recommender.ainvoke(
@@ -144,7 +144,7 @@ async def test_layout_recommender_with_style_filter() -> None:
     mock_service.get_layout_recommendations.return_value = layouts
 
     with patch(
-        "xhs_growth.tools.content.layout.VisualAnalysisService",
+        "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await layout_recommender.ainvoke(
@@ -167,7 +167,7 @@ async def test_layout_recommender_empty_recommendations() -> None:
     mock_service.get_layout_recommendations.return_value = []
 
     with patch(
-        "xhs_growth.tools.content.layout.VisualAnalysisService",
+        "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await layout_recommender.ainvoke(
@@ -191,7 +191,7 @@ async def test_layout_recommender_multiple_layouts() -> None:
     mock_service.get_layout_recommendations.return_value = layouts
 
     with patch(
-        "xhs_growth.tools.content.layout.VisualAnalysisService",
+        "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await layout_recommender.ainvoke(
@@ -210,7 +210,7 @@ async def test_layout_recommender_default_parameters() -> None:
     ]
 
     with patch(
-        "xhs_growth.tools.content.layout.VisualAnalysisService",
+        "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
         # Call with minimal args (default params)
@@ -265,7 +265,7 @@ async def test_layout_recommender_full_workflow() -> None:
     ]
 
     with patch(
-        "xhs_growth.tools.content.layout.VisualAnalysisService",
+        "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await layout_recommender.ainvoke(
@@ -287,7 +287,7 @@ async def test_layout_recommender_zero_image_count() -> None:
     mock_service.get_layout_recommendations.return_value = []
 
     with patch(
-        "xhs_growth.tools.content.layout.VisualAnalysisService",
+        "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await layout_recommender.ainvoke(
@@ -310,7 +310,7 @@ async def test_layout_recommender_large_image_count() -> None:
     ]
 
     with patch(
-        "xhs_growth.tools.content.layout.VisualAnalysisService",
+        "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
         result = await layout_recommender.ainvoke(

@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
-from xhs_growth.services.xhs_client import (
+from backend.services.xhs_client import (
     XHSClient,
     XHSPost,
     XHSAnalytics,

@@ -1,7 +1,7 @@
 """Tests for Event types and Event data class."""
 
 import pytest
-from xhs_growth.realtime.events import EventType, Event
+from backend.realtime.events import EventType, Event
 
 
 def test_event_type_enum():

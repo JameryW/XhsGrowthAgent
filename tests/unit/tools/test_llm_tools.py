@@ -6,12 +6,12 @@ Tests the three-tier fallback pattern and output structure validation.
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
-from xhs_growth.tools.content import (
+from backend.tools.content import (
     hashtag_researcher,
     title_generator,
     image_prompt_generator,
 )
-from xhs_growth.tools.scheduling import timing_optimizer
+from backend.tools.scheduling import timing_optimizer
 
 
 # ── hashtag_researcher tests ──
@@ -29,7 +29,7 @@ async def test_hashtag_researcher_llm_success():
 }
 ```"""
 
-    with patch("xhs_growth.tools.content.hashtag_researcher.get_llm_service") as mock_service:
+    with patch("backend.tools.content.hashtag_researcher.get_llm_service") as mock_service:
         mock_llm = MagicMock()
         mock_llm.enrich_with_llm = AsyncMock(return_value={
             "hashtags": [
@@ -50,7 +50,7 @@ async def test_hashtag_researcher_llm_success():
 @pytest.mark.asyncio
 async def test_hashtag_researcher_fallback_on_error():
     """Uses algorithmic fallback when LLM fails"""
-    with patch("xhs_growth.tools.content.hashtag_researcher.get_llm_service") as mock_service:
+    with patch("backend.tools.content.hashtag_researcher.get_llm_service") as mock_service:
         mock_llm = MagicMock()
         mock_llm.enrich_with_llm = AsyncMock(side_effect=Exception("LLM error"))
         mock_service.return_value = mock_llm
@@ -68,7 +68,7 @@ async def test_hashtag_researcher_fallback_on_error():
 async def test_hashtag_researcher_default_fallback():
     """Returns default hashtags when everything fails"""
     # Force both LLM and fallback to fail
-    with patch("xhs_growth.tools.content.hashtag_researcher._load_prompt") as mock_load:
+    with patch("backend.tools.content.hashtag_researcher._load_prompt") as mock_load:
         mock_load.side_effect = Exception("No prompt file")
 
         result = await hashtag_researcher("美食", limit=5)
@@ -92,7 +92,7 @@ async def test_title_generator_llm_success():
 }
 ```"""
 
-    with patch("xhs_growth.tools.content.title_generator.get_llm_service") as mock_service:
+    with patch("backend.tools.content.title_generator.get_llm_service") as mock_service:
         mock_llm = MagicMock()
         mock_llm.enrich_with_llm = AsyncMock(return_value={
             "titles": [
@@ -113,7 +113,7 @@ async def test_title_generator_llm_success():
 @pytest.mark.asyncio
 async def test_title_generator_fallback_on_error():
     """Uses algorithmic fallback when LLM fails"""
-    with patch("xhs_growth.tools.content.title_generator.get_llm_service") as mock_service:
+    with patch("backend.tools.content.title_generator.get_llm_service") as mock_service:
         mock_llm = MagicMock()
         mock_llm.enrich_with_llm = AsyncMock(side_effect=Exception("LLM error"))
         mock_service.return_value = mock_llm
@@ -129,7 +129,7 @@ async def test_title_generator_fallback_on_error():
 @pytest.mark.asyncio
 async def test_title_generator_value_style():
     """Generates value-style titles"""
-    with patch("xhs_growth.tools.content.title_generator.get_llm_service") as mock_service:
+    with patch("backend.tools.content.title_generator.get_llm_service") as mock_service:
         mock_llm = MagicMock()
         mock_llm.enrich_with_llm = AsyncMock(return_value={
             "titles": [
@@ -148,7 +148,7 @@ async def test_title_generator_value_style():
 @pytest.mark.asyncio
 async def test_image_prompt_generator_llm_success():
     """LLM returns visual prompts"""
-    with patch("xhs_growth.tools.content.image_prompt.get_llm_service") as mock_service:
+    with patch("backend.tools.content.image_prompt.get_llm_service") as mock_service:
         mock_llm = MagicMock()
         mock_llm.enrich_with_llm = AsyncMock(return_value={
             "prompts": [
@@ -176,7 +176,7 @@ async def test_image_prompt_generator_llm_success():
 @pytest.mark.asyncio
 async def test_image_prompt_generator_fallback_on_error():
     """Uses algorithmic fallback when LLM fails"""
-    with patch("xhs_growth.tools.content.image_prompt.get_llm_service") as mock_service:
+    with patch("backend.tools.content.image_prompt.get_llm_service") as mock_service:
         mock_llm = MagicMock()
         mock_llm.enrich_with_llm = AsyncMock(side_effect=Exception("LLM error"))
         mock_service.return_value = mock_llm
@@ -192,7 +192,7 @@ async def test_image_prompt_generator_fallback_on_error():
 @pytest.mark.asyncio
 async def test_image_prompt_generator_vintage_style():
     """Generates vintage style prompts"""
-    with patch("xhs_growth.tools.content.image_prompt.get_llm_service") as mock_service:
+    with patch("backend.tools.content.image_prompt.get_llm_service") as mock_service:
         mock_llm = MagicMock()
         mock_llm.enrich_with_llm = AsyncMock(return_value={
             "prompts": [
@@ -219,7 +219,7 @@ async def test_image_prompt_generator_vintage_style():
 @pytest.mark.asyncio
 async def test_timing_optimizer_llm_success():
     """LLM returns timing analysis"""
-    with patch("xhs_growth.tools.scheduling.calendar.get_llm_service") as mock_service:
+    with patch("backend.tools.scheduling.calendar.get_llm_service") as mock_service:
         mock_llm = MagicMock()
         mock_llm.enrich_with_llm = AsyncMock(return_value={
             "best_times": ["08:00", "12:00", "18:00"],
@@ -246,7 +246,7 @@ async def test_timing_optimizer_llm_success():
 @pytest.mark.asyncio
 async def test_timing_optimizer_fallback_on_error():
     """Uses algorithmic fallback when LLM fails"""
-    with patch("xhs_growth.tools.scheduling.calendar.get_llm_service") as mock_service:
+    with patch("backend.tools.scheduling.calendar.get_llm_service") as mock_service:
         mock_llm = MagicMock()
         mock_llm.enrich_with_llm = AsyncMock(side_effect=Exception("LLM error"))
         mock_service.return_value = mock_llm
@@ -262,7 +262,7 @@ async def test_timing_optimizer_fallback_on_error():
 @pytest.mark.asyncio
 async def test_timing_optimizer_unknown_niche():
     """Returns default pattern for unknown niche"""
-    with patch("xhs_growth.tools.scheduling.calendar.get_llm_service") as mock_service:
+    with patch("backend.tools.scheduling.calendar.get_llm_service") as mock_service:
         mock_llm = MagicMock()
         mock_llm.enrich_with_llm = AsyncMock(side_effect=Exception("LLM error"))
         mock_service.return_value = mock_llm
@@ -277,7 +277,7 @@ async def test_timing_optimizer_unknown_niche():
 @pytest.mark.asyncio
 async def test_timing_optimizer_niche_matching():
     """Correctly matches niche keywords"""
-    with patch("xhs_growth.tools.scheduling.calendar.get_llm_service") as mock_service:
+    with patch("backend.tools.scheduling.calendar.get_llm_service") as mock_service:
         mock_llm = MagicMock()
         mock_llm.enrich_with_llm = AsyncMock(side_effect=Exception("LLM error"))
         mock_service.return_value = mock_llm
@@ -297,7 +297,7 @@ async def test_timing_optimizer_niche_matching():
 
 def test_tool_registry_has_content_tools():
     """Tool registry contains content tools"""
-    from xhs_growth.tools.registry import ToolRegistry
+    from backend.tools.registry import ToolRegistry
 
     ToolRegistry.register_content_tools()
     names = ToolRegistry.available_tool_names()
@@ -309,7 +309,7 @@ def test_tool_registry_has_content_tools():
 
 def test_tool_registry_has_scheduling_tools():
     """Tool registry contains scheduling tools."""
-    from xhs_growth.tools.registry import ToolRegistry
+    from backend.tools.registry import ToolRegistry
 
     ToolRegistry.register_scheduling_tools()
     names = ToolRegistry.available_tool_names()
@@ -319,7 +319,7 @@ def test_tool_registry_has_scheduling_tools():
 
 def test_content_strategist_has_timing_optimizer():
     """ContentStrategist agent has timing_optimizer tool"""
-    from xhs_growth.tools.registry import ToolRegistry
+    from backend.tools.registry import ToolRegistry
 
     ToolRegistry.register_scheduling_tools()
     tools = ToolRegistry.get_tools_for_agent("content_strategist")
@@ -330,7 +330,7 @@ def test_content_strategist_has_timing_optimizer():
 
 def test_copywriter_has_content_tools():
     """Copywriter agent has content tools"""
-    from xhs_growth.tools.registry import ToolRegistry
+    from backend.tools.registry import ToolRegistry
 
     ToolRegistry.register_content_tools()
     tools = ToolRegistry.get_tools_for_agent("copywriter")
@@ -342,7 +342,7 @@ def test_copywriter_has_content_tools():
 
 def test_visual_designer_has_image_prompt():
     """VisualDesigner agent has image_prompt_generator tool"""
-    from xhs_growth.tools.registry import ToolRegistry
+    from backend.tools.registry import ToolRegistry
 
     ToolRegistry.register_content_tools()
     tools = ToolRegistry.get_tools_for_agent("visual_designer")
