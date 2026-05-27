@@ -3,17 +3,27 @@ import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
-import { useWorkflowStore, useReviewStore } from '@/stores'
+import ConfirmModal from '@/components/ConfirmModal.vue'
+import { useWorkflowStore, useReviewStore, useToastStore } from '@/stores'
 import type { ContentStatus, CopyContent, VisualPlan } from '@/types'
 
 const router = useRouter()
 const workflowStore = useWorkflowStore()
 const reviewStore = useReviewStore()
+const toastStore = useToastStore()
 
 const comments = ref('')
 const selectedDecision = ref<ContentStatus | null>(null)
 const isSubmitting = ref(false)
 const error = ref<string | null>(null)
+
+// Confirmation modal state
+const showConfirmModal = ref(false)
+const pendingDecision = ref<ContentStatus | null>(null)
+const confirmModalTitle = ref('')
+const confirmModalMessage = ref('')
+const confirmModalAction = ref('')
+const confirmModalVariant = ref<'danger' | 'warning' | 'info'>('warning')
 
 onMounted(() => {
   if (workflowStore.currentThreadId) {
@@ -24,18 +34,58 @@ onMounted(() => {
 const copyContent = computed<Partial<CopyContent>>(() => reviewStore.copyContent || {})
 const visualPlan = computed<Partial<VisualPlan>>(() => reviewStore.visualPlan || {})
 
-const handleDecision = async (decision: ContentStatus) => {
+// Request confirmation before action
+const requestDecision = (decision: ContentStatus) => {
+  pendingDecision.value = decision
+
+  if (decision === 'rejected') {
+    confirmModalTitle.value = '确认拒绝内容'
+    confirmModalMessage.value = '拒绝后内容将被放弃，此操作不可撤销。确定要拒绝这篇内容吗？'
+    confirmModalAction.value = '内容将被标记为"已拒绝"，工作流将结束。'
+    confirmModalVariant.value = 'danger'
+    showConfirmModal.value = true
+  } else if (decision === 'approved') {
+    confirmModalTitle.value = '确认批准内容'
+    confirmModalMessage.value = '批准后内容将进入发布流程。确定内容已准备好发布吗？'
+    confirmModalAction.value = '内容将被标记为"已批准"，进入发布阶段。'
+    confirmModalVariant.value = 'info'
+    showConfirmModal.value = true
+  } else {
+    // needs_revision - no confirmation needed
+    executeDecision(decision)
+  }
+}
+
+// Execute decision after confirmation
+const executeDecision = async (decision: ContentStatus) => {
   selectedDecision.value = decision
   error.value = null
   isSubmitting.value = true
+  showConfirmModal.value = false
+
   try {
     await reviewStore.submitDecision(decision, comments.value)
+    toastStore.success('审核完成', `决定: ${decision}`)
     router.push('/dashboard')
   } catch (e: any) {
     error.value = e.message || '提交失败，请重试'
+    toastStore.error('提交失败', e.message)
   } finally {
     isSubmitting.value = false
+    pendingDecision.value = null
   }
+}
+
+const handleConfirm = () => {
+  if (pendingDecision.value) {
+    executeDecision(pendingDecision.value)
+  }
+}
+
+const handleCancelConfirm = () => {
+  showConfirmModal.value = false
+  pendingDecision.value = null
+  toastStore.info('操作已取消', '您可以继续审核内容')
 }
 </script>
 
@@ -143,7 +193,7 @@ const handleDecision = async (decision: ContentStatus) => {
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-        <NeonButton variant="cyan" size="lg" class="w-full" @click="handleDecision('approved')" :loading="isSubmitting" :disabled="isSubmitting">
+        <NeonButton variant="cyan" size="lg" class="w-full" @click="requestDecision('approved')" :loading="isSubmitting" :disabled="isSubmitting">
           <span class="flex flex-col items-center gap-1">
             <AppIcon name="CheckCircle" size="lg" variant="white" />
             <span class="font-semibold">APPROVE</span>
@@ -151,7 +201,7 @@ const handleDecision = async (decision: ContentStatus) => {
           </span>
         </NeonButton>
 
-        <NeonButton variant="purple" size="lg" class="w-full" @click="handleDecision('needs_revision')" :loading="isSubmitting" :disabled="isSubmitting">
+        <NeonButton variant="purple" size="lg" class="w-full" @click="requestDecision('needs_revision')" :loading="isSubmitting" :disabled="isSubmitting">
           <span class="flex flex-col items-center gap-1">
             <AppIcon name="Edit3" size="lg" variant="white" />
             <span class="font-semibold">REVISE</span>
@@ -159,7 +209,7 @@ const handleDecision = async (decision: ContentStatus) => {
           </span>
         </NeonButton>
 
-        <NeonButton variant="ghost" size="lg" class="w-full border border-rose-200 text-rose-500 hover:bg-rose-50" @click="handleDecision('rejected')" :disabled="isSubmitting">
+        <NeonButton variant="ghost" size="lg" class="w-full border border-rose-200 text-rose-500 hover:bg-rose-50" @click="requestDecision('rejected')" :disabled="isSubmitting">
           <span class="flex flex-col items-center gap-1">
             <AppIcon name="XCircle" size="lg" variant="pink" />
             <span class="font-semibold">REJECT</span>
@@ -183,5 +233,16 @@ const handleDecision = async (decision: ContentStatus) => {
         />
       </div>
     </div>
+
+    <!-- Confirmation Modal -->
+    <ConfirmModal
+      :is-open="showConfirmModal"
+      :title="confirmModalTitle"
+      :message="confirmModalMessage"
+      :confirm-action="confirmModalAction"
+      :variant="confirmModalVariant"
+      @confirm="handleConfirm"
+      @cancel="handleCancelConfirm"
+    />
   </div>
 </template>
