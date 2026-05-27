@@ -65,15 +65,6 @@ function handleConfirm() {
   })
 }
 
-function getVersionTypeLabel(type: string): string {
-  switch (type) {
-    case 'A': return '保守优化'
-    case 'B': return '平衡优化'
-    case 'C': return '激进优化'
-    default: return type
-  }
-}
-
 function getVersionTypeColor(type: string): string {
   switch (type) {
     case 'A': return 'border-teal-200 bg-teal-50 text-teal-600'

@@ -9,7 +9,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.checkpoint.memory import MemorySaver
 
 from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase
-from xhs_growth.graph.nodes import (
+from xhs_growth.agents.nodes import (
     orchestrator_node,
     trend_scout_node,
     content_strategist_node,

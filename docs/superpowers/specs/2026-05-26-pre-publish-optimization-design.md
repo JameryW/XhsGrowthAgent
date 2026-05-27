@@ -25,6 +25,8 @@ copywriter → viral_matcher → content_analyzer → version_generator → choi
 | `version_generator` | 生成多版本 | 分析报告 + 草稿 | A/B/C 版本选项 |
 | `choice_gate` | 用户选择 | 版本列表 | 选定版本 + 修改说明 |
 
+**注**：`choice_gate` 使用 `interrupt_before=["choice_gate"]` 实现人工选择中断，与现有 `review_gate` 模式一致。
+
 ### 条件路由
 
 - 用户未提供草稿：`viral_matcher` 检测空草稿 → 直接跳转到 `visual_designer`
@@ -308,7 +310,7 @@ frontend/src/types/optimization.ts
 ```
 xhs_growth/graph/builder.py (添加新节点和边)
 xhs_growth/graph/nodes/__init__.py (导出新节点)
-xhs_growth/graph/routers.py (添加 choice_gate 路由)
+xhs_growth/graph/routers.py (添加 choice_gate 路由 + choice_outcome 函数)
 xhs_growth/state/schema.py (添加新状态字段)
 xhs_growth/config/models.py (添加新 TaskType)
 xhs_growth/tools/registry.py (注册新工具)

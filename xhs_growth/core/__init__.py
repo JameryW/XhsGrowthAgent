@@ -1,5 +1,5 @@
-"""Core utilities."""
-# Note: ServiceContainer was removed as it was not used in the codebase.
-# Dependency injection is handled implicitly through model router and tool registry.
+"""Core infrastructure for XHS Growth Agent."""
+from xhs_growth.core.base_agent import BaseAgent
+from xhs_growth.core.error_handling import AgentError, handle_agent_error
 
-__all__ = []
+__all__ = ["BaseAgent", "AgentError", "handle_agent_error"]
