@@ -6,6 +6,7 @@ import { useRealtimeStore } from './realtime'
 import { useToastStore } from './toast'
 import { useOfflineStore } from './offline'
 import { EventType } from '@/realtime/events'
+import { useLoading } from '@/composables/useLoading'
 
 export const useWorkflowStore = defineStore('workflow', () => {
   // State - restore threadId from localStorage
@@ -14,6 +15,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const progressPercent = ref(0)
+  const isOverlayLoading = ref(false)
 
   // Computed
   const currentPhase = computed<WorkflowPhase>(() =>
@@ -35,19 +37,15 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const realtimeStore = useRealtimeStore()
   const toastStore = useToastStore()
   const offlineStore = useOfflineStore()
+  const { phaseToPercent, isOverlayPhase } = useLoading()
 
-  // Phase progress mapping (synced with backend)
-  const PHASE_PROGRESS: Record<string, number> = {
-    idle: 0,
-    scouting: 10,
-    planning: 20,
-    creating: 40,
-    reviewing: 60,
-    publishing: 80,
-    analyzing: 90,
-    engaging: 95,
-    completed: 100,
-    error: 0,
+  /**
+   * Update progress percent and overlay loading state from phase
+   * @param phase - Current workflow phase
+   */
+  function updateProgressFromPhase(phase: WorkflowPhase) {
+    progressPercent.value = phaseToPercent(phase)
+    isOverlayLoading.value = isOverlayPhase(phase)
   }
 
   // WebSocket event handlers
@@ -60,8 +58,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
         phase: newPhase as WorkflowPhase,
         current_agent: p.current_agent,
       }
-      // Update progress
-      progressPercent.value = PHASE_PROGRESS[newPhase] || 0
+      // Update progress and overlay state
+      updateProgressFromPhase(newPhase as WorkflowPhase)
       // Special notification for reviewing phase - requires user action
       if (newPhase === 'reviewing') {
         toastStore.info('等待审核', '工作流已暂停，请前往审核页面查看并决定')
@@ -87,7 +85,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         phase: 'completed',
         next_steps: [],
       }
-      progressPercent.value = 100
+      updateProgressFromPhase('completed')
       toastStore.success('工作流完成', `Thread: ${p.thread_id}`)
     }
   })
@@ -100,7 +98,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         phase: 'error',
         error: p.error,
       }
-      progressPercent.value = 0
+      updateProgressFromPhase('error')
       toastStore.error('工作流错误', `Agent: ${p.agent} - ${p.error}`)
     }
   })
@@ -125,7 +123,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       const result = await workflowApi.startWorkflow({ account_id: accountId, phase })
       currentThreadId.value = result.thread_id
       localStorage.setItem('currentThreadId', result.thread_id)
-      progressPercent.value = PHASE_PROGRESS[phase] || 0
+      updateProgressFromPhase(phase)
       await refreshStatus()
       // Connect WebSocket and subscribe
       realtimeStore.connect()
@@ -159,9 +157,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
     error.value = null
     try {
       workflowState.value = await workflowApi.getWorkflowStatus(currentThreadId.value)
-      // Update progress from state
+      // Update progress and overlay state from current phase
       const phase = workflowState.value?.phase || 'idle'
-      progressPercent.value = PHASE_PROGRESS[phase] || 0
+      updateProgressFromPhase(phase as WorkflowPhase)
     } catch (e: any) {
       error.value = e.message
       toastStore.warning('状态刷新失败', e.message)
@@ -234,6 +232,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isLoading,
     error,
     progressPercent,
+    isOverlayLoading,
     currentPhase,
     nextNodes,
     isRunning,
@@ -248,5 +247,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
     startPolling,
     stopPolling,
     setThreadId,
+    updateProgressFromPhase,
   }
 })
