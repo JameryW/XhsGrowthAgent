@@ -5,6 +5,7 @@ import type { PendingReview, ContentStatus, ReviewDecision, Revision } from '@/t
 import type { ContentPlan, CopyContent, VisualPlan } from '@/types/workflow'
 import { useRealtimeStore } from './realtime'
 import { useWorkflowStore } from './workflow'
+import { useToastStore } from './toast'
 import { EventType } from '@/realtime/events'
 
 export const useReviewStore = defineStore('review', () => {
@@ -29,8 +30,9 @@ export const useReviewStore = defineStore('review', () => {
   // WebSocket event handlers
   const realtimeStore = useRealtimeStore()
   const workflowStore = useWorkflowStore()
+  const toastStore = useToastStore()
 
-  // 注册审核事件处理器
+  // 注册审核事件处理器 - 收到待审核内容时显示醒目通知
   realtimeStore.wsService.onEvent(EventType.REVIEW_PENDING, (payload: unknown) => {
     const p = payload as {
       thread_id?: string
@@ -46,20 +48,21 @@ export const useReviewStore = defineStore('review', () => {
         copy_content: p.copy_content,
         visual_plan: p.visual_plan,
       }
-      // TODO: showToast("info", "收到新内容待审核") when Toast component created
+      // 醒目通知: 内容已准备好，等待审核
+      toastStore.info('内容待审核', '文案和视觉方案已生成，请前往审核页面查看')
     }
   })
 
   realtimeStore.wsService.onEvent(EventType.REVIEW_APPROVED, () => {
-    // TODO: showToast("success", "审核通过，即将发布") when Toast component created
+    toastStore.success('审核通过', '内容即将发布到小红书')
   })
 
   realtimeStore.wsService.onEvent(EventType.REVIEW_REJECTED, () => {
-    // TODO: showToast("warning", "审核已拒绝") when Toast component created
+    toastStore.warning('审核已拒绝', '内容已被放弃，工作流结束')
   })
 
   realtimeStore.wsService.onEvent(EventType.REVIEW_NEEDS_REVISION, () => {
-    // TODO: showToast("info", "内容需要修改") when Toast component created
+    toastStore.info('需要修改', '请根据审核意见修改内容')
   })
 
   // Actions

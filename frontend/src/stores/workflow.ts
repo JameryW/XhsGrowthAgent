@@ -63,8 +63,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
       }
       // Update progress
       progressPercent.value = PHASE_PROGRESS[newPhase] || 0
-      // Show toast notification
-      toastStore.info(`阶段切换: ${p.old_phase} → ${newPhase}`, `当前 Agent: ${p.current_agent}`)
+      // Special notification for reviewing phase - requires user action
+      if (newPhase === 'reviewing') {
+        toastStore.info('等待审核', '工作流已暂停，请前往审核页面查看并决定')
+      } else {
+        toastStore.info(`阶段切换: ${p.old_phase} → ${newPhase}`, `当前 Agent: ${p.current_agent}`)
+      }
     }
   })
 
