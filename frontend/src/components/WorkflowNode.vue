@@ -6,9 +6,14 @@ interface Props {
   icon: string // lucide icon name
   label: string
   status: 'completed' | 'running' | 'pending'
+  focused?: boolean
+  tabindex?: number
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  focused: false,
+  tabindex: -1,
+})
 
 // Badge type definition
 interface BadgeConfig {
@@ -50,14 +55,27 @@ const statusStyles: Record<string, {
 }
 
 const currentStyle = computed(() => statusStyles[props.status])
+
+const focusClass = computed(() => {
+  if (props.focused) {
+    return 'ring-2 ring-teal-400 ring-offset-2 ring-offset-white scale-105'
+  }
+  return ''
+})
 </script>
 
 <template>
-  <div class="text-center group relative">
+  <div
+    class="text-center group relative outline-none"
+    :tabindex="props.tabindex"
+    :aria-label="$attrs['aria-label']"
+    :aria-describedby="$attrs['aria-describedby']"
+  >
     <!-- Node shape -->
     <div :class="[
       'w-16 h-16 rounded-xl flex items-center justify-center mx-auto transition-all duration-300 ease-out group-hover:scale-105',
       currentStyle.shape,
+      focusClass,
     ]">
       <AppIcon
         :name="props.status === 'running' ? 'Loader2' : props.icon"
