@@ -2,10 +2,12 @@
 import { onMounted, onUnmounted } from "vue"
 import ConnectionStatus from "@/components/ConnectionStatus.vue"
 import Toast from "@/components/Toast.vue"
+import OfflineIndicator from "@/components/OfflineIndicator.vue"
 import Navbar from "@/components/Navbar.vue"
-import { useRealtimeStore } from "@/stores/realtime"
+import { useRealtimeStore, useOfflineStore } from "@/stores"
 
 const realtimeStore = useRealtimeStore()
+const offlineStore = useOfflineStore()
 
 onMounted(() => {
   // 应用启动时建立WebSocket连接
@@ -31,6 +33,7 @@ onUnmounted(() => {
     <div class="absolute inset-0 pointer-events-none" style="background-image: linear-gradient(rgba(0,0,0,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.02) 1px, transparent 1px); background-size: 40px 40px;" />
 
     <!-- Status indicators -->
+    <OfflineIndicator />
     <ConnectionStatus />
     <Toast />
 

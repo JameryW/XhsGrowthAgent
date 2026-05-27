@@ -4,6 +4,7 @@ import * as workflowApi from '@/api/workflow'
 import type { WorkflowStateResponse, WorkflowPhase } from '@/types/workflow'
 import { useRealtimeStore } from './realtime'
 import { useToastStore } from './toast'
+import { useOfflineStore } from './offline'
 import { EventType } from '@/realtime/events'
 
 export const useWorkflowStore = defineStore('workflow', () => {
@@ -33,6 +34,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   // Dependencies
   const realtimeStore = useRealtimeStore()
   const toastStore = useToastStore()
+  const offlineStore = useOfflineStore()
 
   // Phase progress mapping (synced with backend)
   const PHASE_PROGRESS: Record<string, number> = {
@@ -119,6 +121,18 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   // Actions
   async function startWorkflow(accountId: string, phase: WorkflowPhase = 'scouting') {
+    // Check offline status
+    if (!offlineStore.isOnline) {
+      offlineStore.queueAction(
+        `start-${accountId}`,
+        async () => {
+          await startWorkflow(accountId, phase)
+        },
+        '启动工作流'
+      )
+      return { thread_id: 'pending', status: 'queued' }
+    }
+
     isLoading.value = true
     error.value = null
     try {
@@ -142,6 +156,18 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   async function refreshStatus() {
     if (!currentThreadId.value) return
+    // Skip if offline, queue for later
+    if (!offlineStore.isOnline) {
+      offlineStore.queueAction(
+        `refresh-${currentThreadId.value}`,
+        async () => {
+          await refreshStatus()
+        },
+        '刷新状态'
+      )
+      return
+    }
+
     isLoading.value = true
     error.value = null
     try {
