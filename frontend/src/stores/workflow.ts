@@ -28,10 +28,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
     (workflowState.value?.next_steps?.length ?? 0) > 0 && currentPhase.value !== 'completed'
   )
 
-  const trendData = computed(() => workflowState.value?.values?.trend_data || {})
-  const contentPlan = computed(() => workflowState.value?.values?.content_plan || {})
-  const copyContent = computed(() => workflowState.value?.values?.copy_content || {})
-  const visualPlan = computed(() => workflowState.value?.values?.visual_plan || {})
+  const trendData = computed(() => (workflowState.value as any)?.trend_data || {})
+  const contentPlan = computed(() => (workflowState.value as any)?.content_plan || {})
+  const copyContent = computed(() => (workflowState.value as any)?.copy_content || {})
+  const visualPlan = computed(() => (workflowState.value as any)?.visual_plan || {})
 
   // Dependencies
   const realtimeStore = useRealtimeStore()
@@ -191,13 +191,35 @@ export const useWorkflowStore = defineStore('workflow', () => {
       const result = await workflowApi.resumeWorkflow(currentThreadId.value)
       await refreshStatus()
       realtimeStore.subscribeWorkflow(currentThreadId.value)
-      toastStore.success('工作流已恢复', `当前阶段: ${workflowState.value?.values?.phase}`)
+      toastStore.success('工作流已恢复', `当前阶段: ${workflowState.value?.phase}`)
       return result
     } catch (e: any) {
       error.value = e.message
       toastStore.error('恢复失败', e.message)
     } finally {
       isLoading.value = false
+    }
+  }
+
+  async function cancelWorkflow() {
+    if (!currentThreadId.value) return
+    isLoading.value = true
+    try {
+      realtimeStore.unsubscribeWorkflow(currentThreadId.value)
+      await workflowApi.cancelWorkflow(currentThreadId.value)
+      workflowState.value = {
+        ...workflowState.value,
+        phase: 'cancelled',
+        next_steps: [],
+      } as WorkflowStateResponse
+      updateProgressFromPhase('cancelled')
+      toastStore.info('工作流已取消', `Thread: ${currentThreadId.value}`)
+    } catch (e: any) {
+      error.value = e.message
+      toastStore.error('取消失败', e.message)
+    } finally {
+      isLoading.value = false
+      isOverlayLoading.value = false
     }
   }
 
@@ -244,6 +266,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     refreshStatus,
     pauseWorkflow,
     resumeWorkflow,
+    cancelWorkflow,
     startPolling,
     stopPolling,
     setThreadId,

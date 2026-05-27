@@ -10,6 +10,7 @@ export type WorkflowPhase =
   | 'engaging'
   | 'completed'
   | 'error'
+  | 'cancelled'
 
 // Workflow status - matches backend WorkflowStatus enum
 export type WorkflowStatus =

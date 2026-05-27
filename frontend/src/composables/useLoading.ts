@@ -15,7 +15,8 @@ const PHASE_PERCENT_MAP: Record<WorkflowPhase, number> = {
   analyzing: 90,
   engaging: 95,
   completed: 100,
-  error: 0
+  error: 0,
+  cancelled: 0
 }
 
 /**
@@ -32,7 +33,8 @@ const PHASE_COLOR_MAP: Record<WorkflowPhase, string> = {
   analyzing: '#22c55e', // green-500
   engaging: '#22c55e',  // green-500
   completed: '#10b981', // emerald-500
-  error: '#f43f5e'      // rose-500
+  error: '#f43f5e',     // rose-500
+  cancelled: '#94a3b8'  // slate-400
 }
 
 /**

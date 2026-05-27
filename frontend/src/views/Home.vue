@@ -3,6 +3,7 @@ import { useRouter } from 'vue-router'
 import { ref } from 'vue'
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import { useWorkflowStore } from '@/stores'
 
 const router = useRouter()
@@ -80,5 +81,12 @@ const startNewWorkflow = async () => {
         </div>
       </div>
     </div>
+
+    <!-- Loading Overlay -->
+    <LoadingOverlay
+      :is-visible="workflowStore.isOverlayLoading"
+      :message="`正在执行 ${workflowStore.currentPhase} 阶段...`"
+      @cancel="workflowStore.cancelWorkflow"
+    />
   </div>
 </template>

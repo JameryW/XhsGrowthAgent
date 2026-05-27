@@ -20,3 +20,8 @@ export async function pauseWorkflow(threadId: string): Promise<{ thread_id: stri
 export async function resumeWorkflow(threadId: string): Promise<WorkflowResponse> {
   return client.post(`/workflow/resume/${threadId}`)
 }
+
+// 取消工作流
+export async function cancelWorkflow(threadId: string): Promise<{ thread_id: string; status: string; message: string }> {
+  return client.post(`/workflow/cancel/${threadId}`)
+}
