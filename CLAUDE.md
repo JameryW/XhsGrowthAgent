@@ -42,6 +42,34 @@ mypy xhs_growth
 
 ## Architecture
 
+### New Layered Structure (2026-05-27)
+
+The codebase now follows a clear layered architecture:
+
+```
+xhs_growth/
+├── core/           # Base infrastructure (BaseAgent, error handling, validators)
+├── agents/         # Business logic
+│   ├── nodes/      # Node functions (split from graph/nodes.py)
+│   │   └── optimization/  # Pre-publish optimization nodes
+│   └── mixins/     # Agent capabilities (retry, validation, memory)
+├── services/       # Tool orchestration layer
+├── tools/          # Atomic operations
+├── graph/          # Topology definition only
+├── state/          # TypedDict schemas
+└── config/         # Model routing, prompts
+```
+
+**Import paths:**
+- `from xhs_growth.core import BaseAgent`
+- `from xhs_growth.agents.nodes import orchestrator_node`
+- `from xhs_growth.services import OptimizationService`
+
+**Key changes:**
+- Node functions moved from `graph/nodes.py` to `agents/nodes/`
+- Dashboard.vue split into 5 sub-components (32 lines from 263)
+- Service layer added for tool orchestration
+
 ### LangGraph Workflow (graph/builder.py)
 
 The system is a StateGraph with nodes and conditional edges:
