@@ -147,7 +147,7 @@ class TestViralMatcherNode:
     @pytest.mark.asyncio
     async def test_viral_matcher_emits_event(self, optimization_state, mock_store):
         """viral_matcher_node emits WORKFLOW_DATA_UPDATED event."""
-        from xhs_growth.graph.nodes import viral_matcher_node
+        from xhs_growth.agents.nodes import viral_matcher_node
         from xhs_growth.realtime import EventBusService, EventType
 
         # Mock EventBus
@@ -185,7 +185,7 @@ class TestContentAnalyzerNode:
     @pytest.mark.asyncio
     async def test_content_analyzer_returns_analysis(self, optimization_state, mock_store, mock_model):
         """content_analyzer_node returns optimization_analysis."""
-        from xhs_growth.graph.nodes import content_analyzer_node
+        from xhs_growth.agents.nodes import content_analyzer_node
 
         # Mock the model
         with patch("xhs_growth.agents.content_analyzer.ContentAnalyzerAgent.model", mock_model):
@@ -201,7 +201,7 @@ class TestVersionGeneratorNode:
     @pytest.mark.asyncio
     async def test_version_generator_returns_versions(self, optimization_state, mock_store, mock_model):
         """version_generator_node returns content_versions."""
-        from xhs_growth.graph.nodes import version_generator_node
+        from xhs_growth.agents.nodes import version_generator_node
 
         # Add optimization_analysis to state
         state_with_analysis = optimization_state.copy()
@@ -246,7 +246,7 @@ class TestChoiceGateNode:
     @pytest.mark.asyncio
     async def test_choice_gate_interrupts_and_returns_selection(self, optimization_state, mock_store):
         """choice_gate_node interrupts and returns selected version."""
-        from xhs_growth.graph.nodes import choice_gate_node
+        from xhs_growth.agents.nodes import choice_gate_node
         from langgraph.types import interrupt
 
         # Add content_versions to state
@@ -344,7 +344,7 @@ class TestFullOptimizationWorkflow:
     @pytest.mark.asyncio
     async def test_workflow_pipeline_order(self, optimization_state, mock_store):
         """Optimization pipeline executes in correct order: viral_matcher → analyzer → generator → choice_gate."""
-        from xhs_growth.graph.nodes import (
+        from xhs_growth.agents.nodes import (
             viral_matcher_node,
             content_analyzer_node,
             version_generator_node,
@@ -372,7 +372,7 @@ class TestFullOptimizationWorkflow:
 @pytest.mark.asyncio
 async def test_state_updates_preserve_original_content(optimization_state, mock_store):
     """Optimization updates preserve original copy_content."""
-    from xhs_growth.graph.nodes import viral_matcher_node
+    from xhs_growth.agents.nodes import viral_matcher_node
 
     original_copy = optimization_state.get("copy_content")
 
