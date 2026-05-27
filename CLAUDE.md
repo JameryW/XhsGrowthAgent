@@ -12,8 +12,11 @@ XhsGrowthAgent is a LangGraph-based multi-agent system for automating content gr
 # Install dependencies
 pip install -e ".[dev,browser]"
 
-# Run CLI workflow
+# Run CLI workflow (with progress visualization)
 xhs-growth run --account-id my_account --phase scouting
+
+# Run with verbose logging
+xhs-growth run --verbose
 
 # Run with dry-run (no real API calls)
 xhs-growth run --dry-run
@@ -21,8 +24,20 @@ xhs-growth run --dry-run
 # Start API server
 xhs-growth serve --port 8000
 
-# Check workflow status
+# Check workflow status (enhanced with table output)
 xhs-growth status <thread_id>
+
+# Resume interrupted workflow
+xhs-growth resume <thread_id>
+
+# View workflow logs
+xhs-growth logs <thread_id>
+
+# Check configuration status
+xhs-growth config
+
+# Show version info
+xhs-growth version
 
 # Run tests
 pytest
@@ -37,17 +52,17 @@ ruff check .
 ruff format .
 
 # Type check
-mypy xhs_growth
+mypy backend
 ```
 
 ## Architecture
 
-### New Layered Structure (2026-05-27)
+### Directory Structure (2026-05-27 Refactor)
 
-The codebase now follows a clear layered architecture:
+The project follows a clear layered architecture with `backend` as the core package:
 
 ```
-xhs_growth/
+backend/
 ├── core/           # Base infrastructure (BaseAgent, error handling, validators)
 ├── agents/         # Business logic
 │   ├── nodes/      # Node functions (split from graph/nodes.py)
@@ -57,18 +72,57 @@ xhs_growth/
 ├── tools/          # Atomic operations
 ├── graph/          # Topology definition only
 ├── state/          # TypedDict schemas
+├── api/            # FastAPI routes with unified responses
+│   ├── routes/     # Workflow, review, analytics, realtime
+│   └── responses.py # ApiResponse envelope
+├── realtime/       # WebSocket + SSE event streaming
+├── cli/            # Typer CLI with Rich progress
 └── config/         # Model routing, prompts
+
+frontend/
+├── src/
+│   ├── views/      # Dashboard (32 lines, split into 5 components)
+│   ├── components/ # Reusable Vue components
+│   ├── stores/     # Pinia stores with toast notifications
+│   └── realtime/   # WebSocket client with event recovery
 ```
 
 **Import paths:**
-- `from xhs_growth.core import BaseAgent`
-- `from xhs_growth.agents.nodes import orchestrator_node`
-- `from xhs_growth.services import OptimizationService`
+```python
+# Main package
+from backend import XHSGrowthState, compile_graph_dev, WorkflowPhase
 
-**Key changes:**
+# Core
+from backend.core import BaseAgent, AgentError, handle_agent_error
+
+# Agents
+from backend.agents import OrchestratorAgent, TrendScoutAgent
+from backend.agents.nodes import orchestrator_node
+
+# Services
+from backend.services import XHSClient, RippleService
+
+# Models
+from backend.models import get_model, CostTracker
+
+# State
+from backend.state import merge_dict, append_list
+
+# Tools
+from backend.tools.content import layout_recommender, style_library
+from backend.tools.analysis import topic_scorer
+
+# API responses
+from backend.api.responses import success, error
+```
+
+**Key changes from refactor:**
+- Directory renamed from `xhs_growth` to `backend` for clearer naming
 - Node functions moved from `graph/nodes.py` to `agents/nodes/`
-- Dashboard.vue split into 5 sub-components (32 lines from 263)
+- Dashboard.vue split into 5 sub-components (WorkflowHeader, WorkflowTimeline, ContentCards, OptimizationPanel, ActionButtons)
 - Service layer added for tool orchestration
+- CLI enhanced with progress bars, toast notifications, and new commands
+- API enhanced with SSE streaming, cancel endpoint, and progress tracking
 
 ### LangGraph Workflow (graph/builder.py)
 
@@ -106,13 +160,49 @@ Reducers imported from `state/reducers.py`:
 - `replace`: Simple replacement
 - `max_value`: Keep larger value
 
-### Agent Base Class (agents/base.py)
+### Agent Base Class (core/base_agent.py)
 
 All agents inherit from `BaseAgent`:
 - Define `task_type: TaskType`, `agent_name: str`, `prompt_file: str`
-- Prompt loaded from `xhs_growth/config/prompts/<agent>.yaml`
+- Prompt loaded from `backend/config/prompts/<agent>.yaml`
 - `execute(state, store)` returns dict of state updates
 - Model routed via `get_model(task_type.value)` from `models/router.py`
+
+### CLI Commands (cli/main.py)
+
+Typer-based CLI with Rich progress visualization:
+- `run`: Start workflow with progress bar and spinner
+- `serve`: Start API server with uvicorn
+- `status`: View workflow status in table format
+- `resume`: Resume interrupted workflow
+- `logs`: View workflow messages and performance log
+- `list`: List active workflows (placeholder for Postgres)
+- `version`: Show version info
+- `config`: Check environment configuration
+
+### API Routes (api/routes/)
+
+FastAPI routes with unified `ApiResponse` envelope:
+
+**Workflow routes (`workflow.py`):**
+- `POST /start`: Start workflow (async_mode, SSE/WebSocket URLs)
+- `GET /status/{thread_id}`: Get status with progress_percent
+- `POST /pause/{thread_id}`: Pause workflow
+- `POST /resume/{thread_id}`: Resume workflow
+- `POST /cancel/{thread_id}`: Cancel workflow
+- `GET /stream/{thread_id}`: SSE progress streaming
+- `GET /list`: List workflows (placeholder)
+
+**Realtime routes (`realtime.py`):**
+- `WS /ws`: WebSocket with subscribe/unsubscribe/ping/get_missed
+- `GET /events/missed`: HTTP recovery for lost events
+
+### Frontend Stores (frontend/src/stores/)
+
+Pinia stores with toast notifications:
+- `workflow.ts`: Progress tracking (0-100), phase change notifications
+- `realtime.ts`: WebSocket connection with event recovery
+- `toast.ts`: Success/error/warning/info notifications
 
 ### Model Router (models/router.py)
 
@@ -214,6 +304,8 @@ user_template: |
 - `tests/conftest.py`: fixtures for `initial_state`, `mock_llm`, `mock_store`
 - Use `pytest-asyncio` (auto mode) for async tests
 - Mock LLM responses with JSON content in `MagicMock().content`
+- Contract tests verify OpenAPI spec sync (`tests/contract/test_type_sync.py`)
+- Ripple service tests cover singleton, health check, retry, fallback (`tests/unit/services/test_ripple_service.py`)
 
 ## Visual Design Tools (tools/visual/)
 
