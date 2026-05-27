@@ -34,6 +34,17 @@ const neonColors = {
   purple: { main: '#8B5CF6', gradient: ['rgba(139,92,246,0.2)', 'rgba(139,92,246,0)'] },
 }
 
+// Accessibility: compute chart description for screen readers
+const chartDescription = computed(() => {
+  if (props.data.length === 0) return '无数据'
+  const values = props.data.map(d => d.value)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length)
+  const trend = values[values.length - 1] > values[0] ? '上升' : values[values.length - 1] < values[0] ? '下降' : '平稳'
+  return `${props.title || '趋势图'}: 数据范围 ${min} 至 ${max}, 平均 ${avg}, 趋势 ${trend}`
+})
+
 const chartOption = computed(() => {
   const colors = neonColors[props.variant]
 
@@ -108,15 +119,54 @@ const chartOption = computed(() => {
 </script>
 
 <template>
-  <div class="rounded-xl p-5 transition-all duration-200 hover:shadow-lg bg-white/98 backdrop-blur-sm border border-slate-200/50" :class="`border-${props.variant === 'pink' ? 'rose' : props.variant === 'cyan' ? 'teal' : 'violet'}-200/30`">
+  <div
+    class="rounded-xl p-5 transition-all duration-200 hover:shadow-lg bg-white/98 backdrop-blur-sm border border-slate-200/50"
+    :class="`border-${props.variant === 'pink' ? 'rose' : props.variant === 'cyan' ? 'teal' : 'violet'}-200/30`"
+    role="figure"
+    :aria-label="chartDescription"
+  >
     <div v-if="props.title" class="text-xs text-slate-500 mb-4 flex items-center gap-2 font-medium uppercase tracking-wide">
-      <div class="w-2 h-2 rounded-full" :style="{ background: neonColors[props.variant].main }" />
+      <div class="w-2 h-2 rounded-full" :style="{ background: neonColors[props.variant].main }" aria-hidden="true" />
       {{ props.title }}
     </div>
+
+    <!-- Chart for visual users -->
     <VChart
       :option="chartOption"
       :style="{ height: `${props.height}px` }"
       autoresize
+      aria-hidden="true"
     />
+
+    <!-- Hidden data table for screen readers -->
+    <table class="sr-only" aria-label="图表数据表">
+      <caption>{{ props.title || '趋势数据' }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">日期</th>
+          <th scope="col">数值</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="point in props.data" :key="point.date">
+          <td>{{ point.date }}</td>
+          <td>{{ point.value }}</td>
+        </tr>
+      </tbody>
+    </table>
   </div>
 </template>
+
+<style scoped>
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+</style>

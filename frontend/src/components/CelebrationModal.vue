@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch, nextTick } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 
 interface Props {
@@ -12,6 +12,10 @@ const props = withDefaults(defineProps<Props>(), {
   title: '恭喜！工作流完成',
   message: '内容已成功发布',
 })
+
+// Focus management
+const closeButtonRef = ref<HTMLButtonElement | null>(null)
+const previousFocusElement = ref<HTMLElement | null>(null)
 
 // Confetti particles
 const particles = ref<{ id: number; x: number; y: number; color: string; delay: number; size: number }[]>([])
@@ -38,6 +42,27 @@ const emit = defineEmits<{
 }>()
 
 const handleClose = () => emit('close')
+
+// Focus management: save previous focus, set focus to close button when opened, restore on close
+watch(() => props.show, async (isOpen) => {
+  if (isOpen) {
+    // Save the element that had focus before modal opened
+    previousFocusElement.value = document.activeElement as HTMLElement
+    // Wait for DOM update then focus the close button
+    await nextTick()
+    closeButtonRef.value?.focus()
+  } else {
+    // Restore focus to the previous element
+    previousFocusElement.value?.focus()
+  }
+})
+
+// Keyboard handling: Escape to close
+const handleKeyDown = (e: KeyboardEvent) => {
+  if (e.key === 'Escape') {
+    handleClose()
+  }
+}
 </script>
 
 <template>
@@ -49,6 +74,8 @@ const handleClose = () => emit('close')
         role="dialog"
         aria-modal="true"
         aria-labelledby="celebration-title"
+        aria-describedby="celebration-message"
+        @keydown="handleKeyDown"
       >
         <!-- Backdrop -->
         <div class="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" @click="handleClose" aria-hidden="true" />
@@ -85,7 +112,7 @@ const handleClose = () => emit('close')
           </h2>
 
           <!-- Message -->
-          <p class="text-slate-600 mb-6">{{ message }}</p>
+          <p id="celebration-message" class="text-slate-600 mb-6">{{ message }}</p>
 
           <!-- Stats Preview -->
           <div class="grid grid-cols-3 gap-3 mb-6">
@@ -105,6 +132,7 @@ const handleClose = () => emit('close')
 
           <!-- Close Button -->
           <button
+            ref="closeButtonRef"
             class="w-full px-6 py-3 rounded-lg bg-gradient-to-r from-teal-500 to-teal-400 text-white font-medium hover:from-teal-600 hover:to-teal-500 transition-all shadow-sm"
             @click="handleClose"
           >

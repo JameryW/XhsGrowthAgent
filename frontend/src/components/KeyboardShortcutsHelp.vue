@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 
 interface Props {
@@ -11,6 +11,21 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   (e: 'close'): void
 }>()
+
+// Focus management
+const closeButtonRef = ref<HTMLButtonElement | null>(null)
+const previousFocusElement = ref<HTMLElement | null>(null)
+
+// Save and restore focus when modal opens/closes
+watch(() => props.isOpen, async (isOpen) => {
+  if (isOpen) {
+    previousFocusElement.value = document.activeElement as HTMLElement
+    await nextTick()
+    closeButtonRef.value?.focus()
+  } else {
+    previousFocusElement.value?.focus()
+  }
+})
 
 const shortcuts = [
   { key: '?', description: '显示快捷键帮助' },
@@ -38,6 +53,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
         role="dialog"
         aria-modal="true"
         aria-labelledby="shortcuts-title"
+        aria-describedby="shortcuts-desc"
         @keydown="handleKeyDown"
       >
         <!-- Backdrop -->
@@ -47,7 +63,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
         <div class="relative w-full max-w-md p-6 rounded-2xl bg-white/98 shadow-xl border border-slate-200/50">
           <!-- Header -->
           <div class="flex items-center gap-3 mb-4">
-            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm" aria-hidden="true">
               <AppIcon name="Keyboard" size="md" variant="white" />
             </div>
             <h2 id="shortcuts-title" class="text-lg font-semibold text-slate-800">
@@ -55,12 +71,16 @@ const handleKeyDown = (e: KeyboardEvent) => {
             </h2>
           </div>
 
+          <!-- Description for screen readers -->
+          <p id="shortcuts-desc" class="sr-only">可用的键盘快捷键列表，帮助您快速操作应用</p>
+
           <!-- Shortcuts list -->
-          <div class="space-y-2">
+          <div class="space-y-2" role="list" aria-label="快捷键列表">
             <div
               v-for="shortcut in shortcuts"
               :key="shortcut.key"
               class="flex items-center justify-between p-2 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors"
+              role="listitem"
             >
               <span class="text-sm text-slate-600">{{ shortcut.description }}</span>
               <kbd class="px-2 py-1 rounded bg-slate-200 text-slate-700 text-xs font-mono border border-slate-300 shadow-sm">
@@ -70,8 +90,14 @@ const handleKeyDown = (e: KeyboardEvent) => {
           </div>
 
           <!-- Footer -->
-          <div class="mt-4 pt-4 border-t border-slate-200 text-center">
-            <p class="text-xs text-slate-500">按 <kbd class="px-1 py-0.5 rounded bg-slate-200 text-slate-600 text-xs font-mono">Esc</kbd> 关闭此窗口</p>
+          <div class="mt-4 pt-4 border-t border-slate-200 flex justify-center">
+            <button
+              ref="closeButtonRef"
+              class="px-4 py-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+              @click="handleClose"
+            >
+              关闭
+            </button>
           </div>
         </div>
       </div>

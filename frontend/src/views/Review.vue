@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import { ReviewSkeleton } from '@/components/skeletons'
 import { useWorkflowStore, useReviewStore, useToastStore } from '@/stores'
 import type { ContentStatus, CopyContent, VisualPlan } from '@/types'
 
@@ -16,6 +17,9 @@ const comments = ref('')
 const selectedDecision = ref<ContentStatus | null>(null)
 const isSubmitting = ref(false)
 const error = ref<string | null>(null)
+
+// Loading state
+const isLoading = computed(() => reviewStore.isLoading && !reviewStore.pendingReview)
 
 // Confirmation modal state
 const showConfirmModal = ref(false)
@@ -90,7 +94,8 @@ const handleCancelConfirm = () => {
 </script>
 
 <template>
-  <div class="relative space-y-5">
+  <ReviewSkeleton v-if="isLoading" />
+  <div v-else class="relative space-y-5">
     <!-- 审核状态栏 -->
     <div class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
       <div class="flex items-center gap-5">

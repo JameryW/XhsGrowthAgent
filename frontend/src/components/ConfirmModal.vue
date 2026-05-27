@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 
 interface Props {
@@ -54,14 +54,47 @@ const iconName = computed(() => {
 
 // Focus trap - focus confirm button on open
 const confirmButtonRef = ref<HTMLButtonElement | null>(null)
+const cancelButtonRef = ref<HTMLButtonElement | null>(null)
+const previousFocusElement = ref<HTMLElement | null>(null)
+
+// Focus management: save previous focus, set focus to cancel button when opened, restore on close
+watch(() => props.isOpen, async (isOpen) => {
+  if (isOpen) {
+    // Save the element that had focus before modal opened
+    previousFocusElement.value = document.activeElement as HTMLElement
+    // Wait for DOM update then focus the cancel button (safer default)
+    await nextTick()
+    cancelButtonRef.value?.focus()
+  } else {
+    // Restore focus to the previous element
+    previousFocusElement.value?.focus()
+  }
+})
 
 const handleConfirm = () => emit('confirm')
 const handleCancel = () => emit('cancel')
 
-// Keyboard: Escape to cancel
+// Keyboard: Escape to cancel, Tab to cycle focus within modal
 const handleKeyDown = (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
     handleCancel()
+  } else if (e.key === 'Tab') {
+    // Simple focus trap: cycle between cancel and confirm buttons
+    const focusableElements = [cancelButtonRef.value, confirmButtonRef.value].filter(Boolean) as HTMLButtonElement[]
+    if (focusableElements.length === 0) return
+
+    const currentIndex = focusableElements.indexOf(document.activeElement as HTMLButtonElement)
+    if (e.shiftKey) {
+      // Shift+Tab: go backwards
+      const prevIndex = currentIndex <= 0 ? focusableElements.length - 1 : currentIndex - 1
+      focusableElements[prevIndex]?.focus()
+      e.preventDefault()
+    } else {
+      // Tab: go forwards
+      const nextIndex = currentIndex >= focusableElements.length - 1 ? 0 : currentIndex + 1
+      focusableElements[nextIndex]?.focus()
+      e.preventDefault()
+    }
   }
 }
 </script>
@@ -75,6 +108,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
+        aria-describedby="modal-message"
         @keydown="handleKeyDown"
       >
         <!-- Backdrop -->
@@ -102,7 +136,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
           </div>
 
           <!-- Message -->
-          <p class="text-slate-600 mb-4">{{ message }}</p>
+          <p id="modal-message" class="text-slate-600 mb-4">{{ message }}</p>
 
           <!-- Action Preview -->
           <div v-if="confirmAction" class="mb-4 p-3 rounded-lg bg-slate-50 border border-slate-200">
@@ -113,6 +147,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
           <!-- Buttons -->
           <div class="flex gap-3 justify-end">
             <button
+              ref="cancelButtonRef"
               class="px-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 transition-all"
               @click="handleCancel"
             >

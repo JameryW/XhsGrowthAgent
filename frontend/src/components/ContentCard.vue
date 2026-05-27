@@ -55,27 +55,27 @@ const styles = {
 </script>
 
 <template>
-  <div :class="['rounded-xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5', styles[props.variant].border]">
+  <div :class="['rounded-xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5', styles[props.variant].border]" role="region" aria-label="{{ title }}模块输出">
     <!-- Header -->
     <div class="flex items-center gap-3 mb-4">
-      <div :class="['w-11 h-11 rounded-xl bg-gradient-to-br flex items-center justify-center shadow-sm', styles[props.variant].iconBg]">
-        <AppIcon :name="props.icon" size="md" variant="white" :aria-label="props.title" />
+      <div :class="['w-11 h-11 rounded-xl bg-gradient-to-br flex items-center justify-center shadow-sm', styles[props.variant].iconBg]" aria-hidden="true">
+        <AppIcon :name="props.icon" size="md" variant="white" />
       </div>
       <div class="flex-1">
         <div class="text-slate-800 font-semibold text-sm">{{ props.title }}</div>
         <div class="text-xs text-slate-400 uppercase tracking-wide">Module Output</div>
       </div>
       <div v-if="props.completed" :class="['px-2.5 py-1 rounded-lg flex items-center gap-1.5 bg-teal-50 border border-teal-100']">
-        <AppIcon name="Check" size="sm" variant="cyan" aria-label="Completed" />
+        <AppIcon name="Check" size="sm" variant="cyan" aria-label="已完成" />
         <span class="text-xs text-teal-600 font-medium">完成</span>
       </div>
     </div>
 
     <!-- Content -->
-    <div v-if="hasContent" :class="['bg-slate-50 rounded-lg p-4 border-l-2', styles[props.variant].accent]">
+    <div v-if="hasContent" :class="['bg-slate-50 rounded-lg p-4 border-l-2', styles[props.variant].accent]" role="status" aria-live="polite">
       <div class="text-xs text-slate-600 space-y-2">
         <div v-for="(value, key) in props.content" :key="key" class="flex items-start gap-2">
-          <span :class="styles[props.variant].text">▸</span>
+          <span :class="styles[props.variant].text" aria-hidden="true">▸</span>
           <span class="text-slate-400">{{ key }}:</span>
           <span :class="styles[props.variant].textLight">{{ value }}</span>
         </div>
@@ -83,7 +83,7 @@ const styles = {
     </div>
 
     <!-- Loading state -->
-    <div v-else class="bg-slate-50 rounded-lg p-4 border-l-2 border-slate-200">
+    <div v-else class="bg-slate-50 rounded-lg p-4 border-l-2 border-slate-200" role="status" aria-live="polite" aria-label="加载中">
       <div class="h-4 w-full rounded bg-slate-200 animate-pulse" />
     </div>
   </div>
