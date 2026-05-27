@@ -7,6 +7,7 @@ from typing import Literal
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.store.memory import InMemoryStore
 
 from backend.state.schema import XHSGrowthState, WorkflowPhase
 from backend.agents.nodes import (
@@ -144,12 +145,14 @@ def build_graph() -> StateGraph:
 
 
 def compile_graph_dev() -> CompiledStateGraph:
-    """开发模式编译 — 使用内存检查点"""
+    """开发模式编译 — 使用内存检查点和内存存储"""
     builder = build_graph()
     checkpointer = MemorySaver()
+    store = InMemoryStore()
 
     graph = builder.compile(
         checkpointer=checkpointer,
+        store=store,
         interrupt_before=["review_gate", "choice_gate"],  # human-in-the-loop 审核门 + 版本选择门
     )
     return graph
