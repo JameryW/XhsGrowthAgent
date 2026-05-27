@@ -10,10 +10,12 @@ import ProgressPhase from '@/components/ProgressPhase.vue'
 import StepIndicator from '@/components/StepIndicator.vue'
 import { DashboardSkeleton } from '@/components/skeletons'
 import ErrorState from '@/components/ErrorState.vue'
-import { useWorkflowStore, useToastStore } from '@/stores'
+import ErrorCard from '@/components/ErrorCard.vue'
+import { useWorkflowStore, useToastStore, useErrorStore } from '@/stores'
 
 const workflowStore = useWorkflowStore()
 const toastStore = useToastStore()
+const errorStore = useErrorStore()
 
 const showOptimization = computed(() => workflowStore.currentPhase === 'creating')
 const isLoading = computed(() => workflowStore.isLoading && !workflowStore.workflowState)
@@ -51,6 +53,16 @@ const handleCloseCelebration = () => {
   showCelebration.value = false
 }
 
+// ErrorCard handlers
+const handleErrorRetry = () => {
+  errorStore.clearError()
+  workflowStore.startWorkflow('default')
+}
+
+const handleErrorDismiss = () => {
+  errorStore.clearError()
+}
+
 onMounted(() => {
   if (workflowStore.currentThreadId) {
     workflowStore.refreshStatus()
@@ -67,6 +79,16 @@ onUnmounted(() => {
   <DashboardSkeleton v-if="isLoading" />
   <div v-else class="space-y-6">
     <ErrorState v-if="hasError" />
+
+    <!-- ErrorCard for API errors -->
+    <ErrorCard
+      v-if="errorStore.hasError && errorStore.errorType"
+      :type="errorStore.errorType"
+      :message="errorStore.errorMessage"
+      :retry-count="errorStore.retryCount"
+      @retry="handleErrorRetry"
+      @dismiss="handleErrorDismiss"
+    />
 
     <!-- Progress Phase and Step Indicator -->
     <div class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
