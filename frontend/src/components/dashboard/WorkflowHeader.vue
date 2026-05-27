@@ -10,12 +10,66 @@ const workflowStore = useWorkflowStore()
 // Memoized phase order for performance
 const phaseOrder = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'completed'] as const
 
+// Default time estimates per phase (in seconds) - based on typical execution
+const phaseTimeEstimates: Record<string, number> = {
+  idle: 0,
+  scouting: 30,
+  planning: 45,
+  creating: 90,
+  reviewing: 0, // User-controlled, no estimate
+  publishing: 20,
+  analyzing: 30,
+  engaging: 15,
+  completed: 0,
+  error: 0,
+}
+
 // Progress calculation based on current phase
 const workflowProgress = computed(() => {
   const currentPhase = workflowStore.currentPhase
   const currentIndex = phaseOrder.indexOf(currentPhase as any)
   if (currentIndex === -1) return 0
   return Math.round((currentIndex / (phaseOrder.length - 1)) * 100)
+})
+
+// Estimated time remaining calculation
+const estimatedTimeRemaining = computed(() => {
+  const phase = workflowStore.currentPhase
+  if (phase === 'completed' || phase === 'error' || phase === 'idle' || phase === 'reviewing') {
+    return null
+  }
+
+  // Sum remaining phases' estimates
+  const currentIndex = phaseOrder.indexOf(phase as any)
+  if (currentIndex === -1) return null
+
+  let remainingSeconds = 0
+  for (let i = currentIndex; i < phaseOrder.length; i++) {
+    remainingSeconds += phaseTimeEstimates[phaseOrder[i]] || 0
+  }
+
+  // Adjust based on current progress (if we're 50% through a phase, halve its estimate)
+  const progressPercent = workflowProgress.value
+  const phaseProgress = progressPercent % 20 // Approximate progress within phase
+  if (phaseProgress > 0 && remainingSeconds > 0) {
+    const currentPhaseEstimate = phaseTimeEstimates[phase] || 0
+    const phaseProgressFraction = phaseProgress / 20
+    remainingSeconds -= Math.round(currentPhaseEstimate * phaseProgressFraction)
+  }
+
+  return remainingSeconds > 0 ? remainingSeconds : null
+})
+
+// Format time remaining as human-readable string
+const timeRemainingDisplay = computed(() => {
+  const seconds = estimatedTimeRemaining.value
+  if (seconds === null) return ''
+
+  if (seconds < 60) {
+    return `约 ${seconds} 秒`
+  }
+  const minutes = Math.round(seconds / 60)
+  return `约 ${minutes} 分钟`
 })
 </script>
 
@@ -42,6 +96,11 @@ const workflowProgress = computed(() => {
         </div>
         <div class="text-xl font-semibold text-slate-800">
           {{ workflowStore.currentPhase === 'idle' ? '等待启动' : `${workflowStore.currentPhase} 阶段` }}
+        </div>
+        <!-- Estimated time remaining -->
+        <div v-if="timeRemainingDisplay" class="flex items-center gap-2 text-sm text-slate-500">
+          <AppIcon name="Clock" size="sm" variant="cyan" aria-hidden="true" />
+          <span>预计剩余时间: {{ timeRemainingDisplay }}</span>
         </div>
         <MiniProgress :value="workflowProgress" variant="cyan" class="max-w-xs" aria-hidden="true" />
       </div>
