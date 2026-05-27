@@ -40,29 +40,36 @@ const getNodeStatus = (phase: string) => {
 </script>
 
 <template>
-  <div class="bg-white/98 backdrop-blur-sm rounded-2xl p-6 border border-slate-200/50 shadow-sm">
+  <div
+    class="bg-white/98 backdrop-blur-sm rounded-2xl p-6 border border-slate-200/50 shadow-sm"
+    role="region"
+    aria-label="工作流进度"
+  >
     <div class="flex items-center gap-2 mb-5">
-      <AppIcon name="GitBranch" size="md" variant="cyan" />
+      <AppIcon name="GitBranch" size="md" variant="cyan" aria-hidden="true" />
       <span class="text-xs text-slate-500 uppercase tracking-wide font-medium">Workflow Pipeline</span>
     </div>
 
-    <!-- Progress line -->
-    <div class="relative py-4">
-      <div class="absolute top-1/2 left-0 right-0 h-1 bg-slate-100 rounded-full" />
+    <!-- Progress line with ARIA -->
+    <div class="relative py-4" role="progressbar" :aria-valuenow="workflowProgress" aria-valuemin="0" aria-valuemax="100" :aria-label="`工作流进度 ${workflowProgress}%`">
+      <div class="absolute top-1/2 left-0 right-0 h-1 bg-slate-100 rounded-full" aria-hidden="true" />
       <div
         class="absolute top-1/2 left-0 h-1 bg-gradient-to-r from-rose-400 to-teal-400 rounded-full transition-all duration-500"
         :style="{ width: `${workflowProgress}%` }"
+        aria-hidden="true"
       />
     </div>
 
-    <!-- Nodes -->
-    <div class="flex justify-between items-center relative px-4">
+    <!-- Nodes with ARIA labels -->
+    <div class="flex justify-between items-center relative px-4" role="list" aria-label="工作流阶段">
       <WorkflowNode
         v-for="node in workflowNodes"
         :key="node.phase"
         :icon="node.icon"
         :label="node.label"
         :status="getNodeStatus(node.phase)"
+        role="listitem"
+        :aria-label="`${node.label} - ${getNodeStatus(node.phase)}`"
       />
     </div>
   </div>
