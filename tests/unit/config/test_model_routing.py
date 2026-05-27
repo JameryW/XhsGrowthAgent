@@ -1,6 +1,6 @@
 """Model routing tests."""
 
-from xhs_growth.config.models import (
+from backend.config.models import (
     TaskType,
     ModelProvider,
     resolve_model_id,

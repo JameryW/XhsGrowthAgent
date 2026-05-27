@@ -5,11 +5,11 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from xhs_growth.services.visual_analysis import VisualAnalysisService
-from xhs_growth.services.xhs_client import XHSSearchResult, XHSClient
-from xhs_growth.memory.scene_database import SceneDatabase
-from xhs_growth.services.visual_extractor import VisualDataExtractor
-from xhs_growth.models.visual_types import (
+from backend.services.visual_analysis import VisualAnalysisService
+from backend.services.xhs_client import XHSSearchResult, XHSClient
+from backend.memory.scene_database import SceneDatabase
+from backend.services.visual_extractor import VisualDataExtractor
+from backend.models.visual_types import (
     ColorPalette,
     LayoutOption,
     SceneAnalysisResult,

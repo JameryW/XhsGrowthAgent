@@ -1,6 +1,6 @@
 """Cost tracker tests."""
 
-from xhs_growth.models.cost_tracker import CostTracker
+from backend.models.cost_tracker import CostTracker
 
 
 def test_record_usage():

@@ -1,5 +1,5 @@
 import pytest
-from xhs_growth.api.errors import (
+from backend.api.errors import (
     ErrorCode, APIError,
     WorkflowNotFoundError, ValidationError, ReviewNotPendingError
 )

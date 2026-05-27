@@ -3,8 +3,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 import pytest
 
-from xhs_growth.agents.copywriter import CopywriterAgent
-from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase
+from backend.agents.copywriter import CopywriterAgent
+from backend.state.schema import XHSGrowthState, WorkflowPhase
 
 
 class TestCopywriterAgent:

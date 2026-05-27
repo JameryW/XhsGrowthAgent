@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted } from 'vue'
 import { useToastStore } from "@/stores/toast"
 import type { ToastType } from "@/stores/toast"
 import AppIcon from "@/components/AppIcon.vue"
@@ -40,16 +41,34 @@ const toastStyles: Record<ToastType, {
 function closeToast(id: string) {
   toastStore.removeToast(id)
 }
+
+// Keyboard: Escape to dismiss latest toast
+function handleKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && toastStore.toasts.length > 0) {
+    const latestToast = toastStore.toasts[toastStore.toasts.length - 1]
+    closeToast(latestToast.id)
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyDown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+})
 </script>
 
 <template>
-  <div class="fixed top-12 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
+  <div class="fixed top-12 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none" role="region" aria-label="通知">
     <TransitionGroup name="toast">
       <div
         v-for="toast in toastStore.toasts"
         :key="toast.id"
         class="p-4 rounded-xl border backdrop-blur-sm bg-white/98 shadow-lg pointer-events-auto"
         :class="[toastStyles[toast.type].borderClass]"
+        role="alert"
+        :aria-live="toast.type === 'error' ? 'assertive' : 'polite'"
       >
         <div class="flex items-start gap-3">
           <!-- Icon -->

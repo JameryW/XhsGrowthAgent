@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from xhs_growth.cli.main import app
+from backend.cli.main import app
 
 
 runner = CliRunner()

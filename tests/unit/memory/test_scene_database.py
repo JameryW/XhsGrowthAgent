@@ -15,8 +15,8 @@ from unittest.mock import patch
 
 import pytest
 
-from xhs_growth.memory.scene_database import SceneDatabase
-from xhs_growth.models.visual_types import (
+from backend.memory.scene_database import SceneDatabase
+from backend.models.visual_types import (
     ColorPalette,
     LayoutOption,
     SceneAnalysisResult,

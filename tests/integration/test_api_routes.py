@@ -10,9 +10,9 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
-from xhs_growth.api.app import app
-from xhs_growth.state.enums import WorkflowPhase, ContentStatus
-from xhs_growth.api.responses import ApiResponse
+from backend.api.app import app
+from backend.state.enums import WorkflowPhase, ContentStatus
+from backend.api.responses import ApiResponse
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
@@ -148,7 +148,9 @@ class TestWorkflowRoutes:
         assert data["success"] is True
         assert data["data"] is not None
         assert data["data"]["thread_id"] == "xhs_test_abc123"
-        assert "values" in data["data"]
+        assert "phase" in data["data"]
+        assert "current_agent" in data["data"]
+        assert "progress_percent" in data["data"]
         assert data["error"] is None
 
     def test_get_workflow_status_not_found(self, client, mock_graph):

@@ -3,14 +3,14 @@
 from unittest.mock import AsyncMock, patch, MagicMock
 import pytest
 
-from xhs_growth.tools.ripple.client import (
+from backend.tools.ripple.client import (
     ripple_predict_content_spread,
     ripple_validate_pmf,
     ripple_get_simulation_status,
     ripple_get_simulation_result,
     ripple_generate_report,
 )
-from xhs_growth.tools.ripple.integration import (
+from backend.tools.ripple.integration import (
     predict_spread,
     validate_pmf,
     parse_spread_prediction,
@@ -78,7 +78,7 @@ def test_parse_pmf_result_error():
 @pytest.mark.asyncio
 async def test_predict_spread_handles_failure():
     """传播预测失败时返回错误"""
-    with patch("xhs_growth.tools.ripple.integration.ripple_predict_content_spread") as mock_tool:
+    with patch("backend.tools.ripple.integration.ripple_predict_content_spread") as mock_tool:
         mock_tool.ainvoke = AsyncMock(side_effect=Exception("Connection refused"))
         result = await predict_spread(topic="测试话题")
         assert "error" in result
@@ -87,7 +87,7 @@ async def test_predict_spread_handles_failure():
 
 def test_ripple_settings_default():
     """Ripple 配置默认值"""
-    from xhs_growth.config.settings import RippleSettings
+    from backend.config.settings import RippleSettings
 
     s = RippleSettings()
     assert s.base_url == "http://127.0.0.1:8081"
@@ -98,7 +98,7 @@ def test_ripple_settings_default():
 
 def test_tool_registry_has_ripple():
     """工具注册表包含 Ripple 工具"""
-    from xhs_growth.tools.registry import ToolRegistry
+    from backend.tools.registry import ToolRegistry
 
     ToolRegistry.register_ripple_tools()
     names = ToolRegistry.available_tool_names()
@@ -110,7 +110,7 @@ def test_tool_registry_has_ripple():
 
 def test_content_strategist_has_ripple_tools():
     """ContentStrategist agent 分配有 Ripple 工具"""
-    from xhs_growth.tools.registry import ToolRegistry
+    from backend.tools.registry import ToolRegistry
 
     ToolRegistry.register_ripple_tools()
     tools = ToolRegistry.get_tools_for_agent("content_strategist")
@@ -121,7 +121,7 @@ def test_content_strategist_has_ripple_tools():
 
 def test_analyst_has_ripple_tools():
     """Analyst agent 分配有 Ripple 工具"""
-    from xhs_growth.tools.registry import ToolRegistry
+    from backend.tools.registry import ToolRegistry
 
     ToolRegistry.register_ripple_tools()
     tools = ToolRegistry.get_tools_for_agent("analyst")

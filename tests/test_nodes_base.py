@@ -1,7 +1,7 @@
 """Tests for nodes base classes."""
 import pytest
-from xhs_growth.agents.nodes._base import NodeContext, NodeResult
-from xhs_growth.state.schema import XHSGrowthState
+from backend.agents.nodes._base import NodeContext, NodeResult
+from backend.state.schema import XHSGrowthState
 
 
 def test_node_context_creation():

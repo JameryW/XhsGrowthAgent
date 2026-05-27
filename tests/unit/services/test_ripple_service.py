@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 import httpx
 
-from xhs_growth.services.ripple_service import RippleService, RippleHealthStatus
+from backend.services.ripple_service import RippleService, RippleHealthStatus
 
 
 class TestRippleServiceSingleton:

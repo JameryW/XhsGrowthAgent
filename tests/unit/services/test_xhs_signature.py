@@ -2,7 +2,7 @@
 
 import pytest
 
-from xhs_growth.services.xhs_signature import XHSSignature, XHSCookieParser
+from backend.services.xhs_signature import XHSSignature, XHSCookieParser
 
 
 class TestXHSSignature:

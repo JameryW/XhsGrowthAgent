@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
 import pytest
 
-from xhs_growth.agents.base import BaseAgent
-from xhs_growth.config.models import TaskType
-from xhs_growth.state.schema import XHSGrowthState
+from backend.agents.base import BaseAgent
+from backend.config.models import TaskType
+from backend.state.schema import XHSGrowthState
 
 
 class TestBaseAgent:
@@ -56,7 +56,7 @@ user_template: "Process this: {topic}"
 
         agent = DummyAgent()
         # Temporarily patch the path resolution
-        original_path = Path(__file__).parent.parent.parent.parent / "xhs_growth" / "config" / "prompts"
+        original_path = Path(__file__).parent.parent.parent.parent / "backend" / "config" / "prompts"
         with patch.object(Path, "parent", return_value=tmp_path.parent):
             with patch.object(Path, "__truediv__", return_value=tmp_path):
                 template = agent._load_prompt()
@@ -239,7 +239,7 @@ Some text after"""
             async def execute(self, state, store):
                 return {}
 
-        with patch("xhs_growth.agents.base.get_model") as mock_get_model:
+        with patch("backend.agents.base.get_model") as mock_get_model:
             mock_model = MagicMock()
             mock_get_model.return_value = mock_model
 

@@ -13,7 +13,7 @@ class TestColorPalette:
 
     def test_color_palette_creation(self):
         """Test ColorPalette can be created with required fields."""
-        from xhs_growth.models.visual_types import ColorPalette
+        from backend.models.visual_types import ColorPalette
 
         palette = ColorPalette(
             primary_colors=["#FF6B6B", "#4ECDC4", "#45B7D1"],
@@ -27,7 +27,7 @@ class TestColorPalette:
 
     def test_color_palette_defaults(self):
         """Test ColorPalette default values."""
-        from xhs_growth.models.visual_types import ColorPalette
+        from backend.models.visual_types import ColorPalette
 
         palette = ColorPalette(
             primary_colors=["#FF6B6B"],
@@ -41,7 +41,7 @@ class TestColorPalette:
 
     def test_color_palette_to_dict(self):
         """Test ColorPalette has to_dict() method."""
-        from xhs_growth.models.visual_types import ColorPalette
+        from backend.models.visual_types import ColorPalette
 
         palette = ColorPalette(
             primary_colors=["#FF6B6B"],
@@ -62,7 +62,7 @@ class TestLayoutOption:
 
     def test_layout_option_creation_all_fields(self):
         """Test LayoutOption can be created with all 10 required fields."""
-        from xhs_growth.models.visual_types import LayoutOption
+        from backend.models.visual_types import LayoutOption
 
         layout = LayoutOption(
             layout_type="grid_3x3",
@@ -97,7 +97,7 @@ class TestLayoutOption:
 
     def test_layout_option_defaults(self):
         """Test LayoutOption default values for optional fields."""
-        from xhs_growth.models.visual_types import LayoutOption
+        from backend.models.visual_types import LayoutOption
 
         layout = LayoutOption(
             layout_type="single_image",
@@ -115,7 +115,7 @@ class TestLayoutOption:
 
     def test_layout_option_to_dict(self):
         """Test LayoutOption has to_dict() method with all fields."""
-        from xhs_growth.models.visual_types import LayoutOption
+        from backend.models.visual_types import LayoutOption
 
         layout = LayoutOption(
             layout_type="carousel",
@@ -150,7 +150,7 @@ class TestStyleOption:
 
     def test_style_option_creation_all_fields(self):
         """Test StyleOption can be created with all 10 required fields."""
-        from xhs_growth.models.visual_types import StyleOption
+        from backend.models.visual_types import StyleOption
 
         style = StyleOption(
             style_name="minimalist_clean",
@@ -185,7 +185,7 @@ class TestStyleOption:
 
     def test_style_option_with_empty_palette(self):
         """Test StyleOption can have empty color_palette."""
-        from xhs_growth.models.visual_types import StyleOption
+        from backend.models.visual_types import StyleOption
 
         style = StyleOption(
             style_name="vintage_warm",
@@ -199,7 +199,7 @@ class TestStyleOption:
 
     def test_style_option_defaults(self):
         """Test StyleOption default values for optional fields."""
-        from xhs_growth.models.visual_types import StyleOption
+        from backend.models.visual_types import StyleOption
 
         style = StyleOption(
             style_name="bold_colorful",
@@ -217,7 +217,7 @@ class TestStyleOption:
 
     def test_style_option_to_dict(self):
         """Test StyleOption has to_dict() method with all fields."""
-        from xhs_growth.models.visual_types import StyleOption
+        from backend.models.visual_types import StyleOption
 
         style = StyleOption(
             style_name="minimalist_clean",
@@ -248,7 +248,7 @@ class TestStyleOption:
 
     def test_style_option_to_dict_with_empty_palette(self):
         """Test StyleOption to_dict() with empty color_palette."""
-        from xhs_growth.models.visual_types import StyleOption
+        from backend.models.visual_types import StyleOption
 
         style = StyleOption(
             style_name="vintage",
@@ -273,7 +273,7 @@ class TestSceneAnalysisResult:
 
     def test_scene_analysis_result_creation_all_fields(self):
         """Test SceneAnalysisResult can be created with all 9 required fields."""
-        from xhs_growth.models.visual_types import SceneAnalysisResult, ColorPalette
+        from backend.models.visual_types import SceneAnalysisResult, ColorPalette
 
         palettes = [
             ColorPalette(
@@ -315,7 +315,7 @@ class TestSceneAnalysisResult:
 
     def test_scene_analysis_result_defaults(self):
         """Test SceneAnalysisResult default values for optional fields."""
-        from xhs_growth.models.visual_types import SceneAnalysisResult
+        from backend.models.visual_types import SceneAnalysisResult
 
         result = SceneAnalysisResult(
             scene="food_restaurant",
@@ -332,7 +332,7 @@ class TestSceneAnalysisResult:
 
     def test_scene_analysis_result_to_dict(self):
         """Test SceneAnalysisResult has to_dict() method with all fields."""
-        from xhs_growth.models.visual_types import SceneAnalysisResult, ColorPalette
+        from backend.models.visual_types import SceneAnalysisResult, ColorPalette
 
         palettes = [
             ColorPalette(
@@ -371,7 +371,7 @@ class TestSceneAnalysisResult:
 
     def test_scene_analysis_result_to_dict_with_none_timestamp(self):
         """Test SceneAnalysisResult to_dict() with None analyzed_at."""
-        from xhs_growth.models.visual_types import SceneAnalysisResult
+        from backend.models.visual_types import SceneAnalysisResult
 
         result = SceneAnalysisResult(
             scene="test_scene",
@@ -385,7 +385,7 @@ class TestSceneAnalysisResult:
 
     def test_scene_analysis_result_no_generic_dicts(self):
         """Test that SceneAnalysisResult does NOT have generic distributions or trending_items dicts."""
-        from xhs_growth.models.visual_types import SceneAnalysisResult
+        from backend.models.visual_types import SceneAnalysisResult
 
         result = SceneAnalysisResult(
             scene="test",

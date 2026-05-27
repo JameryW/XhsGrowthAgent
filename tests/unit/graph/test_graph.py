@@ -1,6 +1,6 @@
 """Graph topology tests — verify node/edge structure."""
 
-from xhs_growth.graph.builder import build_graph
+from backend.graph.builder import build_graph
 
 
 def test_graph_builds():
@@ -30,7 +30,7 @@ def test_graph_has_all_nodes():
 
 def test_graph_compiles_dev():
     """开发模式图可以正常编译"""
-    from xhs_growth.graph.builder import compile_graph_dev
+    from backend.graph.builder import compile_graph_dev
 
     graph = compile_graph_dev()
     assert graph is not None
@@ -38,7 +38,7 @@ def test_graph_compiles_dev():
 
 def test_graph_has_interrupt():
     """编译后的图在 review_gate 前有中断"""
-    from xhs_growth.graph.builder import compile_graph_dev
+    from backend.graph.builder import compile_graph_dev
 
     graph = compile_graph_dev()
     # interrupt_before 应包含 review_gate

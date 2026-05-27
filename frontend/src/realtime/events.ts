@@ -1,6 +1,6 @@
 // frontend/src/realtime/events.ts
 
-/** 事件类型枚举 - 与后端xhs_growth.realtime.events.EventType同步 */
+/** 事件类型枚举 - 与后端backend.realtime.events.EventType同步 */
 
 export enum EventType {
   // Workflow

@@ -1,7 +1,7 @@
 """Tests for agent mixins."""
 import pytest
-from xhs_growth.agents.mixins.retry_mixin import RetryMixin
-from xhs_growth.agents.mixins.validation_mixin import ValidationMixin
+from backend.agents.mixins.retry_mixin import RetryMixin
+from backend.agents.mixins.validation_mixin import ValidationMixin
 
 
 class TestRetryMixin:
@@ -48,7 +48,7 @@ class TestRetryMixin:
 class TestValidationMixin:
     def test_validate_state_update_valid_field(self):
         """Verify ValidationMixin passes valid fields."""
-        from xhs_growth.state.schema import XHSGrowthState
+        from backend.state.schema import XHSGrowthState
 
         class MockAgent(ValidationMixin):
             pass
@@ -59,7 +59,7 @@ class TestValidationMixin:
 
     def test_validate_state_update_invalid_field(self):
         """Verify ValidationMixin raises on invalid field."""
-        from xhs_growth.state.schema import XHSGrowthState
+        from backend.state.schema import XHSGrowthState
 
         class MockAgent(ValidationMixin):
             pass

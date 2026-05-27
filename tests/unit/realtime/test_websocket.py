@@ -1,8 +1,8 @@
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from xhs_growth.realtime.websocket import WebSocketManager, WsSession
-from xhs_growth.realtime.events import EventType, Event
+from backend.realtime.websocket import WebSocketManager, WsSession
+from backend.realtime.events import EventType, Event
 
 
 @pytest.fixture(autouse=True)
@@ -70,7 +70,7 @@ def test_websocket_manager_singleton():
 @pytest.mark.asyncio
 async def test_handle_connection_lifecycle():
     """handle_connection生命周期：subscribe/unsubscribe/ping"""
-    from xhs_growth.realtime.event_bus import EventBusService
+    from backend.realtime.event_bus import EventBusService
 
     # Reset EventBusService singleton
     EventBusService._instance = None
@@ -115,7 +115,7 @@ async def test_handle_connection_lifecycle():
 @pytest.mark.asyncio
 async def test_handle_connection_disconnect():
     """handle_connection处理WebSocketDisconnect异常"""
-    from xhs_growth.realtime.event_bus import EventBusService
+    from backend.realtime.event_bus import EventBusService
     from fastapi import WebSocketDisconnect
 
     # Reset EventBusService singleton
@@ -149,7 +149,7 @@ async def test_handle_connection_disconnect():
 @pytest.mark.asyncio
 async def test_handle_client_message_get_missed():
     """_handle_client_message处理get_missed动作"""
-    from xhs_growth.realtime.event_bus import EventBusService
+    from backend.realtime.event_bus import EventBusService
 
     # Reset EventBusService singleton
     EventBusService._instance = None

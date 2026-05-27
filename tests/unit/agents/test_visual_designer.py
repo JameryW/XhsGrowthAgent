@@ -3,8 +3,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 import pytest
 
-from xhs_growth.agents.visual_designer import VisualDesignerAgent
-from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase
+from backend.agents.visual_designer import VisualDesignerAgent
+from backend.state.schema import XHSGrowthState, WorkflowPhase
 
 
 class TestVisualDesignerAgent:

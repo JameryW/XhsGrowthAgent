@@ -3,8 +3,8 @@
 from unittest.mock import AsyncMock
 import pytest
 
-from xhs_growth.agents.orchestrator import OrchestratorAgent
-from xhs_growth.state.schema import XHSGrowthState, WorkflowPhase
+from backend.agents.orchestrator import OrchestratorAgent
+from backend.state.schema import XHSGrowthState, WorkflowPhase
 
 
 class TestOrchestratorAgent:

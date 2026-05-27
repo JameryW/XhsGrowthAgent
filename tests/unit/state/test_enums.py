@@ -1,5 +1,5 @@
 import pytest
-from xhs_growth.state.enums import WorkflowPhase, ContentStatus, ContentType, Urgency
+from backend.state.enums import WorkflowPhase, ContentStatus, ContentType, Urgency
 
 def test_workflow_phase_values():
     assert WorkflowPhase.IDLE.value == "idle"

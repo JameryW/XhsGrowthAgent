@@ -1,0 +1,72 @@
+"""Review API routes — human-in-the-loop content review."""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Request
+from pydantic import BaseModel
+from langgraph.types import Command
+
+from backend.api.responses import success
+from backend.api.errors import ReviewNotPendingError
+from backend.state.enums import ContentStatus
+
+router = APIRouter()
+
+
+class ReviewDecision(BaseModel):
+    decision: ContentStatus
+    comments: str = ""
+    revisions: list[str] = []
+
+
+@router.get("/pending/{thread_id}")
+async def get_pending_review(thread_id: str, request: Request):
+    """获取待审核内容"""
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    state = await graph.aget_state(config)
+
+    # 检查是否在审核门等待
+    if "review_gate" in state.next:
+        values = state.values
+        return success(
+            data={
+                "status": "awaiting_review",
+                "content_plan": values.get("content_plan", {}),
+                "copy_content": values.get("copy_content", {}),
+                "visual_plan": values.get("visual_plan", {}),
+            }
+        )
+
+    # No pending review - raise exception
+    current_phase = state.values.get("phase", "unknown")
+    raise ReviewNotPendingError(thread_id=thread_id, current_phase=current_phase)
+
+
+@router.post("/submit/{thread_id}")
+async def submit_review(thread_id: str, decision: ReviewDecision, request: Request):
+    """提交审核决定"""
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    # Verify workflow is awaiting review before resuming
+    state = await graph.aget_state(config)
+    if "review_gate" not in state.next:
+        current_phase = state.values.get("phase", "unknown")
+        raise ReviewNotPendingError(thread_id=thread_id, current_phase=current_phase)
+
+    # 用 Command(resume=...) 恢复中断的图
+    result = await graph.ainvoke(
+        Command(resume=decision.model_dump()),
+        config,
+    )
+
+    return success(
+        data={
+            "thread_id": thread_id,
+            "status": "resumed",
+            "decision": decision.decision.value,
+            "next_phase": result.get("phase", "unknown") if result else "unknown",
+        }
+    )
