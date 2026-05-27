@@ -220,6 +220,8 @@ function toggleViralLinks() {
         <button
           @click="toggleViralLinks"
           :disabled="props.isLoading"
+          :aria-expanded="showViralLinks"
+          aria-controls="viral-links-section"
           class="flex items-center gap-2 text-xs text-slate-500 hover:text-teal-500 transition-colors"
         >
           <AppIcon :name="showViralLinks ? 'ChevronDown' : 'ChevronRight'" size="sm" variant="cyan" />
@@ -227,7 +229,7 @@ function toggleViralLinks() {
         </button>
 
         <!-- Viral links input (collapsible) -->
-        <div v-if="showViralLinks" class="mt-3">
+        <div v-if="showViralLinks" id="viral-links-section" class="mt-3">
           <textarea
             v-model="viralLinks"
             :disabled="props.isLoading"
