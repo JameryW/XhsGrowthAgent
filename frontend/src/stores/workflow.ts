@@ -8,8 +8,8 @@ import { useOfflineStore } from './offline'
 import { EventType } from '@/realtime/events'
 
 export const useWorkflowStore = defineStore('workflow', () => {
-  // State
-  const currentThreadId = ref<string | null>(null)
+  // State - restore threadId from localStorage
+  const currentThreadId = ref<string | null>(localStorage.getItem('currentThreadId'))
   const workflowState = ref<WorkflowStateResponse | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
@@ -17,13 +17,13 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   // Computed
   const currentPhase = computed<WorkflowPhase>(() =>
-    workflowState.value?.values?.phase || 'idle'
+    workflowState.value?.phase || 'idle'
   )
 
-  const nextNodes = computed(() => workflowState.value?.next || [])
+  const nextNodes = computed(() => workflowState.value?.next_steps || [])
 
   const isRunning = computed(() =>
-    (workflowState.value?.next?.length ?? 0) > 0 && currentPhase.value !== 'completed'
+    (workflowState.value?.next_steps?.length ?? 0) > 0 && currentPhase.value !== 'completed'
   )
 
   const trendData = computed(() => workflowState.value?.values?.trend_data || {})
@@ -54,14 +54,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
   realtimeStore.wsService.onEvent(EventType.WORKFLOW_PHASE_CHANGED, (payload: unknown) => {
     const p = payload as { thread_id?: string; old_phase?: string; new_phase?: string; current_agent?: string }
     if (p.thread_id === currentThreadId.value && workflowState.value) {
-      const newPhase = p.new_phase || workflowState.value.values.phase
+      const newPhase = p.new_phase || workflowState.value.phase
       workflowState.value = {
         ...workflowState.value,
-        values: {
-          ...workflowState.value.values,
-          phase: newPhase as WorkflowPhase,
-          current_agent: p.current_agent,
-        },
+        phase: newPhase as WorkflowPhase,
+        current_agent: p.current_agent,
       }
       // Update progress
       progressPercent.value = PHASE_PROGRESS[newPhase] || 0
@@ -77,13 +74,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
   realtimeStore.wsService.onEvent(EventType.WORKFLOW_DATA_UPDATED, (payload: unknown) => {
     const p = payload as { thread_id?: string; data_type?: string; data?: unknown }
     if (p.thread_id === currentThreadId.value && workflowState.value && p.data_type && p.data) {
-      workflowState.value = {
-        ...workflowState.value,
-        values: {
-          ...workflowState.value.values,
-          [p.data_type]: p.data,
-        },
-      }
+      // Store data updates in a separate object since backend doesn't return values
+      ;(workflowState.value as any)[p.data_type] = p.data
     }
   })
 
@@ -92,11 +84,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (p.thread_id === currentThreadId.value && workflowState.value) {
       workflowState.value = {
         ...workflowState.value,
-        values: {
-          ...workflowState.value.values,
-          phase: 'completed',
-        },
-        next: [],
+        phase: 'completed',
+        next_steps: [],
       }
       progressPercent.value = 100
       toastStore.success('工作流完成', `Thread: ${p.thread_id}`)
@@ -108,11 +97,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (p.thread_id === currentThreadId.value && workflowState.value) {
       workflowState.value = {
         ...workflowState.value,
-        values: {
-          ...workflowState.value.values,
-          phase: 'error',
-          error: p.error,
-        },
+        phase: 'error',
+        error: p.error,
       }
       progressPercent.value = 0
       toastStore.error('工作流错误', `Agent: ${p.agent} - ${p.error}`)
@@ -138,6 +124,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     try {
       const result = await workflowApi.startWorkflow({ account_id: accountId, phase })
       currentThreadId.value = result.thread_id
+      localStorage.setItem('currentThreadId', result.thread_id)
       progressPercent.value = PHASE_PROGRESS[phase] || 0
       await refreshStatus()
       // Connect WebSocket and subscribe
@@ -173,7 +160,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     try {
       workflowState.value = await workflowApi.getWorkflowStatus(currentThreadId.value)
       // Update progress from state
-      const phase = workflowState.value?.values?.phase || 'idle'
+      const phase = workflowState.value?.phase || 'idle'
       progressPercent.value = PHASE_PROGRESS[phase] || 0
     } catch (e: any) {
       error.value = e.message

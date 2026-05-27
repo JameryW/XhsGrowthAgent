@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+
+# 加载 .env 文件（必须在其他导入之前）
+load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,7 +44,7 @@ from backend.api.routes import workflow, review, analytics, realtime  # noqa: E4
 app.include_router(workflow.router, prefix="/api/workflow", tags=["workflow"])
 app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
-app.include_router(realtime.router, prefix="/api", tags=["realtime"])
+app.include_router(realtime.router, tags=["realtime"])  # WebSocket 不需要 /api 前缀
 
 
 @app.get("/health")

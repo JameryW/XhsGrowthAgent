@@ -110,6 +110,7 @@ export interface CopyContent {
   cta: string
   emoji_usage: string[]
   tone: Tone
+  raw_content?: string // Fallback for malformed JSON
 }
 
 // Visual plan
@@ -137,10 +138,14 @@ export interface WorkflowState {
   updated_at: string
 }
 
-// Workflow state response (with next field for LangGraph)
+// Workflow state response (matches backend WorkflowStatusResponse)
 export interface WorkflowStateResponse {
   thread_id: string
-  next: string[]
-  values: WorkflowState
+  phase: WorkflowPhase
+  current_agent?: string
+  next_steps: string[]
+  error?: string | null
+  progress_percent: number
   created_at?: string
+  updated_at?: string
 }

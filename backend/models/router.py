@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
+from dotenv import load_dotenv
+
+# 加载 .env 文件（确保环境变量可用）
+load_dotenv()
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel

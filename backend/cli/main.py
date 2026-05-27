@@ -162,7 +162,11 @@ def serve(
     port: int = typer.Option(8000, help="监听端口"),
 ):
     """启动 API 服务"""
+    from dotenv import load_dotenv
     import uvicorn
+
+    # 加载 .env 文件
+    load_dotenv()
 
     console.print(Panel(f"🌐 启动 API 服务: {host}:{port}", style="bold blue"))
     uvicorn.run("backend.api.app:app", host=host, port=port, reload=True)

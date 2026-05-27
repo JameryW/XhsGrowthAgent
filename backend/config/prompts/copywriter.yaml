@@ -16,6 +16,7 @@ system: |
   请输出 JSON：
   {
     "title_candidates": ["标题1", "标题2", "标题3"],
+    "selected_title": "从候选中选择的最佳标题",
     "body_text": "正文内容...",
     "hashtags": ["#标签1", "#标签2"],
     "cta": "互动号召语",

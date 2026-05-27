@@ -77,18 +77,18 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
 def resolve_model_id(task_type: TaskType, routing_overrides: dict[str, str] | None = None) -> str:
     """根据任务类型解析模型 ID，支持用户覆盖"""
     routing = {
-        TaskType.ROUTING: "deepseek-chat",
-        TaskType.SCOUTING: "deepseek-chat",
-        TaskType.STRATEGY: "claude-sonnet-4-20250514",
-        TaskType.WRITING: "claude-sonnet-4-20250514",
-        TaskType.VISUAL: "gpt-4o",
-        TaskType.ANALYSIS: "gpt-4o",
-        TaskType.PUBLISHING: "qwen-plus",
-        TaskType.ENGAGEMENT: "deepseek-chat",
+        TaskType.ROUTING: "mimo-v2.5-pro",
+        TaskType.SCOUTING: "mimo-v2.5-pro",
+        TaskType.STRATEGY: "mimo-v2.5-pro",
+        TaskType.WRITING: "mimo-v2.5-pro",
+        TaskType.VISUAL: "mimo-v2.5-pro",
+        TaskType.ANALYSIS: "mimo-v2.5-pro",
+        TaskType.PUBLISHING: "mimo-v2.5-pro",
+        TaskType.ENGAGEMENT: "mimo-v2.5-pro",
         # 新增
-        TaskType.VIRAL_MATCHING: "deepseek-chat",
-        TaskType.CONTENT_ANALYSIS: "claude-sonnet-4-20250514",
-        TaskType.VERSION_GEN: "gpt-4o",
+        TaskType.VIRAL_MATCHING: "mimo-v2.5-pro",
+        TaskType.CONTENT_ANALYSIS: "mimo-v2.5-pro",
+        TaskType.VERSION_GEN: "mimo-v2.5-pro",
     }
     if routing_overrides:
         for k, v in routing_overrides.items():

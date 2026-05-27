@@ -23,8 +23,39 @@ export const useReviewStore = defineStore('review', () => {
     pendingReview.value?.status === 'awaiting_review'
   )
 
+  // Helper to parse raw_content if fields are missing
+  function parseCopyContent(raw: CopyContent | undefined): CopyContent | undefined {
+    if (!raw) return undefined
+    // If expected fields exist, return as-is
+    if (raw.selected_title || raw.body_text) return raw
+    // If raw_content exists, try to parse it
+    if (raw.raw_content) {
+      try {
+        // Remove markdown code block markers if present
+        let jsonStr = raw.raw_content.trim()
+        if (jsonStr.includes('```json')) {
+          jsonStr = jsonStr.split('```json')[1].split('```')[0].trim()
+        } else if (jsonStr.includes('```')) {
+          const parts = jsonStr.split('```')
+          jsonStr = parts[1]?.trim() || jsonStr
+        }
+        // Find JSON object boundaries
+        const start = jsonStr.indexOf('{')
+        const end = jsonStr.lastIndexOf('}')
+        if (start !== -1 && end !== -1 && end > start) {
+          jsonStr = jsonStr.slice(start, end + 1)
+        }
+        const parsed = JSON.parse(jsonStr)
+        return parsed as CopyContent
+      } catch {
+        return raw
+      }
+    }
+    return raw
+  }
+
   const contentPlan = computed(() => pendingReview.value?.content_plan)
-  const copyContent = computed(() => pendingReview.value?.copy_content)
+  const copyContent = computed(() => parseCopyContent(pendingReview.value?.copy_content))
   const visualPlan = computed(() => pendingReview.value?.visual_plan)
 
   // WebSocket event handlers

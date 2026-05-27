@@ -73,42 +73,74 @@ class BaseAgent(ABC):
         return [item.value for item in items]
 
     def _parse_json_response(self, content: str) -> dict[str, Any]:
-        """从 LLM 响应中提取 JSON（增强版，处理多种格式）"""
-        try:
-            # 1. 尝试直接解析纯 JSON
-            stripped = content.strip()
-            if stripped.startswith("{") and stripped.endswith("}"):
-                return json.loads(stripped)
+        """从 LLM 响应中提取 JSON（增强版，处理多种格式和常见语法错误）"""
+        import re
 
-            # 2. 尝试从 markdown code block 中提取
-            if "```json" in content:
-                json_str = content.split("```json")[1].split("```")[0].strip()
-                return json.loads(json_str)
-            if "```" in content:
-                parts = content.split("```")
+        def repair_json(json_str: str) -> str:
+            """修复常见的 JSON 语法错误"""
+            # 修复缺少引号的值（如 #hashtag -> "#hashtag"）
+            # 匹配数组中缺少引号的元素: [, #value, -> , "#value",
+            json_str = re.sub(r',\s*#([^\s,\[\]"]+)', r', "#\1"', json_str)
+            # 修复缺少引号的值开头: [#value, -> ["#value",
+            json_str = re.sub(r'\[\s*#([^\s,\[\]"]+)', r'["#\1"', json_str)
+            # 修复缺少引号的值结尾: , #value] -> , "#value"]
+            json_str = re.sub(r',\s*#([^\s,\[\]"]+)\s*\]', r', "#\1"]', json_str)
+            return json_str
+
+        def extract_json_from_markdown(text: str) -> str:
+            """从 markdown 代码块中提取 JSON"""
+            if "```json" in text:
+                return text.split("```json")[1].split("```")[0].strip()
+            if "```" in text:
+                parts = text.split("```")
                 for i, part in enumerate(parts):
                     if i % 2 == 1:  # 奇数索引是代码块内容
-                        try:
-                            return json.loads(part.strip())
-                        except json.JSONDecodeError:
-                            continue
+                        return part.strip()
+            return text
 
-            # 3. 尝试从文本中提取 JSON 对象
-            import re
-            json_pattern = r'\{[^{}]*\}'
+        try:
+            # 1. 提取 JSON 内容
+            json_content = extract_json_from_markdown(content)
+
+            # 2. 尝试直接解析
+            try:
+                return json.loads(json_content)
+            except json.JSONDecodeError:
+                pass
+
+            # 3. 尝试修复常见语法错误后解析
+            repaired = repair_json(json_content)
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                pass
+
+            # 4. 尝试从文本中找到 JSON 对象边界
+            start = json_content.find("{")
+            end = json_content.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                json_str = json_content[start:end+1]
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    repaired = repair_json(json_str)
+                    try:
+                        return json.loads(repaired)
+                    except json.JSONDecodeError:
+                        pass
+
+            # 5. 尝试正则匹配 JSON 对象
+            json_pattern = r'\{(?:[^{}]|(?:\{(?:[^{}]|(?:\{[^{}]*\}))*\}))*\}'
             matches = re.findall(json_pattern, content)
             for match in matches:
                 try:
                     return json.loads(match)
                 except json.JSONDecodeError:
-                    continue
-
-            # 4. 尝试找到第一个 { 和最后一个 }
-            start = content.find("{")
-            end = content.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                json_str = content[start:end+1]
-                return json.loads(json_str)
+                    repaired = repair_json(match)
+                    try:
+                        return json.loads(repaired)
+                    except json.JSONDecodeError:
+                        continue
 
             # 所有方法都失败
             logger.warning(f"Failed to parse JSON response from {self.agent_name}: {content[:200]}")
