@@ -41,6 +41,14 @@ const handleCloseShortcutsHelp = () => {
 
 <template>
   <div class="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100/80 flex relative overflow-hidden">
+    <!-- Skip to main content link for keyboard users -->
+    <a
+      href="#main-content"
+      class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-teal-500 focus:text-white focus:rounded-lg focus:shadow-lg focus:outline-none"
+    >
+      跳转到主内容
+    </a>
+
     <!-- Animated gradient mesh -->
     <div class="absolute inset-0 pointer-events-none overflow-hidden">
       <div class="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full opacity-70 animate-pulse" style="background: radial-gradient(circle, rgba(244,63,94,0.15) 0%, transparent 50%); animation-duration: 4s;" />
@@ -63,7 +71,7 @@ const handleCloseShortcutsHelp = () => {
     <Navbar />
 
     <!-- 主内容区 -->
-    <main class="flex-1 p-8 overflow-auto relative z-10">
+    <main id="main-content" class="flex-1 p-8 overflow-auto relative z-10" tabindex="-1">
       <router-view v-slot="{ Component }">
         <transition name="page-transition" mode="out-in">
           <component :is="Component" />
