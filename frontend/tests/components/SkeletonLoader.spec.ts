@@ -27,6 +27,18 @@ describe('SkeletonLoader', () => {
     expect(avatar.attributes('style')).toContain('height: 48px')
   })
 
+  it('renders list skeleton with 3 items', () => {
+    const wrapper = mount(SkeletonLoader, {
+      props: { type: 'list' }
+    })
+    // List renders 3 items by default
+    expect(wrapper.findAll('.flex.gap-3')).toHaveLength(3)
+    // Each item has avatar + content structure
+    const firstItem = wrapper.findAll('.flex.gap-3')[0]
+    expect(firstItem.find('.w-10.h-10.rounded-full')).toBeDefined()
+    expect(firstItem.find('.flex-1').findAll('.shimmer-animation')).toHaveLength(2)
+  })
+
   it('applies shimmer animation class', () => {
     const wrapper = mount(SkeletonLoader, {
       props: { type: 'text', lines: 1 }
