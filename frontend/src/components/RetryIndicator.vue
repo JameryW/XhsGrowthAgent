@@ -78,7 +78,7 @@ onUnmounted(() => {
     <div class="flex items-center gap-3 mb-3">
       <!-- Retry icon with animation -->
       <div class="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
-        <AppIcon name="RefreshCw" size="sm" variant="yellow" animate />
+        <AppIcon name="RefreshCw" size="sm" variant="peach" animate />
       </div>
 
       <!-- Retry count text -->

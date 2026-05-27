@@ -27,7 +27,6 @@ const onlineStatus = computed(() => {
 })
 
 const isOffline = computed(() => !onlineStatus.value)
-const showReconnectionNotification = computed(() => wasOffline.value && onlineStatus.value)
 
 // Handle online/offline events
 const handleOnline = () => {

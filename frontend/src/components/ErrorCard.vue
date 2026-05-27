@@ -5,16 +5,6 @@ import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
 
 /**
- * Color mapping for error types
- */
-const ERROR_COLORS: Record<ErrorType, string> = {
-  api: '#f43f5e',        // rose-500
-  timeout: '#f59e0b',    // amber-500
-  unknown: '#8b5cf6',    // violet-500
-  retry_success: '#22c55e' // green-500
-}
-
-/**
  * Tailwind class mapping for error types
  */
 const ERROR_BG_CLASSES: Record<ErrorType, string> = {
@@ -52,7 +42,6 @@ const emit = defineEmits<{
 }>()
 
 // Computed
-const bgColor = computed(() => ERROR_COLORS[props.type])
 const bgClasses = computed(() => ERROR_BG_CLASSES[props.type])
 const iconBgClasses = computed(() => ERROR_ICON_BG_CLASSES[props.type])
 const textClasses = computed(() => ERROR_TEXT_CLASSES[props.type])
@@ -75,11 +64,11 @@ const iconVariant = computed(() => {
     case 'api':
       return 'pink'
     case 'timeout':
-      return 'yellow'
+      return 'peach'
     case 'unknown':
       return 'purple'
     case 'retry_success':
-      return 'green'
+      return 'cyan'
     default:
       return 'pink'
   }

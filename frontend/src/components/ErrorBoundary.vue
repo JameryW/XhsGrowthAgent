@@ -23,7 +23,7 @@ const errorInfo = ref('')
 const defaultMessage = '组件渲染出错'
 
 // Error captured lifecycle hook
-onErrorCaptured((error: Error, instance: ComponentPublicInstance, info: string) => {
+onErrorCaptured((error: Error, instance: ComponentPublicInstance | null, info: string) => {
   // Set error state
   hasError.value = true
   // Use custom fallback if provided, otherwise use actual error message
@@ -31,7 +31,9 @@ onErrorCaptured((error: Error, instance: ComponentPublicInstance, info: string) 
   errorInfo.value = info
 
   // Emit error event for parent handling
-  emit('error', error, instance, info)
+  if (instance) {
+    emit('error', error, instance, info)
+  }
 
   // Return false to prevent the error from propagating further
   return false
