@@ -3,12 +3,13 @@ import { onMounted, onUnmounted, ref } from "vue"
 import ConnectionStatus from "@/components/ConnectionStatus.vue"
 import Toast from "@/components/Toast.vue"
 import OfflineIndicator from "@/components/OfflineIndicator.vue"
+import OfflineRecovery from "@/components/OfflineRecovery.vue"
 import KeyboardShortcutsHelp from "@/components/KeyboardShortcutsHelp.vue"
 import Navbar from "@/components/Navbar.vue"
-import { useRealtimeStore, useOfflineStore } from "@/stores"
+import ErrorBoundary from "@/components/ErrorBoundary.vue"
+import { useRealtimeStore } from "@/stores"
 
 const realtimeStore = useRealtimeStore()
-const offlineStore = useOfflineStore()
 
 // Keyboard shortcuts help
 const showShortcutsHelp = ref(false)
@@ -36,6 +37,16 @@ onUnmounted(() => {
 
 const handleCloseShortcutsHelp = () => {
   showShortcutsHelp.value = false
+}
+
+// ErrorBoundary handler
+const handleErrorBoundaryError = (error: Error) => {
+  console.error('ErrorBoundary captured:', error)
+}
+
+const handleErrorBoundaryRefresh = () => {
+  // Force a page refresh to reset state
+  window.location.reload()
 }
 </script>
 
@@ -67,16 +78,25 @@ const handleCloseShortcutsHelp = () => {
     <!-- Keyboard shortcuts help -->
     <KeyboardShortcutsHelp :is-open="showShortcutsHelp" @close="handleCloseShortcutsHelp" />
 
+    <!-- Offline recovery bar (above navbar) -->
+    <OfflineRecovery />
+
     <!-- 左侧导航 -->
     <Navbar />
 
     <!-- 主内容区 -->
     <main id="main-content" class="flex-1 p-8 overflow-auto relative z-10" tabindex="-1">
-      <router-view v-slot="{ Component }">
-        <transition name="page-transition" mode="out-in">
-          <component :is="Component" />
-        </transition>
-      </router-view>
+      <ErrorBoundary
+        fallback-message="页面加载出现问题"
+        @error="handleErrorBoundaryError"
+        @refresh="handleErrorBoundaryRefresh"
+      >
+        <router-view v-slot="{ Component }">
+          <transition name="page-transition" mode="out-in">
+            <component :is="Component" />
+          </transition>
+        </router-view>
+      </ErrorBoundary>
     </main>
   </div>
 </template>
