@@ -26,6 +26,7 @@ class ModelProvider(str, Enum):
     OPENAI = "openai"
     DEEPSEEK = "deepseek"
     DASHSCOPE = "dashscope"
+    XIAOMIMIMO = "xiaomimimo"
 
 
 class ModelConfig(BaseModel):
@@ -62,6 +63,12 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
         provider=ModelProvider.DASHSCOPE,
         model_name="qwen-plus",
         temperature=0.5,
+        max_tokens=4096,
+    ),
+    "mimo-v2.5-pro": ModelConfig(
+        provider=ModelProvider.XIAOMIMIMO,
+        model_name="mimo-v2.5-pro",
+        temperature=0.7,
         max_tokens=4096,
     ),
 }

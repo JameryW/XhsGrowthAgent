@@ -62,6 +62,11 @@ def run(
     verbose: bool = typer.Option(False, help="显示详细日志"),
 ):
     """启动增长引擎工作流"""
+    from dotenv import load_dotenv
+
+    # 加载 .env 文件
+    load_dotenv()
+
     console.print(Panel("🚀 小红书增长引擎", style="bold green"))
 
     async def _run():
@@ -326,6 +331,10 @@ def version():
 def config():
     """检查配置状态"""
     import os
+    from dotenv import load_dotenv
+
+    # 加载 .env 文件
+    load_dotenv()
 
     console.print(Panel("🔧 配置检查", style="bold blue"))
 
@@ -334,6 +343,7 @@ def config():
         ("OPENAI_API_KEY", "OpenAI GPT API"),
         ("DEEPSEEK_API_KEY", "DeepSeek API"),
         ("DASHSCOPE_API_KEY", "阿里云 Qwen API"),
+        ("XIAOMIMIMO_API_KEY", "MiMo API"),
         ("XHS_COOKIE", "小红书 Cookie"),
         ("RIPPLE_BASE_URL", "Ripple CAS 服务"),
     ]

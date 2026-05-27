@@ -49,6 +49,15 @@ def _create_model(config: ModelConfig) -> BaseChatModel:
                 api_key=os.environ.get("DASHSCOPE_API_KEY"),
                 base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
             )
+        case ModelProvider.XIAOMIMIMO:
+            return ChatOpenAI(
+                model=config.model_name,
+                temperature=config.temperature,
+                max_tokens=config.max_tokens,
+                timeout=config.timeout,
+                api_key=os.environ.get("XIAOMIMIMO_API_KEY"),
+                base_url=os.environ.get("XIAOMIMIMO_BASE_URL", "https://token-plan-sgp.xiaomimimo.com/v1"),
+            )
 
 
 class ModelRouter:
