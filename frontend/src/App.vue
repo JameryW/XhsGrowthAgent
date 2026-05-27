@@ -1,23 +1,42 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from "vue"
+import { onMounted, onUnmounted, ref } from "vue"
 import ConnectionStatus from "@/components/ConnectionStatus.vue"
 import Toast from "@/components/Toast.vue"
 import OfflineIndicator from "@/components/OfflineIndicator.vue"
+import KeyboardShortcutsHelp from "@/components/KeyboardShortcutsHelp.vue"
 import Navbar from "@/components/Navbar.vue"
 import { useRealtimeStore, useOfflineStore } from "@/stores"
 
 const realtimeStore = useRealtimeStore()
 const offlineStore = useOfflineStore()
 
+// Keyboard shortcuts help
+const showShortcutsHelp = ref(false)
+
+const handleGlobalKeyDown = (e: KeyboardEvent) => {
+  // Show shortcuts help with "?" key (Shift+/)
+  if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+    showShortcutsHelp.value = true
+  }
+}
+
 onMounted(() => {
   // 应用启动时建立WebSocket连接
   realtimeStore.connect()
+  // Add global keyboard listener
+  window.addEventListener("keydown", handleGlobalKeyDown)
 })
 
 onUnmounted(() => {
   // 应用卸载时断开WebSocket
   realtimeStore.disconnect()
+  // Remove keyboard listener
+  window.removeEventListener("keydown", handleGlobalKeyDown)
 })
+
+const handleCloseShortcutsHelp = () => {
+  showShortcutsHelp.value = false
+}
 </script>
 
 <template>
@@ -36,6 +55,9 @@ onUnmounted(() => {
     <OfflineIndicator />
     <ConnectionStatus />
     <Toast />
+
+    <!-- Keyboard shortcuts help -->
+    <KeyboardShortcutsHelp :is-open="showShortcutsHelp" @close="handleCloseShortcutsHelp" />
 
     <!-- 左侧导航 -->
     <Navbar />
