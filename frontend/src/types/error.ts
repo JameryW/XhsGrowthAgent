@@ -5,8 +5,8 @@ export interface ErrorState {
   message: string
   retryCount: number
   isRecovering: boolean
-  recoverAction?: () => void
-  timestamp: Date
+  recoverAction?: string // Action identifier instead of function for serialization
+  timestamp: string // ISO format string for serialization
 }
 
 export interface RetryConfig {
