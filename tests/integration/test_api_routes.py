@@ -148,7 +148,9 @@ class TestWorkflowRoutes:
         assert data["success"] is True
         assert data["data"] is not None
         assert data["data"]["thread_id"] == "xhs_test_abc123"
-        assert "values" in data["data"]
+        assert "phase" in data["data"]
+        assert "current_agent" in data["data"]
+        assert "progress_percent" in data["data"]
         assert data["error"] is None
 
     def test_get_workflow_status_not_found(self, client, mock_graph):
