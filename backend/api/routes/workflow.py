@@ -1,15 +1,17 @@
-"""Workflow API routes — start/pause/resume/list workflows."""
+"""Workflow API routes — start/pause/resume/list/cancel workflows."""
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
+import asyncio
 
-from fastapi import APIRouter, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Request, Query
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
-from backend.api.responses import success
+from backend.api.responses import success, ApiResponse
 from backend.api.errors import ValidationError, WorkflowNotFoundError
 from backend.state.enums import WorkflowPhase
 
@@ -17,13 +19,52 @@ router = APIRouter()
 
 
 class WorkflowStartRequest(BaseModel):
-    account_id: str = "default"
-    phase: WorkflowPhase = WorkflowPhase.SCOUTING
+    account_id: str = Field(default="default", description="账号 ID")
+    phase: WorkflowPhase = Field(default=WorkflowPhase.SCOUTING, description="起始阶段")
+    async_mode: bool = Field(default=True, description="异步执行模式")
+
+
+class WorkflowStatusResponse(BaseModel):
+    """Workflow status response model."""
+    thread_id: str
+    phase: str
+    current_agent: str
+    next_steps: list[str]
+    error: Optional[str] = None
+    progress_percent: int = Field(default=0, description="进度百分比")
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+PHASE_PROGRESS = {
+    "idle": 0,
+    "scouting": 10,
+    "planning": 20,
+    "creating": 40,
+    "reviewing": 60,
+    "publishing": 80,
+    "analyzing": 90,
+    "engaging": 95,
+    "completed": 100,
+    "error": 0,
+}
+
+
+def get_progress(phase: str) -> int:
+    """Calculate progress percentage from phase."""
+    return PHASE_PROGRESS.get(phase, 0)
 
 
 @router.post("/start")
 async def start_workflow(req: WorkflowStartRequest, request: Request):
-    """启动新的增长引擎工作流"""
+    """启动新的增长引擎工作流
+
+    Returns:
+        - thread_id: 工作流唯一标识
+        - status: 当前状态 (running/pending)
+        - phase: 当前阶段
+        - progress_url: SSE 进度推送地址
+    """
     # Validate account_id
     if not req.account_id or req.account_id.strip() == "":
         raise ValidationError("account_id", "account_id cannot be empty")
@@ -55,19 +96,42 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
 
     config = {"configurable": {"thread_id": thread_id}}
 
-    # 异步启动工作流
-    result = await graph.ainvoke(initial_state, config)
-
-    return success(data={
-        "thread_id": thread_id,
-        "status": "running",
-        "phase": result.get("phase", "unknown"),
-    })
+    if req.async_mode:
+        # 异步启动（立即返回，后台执行）
+        asyncio.create_task(graph.ainvoke(initial_state, config))
+        return success(data={
+            "thread_id": thread_id,
+            "status": "running",
+            "phase": req.phase.value,
+            "progress_percent": get_progress(req.phase.value),
+            "sse_url": f"/api/workflow/stream/{thread_id}",
+            "websocket_url": f"/api/realtime/ws",
+        })
+    else:
+        # 同步执行（等待完成）
+        result = await graph.ainvoke(initial_state, config)
+        return success(data={
+            "thread_id": thread_id,
+            "status": "completed",
+            "phase": result.get("phase", "unknown"),
+            "progress_percent": 100,
+        })
 
 
 @router.get("/status/{thread_id}")
 async def get_workflow_status(thread_id: str, request: Request):
-    """获取工作流状态"""
+    """获取工作流状态
+
+    Returns:
+        - thread_id: 工作流唯一标识
+        - phase: 当前阶段
+        - current_agent: 当前执行的 Agent
+        - next_steps: 下一步操作列表
+        - progress_percent: 进度百分比
+        - error: 错误信息（如有）
+        - created_at: 创建时间
+        - updated_at: 最后更新时间
+    """
     # Validate thread_id
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
@@ -81,12 +145,18 @@ async def get_workflow_status(thread_id: str, request: Request):
     if not state.values or state.values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
-    return success(data={
-        "thread_id": thread_id,
-        "next": state.next,
-        "values": state.values,
-        "created_at": state.created_at if hasattr(state, "created_at") else None,
-    })
+    phase = state.values.get("phase", "unknown")
+
+    return success(data=WorkflowStatusResponse(
+        thread_id=thread_id,
+        phase=phase,
+        current_agent=state.values.get("current_agent", "unknown"),
+        next_steps=list(state.next) if state.next else [],
+        error=state.values.get("error"),
+        progress_percent=get_progress(phase),
+        created_at=state.values.get("created_at"),
+        updated_at=state.values.get("updated_at"),
+    ).model_dump())
 
 
 @router.post("/pause/{thread_id}")
@@ -137,4 +207,110 @@ async def resume_workflow(thread_id: str, request: Request):
     return success(data={
         "thread_id": thread_id,
         "status": "completed",
+    })
+
+
+@router.post("/cancel/{thread_id}")
+async def cancel_workflow(thread_id: str, request: Request):
+    """取消工作流
+
+    标记工作流为已取消状态，停止后续执行。
+    """
+    # Validate thread_id
+    if not thread_id or thread_id.strip() == "":
+        raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    state = await graph.aget_state(config)
+
+    # Check if workflow exists
+    if not state.values or state.values.get("session_id") is None:
+        raise WorkflowNotFoundError(thread_id)
+
+    # Update state to mark as cancelled
+    await graph.aupdate_state(config, {"phase": "cancelled", "error": "User cancelled"})
+
+    return success(data={
+        "thread_id": thread_id,
+        "status": "cancelled",
+        "message": "工作流已取消",
+    })
+
+
+@router.get("/stream/{thread_id}")
+async def stream_workflow_progress(thread_id: str, request: Request):
+    """SSE 流式进度推送
+
+    通过 Server-Sent Events 实时推送工作流进度更新。
+
+    Events:
+        - progress: 进度更新 {phase, percent, agent}
+        - error: 错误事件 {message}
+        - complete: 完成事件 {final_phase}
+    """
+    # Validate thread_id
+    if not thread_id or thread_id.strip() == "":
+        raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    async def event_generator():
+        graph = request.app.state.graph
+        config = {"configurable": {"thread_id": thread_id}}
+
+        try:
+            # Stream events from LangGraph
+            async for event in graph.astream_events(None, config, version="v1"):
+                event_type = event.get("event", "")
+                event_name = event.get("name", "unknown")
+
+                if event_type == "on_chain_start":
+                    yield f"event: progress\ndata: {{\"agent\": \"{event_name}\", \"status\": \"starting\"}}\n\n"
+                elif event_type == "on_chain_end":
+                    # Get current state
+                    state = await graph.aget_state(config)
+                    phase = state.values.get("phase", "unknown")
+                    progress = get_progress(phase)
+                    yield f"event: progress\ndata: {{\"agent\": \"{event_name}\", \"phase\": \"{phase}\", \"percent\": {progress}, \"status\": \"completed\"}}\n\n"
+
+            # Final state
+            final_state = await graph.aget_state(config)
+            final_phase = final_state.values.get("phase", "unknown")
+            yield f"event: complete\ndata: {{\"phase\": \"{final_phase}\", \"percent\": 100}}\n\n"
+
+        except Exception as e:
+            yield f"event: error\ndata: {{\"message\": \"{str(e)}\"}}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/list")
+async def list_workflows(
+    request: Request,
+    account_id: Optional[str] = Query(None, description="筛选账号 ID"),
+    limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
+    offset: int = Query(0, ge=0, description="分页偏移"),
+):
+    """列出工作流
+
+    返回工作流列表，支持按账号筛选和分页。
+
+    Note: 开发模式（内存检查点）下不支持列表查询。
+    """
+    # In dev mode with memory checkpointer, we can't list threads
+    # This is a placeholder for production mode with Postgres
+    return success(data={
+        "workflows": [],
+        "total": 0,
+        "limit": limit,
+        "offset": offset,
+        "message": "开发模式下无法列出工作流（使用内存检查点）",
     })
