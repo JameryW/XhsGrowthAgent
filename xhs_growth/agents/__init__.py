@@ -14,7 +14,7 @@ Agents:
 - VersionGeneratorAgent: 版本生成 (发布前优化)
 """
 
-from xhs_growth.agents.base import BaseAgent
+from xhs_growth.core.base_agent import BaseAgent
 from xhs_growth.agents.orchestrator import OrchestratorAgent
 from xhs_growth.agents.trend_scout import TrendScoutAgent
 from xhs_growth.agents.content_strategist import ContentStrategistAgent
