@@ -166,7 +166,13 @@ function getVersionTypeColor(type: string): string {
               ? 'border-neon-cyan bg-neon-cyan/5 shadow-neon-cyan-sm'
               : 'border-slate-100 hover:border-slate-200'
           ]"
+          tabindex="0"
+          role="button"
+          :aria-label="`选择 ${version.version_type} 版 - 评分 ${version.predicted_score.toFixed(1)}`"
+          :aria-pressed="selectedVersionId === version.version_id"
           @click="selectVersion(version.version_id)"
+          @keydown.enter="selectVersion(version.version_id)"
+          @keydown.space.prevent="selectVersion(version.version_id)"
         >
           <!-- Version Header -->
           <div class="flex items-center justify-between mb-3">
