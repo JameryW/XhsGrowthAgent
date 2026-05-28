@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import type { ErrorType } from '@/types/error'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
@@ -40,6 +40,17 @@ const emit = defineEmits<{
   retry: []
   dismiss: []
 }>()
+
+// Shake animation state
+const isShaking = ref(false)
+
+// Trigger shake animation on mount
+onMounted(() => {
+  isShaking.value = true
+  setTimeout(() => {
+    isShaking.value = false
+  }, 300)
+})
 
 // Computed
 const bgClasses = computed(() => ERROR_BG_CLASSES[props.type])
@@ -97,7 +108,7 @@ const retryButtonText = computed(() => {
 </script>
 
 <template>
-  <div class="rounded-2xl p-6 border" :class="bgClasses">
+  <div class="rounded-2xl p-6 border" :class="[bgClasses, { 'shake-animation': isShaking }]">
     <div class="flex items-start gap-4">
       <!-- Error icon -->
       <div class="w-12 h-12 rounded-xl flex items-center justify-center" :class="iconBgClasses">
@@ -145,3 +156,21 @@ const retryButtonText = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.shake-animation {
+  animation: shake 300ms ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-4px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(4px);
+  }
+}
+</style>
