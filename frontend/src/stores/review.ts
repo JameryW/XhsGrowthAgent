@@ -104,7 +104,12 @@ export const useReviewStore = defineStore('review', () => {
     try {
       pendingReview.value = await reviewApi.getPendingReview(tid)
     } catch (e: any) {
-      error.value = e.message
+      // No pending review is normal — not an error worth showing
+      if (e.code === 'ERROR_REVIEW_NOT_PENDING' || e.code === 'ERROR_WORKFLOW_NOT_FOUND') {
+        pendingReview.value = null
+      } else {
+        error.value = e.message
+      }
     } finally {
       isLoading.value = false
     }

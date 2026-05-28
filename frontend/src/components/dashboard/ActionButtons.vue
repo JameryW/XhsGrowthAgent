@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
@@ -9,11 +9,22 @@ const router = useRouter()
 const workflowStore = useWorkflowStore()
 const reviewStore = useReviewStore()
 
-// Check if workflow is waiting for review
+// Check if workflow is active
+const hasActiveWorkflow = computed(() => !!workflowStore.currentThreadId)
 const isReviewing = computed(() => workflowStore.currentPhase === 'reviewing')
 const needsReview = computed(() => reviewStore.hasPendingReview)
+const isStarting = ref(false)
 
 // Operations
+const startNewWorkflow = async () => {
+  isStarting.value = true
+  try {
+    await workflowStore.startWorkflow('default', 'scouting')
+  } finally {
+    isStarting.value = false
+  }
+}
+
 const pauseWorkflow = () => {
   workflowStore.pauseWorkflow()
 }
@@ -28,6 +39,23 @@ const goToReview = () => {
 
 <template>
   <div class="flex flex-wrap gap-3" role="group" aria-label="工作流操作按钮">
+    <!-- Start new workflow when no active workflow -->
+    <NeonButton
+      v-if="!hasActiveWorkflow"
+      variant="pink"
+      size="lg"
+      class="w-full sm:w-auto"
+      title="启动新的内容增长工作流"
+      aria-label="启动新工作流"
+      :loading="isStarting"
+      @click="startNewWorkflow"
+    >
+      <span class="inline-flex items-center gap-2">
+        <AppIcon name="Rocket" size="lg" variant="white" />
+        <span class="font-bold">启动新工作流</span>
+      </span>
+    </NeonButton>
+
     <!-- Prominent review button when workflow is in reviewing phase -->
     <NeonButton
       v-if="isReviewing"

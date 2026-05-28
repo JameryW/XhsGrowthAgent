@@ -54,11 +54,33 @@ async def health():
 
 
 # 托管前端静态文件（生产环境）
-import os
 from pathlib import Path
+from starlette.responses import FileResponse, Response
+from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 
 frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
+
 if frontend_dist.exists():
-    from fastapi.staticfiles import StaticFiles
-    # 注意：API 路由已注册，静态文件挂载在最后
-    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+    assets_dir = frontend_dist / "assets"
+
+    # SPA catch-all: 非 API/非 WebSocket 路由返回 index.html（不缓存）
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Serve SPA frontend — return index.html for all non-API routes."""
+        # WebSocket 和事件恢复路径不处理
+        if full_path.startswith("ws") or full_path.startswith("events/"):
+            return Response(status_code=404)
+        # assets 目录提供静态文件（带缓存头）
+        if full_path.startswith("assets/"):
+            file_path = assets_dir / full_path.removeprefix("assets/")
+            if file_path.is_file():
+                return FileResponse(
+                    str(file_path),
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"},
+                )
+        # 其他路由返回 index.html
+        return Response(
+            content=(frontend_dist / "index.html").read_bytes(),
+            media_type="text/html",
+            headers={"Cache-Control": "no-cache"},
+        )

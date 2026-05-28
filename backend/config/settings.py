@@ -10,17 +10,17 @@ class ModelSettings(BaseSettings):
     deepseek_api_key: str = ""
     dashscope_api_key: str = ""
 
-    # 默认模型分配
+    # 默认模型分配 — 全部使用 mimo-v2.5-pro
     model_routing: dict[str, str] = Field(
         default_factory=lambda: {
-            "routing": "deepseek-chat",
-            "scouting": "deepseek-chat",
-            "strategy": "claude-sonnet-4-20250514",
-            "writing": "claude-sonnet-4-20250514",
-            "visual": "gpt-4o",
-            "analysis": "gpt-4o",
-            "publishing": "qwen-plus",
-            "engagement": "deepseek-chat",
+            "routing": "mimo-v2.5-pro",
+            "scouting": "mimo-v2.5-pro",
+            "strategy": "mimo-v2.5-pro",
+            "writing": "mimo-v2.5-pro",
+            "visual": "mimo-v2.5-pro",
+            "analysis": "mimo-v2.5-pro",
+            "publishing": "mimo-v2.5-pro",
+            "engagement": "mimo-v2.5-pro",
         }
     )
 

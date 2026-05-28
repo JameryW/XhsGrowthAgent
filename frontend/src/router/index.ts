@@ -8,7 +8,7 @@ const router = createRouter({
       path: '/',
       name: 'home',
       component: () => import('@/views/Home.vue'),
-      meta: { transition: 'fade-slide', public: true },
+      meta: { transition: 'fade-slide', requiresAuth: true },
     },
     {
       path: '/login',
@@ -43,22 +43,15 @@ const router = createRouter({
   ],
 })
 
-// Auth guard
-router.beforeEach(async (to, _from, next) => {
+// Auth guard — non-blocking: uses cached token for instant redirects,
+// validates token asynchronously in the background (App.vue handles invalidation)
+router.beforeEach((to, _from, next) => {
   const authStore = useAuthStore()
-
-  // Wait for auth initialization if needed
-  if (!authStore.isInitialized) {
-    await authStore.initialize()
-  }
-
   const requiresAuth = to.meta.requiresAuth
 
   if (requiresAuth && !authStore.isAuthenticated) {
-    // Redirect to login with return path
     next({ name: 'login', query: { redirect: to.fullPath } })
   } else if (to.name === 'login' && authStore.isAuthenticated) {
-    // Already logged in - redirect to dashboard
     next({ name: 'dashboard' })
   } else {
     next()

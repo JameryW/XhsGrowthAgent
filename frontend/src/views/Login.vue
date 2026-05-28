@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
@@ -12,6 +12,12 @@ const authStore = useAuthStore()
 const username = ref('')
 const password = ref('')
 const localError = ref<string | null>(null)
+const usernameInput = ref<HTMLInputElement | null>(null)
+
+onMounted(() => {
+  // Auto-focus username field
+  usernameInput.value?.focus()
+})
 
 const handleLogin = async () => {
   localError.value = null
@@ -32,6 +38,8 @@ const handleLogin = async () => {
     router.push(redirect)
   } catch (e: any) {
     localError.value = e.message || '登录失败，请重试'
+    // Clear password on failed login
+    password.value = ''
   }
 }
 
@@ -59,6 +67,7 @@ const handleDismissError = () => {
           <label for="username" class="block text-sm font-medium text-slate-700 mb-2">用户名</label>
           <input
             id="username"
+            ref="usernameInput"
             v-model="username"
             type="text"
             autocomplete="username"
@@ -111,9 +120,9 @@ const handleDismissError = () => {
         </NeonButton>
       </form>
 
-      <!-- Footer hint -->
+      <!-- Footer -->
       <div class="mt-6 text-center text-xs text-slate-400">
-        <p>默认账号: admin / admin123</p>
+        <p>小红书增长引擎 v0.1.0</p>
       </div>
     </div>
   </div>
