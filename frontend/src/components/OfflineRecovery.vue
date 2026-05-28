@@ -17,8 +17,10 @@ const emit = defineEmits<{
 // Stores
 const toastStore = useToastStore()
 
-// Internal state - initialize from navigator.onLine, default to true if undefined
-const internalIsOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine ?? true : true)
+// Internal state - default to true (online) to avoid false warnings during browser initialization
+// (Playwright and some browsers may report offline during initialization)
+// We rely on actual offline events to update state, not the initial navigator.onLine value
+const internalIsOnline = ref(true)
 const wasOffline = ref(false)
 
 // Use prop if provided, otherwise use internal state
@@ -63,6 +65,19 @@ watch(() => props.isOnline, (newValue) => {
 onMounted(() => {
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
+
+  // Delayed check to handle browser initialization timing issues
+  // Some browsers (especially Playwright) may report offline during initialization
+  // but become online shortly after. We verify the actual state after a short delay.
+  setTimeout(() => {
+    const currentOnlineStatus = navigator.onLine ?? true
+    if (currentOnlineStatus !== internalIsOnline.value) {
+      internalIsOnline.value = currentOnlineStatus
+      if (currentOnlineStatus) {
+        wasOffline.value = false
+      }
+    }
+  }, 100)
 })
 
 onUnmounted(() => {
