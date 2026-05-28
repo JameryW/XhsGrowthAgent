@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useWorkflowStore } from '@/stores'
+import { useWorkflowStore, useOnboardingStore } from '@/stores'
 import AppIcon from '@/components/AppIcon.vue'
+import HelpCenter from '@/components/HelpCenter.vue'
 
 const route = useRoute()
 const router = useRouter()
 const workflowStore = useWorkflowStore()
+const onboardingStore = useOnboardingStore()
 
 const navItems = [
   { path: '/dashboard', icon: 'Home', label: '工作流仪表盘', color: 'pink' },
@@ -21,6 +23,22 @@ const navigateTo = (path: string) => {
 }
 
 const currentPhase = computed(() => workflowStore.currentPhase)
+
+// HelpCenter handlers
+const handleOpenFaq = () => {
+  // Navigate to FAQ page or show modal
+  router.push('/faq')
+}
+
+const handleOpenShortcuts = () => {
+  // Emit event to show shortcuts panel or toggle
+  onboardingStore.startTour() // Could trigger shortcuts panel instead
+}
+
+const handleSendFeedback = () => {
+  // Open feedback modal or navigate to feedback page
+  window.open('mailto:feedback@example.com', '_blank')
+}
 </script>
 
 <template>
@@ -86,6 +104,15 @@ const currentPhase = computed(() => workflowStore.currentPhase)
 
     <!-- 底部信息 -->
     <div class="mt-auto pt-6 border-t border-slate-100" aria-label="系统信息">
+      <!-- HelpCenter -->
+      <div class="mb-3 flex justify-center">
+        <HelpCenter
+          @open-faq="handleOpenFaq"
+          @open-shortcuts="handleOpenShortcuts"
+          @send-feedback="handleSendFeedback"
+        />
+      </div>
+
       <div class="bg-gradient-to-r from-slate-50 to-white rounded-lg p-3 text-xs border border-slate-100 hover:border-slate-200 transition-all duration-200">
         <div class="flex items-center justify-between mb-2">
           <span class="text-slate-400">Account</span>

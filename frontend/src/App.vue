@@ -1,21 +1,41 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue"
+import { onMounted, onUnmounted, ref, computed } from "vue"
 import ConnectionStatus from "@/components/ConnectionStatus.vue"
 import Toast from "@/components/Toast.vue"
 import OfflineIndicator from "@/components/OfflineIndicator.vue"
+import OfflineRecovery from "@/components/OfflineRecovery.vue"
 import KeyboardShortcutsHelp from "@/components/KeyboardShortcutsHelp.vue"
 import Navbar from "@/components/Navbar.vue"
-import { useRealtimeStore, useOfflineStore } from "@/stores"
+import ErrorBoundary from "@/components/ErrorBoundary.vue"
+import PageTransition from "@/components/PageTransition.vue"
+import OnboardingTour from "@/components/OnboardingTour.vue"
+import { useRealtimeStore, useOnboardingStore, useShortcutsStore } from "@/stores"
+import { useOnboarding } from "@/composables/useOnboarding"
+import { useShortcuts } from "@/composables/useShortcuts"
 
 const realtimeStore = useRealtimeStore()
-const offlineStore = useOfflineStore()
+const onboardingStore = useOnboardingStore()
+const shortcutsStore = useShortcutsStore()
+const { initOnboarding, isVisible: showOnboarding, skipTour, completeTour, advanceStep } = useOnboarding()
+const { handleShortcutAction } = useShortcuts()
 
 // Keyboard shortcuts help
 const showShortcutsHelp = ref(false)
 
+// Onboarding state for OnboardingTour component
+const onboardingCurrentStep = computed(() => onboardingStore.currentStep)
+const isOnboardingActive = computed(() => onboardingStore.isOnboardingActive)
+
 const handleGlobalKeyDown = (e: KeyboardEvent) => {
   // Show shortcuts help with "?" key (Shift+/)
   if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+    showShortcutsHelp.value = true
+    shortcutsStore.showShortcutsPanel()
+  }
+  // Ctrl+K to open command palette
+  if (e.ctrlKey && e.key === "k") {
+    e.preventDefault()
+    shortcutsStore.showShortcutsPanel()
     showShortcutsHelp.value = true
   }
 }
@@ -25,6 +45,8 @@ onMounted(() => {
   realtimeStore.connect()
   // Add global keyboard listener
   window.addEventListener("keydown", handleGlobalKeyDown)
+  // Initialize onboarding - check if user needs to see tour
+  initOnboarding()
 })
 
 onUnmounted(() => {
@@ -36,6 +58,30 @@ onUnmounted(() => {
 
 const handleCloseShortcutsHelp = () => {
   showShortcutsHelp.value = false
+  shortcutsStore.hideShortcutsPanel()
+}
+
+// Onboarding tour handlers
+const handleOnboardingNext = () => {
+  advanceStep()
+}
+
+const handleOnboardingSkip = () => {
+  skipTour()
+}
+
+const handleOnboardingComplete = () => {
+  completeTour()
+}
+
+// ErrorBoundary handler
+const handleErrorBoundaryError = (error: Error) => {
+  console.error('ErrorBoundary captured:', error)
+}
+
+const handleErrorBoundaryRefresh = () => {
+  // Force a page refresh to reset state
+  window.location.reload()
 }
 </script>
 
@@ -67,21 +113,36 @@ const handleCloseShortcutsHelp = () => {
     <!-- Keyboard shortcuts help -->
     <KeyboardShortcutsHelp :is-open="showShortcutsHelp" @close="handleCloseShortcutsHelp" />
 
+    <!-- Onboarding tour -->
+    <OnboardingTour
+      :is-active="isOnboardingActive"
+      :current-step="onboardingCurrentStep"
+      @next="handleOnboardingNext"
+      @skip="handleOnboardingSkip"
+      @complete="handleOnboardingComplete"
+    />
+
+    <!-- Offline recovery bar (above navbar) -->
+    <OfflineRecovery />
+
     <!-- 左侧导航 -->
     <Navbar />
 
     <!-- 主内容区 -->
     <main id="main-content" class="flex-1 p-8 overflow-auto relative z-10" tabindex="-1">
-      <router-view v-slot="{ Component }">
-        <transition name="page-transition" mode="out-in">
-          <component :is="Component" />
-        </transition>
-      </router-view>
+      <ErrorBoundary
+        fallback-message="页面加载出现问题"
+        @error="handleErrorBoundaryError"
+        @refresh="handleErrorBoundaryRefresh"
+      >
+        <PageTransition />
+      </ErrorBoundary>
     </main>
   </div>
 </template>
 
 <style scoped>
+/* Fade slide transition styles (legacy, kept for reference) */
 .page-transition-enter-active {
   transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -96,9 +157,7 @@ const handleCloseShortcutsHelp = () => {
   opacity: 0;
   transform: translateY(-8px);
 }
-</style>
 
-<style scoped>
 .slide-fade-enter-active {
   transition: all 0.4s ease-out;
 }

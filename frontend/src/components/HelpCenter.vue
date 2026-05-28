@@ -1,0 +1,154 @@
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted } from 'vue'
+import AppIcon from '@/components/AppIcon.vue'
+
+interface Props {
+  faqUrl?: string
+  shortcutsUrl?: string
+  feedbackEmail?: string
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  faqUrl: '/faq',
+  shortcutsUrl: '/shortcuts',
+  feedbackEmail: 'feedback@example.com',
+})
+
+const emit = defineEmits<{
+  (e: 'open-faq'): void
+  (e: 'open-shortcuts'): void
+  (e: 'send-feedback'): void
+}>()
+
+// Dropdown state
+const isOpen = ref(false)
+
+// Toggle dropdown
+const toggleDropdown = () => {
+  isOpen.value = !isOpen.value
+}
+
+// Close dropdown
+const closeDropdown = () => {
+  isOpen.value = false
+}
+
+// Handle menu item clicks
+const handleOpenFaq = () => {
+  emit('open-faq')
+  closeDropdown()
+}
+
+const handleOpenShortcuts = () => {
+  emit('open-shortcuts')
+  closeDropdown()
+}
+
+const handleSendFeedback = () => {
+  emit('send-feedback')
+  closeDropdown()
+}
+
+// Handle keyboard navigation
+const handleKeyDown = (e: KeyboardEvent) => {
+  if (e.key === 'Escape') {
+    closeDropdown()
+  }
+}
+
+// Close dropdown on outside click
+const handleClickOutside = (e: MouseEvent) => {
+  const target = e.target as HTMLElement
+  if (!target.closest('.help-center-container')) {
+    closeDropdown()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+  document.addEventListener('keydown', handleKeyDown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
+  document.removeEventListener('keydown', handleKeyDown)
+})
+</script>
+
+<template>
+  <div class="help-center-container relative">
+    <!-- Help button -->
+    <button
+      class="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50"
+      :aria-expanded="isOpen"
+      aria-haspopup="true"
+      aria-label="帮助中心"
+      @click="toggleDropdown"
+    >
+      <AppIcon name="HelpCircle" size="md" variant="pink" />
+    </button>
+
+    <!-- Dropdown menu -->
+    <Transition name="dropdown">
+      <div
+        v-if="isOpen"
+        class="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-200/50 py-2 z-40"
+        role="menu"
+        aria-label="帮助菜单"
+      >
+        <!-- FAQ link -->
+        <button
+          class="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-100 flex items-center gap-2 transition-colors"
+          role="menuitem"
+          @click="handleOpenFaq"
+        >
+          <AppIcon name="BookOpen" size="sm" variant="cyan" />
+          <span>常见问题</span>
+        </button>
+
+        <!-- Shortcuts link -->
+        <button
+          class="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-100 flex items-center gap-2 transition-colors"
+          role="menuitem"
+          @click="handleOpenShortcuts"
+        >
+          <AppIcon name="Keyboard" size="sm" variant="purple" />
+          <span>快捷键</span>
+        </button>
+
+        <!-- Divider -->
+        <div class="my-1 border-t border-slate-200" />
+
+        <!-- Feedback link -->
+        <button
+          class="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-100 flex items-center gap-2 transition-colors"
+          role="menuitem"
+          @click="handleSendFeedback"
+        >
+          <AppIcon name="MessageCircle" size="sm" variant="peach" />
+          <span>反馈建议</span>
+        </button>
+      </div>
+    </Transition>
+  </div>
+</template>
+
+<style scoped>
+.dropdown-enter-active {
+  transition: all 0.2s ease-out;
+}
+
+.dropdown-leave-active {
+  transition: all 0.15s ease-in;
+}
+
+.dropdown-enter-from {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+</style>
