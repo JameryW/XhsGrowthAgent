@@ -1,10 +1,68 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import * as LucideIcons from '@lucide/vue'
+import { computed, type Component } from 'vue'
 import { cn } from '@/utils/cn'
 
+import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowLeft,
+  BarChart3,
+  BookOpen,
+  Calendar,
+  Check,
+  CheckCircle,
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  ClipboardList,
+  Clock,
+  Compass,
+  Edit3,
+  FileText,
+  GitBranch,
+  HelpCircle,
+  Home,
+  Inbox,
+  Keyboard,
+  Loader,
+  Loader2,
+  Lock,
+  LogIn,
+  LogOut,
+  MessageCircle,
+  MessageSquare,
+  Minus,
+  Palette,
+  Pause,
+  Pencil,
+  RefreshCw,
+  Rocket,
+  Scan,
+  Search,
+  SearchX,
+  Sparkles,
+  Star,
+  TrendingUp,
+  Wand2,
+  Wifi,
+  WifiOff,
+  X,
+  XCircle,
+  Zap,
+} from '@lucide/vue'
+
+const iconMap: Record<string, Component> = {
+  AlertCircle, AlertTriangle, ArrowLeft, BarChart3, BookOpen, Calendar,
+  Check, CheckCircle, ChevronDown, ChevronRight, Circle, ClipboardList,
+  Clock, Compass, Edit3, FileText, GitBranch, HelpCircle, Home, Inbox,
+  Keyboard, Loader, Loader2, Lock, LogIn, LogOut, MessageCircle,
+  MessageSquare, Minus, Palette, Pause, Pencil, RefreshCw, Rocket, Scan,
+  Search, SearchX, Sparkles, Star, TrendingUp, Wand2, Wifi, WifiOff, X,
+  XCircle, Zap,
+}
+
 interface Props {
-  name: string // lucide icon name (e.g., 'Home', 'CheckCircle')
+  name: string
   size?: 'sm' | 'md' | 'lg' | 'xl'
   variant?: 'pink' | 'cyan' | 'purple' | 'peach' | 'white'
   animate?: boolean
@@ -18,7 +76,6 @@ const props = withDefaults(defineProps<Props>(), {
   ariaLabel: '',
 })
 
-// Icon sizes in pixels
 const sizeMap = {
   sm: 16,
   md: 20,
@@ -26,7 +83,6 @@ const sizeMap = {
   xl: 32,
 }
 
-// Neon color classes
 const colorClasses = {
   pink: 'text-neon-pink',
   cyan: 'text-neon-cyan',
@@ -38,12 +94,7 @@ const colorClasses = {
 const iconSize = computed(() => sizeMap[props.size])
 const colorClass = computed(() => colorClasses[props.variant])
 
-// Get the icon component dynamically
-const IconComponent = computed(() => {
-  const iconName = props.name
-  // @lucide/vue exports icons as PascalCase components
-  return (LucideIcons as Record<string, any>)[iconName] || LucideIcons.HelpCircle
-})
+const IconComponent = computed(() => iconMap[props.name] || HelpCircle)
 
 const iconClasses = computed(() =>
   cn(

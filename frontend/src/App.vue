@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed } from "vue"
+import { useRoute } from "vue-router"
 import ConnectionStatus from "@/components/ConnectionStatus.vue"
 import Toast from "@/components/Toast.vue"
 import OfflineIndicator from "@/components/OfflineIndicator.vue"
@@ -17,6 +18,10 @@ const realtimeStore = useRealtimeStore()
 const onboardingStore = useOnboardingStore()
 const shortcutsStore = useShortcutsStore()
 const authStore = useAuthStore()
+const route = useRoute()
+
+// Hide Navbar and chrome on login page
+const showChrome = computed(() => authStore.isAuthenticated && route.name !== 'login')
 const { initOnboarding, isVisible: showOnboarding, skipTour, completeTour, advanceStep } = useOnboarding()
 const { handleShortcutAction } = useShortcuts()
 
@@ -42,11 +47,9 @@ const handleGlobalKeyDown = (e: KeyboardEvent) => {
 }
 
 onMounted(async () => {
-  // Initialize auth first
-  await authStore.initialize()
-
-  // Only connect WebSocket if authenticated
+  // Validate token in background — don't block router navigation
   if (authStore.isAuthenticated) {
+    authStore.initialize()
     realtimeStore.connect()
   }
   // Add global keyboard listener
@@ -111,28 +114,32 @@ const handleErrorBoundaryRefresh = () => {
     <!-- Subtle grid -->
     <div class="absolute inset-0 pointer-events-none" style="background-image: linear-gradient(rgba(0,0,0,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.02) 1px, transparent 1px); background-size: 40px 40px;" />
 
-    <!-- Status indicators -->
-    <OfflineIndicator />
-    <ConnectionStatus />
+    <!-- Status indicators (always visible) -->
     <Toast />
 
-    <!-- Keyboard shortcuts help -->
-    <KeyboardShortcutsHelp :is-open="showShortcutsHelp" @close="handleCloseShortcutsHelp" />
+    <!-- Authenticated chrome -->
+    <template v-if="showChrome">
+      <OfflineIndicator />
+      <ConnectionStatus />
 
-    <!-- Onboarding tour -->
-    <OnboardingTour
-      :is-active="isOnboardingActive"
-      :current-step="onboardingCurrentStep"
-      @next="handleOnboardingNext"
-      @skip="handleOnboardingSkip"
-      @complete="handleOnboardingComplete"
-    />
+      <!-- Keyboard shortcuts help -->
+      <KeyboardShortcutsHelp :is-open="showShortcutsHelp" @close="handleCloseShortcutsHelp" />
 
-    <!-- Offline recovery bar (above navbar) -->
-    <OfflineRecovery />
+      <!-- Onboarding tour -->
+      <OnboardingTour
+        :is-active="isOnboardingActive"
+        :current-step="onboardingCurrentStep"
+        @next="handleOnboardingNext"
+        @skip="handleOnboardingSkip"
+        @complete="handleOnboardingComplete"
+      />
 
-    <!-- 左侧导航 -->
-    <Navbar />
+      <!-- Offline recovery bar (above navbar) -->
+      <OfflineRecovery />
+
+      <!-- 左侧导航 -->
+      <Navbar />
+    </template>
 
     <!-- 主内容区 -->
     <main id="main-content" class="flex-1 p-8 overflow-auto relative z-10" tabindex="-1">

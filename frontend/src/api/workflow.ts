@@ -15,17 +15,9 @@ export async function startWorkflow(req: WorkflowStartRequest): Promise<Workflow
   })
 }
 
-// 获取工作流状态
+// 获取工作流状态（不重试，404 是正常场景）
 export async function getWorkflowStatus(threadId: string): Promise<WorkflowStateResponse> {
-  const { retryWithBackoff } = useRetry()
-  return retryWithBackoff(async () => {
-    try {
-      const result = await client.get(`/workflow/status/${threadId}`) as WorkflowStateResponse
-      return result
-    } catch (error) {
-      throw error
-    }
-  })
+  return client.get(`/workflow/status/${threadId}`) as unknown as WorkflowStateResponse
 }
 
 // 暂停工作流

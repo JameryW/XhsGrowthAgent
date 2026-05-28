@@ -72,6 +72,16 @@ const handleLogout = async () => {
       </div>
     </div>
 
+    <!-- 启动新工作流按钮 -->
+    <button
+      @click="router.push('/')"
+      class="mb-4 w-full p-3 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-lg shadow-rose-500/25 hover:shadow-rose-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+      aria-label="启动新工作流"
+    >
+      <AppIcon name="Rocket" size="sm" variant="white" />
+      <span>启动新工作流</span>
+    </button>
+
     <!-- 导航项 -->
     <div class="space-y-1.5 relative" role="list" aria-label="导航链接">
       <button

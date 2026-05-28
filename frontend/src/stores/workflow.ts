@@ -161,8 +161,16 @@ export const useWorkflowStore = defineStore('workflow', () => {
       const phase = workflowState.value?.phase || 'idle'
       updateProgressFromPhase(phase as WorkflowPhase)
     } catch (e: any) {
-      error.value = e.message
-      toastStore.warning('状态刷新失败', e.message)
+      // Workflow not found — clear stale threadId silently
+      if (e.code === 'ERROR_WORKFLOW_NOT_FOUND' || e.message?.includes('not found')) {
+        currentThreadId.value = null
+        workflowState.value = null
+        localStorage.removeItem('currentThreadId')
+        updateProgressFromPhase('idle')
+      } else {
+        error.value = e.message
+        toastStore.warning('状态刷新失败', e.message)
+      }
     } finally {
       isLoading.value = false
     }
