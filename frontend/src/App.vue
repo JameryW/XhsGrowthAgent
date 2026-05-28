@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue"
+import { onMounted, onUnmounted, ref, computed } from "vue"
 import ConnectionStatus from "@/components/ConnectionStatus.vue"
 import Toast from "@/components/Toast.vue"
 import OfflineIndicator from "@/components/OfflineIndicator.vue"
@@ -8,16 +8,34 @@ import KeyboardShortcutsHelp from "@/components/KeyboardShortcutsHelp.vue"
 import Navbar from "@/components/Navbar.vue"
 import ErrorBoundary from "@/components/ErrorBoundary.vue"
 import PageTransition from "@/components/PageTransition.vue"
-import { useRealtimeStore } from "@/stores"
+import OnboardingTour from "@/components/OnboardingTour.vue"
+import { useRealtimeStore, useOnboardingStore, useShortcutsStore } from "@/stores"
+import { useOnboarding } from "@/composables/useOnboarding"
+import { useShortcuts } from "@/composables/useShortcuts"
 
 const realtimeStore = useRealtimeStore()
+const onboardingStore = useOnboardingStore()
+const shortcutsStore = useShortcutsStore()
+const { initOnboarding, isVisible: showOnboarding, skipTour, completeTour, advanceStep } = useOnboarding()
+const { handleShortcutAction } = useShortcuts()
 
 // Keyboard shortcuts help
 const showShortcutsHelp = ref(false)
 
+// Onboarding state for OnboardingTour component
+const onboardingCurrentStep = computed(() => onboardingStore.currentStep)
+const isOnboardingActive = computed(() => onboardingStore.isOnboardingActive)
+
 const handleGlobalKeyDown = (e: KeyboardEvent) => {
   // Show shortcuts help with "?" key (Shift+/)
   if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+    showShortcutsHelp.value = true
+    shortcutsStore.showShortcutsPanel()
+  }
+  // Ctrl+K to open command palette
+  if (e.ctrlKey && e.key === "k") {
+    e.preventDefault()
+    shortcutsStore.showShortcutsPanel()
     showShortcutsHelp.value = true
   }
 }
@@ -27,6 +45,8 @@ onMounted(() => {
   realtimeStore.connect()
   // Add global keyboard listener
   window.addEventListener("keydown", handleGlobalKeyDown)
+  // Initialize onboarding - check if user needs to see tour
+  initOnboarding()
 })
 
 onUnmounted(() => {
@@ -38,6 +58,20 @@ onUnmounted(() => {
 
 const handleCloseShortcutsHelp = () => {
   showShortcutsHelp.value = false
+  shortcutsStore.hideShortcutsPanel()
+}
+
+// Onboarding tour handlers
+const handleOnboardingNext = () => {
+  advanceStep()
+}
+
+const handleOnboardingSkip = () => {
+  skipTour()
+}
+
+const handleOnboardingComplete = () => {
+  completeTour()
 }
 
 // ErrorBoundary handler
@@ -78,6 +112,15 @@ const handleErrorBoundaryRefresh = () => {
 
     <!-- Keyboard shortcuts help -->
     <KeyboardShortcutsHelp :is-open="showShortcutsHelp" @close="handleCloseShortcutsHelp" />
+
+    <!-- Onboarding tour -->
+    <OnboardingTour
+      :is-active="isOnboardingActive"
+      :current-step="onboardingCurrentStep"
+      @next="handleOnboardingNext"
+      @skip="handleOnboardingSkip"
+      @complete="handleOnboardingComplete"
+    />
 
     <!-- Offline recovery bar (above navbar) -->
     <OfflineRecovery />

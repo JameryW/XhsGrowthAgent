@@ -129,7 +129,7 @@ const handleCancelConfirm = () => {
     </div>
 
     <!-- 内容预览 -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 review-content">
       <!-- 文案预览 -->
       <div class="rounded-xl p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
         <div class="flex items-center gap-3 mb-4">

@@ -102,10 +102,16 @@ onUnmounted(() => {
     </div>
 
     <WorkflowHeader />
-    <WorkflowTimeline />
+    <!-- Workflow timeline with onboarding selector -->
+    <div class="workflow-timeline">
+      <WorkflowTimeline />
+    </div>
     <ContentCards />
     <OptimizationPanel v-if="showOptimization" />
-    <ActionButtons />
+    <!-- Action buttons with onboarding selector -->
+    <div class="action-buttons">
+      <ActionButtons />
+    </div>
   </div>
 
   <!-- Celebration Modal -->
