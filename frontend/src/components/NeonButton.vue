@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { cn } from '@/utils/cn'
 
@@ -8,6 +8,7 @@ interface Props {
   size?: 'sm' | 'md' | 'lg'
   disabled?: boolean
   loading?: boolean
+  success?: boolean
   ariaLabel?: string
   title?: string // Tooltip text
 }
@@ -17,6 +18,7 @@ const props = withDefaults(defineProps<Props>(), {
   size: 'md',
   disabled: false,
   loading: false,
+  success: false,
   ariaLabel: '',
   title: '',
 })
@@ -27,6 +29,27 @@ const emit = defineEmits<{
 
 // Ripple effect state
 const rippleActive = ref(false)
+
+// Success animation state
+const showSuccessAnimation = ref(false)
+
+// Watch success prop for animation trigger
+watch(
+  () => props.success,
+  (newSuccess, oldSuccess) => {
+    if (newSuccess && !oldSuccess) {
+      showSuccessAnimation.value = true
+      setTimeout(() => {
+        showSuccessAnimation.value = false
+      }, 600)
+    }
+  }
+)
+
+// Cleanup on unmount
+onUnmounted(() => {
+  showSuccessAnimation.value = false
+})
 
 const variantClasses = computed(() => {
   const variants = {
@@ -75,6 +98,7 @@ const handleClick = () => {
       'focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-white',
       variantClasses,
       sizeClasses,
+      { 'scale-bounce-animation': showSuccessAnimation },
     ]"
   >
     <!-- Content -->
@@ -83,7 +107,35 @@ const handleClick = () => {
         <AppIcon name="Loader2" size="sm" variant="white" animate aria-label="Loading" />
         <span>Loading...</span>
       </span>
+      <span v-else-if="success" class="inline-flex items-center gap-2">
+        <AppIcon name="Check" size="sm" variant="white" aria-label="Success" />
+        <slot />
+      </span>
       <slot v-else />
     </span>
   </button>
 </template>
+
+<style scoped>
+.scale-bounce-animation {
+  animation: scale-bounce 600ms ease-out;
+}
+
+@keyframes scale-bounce {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.1);
+  }
+  50% {
+    transform: scale(0.95);
+  }
+  70% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+</style>
