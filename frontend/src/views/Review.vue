@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import CelebrationEffect from '@/components/CelebrationEffect.vue'
 import { ReviewSkeleton } from '@/components/skeletons'
 import { useWorkflowStore, useReviewStore, useToastStore } from '@/stores'
 import type { ContentStatus, CopyContent, VisualPlan } from '@/types'
@@ -17,6 +18,19 @@ const comments = ref('')
 const selectedDecision = ref<ContentStatus | null>(null)
 const isSubmitting = ref(false)
 const error = ref<string | null>(null)
+
+// Celebration effect state
+const showCelebration = ref(false)
+
+// Watch for workflow completion
+watch(
+  () => workflowStore.currentPhase,
+  (newPhase) => {
+    if (newPhase === 'completed') {
+      showCelebration.value = true
+    }
+  }
+)
 
 // Loading state
 const isLoading = computed(() => reviewStore.isLoading && !reviewStore.pendingReview)
@@ -249,5 +263,14 @@ const handleCancelConfirm = () => {
       @confirm="handleConfirm"
       @cancel="handleCancelConfirm"
     />
+
+    <!-- Celebration Effect for workflow completion -->
+    <div class="relative">
+      <CelebrationEffect
+        :is-active="showCelebration"
+        type="confetti"
+        :duration="3000"
+      />
+    </div>
   </div>
 </template>
