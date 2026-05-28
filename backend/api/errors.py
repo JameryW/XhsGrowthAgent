@@ -20,6 +20,11 @@ class ErrorCode(str, Enum):
     INTERNAL_ERROR = "ERROR_INTERNAL"
     VALIDATION_ERROR = "ERROR_VALIDATION"
     RATE_LIMIT_EXCEEDED = "ERROR_RATE_LIMIT"
+    # Authentication errors
+    AUTH_TOKEN_MISSING = "ERROR_AUTH_TOKEN_MISSING"
+    AUTH_TOKEN_INVALID = "ERROR_AUTH_TOKEN_INVALID"
+    AUTH_TOKEN_EXPIRED = "ERROR_AUTH_TOKEN_EXPIRED"
+    AUTH_LOGIN_FAILED = "ERROR_AUTH_LOGIN_FAILED"
 
 class APIError(Exception):
     """Base API exception."""
@@ -73,4 +78,42 @@ class ValidationError(APIError):
             message=f"Validation failed: {field}",
             details={"field": field, "reason": reason},
             status_code=400,
+        )
+
+# Authentication exceptions
+class AuthenticationError(APIError):
+    """Base authentication exception."""
+    def __init__(
+        self,
+        code: ErrorCode,
+        message: str,
+        details: dict[str, Any] | None = None,
+    ):
+        super().__init__(code=code, message=message, details=details, status_code=401)
+
+class TokenMissingError(AuthenticationError):
+    """Token missing in request."""
+    def __init__(self):
+        super().__init__(
+            code=ErrorCode.AUTH_TOKEN_MISSING,
+            message="Authorization token required",
+            details={"hint": "Include Authorization: Bearer <token> header"},
+        )
+
+class TokenInvalidError(AuthenticationError):
+    """Token invalid or expired."""
+    def __init__(self, reason: str = "invalid"):
+        super().__init__(
+            code=ErrorCode.AUTH_TOKEN_INVALID,
+            message=f"Token {reason}",
+            details={"reason": reason},
+        )
+
+class LoginFailedError(AuthenticationError):
+    """Login failed."""
+    def __init__(self, reason: str = "Invalid credentials"):
+        super().__init__(
+            code=ErrorCode.AUTH_LOGIN_FAILED,
+            message="Login failed",
+            details={"reason": reason},
         )

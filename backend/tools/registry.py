@@ -112,8 +112,24 @@ class ToolRegistry:
         ])
 
     @classmethod
+    def register_xhs_tools(cls) -> None:
+        """注册所有小红书平台工具"""
+        from backend.tools.xhs.publisher import (
+            xhs_publisher,
+            ab_test_manager,
+            post_scheduler,
+        )
+
+        cls.register_many([
+            xhs_publisher,
+            ab_test_manager,
+            post_scheduler,
+        ])
+
+    @classmethod
     def register_all_tools(cls) -> None:
         """注册所有可用工具"""
         cls.register_ripple_tools()
         cls.register_scheduling_tools()
         cls.register_content_tools()
+        cls.register_xhs_tools()

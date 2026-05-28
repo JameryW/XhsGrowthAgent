@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useWorkflowStore, useOnboardingStore } from '@/stores'
+import { useWorkflowStore, useOnboardingStore, useAuthStore } from '@/stores'
 import AppIcon from '@/components/AppIcon.vue'
 import HelpCenter from '@/components/HelpCenter.vue'
 
@@ -9,6 +9,7 @@ const route = useRoute()
 const router = useRouter()
 const workflowStore = useWorkflowStore()
 const onboardingStore = useOnboardingStore()
+const authStore = useAuthStore()
 
 const navItems = [
   { path: '/dashboard', icon: 'Home', label: '工作流仪表盘', color: 'pink' },
@@ -38,6 +39,12 @@ const handleOpenShortcuts = () => {
 const handleSendFeedback = () => {
   // Open feedback modal or navigate to feedback page
   window.open('mailto:feedback@example.com', '_blank')
+}
+
+// Logout handler
+const handleLogout = async () => {
+  await authStore.logout()
+  router.push('/login')
 }
 </script>
 
@@ -104,6 +111,17 @@ const handleSendFeedback = () => {
 
     <!-- 底部信息 -->
     <div class="mt-auto pt-6 border-t border-slate-100" aria-label="系统信息">
+      <!-- Logout button -->
+      <button
+        v-if="authStore.isAuthenticated"
+        @click="handleLogout"
+        class="mb-3 w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-500 transition-all duration-200 flex items-center justify-center gap-2 text-sm font-medium"
+        aria-label="退出登录"
+      >
+        <AppIcon name="LogOut" size="sm" variant="pink" />
+        <span>退出登录</span>
+      </button>
+
       <!-- HelpCenter -->
       <div class="mb-3 flex justify-center">
         <HelpCenter
@@ -116,7 +134,7 @@ const handleSendFeedback = () => {
       <div class="bg-gradient-to-r from-slate-50 to-white rounded-lg p-3 text-xs border border-slate-100 hover:border-slate-200 transition-all duration-200">
         <div class="flex items-center justify-between mb-2">
           <span class="text-slate-400">Account</span>
-          <span class="text-teal-600 font-medium bg-teal-50 px-2 py-0.5 rounded">default</span>
+          <span class="text-teal-600 font-medium bg-teal-50 px-2 py-0.5 rounded">{{ authStore.user?.username || 'default' }}</span>
         </div>
         <div class="flex items-center justify-between">
           <span class="text-slate-400">Version</span>
