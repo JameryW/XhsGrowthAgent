@@ -90,6 +90,17 @@ class NotificationSettings(BaseSettings):
     model_config = {"env_prefix": "NOTIFICATION_", "env_file": ".env", "extra": "ignore"}
 
 
+class AuthSettings(BaseSettings):
+    """认证配置"""
+
+    secret_key: str = "dev-secret-key-change-in-production"
+    token_expire_hours: int = 24
+    admin_username: str = "admin"
+    admin_password: str = "admin123"  # Plain password for demo; use hash in production
+
+    model_config = {"env_prefix": "AUTH_", "env_file": ".env", "extra": "ignore"}
+
+
 class Settings(BaseSettings):
     """全局配置聚合"""
 
@@ -99,5 +110,6 @@ class Settings(BaseSettings):
     workflow: WorkflowSettings = Field(default_factory=WorkflowSettings)
     notification: NotificationSettings = Field(default_factory=NotificationSettings)
     ripple: RippleSettings = Field(default_factory=RippleSettings)
+    auth: AuthSettings = Field(default_factory=AuthSettings)
 
     model_config = {"env_file": ".env", "extra": "ignore"}

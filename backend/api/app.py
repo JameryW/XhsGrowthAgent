@@ -39,8 +39,9 @@ app.add_middleware(
 
 app.middleware("http")(error_handler_middleware)
 
-from backend.api.routes import workflow, review, analytics, realtime  # noqa: E402
+from backend.api.routes import workflow, review, analytics, realtime, auth  # noqa: E402
 
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(workflow.router, prefix="/api/workflow", tags=["workflow"])
 app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])

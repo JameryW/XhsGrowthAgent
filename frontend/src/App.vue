@@ -9,13 +9,14 @@ import Navbar from "@/components/Navbar.vue"
 import ErrorBoundary from "@/components/ErrorBoundary.vue"
 import PageTransition from "@/components/PageTransition.vue"
 import OnboardingTour from "@/components/OnboardingTour.vue"
-import { useRealtimeStore, useOnboardingStore, useShortcutsStore } from "@/stores"
+import { useRealtimeStore, useOnboardingStore, useShortcutsStore, useAuthStore } from "@/stores"
 import { useOnboarding } from "@/composables/useOnboarding"
 import { useShortcuts } from "@/composables/useShortcuts"
 
 const realtimeStore = useRealtimeStore()
 const onboardingStore = useOnboardingStore()
 const shortcutsStore = useShortcutsStore()
+const authStore = useAuthStore()
 const { initOnboarding, isVisible: showOnboarding, skipTour, completeTour, advanceStep } = useOnboarding()
 const { handleShortcutAction } = useShortcuts()
 
@@ -40,9 +41,14 @@ const handleGlobalKeyDown = (e: KeyboardEvent) => {
   }
 }
 
-onMounted(() => {
-  // 应用启动时建立WebSocket连接
-  realtimeStore.connect()
+onMounted(async () => {
+  // Initialize auth first
+  await authStore.initialize()
+
+  // Only connect WebSocket if authenticated
+  if (authStore.isAuthenticated) {
+    realtimeStore.connect()
+  }
   // Add global keyboard listener
   window.addEventListener("keydown", handleGlobalKeyDown)
   // Initialize onboarding - check if user needs to see tour

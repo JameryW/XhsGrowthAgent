@@ -5,8 +5,10 @@ import { useToastStore } from './toast'
 export const useOfflineStore = defineStore('offline', () => {
   const toastStore = useToastStore()
 
-  // State
-  const isOnline = ref(navigator.onLine)
+  // State - default to true (online) to avoid false warnings during browser initialization
+  // (Playwright and some browsers may report offline during initialization)
+  // We rely on actual offline events to update state, not the initial navigator.onLine value
+  const isOnline = ref(true)
   const wasOffline = ref(false)
   const actionQueue = ref<Array<{ id: string; action: () => Promise<void>; description: string }>>([])
 
@@ -65,6 +67,18 @@ export const useOfflineStore = defineStore('offline', () => {
   onMounted(() => {
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
+
+    // Delayed check to handle browser initialization timing issues
+    // Some browsers may report offline during initialization but become online shortly after
+    setTimeout(() => {
+      const currentOnlineStatus = navigator.onLine ?? true
+      if (currentOnlineStatus !== isOnline.value) {
+        isOnline.value = currentOnlineStatus
+        if (currentOnlineStatus) {
+          wasOffline.value = false
+        }
+      }
+    }, 100)
   })
 
   onUnmounted(() => {

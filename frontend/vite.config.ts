@@ -46,7 +46,12 @@ export default defineConfig({
       '/ws': {
         target: 'ws://localhost:8000',
         ws: true,
+        changeOrigin: true,
+        rewrite: (path) => path,
       },
+    },
+    hmr: {
+      clientPort: 3000,
     },
   },
 })
