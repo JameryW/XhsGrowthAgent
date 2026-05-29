@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import os
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 import asyncio
 
@@ -17,11 +20,55 @@ from backend.state.enums import WorkflowPhase
 
 router = APIRouter()
 
+# Workflow registry with JSON file persistence
+_REGISTRY_PATH = Path(os.environ.get("XHS_REGISTRY_PATH", ".xhs/workflow_registry.json"))
+_workflow_registry: dict[str, dict] = {}
+
+
+def _load_registry() -> dict[str, dict]:
+    """Load workflow registry from JSON file."""
+    if _REGISTRY_PATH.exists():
+        try:
+            data = json.loads(_REGISTRY_PATH.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def _save_registry() -> None:
+    """Persist workflow registry to JSON file."""
+    try:
+        _REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _REGISTRY_PATH.write_text(
+            json.dumps(_workflow_registry, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass  # Non-critical: registry is also in memory
+
+
+# Load persisted registry on module import
+_workflow_registry = _load_registry()
+
 
 class WorkflowStartRequest(BaseModel):
     account_id: str = Field(default="default", description="账号 ID")
     phase: WorkflowPhase = Field(default=WorkflowPhase.SCOUTING, description="起始阶段")
     async_mode: bool = Field(default=True, description="异步执行模式")
+    dry_run: bool = Field(default=False, description="试运行模式（不实际发布）")
+    auto_publish: bool = Field(default=False, description="审核通过后自动发布")
+    topic: Optional[str] = Field(default=None, description="内容主题/关键词")
+
+
+class AgentTimelineEntry(BaseModel):
+    """Per-agent execution detail."""
+    agent: str
+    started_at: str = ""
+    completed_at: str = ""
+    duration_seconds: float = 0.0
+    status: str = "success"
+    error: Optional[str] = None
 
 
 class WorkflowStatusResponse(BaseModel):
@@ -34,6 +81,7 @@ class WorkflowStatusResponse(BaseModel):
     progress_percent: int = Field(default=0, description="进度百分比")
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    agent_timeline: list[AgentTimelineEntry] = Field(default_factory=list, description="Agent 执行时间线")
 
 
 PHASE_PROGRESS = {
@@ -90,11 +138,28 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
         "performance_log": [],
         "account_id": req.account_id,
         "session_id": thread_id,
+        "topic": req.topic,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
     config = {"configurable": {"thread_id": thread_id}}
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Register workflow in memory registry
+    _workflow_registry[thread_id] = {
+        "thread_id": thread_id,
+        "account_id": req.account_id,
+        "phase": req.phase.value,
+        "status": "running",
+        "dry_run": req.dry_run,
+        "auto_publish": req.auto_publish,
+        "progress_percent": get_progress(req.phase.value),
+        "created_at": now,
+        "updated_at": now,
+        "error": None,
+    }
+    _save_registry()
 
     if req.async_mode:
         # 异步启动（立即返回，后台执行）
@@ -110,10 +175,15 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
     else:
         # 同步执行（等待完成）
         result = await graph.ainvoke(initial_state, config)
+        final_phase = result.get("phase", "unknown")
+        _workflow_registry[thread_id]["phase"] = final_phase
+        _workflow_registry[thread_id]["status"] = "completed"
+        _workflow_registry[thread_id]["progress_percent"] = 100
+        _save_registry()
         return success(data={
             "thread_id": thread_id,
             "status": "completed",
-            "phase": result.get("phase", "unknown"),
+            "phase": final_phase,
             "progress_percent": 100,
         })
 
@@ -146,6 +216,35 @@ async def get_workflow_status(thread_id: str, request: Request):
         raise WorkflowNotFoundError(thread_id)
 
     phase = state.values.get("phase", "unknown")
+    progress = get_progress(phase)
+
+    # Update registry if workflow exists there
+    if thread_id in _workflow_registry:
+        _workflow_registry[thread_id]["phase"] = phase
+        _workflow_registry[thread_id]["progress_percent"] = progress
+        _workflow_registry[thread_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        if state.values.get("error"):
+            _workflow_registry[thread_id]["error"] = state.values.get("error")
+            _workflow_registry[thread_id]["status"] = "error"
+        elif phase == "completed":
+            _workflow_registry[thread_id]["status"] = "completed"
+        elif phase == "cancelled":
+            _workflow_registry[thread_id]["status"] = "cancelled"
+        _save_registry()
+
+    # Build agent timeline from performance_log
+    perf_log = state.values.get("performance_log") or []
+    agent_timeline = [
+        AgentTimelineEntry(
+            agent=entry.get("agent", "unknown"),
+            started_at=entry.get("started_at", ""),
+            completed_at=entry.get("completed_at", ""),
+            duration_seconds=entry.get("duration_seconds", 0.0),
+            status=entry.get("status", "success"),
+            error=entry.get("error"),
+        )
+        for entry in perf_log
+    ]
 
     return success(data=WorkflowStatusResponse(
         thread_id=thread_id,
@@ -153,15 +252,19 @@ async def get_workflow_status(thread_id: str, request: Request):
         current_agent=state.values.get("current_agent", "unknown"),
         next_steps=list(state.next) if state.next else [],
         error=state.values.get("error"),
-        progress_percent=get_progress(phase),
+        progress_percent=progress,
         created_at=state.values.get("created_at"),
         updated_at=state.values.get("updated_at"),
+        agent_timeline=agent_timeline,
     ).model_dump())
 
 
 @router.post("/pause/{thread_id}")
 async def pause_workflow(thread_id: str, request: Request):
-    """暂停工作流（状态已通过检查点保存）"""
+    """暂停工作流
+
+    设置暂停标志，工作流将在当前 Agent 完成后暂停，不会启动下一个节点。
+    """
     # Validate thread_id
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
@@ -175,15 +278,28 @@ async def pause_workflow(thread_id: str, request: Request):
     if not state.values or state.values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
+    # Update registry with paused flag
+    if thread_id in _workflow_registry:
+        _workflow_registry[thread_id]["status"] = "paused"
+        _workflow_registry[thread_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _save_registry()
+
+    # Update graph state to signal pause
+    await graph.aupdate_state(config, {"phase": "paused"})
+
     return success(data={
         "thread_id": thread_id,
         "status": "paused",
+        "message": "工作流已暂停，当前 Agent 完成后将停止",
     })
 
 
 @router.post("/resume/{thread_id}")
 async def resume_workflow(thread_id: str, request: Request):
-    """恢复暂停的工作流"""
+    """恢复暂停的工作流
+
+    清除暂停标志并重新启动工作流执行。
+    """
     # Validate thread_id
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
@@ -197,13 +313,34 @@ async def resume_workflow(thread_id: str, request: Request):
     if not state.values or state.values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
+    # Update registry to running
+    if thread_id in _workflow_registry:
+        _workflow_registry[thread_id]["status"] = "running"
+        _workflow_registry[thread_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _save_registry()
+
     if state.next:
-        result = await graph.ainvoke(None, config)
+        # Resume from next interrupt point
+        asyncio.create_task(graph.ainvoke(None, config))
         return success(data={
             "thread_id": thread_id,
             "status": "running",
-            "phase": result.get("phase", "unknown"),
+            "phase": state.values.get("phase", "unknown"),
         })
+
+    # No next steps — re-invoke to continue
+    current_phase = state.values.get("phase", "unknown")
+    if current_phase in ("paused", "cancelled"):
+        # Restore to the phase before pause
+        prev_phase = state.values.get("prev_phase") or "scouting"
+        await graph.aupdate_state(config, {"phase": prev_phase})
+        asyncio.create_task(graph.ainvoke(None, config))
+        return success(data={
+            "thread_id": thread_id,
+            "status": "running",
+            "phase": prev_phase,
+        })
+
     return success(data={
         "thread_id": thread_id,
         "status": "completed",
@@ -229,8 +366,23 @@ async def cancel_workflow(thread_id: str, request: Request):
     if not state.values or state.values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
+    # Save previous phase for potential resume
+    current_phase = state.values.get("phase", "unknown")
+
     # Update state to mark as cancelled
-    await graph.aupdate_state(config, {"phase": "cancelled", "error": "User cancelled"})
+    await graph.aupdate_state(config, {
+        "phase": "cancelled",
+        "error": "User cancelled",
+        "prev_phase": current_phase,
+    })
+
+    # Update registry
+    if thread_id in _workflow_registry:
+        _workflow_registry[thread_id]["status"] = "cancelled"
+        _workflow_registry[thread_id]["phase"] = "cancelled"
+        _workflow_registry[thread_id]["error"] = "User cancelled"
+        _workflow_registry[thread_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _save_registry()
 
     return success(data={
         "thread_id": thread_id,
@@ -296,21 +448,59 @@ async def stream_workflow_progress(thread_id: str, request: Request):
 async def list_workflows(
     request: Request,
     account_id: Optional[str] = Query(None, description="筛选账号 ID"),
+    status: Optional[str] = Query(None, description="筛选状态: running/completed/error/cancelled"),
     limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
     offset: int = Query(0, ge=0, description="分页偏移"),
 ):
     """列出工作流
 
-    返回工作流列表，支持按账号筛选和分页。
-
-    Note: 开发模式（内存检查点）下不支持列表查询。
+    返回工作流列表，支持按账号和状态筛选、分页。
+    按创建时间倒序排列。
     """
-    # In dev mode with memory checkpointer, we can't list threads
-    # This is a placeholder for production mode with Postgres
+    workflows = list(_workflow_registry.values())
+
+    # Filter by account_id
+    if account_id:
+        workflows = [w for w in workflows if w["account_id"] == account_id]
+
+    # Filter by status
+    if status:
+        workflows = [w for w in workflows if w["status"] == status]
+
+    # Sort by created_at descending
+    workflows.sort(key=lambda w: w.get("created_at", ""), reverse=True)
+
+    total = len(workflows)
+    paginated = workflows[offset:offset + limit]
+
     return success(data={
-        "workflows": [],
-        "total": 0,
+        "workflows": paginated,
+        "total": total,
         "limit": limit,
         "offset": offset,
-        "message": "开发模式下无法列出工作流（使用内存检查点）",
+    })
+
+
+@router.delete("/{thread_id}")
+async def delete_workflow(thread_id: str):
+    """删除工作流记录
+
+    从历史记录中删除指定工作流。只能删除已完成、已取消或出错的工作流。
+    """
+    if not thread_id or thread_id.strip() == "":
+        raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    if thread_id not in _workflow_registry:
+        raise WorkflowNotFoundError(thread_id)
+
+    wf = _workflow_registry[thread_id]
+    if wf["status"] == "running":
+        raise ValidationError("thread_id", "Cannot delete a running workflow. Cancel it first.")
+
+    del _workflow_registry[thread_id]
+    _save_registry()
+
+    return success(data={
+        "thread_id": thread_id,
+        "message": "Workflow deleted from history",
     })

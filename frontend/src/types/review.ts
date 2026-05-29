@@ -20,12 +20,31 @@ export interface Revision {
   suggestion: string
 }
 
+// Import related types
+import type { ContentPlan, CopyContent, VisualPlan } from './workflow'
+import type { ContentVersion } from './optimization'
+
+// Re-export for convenience
+export type { ContentVersion }
+
 // Pending review content
 export interface PendingReview {
   status: ReviewStatus
   content_plan?: ContentPlan
   copy_content?: CopyContent
   visual_plan?: VisualPlan
+  version_history?: ContentVersion[]
+}
+
+// Version history response
+export interface VersionHistoryResponse {
+  thread_id: string
+  versions: ContentVersion[]
+  current: {
+    title: string
+    body: string
+    hashtags: string[]
+  }
 }
 
 // Review decision request
@@ -42,6 +61,3 @@ export interface ReviewSubmitResponse {
   decision: ReviewDecision
   next_phase: string
 }
-
-// Import related types from workflow
-import type { ContentPlan, CopyContent, VisualPlan } from './workflow'

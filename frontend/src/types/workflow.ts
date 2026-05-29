@@ -10,6 +10,7 @@ export type WorkflowPhase =
   | 'engaging'
   | 'completed'
   | 'error'
+  | 'paused'
   | 'cancelled'
 
 // Workflow status - matches backend WorkflowStatus enum
@@ -36,6 +37,31 @@ export type Urgency =
 export interface WorkflowStartRequest {
   account_id: string
   phase?: WorkflowPhase
+  dry_run?: boolean
+  auto_publish?: boolean
+  topic?: string
+}
+
+// Workflow list item (from /workflow/list)
+export interface WorkflowListItem {
+  thread_id: string
+  account_id: string
+  phase: WorkflowPhase
+  status: 'running' | 'completed' | 'error' | 'cancelled'
+  dry_run: boolean
+  auto_publish: boolean
+  progress_percent: number
+  created_at: string
+  updated_at: string
+  error: string | null
+}
+
+// Workflow list response
+export interface WorkflowListResponse {
+  workflows: WorkflowListItem[]
+  total: number
+  limit: number
+  offset: number
 }
 
 // Workflow response
@@ -139,6 +165,16 @@ export interface WorkflowState {
   updated_at: string
 }
 
+// Agent timeline entry (per-agent execution detail)
+export interface AgentTimelineEntry {
+  agent: string
+  started_at: string
+  completed_at: string
+  duration_seconds: number
+  status: 'success' | 'error'
+  error?: string | null
+}
+
 // Workflow state response (matches backend WorkflowStatusResponse)
 export interface WorkflowStateResponse {
   thread_id: string
@@ -149,4 +185,5 @@ export interface WorkflowStateResponse {
   progress_percent: number
   created_at?: string
   updated_at?: string
+  agent_timeline: AgentTimelineEntry[]
 }

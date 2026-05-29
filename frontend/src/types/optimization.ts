@@ -50,7 +50,7 @@ export interface OptimizationAnalysis {
 // 内容版本
 export interface ContentVersion {
   version_id: string
-  version_type: 'A' | 'B' | 'C'
+  version_type?: 'A' | 'B' | 'C'
   title: string
   body: string
   hashtags: string[]
@@ -58,6 +58,7 @@ export interface ContentVersion {
   style_suggestion?: string
   changes_summary: string
   predicted_score: number
+  created_at?: string
 }
 
 // 版本选择结果

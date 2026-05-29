@@ -1,6 +1,16 @@
 import client from './client'
-import type { WorkflowStartRequest, WorkflowResponse, WorkflowStateResponse } from '@/types/workflow'
+import type { WorkflowStartRequest, WorkflowResponse, WorkflowStateResponse, WorkflowListResponse } from '@/types/workflow'
 import { useRetry } from '@/composables/useRetry'
+
+// 工作流列表
+export async function listWorkflows(params?: {
+  account_id?: string
+  status?: string
+  limit?: number
+  offset?: number
+}): Promise<WorkflowListResponse> {
+  return client.get('/workflow/list', { params }) as unknown as WorkflowListResponse
+}
 
 // 启动工作流
 export async function startWorkflow(req: WorkflowStartRequest): Promise<WorkflowResponse> {
@@ -57,4 +67,9 @@ export async function cancelWorkflow(threadId: string): Promise<{ thread_id: str
       throw error
     }
   })
+}
+
+// 删除工作流历史记录
+export async function deleteWorkflow(threadId: string): Promise<{ thread_id: string; message: string }> {
+  return client.delete(`/workflow/${threadId}`) as unknown as { thread_id: string; message: string }
 }

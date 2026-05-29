@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import AppIcon from '@/components/AppIcon.vue'
 import WorkflowHeader from '@/components/dashboard/WorkflowHeader.vue'
 import WorkflowTimeline from '@/components/dashboard/WorkflowTimeline.vue'
 import ContentCards from '@/components/dashboard/ContentCards.vue'
@@ -15,6 +17,7 @@ import ErrorCard from '@/components/ErrorCard.vue'
 import { useWorkflowStore, useToastStore, useErrorStore } from '@/stores'
 
 const { t } = useI18n()
+const router = useRouter()
 const workflowStore = useWorkflowStore()
 const toastStore = useToastStore()
 const errorStore = useErrorStore()
@@ -92,6 +95,64 @@ onUnmounted(() => {
         @retry="handleErrorRetry"
         @dismiss="handleErrorDismiss"
       />
+
+      <!-- Publish Error Recovery -->
+      <div v-if="workflowStore.publishError" class="rounded-2xl p-5 bg-rose-50/80 border border-rose-200/50 shadow-sm">
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center flex-shrink-0">
+            <AppIcon name="AlertTriangle" size="md" variant="pink" />
+          </div>
+          <div class="flex-1">
+            <div class="text-rose-700 font-semibold text-sm mb-1">{{ t('dashboard.publishError.title') || '发布失败' }}</div>
+            <p class="text-rose-600 text-sm mb-2">{{ workflowStore.publishError.message }}</p>
+            <div v-if="workflowStore.publishError.recovery" class="space-y-2">
+              <p class="text-xs text-rose-500">{{ workflowStore.publishError.recovery.hint }}</p>
+              <div class="flex items-center gap-2">
+                <!-- Retry (network errors) -->
+                <button
+                  v-if="workflowStore.publishError.recovery.action === 'retry'"
+                  @click="workflowStore.resumeWorkflow()"
+                  class="text-xs px-3 py-1.5 rounded-lg bg-rose-100 text-rose-600 hover:bg-rose-200 transition-colors font-medium"
+                >
+                  {{ workflowStore.publishError.recovery.action_label }}
+                </button>
+                <!-- Revise content (content violation) -->
+                <button
+                  v-if="workflowStore.publishError.recovery.action === 'revise_content'"
+                  @click="router.push('/review')"
+                  class="text-xs px-3 py-1.5 rounded-lg bg-amber-100 text-amber-600 hover:bg-amber-200 transition-colors font-medium"
+                >
+                  {{ workflowStore.publishError.recovery.action_label }}
+                </button>
+                <!-- Reconfigure (auth expired) -->
+                <button
+                  v-if="workflowStore.publishError.recovery.action === 'reconfigure'"
+                  @click="router.push('/')"
+                  class="text-xs px-3 py-1.5 rounded-lg bg-violet-100 text-violet-600 hover:bg-violet-200 transition-colors font-medium"
+                >
+                  {{ workflowStore.publishError.recovery.action_label }}
+                </button>
+                <!-- Retry later (rate limited) -->
+                <button
+                  v-if="workflowStore.publishError.recovery.action === 'retry_later'"
+                  @click="workflowStore.resumeWorkflow()"
+                  class="text-xs px-3 py-1.5 rounded-lg bg-amber-100 text-amber-600 hover:bg-amber-200 transition-colors font-medium"
+                >
+                  {{ workflowStore.publishError.recovery.action_label }}
+                </button>
+                <!-- Provide images -->
+                <button
+                  v-if="workflowStore.publishError.recovery.action === 'provide_images'"
+                  @click="router.push('/review')"
+                  class="text-xs px-3 py-1.5 rounded-lg bg-teal-100 text-teal-600 hover:bg-teal-200 transition-colors font-medium"
+                >
+                  {{ workflowStore.publishError.recovery.action_label }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- Progress Phase and Step Indicator -->
       <div class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">

@@ -13,6 +13,8 @@ class WorkflowPhase(str, Enum):
     ENGAGING = "engaging"
     COMPLETED = "completed"
     ERROR = "error"
+    PAUSED = "paused"
+    CANCELLED = "cancelled"
 
 class ContentStatus(str, Enum):
     """Content review status."""

@@ -2,7 +2,19 @@
 export interface GrowthReport {
   account_id: string
   period: 'daily' | 'weekly' | 'monthly'
-  report: string
+  report?: string
+  metrics?: {
+    total_posts: number
+    total_engagement: number
+    avg_engagement_rate: number
+    best_post_title: string
+    trend_topics: string[]
+  }
+  insights?: Array<{
+    type: 'trend' | 'opportunity' | 'warning' | 'info'
+    message: string
+  }>
+  generated_at?: string
 }
 
 // 帖子表现
@@ -11,6 +23,8 @@ export interface PostPerformance {
   likes: number
   comments: number
   collects: number
+  shares: number
+  views: number
   engagement_rate: number
   published_at: string
 }

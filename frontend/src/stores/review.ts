@@ -57,6 +57,7 @@ export const useReviewStore = defineStore('review', () => {
   const contentPlan = computed(() => pendingReview.value?.content_plan)
   const copyContent = computed(() => parseCopyContent(pendingReview.value?.copy_content))
   const visualPlan = computed(() => pendingReview.value?.visual_plan)
+  const versionHistory = computed(() => pendingReview.value?.version_history || [])
 
   // WebSocket event handlers
   const realtimeStore = useRealtimeStore()
@@ -160,6 +161,7 @@ export const useReviewStore = defineStore('review', () => {
     contentPlan,
     copyContent,
     visualPlan,
+    versionHistory,
     fetchPendingReview,
     submitDecision,
     setComments,

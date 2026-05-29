@@ -40,11 +40,13 @@ app.add_middleware(
 app.middleware("http")(error_handler_middleware)
 
 from backend.api.routes import workflow, review, analytics, realtime, auth  # noqa: E402
+from backend.api.routes.system import router as system_router  # noqa: E402
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(workflow.router, prefix="/api/workflow", tags=["workflow"])
 app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
+app.include_router(system_router, prefix="/api/system", tags=["system"])
 app.include_router(realtime.router, tags=["realtime"])  # WebSocket 不需要 /api 前缀
 
 
