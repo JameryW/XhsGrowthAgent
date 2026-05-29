@@ -71,7 +71,7 @@ const currentStyle = computed(() => statusStyles.value[realtimeStore.connectionS
     <span
       v-if="realtimeStore.connectionStatus === 'connected'"
       class="px-2 py-0.5 rounded bg-teal-50 text-teal-600/80 text-xs font-medium"
-      aria-label="消息序列号"
+      :aria-label="t('connection.seqNumber')"
     >
       seq: {{ realtimeStore.getLastSeq() }}
     </span>

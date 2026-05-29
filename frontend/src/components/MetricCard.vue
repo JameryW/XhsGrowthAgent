@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+
+const { t } = useI18n()
 
 interface Props {
   icon: string // lucide icon name
@@ -46,7 +49,7 @@ const colors = {
 </script>
 
 <template>
-  <div :class="['rounded-xl p-5 relative overflow-hidden bg-white/80 backdrop-blur-sm border transition-all duration-300 hover:shadow-lg group', colors[props.variant].border, colors[props.variant].shadow]" role="region" aria-label="统计指标: {{ title }}">
+  <div :class="['rounded-xl p-5 relative overflow-hidden bg-white/80 backdrop-blur-sm border transition-all duration-300 hover:shadow-lg group', colors[props.variant].border, colors[props.variant].shadow]" role="region" :aria-label="t('metricCard.ariaLabel', { title })">
     <!-- Hover glow -->
     <div class="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" :style="{ background: `radial-gradient(circle at 50% 0%, ${props.variant === 'pink' ? 'rgba(244,63,94,0.08)' : props.variant === 'cyan' ? 'rgba(20,184,166,0.08)' : props.variant === 'purple' ? 'rgba(139,92,246,0.08)' : 'rgba(245,158,11,0.08)'} 0%, transparent 50%)` }" aria-hidden="true" />
 

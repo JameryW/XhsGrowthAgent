@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, onErrorCaptured, type ComponentPublicInstance } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
+
+const { t } = useI18n()
 
 // Props
 const props = defineProps<{
@@ -20,7 +23,7 @@ const errorMessage = ref('')
 const errorInfo = ref('')
 
 // Default fallback message - use only when no actual error message
-const defaultMessage = '组件渲染出错'
+const defaultMessage = t('errorBoundary.componentError')
 
 // Error captured lifecycle hook
 onErrorCaptured((error: Error, instance: ComponentPublicInstance | null, info: string) => {
@@ -66,13 +69,13 @@ const handleRefresh = () => {
         <!-- Error content -->
         <div class="flex-1">
           <h3 class="text-lg font-semibold text-rose-700 mb-1">
-            组件错误
+            {{ t('errorBoundary.componentError') }}
           </h3>
           <p class="text-sm text-rose-600 mb-2">
             {{ errorMessage }}
           </p>
           <p v-if="errorInfo" class="text-xs text-rose-500 opacity-70">
-            错误来源: {{ errorInfo }}
+            {{ t('errorBoundary.errorSource', { info: errorInfo }) }}
           </p>
         </div>
 
@@ -85,7 +88,7 @@ const handleRefresh = () => {
           >
             <span class="inline-flex items-center gap-2">
               <AppIcon name="RefreshCw" size="sm" variant="white" />
-              <span>刷新</span>
+              <span>{{ t('errorBoundary.refresh') }}</span>
             </span>
           </NeonButton>
         </div>

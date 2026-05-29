@@ -66,7 +66,7 @@ const handleLogout = async () => {
           <AppIcon name="BookOpen" size="lg" variant="white" />
         </div>
         <div>
-          <div class="text-slate-800 font-semibold text-lg tracking-tight">增长引擎</div>
+          <div class="text-slate-800 font-semibold text-lg tracking-tight">{{ t('nav.appName') }}</div>
           <div class="text-xs text-slate-400 mt-0.5">XHS Growth Agent</div>
         </div>
       </div>
@@ -89,7 +89,7 @@ const handleLogout = async () => {
     </button>
 
     <!-- 导航项 -->
-    <div class="space-y-1.5 relative" role="list" aria-label="导航链接">
+    <div class="space-y-1.5 relative" role="list" :aria-label="t('nav.home')">
       <button
         v-for="item in navItems"
         :key="item.path"
@@ -126,7 +126,7 @@ const handleLogout = async () => {
     </div>
 
     <!-- 底部信息 -->
-    <div class="mt-auto pt-6 border-t border-slate-100" aria-label="系统信息">
+    <div class="mt-auto pt-6 border-t border-slate-100" :aria-label="t('nav.systemInfo')">
       <!-- Logout button -->
       <button
         v-if="authStore.isAuthenticated"

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+
+const { t } = useI18n()
 
 interface Props {
   icon: string // lucide icon name
@@ -102,7 +105,7 @@ const focusClass = computed(() => {
     <div v-if="currentStyle.badge.show && currentStyle.badge.icon" class="mt-1.5 flex items-center justify-center gap-1">
       <AppIcon :name="currentStyle.badge.icon" size="sm" :variant="props.status === 'completed' ? 'cyan' : 'peach'" :animate="currentStyle.badge.animate" />
       <span v-if="currentStyle.badge.color" :class="['text-xs', currentStyle.badge.color]">
-        {{ props.status === 'completed' ? '完成' : props.status === 'error' ? '错误' : '进行中' }}
+        {{ props.status === 'completed' ? t('workflowNode.completed') : props.status === 'error' ? t('workflowNode.error') : t('workflowNode.running') }}
       </span>
     </div>
   </div>

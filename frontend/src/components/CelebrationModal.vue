@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref, watch, nextTick } from 'vue'
+import { computed, onMounted, ref, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+
+const { t } = useI18n()
 
 interface Props {
   show: boolean
@@ -9,9 +12,12 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  title: '恭喜！工作流完成',
-  message: '内容已成功发布',
+  title: '',
+  message: '',
 })
+
+const displayTitle = computed(() => props.title || t('celebration.title'))
+const displayMessage = computed(() => props.message || t('celebration.message'))
 
 // Focus management
 const closeButtonRef = ref<HTMLButtonElement | null>(null)
@@ -108,25 +114,25 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
           <!-- Title -->
           <h2 id="celebration-title" class="text-2xl font-bold text-slate-800 mt-6 mb-2">
-            {{ title }}
+            {{ displayTitle }}
           </h2>
 
           <!-- Message -->
-          <p id="celebration-message" class="text-slate-600 mb-6">{{ message }}</p>
+          <p id="celebration-message" class="text-slate-600 mb-6">{{ displayMessage }}</p>
 
           <!-- Stats Preview -->
           <div class="grid grid-cols-3 gap-3 mb-6">
             <div class="p-3 rounded-lg bg-rose-50 border border-rose-100">
               <div class="text-rose-500 font-bold text-lg">✓</div>
-              <div class="text-xs text-slate-500">内容发布</div>
+              <div class="text-xs text-slate-500">{{ t('celebration.contentPublished') }}</div>
             </div>
             <div class="p-3 rounded-lg bg-teal-50 border border-teal-100">
               <div class="text-teal-500 font-bold text-lg">100%</div>
-              <div class="text-xs text-slate-500">进度完成</div>
+              <div class="text-xs text-slate-500">{{ t('celebration.progressComplete') }}</div>
             </div>
             <div class="p-3 rounded-lg bg-violet-50 border border-violet-100">
               <div class="text-violet-500 font-bold text-lg">🎉</div>
-              <div class="text-xs text-slate-500">工作流结束</div>
+              <div class="text-xs text-slate-500">{{ t('celebration.workflowEnd') }}</div>
             </div>
           </div>
 
@@ -136,7 +142,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
             class="w-full px-6 py-3 rounded-lg bg-gradient-to-r from-teal-500 to-teal-400 text-white font-medium hover:from-teal-600 hover:to-teal-500 transition-all shadow-sm"
             @click="handleClose"
           >
-            返回仪表盘
+            {{ t('celebration.backToDashboard') }}
           </button>
         </div>
       </div>

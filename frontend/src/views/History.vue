@@ -55,18 +55,21 @@ const statusLabel = (status: string) => {
   return t(key)
 }
 
-const phaseLabels: Record<string, string> = {
-  idle: '空闲',
-  scouting: '趋势发现',
-  planning: '策略规划',
-  creating: '内容创作',
-  reviewing: '内容审核',
-  publishing: '发布中',
-  analyzing: '数据分析',
-  engaging: '互动管理',
-  completed: '已完成',
-  error: '错误',
-  cancelled: '已取消',
+const phaseLabel = (phase: string) => {
+  const map: Record<string, string> = {
+    idle: 'review.emptyState.phaseIdle',
+    scouting: 'dashboard.timeline.scouting',
+    planning: 'dashboard.timeline.planning',
+    creating: 'dashboard.timeline.creating',
+    reviewing: 'dashboard.timeline.reviewing',
+    publishing: 'dashboard.timeline.publishing',
+    analyzing: 'dashboard.timeline.analyzing',
+    engaging: 'dashboard.timeline.engaging',
+    completed: 'dashboard.timeline.completed',
+    error: 'dashboard.timeline.error',
+    cancelled: 'review.emptyState.phaseCancelled',
+  }
+  return t(map[phase] || `dashboard.timeline.${phase}`)
 }
 
 function formatDate(iso: string) {
@@ -200,7 +203,7 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
                 </span>
               </div>
               <div class="flex items-center gap-3 mt-1 text-xs text-slate-400">
-                <span>{{ phaseLabels[wf.phase] || wf.phase }}</span>
+                <span>{{ phaseLabel(wf.phase) }}</span>
                 <span>{{ statusLabel(wf.status) }}</span>
                 <span>{{ formatDate(wf.created_at) }}</span>
               </div>

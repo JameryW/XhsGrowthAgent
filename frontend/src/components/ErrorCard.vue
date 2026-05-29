@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { ErrorType } from '@/types/error'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
+
+const { t } = useI18n()
 
 /**
  * Tailwind class mapping for error types
@@ -87,23 +90,23 @@ const iconVariant = computed(() => {
 const title = computed(() => {
   switch (props.type) {
     case 'api':
-      return 'API错误'
+      return t('common.apiError')
     case 'timeout':
-      return '请求超时'
+      return t('common.timeoutError')
     case 'unknown':
-      return '未知错误'
+      return t('common.unknownError')
     case 'retry_success':
-      return '重试成功'
+      return t('common.retrySuccess')
     default:
-      return '错误'
+      return t('common.error')
   }
 })
 const showRetryButton = computed(() => props.type !== 'retry_success')
 const retryButtonText = computed(() => {
   if (props.retryCount && props.retryCount > 0) {
-    return `重试 (${props.retryCount})`
+    return t('common.retryCount', { count: props.retryCount })
   }
-  return '重试'
+  return t('common.retry')
 })
 </script>
 
@@ -124,7 +127,7 @@ const retryButtonText = computed(() => {
           {{ message }}
         </p>
         <p v-if="retryCount && retryCount > 0" class="text-xs opacity-70" :class="textClasses.message">
-          已重试 {{ retryCount }} 次
+          {{ t('common.retriedTimes', { count: retryCount }) }}
         </p>
       </div>
 
@@ -149,7 +152,7 @@ const retryButtonText = computed(() => {
         >
           <span class="inline-flex items-center gap-2">
             <AppIcon name="X" size="sm" :variant="iconVariant" />
-            <span>关闭</span>
+            <span>{{ t('common.close') }}</span>
           </span>
         </NeonButton>
       </div>

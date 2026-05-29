@@ -21,27 +21,32 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
-const phaseLabels: Record<string, string> = {
-  scouting: '趋势发现',
-  planning: '策略规划',
-  creating: '内容创作',
-  reviewing: '内容审核',
+const phaseLabel = (phase: string) => {
+  const map: Record<string, string> = {
+    scouting: 'dashboard.timeline.scouting',
+    planning: 'dashboard.timeline.planning',
+    creating: 'dashboard.timeline.creating',
+    visual: 'dashboard.timeline.visual',
+    reviewing: 'dashboard.timeline.reviewing',
+    publishing: 'dashboard.timeline.publishing',
+  }
+  return t(map[phase] || `dashboard.timeline.${phase}`)
 }
 
-const allSteps = [
-  { phase: 'scouting', label: '趋势发现' },
-  { phase: 'planning', label: '策略规划' },
-  { phase: 'creating', label: '文案创作' },
-  { phase: 'visual', label: '视觉设计' },
-  { phase: 'reviewing', label: '人工审核' },
-  { phase: 'publishing', label: '发布' },
-]
+const allSteps = computed(() => [
+  { phase: 'scouting', label: t('dashboard.timeline.scouting') },
+  { phase: 'planning', label: t('dashboard.timeline.planning') },
+  { phase: 'creating', label: t('dashboard.timeline.creating') },
+  { phase: 'visual', label: t('dashboard.timeline.visual') },
+  { phase: 'reviewing', label: t('dashboard.timeline.reviewing') },
+  { phase: 'publishing', label: t('dashboard.timeline.publishing') },
+])
 
 const expectedSteps = computed(() => {
   const phaseOrder = ['scouting', 'planning', 'creating', 'visual', 'reviewing', 'publishing']
   const startIdx = phaseOrder.indexOf(props.phase)
-  if (startIdx < 0) return allSteps
-  return allSteps.slice(startIdx)
+  if (startIdx < 0) return allSteps.value
+  return allSteps.value.slice(startIdx)
 })
 </script>
 
@@ -79,7 +84,7 @@ const expectedSteps = computed(() => {
             </div>
             <div class="flex items-center justify-between py-2">
               <span class="text-sm text-slate-500">{{ t('home.form.startPhase') }}</span>
-              <span class="text-sm font-medium text-slate-700">{{ phaseLabels[phase] || phase }}</span>
+              <span class="text-sm font-medium text-slate-700">{{ phaseLabel(phase) }}</span>
             </div>
             <div class="flex items-center justify-between py-2">
               <span class="text-sm text-slate-500">{{ t('home.form.dryRun') }}</span>
