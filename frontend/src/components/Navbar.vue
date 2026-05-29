@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useWorkflowStore, useOnboardingStore, useAuthStore, useRealtimeStore } from '@/stores'
 import AppIcon from '@/components/AppIcon.vue'
 import HelpCenter from '@/components/HelpCenter.vue'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 
 const { t } = useI18n()
 
@@ -168,6 +169,15 @@ const handleLogout = async () => {
         >
           {{ t('nav.ws.reconnect') }}
         </button>
+      </div>
+
+      <!-- Language Switcher -->
+      <div class="mb-3 flex items-center justify-between px-3 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
+        <div class="flex items-center gap-2">
+          <AppIcon name="Globe" size="sm" variant="cyan" />
+          <span class="text-xs text-slate-500">{{ t('nav.language') || '语言' }}</span>
+        </div>
+        <LanguageSwitcher />
       </div>
 
       <div class="bg-gradient-to-r from-slate-50 to-white rounded-lg p-3 text-xs border border-slate-100 hover:border-slate-200 transition-all duration-200">

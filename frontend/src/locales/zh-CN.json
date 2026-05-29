@@ -63,6 +63,7 @@
     "account": "账户",
     "version": "版本",
     "history": "工作流历史",
+    "language": "语言",
     "ws": {
       "connected": "已连接",
       "connecting": "连接中...",

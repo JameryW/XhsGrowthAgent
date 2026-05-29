@@ -63,6 +63,7 @@
     "account": "Account",
     "version": "Version",
     "history": "History",
+    "language": "Language",
     "ws": {
       "connected": "Connected",
       "connecting": "Connecting...",
