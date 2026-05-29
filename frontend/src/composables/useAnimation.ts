@@ -1,5 +1,5 @@
 // frontend/src/composables/useAnimation.ts
-import { ref, watch, onUnmounted } from 'vue'
+import { ref, onUnmounted } from 'vue'
 
 /**
  * Composable for animation utilities
@@ -107,8 +107,6 @@ export function animatedCounter(
 
     const startTime = performance.now()
     const change = end - start
-    let frameId: number | null = null
-
     const animate = (currentTime: number) => {
       const elapsed = currentTime - startTime
       const progress = Math.min(elapsed / duration, 1)
@@ -119,12 +117,12 @@ export function animatedCounter(
       onUpdate(Math.round(currentValue))
 
       if (progress < 1) {
-        frameId = requestAnimationFrame(animate)
+        requestAnimationFrame(animate)
       } else {
         resolve()
       }
     }
 
-    frameId = requestAnimationFrame(animate)
+    requestAnimationFrame(animate)
   })
 }

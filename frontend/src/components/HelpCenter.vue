@@ -11,7 +11,7 @@ interface Props {
   feedbackEmail?: string
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   faqUrl: '/faq',
   shortcutsUrl: '/shortcuts',
   feedbackEmail: 'feedback@example.com',

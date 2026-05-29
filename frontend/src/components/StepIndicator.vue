@@ -11,7 +11,7 @@ interface Props {
   layout?: 'horizontal' | 'vertical'
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   layout: 'vertical'
 })
 

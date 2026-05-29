@@ -72,7 +72,7 @@ const issueCount = computed(() => {
   if (!health.value) return 0
   let count = 0
   if (health.value.checks.llm_providers.status !== 'ok') count++
-  if (health.value.checks.xhs_platform.status !== 'ok') count++
+  // XHS platform is optional (preview-only without it), don't count as issue
   if (health.value.checks.ripple_cas.status !== 'ok' && health.value.checks.ripple_cas.status !== 'disabled') count++
   return count
 })
@@ -85,7 +85,7 @@ const issueCount = computed(() => {
       class="w-full flex items-center justify-between p-4 hover:bg-slate-50/50 transition-colors"
       @click="isExpanded = !isExpanded"
       :aria-expanded="isExpanded"
-      aria-label="系统健康检查"
+      :aria-label="t('health.title')"
     >
       <div class="flex items-center gap-3">
         <div
@@ -108,7 +108,7 @@ const issueCount = computed(() => {
           v-if="!isLoading"
           @click.stop="fetchHealth"
           class="p-1 rounded hover:bg-slate-100 transition-colors"
-          aria-label="刷新健康检查"
+          :aria-label="t('health.refresh')"
         >
           <AppIcon name="RefreshCw" size="sm" variant="cyan" />
         </button>

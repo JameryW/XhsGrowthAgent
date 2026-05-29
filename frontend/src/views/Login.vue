@@ -57,7 +57,7 @@ const handleDismissError = () => {
       <!-- Header -->
       <div class="text-center mb-8">
         <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-rose-400 via-rose-500 to-amber-400 flex items-center justify-center mb-4 shadow-lg shadow-rose-500/20">
-          <AppIcon name="Lock" size="lg" variant="white" aria-label="Login" />
+          <AppIcon name="Lock" size="lg" variant="white" :aria-label="t('login.title')" />
         </div>
         <h1 class="text-2xl font-bold text-slate-800">{{ t('login.title') }}</h1>
         <p class="text-slate-500 mt-2">{{ t('login.subtitle') }}</p>

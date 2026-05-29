@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import { cn } from '@/utils/cn'
+
+const { t } = useI18n()
 
 interface Props {
   variant?: 'pink' | 'cyan' | 'purple' | 'peach' | 'ghost'
@@ -104,11 +107,11 @@ const handleClick = () => {
     <!-- Content -->
     <span :class="cn('relative z-10 flex items-center justify-center gap-2', loading && 'opacity-80')">
       <span v-if="loading" class="inline-flex items-center gap-2">
-        <AppIcon name="Loader2" size="sm" variant="white" animate aria-label="Loading" />
-        <span>Loading...</span>
+        <AppIcon name="Loader2" size="sm" variant="white" animate :aria-label="t('common.loading')" />
+        <span>{{ t('common.loading') }}</span>
       </span>
       <span v-else-if="success" class="inline-flex items-center gap-2">
-        <AppIcon name="Check" size="sm" variant="white" aria-label="Success" />
+        <AppIcon name="Check" size="sm" variant="white" :aria-label="t('common.success')" />
         <slot />
       </span>
       <slot v-else />

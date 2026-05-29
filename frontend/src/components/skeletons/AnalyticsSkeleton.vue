@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import MetricCardSkeleton from './MetricCardSkeleton.vue'
 import DataTableSkeleton from './DataTableSkeleton.vue'
-import AppIcon from '@/components/AppIcon.vue'
 </script>
 
 <template>

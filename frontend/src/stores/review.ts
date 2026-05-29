@@ -7,6 +7,9 @@ import { useRealtimeStore } from './realtime'
 import { useWorkflowStore } from './workflow'
 import { useToastStore } from './toast'
 import { EventType } from '@/realtime/events'
+import i18n from '@/locales'
+
+const { t } = i18n.global
 
 export const useReviewStore = defineStore('review', () => {
   // State
@@ -81,20 +84,20 @@ export const useReviewStore = defineStore('review', () => {
         visual_plan: p.visual_plan,
       }
       // 醒目通知: 内容已准备好，等待审核
-      toastStore.info('内容待审核', '文案和视觉方案已生成，请前往审核页面查看')
+      toastStore.info(t('workflow.awaitingReview'), t('workflow.awaitingReviewMessage'))
     }
   })
 
   realtimeStore.wsService.onEvent(EventType.REVIEW_APPROVED, () => {
-    toastStore.success('审核通过', '内容即将发布到小红书')
+    toastStore.success(t('review.success'), t('workflow.completedMessage'))
   })
 
   realtimeStore.wsService.onEvent(EventType.REVIEW_REJECTED, () => {
-    toastStore.warning('审核已拒绝', '内容已被放弃，工作流结束')
+    toastStore.warning(t('review.reject'), t('review.rejectDesc'))
   })
 
   realtimeStore.wsService.onEvent(EventType.REVIEW_NEEDS_REVISION, () => {
-    toastStore.info('需要修改', '请根据审核意见修改内容')
+    toastStore.info(t('review.revise'), t('review.reviseDesc'))
   })
 
   // Actions

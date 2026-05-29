@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { OnboardingStep } from '@/types/onboarding'
 import AppIcon from '@/components/AppIcon.vue'
+
+const { t } = useI18n()
 
 interface Props {
   isActive: boolean
@@ -17,32 +20,32 @@ const emit = defineEmits<{
 }>()
 
 // Tour step configurations
-const tourSteps = [
+const tourSteps = computed(() => [
   {
     step: 1,
-    title: '了解工作流',
-    description: '查看工作流的各个阶段，包括选品、策划、创作、审核、发布和分析。',
+    title: t('onboarding.steps.workflow.title'),
+    description: t('onboarding.steps.workflow.desc'),
     targetSelector: '.workflow-timeline',
     position: 'right' as const,
   },
   {
     step: 2,
-    title: '启动工作流',
-    description: '点击"启动"按钮开始新的工作流，系统会自动执行各个阶段。',
+    title: t('onboarding.steps.start.title'),
+    description: t('onboarding.steps.start.desc'),
     targetSelector: '.action-buttons',
     position: 'top' as const,
   },
   {
     step: 3,
-    title: '审核与发布',
-    description: '在审核页面查看生成的内容，确认后即可发布到小红书平台。',
+    title: t('onboarding.steps.review.title'),
+    description: t('onboarding.steps.review.desc'),
     targetSelector: '.review-content',
     position: 'left' as const,
   },
-]
+])
 
 // Current step configuration
-const currentStepConfig = computed(() => tourSteps[props.currentStep - 1])
+const currentStepConfig = computed(() => tourSteps.value[props.currentStep - 1])
 
 // Highlight box position
 const highlightBox = ref({
@@ -80,12 +83,6 @@ const updatePositions = async () => {
       case 'top':
         tooltipPosition.value = {
           top: rect.top - tooltipHeight - padding,
-          left: rect.left + rect.width / 2 - tooltipWidth / 2,
-        }
-        break
-      case 'bottom':
-        tooltipPosition.value = {
-          top: rect.bottom + padding,
           left: rect.left + rect.width / 2 - tooltipWidth / 2,
         }
         break
@@ -185,7 +182,7 @@ const isLastStep = computed(() => props.currentStep === 3)
               </h3>
             </div>
             <!-- Step dots -->
-            <div class="flex gap-1.5" role="group" aria-label="步骤指示器">
+            <div class="flex gap-1.5" role="group" :aria-label="t('onboarding.stepIndicator')">
               <span
                 v-for="step in 3"
                 :key="step"
@@ -197,7 +194,7 @@ const isLastStep = computed(() => props.currentStep === 3)
                       ? 'bg-neon-cyan/50'
                       : 'bg-slate-300'
                 "
-                :aria-label="`步骤 ${step}${step === currentStep ? ' (当前)' : ''}`"
+                :aria-label="`${t('onboarding.stepStatus', { step })}${step === currentStep ? ` (${t('onboarding.currentStep')})` : ''}`"
               />
             </div>
           </div>
@@ -212,26 +209,26 @@ const isLastStep = computed(() => props.currentStep === 3)
             <button
               class="px-3 py-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors text-sm font-medium"
               @click="handleSkip"
-              aria-label="跳过引导"
+              :aria-label="t('onboarding.skip')"
             >
-              跳过
+              {{ t('onboarding.skip') }}
             </button>
 
             <button
               v-if="!isLastStep"
               class="px-4 py-2 rounded-lg bg-gradient-to-r from-neon-cyan to-neon-purple text-white font-medium hover:shadow-lg transition-all"
               @click="handleNext"
-              aria-label="下一步"
+              :aria-label="t('onboarding.next')"
             >
-              下一步
+              {{ t('onboarding.next') }}
             </button>
             <button
               v-else
               class="px-4 py-2 rounded-lg bg-gradient-to-r from-neon-pink to-neon-peach text-white font-medium hover:shadow-lg transition-all"
               @click="handleComplete"
-              aria-label="完成引导"
+              :aria-label="t('onboarding.finish')"
             >
-              完成
+              {{ t('onboarding.finish') }}
             </button>
           </div>
         </div>

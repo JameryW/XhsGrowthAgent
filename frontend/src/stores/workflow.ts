@@ -42,7 +42,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     const pr = (workflowState.value as any)?.publish_result
     if (!pr || pr.status !== 'failed') return null
     return {
-      message: pr.error || '发布失败',
+      message: pr.error || t('workflow.publishFailed'),
       type: pr.error_type || 'unknown',
       recovery: pr.recovery || null,
     }
@@ -247,7 +247,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       toastStore.info(t('workflow.paused'), `${t('workflow.thread')}: ${currentThreadId.value}`)
     } catch (e: any) {
       error.value = e.message
-      toastStore.error('取消失败', e.message)
+      toastStore.error(t('workflow.cancelFailed'), e.message)
     } finally {
       isLoading.value = false
       isOverlayLoading.value = false

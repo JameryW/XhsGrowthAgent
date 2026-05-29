@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import os
 from typing import Literal
 
 from langgraph.graph import END
 
 from backend.state.enums import WorkflowPhase, ContentStatus
 from backend.state.schema import XHSGrowthState
+
+
+def _xhs_configured() -> bool:
+    """Check if XHS platform credentials are available."""
+    return bool(os.environ.get("XHS_COOKIE") and os.environ.get("XHS_USER_ID"))
 
 
 def orchestrator_router(state: XHSGrowthState) -> str:
@@ -36,12 +42,15 @@ def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "__end__
     return "__end__"
 
 
-def review_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_content"]:
+def review_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_content", "__end__"]:
     """人工审核路由 — 根据审核结果决定下一步"""
     feedback = state.get("human_feedback", {})
     decision = feedback.get("decision", ContentStatus.REJECTED)
     # Handle both enum and string values for frontend compatibility
     if decision == ContentStatus.APPROVED or decision == "approved":
+        # Skip publishing if XHS credentials are not configured (preview-only mode)
+        if not _xhs_configured():
+            return "__end__"
         return "publisher"
     # needs_revision and rejected both go to revise_content
     return "revise_content"

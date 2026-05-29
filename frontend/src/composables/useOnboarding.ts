@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { useOnboardingStore } from '@/stores/onboarding'
 import type { OnboardingStep, TourStep } from '@/types/onboarding'
-import { ONBOARDING_STORAGE_KEY, DEFAULT_ONBOARDING_STATE } from '@/types/onboarding'
+import { ONBOARDING_STORAGE_KEY } from '@/types/onboarding'
 
 /**
  * Tour steps configuration

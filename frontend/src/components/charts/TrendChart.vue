@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { LineChart } from 'echarts/charts'
@@ -8,6 +9,8 @@ import { CanvasRenderer } from 'echarts/renderers'
 
 // Register ECharts modules
 use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
+
+const { t } = useI18n()
 
 interface DataPoint {
   date: string
@@ -36,13 +39,13 @@ const neonColors = {
 
 // Accessibility: compute chart description for screen readers
 const chartDescription = computed(() => {
-  if (props.data.length === 0) return '无数据'
+  if (props.data.length === 0) return t('charts.noData')
   const values = props.data.map(d => d.value)
   const min = Math.min(...values)
   const max = Math.max(...values)
   const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length)
-  const trend = values[values.length - 1] > values[0] ? '上升' : values[values.length - 1] < values[0] ? '下降' : '平稳'
-  return `${props.title || '趋势图'}: 数据范围 ${min} 至 ${max}, 平均 ${avg}, 趋势 ${trend}`
+  const trend = values[values.length - 1] > values[0] ? t('charts.trend.rising') : values[values.length - 1] < values[0] ? t('charts.trend.falling') : t('charts.trend.stable')
+  return `${props.title || t('charts.trendChart')}: ${min}-${max}, avg ${avg}, ${trend}`
 })
 
 const chartOption = computed(() => {
@@ -139,12 +142,12 @@ const chartOption = computed(() => {
     />
 
     <!-- Hidden data table for screen readers -->
-    <table class="sr-only" aria-label="图表数据表">
-      <caption>{{ props.title || '趋势数据' }}</caption>
+    <table class="sr-only" :aria-label="t('charts.trendTable')">
+      <caption>{{ props.title || t('charts.trendData') }}</caption>
       <thead>
         <tr>
-          <th scope="col">日期</th>
-          <th scope="col">数值</th>
+          <th scope="col">{{ t('charts.date') }}</th>
+          <th scope="col">{{ t('charts.value') }}</th>
         </tr>
       </thead>
       <tbody>

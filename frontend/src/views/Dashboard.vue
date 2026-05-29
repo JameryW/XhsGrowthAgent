@@ -103,7 +103,7 @@ onUnmounted(() => {
             <AppIcon name="AlertTriangle" size="md" variant="pink" />
           </div>
           <div class="flex-1">
-            <div class="text-rose-700 font-semibold text-sm mb-1">{{ t('dashboard.publishError.title') || '发布失败' }}</div>
+            <div class="text-rose-700 font-semibold text-sm mb-1">{{ t('dashboard.publishFailed') }}</div>
             <p class="text-rose-600 text-sm mb-2">{{ workflowStore.publishError.message }}</p>
             <div v-if="workflowStore.publishError.recovery" class="space-y-2">
               <p class="text-xs text-rose-500">{{ workflowStore.publishError.recovery.hint }}</p>

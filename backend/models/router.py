@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
+from pathlib import Path
 from dotenv import load_dotenv
 
 # 加载 .env 文件（确保环境变量可用）
-load_dotenv()
+_project_root = Path(__file__).resolve().parent.parent.parent
+load_dotenv(_project_root / ".env")
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
@@ -16,8 +18,25 @@ from langchain_openai import ChatOpenAI
 from backend.config.models import ModelConfig, ModelProvider, TaskType, resolve_model_id
 
 
+_PROVIDER_ENV_VARS: dict[ModelProvider, str] = {
+    ModelProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
+    ModelProvider.OPENAI: "OPENAI_API_KEY",
+    ModelProvider.DEEPSEEK: "DEEPSEEK_API_KEY",
+    ModelProvider.DASHSCOPE: "DASHSCOPE_API_KEY",
+    ModelProvider.XIAOMIMIMO: "XIAOMIMIMO_API_KEY",
+}
+
+
 def _create_model(config: ModelConfig) -> BaseChatModel:
     """根据 ModelConfig 创建对应的 ChatModel 实例"""
+    env_var = _PROVIDER_ENV_VARS.get(config.provider)
+    api_key = os.environ.get(env_var, "") if env_var else ""
+    if not api_key:
+        raise ValueError(
+            f"Missing API key for {config.provider.value} provider (model: {config.model_name}). "
+            f"Set the {env_var} environment variable or add it to your .env file."
+        )
+
     match config.provider:
         case ModelProvider.ANTHROPIC:
             return ChatAnthropic(
@@ -25,7 +44,7 @@ def _create_model(config: ModelConfig) -> BaseChatModel:
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
                 timeout=config.timeout,
-                api_key=os.environ.get("ANTHROPIC_API_KEY"),
+                api_key=api_key,
             )
         case ModelProvider.OPENAI:
             return ChatOpenAI(
@@ -33,7 +52,7 @@ def _create_model(config: ModelConfig) -> BaseChatModel:
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
                 timeout=config.timeout,
-                api_key=os.environ.get("OPENAI_API_KEY"),
+                api_key=api_key,
             )
         case ModelProvider.DEEPSEEK:
             return ChatOpenAI(
@@ -41,7 +60,7 @@ def _create_model(config: ModelConfig) -> BaseChatModel:
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
                 timeout=config.timeout,
-                api_key=os.environ.get("DEEPSEEK_API_KEY"),
+                api_key=api_key,
                 base_url="https://api.deepseek.com",
             )
         case ModelProvider.DASHSCOPE:
@@ -50,7 +69,7 @@ def _create_model(config: ModelConfig) -> BaseChatModel:
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
                 timeout=config.timeout,
-                api_key=os.environ.get("DASHSCOPE_API_KEY"),
+                api_key=api_key,
                 base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
             )
         case ModelProvider.XIAOMIMIMO:
@@ -59,7 +78,7 @@ def _create_model(config: ModelConfig) -> BaseChatModel:
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
                 timeout=config.timeout,
-                api_key=os.environ.get("XIAOMIMIMO_API_KEY"),
+                api_key=api_key,
                 base_url=os.environ.get("XIAOMIMIMO_BASE_URL", "https://token-plan-sgp.xiaomimimo.com/v1"),
             )
 

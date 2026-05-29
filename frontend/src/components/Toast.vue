@@ -98,7 +98,7 @@ onUnmounted(() => {
           <button
             class="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-150"
             @click="closeToast(toast.id)"
-            aria-label="Close notification"
+            :aria-label="t('common.close')"
           >
             <AppIcon name="X" size="sm" variant="cyan" />
           </button>

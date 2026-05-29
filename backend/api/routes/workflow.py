@@ -21,7 +21,9 @@ from backend.state.enums import WorkflowPhase
 router = APIRouter()
 
 # Workflow registry with JSON file persistence
-_REGISTRY_PATH = Path(os.environ.get("XHS_REGISTRY_PATH", ".xhs/workflow_registry.json"))
+_DATA_DIR = Path(os.environ.get("XHS_REGISTRY_PATH", ".xhs"))
+_REGISTRY_PATH = _DATA_DIR / "workflow_registry.json"
+_HISTORY_DIR = _DATA_DIR / "history"
 _workflow_registry: dict[str, dict] = {}
 
 
@@ -46,6 +48,45 @@ def _save_registry() -> None:
         )
     except OSError:
         pass  # Non-critical: registry is also in memory
+
+
+def _save_workflow_result(thread_id: str, state_values: dict) -> None:
+    """Persist completed workflow result to history file."""
+    try:
+        _HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+        history_path = _HISTORY_DIR / f"{thread_id}.json"
+        history_path.write_text(
+            json.dumps(state_values, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+def _load_workflow_result(thread_id: str) -> dict | None:
+    """Load persisted workflow result from history file."""
+    history_path = _HISTORY_DIR / f"{thread_id}.json"
+    if history_path.exists():
+        try:
+            return json.loads(history_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+    return None
+
+
+def _load_all_history() -> dict[str, dict]:
+    """Load all persisted workflow results."""
+    results = {}
+    if not _HISTORY_DIR.exists():
+        return results
+    for f in _HISTORY_DIR.glob("*.json"):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            tid = f.stem
+            results[tid] = data
+        except (json.JSONDecodeError, OSError):
+            continue
+    return results
 
 
 # Load persisted registry on module import
@@ -83,6 +124,12 @@ class WorkflowStatusResponse(BaseModel):
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     agent_timeline: list[AgentTimelineEntry] = Field(default_factory=list, description="Agent 执行时间线")
+    trend_data: dict = Field(default_factory=dict, description="趋势发现数据")
+    content_plan: dict = Field(default_factory=dict, description="内容策略")
+    copy_content: dict = Field(default_factory=dict, description="文案内容")
+    visual_plan: dict = Field(default_factory=dict, description="视觉方案")
+    publish_result: dict = Field(default_factory=dict, description="发布结果")
+    analytics: dict = Field(default_factory=dict, description="分析数据")
 
 
 PHASE_PROGRESS = {
@@ -165,7 +212,20 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
 
     if req.async_mode:
         # 异步启动（立即返回，后台执行）
-        asyncio.create_task(graph.ainvoke(initial_state, config))
+        async def _run_and_persist():
+            try:
+                result = await graph.ainvoke(initial_state, config)
+                final_phase = result.get("phase", "unknown")
+                _workflow_registry[thread_id]["phase"] = final_phase
+                _workflow_registry[thread_id]["status"] = "completed"
+                _workflow_registry[thread_id]["progress_percent"] = 100
+                _save_registry()
+                _save_workflow_result(thread_id, result)
+            except Exception:
+                _workflow_registry[thread_id]["status"] = "error"
+                _save_registry()
+
+        asyncio.create_task(_run_and_persist())
         return success(data={
             "thread_id": thread_id,
             "status": "running",
@@ -182,6 +242,7 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
         _workflow_registry[thread_id]["status"] = "completed"
         _workflow_registry[thread_id]["progress_percent"] = 100
         _save_registry()
+        _save_workflow_result(thread_id, result)
         return success(data={
             "thread_id": thread_id,
             "status": "completed",
@@ -213,52 +274,110 @@ async def get_workflow_status(thread_id: str, request: Request):
 
     state = await graph.aget_state(config)
 
-    # Check if workflow exists (state.values should have content)
-    if not state.values or state.values.get("session_id") is None:
-        raise WorkflowNotFoundError(thread_id)
+    # Check if workflow exists in live graph state
+    if state.values and state.values.get("session_id") is not None:
+        phase = state.values.get("phase", "unknown")
+        progress = get_progress(phase)
 
-    phase = state.values.get("phase", "unknown")
-    progress = get_progress(phase)
+        # Persist completed workflow results
+        if phase in ("completed", "error", "cancelled"):
+            _save_workflow_result(thread_id, state.values)
 
-    # Update registry if workflow exists there
+        # Update registry if workflow exists there
+        if thread_id in _workflow_registry:
+            _workflow_registry[thread_id]["phase"] = phase
+            _workflow_registry[thread_id]["progress_percent"] = progress
+            _workflow_registry[thread_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+            if state.values.get("error"):
+                _workflow_registry[thread_id]["error"] = state.values.get("error")
+                _workflow_registry[thread_id]["status"] = "error"
+            elif phase == "completed":
+                _workflow_registry[thread_id]["status"] = "completed"
+            elif phase == "cancelled":
+                _workflow_registry[thread_id]["status"] = "cancelled"
+            _save_registry()
+
+        # Build agent timeline from performance_log
+        perf_log = state.values.get("performance_log") or []
+        agent_timeline = [
+            AgentTimelineEntry(
+                agent=entry.get("agent", "unknown"),
+                started_at=entry.get("started_at", ""),
+                completed_at=entry.get("completed_at", ""),
+                duration_seconds=entry.get("duration_seconds", 0.0),
+                status=entry.get("status", "success"),
+                error=entry.get("error"),
+            )
+            for entry in perf_log
+        ]
+
+        return success(data=WorkflowStatusResponse(
+            thread_id=thread_id,
+            phase=phase,
+            current_agent=state.values.get("current_agent", "unknown"),
+            next_steps=list(state.next) if state.next else [],
+            error=state.values.get("error"),
+            progress_percent=progress,
+            created_at=state.values.get("created_at"),
+            updated_at=state.values.get("updated_at"),
+            agent_timeline=agent_timeline,
+            trend_data=state.values.get("trend_data") or {},
+            content_plan=state.values.get("content_plan") or {},
+            copy_content=state.values.get("copy_content") or {},
+            visual_plan=state.values.get("visual_plan") or {},
+            publish_result=state.values.get("publish_result") or {},
+            analytics=state.values.get("analytics") or {},
+        ).model_dump())
+
+    # Fallback: check persisted history (container restart case)
+    saved = _load_workflow_result(thread_id)
+    if saved:
+        phase = saved.get("phase", "unknown")
+        perf_log = saved.get("performance_log") or []
+        agent_timeline = [
+            AgentTimelineEntry(
+                agent=entry.get("agent", "unknown"),
+                started_at=entry.get("started_at", ""),
+                completed_at=entry.get("completed_at", ""),
+                duration_seconds=entry.get("duration_seconds", 0.0),
+                status=entry.get("status", "success"),
+                error=entry.get("error"),
+            )
+            for entry in perf_log
+        ]
+        return success(data=WorkflowStatusResponse(
+            thread_id=thread_id,
+            phase=phase,
+            current_agent=saved.get("current_agent", "unknown"),
+            next_steps=[],
+            error=saved.get("error"),
+            progress_percent=get_progress(phase),
+            created_at=saved.get("created_at"),
+            updated_at=saved.get("updated_at"),
+            agent_timeline=agent_timeline,
+            trend_data=saved.get("trend_data") or {},
+            content_plan=saved.get("content_plan") or {},
+            copy_content=saved.get("copy_content") or {},
+            visual_plan=saved.get("visual_plan") or {},
+            publish_result=saved.get("publish_result") or {},
+            analytics=saved.get("analytics") or {},
+        ).model_dump())
+
+    # Also check registry for metadata-only entries
     if thread_id in _workflow_registry:
-        _workflow_registry[thread_id]["phase"] = phase
-        _workflow_registry[thread_id]["progress_percent"] = progress
-        _workflow_registry[thread_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
-        if state.values.get("error"):
-            _workflow_registry[thread_id]["error"] = state.values.get("error")
-            _workflow_registry[thread_id]["status"] = "error"
-        elif phase == "completed":
-            _workflow_registry[thread_id]["status"] = "completed"
-        elif phase == "cancelled":
-            _workflow_registry[thread_id]["status"] = "cancelled"
-        _save_registry()
+        meta = _workflow_registry[thread_id]
+        return success(data=WorkflowStatusResponse(
+            thread_id=thread_id,
+            phase=meta.get("phase", "unknown"),
+            current_agent="unknown",
+            next_steps=[],
+            error=meta.get("error"),
+            progress_percent=meta.get("progress_percent", 0),
+            created_at=meta.get("created_at"),
+            updated_at=meta.get("updated_at"),
+        ).model_dump())
 
-    # Build agent timeline from performance_log
-    perf_log = state.values.get("performance_log") or []
-    agent_timeline = [
-        AgentTimelineEntry(
-            agent=entry.get("agent", "unknown"),
-            started_at=entry.get("started_at", ""),
-            completed_at=entry.get("completed_at", ""),
-            duration_seconds=entry.get("duration_seconds", 0.0),
-            status=entry.get("status", "success"),
-            error=entry.get("error"),
-        )
-        for entry in perf_log
-    ]
-
-    return success(data=WorkflowStatusResponse(
-        thread_id=thread_id,
-        phase=phase,
-        current_agent=state.values.get("current_agent", "unknown"),
-        next_steps=list(state.next) if state.next else [],
-        error=state.values.get("error"),
-        progress_percent=progress,
-        created_at=state.values.get("created_at"),
-        updated_at=state.values.get("updated_at"),
-        agent_timeline=agent_timeline,
-    ).model_dump())
+    raise WorkflowNotFoundError(thread_id)
 
 
 @router.post("/pause/{thread_id}")
@@ -458,8 +577,25 @@ async def list_workflows(
 
     返回工作流列表，支持按账号和状态筛选、分页。
     按创建时间倒序排列。
+    合并内存注册表和持久化历史记录。
     """
-    workflows = list(_workflow_registry.values())
+    # Merge registry with persisted history (history fills gaps after restart)
+    workflows = {w["thread_id"]: w for w in _workflow_registry.values()}
+    for tid, saved in _load_all_history().items():
+        if tid not in workflows:
+            workflows[tid] = {
+                "thread_id": tid,
+                "account_id": saved.get("account_id", "unknown"),
+                "phase": saved.get("phase", "unknown"),
+                "status": saved.get("phase", "unknown"),
+                "dry_run": False,
+                "auto_publish": False,
+                "progress_percent": get_progress(saved.get("phase", "")),
+                "created_at": saved.get("created_at", ""),
+                "updated_at": saved.get("updated_at", ""),
+                "error": saved.get("error"),
+            }
+    workflows = list(workflows.values())
 
     # Filter by account_id
     if account_id:

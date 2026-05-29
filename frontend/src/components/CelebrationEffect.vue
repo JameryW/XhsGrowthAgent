@@ -1,6 +1,6 @@
 <!-- frontend/src/components/CelebrationEffect.vue -->
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 
 /**
  * CelebrationEffect component

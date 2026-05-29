@@ -165,7 +165,7 @@ const isFocused = (index: number) => focusedIndex.value === index
         <div class="flex items-center gap-2">
           <AppIcon name="Clock" size="sm" variant="cyan" />
           <span class="text-xs text-slate-600 uppercase tracking-wide font-medium">
-            {{ t('dashboard.timeline.agentDetails') || 'Agent 执行详情' }}
+            {{ t('dashboard.timeline.agentDetails') }}
           </span>
           <span class="text-xs px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-600 font-medium">
             {{ agentTimeline.length }}

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { BarChart } from 'echarts/charts'
@@ -8,6 +9,8 @@ import { CanvasRenderer } from 'echarts/renderers'
 
 // Register ECharts modules
 use([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
+
+const { t } = useI18n()
 
 interface DataItem {
   category: string
@@ -35,10 +38,10 @@ const neonColors = {
 
 // Accessibility: compute chart description for screen readers
 const chartDescription = computed(() => {
-  if (props.data.length === 0) return '无数据'
+  if (props.data.length === 0) return t('charts.noData')
   const total = props.data.reduce((sum, d) => sum + d.value, 0)
   const maxCategory = props.data.reduce((max, d) => d.value > max.value ? d : max, props.data[0])
-  return `互动分布图: 总计 ${total} 次, 最高 ${maxCategory.category} ${maxCategory.value} 次`
+  return `Total: ${total}, top: ${maxCategory.category} ${maxCategory.value}`
 })
 
 const chartOption = computed(() => ({
@@ -118,12 +121,12 @@ const chartOption = computed(() => ({
     />
 
     <!-- Hidden data table for screen readers -->
-    <table class="sr-only" aria-label="互动数据表">
-      <caption>互动类型分布</caption>
+    <table class="sr-only" :aria-label="t('charts.engagementTable')">
+      <caption>{{ t('charts.engagementTable') }}</caption>
       <thead>
         <tr>
-          <th scope="col">类型</th>
-          <th scope="col">次数</th>
+          <th scope="col">{{ t('charts.type') }}</th>
+          <th scope="col">{{ t('charts.count') }}</th>
         </tr>
       </thead>
       <tbody>

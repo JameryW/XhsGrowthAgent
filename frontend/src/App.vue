@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed } from "vue"
 import { useRoute } from "vue-router"
+import { useI18n } from "vue-i18n"
 import ConnectionStatus from "@/components/ConnectionStatus.vue"
 import Toast from "@/components/Toast.vue"
 import OfflineIndicator from "@/components/OfflineIndicator.vue"
@@ -14,6 +15,7 @@ import { useRealtimeStore, useOnboardingStore, useShortcutsStore, useAuthStore }
 import { useOnboarding } from "@/composables/useOnboarding"
 import { useShortcuts } from "@/composables/useShortcuts"
 
+const { t } = useI18n()
 const realtimeStore = useRealtimeStore()
 const onboardingStore = useOnboardingStore()
 const shortcutsStore = useShortcutsStore()
@@ -22,8 +24,8 @@ const route = useRoute()
 
 // Hide Navbar and chrome on login page
 const showChrome = computed(() => authStore.isAuthenticated && route.name !== 'login')
-const { initOnboarding, isVisible: showOnboarding, skipTour, completeTour, advanceStep } = useOnboarding()
-const { handleShortcutAction } = useShortcuts()
+const { initOnboarding, skipTour, completeTour, advanceStep } = useOnboarding()
+useShortcuts()
 
 // Keyboard shortcuts help
 const showShortcutsHelp = ref(false)
@@ -101,7 +103,7 @@ const handleErrorBoundaryRefresh = () => {
       href="#main-content"
       class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-teal-500 focus:text-white focus:rounded-lg focus:shadow-lg focus:outline-none"
     >
-      跳转到主内容
+      {{ t('common.skipToContent') }}
     </a>
 
     <!-- Animated gradient mesh -->
@@ -144,7 +146,7 @@ const handleErrorBoundaryRefresh = () => {
     <!-- 主内容区 -->
     <main id="main-content" class="flex-1 p-8 overflow-auto relative z-10" tabindex="-1">
       <ErrorBoundary
-        fallback-message="页面加载出现问题"
+        :fallback-message="t('common.pageLoadError')"
         @error="handleErrorBoundaryError"
         @refresh="handleErrorBoundaryRefresh"
       >
