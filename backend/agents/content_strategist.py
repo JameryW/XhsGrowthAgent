@@ -35,9 +35,11 @@ class ContentStrategistAgent(BaseAgent):
 
         system_prompt = self._build_system_prompt(state, extra_context=memory_context)
 
+        niche = state.get("niche", "母婴")
         trend_data = state.get("trend_data", {})
         user_msg = f"""趋势数据：{trend_data}
 账号定位：{account_id}
+垂类赛道：{niche}
 历史表现洞察：{memory_context}"""
 
         response = await self.model.ainvoke([

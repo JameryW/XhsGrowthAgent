@@ -32,8 +32,9 @@ class TrendScoutAgent(BaseAgent):
 
         system_prompt = self._build_system_prompt(state, extra_context=memory_context)
 
+        niche = state.get("niche", "母婴")
         user_msg = f"""账号定位：{state.get('account_id', 'default')}
-关注领域：生活方式、美妆、穿搭
+关注领域：{niche}
 竞品账号：暂无"""
 
         response = await self.model.ainvoke([

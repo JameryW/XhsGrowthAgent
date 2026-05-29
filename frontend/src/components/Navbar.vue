@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useWorkflowStore, useOnboardingStore, useAuthStore, useRealtimeStore } from '@/stores'
 import AppIcon from '@/components/AppIcon.vue'
 import HelpCenter from '@/components/HelpCenter.vue'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 
 const { t } = useI18n()
 
@@ -65,7 +66,7 @@ const handleLogout = async () => {
           <AppIcon name="BookOpen" size="lg" variant="white" />
         </div>
         <div>
-          <div class="text-slate-800 font-semibold text-lg tracking-tight">增长引擎</div>
+          <div class="text-slate-800 font-semibold text-lg tracking-tight">{{ t('nav.appName') }}</div>
           <div class="text-xs text-slate-400 mt-0.5">XHS Growth Agent</div>
         </div>
       </div>
@@ -88,7 +89,7 @@ const handleLogout = async () => {
     </button>
 
     <!-- 导航项 -->
-    <div class="space-y-1.5 relative" role="list" aria-label="导航链接">
+    <div class="space-y-1.5 relative" role="list" :aria-label="t('nav.home')">
       <button
         v-for="item in navItems"
         :key="item.path"
@@ -125,7 +126,7 @@ const handleLogout = async () => {
     </div>
 
     <!-- 底部信息 -->
-    <div class="mt-auto pt-6 border-t border-slate-100" aria-label="系统信息">
+    <div class="mt-auto pt-6 border-t border-slate-100" :aria-label="t('nav.systemInfo')">
       <!-- Logout button -->
       <button
         v-if="authStore.isAuthenticated"
@@ -168,6 +169,15 @@ const handleLogout = async () => {
         >
           {{ t('nav.ws.reconnect') }}
         </button>
+      </div>
+
+      <!-- Language Switcher -->
+      <div class="mb-3 flex items-center justify-between px-3 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
+        <div class="flex items-center gap-2">
+          <AppIcon name="Globe" size="sm" variant="cyan" />
+          <span class="text-xs text-slate-500">{{ t('nav.language') || '语言' }}</span>
+        </div>
+        <LanguageSwitcher />
       </div>
 
       <div class="bg-gradient-to-r from-slate-50 to-white rounded-lg p-3 text-xs border border-slate-100 hover:border-slate-200 transition-all duration-200">

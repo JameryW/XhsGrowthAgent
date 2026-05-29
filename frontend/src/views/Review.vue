@@ -148,19 +148,19 @@ function buildFeedback(decision: ContentStatus): string {
 
   if (decision === 'needs_revision' || decision === 'rejected') {
     const structured: string[] = []
-    if (titleIssue.value) structured.push(`标题: ${titleIssue.value}`)
-    if (bodyIssue.value) structured.push(`正文: ${bodyIssue.value}`)
-    if (tagsIssue.value) structured.push(`标签: ${tagsIssue.value}`)
-    if (visualIssue.value) structured.push(`视觉: ${visualIssue.value}`)
-    if (timingIssue.value) structured.push(`发布时间: ${timingIssue.value}`)
-    if (structured.length) parts.push(`[结构化反馈] ${structured.join('; ')}`)
+    if (titleIssue.value) structured.push(`${t('review.titlePrefix')}: ${titleIssue.value}`)
+    if (bodyIssue.value) structured.push(`${t('review.bodyPrefix')}: ${bodyIssue.value}`)
+    if (tagsIssue.value) structured.push(`${t('review.tagsPrefix')}: ${tagsIssue.value}`)
+    if (visualIssue.value) structured.push(`${t('review.visualPrefix')}: ${visualIssue.value}`)
+    if (timingIssue.value) structured.push(`${t('review.timingPrefix')}: ${timingIssue.value}`)
+    if (structured.length) parts.push(`${t('review.structuredPrefix')} ${structured.join('; ')}`)
   }
 
   if (decision === 'rejected' && rejectReason.value) {
-    parts.push(`[拒绝原因] ${rejectReason.value}`)
+    parts.push(`${t('review.rejectPrefix')} ${rejectReason.value}`)
   }
   if (decision === 'needs_revision' && revisionReason.value) {
-    parts.push(`[修改要求] ${revisionReason.value}`)
+    parts.push(`${t('review.revisionPrefix')} ${revisionReason.value}`)
   }
 
   return parts.join('\n')
@@ -465,7 +465,7 @@ const handleCancelConfirm = () => {
               <span class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 text-xs font-medium flex items-center justify-center">
                 {{ reviewStore.versionHistory.length - idx }}
               </span>
-              <span class="text-sm font-medium text-slate-700">{{ version.changes_summary || `版本 ${reviewStore.versionHistory.length - idx}` }}</span>
+              <span class="text-sm font-medium text-slate-700">{{ version.changes_summary || t('review.versionLabel', { n: reviewStore.versionHistory.length - idx }) }}</span>
               <span v-if="version.title" class="text-xs text-slate-400 truncate max-w-[200px]">— {{ version.title }}</span>
             </div>
             <div class="flex items-center gap-2">
@@ -666,7 +666,7 @@ const handleCancelConfirm = () => {
           </div>
 
           <div class="border-t border-slate-200 pt-3">
-            <p class="text-xs text-slate-400 mb-2">按维度反馈（可选）：</p>
+            <p class="text-xs text-slate-400 mb-2">{{ t('review.structuredFeedbackLabel') }}</p>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <input v-model="titleIssue" :placeholder="t('review.titleIssue')" class="px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all" />
               <input v-model="bodyIssue" :placeholder="t('review.bodyIssue')" class="px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all" />

@@ -23,10 +23,12 @@ class VisualDesignerAgent(BaseAgent):
 
         system_prompt = self._build_system_prompt(state)
 
+        niche = state.get("niche", "母婴")
         body_summary = copy.get("body_text", "")[:200] if copy else ""
         user_msg = f"""选题：{plan.get('selected_topic', '')}
 角度：{plan.get('content_angle', '')}
 内容类型：{plan.get('content_type', 'note')}
+垂类赛道：{niche}
 正文摘要：{body_summary}"""
 
         response = await self.model.ainvoke([

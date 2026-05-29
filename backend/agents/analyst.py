@@ -38,9 +38,11 @@ class AnalystAgent(BaseAgent):
         if ripple_report:
             ripple_context = f"\nRipple 传播预测报告：\n{ripple_report}\n"
 
+        niche = state.get("niche", "母婴")
         user_msg = f"""帖子数据：{publish_result}
 历史数据：{history}
-账号定位：{account_id}{ripple_context}"""
+账号定位：{account_id}
+垂类赛道：{niche}{ripple_context}"""
 
         response = await self.model.ainvoke([
             SystemMessage(content=system_prompt),

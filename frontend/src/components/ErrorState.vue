@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { useWorkflowStore, useToastStore } from '@/stores'
+
+const { t } = useI18n()
 
 const workflowStore = useWorkflowStore()
 const toastStore = useToastStore()
@@ -29,50 +32,26 @@ const errorType = computed(() => {
 })
 
 const recoverySuggestions = computed(() => {
-  switch (errorType.value) {
-    case 'network':
-      return [
-        '检查网络连接是否正常',
-        '尝试刷新页面',
-        '等待片刻后重试',
-      ]
-    case 'validation':
-      return [
-        '检查输入参数是否正确',
-        '确认账号ID有效',
-        '查看API文档了解参数要求',
-      ]
-    case 'not_found':
-      return [
-        '确认工作流ID存在',
-        '检查是否已删除的工作流',
-        '返回仪表盘重新开始',
-      ]
-    case 'auth':
-      return [
-        '检查登录状态',
-        '重新登录系统',
-        '联系管理员获取权限',
-      ]
-    default:
-      return [
-        '点击重试按钮重新尝试',
-        '返回仪表盘查看状态',
-        '联系技术支持获取帮助',
-      ]
-  }
+  const key = {
+    network: 'errorState.networkSuggestions',
+    validation: 'errorState.validationSuggestions',
+    not_found: 'errorState.notFoundSuggestions',
+    auth: 'errorState.authSuggestions',
+    general: 'errorState.generalSuggestions',
+  }[errorType.value] || 'errorState.generalSuggestions'
+  return t(key) as unknown as string[]
 })
 
 const retryAction = () => {
   workflowStore.refreshStatus()
-  toastStore.info('正在重试...', '重新获取工作流状态')
+  toastStore.info(t('errorState.retrying'), t('errorState.retryingMessage'))
 }
 
 const goBackAction = () => {
   workflowStore.setThreadId('')
   workflowStore.workflowState = null
   workflowStore.error = null
-  toastStore.info('已返回', '请重新开始工作流')
+  toastStore.info(t('errorState.returned'), t('errorState.returnedMessage'))
 }
 </script>
 
@@ -86,13 +65,13 @@ const goBackAction = () => {
 
       <!-- Error content -->
       <div class="flex-1">
-        <h3 class="text-lg font-semibold text-red-700 mb-1">工作流错误</h3>
+        <h3 class="text-lg font-semibold text-red-700 mb-1">{{ t('errorState.workflowError') }}</h3>
         <p class="text-red-600 text-sm mb-2">{{ workflowStore.error }}</p>
-        <p class="text-red-500/70 text-xs mb-3">当前阶段: {{ currentPhase }}</p>
+        <p class="text-red-500/70 text-xs mb-3">{{ t('errorState.currentPhase', { phase: currentPhase }) }}</p>
 
         <!-- Recovery suggestions -->
         <div class="mt-3 p-3 rounded-lg bg-white/80 border border-red-100">
-          <p class="text-xs text-red-600 font-medium mb-2">建议解决方案:</p>
+          <p class="text-xs text-red-600 font-medium mb-2">{{ t('errorState.suggestions') }}</p>
           <ul class="space-y-1">
             <li v-for="suggestion in recoverySuggestions" :key="suggestion" class="flex items-center gap-2 text-xs text-red-500">
               <AppIcon name="ChevronRight" size="sm" variant="pink" aria-hidden="true" />
@@ -107,13 +86,13 @@ const goBackAction = () => {
         <NeonButton variant="pink" size="sm" @click="retryAction" :loading="workflowStore.isLoading">
           <span class="inline-flex items-center gap-2">
             <AppIcon name="RefreshCw" size="sm" variant="white" />
-            <span>重试</span>
+            <span>{{ t('errorState.retry') }}</span>
           </span>
         </NeonButton>
         <NeonButton variant="ghost" size="sm" class="text-red-500 hover:bg-red-50" @click="goBackAction">
           <span class="inline-flex items-center gap-2">
             <AppIcon name="Home" size="sm" variant="pink" />
-            <span>返回</span>
+            <span>{{ t('errorState.back') }}</span>
           </span>
         </NeonButton>
       </div>

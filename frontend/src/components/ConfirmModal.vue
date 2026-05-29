@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+
+const { t } = useI18n()
 
 interface Props {
   isOpen: boolean
@@ -13,11 +16,14 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  confirmLabel: '确认',
-  cancelLabel: '取消',
+  confirmLabel: '',
+  cancelLabel: '',
   variant: 'warning',
   confirmAction: '',
 })
+
+const displayConfirmLabel = computed(() => props.confirmLabel || t('common.confirm'))
+const displayCancelLabel = computed(() => props.cancelLabel || t('common.cancel'))
 
 const emit = defineEmits<{
   (e: 'confirm'): void
@@ -140,7 +146,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
           <!-- Action Preview -->
           <div v-if="confirmAction" class="mb-4 p-3 rounded-lg bg-slate-50 border border-slate-200">
-            <p class="text-xs text-slate-500 uppercase tracking-wide mb-1">操作预览</p>
+            <p class="text-xs text-slate-500 uppercase tracking-wide mb-1">{{ t('common.actionPreview') }}</p>
             <p class="text-sm text-slate-700">{{ confirmAction }}</p>
           </div>
 
@@ -151,7 +157,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
               class="px-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 transition-all"
               @click="handleCancel"
             >
-              {{ cancelLabel }}
+              {{ displayCancelLabel }}
             </button>
             <button
               ref="confirmButtonRef"
@@ -162,7 +168,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
               @click="handleConfirm"
             >
               <AppIcon name="Check" size="sm" variant="white" />
-              {{ confirmLabel }}
+              {{ displayConfirmLabel }}
             </button>
           </div>
         </div>

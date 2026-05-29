@@ -8,7 +8,18 @@
     "save": "保存",
     "delete": "删除",
     "retry": "重试",
-    "close": "关闭"
+    "close": "关闭",
+    "apiError": "API 错误",
+    "moduleOutput": "模块输出",
+    "completed": "已完成",
+    "loadingState": "加载中",
+    "actionPreview": "操作预览",
+    "apiError": "API 错误",
+    "timeoutError": "请求超时",
+    "unknownError": "未知错误",
+    "retrySuccess": "重试成功",
+    "retryCount": "重试 ({count})",
+    "retriedTimes": "已重试 {count} 次"
   },
   "health": {
     "ready": "就绪",
@@ -63,13 +74,16 @@
     "account": "账户",
     "version": "版本",
     "history": "工作流历史",
+    "language": "语言",
     "ws": {
       "connected": "已连接",
       "connecting": "连接中...",
       "reconnecting": "重连中...",
       "disconnected": "未连接",
       "reconnect": "重新连接"
-    }
+    },
+    "appName": "增长引擎",
+    "systemInfo": "系统信息"
   },
   "home": {
     "title": "小红书增长引擎",
@@ -92,7 +106,12 @@
       "dryRun": "试运行模式",
       "dryRunHelp": "不实际发布到小红书",
       "autoPublish": "自动发布",
-      "autoPublishHelp": "审核通过后自动发布"
+      "autoPublishHelp": "审核通过后自动发布",
+      "topic": "话题主题",
+      "topicPlaceholder": "可选：输入内容主题或关键词",
+      "topicHelp": "指定主题可引导内容策略方向",
+      "niche": "垂类赛道",
+      "nicheHelp": "选择内容垂类，影响趋势发现和内容策略"
     },
     "confirm": {
       "title": "确认启动工作流",
@@ -132,7 +151,9 @@
       "publishing": "发布",
       "publishingDesc": "发布到小红书平台",
       "analyzing": "数据分析",
-      "analyzingDesc": "分析表现数据"
+      "analyzingDesc": "分析表现数据",
+      "engaging": "互动管理",
+      "engagingDesc": "受众互动管理"
     }
   },
   "review": {
@@ -216,7 +237,64 @@
     "connected": "实时连接",
     "connecting": "连接中...",
     "reconnecting": "重连中...",
-    "disconnected": "已断开"
+    "disconnected": "已断开",
+    "seqNumber": "消息序列号"
+  },
+  "errorState": {
+    "workflowError": "工作流错误",
+    "currentPhase": "当前阶段: {phase}",
+    "suggestions": "建议解决方案:",
+    "retry": "重试",
+    "back": "返回",
+    "retrying": "正在重试...",
+    "retryingMessage": "重新获取工作流状态",
+    "returned": "已返回",
+    "returnedMessage": "请重新开始工作流",
+    "networkSuggestions": ["检查网络连接是否正常", "尝试刷新页面", "等待片刻后重试"],
+    "validationSuggestions": ["检查输入参数是否正确", "确认账号ID有效", "查看API文档了解参数要求"],
+    "notFoundSuggestions": ["确认工作流ID存在", "检查是否已删除的工作流", "返回仪表盘重新开始"],
+    "authSuggestions": ["检查登录状态", "重新登录系统", "联系管理员获取权限"],
+    "generalSuggestions": ["点击重试按钮重新尝试", "返回仪表盘查看状态", "联系技术支持获取帮助"]
+  },
+  "dataTable": {
+    "title": "数据表格",
+    "noData": "暂无数据",
+    "noDataDesc": "等待数据加载或操作生成",
+    "records": "共 {count} 条记录"
+  },
+  "errorBoundary": {
+    "componentError": "组件错误",
+    "errorSource": "错误来源: {info}",
+    "refresh": "刷新"
+  },
+  "workflowNode": {
+    "completed": "完成",
+    "error": "错误",
+    "running": "进行中"
+  },
+  "offlineIndicator": {
+    "networkOffline": "网络离线",
+    "pendingActions": "{count} 个操作待执行"
+  },
+  "metricCard": {
+    "ariaLabel": "统计指标: {title}"
+  },
+  "retryIndicator": {
+    "retryStatus": "重试状态",
+    "retryCount": "第{count}次重试",
+    "retryIn": "{time}后重试",
+    "cancelRetry": "取消重试",
+    "seconds": "{n}秒",
+    "minutes": "{n}分钟",
+    "minutesSeconds": "{m}分{s}秒",
+    "zero": "0秒"
+  },
+  "miniProgress": {
+    "progress": "进度 {percent}%",
+    "label": "进度"
+  },
+  "toast": {
+    "notifications": "通知"
   },
   "offline": {
     "recovered": "连接恢复",
@@ -298,6 +376,16 @@
     "feedbackPlaceholder": "请输入审核意见或修改建议...",
     "feedbackAriaLabel": "审核意见输入框",
     "structuredFeedback": "结构化反馈",
+    "structuredFeedbackLabel": "按维度反馈（可选）：",
+    "structuredPrefix": "[结构化反馈]",
+    "rejectPrefix": "[拒绝原因]",
+    "revisionPrefix": "[修改要求]",
+    "titlePrefix": "标题",
+    "bodyPrefix": "正文",
+    "tagsPrefix": "标签",
+    "visualPrefix": "视觉",
+    "timingPrefix": "发布时间",
+    "versionLabel": "版本 {n}",
     "titleIssue": "标题问题",
     "bodyIssue": "正文问题",
     "tagsIssue": "标签问题",
@@ -360,6 +448,14 @@
       "liveWarning": "当前为实时模式，内容将真实发布到小红书平台。请确认所有内容无误。",
       "confirm": "批准并发布"
     }
+  },
+  "celebration": {
+    "title": "恭喜！工作流完成",
+    "message": "内容已成功发布",
+    "contentPublished": "内容发布",
+    "progressComplete": "进度完成",
+    "workflowEnd": "工作流结束",
+    "backToDashboard": "返回仪表盘"
   },
   "help": {
     "center": "帮助中心",

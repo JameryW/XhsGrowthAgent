@@ -12,6 +12,7 @@ export interface WorkflowConfig {
   dryRun: boolean
   autoPublish: boolean
   topic?: string
+  niche: string
 }
 
 const props = defineProps<{
@@ -23,6 +24,20 @@ const phase = ref<WorkflowPhase>('scouting')
 const dryRun = ref(true)
 const autoPublish = ref(false)
 const topic = ref(props.initialTopic || '')
+const niche = ref('母婴')
+
+const niches = [
+  { value: '母婴', label: '母婴', icon: 'Baby' },
+  { value: '美妆', label: '美妆', icon: 'Sparkles' },
+  { value: '穿搭', label: '穿搭', icon: 'Shirt' },
+  { value: '美食', label: '美食', icon: 'UtensilsCrossed' },
+  { value: '家居', label: '家居', icon: 'Home' },
+  { value: '健身', label: '健身', icon: 'Dumbbell' },
+  { value: '旅行', label: '旅行', icon: 'Plane' },
+  { value: '数码', label: '数码', icon: 'Smartphone' },
+  { value: '宠物', label: '宠物', icon: 'PawPrint' },
+  { value: '知识', label: '知识', icon: 'BookOpen' },
+]
 
 const phases: { value: WorkflowPhase; label: string; desc: string }[] = [
   { value: 'scouting', label: '趋势发现', desc: '从发现热门趋势开始' },
@@ -39,6 +54,7 @@ function getConfig(): WorkflowConfig {
     dryRun: dryRun.value,
     autoPublish: autoPublish.value,
     topic: topic.value.trim() || undefined,
+    niche: niche.value,
   }
 }
 
@@ -73,6 +89,32 @@ defineExpose({ getConfig })
         :placeholder="t('home.form.topicPlaceholder') || '可选：输入内容主题或关键词'"
       />
       <p class="text-xs text-slate-400 mt-1">{{ t('home.form.topicHelp') || '指定主题可引导内容策略方向' }}</p>
+    </div>
+
+    <!-- Niche / Track -->
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1.5">
+        {{ t('home.form.niche') || '垂类赛道' }}
+      </label>
+      <div class="grid grid-cols-5 gap-2">
+        <button
+          v-for="n in niches"
+          :key="n.value"
+          @click="niche = n.value"
+          :class="[
+            'flex flex-col items-center p-2 rounded-lg border text-center transition-all duration-200',
+            niche === n.value
+              ? 'border-rose-300 bg-rose-50 shadow-sm'
+              : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+          ]"
+        >
+          <AppIcon :name="n.icon" size="md" :variant="niche === n.value ? 'pink' : 'cyan'" />
+          <span :class="['text-xs font-medium mt-1', niche === n.value ? 'text-rose-600' : 'text-slate-600']">
+            {{ n.label }}
+          </span>
+        </button>
+      </div>
+      <p class="text-xs text-slate-400 mt-1">{{ t('home.form.nicheHelp') || '选择内容垂类，影响趋势发现和内容策略' }}</p>
     </div>
 
     <!-- Starting Phase -->

@@ -8,7 +8,18 @@
     "save": "Save",
     "delete": "Delete",
     "retry": "Retry",
-    "close": "Close"
+    "close": "Close",
+    "apiError": "API Error",
+    "moduleOutput": "Module Output",
+    "completed": "Completed",
+    "loadingState": "Loading",
+    "actionPreview": "Action Preview",
+    "apiError": "API Error",
+    "timeoutError": "Request Timeout",
+    "unknownError": "Unknown Error",
+    "retrySuccess": "Retry Successful",
+    "retryCount": "Retry ({count})",
+    "retriedTimes": "Retried {count} times"
   },
   "health": {
     "ready": "Ready",
@@ -63,13 +74,16 @@
     "account": "Account",
     "version": "Version",
     "history": "History",
+    "language": "Language",
     "ws": {
       "connected": "Connected",
       "connecting": "Connecting...",
       "reconnecting": "Reconnecting...",
       "disconnected": "Disconnected",
       "reconnect": "Reconnect"
-    }
+    },
+    "appName": "Growth Engine",
+    "systemInfo": "System Info"
   },
   "home": {
     "title": "XHS Growth Engine",
@@ -92,7 +106,12 @@
       "dryRun": "Dry Run Mode",
       "dryRunHelp": "Don't actually publish to Xiaohongshu",
       "autoPublish": "Auto Publish",
-      "autoPublishHelp": "Auto-publish after approval"
+      "autoPublishHelp": "Auto-publish after approval",
+      "topic": "Topic",
+      "topicPlaceholder": "Optional: enter content topic or keywords",
+      "topicHelp": "Specify a topic to guide content strategy direction",
+      "niche": "Content Track",
+      "nicheHelp": "Select a vertical track, affects trend discovery and content strategy"
     },
     "confirm": {
       "title": "Confirm Workflow Start",
@@ -132,7 +151,9 @@
       "publishing": "Publish",
       "publishingDesc": "Publish to Xiaohongshu",
       "analyzing": "Analytics",
-      "analyzingDesc": "Analyze performance data"
+      "analyzingDesc": "Analyze performance data",
+      "engaging": "Engagement",
+      "engagingDesc": "Audience interaction"
     }
   },
   "analytics": {
@@ -179,7 +200,64 @@
     "connected": "Connected",
     "connecting": "Connecting...",
     "reconnecting": "Reconnecting...",
-    "disconnected": "Disconnected"
+    "disconnected": "Disconnected",
+    "seqNumber": "Message sequence number"
+  },
+  "errorState": {
+    "workflowError": "Workflow Error",
+    "currentPhase": "Current phase: {phase}",
+    "suggestions": "Suggested solutions:",
+    "retry": "Retry",
+    "back": "Back",
+    "retrying": "Retrying...",
+    "retryingMessage": "Re-fetching workflow status",
+    "returned": "Returned",
+    "returnedMessage": "Please restart the workflow",
+    "networkSuggestions": ["Check network connection", "Try refreshing the page", "Wait and retry"],
+    "validationSuggestions": ["Check input parameters", "Verify account ID is valid", "See API docs for parameter requirements"],
+    "notFoundSuggestions": ["Verify workflow ID exists", "Check if workflow was deleted", "Return to dashboard to start over"],
+    "authSuggestions": ["Check login status", "Re-login to the system", "Contact admin for permissions"],
+    "generalSuggestions": ["Click retry to try again", "Return to dashboard to check status", "Contact support for help"]
+  },
+  "dataTable": {
+    "title": "Data Table",
+    "noData": "No data",
+    "noDataDesc": "Waiting for data to load or operations to generate",
+    "records": "{count} records"
+  },
+  "errorBoundary": {
+    "componentError": "Component Error",
+    "errorSource": "Error source: {info}",
+    "refresh": "Refresh"
+  },
+  "workflowNode": {
+    "completed": "Completed",
+    "error": "Error",
+    "running": "In progress"
+  },
+  "offlineIndicator": {
+    "networkOffline": "Network Offline",
+    "pendingActions": "{count} pending actions"
+  },
+  "metricCard": {
+    "ariaLabel": "Metric: {title}"
+  },
+  "retryIndicator": {
+    "retryStatus": "Retry status",
+    "retryCount": "Retry #{count}",
+    "retryIn": "Retrying in {time}",
+    "cancelRetry": "Cancel retry",
+    "seconds": "{n}s",
+    "minutes": "{n}m",
+    "minutesSeconds": "{m}m {s}s",
+    "zero": "0s"
+  },
+  "miniProgress": {
+    "progress": "Progress {percent}%",
+    "label": "Progress"
+  },
+  "toast": {
+    "notifications": "Notifications"
   },
   "offline": {
     "recovered": "Connection Restored",
@@ -261,6 +339,16 @@
     "feedbackPlaceholder": "Enter review comments or suggestions...",
     "feedbackAriaLabel": "Review comments input",
     "structuredFeedback": "Structured Feedback",
+    "structuredFeedbackLabel": "Feedback by dimension (optional):",
+    "structuredPrefix": "[Structured Feedback]",
+    "rejectPrefix": "[Rejection Reason]",
+    "revisionPrefix": "[Revision Request]",
+    "titlePrefix": "Title",
+    "bodyPrefix": "Body",
+    "tagsPrefix": "Tags",
+    "visualPrefix": "Visual",
+    "timingPrefix": "Timing",
+    "versionLabel": "Version {n}",
     "titleIssue": "Title Issue",
     "bodyIssue": "Body Issue",
     "tagsIssue": "Tags Issue",
@@ -323,6 +411,14 @@
       "liveWarning": "Live mode is on. Content will be published to Xiaohongshu for real. Make sure everything is correct.",
       "confirm": "Approve & Publish"
     }
+  },
+  "celebration": {
+    "title": "Congratulations! Workflow Completed",
+    "message": "Content published successfully",
+    "contentPublished": "Published",
+    "progressComplete": "Progress Complete",
+    "workflowEnd": "Workflow Done",
+    "backToDashboard": "Back to Dashboard"
   },
   "help": {
     "center": "Help Center",

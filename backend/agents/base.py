@@ -56,6 +56,8 @@ class BaseAgent(ABC):
 
     def _build_system_prompt(self, state: XHSGrowthState, extra_context: str = "") -> str:
         template = self.prompt_template.get("system", "")
+        niche = state.get("niche", "母婴")
+        template = template.replace("{account_niche}", niche)
         if extra_context:
             template = template.replace("{memory_context}", extra_context)
         return template

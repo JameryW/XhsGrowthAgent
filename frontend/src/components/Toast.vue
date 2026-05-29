@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useToastStore } from "@/stores/toast"
 import type { ToastType } from "@/stores/toast"
 import AppIcon from "@/components/AppIcon.vue"
+
+const { t } = useI18n()
 
 const toastStore = useToastStore()
 
@@ -60,7 +63,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="fixed top-12 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none" role="region" aria-label="通知">
+  <div class="fixed top-12 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none" role="region" :aria-label="t('toast.notifications')">
     <TransitionGroup name="toast">
       <div
         v-for="toast in toastStore.toasts"

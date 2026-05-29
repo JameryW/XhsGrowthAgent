@@ -30,6 +30,7 @@ const formConfig = ref<WorkflowConfig>({
   phase: 'scouting',
   dryRun: true,
   autoPublish: false,
+  niche: '母婴',
 })
 
 // Check for topic query param from analytics
@@ -62,7 +63,7 @@ const confirmStart = async () => {
     await workflowStore.startWorkflow(
       formConfig.value.accountId,
       formConfig.value.phase,
-      { dryRun: formConfig.value.dryRun, autoPublish: formConfig.value.autoPublish, topic: formConfig.value.topic }
+      { dryRun: formConfig.value.dryRun, autoPublish: formConfig.value.autoPublish, topic: formConfig.value.topic, niche: formConfig.value.niche }
     )
     showConfirm.value = false
     router.push('/dashboard')
@@ -78,6 +79,7 @@ const quickStart = () => {
     phase: 'scouting',
     dryRun: true,
     autoPublish: false,
+    niche: '母婴',
   }
   showConfirm.value = true
 }
@@ -194,6 +196,7 @@ const quickStart = () => {
       :phase="formConfig.phase"
       :dry-run="formConfig.dryRun"
       :auto-publish="formConfig.autoPublish"
+      :niche="formConfig.niche"
       :is-loading="isStarting"
       @confirm="confirmStart"
       @cancel="showConfirm = false"

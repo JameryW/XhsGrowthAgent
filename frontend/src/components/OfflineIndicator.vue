@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import { useOfflineStore } from '@/stores'
+
+const { t } = useI18n()
 
 const offlineStore = useOfflineStore()
 
@@ -16,12 +19,12 @@ const pendingCount = computed(() => offlineStore.pendingActionCount)
       class="fixed top-0 left-0 right-0 z-40 px-4 py-2 bg-gradient-to-r from-rose-500 to-rose-400 text-white text-sm flex items-center justify-center gap-2 shadow-md"
       role="status"
       aria-live="assertive"
-      aria-label="网络离线"
+      :aria-label="t('offlineIndicator.networkOffline')"
     >
       <AppIcon name="Wifi" size="sm" variant="white" animate aria-hidden="true" />
-      <span class="font-medium">网络离线</span>
+      <span class="font-medium">{{ t('offlineIndicator.networkOffline') }}</span>
       <span v-if="pendingCount > 0" class="opacity-80">
-        · {{ pendingCount }} 个操作待执行
+        · {{ t('offlineIndicator.pendingActions', { count: pendingCount }) }}
       </span>
     </div>
   </Transition>

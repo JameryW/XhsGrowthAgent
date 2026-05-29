@@ -59,6 +59,7 @@ class WorkflowStartRequest(BaseModel):
     dry_run: bool = Field(default=False, description="试运行模式（不实际发布）")
     auto_publish: bool = Field(default=False, description="审核通过后自动发布")
     topic: Optional[str] = Field(default=None, description="内容主题/关键词")
+    niche: str = Field(default="母婴", description="垂类赛道")
 
 
 class AgentTimelineEntry(BaseModel):
@@ -139,6 +140,7 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
         "account_id": req.account_id,
         "session_id": thread_id,
         "topic": req.topic,
+        "niche": req.niche,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }

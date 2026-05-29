@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 interface Props {
   value: number // 0-100
@@ -27,7 +30,7 @@ const percentage = computed(() => Math.min(100, Math.max(0, props.value)))
 </script>
 
 <template>
-  <div class="w-full" aria-live="polite" :aria-label="`进度 ${percentage}%`">
+  <div class="w-full" aria-live="polite" :aria-label="t('miniProgress.progress', { percent: percentage })">
     <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden relative">
       <!-- Progress bar -->
       <div
@@ -48,7 +51,7 @@ const percentage = computed(() => Math.min(100, Math.max(0, props.value)))
     </div>
 
     <div v-if="showLabel" class="text-xs text-slate-500 mt-1 flex justify-between font-medium">
-      <span>进度</span>
+      <span>{{ t('miniProgress.label') }}</span>
       <span :class="`text-${props.variant === 'pink' ? 'rose' : props.variant === 'cyan' ? 'teal' : props.variant === 'purple' ? 'violet' : 'amber'}-600`">{{ percentage }}%</span>
     </div>
   </div>

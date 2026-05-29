@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+
+const { t } = useI18n()
 
 interface Props {
   title: string
@@ -55,7 +58,7 @@ const styles = {
 </script>
 
 <template>
-  <div :class="['rounded-xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5', styles[props.variant].border]" role="region" aria-label="{{ title }}模块输出">
+  <div :class="['rounded-xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5', styles[props.variant].border]" role="region" :aria-label="`${title} ${t('common.moduleOutput')}`">
     <!-- Header -->
     <div class="flex items-center gap-3 mb-4">
       <div :class="['w-11 h-11 rounded-xl bg-gradient-to-br flex items-center justify-center shadow-sm', styles[props.variant].iconBg]" aria-hidden="true">
@@ -63,11 +66,11 @@ const styles = {
       </div>
       <div class="flex-1">
         <div class="text-slate-800 font-semibold text-sm">{{ props.title }}</div>
-        <div class="text-xs text-slate-400 uppercase tracking-wide">Module Output</div>
+        <div class="text-xs text-slate-400 uppercase tracking-wide">{{ t('common.moduleOutput') }}</div>
       </div>
       <div v-if="props.completed" :class="['px-2.5 py-1 rounded-lg flex items-center gap-1.5 bg-teal-50 border border-teal-100']">
-        <AppIcon name="Check" size="sm" variant="cyan" aria-label="已完成" />
-        <span class="text-xs text-teal-600 font-medium">完成</span>
+        <AppIcon name="Check" size="sm" variant="cyan" :aria-label="t('common.completed')" />
+        <span class="text-xs text-teal-600 font-medium">{{ t('common.completed') }}</span>
       </div>
     </div>
 
@@ -83,7 +86,7 @@ const styles = {
     </div>
 
     <!-- Loading state -->
-    <div v-else class="bg-slate-50 rounded-lg p-4 border-l-2 border-slate-200" role="status" aria-live="polite" aria-label="加载中">
+    <div v-else class="bg-slate-50 rounded-lg p-4 border-l-2 border-slate-200" role="status" aria-live="polite" :aria-label="t('common.loadingState')">
       <div class="h-4 w-full rounded bg-slate-200 animate-pulse" />
     </div>
   </div>

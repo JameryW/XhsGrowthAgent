@@ -2,7 +2,6 @@
 import { onMounted, onUnmounted, ref, computed } from "vue"
 import { useRoute } from "vue-router"
 import ConnectionStatus from "@/components/ConnectionStatus.vue"
-import LanguageSwitcher from "@/components/LanguageSwitcher.vue"
 import Toast from "@/components/Toast.vue"
 import OfflineIndicator from "@/components/OfflineIndicator.vue"
 import OfflineRecovery from "@/components/OfflineRecovery.vue"
@@ -122,7 +121,6 @@ const handleErrorBoundaryRefresh = () => {
     <template v-if="showChrome">
       <OfflineIndicator />
       <ConnectionStatus />
-      <LanguageSwitcher />
 
       <!-- Keyboard shortcuts help -->
       <KeyboardShortcutsHelp :is-open="showShortcutsHelp" @close="handleCloseShortcutsHelp" />

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+
+const { t } = useI18n()
 
 // Props
 const props = defineProps<{
@@ -24,16 +27,16 @@ const progressPercent = computed(() => {
 
 const formattedTime = computed(() => {
   const seconds = countdown.value
-  if (seconds <= 0) return '0秒'
-  if (seconds < 60) return `${seconds}秒`
+  if (seconds <= 0) return t('retryIndicator.zero')
+  if (seconds < 60) return t('retryIndicator.seconds', { n: seconds })
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = seconds % 60
-  if (remainingSeconds === 0) return `${minutes}分钟`
-  return `${minutes}分${remainingSeconds}秒`
+  if (remainingSeconds === 0) return t('retryIndicator.minutes', { n: minutes })
+  return t('retryIndicator.minutesSeconds', { m: minutes, s: remainingSeconds })
 })
 
 const retryText = computed(() => {
-  return `第${props.retryCount}次重试`
+  return t('retryIndicator.retryCount', { count: props.retryCount })
 })
 
 // Countdown timer
@@ -73,7 +76,7 @@ onUnmounted(() => {
     class="bg-amber-50/80 border border-amber-200/50 rounded-xl p-4"
     role="status"
     aria-live="polite"
-    aria-label="重试状态"
+    :aria-label="t('retryIndicator.retryStatus')"
   >
     <div class="flex items-center gap-3 mb-3">
       <!-- Retry icon with animation -->
@@ -88,7 +91,7 @@ onUnmounted(() => {
 
       <!-- Countdown timer -->
       <span class="text-amber-600 text-sm">
-        {{ formattedTime }}后重试
+        {{ t('retryIndicator.retryIn', { time: formattedTime }) }}
       </span>
     </div>
 
@@ -105,7 +108,7 @@ onUnmounted(() => {
       class="mt-3 text-sm text-amber-600 hover:text-amber-700 transition-colors underline"
       @click="emit('cancel')"
     >
-      取消重试
+      {{ t('retryIndicator.cancelRetry') }}
     </button>
   </div>
 </template>
