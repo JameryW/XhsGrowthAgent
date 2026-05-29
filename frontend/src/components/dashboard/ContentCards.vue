@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import ContentCard from '@/components/ContentCard.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { useWorkflowStore } from '@/stores'
 
+const { t } = useI18n()
 const workflowStore = useWorkflowStore()
 
 // Memoized phase order for consistent status lookup
@@ -34,31 +36,31 @@ const allEmpty = () =>
     <div class="w-16 h-16 mx-auto rounded-full bg-slate-100 flex items-center justify-center mb-4" aria-hidden="true">
       <AppIcon name="Rocket" size="lg" variant="cyan" />
     </div>
-    <p class="text-slate-500 text-lg mb-2">工作流尚未启动</p>
-    <p class="text-slate-400 text-sm">前往首页开始新的增长流程</p>
+    <p class="text-slate-500 text-lg mb-2">{{ t('dashboard.header.idle') }}</p>
+    <p class="text-slate-400 text-sm">{{ t('home.startWorkflow') }}</p>
   </div>
 
   <!-- Empty state when started but no data yet -->
-  <div v-else-if="allEmpty() && !isIdle()" class="grid grid-cols-1 lg:grid-cols-3 gap-4" role="status" aria-live="polite" aria-label="工作流数据加载状态">
+  <div v-else-if="allEmpty() && !isIdle()" class="grid grid-cols-1 lg:grid-cols-3 gap-4" role="status" aria-live="polite" :aria-label="t('dashboard.contentCards.loading')">
     <div class="rounded-xl p-6 bg-white/98 border border-slate-200/50 text-center">
       <AppIcon name="Search" size="md" variant="pink" class="mb-3" aria-hidden="true" />
-      <p class="text-slate-400 text-sm">趋势数据正在收集...</p>
+      <p class="text-slate-400 text-sm">{{ t('dashboard.contentCards.trendScouting') }}...</p>
     </div>
     <div class="rounded-xl p-6 bg-white/98 border border-slate-200/50 text-center">
       <AppIcon name="ClipboardList" size="md" variant="cyan" class="mb-3" aria-hidden="true" />
-      <p class="text-slate-400 text-sm">策略规划即将开始...</p>
+      <p class="text-slate-400 text-sm">{{ t('dashboard.contentCards.strategyPlanning') }}...</p>
     </div>
     <div class="rounded-xl p-6 bg-white/98 border border-slate-200/50 text-center">
       <AppIcon name="Pencil" size="md" variant="purple" class="mb-3" aria-hidden="true" />
-      <p class="text-slate-400 text-sm">文案创作待处理...</p>
+      <p class="text-slate-400 text-sm">{{ t('dashboard.contentCards.copywriting') }}...</p>
     </div>
   </div>
 
   <!-- Cards with data -->
-  <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-4" role="region" aria-label="工作流内容卡片">
+  <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-4" role="region" :aria-label="t('dashboard.contentCards.cards')">
     <ContentCard
       v-if="Object.keys(workflowStore.trendData).length > 0"
-      title="趋势发现"
+      :title="t('dashboard.contentCards.trendScouting')"
       icon="Search"
       :content="workflowStore.trendData"
       variant="pink"
@@ -66,7 +68,7 @@ const allEmpty = () =>
     />
     <ContentCard
       v-if="Object.keys(workflowStore.contentPlan).length > 0"
-      title="策略规划"
+      :title="t('dashboard.contentCards.strategyPlanning')"
       icon="ClipboardList"
       :content="workflowStore.contentPlan"
       variant="cyan"
@@ -74,7 +76,7 @@ const allEmpty = () =>
     />
     <ContentCard
       v-if="Object.keys(workflowStore.copyContent).length > 0"
-      title="文案创作"
+      :title="t('dashboard.contentCards.copywriting')"
       icon="Pencil"
       :content="workflowStore.copyContent"
       variant="purple"

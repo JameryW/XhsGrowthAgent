@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+
+const { t } = useI18n()
 
 interface Props {
   isOpen: boolean
@@ -27,16 +30,18 @@ watch(() => props.isOpen, async (isOpen) => {
   }
 })
 
-const shortcuts = [
-  { key: '?', description: '显示快捷键帮助' },
-  { key: 'Esc', description: '关闭弹窗/取消操作' },
-  { key: 'Enter', description: '确认选择/提交' },
-  { key: 'Space', description: '选择项目/切换状态' },
-  { key: 'Tab', description: '切换焦点到下一个元素' },
-  { key: 'Shift+Tab', description: '切换焦点到上一个元素' },
-  { key: 'R', description: '刷新状态 (Dashboard)' },
-  { key: 'P', description: '暂停工作流 (Dashboard)' },
-]
+import { computed } from 'vue'
+
+const shortcuts = computed(() => [
+  { key: '?', description: t('onboarding.steps.workflow.title') },
+  { key: 'Esc', description: t('common.close') + ' / ' + t('common.cancel') },
+  { key: 'Enter', description: t('common.confirm') },
+  { key: 'Space', description: t('common.confirm') },
+  { key: 'Tab', description: 'Tab' },
+  { key: 'Shift+Tab', description: 'Shift+Tab' },
+  { key: 'R', description: t('dashboard.actionButtons.refresh') },
+  { key: 'P', description: t('dashboard.actionButtons.pause') },
+])
 
 const handleClose = () => emit('close')
 const handleKeyDown = (e: KeyboardEvent) => {
@@ -67,15 +72,15 @@ const handleKeyDown = (e: KeyboardEvent) => {
               <AppIcon name="Keyboard" size="md" variant="white" />
             </div>
             <h2 id="shortcuts-title" class="text-lg font-semibold text-slate-800">
-              快捷键帮助
+              {{ t('help.shortcuts') }}
             </h2>
           </div>
 
           <!-- Description for screen readers -->
-          <p id="shortcuts-desc" class="sr-only">可用的键盘快捷键列表，帮助您快速操作应用</p>
+          <p id="shortcuts-desc" class="sr-only">{{ t('help.shortcuts') }}</p>
 
           <!-- Shortcuts list -->
-          <div class="space-y-2" role="list" aria-label="快捷键列表">
+          <div class="space-y-2" role="list" :aria-label="t('help.shortcuts')">
             <div
               v-for="shortcut in shortcuts"
               :key="shortcut.key"
@@ -96,7 +101,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
               class="px-4 py-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
               @click="handleClose"
             >
-              关闭
+              {{ t('common.close') }}
             </button>
           </div>
         </div>

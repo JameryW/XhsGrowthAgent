@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { useWorkflowStore, useReviewStore } from '@/stores'
 
+const { t } = useI18n()
 const router = useRouter()
 const workflowStore = useWorkflowStore()
 const reviewStore = useReviewStore()
@@ -38,21 +40,21 @@ const goToReview = () => {
 </script>
 
 <template>
-  <div class="flex flex-wrap gap-3" role="group" aria-label="工作流操作按钮">
+  <div class="flex flex-wrap gap-3" role="group" :aria-label="t('dashboard.actionButtons.ariaLabel')">
     <!-- Start new workflow when no active workflow -->
     <NeonButton
       v-if="!hasActiveWorkflow"
       variant="pink"
       size="lg"
       class="w-full sm:w-auto"
-      title="启动新的内容增长工作流"
-      aria-label="启动新工作流"
+      :title="t('dashboard.actionButtons.startNewDesc')"
+      :aria-label="t('dashboard.actionButtons.startNew')"
       :loading="isStarting"
       @click="startNewWorkflow"
     >
       <span class="inline-flex items-center gap-2">
         <AppIcon name="Rocket" size="lg" variant="white" />
-        <span class="font-bold">启动新工作流</span>
+        <span class="font-bold">{{ t('dashboard.actionButtons.startNew') }}</span>
       </span>
     </NeonButton>
 
@@ -62,14 +64,14 @@ const goToReview = () => {
       variant="cyan"
       size="lg"
       class="w-full sm:w-auto animate-pulse"
-      title="前往审核页面查看并决定内容"
-      aria-label="去审核内容 - 内容已准备好等待审核"
+      :title="t('dashboard.actionButtons.goReviewPendingDesc')"
+      :aria-label="t('dashboard.actionButtons.goReviewPending')"
       @click="goToReview"
     >
       <span class="inline-flex items-center gap-2">
         <AppIcon name="CheckCircle" size="lg" variant="white" />
-        <span class="font-bold">去审核内容</span>
-        <span v-if="needsReview" class="text-xs opacity-70">待处理</span>
+        <span class="font-bold">{{ t('dashboard.actionButtons.goReview') }}</span>
+        <span v-if="needsReview" class="text-xs opacity-70">{{ t('dashboard.timeline.pending') }}</span>
       </span>
     </NeonButton>
 
@@ -77,26 +79,26 @@ const goToReview = () => {
     <NeonButton
       v-if="!isReviewing"
       variant="pink"
-      title="暂停当前工作流执行"
-      aria-label="暂停工作流"
+      :title="t('dashboard.actionButtons.pauseDesc')"
+      :aria-label="t('dashboard.actionButtons.pause')"
       @click="pauseWorkflow"
       :loading="workflowStore.isLoading"
     >
       <span class="inline-flex items-center gap-2">
         <AppIcon name="Pause" size="sm" variant="white" />
-        <span>暂停工作流</span>
+        <span>{{ t('dashboard.actionButtons.pause') }}</span>
       </span>
     </NeonButton>
 
     <NeonButton
       variant="cyan"
-      title="刷新获取最新工作流状态"
-      aria-label="刷新状态"
+      :title="t('dashboard.actionButtons.refreshDesc')"
+      :aria-label="t('dashboard.actionButtons.refresh')"
       @click="workflowStore.refreshStatus()"
     >
       <span class="inline-flex items-center gap-2">
         <AppIcon name="RefreshCw" size="sm" variant="white" />
-        <span>刷新状态</span>
+        <span>{{ t('dashboard.actionButtons.refresh') }}</span>
       </span>
     </NeonButton>
 
@@ -104,13 +106,13 @@ const goToReview = () => {
     <NeonButton
       v-if="!isReviewing"
       variant="purple"
-      title="前往审核页面查看内容"
-      aria-label="进入审核页面"
+      :title="t('dashboard.actionButtons.goReviewDesc')"
+      :aria-label="t('dashboard.actionButtons.goReview')"
       @click="goToReview"
     >
       <span class="inline-flex items-center gap-2">
         <AppIcon name="CheckCircle" size="sm" variant="white" />
-        <span>进入审核</span>
+        <span>{{ t('dashboard.actionButtons.goReview') }}</span>
       </span>
     </NeonButton>
   </div>

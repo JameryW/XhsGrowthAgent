@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import CircularProgress from '@/components/CircularProgress.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import MiniProgress from '@/components/MiniProgress.vue'
 import { useWorkflowStore } from '@/stores'
 
+const { t } = useI18n()
 const workflowStore = useWorkflowStore()
 
 // Memoized phase order for performance
@@ -66,10 +68,10 @@ const timeRemainingDisplay = computed(() => {
   if (seconds === null) return ''
 
   if (seconds < 60) {
-    return `约 ${seconds} 秒`
+    return `~${seconds}s`
   }
   const minutes = Math.round(seconds / 60)
-  return `约 ${minutes} 分钟`
+  return `~${minutes}m`
 })
 </script>
 
@@ -77,12 +79,12 @@ const timeRemainingDisplay = computed(() => {
   <div
     class="rounded-2xl p-6 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm"
     role="region"
-    aria-label="工作流状态"
+    :aria-label="t('dashboard.header.status')"
   >
     <div class="flex items-center gap-5">
       <!-- Progress & Logo -->
       <div class="flex items-center gap-4">
-        <CircularProgress :value="workflowProgress" variant="cyan" size="lg" show-value aria-label="工作流进度" />
+        <CircularProgress :value="workflowProgress" variant="cyan" size="lg" show-value :aria-label="t('dashboard.header.progress')" />
         <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-rose-400 via-rose-500 to-amber-400 flex items-center justify-center shadow-sm" aria-hidden="true">
           <AppIcon name="Rocket" size="xl" variant="white" />
         </div>
@@ -91,16 +93,16 @@ const timeRemainingDisplay = computed(() => {
       <!-- Info -->
       <div class="flex-1 space-y-2">
         <div class="flex items-center gap-3">
-          <span class="px-2 py-1 rounded bg-teal-50 text-teal-600 text-xs uppercase tracking-wide font-medium">WORKFLOW</span>
+          <span class="px-2 py-1 rounded bg-teal-50 text-teal-600 text-xs uppercase tracking-wide font-medium">{{ t('dashboard.header.workflow') }}</span>
           <span class="text-xs text-slate-400">{{ workflowStore.currentThreadId || '—' }}</span>
         </div>
         <div class="text-xl font-semibold text-slate-800">
-          {{ workflowStore.currentPhase === 'idle' ? '等待启动' : `${workflowStore.currentPhase} 阶段` }}
+          {{ workflowStore.currentPhase === 'idle' ? t('dashboard.header.waiting') : `${workflowStore.currentPhase}` }}
         </div>
         <!-- Estimated time remaining -->
         <div v-if="timeRemainingDisplay" class="flex items-center gap-2 text-sm text-slate-500">
           <AppIcon name="Clock" size="sm" variant="cyan" aria-hidden="true" />
-          <span>预计剩余时间: {{ timeRemainingDisplay }}</span>
+          <span>{{ timeRemainingDisplay }}</span>
         </div>
         <MiniProgress :value="workflowProgress" variant="cyan" class="max-w-xs" aria-hidden="true" />
       </div>
@@ -115,10 +117,10 @@ const timeRemainingDisplay = computed(() => {
         ]"
         role="status"
         aria-live="polite"
-        :aria-label="workflowStore.isRunning ? '工作流运行中' : '工作流空闲'"
+        :aria-label="workflowStore.isRunning ? t('dashboard.header.running') : t('dashboard.header.idle')"
       >
         <AppIcon :name="workflowStore.isRunning ? 'Circle' : 'Minus'" size="sm" :variant="workflowStore.isRunning ? 'white' : 'cyan'" :animate="workflowStore.isRunning" aria-hidden="true" />
-        <span>{{ workflowStore.isRunning ? 'RUNNING' : 'IDLE' }}</span>
+        <span>{{ workflowStore.isRunning ? t('dashboard.header.running') : t('dashboard.header.idle') }}</span>
       </div>
     </div>
   </div>

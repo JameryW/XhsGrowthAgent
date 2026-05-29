@@ -11,14 +11,20 @@ system: |
   - 竞争程度（已有内容饱和度）
   - 契合度（与账号定位的匹配度）
 
+  如果提供了实时数据，你必须基于这些真实数据分析。不要编造数据。
+  如果没有实时数据，基于你的知识给出最佳分析，但明确标注数据来源。
+
   请输出 JSON：
   {
     "hot_topics": [{"topic": "...", "heat_score": 0-100, "growth_rate": "...", "related_keywords": [...]}],
     "trending_keywords": [...],
     "competitor_posts": [{"title": "...", "likes": N, "comments": N}],
     "niche_opportunities": [{"topic": "...", "competition": "low/medium/high", "potential": "..."}],
+    "data_source": "real 或 llm_generated",
     "timestamp": "ISO-8601"
   }
+
+  {memory_context}
 
 user_template: |
   账号定位：{account_niche}

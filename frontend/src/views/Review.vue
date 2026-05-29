@@ -178,7 +178,7 @@ function formatDate(iso: string): string {
 function copyVersion(version: { title: string; body: string; hashtags: string[] }) {
   const text = [version.title, '', version.body, '', ...version.hashtags.map(t => `#${t}`)].join('\n')
   navigator.clipboard.writeText(text).then(() => {
-    toastStore.success(t('common.success') || '已复制', t('review.versionCopied') || '版本内容已复制到剪贴板')
+    toastStore.success(t('review.versionHistory.copied'), t('review.versionHistory.copiedDesc'))
   })
 }
 
@@ -322,7 +322,7 @@ const handleCancelConfirm = () => {
     <div class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
       <div class="flex items-center gap-5">
         <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-400 to-rose-400 flex items-center justify-center shadow-sm">
-          <AppIcon name="Clock" size="xl" variant="white" aria-label="Review" />
+          <AppIcon name="Clock" size="xl" variant="white" :aria-label="t('review.title')" />
         </div>
         <div class="flex-1">
           <div class="flex items-center gap-2 mb-1">
@@ -342,7 +342,7 @@ const handleCancelConfirm = () => {
       <div class="rounded-xl p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
         <div class="flex items-center gap-3 mb-4">
           <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
-            <AppIcon name="Pencil" size="md" variant="white" aria-label="Copy content" />
+            <AppIcon name="Pencil" size="md" variant="white" :aria-label="t('review.copyContent')" />
           </div>
           <div class="flex-1">
             <div class="text-slate-800 font-semibold text-sm">{{ t('review.copyContent') }}</div>
@@ -373,7 +373,7 @@ const handleCancelConfirm = () => {
       <div class="rounded-xl p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
         <div class="flex items-center gap-3 mb-4">
           <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm">
-            <AppIcon name="Palette" size="md" variant="white" aria-label="Visual plan" />
+            <AppIcon name="Palette" size="md" variant="white" :aria-label="t('review.visualPlan')" />
           </div>
           <div class="flex-1">
             <div class="text-slate-800 font-semibold text-sm">{{ t('review.visualPlan') }}</div>
@@ -403,11 +403,11 @@ const handleCancelConfirm = () => {
     <div v-if="reviewStore.versionHistory.length > 0" class="rounded-2xl p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm shadow-sm">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-400 to-indigo-500 flex items-center justify-center shadow-sm">
-          <AppIcon name="GitBranch" size="md" variant="white" aria-label="Version history" />
+          <AppIcon name="GitBranch" size="md" variant="white" :aria-label="t('review.versionHistory.title')" />
         </div>
         <div class="flex-1">
-          <div class="text-indigo-500 font-semibold text-sm">{{ t('review.versionHistory') || '版本历史' }}</div>
-          <div class="text-xs text-slate-400">{{ reviewStore.versionHistory.length }} {{ t('review.previousVersions') || '个历史版本' }}</div>
+          <div class="text-indigo-500 font-semibold text-sm">{{ t('review.versionHistory.title') }}</div>
+          <div class="text-xs text-slate-400">{{ reviewStore.versionHistory.length }} {{ t('review.versionHistory.count') }}</div>
         </div>
         <div class="flex items-center gap-2">
           <button
@@ -418,20 +418,20 @@ const handleCancelConfirm = () => {
               compareMode ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
             ]"
           >
-            {{ compareMode ? (t('review.exitCompare') || '退出对比') : (t('review.compareVersions') || '对比版本') }}
+            {{ compareMode ? t('review.versionHistory.exitCompare') : t('review.versionHistory.compare') }}
           </button>
           <button
             @click="showVersionHistory = !showVersionHistory"
             class="text-xs text-indigo-500 hover:text-indigo-600 transition-colors"
           >
-            {{ showVersionHistory ? (t('common.collapse') || '收起') : (t('common.expand') || '展开') }}
+            {{ showVersionHistory ? t('review.versionHistory.collapse') : t('review.versionHistory.expand') }}
           </button>
         </div>
       </div>
 
       <!-- Compare mode hint -->
       <div v-if="compareMode && showVersionHistory" class="mb-3 p-2.5 rounded-lg bg-indigo-50 border border-indigo-100 text-xs text-indigo-600">
-        {{ t('review.compareHint') || '请选择 2 个版本进行对比' }}
+        {{ t('review.versionHistory.selectTwo') }}
         <span v-if="selectedForCompare.length > 0" class="ml-1 font-medium">({{ selectedForCompare.length }}/2)</span>
       </div>
 
@@ -477,7 +477,7 @@ const handleCancelConfirm = () => {
           <!-- Version detail -->
           <div v-if="expandedVersion === version.version_id" class="border-t border-slate-100 p-4 bg-slate-50/50">
             <div v-if="version.title" class="mb-2">
-              <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">{{ t('review.copyContent') || '文案' }}</span>
+              <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">{{ t('review.versionHistory.copy') }}</span>
               <p class="text-rose-500 font-bold text-sm mt-1">{{ version.title }}</p>
             </div>
             <div v-if="version.body" class="mb-2">
@@ -494,7 +494,7 @@ const handleCancelConfirm = () => {
                 class="text-xs text-indigo-500 hover:text-indigo-600 flex items-center gap-1 transition-colors"
               >
                 <AppIcon name="Copy" size="sm" variant="cyan" />
-                {{ t('review.copyVersion') || '复制此版本' }}
+                {{ t('review.versionHistory.copyVersion') }}
               </button>
             </div>
           </div>
@@ -505,7 +505,7 @@ const handleCancelConfirm = () => {
       <div v-if="compareVersions && showVersionHistory" class="mt-4 pt-4 border-t border-slate-200">
         <div class="flex items-center gap-2 mb-3">
           <AppIcon name="Columns" size="sm" variant="cyan" />
-          <span class="text-xs text-slate-600 uppercase tracking-wide font-medium">{{ t('review.diffView') || '版本对比' }}</span>
+          <span class="text-xs text-slate-600 uppercase tracking-wide font-medium">{{ t('review.versionHistory.comparison') }}</span>
         </div>
 
         <div class="grid grid-cols-2 gap-4">
@@ -513,18 +513,18 @@ const handleCancelConfirm = () => {
           <div class="rounded-lg border border-slate-200 p-3">
             <div class="flex items-center gap-2 mb-2">
               <span class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
-                {{ t('review.beforeVersion') || '修改前' }}
+                {{ t('review.versionHistory.before') }}
               </span>
               <span class="text-xs text-slate-400">{{ formatDate(compareVersions.left.created_at || '') }}</span>
             </div>
             <div v-if="compareVersions.left.title" class="mb-2">
-              <span class="text-xs text-slate-400">{{ t('review.copyContent') || '标题' }}</span>
+              <span class="text-xs text-slate-400">{{ t('review.versionHistory.titleLabel') }}</span>
               <p :class="['text-sm font-medium mt-0.5', diffField(compareVersions.left.title, compareVersions.right.title) ? 'bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded' : 'text-slate-700']">
                 {{ compareVersions.left.title }}
               </p>
             </div>
             <div v-if="compareVersions.left.body" class="mb-2">
-              <span class="text-xs text-slate-400">{{ t('review.bodyText') || '正文' }}</span>
+              <span class="text-xs text-slate-400">{{ t('review.versionHistory.bodyLabel') }}</span>
               <p :class="['text-xs leading-relaxed whitespace-pre-wrap mt-0.5', diffField(compareVersions.left.body, compareVersions.right.body) ? 'bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded' : 'text-slate-600']">
                 {{ compareVersions.left.body }}
               </p>
@@ -541,18 +541,18 @@ const handleCancelConfirm = () => {
           <div class="rounded-lg border border-indigo-200 p-3 bg-indigo-50/30">
             <div class="flex items-center gap-2 mb-2">
               <span class="text-xs px-2 py-0.5 rounded bg-indigo-100 text-indigo-600 font-medium">
-                {{ t('review.afterVersion') || '修改后' }}
+                {{ t('review.versionHistory.after') }}
               </span>
               <span class="text-xs text-slate-400">{{ formatDate(compareVersions.right.created_at || '') }}</span>
             </div>
             <div v-if="compareVersions.right.title" class="mb-2">
-              <span class="text-xs text-slate-400">{{ t('review.copyContent') || '标题' }}</span>
+              <span class="text-xs text-slate-400">{{ t('review.versionHistory.titleLabel') }}</span>
               <p :class="['text-sm font-medium mt-0.5', diffField(compareVersions.left.title, compareVersions.right.title) ? 'bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded' : 'text-slate-700']">
                 {{ compareVersions.right.title }}
               </p>
             </div>
             <div v-if="compareVersions.right.body" class="mb-2">
-              <span class="text-xs text-slate-400">{{ t('review.bodyText') || '正文' }}</span>
+              <span class="text-xs text-slate-400">{{ t('review.versionHistory.bodyLabel') }}</span>
               <p :class="['text-xs leading-relaxed whitespace-pre-wrap mt-0.5', diffField(compareVersions.left.body, compareVersions.right.body) ? 'bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded' : 'text-slate-600']">
                 {{ compareVersions.right.body }}
               </p>
@@ -572,7 +572,7 @@ const handleCancelConfirm = () => {
     <div class="rounded-2xl p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm shadow-sm">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-rose-400 to-amber-400 flex items-center justify-center shadow-sm">
-          <AppIcon name="GitBranch" size="md" variant="white" aria-label="Actions" />
+          <AppIcon name="GitBranch" size="md" variant="white" :aria-label="t('review.actions')" />
         </div>
         <div>
           <div class="text-rose-500 font-semibold text-sm">{{ t('review.actions') }}</div>

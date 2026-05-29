@@ -78,8 +78,8 @@ const focusClass = computed(() => {
   <div
     class="text-center group relative outline-none"
     :tabindex="props.tabindex"
-    :aria-label="$attrs['aria-label']"
-    :aria-describedby="$attrs['aria-describedby']"
+    :aria-label="($attrs['aria-label'] as string | undefined)"
+    :aria-describedby="($attrs['aria-describedby'] as string | undefined)"
   >
     <!-- Node shape -->
     <div :class="[

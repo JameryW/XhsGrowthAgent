@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+
+const { t } = useI18n()
 import NeonButton from '@/components/NeonButton.vue'
 import MiniProgress from '@/components/MiniProgress.vue'
 import type { ContentVersion, OptimizationAnalysis, VersionChoice } from '@/types/optimization'
@@ -98,17 +101,17 @@ function getCardClass(version: ContentVersion): string[] {
     <div v-if="props.analysis" class="rounded-xl p-5 bg-white/98 backdrop-blur-sm border border-violet-200/50">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
-          <AppIcon name="Scan" size="md" variant="white" aria-label="Analysis" />
+          <AppIcon name="Scan" size="md" variant="white" :aria-label="t('versionCompare.analysisReport')" />
         </div>
         <div class="flex-1">
-          <div class="text-slate-800 font-semibold text-sm">优化分析报告</div>
-          <div class="text-xs text-slate-400 uppercase tracking-wide">Gap Analysis</div>
+          <div class="text-slate-800 font-semibold text-sm">{{ t('versionCompare.analysisReport') }}</div>
+          <div class="text-xs text-slate-400 uppercase tracking-wide">{{ t('versionCompare.gapAnalysis') }}</div>
         </div>
       </div>
 
       <!-- Gaps -->
       <div v-if="props.analysis.gaps.length > 0" class="mb-4">
-        <h4 class="text-xs text-slate-500 font-medium mb-2">发现差距</h4>
+        <h4 class="text-xs text-slate-500 font-medium mb-2">{{ t('versionCompare.gapsFound') }}</h4>
         <div class="space-y-2">
           <div
             v-for="gap in props.analysis.gaps"
@@ -128,7 +131,7 @@ function getCardClass(version: ContentVersion): string[] {
 
       <!-- Suggestions -->
       <div v-if="props.analysis.suggestions.length > 0">
-        <h4 class="text-xs text-slate-500 font-medium mb-2">优化建议</h4>
+        <h4 class="text-xs text-slate-500 font-medium mb-2">{{ t('versionCompare.suggestions') }}</h4>
         <div class="space-y-2">
           <div
             v-for="suggestion in props.analysis.suggestions"
@@ -137,7 +140,7 @@ function getCardClass(version: ContentVersion): string[] {
           >
             <div class="flex items-center justify-between mb-1">
               <span class="text-xs font-medium text-slate-700">{{ suggestion.dimension }}</span>
-              <span class="text-xs text-slate-400">优先级 {{ suggestion.priority }}</span>
+              <span class="text-xs text-slate-400">{{ t('versionCompare.priority') }} {{ suggestion.priority }}</span>
             </div>
             <p class="text-xs text-slate-600 font-medium">{{ suggestion.action }}</p>
             <p class="text-xs text-slate-400 mt-0.5">{{ suggestion.reasoning }}</p>
@@ -147,7 +150,7 @@ function getCardClass(version: ContentVersion): string[] {
 
       <!-- Viral Patterns -->
       <div v-if="props.analysis.viral_patterns.length > 0" class="mt-4 pt-4 border-t border-slate-100">
-        <h4 class="text-xs text-slate-500 font-medium mb-2">爆款模式</h4>
+        <h4 class="text-xs text-slate-500 font-medium mb-2">{{ t('versionCompare.viralPatterns') }}</h4>
         <div class="flex flex-wrap gap-2">
           <span
             v-for="pattern in props.analysis.viral_patterns"
@@ -164,16 +167,16 @@ function getCardClass(version: ContentVersion): string[] {
     <div class="rounded-xl p-5 bg-white/98 backdrop-blur-sm border border-teal-200/50">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm">
-          <AppIcon name="GitBranch" size="md" variant="white" aria-label="Versions" />
+          <AppIcon name="GitBranch" size="md" variant="white" :aria-label="t('versionCompare.versionComparison')" />
         </div>
         <div class="flex-1">
-          <div class="text-slate-800 font-semibold text-sm">版本对比</div>
-          <div class="text-xs text-slate-400 uppercase tracking-wide">Choose Your Version</div>
+          <div class="text-slate-800 font-semibold text-sm">{{ t('versionCompare.versionComparison') }}</div>
+          <div class="text-xs text-slate-400 uppercase tracking-wide">{{ t('versionCompare.chooseVersion') }}</div>
         </div>
         <!-- Best recommendation badge -->
         <div v-if="bestVersion" class="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-600 text-xs font-medium flex items-center gap-1.5">
           <AppIcon name="Star" size="sm" variant="peach" aria-hidden="true" />
-          最佳推荐: {{ bestVersion.version_type }} 版
+          {{ t('versionCompare.bestRecommendation') }}: {{ bestVersion.version_type }}
         </div>
       </div>
 
@@ -185,7 +188,7 @@ function getCardClass(version: ContentVersion): string[] {
           :class="getCardClass(version)"
           tabindex="0"
           role="button"
-          :aria-label="`选择 ${version.version_type} 版 - 评分 ${version.predicted_score.toFixed(1)}`"
+          :aria-label="`${version.version_type} - ${version.predicted_score.toFixed(1)}`"
           :aria-pressed="selectedVersionId === version.version_id"
           @click="selectVersion(version.version_id)"
           @keydown.enter="selectVersion(version.version_id)"
@@ -212,10 +215,10 @@ function getCardClass(version: ContentVersion): string[] {
           <!-- Version Header -->
           <div class="flex items-center justify-between mb-3">
             <span :class="['px-2 py-1 rounded-lg text-xs font-semibold border', getVersionTypeColor(version.version_type || 'A')]">
-              {{ version.version_type || 'A' }} 版
+              {{ version.version_type || 'A' }}
             </span>
             <span :class="['text-xs', version.version_id === bestVersion?.version_id ? 'text-amber-500 font-medium' : 'text-slate-400']">
-              {{ version.predicted_score.toFixed(1) }} 分
+              {{ version.predicted_score.toFixed(1) }} {{ t('versionCompare.scoreUnit') }}
             </span>
           </div>
 
@@ -223,7 +226,7 @@ function getCardClass(version: ContentVersion): string[] {
           <MiniProgress
             :value="version.predicted_score"
             :max="100"
-            :label="'预测得分'"
+            :label="t('analytics.avgEngagementRate')"
             :color="version.version_type === 'C' ? 'pink' : version.version_type === 'B' ? 'cyan' : 'teal'"
           />
 
@@ -266,7 +269,7 @@ function getCardClass(version: ContentVersion): string[] {
           <div class="flex items-center gap-2">
             <AppIcon name="CheckCircle" size="sm" variant="cyan" />
             <span class="text-xs text-teal-600 font-medium">
-              已选择 {{ selectedVersion.version_type }} 版 - {{ selectedVersion.title }}
+              {{ t('versionCompare.selected', { type: selectedVersion.version_type, title: selectedVersion.title }) }}
             </span>
           </div>
         </div>
@@ -281,7 +284,7 @@ function getCardClass(version: ContentVersion): string[] {
           @click="handleConfirm"
         >
           <AppIcon name="Check" size="sm" variant="white" />
-          <span>确认选择</span>
+          <span>{{ t('versionCompare.confirmSelection') }}</span>
         </NeonButton>
       </div>
     </div>

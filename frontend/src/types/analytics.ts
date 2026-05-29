@@ -39,5 +39,7 @@ export interface PerformanceData {
 export interface CostData {
   total_cost_usd: number
   today_cost_usd: number
+  budget_remaining_usd?: number
+  by_model?: Record<string, number>
   circuit_open: boolean
 }

@@ -102,7 +102,7 @@ function toggleViralLinks() {
     <!-- Header -->
     <div class="flex items-center gap-3 mb-5">
       <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm">
-        <AppIcon name="FileText" size="md" variant="white" aria-label="Draft Input" />
+        <AppIcon name="FileText" size="md" variant="white" :aria-label="t('draft.title')" />
       </div>
       <div class="flex-1">
         <div class="text-slate-800 font-semibold text-sm">{{ t('draft.title') }}</div>

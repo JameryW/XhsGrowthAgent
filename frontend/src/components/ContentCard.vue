@@ -21,6 +21,29 @@ const props = withDefaults(defineProps<Props>(), {
 // Check if content has data
 const hasContent = computed(() => Object.keys(props.content).length > 0)
 
+// Check if a value is a simple primitive
+function isSimple(value: unknown): boolean {
+  return value === null || value === undefined || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+}
+
+// Check if value is an array of primitives
+function isStringArray(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0 && value.every(isSimple)
+}
+
+// Check if value is an array of objects
+function isObjectArray(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0 && value.some(v => typeof v === 'object' && v !== null)
+}
+
+// Format snake_case/camelCase keys to readable labels
+function formatKey(key: string): string {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\b\w/g, c => c.toUpperCase())
+}
+
 const styles = {
   pink: {
     border: 'border-neon-pink/10',
@@ -77,11 +100,57 @@ const styles = {
     <!-- Content -->
     <div v-if="hasContent" :class="['bg-slate-50 rounded-lg p-4 border-l-2', styles[props.variant].accent]" role="status" aria-live="polite">
       <div class="text-xs text-slate-600 space-y-2">
-        <div v-for="(value, key) in props.content" :key="key" class="flex items-start gap-2">
-          <span :class="styles[props.variant].text" aria-hidden="true">▸</span>
-          <span class="text-slate-400">{{ key }}:</span>
-          <span :class="styles[props.variant].textLight">{{ value }}</span>
-        </div>
+        <template v-for="(value, key) in props.content" :key="key">
+          <!-- Simple values (string, number, boolean) -->
+          <div v-if="isSimple(value)" class="flex items-start gap-2">
+            <span :class="styles[props.variant].text" aria-hidden="true">▸</span>
+            <span class="text-slate-400 shrink-0">{{ formatKey(String(key)) }}:</span>
+            <span :class="styles[props.variant].textLight">{{ String(value) }}</span>
+          </div>
+
+          <!-- Array of simple values -->
+          <div v-else-if="isStringArray(value)" class="flex items-start gap-2">
+            <span :class="styles[props.variant].text" aria-hidden="true">▸</span>
+            <span class="text-slate-400 shrink-0">{{ formatKey(String(key)) }}:</span>
+            <div class="flex flex-wrap gap-1">
+              <span v-for="(item, i) in value" :key="i" :class="['px-1.5 py-0.5 rounded bg-white border text-[11px]', styles[props.variant].border, styles[props.variant].textLight]">{{ item }}</span>
+            </div>
+          </div>
+
+          <!-- Array of objects -->
+          <div v-else-if="isObjectArray(value)" class="space-y-1.5">
+            <div class="flex items-center gap-2">
+              <span :class="styles[props.variant].text" aria-hidden="true">▸</span>
+              <span class="text-slate-400 font-medium">{{ formatKey(String(key)) }}</span>
+              <span class="text-slate-300 text-[11px]">({{ value.length }})</span>
+            </div>
+            <div class="ml-4 space-y-1">
+              <div v-for="(item, i) in value.slice(0, 5)" :key="i" class="bg-white rounded-md px-3 py-2 border border-slate-100">
+                <div class="flex flex-wrap gap-x-3 gap-y-0.5">
+                  <span v-for="(v, k) in item" :key="k" class="text-[11px]">
+                    <span class="text-slate-400">{{ formatKey(String(k)) }}:</span>
+                    <span :class="styles[props.variant].textLight" class="ml-0.5">{{ isSimple(v) ? String(v) : JSON.stringify(v) }}</span>
+                  </span>
+                </div>
+              </div>
+              <div v-if="value.length > 5" class="text-[11px] text-slate-300 ml-1">+{{ value.length - 5 }} more</div>
+            </div>
+          </div>
+
+          <!-- Nested object -->
+          <div v-else-if="typeof value === 'object' && value !== null" class="space-y-1.5">
+            <div class="flex items-center gap-2">
+              <span :class="styles[props.variant].text" aria-hidden="true">▸</span>
+              <span class="text-slate-400 font-medium">{{ formatKey(String(key)) }}</span>
+            </div>
+            <div class="ml-4 space-y-0.5">
+              <div v-for="(v, k) in value" :key="k" class="flex items-start gap-1.5 text-[11px]">
+                <span class="text-slate-400">{{ formatKey(String(k)) }}:</span>
+                <span :class="styles[props.variant].textLight">{{ isSimple(v) ? String(v) : JSON.stringify(v) }}</span>
+              </div>
+            </div>
+          </div>
+        </template>
       </div>
     </div>
 

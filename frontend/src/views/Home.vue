@@ -18,7 +18,7 @@ const route = useRoute()
 const workflowStore = useWorkflowStore()
 const isStarting = ref(false)
 const showConfirm = ref(false)
-const showForm = ref(false)
+const showForm = ref(true)
 const startFormRef = ref<InstanceType<typeof WorkflowStartForm> | null>(null)
 
 // Pre-filled topic from analytics
@@ -119,7 +119,7 @@ const quickStart = () => {
         <div v-if="prefilledTopic" class="mb-4 p-3 rounded-lg bg-teal-50 border border-teal-100 flex items-center gap-2">
           <AppIcon name="Sparkles" size="sm" variant="cyan" />
           <div class="flex-1">
-            <span class="text-xs text-teal-500 font-medium">{{ t('home.recommendedTopic') || '推荐话题' }}</span>
+            <span class="text-xs text-teal-500 font-medium">{{ t('home.recommendedTopic') }}</span>
             <p class="text-sm text-teal-700 font-semibold">{{ prefilledTopic }}</p>
           </div>
           <button @click="prefilledTopic = null" class="text-teal-400 hover:text-teal-600 transition-colors">

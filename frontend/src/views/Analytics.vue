@@ -145,7 +145,7 @@ function startWithTopic(topic: string) {
     <div class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
       <div class="flex items-center gap-5">
         <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm">
-          <AppIcon name="BarChart3" size="xl" variant="white" aria-label="Analytics" />
+          <AppIcon name="BarChart3" size="xl" variant="white" :aria-label="t('analytics.title')" />
         </div>
         <div class="flex-1">
           <div class="flex items-center gap-2 mb-1">
@@ -207,32 +207,32 @@ function startWithTopic(topic: string) {
     <div v-if="analyticsStore.costData" class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm">
-          <AppIcon name="DollarSign" size="md" variant="white" aria-label="Cost" />
+          <AppIcon name="DollarSign" size="md" variant="white" :aria-label="t('analytics.cost.title')" />
         </div>
         <div class="flex-1">
-          <div class="text-rose-500 font-semibold text-sm">{{ t('analytics.costBreakdown') || '成本明细' }}</div>
-          <div class="text-xs text-slate-400">{{ t('analytics.costBreakdownDesc') || 'LLM 调用成本统计' }}</div>
+          <div class="text-rose-500 font-semibold text-sm">{{ t('analytics.cost.title') }}</div>
+          <div class="text-xs text-slate-400">{{ t('analytics.cost.subtitle') }}</div>
         </div>
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
         <div class="rounded-lg p-3 bg-rose-50 border border-rose-100">
-          <div class="text-xs text-rose-500 font-medium">{{ t('analytics.totalCost') || '总成本' }}</div>
+          <div class="text-xs text-rose-500 font-medium">{{ t('analytics.cost.total') }}</div>
           <div class="text-xl font-bold text-rose-700">${{ analyticsStore.costData.total_cost_usd?.toFixed(2) || '0.00' }}</div>
         </div>
         <div class="rounded-lg p-3 bg-amber-50 border border-amber-100">
-          <div class="text-xs text-amber-500 font-medium">{{ t('analytics.todayCost') || '今日成本' }}</div>
+          <div class="text-xs text-amber-500 font-medium">{{ t('analytics.cost.today') }}</div>
           <div class="text-xl font-bold text-amber-700">${{ analyticsStore.costData.today_cost_usd?.toFixed(2) || '0.00' }}</div>
         </div>
         <div class="rounded-lg p-3 bg-emerald-50 border border-emerald-100">
-          <div class="text-xs text-emerald-500 font-medium">{{ t('analytics.budgetRemaining') || '预算剩余' }}</div>
+          <div class="text-xs text-emerald-500 font-medium">{{ t('analytics.cost.remaining') }}</div>
           <div class="text-xl font-bold text-emerald-700">${{ analyticsStore.costData.budget_remaining_usd?.toFixed(2) || '0.00' }}</div>
         </div>
       </div>
 
       <!-- By model breakdown -->
       <div v-if="analyticsStore.costData.by_model && Object.keys(analyticsStore.costData.by_model).length > 0">
-        <div class="text-xs text-slate-500 uppercase tracking-wide font-medium mb-2">{{ t('analytics.byModel') || '按模型' }}</div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide font-medium mb-2">{{ t('analytics.cost.byModel') }}</div>
         <div class="space-y-1.5">
           <div
             v-for="(cost, model) in analyticsStore.costData.by_model"
@@ -250,11 +250,11 @@ function startWithTopic(topic: string) {
     <div v-if="insights.length > 0 || trendTopics.length > 0" class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center shadow-sm">
-          <AppIcon name="Lightbulb" size="md" variant="white" aria-label="Insights" />
+          <AppIcon name="Lightbulb" size="md" variant="white" :aria-label="t('analytics.insights.title')" />
         </div>
         <div class="flex-1">
-          <div class="text-amber-600 font-semibold text-sm">{{ t('analytics.insights') || '增长洞察' }}</div>
-          <div class="text-xs text-slate-400">{{ t('analytics.insightsDesc') || '基于已完成工作流的分析建议' }}</div>
+          <div class="text-amber-600 font-semibold text-sm">{{ t('analytics.insights.title') }}</div>
+          <div class="text-xs text-slate-400">{{ t('analytics.insights.subtitle') }}</div>
         </div>
       </div>
 
@@ -281,7 +281,7 @@ function startWithTopic(topic: string) {
       <!-- Trending topics with workflow trigger -->
       <div v-if="trendTopics.length > 0" class="border-t border-slate-100 pt-4">
         <div class="flex items-center justify-between mb-3">
-          <span class="text-xs text-slate-500 uppercase tracking-wide font-medium">{{ t('analytics.trendTopics') || '热门话题' }}</span>
+          <span class="text-xs text-slate-500 uppercase tracking-wide font-medium">{{ t('analytics.hotTopics') }}</span>
         </div>
         <div class="flex flex-wrap gap-2">
           <button
@@ -292,7 +292,7 @@ function startWithTopic(topic: string) {
           >
             <AppIcon name="Sparkles" size="sm" variant="cyan" />
             {{ topic }}
-            <span class="text-teal-400 text-xs">{{ t('analytics.startWorkflow') || '发起' }}</span>
+            <span class="text-teal-400 text-xs">{{ t('analytics.launch') }}</span>
           </button>
         </div>
       </div>
@@ -302,7 +302,7 @@ function startWithTopic(topic: string) {
     <div class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
-          <AppIcon name="FileText" size="md" variant="white" aria-label="Posts" />
+          <AppIcon name="FileText" size="md" variant="white" :aria-label="t('analytics.recentPosts')" />
         </div>
         <div>
           <div class="text-violet-600 font-semibold text-sm">{{ t('analytics.recentPosts') }}</div>

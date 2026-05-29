@@ -1,6 +1,8 @@
 {
   "common": {
     "loading": "Loading...",
+    "optional": "Optional",
+    "skipToContent": "Skip to main content",
     "error": "Error",
     "success": "Success",
     "cancel": "Cancel",
@@ -14,14 +16,15 @@
     "completed": "Completed",
     "loadingState": "Loading",
     "actionPreview": "Action Preview",
-    "apiError": "API Error",
     "timeoutError": "Request Timeout",
     "unknownError": "Unknown Error",
     "retrySuccess": "Retry Successful",
     "retryCount": "Retry ({count})",
-    "retriedTimes": "Retried {count} times"
+    "retriedTimes": "Retried {count} times",
+    "pageLoadError": "Page failed to load"
   },
   "health": {
+    "title": "System Health Check",
     "ready": "Ready",
     "needsConfig": "Needs Config",
     "apiUnreachable": "API Unreachable",
@@ -30,7 +33,7 @@
     "notConfigured": "Not configured",
     "notSet": "Not set",
     "set": "Set",
-    "refresh": "Refresh",
+    "refresh": "Refresh Health Check",
     "status": {
       "ok": "OK",
       "warning": "Not configured",
@@ -42,7 +45,7 @@
     },
     "guide": {
       "llmMissing": "Set at least one LLM API key (e.g. ANTHROPIC_API_KEY) in .env to enable AI features.",
-      "xhsMissing": "Set XHS_COOKIE and XHS_USER_ID in .env to enable Xiaohongshu platform access.",
+      "xhsMissing": "XHS credentials not set — publishing will be skipped (preview only). Set XHS_COOKIE and XHS_USER_ID in .env to enable publishing.",
       "rippleMissing": "Set RIPPLE_BASE_URL and RIPPLE_API_TOKEN in .env (optional, for content spread prediction).",
       "apiUnreachable": "Ensure the backend server is running: xhs-growth serve --port 8000"
     }
@@ -97,6 +100,7 @@
     "customStart": "Custom Configuration",
     "quickStart": "Quick Start (Default)",
     "history": "Workflow History",
+    "recommendedTopic": "Recommended Topic",
     "form": {
       "accountId": "Account ID",
       "accountIdPlaceholder": "Enter account identifier",
@@ -111,7 +115,25 @@
       "topicPlaceholder": "Optional: enter content topic or keywords",
       "topicHelp": "Specify a topic to guide content strategy direction",
       "niche": "Content Track",
-      "nicheHelp": "Select a vertical track, affects trend discovery and content strategy"
+      "nicheHelp": "Select a vertical track, affects trend discovery and content strategy",
+      "niches": {
+        "baby": "Baby",
+        "beauty": "Beauty",
+        "fashion": "Fashion",
+        "food": "Food",
+        "homeDecor": "Home",
+        "fitness": "Fitness",
+        "travel": "Travel",
+        "tech": "Tech",
+        "pets": "Pets",
+        "knowledge": "Knowledge"
+      },
+      "phases": {
+        "scouting": { "label": "Trend Discovery", "desc": "Start from discovering trending topics" },
+        "planning": { "label": "Strategy Planning", "desc": "Skip trend discovery, go straight to strategy" },
+        "creating": { "label": "Content Creation", "desc": "Skip strategy, start creating directly" },
+        "reviewing": { "label": "Content Review", "desc": "Jump to the review stage" }
+      }
     },
     "confirm": {
       "title": "Confirm Workflow Start",
@@ -128,6 +150,39 @@
     "title": "Workflow Dashboard",
     "completed": "Workflow Completed",
     "completedMessage": "Content published to Xiaohongshu successfully",
+    "publishFailed": "Publish Failed",
+    "header": {
+      "status": "Workflow Status",
+      "progress": "Workflow Progress",
+      "idle": "Idle",
+      "running": "Running",
+      "waiting": "Waiting to Start",
+      "workflow": "Workflow"
+    },
+    "contentCards": {
+      "loading": "Workflow data loading state",
+      "cards": "Workflow content cards",
+      "trendScouting": "Trend Discovery",
+      "strategyPlanning": "Strategy Planning",
+      "copywriting": "Copywriting"
+    },
+    "actionButtons": {
+      "ariaLabel": "Workflow action buttons",
+      "startNew": "Start New Workflow",
+      "startNewDesc": "Launch a new content growth workflow",
+      "goReview": "Go to review page to view content",
+      "goReviewDesc": "Go to Review",
+      "goReviewPending": "Go to review page to review and decide",
+      "goReviewPendingDesc": "Review content - ready for your decision",
+      "pause": "Pause Workflow",
+      "pauseDesc": "Pause current workflow execution",
+      "refresh": "Refresh Status",
+      "refreshDesc": "Refresh to get latest workflow status"
+    },
+    "optimization": {
+      "title": "Pre-publish Optimization Panel",
+      "desc": "Submit a draft to start optimization analysis"
+    },
     "timeline": {
       "title": "Workflow Pipeline",
       "keyboardHint": "Use arrow keys to navigate",
@@ -153,7 +208,120 @@
       "analyzing": "Analytics",
       "analyzingDesc": "Analyze performance data",
       "engaging": "Engagement",
-      "engagingDesc": "Audience interaction"
+      "engagingDesc": "Audience interaction",
+      "agentDetails": "Agent Execution Details"
+    }
+  },
+  "review": {
+    "title": "Content Review",
+    "subtitle": "Awaiting Your Decision",
+    "pendingApproval": "Pending Review",
+    "copyContent": "Copy Content",
+    "copyContentEn": "Copy Content",
+    "visualPlan": "Visual Plan",
+    "visualPlanEn": "Visual Plan",
+    "actions": "Review Actions",
+    "selectAction": "Select Action",
+    "feedbackInput": "Feedback Input",
+    "feedbackLabel": "Feedback",
+    "approve": "Approve",
+    "approveDesc": "Publish directly",
+    "revise": "Revise",
+    "reviseDesc": "Request changes",
+    "reject": "Reject",
+    "rejectDesc": "Discard content",
+    "feedbackPlaceholder": "Enter review comments or suggestions...",
+    "feedbackAriaLabel": "Review comments input",
+    "structuredFeedback": "Structured Feedback",
+    "structuredFeedbackLabel": "Feedback by dimension (optional):",
+    "structuredPrefix": "[Structured Feedback]",
+    "rejectPrefix": "[Rejection Reason]",
+    "revisionPrefix": "[Revision Request]",
+    "titlePrefix": "Title",
+    "bodyPrefix": "Body",
+    "tagsPrefix": "Tags",
+    "visualPrefix": "Visual",
+    "timingPrefix": "Timing",
+    "versionLabel": "Version {n}",
+    "titleIssue": "Title Issue",
+    "bodyIssue": "Body Issue",
+    "tagsIssue": "Tags Issue",
+    "visualIssue": "Visual Issue",
+    "timingIssue": "Timing Issue",
+    "rejectReason": "Rejection Reason (required)",
+    "rejectReasonPlaceholder": "Please explain the reason for rejection...",
+    "revisionReason": "Revision Request (required)",
+    "revisionReasonPlaceholder": "Please explain what needs to be changed...",
+    "versionHistory": {
+      "title": "Version History",
+      "count": "versions",
+      "compare": "Compare Versions",
+      "exitCompare": "Exit Comparison",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "selectTwo": "Please select 2 versions to compare",
+      "copy": "Copy",
+      "copyVersion": "Copy this version",
+      "comparison": "Version Comparison",
+      "before": "Before",
+      "after": "After",
+      "titleLabel": "Title",
+      "bodyLabel": "Body",
+      "copied": "Copied",
+      "copiedDesc": "Version content copied to clipboard"
+    },
+    "emptyState": {
+      "title": "No Pending Reviews",
+      "description": "There are no items to review. Possible reasons:",
+      "reason1": "Workflow hasn't reached the review stage yet",
+      "reason2": "Workflow is completed or cancelled",
+      "reason3": "No active workflow — start one from the home page",
+      "goDashboard": "Go to Dashboard",
+      "goHome": "Back to Home",
+      "noWorkflow": "No active workflow. Start a new workflow to generate content for review.",
+      "workflowCompleted": "This workflow has been completed. Start a new one to create more content.",
+      "workflowError": "The workflow encountered an error. Check the dashboard for details.",
+      "workflowCancelled": "This workflow was cancelled. Start a new one to continue.",
+      "loadingReview": "Review content is being loaded. If this persists, try refreshing the dashboard.",
+      "stillRunning": "Workflow is still running in the {phase} phase. Content will be available for review once it reaches the review stage.",
+      "notReached": "The workflow hasn't reached the review stage yet.",
+      "currentPhase": "Current phase",
+      "phaseIdle": "Idle",
+      "phaseScouting": "Trend Scouting",
+      "phasePlanning": "Strategy Planning",
+      "phaseCreating": "Content Creation",
+      "phaseReviewing": "Review",
+      "phasePublishing": "Publishing",
+      "phaseAnalyzing": "Analytics",
+      "phaseEngaging": "Engagement",
+      "phaseCompleted": "Completed",
+      "phaseError": "Error",
+      "phaseCancelled": "Cancelled"
+    },
+    "confirmReject": {
+      "title": "Confirm Rejection",
+      "message": "Rejected content will be discarded. This action cannot be undone. Are you sure?",
+      "action": "Content will be marked as \"rejected\" and the workflow will end."
+    },
+    "confirmApprove": {
+      "title": "Confirm Approval",
+      "message": "Approved content will proceed to publishing. Is the content ready?",
+      "action": "Content will be marked as \"approved\" and enter the publishing phase."
+    },
+    "success": "Review completed",
+    "decisionLabel": "Decision",
+    "submitFailed": "Submit failed, please try again",
+    "submitFailedTitle": "Submit Failed",
+    "cancelSuccess": "Action cancelled",
+    "cancelMessage": "You can continue reviewing the content",
+    "publishConfirm": {
+      "title": "Confirm Publish",
+      "subtitle": "Review publish settings before proceeding",
+      "target": "Workflow Thread",
+      "dryRun": "Dry Run Mode",
+      "dryRunHelp": "Preview without actually publishing",
+      "liveWarning": "Live mode is on. Content will be published to Xiaohongshu for real. Make sure everything is correct.",
+      "confirm": "Approve & Publish"
     }
   },
   "analytics": {
@@ -169,6 +337,20 @@
     "interactionTrend": "Interaction Trend",
     "recentPosts": "Recent Post Performance",
     "top10": "TOP 10",
+    "cost": {
+      "title": "Cost Breakdown",
+      "subtitle": "LLM call cost statistics",
+      "total": "Total Cost",
+      "today": "Today's Cost",
+      "remaining": "Budget Remaining",
+      "byModel": "By Model"
+    },
+    "insights": {
+      "title": "Growth Insights",
+      "subtitle": "Analysis based on completed workflows"
+    },
+    "hotTopics": "Hot Topics",
+    "launch": "Launch",
     "table": {
       "title": "Title",
       "likes": "Likes",
@@ -196,6 +378,37 @@
     "month": "This Month",
     "year": "This Year"
   },
+  "versionCompare": {
+    "analysisReport": "Optimization Analysis Report",
+    "gapAnalysis": "Gap Analysis",
+    "gapsFound": "Gaps Found",
+    "suggestions": "Optimization Suggestions",
+    "priority": "Priority",
+    "viralPatterns": "Viral Patterns",
+    "versionComparison": "Version Comparison",
+    "chooseVersion": "Choose Your Version",
+    "bestRecommendation": "Best Pick",
+    "version": "",
+    "confirmSelection": "Confirm Selection",
+    "selected": "Selected {type} - {title}",
+    "scoreUnit": "pts"
+  },
+  "charts": {
+    "engagementTable": "Engagement Data Table",
+    "trendTable": "Chart Data Table",
+    "trendData": "Trend Data",
+    "noData": "No Data",
+    "trendChart": "Trend Chart",
+    "type": "Type",
+    "count": "Count",
+    "date": "Date",
+    "value": "Value",
+    "trend": {
+      "rising": "Rising",
+      "falling": "Falling",
+      "stable": "Stable"
+    }
+  },
   "connection": {
     "connected": "Connected",
     "connecting": "Connecting...",
@@ -213,6 +426,12 @@
     "retryingMessage": "Re-fetching workflow status",
     "returned": "Returned",
     "returnedMessage": "Please restart the workflow",
+    "type": {
+      "connection": "Connection",
+      "validation": "Validation",
+      "notFound": "Not Found",
+      "auth": "Authentication"
+    },
     "networkSuggestions": ["Check network connection", "Try refreshing the page", "Wait and retry"],
     "validationSuggestions": ["Check input parameters", "Verify account ID is valid", "See API docs for parameter requirements"],
     "notFoundSuggestions": ["Verify workflow ID exists", "Check if workflow was deleted", "Return to dashboard to start over"],
@@ -287,10 +506,12 @@
     "pauseFailed": "Pause failed",
     "resumed": "Workflow resumed",
     "resumeFailed": "Resume failed",
+    "cancelFailed": "Cancel failed",
     "statusRefreshFailed": "Status refresh failed",
     "currentPhase": "Current Phase",
     "currentAgent": "Current Agent",
-    "thread": "Thread"
+    "thread": "Thread",
+    "publishFailed": "Publish Failed"
   },
   "history": {
     "title": "Workflow History",
@@ -318,99 +539,34 @@
     "deleteSuccess": "Workflow deleted",
     "deleteFailed": "Failed to delete workflow"
   },
-  "review": {
-    "title": "Content Review",
-    "subtitle": "Awaiting Your Decision",
-    "pendingApproval": "PENDING_APPROVAL",
-    "copyContent": "Copy Content",
-    "copyContentEn": "Copy Content",
-    "visualPlan": "Visual Plan",
-    "visualPlanEn": "Visual Plan",
-    "actions": "Review Actions",
-    "selectAction": "SELECT_ACTION",
-    "feedbackInput": "Feedback Input",
-    "feedbackLabel": "FEEDBACK_INPUT",
-    "approve": "Approve",
-    "approveDesc": "Publish directly",
-    "revise": "Revise",
-    "reviseDesc": "Request changes",
-    "reject": "Reject",
-    "rejectDesc": "Discard content",
-    "feedbackPlaceholder": "Enter review comments or suggestions...",
-    "feedbackAriaLabel": "Review comments input",
-    "structuredFeedback": "Structured Feedback",
-    "structuredFeedbackLabel": "Feedback by dimension (optional):",
-    "structuredPrefix": "[Structured Feedback]",
-    "rejectPrefix": "[Rejection Reason]",
-    "revisionPrefix": "[Revision Request]",
-    "titlePrefix": "Title",
-    "bodyPrefix": "Body",
-    "tagsPrefix": "Tags",
-    "visualPrefix": "Visual",
-    "timingPrefix": "Timing",
-    "versionLabel": "Version {n}",
-    "titleIssue": "Title Issue",
-    "bodyIssue": "Body Issue",
-    "tagsIssue": "Tags Issue",
-    "visualIssue": "Visual Issue",
-    "timingIssue": "Timing Issue",
-    "rejectReason": "Rejection Reason (required)",
-    "rejectReasonPlaceholder": "Please explain the reason for rejection...",
-    "revisionReason": "Revision Request (required)",
-    "revisionReasonPlaceholder": "Please explain what needs to be changed...",
-    "emptyState": {
-      "title": "No Pending Reviews",
-      "description": "There are no items to review. Possible reasons:",
-      "reason1": "Workflow hasn't reached the review stage yet",
-      "reason2": "Workflow is completed or cancelled",
-      "reason3": "No active workflow — start one from the home page",
-      "goDashboard": "Go to Dashboard",
-      "goHome": "Back to Home",
-      "noWorkflow": "No active workflow. Start a new workflow to generate content for review.",
-      "workflowCompleted": "This workflow has been completed. Start a new one to create more content.",
-      "workflowError": "The workflow encountered an error. Check the dashboard for details.",
-      "workflowCancelled": "This workflow was cancelled. Start a new one to continue.",
-      "loadingReview": "Review content is being loaded. If this persists, try refreshing the dashboard.",
-      "stillRunning": "Workflow is still running in the {phase} phase. Content will be available for review once it reaches the review stage.",
-      "notReached": "The workflow hasn't reached the review stage yet.",
-      "currentPhase": "Current phase",
-      "phaseIdle": "Idle",
-      "phaseScouting": "Trend Scouting",
-      "phasePlanning": "Strategy Planning",
-      "phaseCreating": "Content Creation",
-      "phaseReviewing": "Review",
-      "phasePublishing": "Publishing",
-      "phaseAnalyzing": "Analytics",
-      "phaseEngaging": "Engagement",
-      "phaseCompleted": "Completed",
-      "phaseError": "Error",
-      "phaseCancelled": "Cancelled"
+  "keyboard": {
+    "global": "Global",
+    "dashboard": "Dashboard",
+    "review": "Review",
+    "close": "Close",
+    "escHint": "Press Esc to close this panel"
+  },
+  "onboarding": {
+    "steps": {
+      "workflow": {
+        "title": "Understand the Workflow",
+        "desc": "View each stage of the workflow, including trend scouting, strategy, creation, review, publishing, and analytics."
+      },
+      "start": {
+        "title": "Start a Workflow",
+        "desc": "Click the button to start a new workflow. The system will automatically execute each stage."
+      },
+      "review": {
+        "title": "Review & Publish",
+        "desc": "Review generated content on the review page. Once approved, it will be published to Xiaohongshu."
+      }
     },
-    "confirmReject": {
-      "title": "Confirm Rejection",
-      "message": "Rejected content will be discarded. This action cannot be undone. Are you sure?",
-      "action": "Content will be marked as \"rejected\" and the workflow will end."
-    },
-    "confirmApprove": {
-      "title": "Confirm Approval",
-      "message": "Approved content will proceed to publishing. Is the content ready?",
-      "action": "Content will be marked as \"approved\" and enter the publishing phase."
-    },
-    "success": "Review completed",
-    "decisionLabel": "Decision",
-    "submitFailed": "Submit failed, please try again",
-    "submitFailedTitle": "Submit Failed",
-    "cancelSuccess": "Action cancelled",
-    "cancelMessage": "You can continue reviewing the content",
-    "publishConfirm": {
-      "title": "Confirm Publish",
-      "subtitle": "Review publish settings before proceeding",
-      "target": "Workflow Thread",
-      "dryRun": "Dry Run Mode",
-      "dryRunHelp": "Preview without actually publishing",
-      "liveWarning": "Live mode is on. Content will be published to Xiaohongshu for real. Make sure everything is correct.",
-      "confirm": "Approve & Publish"
-    }
+    "stepIndicator": "Step indicator",
+    "stepStatus": "Step {step}",
+    "currentStep": "Current step",
+    "skip": "Skip Tour",
+    "next": "Next",
+    "finish": "Finish Tour"
   },
   "celebration": {
     "title": "Congratulations! Workflow Completed",

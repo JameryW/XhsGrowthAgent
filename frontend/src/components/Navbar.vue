@@ -31,6 +31,14 @@ const navigateTo = (path: string) => {
 
 const currentPhase = computed(() => workflowStore.currentPhase)
 
+const phaseLabel = computed(() => {
+  const phase = currentPhase.value
+  const key = `dashboard.timeline.${phase}`
+  // Only use translation if the key exists, otherwise show raw phase
+  const translated = t(key)
+  return translated !== key ? translated : phase
+})
+
 // HelpCenter handlers
 const handleOpenFaq = () => {
   // Navigate to FAQ page or show modal
@@ -73,7 +81,7 @@ const handleLogout = async () => {
       <div class="mt-4 bg-gradient-to-r from-slate-50 to-white rounded-lg px-3 py-2 flex items-center gap-2 border border-slate-100 transition-all duration-200 hover:border-slate-200 hover:shadow-sm" role="status" aria-live="polite" :aria-label="t('nav.phase')">
         <div class="w-2 h-2 rounded-full animate-pulse" :class="currentPhase === 'idle' ? 'bg-amber-400' : 'bg-teal-500'" aria-hidden="true" />
         <div class="text-xs text-slate-500">
-          {{ t('nav.phase') }}: <span class="text-teal-600 font-medium">{{ currentPhase }}</span>
+          {{ t('nav.phase') }}: <span class="text-teal-600 font-medium">{{ phaseLabel }}</span>
         </div>
       </div>
     </div>
@@ -175,7 +183,7 @@ const handleLogout = async () => {
       <div class="mb-3 flex items-center justify-between px-3 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
         <div class="flex items-center gap-2">
           <AppIcon name="Globe" size="sm" variant="cyan" />
-          <span class="text-xs text-slate-500">{{ t('nav.language') || '语言' }}</span>
+          <span class="text-xs text-slate-500">{{ t('nav.language') }}</span>
         </div>
         <LanguageSwitcher />
       </div>

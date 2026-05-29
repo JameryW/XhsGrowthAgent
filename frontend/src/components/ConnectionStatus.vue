@@ -12,6 +12,7 @@ const statusStyles = computed(() => ({
   connected: {
     icon: "Wifi",
     iconVariant: "cyan" as const,
+    animate: false,
     text: t('connection.connected'),
     borderClass: "border-neon-cyan/20",
     bgClass: "bg-white",
@@ -38,6 +39,7 @@ const statusStyles = computed(() => ({
   disconnected: {
     icon: "WifiOff",
     iconVariant: "pink" as const,
+    animate: false,
     text: t('connection.disconnected'),
     borderClass: "border-neon-pink/20",
     bgClass: "bg-white",
@@ -55,7 +57,7 @@ const currentStyle = computed(() => statusStyles.value[realtimeStore.connectionS
     :class="[currentStyle.borderClass]"
     role="status"
     aria-live="polite"
-    :aria-label="`${t('connection.connected')}: ${currentStyle.text}`"
+    :aria-label="currentStyle.text"
   >
     <div class="w-6 h-6 rounded-lg flex items-center justify-center bg-slate-50" aria-hidden="true">
       <AppIcon

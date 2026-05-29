@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useShortcutsStore, SHORTCUTS } from '@/stores/shortcuts'
 import AppIcon from '@/components/AppIcon.vue'
+
+const { t } = useI18n()
 
 interface Props {
   isOpen: boolean
@@ -22,18 +25,18 @@ const previousFocusElement = ref<HTMLElement | null>(null)
 // Group shortcuts by category
 const shortcutGroups = computed(() => {
   const groups: Record<string, typeof SHORTCUTS> = {
-    '全局': [],
-    'Dashboard': [],
-    'Review': [],
+    [t('keyboard.global')]: [],
+    [t('keyboard.dashboard')]: [],
+    [t('keyboard.review')]: [],
   }
 
   for (const shortcut of SHORTCUTS) {
     if (!shortcut.pages || shortcut.pages.length === 0) {
-      groups['全局'].push(shortcut)
+      groups[t('keyboard.global')].push(shortcut)
     } else if (shortcut.pages.includes('dashboard') && !shortcut.pages.includes('chord_g')) {
-      groups['Dashboard'].push(shortcut)
+      groups[t('keyboard.dashboard')].push(shortcut)
     } else if (shortcut.pages.includes('review') && !shortcut.pages.includes('chord_g')) {
-      groups['Review'].push(shortcut)
+      groups[t('keyboard.review')].push(shortcut)
     }
   }
 
@@ -126,7 +129,7 @@ onUnmounted(() => {
               <button
                 ref="closeButtonRef"
                 class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
-                aria-label="关闭"
+                :aria-label="t('keyboard.close')"
                 @click="handleClose"
               >
                 <AppIcon name="X" size="sm" variant="pink" />
@@ -146,9 +149,9 @@ onUnmounted(() => {
                 <span
                   class="text-xs font-semibold uppercase tracking-wider"
                   :class="
-                    category === '全局'
+                    category === t('keyboard.global')
                       ? 'text-violet-500'
-                      : category === 'Dashboard'
+                      : category === t('keyboard.dashboard')
                         ? 'text-neon-cyan'
                         : 'text-neon-pink'
                   "
@@ -188,7 +191,7 @@ onUnmounted(() => {
           <!-- Footer hint -->
           <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 text-center">
             <p class="text-xs text-slate-500">
-              按 <kbd class="px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 font-mono">Esc</kbd> 关闭此面板
+              {{ t('keyboard.escHint') }}
             </p>
           </div>
         </div>

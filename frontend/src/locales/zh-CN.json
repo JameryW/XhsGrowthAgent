@@ -1,6 +1,8 @@
 {
   "common": {
     "loading": "加载中...",
+    "optional": "可选",
+    "skipToContent": "跳转到主内容",
     "error": "错误",
     "success": "成功",
     "cancel": "取消",
@@ -14,14 +16,15 @@
     "completed": "已完成",
     "loadingState": "加载中",
     "actionPreview": "操作预览",
-    "apiError": "API 错误",
     "timeoutError": "请求超时",
     "unknownError": "未知错误",
     "retrySuccess": "重试成功",
     "retryCount": "重试 ({count})",
-    "retriedTimes": "已重试 {count} 次"
+    "retriedTimes": "已重试 {count} 次",
+    "pageLoadError": "页面加载出现问题"
   },
   "health": {
+    "title": "系统健康检查",
     "ready": "就绪",
     "needsConfig": "需配置",
     "apiUnreachable": "API 不可达",
@@ -30,7 +33,7 @@
     "notConfigured": "未配置",
     "notSet": "未设置",
     "set": "已设置",
-    "refresh": "刷新",
+    "refresh": "刷新健康检查",
     "status": {
       "ok": "正常",
       "warning": "未配置",
@@ -42,7 +45,7 @@
     },
     "guide": {
       "llmMissing": "请在 .env 文件中设置至少一个 LLM API Key（如 ANTHROPIC_API_KEY）以启用 AI 功能。",
-      "xhsMissing": "请在 .env 文件中设置 XHS_COOKIE 和 XHS_USER_ID 以启用小红书平台访问。",
+      "xhsMissing": "未配置小红书凭证，发布阶段将自动跳过（仅生成预览）。如需发布，请在 .env 中设置 XHS_COOKIE 和 XHS_USER_ID。",
       "rippleMissing": "请在 .env 文件中设置 RIPPLE_BASE_URL 和 RIPPLE_API_TOKEN（可选，用于内容传播预测）。",
       "apiUnreachable": "请确保后端服务已启动：xhs-growth serve --port 8000"
     }
@@ -97,6 +100,7 @@
     "customStart": "自定义配置启动",
     "quickStart": "快速启动（默认配置）",
     "history": "工作流历史",
+    "recommendedTopic": "推荐话题",
     "form": {
       "accountId": "账号 ID",
       "accountIdPlaceholder": "输入账号标识",
@@ -111,7 +115,25 @@
       "topicPlaceholder": "可选：输入内容主题或关键词",
       "topicHelp": "指定主题可引导内容策略方向",
       "niche": "垂类赛道",
-      "nicheHelp": "选择内容垂类，影响趋势发现和内容策略"
+      "nicheHelp": "选择内容垂类，影响趋势发现和内容策略",
+      "niches": {
+        "baby": "母婴",
+        "beauty": "美妆",
+        "fashion": "穿搭",
+        "food": "美食",
+        "homeDecor": "家居",
+        "fitness": "健身",
+        "travel": "旅行",
+        "tech": "数码",
+        "pets": "宠物",
+        "knowledge": "知识"
+      },
+      "phases": {
+        "scouting": { "label": "趋势发现", "desc": "从发现热门趋势开始" },
+        "planning": { "label": "策略规划", "desc": "跳过趋势发现，直接制定策略" },
+        "creating": { "label": "内容创作", "desc": "跳过策略，直接开始创作" },
+        "reviewing": { "label": "内容审核", "desc": "跳到审核阶段" }
+      }
     },
     "confirm": {
       "title": "确认启动工作流",
@@ -128,6 +150,39 @@
     "title": "工作流仪表盘",
     "completed": "工作流完成",
     "completedMessage": "内容已成功发布到小红书",
+    "publishFailed": "发布失败",
+    "header": {
+      "status": "工作流状态",
+      "progress": "工作流进度",
+      "idle": "空闲",
+      "running": "运行中",
+      "waiting": "等待启动",
+      "workflow": "工作流"
+    },
+    "contentCards": {
+      "loading": "工作流数据加载状态",
+      "cards": "工作流内容卡片",
+      "trendScouting": "趋势发现",
+      "strategyPlanning": "策略规划",
+      "copywriting": "文案创作"
+    },
+    "actionButtons": {
+      "ariaLabel": "工作流操作按钮",
+      "startNew": "启动新工作流",
+      "startNewDesc": "启动新的内容增长工作流",
+      "goReview": "前往审核页面查看内容",
+      "goReviewDesc": "进入审核页面",
+      "goReviewPending": "前往审核页面查看并决定内容",
+      "goReviewPendingDesc": "去审核内容 - 内容已准备好等待审核",
+      "pause": "暂停工作流",
+      "pauseDesc": "暂停当前工作流执行",
+      "refresh": "刷新状态",
+      "refreshDesc": "刷新获取最新工作流状态"
+    },
+    "optimization": {
+      "title": "发布前优化面板",
+      "desc": "开始提交草稿进行优化分析"
+    },
     "timeline": {
       "title": "工作流管线",
       "keyboardHint": "使用方向键导航",
@@ -153,21 +208,22 @@
       "analyzing": "数据分析",
       "analyzingDesc": "分析表现数据",
       "engaging": "互动管理",
-      "engagingDesc": "受众互动管理"
+      "engagingDesc": "受众互动管理",
+      "agentDetails": "Agent 执行详情"
     }
   },
   "review": {
     "title": "内容审核",
     "subtitle": "等待您的决定",
-    "pendingApproval": "待审批",
+    "pendingApproval": "待审核",
     "copyContent": "文案内容",
     "copyContentEn": "Copy Content",
     "visualPlan": "视觉方案",
     "visualPlanEn": "Visual Plan",
     "actions": "审核操作",
-    "selectAction": "SELECT_ACTION",
+    "selectAction": "选择操作",
     "feedbackInput": "反馈输入",
-    "feedbackLabel": "FEEDBACK_INPUT",
+    "feedbackLabel": "反馈意见",
     "approve": "批准",
     "approveDesc": "直接发布",
     "revise": "修改",
@@ -176,6 +232,72 @@
     "rejectDesc": "放弃内容",
     "feedbackPlaceholder": "请输入审核意见或修改建议...",
     "feedbackAriaLabel": "审核意见输入框",
+    "structuredFeedback": "结构化反馈",
+    "structuredFeedbackLabel": "按维度反馈（可选）：",
+    "structuredPrefix": "[结构化反馈]",
+    "rejectPrefix": "[拒绝原因]",
+    "revisionPrefix": "[修改要求]",
+    "titlePrefix": "标题",
+    "bodyPrefix": "正文",
+    "tagsPrefix": "标签",
+    "visualPrefix": "视觉",
+    "timingPrefix": "发布时间",
+    "versionLabel": "版本 {n}",
+    "titleIssue": "标题问题",
+    "bodyIssue": "正文问题",
+    "tagsIssue": "标签问题",
+    "visualIssue": "视觉问题",
+    "timingIssue": "发布时间问题",
+    "rejectReason": "拒绝原因（必填）",
+    "rejectReasonPlaceholder": "请说明拒绝原因...",
+    "revisionReason": "修改要求（必填）",
+    "revisionReasonPlaceholder": "请说明需要修改的内容...",
+    "versionHistory": {
+      "title": "版本历史",
+      "count": "个历史版本",
+      "compare": "对比版本",
+      "exitCompare": "退出对比",
+      "expand": "展开",
+      "collapse": "收起",
+      "selectTwo": "请选择 2 个版本进行对比",
+      "copy": "文案",
+      "copyVersion": "复制此版本",
+      "comparison": "版本对比",
+      "before": "修改前",
+      "after": "修改后",
+      "titleLabel": "标题",
+      "bodyLabel": "正文",
+      "copied": "已复制",
+      "copiedDesc": "版本内容已复制到剪贴板"
+    },
+    "emptyState": {
+      "title": "暂无待审核内容",
+      "description": "当前没有需要审核的内容，可能原因：",
+      "reason1": "工作流尚未到达审核阶段",
+      "reason2": "工作流已完成或已取消",
+      "reason3": "没有活跃的工作流 — 从首页启动一个",
+      "goDashboard": "前往仪表盘",
+      "goHome": "返回首页",
+      "noWorkflow": "没有活跃的工作流。启动一个新的工作流来生成待审核内容。",
+      "workflowCompleted": "此工作流已完成。启动新的工作流来创建更多内容。",
+      "workflowError": "工作流遇到错误。请在仪表盘查看详情。",
+      "workflowCancelled": "此工作流已取消。启动新的工作流继续。",
+      "loadingReview": "审核内容正在加载中。如果持续显示，请刷新仪表盘。",
+      "stillRunning": "工作流仍在 {phase} 阶段运行中。到达审核阶段后内容将可审核。",
+      "notReached": "工作流尚未到达审核阶段。",
+      "currentPhase": "当前阶段",
+      "phaseIdle": "空闲",
+      "phaseScouting": "趋势发现",
+      "phasePlanning": "策略规划",
+      "phaseCreating": "内容创作",
+      "phaseReviewing": "内容审核",
+      "phasePublishing": "发布中",
+      "phaseAnalyzing": "数据分析",
+      "phaseEngaging": "互动管理",
+      "phaseCompleted": "已完成",
+      "phaseError": "错误",
+      "phaseCancelled": "已取消"
+    },
     "confirmReject": {
       "title": "确认拒绝内容",
       "message": "拒绝后内容将被放弃，此操作不可撤销。确定要拒绝这篇内容吗？",
@@ -191,7 +313,16 @@
     "submitFailed": "提交失败，请重试",
     "submitFailedTitle": "提交失败",
     "cancelSuccess": "操作已取消",
-    "cancelMessage": "您可以继续审核内容"
+    "cancelMessage": "您可以继续审核内容",
+    "publishConfirm": {
+      "title": "确认发布",
+      "subtitle": "发布前请检查以下设置",
+      "target": "工作流 Thread",
+      "dryRun": "试运行模式",
+      "dryRunHelp": "预览效果，不实际发布",
+      "liveWarning": "当前为实时模式，内容将真实发布到小红书平台。请确认所有内容无误。",
+      "confirm": "批准并发布"
+    }
   },
   "analytics": {
     "title": "数据分析中心",
@@ -206,6 +337,20 @@
     "interactionTrend": "互动趋势",
     "recentPosts": "最近帖子表现",
     "top10": "TOP 10",
+    "cost": {
+      "title": "成本明细",
+      "subtitle": "LLM 调用成本统计",
+      "total": "总成本",
+      "today": "今日成本",
+      "remaining": "预算剩余",
+      "byModel": "按模型"
+    },
+    "insights": {
+      "title": "增长洞察",
+      "subtitle": "基于已完成工作流的分析建议"
+    },
+    "hotTopics": "热门话题",
+    "launch": "发起",
     "table": {
       "title": "标题",
       "likes": "点赞",
@@ -233,6 +378,37 @@
     "month": "本月",
     "year": "全年"
   },
+  "versionCompare": {
+    "analysisReport": "优化分析报告",
+    "gapAnalysis": "差距分析",
+    "gapsFound": "发现差距",
+    "suggestions": "优化建议",
+    "priority": "优先级",
+    "viralPatterns": "爆款模式",
+    "versionComparison": "版本对比",
+    "chooseVersion": "选择版本",
+    "bestRecommendation": "最佳推荐",
+    "version": "版",
+    "confirmSelection": "确认选择",
+    "selected": "已选择 {type} 版 - {title}",
+    "scoreUnit": "分"
+  },
+  "charts": {
+    "engagementTable": "互动数据表",
+    "trendTable": "图表数据表",
+    "trendData": "趋势数据",
+    "noData": "无数据",
+    "trendChart": "趋势图",
+    "type": "类型",
+    "count": "次数",
+    "date": "日期",
+    "value": "数值",
+    "trend": {
+      "rising": "上升",
+      "falling": "下降",
+      "stable": "平稳"
+    }
+  },
   "connection": {
     "connected": "实时连接",
     "connecting": "连接中...",
@@ -250,6 +426,12 @@
     "retryingMessage": "重新获取工作流状态",
     "returned": "已返回",
     "returnedMessage": "请重新开始工作流",
+    "type": {
+      "connection": "连接",
+      "validation": "参数",
+      "notFound": "不存在",
+      "auth": "认证"
+    },
     "networkSuggestions": ["检查网络连接是否正常", "尝试刷新页面", "等待片刻后重试"],
     "validationSuggestions": ["检查输入参数是否正确", "确认账号ID有效", "查看API文档了解参数要求"],
     "notFoundSuggestions": ["确认工作流ID存在", "检查是否已删除的工作流", "返回仪表盘重新开始"],
@@ -324,10 +506,12 @@
     "pauseFailed": "暂停失败",
     "resumed": "工作流已恢复",
     "resumeFailed": "恢复失败",
+    "cancelFailed": "取消失败",
     "statusRefreshFailed": "状态刷新失败",
     "currentPhase": "当前阶段",
     "currentAgent": "当前 Agent",
-    "thread": "Thread"
+    "thread": "Thread",
+    "publishFailed": "发布失败"
   },
   "history": {
     "title": "工作流历史",
@@ -355,99 +539,34 @@
     "deleteSuccess": "工作流已删除",
     "deleteFailed": "删除失败"
   },
-  "review": {
-    "title": "内容审核",
-    "subtitle": "等待您的决定",
-    "pendingApproval": "待审批",
-    "copyContent": "文案内容",
-    "copyContentEn": "Copy Content",
-    "visualPlan": "视觉方案",
-    "visualPlanEn": "Visual Plan",
-    "actions": "审核操作",
-    "selectAction": "SELECT_ACTION",
-    "feedbackInput": "反馈输入",
-    "feedbackLabel": "FEEDBACK_INPUT",
-    "approve": "批准",
-    "approveDesc": "直接发布",
-    "revise": "修改",
-    "reviseDesc": "要求修改",
-    "reject": "拒绝",
-    "rejectDesc": "放弃内容",
-    "feedbackPlaceholder": "请输入审核意见或修改建议...",
-    "feedbackAriaLabel": "审核意见输入框",
-    "structuredFeedback": "结构化反馈",
-    "structuredFeedbackLabel": "按维度反馈（可选）：",
-    "structuredPrefix": "[结构化反馈]",
-    "rejectPrefix": "[拒绝原因]",
-    "revisionPrefix": "[修改要求]",
-    "titlePrefix": "标题",
-    "bodyPrefix": "正文",
-    "tagsPrefix": "标签",
-    "visualPrefix": "视觉",
-    "timingPrefix": "发布时间",
-    "versionLabel": "版本 {n}",
-    "titleIssue": "标题问题",
-    "bodyIssue": "正文问题",
-    "tagsIssue": "标签问题",
-    "visualIssue": "视觉问题",
-    "timingIssue": "发布时间问题",
-    "rejectReason": "拒绝原因（必填）",
-    "rejectReasonPlaceholder": "请说明拒绝原因...",
-    "revisionReason": "修改要求（必填）",
-    "revisionReasonPlaceholder": "请说明需要修改的内容...",
-    "emptyState": {
-      "title": "暂无待审核内容",
-      "description": "当前没有需要审核的内容，可能原因：",
-      "reason1": "工作流尚未到达审核阶段",
-      "reason2": "工作流已完成或已取消",
-      "reason3": "没有活跃的工作流 — 从首页启动一个",
-      "goDashboard": "前往仪表盘",
-      "goHome": "返回首页",
-      "noWorkflow": "没有活跃的工作流。启动一个新的工作流来生成待审核内容。",
-      "workflowCompleted": "此工作流已完成。启动新的工作流来创建更多内容。",
-      "workflowError": "工作流遇到错误。请在仪表盘查看详情。",
-      "workflowCancelled": "此工作流已取消。启动新的工作流继续。",
-      "loadingReview": "审核内容正在加载中。如果持续显示，请刷新仪表盘。",
-      "stillRunning": "工作流仍在 {phase} 阶段运行中。到达审核阶段后内容将可审核。",
-      "notReached": "工作流尚未到达审核阶段。",
-      "currentPhase": "当前阶段",
-      "phaseIdle": "空闲",
-      "phaseScouting": "趋势发现",
-      "phasePlanning": "策略规划",
-      "phaseCreating": "内容创作",
-      "phaseReviewing": "内容审核",
-      "phasePublishing": "发布中",
-      "phaseAnalyzing": "数据分析",
-      "phaseEngaging": "互动管理",
-      "phaseCompleted": "已完成",
-      "phaseError": "错误",
-      "phaseCancelled": "已取消"
+  "keyboard": {
+    "global": "全局",
+    "dashboard": "仪表盘",
+    "review": "审核",
+    "close": "关闭",
+    "escHint": "按 Esc 关闭此面板"
+  },
+  "onboarding": {
+    "steps": {
+      "workflow": {
+        "title": "了解工作流",
+        "desc": "查看工作流的各个阶段，包括选品、策划、创作、审核、发布和分析。"
+      },
+      "start": {
+        "title": "启动工作流",
+        "desc": "点击按钮开始新的工作流，系统会自动执行各个阶段。"
+      },
+      "review": {
+        "title": "审核与发布",
+        "desc": "在审核页面查看生成的内容，确认后即可发布到小红书平台。"
+      }
     },
-    "confirmReject": {
-      "title": "确认拒绝内容",
-      "message": "拒绝后内容将被放弃，此操作不可撤销。确定要拒绝这篇内容吗？",
-      "action": "内容将被标记为\"已拒绝\"，工作流将结束。"
-    },
-    "confirmApprove": {
-      "title": "确认批准内容",
-      "message": "批准后内容将进入发布流程。确定内容已准备好发布吗？",
-      "action": "内容将被标记为\"已批准\"，进入发布阶段。"
-    },
-    "success": "审核完成",
-    "decisionLabel": "决定",
-    "submitFailed": "提交失败，请重试",
-    "submitFailedTitle": "提交失败",
-    "cancelSuccess": "操作已取消",
-    "cancelMessage": "您可以继续审核内容",
-    "publishConfirm": {
-      "title": "确认发布",
-      "subtitle": "发布前请检查以下设置",
-      "target": "工作流 Thread",
-      "dryRun": "试运行模式",
-      "dryRunHelp": "预览效果，不实际发布",
-      "liveWarning": "当前为实时模式，内容将真实发布到小红书平台。请确认所有内容无误。",
-      "confirm": "批准并发布"
-    }
+    "stepIndicator": "步骤指示器",
+    "stepStatus": "步骤 {step}",
+    "currentStep": "当前步骤",
+    "skip": "跳过引导",
+    "next": "下一步",
+    "finish": "完成引导"
   },
   "celebration": {
     "title": "恭喜！工作流完成",

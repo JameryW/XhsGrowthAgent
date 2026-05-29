@@ -28,6 +28,7 @@ def _check_llm_providers() -> dict:
         "openai": _check_env_var("OPENAI_API_KEY"),
         "deepseek": _check_env_var("DEEPSEEK_API_KEY"),
         "dashscope": _check_env_var("DASHSCOPE_API_KEY"),
+        "xiaomimimo": _check_env_var("XIAOMIMIMO_API_KEY"),
     }
     any_configured = any(p["configured"] for p in providers.values())
     return {
@@ -60,7 +61,9 @@ def _check_ripple() -> dict:
     if not enabled:
         return {"status": "disabled", "configured": False, "message": "Ripple 服务已禁用"}
 
-    configured = bool(base_url and api_token)
+    # Local services don't need an API token
+    is_local = bool(base_url) and ("127.0.0.1" in base_url or "localhost" in base_url)
+    configured = bool(base_url and (api_token or is_local))
     return {
         "status": "ok" if configured else "warning",
         "configured": configured,
@@ -82,9 +85,8 @@ async def system_health():
     xhs = _check_xhs()
     ripple = _check_ripple()
 
-    # Overall status: ok if LLM + XHS are configured
-    critical_ok = llm["status"] == "ok" and xhs["status"] == "ok"
-    overall = "ok" if critical_ok else "degraded"
+    # Overall status: ok if LLM is configured (XHS is optional — preview-only without it)
+    overall = "ok" if llm["status"] == "ok" else "degraded"
 
     checks = {
         "llm_providers": llm,
