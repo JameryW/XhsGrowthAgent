@@ -93,7 +93,12 @@
       "dryRun": "试运行模式",
       "dryRunHelp": "不实际发布到小红书",
       "autoPublish": "自动发布",
-      "autoPublishHelp": "审核通过后自动发布"
+      "autoPublishHelp": "审核通过后自动发布",
+      "topic": "话题主题",
+      "topicPlaceholder": "可选：输入内容主题或关键词",
+      "topicHelp": "指定主题可引导内容策略方向",
+      "niche": "垂类赛道",
+      "nicheHelp": "选择内容垂类，影响趋势发现和内容策略"
     },
     "confirm": {
       "title": "确认启动工作流",

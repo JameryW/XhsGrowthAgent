@@ -12,6 +12,7 @@ const props = defineProps<{
   phase: string
   dryRun: boolean
   autoPublish: boolean
+  niche?: string
   isLoading: boolean
 }>()
 
@@ -71,6 +72,10 @@ const expectedSteps = computed(() => {
             <div class="flex items-center justify-between py-2">
               <span class="text-sm text-slate-500">{{ t('home.form.accountId') }}</span>
               <span class="text-sm font-medium text-slate-700">{{ accountId }}</span>
+            </div>
+            <div v-if="niche" class="flex items-center justify-between py-2">
+              <span class="text-sm text-slate-500">{{ t('home.form.niche') || '垂类赛道' }}</span>
+              <span class="text-sm font-medium text-rose-600 bg-rose-50 px-2 py-0.5 rounded">{{ niche }}</span>
             </div>
             <div class="flex items-center justify-between py-2">
               <span class="text-sm text-slate-500">{{ t('home.form.startPhase') }}</span>

@@ -93,7 +93,12 @@
       "dryRun": "Dry Run Mode",
       "dryRunHelp": "Don't actually publish to Xiaohongshu",
       "autoPublish": "Auto Publish",
-      "autoPublishHelp": "Auto-publish after approval"
+      "autoPublishHelp": "Auto-publish after approval",
+      "topic": "Topic",
+      "topicPlaceholder": "Optional: enter content topic or keywords",
+      "topicHelp": "Specify a topic to guide content strategy direction",
+      "niche": "Content Track",
+      "nicheHelp": "Select a vertical track, affects trend discovery and content strategy"
     },
     "confirm": {
       "title": "Confirm Workflow Start",

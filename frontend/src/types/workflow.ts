@@ -40,6 +40,7 @@ export interface WorkflowStartRequest {
   dry_run?: boolean
   auto_publish?: boolean
   topic?: string
+  niche?: string
 }
 
 // Workflow list item (from /workflow/list)

@@ -119,7 +119,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   })
 
   // Actions
-  async function startWorkflow(accountId: string, phase: WorkflowPhase = 'scouting', options?: { dryRun?: boolean; autoPublish?: boolean; topic?: string }) {
+  async function startWorkflow(accountId: string, phase: WorkflowPhase = 'scouting', options?: { dryRun?: boolean; autoPublish?: boolean; topic?: string; niche?: string }) {
     // Check offline status
     if (!offlineStore.isOnline) {
       offlineStore.queueAction(
@@ -141,6 +141,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         dry_run: options?.dryRun,
         auto_publish: options?.autoPublish,
         topic: options?.topic,
+        niche: options?.niche,
       })
       currentThreadId.value = result.thread_id
       localStorage.setItem('currentThreadId', result.thread_id)
