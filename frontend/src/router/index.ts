@@ -35,6 +35,12 @@ const router = createRouter({
       meta: { transition: 'fade-slide', requiresAuth: true },
     },
     {
+      path: '/history',
+      name: 'history',
+      component: () => import('@/views/History.vue'),
+      meta: { transition: 'fade-slide', requiresAuth: true },
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       component: () => import('@/views/NotFound.vue'),

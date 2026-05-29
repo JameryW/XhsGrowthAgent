@@ -1,5 +1,5 @@
 import client from './client'
-import type { PendingReview, ReviewDecisionRequest, ReviewSubmitResponse } from '@/types/review'
+import type { PendingReview, ReviewDecisionRequest, ReviewSubmitResponse, VersionHistoryResponse } from '@/types/review'
 import { useRetry } from '@/composables/useRetry'
 
 // 获取待审核内容（不重试，无待审核是正常场景）
@@ -21,4 +21,9 @@ export async function submitReview(
       throw error
     }
   })
+}
+
+// 获取内容版本历史
+export async function getVersionHistory(threadId: string): Promise<VersionHistoryResponse> {
+  return client.get(`/review/versions/${threadId}`) as unknown as VersionHistoryResponse
 }

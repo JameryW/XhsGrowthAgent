@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { useWorkflowStore, useOnboardingStore, useAuthStore } from '@/stores'
+import { useWorkflowStore, useOnboardingStore, useAuthStore, useRealtimeStore } from '@/stores'
 import AppIcon from '@/components/AppIcon.vue'
 import HelpCenter from '@/components/HelpCenter.vue'
 
@@ -13,11 +13,13 @@ const router = useRouter()
 const workflowStore = useWorkflowStore()
 const onboardingStore = useOnboardingStore()
 const authStore = useAuthStore()
+const realtimeStore = useRealtimeStore()
 
 const navItems = computed(() => [
   { path: '/dashboard', icon: 'Home', label: t('nav.dashboard'), color: 'pink' },
   { path: '/review', icon: 'CheckCircle', label: t('nav.review'), color: 'cyan' },
   { path: '/analytics', icon: 'BarChart3', label: t('nav.analytics'), color: 'purple' },
+  { path: '/history', icon: 'History', label: t('nav.history'), color: 'peach' },
 ])
 
 const currentPath = computed(() => route.path)
@@ -142,6 +144,30 @@ const handleLogout = async () => {
           @open-shortcuts="handleOpenShortcuts"
           @send-feedback="handleSendFeedback"
         />
+      </div>
+
+      <!-- WebSocket Connection Status -->
+      <div class="mb-3 flex items-center justify-between px-3 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
+        <div class="flex items-center gap-2">
+          <span
+            class="w-2 h-2 rounded-full"
+            :class="{
+              'bg-emerald-500': realtimeStore.connectionStatus === 'connected',
+              'bg-amber-500 animate-pulse': realtimeStore.connectionStatus === 'connecting' || realtimeStore.connectionStatus === 'reconnecting',
+              'bg-rose-500': realtimeStore.connectionStatus === 'disconnected',
+            }"
+          />
+          <span class="text-xs text-slate-500">
+            {{ realtimeStore.connectionStatus === 'connected' ? t('nav.ws.connected') : realtimeStore.connectionStatus === 'reconnecting' ? t('nav.ws.reconnecting') : realtimeStore.connectionStatus === 'connecting' ? t('nav.ws.connecting') : t('nav.ws.disconnected') }}
+          </span>
+        </div>
+        <button
+          v-if="realtimeStore.connectionStatus === 'disconnected'"
+          @click="realtimeStore.connect()"
+          class="text-xs text-rose-500 hover:text-rose-600 font-medium transition-colors"
+        >
+          {{ t('nav.ws.reconnect') }}
+        </button>
       </div>
 
       <div class="bg-gradient-to-r from-slate-50 to-white rounded-lg p-3 text-xs border border-slate-100 hover:border-slate-200 transition-all duration-200">

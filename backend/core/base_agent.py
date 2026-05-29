@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -92,16 +94,60 @@ class BaseAgent(ABC):
         """执行 Agent 核心逻辑，返回状态更新字典"""
         ...
 
+    def _get_model_id(self) -> str:
+        """Resolve model ID for this agent's task type."""
+        from backend.config.models import get_model_id_for_task
+        return get_model_id_for_task(self.task_type)
+
+    def _estimate_cost(self, duration_seconds: float, model_id: str) -> float:
+        """Rough cost estimate based on duration and model pricing."""
+        from backend.config.models import MODEL_COST_PER_1K
+        costs = MODEL_COST_PER_1K.get(model_id)
+        if not costs:
+            return 0.0
+        # Rough: ~50 tokens/sec input, ~30 tokens/sec output for LLM calls
+        est_input_tokens = duration_seconds * 50
+        est_output_tokens = duration_seconds * 30
+        return round(
+            (est_input_tokens / 1000) * costs["input"]
+            + (est_output_tokens / 1000) * costs["output"],
+            4,
+        )
+
     async def __call__(self, state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
-        """LangGraph node 入口点"""
+        """LangGraph node 入口点 — tracks timing and cost in performance_log."""
+        start = time.monotonic()
+        started_at = datetime.now(timezone.utc).isoformat()
+        model_id = self._get_model_id()
         try:
             result = await self.execute(state, store)
             result["current_agent"] = self.agent_name
+            elapsed = round(time.monotonic() - start, 2)
+            result["performance_log"] = [{
+                "agent": self.agent_name,
+                "model": model_id,
+                "started_at": started_at,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "duration_seconds": elapsed,
+                "cost_usd": self._estimate_cost(elapsed, model_id),
+                "status": "success",
+            }]
             return result
         except Exception as e:
+            elapsed = round(time.monotonic() - start, 2)
             logger.error(f"Agent {self.agent_name} failed: {e}", exc_info=True)
             return {
                 "error": f"{self.agent_name}: {type(e).__name__}: {e}",
                 "retry_count": state.get("retry_count", 0) + 1,
                 "current_agent": self.agent_name,
+                "performance_log": [{
+                    "agent": self.agent_name,
+                    "model": model_id,
+                    "started_at": started_at,
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "duration_seconds": elapsed,
+                    "cost_usd": self._estimate_cost(elapsed, model_id),
+                    "status": "error",
+                    "error": str(e),
+                }],
             }

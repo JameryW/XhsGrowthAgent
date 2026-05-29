@@ -1,105 +1,189 @@
-"""Analytics API routes — growth reports and performance data."""
+"""Analytics API routes — growth reports and performance data from real workflows."""
 
 from __future__ import annotations
 
-import random
-from datetime import datetime, timedelta
+import time
+from datetime import datetime, timezone
+from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from backend.api.responses import success
+from backend.api.routes.workflow import _workflow_registry
 
 router = APIRouter()
 
-
-# Mock data generators for demo
-def _generate_mock_posts(count: int = 10) -> list[dict]:
-    """Generate mock post performance data."""
-    posts = []
-    base_time = datetime.now() - timedelta(days=7)
-
-    topics = [
-        "春日穿搭分享｜清新简约风格",
-        "美食探店｜城中热门餐厅打卡",
-        "旅行攻略｜周末小众景点推荐",
-        "护肤心得｜敏感肌护理秘籍",
-        "健身打卡｜一周运动记录",
-    ]
-
-    for i in range(count):
-        published_at = base_time + timedelta(days=i, hours=random.randint(8, 20))
-        likes = random.randint(50, 500)
-        comments = random.randint(5, 50)
-        collects = random.randint(10, 100)
-        shares = random.randint(2, 20)
-        views = random.randint(500, 5000)
-
-        posts.append({
-            "id": f"post_{i}",
-            "title": topics[i % len(topics)],
-            "likes": likes,
-            "comments": comments,
-            "collects": collects,
-            "shares": shares,
-            "views": views,
-            "engagement_rate": round((likes + comments + collects + shares) / views * 100, 2),
-            "published_at": published_at.strftime("%Y-%m-%d %H:%M"),
-        })
-
-    return posts
+# Simple in-memory cache with TTL
+_cache: dict[str, tuple[float, Any]] = {}
+_CACHE_TTL = 30  # seconds
 
 
-def _generate_mock_metrics(period: str) -> dict:
-    """Generate mock growth metrics."""
-    if period == "daily":
-        return {
-            "total_posts": 1,
-            "total_engagement": random.randint(100, 300),
-            "avg_engagement_rate": random.uniform(2.5, 5.0),
-            "best_post_title": "今日热门内容",
-            "trend_topics": ["穿搭", "美食"],
-        }
-    elif period == "weekly":
-        return {
-            "total_posts": 7,
-            "total_engagement": random.randint(1000, 3000),
-            "avg_engagement_rate": random.uniform(3.0, 6.0),
-            "best_post_title": "春日穿搭分享",
-            "trend_topics": ["穿搭", "美食", "旅行"],
-        }
-    else:  # monthly
-        return {
-            "total_posts": 30,
-            "total_engagement": random.randint(5000, 15000),
-            "avg_engagement_rate": random.uniform(3.5, 7.0),
-            "best_post_title": "月度最佳内容",
-            "trend_topics": ["穿搭", "美食", "旅行", "护肤", "健身"],
-        }
+def _get_cached(key: str) -> Any | None:
+    if key in _cache:
+        ts, val = _cache[key]
+        if time.time() - ts < _CACHE_TTL:
+            return val
+        del _cache[key]
+    return None
+
+
+def _set_cached(key: str, value: Any) -> None:
+    _cache[key] = (time.time(), value)
+
+
+async def _get_completed_workflows(
+    graph, account_id: str | None = None
+) -> list[dict[str, Any]]:
+    """Read full state for completed workflows, with caching."""
+    cache_key = f"completed_{account_id or 'all'}"
+    cached = _get_cached(cache_key)
+    if cached is not None:
+        return cached
+
+    results = []
+    for wf in _workflow_registry.values():
+        if wf.get("status") != "completed":
+            continue
+        if account_id and wf.get("account_id") != account_id:
+            continue
+        try:
+            config = {"configurable": {"thread_id": wf["thread_id"]}}
+            state = await graph.aget_state(config)
+            if state.values:
+                results.append({**wf, "_state": state.values})
+        except Exception:
+            continue
+
+    _set_cached(cache_key, results)
+    return results
+
+
+def _extract_post_data(wf_state: dict) -> dict | None:
+    """Extract post performance data from a completed workflow state."""
+    publish = wf_state.get("publish_result") or {}
+    analytics = wf_state.get("analytics") or {}
+    copy = wf_state.get("copy_content") or {}
+    plan = wf_state.get("content_plan") or {}
+
+    title = (
+        copy.get("selected_title")
+        or plan.get("selected_topic")
+        or publish.get("title", "")
+    )
+
+    if not title and not analytics:
+        return None
+
+    return {
+        "id": publish.get("post_id", wf_state.get("session_id", "")),
+        "title": title,
+        "likes": analytics.get("likes", 0),
+        "comments": analytics.get("comments", 0),
+        "collects": analytics.get("collects", 0),
+        "shares": analytics.get("shares", 0),
+        "views": analytics.get("views", 0),
+        "engagement_rate": round(analytics.get("engagement_rate", 0.0), 2),
+        "published_at": publish.get("published_at", wf_state.get("updated_at", "")),
+    }
 
 
 @router.get("/report/{account_id}")
-async def get_growth_report(account_id: str, period: str = "weekly"):
-    """获取增长报告"""
-    metrics = _generate_mock_metrics(period)
-    insights = [
-        {"type": "trend", "message": "穿搭类内容互动率持续上升"},
-        {"type": "opportunity", "message": "建议增加美食探店频次"},
-        {"type": "warning", "message": "周末发布效果优于工作日"},
-    ]
+async def get_growth_report(
+    account_id: str, period: str = "weekly", request: Request = None
+):
+    """获取增长报告 — from real completed workflows."""
+    graph = request.app.state.graph
+    workflows = await _get_completed_workflows(graph, account_id)
+
+    posts = []
+    topics: dict[str, int] = {}
+    for wf in workflows:
+        state = wf.get("_state", {})
+        post = _extract_post_data(state)
+        if post:
+            posts.append(post)
+        plan = state.get("content_plan") or {}
+        topic = plan.get("selected_topic")
+        if topic:
+            topics[topic] = topics.get(topic, 0) + 1
+
+    # Filter by period
+    now = datetime.now(timezone.utc)
+    if period == "daily":
+        cutoff_hours = 24
+    elif period == "weekly":
+        cutoff_hours = 7 * 24
+    else:
+        cutoff_hours = 30 * 24
+
+    filtered_posts = []
+    for p in posts:
+        try:
+            pub = datetime.fromisoformat(p["published_at"].replace(" ", "T"))
+            if pub.tzinfo is None:
+                pub = pub.replace(tzinfo=timezone.utc)
+            if (now - pub).total_seconds() / 3600 <= cutoff_hours:
+                filtered_posts.append(p)
+        except (ValueError, AttributeError):
+            filtered_posts.append(p)
+
+    total_engagement = sum(
+        p["likes"] + p["comments"] + p["collects"] for p in filtered_posts
+    )
+    avg_rate = (
+        sum(p["engagement_rate"] for p in filtered_posts) / len(filtered_posts)
+        if filtered_posts
+        else 0.0
+    )
+    best = max(filtered_posts, key=lambda p: p["likes"] + p["comments"], default=None)
+    trend_topics = sorted(topics, key=topics.get, reverse=True)[:5]
+
+    # Generate insights from real data
+    insights = []
+    if avg_rate > 4.0:
+        insights.append({"type": "trend", "message": "互动率表现优秀，继续保持当前内容策略"})
+    elif filtered_posts:
+        insights.append({"type": "opportunity", "message": "互动率有提升空间，建议优化标题和封面"})
+
+    if trend_topics:
+        insights.append({"type": "trend", "message": f"热门话题：{'、'.join(trend_topics[:3])}"})
+
+    if not filtered_posts:
+        insights.append({"type": "info", "message": "暂无已完成的工作流数据，请先完成一次内容发布"})
 
     return success(data={
         "account_id": account_id,
         "period": period,
-        "metrics": metrics,
+        "metrics": {
+            "total_posts": len(filtered_posts),
+            "total_engagement": total_engagement,
+            "avg_engagement_rate": round(avg_rate, 1),
+            "best_post_title": best["title"] if best else "",
+            "trend_topics": trend_topics,
+        },
         "insights": insights,
         "generated_at": datetime.now().isoformat(),
     })
 
 
 @router.get("/performance/{account_id}")
-async def get_performance(account_id: str, limit: int = 20):
-    """获取最近帖子表现数据"""
-    posts = _generate_mock_posts(min(limit, 20))
+async def get_performance(
+    account_id: str, limit: int = 20, request: Request = None
+):
+    """获取最近帖子表现数据 — from real completed workflows."""
+    graph = request.app.state.graph
+    workflows = await _get_completed_workflows(graph, account_id)
+
+    posts = []
+    for wf in workflows:
+        state = wf.get("_state", {})
+        post = _extract_post_data(state)
+        if post:
+            posts.append(post)
+
+    # Sort by published_at descending
+    posts.sort(key=lambda p: p.get("published_at", ""), reverse=True)
+    posts = posts[:limit]
 
     return success(data={
         "account_id": account_id,
@@ -110,18 +194,40 @@ async def get_performance(account_id: str, limit: int = 20):
 
 
 @router.get("/costs")
-async def get_costs():
-    """获取 LLM 调用成本"""
-    # Mock cost data for demo
+async def get_costs(request: Request):
+    """获取 LLM 调用成本 — aggregated from workflow performance logs."""
+    graph = request.app.state.graph
+    workflows = await _get_completed_workflows(graph)
+
+    by_model: dict[str, float] = {}
+    total_cost = 0.0
+    today_cost = 0.0
+    today = datetime.now(timezone.utc).date()
+
+    for wf in workflows:
+        state = wf.get("_state", {})
+        perf_log = state.get("performance_log") or []
+        for entry in perf_log:
+            cost = entry.get("cost_usd", 0.0)
+            model = entry.get("model", "unknown")
+            total_cost += cost
+            by_model[model] = by_model.get(model, 0.0) + cost
+
+            # Check if entry is from today
+            try:
+                ts = entry.get("timestamp", "")
+                if ts:
+                    entry_date = datetime.fromisoformat(ts).date()
+                    if entry_date == today:
+                        today_cost += cost
+            except (ValueError, AttributeError):
+                pass
+
     return success(data={
-        "total_cost_usd": random.uniform(1.0, 5.0),
-        "today_cost_usd": random.uniform(0.1, 0.5),
-        "by_model": {
-            "claude-sonnet": random.uniform(0.5, 2.0),
-            "gpt-4o": random.uniform(0.3, 1.5),
-            "deepseek-chat": random.uniform(0.05, 0.3),
-        },
+        "total_cost_usd": round(total_cost, 2),
+        "today_cost_usd": round(today_cost, 2),
+        "by_model": {k: round(v, 2) for k, v in by_model.items()},
         "circuit_open": False,
-        "budget_remaining_usd": 8.5,
+        "budget_remaining_usd": round(max(0, 10.0 - total_cost), 2),
         "updated_at": datetime.now().isoformat(),
     })

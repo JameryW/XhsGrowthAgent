@@ -35,6 +35,18 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const contentPlan = computed(() => (workflowState.value as any)?.content_plan || {})
   const copyContent = computed(() => (workflowState.value as any)?.copy_content || {})
   const visualPlan = computed(() => (workflowState.value as any)?.visual_plan || {})
+  const agentTimeline = computed(() => workflowState.value?.agent_timeline || [])
+
+  // Structured publish error info (when publish fails)
+  const publishError = computed(() => {
+    const pr = (workflowState.value as any)?.publish_result
+    if (!pr || pr.status !== 'failed') return null
+    return {
+      message: pr.error || '发布失败',
+      type: pr.error_type || 'unknown',
+      recovery: pr.recovery || null,
+    }
+  })
 
   // Dependencies
   const realtimeStore = useRealtimeStore()
@@ -43,11 +55,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const { phaseToPercent, isOverlayPhase } = useLoading()
 
   /**
-   * Update progress percent and overlay loading state from phase
-   * @param phase - Current workflow phase
+   * Update progress percent and overlay loading state from phase.
+   * Uses backend progress_percent when available, falls back to local mapping.
    */
-  function updateProgressFromPhase(phase: WorkflowPhase) {
-    progressPercent.value = phaseToPercent(phase)
+  function updateProgressFromPhase(phase: WorkflowPhase, backendProgress?: number) {
+    progressPercent.value = backendProgress ?? phaseToPercent(phase)
     isOverlayLoading.value = isOverlayPhase(phase)
   }
 
@@ -107,13 +119,13 @@ export const useWorkflowStore = defineStore('workflow', () => {
   })
 
   // Actions
-  async function startWorkflow(accountId: string, phase: WorkflowPhase = 'scouting') {
+  async function startWorkflow(accountId: string, phase: WorkflowPhase = 'scouting', options?: { dryRun?: boolean; autoPublish?: boolean; topic?: string }) {
     // Check offline status
     if (!offlineStore.isOnline) {
       offlineStore.queueAction(
         `start-${accountId}`,
         async () => {
-          await startWorkflow(accountId, phase)
+          await startWorkflow(accountId, phase, options)
         },
         t('nav.startWorkflow')
       )
@@ -123,7 +135,13 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isLoading.value = true
     error.value = null
     try {
-      const result = await workflowApi.startWorkflow({ account_id: accountId, phase })
+      const result = await workflowApi.startWorkflow({
+        account_id: accountId,
+        phase,
+        dry_run: options?.dryRun,
+        auto_publish: options?.autoPublish,
+        topic: options?.topic,
+      })
       currentThreadId.value = result.thread_id
       localStorage.setItem('currentThreadId', result.thread_id)
       updateProgressFromPhase(phase)
@@ -160,9 +178,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
     error.value = null
     try {
       workflowState.value = await workflowApi.getWorkflowStatus(currentThreadId.value)
-      // Update progress and overlay state from current phase
+      // Use backend progress_percent when available, fallback to local mapping
       const phase = workflowState.value?.phase || 'idle'
-      updateProgressFromPhase(phase as WorkflowPhase)
+      const backendProgress = workflowState.value?.progress_percent
+      updateProgressFromPhase(phase as WorkflowPhase, backendProgress)
     } catch (e: any) {
       // Workflow not found — clear stale threadId silently
       if (e.code === 'ERROR_WORKFLOW_NOT_FOUND' || e.message?.includes('not found')) {
@@ -273,6 +292,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
     contentPlan,
     copyContent,
     visualPlan,
+    agentTimeline,
+    publishError,
     startWorkflow,
     refreshStatus,
     pauseWorkflow,

@@ -80,11 +80,15 @@ class PublisherAgent(BaseAgent):
 
             except Exception as e:
                 logger.error(f"发布失败: {e}")
+                from backend.api.errors import classify_publish_error
+                error_type, recovery = classify_publish_error(str(e))
                 publish_result = {
                     "post_id": "",
                     "post_url": "",
                     "status": "failed",
                     "error": str(e),
+                    "error_type": error_type.value,
+                    "recovery": recovery,
                 }
 
             finally:

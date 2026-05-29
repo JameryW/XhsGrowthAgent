@@ -5,7 +5,7 @@ import AppIcon from '@/components/AppIcon.vue'
 interface Props {
   icon: string // lucide icon name
   label: string
-  status: 'completed' | 'running' | 'pending'
+  status: 'completed' | 'running' | 'pending' | 'error'
   focused?: boolean
   tabindex?: number
 }
@@ -52,6 +52,13 @@ const statusStyles: Record<string, {
     labelClass: 'text-slate-400',
     badge: { show: false },
   },
+  error: {
+    shape: 'bg-gradient-to-br from-rose-400 to-rose-500 shadow-sm',
+    iconVariant: 'white',
+    animate: false,
+    labelClass: 'text-rose-600 font-semibold',
+    badge: { show: true, icon: 'AlertTriangle', color: 'text-rose-500', animate: true },
+  },
 }
 
 const currentStyle = computed(() => statusStyles[props.status])
@@ -95,7 +102,7 @@ const focusClass = computed(() => {
     <div v-if="currentStyle.badge.show && currentStyle.badge.icon" class="mt-1.5 flex items-center justify-center gap-1">
       <AppIcon :name="currentStyle.badge.icon" size="sm" :variant="props.status === 'completed' ? 'cyan' : 'peach'" :animate="currentStyle.badge.animate" />
       <span v-if="currentStyle.badge.color" :class="['text-xs', currentStyle.badge.color]">
-        {{ props.status === 'completed' ? '完成' : '进行中' }}
+        {{ props.status === 'completed' ? '完成' : props.status === 'error' ? '错误' : '进行中' }}
       </span>
     </div>
   </div>

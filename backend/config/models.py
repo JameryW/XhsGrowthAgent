@@ -101,3 +101,18 @@ def get_model_config(model_id: str) -> ModelConfig:
     if model_id not in MODEL_REGISTRY:
         raise KeyError(f"Unknown model: {model_id}. Available: {list(MODEL_REGISTRY.keys())}")
     return MODEL_REGISTRY[model_id]
+
+
+# Approximate cost per 1K tokens (USD) for analytics estimation
+MODEL_COST_PER_1K: dict[str, dict[str, float]] = {
+    "claude-sonnet-4-20250514": {"input": 0.003, "output": 0.015},
+    "gpt-4o": {"input": 0.0025, "output": 0.01},
+    "deepseek-chat": {"input": 0.00014, "output": 0.00028},
+    "qwen-plus": {"input": 0.0004, "output": 0.0012},
+    "mimo-v2.5-pro": {"input": 0.0002, "output": 0.0006},
+}
+
+
+def get_model_id_for_task(task_type: TaskType) -> str:
+    """Get the model ID for a given task type."""
+    return resolve_model_id(task_type)

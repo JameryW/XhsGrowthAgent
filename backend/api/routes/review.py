@@ -1,6 +1,9 @@
-"""Review API routes — human-in-the-loop content review."""
+"""Review API routes — human-in-the-loop content review with version tracking."""
 
 from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
@@ -19,9 +22,24 @@ class ReviewDecision(BaseModel):
     revisions: list[str] = []
 
 
+def _build_version_entry(copy_content: dict, visual_plan: dict, label: str = "draft") -> dict:
+    """Build a version entry from current content state."""
+    return {
+        "version_id": uuid.uuid4().hex[:8],
+        "title": copy_content.get("selected_title", ""),
+        "body": copy_content.get("body_text", ""),
+        "hashtags": copy_content.get("hashtags", []),
+        "image_prompts": visual_plan.get("image_prompts", []),
+        "style_suggestion": visual_plan.get("layout_style", ""),
+        "changes_summary": label,
+        "predicted_score": 0.0,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @router.get("/pending/{thread_id}")
 async def get_pending_review(thread_id: str, request: Request):
-    """获取待审核内容"""
+    """获取待审核内容 — includes version history if available."""
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
@@ -36,6 +54,7 @@ async def get_pending_review(thread_id: str, request: Request):
                 "content_plan": values.get("content_plan", {}),
                 "copy_content": values.get("copy_content", {}),
                 "visual_plan": values.get("visual_plan", {}),
+                "version_history": values.get("content_versions", []),
             }
         )
 
@@ -46,7 +65,7 @@ async def get_pending_review(thread_id: str, request: Request):
 
 @router.post("/submit/{thread_id}")
 async def submit_review(thread_id: str, decision: ReviewDecision, request: Request):
-    """提交审核决定"""
+    """提交审核决定 — saves version before resuming on 'needs_revision'."""
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
@@ -55,6 +74,21 @@ async def submit_review(thread_id: str, decision: ReviewDecision, request: Reque
     if "review_gate" not in state.next:
         current_phase = state.values.get("phase", "unknown")
         raise ReviewNotPendingError(thread_id=thread_id, current_phase=current_phase)
+
+    values = state.values or {}
+
+    # On 'needs_revision', save current content as a version before resuming
+    if decision.decision == "needs_revision":
+        copy_content = values.get("copy_content") or {}
+        visual_plan = values.get("visual_plan") or {}
+        version_entry = _build_version_entry(
+            copy_content, visual_plan, label="AI 初稿" if not values.get("content_versions") else f"修改版本"
+        )
+        # Append version to state before resuming
+        existing_versions = values.get("content_versions") or []
+        await graph.aupdate_state(config, {
+            "content_versions": existing_versions + [version_entry],
+        })
 
     # 用 Command(resume=...) 恢复中断的图
     result = await graph.ainvoke(
@@ -70,3 +104,29 @@ async def submit_review(thread_id: str, decision: ReviewDecision, request: Reque
             "next_phase": result.get("phase", "unknown") if result else "unknown",
         }
     )
+
+
+@router.get("/versions/{thread_id}")
+async def get_version_history(thread_id: str, request: Request):
+    """获取内容版本历史 — all revisions for a workflow."""
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    state = await graph.aget_state(config)
+
+    if not state.values or state.values.get("session_id") is None:
+        from backend.api.errors import WorkflowNotFoundError
+        raise WorkflowNotFoundError(thread_id)
+
+    versions = state.values.get("content_versions") or []
+    current_copy = state.values.get("copy_content") or {}
+
+    return success(data={
+        "thread_id": thread_id,
+        "versions": versions,
+        "current": {
+            "title": current_copy.get("selected_title", ""),
+            "body": current_copy.get("body_text", ""),
+            "hashtags": current_copy.get("hashtags", []),
+        },
+    })

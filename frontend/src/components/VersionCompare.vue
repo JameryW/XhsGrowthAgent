@@ -60,7 +60,7 @@ function handleConfirm() {
   if (!version) return
 
   emit('select', {
-    selected_version: version.version_type,
+    selected_version: version.version_type || 'A',
     version_id: selectedVersionId.value,
   })
 }
@@ -76,7 +76,7 @@ function getVersionTypeColor(type: string): string {
 
 function getCardClass(version: ContentVersion): string[] {
   const isSelected = selectedVersionId.value === version.version_id
-  const isBest = version.version_id === bestVersion?.version_id
+  const isBest = version.version_id === bestVersion.value?.version_id
 
   const classes = ['rounded-lg p-4 border-2 cursor-pointer transition-all duration-300']
 
@@ -211,8 +211,8 @@ function getCardClass(version: ContentVersion): string[] {
 
           <!-- Version Header -->
           <div class="flex items-center justify-between mb-3">
-            <span :class="['px-2 py-1 rounded-lg text-xs font-semibold border', getVersionTypeColor(version.version_type)]">
-              {{ version.version_type }} 版
+            <span :class="['px-2 py-1 rounded-lg text-xs font-semibold border', getVersionTypeColor(version.version_type || 'A')]">
+              {{ version.version_type || 'A' }} 版
             </span>
             <span :class="['text-xs', version.version_id === bestVersion?.version_id ? 'text-amber-500 font-medium' : 'text-slate-400']">
               {{ version.predicted_score.toFixed(1) }} 分

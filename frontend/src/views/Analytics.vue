@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, computed, ref } from 'vue'
+import { onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import MetricCard from '@/components/MetricCard.vue'
 import DataTable from '@/components/DataTable.vue'
@@ -9,6 +10,7 @@ import { AnalyticsSkeleton } from '@/components/skeletons'
 import { useAnalyticsStore } from '@/stores'
 
 const { t } = useI18n()
+const router = useRouter()
 const analyticsStore = useAnalyticsStore()
 
 onMounted(() => {
@@ -21,29 +23,68 @@ onMounted(() => {
 const isLoading = computed(() => analyticsStore.isLoading && !analyticsStore.posts.length)
 
 const metrics = computed(() => [
-  { icon: 'Upload', title: t('analytics.postsPublished'), value: analyticsStore.posts.length, subtitle: '↑ +3 ' + t('analytics.thisWeek'), variant: 'pink' as const },
-  { icon: 'MessageCircle', title: t('analytics.totalEngagement'), value: analyticsStore.totalEngagement, subtitle: '↑ +18%', variant: 'cyan' as const },
-  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: `${analyticsStore.avgEngagementRate.toFixed(1)}%`, subtitle: '↑ +2.1%', variant: 'purple' as const },
-  { icon: 'DollarSign', title: t('analytics.aiCost'), value: analyticsStore.costData?.today_cost_usd?.toFixed(2) || '$0.00', subtitle: t('analytics.thisWeek'), variant: 'peach' as const },
+  { icon: 'Upload', title: t('analytics.postsPublished'), value: analyticsStore.posts.length, subtitle: t('analytics.thisWeek'), variant: 'pink' as const },
+  { icon: 'MessageCircle', title: t('analytics.totalEngagement'), value: analyticsStore.totalEngagement.toLocaleString(), subtitle: `${analyticsStore.posts.length} ` + t('analytics.postsPublished'), variant: 'cyan' as const },
+  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: `${analyticsStore.avgEngagementRate.toFixed(1)}%`, subtitle: t('analytics.thisWeek'), variant: 'purple' as const },
+  { icon: 'DollarSign', title: t('analytics.aiCost'), value: `$${analyticsStore.costData?.today_cost_usd?.toFixed(2) || '0.00'}`, subtitle: t('analytics.thisWeek'), variant: 'peach' as const },
 ])
 
-// Mock trend data for chart visualization
-const trendData = computed(() => [
-  { date: t('analytics.weekdays.mon'), value: 120 },
-  { date: t('analytics.weekdays.tue'), value: 180 },
-  { date: t('analytics.weekdays.wed'), value: 250 },
-  { date: t('analytics.weekdays.thu'), value: 220 },
-  { date: t('analytics.weekdays.fri'), value: 310 },
-  { date: t('analytics.weekdays.sat'), value: 380 },
-  { date: t('analytics.weekdays.sun'), value: 420 },
-])
+// Derive trend data from actual posts
+const trendData = computed(() => {
+  const posts = analyticsStore.posts
+  if (!posts.length) return []
 
-const engagementData = computed(() => [
-  { category: t('analytics.categories.likes'), value: 1250 },
-  { category: t('analytics.categories.comments'), value: 320 },
-  { category: t('analytics.categories.collects'), value: 180 },
-  { category: t('analytics.categories.shares'), value: 95 },
-])
+  // Group engagement by day of week
+  const dayNames = [
+    t('analytics.weekdays.sun'),
+    t('analytics.weekdays.mon'),
+    t('analytics.weekdays.tue'),
+    t('analytics.weekdays.wed'),
+    t('analytics.weekdays.thu'),
+    t('analytics.weekdays.fri'),
+    t('analytics.weekdays.sat'),
+  ]
+  const dayTotals = new Array(7).fill(0)
+  const dayCounts = new Array(7).fill(0)
+
+  posts.forEach(post => {
+    if (post.published_at) {
+      const d = new Date(post.published_at)
+      const day = d.getDay()
+      dayTotals[day] += post.likes + post.comments + post.collects
+      dayCounts[day]++
+    }
+  })
+
+  // Use Mon-Sun order
+  return [1, 2, 3, 4, 5, 6, 0].map(day => ({
+    date: dayNames[day],
+    value: dayCounts[day] > 0 ? Math.round(dayTotals[day] / dayCounts[day]) : 0,
+  }))
+})
+
+// Derive engagement breakdown from actual posts
+const engagementData = computed(() => {
+  const posts = analyticsStore.posts
+  if (!posts.length) return []
+
+  const totals = posts.reduce(
+    (acc, post) => ({
+      likes: acc.likes + post.likes,
+      comments: acc.comments + post.comments,
+      collects: acc.collects + post.collects,
+      shares: acc.shares + (post.shares || 0),
+    }),
+    { likes: 0, comments: 0, collects: 0, shares: 0 }
+  )
+
+  return [
+    { category: t('analytics.categories.likes'), value: totals.likes },
+    { category: t('analytics.categories.comments'), value: totals.comments },
+    { category: t('analytics.categories.collects'), value: totals.collects },
+    { category: t('analytics.categories.shares'), value: totals.shares },
+  ]
+})
 
 const tableColumns = computed(() => [
   { key: 'title', label: t('analytics.table.title'), align: 'left' as const },
@@ -58,6 +99,42 @@ const tableData = computed(() => analyticsStore.posts.slice(0, 10))
 
 const setPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
   analyticsStore.setPeriod(period)
+}
+
+// Insights from growth report
+const insights = computed(() => analyticsStore.growthReport?.insights || [])
+const trendTopics = computed(() => analyticsStore.growthReport?.metrics?.trend_topics || [])
+
+const insightIcon = (type: string) => {
+  switch (type) {
+    case 'trend': return 'TrendingUp'
+    case 'opportunity': return 'Lightbulb'
+    case 'warning': return 'AlertTriangle'
+    default: return 'Info'
+  }
+}
+
+const insightVariant = (type: string) => {
+  switch (type) {
+    case 'trend': return 'cyan'
+    case 'opportunity': return 'purple'
+    case 'warning': return 'peach'
+    default: return 'cyan'
+  }
+}
+
+const insightBg = (type: string) => {
+  switch (type) {
+    case 'trend': return 'bg-teal-50 border-teal-100'
+    case 'opportunity': return 'bg-violet-50 border-violet-100'
+    case 'warning': return 'bg-amber-50 border-amber-100'
+    default: return 'bg-slate-50 border-slate-100'
+  }
+}
+
+// Start new workflow with recommended topic
+function startWithTopic(topic: string) {
+  router.push({ path: '/', query: { topic } })
 }
 </script>
 
@@ -124,6 +201,101 @@ const setPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
         variant="pink"
         :height="280"
       />
+    </div>
+
+    <!-- 成本明细 -->
+    <div v-if="analyticsStore.costData" class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm">
+          <AppIcon name="DollarSign" size="md" variant="white" aria-label="Cost" />
+        </div>
+        <div class="flex-1">
+          <div class="text-rose-500 font-semibold text-sm">{{ t('analytics.costBreakdown') || '成本明细' }}</div>
+          <div class="text-xs text-slate-400">{{ t('analytics.costBreakdownDesc') || 'LLM 调用成本统计' }}</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+        <div class="rounded-lg p-3 bg-rose-50 border border-rose-100">
+          <div class="text-xs text-rose-500 font-medium">{{ t('analytics.totalCost') || '总成本' }}</div>
+          <div class="text-xl font-bold text-rose-700">${{ analyticsStore.costData.total_cost_usd?.toFixed(2) || '0.00' }}</div>
+        </div>
+        <div class="rounded-lg p-3 bg-amber-50 border border-amber-100">
+          <div class="text-xs text-amber-500 font-medium">{{ t('analytics.todayCost') || '今日成本' }}</div>
+          <div class="text-xl font-bold text-amber-700">${{ analyticsStore.costData.today_cost_usd?.toFixed(2) || '0.00' }}</div>
+        </div>
+        <div class="rounded-lg p-3 bg-emerald-50 border border-emerald-100">
+          <div class="text-xs text-emerald-500 font-medium">{{ t('analytics.budgetRemaining') || '预算剩余' }}</div>
+          <div class="text-xl font-bold text-emerald-700">${{ analyticsStore.costData.budget_remaining_usd?.toFixed(2) || '0.00' }}</div>
+        </div>
+      </div>
+
+      <!-- By model breakdown -->
+      <div v-if="analyticsStore.costData.by_model && Object.keys(analyticsStore.costData.by_model).length > 0">
+        <div class="text-xs text-slate-500 uppercase tracking-wide font-medium mb-2">{{ t('analytics.byModel') || '按模型' }}</div>
+        <div class="space-y-1.5">
+          <div
+            v-for="(cost, model) in analyticsStore.costData.by_model"
+            :key="model"
+            class="flex items-center justify-between py-1.5 px-3 rounded bg-slate-50 border border-slate-100"
+          >
+            <span class="text-sm text-slate-700 font-medium">{{ model }}</span>
+            <span class="text-sm text-slate-600">${{ (cost as number).toFixed(2) }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 增长洞察 -->
+    <div v-if="insights.length > 0 || trendTopics.length > 0" class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center shadow-sm">
+          <AppIcon name="Lightbulb" size="md" variant="white" aria-label="Insights" />
+        </div>
+        <div class="flex-1">
+          <div class="text-amber-600 font-semibold text-sm">{{ t('analytics.insights') || '增长洞察' }}</div>
+          <div class="text-xs text-slate-400">{{ t('analytics.insightsDesc') || '基于已完成工作流的分析建议' }}</div>
+        </div>
+      </div>
+
+      <!-- Insight cards -->
+      <div class="space-y-2 mb-4">
+        <div
+          v-for="(insight, idx) in insights"
+          :key="idx"
+          class="flex items-start gap-3 p-3 rounded-lg border"
+          :class="insightBg(insight.type)"
+        >
+          <div class="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 mt-0.5" :class="{
+            'bg-teal-100': insight.type === 'trend',
+            'bg-violet-100': insight.type === 'opportunity',
+            'bg-amber-100': insight.type === 'warning',
+            'bg-slate-100': insight.type === 'info',
+          }">
+            <AppIcon :name="insightIcon(insight.type)" size="sm" :variant="insightVariant(insight.type) as any" />
+          </div>
+          <p class="text-sm text-slate-700">{{ insight.message }}</p>
+        </div>
+      </div>
+
+      <!-- Trending topics with workflow trigger -->
+      <div v-if="trendTopics.length > 0" class="border-t border-slate-100 pt-4">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-xs text-slate-500 uppercase tracking-wide font-medium">{{ t('analytics.trendTopics') || '热门话题' }}</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="topic in trendTopics"
+            :key="topic"
+            @click="startWithTopic(topic)"
+            class="px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-100 text-teal-700 text-xs font-medium hover:bg-teal-100 hover:border-teal-200 transition-all duration-200 flex items-center gap-1.5"
+          >
+            <AppIcon name="Sparkles" size="sm" variant="cyan" />
+            {{ topic }}
+            <span class="text-teal-400 text-xs">{{ t('analytics.startWorkflow') || '发起' }}</span>
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- 帖子表现列表 -->
