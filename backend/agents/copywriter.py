@@ -43,10 +43,12 @@ class CopywriterAgent(BaseAgent):
 
         system_prompt = self._build_system_prompt(state, extra_context=memory_context)
 
+        niche = state.get("niche", "母婴")
         user_msg = f"""选题：{plan.get('selected_topic', '')}
 角度：{plan.get('content_angle', '')}
 目标受众：{plan.get('target_audience', '')}
-内容类型：{plan.get('content_type', 'note')}"""
+内容类型：{plan.get('content_type', 'note')}
+垂类赛道：{niche}"""
 
         response = await self.model.ainvoke([
             SystemMessage(content=system_prompt),
