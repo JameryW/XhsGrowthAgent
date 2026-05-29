@@ -1,6 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useToastStore } from './toast'
+import i18n from '@/locales'
+
+const { t } = i18n.global
 
 export const useOfflineStore = defineStore('offline', () => {
   const toastStore = useToastStore()
@@ -21,7 +24,7 @@ export const useOfflineStore = defineStore('offline', () => {
     const existingIndex = actionQueue.value.findIndex(a => a.id === id)
     if (existingIndex === -1) {
       actionQueue.value.push({ id, action, description })
-      toastStore.warning('离线状态', `${description} 已加入队列，连接恢复后自动执行`)
+      toastStore.warning(t('offline.lost'), `${description}`)
     }
   }
 
@@ -32,7 +35,7 @@ export const useOfflineStore = defineStore('offline', () => {
   async function executeQueue() {
     if (actionQueue.value.length === 0) return
 
-    toastStore.info('恢复连接', `正在执行 ${actionQueue.value.length} 个待处理操作...`)
+    toastStore.info(t('offline.recovered'), `${actionQueue.value.length}`)
 
     const actions = [...actionQueue.value]
     actionQueue.value = []
@@ -40,9 +43,9 @@ export const useOfflineStore = defineStore('offline', () => {
     for (const { action, description } of actions) {
       try {
         await action()
-        toastStore.success('操作完成', description)
+        toastStore.success(t('common.success'), description)
       } catch (e) {
-        toastStore.error('操作失败', `${description} 执行失败`)
+        toastStore.error(t('common.error'), `${description}`)
       }
     }
   }
@@ -51,7 +54,7 @@ export const useOfflineStore = defineStore('offline', () => {
   function handleOnline() {
     isOnline.value = true
     if (wasOffline.value) {
-      toastStore.success('连接恢复', '网络已恢复')
+      toastStore.success(t('offline.recovered'), t('offline.recoveredMessage'))
       executeQueue()
     }
     wasOffline.value = false
@@ -60,7 +63,7 @@ export const useOfflineStore = defineStore('offline', () => {
   function handleOffline() {
     isOnline.value = false
     wasOffline.value = true
-    toastStore.warning('离线状态', '网络连接丢失，操作将自动排队')
+    toastStore.warning(t('offline.lost'), t('offline.lostMessage'))
   }
 
   // Lifecycle hooks

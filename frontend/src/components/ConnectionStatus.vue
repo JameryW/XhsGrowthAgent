@@ -1,57 +1,52 @@
 <!-- frontend/src/components/ConnectionStatus.vue -->
 <script setup lang="ts">
 import { computed } from "vue"
+import { useI18n } from "vue-i18n"
 import { useRealtimeStore } from "@/stores/realtime"
 import AppIcon from "@/components/AppIcon.vue"
 
+const { t } = useI18n()
 const realtimeStore = useRealtimeStore()
 
-const statusStyles: Record<string, {
-  icon: string
-  iconVariant: 'pink' | 'cyan' | 'purple' | 'peach' | 'white'
-  animate?: boolean
-  text: string
-  borderClass: string
-  bgClass: string
-  textClass: string
-}> = {
+const statusStyles = computed(() => ({
   connected: {
     icon: "Wifi",
-    iconVariant: "cyan",
-    text: "实时连接",
+    iconVariant: "cyan" as const,
+    text: t('connection.connected'),
     borderClass: "border-neon-cyan/20",
     bgClass: "bg-white",
     textClass: "text-neon-cyan",
   },
   connecting: {
     icon: "Loader2",
-    iconVariant: "peach",
+    iconVariant: "peach" as const,
     animate: true,
-    text: "连接中...",
+    text: t('connection.connecting'),
     borderClass: "border-neon-peach/20",
     bgClass: "bg-white",
     textClass: "text-neon-peach",
   },
   reconnecting: {
     icon: "Loader2",
-    iconVariant: "peach",
+    iconVariant: "peach" as const,
     animate: true,
-    text: "重连中...",
+    text: t('connection.reconnecting'),
     borderClass: "border-neon-peach/20",
     bgClass: "bg-white",
     textClass: "text-neon-peach",
   },
   disconnected: {
     icon: "WifiOff",
-    iconVariant: "pink",
-    text: "已断开",
+    iconVariant: "pink" as const,
+    text: t('connection.disconnected'),
     borderClass: "border-neon-pink/20",
     bgClass: "bg-white",
     textClass: "text-neon-pink",
   },
-}
+}))
 
-const currentStyle = computed(() => statusStyles[realtimeStore.connectionStatus])
+const currentStyle = computed(() => statusStyles.value[realtimeStore.connectionStatus])
+
 </script>
 
 <template>
@@ -60,7 +55,7 @@ const currentStyle = computed(() => statusStyles[realtimeStore.connectionStatus]
     :class="[currentStyle.borderClass]"
     role="status"
     aria-live="polite"
-    aria-label="实时连接状态: {{ currentStyle.text }}"
+    :aria-label="`${t('connection.connected')}: ${currentStyle.text}`"
   >
     <div class="w-6 h-6 rounded-lg flex items-center justify-center bg-slate-50" aria-hidden="true">
       <AppIcon

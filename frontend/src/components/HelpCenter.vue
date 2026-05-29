@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+
+const { t } = useI18n()
 
 interface Props {
   faqUrl?: string
@@ -82,7 +85,7 @@ onUnmounted(() => {
       class="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/50"
       :aria-expanded="isOpen"
       aria-haspopup="true"
-      aria-label="帮助中心"
+      :aria-label="t('help.center')"
       @click="toggleDropdown"
     >
       <AppIcon name="HelpCircle" size="md" variant="pink" />
@@ -94,7 +97,7 @@ onUnmounted(() => {
         v-if="isOpen"
         class="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-200/50 py-2 z-40"
         role="menu"
-        aria-label="帮助菜单"
+        :aria-label="t('help.menu')"
       >
         <!-- FAQ link -->
         <button
@@ -103,7 +106,7 @@ onUnmounted(() => {
           @click="handleOpenFaq"
         >
           <AppIcon name="BookOpen" size="sm" variant="cyan" />
-          <span>常见问题</span>
+          <span>{{ t('help.faq') }}</span>
         </button>
 
         <!-- Shortcuts link -->
@@ -113,7 +116,7 @@ onUnmounted(() => {
           @click="handleOpenShortcuts"
         >
           <AppIcon name="Keyboard" size="sm" variant="purple" />
-          <span>快捷键</span>
+          <span>{{ t('help.shortcuts') }}</span>
         </button>
 
         <!-- Divider -->
@@ -126,7 +129,7 @@ onUnmounted(() => {
           @click="handleSendFeedback"
         >
           <AppIcon name="MessageCircle" size="sm" variant="peach" />
-          <span>反馈建议</span>
+          <span>{{ t('help.feedback') }}</span>
         </button>
       </div>
     </Transition>

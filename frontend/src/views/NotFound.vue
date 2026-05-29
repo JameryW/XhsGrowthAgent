@@ -2,6 +2,9 @@
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const router = useRouter()
 
@@ -27,20 +30,20 @@ const goHome = () => {
 
       <!-- Message -->
       <p class="text-xs text-slate-500 mb-2 uppercase tracking-wide font-medium">PAGE_NOT_FOUND</p>
-      <p class="text-sm text-slate-400 mb-8">页面不存在 · 请返回首页继续操作</p>
+      <p class="text-sm text-slate-400 mb-8">{{ t('notFound.message') }}</p>
 
       <!-- Navigation buttons -->
       <div class="flex gap-3 justify-center">
         <NeonButton variant="cyan" size="lg" @click="goHome">
           <span class="inline-flex items-center gap-2">
             <AppIcon name="Home" size="md" variant="white" />
-            <span>返回首页</span>
+            <span>{{ t('notFound.backHome') }}</span>
           </span>
         </NeonButton>
         <NeonButton variant="ghost" size="lg" @click="router.back()">
           <span class="inline-flex items-center gap-2">
             <AppIcon name="ArrowLeft" size="md" variant="cyan" />
-            <span>返回上页</span>
+            <span>{{ t('notFound.backPrev') }}</span>
           </span>
         </NeonButton>
       </div>

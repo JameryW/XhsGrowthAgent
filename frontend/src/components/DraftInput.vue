@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import type { DraftContent } from '@/types/optimization'
+
+const { t } = useI18n()
 
 interface Props {
   isLoading?: boolean
@@ -45,10 +48,10 @@ const validationState = computed(() => {
 })
 
 const validationMessage = computed(() => {
-  if (isValidDraft.value) return '内容长度满足要求'
-  if (isNearMinimum.value) return `还需 ${50 - draftText.value.trim().length} 字`
-  if (isEmpty.value) return '请输入正文内容'
-  return `内容太短，至少需要 50 字`
+  if (isValidDraft.value) return t('draft.validContent')
+  if (isNearMinimum.value) return t('draft.needMoreChars', { count: 50 - draftText.value.trim().length })
+  if (isEmpty.value) return t('draft.enterContent')
+  return t('draft.contentTooShort')
 })
 
 const parsedHashtags = computed(() => {
@@ -102,7 +105,7 @@ function toggleViralLinks() {
         <AppIcon name="FileText" size="md" variant="white" aria-label="Draft Input" />
       </div>
       <div class="flex-1">
-        <div class="text-slate-800 font-semibold text-sm">提交草稿内容</div>
+        <div class="text-slate-800 font-semibold text-sm">{{ t('draft.title') }}</div>
         <div class="text-xs text-slate-400 uppercase tracking-wide">Pre-Publish Optimization</div>
       </div>
     </div>
@@ -112,14 +115,14 @@ function toggleViralLinks() {
       <!-- Main text input -->
       <div>
         <label class="text-xs text-slate-500 font-medium mb-1.5 block">
-          草稿正文 <span class="text-rose-500">*</span>
+          {{ t('draft.draftBody') }} <span class="text-rose-500">{{ t('draft.required') }}</span>
         </label>
         <textarea
           v-model="draftText"
           :disabled="props.isLoading"
           @focus="textFocused = true"
           @blur="textFocused = false"
-          placeholder="输入您的笔记正文内容（至少50字）..."
+          :placeholder="t('draft.placeholder')"
           rows="6"
           :aria-invalid="!isValidDraft && draftText.length > 0"
           :aria-errormessage="!isValidDraft && draftText.length > 0 ? 'draft-text-error' : undefined"
@@ -133,7 +136,7 @@ function toggleViralLinks() {
 
         <!-- Error message for accessibility -->
         <div id="draft-text-error" class="sr-only" role="alert">
-          正文内容至少需要50字
+          {{ t('draft.minLength') }}
         </div>
 
         <!-- Validation feedback -->
@@ -177,31 +180,31 @@ function toggleViralLinks() {
           </div>
 
           <span class="text-xs text-slate-400">
-            {{ draftText.length }} 字
+            {{ t('draft.charCount', { count: draftText.length }) }}
           </span>
         </div>
       </div>
 
       <!-- Title input -->
       <div>
-        <label class="text-xs text-slate-500 font-medium mb-1.5 block">标题（可选）</label>
+        <label class="text-xs text-slate-500 font-medium mb-1.5 block">{{ t('draft.titleLabel') }}</label>
         <input
           v-model="draftTitle"
           :disabled="props.isLoading"
           type="text"
-          placeholder="笔记标题..."
+          :placeholder="t('draft.titlePlaceholder')"
           class="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:border-teal-300 focus:ring-1 focus:ring-teal-200 text-slate-700 placeholder:text-slate-300 transition-all"
         />
       </div>
 
       <!-- Hashtags input -->
       <div>
-        <label class="text-xs text-slate-500 font-medium mb-1.5 block">话题标签（可选）</label>
+        <label class="text-xs text-slate-500 font-medium mb-1.5 block">{{ t('draft.tagsLabel') }}</label>
         <input
           v-model="draftHashtags"
           :disabled="props.isLoading"
           type="text"
-          placeholder="#美食 #探店 或 逗号分隔..."
+          :placeholder="t('draft.tagsPlaceholder')"
           class="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:border-teal-300 focus:ring-1 focus:ring-teal-200 text-slate-700 placeholder:text-slate-300 transition-all"
         />
         <div v-if="parsedHashtags.length > 0" class="flex gap-2 mt-2">
@@ -225,7 +228,7 @@ function toggleViralLinks() {
           class="flex items-center gap-2 text-xs text-slate-500 hover:text-teal-500 transition-colors"
         >
           <AppIcon :name="showViralLinks ? 'ChevronDown' : 'ChevronRight'" size="sm" variant="cyan" />
-          <span>提供爆款参考链接（可选）</span>
+          <span>{{ t('draft.viralLinksLabel') }}</span>
         </button>
 
         <!-- Viral links input (collapsible) -->
@@ -233,13 +236,13 @@ function toggleViralLinks() {
           <textarea
             v-model="viralLinks"
             :disabled="props.isLoading"
-            placeholder="粘贴小红书笔记链接，每行一个..."
+            :placeholder="t('draft.viralLinksPlaceholder')"
             rows="3"
             class="w-full px-4 py-3 rounded-lg border border-slate-200 focus:border-violet-300 focus:ring-1 focus:ring-violet-200 text-slate-700 placeholder:text-slate-300 resize-none transition-all"
           />
           <div class="flex justify-between mt-1.5">
             <span class="text-xs text-slate-400">
-              {{ parsedViralLinks.length }} 个链接
+              {{ t('draft.linksCount', { count: parsedViralLinks.length }) }}
             </span>
           </div>
         </div>
@@ -255,14 +258,14 @@ function toggleViralLinks() {
         @click="handleSubmit"
       >
         <AppIcon name="Sparkles" size="sm" variant="white" />
-        <span>开始优化分析</span>
+        <span>{{ t('draft.startOptimization') }}</span>
       </NeonButton>
       <NeonButton
         variant="ghost"
         :disabled="props.isLoading"
         @click="handleSkip"
       >
-        <span>跳过优化</span>
+        <span>{{ t('draft.skipOptimization') }}</span>
       </NeonButton>
     </div>
   </div>

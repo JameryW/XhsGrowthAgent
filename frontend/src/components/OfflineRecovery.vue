@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import { useToastStore } from '@/stores'
+
+const { t } = useI18n()
 
 // Emits
 const emit = defineEmits<{
@@ -25,7 +28,7 @@ const handleOnline = () => {
   emit('online')
 
   if (wasOffline.value) {
-    toastStore.success('连接恢复', '网络已恢复，可以继续操作')
+    toastStore.success(t('offline.recovered'), t('offline.recoveredMessage'))
     wasOffline.value = false
   }
 }
@@ -34,7 +37,7 @@ const handleOffline = () => {
   internalIsOnline.value = false
   wasOffline.value = true
   emit('offline')
-  toastStore.warning('离线状态', '网络连接丢失，部分功能可能不可用')
+  toastStore.warning(t('offline.lost'), t('offline.lostMessage'))
 }
 
 // Lifecycle
@@ -70,12 +73,12 @@ onUnmounted(() => {
       class="fixed top-0 left-0 right-0 z-50 px-4 py-3 bg-gradient-to-r from-amber-500 to-amber-400 text-white shadow-lg"
       role="status"
       aria-live="assertive"
-      aria-label="网络离线警告"
+      :aria-label="t('offline.warning')"
     >
       <div class="flex items-center justify-center gap-3">
         <AppIcon name="WifiOff" size="md" variant="white" />
-        <span class="font-medium">网络连接已断开</span>
-        <span class="text-sm opacity-80">请检查网络设置</span>
+        <span class="font-medium">{{ t('offline.networkDisconnected') }}</span>
+        <span class="text-sm opacity-80">{{ t('offline.checkNetwork') }}</span>
       </div>
     </div>
   </Transition>

@@ -1,0 +1,203 @@
+{
+  "common": {
+    "loading": "加载中...",
+    "error": "错误",
+    "success": "成功",
+    "cancel": "取消",
+    "confirm": "确认",
+    "save": "保存",
+    "delete": "删除",
+    "retry": "重试",
+    "close": "关闭"
+  },
+  "login": {
+    "title": "登录",
+    "subtitle": "小红书增长引擎",
+    "username": "用户名",
+    "password": "密码",
+    "usernamePlaceholder": "请输入用户名",
+    "passwordPlaceholder": "请输入密码",
+    "submit": "登录",
+    "error": {
+      "usernameRequired": "请输入用户名",
+      "passwordRequired": "请输入密码",
+      "loginFailed": "登录失败，请重试"
+    },
+    "dismissError": "关闭错误提示",
+    "version": "小红书增长引擎 v0.1.0"
+  },
+  "nav": {
+    "home": "首页",
+    "dashboard": "工作流仪表盘",
+    "review": "内容审核",
+    "analytics": "数据分析",
+    "startWorkflow": "启动新工作流",
+    "logout": "退出登录",
+    "phase": "阶段",
+    "account": "账户",
+    "version": "版本"
+  },
+  "home": {
+    "title": "小红书增长引擎",
+    "subtitle": "AI驱动的自动化内容创作平台",
+    "startWorkflow": "启动新工作流",
+    "viewDashboard": "查看现有工作流",
+    "systemStatus": "系统状态",
+    "account": "账户",
+    "phase": "阶段",
+    "loadingOverlay": "正在执行 {phase} 阶段..."
+  },
+  "dashboard": {
+    "title": "工作流仪表盘",
+    "completed": "工作流完成",
+    "completedMessage": "内容已成功发布到小红书"
+  },
+  "review": {
+    "title": "内容审核",
+    "subtitle": "等待您的决定",
+    "pendingApproval": "待审批",
+    "copyContent": "文案内容",
+    "copyContentEn": "Copy Content",
+    "visualPlan": "视觉方案",
+    "visualPlanEn": "Visual Plan",
+    "actions": "审核操作",
+    "selectAction": "SELECT_ACTION",
+    "feedbackInput": "反馈输入",
+    "feedbackLabel": "FEEDBACK_INPUT",
+    "approve": "批准",
+    "approveDesc": "直接发布",
+    "revise": "修改",
+    "reviseDesc": "要求修改",
+    "reject": "拒绝",
+    "rejectDesc": "放弃内容",
+    "feedbackPlaceholder": "请输入审核意见或修改建议...",
+    "feedbackAriaLabel": "审核意见输入框",
+    "confirmReject": {
+      "title": "确认拒绝内容",
+      "message": "拒绝后内容将被放弃，此操作不可撤销。确定要拒绝这篇内容吗？",
+      "action": "内容将被标记为\"已拒绝\"，工作流将结束。"
+    },
+    "confirmApprove": {
+      "title": "确认批准内容",
+      "message": "批准后内容将进入发布流程。确定内容已准备好发布吗？",
+      "action": "内容将被标记为\"已批准\"，进入发布阶段。"
+    },
+    "success": "审核完成",
+    "decisionLabel": "决定",
+    "submitFailed": "提交失败，请重试",
+    "submitFailedTitle": "提交失败",
+    "cancelSuccess": "操作已取消",
+    "cancelMessage": "您可以继续审核内容"
+  },
+  "analytics": {
+    "title": "数据分析中心",
+    "analyticsLabel": "Analytics",
+    "postsPublished": "已发布帖子",
+    "totalEngagement": "总互动量",
+    "avgEngagementRate": "平均互动率",
+    "aiCost": "AI 费用 (USD)",
+    "thisWeek": "本周",
+    "thisMonth": "本月",
+    "thisYear": "全年",
+    "interactionTrend": "互动趋势",
+    "recentPosts": "最近帖子表现",
+    "top10": "TOP 10",
+    "table": {
+      "title": "标题",
+      "likes": "点赞",
+      "comments": "评论",
+      "collects": "收藏",
+      "engagementRate": "互动率",
+      "publishedAt": "发布时间"
+    },
+    "weekdays": {
+      "mon": "周一",
+      "tue": "周二",
+      "wed": "周三",
+      "thu": "周四",
+      "fri": "周五",
+      "sat": "周六",
+      "sun": "周日"
+    },
+    "categories": {
+      "likes": "点赞",
+      "comments": "评论",
+      "collects": "收藏",
+      "shares": "分享"
+    },
+    "week": "本周",
+    "month": "本月",
+    "year": "全年"
+  },
+  "connection": {
+    "connected": "实时连接",
+    "connecting": "连接中...",
+    "reconnecting": "重连中...",
+    "disconnected": "已断开"
+  },
+  "offline": {
+    "recovered": "连接恢复",
+    "recoveredMessage": "网络已恢复，可以继续操作",
+    "lost": "离线状态",
+    "lostMessage": "网络连接丢失，部分功能可能不可用",
+    "networkDisconnected": "网络连接已断开",
+    "checkNetwork": "请检查网络设置",
+    "warning": "网络离线警告"
+  },
+  "notFound": {
+    "title": "404",
+    "message": "页面不存在 · 请返回首页继续操作",
+    "backHome": "返回首页",
+    "backPrev": "返回上页"
+  },
+  "workflow": {
+    "completed": "工作流完成",
+    "completedMessage": "内容已成功发布到小红书",
+    "error": "工作流错误",
+    "phaseChange": "阶段切换",
+    "awaitingReview": "等待审核",
+    "awaitingReviewMessage": "工作流已暂停，请前往审核页面查看并决定",
+    "startSuccess": "工作流启动成功",
+    "startFailed": "启动失败",
+    "paused": "工作流已暂停",
+    "pauseFailed": "暂停失败",
+    "resumed": "工作流已恢复",
+    "resumeFailed": "恢复失败",
+    "statusRefreshFailed": "状态刷新失败",
+    "currentPhase": "当前阶段",
+    "currentAgent": "当前 Agent",
+    "thread": "Thread"
+  },
+  "help": {
+    "center": "帮助中心",
+    "menu": "帮助菜单",
+    "faq": "常见问题",
+    "shortcuts": "快捷键",
+    "feedback": "反馈建议"
+  },
+  "loading": {
+    "processing": "正在处理...",
+    "cancel": "取消操作"
+  },
+  "draft": {
+    "title": "提交草稿内容",
+    "draftBody": "草稿正文",
+    "required": "*",
+    "placeholder": "输入您的笔记正文内容（至少50字）...",
+    "minLength": "正文内容至少需要50字",
+    "charCount": "{count} 字",
+    "titleLabel": "标题（可选）",
+    "titlePlaceholder": "笔记标题...",
+    "tagsLabel": "话题标签（可选）",
+    "tagsPlaceholder": "#美食 #探店 或 逗号分隔...",
+    "viralLinksLabel": "提供爆款参考链接（可选）",
+    "viralLinksPlaceholder": "粘贴小红书笔记链接，每行一个...",
+    "linksCount": "{count} 个链接",
+    "startOptimization": "开始优化分析",
+    "skipOptimization": "跳过优化",
+    "validContent": "内容长度满足要求",
+    "needMoreChars": "还需 {count} 字",
+    "enterContent": "请输入正文内容",
+    "contentTooShort": "内容太短，至少需要 50 字"
+  }
+}

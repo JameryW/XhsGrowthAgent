@@ -6,6 +6,9 @@ import * as authApi from '@/api/auth'
 import type { AuthUser } from '@/types/auth'
 import { AUTH_TOKEN_KEY, AUTH_USER_KEY } from '@/types/auth'
 import { useToastStore } from './toast'
+import i18n from '@/locales'
+
+const { t } = i18n.global
 
 export const useAuthStore = defineStore('auth', () => {
   const toastStore = useToastStore()
@@ -41,11 +44,11 @@ export const useAuthStore = defineStore('auth', () => {
       user.value = result.user
       localStorage.setItem(AUTH_TOKEN_KEY, result.token)
       localStorage.setItem(AUTH_USER_KEY, JSON.stringify(result.user))
-      toastStore.success('登录成功', `欢迎回来，${result.user.username}`)
+      toastStore.success(t('common.success'), `${result.user.username}`)
       return result
     } catch (e: any) {
-      error.value = e.message || '登录失败'
-      toastStore.error('登录失败', e.message || '请检查用户名和密码')
+      error.value = e.message || t('login.error.loginFailed')
+      toastStore.error(t('login.error.loginFailed'), e.message)
       throw e
     } finally {
       isLoading.value = false
@@ -61,7 +64,7 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       clearAuth()
       isLoading.value = false
-      toastStore.info('已退出', '请重新登录以继续使用')
+      toastStore.info(t('nav.logout'), t('login.error.loginFailed'))
     }
   }
 

@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useWorkflowStore, useOnboardingStore, useAuthStore } from '@/stores'
 import AppIcon from '@/components/AppIcon.vue'
 import HelpCenter from '@/components/HelpCenter.vue'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -11,11 +14,11 @@ const workflowStore = useWorkflowStore()
 const onboardingStore = useOnboardingStore()
 const authStore = useAuthStore()
 
-const navItems = [
-  { path: '/dashboard', icon: 'Home', label: '工作流仪表盘', color: 'pink' },
-  { path: '/review', icon: 'CheckCircle', label: '内容审核', color: 'cyan' },
-  { path: '/analytics', icon: 'BarChart3', label: '数据分析', color: 'purple' },
-]
+const navItems = computed(() => [
+  { path: '/dashboard', icon: 'Home', label: t('nav.dashboard'), color: 'pink' },
+  { path: '/review', icon: 'CheckCircle', label: t('nav.review'), color: 'cyan' },
+  { path: '/analytics', icon: 'BarChart3', label: t('nav.analytics'), color: 'purple' },
+])
 
 const currentPath = computed(() => route.path)
 
@@ -49,7 +52,7 @@ const handleLogout = async () => {
 </script>
 
 <template>
-  <nav class="w-64 bg-white/80 backdrop-blur-xl p-6 flex flex-col border-r border-slate-200/60 relative overflow-hidden" role="navigation" aria-label="主导航">
+  <nav class="w-64 bg-white/80 backdrop-blur-xl p-6 flex flex-col border-r border-slate-200/60 relative overflow-hidden" role="navigation" :aria-label="t('nav.home')">
     <!-- Animated glow border -->
     <div class="absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-rose-300/30 to-transparent animate-pulse" style="animation-duration: 3s;" aria-hidden="true" />
 
@@ -64,10 +67,10 @@ const handleLogout = async () => {
           <div class="text-xs text-slate-400 mt-0.5">XHS Growth Agent</div>
         </div>
       </div>
-      <div class="mt-4 bg-gradient-to-r from-slate-50 to-white rounded-lg px-3 py-2 flex items-center gap-2 border border-slate-100 transition-all duration-200 hover:border-slate-200 hover:shadow-sm" role="status" aria-live="polite" aria-label="当前工作流阶段">
+      <div class="mt-4 bg-gradient-to-r from-slate-50 to-white rounded-lg px-3 py-2 flex items-center gap-2 border border-slate-100 transition-all duration-200 hover:border-slate-200 hover:shadow-sm" role="status" aria-live="polite" :aria-label="t('nav.phase')">
         <div class="w-2 h-2 rounded-full animate-pulse" :class="currentPhase === 'idle' ? 'bg-amber-400' : 'bg-teal-500'" aria-hidden="true" />
         <div class="text-xs text-slate-500">
-          Phase: <span class="text-teal-600 font-medium">{{ currentPhase }}</span>
+          {{ t('nav.phase') }}: <span class="text-teal-600 font-medium">{{ currentPhase }}</span>
         </div>
       </div>
     </div>
@@ -76,10 +79,10 @@ const handleLogout = async () => {
     <button
       @click="router.push('/')"
       class="mb-4 w-full p-3 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-lg shadow-rose-500/25 hover:shadow-rose-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
-      aria-label="启动新工作流"
+      :aria-label="t('nav.startWorkflow')"
     >
       <AppIcon name="Rocket" size="sm" variant="white" />
-      <span>启动新工作流</span>
+      <span>{{ t('nav.startWorkflow') }}</span>
     </button>
 
     <!-- 导航项 -->
@@ -126,10 +129,10 @@ const handleLogout = async () => {
         v-if="authStore.isAuthenticated"
         @click="handleLogout"
         class="mb-3 w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-500 transition-all duration-200 flex items-center justify-center gap-2 text-sm font-medium"
-        aria-label="退出登录"
+        :aria-label="t('nav.logout')"
       >
         <AppIcon name="LogOut" size="sm" variant="pink" />
-        <span>退出登录</span>
+        <span>{{ t('nav.logout') }}</span>
       </button>
 
       <!-- HelpCenter -->
@@ -143,11 +146,11 @@ const handleLogout = async () => {
 
       <div class="bg-gradient-to-r from-slate-50 to-white rounded-lg p-3 text-xs border border-slate-100 hover:border-slate-200 transition-all duration-200">
         <div class="flex items-center justify-between mb-2">
-          <span class="text-slate-400">Account</span>
+          <span class="text-slate-400">{{ t('nav.account') }}</span>
           <span class="text-teal-600 font-medium bg-teal-50 px-2 py-0.5 rounded">{{ authStore.user?.username || 'default' }}</span>
         </div>
         <div class="flex items-center justify-between">
-          <span class="text-slate-400">Version</span>
+          <span class="text-slate-400">{{ t('nav.version') }}</span>
           <span class="text-violet-600 font-medium bg-violet-50 px-2 py-0.5 rounded">v0.2.0</span>
         </div>
       </div>
