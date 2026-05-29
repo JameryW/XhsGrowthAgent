@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import NeonButton from '@/components/NeonButton.vue'
+
+const { t } = useI18n()
 
 interface Props {
   isVisible: boolean
@@ -8,7 +11,7 @@ interface Props {
 }
 
 withDefaults(defineProps<Props>(), {
-  message: '正在处理...',
+  message: undefined,
   canCancel: true
 })
 
@@ -45,7 +48,7 @@ const handleCancel = () => {
         id="loading-message"
         class="text-slate-700 font-semibold text-center"
       >
-        {{ message }}
+        {{ message || t('loading.processing') }}
       </p>
 
       <!-- Cancel button -->
@@ -54,9 +57,9 @@ const handleCancel = () => {
         variant="ghost"
         size="sm"
         @click="handleCancel"
-        aria-label="取消操作"
+        :aria-label="t('loading.cancel')"
       >
-        取消操作
+        {{ t('loading.cancel') }}
       </NeonButton>
     </div>
   </div>

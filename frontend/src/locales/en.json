@@ -1,0 +1,203 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "delete": "Delete",
+    "retry": "Retry",
+    "close": "Close"
+  },
+  "login": {
+    "title": "Login",
+    "subtitle": "XHS Growth Engine",
+    "username": "Username",
+    "password": "Password",
+    "usernamePlaceholder": "Enter username",
+    "passwordPlaceholder": "Enter password",
+    "submit": "Login",
+    "error": {
+      "usernameRequired": "Please enter username",
+      "passwordRequired": "Please enter password",
+      "loginFailed": "Login failed, please try again"
+    },
+    "dismissError": "Dismiss error",
+    "version": "XHS Growth Engine v0.1.0"
+  },
+  "nav": {
+    "home": "Home",
+    "dashboard": "Workflow Dashboard",
+    "review": "Content Review",
+    "analytics": "Analytics",
+    "startWorkflow": "Start New Workflow",
+    "logout": "Logout",
+    "phase": "Phase",
+    "account": "Account",
+    "version": "Version"
+  },
+  "home": {
+    "title": "XHS Growth Engine",
+    "subtitle": "AI-powered automated content creation platform",
+    "startWorkflow": "Start New Workflow",
+    "viewDashboard": "View Dashboard",
+    "systemStatus": "System Status",
+    "account": "Account",
+    "phase": "Phase",
+    "loadingOverlay": "Executing {phase} phase..."
+  },
+  "dashboard": {
+    "title": "Workflow Dashboard",
+    "completed": "Workflow Completed",
+    "completedMessage": "Content published to Xiaohongshu successfully"
+  },
+  "review": {
+    "title": "Content Review",
+    "subtitle": "Awaiting Your Decision",
+    "pendingApproval": "PENDING_APPROVAL",
+    "copyContent": "文案内容",
+    "copyContentEn": "Copy Content",
+    "visualPlan": "视觉方案",
+    "visualPlanEn": "Visual Plan",
+    "actions": "Review Actions",
+    "selectAction": "SELECT_ACTION",
+    "feedbackInput": "Feedback Input",
+    "feedbackLabel": "FEEDBACK_INPUT",
+    "approve": "APPROVE",
+    "approveDesc": "Publish directly",
+    "revise": "REVISE",
+    "reviseDesc": "Request changes",
+    "reject": "REJECT",
+    "rejectDesc": "Discard content",
+    "feedbackPlaceholder": "Enter review comments or suggestions...",
+    "feedbackAriaLabel": "Review comments input",
+    "confirmReject": {
+      "title": "Confirm Rejection",
+      "message": "Rejected content will be discarded. This action cannot be undone. Are you sure?",
+      "action": "Content will be marked as \"rejected\" and the workflow will end."
+    },
+    "confirmApprove": {
+      "title": "Confirm Approval",
+      "message": "Approved content will proceed to publishing. Is the content ready?",
+      "action": "Content will be marked as \"approved\" and enter the publishing phase."
+    },
+    "success": "Review completed",
+    "decisionLabel": "Decision",
+    "submitFailed": "Submit failed, please try again",
+    "submitFailedTitle": "Submit Failed",
+    "cancelSuccess": "Action cancelled",
+    "cancelMessage": "You can continue reviewing the content"
+  },
+  "analytics": {
+    "title": "Analytics Center",
+    "analyticsLabel": "Analytics",
+    "postsPublished": "Posts Published",
+    "totalEngagement": "Total Engagement",
+    "avgEngagementRate": "Avg Engagement Rate",
+    "aiCost": "AI Cost (USD)",
+    "thisWeek": "This Week",
+    "thisMonth": "This Month",
+    "thisYear": "This Year",
+    "interactionTrend": "Interaction Trend",
+    "recentPosts": "Recent Post Performance",
+    "top10": "TOP 10",
+    "table": {
+      "title": "Title",
+      "likes": "Likes",
+      "comments": "Comments",
+      "collects": "Collects",
+      "engagementRate": "Engagement Rate",
+      "publishedAt": "Published At"
+    },
+    "weekdays": {
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat",
+      "sun": "Sun"
+    },
+    "categories": {
+      "likes": "Likes",
+      "comments": "Comments",
+      "collects": "Collects",
+      "shares": "Shares"
+    },
+    "week": "This Week",
+    "month": "This Month",
+    "year": "This Year"
+  },
+  "connection": {
+    "connected": "Connected",
+    "connecting": "Connecting...",
+    "reconnecting": "Reconnecting...",
+    "disconnected": "Disconnected"
+  },
+  "offline": {
+    "recovered": "Connection Restored",
+    "recoveredMessage": "Network is back, you can continue",
+    "lost": "Offline",
+    "lostMessage": "Network connection lost, some features may be unavailable",
+    "networkDisconnected": "Network connection lost",
+    "checkNetwork": "Please check network settings",
+    "warning": "Network Offline Warning"
+  },
+  "notFound": {
+    "title": "404",
+    "message": "Page not found · Please return to home",
+    "backHome": "Back to Home",
+    "backPrev": "Go Back"
+  },
+  "workflow": {
+    "completed": "Workflow Completed",
+    "completedMessage": "Content published to Xiaohongshu successfully",
+    "error": "Workflow Error",
+    "phaseChange": "Phase Changed",
+    "awaitingReview": "Awaiting Review",
+    "awaitingReviewMessage": "Workflow paused, please review and decide",
+    "startSuccess": "Workflow started successfully",
+    "startFailed": "Start failed",
+    "paused": "Workflow paused",
+    "pauseFailed": "Pause failed",
+    "resumed": "Workflow resumed",
+    "resumeFailed": "Resume failed",
+    "statusRefreshFailed": "Status refresh failed",
+    "currentPhase": "Current Phase",
+    "currentAgent": "Current Agent",
+    "thread": "Thread"
+  },
+  "help": {
+    "center": "Help Center",
+    "menu": "Help Menu",
+    "faq": "FAQ",
+    "shortcuts": "Shortcuts",
+    "feedback": "Feedback"
+  },
+  "loading": {
+    "processing": "Processing...",
+    "cancel": "Cancel"
+  },
+  "draft": {
+    "title": "Submit Draft Content",
+    "draftBody": "Draft Body",
+    "required": "*",
+    "placeholder": "Enter your note content (at least 50 characters)...",
+    "minLength": "Content requires at least 50 characters",
+    "charCount": "{count} characters",
+    "titleLabel": "Title (optional)",
+    "titlePlaceholder": "Note title...",
+    "tagsLabel": "Tags (optional)",
+    "tagsPlaceholder": "#food #travel or comma separated...",
+    "viralLinksLabel": "Provide viral reference links (optional)",
+    "viralLinksPlaceholder": "Paste Xiaohongshu note links, one per line...",
+    "linksCount": "{count} links",
+    "startOptimization": "Start Optimization",
+    "skipOptimization": "Skip Optimization",
+    "validContent": "Content length meets requirements",
+    "needMoreChars": "Need {count} more characters",
+    "enterContent": "Please enter content",
+    "contentTooShort": "Content too short, need at least 50 characters"
+  }
+}

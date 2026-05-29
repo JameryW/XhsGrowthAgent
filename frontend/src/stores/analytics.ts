@@ -5,6 +5,9 @@ import type { GrowthReport, PerformanceData, CostData, PostPerformance } from '@
 import { useRealtimeStore } from './realtime'
 import { useToastStore } from './toast'
 import { EventType } from '@/realtime/events'
+import i18n from '@/locales'
+
+const { t } = i18n.global
 
 export const useAnalyticsStore = defineStore('analytics', () => {
   // State
@@ -43,17 +46,17 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     const p = payload as { report?: GrowthReport }
     if (p.report) {
       growthReport.value = p.report
-      toastStore.info('报告已更新', '数据分析报告已同步最新数据')
+      toastStore.info(t('common.success'), t('analytics.title'))
     }
   })
 
   realtimeStore.wsService.onEvent(EventType.ANALYTICS_COST_ALERT, (payload: unknown) => {
     const p = payload as { message?: string; level?: string }
-    const message = p.message || '成本预警'
+    const message = p.message || t('analytics.aiCost')
     if (p.level === 'critical') {
-      toastStore.error('成本预警', message)
+      toastStore.error(t('common.error'), message)
     } else {
-      toastStore.warning('成本提醒', message)
+      toastStore.warning(t('common.error'), message)
     }
   })
 
@@ -64,7 +67,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
         ...performanceData.value,
         posts: [...performanceData.value.posts, p.post],
       }
-      toastStore.info('新数据', `帖子 "${p.post.title?.slice(0, 20)}..." 有新互动数据`)
+      toastStore.info(t('common.success'), `${p.post.title?.slice(0, 20)}...`)
     }
   })
 

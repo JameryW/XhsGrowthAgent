@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import WorkflowHeader from '@/components/dashboard/WorkflowHeader.vue'
 import WorkflowTimeline from '@/components/dashboard/WorkflowTimeline.vue'
 import ContentCards from '@/components/dashboard/ContentCards.vue'
@@ -13,6 +14,7 @@ import ErrorState from '@/components/ErrorState.vue'
 import ErrorCard from '@/components/ErrorCard.vue'
 import { useWorkflowStore, useToastStore, useErrorStore } from '@/stores'
 
+const { t } = useI18n()
 const workflowStore = useWorkflowStore()
 const toastStore = useToastStore()
 const errorStore = useErrorStore()
@@ -44,7 +46,7 @@ watch(
     if (newPhase === 'completed' && oldPhase !== 'completed' && !hasShownCelebration.value) {
       showCelebration.value = true
       hasShownCelebration.value = true
-      toastStore.success('工作流完成', '内容已成功发布到小红书')
+      toastStore.success(t('dashboard.completed'), t('dashboard.completedMessage'))
     }
   }
 )

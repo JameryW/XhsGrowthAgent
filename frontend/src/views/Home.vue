@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import { useWorkflowStore } from '@/stores'
+
+const { t } = useI18n()
 
 const router = useRouter()
 const workflowStore = useWorkflowStore()
@@ -35,7 +38,7 @@ const startNewWorkflow = async () => {
     </div>
 
     <!-- 主卡片 -->
-    <div class="rounded-2xl p-10 max-w-lg w-full relative overflow-hidden bg-white/85 backdrop-blur-xl border border-white/50 shadow-2xl shadow-rose-500/5 transition-all duration-300 hover:shadow-rose-500/10 group" role="region" aria-label="工作流启动面板">
+    <div class="rounded-2xl p-10 max-w-lg w-full relative overflow-hidden bg-white/85 backdrop-blur-xl border border-white/50 shadow-2xl shadow-rose-500/5 transition-all duration-300 hover:shadow-rose-500/10 group" role="region" :aria-label="t('home.systemStatus')">
       <!-- Glow effect -->
       <div class="absolute -inset-px rounded-2xl bg-gradient-to-r from-rose-400/20 via-teal-400/20 to-violet-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 -z-10 blur-xl" aria-hidden="true" />
 
@@ -48,35 +51,35 @@ const startNewWorkflow = async () => {
           <div class="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-rose-400 opacity-60 animate-ping" style="animation-duration: 2s;" aria-hidden="true" />
           <div class="absolute -bottom-1 -left-3 w-3 h-3 rounded-full bg-teal-400 opacity-50 animate-ping" style="animation-duration: 2.5s; animation-delay: 0.5s;" aria-hidden="true" />
         </div>
-        <h1 class="text-3xl font-bold mb-3 text-slate-800 tracking-tight">小红书增长引擎</h1>
-        <p class="text-base text-slate-500 font-medium">AI驱动的自动化内容创作平台</p>
+        <h1 class="text-3xl font-bold mb-3 text-slate-800 tracking-tight">{{ t('home.title') }}</h1>
+        <p class="text-base text-slate-500 font-medium">{{ t('home.subtitle') }}</p>
       </div>
 
       <div class="space-y-4">
-        <NeonButton variant="pink" size="lg" class="w-full group/btn" @click="startNewWorkflow" :loading="isStarting" aria-label="启动新的工作流进行趋势发现">
+        <NeonButton variant="pink" size="lg" class="w-full group/btn" @click="startNewWorkflow" :loading="isStarting" :aria-label="t('home.startWorkflow')">
           <span class="inline-flex items-center gap-3 transition-transform duration-200 group-hover/btn:translate-x-1">
             <AppIcon name="Rocket" size="md" variant="white" aria-hidden="true" />
-            <span class="font-medium">启动新工作流</span>
+            <span class="font-medium">{{ t('home.startWorkflow') }}</span>
           </span>
         </NeonButton>
 
-        <NeonButton variant="ghost" size="md" class="w-full" @click="goToDashboard" :disabled="isStarting" aria-label="查看现有工作流仪表盘">
+        <NeonButton variant="ghost" size="md" class="w-full" @click="goToDashboard" :disabled="isStarting" :aria-label="t('home.viewDashboard')">
           <span class="inline-flex items-center gap-3">
             <AppIcon name="BarChart3" size="md" variant="cyan" aria-hidden="true" />
-            <span>查看现有工作流</span>
+            <span>{{ t('home.viewDashboard') }}</span>
           </span>
         </NeonButton>
       </div>
 
-      <div class="mt-8 bg-gradient-to-r from-slate-50/80 to-white rounded-xl p-4 text-center border border-slate-100 hover:border-slate-200 transition-all duration-200" role="status" aria-live="polite" aria-label="系统状态">
+      <div class="mt-8 bg-gradient-to-r from-slate-50/80 to-white rounded-xl p-4 text-center border border-slate-100 hover:border-slate-200 transition-all duration-200" role="status" aria-live="polite" :aria-label="t('home.systemStatus')">
         <div class="flex items-center justify-center gap-6 text-xs text-slate-500">
           <div class="flex items-center gap-2 group hover:scale-105 transition-transform">
             <div class="w-2 h-2 rounded-full bg-teal-500 animate-pulse" aria-hidden="true" />
-            <span>Account: <span class="text-teal-600 font-medium">default</span></span>
+            <span>{{ t('home.account') }}: <span class="text-teal-600 font-medium">default</span></span>
           </div>
           <div class="flex items-center gap-2 group hover:scale-105 transition-transform">
             <AppIcon name="Zap" size="sm" variant="peach" aria-hidden="true" />
-            <span>Phase: <span class="text-amber-600 font-medium">scouting</span></span>
+            <span>{{ t('home.phase') }}: <span class="text-amber-600 font-medium">scouting</span></span>
           </div>
         </div>
       </div>
@@ -85,7 +88,7 @@ const startNewWorkflow = async () => {
     <!-- Loading Overlay -->
     <LoadingOverlay
       :is-visible="workflowStore.isOverlayLoading"
-      :message="`正在执行 ${workflowStore.currentPhase} 阶段...`"
+      :message="t('home.loadingOverlay', { phase: workflowStore.currentPhase })"
       @cancel="workflowStore.cancelWorkflow"
     />
   </div>

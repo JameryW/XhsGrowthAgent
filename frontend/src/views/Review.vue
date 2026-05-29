@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
@@ -9,6 +10,7 @@ import { ReviewSkeleton } from '@/components/skeletons'
 import { useWorkflowStore, useReviewStore, useToastStore } from '@/stores'
 import type { ContentStatus, CopyContent, VisualPlan } from '@/types'
 
+const { t } = useI18n()
 const router = useRouter()
 const workflowStore = useWorkflowStore()
 const reviewStore = useReviewStore()
@@ -57,15 +59,15 @@ const requestDecision = (decision: ContentStatus) => {
   pendingDecision.value = decision
 
   if (decision === 'rejected') {
-    confirmModalTitle.value = '确认拒绝内容'
-    confirmModalMessage.value = '拒绝后内容将被放弃，此操作不可撤销。确定要拒绝这篇内容吗？'
-    confirmModalAction.value = '内容将被标记为"已拒绝"，工作流将结束。'
+    confirmModalTitle.value = t('review.confirmReject.title')
+    confirmModalMessage.value = t('review.confirmReject.message')
+    confirmModalAction.value = t('review.confirmReject.action')
     confirmModalVariant.value = 'danger'
     showConfirmModal.value = true
   } else if (decision === 'approved') {
-    confirmModalTitle.value = '确认批准内容'
-    confirmModalMessage.value = '批准后内容将进入发布流程。确定内容已准备好发布吗？'
-    confirmModalAction.value = '内容将被标记为"已批准"，进入发布阶段。'
+    confirmModalTitle.value = t('review.confirmApprove.title')
+    confirmModalMessage.value = t('review.confirmApprove.message')
+    confirmModalAction.value = t('review.confirmApprove.action')
     confirmModalVariant.value = 'info'
     showConfirmModal.value = true
   } else {
@@ -83,11 +85,11 @@ const executeDecision = async (decision: ContentStatus) => {
 
   try {
     await reviewStore.submitDecision(decision, comments.value)
-    toastStore.success('审核完成', `决定: ${decision}`)
+    toastStore.success(t('review.success'), `${t('review.decisionLabel')}: ${decision}`)
     router.push('/dashboard')
   } catch (e: any) {
-    error.value = e.message || '提交失败，请重试'
-    toastStore.error('提交失败', e.message)
+    error.value = e.message || t('review.submitFailed')
+    toastStore.error(t('review.submitFailedTitle'), e.message)
   } finally {
     isSubmitting.value = false
     pendingDecision.value = null
@@ -103,7 +105,7 @@ const handleConfirm = () => {
 const handleCancelConfirm = () => {
   showConfirmModal.value = false
   pendingDecision.value = null
-  toastStore.info('操作已取消', '您可以继续审核内容')
+  toastStore.info(t('review.cancelSuccess'), t('review.cancelMessage'))
 }
 </script>
 
@@ -118,9 +120,9 @@ const handleCancelConfirm = () => {
         </div>
         <div class="flex-1">
           <div class="flex items-center gap-2 mb-1">
-            <span class="px-2 py-1 rounded bg-amber-50 text-amber-600 text-xs uppercase tracking-wide font-medium">PENDING_APPROVAL</span>
+            <span class="px-2 py-1 rounded bg-amber-50 text-amber-600 text-xs uppercase tracking-wide font-medium">{{ t('review.pendingApproval') }}</span>
           </div>
-          <div class="text-xl font-semibold text-slate-800">内容审核 · 等待您的决定</div>
+          <div class="text-xl font-semibold text-slate-800">{{ t('review.title') }} · {{ t('review.subtitle') }}</div>
           <div class="text-xs text-slate-400 mt-1">
             Thread: {{ workflowStore.currentThreadId || '—' }}
           </div>
@@ -137,8 +139,8 @@ const handleCancelConfirm = () => {
             <AppIcon name="Pencil" size="md" variant="white" aria-label="Copy content" />
           </div>
           <div class="flex-1">
-            <div class="text-slate-800 font-semibold text-sm">文案内容</div>
-            <div class="text-xs text-slate-400 uppercase tracking-wide">Copy Content</div>
+            <div class="text-slate-800 font-semibold text-sm">{{ t('review.copyContent') }}</div>
+            <div class="text-xs text-slate-400 uppercase tracking-wide">{{ t('review.copyContentEn') }}</div>
           </div>
         </div>
 
@@ -168,8 +170,8 @@ const handleCancelConfirm = () => {
             <AppIcon name="Palette" size="md" variant="white" aria-label="Visual plan" />
           </div>
           <div class="flex-1">
-            <div class="text-slate-800 font-semibold text-sm">视觉方案</div>
-            <div class="text-xs text-slate-400 uppercase tracking-wide">Visual Plan</div>
+            <div class="text-slate-800 font-semibold text-sm">{{ t('review.visualPlan') }}</div>
+            <div class="text-xs text-slate-400 uppercase tracking-wide">{{ t('review.visualPlanEn') }}</div>
           </div>
         </div>
 
@@ -198,8 +200,8 @@ const handleCancelConfirm = () => {
           <AppIcon name="GitBranch" size="md" variant="white" aria-label="Actions" />
         </div>
         <div>
-          <div class="text-rose-500 font-semibold text-sm">审核操作</div>
-          <div class="text-xs text-slate-400">SELECT_ACTION</div>
+          <div class="text-rose-500 font-semibold text-sm">{{ t('review.actions') }}</div>
+          <div class="text-xs text-slate-400">{{ t('review.selectAction') }}</div>
         </div>
       </div>
 
@@ -215,24 +217,24 @@ const handleCancelConfirm = () => {
         <NeonButton variant="cyan" size="lg" class="w-full" @click="requestDecision('approved')" :loading="isSubmitting" :disabled="isSubmitting">
           <span class="flex flex-col items-center gap-1">
             <AppIcon name="CheckCircle" size="lg" variant="white" />
-            <span class="font-semibold">APPROVE</span>
-            <span class="text-xs opacity-70">直接发布</span>
+            <span class="font-semibold">{{ t('review.approve') }}</span>
+            <span class="text-xs opacity-70">{{ t('review.approveDesc') }}</span>
           </span>
         </NeonButton>
 
         <NeonButton variant="purple" size="lg" class="w-full" @click="requestDecision('needs_revision')" :loading="isSubmitting" :disabled="isSubmitting">
           <span class="flex flex-col items-center gap-1">
             <AppIcon name="Edit3" size="lg" variant="white" />
-            <span class="font-semibold">REVISE</span>
-            <span class="text-xs opacity-70">要求修改</span>
+            <span class="font-semibold">{{ t('review.revise') }}</span>
+            <span class="text-xs opacity-70">{{ t('review.reviseDesc') }}</span>
           </span>
         </NeonButton>
 
-        <NeonButton variant="ghost" size="lg" class="w-full border border-rose-200 text-rose-500 hover:bg-rose-50" @click="requestDecision('rejected')" :disabled="isSubmitting">
+        <NeonButton variant="ghost" size="lg" class="w-full border border-rose-200 !text-rose-500 hover:bg-rose-50" @click="requestDecision('rejected')" :disabled="isSubmitting">
           <span class="flex flex-col items-center gap-1">
             <AppIcon name="XCircle" size="lg" variant="pink" />
-            <span class="font-semibold">REJECT</span>
-            <span class="text-xs opacity-70">放弃内容</span>
+            <span class="font-semibold">{{ t('review.reject') }}</span>
+            <span class="text-xs !opacity-100 text-rose-400">{{ t('review.rejectDesc') }}</span>
           </span>
         </NeonButton>
       </div>
@@ -241,14 +243,14 @@ const handleCancelConfirm = () => {
       <div class="bg-slate-50 rounded-lg p-4 border border-slate-100">
         <div class="flex items-center gap-2 mb-2">
           <AppIcon name="MessageSquare" size="sm" variant="purple" />
-          <span class="text-xs text-violet-600 uppercase tracking-wide font-medium">FEEDBACK_INPUT</span>
+          <span class="text-xs text-violet-600 uppercase tracking-wide font-medium">{{ t('review.feedbackLabel') }}</span>
         </div>
         <textarea
           v-model="comments"
-          aria-label="审核意见输入框"
+          :aria-label="t('review.feedbackAriaLabel')"
           class="w-full bg-white rounded-lg p-3 border border-slate-200 text-slate-700 text-sm resize-none focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 placeholder:text-slate-400 transition-all duration-200"
           rows="3"
-          placeholder="请输入审核意见或修改建议..."
+          :placeholder="t('review.feedbackPlaceholder')"
         />
       </div>
     </div>

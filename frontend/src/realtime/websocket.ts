@@ -185,7 +185,8 @@ export class WebSocketService {
     this.ws = null
     this.stopHeartbeat()
 
-    if (this.status === "connected") {
+    // Always update status when connection closes (handles failed "connecting" attempts too)
+    if (this.status !== "disconnected") {
       this.notifyStatusChange("disconnected")
     }
 

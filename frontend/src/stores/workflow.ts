@@ -7,6 +7,9 @@ import { useToastStore } from './toast'
 import { useOfflineStore } from './offline'
 import { EventType } from '@/realtime/events'
 import { useLoading } from '@/composables/useLoading'
+import i18n from '@/locales'
+
+const { t } = i18n.global
 
 export const useWorkflowStore = defineStore('workflow', () => {
   // State - restore threadId from localStorage
@@ -62,9 +65,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
       updateProgressFromPhase(newPhase as WorkflowPhase)
       // Special notification for reviewing phase - requires user action
       if (newPhase === 'reviewing') {
-        toastStore.info('等待审核', '工作流已暂停，请前往审核页面查看并决定')
+        toastStore.info(t('workflow.awaitingReview'), t('workflow.awaitingReviewMessage'))
       } else {
-        toastStore.info(`阶段切换: ${p.old_phase} → ${newPhase}`, `当前 Agent: ${p.current_agent}`)
+        toastStore.info(`${t('workflow.phaseChange')}: ${p.old_phase} → ${newPhase}`, `${t('workflow.currentAgent')}: ${p.current_agent}`)
       }
     }
   })
@@ -86,7 +89,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         next_steps: [],
       }
       updateProgressFromPhase('completed')
-      toastStore.success('工作流完成', `Thread: ${p.thread_id}`)
+      toastStore.success(t('workflow.completed'), `${t('workflow.thread')}: ${p.thread_id}`)
     }
   })
 
@@ -99,7 +102,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         error: p.error,
       }
       updateProgressFromPhase('error')
-      toastStore.error('工作流错误', `Agent: ${p.agent} - ${p.error}`)
+      toastStore.error(t('workflow.error'), `${t('workflow.currentAgent')}: ${p.agent} - ${p.error}`)
     }
   })
 
@@ -112,7 +115,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         async () => {
           await startWorkflow(accountId, phase)
         },
-        '启动工作流'
+        t('nav.startWorkflow')
       )
       return { thread_id: 'pending', status: 'queued' }
     }
@@ -128,11 +131,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
       // Connect WebSocket and subscribe
       realtimeStore.connect()
       realtimeStore.subscribeWorkflow(result.thread_id)
-      toastStore.success('工作流启动成功', `Thread: ${result.thread_id}`)
+      toastStore.success(t('workflow.startSuccess'), `${t('workflow.thread')}: ${result.thread_id}`)
       return result
     } catch (e: any) {
       error.value = e.message
-      toastStore.error('启动失败', e.message)
+      toastStore.error(t('workflow.startFailed'), e.message)
       throw e
     } finally {
       isLoading.value = false
@@ -148,7 +151,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         async () => {
           await refreshStatus()
         },
-        '刷新状态'
+        t('workflow.statusRefreshFailed')
       )
       return
     }
@@ -169,7 +172,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         updateProgressFromPhase('idle')
       } else {
         error.value = e.message
-        toastStore.warning('状态刷新失败', e.message)
+        toastStore.warning(t('workflow.statusRefreshFailed'), e.message)
       }
     } finally {
       isLoading.value = false
@@ -183,10 +186,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
       realtimeStore.unsubscribeWorkflow(currentThreadId.value)
       await workflowApi.pauseWorkflow(currentThreadId.value)
       await refreshStatus()
-      toastStore.info('工作流已暂停', `Thread: ${currentThreadId.value}`)
+      toastStore.info(t('workflow.paused'), `${t('workflow.thread')}: ${currentThreadId.value}`)
     } catch (e: any) {
       error.value = e.message
-      toastStore.error('暂停失败', e.message)
+      toastStore.error(t('workflow.pauseFailed'), e.message)
     } finally {
       isLoading.value = false
     }
@@ -199,11 +202,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
       const result = await workflowApi.resumeWorkflow(currentThreadId.value)
       await refreshStatus()
       realtimeStore.subscribeWorkflow(currentThreadId.value)
-      toastStore.success('工作流已恢复', `当前阶段: ${workflowState.value?.phase}`)
+      toastStore.success(t('workflow.resumed'), `${t('workflow.currentPhase')}: ${workflowState.value?.phase}`)
       return result
     } catch (e: any) {
       error.value = e.message
-      toastStore.error('恢复失败', e.message)
+      toastStore.error(t('workflow.resumeFailed'), e.message)
     } finally {
       isLoading.value = false
     }
@@ -221,7 +224,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         next_steps: [],
       } as WorkflowStateResponse
       updateProgressFromPhase('cancelled')
-      toastStore.info('工作流已取消', `Thread: ${currentThreadId.value}`)
+      toastStore.info(t('workflow.paused'), `${t('workflow.thread')}: ${currentThreadId.value}`)
     } catch (e: any) {
       error.value = e.message
       toastStore.error('取消失败', e.message)
