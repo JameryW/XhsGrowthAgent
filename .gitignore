@@ -28,3 +28,12 @@ logs/
 # OS files
 .DS_Store
 Thumbs.db
+
+# XHS runtime data (workflow history, registry)
+.xhs/
+.xhs-data/
+
+# Tool runtime data
+.playwright-mcp/
+.serena/
+.superpowers/
