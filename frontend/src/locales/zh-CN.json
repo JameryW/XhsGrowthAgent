@@ -48,7 +48,9 @@
       "xhsMissing": "未配置小红书凭证，发布阶段将自动跳过（仅生成预览）。如需发布，请在 .env 中设置 XHS_COOKIE 和 XHS_USER_ID。",
       "rippleMissing": "请在 .env 文件中设置 RIPPLE_BASE_URL 和 RIPPLE_API_TOKEN（可选，用于内容传播预测）。",
       "apiUnreachable": "请确保后端服务已启动：xhs-growth serve --port 8000"
-    }
+    },
+    "required": "必需",
+    "optional": "可选"
   },
   "login": {
     "title": "登录",
@@ -129,10 +131,22 @@
         "knowledge": "知识"
       },
       "phases": {
-        "scouting": { "label": "趋势发现", "desc": "从发现热门趋势开始" },
-        "planning": { "label": "策略规划", "desc": "跳过趋势发现，直接制定策略" },
-        "creating": { "label": "内容创作", "desc": "跳过策略，直接开始创作" },
-        "reviewing": { "label": "内容审核", "desc": "跳到审核阶段" }
+        "scouting": {
+          "label": "趋势发现",
+          "desc": "从发现热门趋势开始"
+        },
+        "planning": {
+          "label": "策略规划",
+          "desc": "跳过趋势发现，直接制定策略"
+        },
+        "creating": {
+          "label": "内容创作",
+          "desc": "跳过策略，直接开始创作"
+        },
+        "reviewing": {
+          "label": "内容审核",
+          "desc": "跳到审核阶段"
+        }
       }
     },
     "confirm": {
@@ -157,7 +171,11 @@
       "idle": "空闲",
       "running": "运行中",
       "waiting": "等待启动",
-      "workflow": "工作流"
+      "workflow": "工作流",
+      "statusSource": "状态来源",
+      "realtime": "实时同步",
+      "polling": "轮询刷新",
+      "snapshot": "历史快照"
     },
     "contentCards": {
       "loading": "工作流数据加载状态",
@@ -210,6 +228,19 @@
       "engaging": "互动管理",
       "engagingDesc": "受众互动管理",
       "agentDetails": "Agent 执行详情"
+    },
+    "phase": {
+      "idle": "空闲",
+      "scouting": "趋势侦察",
+      "planning": "内容策划",
+      "creating": "内容创作",
+      "reviewing": "等待审核",
+      "publishing": "发布中",
+      "analyzing": "数据分析",
+      "engaging": "互动管理",
+      "completed": "已完成",
+      "error": "错误",
+      "cancelled": "已取消"
     }
   },
   "review": {
@@ -314,6 +345,11 @@
     "submitFailedTitle": "提交失败",
     "cancelSuccess": "操作已取消",
     "cancelMessage": "您可以继续审核内容",
+    "decisionApproved": "内容已批准",
+    "decisionRevision": "已要求修改",
+    "decisionRejected": "内容已拒绝",
+    "dryRunMode": "试运行",
+    "liveMode": "实时发布",
     "publishConfirm": {
       "title": "确认发布",
       "subtitle": "发布前请检查以下设置",
@@ -432,11 +468,31 @@
       "notFound": "不存在",
       "auth": "认证"
     },
-    "networkSuggestions": ["检查网络连接是否正常", "尝试刷新页面", "等待片刻后重试"],
-    "validationSuggestions": ["检查输入参数是否正确", "确认账号ID有效", "查看API文档了解参数要求"],
-    "notFoundSuggestions": ["确认工作流ID存在", "检查是否已删除的工作流", "返回仪表盘重新开始"],
-    "authSuggestions": ["检查登录状态", "重新登录系统", "联系管理员获取权限"],
-    "generalSuggestions": ["点击重试按钮重新尝试", "返回仪表盘查看状态", "联系技术支持获取帮助"]
+    "networkSuggestions": [
+      "检查网络连接是否正常",
+      "尝试刷新页面",
+      "等待片刻后重试"
+    ],
+    "validationSuggestions": [
+      "检查输入参数是否正确",
+      "确认账号ID有效",
+      "查看API文档了解参数要求"
+    ],
+    "notFoundSuggestions": [
+      "确认工作流ID存在",
+      "检查是否已删除的工作流",
+      "返回仪表盘重新开始"
+    ],
+    "authSuggestions": [
+      "检查登录状态",
+      "重新登录系统",
+      "联系管理员获取权限"
+    ],
+    "generalSuggestions": [
+      "点击重试按钮重新尝试",
+      "返回仪表盘查看状态",
+      "联系技术支持获取帮助"
+    ]
   },
   "dataTable": {
     "title": "数据表格",
@@ -511,7 +567,10 @@
     "currentPhase": "当前阶段",
     "currentAgent": "当前 Agent",
     "thread": "Thread",
-    "publishFailed": "发布失败"
+    "publishFailed": "发布失败",
+    "agentStarted": "Agent 已启动",
+    "agentCompleted": "Agent 已完成",
+    "workflowStarted": "工作流已启动"
   },
   "history": {
     "title": "工作流历史",
@@ -607,5 +666,44 @@
     "needMoreChars": "还需 {count} 字",
     "enterContent": "请输入正文内容",
     "contentTooShort": "内容太短，至少需要 50 字"
+  },
+  "checklist": {
+    "title": "启动前检查清单",
+    "subtitle": "启动前验证系统就绪状态",
+    "required": "必需",
+    "optional": "可选",
+    "readyFull": "完全就绪",
+    "readyDryRun": "仅试运行",
+    "blocked": "需要配置",
+    "apiError": "无法检查系统状态",
+    "refresh": "刷新",
+    "ready": "就绪",
+    "llm": {
+      "label": "LLM 服务商",
+      "description": "用于内容生成的 AI 模型",
+      "impact": "所有 AI 操作必需",
+      "fixGuide": "在 .env 中设置至少一个 API Key（如 ANTHROPIC_API_KEY、OPENAI_API_KEY）"
+    },
+    "xhs": {
+      "label": "小红书平台",
+      "description": "发布到小红书的凭证",
+      "impactReal": "可真实发布到小红书",
+      "impactDryRun": "仅可预览（无法真实发布）",
+      "fixGuide": "在 .env 中设置 XHS_COOKIE 和 XHS_USER_ID 以启用发布功能"
+    },
+    "ripple": {
+      "label": "Ripple CAS 引擎",
+      "description": "内容传播预测服务",
+      "impact": "增强内容策略的病毒式传播预测",
+      "fixGuide": "在 .env 中设置 RIPPLE_BASE_URL 和 RIPPLE_API_TOKEN（可选）"
+    },
+    "database": {
+      "label": "数据存储",
+      "description": "工作流持久化层",
+      "impactMemory": "使用内存存储（重启后数据丢失）",
+      "impactPersistent": "使用持久化数据库存储"
+    },
+    "suggestDryRun": "建议使用试运行模式",
+    "suggestDryRunReason": "小红书凭证未配置，工作流将以预览模式运行，不会实际发布。"
   }
 }

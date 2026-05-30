@@ -186,8 +186,11 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
         "performance_log": [],
         "account_id": req.account_id,
         "session_id": thread_id,
+        "thread_id": thread_id,
         "topic": req.topic,
         "niche": req.niche,
+        "dry_run": req.dry_run,
+        "auto_publish": req.auto_publish,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }

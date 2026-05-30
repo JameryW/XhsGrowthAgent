@@ -1,6 +1,7 @@
 """Unit tests for graph routers."""
 
 import pytest
+from unittest.mock import patch
 
 from backend.graph.routers import (
     orchestrator_router,
@@ -95,17 +96,26 @@ class TestShouldPlan:
 class TestReviewOutcome:
     """Tests for review_outcome conditional edge."""
 
-    def test_routes_to_publisher_for_approved_enum(self):
-        """APPROVED enum → publisher."""
+    @patch("backend.graph.routers._xhs_configured", return_value=True)
+    def test_routes_to_publisher_for_approved_enum(self, mock_xhs):
+        """APPROVED enum → publisher (when XHS configured)."""
         state = {"human_feedback": {"decision": ContentStatus.APPROVED}}
         result = review_outcome(state)
         assert result == "publisher"
 
-    def test_routes_to_publisher_for_approved_string(self):
-        """approved string → publisher."""
+    @patch("backend.graph.routers._xhs_configured", return_value=True)
+    def test_routes_to_publisher_for_approved_string(self, mock_xhs):
+        """approved string → publisher (when XHS configured)."""
         state = {"human_feedback": {"decision": "approved"}}
         result = review_outcome(state)
         assert result == "publisher"
+
+    def test_routes_to_end_for_approved_without_xhs(self):
+        """APPROVED → __end__ when XHS not configured (preview-only)."""
+        with patch("backend.graph.routers._xhs_configured", return_value=False):
+            state = {"human_feedback": {"decision": ContentStatus.APPROVED}}
+            result = review_outcome(state)
+            assert result == "__end__"
 
     def test_routes_to_revise_for_needs_revision(self):
         """NEEDS_REVISION → revise_content."""
@@ -113,17 +123,17 @@ class TestReviewOutcome:
         result = review_outcome(state)
         assert result == "revise_content"
 
-    def test_routes_to_revise_for_rejected(self):
-        """REJECTED → revise_content."""
+    def test_routes_to_end_for_rejected(self):
+        """REJECTED → __end__ (end workflow, no revision loop)."""
         state = {"human_feedback": {"decision": ContentStatus.REJECTED}}
         result = review_outcome(state)
-        assert result == "revise_content"
+        assert result == "__end__"
 
-    def test_routes_to_revise_default(self):
-        """No feedback → revise_content (safe default)."""
+    def test_routes_to_end_for_no_feedback(self):
+        """No feedback defaults to REJECTED → __end__."""
         state = {}
         result = review_outcome(state)
-        assert result == "revise_content"
+        assert result == "__end__"
 
 
 class TestShouldContinue:

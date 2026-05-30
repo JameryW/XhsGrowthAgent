@@ -80,8 +80,14 @@ class XHSGrowthState(TypedDict, total=False):
     # Metadata
     account_id: str
     session_id: str
+    thread_id: str
     created_at: str
     updated_at: str
+
+    # Publish options (set by review decision)
+    publish_options: dict
+    dry_run: bool
+    auto_publish: bool
 
 
 __all__ = ["XHSGrowthState"]

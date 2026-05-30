@@ -97,9 +97,9 @@ onUnmounted(() => {
       />
 
       <!-- Publish Error Recovery -->
-      <div v-if="workflowStore.publishError" class="rounded-2xl p-5 bg-rose-50/80 border border-rose-200/50 shadow-sm">
+      <div v-if="workflowStore.publishError" class="card-error">
         <div class="flex items-start gap-3">
-          <div class="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center flex-shrink-0">
+          <div class="w-10 h-10 rounded-lg bg-rose-100 flex items-center justify-center flex-shrink-0">
             <AppIcon name="AlertTriangle" size="md" variant="pink" />
           </div>
           <div class="flex-1">
@@ -112,7 +112,7 @@ onUnmounted(() => {
                 <button
                   v-if="workflowStore.publishError.recovery.action === 'retry'"
                   @click="workflowStore.resumeWorkflow()"
-                  class="text-xs px-3 py-1.5 rounded-lg bg-rose-100 text-rose-600 hover:bg-rose-200 transition-colors font-medium"
+                  class="btn-sm bg-rose-100 text-rose-600 hover:bg-rose-200"
                 >
                   {{ workflowStore.publishError.recovery.action_label }}
                 </button>
@@ -120,7 +120,7 @@ onUnmounted(() => {
                 <button
                   v-if="workflowStore.publishError.recovery.action === 'revise_content'"
                   @click="router.push('/review')"
-                  class="text-xs px-3 py-1.5 rounded-lg bg-amber-100 text-amber-600 hover:bg-amber-200 transition-colors font-medium"
+                  class="btn-sm bg-amber-100 text-amber-600 hover:bg-amber-200"
                 >
                   {{ workflowStore.publishError.recovery.action_label }}
                 </button>
@@ -128,7 +128,7 @@ onUnmounted(() => {
                 <button
                   v-if="workflowStore.publishError.recovery.action === 'reconfigure'"
                   @click="router.push('/')"
-                  class="text-xs px-3 py-1.5 rounded-lg bg-violet-100 text-violet-600 hover:bg-violet-200 transition-colors font-medium"
+                  class="btn-sm bg-violet-100 text-violet-600 hover:bg-violet-200"
                 >
                   {{ workflowStore.publishError.recovery.action_label }}
                 </button>
@@ -136,7 +136,7 @@ onUnmounted(() => {
                 <button
                   v-if="workflowStore.publishError.recovery.action === 'retry_later'"
                   @click="workflowStore.resumeWorkflow()"
-                  class="text-xs px-3 py-1.5 rounded-lg bg-amber-100 text-amber-600 hover:bg-amber-200 transition-colors font-medium"
+                  class="btn-sm bg-amber-100 text-amber-600 hover:bg-amber-200"
                 >
                   {{ workflowStore.publishError.recovery.action_label }}
                 </button>
@@ -144,7 +144,7 @@ onUnmounted(() => {
                 <button
                   v-if="workflowStore.publishError.recovery.action === 'provide_images'"
                   @click="router.push('/review')"
-                  class="text-xs px-3 py-1.5 rounded-lg bg-teal-100 text-teal-600 hover:bg-teal-200 transition-colors font-medium"
+                  class="btn-sm bg-teal-100 text-teal-600 hover:bg-teal-200"
                 >
                   {{ workflowStore.publishError.recovery.action_label }}
                 </button>
@@ -155,7 +155,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Progress Phase and Step Indicator -->
-      <div class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+      <div class="card">
         <ProgressPhase
           :percent="workflowStore.progressPercent"
           :current-phase="workflowStore.currentPhase"

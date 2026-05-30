@@ -142,7 +142,7 @@ function startWithTopic(topic: string) {
   <AnalyticsSkeleton v-if="isLoading" />
   <div v-else class="relative space-y-6">
     <!-- 顶部标题栏 -->
-    <div class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+    <div class="card">
       <div class="flex items-center gap-5">
         <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm">
           <AppIcon name="BarChart3" size="xl" variant="white" :aria-label="t('analytics.title')" />
@@ -204,7 +204,7 @@ function startWithTopic(topic: string) {
     </div>
 
     <!-- 成本明细 -->
-    <div v-if="analyticsStore.costData" class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+    <div v-if="analyticsStore.costData" class="card">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm">
           <AppIcon name="DollarSign" size="md" variant="white" :aria-label="t('analytics.cost.title')" />
@@ -247,7 +247,7 @@ function startWithTopic(topic: string) {
     </div>
 
     <!-- 增长洞察 -->
-    <div v-if="insights.length > 0 || trendTopics.length > 0" class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+    <div v-if="insights.length > 0 || trendTopics.length > 0" class="card">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center shadow-sm">
           <AppIcon name="Lightbulb" size="md" variant="white" :aria-label="t('analytics.insights.title')" />
@@ -299,7 +299,7 @@ function startWithTopic(topic: string) {
     </div>
 
     <!-- 帖子表现列表 -->
-    <div class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+    <div class="card">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
           <AppIcon name="FileText" size="md" variant="white" :aria-label="t('analytics.recentPosts')" />

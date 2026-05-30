@@ -113,88 +113,88 @@ class TestXHSClient:
     @pytest.mark.asyncio
     async def test_get_trending_success(self, client):
         """get_trending returns trending topics."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": {"topics": [{"name": "美食", "heat": 100}]}
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        with patch.object(client._http_client, "get", AsyncMock(return_value=mock_response)):
+        mock_notes = [
+            {"note_id": "n1", "display_title": "美食探店", "like_count": 100, "tag_list": ["美食"]},
+            {"note_id": "n2", "display_title": "咖啡推荐", "like_count": 50, "tag_list": ["咖啡"]},
+        ]
+        with patch.object(client._http, "get_homefeed", new_callable=AsyncMock, return_value=mock_notes):
             result = await client.get_trending()
 
-        assert result is not None
-        assert "topics" in result or "data" in result
+        assert len(result) == 2
+        assert result[0].topic_id == "n1"
+        assert result[0].title == "美食探店"
+        assert result[0].heat_score == 100
 
     @pytest.mark.asyncio
     async def test_get_trending_rate_limit(self, client):
-        """get_trending handles rate limit."""
-        with patch.object(client._http_client, "get", AsyncMock(side_effect=XHSRateLimitError)):
-            with pytest.raises(XHSRateLimitError):
-                await client.get_trending()
+        """get_trending returns empty list on rate limit (caught by internal handler)."""
+        with patch.object(client._http, "get_homefeed", new_callable=AsyncMock, side_effect=XHSRateLimitError("rate limited")):
+            result = await client.get_trending()
+
+        assert result == []
 
     @pytest.mark.asyncio
     async def test_search_posts_success(self, client):
         """search_posts returns search results."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": {"posts": [{"id": "1", "title": "Test"}]}
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        with patch.object(client._http_client, "get", AsyncMock(return_value=mock_response)):
+        mock_notes = [
+            {"id": "n1", "display_title": "Test Post", "user": {"nickname": "User", "user_id": "u1"},
+             "like_count": 10, "comment_count": 2, "collect_count": 5,
+             "cover": {"url": "http://img.jpg"}},
+        ]
+        with patch.object(client._http, "search_notes", new_callable=AsyncMock, return_value=mock_notes):
             result = await client.search_posts("美食")
 
-        assert result is not None
+        assert len(result) == 1
+        assert result[0].note_id == "n1"
+        assert result[0].title == "Test Post"
+        assert result[0].user_name == "User"
 
     @pytest.mark.asyncio
-    async def test_get_analytics_success(self, client):
-        """get_analytics returns analytics data."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": {
-                "views": 1000,
-                "likes": 50,
-                "comments": 10,
-            }
+    async def test_get_post_analytics_success(self, client):
+        """get_post_analytics returns analytics data."""
+        mock_detail = {
+            "view_count": 1000,
+            "like_count": 50,
+            "collect_count": 10,
+            "comment_count": 8,
+            "share_count": 3,
+            "engagement_rate": 0.071,
         }
-        mock_response.raise_for_status = MagicMock()
+        with patch.object(client._http, "get_note_detail", new_callable=AsyncMock, return_value=mock_detail):
+            result = await client.get_post_analytics("post_123")
 
-        with patch.object(client._http_client, "get", AsyncMock(return_value=mock_response)):
-            result = await client.get_analytics("post_123")
-
-        assert result is not None
+        assert result.post_id == "post_123"
+        assert result.views == 1000
+        assert result.likes == 50
 
     @pytest.mark.asyncio
     async def test_get_comments_success(self, client):
         """get_comments returns comments list."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": {
-                "comments": [
-                    {"id": "c1", "content": "Nice!", "user_name": "User"}
-                ]
-            }
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        with patch.object(client._http_client, "get", AsyncMock(return_value=mock_response)):
+        mock_comments = [
+            {"id": "c1", "content": "Nice!", "user": {"nickname": "User", "user_id": "u1"},
+             "like_count": 5, "create_time": "2026-01-01", "target_comment": {}},
+        ]
+        with patch.object(client._http, "get_comments", new_callable=AsyncMock, return_value=mock_comments):
             result = await client.get_comments("post_123")
 
-        assert result is not None
+        assert len(result) == 1
+        assert result[0].comment_id == "c1"
+        assert result[0].content == "Nice!"
 
     @pytest.mark.asyncio
     async def test_auth_error_on_invalid_cookie(self, client):
         """Auth error when cookie invalid."""
-        mock_response = MagicMock()
-        mock_response.status_code = 401
+        with patch.object(client._http, "get_note_detail", new_callable=AsyncMock, side_effect=XHSAuthError("认证失败")):
+            result = await client.get_post_analytics("post_123")
 
-        with patch.object(client._http_client, "get", AsyncMock(return_value=mock_response)):
-            # Client should detect auth error
-            pass  # Implementation depends on actual error handling
+        # Falls back to empty analytics on error
+        assert result.post_id == "post_123"
+        assert result.views == 0
 
-    def test_close_client(self, client):
+    @pytest.mark.asyncio
+    async def test_close_client(self, client):
         """Client can be closed."""
-        # Async close
-        with patch.object(client._http_client, "aclose", AsyncMock()):
-            # Would need to await in real usage
-            pass
+        with patch.object(client._http, "close", new_callable=AsyncMock) as mock_close:
+            await client.close()
+
+        mock_close.assert_called_once()

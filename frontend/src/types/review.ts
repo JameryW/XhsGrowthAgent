@@ -47,11 +47,18 @@ export interface VersionHistoryResponse {
   }
 }
 
+// Publish options for approved decisions
+export interface PublishOptions {
+  dry_run: boolean
+  auto_publish?: boolean
+}
+
 // Review decision request
 export interface ReviewDecisionRequest {
   decision: ReviewDecision
   comments?: string
   revisions?: Revision[]
+  publish_options?: PublishOptions
 }
 
 // Review submit response

@@ -11,16 +11,16 @@ from backend.config.models import (
 
 def test_resolve_model_id_default():
     """默认路由：每个任务类型映射到正确的模型"""
-    assert resolve_model_id(TaskType.WRITING) == "claude-sonnet-4-20250514"
-    assert resolve_model_id(TaskType.SCOUTING) == "deepseek-chat"
-    assert resolve_model_id(TaskType.ANALYSIS) == "gpt-4o"
-    assert resolve_model_id(TaskType.PUBLISHING) == "qwen-plus"
+    assert resolve_model_id(TaskType.WRITING) == "mimo-v2.5-pro"
+    assert resolve_model_id(TaskType.SCOUTING) == "mimo-v2.5-pro"
+    assert resolve_model_id(TaskType.ANALYSIS) == "mimo-v2.5-pro"
+    assert resolve_model_id(TaskType.PUBLISHING) == "mimo-v2.5-pro"
 
 
 def test_resolve_model_id_override():
     """用户覆盖路由"""
-    overrides = {"writing": "gpt-4o"}
-    assert resolve_model_id(TaskType.WRITING, overrides) == "gpt-4o"
+    overrides = {"writing": "deepseek-chat"}
+    assert resolve_model_id(TaskType.WRITING, overrides) == "deepseek-chat"
 
 
 def test_get_model_config():

@@ -17,7 +17,7 @@ async def content_analyzer_node(state: XHSGrowthState, *, store: BaseStore) -> d
     result = await _content_analyzer(state, store=store)
 
     # Emit data updated event for optimization_analysis
-    thread_id = state.get("thread_id")
+    thread_id = state.get("session_id")
     if result.get("optimization_analysis"):
         EventBusService.get_instance().emit(
             EventType.WORKFLOW_DATA_UPDATED,

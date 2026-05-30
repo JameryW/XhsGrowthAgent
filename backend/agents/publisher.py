@@ -30,8 +30,15 @@ class PublisherAgent(BaseAgent):
         settings = Settings()
         use_browser = settings.platform.use_browser
 
-        if not use_browser:
-            logger.warning("use_browser=False，跳过真实发布")
+        # Read publish options from review decision (overrides defaults)
+        publish_options = state.get("publish_options") or {}
+        is_dry_run = publish_options.get("dry_run", True)
+
+        if is_dry_run or not use_browser:
+            if is_dry_run:
+                logger.info("dry_run=True，执行试运行发布")
+            else:
+                logger.warning("use_browser=False，跳过真实发布")
             # 返回模拟结果
             import datetime
             publish_result = {

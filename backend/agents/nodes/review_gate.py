@@ -21,7 +21,7 @@ async def review_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
     plan = state.get("content_plan", {})
 
     # Emit review pending event before interrupt
-    thread_id = state.get("thread_id")
+    thread_id = state.get("session_id")
     EventBusService.get_instance().emit(
         EventType.REVIEW_PENDING,
         thread_id=thread_id,

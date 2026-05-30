@@ -664,6 +664,8 @@ components:
         - engaging
         - completed
         - error
+        - paused
+        - cancelled
       description: Current phase of the workflow lifecycle
 
     ContentStatus:

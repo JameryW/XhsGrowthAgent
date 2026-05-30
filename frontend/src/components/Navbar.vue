@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useWorkflowStore, useOnboardingStore, useAuthStore, useRealtimeStore } from '@/stores'
@@ -16,6 +16,9 @@ const onboardingStore = useOnboardingStore()
 const authStore = useAuthStore()
 const realtimeStore = useRealtimeStore()
 
+// Mobile drawer state
+const isMobileMenuOpen = ref(false)
+
 const navItems = computed(() => [
   { path: '/dashboard', icon: 'Home', label: t('nav.dashboard'), color: 'pink' },
   { path: '/review', icon: 'CheckCircle', label: t('nav.review'), color: 'cyan' },
@@ -27,6 +30,7 @@ const currentPath = computed(() => route.path)
 
 const navigateTo = (path: string) => {
   router.push(path)
+  isMobileMenuOpen.value = false
 }
 
 const currentPhase = computed(() => workflowStore.currentPhase)
@@ -59,6 +63,15 @@ const handleSendFeedback = () => {
 const handleLogout = async () => {
   await authStore.logout()
   router.push('/login')
+  isMobileMenuOpen.value = false
+}
+
+const toggleMobileMenu = () => {
+  isMobileMenuOpen.value = !isMobileMenuOpen.value
+}
+
+const closeMobileMenu = () => {
+  isMobileMenuOpen.value = false
 }
 </script>
 

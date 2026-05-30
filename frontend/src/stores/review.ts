@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import * as reviewApi from '@/api/review'
-import type { PendingReview, ContentStatus, ReviewDecision, Revision } from '@/types'
+import type { PendingReview, ContentStatus, ReviewDecision, Revision, PublishOptions } from '@/types'
 import type { ContentPlan, CopyContent, VisualPlan } from '@/types/workflow'
 import { useRealtimeStore } from './realtime'
 import { useWorkflowStore } from './workflow'
@@ -68,14 +68,13 @@ export const useReviewStore = defineStore('review', () => {
   const toastStore = useToastStore()
 
   // 注册审核事件处理器 - 收到待审核内容时显示醒目通知
-  realtimeStore.wsService.onEvent(EventType.REVIEW_PENDING, (payload: unknown) => {
-    const p = payload as {
-      thread_id?: string
-      content_plan?: ContentPlan
-      copy_content?: CopyContent
-      visual_plan?: VisualPlan
-    }
-    if (p.thread_id === workflowStore.currentThreadId) {
+  realtimeStore.wsService.onEvent(EventType.REVIEW_PENDING, (msg) => {
+    if (msg.thread_id === workflowStore.currentThreadId) {
+      const p = msg.payload as {
+        content_plan?: ContentPlan
+        copy_content?: CopyContent
+        visual_plan?: VisualPlan
+      }
       // Update pendingReview with incoming content
       pendingReview.value = {
         status: 'awaiting_review',
@@ -119,7 +118,7 @@ export const useReviewStore = defineStore('review', () => {
     }
   }
 
-  async function submitDecision(dec: ContentStatus, comment?: string, revs?: Revision[]) {
+  async function submitDecision(dec: ContentStatus, comment?: string, revs?: Revision[], pubOptions?: PublishOptions) {
     if (!threadId.value) return
     isLoading.value = true
     error.value = null
@@ -128,6 +127,7 @@ export const useReviewStore = defineStore('review', () => {
         decision: dec as ReviewDecision,
         comments: comment || '',
         revisions: revs || [],
+        publish_options: pubOptions,
       })
       decision.value = dec
       pendingReview.value = null

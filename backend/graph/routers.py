@@ -52,8 +52,10 @@ def review_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_conten
         if not _xhs_configured():
             return "__end__"
         return "publisher"
-    # needs_revision and rejected both go to revise_content
-    return "revise_content"
+    if decision == ContentStatus.NEEDS_REVISION or decision == "needs_revision":
+        return "revise_content"
+    # rejected → end workflow (do not enter revision loop)
+    return "__end__"
 
 
 def should_continue(state: XHSGrowthState) -> Literal["orchestrator", "__end__"]:

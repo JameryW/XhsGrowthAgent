@@ -47,10 +47,11 @@ class TestContentStrategistAgent:
 }
 ```"""
 
-        with patch.object(agent, "model") as mock_model:
-            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+        result = await agent.execute(mock_state, store=mock_store)
 
         assert "content_plan" in result
         assert result["phase"] == WorkflowPhase.PLANNING
@@ -66,10 +67,11 @@ class TestContentStrategistAgent:
         mock_response = MagicMock()
         mock_response.content = '{"selected_topic": "test"}'
 
-        with patch.object(agent, "model") as mock_model:
-            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+        result = await agent.execute(mock_state, store=mock_store)
 
         mock_store.asearch.assert_called()
 
@@ -79,21 +81,18 @@ class TestContentStrategistAgent:
         mock_response = MagicMock()
         mock_response.content = '{"selected_topic": "美食探店"}'
 
-        with patch.object(agent, "model") as mock_model:
-            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = mock_model
 
-            with patch("backend.agents.content_strategist.predict_spread") as mock_predict:
-                mock_predict.return_value = {
-                    "job_id": "test-job",
-                    "output": {
-                        "metrics": {
-                            "estimated_reach": 5000,
-                            "viral_probability": 0.3,
-                        },
-                    },
-                }
+        with patch("backend.tools.ripple.integration.predict_spread") as mock_predict, \
+             patch("backend.tools.ripple.integration.parse_spread_prediction") as mock_parse:
+            mock_predict.return_value = {"job_id": "test-job", "output": {"metrics": {"estimated_reach": 5000}}}
+            mock_parse.return_value = {
+                "ripple_prediction": {"estimated_reach": 5000, "viral_probability": 0.3},
+            }
 
-                result = await agent.execute(mock_state, store=mock_store)
+            result = await agent.execute(mock_state, store=mock_store)
 
         assert result["content_plan"]["ripple_prediction"]["estimated_reach"] == 5000
 
@@ -103,13 +102,14 @@ class TestContentStrategistAgent:
         mock_response = MagicMock()
         mock_response.content = '{"selected_topic": "美食探店"}'
 
-        with patch.object(agent, "model") as mock_model:
-            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = mock_model
 
-            with patch("backend.agents.content_strategist.predict_spread") as mock_predict:
-                mock_predict.side_effect = Exception("Ripple unavailable")
+        with patch("backend.tools.ripple.integration.predict_spread") as mock_predict:
+            mock_predict.side_effect = Exception("Ripple unavailable")
 
-                result = await agent.execute(mock_state, store=mock_store)
+            result = await agent.execute(mock_state, store=mock_store)
 
         # Should not have ripple_prediction
         assert "ripple_prediction" not in result.get("content_plan", {})
@@ -121,10 +121,11 @@ class TestContentStrategistAgent:
         mock_response = MagicMock()
         mock_response.content = '{"selected_topic": ""}'
 
-        with patch.object(agent, "model") as mock_model:
-            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+        result = await agent.execute(mock_state, store=mock_store)
 
         assert result["content_plan"]["selected_topic"] == ""
 

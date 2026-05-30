@@ -247,7 +247,6 @@ class TestChoiceGateNode:
     async def test_choice_gate_interrupts_and_returns_selection(self, optimization_state, mock_store):
         """choice_gate_node interrupts and returns selected version."""
         from backend.agents.nodes import choice_gate_node
-        from langgraph.types import interrupt
 
         # Add content_versions to state
         state_with_versions = optimization_state.copy()
@@ -272,8 +271,8 @@ class TestChoiceGateNode:
             ),
         ]
 
-        # Mock interrupt to return user selection
-        with patch("langgraph.types.interrupt") as mock_interrupt:
+        # Mock interrupt in the module where it's used
+        with patch("backend.agents.nodes.optimization.choice_gate.interrupt") as mock_interrupt:
             mock_interrupt.return_value = {
                 "selected_version": "A",
                 "version_id": "ver-A",

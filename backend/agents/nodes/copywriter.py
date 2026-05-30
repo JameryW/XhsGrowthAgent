@@ -14,12 +14,26 @@ _copywriter = CopywriterAgent()
 
 async def copywriter_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
     """Execute copywriter agent and emit data updated event."""
+    thread_id = state.get("session_id")
+    event_bus = EventBusService.get_instance()
+
+    event_bus.emit(
+        EventType.WORKFLOW_AGENT_STARTED,
+        thread_id=thread_id,
+        payload={"agent": "copywriter"},
+    )
+
     result = await _copywriter(state, store=store)
 
+    event_bus.emit(
+        EventType.WORKFLOW_AGENT_COMPLETED,
+        thread_id=thread_id,
+        payload={"agent": "copywriter"},
+    )
+
     # Emit data updated event for copy_content
-    thread_id = state.get("thread_id")
     if result.get("copy_content"):
-        EventBusService.get_instance().emit(
+        event_bus.emit(
             EventType.WORKFLOW_DATA_UPDATED,
             thread_id=thread_id,
             payload={"data_type": "copy_content", "data": result.get("copy_content")},

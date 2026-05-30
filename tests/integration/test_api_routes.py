@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 from backend.api.app import app
+from backend.api.routes import workflow as workflow_module
 from backend.state.enums import WorkflowPhase, ContentStatus
 from backend.api.responses import ApiResponse
 
@@ -23,6 +24,7 @@ def mock_graph():
     graph = MagicMock()
     graph.ainvoke = AsyncMock(return_value={"phase": "completed", "session_id": "test_session"})
     graph.aget_state = AsyncMock()
+    graph.aupdate_state = AsyncMock()
     return graph
 
 
@@ -31,8 +33,13 @@ def client(mock_graph):
     """Test client with mocked graph."""
     # Set the graph directly on app.state before creating client
     app.state.graph = mock_graph
+    # Clear workflow registry to avoid stale data
+    original_registry = workflow_module._workflow_registry.copy()
+    workflow_module._workflow_registry.clear()
     yield TestClient(app)
     # Clean up after test
+    workflow_module._workflow_registry.clear()
+    workflow_module._workflow_registry.update(original_registry)
     if hasattr(app.state, "graph"):
         delattr(app.state, "graph")
 

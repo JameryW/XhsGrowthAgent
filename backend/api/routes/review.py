@@ -16,10 +16,16 @@ from backend.state.enums import ContentStatus
 router = APIRouter()
 
 
+class PublishOptions(BaseModel):
+    dry_run: bool = True
+    auto_publish: bool = False
+
+
 class ReviewDecision(BaseModel):
     decision: ContentStatus
     comments: str = ""
     revisions: list[str] = []
+    publish_options: PublishOptions | None = None
 
 
 def _build_version_entry(copy_content: dict, visual_plan: dict, label: str = "draft") -> dict:
@@ -88,6 +94,13 @@ async def submit_review(thread_id: str, decision: ReviewDecision, request: Reque
         existing_versions = values.get("content_versions") or []
         await graph.aupdate_state(config, {
             "content_versions": existing_versions + [version_entry],
+        })
+
+    # On 'approved', write publish options to state so publisher can read them
+    if decision.decision == "approved":
+        pub_opts = decision.publish_options or PublishOptions(dry_run=True)
+        await graph.aupdate_state(config, {
+            "publish_options": pub_opts.model_dump(),
         })
 
     # 用 Command(resume=...) 恢复中断的图

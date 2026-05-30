@@ -48,7 +48,9 @@
       "xhsMissing": "XHS credentials not set — publishing will be skipped (preview only). Set XHS_COOKIE and XHS_USER_ID in .env to enable publishing.",
       "rippleMissing": "Set RIPPLE_BASE_URL and RIPPLE_API_TOKEN in .env (optional, for content spread prediction).",
       "apiUnreachable": "Ensure the backend server is running: xhs-growth serve --port 8000"
-    }
+    },
+    "required": "Required",
+    "optional": "Optional"
   },
   "login": {
     "title": "Login",
@@ -129,10 +131,22 @@
         "knowledge": "Knowledge"
       },
       "phases": {
-        "scouting": { "label": "Trend Discovery", "desc": "Start from discovering trending topics" },
-        "planning": { "label": "Strategy Planning", "desc": "Skip trend discovery, go straight to strategy" },
-        "creating": { "label": "Content Creation", "desc": "Skip strategy, start creating directly" },
-        "reviewing": { "label": "Content Review", "desc": "Jump to the review stage" }
+        "scouting": {
+          "label": "Trend Discovery",
+          "desc": "Start from discovering trending topics"
+        },
+        "planning": {
+          "label": "Strategy Planning",
+          "desc": "Skip trend discovery, go straight to strategy"
+        },
+        "creating": {
+          "label": "Content Creation",
+          "desc": "Skip strategy, start creating directly"
+        },
+        "reviewing": {
+          "label": "Content Review",
+          "desc": "Jump to the review stage"
+        }
       }
     },
     "confirm": {
@@ -157,7 +171,11 @@
       "idle": "Idle",
       "running": "Running",
       "waiting": "Waiting to Start",
-      "workflow": "Workflow"
+      "workflow": "Workflow",
+      "statusSource": "Status Source",
+      "realtime": "Real-time",
+      "polling": "Polling",
+      "snapshot": "Snapshot"
     },
     "contentCards": {
       "loading": "Workflow data loading state",
@@ -210,6 +228,19 @@
       "engaging": "Engagement",
       "engagingDesc": "Audience interaction",
       "agentDetails": "Agent Execution Details"
+    },
+    "phase": {
+      "idle": "Idle",
+      "scouting": "Trend Scouting",
+      "planning": "Content Planning",
+      "creating": "Content Creation",
+      "reviewing": "Pending Review",
+      "publishing": "Publishing",
+      "analyzing": "Analytics",
+      "engaging": "Engagement",
+      "completed": "Completed",
+      "error": "Error",
+      "cancelled": "Cancelled"
     }
   },
   "review": {
@@ -314,6 +345,11 @@
     "submitFailedTitle": "Submit Failed",
     "cancelSuccess": "Action cancelled",
     "cancelMessage": "You can continue reviewing the content",
+    "decisionApproved": "Content approved",
+    "decisionRevision": "Revision requested",
+    "decisionRejected": "Content rejected",
+    "dryRunMode": "Dry Run",
+    "liveMode": "Live",
     "publishConfirm": {
       "title": "Confirm Publish",
       "subtitle": "Review publish settings before proceeding",
@@ -432,11 +468,31 @@
       "notFound": "Not Found",
       "auth": "Authentication"
     },
-    "networkSuggestions": ["Check network connection", "Try refreshing the page", "Wait and retry"],
-    "validationSuggestions": ["Check input parameters", "Verify account ID is valid", "See API docs for parameter requirements"],
-    "notFoundSuggestions": ["Verify workflow ID exists", "Check if workflow was deleted", "Return to dashboard to start over"],
-    "authSuggestions": ["Check login status", "Re-login to the system", "Contact admin for permissions"],
-    "generalSuggestions": ["Click retry to try again", "Return to dashboard to check status", "Contact support for help"]
+    "networkSuggestions": [
+      "Check network connection",
+      "Try refreshing the page",
+      "Wait and retry"
+    ],
+    "validationSuggestions": [
+      "Check input parameters",
+      "Verify account ID is valid",
+      "See API docs for parameter requirements"
+    ],
+    "notFoundSuggestions": [
+      "Verify workflow ID exists",
+      "Check if workflow was deleted",
+      "Return to dashboard to start over"
+    ],
+    "authSuggestions": [
+      "Check login status",
+      "Re-login to the system",
+      "Contact admin for permissions"
+    ],
+    "generalSuggestions": [
+      "Click retry to try again",
+      "Return to dashboard to check status",
+      "Contact support for help"
+    ]
   },
   "dataTable": {
     "title": "Data Table",
@@ -511,7 +567,10 @@
     "currentPhase": "Current Phase",
     "currentAgent": "Current Agent",
     "thread": "Thread",
-    "publishFailed": "Publish Failed"
+    "publishFailed": "Publish Failed",
+    "agentStarted": "Agent Started",
+    "agentCompleted": "Agent Completed",
+    "workflowStarted": "Workflow Started"
   },
   "history": {
     "title": "Workflow History",
@@ -607,5 +666,44 @@
     "needMoreChars": "Need {count} more characters",
     "enterContent": "Please enter content",
     "contentTooShort": "Content too short, need at least 50 characters"
+  },
+  "checklist": {
+    "title": "Pre-Launch Checklist",
+    "subtitle": "Verify system readiness before starting",
+    "required": "Required",
+    "optional": "Optional",
+    "readyFull": "Fully Ready",
+    "readyDryRun": "Dry-Run Only",
+    "blocked": "Setup Required",
+    "apiError": "Cannot check system status",
+    "refresh": "Refresh",
+    "ready": "ready",
+    "llm": {
+      "label": "LLM Provider",
+      "description": "AI model for content generation",
+      "impact": "Required for all AI operations",
+      "fixGuide": "Set at least one API key in .env (e.g., ANTHROPIC_API_KEY, OPENAI_API_KEY)"
+    },
+    "xhs": {
+      "label": "Xiaohongshu Platform",
+      "description": "Credentials for publishing to XHS",
+      "impactReal": "Enables real publishing to Xiaohongshu",
+      "impactDryRun": "Only preview mode available (no real publishing)",
+      "fixGuide": "Set XHS_COOKIE and XHS_USER_ID in .env to enable publishing"
+    },
+    "ripple": {
+      "label": "Ripple CAS Engine",
+      "description": "Content spread prediction service",
+      "impact": "Enhances content strategy with viral predictions",
+      "fixGuide": "Set RIPPLE_BASE_URL and RIPPLE_API_TOKEN in .env (optional)"
+    },
+    "database": {
+      "label": "Data Storage",
+      "description": "Workflow persistence layer",
+      "impactMemory": "Using in-memory storage (data lost on restart)",
+      "impactPersistent": "Using persistent database storage"
+    },
+    "suggestDryRun": "Dry-run mode recommended",
+    "suggestDryRunReason": "XHS credentials not configured. Workflow will run in preview mode without actual publishing."
   }
 }

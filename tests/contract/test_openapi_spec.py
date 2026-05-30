@@ -12,8 +12,8 @@ import yaml
 from pathlib import Path
 
 
-# Path to OpenAPI spec (in main project, not worktree)
-OPENAPI_SPEC_PATH = Path("/Users/jameryw/aiworks/XhsGrowthAgent/api/spec/openapi.yaml")
+# Path to OpenAPI spec (relative to project root)
+OPENAPI_SPEC_PATH = Path(__file__).resolve().parent.parent.parent / "api" / "spec" / "openapi.yaml"
 
 
 class TestOpenAPISpecExists:

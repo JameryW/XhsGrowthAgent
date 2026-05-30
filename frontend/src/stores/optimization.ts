@@ -38,30 +38,31 @@ export const useOptimizationStore = defineStore('optimization', () => {
   // WebSocket event handlers
   const realtimeStore = useRealtimeStore()
 
-  realtimeStore.wsService.onEvent(EventType.WORKFLOW_DATA_UPDATED, (payload: unknown) => {
-    const p = payload as { thread_id?: string; data_type?: string; data?: unknown }
+  realtimeStore.wsService.onEvent(EventType.WORKFLOW_DATA_UPDATED, (msg) => {
     const threadId = getThreadId()
-    if (p.thread_id === threadId && p.data_type && p.data) {
-      switch (p.data_type) {
-        case 'draft_content':
-          draftContent.value = p.data as DraftContent
-          break
-        case 'viral_posts':
-          viralPosts.value = p.data as ViralPost[]
-          break
-        case 'optimization_analysis':
-          optimizationAnalysis.value = p.data as OptimizationAnalysis
-          break
-        case 'content_versions':
-          contentVersions.value = p.data as ContentVersion[]
-          break
-        case 'choice_pending':
-          // choice_pending contains versions, draft, and analysis
-          const choiceData = p.data as { versions?: ContentVersion[]; draft?: DraftContent; analysis?: OptimizationAnalysis }
-          if (choiceData.versions) contentVersions.value = choiceData.versions
-          if (choiceData.draft) draftContent.value = choiceData.draft
-          if (choiceData.analysis) optimizationAnalysis.value = choiceData.analysis
-          break
+    if (msg.thread_id === threadId) {
+      const p = msg.payload as { data_type?: string; data?: unknown }
+      if (p.data_type && p.data) {
+        switch (p.data_type) {
+          case 'draft_content':
+            draftContent.value = p.data as DraftContent
+            break
+          case 'viral_posts':
+            viralPosts.value = p.data as ViralPost[]
+            break
+          case 'optimization_analysis':
+            optimizationAnalysis.value = p.data as OptimizationAnalysis
+            break
+          case 'content_versions':
+            contentVersions.value = p.data as ContentVersion[]
+            break
+          case 'choice_pending':
+            const choiceData = p.data as { versions?: ContentVersion[]; draft?: DraftContent; analysis?: OptimizationAnalysis }
+            if (choiceData.versions) contentVersions.value = choiceData.versions
+            if (choiceData.draft) draftContent.value = choiceData.draft
+            if (choiceData.analysis) optimizationAnalysis.value = choiceData.analysis
+            break
+        }
       }
     }
   })

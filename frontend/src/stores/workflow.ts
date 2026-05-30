@@ -64,9 +64,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   // WebSocket event handlers
-  realtimeStore.wsService.onEvent(EventType.WORKFLOW_PHASE_CHANGED, (payload: unknown) => {
-    const p = payload as { thread_id?: string; old_phase?: string; new_phase?: string; current_agent?: string }
-    if (p.thread_id === currentThreadId.value && workflowState.value) {
+  // onEvent receives the full WsMessage {event_type, thread_id, payload, timestamp, seq}
+  // Business data is in msg.payload
+  realtimeStore.wsService.onEvent(EventType.WORKFLOW_PHASE_CHANGED, (msg) => {
+    if (msg.thread_id === currentThreadId.value && workflowState.value) {
+      const p = msg.payload as { old_phase?: string; new_phase?: string; current_agent?: string }
       const newPhase = p.new_phase || workflowState.value.phase
       workflowState.value = {
         ...workflowState.value,
@@ -84,30 +86,30 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   })
 
-  realtimeStore.wsService.onEvent(EventType.WORKFLOW_DATA_UPDATED, (payload: unknown) => {
-    const p = payload as { thread_id?: string; data_type?: string; data?: unknown }
-    if (p.thread_id === currentThreadId.value && workflowState.value && p.data_type && p.data) {
-      // Store data updates in a separate object since backend doesn't return values
-      ;(workflowState.value as any)[p.data_type] = p.data
+  realtimeStore.wsService.onEvent(EventType.WORKFLOW_DATA_UPDATED, (msg) => {
+    if (msg.thread_id === currentThreadId.value && workflowState.value) {
+      const p = msg.payload as { data_type?: string; data?: unknown }
+      if (p.data_type && p.data) {
+        ;(workflowState.value as any)[p.data_type] = p.data
+      }
     }
   })
 
-  realtimeStore.wsService.onEvent(EventType.WORKFLOW_COMPLETED, (payload: unknown) => {
-    const p = payload as { thread_id?: string }
-    if (p.thread_id === currentThreadId.value && workflowState.value) {
+  realtimeStore.wsService.onEvent(EventType.WORKFLOW_COMPLETED, (msg) => {
+    if (msg.thread_id === currentThreadId.value && workflowState.value) {
       workflowState.value = {
         ...workflowState.value,
         phase: 'completed',
         next_steps: [],
       }
       updateProgressFromPhase('completed')
-      toastStore.success(t('workflow.completed'), `${t('workflow.thread')}: ${p.thread_id}`)
+      toastStore.success(t('workflow.completed'), `${t('workflow.thread')}: ${msg.thread_id}`)
     }
   })
 
-  realtimeStore.wsService.onEvent(EventType.WORKFLOW_ERROR, (payload: unknown) => {
-    const p = payload as { thread_id?: string; error?: string; agent?: string }
-    if (p.thread_id === currentThreadId.value && workflowState.value) {
+  realtimeStore.wsService.onEvent(EventType.WORKFLOW_ERROR, (msg) => {
+    if (msg.thread_id === currentThreadId.value && workflowState.value) {
+      const p = msg.payload as { error?: string; agent?: string }
       workflowState.value = {
         ...workflowState.value,
         phase: 'error',
@@ -115,6 +117,40 @@ export const useWorkflowStore = defineStore('workflow', () => {
       }
       updateProgressFromPhase('error')
       toastStore.error(t('workflow.error'), `${t('workflow.currentAgent')}: ${p.agent} - ${p.error}`)
+    }
+  })
+
+  realtimeStore.wsService.onEvent(EventType.WORKFLOW_STARTED, (msg) => {
+    if (msg.thread_id === currentThreadId.value && workflowState.value) {
+      const p = msg.payload as { phase?: string; account_id?: string; dry_run?: boolean }
+      workflowState.value = {
+        ...workflowState.value,
+        phase: (p.phase || 'scouting') as WorkflowPhase,
+        current_agent: 'orchestrator',
+      }
+      updateProgressFromPhase((p.phase || 'scouting') as WorkflowPhase)
+    }
+  })
+
+  realtimeStore.wsService.onEvent(EventType.WORKFLOW_AGENT_STARTED, (msg) => {
+    if (msg.thread_id === currentThreadId.value && workflowState.value) {
+      const p = msg.payload as { agent?: string }
+      workflowState.value = {
+        ...workflowState.value,
+        current_agent: p.agent || workflowState.value.current_agent,
+      }
+    }
+  })
+
+  realtimeStore.wsService.onEvent(EventType.WORKFLOW_AGENT_COMPLETED, (msg) => {
+    if (msg.thread_id === currentThreadId.value && workflowState.value) {
+      const p = msg.payload as { agent?: string; status?: string }
+      const timeline = workflowState.value.agent_timeline || []
+      const existing = timeline.find((e: any) => e.agent === p.agent && !e.completed_at)
+      if (existing) {
+        existing.completed_at = new Date().toISOString()
+        existing.status = (p.status === 'error' ? 'error' : 'success') as 'success' | 'error'
+      }
     }
   })
 

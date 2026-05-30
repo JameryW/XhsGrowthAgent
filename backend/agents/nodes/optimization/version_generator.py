@@ -17,7 +17,7 @@ async def version_generator_node(state: XHSGrowthState, *, store: BaseStore) -> 
     result = await _version_generator(state, store=store)
 
     # Emit data updated event for content_versions
-    thread_id = state.get("thread_id")
+    thread_id = state.get("session_id")
     if result.get("content_versions"):
         EventBusService.get_instance().emit(
             EventType.WORKFLOW_DATA_UPDATED,

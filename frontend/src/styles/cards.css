@@ -1,0 +1,238 @@
+/* Unified card styles for XHS Growth Agent */
+
+/* Base card - clean, minimal */
+.card {
+  @apply rounded-xl bg-white border border-slate-200/60 shadow-sm;
+}
+
+/* Card with hover effect */
+.card-hover {
+  @apply card transition-all duration-200 hover:shadow-md hover:border-slate-300/60;
+}
+
+/* Card header section */
+.card-header {
+  @apply flex items-center gap-3 mb-4;
+}
+
+/* Card icon container */
+.card-icon {
+  @apply w-10 h-10 rounded-lg flex items-center justify-center shadow-sm;
+}
+
+/* Card title */
+.card-title {
+  @apply text-sm font-semibold text-slate-700;
+}
+
+/* Card subtitle */
+.card-subtitle {
+  @apply text-xs text-slate-400;
+}
+
+/* Card content area */
+.card-content {
+  @apply space-y-3;
+}
+
+/* Card footer */
+.card-footer {
+  @apply pt-4 border-t border-slate-100 mt-4;
+}
+
+/* Status cards */
+.card-success {
+  @apply card border-emerald-200/60 bg-emerald-50/30;
+}
+
+.card-warning {
+  @apply card border-amber-200/60 bg-amber-50/30;
+}
+
+.card-error {
+  @apply card border-rose-200/60 bg-rose-50/30;
+}
+
+.card-info {
+  @apply card border-cyan-200/60 bg-cyan-50/30;
+}
+
+/* Compact card for dense layouts */
+.card-compact {
+  @apply rounded-lg bg-white border border-slate-200/60 shadow-sm p-3;
+}
+
+/* Card grid layout */
+.card-grid {
+  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4;
+}
+
+.card-grid-4 {
+  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4;
+}
+
+/* Empty state card */
+.card-empty {
+  @apply card p-8 text-center;
+}
+
+/* Button styles */
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+}
+
+.btn-sm {
+  @apply btn px-3 py-1.5 text-xs;
+}
+
+.btn-md {
+  @apply btn px-4 py-2 text-sm;
+}
+
+.btn-lg {
+  @apply btn px-6 py-3 text-base;
+}
+
+.btn-primary {
+  @apply btn bg-rose-500 text-white hover:bg-rose-600 focus:ring-rose-500 shadow-sm;
+}
+
+.btn-secondary {
+  @apply btn bg-slate-100 text-slate-700 hover:bg-slate-200 focus:ring-slate-500;
+}
+
+.btn-ghost {
+  @apply btn bg-transparent text-slate-600 hover:bg-slate-100 focus:ring-slate-500;
+}
+
+/* Badge styles */
+.badge {
+  @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+}
+
+.badge-success {
+  @apply badge bg-emerald-50 text-emerald-600 border border-emerald-100;
+}
+
+.badge-warning {
+  @apply badge bg-amber-50 text-amber-600 border border-amber-100;
+}
+
+.badge-error {
+  @apply badge bg-rose-50 text-rose-600 border border-rose-100;
+}
+
+.badge-info {
+  @apply badge bg-cyan-50 text-cyan-600 border border-cyan-100;
+}
+
+/* Form styles */
+.form-group {
+  @apply space-y-1.5;
+}
+
+.form-label {
+  @apply block text-sm font-medium text-slate-700;
+}
+
+.form-input {
+  @apply w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:border-rose-300 focus:ring-1 focus:ring-rose-200 transition-colors;
+}
+
+.form-select {
+  @apply form-input appearance-none bg-no-repeat bg-right pr-8;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 0.5rem center;
+  background-size: 1.5em 1.5em;
+}
+
+.form-textarea {
+  @apply form-input resize-none;
+}
+
+/* Table styles */
+.table-container {
+  @apply overflow-x-auto rounded-lg border border-slate-200/60;
+}
+
+.table {
+  @apply w-full text-sm;
+}
+
+.table th {
+  @apply px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider bg-slate-50/50;
+}
+
+.table td {
+  @apply px-4 py-3 text-slate-700 border-t border-slate-100;
+}
+
+.table tr:hover td {
+  @apply bg-slate-50/50;
+}
+
+/* Skeleton loading */
+.skeleton {
+  @apply animate-pulse bg-slate-200 rounded;
+}
+
+.skeleton-text {
+  @apply skeleton h-4 w-3/4;
+}
+
+.skeleton-title {
+  @apply skeleton h-6 w-1/2;
+}
+
+.skeleton-avatar {
+  @apply skeleton h-10 w-10 rounded-full;
+}
+
+/* Transition utilities */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: all 0.3s ease;
+}
+
+.slide-up-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+/* Focus styles for accessibility */
+:focus-visible {
+  @apply outline-none ring-2 ring-rose-500 ring-offset-2;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  @apply w-2 h-2;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-slate-100 rounded-full;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-300 rounded-full hover:bg-slate-400;
+}
+
+/* Selection styles */
+::selection {
+  @apply bg-rose-100 text-rose-900;
+}
