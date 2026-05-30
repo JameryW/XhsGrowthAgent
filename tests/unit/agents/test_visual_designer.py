@@ -58,7 +58,7 @@ class TestVisualDesignerAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            _result = await agent.execute(mock_state, store=mock_store)
+            result = await agent.execute(mock_state, store=mock_store)
 
         assert "visual_plan" in result
         assert result["phase"] == WorkflowPhase.CREATING
@@ -105,7 +105,7 @@ class TestVisualDesignerAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            _result = await agent.execute(mock_state, store=mock_store)
+            result = await agent.execute(mock_state, store=mock_store)
 
         assert "visual_plan" in result
 
@@ -125,7 +125,7 @@ class TestVisualDesignerAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            _result = await agent.execute(mock_state, store=mock_store)
+            result = await agent.execute(mock_state, store=mock_store)
 
         assert "visual_plan" in result
 
@@ -140,7 +140,7 @@ class TestVisualDesignerAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            _result = await agent.execute(mock_state, store=mock_store)
+            result = await agent.execute(mock_state, store=mock_store)
 
         assert "visual_plan" in result
         assert result["visual_plan"].get("raw_content") == "Not valid JSON"
@@ -156,7 +156,7 @@ class TestVisualDesignerAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            _result = await agent.execute(mock_state, store=mock_store)
+            result = await agent.execute(mock_state, store=mock_store)
 
         # Verify LLM was called
         assert mock_model.ainvoke.called

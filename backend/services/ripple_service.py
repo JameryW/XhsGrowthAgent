@@ -104,11 +104,11 @@ class RippleService:
             start = time.time()
 
             # 尝试访问健康端点或根路径
-            resp = await client.get(f"{config['base_url']}/health", timeout=5.0)
+            resp = await client.get(f"{config['base_url']}/healthz", timeout=5.0)
 
             latency = (time.time() - start) * 1000
 
-            if resp.status_code in (200, 404):  # 404 表示服务运行但没有 /health
+            if resp.status_code == 200:
                 self._health_status = RippleHealthStatus(
                     is_healthy=True,
                     last_check="ok",
@@ -272,12 +272,7 @@ class RippleService:
                 "simulation_horizon": simulation_horizon,
             }
 
-            result = await self._request_with_retry(
-                "POST",
-                f"{config['base_url']}/v1/simulations",
-                json_data=request_body,
-            )
-
+            result = await self.submit_and_wait(request_body)
             return self._parse_spread_result(result)
 
         except Exception as e:
@@ -319,12 +314,7 @@ class RippleService:
                 "event": event,
             }
 
-            result = await self._request_with_retry(
-                "POST",
-                f"{config['base_url']}/v1/simulations",
-                json_data=request_body,
-            )
-
+            result = await self.submit_and_wait(request_body)
             return self._parse_pmf_result(result)
 
         except Exception as e:
@@ -332,6 +322,85 @@ class RippleService:
             if use_fallback:
                 return self._default_pmf_result()
             return {"error": str(e)}
+
+    async def submit_simulation(self, request_body: dict[str, Any]) -> dict[str, Any]:
+        """提交模拟任务，返回含 job_id 的响应"""
+        config = self._get_config()
+        return await self._request_with_retry(
+            "POST",
+            f"{config['base_url']}/v1/simulations",
+            json_data=request_body,
+        )
+
+    async def get_simulation_status(self, job_id: str) -> dict[str, Any]:
+        """获取模拟任务状态"""
+        config = self._get_config()
+        return await self._request_with_retry(
+            "GET",
+            f"{config['base_url']}/v1/simulations/{job_id}",
+        )
+
+    async def wait_for_completion(
+        self,
+        job_id: str,
+        poll_interval: float = 10.0,
+        max_wait: float = 1800.0,
+    ) -> dict[str, Any]:
+        """轮询等待模拟完成
+
+        Args:
+            job_id: 模拟任务 ID
+            poll_interval: 轮询间隔（秒）
+            max_wait: 最大等待时间（秒）
+
+        Returns:
+            最终的模拟状态响应
+
+        Raises:
+            TimeoutError: 超过最大等待时间
+            RuntimeError: 模拟失败
+        """
+        elapsed = 0.0
+        while elapsed < max_wait:
+            status = await self.get_simulation_status(job_id)
+            state = status.get("status", "").lower()
+
+            if state in ("completed", "done", "finished"):
+                logger.info(f"Ripple simulation {job_id} completed after {elapsed:.0f}s")
+                return status
+            if state in ("failed", "error"):
+                error_msg = status.get("error", "Unknown simulation error")
+                raise RuntimeError(f"Ripple simulation {job_id} failed: {error_msg}")
+
+            logger.debug(f"Ripple simulation {job_id} status: {state}, waiting {poll_interval}s...")
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+
+        raise TimeoutError(f"Ripple simulation {job_id} did not complete within {max_wait}s")
+
+    async def submit_and_wait(
+        self,
+        request_body: dict[str, Any],
+        poll_interval: float = 10.0,
+        max_wait: float = 1800.0,
+    ) -> dict[str, Any]:
+        """提交模拟并等待完成，返回完整结果
+
+        Returns:
+            包含 job_id 和完整 output 的结果字典
+        """
+        submit_result = await self.submit_simulation(request_body)
+        job_id = submit_result.get("job_id", submit_result.get("id", ""))
+
+        if not job_id:
+            # 同步完成（非异步模式）
+            return submit_result
+
+        await self.wait_for_completion(job_id, poll_interval, max_wait)
+        result = await self.get_result(job_id)
+        # 确保 job_id 在结果中
+        result.setdefault("job_id", job_id)
+        return result
 
     async def get_result(self, job_id: str) -> dict[str, Any]:
         """获取模拟结果"""

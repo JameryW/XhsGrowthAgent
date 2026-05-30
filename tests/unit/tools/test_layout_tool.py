@@ -69,7 +69,7 @@ async def test_layout_recommender_returns_list() -> None:
         "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
-        _result = await layout_recommender.ainvoke(
+        result = await layout_recommender.ainvoke(
             {"scene": "travel_outdoor", "content_type": "图文笔记", "image_count": 3}
         )
 
@@ -119,7 +119,7 @@ async def test_layout_recommender_converts_to_dict() -> None:
         "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
-        _result = await layout_recommender.ainvoke(
+        result = await layout_recommender.ainvoke(
             {"scene": "test_scene", "content_type": "图文笔记"}
         )
 
@@ -147,7 +147,7 @@ async def test_layout_recommender_with_style_filter() -> None:
         "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
-        _result = await layout_recommender.ainvoke(
+        result = await layout_recommender.ainvoke(
             {
                 "scene": "test_scene",
                 "content_type": "图文笔记",
@@ -170,7 +170,7 @@ async def test_layout_recommender_empty_recommendations() -> None:
         "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
-        _result = await layout_recommender.ainvoke(
+        result = await layout_recommender.ainvoke(
             {"scene": "unknown_scene", "content_type": "图文笔记"}
         )
 
@@ -194,7 +194,7 @@ async def test_layout_recommender_multiple_layouts() -> None:
         "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
-        _result = await layout_recommender.ainvoke(
+        result = await layout_recommender.ainvoke(
             {"scene": "test_scene", "content_type": "图文笔记"}
         )
 
@@ -214,7 +214,7 @@ async def test_layout_recommender_default_parameters() -> None:
         return_value=mock_service,
     ):
         # Call with minimal args (default params)
-        _result = await layout_recommender.ainvoke({})
+        result = await layout_recommender.ainvoke({})
 
     # Should still work
     mock_service.get_layout_recommendations.assert_called_once_with(
@@ -268,7 +268,7 @@ async def test_layout_recommender_full_workflow() -> None:
         "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
-        _result = await layout_recommender.ainvoke(
+        result = await layout_recommender.ainvoke(
             {"scene": "travel_outdoor", "content_type": "图文笔记", "image_count": 4}
         )
 
@@ -290,7 +290,7 @@ async def test_layout_recommender_zero_image_count() -> None:
         "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
-        _result = await layout_recommender.ainvoke(
+        result = await layout_recommender.ainvoke(
             {"scene": "test", "content_type": "图文笔记", "image_count": 0}
         )
 
@@ -313,7 +313,7 @@ async def test_layout_recommender_large_image_count() -> None:
         "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
-        _result = await layout_recommender.ainvoke(
+        result = await layout_recommender.ainvoke(
             {"scene": "test", "content_type": "轮播图", "image_count": 10}
         )
 

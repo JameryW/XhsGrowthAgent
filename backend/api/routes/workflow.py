@@ -131,6 +131,10 @@ class WorkflowStatusResponse(BaseModel):
     visual_plan: dict = Field(default_factory=dict, description="视觉方案")
     publish_result: dict = Field(default_factory=dict, description="发布结果")
     analytics: dict = Field(default_factory=dict, description="分析数据")
+    # Ripple CAS engine results
+    ripple_prediction: dict = Field(default_factory=dict, description="Ripple 传播预测")
+    ripple_pmf: dict = Field(default_factory=dict, description="Ripple PMF 验证")
+    ripple_comparison: dict = Field(default_factory=dict, description="Ripple 预测 vs 实际对比")
 
 
 PHASE_PROGRESS = {
@@ -150,6 +154,11 @@ PHASE_PROGRESS = {
 def get_progress(phase: str) -> int:
     """Calculate progress percentage from phase."""
     return PHASE_PROGRESS.get(phase, 0)
+
+
+def _extract_ripple(values: dict, key: str) -> dict:
+    """Extract Ripple data from top-level or nested content_plan."""
+    return values.get(key) or values.get("content_plan", {}).get(key) or {}
 
 
 @router.post("/start")
@@ -331,6 +340,9 @@ async def get_workflow_status(thread_id: str, request: Request):
             visual_plan=state.values.get("visual_plan") or {},
             publish_result=state.values.get("publish_result") or {},
             analytics=state.values.get("analytics") or {},
+            ripple_prediction=_extract_ripple(state.values, "ripple_prediction"),
+            ripple_pmf=_extract_ripple(state.values, "ripple_pmf"),
+            ripple_comparison=state.values.get("ripple_comparison") or {},
         ).model_dump())
 
     # Fallback: check persisted history (container restart case)
@@ -365,6 +377,9 @@ async def get_workflow_status(thread_id: str, request: Request):
             visual_plan=saved.get("visual_plan") or {},
             publish_result=saved.get("publish_result") or {},
             analytics=saved.get("analytics") or {},
+            ripple_prediction=_extract_ripple(saved, "ripple_prediction"),
+            ripple_pmf=_extract_ripple(saved, "ripple_pmf"),
+            ripple_comparison=saved.get("ripple_comparison") or {},
         ).model_dump())
 
     # Also check registry for metadata-only entries

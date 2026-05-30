@@ -231,6 +231,47 @@
       "engagingDesc": "Audience interaction",
       "agentDetails": "Agent Execution Details"
     },
+    "ripple": {
+      "title": "Ripple CAS Analysis",
+      "spreadPrediction": "Spread Prediction",
+      "pmfValidation": "PMF Validation",
+      "predictionComparison": "Prediction vs Actual",
+      "viralProbability": "Viral Probability",
+      "estimatedReach": "Estimated Reach",
+      "estimatedEngagement": "Estimated Engagement",
+      "confidence": "Confidence",
+      "pmfScore": "PMF Score",
+      "riskFactors": "Risk Factors",
+      "improvementStrategies": "Improvement Strategies",
+      "predictedReach": "Predicted Reach",
+      "actualEngagementRate": "Actual Engagement Rate",
+      "reachDeviation": "Reach Deviation",
+      "accuracyRating": "Accuracy Rating",
+      "calibrationInsight": "Calibration Insight",
+      "showDetails": "Show Details",
+      "hideDetails": "Hide Details",
+      "noData": "No Ripple data available yet",
+      "spreadPhases": "Spread Phases",
+      "keyInfluencers": "Key Influencers"
+    },
+    "scouting": {
+      "hotTopics": "Hot Topics",
+      "heatScore": "Heat Score",
+      "growthRate": "Growth Rate",
+      "trendingKeywords": "Trending Keywords",
+      "nicheOpportunities": "Niche Opportunities",
+      "potentialScore": "Potential Score",
+      "audienceMatch": "Audience Match",
+      "entryBarrier": "Entry Barrier"
+    },
+    "publishResult": {
+      "title": "Publish Result",
+      "postId": "Post ID",
+      "postUrl": "Post URL",
+      "publishedAt": "Published At",
+      "status": "Status",
+      "viewPost": "View Post"
+    },
     "phase": {
       "idle": "Idle",
       "scouting": "Trend Scouting",
@@ -352,6 +393,8 @@
     "decisionRejected": "Content rejected",
     "dryRunMode": "Dry Run",
     "liveMode": "Live",
+    "publishSkipped": "Publishing skipped",
+    "publishSkippedReason": "XHS credentials not configured. Set XHS_COOKIE and XHS_USER_ID in .env",
     "publishConfirm": {
       "title": "Confirm Publish",
       "subtitle": "Review publish settings before proceeding",

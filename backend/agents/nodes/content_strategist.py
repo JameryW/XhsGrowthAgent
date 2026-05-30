@@ -39,4 +39,18 @@ async def content_strategist_node(state: XHSGrowthState, *, store: BaseStore) ->
             payload={"data_type": "content_plan", "data": result.get("content_plan")},
         )
 
+    # Emit Ripple data events for real-time UI updates
+    if result.get("ripple_prediction"):
+        event_bus.emit(
+            EventType.WORKFLOW_DATA_UPDATED,
+            thread_id=thread_id,
+            payload={"data_type": "ripple_prediction", "data": result.get("ripple_prediction")},
+        )
+    if result.get("ripple_pmf"):
+        event_bus.emit(
+            EventType.WORKFLOW_DATA_UPDATED,
+            thread_id=thread_id,
+            payload={"data_type": "ripple_pmf", "data": result.get("ripple_pmf")},
+        )
+
     return NodeResult(result, "content_strategist").to_dict()

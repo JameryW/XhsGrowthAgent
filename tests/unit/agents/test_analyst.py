@@ -55,7 +55,7 @@ class TestAnalystAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            _result = await agent.execute(mock_state, store=mock_store)
+            result = await agent.execute(mock_state, store=mock_store)
 
         assert "analytics" in result
         assert result["phase"] == WorkflowPhase.ANALYZING
@@ -76,7 +76,7 @@ class TestAnalystAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            _result = await agent.execute(mock_state, store=mock_store)
+            await agent.execute(mock_state, store=mock_store)
 
         # Memory recall was called
         mock_store.asearch.assert_called()
@@ -92,7 +92,7 @@ class TestAnalystAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            _result = await agent.execute(mock_state, store=mock_store)
+            await agent.execute(mock_state, store=mock_store)
 
         # Insights stored
         assert mock_store.aput.called
@@ -102,9 +102,7 @@ class TestAnalystAgent:
         """_ripple_report returns report when job_id exists."""
         state_with_ripple = {
             **mock_state,
-            "content_plan": {
-                "ripple_prediction": {"ripple_job_id": "job_123"}
-            },
+            "content_plan": {"ripple_prediction": {"ripple_job_id": "job_123"}},
         }
 
         with patch("backend.tools.ripple.integration.get_report") as mock_get_report:

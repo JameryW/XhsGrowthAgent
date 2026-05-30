@@ -37,6 +37,16 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const visualPlan = computed(() => (workflowState.value as any)?.visual_plan || {})
   const agentTimeline = computed(() => workflowState.value?.agent_timeline || [])
 
+  // Ripple CAS engine results
+  const ripplePrediction = computed(() => workflowState.value?.ripple_prediction || {})
+  const ripplePmf = computed(() => workflowState.value?.ripple_pmf || {})
+  const rippleComparison = computed(() => workflowState.value?.ripple_comparison || {})
+  const hasRippleData = computed(() =>
+    Object.keys(ripplePrediction.value).length > 0 ||
+    Object.keys(ripplePmf.value).length > 0 ||
+    Object.keys(rippleComparison.value).length > 0
+  )
+
   // Structured publish error info (when publish fails)
   const publishError = computed(() => {
     const pr = (workflowState.value as any)?.publish_result
@@ -340,6 +350,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
     visualPlan,
     agentTimeline,
     publishError,
+    ripplePrediction,
+    ripplePmf,
+    rippleComparison,
+    hasRippleData,
     startWorkflow,
     refreshStatus,
     pauseWorkflow,

@@ -28,8 +28,8 @@ def extract_python_enum_values(file_path: Path, enum_name: str) -> set[str]:
     with open(file_path) as f:
         content = f.read()
 
-    # Find the enum class definition
-    pattern = rf"class {enum_name}\(str,\s*Enum\):\s*.*?(?=\nclass|\n__all__|\Z)"
+    # Find the enum class definition — matches both (str, Enum) and (StrEnum)
+    pattern = rf"class {enum_name}\((?:str,\s*Enum|StrEnum)\):\s*.*?(?=\nclass|\n__all__|\Z)"
     match = re.search(pattern, content, re.DOTALL)
     if not match:
         return set()

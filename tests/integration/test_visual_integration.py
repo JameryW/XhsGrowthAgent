@@ -169,7 +169,7 @@ async def test_service_analyze_and_save_to_database(
     )
 
     # Analyze scene
-    _result = await service.analyze_scene("travel_outdoor", limit=50)
+    result = await service.analyze_scene("travel_outdoor", limit=50)
 
     # Verify result structure
     assert result.scene == "travel_outdoor"
@@ -178,7 +178,7 @@ async def test_service_analyze_and_save_to_database(
     assert len(result.layout_distribution) > 0
 
     # Database saved the result
-    _saved = temp_database.get_scene_analysis("travel_outdoor")
+    saved = temp_database.get_scene_analysis("travel_outdoor")
     # May return None if sample_size < min_sample_size (30)
     # That's expected behavior - verify the result was saved
     # Check the saved file directly
@@ -268,7 +268,7 @@ async def test_layout_tool_calls_service(
         "backend.tools.content.layout.VisualAnalysisService",
         return_value=service,
     ):
-        _result = await layout_recommender.ainvoke(
+        result = await layout_recommender.ainvoke(
             {"scene": "travel_outdoor", "content_type": "图文笔记", "image_count": 3}
         )
 
@@ -305,7 +305,7 @@ async def test_style_tool_calls_service(
         "backend.tools.content.style.VisualAnalysisService",
         return_value=service,
     ):
-        _result = await style_library.ainvoke(
+        result = await style_library.ainvoke(
             {"scene": "travel_outdoor", "limit": 3}
         )
 
@@ -381,7 +381,7 @@ async def test_distribution_calculation_accuracy(
         extractor=mock_extractor,
     )
 
-    _result = await service.analyze_scene("travel_outdoor")
+    result = await service.analyze_scene("travel_outdoor")
 
     # Verify style distribution calculations
     # Styles: 温暖治愈(2), 高冷高级(1), 复古文艺(1), 清新自然(1) = 5 total
@@ -411,7 +411,7 @@ async def test_workflow_handles_empty_xhs_response(
         extractor=extractor,
     )
 
-    _result = await service.analyze_scene("empty_scene")
+    result = await service.analyze_scene("empty_scene")
 
     assert result.sample_size == 0
     assert result.style_distribution == {}
@@ -435,7 +435,7 @@ async def test_workflow_handles_xhs_api_error_gracefully(
 
     # Should handle error and return empty result
     try:
-        _result = await service.analyze_scene("error_scene")
+        result = await service.analyze_scene("error_scene")
     except ConnectionError:
         # Propagates error - acceptable behavior
         pass

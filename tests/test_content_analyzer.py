@@ -101,7 +101,7 @@ async def test_content_analyzer_with_draft_and_viral(mock_state_with_draft_and_v
     ))
 
     with patch.object(agent, '_model', mock_model):
-        _result = await agent.execute(mock_state_with_draft_and_viral, mock_store)
+        result = await agent.execute(mock_state_with_draft_and_viral, mock_store)
 
     assert "optimization_analysis" in result
     assert "gaps" in result["optimization_analysis"]
@@ -120,7 +120,7 @@ async def test_content_analyzer_builds_viral_summary(mock_state_with_draft_and_v
     ))
 
     with patch.object(agent, '_model', mock_model):
-        _result = await agent.execute(mock_state_with_draft_and_viral, mock_store)
+        result = await agent.execute(mock_state_with_draft_and_viral, mock_store)
 
     # Verify viral summary was built correctly
     viral_summary = agent._build_viral_summary(mock_state_with_draft_and_viral["viral_posts"])
@@ -140,7 +140,7 @@ async def test_content_analyzer_phase_update(mock_state_with_draft_and_viral, mo
     ))
 
     with patch.object(agent, '_model', mock_model):
-        _result = await agent.execute(mock_state_with_draft_and_viral, mock_store)
+        result = await agent.execute(mock_state_with_draft_and_viral, mock_store)
 
     assert result.get("phase") is not None
 
@@ -174,7 +174,7 @@ async def test_content_analyzer_handles_invalid_json(mock_state_with_draft_and_v
     ))
 
     with patch.object(agent, '_model', mock_model):
-        _result = await agent.execute(mock_state_with_draft_and_viral, mock_store)
+        result = await agent.execute(mock_state_with_draft_and_viral, mock_store)
 
     assert "optimization_analysis" in result
     assert result["optimization_analysis"]["gaps"] == []
@@ -219,7 +219,7 @@ async def test_content_analyzer_limits_viral_posts(mock_state_with_many_viral, m
     ))
 
     with patch.object(agent, '_model', mock_model):
-        _result = await agent.execute(mock_state_with_many_viral, mock_store)
+        result = await agent.execute(mock_state_with_many_viral, mock_store)
 
     viral_summary = agent._build_viral_summary(mock_state_with_many_viral["viral_posts"])
     summary_data = json.loads(viral_summary)

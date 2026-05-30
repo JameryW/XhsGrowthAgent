@@ -112,14 +112,26 @@ async def submit_review(thread_id: str, decision: ReviewDecision, request: Reque
         config,
     )
 
-    return success(
-        data={
-            "thread_id": thread_id,
-            "status": "resumed",
-            "decision": decision.decision.value,
-            "next_phase": result.get("phase", "unknown") if result else "unknown",
-        }
-    )
+    next_phase = result.get("phase", "unknown") if result else "unknown"
+
+    # Detect if publishing was skipped due to missing XHS configuration
+    publish_skipped = False
+    if decision.decision == "approved" and next_phase in ("reviewing", "unknown"):
+        import os
+        if not (os.environ.get("XHS_COOKIE") and os.environ.get("XHS_USER_ID")):
+            publish_skipped = True
+
+    response_data = {
+        "thread_id": thread_id,
+        "status": "resumed",
+        "decision": decision.decision.value,
+        "next_phase": next_phase,
+    }
+    if publish_skipped:
+        response_data["publish_skipped"] = True
+        response_data["skip_reason"] = "XHS credentials not configured. Set XHS_COOKIE and XHS_USER_ID in .env to enable publishing."
+
+    return success(data=response_data)
 
 
 @router.get("/versions/{thread_id}")

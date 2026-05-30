@@ -86,15 +86,25 @@ class ContentStrategistAgent(BaseAgent):
             revised_plan["ripple_revised"] = True
             content_plan = revised_plan
 
-        return {
+        result = {
             "content_plan": content_plan,
             "phase": WorkflowPhase.PLANNING,
         }
+        # Also set top-level Ripple fields for API exposure
+        if ripple_prediction:
+            result["ripple_prediction"] = ripple_prediction
+        if ripple_pmf:
+            result["ripple_pmf"] = ripple_pmf
+        return result
 
     async def _ripple_predict(self, content_plan: dict) -> dict | None:
-        """调用 Ripple 预测内容传播效果"""
+        """调用 Ripple 预测内容传播效果
+
+        Returns:
+            包含 ripple_job_id 和预测数据的 dict，或 None
+        """
         try:
-            from backend.tools.ripple.integration import parse_spread_prediction, predict_spread
+            from backend.tools.ripple.integration import predict_spread
 
             topic = content_plan.get("selected_topic", "")
             if not topic:
@@ -110,10 +120,16 @@ class ContentStrategistAgent(BaseAgent):
                 simulation_horizon="48h",
             )
 
-            parsed = parse_spread_prediction(result)
-            if parsed.get("ripple_prediction"):
-                logger.info(f"Ripple prediction for '{topic}': {parsed['ripple_prediction']}")
-                return parsed["ripple_prediction"]
+            if result.get("ripple_prediction"):
+                logger.info(f"Ripple prediction for '{topic}': {result['ripple_prediction']}")
+                # 返回包含 job_id 和预测数据的完整结果
+                return {
+                    "ripple_job_id": result.get("ripple_job_id", ""),
+                    **result["ripple_prediction"],
+                }
+
+            if result.get("error"):
+                logger.warning(f"Ripple prediction error for '{topic}': {result['error']}")
 
         except Exception as e:
             logger.warning(f"Ripple prediction skipped: {e}")
@@ -123,7 +139,7 @@ class ContentStrategistAgent(BaseAgent):
     async def _ripple_validate_pmf(self, content_plan: dict) -> dict | None:
         """调用 Ripple 验证产品市场契合度"""
         try:
-            from backend.tools.ripple.integration import parse_pmf_result, validate_pmf
+            from backend.tools.ripple.integration import validate_pmf
 
             topic = content_plan.get("selected_topic", "")
             if not topic:
@@ -136,10 +152,12 @@ class ContentStrategistAgent(BaseAgent):
                 differentiators=content_plan.get("key_points", []),
             )
 
-            parsed = parse_pmf_result(result)
-            if parsed.get("ripple_pmf"):
-                logger.info(f"Ripple PMF for '{topic}': {parsed['ripple_pmf']}")
-                return parsed["ripple_pmf"]
+            if result.get("ripple_pmf"):
+                logger.info(f"Ripple PMF for '{topic}': {result['ripple_pmf']}")
+                return result["ripple_pmf"]
+
+            if result.get("error"):
+                logger.warning(f"Ripple PMF error for '{topic}': {result['error']}")
 
         except Exception as e:
             logger.warning(f"Ripple PMF validation skipped: {e}")

@@ -1,6 +1,6 @@
 """Ripple integration tests."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -71,11 +71,16 @@ def test_parse_pmf_result_error():
 @pytest.mark.asyncio
 async def test_predict_spread_handles_failure():
     """传播预测失败时返回错误"""
-    with patch("backend.tools.ripple.integration.ripple_predict_content_spread") as mock_tool:
-        mock_tool.ainvoke = AsyncMock(side_effect=Exception("Connection refused"))
+    mock_service = MagicMock()
+    mock_service.is_healthy.return_value = True
+    mock_service.predict_spread = AsyncMock(side_effect=Exception("Connection refused"))
+    mock_service.health_check = AsyncMock()
+
+    with patch("backend.tools.ripple.integration.RippleService") as mock_cls:
+        mock_cls.get_instance.return_value = mock_service
         result = await predict_spread(topic="测试话题")
         assert "error" in result
-        assert result["job_id"] is None
+        assert result["ripple_prediction"] is None
 
 
 def test_ripple_settings_default():

@@ -55,7 +55,7 @@ class TestCopywriterAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            _result = await agent.execute(mock_state, store=mock_store)
+            result = await agent.execute(mock_state, store=mock_store)
 
         assert "copy_content" in result
         assert result["phase"] == WorkflowPhase.CREATING
@@ -76,7 +76,7 @@ class TestCopywriterAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            _result = await agent.execute(mock_state, store=mock_store)
+            result = await agent.execute(mock_state, store=mock_store)
 
         # Memory was recalled
         assert mock_store.asearch.called
@@ -96,7 +96,7 @@ class TestCopywriterAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            _result = await agent.execute(mock_state, store=mock_store)
+            result = await agent.execute(mock_state, store=mock_store)
 
         # Multiple recall calls
         assert mock_store.asearch.call_count >= 2
@@ -114,7 +114,7 @@ class TestCopywriterAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            _result = await agent.execute(mock_state, store=mock_store)
+            result = await agent.execute(mock_state, store=mock_store)
 
         assert "copy_content" in result
 
@@ -129,7 +129,7 @@ class TestCopywriterAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            _result = await agent.execute(mock_state, store=mock_store)
+            result = await agent.execute(mock_state, store=mock_store)
 
         # Should still return copy_content with raw_content
         assert "copy_content" in result
@@ -154,7 +154,7 @@ class TestCopywriterAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            _result = await agent.execute(mock_state, store=mock_store)
+            result = await agent.execute(mock_state, store=mock_store)
 
         assert result["phase"] == WorkflowPhase.CREATING
 
