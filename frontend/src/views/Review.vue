@@ -6,6 +6,7 @@ import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import CelebrationEffect from '@/components/CelebrationEffect.vue'
+import RipplePanel from '@/components/RipplePanel.vue'
 import { ReviewSkeleton } from '@/components/skeletons'
 import { useWorkflowStore, useReviewStore, useToastStore } from '@/stores'
 import type { ContentStatus, CopyContent, VisualPlan } from '@/types'
@@ -141,6 +142,14 @@ onMounted(() => {
 const copyContent = computed<Partial<CopyContent>>(() => reviewStore.copyContent || {})
 const visualPlan = computed<Partial<VisualPlan>>(() => reviewStore.visualPlan || {})
 
+// Ripple data from workflow store
+const ripplePrediction = computed(() => workflowStore.ripplePrediction)
+const ripplePmf = computed(() => workflowStore.ripplePmf)
+const hasRipple = computed(() =>
+  Object.keys(ripplePrediction.value).length > 0 ||
+  Object.keys(ripplePmf.value).length > 0
+)
+
 // Build structured feedback comment
 function buildFeedback(decision: ContentStatus): string {
   const parts: string[] = []
@@ -240,11 +249,18 @@ const executeDecision = async (decision: ContentStatus) => {
     // Use backend next_phase to show accurate outcome
     const nextPhase = result?.next_phase || decision
     if (decision === 'approved') {
-      const mode = publishDryRun.value ? t('review.dryRunMode') : t('review.liveMode')
-      toastStore.success(
-        t('review.decisionApproved'),
-        `${t('review.decisionLabel')}: ${decision} · ${mode} → ${nextPhase}`
-      )
+      if (result?.publish_skipped) {
+        toastStore.warning(
+          t('review.decisionApproved'),
+          `${t('review.publishSkipped')}: ${result?.skip_reason || t('review.publishSkippedReason')}`
+        )
+      } else {
+        const mode = publishDryRun.value ? t('review.dryRunMode') : t('review.liveMode')
+        toastStore.success(
+          t('review.decisionApproved'),
+          `${t('review.decisionLabel')}: ${decision} · ${mode} → ${nextPhase}`
+        )
+      }
     } else if (decision === 'rejected') {
       toastStore.warning(
         t('review.decisionRejected'),
@@ -359,6 +375,14 @@ const handleCancelConfirm = () => {
         </div>
       </div>
     </div>
+
+    <!-- Ripple 传播预测摘要 -->
+    <RipplePanel
+      v-if="hasRipple"
+      :prediction="ripplePrediction"
+      :pmf="ripplePmf"
+      variant="planning"
+    />
 
     <!-- 内容预览 -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 review-content">

@@ -13,10 +13,9 @@ import asyncio
 import logging
 import os
 import time
-from pathlib import Path
 from typing import Any
 
-from playwright.async_api import Browser, Page, PlaywrightContextManager, async_playwright
+from playwright.async_api import Browser, Page, async_playwright
 
 logger = logging.getLogger("xhs_growth.publisher")
 
@@ -112,7 +111,7 @@ class XHSPublisher:
         title: str,
         body: str,
         image_paths: list[str],
-        hashtags: list[str] = [],
+        hashtags: list[str] | None = None,
         category: str = "",
         location: str = "",
         scheduled_time: str = "",
@@ -133,6 +132,8 @@ class XHSPublisher:
         Returns:
             发布结果: {"post_id": str, "status": str, "url": str}
         """
+        if hashtags is None:
+            hashtags = []
         page = await self._ensure_page()
 
         try:

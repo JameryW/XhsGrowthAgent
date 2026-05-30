@@ -2,14 +2,14 @@
 
 import logging
 from typing import Any
+
 from langgraph.store.base import BaseStore
 from langgraph.types import interrupt
 
 from backend.agents.nodes._base import NodeResult
 from backend.realtime import EventBusService, EventType
+from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
-from backend.state.enums import WorkflowPhase, ContentStatus
-
 
 logger = logging.getLogger("xhs_growth.graph.nodes")
 
@@ -43,9 +43,8 @@ async def review_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
     # interrupt() pauses execution, sends payload to caller
     decision = interrupt(review_payload)
 
-    # decision is human review result: {"decision": "approved/needs_revision/rejected", "comments": "...", "revisions": [...]}
-    # Handle both enum and string values for compatibility
-    decision_value = decision.get("decision")
+    # decision format: {"decision": "approved/needs_revision/rejected",
+    #                    "comments": "...", "revisions": [...]}
     result = {
         "human_feedback": decision,
         "phase": WorkflowPhase.REVIEWING,

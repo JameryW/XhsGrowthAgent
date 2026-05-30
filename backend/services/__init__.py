@@ -5,6 +5,6 @@ They sit between Agents (business logic) and Tools (atomic operations).
 """
 
 from backend.services.optimization_service import OptimizationService
-from backend.services.ripple_service import RippleService, RippleHealthStatus
+from backend.services.ripple_service import RippleHealthStatus, RippleService
 
 __all__ = ["OptimizationService", "RippleService", "RippleHealthStatus"]

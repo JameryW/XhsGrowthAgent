@@ -1,0 +1,44 @@
+- generic [ref=e3]:
+  - link "跳转到主内容" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - region "通知":
+    - alert [ref=e32]:
+      - generic [ref=e33]:
+        - img "error" [ref=e35]
+        - heading "Login failed" [level=4] [ref=e40]
+        - button "Close notification" [ref=e41] [cursor=pointer]:
+          - img [ref=e42]
+    - alert [ref=e47]:
+      - generic [ref=e48]:
+        - img "error" [ref=e50]
+        - generic [ref=e54]:
+          - heading "登录失败，请重试" [level=4] [ref=e55]
+          - paragraph [ref=e56]: Login failed
+        - button "Close notification" [ref=e57] [cursor=pointer]:
+          - img [ref=e58]
+  - main [ref=e5]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - img "Login" [ref=e11]
+        - heading "登录" [level=1] [ref=e14]
+        - paragraph [ref=e15]: 小红书增长引擎
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic [ref=e18]: 用户名
+          - textbox "用户名" [ref=e19]:
+            - /placeholder: 请输入用户名
+            - text: admin
+        - generic [ref=e20]:
+          - generic [ref=e21]: 密码
+          - textbox "密码" [ref=e22]:
+            - /placeholder: 请输入密码
+        - generic [ref=e63]:
+          - img [ref=e65]
+          - generic [ref=e67]: Login failed
+          - button "关闭错误提示" [ref=e68] [cursor=pointer]:
+            - img [ref=e69]
+        - button "登录" [ref=e23] [cursor=pointer]:
+          - generic [ref=e72]:
+            - img [ref=e73]
+            - generic [ref=e76]: 登录
+      - paragraph [ref=e31]: 小红书增长引擎 v0.1.0

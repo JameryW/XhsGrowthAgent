@@ -48,7 +48,8 @@ class LayoutOption:
         cons: List of disadvantages for this layout
         reference_posts: List of post IDs using this layout successfully
         suitable_for: List of content types this layout is suitable for
-        image_sequence_strategy: Strategy for ordering images (e.g., "chronological", "impact_first")
+        image_sequence_strategy: Strategy for ordering images
+            (e.g., "chronological", "impact_first")
         text_position: Recommended text placement (e.g., "overlay", "below", "sidebar")
         avg_engagement: Average engagement rate for posts using this layout
     """

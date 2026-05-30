@@ -11,7 +11,7 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
-from backend.state.schema import XHSGrowthState, WorkflowPhase
+from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.content_analyzer")
 
@@ -42,7 +42,6 @@ class ContentAnalyzerAgent(BaseAgent):
                 "phase": WorkflowPhase.CREATING,
             }
 
-        account_id = state.get("account_id", "default")
         system_prompt = self._build_system_prompt(state)
 
         # 构建爆款摘要 JSON
@@ -73,7 +72,12 @@ class ContentAnalyzerAgent(BaseAgent):
                 "viral_patterns": [],
             }
 
-        logger.info(f"Generated optimization analysis with {len(optimization_analysis.get('gaps', []))} gaps and {len(optimization_analysis.get('suggestions', []))} suggestions")
+        gaps_count = len(optimization_analysis.get("gaps", []))
+        suggestions_count = len(optimization_analysis.get("suggestions", []))
+        logger.info(
+            f"Generated optimization analysis with "
+            f"{gaps_count} gaps and {suggestions_count} suggestions"
+        )
 
         return {
             "optimization_analysis": optimization_analysis,

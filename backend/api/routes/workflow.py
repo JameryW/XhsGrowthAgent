@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
-import asyncio
 
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from backend.api.responses import success, ApiResponse
 from backend.api.errors import ValidationError, WorkflowNotFoundError
+from backend.api.responses import success
 from backend.state.enums import WorkflowPhase
 
 router = APIRouter()
@@ -99,7 +98,7 @@ class WorkflowStartRequest(BaseModel):
     async_mode: bool = Field(default=True, description="异步执行模式")
     dry_run: bool = Field(default=False, description="试运行模式（不实际发布）")
     auto_publish: bool = Field(default=False, description="审核通过后自动发布")
-    topic: Optional[str] = Field(default=None, description="内容主题/关键词")
+    topic: str | None = Field(default=None, description="内容主题/关键词")
     niche: str = Field(default="母婴", description="垂类赛道")
 
 
@@ -110,7 +109,7 @@ class AgentTimelineEntry(BaseModel):
     completed_at: str = ""
     duration_seconds: float = 0.0
     status: str = "success"
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class WorkflowStatusResponse(BaseModel):
@@ -119,17 +118,23 @@ class WorkflowStatusResponse(BaseModel):
     phase: str
     current_agent: str
     next_steps: list[str]
-    error: Optional[str] = None
+    error: str | None = None
     progress_percent: int = Field(default=0, description="进度百分比")
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    agent_timeline: list[AgentTimelineEntry] = Field(default_factory=list, description="Agent 执行时间线")
+    created_at: str | None = None
+    updated_at: str | None = None
+    agent_timeline: list[AgentTimelineEntry] = Field(
+        default_factory=list, description="Agent 执行时间线"
+    )
     trend_data: dict = Field(default_factory=dict, description="趋势发现数据")
     content_plan: dict = Field(default_factory=dict, description="内容策略")
     copy_content: dict = Field(default_factory=dict, description="文案内容")
     visual_plan: dict = Field(default_factory=dict, description="视觉方案")
     publish_result: dict = Field(default_factory=dict, description="发布结果")
     analytics: dict = Field(default_factory=dict, description="分析数据")
+    # Ripple CAS engine results
+    ripple_prediction: dict = Field(default_factory=dict, description="Ripple 传播预测")
+    ripple_pmf: dict = Field(default_factory=dict, description="Ripple PMF 验证")
+    ripple_comparison: dict = Field(default_factory=dict, description="Ripple 预测 vs 实际对比")
 
 
 PHASE_PROGRESS = {
@@ -149,6 +154,11 @@ PHASE_PROGRESS = {
 def get_progress(phase: str) -> int:
     """Calculate progress percentage from phase."""
     return PHASE_PROGRESS.get(phase, 0)
+
+
+def _extract_ripple(values: dict, key: str) -> dict:
+    """Extract Ripple data from top-level or nested content_plan."""
+    return values.get(key) or values.get("content_plan", {}).get(key) or {}
 
 
 @router.post("/start")
@@ -191,12 +201,12 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
         "niche": req.niche,
         "dry_run": req.dry_run,
         "auto_publish": req.auto_publish,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
 
     config = {"configurable": {"thread_id": thread_id}}
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # Register workflow in memory registry
     _workflow_registry[thread_id] = {
@@ -235,7 +245,7 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
             "phase": req.phase.value,
             "progress_percent": get_progress(req.phase.value),
             "sse_url": f"/api/workflow/stream/{thread_id}",
-            "websocket_url": f"/api/realtime/ws",
+            "websocket_url": "/api/realtime/ws",
         })
     else:
         # 同步执行（等待完成）
@@ -290,7 +300,7 @@ async def get_workflow_status(thread_id: str, request: Request):
         if thread_id in _workflow_registry:
             _workflow_registry[thread_id]["phase"] = phase
             _workflow_registry[thread_id]["progress_percent"] = progress
-            _workflow_registry[thread_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+            _workflow_registry[thread_id]["updated_at"] = datetime.now(UTC).isoformat()
             if state.values.get("error"):
                 _workflow_registry[thread_id]["error"] = state.values.get("error")
                 _workflow_registry[thread_id]["status"] = "error"
@@ -330,6 +340,9 @@ async def get_workflow_status(thread_id: str, request: Request):
             visual_plan=state.values.get("visual_plan") or {},
             publish_result=state.values.get("publish_result") or {},
             analytics=state.values.get("analytics") or {},
+            ripple_prediction=_extract_ripple(state.values, "ripple_prediction"),
+            ripple_pmf=_extract_ripple(state.values, "ripple_pmf"),
+            ripple_comparison=state.values.get("ripple_comparison") or {},
         ).model_dump())
 
     # Fallback: check persisted history (container restart case)
@@ -364,6 +377,9 @@ async def get_workflow_status(thread_id: str, request: Request):
             visual_plan=saved.get("visual_plan") or {},
             publish_result=saved.get("publish_result") or {},
             analytics=saved.get("analytics") or {},
+            ripple_prediction=_extract_ripple(saved, "ripple_prediction"),
+            ripple_pmf=_extract_ripple(saved, "ripple_pmf"),
+            ripple_comparison=saved.get("ripple_comparison") or {},
         ).model_dump())
 
     # Also check registry for metadata-only entries
@@ -405,7 +421,7 @@ async def pause_workflow(thread_id: str, request: Request):
     # Update registry with paused flag
     if thread_id in _workflow_registry:
         _workflow_registry[thread_id]["status"] = "paused"
-        _workflow_registry[thread_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _workflow_registry[thread_id]["updated_at"] = datetime.now(UTC).isoformat()
         _save_registry()
 
     # Update graph state to signal pause
@@ -440,7 +456,7 @@ async def resume_workflow(thread_id: str, request: Request):
     # Update registry to running
     if thread_id in _workflow_registry:
         _workflow_registry[thread_id]["status"] = "running"
-        _workflow_registry[thread_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _workflow_registry[thread_id]["updated_at"] = datetime.now(UTC).isoformat()
         _save_registry()
 
     if state.next:
@@ -505,7 +521,7 @@ async def cancel_workflow(thread_id: str, request: Request):
         _workflow_registry[thread_id]["status"] = "cancelled"
         _workflow_registry[thread_id]["phase"] = "cancelled"
         _workflow_registry[thread_id]["error"] = "User cancelled"
-        _workflow_registry[thread_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _workflow_registry[thread_id]["updated_at"] = datetime.now(UTC).isoformat()
         _save_registry()
 
     return success(data={
@@ -541,13 +557,20 @@ async def stream_workflow_progress(thread_id: str, request: Request):
                 event_name = event.get("name", "unknown")
 
                 if event_type == "on_chain_start":
-                    yield f"event: progress\ndata: {{\"agent\": \"{event_name}\", \"status\": \"starting\"}}\n\n"
+                    yield (
+                        f"event: progress\ndata: "
+                        f'{{"agent": "{event_name}", "status": "starting"}}\n\n'
+                    )
                 elif event_type == "on_chain_end":
                     # Get current state
                     state = await graph.aget_state(config)
                     phase = state.values.get("phase", "unknown")
                     progress = get_progress(phase)
-                    yield f"event: progress\ndata: {{\"agent\": \"{event_name}\", \"phase\": \"{phase}\", \"percent\": {progress}, \"status\": \"completed\"}}\n\n"
+                    yield (
+                        f"event: progress\ndata: "
+                        f'{{"agent": "{event_name}", "phase": "{phase}", '
+                        f'"percent": {progress}, "status": "completed"}}\n\n'
+                    )
 
             # Final state
             final_state = await graph.aget_state(config)
@@ -571,8 +594,8 @@ async def stream_workflow_progress(thread_id: str, request: Request):
 @router.get("/list")
 async def list_workflows(
     request: Request,
-    account_id: Optional[str] = Query(None, description="筛选账号 ID"),
-    status: Optional[str] = Query(None, description="筛选状态: running/completed/error/cancelled"),
+    account_id: str | None = Query(None, description="筛选账号 ID"),
+    status: str | None = Query(None, description="筛选状态: running/completed/error/cancelled"),
     limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
     offset: int = Query(0, ge=0, description="分页偏移"),
 ):

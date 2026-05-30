@@ -5,10 +5,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from backend.api.responses import success
-from backend.api.auth import generate_token, validate_token, revoke_token, verify_credentials
-from backend.api.errors import LoginFailedError, TokenInvalidError
+from backend.api.auth import generate_token, verify_credentials
 from backend.api.deps import get_current_user, get_optional_user
+from backend.api.errors import LoginFailedError
+from backend.api.responses import success
 
 router = APIRouter()
 

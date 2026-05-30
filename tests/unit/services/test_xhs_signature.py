@@ -1,8 +1,7 @@
 """Unit tests for XHS Signature."""
 
-import pytest
 
-from backend.services.xhs_signature import XHSSignature, XHSCookieParser
+from backend.services.xhs_signature import XHSCookieParser, XHSSignature
 
 
 class TestXHSSignature:

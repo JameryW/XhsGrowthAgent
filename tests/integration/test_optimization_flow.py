@@ -1,18 +1,18 @@
 """Integration tests for pre-publish optimization workflow."""
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
-import asyncio
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from backend.graph import build_graph, compile_graph_dev
+from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
-from backend.state.enums import WorkflowPhase, ContentStatus
 from backend.state.substates import (
-    DraftContent,
-    ViralPost,
-    OptimizationAnalysis,
     ContentVersion,
+    DraftContent,
+    OptimizationAnalysis,
+    ViralPost,
 )
 
 
@@ -344,9 +344,9 @@ class TestFullOptimizationWorkflow:
     async def test_workflow_pipeline_order(self, optimization_state, mock_store):
         """Optimization pipeline executes in correct order: viral_matcher → analyzer → generator → choice_gate."""
         from backend.agents.nodes import (
-            viral_matcher_node,
             content_analyzer_node,
             version_generator_node,
+            viral_matcher_node,
         )
 
         # Execute pipeline nodes in sequence
@@ -373,7 +373,7 @@ async def test_state_updates_preserve_original_content(optimization_state, mock_
     """Optimization updates preserve original copy_content."""
     from backend.agents.nodes import viral_matcher_node
 
-    original_copy = optimization_state.get("copy_content")
+    _original_copy = optimization_state.get("copy_content")
 
     result = await viral_matcher_node(optimization_state, store=mock_store)
 

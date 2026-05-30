@@ -6,7 +6,7 @@ Components:
 - prompts: Agent 提示词 YAML
 """
 
-from backend.config.models import TaskType, ModelProvider, ModelConfig
+from backend.config.models import ModelConfig, ModelProvider, TaskType
 from backend.config.settings import Settings
 
 __all__ = ["TaskType", "ModelProvider", "ModelConfig", "Settings"]

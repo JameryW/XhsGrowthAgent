@@ -1,6 +1,7 @@
 import pytest
+
 from backend.realtime.event_bus import EventBusService
-from backend.realtime.events import EventType, Event
+from backend.realtime.events import Event, EventType
 
 
 @pytest.fixture(autouse=True)

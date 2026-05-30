@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
 import yaml
 from langchain_core.tools import tool
@@ -46,7 +45,11 @@ def _algorithmic_fallback(data: dict) -> list[dict]:
     # Prompt templates
     prompts = [
         {
-            "prompt": f"A {style} style {scene} scene featuring {topic}, soft lighting, {colors[0]} and {colors[1]} accents, Xiaohongshu aesthetic, high quality",
+            "prompt": (
+                f"A {style} style {scene} scene featuring {topic}, "
+                f"soft lighting, {colors[0]} and {colors[1]} accents, "
+                f"Xiaohongshu aesthetic, high quality"
+            ),
             "prompt_type": "cover",
             "aspect_ratio": "3:4",
             "key_elements": [topic, style, scene],
@@ -54,7 +57,11 @@ def _algorithmic_fallback(data: dict) -> list[dict]:
             "negative_prompt": "blur, low quality, distorted text",
         },
         {
-            "prompt": f"{topic} close-up shot, {style} design, clean background, product photography style, {colors[0]} highlights",
+            "prompt": (
+                f"{topic} close-up shot, {style} design, "
+                f"clean background, product photography style, "
+                f"{colors[0]} highlights"
+            ),
             "prompt_type": "carousel",
             "aspect_ratio": "1:1",
             "key_elements": [topic, "close-up", style],
@@ -62,7 +69,10 @@ def _algorithmic_fallback(data: dict) -> list[dict]:
             "negative_prompt": "messy background, harsh shadows",
         },
         {
-            "prompt": f"{scene} environment with {topic}, lifestyle photography, {style} atmosphere, natural light, warm tones",
+            "prompt": (
+                f"{scene} environment with {topic}, lifestyle photography, "
+                f"{style} atmosphere, natural light, warm tones"
+            ),
             "prompt_type": "story",
             "aspect_ratio": "16:9",
             "key_elements": [scene, topic, "lifestyle"],

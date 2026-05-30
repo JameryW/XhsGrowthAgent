@@ -1,8 +1,10 @@
-import pytest
 from backend.api.errors import (
-    ErrorCode, APIError,
-    WorkflowNotFoundError, ValidationError, ReviewNotPendingError
+    ErrorCode,
+    ReviewNotPendingError,
+    ValidationError,
+    WorkflowNotFoundError,
 )
+
 
 def test_error_code_enum():
     assert ErrorCode.WORKFLOW_NOT_FOUND.value == "ERROR_WORKFLOW_NOT_FOUND"

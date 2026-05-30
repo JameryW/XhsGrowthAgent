@@ -7,8 +7,6 @@ Tests cover:
 - Data completeness validation (sample_size >= 30)
 """
 
-import json
-import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -159,10 +157,10 @@ class TestGetDefaultLayouts:
 
         assert layouts is not None
         assert len(layouts) >= 2
-        assert all(isinstance(l, LayoutOption) for l in layouts)
+        assert all(isinstance(lo, LayoutOption) for lo in layouts)
         # Updated to match new Chinese layout names
-        assert any(l.layout_type == "上下结构" for l in layouts)
-        assert any(l.layout_type == "网格布局" for l in layouts)
+        assert any(lo.layout_type == "上下结构" for lo in layouts)
+        assert any(lo.layout_type == "网格布局" for lo in layouts)
 
     def test_get_default_layouts_scene_not_found(
         self, scene_db: SceneDatabase

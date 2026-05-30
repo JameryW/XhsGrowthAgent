@@ -7,17 +7,16 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from backend.services.xhs_api import XHSApiEndpoints, XHSApiHeaders, XHSApiParams
-from backend.services.xhs_signature import XHSSignature, XHSCookieParser
+from backend.services.xhs_signature import XHSCookieParser, XHSSignature
 
 logger = logging.getLogger("xhs_growth.xhs_client")
 
@@ -164,16 +163,16 @@ class _HTTPClient:
             data = response.json()
 
             # 检查业务状态
-            if data.get("success") != True:
+            if not data.get("success"):
                 error_msg = data.get("msg", "Unknown error")
                 raise XHSApiError(f"API error: {error_msg}")
 
             return data.get("data", {})
 
-        except httpx.TimeoutException:
-            raise TimeoutError("API 请求超时")
+        except httpx.TimeoutException as e:
+            raise TimeoutError("API 请求超时") from e
         except httpx.RequestError as e:
-            raise ConnectionError(f"网络错误: {e}")
+            raise ConnectionError(f"网络错误: {e}") from e
 
     @retry(
         stop=stop_after_attempt(3),

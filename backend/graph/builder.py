@@ -2,38 +2,35 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.store.memory import InMemoryStore
 
-from backend.state.schema import XHSGrowthState, WorkflowPhase
 from backend.agents.nodes import (
-    orchestrator_node,
-    trend_scout_node,
+    analyst_node,
+    choice_gate_node,
+    content_analyzer_node,
     content_strategist_node,
     copywriter_node,
-    visual_designer_node,
-    review_gate_node,
-    publisher_node,
-    analyst_node,
     engagement_node,
+    orchestrator_node,
+    publisher_node,
+    review_gate_node,
     revise_content_node,
-    viral_matcher_node,
-    content_analyzer_node,
+    trend_scout_node,
     version_generator_node,
-    choice_gate_node,
+    viral_matcher_node,
+    visual_designer_node,
 )
 from backend.graph.routers import (
-    should_plan,
-    should_continue,
-    review_outcome,
     orchestrator_router,
+    review_outcome,
+    should_continue,
     should_optimize,
-    choice_outcome,
+    should_plan,
 )
+from backend.state.schema import XHSGrowthState
 
 
 def build_graph() -> StateGraph:

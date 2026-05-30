@@ -1,11 +1,11 @@
 """Model routing tests."""
 
 from backend.config.models import (
-    TaskType,
-    ModelProvider,
-    resolve_model_id,
-    get_model_config,
     MODEL_REGISTRY,
+    ModelProvider,
+    TaskType,
+    get_model_config,
+    resolve_model_id,
 )
 
 

@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
+
 from dotenv import load_dotenv
-
-# 加载 .env 文件（必须在其他导入之前）
-load_dotenv()
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import FileResponse, Response
 
 from backend.api.middleware import error_handler_middleware
 from backend.api.responses import success
 from backend.graph.builder import compile_graph_dev
+
+# 加载 .env 文件（必须在其他导入之前）
+load_dotenv()
 
 
 @asynccontextmanager
@@ -39,7 +41,7 @@ app.add_middleware(
 
 app.middleware("http")(error_handler_middleware)
 
-from backend.api.routes import workflow, review, analytics, realtime, auth  # noqa: E402
+from backend.api.routes import analytics, auth, realtime, review, workflow  # noqa: E402
 from backend.api.routes.system import router as system_router  # noqa: E402
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
@@ -56,10 +58,6 @@ async def health():
 
 
 # 托管前端静态文件（生产环境）
-from pathlib import Path
-from starlette.responses import FileResponse, Response
-from starlette.staticfiles import StaticFiles as StarletteStaticFiles
-
 frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
 
 if frontend_dist.exists():

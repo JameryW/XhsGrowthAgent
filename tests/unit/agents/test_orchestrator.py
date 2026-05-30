@@ -1,10 +1,11 @@
 """Unit tests for OrchestratorAgent."""
 
 from unittest.mock import AsyncMock
+
 import pytest
 
 from backend.agents.orchestrator import OrchestratorAgent
-from backend.state.schema import XHSGrowthState, WorkflowPhase
+from backend.state.schema import WorkflowPhase
 
 
 class TestOrchestratorAgent:

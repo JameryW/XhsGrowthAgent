@@ -1,12 +1,12 @@
 """Tests for enhanced layout_recommender tool."""
 
-import pytest
-from unittest.mock import MagicMock, patch
 from datetime import datetime
+from unittest.mock import MagicMock, patch
 
-from backend.tools.content.layout import layout_recommender, get_default_layouts
+import pytest
+
 from backend.models.visual_types import LayoutOption, SceneAnalysisResult
-
+from backend.tools.content.layout import get_default_layouts, layout_recommender
 
 # ── get_default_layouts Tests ────────────────────────────────────────────────
 
@@ -17,13 +17,13 @@ def test_get_default_layouts_returns_list() -> None:
 
     assert isinstance(result, list)
     assert len(result) > 0
-    assert all(isinstance(l, LayoutOption) for l in result)
+    assert all(isinstance(lo, LayoutOption) for lo in result)
 
 
 def test_get_default_layouts_has_expected_layouts() -> None:
     """Test default layouts contain expected layout types."""
     result = get_default_layouts()
-    layout_types = [l.layout_type for l in result]
+    layout_types = [lo.layout_type for lo in result]
 
     assert "全图+文末" in layout_types
     assert "上下结构" in layout_types

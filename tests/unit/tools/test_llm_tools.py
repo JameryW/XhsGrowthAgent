@@ -4,15 +4,15 @@ Tests the three-tier fallback pattern and output structure validation.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from backend.tools.content import (
     hashtag_researcher,
-    title_generator,
     image_prompt_generator,
+    title_generator,
 )
 from backend.tools.scheduling import timing_optimizer
-
 
 # ── hashtag_researcher tests ──
 

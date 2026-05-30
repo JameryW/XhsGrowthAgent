@@ -10,10 +10,11 @@ playwright_mock = MagicMock()
 sys.modules["playwright"] = playwright_mock
 sys.modules["playwright.async_api"] = MagicMock()
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from backend.state.schema import XHSGrowthState, WorkflowPhase
+import pytest
+
+from backend.state.schema import WorkflowPhase
 
 
 @pytest.fixture

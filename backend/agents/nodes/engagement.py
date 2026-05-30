@@ -1,12 +1,12 @@
 """Engagement node implementation."""
 
 from typing import Any
+
 from langgraph.store.base import BaseStore
 
-from backend.agents.nodes._base import NodeResult
 from backend.agents.engagement import EngagementAgent
+from backend.agents.nodes._base import NodeResult
 from backend.state.schema import XHSGrowthState
-
 
 _engagement = EngagementAgent()
 

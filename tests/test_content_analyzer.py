@@ -1,10 +1,11 @@
 """Tests for ContentAnalyzerAgent."""
 
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+
 from backend.agents.content_analyzer import ContentAnalyzerAgent
-from backend.state.schema import XHSGrowthState
 
 
 @pytest.fixture
@@ -78,7 +79,7 @@ async def test_content_analyzer_no_draft(mock_state_no_draft, mock_store):
     """Should skip analysis when no draft provided."""
     agent = ContentAnalyzerAgent()
     result = await agent.execute(mock_state_no_draft, mock_store)
-    assert result.get("skip_analysis") == True
+    assert result.get("skip_analysis")
 
 
 @pytest.mark.asyncio
@@ -86,7 +87,7 @@ async def test_content_analyzer_no_viral(mock_state_no_viral, mock_store):
     """Should skip analysis when no viral posts provided."""
     agent = ContentAnalyzerAgent()
     result = await agent.execute(mock_state_no_viral, mock_store)
-    assert result.get("skip_analysis") == True
+    assert result.get("skip_analysis")
 
 
 @pytest.mark.asyncio
@@ -159,7 +160,7 @@ async def test_content_analyzer_empty_viral_posts(mock_store):
     }
 
     result = await agent.execute(state_with_empty_viral, mock_store)
-    assert result.get("skip_analysis") == True
+    assert result.get("skip_analysis")
 
 
 @pytest.mark.asyncio

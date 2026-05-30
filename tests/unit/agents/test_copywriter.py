@@ -1,10 +1,11 @@
 """Unit tests for CopywriterAgent."""
 
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+
 import pytest
 
 from backend.agents.copywriter import CopywriterAgent
-from backend.state.schema import XHSGrowthState, WorkflowPhase
+from backend.state.schema import WorkflowPhase
 
 
 class TestCopywriterAgent:

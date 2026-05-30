@@ -1,10 +1,11 @@
 """Unit tests for ContentStrategistAgent."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from backend.agents.content_strategist import ContentStrategistAgent
-from backend.state.schema import XHSGrowthState, WorkflowPhase
+from backend.state.schema import WorkflowPhase
 
 
 class TestContentStrategistAgent:
@@ -51,7 +52,18 @@ class TestContentStrategistAgent:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
         agent._model = mock_model
 
-        result = await agent.execute(mock_state, store=mock_store)
+        with (
+            patch(
+                "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
+            ) as mock_pred,
+            patch(
+                "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
+            ) as mock_pmf,
+        ):
+            mock_pred.return_value = {"ripple_prediction": None}
+            mock_pmf.return_value = {"ripple_pmf": None}
+
+            result = await agent.execute(mock_state, store=mock_store)
 
         assert "content_plan" in result
         assert result["phase"] == WorkflowPhase.PLANNING
@@ -71,7 +83,18 @@ class TestContentStrategistAgent:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
         agent._model = mock_model
 
-        result = await agent.execute(mock_state, store=mock_store)
+        with (
+            patch(
+                "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
+            ) as mock_pred,
+            patch(
+                "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
+            ) as mock_pmf,
+        ):
+            mock_pred.return_value = {"ripple_prediction": None}
+            mock_pmf.return_value = {"ripple_pmf": None}
+
+            await agent.execute(mock_state, store=mock_store)
 
         mock_store.asearch.assert_called()
 
@@ -85,16 +108,24 @@ class TestContentStrategistAgent:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
         agent._model = mock_model
 
-        with patch("backend.tools.ripple.integration.predict_spread") as mock_predict, \
-             patch("backend.tools.ripple.integration.parse_spread_prediction") as mock_parse:
-            mock_predict.return_value = {"job_id": "test-job", "output": {"metrics": {"estimated_reach": 5000}}}
-            mock_parse.return_value = {
+        with (
+            patch(
+                "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
+            ) as mock_predict,
+            patch(
+                "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
+            ) as mock_pmf,
+        ):
+            mock_predict.return_value = {
+                "ripple_job_id": "test-job",
                 "ripple_prediction": {"estimated_reach": 5000, "viral_probability": 0.3},
             }
+            mock_pmf.return_value = {"ripple_pmf": None}
 
             result = await agent.execute(mock_state, store=mock_store)
 
         assert result["content_plan"]["ripple_prediction"]["estimated_reach"] == 5000
+        assert result["content_plan"]["ripple_prediction"]["ripple_job_id"] == "test-job"
 
     @pytest.mark.asyncio
     async def test_ripple_predict_skipped_on_error(self, agent, mock_state, mock_store):
@@ -106,8 +137,16 @@ class TestContentStrategistAgent:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
         agent._model = mock_model
 
-        with patch("backend.tools.ripple.integration.predict_spread") as mock_predict:
+        with (
+            patch(
+                "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
+            ) as mock_predict,
+            patch(
+                "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
+            ) as mock_pmf,
+        ):
             mock_predict.side_effect = Exception("Ripple unavailable")
+            mock_pmf.side_effect = Exception("Ripple unavailable")
 
             result = await agent.execute(mock_state, store=mock_store)
 
@@ -125,7 +164,18 @@ class TestContentStrategistAgent:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
         agent._model = mock_model
 
-        result = await agent.execute(mock_state, store=mock_store)
+        with (
+            patch(
+                "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
+            ) as mock_pred,
+            patch(
+                "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
+            ) as mock_pmf,
+        ):
+            mock_pred.return_value = {"ripple_prediction": None}
+            mock_pmf.return_value = {"ripple_pmf": None}
+
+            result = await agent.execute(mock_state, store=mock_store)
 
         assert result["content_plan"]["selected_topic"] == ""
 

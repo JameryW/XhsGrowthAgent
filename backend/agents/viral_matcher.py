@@ -10,7 +10,7 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
-from backend.state.schema import XHSGrowthState, WorkflowPhase
+from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.viral_matcher")
 
@@ -33,7 +33,6 @@ class ViralMatcherAgent(BaseAgent):
                 "phase": WorkflowPhase.CREATING,
             }
 
-        account_id = state.get("account_id", "default")
         user_links = state.get("user_viral_links", [])
 
         # 获取自动搜索关键词（来自趋势或策略）

@@ -1,5 +1,5 @@
-import pytest
-from backend.state.enums import WorkflowPhase, ContentStatus, ContentType, Urgency
+from backend.state.enums import ContentStatus, WorkflowPhase
+
 
 def test_workflow_phase_values():
     assert WorkflowPhase.IDLE.value == "idle"

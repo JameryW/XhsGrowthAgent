@@ -1,13 +1,13 @@
 """Viral matcher node implementation - searches and matches viral posts."""
 
 from typing import Any
+
 from langgraph.store.base import BaseStore
 
 from backend.agents.nodes._base import NodeResult
 from backend.agents.viral_matcher import ViralMatcherAgent
 from backend.realtime import EventBusService, EventType
 from backend.state.schema import XHSGrowthState
-
 
 _viral_matcher = ViralMatcherAgent()
 

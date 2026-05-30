@@ -1,8 +1,9 @@
-import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from backend.realtime.events import Event, EventType
 from backend.realtime.websocket import WebSocketManager, WsSession
-from backend.realtime.events import EventType, Event
 
 
 @pytest.fixture(autouse=True)
@@ -88,7 +89,7 @@ async def test_handle_connection_lifecycle():
 
     # Set up websocket to return messages then raise timeout
     mock_ws.receive_json = AsyncMock()
-    mock_ws.receive_json.side_effect = messages + [asyncio.TimeoutError()]
+    mock_ws.receive_json.side_effect = messages + [TimeoutError()]
     mock_ws.accept = AsyncMock()
     mock_ws.close = AsyncMock()
     mock_ws.send_json = AsyncMock()
@@ -115,8 +116,9 @@ async def test_handle_connection_lifecycle():
 @pytest.mark.asyncio
 async def test_handle_connection_disconnect():
     """handle_connection处理WebSocketDisconnect异常"""
-    from backend.realtime.event_bus import EventBusService
     from fastapi import WebSocketDisconnect
+
+    from backend.realtime.event_bus import EventBusService
 
     # Reset EventBusService singleton
     EventBusService._instance = None

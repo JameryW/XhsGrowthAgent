@@ -1,13 +1,13 @@
 """Visual designer node implementation."""
 
 from typing import Any
+
 from langgraph.store.base import BaseStore
 
 from backend.agents.nodes._base import NodeResult
 from backend.agents.visual_designer import VisualDesignerAgent
 from backend.realtime import EventBusService, EventType
 from backend.state.schema import XHSGrowthState
-
 
 _visual_designer = VisualDesignerAgent()
 

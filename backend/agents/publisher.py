@@ -5,13 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.config.settings import Settings
-from backend.state.schema import XHSGrowthState, WorkflowPhase
+from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.publisher")
 
@@ -23,7 +22,6 @@ class PublisherAgent(BaseAgent):
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         copy = state.get("copy_content", {})
-        visual = state.get("visual_plan", {})
         plan = state.get("content_plan", {})
 
         # 获取配置
@@ -60,12 +58,19 @@ class PublisherAgent(BaseAgent):
             )
 
             try:
+                # 从 visual_plan 提取图片路径
+                visual = state.get("visual_plan", {})
+                image_paths = visual.get("image_paths", [])
+                if not image_paths:
+                    # 尝试从 generated_images 提取
+                    image_paths = visual.get("generated_images", [])
+
                 # 构造发布数据
                 post = XHSPost(
                     title=copy.get("selected_title", ""),
                     body=copy.get("body_text", ""),
                     hashtags=copy.get("hashtags", []),
-                    image_paths=[],  # 图片路径需要从 visual_plan 获取
+                    image_paths=image_paths,
                     category=plan.get("category", ""),
                     location=plan.get("location", ""),
                     is_private=False,
@@ -104,20 +109,23 @@ class PublisherAgent(BaseAgent):
         # 记录到长期记忆
         account_id = state.get("account_id", "default")
         if publish_result.get("post_id"):
-            from backend.memory.content_history import ContentHistory
+            try:
+                from backend.memory.content_history import ContentHistory
 
-            history = ContentHistory(account_id)
-            await history.record(
-                store,
-                post_id=publish_result["post_id"],
-                data={
-                    "title": copy.get("selected_title", ""),
-                    "topic": plan.get("selected_topic", ""),
-                    "hashtags": copy.get("hashtags", []),
-                    "published_at": publish_result.get("published_at", ""),
-                    "status": publish_result.get("status", ""),
-                },
-            )
+                history = ContentHistory(account_id)
+                await history.record(
+                    store,
+                    post_id=publish_result["post_id"],
+                    data={
+                        "title": copy.get("selected_title", ""),
+                        "topic": plan.get("selected_topic", ""),
+                        "hashtags": copy.get("hashtags", []),
+                        "published_at": publish_result.get("published_at", ""),
+                        "status": publish_result.get("status", ""),
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"记录发布历史失败: {e}")
 
         return {
             "publish_result": publish_result,

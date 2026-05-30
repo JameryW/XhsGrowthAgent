@@ -1,7 +1,6 @@
 """Optimization service - orchestrates pre-publish optimization tools."""
 
 from typing import Any
-from backend.state.schema import XHSGrowthState
 
 
 class OptimizationService:

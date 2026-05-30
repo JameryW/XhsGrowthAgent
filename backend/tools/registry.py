@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from langchain_core.tools import BaseTool
 
 
@@ -66,12 +64,12 @@ class ToolRegistry:
     def register_ripple_tools(cls) -> None:
         """注册所有 Ripple MCP 工具"""
         from backend.tools.ripple.client import (
+            ripple_generate_report,
+            ripple_get_simulation_log,
+            ripple_get_simulation_result,
+            ripple_get_simulation_status,
             ripple_predict_content_spread,
             ripple_validate_pmf,
-            ripple_get_simulation_status,
-            ripple_get_simulation_result,
-            ripple_get_simulation_log,
-            ripple_generate_report,
         )
 
         cls.register_many([
@@ -97,10 +95,10 @@ class ToolRegistry:
         """注册所有内容生成工具"""
         from backend.tools.content import (
             hashtag_researcher,
-            title_generator,
             image_prompt_generator,
             layout_recommender,
             style_library,
+            title_generator,
         )
 
         cls.register_many([
@@ -115,9 +113,9 @@ class ToolRegistry:
     def register_xhs_tools(cls) -> None:
         """注册所有小红书平台工具"""
         from backend.tools.xhs.publisher import (
-            xhs_publisher,
             ab_test_manager,
             post_scheduler,
+            xhs_publisher,
         )
 
         cls.register_many([

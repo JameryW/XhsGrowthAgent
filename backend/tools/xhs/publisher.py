@@ -26,8 +26,8 @@ def _get_publisher():
 async def xhs_publisher(
     title: str,
     body: str,
-    hashtags: list[str] = [],
-    image_paths: list[str] = [],
+    hashtags: list[str] | None = None,
+    image_paths: list[str] | None = None,
     category: str = "",
     location: str = "",
     scheduled_time: str = "",
@@ -48,6 +48,10 @@ async def xhs_publisher(
     Returns:
         发布结果: post_id, status, post_url
     """
+    if hashtags is None:
+        hashtags = []
+    if image_paths is None:
+        image_paths = []
     logger.info(f"Publishing note: {title}")
 
     publisher = _get_publisher()

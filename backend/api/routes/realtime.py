@@ -2,13 +2,12 @@
 
 """WebSocket and SSE routes for realtime workflow updates."""
 
-from fastapi import APIRouter, WebSocket, Query
-from typing import Optional
 
-from backend.realtime.websocket import WebSocketManager
-from backend.realtime.event_bus import EventBusService
+from fastapi import APIRouter, Query, WebSocket
+
 from backend.api.responses import success
-
+from backend.realtime.event_bus import EventBusService
+from backend.realtime.websocket import WebSocketManager
 
 router = APIRouter()
 

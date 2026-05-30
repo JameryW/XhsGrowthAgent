@@ -1,0 +1,160 @@
+- generic [ref=e3]:
+  - link "跳转到主内容" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - region "通知"
+  - main [ref=e5]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - button "系统健康检查" [expanded] [ref=e10] [cursor=pointer]:
+          - generic [ref=e11]:
+            - generic [ref=e13]: 系统状态
+            - generic [ref=e14]: 需配置
+            - generic [ref=e15]: "3"
+          - generic [ref=e16]:
+            - button "刷新健康检查" [ref=e17]:
+              - img [ref=e18]
+            - img [ref=e23]
+        - generic [ref=e27]:
+          - generic [ref=e28]:
+            - generic [ref=e29]:
+              - generic [ref=e30]:
+                - img [ref=e31]
+                - generic [ref=e34]: LLM Provider
+              - generic [ref=e37]: 未配置
+            - generic [ref=e38]:
+              - generic [ref=e39]:
+                - generic [ref=e40]: anthropic
+                - generic [ref=e41]: 未配置
+              - generic [ref=e42]:
+                - generic [ref=e43]: openai
+                - generic [ref=e44]: 未配置
+              - generic [ref=e45]:
+                - generic [ref=e46]: deepseek
+                - generic [ref=e47]: 未配置
+              - generic [ref=e48]:
+                - generic [ref=e49]: dashscope
+                - generic [ref=e50]: 未配置
+              - paragraph [ref=e51]: 请在 .env 文件中设置至少一个 LLM API Key（如 ANTHROPIC_API_KEY）以启用 AI 功能。
+          - generic [ref=e52]:
+            - generic [ref=e53]:
+              - generic [ref=e54]:
+                - img [ref=e55]
+                - generic [ref=e57]: 小红书平台
+              - generic [ref=e60]: 未配置
+            - generic [ref=e61]:
+              - generic [ref=e62]:
+                - generic [ref=e63]: "Cookie: 未设置"
+                - generic [ref=e64]: "User ID: 未设置"
+              - paragraph [ref=e65]: 请在 .env 文件中设置 XHS_COOKIE 和 XHS_USER_ID 以启用小红书平台访问。
+          - generic [ref=e66]:
+            - generic [ref=e67]:
+              - generic [ref=e68]:
+                - img [ref=e69]
+                - generic [ref=e71]: Ripple CAS
+              - generic [ref=e74]: 未配置
+            - paragraph [ref=e75]: 请在 .env 文件中设置 RIPPLE_BASE_URL 和 RIPPLE_API_TOKEN（可选，用于内容传播预测）。
+          - generic [ref=e77]:
+            - generic [ref=e78]:
+              - img [ref=e79]
+              - generic [ref=e83]: 数据存储
+            - generic [ref=e86]: memory
+          - generic [ref=e87]:
+            - generic [ref=e88]: v0.1.0
+            - button "刷新健康检查" [ref=e89] [cursor=pointer]:
+              - img [ref=e90]
+              - text: 刷新健康检查
+      - generic [ref=e95]:
+        - generic [ref=e97]:
+          - img [ref=e100]
+          - heading "小红书增长引擎" [level=1] [ref=e107]
+          - paragraph [ref=e108]: AI驱动的自动化内容创作平台
+        - generic [ref=e110]:
+          - generic [ref=e111]:
+            - generic [ref=e112]: 账号 ID
+            - textbox "输入账号标识" [ref=e113]: default
+            - paragraph [ref=e114]: 用于区分不同小红书账号的工作流
+          - generic [ref=e115]:
+            - generic [ref=e116]: 话题主题
+            - textbox "可选：输入内容主题或关键词" [ref=e117]
+            - paragraph [ref=e118]: 指定主题可引导内容策略方向
+          - generic [ref=e119]:
+            - generic [ref=e120]: 垂类赛道
+            - generic [ref=e121]:
+              - button "母婴" [ref=e122] [cursor=pointer]:
+                - img [ref=e123]
+                - generic [ref=e126]: 母婴
+              - button "美妆" [ref=e127] [cursor=pointer]:
+                - img [ref=e128]
+                - generic [ref=e131]: 美妆
+              - button "穿搭" [ref=e132] [cursor=pointer]:
+                - img [ref=e133]
+                - generic [ref=e135]: 穿搭
+              - button "美食" [ref=e136] [cursor=pointer]:
+                - img [ref=e137]
+                - generic [ref=e142]: 美食
+              - button "家居" [ref=e143] [cursor=pointer]:
+                - img [ref=e144]
+                - generic [ref=e147]: 家居
+              - button "健身" [ref=e148] [cursor=pointer]:
+                - img [ref=e149]
+                - generic [ref=e155]: 健身
+              - button "旅行" [ref=e156] [cursor=pointer]:
+                - img [ref=e157]
+                - generic [ref=e159]: 旅行
+              - button "数码" [ref=e160] [cursor=pointer]:
+                - img [ref=e161]
+                - generic [ref=e163]: 数码
+              - button "宠物" [ref=e164] [cursor=pointer]:
+                - img [ref=e165]
+                - generic [ref=e170]: 宠物
+              - button "知识" [ref=e171] [cursor=pointer]:
+                - img [ref=e172]
+                - generic [ref=e174]: 知识
+            - paragraph [ref=e175]: 选择内容垂类，影响趋势发现和内容策略
+          - generic [ref=e176]:
+            - generic [ref=e177]: 起始阶段
+            - generic [ref=e178]:
+              - button "趋势发现 从发现热门趋势开始" [ref=e179] [cursor=pointer]:
+                - generic [ref=e180]: 趋势发现
+                - generic [ref=e181]: 从发现热门趋势开始
+              - button "策略规划 跳过趋势发现，直接制定策略" [ref=e182] [cursor=pointer]:
+                - generic [ref=e183]: 策略规划
+                - generic [ref=e184]: 跳过趋势发现，直接制定策略
+              - button "内容创作 跳过策略，直接开始创作" [ref=e185] [cursor=pointer]:
+                - generic [ref=e186]: 内容创作
+                - generic [ref=e187]: 跳过策略，直接开始创作
+              - button "内容审核 跳到审核阶段" [ref=e188] [cursor=pointer]:
+                - generic [ref=e189]: 内容审核
+                - generic [ref=e190]: 跳到审核阶段
+          - generic [ref=e191]:
+            - generic [ref=e192]: 运行选项
+            - generic [ref=e193]:
+              - generic [ref=e194]:
+                - img [ref=e195]
+                - generic [ref=e197]:
+                  - text: 试运行模式
+                  - paragraph [ref=e198]: 不实际发布到小红书
+              - switch [checked] [ref=e199] [cursor=pointer]
+            - generic [ref=e201]:
+              - generic [ref=e202]:
+                - img [ref=e203]
+                - generic [ref=e206]:
+                  - text: 自动发布
+                  - paragraph [ref=e207]: 审核通过后自动发布
+              - switch [ref=e208] [cursor=pointer]
+        - generic [ref=e210]:
+          - button "启动新工作流" [ref=e211] [cursor=pointer]:
+            - generic [ref=e213]:
+              - img [ref=e214]
+              - generic [ref=e219]: 启动新工作流
+          - button "快速启动（默认配置）" [ref=e220] [cursor=pointer]:
+            - generic [ref=e221]: 快速启动（默认配置）
+          - generic [ref=e222]:
+            - button "查看现有工作流" [ref=e223] [cursor=pointer]:
+              - generic [ref=e225]:
+                - img [ref=e226]
+                - generic [ref=e228]: 查看现有工作流
+            - button "工作流历史" [ref=e229] [cursor=pointer]:
+              - generic [ref=e231]:
+                - img [ref=e232]
+                - generic [ref=e236]: 工作流历史

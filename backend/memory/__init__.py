@@ -5,7 +5,7 @@ Components:
 - scene_database: 场景分析数据存储
 """
 
-from backend.memory.store import MemoryManager
 from backend.memory.scene_database import SceneDatabase
+from backend.memory.store import MemoryManager
 
 __all__ = ["MemoryManager", "SceneDatabase"]

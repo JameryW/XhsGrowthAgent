@@ -1,13 +1,13 @@
 """Trend scout node implementation."""
 
 from typing import Any
+
 from langgraph.store.base import BaseStore
 
 from backend.agents.nodes._base import NodeResult
 from backend.agents.trend_scout import TrendScoutAgent
 from backend.realtime import EventBusService, EventType
 from backend.state.schema import XHSGrowthState
-
 
 _trend_scout = TrendScoutAgent()
 

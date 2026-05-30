@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel
 from langgraph.types import Command
+from pydantic import BaseModel
 
-from backend.api.responses import success
 from backend.api.errors import ReviewNotPendingError
+from backend.api.responses import success
 from backend.state.enums import ContentStatus
 
 router = APIRouter()
@@ -39,7 +39,7 @@ def _build_version_entry(copy_content: dict, visual_plan: dict, label: str = "dr
         "style_suggestion": visual_plan.get("layout_style", ""),
         "changes_summary": label,
         "predicted_score": 0.0,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -87,8 +87,11 @@ async def submit_review(thread_id: str, decision: ReviewDecision, request: Reque
     if decision.decision == "needs_revision":
         copy_content = values.get("copy_content") or {}
         visual_plan = values.get("visual_plan") or {}
+        label = (
+            "AI 初稿" if not values.get("content_versions") else "修改版本"
+        )
         version_entry = _build_version_entry(
-            copy_content, visual_plan, label="AI 初稿" if not values.get("content_versions") else f"修改版本"
+            copy_content, visual_plan, label=label
         )
         # Append version to state before resuming
         existing_versions = values.get("content_versions") or []
@@ -109,14 +112,26 @@ async def submit_review(thread_id: str, decision: ReviewDecision, request: Reque
         config,
     )
 
-    return success(
-        data={
-            "thread_id": thread_id,
-            "status": "resumed",
-            "decision": decision.decision.value,
-            "next_phase": result.get("phase", "unknown") if result else "unknown",
-        }
-    )
+    next_phase = result.get("phase", "unknown") if result else "unknown"
+
+    # Detect if publishing was skipped due to missing XHS configuration
+    publish_skipped = False
+    if decision.decision == "approved" and next_phase in ("reviewing", "unknown"):
+        import os
+        if not (os.environ.get("XHS_COOKIE") and os.environ.get("XHS_USER_ID")):
+            publish_skipped = True
+
+    response_data = {
+        "thread_id": thread_id,
+        "status": "resumed",
+        "decision": decision.decision.value,
+        "next_phase": next_phase,
+    }
+    if publish_skipped:
+        response_data["publish_skipped"] = True
+        response_data["skip_reason"] = "XHS credentials not configured. Set XHS_COOKIE and XHS_USER_ID in .env to enable publishing."
+
+    return success(data=response_data)
 
 
 @router.get("/versions/{thread_id}")

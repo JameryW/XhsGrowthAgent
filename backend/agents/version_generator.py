@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -58,7 +57,8 @@ class VersionGeneratorAgent(BaseAgent):
 
         suggestions = analysis.get("suggestions", [])
         suggestions_str = "\n".join([
-            f"- [P{s.get('priority', 3)}] {s.get('dimension', '')}: {s.get('action', '')} ({s.get('reasoning', '')})"
+            f"- [P{s.get('priority', 3)}] {s.get('dimension', '')}: "
+            f"{s.get('action', '')} ({s.get('reasoning', '')})"
             for s in suggestions[:5]
         ]) or "无优化建议"
 

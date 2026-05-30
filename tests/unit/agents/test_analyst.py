@@ -1,10 +1,11 @@
 """Unit tests for AnalystAgent."""
 
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+
 import pytest
 
 from backend.agents.analyst import AnalystAgent
-from backend.state.schema import XHSGrowthState, WorkflowPhase
+from backend.state.schema import WorkflowPhase
 
 
 class TestAnalystAgent:
@@ -75,7 +76,7 @@ class TestAnalystAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+            await agent.execute(mock_state, store=mock_store)
 
         # Memory recall was called
         mock_store.asearch.assert_called()
@@ -91,7 +92,7 @@ class TestAnalystAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+            await agent.execute(mock_state, store=mock_store)
 
         # Insights stored
         assert mock_store.aput.called
@@ -101,9 +102,7 @@ class TestAnalystAgent:
         """_ripple_report returns report when job_id exists."""
         state_with_ripple = {
             **mock_state,
-            "content_plan": {
-                "ripple_prediction": {"ripple_job_id": "job_123"}
-            },
+            "content_plan": {"ripple_prediction": {"ripple_job_id": "job_123"}},
         }
 
         with patch("backend.tools.ripple.integration.get_report") as mock_get_report:

@@ -1,9 +1,10 @@
 """Tests for ViralMatcherAgent."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+
 from backend.agents.viral_matcher import ViralMatcherAgent
-from backend.state.schema import XHSGrowthState
 
 
 @pytest.fixture
@@ -43,7 +44,7 @@ async def test_viral_matcher_no_draft(mock_state_no_draft, mock_store):
     """Should skip optimization when no draft provided."""
     agent = ViralMatcherAgent()
     result = await agent.execute(mock_state_no_draft, mock_store)
-    assert result.get("skip_optimization") == True
+    assert result.get("skip_optimization")
 
 
 @pytest.mark.asyncio

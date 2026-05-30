@@ -3,20 +3,18 @@
 from __future__ import annotations
 
 import os
-from functools import lru_cache
 from pathlib import Path
+
 from dotenv import load_dotenv
-
-# 加载 .env 文件（确保环境变量可用）
-_project_root = Path(__file__).resolve().parent.parent.parent
-load_dotenv(_project_root / ".env")
-
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
 from backend.config.models import ModelConfig, ModelProvider, TaskType, resolve_model_id
 
+# 加载 .env 文件（确保环境变量可用）
+_project_root = Path(__file__).resolve().parent.parent.parent
+load_dotenv(_project_root / ".env")
 
 _PROVIDER_ENV_VARS: dict[ModelProvider, str] = {
     ModelProvider.ANTHROPIC: "ANTHROPIC_API_KEY",

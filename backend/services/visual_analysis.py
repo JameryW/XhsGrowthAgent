@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any
 
 from backend.memory.scene_database import SceneDatabase
 from backend.models.visual_types import (
@@ -123,7 +122,8 @@ class VisualAnalysisService:
 
             # Merge visual elements
             for key, value in elements.items():
-                visual_elements[key] = visual_elements.get(key, 0) + (value if isinstance(value, int) else 1)
+                increment = value if isinstance(value, int) else 1
+                visual_elements[key] = visual_elements.get(key, 0) + increment
 
         # Calculate distributions (normalize to percentages)
         total_posts = len(posts)
@@ -144,7 +144,7 @@ class VisualAnalysisService:
         )[:3]
         trending_layouts = sorted(
             layout_counts.keys(),
-            key=lambda l: layout_counts[l],
+            key=lambda x: layout_counts[x],
             reverse=True,
         )[:3]
 
@@ -381,7 +381,7 @@ class VisualAnalysisService:
             layouts.append(layout)
 
         # Sort by popularity
-        layouts.sort(key=lambda l: l.popularity_score, reverse=True)
+        layouts.sort(key=lambda x: x.popularity_score, reverse=True)
         return layouts
 
     def _build_style_options_from_distribution(

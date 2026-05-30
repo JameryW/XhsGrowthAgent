@@ -4,7 +4,6 @@ Following TDD: This test file is created BEFORE the implementation
 to verify the data structures exist and behave correctly.
 """
 
-import pytest
 from datetime import datetime
 
 
@@ -273,7 +272,7 @@ class TestSceneAnalysisResult:
 
     def test_scene_analysis_result_creation_all_fields(self):
         """Test SceneAnalysisResult can be created with all 9 required fields."""
-        from backend.models.visual_types import SceneAnalysisResult, ColorPalette
+        from backend.models.visual_types import ColorPalette, SceneAnalysisResult
 
         palettes = [
             ColorPalette(
@@ -332,7 +331,7 @@ class TestSceneAnalysisResult:
 
     def test_scene_analysis_result_to_dict(self):
         """Test SceneAnalysisResult has to_dict() method with all fields."""
-        from backend.models.visual_types import SceneAnalysisResult, ColorPalette
+        from backend.models.visual_types import ColorPalette, SceneAnalysisResult
 
         palettes = [
             ColorPalette(

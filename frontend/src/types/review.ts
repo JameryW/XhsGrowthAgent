@@ -67,4 +67,6 @@ export interface ReviewSubmitResponse {
   status: 'resumed'
   decision: ReviewDecision
   next_phase: string
+  publish_skipped?: boolean
+  skip_reason?: string
 }

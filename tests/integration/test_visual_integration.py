@@ -4,24 +4,24 @@ Tests the full workflow: tool -> service -> database
 with mocked XHSClient for API calls.
 """
 
-import pytest
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from backend.services.visual_analysis import VisualAnalysisService
-from backend.services.xhs_client import XHSSearchResult, XHSClient
+import pytest
+
 from backend.memory.scene_database import SceneDatabase
-from backend.services.visual_extractor import VisualDataExtractor
 from backend.models.visual_types import (
     ColorPalette,
     LayoutOption,
     SceneAnalysisResult,
     StyleOption,
 )
-from backend.tools.content.layout import layout_recommender, get_default_layouts
-from backend.tools.content.style import style_library, get_default_styles
-
+from backend.services.visual_analysis import VisualAnalysisService
+from backend.services.visual_extractor import VisualDataExtractor
+from backend.services.xhs_client import XHSClient, XHSSearchResult
+from backend.tools.content.layout import get_default_layouts, layout_recommender
+from backend.tools.content.style import get_default_styles, style_library
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -449,8 +449,8 @@ def test_layout_defaults_available() -> None:
     defaults = get_default_layouts()
 
     assert len(defaults) > 0
-    assert all(isinstance(l, LayoutOption) for l in defaults)
-    layout_types = [l.layout_type for l in defaults]
+    assert all(isinstance(lo, LayoutOption) for lo in defaults)
+    layout_types = [lo.layout_type for lo in defaults]
     assert "全图+文末" in layout_types
     assert "网格布局" in layout_types
 

@@ -152,6 +152,38 @@ export interface VisualPlan {
   brand_elements: string[]
 }
 
+// Ripple CAS prediction result
+export interface RipplePrediction {
+  job_id?: string
+  estimated_reach?: number
+  estimated_engagement?: number
+  viral_probability?: number
+  phase?: string
+  confidence?: number
+  key_influencers?: Array<Record<string, unknown>>
+  spread_path?: Array<Record<string, unknown>>
+}
+
+// Ripple PMF validation result
+export interface RipplePMFResult {
+  job_id?: string
+  pmf_score?: number
+  risk_factors?: string[]
+  improvement_strategies?: string[]
+  market_segment?: Record<string, unknown>
+  confidence?: number
+}
+
+// Ripple prediction vs actual comparison
+export interface RippleComparison {
+  predicted_reach?: number
+  actual_engagement_rate?: number
+  reach_deviation?: number
+  engagement_deviation?: number
+  accuracy_rating?: string
+  calibration_insight?: string
+}
+
 // Workflow state
 export interface WorkflowState {
   thread_id: string
@@ -161,6 +193,9 @@ export interface WorkflowState {
   content_plan?: ContentPlan
   copy_content?: CopyContent
   visual_plan?: VisualPlan
+  ripple_prediction?: RipplePrediction
+  ripple_pmf?: RipplePMFResult
+  ripple_comparison?: RippleComparison
   error?: string | null
   created_at: string
   updated_at: string
@@ -187,4 +222,7 @@ export interface WorkflowStateResponse {
   created_at?: string
   updated_at?: string
   agent_timeline: AgentTimelineEntry[]
+  ripple_prediction?: RipplePrediction
+  ripple_pmf?: RipplePMFResult
+  ripple_comparison?: RippleComparison
 }

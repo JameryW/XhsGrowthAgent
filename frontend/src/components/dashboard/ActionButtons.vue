@@ -20,6 +20,12 @@ const isCancelled = computed(() => workflowStore.currentPhase === 'cancelled')
 const needsReview = computed(() => reviewStore.hasPendingReview)
 const isStarting = ref(false)
 
+// Phase-aware computed
+const currentPhase = computed(() => workflowStore.currentPhase)
+const hasRippleData = computed(() => workflowStore.hasRippleData)
+const publishResult = computed(() => (workflowStore.workflowState as any)?.publish_result || {})
+const hasPostUrl = computed(() => !!publishResult.value?.post_url)
+
 // Status source indicator
 const statusSource = computed(() => {
   if (realtimeStore.connectionStatus === 'connected') return 'realtime'
@@ -74,6 +80,12 @@ const goToReview = () => {
 
 const resumeWorkflow = () => {
   workflowStore.resumeWorkflow()
+}
+
+const openPostUrl = () => {
+  if (publishResult.value?.post_url) {
+    window.open(publishResult.value.post_url, '_blank')
+  }
 }
 </script>
 
@@ -204,6 +216,29 @@ const resumeWorkflow = () => {
           <span>{{ t('dashboard.actionButtons.goReview') }}</span>
         </span>
       </NeonButton>
+
+      <!-- Context-aware: View post after publishing -->
+      <NeonButton
+        v-if="hasPostUrl && (currentPhase === 'publishing' || currentPhase === 'analyzing' || currentPhase === 'completed')"
+        variant="cyan"
+        size="sm"
+        :title="t('dashboard.publishResult.viewPost')"
+        @click="openPostUrl"
+      >
+        <span class="inline-flex items-center gap-2">
+          <AppIcon name="ExternalLink" size="sm" variant="white" />
+          <span>{{ t('dashboard.publishResult.viewPost') }}</span>
+        </span>
+      </NeonButton>
+
+      <!-- Context-aware: Ripple data available indicator -->
+      <div
+        v-if="hasRippleData && (currentPhase === 'planning' || currentPhase === 'analyzing')"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-50 border border-violet-100 text-violet-600 text-xs"
+      >
+        <AppIcon name="Zap" size="sm" variant="purple" />
+        <span>{{ t('dashboard.ripple.title') }}</span>
+      </div>
     </div>
   </div>
 </template>

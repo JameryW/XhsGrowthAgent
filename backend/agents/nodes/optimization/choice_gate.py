@@ -2,14 +2,14 @@
 
 import logging
 from typing import Any
+
 from langgraph.store.base import BaseStore
 from langgraph.types import interrupt
 
 from backend.agents.nodes._base import NodeResult
 from backend.realtime import EventBusService, EventType
-from backend.state.schema import XHSGrowthState
 from backend.state.enums import WorkflowPhase
-
+from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.graph.nodes")
 
@@ -63,9 +63,8 @@ async def choice_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
     # interrupt() pauses execution, waiting for user selection
     decision = interrupt(choice_payload)
 
-    # decision is user selection result: {"selected_version": "A/B/C", "version_id": "..."}
+    # decision format: {"selected_version": "A/B/C", "version_id": "..."}
     selected_version_id = decision.get("version_id")
-    selected_version_type = decision.get("selected_version")
 
     # Find selected version from version list
     selected_version = next(

@@ -7,7 +7,6 @@ with cache management and expiry handling.
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 from backend.models.visual_types import (
     ColorPalette,

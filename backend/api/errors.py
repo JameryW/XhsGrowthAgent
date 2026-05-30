@@ -1,9 +1,11 @@
 """Standardized error codes and exception classes."""
+from enum import StrEnum
 from typing import Any
-from enum import Enum
-from backend.api.responses import error, ApiResponse
 
-class ErrorCode(str, Enum):
+from backend.api.responses import ApiResponse, error
+
+
+class ErrorCode(StrEnum):
     """Standard error codes."""
     WORKFLOW_NOT_FOUND = "ERROR_WORKFLOW_NOT_FOUND"
     WORKFLOW_ALREADY_RUNNING = "ERROR_WORKFLOW_ALREADY_RUNNING"
@@ -121,7 +123,7 @@ class LoginFailedError(AuthenticationError):
 
 # ── Publish error classification ──
 
-class PublishErrorType(str, Enum):
+class PublishErrorType(StrEnum):
     """Structured publish error types for actionable recovery."""
     AUTH_EXPIRED = "auth_expired"
     RATE_LIMITED = "rate_limited"

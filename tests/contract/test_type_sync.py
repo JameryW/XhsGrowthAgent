@@ -9,11 +9,11 @@ Note: These tests avoid importing from backend to prevent
 langgraph dependency issues during isolated test runs.
 """
 
-import pytest
-import yaml
 import re
 from pathlib import Path
 
+import pytest
+import yaml
 
 # Project paths (relative to this test file)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -28,8 +28,8 @@ def extract_python_enum_values(file_path: Path, enum_name: str) -> set[str]:
     with open(file_path) as f:
         content = f.read()
 
-    # Find the enum class definition
-    pattern = rf"class {enum_name}\(str,\s*Enum\):\s*.*?(?=\nclass|\n__all__|\Z)"
+    # Find the enum class definition — matches both (str, Enum) and (StrEnum)
+    pattern = rf"class {enum_name}\((?:str,\s*Enum|StrEnum)\):\s*.*?(?=\nclass|\n__all__|\Z)"
     match = re.search(pattern, content, re.DOTALL)
     if not match:
         return set()
