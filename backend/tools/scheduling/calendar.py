@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
 import yaml
 from langchain_core.tools import tool
@@ -81,7 +80,11 @@ def _algorithmic_fallback(data: dict) -> dict:
             "best_times_reason": matched_pattern["reason"],
             "best_days_reason": f"{target_audience}用户活跃日",
         },
-        "audience_active_pattern": f"{target_audience}用户在{matched_pattern['best_times'][0]}-{matched_pattern['best_times'][-1]}时段活跃",
+        "audience_active_pattern": (
+            f"{target_audience}用户在"
+            f"{matched_pattern['best_times'][0]}-"
+            f"{matched_pattern['best_times'][-1]}时段活跃"
+        ),
         "niche_specific_insights": f"{niche}内容适合在{matched_pattern['reason']}发布",
         "avoid_times": ["14:00", "15:00"],
         "avoid_reasons": "下午工作时段流量较低",

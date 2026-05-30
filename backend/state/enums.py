@@ -1,7 +1,8 @@
 """Unified enum definitions - synced with OpenAPI specification."""
-from enum import Enum
+from enum import StrEnum
 
-class WorkflowPhase(str, Enum):
+
+class WorkflowPhase(StrEnum):
     """Workflow execution phase."""
     IDLE = "idle"
     SCOUTING = "scouting"
@@ -16,7 +17,7 @@ class WorkflowPhase(str, Enum):
     PAUSED = "paused"
     CANCELLED = "cancelled"
 
-class ContentStatus(str, Enum):
+class ContentStatus(StrEnum):
     """Content review status."""
     APPROVED = "approved"
     NEEDS_REVISION = "needs_revision"
@@ -26,13 +27,13 @@ class ContentStatus(str, Enum):
     PUBLISHED = "published"
     FAILED = "failed"
 
-class ContentType(str, Enum):
+class ContentType(StrEnum):
     """Content type."""
     NOTE = "note"
     VIDEO = "video"
     CAROUSEL = "carousel"
 
-class Urgency(str, Enum):
+class Urgency(StrEnum):
     """Content urgency level."""
     LOW = "low"
     MEDIUM = "medium"

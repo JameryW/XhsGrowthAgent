@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from typing import Any
@@ -12,7 +11,7 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
-from backend.state.schema import XHSGrowthState, WorkflowPhase
+from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.trend_scout")
 
@@ -32,7 +31,7 @@ class TrendScoutAgent(BaseAgent):
             logger.info("XHS credentials not configured, skipping real data fetch")
             return {}
 
-        from backend.tools.xhs.trending import xhs_trending, keyword_monitor, competitor_analyzer
+        from backend.tools.xhs.trending import competitor_analyzer, keyword_monitor, xhs_trending
 
         data: dict[str, Any] = {}
 
@@ -127,7 +126,9 @@ class TrendScoutAgent(BaseAgent):
             data_context = "\n\n## 无实时数据\n未配置小红书 API 凭证，基于你的知识生成趋势分析。"
             data_source = "llm_generated"
 
-        system_prompt = self._build_system_prompt(state, extra_context=memory_context + data_context)
+        system_prompt = self._build_system_prompt(
+            state, extra_context=memory_context + data_context
+        )
 
         user_msg = f"""账号定位：{account_id}
 关注领域：{niche}

@@ -1,18 +1,19 @@
 """Unit tests for XHS Client."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from backend.services.xhs_client import (
-    XHSClient,
-    XHSPost,
     XHSAnalytics,
+    XHSApiError,
+    XHSAuthError,
+    XHSClient,
     XHSComment,
     XHSDirectMessage,
-    XHSRateLimitError,
-    XHSAuthError,
+    XHSPost,
     XHSPublishError,
-    XHSApiError,
+    XHSRateLimitError,
 )
 
 

@@ -1,7 +1,8 @@
 """Retry mixin for Agent resilience."""
 
 import asyncio
-from typing import Callable, Any
+from collections.abc import Callable
+from typing import Any
 
 
 class RetryMixin:
@@ -32,7 +33,7 @@ class RetryMixin:
         for attempt in range(max_retries):
             try:
                 return await asyncio.wait_for(action(), timeout=timeout)
-            except (TimeoutError, asyncio.TimeoutError):
+            except TimeoutError:
                 if attempt == max_retries - 1:
                     raise
         return None

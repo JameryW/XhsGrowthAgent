@@ -1,0 +1,24 @@
+- generic [ref=e3]:
+  - link "跳转到主内容" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - region "通知"
+  - main [ref=e5]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - img "Login" [ref=e11]
+        - heading "登录" [level=1] [ref=e14]
+        - paragraph [ref=e15]: 小红书增长引擎
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic [ref=e18]: 用户名
+          - textbox "用户名" [active] [ref=e19]:
+            - /placeholder: 请输入用户名
+        - generic [ref=e20]:
+          - generic [ref=e21]: 密码
+          - textbox "密码" [ref=e22]:
+            - /placeholder: 请输入密码
+        - button "登录" [ref=e23] [cursor=pointer]:
+          - generic [ref=e25]:
+            - img [ref=e26]
+            - generic [ref=e29]: 登录
+      - paragraph [ref=e31]: 小红书增长引擎 v0.1.0

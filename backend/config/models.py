@@ -1,10 +1,9 @@
-from enum import Enum
-from typing import Any
+from enum import StrEnum
 
 from pydantic import BaseModel
 
 
-class TaskType(str, Enum):
+class TaskType(StrEnum):
     """任务类型 → 模型路由键"""
 
     ROUTING = "routing"
@@ -21,7 +20,7 @@ class TaskType(str, Enum):
     VERSION_GEN = "version_gen"
 
 
-class ModelProvider(str, Enum):
+class ModelProvider(StrEnum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
     DEEPSEEK = "deepseek"

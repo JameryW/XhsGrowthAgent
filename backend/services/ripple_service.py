@@ -165,11 +165,10 @@ class RippleService:
                 else:
                     resp = await client.get(url)
 
-                if resp.status_code >= 500:
+                if resp.status_code >= 500 and attempt < max_retries - 1:
                     # 服务器错误，重试
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(retry_delay * (attempt + 1))
-                        continue
+                    await asyncio.sleep(retry_delay * (attempt + 1))
+                    continue
 
                 resp.raise_for_status()
                 return resp.json()
@@ -235,7 +234,7 @@ class RippleService:
         self,
         topic: str,
         content_type: str = "图文笔记",
-        tags: list[str] = [],
+        tags: list[str] | None = None,
         tone: str = "真诚种草",
         description: str = "",
         max_waves: int = 8,
@@ -247,6 +246,8 @@ class RippleService:
         Args:
             use_fallback: 服务不可用时是否使用默认值
         """
+        if tags is None:
+            tags = []
         config = self._get_config()
 
         if not config["enabled"] or not self.is_healthy():
@@ -290,10 +291,12 @@ class RippleService:
         product_name: str,
         category: str,
         description: str,
-        differentiators: list[str] = [],
+        differentiators: list[str] | None = None,
         use_fallback: bool = True,
     ) -> dict[str, Any]:
         """验证产品市场契合度"""
+        if differentiators is None:
+            differentiators = []
         config = self._get_config()
 
         if not config["enabled"] or not self.is_healthy():
@@ -377,10 +380,19 @@ class RippleService:
         return {
             "ripple_job_id": job_id,
             "ripple_prediction": {
-                "estimated_reach": metrics.get("estimated_reach", metrics.get("total_reach", 0)),
-                "estimated_engagement": metrics.get("estimated_engagement", metrics.get("total_engagement", 0)),
-                "viral_probability": metrics.get("viral_probability", metrics.get("outbreak_probability", 0.0)),
-                "phase": phase_analysis.get("phase", phase_analysis.get("dominant_phase", "unknown")),
+                "estimated_reach": metrics.get(
+                    "estimated_reach", metrics.get("total_reach", 0)
+                ),
+                "estimated_engagement": metrics.get(
+                    "estimated_engagement", metrics.get("total_engagement", 0)
+                ),
+                "viral_probability": metrics.get(
+                    "viral_probability",
+                    metrics.get("outbreak_probability", 0.0),
+                ),
+                "phase": phase_analysis.get(
+                    "phase", phase_analysis.get("dominant_phase", "unknown")
+                ),
                 "confidence": metrics.get("confidence", 0.0),
                 "key_influencers": metrics.get("key_influencers", []),
                 "spread_path": phase_analysis.get("spread_path", []),

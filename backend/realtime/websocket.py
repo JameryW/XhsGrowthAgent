@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Callable
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -91,7 +90,7 @@ class WebSocketManager:
                         timeout=30.0,
                     )
                     await self._handle_client_message(session, msg)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     await websocket.close(code=1001, reason="heartbeat timeout")
                     break
 

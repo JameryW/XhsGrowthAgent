@@ -1,10 +1,11 @@
 """Unit tests for TrendScoutAgent."""
 
 from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from backend.agents.trend_scout import TrendScoutAgent
-from backend.state.schema import XHSGrowthState, WorkflowPhase
+from backend.state.schema import WorkflowPhase
 
 
 class TestTrendScoutAgent:

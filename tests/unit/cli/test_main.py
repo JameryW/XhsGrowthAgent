@@ -1,11 +1,10 @@
 """Unit tests for CLI main module."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
-import pytest
+from unittest.mock import patch
+
 from typer.testing import CliRunner
 
 from backend.cli.main import app
-
 
 runner = CliRunner()
 

@@ -9,11 +9,11 @@ Note: These tests avoid importing from backend to prevent
 langgraph dependency issues during isolated test runs.
 """
 
-import pytest
-import yaml
 import re
 from pathlib import Path
 
+import pytest
+import yaml
 
 # Project paths (relative to this test file)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent

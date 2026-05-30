@@ -1,7 +1,9 @@
 """Base classes for graph nodes."""
 
 from typing import Any
+
 from langgraph.store.base import BaseStore
+
 from backend.state.schema import XHSGrowthState
 
 

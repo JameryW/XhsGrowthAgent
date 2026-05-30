@@ -1,21 +1,20 @@
 """Tests for VisualAnalysisService."""
 
-import pytest
 from datetime import datetime
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
-from backend.services.visual_analysis import VisualAnalysisService
-from backend.services.xhs_client import XHSSearchResult, XHSClient
+import pytest
+
 from backend.memory.scene_database import SceneDatabase
-from backend.services.visual_extractor import VisualDataExtractor
 from backend.models.visual_types import (
     ColorPalette,
     LayoutOption,
     SceneAnalysisResult,
     StyleOption,
 )
-
+from backend.services.visual_analysis import VisualAnalysisService
+from backend.services.visual_extractor import VisualDataExtractor
+from backend.services.xhs_client import XHSClient, XHSSearchResult
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -287,7 +286,7 @@ def test_get_layout_recommendations_from_analysis(
 
     # Should return LayoutOption objects
     assert len(result) > 0
-    assert all(isinstance(l, LayoutOption) for l in result)
+    assert all(isinstance(lo, LayoutOption) for lo in result)
     # Should be sorted by popularity
     assert result[0].popularity_score >= result[1].popularity_score
 
@@ -341,7 +340,7 @@ def test_get_layout_recommendations_filters_by_content_type(
     )
 
     # Should prefer "全图+文末" for single image
-    assert all(l.layout_type in ["全图+文末", "封面突出"] for l in result)
+    assert all(lo.layout_type in ["全图+文末", "封面突出"] for lo in result)
 
 
 def test_get_layout_recommendations_filters_by_image_count(
@@ -503,7 +502,7 @@ def test_build_layout_options_from_distribution(
     )
 
     assert len(result) == 3
-    assert all(isinstance(l, LayoutOption) for l in result)
+    assert all(isinstance(lo, LayoutOption) for lo in result)
     # Check sorted by popularity
     assert result[0].layout_type == "网格布局"
     assert result[0].popularity_score == 0.5
@@ -574,8 +573,8 @@ async def test_full_workflow_analyze_then_recommend(
     mock_database.get_scene_analysis.return_value = analysis
 
     # Step 3: Get recommendations
-    layouts = service.get_layout_recommendations("travel_outdoor")
-    styles = service.get_style_recommendations("travel_outdoor")
+    _layouts = service.get_layout_recommendations("travel_outdoor")
+    _styles = service.get_style_recommendations("travel_outdoor")
 
     assert len(layouts) > 0
     assert len(styles) > 0
@@ -634,8 +633,8 @@ def test_get_recommendations_with_empty_analysis(
         StyleOption(style_name="default", trending_score=0.5)
     ]
 
-    layouts = service.get_layout_recommendations("travel_outdoor")
-    styles = service.get_style_recommendations("travel_outdoor")
+    _layouts = service.get_layout_recommendations("travel_outdoor")
+    _styles = service.get_style_recommendations("travel_outdoor")
 
     # Should fall back to defaults
     mock_database.get_default_layouts.assert_called()

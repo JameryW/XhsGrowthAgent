@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -40,7 +39,7 @@ def _headers() -> dict[str, str]:
 async def ripple_predict_content_spread(
     topic: str,
     content_type: str = "图文笔记",
-    tags: list[str] = [],
+    tags: list[str] | None = None,
     tone: str = "真诚种草",
     description: str = "",
     platform: str = "xiaohongshu",
@@ -52,6 +51,8 @@ async def ripple_predict_content_spread(
 
     输入内容信息，返回传播预测结果（含置信度）。
     """
+    if tags is None:
+        tags = []
     cfg = _get_config()
     event = {
         "topic": topic,
@@ -83,7 +84,7 @@ async def ripple_validate_pmf(
     product_name: str,
     category: str,
     description: str,
-    differentiators: list[str] = [],
+    differentiators: list[str] | None = None,
     competitive_landscape: str = "",
     channel: str = "content-seeding",
     vertical: str = "fmcg",
@@ -94,6 +95,8 @@ async def ripple_validate_pmf(
 
     输入产品信息，返回 PMF 评分、风险诊断和改进策略。
     """
+    if differentiators is None:
+        differentiators = []
     cfg = _get_config()
     event = {
         "name": product_name,
@@ -165,10 +168,12 @@ async def ripple_get_simulation_log(job_id: str) -> str:
 @tool
 async def ripple_generate_report(
     job_id: str,
-    rounds: list[str] = ["summary", "diagnosis"],
+    rounds: list[str] | None = None,
     role: str = "omniscient",
 ) -> dict[str, Any]:
     """为已完成的 Ripple 模拟任务生成结构化报告 — 包含传播预测总结、动力学诊断和优化建议"""
+    if rounds is None:
+        rounds = ["summary", "diagnosis"]
     cfg = _get_config()
     payload = {
         "rounds": [{"label": r, "system_prompt": "", "extra_user_context": ""} for r in rounds],

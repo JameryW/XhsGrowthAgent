@@ -1,14 +1,15 @@
 """Unit tests for LLM Enrichment Service."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
+from backend.config.models import TaskType
 from backend.services.llm_enrichment import (
-    LLMEnrichmentService,
     LLMEnrichmentError,
+    LLMEnrichmentService,
     get_llm_service,
 )
-from backend.config.models import TaskType
 
 
 class TestLLMEnrichmentService:

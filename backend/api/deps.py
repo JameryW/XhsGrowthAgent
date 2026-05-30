@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import Depends, Header
+from fastapi import Header
 
 from backend.api.auth import validate_token
-from backend.api.errors import TokenMissingError, TokenInvalidError
+from backend.api.errors import TokenInvalidError, TokenMissingError
 
 
 async def get_current_user(

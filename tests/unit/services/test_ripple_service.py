@@ -1,10 +1,11 @@
 """Tests for RippleService."""
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-import httpx
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from backend.services.ripple_service import RippleService, RippleHealthStatus
+import httpx
+import pytest
+
+from backend.services.ripple_service import RippleHealthStatus, RippleService
 
 
 class TestRippleServiceSingleton:
@@ -120,7 +121,7 @@ class TestRippleServiceRetry:
             ]
             mock_client.return_value = client
 
-            result = await service._request_with_retry("POST", "http://test/url", json_data={}, max_retries=3)
+            _result = await service._request_with_retry("POST", "http://test/url", json_data={}, max_retries=3)
             assert client.post.call_count == 2
 
 

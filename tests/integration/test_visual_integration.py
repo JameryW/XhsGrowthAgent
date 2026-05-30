@@ -4,24 +4,24 @@ Tests the full workflow: tool -> service -> database
 with mocked XHSClient for API calls.
 """
 
-import pytest
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from backend.services.visual_analysis import VisualAnalysisService
-from backend.services.xhs_client import XHSSearchResult, XHSClient
+import pytest
+
 from backend.memory.scene_database import SceneDatabase
-from backend.services.visual_extractor import VisualDataExtractor
 from backend.models.visual_types import (
     ColorPalette,
     LayoutOption,
     SceneAnalysisResult,
     StyleOption,
 )
-from backend.tools.content.layout import layout_recommender, get_default_layouts
-from backend.tools.content.style import style_library, get_default_styles
-
+from backend.services.visual_analysis import VisualAnalysisService
+from backend.services.visual_extractor import VisualDataExtractor
+from backend.services.xhs_client import XHSClient, XHSSearchResult
+from backend.tools.content.layout import get_default_layouts, layout_recommender
+from backend.tools.content.style import get_default_styles, style_library
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -169,7 +169,7 @@ async def test_service_analyze_and_save_to_database(
     )
 
     # Analyze scene
-    result = await service.analyze_scene("travel_outdoor", limit=50)
+    _result = await service.analyze_scene("travel_outdoor", limit=50)
 
     # Verify result structure
     assert result.scene == "travel_outdoor"
@@ -178,7 +178,7 @@ async def test_service_analyze_and_save_to_database(
     assert len(result.layout_distribution) > 0
 
     # Database saved the result
-    saved = temp_database.get_scene_analysis("travel_outdoor")
+    _saved = temp_database.get_scene_analysis("travel_outdoor")
     # May return None if sample_size < min_sample_size (30)
     # That's expected behavior - verify the result was saved
     # Check the saved file directly
@@ -268,7 +268,7 @@ async def test_layout_tool_calls_service(
         "backend.tools.content.layout.VisualAnalysisService",
         return_value=service,
     ):
-        result = await layout_recommender.ainvoke(
+        _result = await layout_recommender.ainvoke(
             {"scene": "travel_outdoor", "content_type": "图文笔记", "image_count": 3}
         )
 
@@ -305,7 +305,7 @@ async def test_style_tool_calls_service(
         "backend.tools.content.style.VisualAnalysisService",
         return_value=service,
     ):
-        result = await style_library.ainvoke(
+        _result = await style_library.ainvoke(
             {"scene": "travel_outdoor", "limit": 3}
         )
 
@@ -381,7 +381,7 @@ async def test_distribution_calculation_accuracy(
         extractor=mock_extractor,
     )
 
-    result = await service.analyze_scene("travel_outdoor")
+    _result = await service.analyze_scene("travel_outdoor")
 
     # Verify style distribution calculations
     # Styles: 温暖治愈(2), 高冷高级(1), 复古文艺(1), 清新自然(1) = 5 total
@@ -411,7 +411,7 @@ async def test_workflow_handles_empty_xhs_response(
         extractor=extractor,
     )
 
-    result = await service.analyze_scene("empty_scene")
+    _result = await service.analyze_scene("empty_scene")
 
     assert result.sample_size == 0
     assert result.style_distribution == {}
@@ -435,7 +435,7 @@ async def test_workflow_handles_xhs_api_error_gracefully(
 
     # Should handle error and return empty result
     try:
-        result = await service.analyze_scene("error_scene")
+        _result = await service.analyze_scene("error_scene")
     except ConnectionError:
         # Propagates error - acceptable behavior
         pass
@@ -449,8 +449,8 @@ def test_layout_defaults_available() -> None:
     defaults = get_default_layouts()
 
     assert len(defaults) > 0
-    assert all(isinstance(l, LayoutOption) for l in defaults)
-    layout_types = [l.layout_type for l in defaults]
+    assert all(isinstance(lo, LayoutOption) for lo in defaults)
+    layout_types = [lo.layout_type for lo in defaults]
     assert "全图+文末" in layout_types
     assert "网格布局" in layout_types
 

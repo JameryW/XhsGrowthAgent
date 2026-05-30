@@ -1,6 +1,5 @@
 """Unit tests for graph builder."""
 
-import pytest
 
 from backend.graph.builder import build_graph, compile_graph_dev
 

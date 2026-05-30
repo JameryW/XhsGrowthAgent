@@ -1,5 +1,6 @@
 """Tests for agent mixins."""
 import pytest
+
 from backend.agents.mixins.retry_mixin import RetryMixin
 from backend.agents.mixins.validation_mixin import ValidationMixin
 

@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
-from datetime import datetime, timezone
 import uuid
+from datetime import UTC, datetime
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
-from rich.live import Live
 
 app = typer.Typer(name="xhs-growth", help="小红书增长引擎 Agent")
 console = Console()
@@ -94,8 +92,8 @@ def run(
             "performance_log": [],
             "account_id": account_id,
             "session_id": thread_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }
 
         config = {"configurable": {"thread_id": thread_id}}
@@ -128,7 +126,11 @@ def run(
                         if verbose:
                             console.print(f"[dim]✓ {agent}[/dim]")
 
-                progress.update(task, description="[bold green]工作流完成[/bold green]", completed=True)
+                progress.update(
+                    task,
+                    description="[bold green]工作流完成[/bold green]",
+                    completed=True,
+                )
 
             result = await graph.aget_state(config)
             final_phase = result.values.get("phase", "unknown")
@@ -151,7 +153,7 @@ def run(
                 title="❌ 执行失败",
                 style="red",
             ))
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     asyncio.run(_run())
 
@@ -162,8 +164,8 @@ def serve(
     port: int = typer.Option(8000, help="监听端口"),
 ):
     """启动 API 服务"""
-    from dotenv import load_dotenv
     import uvicorn
+    from dotenv import load_dotenv
 
     # 加载 .env 文件
     load_dotenv()
@@ -208,7 +210,7 @@ def status(thread_id: str = typer.Argument(..., help="工作流线程 ID")):
 
 @app.command("list")
 def list_workflows(
-    account_id: Optional[str] = typer.Option(None, help="筛选账号 ID"),
+    account_id: str | None = typer.Option(None, help="筛选账号 ID"),
     limit: int = typer.Option(10, help="显示数量"),
 ):
     """列出活跃工作流"""
@@ -221,7 +223,6 @@ def list_workflows(
     table.add_column("创建时间", style="dim")
 
     async def _list():
-        from backend.graph.builder import compile_graph_dev
         # In dev mode with memory checkpointer, we can't list threads
         # This is a placeholder for production mode with Postgres
         console.print("[dim]开发模式下无法列出工作流（使用内存检查点）[/dim]")
@@ -233,12 +234,11 @@ def list_workflows(
 @app.command()
 def resume(
     thread_id: str = typer.Argument(..., help="工作流线程 ID"),
-    phase: Optional[str] = typer.Option(None, help="指定恢复阶段"),
+    phase: str | None = typer.Option(None, help="指定恢复阶段"),
 ):
     """恢复中断的工作流"""
     async def _resume():
         from backend.graph.builder import compile_graph_dev
-        from backend.state.schema import WorkflowPhase
 
         graph = compile_graph_dev()
         config = {"configurable": {"thread_id": thread_id}}
@@ -259,7 +259,7 @@ def resume(
                     console=console,
                 ) as progress:
                     task = progress.add_task("恢复执行...", total=None)
-                    result = await graph.ainvoke(None, config)
+                    await graph.ainvoke(None, config)
                     progress.update(task, description="[green]恢复完成[/green]")
 
                 final_state = await graph.aget_state(config)
@@ -335,6 +335,7 @@ def version():
 def config():
     """检查配置状态"""
     import os
+
     from dotenv import load_dotenv
 
     # 加载 .env 文件
@@ -359,10 +360,7 @@ def config():
 
     for var, purpose in required_vars:
         value = os.environ.get(var, "")
-        if value:
-            status = "[green]✅ 已配置[/green]"
-        else:
-            status = "[yellow]⚠️ 未配置[/yellow]"
+        status = "[green]✅ 已配置[/green]" if value else "[yellow]⚠️ 未配置[/yellow]"
         table.add_row(var, status, purpose)
 
     console.print(table)

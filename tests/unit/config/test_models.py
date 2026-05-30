@@ -3,12 +3,12 @@
 import pytest
 
 from backend.config.models import (
-    TaskType,
-    ModelProvider,
-    ModelConfig,
     MODEL_REGISTRY,
-    resolve_model_id,
+    ModelConfig,
+    ModelProvider,
+    TaskType,
     get_model_config,
+    resolve_model_id,
 )
 
 

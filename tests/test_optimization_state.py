@@ -1,13 +1,12 @@
 """Tests for optimization-related state models."""
 
-import pytest
 from backend.state.substates import (
-    DraftContent,
-    ViralPost,
-    GapItem,
-    SuggestionItem,
-    OptimizationAnalysis,
     ContentVersion,
+    DraftContent,
+    GapItem,
+    OptimizationAnalysis,
+    SuggestionItem,
+    ViralPost,
 )
 
 

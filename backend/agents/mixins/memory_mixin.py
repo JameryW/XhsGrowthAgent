@@ -1,6 +1,7 @@
 """Memory mixin for context recall."""
 
 from langgraph.store.base import BaseStore
+
 from backend.memory.store import MemoryManager
 
 

@@ -5,13 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.config.settings import Settings
-from backend.state.schema import XHSGrowthState, WorkflowPhase
+from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.publisher")
 
@@ -23,7 +22,6 @@ class PublisherAgent(BaseAgent):
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         copy = state.get("copy_content", {})
-        visual = state.get("visual_plan", {})
         plan = state.get("content_plan", {})
 
         # 获取配置

@@ -14,8 +14,8 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from backend.services.visual_analysis import VisualAnalysisService
 from backend.models.visual_types import LayoutOption
+from backend.services.visual_analysis import VisualAnalysisService
 
 logger = logging.getLogger("xhs_growth.tools.layout")
 
@@ -52,7 +52,10 @@ async def layout_recommender(
         - text_position: 文字位置建议
         - avg_engagement: 平均互动率
     """
-    logger.info(f"Layout recommendation for scene={scene}, type={content_type}, images={image_count}")
+    logger.info(
+        f"Layout recommendation for scene={scene}, "
+        f"type={content_type}, images={image_count}"
+    )
 
     # Create service instance
     service = VisualAnalysisService()

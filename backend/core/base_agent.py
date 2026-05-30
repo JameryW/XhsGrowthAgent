@@ -6,18 +6,17 @@ import json
 import logging
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 
 from backend.config.models import TaskType
-from backend.models.router import get_model
 from backend.memory.store import MemoryManager
+from backend.models.router import get_model
 from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.core")
@@ -54,7 +53,10 @@ class BaseAgent(ABC):
         if path.exists():
             with open(path) as f:
                 data = yaml.safe_load(f)
-            return {"system": data.get("system", ""), "user_template": data.get("user_template", "")}
+            return {
+                "system": data.get("system", ""),
+                "user_template": data.get("user_template", ""),
+            }
         return {"system": "", "user_template": ""}
 
     def _build_system_prompt(self, state: XHSGrowthState, extra_context: str = "") -> str:
@@ -63,7 +65,14 @@ class BaseAgent(ABC):
             template = template.replace("{memory_context}", extra_context)
         return template
 
-    async def _recall_memory(self, store: BaseStore, account_id: str, query: str, namespace: str, limit: int = 5) -> list[dict]:
+    async def _recall_memory(
+        self,
+        store: BaseStore,
+        account_id: str,
+        query: str,
+        namespace: str,
+        limit: int = 5,
+    ) -> list[dict]:
         mm = MemoryManager(account_id)
         ns_map = {
             "content_history": mm.content_history_ns,
@@ -117,7 +126,7 @@ class BaseAgent(ABC):
     async def __call__(self, state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
         """LangGraph node 入口点 — tracks timing and cost in performance_log."""
         start = time.monotonic()
-        started_at = datetime.now(timezone.utc).isoformat()
+        started_at = datetime.now(UTC).isoformat()
         model_id = self._get_model_id()
         try:
             result = await self.execute(state, store)
@@ -127,7 +136,7 @@ class BaseAgent(ABC):
                 "agent": self.agent_name,
                 "model": model_id,
                 "started_at": started_at,
-                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "completed_at": datetime.now(UTC).isoformat(),
                 "duration_seconds": elapsed,
                 "cost_usd": self._estimate_cost(elapsed, model_id),
                 "status": "success",
@@ -144,7 +153,7 @@ class BaseAgent(ABC):
                     "agent": self.agent_name,
                     "model": model_id,
                     "started_at": started_at,
-                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "completed_at": datetime.now(UTC).isoformat(),
                     "duration_seconds": elapsed,
                     "cost_usd": self._estimate_cost(elapsed, model_id),
                     "status": "error",

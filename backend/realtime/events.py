@@ -1,11 +1,11 @@
 """Event types and Event data class for real-time updates."""
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     """All business event types enumeration."""
 
     # Workflow events

@@ -1,6 +1,7 @@
 """Unit tests for Memory Manager."""
 
 from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from backend.memory.store import MemoryManager

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
 logger = logging.getLogger("xhs_growth.cost_tracker")
 
@@ -46,21 +46,24 @@ class CostTracker:
             cost_usd=cost,
             model=model,
             task=task,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
         self._usage.append(usage)
         logger.info(f"Cost: ${cost:.4f} | Model: {model} | Task: {task}")
 
         if self.today_total() > self.daily_budget:
             self._circuit_open = True
-            logger.warning(f"Daily budget exceeded: ${self.today_total():.2f} > ${self.daily_budget:.2f}")
+            logger.warning(
+                f"Daily budget exceeded: "
+                f"${self.today_total():.2f} > ${self.daily_budget:.2f}"
+            )
 
     @property
     def circuit_open(self) -> bool:
         return self._circuit_open
 
     def today_total(self) -> float:
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         return sum(u.cost_usd for u in self._usage if u.timestamp.startswith(today))
 
     def summary(self) -> dict:

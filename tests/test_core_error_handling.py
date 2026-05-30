@@ -1,5 +1,4 @@
 """Tests for core.error_handling module."""
-import pytest
 from backend.core.error_handling import AgentError, handle_agent_error
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState

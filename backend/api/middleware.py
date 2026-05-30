@@ -1,8 +1,10 @@
 """Exception handling middleware."""
-import uuid
 import logging
+import uuid
+
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
+
 from backend.api.errors import APIError, ErrorCode
 from backend.api.responses import error
 

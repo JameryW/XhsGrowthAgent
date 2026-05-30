@@ -16,7 +16,7 @@ logger = logging.getLogger("xhs_growth.tools.topic_scorer")
 @tool
 async def topic_scorer(
     topic: str,
-    keywords: list[str] = [],
+    keywords: list[str] | None = None,
     niche: str = "",
     time_window: str = "7d",
 ) -> dict[str, Any]:
@@ -31,6 +31,8 @@ async def topic_scorer(
     Returns:
         话题评分结果，包含热度得分、增长趋势、竞争度、推荐等级
     """
+    if keywords is None:
+        keywords = []
     logger.info(f"Scoring topic: {topic}")
 
     from backend.config.settings import Settings

@@ -1,13 +1,13 @@
 """Analyst node implementation."""
 
 from typing import Any
+
 from langgraph.store.base import BaseStore
 
-from backend.agents.nodes._base import NodeResult
 from backend.agents.analyst import AnalystAgent
+from backend.agents.nodes._base import NodeResult
 from backend.realtime import EventBusService, EventType
 from backend.state.schema import XHSGrowthState
-
 
 _analyst = AnalystAgent()
 

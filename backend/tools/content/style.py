@@ -14,8 +14,8 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from backend.services.visual_analysis import VisualAnalysisService
 from backend.models.visual_types import StyleOption
+from backend.services.visual_analysis import VisualAnalysisService
 
 logger = logging.getLogger("xhs_growth.tools.style")
 

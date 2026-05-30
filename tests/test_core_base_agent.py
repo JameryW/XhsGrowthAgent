@@ -1,5 +1,6 @@
 """Tests for core.base_agent module."""
 import pytest
+
 from backend.core.base_agent import BaseAgent
 
 

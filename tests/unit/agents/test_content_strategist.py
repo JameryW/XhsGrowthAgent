@@ -1,10 +1,11 @@
 """Unit tests for ContentStrategistAgent."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from backend.agents.content_strategist import ContentStrategistAgent
-from backend.state.schema import XHSGrowthState, WorkflowPhase
+from backend.state.schema import WorkflowPhase
 
 
 class TestContentStrategistAgent:
@@ -51,7 +52,7 @@ class TestContentStrategistAgent:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
         agent._model = mock_model
 
-        result = await agent.execute(mock_state, store=mock_store)
+        _result = await agent.execute(mock_state, store=mock_store)
 
         assert "content_plan" in result
         assert result["phase"] == WorkflowPhase.PLANNING
@@ -71,7 +72,7 @@ class TestContentStrategistAgent:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
         agent._model = mock_model
 
-        result = await agent.execute(mock_state, store=mock_store)
+        _result = await agent.execute(mock_state, store=mock_store)
 
         mock_store.asearch.assert_called()
 
@@ -92,7 +93,7 @@ class TestContentStrategistAgent:
                 "ripple_prediction": {"estimated_reach": 5000, "viral_probability": 0.3},
             }
 
-            result = await agent.execute(mock_state, store=mock_store)
+            __result = await agent.execute(mock_state, store=mock_store)
 
         assert result["content_plan"]["ripple_prediction"]["estimated_reach"] == 5000
 
@@ -109,7 +110,7 @@ class TestContentStrategistAgent:
         with patch("backend.tools.ripple.integration.predict_spread") as mock_predict:
             mock_predict.side_effect = Exception("Ripple unavailable")
 
-            result = await agent.execute(mock_state, store=mock_store)
+            __result = await agent.execute(mock_state, store=mock_store)
 
         # Should not have ripple_prediction
         assert "ripple_prediction" not in result.get("content_plan", {})
@@ -125,7 +126,7 @@ class TestContentStrategistAgent:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
         agent._model = mock_model
 
-        result = await agent.execute(mock_state, store=mock_store)
+        _result = await agent.execute(mock_state, store=mock_store)
 
         assert result["content_plan"]["selected_topic"] == ""
 

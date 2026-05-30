@@ -1,7 +1,6 @@
 """Tests for Event types and Event data class."""
 
-import pytest
-from backend.realtime.events import EventType, Event
+from backend.realtime.events import Event, EventType
 
 
 def test_event_type_enum():

@@ -1,12 +1,12 @@
 """Unit tests for BaseAgent class."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
-from backend.state.schema import XHSGrowthState
 
 
 class TestBaseAgent:

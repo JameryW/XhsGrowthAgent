@@ -1,0 +1,14 @@
+{
+  "xhs_test_account_191fc259": {
+    "thread_id": "xhs_test_account_191fc259",
+    "account_id": "test_account",
+    "phase": "scouting",
+    "status": "completed",
+    "dry_run": false,
+    "auto_publish": false,
+    "progress_percent": 100,
+    "created_at": "2026-05-30T11:39:44.417251+00:00",
+    "updated_at": "2026-05-30T11:39:44.417251+00:00",
+    "error": null
+  }
+}

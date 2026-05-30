@@ -1,6 +1,7 @@
 """Unified API response format."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Generic, TypeVar
+
 from pydantic import BaseModel
 
 T = TypeVar("T")
@@ -21,7 +22,7 @@ class ApiResponse(BaseModel, Generic[T]):
     success: bool
     data: T | None = None
     error: ErrorDetail | None = None
-    timestamp: datetime = datetime.now(timezone.utc)
+    timestamp: datetime = datetime.now(UTC)
     request_id: str | None = None
 
 def success(data: Any, request_id: str | None = None) -> ApiResponse:

@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.config.settings import Settings
-from backend.state.schema import XHSGrowthState, WorkflowPhase, EngagementAction
+from backend.state.schema import EngagementAction, WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.engagement")
 
@@ -22,7 +23,6 @@ class EngagementAgent(BaseAgent):
     prompt_file = "engagement.yaml"
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
-        account_id = state.get("account_id", "default")
         publish_result = state.get("publish_result", {})
 
         # 获取配置
@@ -86,7 +86,7 @@ class EngagementAgent(BaseAgent):
                             action_type="reply_comment",
                             target_id=comment.comment_id,
                             content=reply_content,
-                            timestamp=__import__("datetime").datetime.now().isoformat(),
+                            timestamp=datetime.now(UTC).isoformat(),
                         ))
 
             # 4. 处理私信
@@ -106,7 +106,7 @@ class EngagementAgent(BaseAgent):
                         action_type="reply_dm",
                         target_id=dm.message_id,
                         content=reply_content,
-                        timestamp=__import__("datetime").datetime.now().isoformat(),
+                        timestamp=datetime.now(UTC).isoformat(),
                     ))
 
             logger.info(f"完成 {len(engagement_actions)} 个互动操作")

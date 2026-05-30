@@ -1,10 +1,11 @@
 """Unit tests for AnalystAgent."""
 
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+
 import pytest
 
 from backend.agents.analyst import AnalystAgent
-from backend.state.schema import XHSGrowthState, WorkflowPhase
+from backend.state.schema import WorkflowPhase
 
 
 class TestAnalystAgent:
@@ -54,7 +55,7 @@ class TestAnalystAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+            _result = await agent.execute(mock_state, store=mock_store)
 
         assert "analytics" in result
         assert result["phase"] == WorkflowPhase.ANALYZING
@@ -75,7 +76,7 @@ class TestAnalystAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+            _result = await agent.execute(mock_state, store=mock_store)
 
         # Memory recall was called
         mock_store.asearch.assert_called()
@@ -91,7 +92,7 @@ class TestAnalystAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+            _result = await agent.execute(mock_state, store=mock_store)
 
         # Insights stored
         assert mock_store.aput.called

@@ -7,10 +7,10 @@ These tests verify that the OpenAPI spec:
 4. Has unified ApiResponse wrapper
 """
 
-import pytest
-import yaml
 from pathlib import Path
 
+import pytest
+import yaml
 
 # Path to OpenAPI spec (relative to project root)
 OPENAPI_SPEC_PATH = Path(__file__).resolve().parent.parent.parent / "api" / "spec" / "openapi.yaml"

@@ -1,6 +1,5 @@
 """Tests for realtime event payload contracts."""
 
-import pytest
 from backend.realtime.events import Event, EventType
 
 

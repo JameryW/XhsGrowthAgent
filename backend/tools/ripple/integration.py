@@ -17,12 +17,10 @@ import logging
 from typing import Any
 
 from backend.tools.ripple.client import (
+    ripple_generate_report,
+    ripple_get_simulation_result,
     ripple_predict_content_spread,
     ripple_validate_pmf,
-    ripple_get_simulation_status,
-    ripple_get_simulation_result,
-    ripple_get_simulation_log,
-    ripple_generate_report,
 )
 
 logger = logging.getLogger("xhs_growth.tools.ripple")
@@ -31,7 +29,7 @@ logger = logging.getLogger("xhs_growth.tools.ripple")
 async def predict_spread(
     topic: str,
     content_type: str = "图文笔记",
-    tags: list[str] = [],
+    tags: list[str] | None = None,
     tone: str = "真诚种草",
     description: str = "",
     max_waves: int = 8,
@@ -44,6 +42,8 @@ async def predict_spread(
         - status: 任务状态
         - 预测数据（如果同步完成）
     """
+    if tags is None:
+        tags = []
     try:
         result = await ripple_predict_content_spread.ainvoke({
             "topic": topic,
@@ -64,7 +64,7 @@ async def validate_pmf(
     product_name: str,
     category: str,
     description: str,
-    differentiators: list[str] = [],
+    differentiators: list[str] | None = None,
 ) -> dict[str, Any]:
     """验证产品市场契合度 — 供 ContentStrategist 调用
 
@@ -74,6 +74,8 @@ async def validate_pmf(
         - risk_factors: 风险因素
         - improvement_strategies: 改进策略
     """
+    if differentiators is None:
+        differentiators = []
     try:
         result = await ripple_validate_pmf.ainvoke({
             "product_name": product_name,
@@ -128,10 +130,19 @@ def parse_spread_prediction(result: dict[str, Any]) -> dict[str, Any]:
     return {
         "ripple_job_id": job_id,
         "ripple_prediction": {
-            "estimated_reach": metrics.get("estimated_reach", metrics.get("total_reach", 0)),
-            "estimated_engagement": metrics.get("estimated_engagement", metrics.get("total_engagement", 0)),
-            "viral_probability": metrics.get("viral_probability", metrics.get("outbreak_probability", 0.0)),
-            "phase": phase_analysis.get("phase", phase_analysis.get("dominant_phase", "unknown")),
+            "estimated_reach": metrics.get(
+                "estimated_reach", metrics.get("total_reach", 0)
+            ),
+            "estimated_engagement": metrics.get(
+                "estimated_engagement", metrics.get("total_engagement", 0)
+            ),
+            "viral_probability": metrics.get(
+                "viral_probability",
+                metrics.get("outbreak_probability", 0.0),
+            ),
+            "phase": phase_analysis.get(
+                "phase", phase_analysis.get("dominant_phase", "unknown")
+            ),
             "confidence": metrics.get("confidence", 0.0),
             "key_influencers": metrics.get("key_influencers", []),
             "spread_path": phase_analysis.get("spread_path", []),

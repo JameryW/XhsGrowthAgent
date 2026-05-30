@@ -1,11 +1,11 @@
 """Tests for exception handling middleware."""
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock
-from fastapi import Request
 from fastapi.responses import JSONResponse
+
+from backend.api.errors import ErrorCode, WorkflowNotFoundError
 from backend.api.middleware import error_handler_middleware
-from backend.api.errors import APIError, ErrorCode, WorkflowNotFoundError
-from backend.api.responses import ApiResponse
 
 
 class MockRequest:

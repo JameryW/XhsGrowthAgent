@@ -1,12 +1,16 @@
 """Tests for enhanced style_library tool."""
 
-import pytest
-from unittest.mock import MagicMock, patch
 from datetime import datetime
+from unittest.mock import MagicMock, patch
 
-from backend.tools.content.style import style_library, get_default_styles, _map_category_to_content_type
-from backend.models.visual_types import StyleOption, SceneAnalysisResult
+import pytest
 
+from backend.models.visual_types import SceneAnalysisResult, StyleOption
+from backend.tools.content.style import (
+    _map_category_to_content_type,
+    get_default_styles,
+    style_library,
+)
 
 # ── get_default_styles Tests ────────────────────────────────────────────────
 

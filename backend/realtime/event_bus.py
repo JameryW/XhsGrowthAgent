@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from collections import deque
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from backend.realtime.events import Event, EventType
@@ -55,7 +55,7 @@ class EventBusService:
                 event_type=event_type,
                 thread_id=thread_id,
                 payload=payload,
-                timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                timestamp=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
                 seq=self._seq,
             )
             self._seq += 1
