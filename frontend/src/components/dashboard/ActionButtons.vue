@@ -15,6 +15,8 @@ const realtimeStore = useRealtimeStore()
 // Check if workflow is active
 const hasActiveWorkflow = computed(() => !!workflowStore.currentThreadId)
 const isReviewing = computed(() => workflowStore.currentPhase === 'reviewing')
+const isPaused = computed(() => workflowStore.currentPhase === 'paused')
+const isCancelled = computed(() => workflowStore.currentPhase === 'cancelled')
 const needsReview = computed(() => reviewStore.hasPendingReview)
 const isStarting = ref(false)
 
@@ -68,6 +70,10 @@ const goToReview = () => {
     reviewStore.fetchPendingReview(workflowStore.currentThreadId)
     router.push('/review')
   }
+}
+
+const resumeWorkflow = () => {
+  workflowStore.resumeWorkflow()
 }
 </script>
 
@@ -124,9 +130,43 @@ const goToReview = () => {
         </span>
       </NeonButton>
 
-      <!-- Regular buttons when not reviewing -->
+      <!-- Resume button when paused -->
       <NeonButton
-        v-if="!isReviewing"
+        v-if="isPaused"
+        variant="cyan"
+        size="lg"
+        class="w-full sm:w-auto"
+        :title="t('dashboard.actionButtons.resumeDesc')"
+        :aria-label="t('dashboard.actionButtons.resume')"
+        :loading="workflowStore.isLoading"
+        @click="resumeWorkflow"
+      >
+        <span class="inline-flex items-center gap-2">
+          <AppIcon name="Play" size="lg" variant="white" />
+          <span class="font-bold">{{ t('dashboard.actionButtons.resume') }}</span>
+        </span>
+      </NeonButton>
+
+      <!-- Start new workflow when cancelled -->
+      <NeonButton
+        v-if="isCancelled"
+        variant="pink"
+        size="lg"
+        class="w-full sm:w-auto"
+        :title="t('dashboard.actionButtons.startNewDesc')"
+        :aria-label="t('dashboard.actionButtons.startNew')"
+        :loading="isStarting"
+        @click="startNewWorkflow"
+      >
+        <span class="inline-flex items-center gap-2">
+          <AppIcon name="Rocket" size="lg" variant="white" />
+          <span class="font-bold">{{ t('dashboard.actionButtons.startNew') }}</span>
+        </span>
+      </NeonButton>
+
+      <!-- Regular buttons when not reviewing, paused, or cancelled -->
+      <NeonButton
+        v-if="!isReviewing && !isPaused && !isCancelled"
         variant="pink"
         :title="t('dashboard.actionButtons.pauseDesc')"
         :aria-label="t('dashboard.actionButtons.pause')"
@@ -151,9 +191,9 @@ const goToReview = () => {
         </span>
       </NeonButton>
 
-      <!-- Standard review button when not in reviewing phase -->
+      <!-- Standard review button when not in reviewing/paused/cancelled phase -->
       <NeonButton
-        v-if="!isReviewing"
+        v-if="!isReviewing && !isPaused && !isCancelled"
         variant="purple"
         :title="t('dashboard.actionButtons.goReviewDesc')"
         :aria-label="t('dashboard.actionButtons.goReview')"

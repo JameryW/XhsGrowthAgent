@@ -132,9 +132,11 @@ const insightBg = (type: string) => {
   }
 }
 
-// Start new workflow with recommended topic
-function startWithTopic(topic: string) {
-  router.push({ path: '/', query: { topic } })
+// Start new workflow with recommended topic (and optional niche)
+function startWithTopic(topic: string, niche?: string) {
+  const query: Record<string, string> = { topic }
+  if (niche) query.niche = niche
+  router.push({ path: '/', query })
 }
 </script>
 

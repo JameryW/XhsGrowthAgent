@@ -78,8 +78,8 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     try {
       const [report, perf, costs] = await Promise.all([
         analyticsApi.getGrowthReport(accountId.value, period.value),
-        analyticsApi.getPerformance(accountId.value, 20),
-        analyticsApi.getCosts(),
+        analyticsApi.getPerformance(accountId.value, period.value, 20),
+        analyticsApi.getCosts(period.value),
       ])
       growthReport.value = report
       performanceData.value = perf
@@ -105,7 +105,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   async function fetchPerformance() {
     isLoading.value = true
     try {
-      performanceData.value = await analyticsApi.getPerformance(accountId.value, 20)
+      performanceData.value = await analyticsApi.getPerformance(accountId.value, period.value, 20)
     } catch (e: any) {
       error.value = e.message
     } finally {
@@ -116,7 +116,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   async function fetchCosts() {
     isLoading.value = true
     try {
-      costData.value = await analyticsApi.getCosts()
+      costData.value = await analyticsApi.getCosts(period.value)
     } catch (e: any) {
       error.value = e.message
     } finally {

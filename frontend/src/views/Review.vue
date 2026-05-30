@@ -235,15 +235,26 @@ const executeDecision = async (decision: ContentStatus) => {
     const publishOpts = decision === 'approved'
       ? { dry_run: publishDryRun.value }
       : undefined
-    await reviewStore.submitDecision(decision, feedback, undefined, publishOpts)
+    const result = await reviewStore.submitDecision(decision, feedback, undefined, publishOpts)
 
+    // Use backend next_phase to show accurate outcome
+    const nextPhase = result?.next_phase || decision
     if (decision === 'approved') {
       const mode = publishDryRun.value ? t('review.dryRunMode') : t('review.liveMode')
-      toastStore.success(t('review.decisionApproved'), `${t('review.decisionLabel')}: ${decision} · ${mode}`)
+      toastStore.success(
+        t('review.decisionApproved'),
+        `${t('review.decisionLabel')}: ${decision} · ${mode} → ${nextPhase}`
+      )
     } else if (decision === 'rejected') {
-      toastStore.warning(t('review.decisionRejected'), `${t('review.decisionLabel')}: ${decision}`)
+      toastStore.warning(
+        t('review.decisionRejected'),
+        `${t('review.decisionLabel')}: ${decision} → ${nextPhase}`
+      )
     } else {
-      toastStore.info(t('review.decisionRevision'), `${t('review.decisionLabel')}: ${decision}`)
+      toastStore.info(
+        t('review.decisionRevision'),
+        `${t('review.decisionLabel')}: ${decision} → ${nextPhase}`
+      )
     }
 
     router.push('/dashboard')

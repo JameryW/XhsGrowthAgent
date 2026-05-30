@@ -12,12 +12,13 @@ export async function getGrowthReport(
 // 获取帖子表现
 export async function getPerformance(
   accountId: string,
+  period: string = 'weekly',
   limit: number = 20
 ): Promise<PerformanceData> {
-  return client.get(`/analytics/performance/${accountId}`, { params: { limit } })
+  return client.get(`/analytics/performance/${accountId}`, { params: { period, limit } })
 }
 
 // 获取成本统计
-export async function getCosts(): Promise<CostData> {
-  return client.get('/analytics/costs')
+export async function getCosts(period: string = 'weekly'): Promise<CostData> {
+  return client.get('/analytics/costs', { params: { period } })
 }

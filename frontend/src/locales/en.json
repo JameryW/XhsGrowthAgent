@@ -194,6 +194,8 @@
       "goReviewPendingDesc": "Review content - ready for your decision",
       "pause": "Pause Workflow",
       "pauseDesc": "Pause current workflow execution",
+      "resume": "Resume Workflow",
+      "resumeDesc": "Resume paused workflow execution",
       "refresh": "Refresh Status",
       "refreshDesc": "Refresh to get latest workflow status"
     },
@@ -450,7 +452,9 @@
     "connecting": "Connecting...",
     "reconnecting": "Reconnecting...",
     "disconnected": "Disconnected",
-    "seqNumber": "Message sequence number"
+    "seqNumber": "Message sequence number",
+    "recoveryTitle": "Real-time Sync Restored",
+    "recoveryMessage": "Recovered {count} missed events (seq: {seq})"
   },
   "errorState": {
     "workflowError": "Workflow Error",

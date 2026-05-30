@@ -8,6 +8,9 @@ export type EventHandler = (event: WsMessage) => void
 /** Status change callback type */
 export type StatusCallback = (status: WsStatus) => void
 
+/** Recovery event callback — fired after missed events are replayed on reconnect */
+export type RecoveryCallback = (recoveredCount: number, lastSeq: number) => void
+
 /** WebSocket connection configuration */
 export interface WebSocketConfig {
   /** WebSocket server URL (default: derived from window.location) */
@@ -54,6 +57,7 @@ export class WebSocketService {
   private subscribedThreads: Set<string> = new Set()
   private messageHandlers: Map<EventType, Set<EventHandler>> = new Map()
   private statusCallbacks: Set<StatusCallback> = new Set()
+  private recoveryCallbacks: Set<RecoveryCallback> = new Set()
 
   private config: Required<WebSocketConfig>
 
@@ -157,9 +161,14 @@ export class WebSocketService {
 
   /** Handle missed events batch */
   private handleMissedEvents(response: WsMissedEventsResponse): void {
+    const count = response.events.length
     response.events.forEach((msg) => {
       this.handleEvent(msg)
     })
+    // Notify recovery callbacks after all events are processed
+    if (count > 0) {
+      this.recoveryCallbacks.forEach((cb) => cb(count, this.lastSeq))
+    }
   }
 
   /** Handle individual business event */
@@ -280,6 +289,22 @@ export class WebSocketService {
    */
   offStatusChange(callback: StatusCallback): void {
     this.statusCallbacks.delete(callback)
+  }
+
+  /**
+   * Register recovery callback — fired after missed events are replayed on reconnect
+   * @param callback - Recovery callback
+   */
+  onRecovery(callback: RecoveryCallback): void {
+    this.recoveryCallbacks.add(callback)
+  }
+
+  /**
+   * Remove recovery callback
+   * @param callback - Callback to remove
+   */
+  offRecovery(callback: RecoveryCallback): void {
+    this.recoveryCallbacks.delete(callback)
   }
 
   /** Schedule reconnect with exponential backoff */

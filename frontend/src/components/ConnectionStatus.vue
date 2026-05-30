@@ -77,5 +77,13 @@ const currentStyle = computed(() => statusStyles.value[realtimeStore.connectionS
     >
       seq: {{ realtimeStore.getLastSeq() }}
     </span>
+
+    <span
+      v-if="realtimeStore.lastRecoveredSeq > 0 && realtimeStore.connectionStatus === 'connected'"
+      class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-600/80 text-xs font-medium"
+      :aria-label="t('connection.recoveryTitle')"
+    >
+      {{ t('connection.recoveryTitle') }}
+    </span>
   </div>
 </template>
