@@ -54,11 +54,20 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const offlineStore = useOfflineStore()
   const { phaseToPercent, isOverlayPhase } = useLoading()
 
+  // Phases that should NOT reset progress — preserve last valid value
+  const PRESERVE_PROGRESS_PHASES: WorkflowPhase[] = ['paused', 'cancelled']
+
   /**
    * Update progress percent and overlay loading state from phase.
    * Uses backend progress_percent when available, falls back to local mapping.
+   * Preserves last valid progress for paused/cancelled states.
    */
   function updateProgressFromPhase(phase: WorkflowPhase, backendProgress?: number) {
+    if (PRESERVE_PROGRESS_PHASES.includes(phase) && !backendProgress) {
+      // Keep current progress — don't reset to 0
+      isOverlayLoading.value = false
+      return
+    }
     progressPercent.value = backendProgress ?? phaseToPercent(phase)
     isOverlayLoading.value = isOverlayPhase(phase)
   }

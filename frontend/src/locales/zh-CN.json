@@ -194,6 +194,8 @@
       "goReviewPendingDesc": "去审核内容 - 内容已准备好等待审核",
       "pause": "暂停工作流",
       "pauseDesc": "暂停当前工作流执行",
+      "resume": "恢复工作流",
+      "resumeDesc": "恢复已暂停的工作流执行",
       "refresh": "刷新状态",
       "refreshDesc": "刷新获取最新工作流状态"
     },
@@ -450,7 +452,9 @@
     "connecting": "连接中...",
     "reconnecting": "重连中...",
     "disconnected": "已断开",
-    "seqNumber": "消息序列号"
+    "seqNumber": "消息序列号",
+    "recoveryTitle": "已恢复实时同步",
+    "recoveryMessage": "已补齐 {count} 条丢失事件（seq: {seq}）"
   },
   "errorState": {
     "workflowError": "工作流错误",

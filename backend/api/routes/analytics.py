@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -58,6 +58,33 @@ async def _get_completed_workflows(
     return results
 
 
+def _period_cutoff_hours(period: str) -> int:
+    """Convert period string to cutoff hours."""
+    if period == "daily":
+        return 24
+    elif period == "weekly":
+        return 7 * 24
+    else:
+        return 30 * 24
+
+
+def _filter_by_period(posts: list[dict], period: str) -> list[dict]:
+    """Filter posts by time period."""
+    now = datetime.now(UTC)
+    cutoff_hours = _period_cutoff_hours(period)
+    filtered = []
+    for p in posts:
+        try:
+            pub = datetime.fromisoformat(p["published_at"].replace(" ", "T"))
+            if pub.tzinfo is None:
+                pub = pub.replace(tzinfo=UTC)
+            if (now - pub).total_seconds() / 3600 <= cutoff_hours:
+                filtered.append(p)
+        except (ValueError, AttributeError):
+            filtered.append(p)
+    return filtered
+
+
 def _extract_post_data(wf_state: dict) -> dict | None:
     """Extract post performance data from a completed workflow state."""
     publish = wf_state.get("publish_result") or {}
@@ -108,24 +135,7 @@ async def get_growth_report(
             topics[topic] = topics.get(topic, 0) + 1
 
     # Filter by period
-    now = datetime.now(timezone.utc)
-    if period == "daily":
-        cutoff_hours = 24
-    elif period == "weekly":
-        cutoff_hours = 7 * 24
-    else:
-        cutoff_hours = 30 * 24
-
-    filtered_posts = []
-    for p in posts:
-        try:
-            pub = datetime.fromisoformat(p["published_at"].replace(" ", "T"))
-            if pub.tzinfo is None:
-                pub = pub.replace(tzinfo=timezone.utc)
-            if (now - pub).total_seconds() / 3600 <= cutoff_hours:
-                filtered_posts.append(p)
-        except (ValueError, AttributeError):
-            filtered_posts.append(p)
+    filtered_posts = _filter_by_period(posts, period)
 
     total_engagement = sum(
         p["likes"] + p["comments"] + p["collects"] for p in filtered_posts
@@ -168,7 +178,7 @@ async def get_growth_report(
 
 @router.get("/performance/{account_id}")
 async def get_performance(
-    account_id: str, limit: int = 20, request: Request = None
+    account_id: str, period: str = "weekly", limit: int = 20, request: Request = None
 ):
     """获取最近帖子表现数据 — from real completed workflows."""
     graph = request.app.state.graph
@@ -181,12 +191,16 @@ async def get_performance(
         if post:
             posts.append(post)
 
+    # Filter by period
+    posts = _filter_by_period(posts, period)
+
     # Sort by published_at descending
     posts.sort(key=lambda p: p.get("published_at", ""), reverse=True)
     posts = posts[:limit]
 
     return success(data={
         "account_id": account_id,
+        "period": period,
         "posts": posts,
         "total": len(posts),
         "fetched_at": datetime.now().isoformat(),
@@ -194,15 +208,20 @@ async def get_performance(
 
 
 @router.get("/costs")
-async def get_costs(request: Request):
+async def get_costs(period: str = "weekly", request: Request = None):
     """获取 LLM 调用成本 — aggregated from workflow performance logs."""
     graph = request.app.state.graph
     workflows = await _get_completed_workflows(graph)
 
+    now = datetime.now(UTC)
+    cutoff_hours = _period_cutoff_hours(period)
+    cutoff_time = now.timestamp() - cutoff_hours * 3600
+
     by_model: dict[str, float] = {}
     total_cost = 0.0
+    period_cost = 0.0
     today_cost = 0.0
-    today = datetime.now(timezone.utc).date()
+    today = now.date()
 
     for wf in workflows:
         state = wf.get("_state", {})
@@ -213,19 +232,26 @@ async def get_costs(request: Request):
             total_cost += cost
             by_model[model] = by_model.get(model, 0.0) + cost
 
-            # Check if entry is from today
+            # Check if entry is within period
             try:
                 ts = entry.get("timestamp", "")
                 if ts:
-                    entry_date = datetime.fromisoformat(ts).date()
+                    entry_dt = datetime.fromisoformat(ts)
+                    if entry_dt.tzinfo is None:
+                        entry_dt = entry_dt.replace(tzinfo=UTC)
+                    entry_date = entry_dt.date()
                     if entry_date == today:
                         today_cost += cost
+                    if entry_dt.timestamp() >= cutoff_time:
+                        period_cost += cost
             except (ValueError, AttributeError):
                 pass
 
     return success(data={
         "total_cost_usd": round(total_cost, 2),
+        "period_cost_usd": round(period_cost, 2),
         "today_cost_usd": round(today_cost, 2),
+        "period": period,
         "by_model": {k: round(v, 2) for k, v in by_model.items()},
         "circuit_open": False,
         "budget_remaining_usd": round(max(0, 10.0 - total_cost), 2),

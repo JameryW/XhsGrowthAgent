@@ -34,12 +34,16 @@ const formConfig = ref<WorkflowConfig>({
   niche: '母婴',
 })
 
-// Check for topic query param from analytics
+// Check for topic and niche query params from analytics
 onMounted(() => {
   const topic = route.query.topic as string
+  const niche = route.query.niche as string
   if (topic) {
     prefilledTopic.value = topic
     showForm.value = true
+  }
+  if (niche) {
+    formConfig.value.niche = niche
   }
 })
 
