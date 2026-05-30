@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
-import HealthCheckPanel from '@/components/HealthCheckPanel.vue'
+import PreLaunchChecklist from '@/components/PreLaunchChecklist.vue'
 import WorkflowStartForm from '@/components/WorkflowStartForm.vue'
 import ConfirmStartModal from '@/components/ConfirmStartModal.vue'
 import type { WorkflowConfig } from '@/components/WorkflowStartForm.vue'
@@ -20,6 +20,7 @@ const isStarting = ref(false)
 const showConfirm = ref(false)
 const showForm = ref(true)
 const startFormRef = ref<InstanceType<typeof WorkflowStartForm> | null>(null)
+const checklistRef = ref<InstanceType<typeof PreLaunchChecklist> | null>(null)
 
 // Pre-filled topic from analytics
 const prefilledTopic = ref<string | null>(null)
@@ -54,6 +55,12 @@ const handleFormSubmit = () => {
   if (startFormRef.value) {
     formConfig.value = startFormRef.value.getConfig()
   }
+
+  // Auto-set dry-run based on checklist recommendation
+  if (checklistRef.value?.suggestedDryRun) {
+    formConfig.value.dryRun = true
+  }
+
   showConfirm.value = true
 }
 
@@ -86,33 +93,19 @@ const quickStart = () => {
 </script>
 
 <template>
-  <div class="min-h-[80vh] flex flex-col items-center justify-center relative overflow-hidden">
-    <!-- Animated gradient mesh -->
-    <div class="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
-      <div class="absolute top-1/4 left-1/4 w-[400px] h-[400px] rounded-full opacity-60 animate-pulse" style="background: radial-gradient(circle, rgba(244,63,94,0.12) 0%, transparent 50%); animation-duration: 4s;" />
-      <div class="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] rounded-full opacity-50 animate-pulse" style="background: radial-gradient(circle, rgba(20,184,166,0.1) 0%, transparent 50%); animation-duration: 5s; animation-delay: 1s;" />
-      <div class="absolute top-1/2 right-1/3 w-[250px] h-[250px] rounded-full opacity-40 animate-pulse" style="background: radial-gradient(circle, rgba(139,92,246,0.08) 0%, transparent 50%); animation-duration: 6s; animation-delay: 2s;" />
-    </div>
-
-    <div class="w-full max-w-lg space-y-4 relative">
-      <!-- Health Check Panel -->
-      <HealthCheckPanel />
+  <div class="min-h-[80vh] flex flex-col items-center justify-center">
+    <div class="w-full max-w-lg space-y-4">
+      <!-- Pre-Launch Checklist -->
+      <PreLaunchChecklist ref="checklistRef" />
 
       <!-- Main Card -->
-      <div class="rounded-2xl p-8 relative overflow-hidden bg-white/85 backdrop-blur-xl border border-white/50 shadow-2xl shadow-rose-500/5 transition-all duration-300 hover:shadow-rose-500/10 group">
-        <!-- Glow effect -->
-        <div class="absolute -inset-px rounded-2xl bg-gradient-to-r from-rose-400/20 via-teal-400/20 to-violet-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 -z-10 blur-xl" aria-hidden="true" />
-
-        <div class="text-center mb-8 relative">
-          <div class="relative inline-block mb-5 group/icon">
-            <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-rose-400 via-rose-500 to-amber-400 flex items-center justify-center shadow-xl shadow-rose-500/30 transition-all duration-300 group-hover/icon:shadow-rose-500/50 group-hover/icon:scale-105 group-hover/icon:-translate-y-1 mx-auto" aria-hidden="true">
-              <AppIcon name="Rocket" size="xl" variant="white" />
-            </div>
-            <div class="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-rose-400 opacity-60 animate-ping" style="animation-duration: 2s;" aria-hidden="true" />
-            <div class="absolute -bottom-1 -left-3 w-3 h-3 rounded-full bg-teal-400 opacity-50 animate-ping" style="animation-duration: 2.5s; animation-delay: 0.5s;" aria-hidden="true" />
+      <div class="rounded-2xl p-8 bg-white border border-slate-200/50 shadow-sm">
+        <div class="text-center mb-8">
+          <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm mx-auto mb-4">
+            <AppIcon name="Rocket" size="xl" variant="white" />
           </div>
-          <h1 class="text-2xl font-bold mb-2 text-slate-800 tracking-tight">{{ t('home.title') }}</h1>
-          <p class="text-sm text-slate-500 font-medium">{{ t('home.subtitle') }}</p>
+          <h1 class="text-2xl font-bold mb-2 text-slate-800">{{ t('home.title') }}</h1>
+          <p class="text-sm text-slate-500">{{ t('home.subtitle') }}</p>
         </div>
 
         <!-- Pre-filled topic from analytics -->

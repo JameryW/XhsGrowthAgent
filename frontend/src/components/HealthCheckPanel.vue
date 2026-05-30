@@ -142,12 +142,13 @@ const issueCount = computed(() => {
       </div>
 
       <div v-else-if="health" class="p-4 space-y-3">
-        <!-- LLM Providers -->
+        <!-- LLM Providers (Required) -->
         <div class="rounded-lg p-3 border" :class="statusBg(health.checks.llm_providers.status)">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <AppIcon name="Cpu" size="sm" variant="purple" />
               <span class="text-sm font-medium text-slate-700">LLM Provider</span>
+              <span class="text-xs px-1.5 py-0.5 rounded bg-rose-50 text-rose-500 font-medium">{{ t('health.required') }}</span>
             </div>
             <div class="flex items-center gap-2">
               <span :class="[statusColor(health.checks.llm_providers.status), 'w-2 h-2 rounded-full']" />
@@ -169,12 +170,13 @@ const issueCount = computed(() => {
           </div>
         </div>
 
-        <!-- XHS Platform -->
+        <!-- XHS Platform (Optional - controls real publishing) -->
         <div class="rounded-lg p-3 border" :class="statusBg(health.checks.xhs_platform.status)">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <AppIcon name="Smartphone" size="sm" variant="pink" />
               <span class="text-sm font-medium text-slate-700">{{ t('health.xhsPlatform') }}</span>
+              <span class="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">{{ t('health.optional') }}</span>
             </div>
             <div class="flex items-center gap-2">
               <span :class="[statusColor(health.checks.xhs_platform.status), 'w-2 h-2 rounded-full']" />
@@ -196,12 +198,13 @@ const issueCount = computed(() => {
           </div>
         </div>
 
-        <!-- Ripple CAS -->
+        <!-- Ripple CAS (Optional) -->
         <div class="rounded-lg p-3 border" :class="statusBg(health.checks.ripple_cas.status)">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <AppIcon name="Zap" size="sm" variant="cyan" />
               <span class="text-sm font-medium text-slate-700">Ripple CAS</span>
+              <span class="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">{{ t('health.optional') }}</span>
             </div>
             <div class="flex items-center gap-2">
               <span :class="[statusColor(health.checks.ripple_cas.status), 'w-2 h-2 rounded-full']" />

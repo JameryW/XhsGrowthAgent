@@ -80,6 +80,7 @@ class TestModelRegistry:
             "gpt-4o",
             "deepseek-chat",
             "qwen-plus",
+            "mimo-v2.5-pro",
         ]
         for model_id in expected_models:
             assert model_id in MODEL_REGISTRY
@@ -94,34 +95,34 @@ class TestModelRegistry:
 class TestResolveModelId:
     """Tests for resolve_model_id function."""
 
-    def test_routing_tasks_use_deepseek(self):
-        """ROUTING and SCOUTING use deepseek-chat."""
-        assert resolve_model_id(TaskType.ROUTING) == "deepseek-chat"
-        assert resolve_model_id(TaskType.SCOUTING) == "deepseek-chat"
+    def test_routing_tasks_use_mimo(self):
+        """ROUTING and SCOUTING use mimo-v2.5-pro."""
+        assert resolve_model_id(TaskType.ROUTING) == "mimo-v2.5-pro"
+        assert resolve_model_id(TaskType.SCOUTING) == "mimo-v2.5-pro"
 
-    def test_strategy_writing_use_claude(self):
-        """STRATEGY and WRITING use claude-sonnet-4."""
-        assert resolve_model_id(TaskType.STRATEGY) == "claude-sonnet-4-20250514"
-        assert resolve_model_id(TaskType.WRITING) == "claude-sonnet-4-20250514"
+    def test_strategy_writing_use_mimo(self):
+        """STRATEGY and WRITING use mimo-v2.5-pro."""
+        assert resolve_model_id(TaskType.STRATEGY) == "mimo-v2.5-pro"
+        assert resolve_model_id(TaskType.WRITING) == "mimo-v2.5-pro"
 
-    def test_visual_analysis_use_gpt4o(self):
-        """VISUAL and ANALYSIS use gpt-4o."""
-        assert resolve_model_id(TaskType.VISUAL) == "gpt-4o"
-        assert resolve_model_id(TaskType.ANALYSIS) == "gpt-4o"
+    def test_visual_analysis_use_mimo(self):
+        """VISUAL and ANALYSIS use mimo-v2.5-pro."""
+        assert resolve_model_id(TaskType.VISUAL) == "mimo-v2.5-pro"
+        assert resolve_model_id(TaskType.ANALYSIS) == "mimo-v2.5-pro"
 
-    def test_publishing_use_qwen(self):
-        """PUBLISHING uses qwen-plus."""
-        assert resolve_model_id(TaskType.PUBLISHING) == "qwen-plus"
+    def test_publishing_use_mimo(self):
+        """PUBLISHING uses mimo-v2.5-pro."""
+        assert resolve_model_id(TaskType.PUBLISHING) == "mimo-v2.5-pro"
 
-    def test_engagement_use_deepseek(self):
-        """ENGAGEMENT uses deepseek-chat."""
-        assert resolve_model_id(TaskType.ENGAGEMENT) == "deepseek-chat"
+    def test_engagement_use_mimo(self):
+        """ENGAGEMENT uses mimo-v2.5-pro."""
+        assert resolve_model_id(TaskType.ENGAGEMENT) == "mimo-v2.5-pro"
 
     def test_routing_overrides(self):
         """Routing overrides allow custom model assignments."""
-        overrides = {"routing": "gpt-4o"}
+        overrides = {"routing": "deepseek-chat"}
         result = resolve_model_id(TaskType.ROUTING, routing_overrides=overrides)
-        assert result == "gpt-4o"
+        assert result == "deepseek-chat"
 
 
 class TestGetModelConfig:

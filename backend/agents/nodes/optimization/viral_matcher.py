@@ -17,7 +17,7 @@ async def viral_matcher_node(state: XHSGrowthState, *, store: BaseStore) -> dict
     result = await _viral_matcher(state, store=store)
 
     # Emit data updated event for viral_posts
-    thread_id = state.get("thread_id")
+    thread_id = state.get("session_id")
     if result.get("viral_posts"):
         EventBusService.get_instance().emit(
             EventType.WORKFLOW_DATA_UPDATED,

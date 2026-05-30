@@ -97,7 +97,7 @@ const handleErrorBoundaryRefresh = () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100/80 flex relative overflow-hidden">
+  <div class="min-h-screen bg-slate-50/80 flex relative overflow-hidden">
     <!-- Skip to main content link for keyboard users -->
     <a
       href="#main-content"
@@ -106,15 +106,8 @@ const handleErrorBoundaryRefresh = () => {
       {{ t('common.skipToContent') }}
     </a>
 
-    <!-- Animated gradient mesh -->
-    <div class="absolute inset-0 pointer-events-none overflow-hidden">
-      <div class="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full opacity-70 animate-pulse" style="background: radial-gradient(circle, rgba(244,63,94,0.15) 0%, transparent 50%); animation-duration: 4s;" />
-      <div class="absolute -bottom-40 -left-40 w-[400px] h-[400px] rounded-full opacity-60 animate-pulse" style="background: radial-gradient(circle, rgba(20,184,166,0.12) 0%, transparent 50%); animation-duration: 5s; animation-delay: 1s;" />
-      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] rounded-full opacity-40 animate-pulse" style="background: radial-gradient(circle, rgba(139,92,246,0.1) 0%, transparent 50%); animation-duration: 6s; animation-delay: 2s;" />
-    </div>
-
-    <!-- Subtle grid -->
-    <div class="absolute inset-0 pointer-events-none" style="background-image: linear-gradient(rgba(0,0,0,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.02) 1px, transparent 1px); background-size: 40px 40px;" />
+    <!-- Subtle background pattern -->
+    <div class="absolute inset-0 pointer-events-none opacity-30" style="background-image: radial-gradient(circle at 1px 1px, rgba(0,0,0,0.05) 1px, transparent 0); background-size: 24px 24px;" />
 
     <!-- Status indicators (always visible) -->
     <Toast />

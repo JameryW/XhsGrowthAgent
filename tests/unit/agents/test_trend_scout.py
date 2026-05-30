@@ -1,6 +1,6 @@
 """Unit tests for TrendScoutAgent."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from backend.agents.trend_scout import TrendScoutAgent
@@ -42,10 +42,11 @@ class TestTrendScoutAgent:
 }
 ```"""
 
-        with patch.object(agent, "model") as mock_model:
-            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+        result = await agent.execute(mock_state, store=mock_store)
 
         assert "trend_data" in result
         assert result["phase"] == WorkflowPhase.SCOUTING
@@ -60,10 +61,11 @@ class TestTrendScoutAgent:
         mock_response = MagicMock()
         mock_response.content = '{"trending_topics": []}'
 
-        with patch.object(agent, "model") as mock_model:
-            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+        result = await agent.execute(mock_state, store=mock_store)
 
         # Memory was recalled
         mock_store.asearch.assert_called_once()
@@ -75,10 +77,11 @@ class TestTrendScoutAgent:
         mock_response = MagicMock()
         mock_response.content = "Not valid JSON"
 
-        with patch.object(agent, "model") as mock_model:
-            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+        result = await agent.execute(mock_state, store=mock_store)
 
         # Should still return trend_data with raw_content
         assert "trend_data" in result
@@ -91,10 +94,11 @@ class TestTrendScoutAgent:
         mock_response = MagicMock()
         mock_response.content = '{"trending_topics": []}'
 
-        with patch.object(agent, "model") as mock_model:
-            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+        result = await agent.execute(mock_state, store=mock_store)
 
         assert result["phase"] == WorkflowPhase.SCOUTING
 

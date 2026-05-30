@@ -14,12 +14,26 @@ _trend_scout = TrendScoutAgent()
 
 async def trend_scout_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
     """Execute trend scout agent and emit data updated event."""
+    thread_id = state.get("session_id")
+    event_bus = EventBusService.get_instance()
+
+    event_bus.emit(
+        EventType.WORKFLOW_AGENT_STARTED,
+        thread_id=thread_id,
+        payload={"agent": "trend_scout"},
+    )
+
     result = await _trend_scout(state, store=store)
 
+    event_bus.emit(
+        EventType.WORKFLOW_AGENT_COMPLETED,
+        thread_id=thread_id,
+        payload={"agent": "trend_scout"},
+    )
+
     # Emit data updated event for trend_data
-    thread_id = state.get("thread_id")
     if result.get("trend_data"):
-        EventBusService.get_instance().emit(
+        event_bus.emit(
             EventType.WORKFLOW_DATA_UPDATED,
             thread_id=thread_id,
             payload={"data_type": "trend_data", "data": result.get("trend_data")},

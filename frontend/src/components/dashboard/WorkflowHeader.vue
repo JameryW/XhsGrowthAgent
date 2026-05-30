@@ -12,6 +12,21 @@ const workflowStore = useWorkflowStore()
 // Memoized phase order for performance
 const phaseOrder = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'completed'] as const
 
+// Phase display labels (i18n)
+const phaseLabels: Record<string, string> = {
+  idle: t('dashboard.phase.idle'),
+  scouting: t('dashboard.phase.scouting'),
+  planning: t('dashboard.phase.planning'),
+  creating: t('dashboard.phase.creating'),
+  reviewing: t('dashboard.phase.reviewing'),
+  publishing: t('dashboard.phase.publishing'),
+  analyzing: t('dashboard.phase.analyzing'),
+  engaging: t('dashboard.phase.engaging'),
+  completed: t('dashboard.phase.completed'),
+  error: t('dashboard.phase.error'),
+  cancelled: t('dashboard.phase.cancelled'),
+}
+
 // Default time estimates per phase (in seconds) - based on typical execution
 const phaseTimeEstimates: Record<string, number> = {
   idle: 0,
@@ -26,13 +41,8 @@ const phaseTimeEstimates: Record<string, number> = {
   error: 0,
 }
 
-// Progress calculation based on current phase
-const workflowProgress = computed(() => {
-  const currentPhase = workflowStore.currentPhase
-  const currentIndex = phaseOrder.indexOf(currentPhase as any)
-  if (currentIndex === -1) return 0
-  return Math.round((currentIndex / (phaseOrder.length - 1)) * 100)
-})
+// Use unified progress from store (backend progress_percent with local fallback)
+const workflowProgress = computed(() => workflowStore.progressPercent)
 
 // Estimated time remaining calculation
 const estimatedTimeRemaining = computed(() => {
@@ -97,7 +107,7 @@ const timeRemainingDisplay = computed(() => {
           <span class="text-xs text-slate-400">{{ workflowStore.currentThreadId || '—' }}</span>
         </div>
         <div class="text-xl font-semibold text-slate-800">
-          {{ workflowStore.currentPhase === 'idle' ? t('dashboard.header.waiting') : `${workflowStore.currentPhase}` }}
+          {{ phaseLabels[workflowStore.currentPhase] || workflowStore.currentPhase }}
         </div>
         <!-- Estimated time remaining -->
         <div v-if="timeRemainingDisplay" class="flex items-center gap-2 text-sm text-slate-500">

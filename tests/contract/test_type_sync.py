@@ -15,8 +15,8 @@ import re
 from pathlib import Path
 
 
-# Project paths (use absolute paths to main project, not worktree)
-PROJECT_ROOT = Path("/Users/jameryw/aiworks/XhsGrowthAgent")
+# Project paths (relative to this test file)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 OPENAPI_SPEC_PATH = PROJECT_ROOT / "api" / "spec" / "openapi.yaml"
 BACKEND_ENUMS_PATH = PROJECT_ROOT / "backend" / "state" / "enums.py"
 FRONTEND_TYPES_PATH = PROJECT_ROOT / "frontend" / "src" / "types"

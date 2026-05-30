@@ -16,16 +16,32 @@ async def orchestrator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
     """Execute orchestrator agent and emit phase change event."""
     result = await _orchestrator(state, store=store)
 
+    thread_id = state.get("session_id")
+    event_bus = EventBusService.get_instance()
+
+    # Emit workflow started event on first orchestrator run
+    if not state.get("current_agent"):
+        event_bus.emit(
+            EventType.WORKFLOW_STARTED,
+            thread_id=thread_id,
+            payload={
+                "phase": result.get("phase", state.get("phase")),
+                "account_id": state.get("account_id"),
+                "dry_run": state.get("dry_run", True),
+            },
+        )
+
     # Emit phase change event if phase changed
     old_phase = state.get("phase")
     new_phase = result.get("phase")
     if new_phase and new_phase != old_phase:
-        EventBusService.get_instance().emit(
+        event_bus.emit(
             EventType.WORKFLOW_PHASE_CHANGED,
-            thread_id=state.get("thread_id"),
+            thread_id=thread_id,
             payload={
                 "old_phase": old_phase,
                 "new_phase": new_phase,
+                "current_agent": result.get("current_agent", "orchestrator"),
             },
         )
 

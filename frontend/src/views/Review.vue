@@ -231,8 +231,21 @@ const executeDecision = async (decision: ContentStatus) => {
 
   try {
     const feedback = buildFeedback(decision)
-    await reviewStore.submitDecision(decision, feedback)
-    toastStore.success(t('review.success'), `${t('review.decisionLabel')}: ${decision}`)
+    // Pass publish options for approved decisions
+    const publishOpts = decision === 'approved'
+      ? { dry_run: publishDryRun.value }
+      : undefined
+    await reviewStore.submitDecision(decision, feedback, undefined, publishOpts)
+
+    if (decision === 'approved') {
+      const mode = publishDryRun.value ? t('review.dryRunMode') : t('review.liveMode')
+      toastStore.success(t('review.decisionApproved'), `${t('review.decisionLabel')}: ${decision} · ${mode}`)
+    } else if (decision === 'rejected') {
+      toastStore.warning(t('review.decisionRejected'), `${t('review.decisionLabel')}: ${decision}`)
+    } else {
+      toastStore.info(t('review.decisionRevision'), `${t('review.decisionLabel')}: ${decision}`)
+    }
+
     router.push('/dashboard')
   } catch (e: any) {
     error.value = e.message || t('review.submitFailed')
@@ -319,7 +332,7 @@ const handleCancelConfirm = () => {
   <!-- Review Content -->
   <div v-else class="relative space-y-5">
     <!-- 审核状态栏 -->
-    <div class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+    <div class="card">
       <div class="flex items-center gap-5">
         <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-400 to-rose-400 flex items-center justify-center shadow-sm">
           <AppIcon name="Clock" size="xl" variant="white" :aria-label="t('review.title')" />
@@ -400,7 +413,7 @@ const handleCancelConfirm = () => {
     </div>
 
     <!-- 版本历史对比 -->
-    <div v-if="reviewStore.versionHistory.length > 0" class="rounded-2xl p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm shadow-sm">
+    <div v-if="reviewStore.versionHistory.length > 0" class="card">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-400 to-indigo-500 flex items-center justify-center shadow-sm">
           <AppIcon name="GitBranch" size="md" variant="white" :aria-label="t('review.versionHistory.title')" />
@@ -569,7 +582,7 @@ const handleCancelConfirm = () => {
     </div>
 
     <!-- 操作按钮区 -->
-    <div class="rounded-2xl p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm shadow-sm">
+    <div class="card">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-rose-400 to-amber-400 flex items-center justify-center shadow-sm">
           <AppIcon name="GitBranch" size="md" variant="white" :aria-label="t('review.actions')" />

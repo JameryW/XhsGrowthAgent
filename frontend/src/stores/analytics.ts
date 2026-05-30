@@ -42,16 +42,16 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   const realtimeStore = useRealtimeStore()
   const toastStore = useToastStore()
 
-  realtimeStore.wsService.onEvent(EventType.ANALYTICS_REPORT_UPDATED, (payload: unknown) => {
-    const p = payload as { report?: GrowthReport }
+  realtimeStore.wsService.onEvent(EventType.ANALYTICS_REPORT_UPDATED, (msg) => {
+    const p = msg.payload as { report?: GrowthReport }
     if (p.report) {
       growthReport.value = p.report
       toastStore.info(t('common.success'), t('analytics.title'))
     }
   })
 
-  realtimeStore.wsService.onEvent(EventType.ANALYTICS_COST_ALERT, (payload: unknown) => {
-    const p = payload as { message?: string; level?: string }
+  realtimeStore.wsService.onEvent(EventType.ANALYTICS_COST_ALERT, (msg) => {
+    const p = msg.payload as { message?: string; level?: string }
     const message = p.message || t('analytics.aiCost')
     if (p.level === 'critical') {
       toastStore.error(t('common.error'), message)
@@ -60,8 +60,8 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     }
   })
 
-  realtimeStore.wsService.onEvent(EventType.ANALYTICS_PERFORMANCE_NEW, (payload: unknown) => {
-    const p = payload as { post?: PostPerformance }
+  realtimeStore.wsService.onEvent(EventType.ANALYTICS_PERFORMANCE_NEW, (msg) => {
+    const p = msg.payload as { post?: PostPerformance }
     if (p.post && performanceData.value) {
       performanceData.value = {
         ...performanceData.value,
@@ -126,7 +126,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
 
   function setPeriod(p: 'daily' | 'weekly' | 'monthly') {
     period.value = p
-    fetchReport()
+    fetchAllData()
   }
 
   function setAccountId(id: string) {

@@ -15,13 +15,8 @@ const showTimelineDetails = ref(false)
 // Memoized phase order for performance
 const phaseOrder = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging', 'completed'] as const
 
-// Progress calculation based on current phase
-const workflowProgress = computed(() => {
-  const currentPhase = workflowStore.currentPhase
-  const currentIndex = phaseOrder.indexOf(currentPhase as any)
-  if (currentIndex === -1) return 0
-  return Math.round((currentIndex / (phaseOrder.length - 1)) * 100)
-})
+// Use unified progress from store (backend progress_percent with local fallback)
+const workflowProgress = computed(() => workflowStore.progressPercent)
 
 // Current agent from workflow state
 const currentAgent = computed(() => workflowStore.workflowState?.current_agent || '')

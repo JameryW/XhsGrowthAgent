@@ -40,29 +40,26 @@ class TestBaseAgent:
 
     def test_load_prompt_existing_file(self, tmp_path):
         """Load prompt from existing YAML file."""
-        prompt_file = tmp_path / "test_prompt.yaml"
-        prompt_file.write_text("""
-system: "You are a test agent."
-user_template: "Process this: {topic}"
-""")
+        # Create the expected directory structure under backend/config/prompts
+        prompts_dir = Path(__file__).resolve().parent.parent.parent.parent / "backend" / "config" / "prompts"
+        prompt_file = prompts_dir / "_test_prompt.yaml"
+        prompt_file.write_text('system: "You are a test agent."\nuser_template: "Process this: {topic}"\n')
 
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "dummy"
-            prompt_file = "test_prompt.yaml"
+            prompt_file = "_test_prompt.yaml"
 
             async def execute(self, state, store):
                 return {}
 
         agent = DummyAgent()
-        # Temporarily patch the path resolution
-        original_path = Path(__file__).parent.parent.parent.parent / "backend" / "config" / "prompts"
-        with patch.object(Path, "parent", return_value=tmp_path.parent):
-            with patch.object(Path, "__truediv__", return_value=tmp_path):
-                template = agent._load_prompt()
-
-        assert template["system"] == "You are a test agent."
-        assert template["user_template"] == "Process this: {topic}"
+        try:
+            template = agent._load_prompt()
+            assert template["system"] == "You are a test agent."
+            assert template["user_template"] == "Process this: {topic}"
+        finally:
+            prompt_file.unlink(missing_ok=True)
 
     def test_load_prompt_missing_file(self):
         """Return empty dict when prompt file missing."""

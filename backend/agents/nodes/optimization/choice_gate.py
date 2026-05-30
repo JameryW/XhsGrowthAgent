@@ -21,7 +21,7 @@ async def choice_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
     analysis = state.get("optimization_analysis", {})
 
     # Emit choice pending event before interrupt
-    thread_id = state.get("thread_id")
+    thread_id = state.get("session_id")
     EventBusService.get_instance().emit(
         EventType.WORKFLOW_DATA_UPDATED,
         thread_id=thread_id,

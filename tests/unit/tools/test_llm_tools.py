@@ -19,32 +19,23 @@ from backend.tools.scheduling import timing_optimizer
 @pytest.mark.asyncio
 async def test_hashtag_researcher_llm_success():
     """LLM returns structured hashtag analysis"""
-    mock_response = MagicMock()
-    mock_response.content = """```json
-{
-  "hashtags": [
-    {"tag": "#美食", "heat_score": 85, "competition": "high", "traffic_potential": "high", "recommended_position": "primary"},
-    {"tag": "#美食推荐", "heat_score": 70, "competition": "medium", "traffic_potential": "medium", "recommended_position": "secondary"}
-  ]
-}
-```"""
+    with patch("backend.tools.content.hashtag_researcher._load_prompt", return_value={"system": "test", "user_template": "test"}):
+        with patch("backend.tools.content.hashtag_researcher.get_llm_service") as mock_service:
+            mock_llm = MagicMock()
+            mock_llm.enrich_with_llm = AsyncMock(return_value={
+                "hashtags": [
+                    {"tag": "#美食", "heat_score": 85, "competition": "high", "traffic_potential": "high", "recommended_position": "primary"},
+                    {"tag": "#美食推荐", "heat_score": 70, "competition": "medium", "traffic_potential": "medium", "recommended_position": "secondary"},
+                ]
+            })
+            mock_service.return_value = mock_llm
 
-    with patch("backend.tools.content.hashtag_researcher.get_llm_service") as mock_service:
-        mock_llm = MagicMock()
-        mock_llm.enrich_with_llm = AsyncMock(return_value={
-            "hashtags": [
-                {"tag": "#美食", "heat_score": 85, "competition": "high", "traffic_potential": "high", "recommended_position": "primary"},
-                {"tag": "#美食推荐", "heat_score": 70, "competition": "medium", "traffic_potential": "medium", "recommended_position": "secondary"},
-            ]
-        })
-        mock_service.return_value = mock_llm
+            result = await hashtag_researcher.ainvoke({"keyword": "美食", "limit": 2})
 
-        result = await hashtag_researcher("美食", limit=2)
-
-        assert len(result) == 2
-        assert result[0]["tag"] == "#美食"
-        assert result[0]["heat_score"] == 85
-        assert result[0]["competition"] == "high"
+            assert len(result) == 2
+            assert result[0]["tag"] == "#美食"
+            assert result[0]["heat_score"] == 85
+            assert result[0]["competition"] == "high"
 
 
 @pytest.mark.asyncio
@@ -55,7 +46,7 @@ async def test_hashtag_researcher_fallback_on_error():
         mock_llm.enrich_with_llm = AsyncMock(side_effect=Exception("LLM error"))
         mock_service.return_value = mock_llm
 
-        result = await hashtag_researcher("美食", limit=5)
+        result = await hashtag_researcher.ainvoke({"keyword": "美食", "limit": 5})
 
         # Should return algorithmic fallback
         assert len(result) > 0
@@ -71,7 +62,7 @@ async def test_hashtag_researcher_default_fallback():
     with patch("backend.tools.content.hashtag_researcher._load_prompt") as mock_load:
         mock_load.side_effect = Exception("No prompt file")
 
-        result = await hashtag_researcher("美食", limit=5)
+        result = await hashtag_researcher.ainvoke({"keyword": "美食", "limit": 5})
 
         # Should still return some hashtags (never fails)
         assert len(result) > 0
@@ -82,32 +73,23 @@ async def test_hashtag_researcher_default_fallback():
 @pytest.mark.asyncio
 async def test_title_generator_llm_success():
     """LLM returns creative titles"""
-    mock_response = MagicMock()
-    mock_response.content = """```json
-{
-  "titles": [
-    {"title": "🔥 美食必看！超实用攻略", "style": "attractive", "hook_type": "数字钩子", "predicted_engagement": "high", "reasoning": "emoji开头吸引眼球"},
-    {"title": "美食干货合集｜建议收藏", "style": "value", "hook_type": "价值钩子", "predicted_engagement": "medium", "reasoning": "强调实用性"}
-  ]
-}
-```"""
+    with patch("backend.tools.content.title_generator._load_prompt", return_value={"system": "test", "user_template": "test"}):
+        with patch("backend.tools.content.title_generator.get_llm_service") as mock_service:
+            mock_llm = MagicMock()
+            mock_llm.enrich_with_llm = AsyncMock(return_value={
+                "titles": [
+                    {"title": "🔥 美食必看！超实用攻略", "style": "attractive", "hook_type": "数字钩子", "predicted_engagement": "high", "reasoning": "emoji开头吸引眼球"},
+                    {"title": "美食干货合集｜建议收藏", "style": "value", "hook_type": "价值钩子", "predicted_engagement": "medium", "reasoning": "强调实用性"},
+                ]
+            })
+            mock_service.return_value = mock_llm
 
-    with patch("backend.tools.content.title_generator.get_llm_service") as mock_service:
-        mock_llm = MagicMock()
-        mock_llm.enrich_with_llm = AsyncMock(return_value={
-            "titles": [
-                {"title": "🔥 美食必看！超实用攻略", "style": "attractive", "hook_type": "数字钩子", "predicted_engagement": "high", "reasoning": "emoji开头吸引眼球"},
-                {"title": "美食干货合集｜建议收藏", "style": "value", "hook_type": "价值钩子", "predicted_engagement": "medium", "reasoning": "强调实用性"},
-            ]
-        })
-        mock_service.return_value = mock_llm
+            result = await title_generator.ainvoke({"topic": "美食", "style": "attractive", "count": 2})
 
-        result = await title_generator("美食", style="attractive", count=2)
-
-        assert len(result) == 2
-        assert result[0]["title"] == "🔥 美食必看！超实用攻略"
-        assert result[0]["style"] == "attractive"
-        assert result[0]["hook_type"] == "数字钩子"
+            assert len(result) == 2
+            assert result[0]["title"] == "🔥 美食必看！超实用攻略"
+            assert result[0]["style"] == "attractive"
+            assert result[0]["hook_type"] == "数字钩子"
 
 
 @pytest.mark.asyncio
@@ -118,7 +100,7 @@ async def test_title_generator_fallback_on_error():
         mock_llm.enrich_with_llm = AsyncMock(side_effect=Exception("LLM error"))
         mock_service.return_value = mock_llm
 
-        result = await title_generator("美食", style="attractive", count=3)
+        result = await title_generator.ainvoke({"topic": "美食", "style": "attractive", "count": 3})
 
         # Should return algorithmic fallback templates
         assert len(result) == 3
@@ -138,7 +120,7 @@ async def test_title_generator_value_style():
         })
         mock_service.return_value = mock_llm
 
-        result = await title_generator("美食", style="value", count=1)
+        result = await title_generator.ainvoke({"topic": "美食", "style": "value", "count": 1})
 
         assert result[0]["style"] == "value"
 
@@ -148,29 +130,30 @@ async def test_title_generator_value_style():
 @pytest.mark.asyncio
 async def test_image_prompt_generator_llm_success():
     """LLM returns visual prompts"""
-    with patch("backend.tools.content.image_prompt.get_llm_service") as mock_service:
-        mock_llm = MagicMock()
-        mock_llm.enrich_with_llm = AsyncMock(return_value={
-            "prompts": [
-                {
-                    "prompt": "A modern style food scene featuring 美食, soft lighting, pastel accents",
-                    "prompt_type": "cover",
-                    "aspect_ratio": "3:4",
-                    "key_elements": ["美食", "modern", "food"],
-                    "color_suggestions": ["#FFE4E1", "#F5F5F5"],
-                    "negative_prompt": "blur, low quality",
-                },
-            ]
-        })
-        mock_service.return_value = mock_llm
+    with patch("backend.tools.content.image_prompt._load_prompt", return_value={"system": "test", "user_template": "test"}):
+        with patch("backend.tools.content.image_prompt.get_llm_service") as mock_service:
+            mock_llm = MagicMock()
+            mock_llm.enrich_with_llm = AsyncMock(return_value={
+                "prompts": [
+                    {
+                        "prompt": "A modern style food scene featuring 美食, soft lighting, pastel accents",
+                        "prompt_type": "cover",
+                        "aspect_ratio": "3:4",
+                        "key_elements": ["美食", "modern", "food"],
+                        "color_suggestions": ["#FFE4E1", "#F5F5F5"],
+                        "negative_prompt": "blur, low quality",
+                    },
+                ]
+            })
+            mock_service.return_value = mock_llm
 
-        result = await image_prompt_generator("美食", style="modern", count=1)
+            result = await image_prompt_generator.ainvoke({"topic": "美食", "style": "modern", "count": 1})
 
-        assert len(result) == 1
-        assert result[0]["prompt_type"] == "cover"
-        assert result[0]["aspect_ratio"] == "3:4"
-        assert "美食" in result[0]["prompt"]
-        assert result[0]["negative_prompt"] == "blur, low quality"
+            assert len(result) == 1
+            assert result[0]["prompt_type"] == "cover"
+            assert result[0]["aspect_ratio"] == "3:4"
+            assert "美食" in result[0]["prompt"]
+            assert result[0]["negative_prompt"] == "blur, low quality"
 
 
 @pytest.mark.asyncio
@@ -181,7 +164,7 @@ async def test_image_prompt_generator_fallback_on_error():
         mock_llm.enrich_with_llm = AsyncMock(side_effect=Exception("LLM error"))
         mock_service.return_value = mock_llm
 
-        result = await image_prompt_generator("美食", style="modern", count=2)
+        result = await image_prompt_generator.ainvoke({"topic": "美食", "style": "modern", "count": 2})
 
         # Should return algorithmic fallback prompts
         assert len(result) == 2
@@ -208,7 +191,7 @@ async def test_image_prompt_generator_vintage_style():
         })
         mock_service.return_value = mock_llm
 
-        result = await image_prompt_generator("美食", style="vintage", count=1)
+        result = await image_prompt_generator.ainvoke({"topic": "美食", "style": "vintage", "count": 1})
 
         assert len(result) == 1
         assert "vintage" in result[0]["key_elements"]
@@ -219,28 +202,29 @@ async def test_image_prompt_generator_vintage_style():
 @pytest.mark.asyncio
 async def test_timing_optimizer_llm_success():
     """LLM returns timing analysis"""
-    with patch("backend.tools.scheduling.calendar.get_llm_service") as mock_service:
-        mock_llm = MagicMock()
-        mock_llm.enrich_with_llm = AsyncMock(return_value={
-            "best_times": ["08:00", "12:00", "18:00"],
-            "best_days": ["周三", "周五", "周六"],
-            "reasoning": {
-                "best_times_reason": "饭点前后是美食内容高峰浏览时段",
-                "best_days_reason": "周末空闲时间多",
-            },
-            "audience_active_pattern": "上班族在早晚和午休时段活跃",
-            "niche_specific_insights": "美食类适合饭点发布",
-            "avoid_times": ["14:00", "15:00"],
-            "avoid_reasons": "下午工作时段流量较低",
-        })
-        mock_service.return_value = mock_llm
+    with patch("backend.tools.scheduling.calendar._load_prompt", return_value={"system": "test", "user_template": "test"}):
+        with patch("backend.tools.scheduling.calendar.get_llm_service") as mock_service:
+            mock_llm = MagicMock()
+            mock_llm.enrich_with_llm = AsyncMock(return_value={
+                "best_times": ["08:00", "12:00", "18:00"],
+                "best_days": ["周三", "周五", "周六"],
+                "reasoning": {
+                    "best_times_reason": "饭点前后是美食内容高峰浏览时段",
+                    "best_days_reason": "周末空闲时间多",
+                },
+                "audience_active_pattern": "上班族在早晚和午休时段活跃",
+                "niche_specific_insights": "美食类适合饭点发布",
+                "avoid_times": ["14:00", "15:00"],
+                "avoid_reasons": "下午工作时段流量较低",
+            })
+            mock_service.return_value = mock_llm
 
-        result = await timing_optimizer(niche="美食", target_audience="上班族")
+            result = await timing_optimizer.ainvoke({"niche": "美食", "target_audience": "上班族"})
 
-        assert result["best_times"] == ["08:00", "12:00", "18:00"]
-        assert result["best_days"] == ["周三", "周五", "周六"]
-        assert result["avoid_times"] == ["14:00", "15:00"]
-        assert "饭点" in result["reasoning"]["best_times_reason"]
+            assert result["best_times"] == ["08:00", "12:00", "18:00"]
+            assert result["best_days"] == ["周三", "周五", "周六"]
+            assert result["avoid_times"] == ["14:00", "15:00"]
+            assert "饭点" in result["reasoning"]["best_times_reason"]
 
 
 @pytest.mark.asyncio
@@ -251,7 +235,7 @@ async def test_timing_optimizer_fallback_on_error():
         mock_llm.enrich_with_llm = AsyncMock(side_effect=Exception("LLM error"))
         mock_service.return_value = mock_llm
 
-        result = await timing_optimizer(niche="美食", target_audience="上班族")
+        result = await timing_optimizer.ainvoke({"niche": "美食", "target_audience": "上班族"})
 
         # Should return niche-specific algorithmic fallback
         assert result["best_times"] == ["07:00", "11:30", "17:30", "21:00"]
@@ -267,7 +251,7 @@ async def test_timing_optimizer_unknown_niche():
         mock_llm.enrich_with_llm = AsyncMock(side_effect=Exception("LLM error"))
         mock_service.return_value = mock_llm
 
-        result = await timing_optimizer(niche="未知领域", target_audience="大众")
+        result = await timing_optimizer.ainvoke({"niche": "未知领域", "target_audience": "大众"})
 
         # Should return default pattern
         assert result["best_times"] == ["08:00", "12:00", "18:00", "21:00"]
@@ -283,12 +267,12 @@ async def test_timing_optimizer_niche_matching():
         mock_service.return_value = mock_llm
 
         # Test "美食家常菜" matches "美食" pattern
-        result = await timing_optimizer(niche="美食家常菜", target_audience="家庭主妇")
+        result = await timing_optimizer.ainvoke({"niche": "美食家常菜", "target_audience": "家庭主妇"})
 
         assert "饭点" in result["niche_specific_insights"]
 
         # Test "穿搭分享" matches "穿搭" pattern
-        result2 = await timing_optimizer(niche="穿搭分享", target_audience="年轻女性")
+        result2 = await timing_optimizer.ainvoke({"niche": "穿搭分享", "target_audience": "年轻女性"})
 
         assert "睡前" in result2["niche_specific_insights"] or "周末" in result2["reasoning"]["best_days_reason"]
 
