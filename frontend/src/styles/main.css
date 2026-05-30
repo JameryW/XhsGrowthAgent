@@ -11,10 +11,12 @@
     color: #1E293B;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
   }
 
   #app {
     min-height: 100vh;
+    min-height: 100dvh;
   }
 
   /* Smooth scrolling */

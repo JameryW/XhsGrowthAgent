@@ -8,12 +8,14 @@ import OfflineIndicator from "@/components/OfflineIndicator.vue"
 import OfflineRecovery from "@/components/OfflineRecovery.vue"
 import KeyboardShortcutsHelp from "@/components/KeyboardShortcutsHelp.vue"
 import Navbar from "@/components/Navbar.vue"
+import MobileTabBar from "@/components/MobileTabBar.vue"
 import ErrorBoundary from "@/components/ErrorBoundary.vue"
 import PageTransition from "@/components/PageTransition.vue"
 import OnboardingTour from "@/components/OnboardingTour.vue"
 import { useRealtimeStore, useOnboardingStore, useShortcutsStore, useAuthStore } from "@/stores"
 import { useOnboarding } from "@/composables/useOnboarding"
 import { useShortcuts } from "@/composables/useShortcuts"
+import { useBreakpoints } from "@/composables/useBreakpoints"
 
 const { t } = useI18n()
 const realtimeStore = useRealtimeStore()
@@ -21,6 +23,7 @@ const onboardingStore = useOnboardingStore()
 const shortcutsStore = useShortcutsStore()
 const authStore = useAuthStore()
 const route = useRoute()
+const { isMobile, isTablet } = useBreakpoints()
 
 // Hide Navbar and chrome on login page
 const showChrome = computed(() => authStore.isAuthenticated && route.name !== 'login')
@@ -132,12 +135,20 @@ const handleErrorBoundaryRefresh = () => {
       <!-- Offline recovery bar (above navbar) -->
       <OfflineRecovery />
 
-      <!-- 左侧导航 -->
-      <Navbar />
+      <!-- 左侧导航 (hidden on mobile) -->
+      <Navbar v-if="!isMobile" />
+
+      <!-- 底部 Tab Bar (mobile only) -->
+      <MobileTabBar v-if="isMobile" />
     </template>
 
     <!-- 主内容区 -->
-    <main id="main-content" class="flex-1 p-8 overflow-auto relative z-10" tabindex="-1">
+    <main
+      id="main-content"
+      class="flex-1 overflow-auto relative z-10"
+      :class="isMobile ? 'p-4 pb-20' : isTablet ? 'p-6' : 'p-8'"
+      tabindex="-1"
+    >
       <ErrorBoundary
         :fallback-message="t('common.pageLoadError')"
         @error="handleErrorBoundaryError"

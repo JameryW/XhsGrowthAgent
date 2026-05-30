@@ -120,10 +120,10 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
 </script>
 
 <template>
-  <div class="space-y-5">
+  <div class="space-y-4 md:space-y-5">
     <!-- Header -->
-    <div class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
-      <div class="flex items-center justify-between">
+    <div class="rounded-2xl p-4 md:p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
         <div class="flex items-center gap-4">
           <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
             <AppIcon name="History" size="xl" variant="white" />
@@ -211,9 +211,9 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
           </div>
 
           <!-- Progress & Actions -->
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-3 flex-shrink-0">
             <!-- Progress bar -->
-            <div class="w-20">
+            <div class="w-20 hidden sm:block">
               <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
                 <div
                   class="h-full rounded-full bg-gradient-to-r from-rose-400 to-teal-400 transition-all"

@@ -3,10 +3,10 @@ import ContentCardSkeleton from './ContentCardSkeleton.vue'
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-4 md:space-y-6">
     <!-- Header skeleton -->
-    <div class="rounded-2xl p-6 bg-white/98 backdrop-blur-sm border border-slate-200/50">
-      <div class="flex items-center gap-5">
+    <div class="rounded-2xl p-4 md:p-6 bg-white/98 backdrop-blur-sm border border-slate-200/50">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
         <div class="w-20 h-20 rounded-xl bg-gradient-to-r from-teal-500/20 to-teal-400/20 animate-pulse" />
         <div class="flex-1 space-y-2">
           <div class="h-4 w-24 rounded bg-gradient-to-r animate-pulse from-teal-500/20 to-teal-400/20" />

@@ -94,12 +94,12 @@ const quickStart = () => {
 
 <template>
   <div class="min-h-[80vh] flex flex-col items-center justify-center">
-    <div class="w-full max-w-lg space-y-4">
+    <div class="w-full max-w-lg space-y-4 px-4 md:px-0">
       <!-- Pre-Launch Checklist -->
       <PreLaunchChecklist ref="checklistRef" />
 
       <!-- Main Card -->
-      <div class="rounded-2xl p-8 bg-white border border-slate-200/50 shadow-sm">
+      <div class="rounded-2xl p-6 md:p-8 bg-white border border-slate-200/50 shadow-sm">
         <div class="text-center mb-8">
           <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm mx-auto mb-4">
             <AppIcon name="Rocket" size="xl" variant="white" />
