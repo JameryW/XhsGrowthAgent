@@ -1,27 +1,29 @@
 """Main state schema for XHS Growth Agent."""
-from typing import Annotated, Any, TypedDict
+
+from typing import Annotated, TypedDict
 
 from langgraph.graph.message import add_messages
 
 from backend.state.enums import WorkflowPhase
+from backend.state.reducers import append_list as _append_list
 from backend.state.substates import (
-    TrendData,
-    ContentPlan,
-    CopyContent,
-    VisualPlan,
-    PublishResult,
     AnalyticsSnapshot,
-    HumanFeedback,
-    EngagementAction,
-    RipplePrediction,
-    RipplePMFResult,
+    ContentPlan,
+    ContentVersion,
+    CopyContent,
     # 发布前优化系统
     DraftContent,
-    ViralPost,
+    EngagementAction,
+    HumanFeedback,
     OptimizationAnalysis,
-    ContentVersion,
+    PublishResult,
+    RippleComparison,
+    RipplePMFResult,
+    RipplePrediction,
+    TrendData,
+    ViralPost,
+    VisualPlan,
 )
-from backend.state.reducers import merge_dict as _merge_dict, append_list as _append_list
 
 
 class XHSGrowthState(TypedDict, total=False):
@@ -52,8 +54,9 @@ class XHSGrowthState(TypedDict, total=False):
     ripple_prediction: RipplePrediction
     ripple_pmf: RipplePMFResult
     ripple_job_ids: Annotated[list[str], _append_list]
+    ripple_comparison: RippleComparison
 
-# ── 发布前优化系统 ──
+    # ── 发布前优化系统 ──
 
     # 用户原始草稿
     draft_content: DraftContent

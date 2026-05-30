@@ -8,35 +8,36 @@ Components:
 """
 
 from backend.state.enums import (
-    WorkflowPhase,
     ContentStatus,
     ContentType,
     Urgency,
+    WorkflowPhase,
 )
+from backend.state.reducers import append_list, max_value, merge_dict, replace
 from backend.state.schema import XHSGrowthState
 from backend.state.substates import (
-    TrendData,
-    ContentPlan,
-    CopyContent,
-    VisualPlan,
-    PublishResult,
     AnalyticsSnapshot,
-    HumanFeedback,
-    EngagementAction,
-    RipplePrediction,
-    RipplePMFResult,
-    HotTopicItem,
-    NicheOpportunity,
     CompetitorPost,
+    ContentPlan,
+    ContentVersion,
+    CopyContent,
     # 发布前优化子状态
     DraftContent,
-    ViralPost,
+    EngagementAction,
     GapItem,
-    SuggestionItem,
+    HotTopicItem,
+    HumanFeedback,
+    NicheOpportunity,
     OptimizationAnalysis,
-    ContentVersion,
+    PublishResult,
+    RippleComparison,
+    RipplePMFResult,
+    RipplePrediction,
+    SuggestionItem,
+    TrendData,
+    ViralPost,
+    VisualPlan,
 )
-from backend.state.reducers import merge_dict, append_list, replace, max_value
 
 __all__ = [
     # Main state
@@ -57,6 +58,7 @@ __all__ = [
     "EngagementAction",
     "RipplePrediction",
     "RipplePMFResult",
+    "RippleComparison",
     # Nested items
     "HotTopicItem",
     "NicheOpportunity",

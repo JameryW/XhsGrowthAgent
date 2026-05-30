@@ -9,7 +9,7 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
-from backend.state.schema import XHSGrowthState, WorkflowPhase
+from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 
 class CopywriterAgent(BaseAgent):
@@ -23,19 +23,28 @@ class CopywriterAgent(BaseAgent):
 
         # 召回相似历史内容
         past_content = await self._recall_memory(
-            store, account_id, query=plan.get("selected_topic", ""), namespace="content_history", limit=3
+            store,
+            account_id,
+            query=plan.get("selected_topic", ""),
+            namespace="content_history",
+            limit=3,
         )
         # 召回受众偏好
         audience_prefs = await self._recall_memory(
-            store, account_id, query=f"audience preference for {plan.get('content_type', 'note')}",
-            namespace="audience_preferences", limit=3,
+            store,
+            account_id,
+            query=f"audience preference for {plan.get('content_type', 'note')}",
+            namespace="audience_preferences",
+            limit=3,
         )
 
         memory_context = ""
         if past_content:
             memory_context += "\n历史爆款参考：\n"
             for pc in past_content:
-                memory_context += f"- {pc.get('title', '')} (互动率: {pc.get('engagement_rate', 'N/A')})\n"
+                title = pc.get("title", "")
+                rate = pc.get("engagement_rate", "N/A")
+                memory_context += f"- {title} (互动率: {rate})\n"
         if audience_prefs:
             memory_context += "\n受众偏好：\n"
             for ap in audience_prefs:
@@ -43,17 +52,23 @@ class CopywriterAgent(BaseAgent):
 
         system_prompt = self._build_system_prompt(state, extra_context=memory_context)
 
+        # 构建 Ripple 传播预测上下文
+        ripple_context = self._build_ripple_context(plan)
+        system_prompt = system_prompt.replace("{ripple_context}", ripple_context)
+
         niche = state.get("niche", "母婴")
-        user_msg = f"""选题：{plan.get('selected_topic', '')}
-角度：{plan.get('content_angle', '')}
-目标受众：{plan.get('target_audience', '')}
-内容类型：{plan.get('content_type', 'note')}
+        user_msg = f"""选题：{plan.get("selected_topic", "")}
+角度：{plan.get("content_angle", "")}
+目标受众：{plan.get("target_audience", "")}
+内容类型：{plan.get("content_type", "note")}
 垂类赛道：{niche}"""
 
-        response = await self.model.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_msg),
-        ])
+        response = await self.model.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_msg),
+            ]
+        )
 
         copy_content = self._parse_json_response(response.content)
 
@@ -61,3 +76,25 @@ class CopywriterAgent(BaseAgent):
             "copy_content": copy_content,
             "phase": WorkflowPhase.CREATING,
         }
+
+    @staticmethod
+    def _build_ripple_context(plan: dict) -> str:
+        """从 content_plan 中提取 Ripple 数据构建 prompt 上下文"""
+        prediction = plan.get("ripple_prediction")
+        pmf = plan.get("ripple_pmf")
+
+        if not prediction and not pmf:
+            return ""
+
+        lines = ["\nRipple 传播预测数据："]
+        if prediction:
+            lines.append(f"- 预计触达: {prediction.get('estimated_reach', 'N/A')}")
+            lines.append(f"- 预计互动: {prediction.get('estimated_engagement', 'N/A')}")
+            lines.append(f"- 爆发概率: {prediction.get('viral_probability', 'N/A')}")
+        if pmf:
+            if pmf.get("risk_factors"):
+                lines.append(f"- PMF 风险: {', '.join(pmf['risk_factors'])}")
+            if pmf.get("improvement_strategies"):
+                lines.append(f"- 改进建议: {', '.join(pmf['improvement_strategies'])}")
+
+        return "\n".join(lines)
