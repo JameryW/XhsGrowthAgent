@@ -64,11 +64,11 @@
 
 /* Card grid layout */
 .card-grid {
-  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4;
+  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4;
 }
 
 .card-grid-4 {
-  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4;
+  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4;
 }
 
 /* Empty state card */

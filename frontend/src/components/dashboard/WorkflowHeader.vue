@@ -87,11 +87,11 @@ const timeRemainingDisplay = computed(() => {
 
 <template>
   <div
-    class="rounded-2xl p-6 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm"
+    class="rounded-2xl p-4 md:p-6 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm"
     role="region"
     :aria-label="t('dashboard.header.status')"
   >
-    <div class="flex items-center gap-5">
+    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
       <!-- Progress & Logo -->
       <div class="flex items-center gap-4">
         <CircularProgress :value="workflowProgress" variant="cyan" size="lg" show-value :aria-label="t('dashboard.header.progress')" />

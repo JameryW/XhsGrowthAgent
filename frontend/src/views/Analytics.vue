@@ -140,11 +140,11 @@ function startWithTopic(topic: string) {
 
 <template>
   <AnalyticsSkeleton v-if="isLoading" />
-  <div v-else class="relative space-y-6">
+  <div v-else class="relative space-y-4 md:space-y-6">
     <!-- 顶部标题栏 -->
     <div class="card">
-      <div class="flex items-center gap-5">
-        <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
+        <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm flex-shrink-0">
           <AppIcon name="BarChart3" size="xl" variant="white" :aria-label="t('analytics.title')" />
         </div>
         <div class="flex-1">
@@ -158,7 +158,7 @@ function startWithTopic(topic: string) {
         </div>
 
         <!-- Period selector -->
-        <div class="flex gap-2">
+        <div class="flex gap-2 flex-wrap">
           <button
             v-for="p in ['daily', 'weekly', 'monthly']"
             :key="p"

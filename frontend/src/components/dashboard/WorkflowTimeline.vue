@@ -99,7 +99,7 @@ const isFocused = (index: number) => focusedIndex.value === index
 
 <template>
   <div
-    class="bg-white/98 backdrop-blur-sm rounded-2xl p-6 border border-slate-200/50 shadow-sm"
+    class="bg-white/98 backdrop-blur-sm rounded-2xl p-4 md:p-6 border border-slate-200/50 shadow-sm"
     role="region"
     :aria-label="t('dashboard.timeline.title')"
     @keydown="handleKeyDown"
@@ -131,7 +131,7 @@ const isFocused = (index: number) => focusedIndex.value === index
     </div>
 
     <!-- Nodes with keyboard navigation -->
-    <div class="flex justify-between items-center relative px-4" role="list" :aria-label="t('dashboard.timeline.stages')">
+    <div class="flex justify-between items-center relative px-2 md:px-4 overflow-x-auto" role="list" :aria-label="t('dashboard.timeline.stages')">
       <WorkflowNode
         v-for="(node, index) in workflowNodes"
         :key="`${node.phase}-${index}`"

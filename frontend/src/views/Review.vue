@@ -330,11 +330,11 @@ const handleCancelConfirm = () => {
   </div>
 
   <!-- Review Content -->
-  <div v-else class="relative space-y-5">
+  <div v-else class="relative space-y-4 md:space-y-5">
     <!-- 审核状态栏 -->
     <div class="card">
-      <div class="flex items-center gap-5">
-        <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-400 to-rose-400 flex items-center justify-center shadow-sm">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
+        <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-400 to-rose-400 flex items-center justify-center shadow-sm flex-shrink-0">
           <AppIcon name="Clock" size="xl" variant="white" :aria-label="t('review.title')" />
         </div>
         <div class="flex-1">

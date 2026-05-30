@@ -83,7 +83,7 @@ onUnmounted(() => {
 <template>
   <div class="dashboard-container">
     <DashboardSkeleton v-if="isLoading" />
-    <div v-else class="space-y-6">
+    <div v-else class="space-y-4 md:space-y-6">
       <ErrorState v-if="hasError" />
 
       <!-- ErrorCard for API errors -->

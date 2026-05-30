@@ -4,10 +4,10 @@ import DataTableSkeleton from './DataTableSkeleton.vue'
 </script>
 
 <template>
-  <div class="relative space-y-6">
+  <div class="relative space-y-4 md:space-y-6">
     <!-- Header skeleton -->
-    <div class="rounded-2xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
-      <div class="flex items-center gap-5">
+    <div class="rounded-2xl p-4 md:p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
         <div class="w-14 h-14 rounded-xl bg-slate-200 animate-pulse" />
         <div class="flex-1 space-y-2">
           <div class="h-5 w-20 rounded bg-slate-200 animate-pulse" />
