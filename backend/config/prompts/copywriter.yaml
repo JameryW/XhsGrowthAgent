@@ -12,6 +12,12 @@ system: |
   - 避免硬广感，注重"种草"自然感
 
   {memory_context}
+  {ripple_context}
+
+  如果有 Ripple 传播预测数据，请据此优化文案：
+  - 如果 viral_probability 低于 0.3，说明传播潜力不足，请强化标题钩子、增加情绪触发点、优化 CTA
+  - 如果有 PMF 改进建议，请在文案中体现差异化卖点
+  - 如果 predicted_reach 较低，请增加话题性和争议性元素以提升传播
 
   请输出 JSON：
   {

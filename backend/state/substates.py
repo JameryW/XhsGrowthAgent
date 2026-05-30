@@ -1,10 +1,13 @@
 """Sub-state TypedDict definitions for modular state management."""
-from typing import TypedDict, Any
-from backend.state.enums import ContentType, Urgency, ContentStatus
+
+from typing import Any, TypedDict
+
+from backend.state.enums import ContentStatus, ContentType, Urgency
 
 
 class HotTopicItem(TypedDict, total=False):
     """Hot topic item."""
+
     topic: str
     heat_score: float
     growth_rate: float
@@ -13,6 +16,7 @@ class HotTopicItem(TypedDict, total=False):
 
 class NicheOpportunity(TypedDict, total=False):
     """Niche opportunity."""
+
     topic: str
     potential_score: float
     audience_match: str
@@ -21,6 +25,7 @@ class NicheOpportunity(TypedDict, total=False):
 
 class CompetitorPost(TypedDict, total=False):
     """Competitor post."""
+
     title: str
     likes: int
     comments: int
@@ -29,6 +34,7 @@ class CompetitorPost(TypedDict, total=False):
 
 class TrendData(TypedDict, total=False):
     """Trend scouting result."""
+
     hot_topics: list[HotTopicItem]
     trending_keywords: list[str]
     competitor_posts: list[CompetitorPost]
@@ -38,6 +44,7 @@ class TrendData(TypedDict, total=False):
 
 class ContentPlan(TypedDict, total=False):
     """Content strategy plan."""
+
     selected_topic: str
     content_angle: str
     content_type: ContentType
@@ -50,6 +57,7 @@ class ContentPlan(TypedDict, total=False):
 
 class CopyContent(TypedDict, total=False):
     """Copy content."""
+
     title_candidates: list[str]
     selected_title: str
     body_text: str
@@ -61,6 +69,7 @@ class CopyContent(TypedDict, total=False):
 
 class VisualPlan(TypedDict, total=False):
     """Visual design plan."""
+
     cover_prompt: str
     image_count: int
     image_prompts: list[str]
@@ -72,6 +81,7 @@ class VisualPlan(TypedDict, total=False):
 
 class PublishResult(TypedDict, total=False):
     """Publish result."""
+
     post_id: str
     post_url: str
     published_at: str
@@ -81,6 +91,7 @@ class PublishResult(TypedDict, total=False):
 
 class AnalyticsSnapshot(TypedDict, total=False):
     """Analytics snapshot."""
+
     post_id: str
     views: int
     likes: int
@@ -96,6 +107,7 @@ class AnalyticsSnapshot(TypedDict, total=False):
 
 class HumanFeedback(TypedDict, total=False):
     """Human review feedback."""
+
     decision: ContentStatus
     comments: str
     revisions: list[str]
@@ -104,6 +116,7 @@ class HumanFeedback(TypedDict, total=False):
 
 class EngagementAction(TypedDict, total=False):
     """Engagement action."""
+
     action_type: str
     target_id: str
     content: str
@@ -112,6 +125,7 @@ class EngagementAction(TypedDict, total=False):
 
 class RipplePrediction(TypedDict, total=False):
     """Ripple CAS prediction result."""
+
     job_id: str
     estimated_reach: int
     estimated_engagement: int
@@ -124,6 +138,7 @@ class RipplePrediction(TypedDict, total=False):
 
 class RipplePMFResult(TypedDict, total=False):
     """Ripple PMF validation result."""
+
     job_id: str
     pmf_score: float
     risk_factors: list[str]
@@ -132,11 +147,23 @@ class RipplePMFResult(TypedDict, total=False):
     confidence: float
 
 
+class RippleComparison(TypedDict, total=False):
+    """Ripple prediction vs actual performance comparison."""
+
+    predicted_reach: int
+    actual_engagement_rate: float
+    reach_deviation: float
+    engagement_deviation: float
+    accuracy_rating: str  # "低估" / "准确" / "高估"
+    calibration_insight: str
+
+
 # ── 发布前优化系统子状态 ──
 
 
 class DraftContent(TypedDict, total=False):
     """用户原始草稿."""
+
     text: str
     images: list[str]
     title: str
@@ -146,6 +173,7 @@ class DraftContent(TypedDict, total=False):
 
 class ViralPost(TypedDict, total=False):
     """爆款参考笔记."""
+
     note_id: str
     title: str
     body: str
@@ -162,6 +190,7 @@ class ViralPost(TypedDict, total=False):
 
 class GapItem(TypedDict, total=False):
     """差距项."""
+
     dimension: str
     description: str
     severity: str
@@ -169,6 +198,7 @@ class GapItem(TypedDict, total=False):
 
 class SuggestionItem(TypedDict, total=False):
     """优化建议项."""
+
     dimension: str
     action: str
     reasoning: str
@@ -177,6 +207,7 @@ class SuggestionItem(TypedDict, total=False):
 
 class OptimizationAnalysis(TypedDict, total=False):
     """优化分析报告."""
+
     gaps: list[GapItem]
     suggestions: list[SuggestionItem]
     viral_patterns: list[str]
@@ -184,6 +215,7 @@ class OptimizationAnalysis(TypedDict, total=False):
 
 class ContentVersion(TypedDict, total=False):
     """内容版本."""
+
     version_id: str
     title: str
     body: str
@@ -195,11 +227,25 @@ class ContentVersion(TypedDict, total=False):
 
 
 __all__ = [
-    "HotTopicItem", "NicheOpportunity", "CompetitorPost",
-    "TrendData", "ContentPlan", "CopyContent", "VisualPlan",
-    "PublishResult", "AnalyticsSnapshot", "HumanFeedback",
-    "EngagementAction", "RipplePrediction", "RipplePMFResult",
+    "HotTopicItem",
+    "NicheOpportunity",
+    "CompetitorPost",
+    "TrendData",
+    "ContentPlan",
+    "CopyContent",
+    "VisualPlan",
+    "PublishResult",
+    "AnalyticsSnapshot",
+    "HumanFeedback",
+    "EngagementAction",
+    "RipplePrediction",
+    "RipplePMFResult",
+    "RippleComparison",
     # 发布前优化
-    "DraftContent", "ViralPost", "GapItem", "SuggestionItem",
-    "OptimizationAnalysis", "ContentVersion",
+    "DraftContent",
+    "ViralPost",
+    "GapItem",
+    "SuggestionItem",
+    "OptimizationAnalysis",
+    "ContentVersion",
 ]

@@ -10,7 +10,7 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
-from backend.state.schema import XHSGrowthState, WorkflowPhase
+from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.analyst")
 
@@ -44,39 +44,61 @@ class AnalystAgent(BaseAgent):
 账号定位：{account_id}
 垂类赛道：{niche}{ripple_context}"""
 
-        response = await self.model.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_msg),
-        ])
+        response = await self.model.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_msg),
+            ]
+        )
 
         analytics = self._parse_json_response(response.content)
 
-        # 将 Ripple 预测与实际数据对比
-        if ripple_report:
-            analytics["ripple_comparison"] = self._compare_prediction_vs_actual(
-                state.get("content_plan", {}).get("ripple_prediction"),
-                publish_result,
+        # 将 Ripple 预测与实际数据对比，写入 state
+        result_updates: dict[str, Any] = {
+            "analytics": analytics,
+            "phase": WorkflowPhase.ANALYZING,
+        }
+
+        ripple_prediction = state.get("content_plan", {}).get("ripple_prediction")
+        if ripple_prediction:
+            ripple_comparison = self._compare_prediction_vs_actual(
+                ripple_prediction, publish_result
             )
+            if ripple_comparison:
+                analytics["ripple_comparison"] = ripple_comparison
+                result_updates["ripple_comparison"] = ripple_comparison
+
+                # 将校准洞察存入记忆，供未来策略参考
+                calibration = ripple_comparison.get("calibration_insight", "")
+                if calibration:
+                    from backend.memory.store import MemoryManager
+
+                    mm = MemoryManager(account_id)
+                    await mm.store_insight(
+                        store,
+                        f"Ripple 校准: {calibration}",
+                        {"source": "analyst", "type": "ripple_calibration"},
+                    )
 
         # 将洞察存入长期记忆
         from backend.memory.store import MemoryManager
 
         mm = MemoryManager(account_id)
         for insight in analytics.get("insights", []):
-            await mm.store_insight(store, insight, {"source": "analyst", "post_id": publish_result.get("post_id", "")})
+            post_id = publish_result.get("post_id", "")
+            await mm.store_insight(store, insight, {"source": "analyst", "post_id": post_id})
 
         for rec in analytics.get("recommendations", []):
             await mm.store_strategy_note(store, rec, {"source": "analyst"})
 
-        return {
-            "analytics": analytics,
-            "phase": WorkflowPhase.ANALYZING,
-        }
+        return result_updates
 
     async def _ripple_report(self, state: XHSGrowthState) -> str | None:
         """尝试获取 Ripple 模拟报告"""
         ripple_prediction = state.get("content_plan", {}).get("ripple_prediction", {})
-        job_id = ripple_prediction.get("ripple_job_id") if isinstance(ripple_prediction, dict) else None
+        job_id = (
+            ripple_prediction.get("ripple_job_id") if isinstance(ripple_prediction, dict) else None
+        )
 
         if not job_id:
             return None
@@ -100,13 +122,73 @@ class AnalystAgent(BaseAgent):
     def _compare_prediction_vs_actual(
         self, prediction: dict | None, actual: dict
     ) -> dict[str, Any]:
-        """对比 Ripple 预测与实际表现"""
+        """对比 Ripple 预测与实际表现，生成可行动的校准洞察"""
         if not prediction:
             return {}
 
+        predicted_reach = prediction.get("estimated_reach", 0)
+        predicted_engagement = prediction.get("estimated_engagement", 0)
+        predicted_viral_prob = prediction.get("viral_probability", 0.0)
+
+        # 从 publish_result 提取实际数据
+        actual_views = actual.get("views", actual.get("impressions", 0))
+        actual_likes = actual.get("likes", 0)
+        actual_collects = actual.get("collects", actual.get("bookmarks", 0))
+        actual_comments = actual.get("comments", 0)
+        actual_shares = actual.get("shares", 0)
+        actual_engagement_total = actual_likes + actual_collects + actual_comments + actual_shares
+        actual_engagement_rate = actual.get(
+            "engagement_rate",
+            (actual_engagement_total / actual_views) if actual_views > 0 else 0.0,
+        )
+
+        # 计算偏差率
+        reach_deviation = 0.0
+        if predicted_reach > 0:
+            reach_deviation = (actual_views - predicted_reach) / predicted_reach
+
+        engagement_deviation = 0.0
+        if predicted_engagement > 0:
+            engagement_deviation = (
+                actual_engagement_total - predicted_engagement
+            ) / predicted_engagement
+
+        # 评级
+        if abs(reach_deviation) <= 0.3:
+            accuracy_rating = "准确"
+        elif reach_deviation > 0.3:
+            accuracy_rating = "低估"
+        else:
+            accuracy_rating = "高估"
+
+        # 生成校准洞察
+        calibration_parts = []
+        if accuracy_rating == "低估":
+            calibration_parts.append(
+                f"Ripple 低估了实际触达 {abs(reach_deviation):.0%}，"
+                f"说明该内容类型/话题的传播力超出模型预期"
+            )
+        elif accuracy_rating == "高估":
+            calibration_parts.append(
+                f"Ripple 高估了实际触达 {abs(reach_deviation):.0%}，说明内容在分发/互动环节存在瓶颈"
+            )
+        else:
+            calibration_parts.append("Ripple 预测与实际表现基本吻合")
+
+        if predicted_viral_prob > 0.5 and actual_engagement_rate < 0.02:
+            calibration_parts.append("高爆发概率但实际互动率偏低，可能标题党效应或受众不匹配")
+        elif predicted_viral_prob < 0.3 and actual_engagement_rate > 0.05:
+            calibration_parts.append("低爆发概率但实际互动率出色，该内容模式值得复用")
+
         return {
-            "predicted_reach": prediction.get("estimated_reach", 0),
-            "predicted_viral_prob": prediction.get("viral_probability", 0),
-            "actual_engagement_rate": actual.get("engagement_rate", 0),
-            "prediction_accuracy": "待评估",  # 需要更多数据点才能计算
+            "predicted_reach": predicted_reach,
+            "predicted_engagement": predicted_engagement,
+            "predicted_viral_prob": predicted_viral_prob,
+            "actual_views": actual_views,
+            "actual_engagement_total": actual_engagement_total,
+            "actual_engagement_rate": actual_engagement_rate,
+            "reach_deviation": round(reach_deviation, 3),
+            "engagement_deviation": round(engagement_deviation, 3),
+            "accuracy_rating": accuracy_rating,
+            "calibration_insight": "；".join(calibration_parts),
         }
