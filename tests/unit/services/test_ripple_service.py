@@ -1,6 +1,6 @@
 """Tests for RippleService."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, patch
 
 import httpx
 import pytest
@@ -198,28 +198,32 @@ class TestRippleServiceConnectionPool:
 
     @pytest.mark.asyncio
     async def test_client_reuse(self):
-        """复用 AsyncClient"""
+        """复用 AsyncClient — mock httpx to avoid real connection."""
         service = RippleService()
+        mock_client = MagicMock()
 
         with patch.object(service, '_get_config', return_value={
             "base_url": "http://test",
             "timeout": 30,
             "api_token": "",
-        }):
+        }), patch("backend.services.ripple_service.httpx.AsyncClient", return_value=mock_client):
             client1 = await service._get_client()
             client2 = await service._get_client()
             assert client1 is client2
 
     @pytest.mark.asyncio
     async def test_close_client(self):
-        """关闭连接"""
+        """关闭连接 — mock httpx to avoid real connection."""
         service = RippleService()
+        mock_client = MagicMock()
+        mock_client.is_closed = False
+        mock_client.aclose = AsyncMock()
 
         with patch.object(service, '_get_config', return_value={
             "base_url": "http://test",
             "timeout": 30,
             "api_token": "",
-        }):
+        }), patch("backend.services.ripple_service.httpx.AsyncClient", return_value=mock_client):
             await service._get_client()
             await service.close()
             assert service._client is None
