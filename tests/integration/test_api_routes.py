@@ -22,7 +22,12 @@ def mock_graph():
     """Mock compiled graph for testing."""
     graph = MagicMock()
     graph.ainvoke = AsyncMock(return_value={"phase": "completed", "session_id": "test_session"})
-    graph.aget_state = AsyncMock()
+    # aget_state returns a StateSnapshot-like object with sync .values/.next/.tasks
+    mock_snapshot = MagicMock()
+    mock_snapshot.values = {"phase": "completed", "session_id": "test_session"}
+    mock_snapshot.next = []
+    mock_snapshot.tasks = []
+    graph.aget_state = AsyncMock(return_value=mock_snapshot)
     graph.aupdate_state = AsyncMock()
     return graph
 
