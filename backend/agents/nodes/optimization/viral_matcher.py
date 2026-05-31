@@ -4,7 +4,7 @@ from typing import Any
 
 from langgraph.store.base import BaseStore
 
-from backend.agents.nodes._base import NodeResult
+from backend.agents.nodes._base import NodeResult, _check_cancelled
 from backend.agents.viral_matcher import ViralMatcherAgent
 from backend.realtime import EventBusService, EventType
 from backend.state.schema import XHSGrowthState
@@ -14,6 +14,7 @@ _viral_matcher = ViralMatcherAgent()
 
 async def viral_matcher_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
     """Execute viral matcher agent and emit data updated event."""
+    _check_cancelled(state)
     result = await _viral_matcher(state, store=store)
 
     # Emit data updated event for viral_posts

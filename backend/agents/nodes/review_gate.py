@@ -6,7 +6,7 @@ from typing import Any
 from langgraph.store.base import BaseStore
 from langgraph.types import interrupt
 
-from backend.agents.nodes._base import NodeResult
+from backend.agents.nodes._base import NodeResult, _check_cancelled
 from backend.realtime import EventBusService, EventType
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
@@ -16,6 +16,7 @@ logger = logging.getLogger("xhs_growth.graph.nodes")
 
 async def review_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
     """Human-in-the-loop review gate - graph interrupts before this node."""
+    _check_cancelled(state)
     copy = state.get("copy_content", {})
     visual = state.get("visual_plan", {})
     plan = state.get("content_plan", {})

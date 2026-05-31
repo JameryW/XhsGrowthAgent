@@ -4,7 +4,7 @@ from typing import Any
 
 from langgraph.store.base import BaseStore
 
-from backend.agents.nodes._base import NodeResult
+from backend.agents.nodes._base import NodeResult, _check_cancelled
 from backend.agents.trend_scout import TrendScoutAgent
 from backend.realtime import EventBusService, EventType
 from backend.state.schema import XHSGrowthState
@@ -14,6 +14,7 @@ _trend_scout = TrendScoutAgent()
 
 async def trend_scout_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
     """Execute trend scout agent and emit data updated event."""
+    _check_cancelled(state)
     thread_id = state.get("session_id")
     event_bus = EventBusService.get_instance()
 

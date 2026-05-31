@@ -4,7 +4,7 @@ from typing import Any
 
 from langgraph.store.base import BaseStore
 
-from backend.agents.nodes._base import NodeResult
+from backend.agents.nodes._base import NodeResult, _check_cancelled
 from backend.agents.publisher import PublisherAgent
 from backend.realtime import EventBusService, EventType
 from backend.state.schema import XHSGrowthState
@@ -14,6 +14,7 @@ _publisher = PublisherAgent()
 
 async def publisher_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
     """Execute publisher agent and emit workflow completed event."""
+    _check_cancelled(state)
     thread_id = state.get("session_id")
     event_bus = EventBusService.get_instance()
 

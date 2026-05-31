@@ -5,7 +5,7 @@ from typing import Any
 from langgraph.store.base import BaseStore
 
 from backend.agents.copywriter import CopywriterAgent
-from backend.agents.nodes._base import NodeResult
+from backend.agents.nodes._base import NodeResult, _check_cancelled
 from backend.realtime import EventBusService, EventType
 from backend.state.schema import XHSGrowthState
 
@@ -14,6 +14,7 @@ _copywriter = CopywriterAgent()
 
 async def copywriter_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
     """Execute copywriter agent and emit data updated event."""
+    _check_cancelled(state)
     thread_id = state.get("session_id")
     event_bus = EventBusService.get_instance()
 
