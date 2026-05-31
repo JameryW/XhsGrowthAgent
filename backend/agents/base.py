@@ -166,15 +166,15 @@ class BaseAgent(ABC):
         ...
 
     async def __call__(self, state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
-        """LangGraph node 入口点"""
+        """LangGraph node entry point."""
+        from backend.core.error_handling import AgentError
+
         try:
             result = await self.execute(state, store)
             result["current_agent"] = self.agent_name
+            result["error"] = None  # Clear stale error on success
             return result
         except Exception as e:
             logger.error(f"Agent {self.agent_name} failed: {e}", exc_info=True)
-            return {
-                "error": f"{self.agent_name}: {type(e).__name__}: {e}",
-                "retry_count": state.get("retry_count", 0) + 1,
-                "current_agent": self.agent_name,
-            }
+            # Propagate to LangGraph retry mechanism
+            raise AgentError(self.agent_name, e) from e

@@ -23,6 +23,7 @@ from backend.agents.nodes import (
     viral_matcher_node,
     visual_designer_node,
 )
+from backend.graph.error_handling import get_retry_policy
 from backend.graph.routers import (
     orchestrator_router,
     review_outcome,
@@ -38,15 +39,15 @@ def build_graph() -> StateGraph:
     builder = StateGraph(XHSGrowthState)
 
     # ── 添加节点 ──
-    builder.add_node("orchestrator", orchestrator_node)
-    builder.add_node("trend_scout", trend_scout_node)
-    builder.add_node("content_strategist", content_strategist_node)
-    builder.add_node("copywriter", copywriter_node)
-    builder.add_node("visual_designer", visual_designer_node)
-    builder.add_node("review_gate", review_gate_node)
-    builder.add_node("publisher", publisher_node)
-    builder.add_node("analyst", analyst_node)
-    builder.add_node("engagement", engagement_node)
+    builder.add_node("orchestrator", orchestrator_node, retry_policy=get_retry_policy("orchestrator"))
+    builder.add_node("trend_scout", trend_scout_node, retry_policy=get_retry_policy("trend_scout"))
+    builder.add_node("content_strategist", content_strategist_node, retry_policy=get_retry_policy("content_strategist"))
+    builder.add_node("copywriter", copywriter_node, retry_policy=get_retry_policy("copywriter"))
+    builder.add_node("visual_designer", visual_designer_node, retry_policy=get_retry_policy("visual_designer"))
+    builder.add_node("review_gate", review_gate_node, retry_policy=get_retry_policy("review_gate"))
+    builder.add_node("publisher", publisher_node, retry_policy=get_retry_policy("publisher"))
+    builder.add_node("analyst", analyst_node, retry_policy=get_retry_policy("analyst"))
+    builder.add_node("engagement", engagement_node, retry_policy=get_retry_policy("engagement"))
     builder.add_node("revise_content", revise_content_node)
     # 发布前优化节点
     builder.add_node("viral_matcher", viral_matcher_node)
