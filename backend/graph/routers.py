@@ -31,12 +31,21 @@ def orchestrator_router(state: XHSGrowthState) -> str:
     return routing.get(phase, "trend_scout")
 
 
-def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "__end__"]:
-    """侦察后判断是否有可操作的趋势"""
-    trend_data = state.get("trend_data", {})
-    hot_topics = trend_data.get("hot_topics", [])
-    if hot_topics:
+def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "trend_scout", "__end__"]:
+    """侦察后判断是否有可操作的趋势 — retry trend_scout on failure before giving up."""
+    trend_data = state.get("trend_data")
+
+    # trend_data present with results → proceed to content_strategist
+    if trend_data and trend_data.get("hot_topics"):
         return "content_strategist"
+
+    # No trend_data: check if we should retry
+    has_error = state.get("error")
+    retry_count = state.get("retry_count", 0)
+
+    if has_error and retry_count < 2:
+        return "trend_scout"
+
     return "__end__"
 
 

@@ -229,13 +229,18 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
             try:
                 result = await graph.ainvoke(initial_state, config)
                 final_phase = result.get("phase", "unknown")
+                has_error = result.get("error")
+                # Phase stuck at early stage with error = premature termination
+                final_status = "error" if (has_error or final_phase in ("scouting", "error")) else "completed"
                 _workflow_registry[thread_id]["phase"] = final_phase
-                _workflow_registry[thread_id]["status"] = "completed"
-                _workflow_registry[thread_id]["progress_percent"] = 100
+                _workflow_registry[thread_id]["status"] = final_status
+                _workflow_registry[thread_id]["progress_percent"] = 100 if final_status == "completed" else 0
+                _workflow_registry[thread_id]["error"] = has_error
                 _save_registry()
                 _save_workflow_result(thread_id, result)
-            except Exception:
+            except Exception as exc:
                 _workflow_registry[thread_id]["status"] = "error"
+                _workflow_registry[thread_id]["error"] = str(exc)
                 _save_registry()
 
         asyncio.create_task(_run_and_persist())
@@ -251,16 +256,19 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
         # 同步执行（等待完成）
         result = await graph.ainvoke(initial_state, config)
         final_phase = result.get("phase", "unknown")
+        has_error = result.get("error")
+        final_status = "error" if (has_error or final_phase in ("scouting", "error")) else "completed"
         _workflow_registry[thread_id]["phase"] = final_phase
-        _workflow_registry[thread_id]["status"] = "completed"
-        _workflow_registry[thread_id]["progress_percent"] = 100
+        _workflow_registry[thread_id]["status"] = final_status
+        _workflow_registry[thread_id]["progress_percent"] = 100 if final_status == "completed" else 0
+        _workflow_registry[thread_id]["error"] = has_error
         _save_registry()
         _save_workflow_result(thread_id, result)
         return success(data={
             "thread_id": thread_id,
-            "status": "completed",
+            "status": final_status,
             "phase": final_phase,
-            "progress_percent": 100,
+            "progress_percent": 100 if final_status == "completed" else 0,
         })
 
 
@@ -654,15 +662,26 @@ async def delete_workflow(thread_id: str):
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
 
-    if thread_id not in _workflow_registry:
+    in_registry = thread_id in _workflow_registry
+    in_history = (_HISTORY_DIR / f"{thread_id}.json").exists()
+
+    if not in_registry and not in_history:
         raise WorkflowNotFoundError(thread_id)
 
-    wf = _workflow_registry[thread_id]
-    if wf["status"] == "running":
+    if in_registry and _workflow_registry[thread_id]["status"] == "running":
         raise ValidationError("thread_id", "Cannot delete a running workflow. Cancel it first.")
 
-    del _workflow_registry[thread_id]
-    _save_registry()
+    if in_registry:
+        del _workflow_registry[thread_id]
+        _save_registry()
+
+    # Remove persisted history file as well
+    history_path = _HISTORY_DIR / f"{thread_id}.json"
+    if history_path.exists():
+        try:
+            history_path.unlink()
+        except OSError:
+            pass
 
     return success(data={
         "thread_id": thread_id,

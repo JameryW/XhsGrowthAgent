@@ -116,6 +116,7 @@ def build_graph() -> StateGraph:
         {
             "publisher": "publisher",
             "revise_content": "revise_content",
+            "__end__": END,
         },
     )
 

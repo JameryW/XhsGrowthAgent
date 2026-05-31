@@ -238,6 +238,20 @@ export const useWorkflowStore = defineStore('workflow', () => {
       const phase = workflowState.value?.phase || 'idle'
       const backendProgress = workflowState.value?.progress_percent
       updateProgressFromPhase(phase as WorkflowPhase, backendProgress)
+      // Stale/errored workflow: phase is active or error but next_steps is empty and no agent running,
+      // or phase is error — these are dead workflows that should not block the UI
+      const activePhases: WorkflowPhase[] = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging']
+      if (
+        (activePhases.includes(phase as WorkflowPhase) &&
+        (workflowState.value?.next_steps?.length ?? 0) === 0 &&
+        !workflowState.value?.current_agent) ||
+        phase === 'error'
+      ) {
+        currentThreadId.value = null
+        workflowState.value = null
+        localStorage.removeItem('currentThreadId')
+        updateProgressFromPhase('idle')
+      }
     } catch (e: any) {
       // Workflow not found — clear stale threadId silently
       if (e.code === 'ERROR_WORKFLOW_NOT_FOUND' || e.message?.includes('not found')) {

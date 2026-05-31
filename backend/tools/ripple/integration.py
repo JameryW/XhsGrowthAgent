@@ -39,10 +39,14 @@ async def predict_spread(
     description: str = "",
     max_waves: int = 8,
     simulation_horizon: str = "48h",
+    max_wait: float = 1800.0,
 ) -> dict[str, Any]:
     """预测内容传播效果 — 供 ContentStrategist 和 Copywriter 调用
 
     通过 RippleService 提交模拟并等待完成，返回解析后的结果。
+
+    Args:
+        max_wait: 最大等待时间（秒），传递给 RippleService.submit_and_wait
 
     Returns:
         - ripple_job_id: 模拟任务 ID
@@ -61,6 +65,7 @@ async def predict_spread(
             description=description,
             max_waves=max_waves,
             simulation_horizon=simulation_horizon,
+            max_wait=max_wait,
         )
         return result
     except Exception as e:
@@ -73,10 +78,14 @@ async def validate_pmf(
     category: str,
     description: str,
     differentiators: list[str] | None = None,
+    max_wait: float = 1800.0,
 ) -> dict[str, Any]:
     """验证产品市场契合度 — 供 ContentStrategist 调用
 
     通过 RippleService 提交模拟并等待完成，返回解析后的结果。
+
+    Args:
+        max_wait: 最大等待时间（秒），传递给 RippleService.submit_and_wait
 
     Returns:
         - ripple_job_id: 模拟任务 ID
@@ -92,6 +101,7 @@ async def validate_pmf(
             category=category,
             description=description,
             differentiators=differentiators,
+            max_wait=max_wait,
         )
         return result
     except Exception as e:

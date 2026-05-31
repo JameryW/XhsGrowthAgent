@@ -27,6 +27,12 @@ const hasPmf = computed(() => Object.keys(props.pmf).length > 0)
 const hasComparison = computed(() => Object.keys(props.comparison).length > 0)
 const hasAnyData = computed(() => hasPrediction.value || hasPmf.value || hasComparison.value)
 
+const isFallback = computed(() => {
+  if (!hasPrediction.value) return false
+  const p = props.prediction
+  return p.viral_probability === 0 && p.estimated_reach === 0 && p.confidence === 0
+})
+
 // Format large numbers
 function formatNumber(n?: number): string {
   if (n === undefined || n === null) return '—'
@@ -94,6 +100,12 @@ function progressWidth(value?: number, max: number = 1): string {
         {{ showDetails ? t('dashboard.ripple.hideDetails') : t('dashboard.ripple.showDetails') }}
         <AppIcon :name="showDetails ? 'ChevronUp' : 'ChevronDown'" size="sm" />
       </button>
+    </div>
+
+    <!-- Fallback notice -->
+    <div v-if="isFallback" class="mx-5 mt-3 p-2.5 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-2">
+      <AppIcon name="AlertTriangle" size="sm" variant="peach" />
+      <span class="text-xs text-amber-700">{{ t('dashboard.ripple.fallbackNotice') }}</span>
     </div>
 
     <!-- Summary cards -->
