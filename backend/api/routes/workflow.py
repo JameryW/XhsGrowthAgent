@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field
 
 from backend.api.errors import ValidationError, WorkflowNotFoundError
 from backend.api.responses import success
+from backend.realtime import EventBusService
+from backend.realtime.events import EventType
 from backend.state.enums import WorkflowPhase
 
 router = APIRouter()
@@ -543,52 +545,33 @@ async def cancel_workflow(thread_id: str, request: Request):
 
 @router.get("/stream/{thread_id}")
 async def stream_workflow_progress(thread_id: str, request: Request):
-    """SSE 流式进度推送
+    """SSE 流式进度推送 — EventBus驱动，不调用graph方法.
 
     通过 Server-Sent Events 实时推送工作流进度更新。
+    纯消费模式：订阅 EventBus，不驱动图执行。
 
     Events:
         - progress: 进度更新 {phase, percent, agent}
         - error: 错误事件 {message}
         - complete: 完成事件 {final_phase}
     """
-    # Validate thread_id
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
 
     async def event_generator():
-        graph = request.app.state.graph
-        config = {"configurable": {"thread_id": thread_id}}
+        bus = EventBusService.get_instance()
+        queue = bus.subscribe_thread(thread_id)
 
         try:
-            # Stream events from LangGraph
-            async for event in graph.astream_events(None, config, version="v1"):
-                event_type = event.get("event", "")
-                event_name = event.get("name", "unknown")
+            while True:
+                event = await queue.get()
+                yield f"event: {event.event_type.value}\ndata: {json.dumps(event.payload, ensure_ascii=False)}\n\n"
 
-                if event_type == "on_chain_start":
-                    yield (
-                        f"event: progress\ndata: "
-                        f'{{"agent": "{event_name}", "status": "starting"}}\n\n'
-                    )
-                elif event_type == "on_chain_end":
-                    # Get current state
-                    state = await graph.aget_state(config)
-                    phase = state.values.get("phase", "unknown")
-                    progress = get_progress(phase)
-                    yield (
-                        f"event: progress\ndata: "
-                        f'{{"agent": "{event_name}", "phase": "{phase}", '
-                        f'"percent": {progress}, "status": "completed"}}\n\n'
-                    )
-
-            # Final state
-            final_state = await graph.aget_state(config)
-            final_phase = final_state.values.get("phase", "unknown")
-            yield f"event: complete\ndata: {{\"phase\": \"{final_phase}\", \"percent\": 100}}\n\n"
-
-        except Exception as e:
-            yield f"event: error\ndata: {{\"message\": \"{str(e)}\"}}\n\n"
+                # Terminal events close the stream
+                if event.event_type in (EventType.WORKFLOW_COMPLETED, EventType.WORKFLOW_ERROR):
+                    break
+        finally:
+            bus.unsubscribe_thread(thread_id, queue)
 
     return StreamingResponse(
         event_generator(),
