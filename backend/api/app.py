@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -20,8 +22,19 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动时编译图
-    app.state.graph = compile_graph_dev()
+    # 启动时编译图 — 基于 POSTGRES_URI 环境变量选择检查点
+    db_uri = os.environ.get("POSTGRES_URI")
+    if db_uri:
+        try:
+            from backend.graph.builder import compile_graph_prod
+            app.state.graph = await compile_graph_prod(db_uri)
+        except Exception as e:
+            logging.getLogger("xhs_growth").warning(
+                f"Postgres checkpointer failed, using memory: {e}"
+            )
+            app.state.graph = compile_graph_dev()
+    else:
+        app.state.graph = compile_graph_dev()
     yield
 
 
@@ -41,7 +54,7 @@ app.add_middleware(
 
 app.middleware("http")(error_handler_middleware)
 
-from backend.api.routes import analytics, auth, realtime, review, workflow  # noqa: E402
+from backend.api.routes import analytics, auth, optimization, realtime, review, workflow  # noqa: E402
 from backend.api.routes.system import router as system_router  # noqa: E402
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
@@ -50,6 +63,7 @@ app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(system_router, prefix="/api/system", tags=["system"])
 app.include_router(realtime.router, tags=["realtime"])  # WebSocket 不需要 /api 前缀
+app.include_router(optimization.router, prefix="/api/optimization", tags=["optimization"])
 
 
 @app.get("/health")

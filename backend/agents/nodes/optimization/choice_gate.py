@@ -6,7 +6,7 @@ from typing import Any
 from langgraph.store.base import BaseStore
 from langgraph.types import interrupt
 
-from backend.agents.nodes._base import NodeResult
+from backend.agents.nodes._base import NodeResult, _check_cancelled
 from backend.realtime import EventBusService, EventType
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
@@ -16,6 +16,7 @@ logger = logging.getLogger("xhs_growth.graph.nodes")
 
 async def choice_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
     """Version selection gate - user chooses A/B/C version."""
+    _check_cancelled(state)
     versions = state.get("content_versions", [])
     draft = state.get("draft_content", {})
     analysis = state.get("optimization_analysis", {})
@@ -77,6 +78,7 @@ async def choice_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
         result = {
             "selected_version": selected_version_id,
             "copy_content": {
+                "selected_title": selected_version.get("title", ""),
                 "title_candidates": [selected_version.get("title", "")],
                 "body_text": selected_version.get("body", ""),
                 "hashtags": selected_version.get("hashtags", []),

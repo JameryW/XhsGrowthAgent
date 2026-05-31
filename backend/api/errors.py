@@ -72,6 +72,16 @@ class ReviewNotPendingError(APIError):
             status_code=400,
         )
 
+class ChoiceNotPendingError(APIError):
+    """No pending version selection exception."""
+    def __init__(self, thread_id: str, current_phase: str):
+        super().__init__(
+            code=ErrorCode.REVIEW_NOT_PENDING,
+            message="Workflow is not awaiting version selection",
+            details={"thread_id": thread_id, "current_phase": current_phase},
+            status_code=400,
+        )
+
 class ValidationError(APIError):
     """Validation error exception."""
     def __init__(self, field: str, reason: str):
