@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import json
 import os
 import uuid
@@ -18,6 +19,7 @@ from backend.api.responses import success
 from backend.realtime import EventBusService
 from backend.realtime.events import EventType
 from backend.state.enums import WorkflowPhase
+from backend.state.machine import WorkflowStatus, derive_status
 
 router = APIRouter()
 
@@ -40,15 +42,20 @@ def _load_registry() -> dict[str, dict]:
 
 
 def _save_registry() -> None:
-    """Persist workflow registry to JSON file."""
+    """Persist workflow registry to JSON file with atomic write."""
     try:
         _REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _REGISTRY_PATH.write_text(
-            json.dumps(_workflow_registry, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        tmp_path = _REGISTRY_PATH.with_suffix(".tmp")
+
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            json.dump(_workflow_registry, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+
+        os.replace(tmp_path, _REGISTRY_PATH)  # Atomic rename
     except OSError:
-        pass  # Non-critical: registry is also in memory
+        pass
 
 
 def _save_workflow_result(thread_id: str, state_values: dict) -> None:
@@ -92,6 +99,9 @@ def _load_all_history() -> dict[str, dict]:
 
 # Load persisted registry on module import
 _workflow_registry = _load_registry()
+
+# Background task registry for cancellation support
+_background_tasks: dict[str, asyncio.Task] = {}
 
 
 class WorkflowStartRequest(BaseModel):
@@ -234,20 +244,37 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
                 result = await graph.ainvoke(initial_state, config)
                 final_phase = result.get("phase", "unknown")
                 has_error = result.get("error")
-                # Phase stuck at early stage with error = premature termination
-                final_status = "error" if (has_error or final_phase in ("scouting", "error")) else "completed"
+                # Use derive_status for consistent status derivation
+                snapshot = await graph.aget_state(config)
+                derived = derive_status(snapshot)
+                if derived == WorkflowStatus.ERROR:
+                    final_status = "error"
+                elif derived == WorkflowStatus.CANCELLED:
+                    final_status = "cancelled"
+                elif derived == WorkflowStatus.COMPLETED:
+                    final_status = "completed"
+                else:
+                    # Phase stuck at early stage with error = premature termination
+                    final_status = "error" if (has_error or final_phase in ("scouting", "error")) else "completed"
                 _workflow_registry[thread_id]["phase"] = final_phase
                 _workflow_registry[thread_id]["status"] = final_status
                 _workflow_registry[thread_id]["progress_percent"] = 100 if final_status == "completed" else 0
                 _workflow_registry[thread_id]["error"] = has_error
                 _save_registry()
                 _save_workflow_result(thread_id, result)
+            except asyncio.CancelledError:
+                _workflow_registry[thread_id]["status"] = "cancelled"
+                _workflow_registry[thread_id]["error"] = "Task cancelled"
+                _save_registry()
             except Exception as exc:
                 _workflow_registry[thread_id]["status"] = "error"
                 _workflow_registry[thread_id]["error"] = str(exc)
                 _save_registry()
+            finally:
+                _background_tasks.pop(thread_id, None)
 
-        asyncio.create_task(_run_and_persist())
+        task = asyncio.create_task(_run_and_persist())
+        _background_tasks[thread_id] = task
         return success(data={
             "thread_id": thread_id,
             "status": "running",
@@ -535,6 +562,11 @@ async def cancel_workflow(thread_id: str, request: Request):
         _workflow_registry[thread_id]["error"] = "User cancelled"
         _workflow_registry[thread_id]["updated_at"] = datetime.now(UTC).isoformat()
         _save_registry()
+
+    # Cancel background task if running
+    bg_task = _background_tasks.get(thread_id)
+    if bg_task and not bg_task.done():
+        bg_task.cancel()
 
     return success(data={
         "thread_id": thread_id,
