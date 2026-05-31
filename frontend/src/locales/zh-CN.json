@@ -252,7 +252,8 @@
       "hideDetails": "收起详情",
       "noData": "暂无 Ripple 数据",
       "spreadPhases": "传播阶段",
-      "keyInfluencers": "关键影响者"
+      "keyInfluencers": "关键影响者",
+      "fallbackNotice": "Ripple 引擎暂不可用，以下为默认预测值"
     },
     "scouting": {
       "hotTopics": "热门话题",

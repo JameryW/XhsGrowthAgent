@@ -240,11 +240,13 @@ class RippleService:
         max_waves: int = 8,
         simulation_horizon: str = "48h",
         use_fallback: bool = True,
+        max_wait: float = 1800.0,
     ) -> dict[str, Any]:
         """预测内容传播效果
 
         Args:
             use_fallback: 服务不可用时是否使用默认值
+            max_wait: 最大等待时间（秒），传递给 submit_and_wait
         """
         if tags is None:
             tags = []
@@ -272,7 +274,7 @@ class RippleService:
                 "simulation_horizon": simulation_horizon,
             }
 
-            result = await self.submit_and_wait(request_body)
+            result = await self.submit_and_wait(request_body, max_wait=max_wait)
             return self._parse_spread_result(result)
 
         except Exception as e:
@@ -288,8 +290,13 @@ class RippleService:
         description: str,
         differentiators: list[str] | None = None,
         use_fallback: bool = True,
+        max_wait: float = 1800.0,
     ) -> dict[str, Any]:
-        """验证产品市场契合度"""
+        """验证产品市场契合度
+
+        Args:
+            max_wait: 最大等待时间（秒），传递给 submit_and_wait
+        """
         if differentiators is None:
             differentiators = []
         config = self._get_config()
@@ -314,7 +321,7 @@ class RippleService:
                 "event": event,
             }
 
-            result = await self.submit_and_wait(request_body)
+            result = await self.submit_and_wait(request_body, max_wait=max_wait)
             return self._parse_pmf_result(result)
 
         except Exception as e:

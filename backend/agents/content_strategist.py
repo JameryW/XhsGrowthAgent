@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -13,6 +14,9 @@ from backend.config.models import TaskType
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.content_strategist")
+
+# Ripple 调用超时（秒）— 单次模拟实测 ~758s，留 20% 余量
+_RIPPLE_TIMEOUT = 900
 
 
 class ContentStrategistAgent(BaseAgent):
@@ -53,9 +57,30 @@ class ContentStrategistAgent(BaseAgent):
 
         content_plan = self._parse_json_response(response.content)
 
-        # 使用 Ripple 预测传播效果 + PMF 验证
-        ripple_prediction = await self._ripple_predict(content_plan)
-        ripple_pmf = await self._ripple_validate_pmf(content_plan)
+        # 使用 Ripple 预测传播效果 + PMF 验证（并行调用，带超时保护）
+        ripple_timeout = _RIPPLE_TIMEOUT
+
+        async def _predict():
+            try:
+                return await asyncio.wait_for(
+                    self._ripple_predict(content_plan, max_wait=ripple_timeout),
+                    timeout=ripple_timeout,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"Ripple spread prediction timed out after {ripple_timeout}s, skipping")
+                return None
+
+        async def _validate_pmf():
+            try:
+                return await asyncio.wait_for(
+                    self._ripple_validate_pmf(content_plan, max_wait=ripple_timeout),
+                    timeout=ripple_timeout,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"Ripple PMF validation timed out after {ripple_timeout}s, skipping")
+                return None
+
+        ripple_prediction, ripple_pmf = await asyncio.gather(_predict(), _validate_pmf())
 
         if ripple_prediction:
             content_plan["ripple_prediction"] = ripple_prediction
@@ -97,8 +122,11 @@ class ContentStrategistAgent(BaseAgent):
             result["ripple_pmf"] = ripple_pmf
         return result
 
-    async def _ripple_predict(self, content_plan: dict) -> dict | None:
+    async def _ripple_predict(self, content_plan: dict, max_wait: float = 900) -> dict | None:
         """调用 Ripple 预测内容传播效果
+
+        Args:
+            max_wait: 最大等待时间（秒），传递给 RippleService
 
         Returns:
             包含 ripple_job_id 和预测数据的 dict，或 None
@@ -118,6 +146,7 @@ class ContentStrategistAgent(BaseAgent):
                 description=content_plan.get("content_angle", ""),
                 max_waves=6,
                 simulation_horizon="48h",
+                max_wait=max_wait,
             )
 
             if result.get("ripple_prediction"):
@@ -136,8 +165,12 @@ class ContentStrategistAgent(BaseAgent):
 
         return None
 
-    async def _ripple_validate_pmf(self, content_plan: dict) -> dict | None:
-        """调用 Ripple 验证产品市场契合度"""
+    async def _ripple_validate_pmf(self, content_plan: dict, max_wait: float = 900) -> dict | None:
+        """调用 Ripple 验证产品市场契合度
+
+        Args:
+            max_wait: 最大等待时间（秒），传递给 RippleService
+        """
         try:
             from backend.tools.ripple.integration import validate_pmf
 
@@ -150,6 +183,7 @@ class ContentStrategistAgent(BaseAgent):
                 category=content_plan.get("content_type", "note"),
                 description=content_plan.get("content_angle", ""),
                 differentiators=content_plan.get("key_points", []),
+                max_wait=max_wait,
             )
 
             if result.get("ripple_pmf"):

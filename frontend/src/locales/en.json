@@ -252,7 +252,8 @@
       "hideDetails": "Hide Details",
       "noData": "No Ripple data available yet",
       "spreadPhases": "Spread Phases",
-      "keyInfluencers": "Key Influencers"
+      "keyInfluencers": "Key Influencers",
+      "fallbackNotice": "Ripple engine unavailable, showing default predictions"
     },
     "scouting": {
       "hotTopics": "Hot Topics",
