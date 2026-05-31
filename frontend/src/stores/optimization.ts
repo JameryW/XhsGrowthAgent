@@ -9,6 +9,7 @@ import type {
 } from '@/types/optimization'
 import { useRealtimeStore } from './realtime'
 import { EventType } from '@/realtime/events'
+import { submitDraft as apiSubmitDraft, selectVersion as apiSelectVersion } from '@/api/workflow'
 
 export const useOptimizationStore = defineStore('optimization', () => {
   // State
@@ -78,13 +79,15 @@ export const useOptimizationStore = defineStore('optimization', () => {
     isLoading.value = true
     error.value = null
     try {
-      // Store draft locally
       draftContent.value = draft
       userViralLinks.value = viralLinks || []
 
-      // Submit to backend (would need new API endpoint)
-      // For now, we update state via WebSocket events
-      // await workflowApi.submitDraft({ thread_id: threadId, draft, viral_links: viralLinks })
+      await apiSubmitDraft(threadId, {
+        title: draft.title || '',
+        text: draft.text,
+        hashtags: draft.hashtags || [],
+        viral_links: viralLinks || [],
+      })
     } catch (e: any) {
       error.value = e.message
       throw e
@@ -103,12 +106,12 @@ export const useOptimizationStore = defineStore('optimization', () => {
     isLoading.value = true
     error.value = null
     try {
-      // Store selection locally
       selectedVersion.value = choice.version_id
 
-      // Submit to backend (would need new API endpoint)
-      // For now, we update state via WebSocket events
-      // await workflowApi.selectVersion({ thread_id: threadId, choice })
+      await apiSelectVersion(threadId, {
+        version_id: choice.version_id,
+        version_type: choice.selected_version,
+      })
     } catch (e: any) {
       error.value = e.message
       throw e

@@ -16,9 +16,12 @@ export type WorkflowPhase =
 // Workflow status - matches backend WorkflowStatus enum
 export type WorkflowStatus =
   | 'running'
+  | 'awaiting_review'
+  | 'awaiting_choice'
   | 'paused'
   | 'completed'
   | 'error'
+  | 'cancelled'
 
 // Content type - matches backend ContentType enum
 export type ContentType =
@@ -41,6 +44,7 @@ export interface WorkflowStartRequest {
   auto_publish?: boolean
   topic?: string
   niche?: string
+  execution_mode?: 'single' | 'continuous'
 }
 
 // Workflow list item (from /workflow/list)
