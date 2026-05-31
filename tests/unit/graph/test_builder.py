@@ -68,11 +68,9 @@ class TestCompileGraphDev:
         # Checkpointer should be present
         assert graph.checkpointer is not None
 
-    def test_compile_graph_dev_interrupts_at_review_gate(self):
-        """Dev graph interrupts before review_gate and choice_gate for human-in-the-loop."""
+    def test_compile_graph_dev_no_interrupt_before(self):
+        """Dev graph uses dynamic interrupt() inside nodes, not interrupt_before."""
         graph = compile_graph_dev()
 
-        # interrupt_before_nodes should include both gates
-        # This is configured in compile_graph_dev
-        assert "review_gate" in graph.interrupt_before_nodes
-        assert "choice_gate" in graph.interrupt_before_nodes
+        # interrupt_before_nodes should be empty — nodes use interrupt() internally
+        assert graph.interrupt_before_nodes == []

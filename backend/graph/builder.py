@@ -151,7 +151,7 @@ def compile_graph_dev() -> CompiledStateGraph:
     graph = builder.compile(
         checkpointer=checkpointer,
         store=store,
-        interrupt_before=["review_gate", "choice_gate"],  # human-in-the-loop 审核门 + 版本选择门
+        # Nodes use dynamic interrupt() instead of interrupt_before
     )
     return graph
 
@@ -167,7 +167,7 @@ async def compile_graph_prod(db_uri: str) -> CompiledStateGraph:
             await checkpointer.setup()
             graph = builder.compile(
                 checkpointer=checkpointer,
-                interrupt_before=["review_gate", "choice_gate"],
+                # Nodes use dynamic interrupt() instead of interrupt_before
             )
             return graph
     except ImportError:

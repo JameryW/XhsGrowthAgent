@@ -134,11 +134,13 @@ class TestOptimizationGraphIntegration:
             e[0] == "copywriter" and e[1] == "viral_matcher" for e in graph._edges
         )
 
-    def test_compile_graph_interrupts_at_choice_gate(self):
-        """Dev graph interrupts before choice_gate for user selection."""
+    def test_compile_graph_uses_dynamic_interrupt(self):
+        """Dev graph no longer uses interrupt_before; nodes use dynamic interrupt()."""
         graph = compile_graph_dev()
 
-        assert "choice_gate" in graph.interrupt_before_nodes
+        # interrupt_before is now empty — nodes use interrupt() internally
+        assert graph.interrupt_before_nodes == []
+        assert graph.interrupt_after_nodes == []
 
 
 class TestViralMatcherNode:
