@@ -14,8 +14,26 @@ def _xhs_configured() -> bool:
     return bool(os.environ.get("XHS_COOKIE") and os.environ.get("XHS_USER_ID"))
 
 
+def _check_terminal(state: XHSGrowthState) -> str | None:
+    """Return '__end__' if workflow is in terminal state, else None.
+
+    Terminal states: cancelled, paused, error
+    """
+    phase = state.get("phase")
+    if phase == WorkflowPhase.CANCELLED:
+        return "__end__"
+    if phase == WorkflowPhase.PAUSED:
+        return "__end__"
+    if state.get("error"):
+        return "__end__"
+    return None
+
+
 def orchestrator_router(state: XHSGrowthState) -> str:
     """编排器路由 — 根据当前阶段决定下一个节点"""
+    if terminal := _check_terminal(state):
+        return terminal
+
     phase = state.get("phase", WorkflowPhase.IDLE)
 
     routing = {
@@ -31,66 +49,73 @@ def orchestrator_router(state: XHSGrowthState) -> str:
     return routing.get(phase, "trend_scout")
 
 
-def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "__end__"]:
-    """侦察后判断是否有可操作的趋势"""
-    trend_data = state.get("trend_data", {})
-    hot_topics = trend_data.get("hot_topics", [])
-    if hot_topics:
+def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "trend_scout", "__end__"]:
+    """侦察后判断是否有可操作的趋势 — retry trend_scout on failure before giving up."""
+    if terminal := _check_terminal(state):
+        return terminal
+
+    trend_data = state.get("trend_data")
+
+    if trend_data and trend_data.get("hot_topics"):
         return "content_strategist"
+
+    has_error = state.get("error")
+    retry_count = state.get("retry_count", 0)
+
+    if has_error and retry_count < 2:
+        return "trend_scout"
+
     return "__end__"
 
 
 def review_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_content", "__end__"]:
     """人工审核路由 — 根据审核结果决定下一步"""
+    if terminal := _check_terminal(state):
+        return terminal
+
     feedback = state.get("human_feedback", {})
     decision = feedback.get("decision", ContentStatus.REJECTED)
-    # Handle both enum and string values for frontend compatibility
+
     if decision == ContentStatus.APPROVED or decision == "approved":
-        # Skip publishing if XHS credentials are not configured (preview-only mode)
         if not _xhs_configured():
             return "__end__"
         return "publisher"
     if decision == ContentStatus.NEEDS_REVISION or decision == "needs_revision":
         return "revise_content"
-    # rejected → end workflow (do not enter revision loop)
     return "__end__"
 
 
-def should_continue(state: XHSGrowthState) -> Literal["orchestrator", "__end__"]:
+def should_continue(state: XHSGrowthState) -> Literal["orchestrator", "engagement", "__end__"]:
     """分析后决定是否继续下一个周期"""
+    if terminal := _check_terminal(state):
+        return terminal
+
     phase = state.get("phase", WorkflowPhase.IDLE)
-    error = state.get("error")
 
-    # 有错误 → 结束
-    if error:
-        return "__end__"
-
-    # 分析完成 → 回到编排器开始新周期
     if phase == WorkflowPhase.ANALYZING:
-        return "orchestrator"
+        mode = state.get("execution_mode", "single")
+        if mode == "continuous":
+            return "orchestrator"
+        return "engagement"
 
     return "__end__"
-
-
-# ── 发布前优化路由 ──
 
 
 def should_optimize(state: XHSGrowthState) -> Literal["content_analyzer", "visual_designer"]:
     """判断是否进入优化流程."""
-    # 用户明确跳过优化 → 直接进入视觉设计
+    if state.get("error"):
+        return "visual_designer"
+
     if state.get("skip_optimization"):
         return "visual_designer"
 
-    # 有爆款参考 → 进入对比分析
     viral_posts = state.get("viral_posts", [])
     if viral_posts and len(viral_posts) > 0:
         return "content_analyzer"
 
-    # 无爆款参考 → 直接进入视觉设计
     return "visual_designer"
 
 
 def choice_outcome(state: XHSGrowthState) -> Literal["visual_designer"]:
     """版本选择后路由 — 统一进入视觉设计."""
-    # 用户选择完成后，进入视觉设计节点
     return "visual_designer"
