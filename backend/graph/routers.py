@@ -51,15 +51,6 @@ def orchestrator_router(state: XHSGrowthState) -> str:
 
 def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "trend_scout", "__end__"]:
     """侦察后判断是否有可操作的趋势 — retry trend_scout on failure before giving up."""
-<<<<<<< HEAD
-    trend_data = state.get("trend_data")
-
-    # trend_data present with results → proceed to content_strategist
-    if trend_data and trend_data.get("hot_topics"):
-        return "content_strategist"
-
-    # No trend_data: check if we should retry
-=======
     if terminal := _check_terminal(state):
         return terminal
 
@@ -68,7 +59,6 @@ def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "trend_s
     if trend_data and trend_data.get("hot_topics"):
         return "content_strategist"
 
->>>>>>> worktree-agent-ad3563fd65e05dd25
     has_error = state.get("error")
     retry_count = state.get("retry_count", 0)
 
