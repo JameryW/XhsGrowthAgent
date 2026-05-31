@@ -93,10 +93,9 @@ async def submit_review(thread_id: str, decision: ReviewDecision, request: Reque
         version_entry = _build_version_entry(
             copy_content, visual_plan, label=label
         )
-        # Append version to state before resuming
-        existing_versions = values.get("content_versions") or []
+        # Append version to state before resuming (reducer appends to existing)
         await graph.aupdate_state(config, {
-            "content_versions": existing_versions + [version_entry],
+            "content_versions": [version_entry],
         })
 
     # On 'approved', write publish options to state so publisher can read them
