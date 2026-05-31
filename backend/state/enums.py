@@ -39,3 +39,9 @@ class Urgency(StrEnum):
     MEDIUM = "medium"
     HIGH = "high"
     TRENDING = "trending"
+
+
+class ExecutionMode(StrEnum):
+    """Workflow execution mode."""
+    SINGLE = "single"          # One content cycle, then completed
+    CONTINUOUS = "continuous"  # Loop back to orchestrator after each cycle

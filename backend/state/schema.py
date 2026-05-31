@@ -34,6 +34,7 @@ class XHSGrowthState(TypedDict, total=False):
     current_agent: str
     error: str | None
     retry_count: int
+    execution_mode: str  # "single" or "continuous" — from ExecutionMode enum
 
     # Message history (LangGraph built-in reducer)
     messages: Annotated[list, add_messages]

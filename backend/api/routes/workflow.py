@@ -100,6 +100,7 @@ class WorkflowStartRequest(BaseModel):
     auto_publish: bool = Field(default=False, description="审核通过后自动发布")
     topic: str | None = Field(default=None, description="内容主题/关键词")
     niche: str = Field(default="母婴", description="垂类赛道")
+    execution_mode: str = Field(default="single", description="执行模式: single/continuous")
 
 
 class AgentTimelineEntry(BaseModel):
@@ -183,6 +184,7 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
         "current_agent": "orchestrator",
         "error": None,
         "retry_count": 0,
+        "execution_mode": req.execution_mode,
         "messages": [],
         "trend_data": {},
         "content_plan": {},
