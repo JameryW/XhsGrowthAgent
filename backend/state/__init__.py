@@ -13,6 +13,7 @@ from backend.state.enums import (
     Urgency,
     WorkflowPhase,
 )
+from backend.state.machine import WorkflowStatus, derive_status
 from backend.state.reducers import append_list, max_value, merge_dict, replace
 from backend.state.schema import XHSGrowthState
 from backend.state.substates import (
@@ -47,6 +48,8 @@ __all__ = [
     "ContentStatus",
     "ContentType",
     "Urgency",
+    "WorkflowStatus",
+    "derive_status",
     # Sub-states
     "TrendData",
     "ContentPlan",
