@@ -143,9 +143,15 @@ class TestShouldContinue:
         result = should_continue(state)
         assert result == "__end__"
 
-    def test_routes_to_orchestrator_after_analyzing(self):
-        """ANALYZING phase → orchestrator (new cycle)."""
+    def test_routes_to_engagement_after_analyzing_single(self):
+        """ANALYZING phase with single mode → engagement."""
         state = {"phase": WorkflowPhase.ANALYZING, "error": None}
+        result = should_continue(state)
+        assert result == "engagement"
+
+    def test_routes_to_orchestrator_after_analyzing_continuous(self):
+        """ANALYZING phase with continuous mode → orchestrator (new cycle)."""
+        state = {"phase": WorkflowPhase.ANALYZING, "error": None, "execution_mode": "continuous"}
         result = should_continue(state)
         assert result == "orchestrator"
 
