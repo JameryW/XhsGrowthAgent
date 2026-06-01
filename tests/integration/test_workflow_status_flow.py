@@ -4,22 +4,23 @@ Tests that derive_status correctly classifies workflow state at each
 phase of the lifecycle: start → running → (review/choice/pause/cancel/error) → end.
 """
 
-import pytest
 from unittest.mock import MagicMock
 
+from backend.state.enums import ExecutionMode, WorkflowPhase
 from backend.state.machine import WorkflowStatus, derive_status
-from backend.state.enums import WorkflowPhase, ExecutionMode
 
 
 def make_snapshot(
     values: dict,
     next: list[str] | None = None,
     tasks: list | None = None,
+    interrupts: list | None = None,
 ) -> MagicMock:
     snapshot = MagicMock()
     snapshot.values = values
     snapshot.next = next or []
     snapshot.tasks = tasks or []
+    snapshot.interrupts = interrupts or []
     return snapshot
 
 
@@ -41,10 +42,12 @@ class TestFullWorkflowLifecycle:
         assert derive_status(snap) == WorkflowStatus.RUNNING
 
         # 4. Review gate — interrupt for human
+        review_interrupt = MagicMock()
+        review_interrupt.value = {"gate": "review"}
         snap = make_snapshot(
             {"phase": WorkflowPhase.REVIEWING},
             next=["review_gate"],
-            tasks=[{"interrupts": [{}]}],
+            interrupts=[review_interrupt],
         )
         assert derive_status(snap) == WorkflowStatus.AWAITING_REVIEW
 
@@ -78,10 +81,12 @@ class TestFullWorkflowLifecycle:
 
     def test_choice_gate_interrupt(self):
         """Optimization choice gate triggers awaiting_choice status."""
+        choice_interrupt = MagicMock()
+        choice_interrupt.value = {"gate": "choice"}
         snap = make_snapshot(
             {"phase": WorkflowPhase.CREATING},
             next=["choice_gate"],
-            tasks=[{"interrupts": [{}]}],
+            interrupts=[choice_interrupt],
         )
         assert derive_status(snap) == WorkflowStatus.AWAITING_CHOICE
 
@@ -128,10 +133,12 @@ class TestFullWorkflowLifecycle:
         Note: derive_status checks review/choice gates before error,
         because a user should still be able to approve/reject.
         """
+        review_interrupt = MagicMock()
+        review_interrupt.value = {"gate": "review"}
         snap = make_snapshot(
             {"phase": WorkflowPhase.REVIEWING, "error": "minor warning"},
             next=["review_gate"],
-            tasks=[{"interrupts": [{}]}],
+            interrupts=[review_interrupt],
         )
         assert derive_status(snap) == WorkflowStatus.AWAITING_REVIEW
 
@@ -153,25 +160,28 @@ class TestStatusEdgeCases:
 
     def test_interrupt_without_matching_gate(self):
         """Interrupt at unknown gate → falls through to error/running/completed."""
+        unknown_interrupt = MagicMock()
+        unknown_interrupt.value = {"gate": "unknown"}
         snap = make_snapshot(
             {"phase": WorkflowPhase.SCOUTING},
             next=["unknown_node"],
-            tasks=[{"interrupts": [{}]}],
+            interrupts=[unknown_interrupt],
         )
         # No review_gate or choice_gate match, so it falls to phase check
         assert derive_status(snap) == WorkflowStatus.RUNNING
 
     def test_interrupt_with_empty_next(self):
-        """Interrupt but no next nodes → falls through (unusual state)."""
+        """Interrupt but no next nodes → uses interrupt value to determine gate type."""
+        review_interrupt = MagicMock()
+        review_interrupt.value = {"gate": "review"}
         snap = make_snapshot(
             {"phase": WorkflowPhase.REVIEWING},
             next=[],
-            tasks=[{"interrupts": [{}]}],
+            interrupts=[review_interrupt],
         )
-        # has_interrupt is True but next is empty, so gate check fails
-        # Falls to error check (none), then completed phase (not completed),
-        # then running check (no next), so completed
-        assert derive_status(snap) == WorkflowStatus.COMPLETED
+        # has_interrupt is True but next is empty, so gate check from next_nodes fails
+        # Falls back to interrupt value inspection → gate="review" → awaiting_review
+        assert derive_status(snap) == WorkflowStatus.AWAITING_REVIEW
 
     def test_idle_with_next_runs(self):
         """Idle phase with next nodes → running."""

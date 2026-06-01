@@ -103,6 +103,35 @@ _workflow_registry = _load_registry()
 # Background task registry for cancellation support
 _background_tasks: dict[str, asyncio.Task] = {}
 
+# Track last known status per thread to detect transitions
+_last_status: dict[str, WorkflowStatus] = {}
+
+
+def _emit_status_transition(new_status: WorkflowStatus, thread_id: str) -> None:
+    """Emit events when workflow status transitions to awaiting_review or awaiting_choice.
+
+    This replaces event emission that was previously done inside interrupt nodes,
+    which caused double emission on resume (Gap 3 fix).
+    """
+    old_status = _last_status.get(thread_id)
+    if old_status == new_status:
+        return  # No transition, skip
+    _last_status[thread_id] = new_status
+
+    bus = EventBusService.get_instance()
+    if new_status == WorkflowStatus.AWAITING_REVIEW:
+        bus.emit(
+            EventType.REVIEW_PENDING,
+            thread_id=thread_id,
+            payload={"gate": "review"},
+        )
+    elif new_status == WorkflowStatus.AWAITING_CHOICE:
+        bus.emit(
+            EventType.WORKFLOW_DATA_UPDATED,
+            thread_id=thread_id,
+            payload={"data_type": "choice_pending", "data": {}},
+        )
+
 
 class WorkflowStartRequest(BaseModel):
     account_id: str = Field(default="default", description="账号 ID")
@@ -129,6 +158,7 @@ class WorkflowStatusResponse(BaseModel):
     """Workflow status response model."""
     thread_id: str
     phase: str
+    status: str = Field(default="running", description="Derived workflow status")
     current_agent: str
     next_steps: list[str]
     error: str | None = None
@@ -247,18 +277,31 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
                 # Use derive_status for consistent status derivation
                 snapshot = await graph.aget_state(config)
                 derived = derive_status(snapshot)
+                # Emit status transition events (e.g. awaiting_review, awaiting_choice)
+                _emit_status_transition(derived, thread_id)
                 if derived == WorkflowStatus.ERROR:
                     final_status = "error"
                 elif derived == WorkflowStatus.CANCELLED:
                     final_status = "cancelled"
                 elif derived == WorkflowStatus.COMPLETED:
                     final_status = "completed"
+                elif derived == WorkflowStatus.AWAITING_REVIEW:
+                    final_status = "awaiting_review"
+                elif derived == WorkflowStatus.AWAITING_CHOICE:
+                    final_status = "awaiting_choice"
+                elif derived == WorkflowStatus.PAUSED:
+                    final_status = "paused"
                 else:
                     # Phase stuck at early stage with error = premature termination
-                    final_status = "error" if (has_error or final_phase in ("scouting", "error")) else "completed"
+                    final_status = (
+                        "error"
+                        if (has_error or final_phase in ("scouting", "error"))
+                        else "completed"
+                    )
                 _workflow_registry[thread_id]["phase"] = final_phase
                 _workflow_registry[thread_id]["status"] = final_status
-                _workflow_registry[thread_id]["progress_percent"] = 100 if final_status == "completed" else 0
+                progress = 100 if final_status == "completed" else 0
+                _workflow_registry[thread_id]["progress_percent"] = progress
                 _workflow_registry[thread_id]["error"] = has_error
                 _save_registry()
                 _save_workflow_result(thread_id, result)
@@ -286,13 +329,25 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
     else:
         # 同步执行（等待完成）
         result = await graph.ainvoke(initial_state, config)
+        # Use derive_status for consistent status derivation
+        snapshot = await graph.aget_state(config)
+        derived = derive_status(snapshot)
+        final_status_map = {
+            WorkflowStatus.ERROR: "error",
+            WorkflowStatus.CANCELLED: "cancelled",
+            WorkflowStatus.COMPLETED: "completed",
+            WorkflowStatus.AWAITING_REVIEW: "awaiting_review",
+            WorkflowStatus.AWAITING_CHOICE: "awaiting_choice",
+            WorkflowStatus.PAUSED: "paused",
+            WorkflowStatus.RUNNING: "running",
+        }
+        final_status = final_status_map.get(derived, "completed")
         final_phase = result.get("phase", "unknown")
-        has_error = result.get("error")
-        final_status = "error" if (has_error or final_phase in ("scouting", "error")) else "completed"
         _workflow_registry[thread_id]["phase"] = final_phase
         _workflow_registry[thread_id]["status"] = final_status
-        _workflow_registry[thread_id]["progress_percent"] = 100 if final_status == "completed" else 0
-        _workflow_registry[thread_id]["error"] = has_error
+        progress = 100 if final_status == "completed" else 0
+        _workflow_registry[thread_id]["progress_percent"] = progress
+        _workflow_registry[thread_id]["error"] = result.get("error")
         _save_registry()
         _save_workflow_result(thread_id, result)
         return success(data={
@@ -331,6 +386,10 @@ async def get_workflow_status(thread_id: str, request: Request):
         phase = state.values.get("phase", "unknown")
         progress = get_progress(phase)
 
+        # Derive status from snapshot for consistent results
+        derived_status = derive_status(state)
+        status_str = str(derived_status.value)
+
         # Persist completed workflow results
         if phase in ("completed", "error", "cancelled"):
             _save_workflow_result(thread_id, state.values)
@@ -338,15 +397,11 @@ async def get_workflow_status(thread_id: str, request: Request):
         # Update registry if workflow exists there
         if thread_id in _workflow_registry:
             _workflow_registry[thread_id]["phase"] = phase
+            _workflow_registry[thread_id]["status"] = status_str
             _workflow_registry[thread_id]["progress_percent"] = progress
             _workflow_registry[thread_id]["updated_at"] = datetime.now(UTC).isoformat()
             if state.values.get("error"):
                 _workflow_registry[thread_id]["error"] = state.values.get("error")
-                _workflow_registry[thread_id]["status"] = "error"
-            elif phase == "completed":
-                _workflow_registry[thread_id]["status"] = "completed"
-            elif phase == "cancelled":
-                _workflow_registry[thread_id]["status"] = "cancelled"
             _save_registry()
 
         # Build agent timeline from performance_log
@@ -366,6 +421,7 @@ async def get_workflow_status(thread_id: str, request: Request):
         return success(data=WorkflowStatusResponse(
             thread_id=thread_id,
             phase=phase,
+            status=status_str,
             current_agent=state.values.get("current_agent", "unknown"),
             next_steps=list(state.next) if state.next else [],
             error=state.values.get("error"),
@@ -462,6 +518,11 @@ async def pause_workflow(thread_id: str, request: Request):
         _workflow_registry[thread_id]["status"] = "paused"
         _workflow_registry[thread_id]["updated_at"] = datetime.now(UTC).isoformat()
         _save_registry()
+
+    # Cancel background task to actually stop execution
+    bg_task = _background_tasks.get(thread_id)
+    if bg_task and not bg_task.done():
+        bg_task.cancel()
 
     # Update graph state to signal pause
     await graph.aupdate_state(config, {"phase": "paused"})
@@ -634,14 +695,16 @@ async def list_workflows(
     workflows = {w["thread_id"]: w for w in _workflow_registry.values()}
     for tid, saved in _load_all_history().items():
         if tid not in workflows:
+            # History-only entries: best-effort status from phase
+            hist_phase = saved.get("phase", "unknown")
             workflows[tid] = {
                 "thread_id": tid,
                 "account_id": saved.get("account_id", "unknown"),
-                "phase": saved.get("phase", "unknown"),
-                "status": saved.get("phase", "unknown"),
+                "phase": hist_phase,
+                "status": hist_phase,  # best-effort for history-only
                 "dry_run": False,
                 "auto_publish": False,
-                "progress_percent": get_progress(saved.get("phase", "")),
+                "progress_percent": get_progress(hist_phase),
                 "created_at": saved.get("created_at", ""),
                 "updated_at": saved.get("updated_at", ""),
                 "error": saved.get("error"),

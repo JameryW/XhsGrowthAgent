@@ -1,51 +1,74 @@
-# Error Handling
+# Error Handling & Retry
 
-> How errors are handled in this project.
+## Scope / Trigger
 
----
+- Any code that raises or catches exceptions in agent nodes
+- Any code that configures LangGraph retry policies
+- Any code that cancels or pauses running workflows
 
-## Overview
+## Signatures
 
-<!--
-Document your project's error handling conventions here.
+### Exception Hierarchy
 
-Questions to answer:
-- What error types do you define?
-- How are errors propagated?
-- How are errors logged?
-- How are errors returned to clients?
--->
+```python
+class AgentError(Exception):
+    """Raised by BaseAgent when execution fails after retries."""
+    agent_name: str
+    task_type: str
 
-(To be filled by the team)
+class WorkflowCancelledError(Exception):
+    """Raised by _check_cancelled when workflow is cancelled/paused."""
+    thread_id: str
+```
 
----
+### Retry Policy Connection
 
-## Error Types
+```python
+# backend/graph/error_handling.py
+RETRY_POLICIES: dict[str, RetryPolicy] = {
+    "scouting": RetryPolicy(max_attempts=3),
+    "writing": RetryPolicy(max_attempts=2),
+    ...
+}
 
-<!-- Custom error classes/types -->
+def get_retry_policy(node_name: str) -> RetryPolicy | None:
+    """Used in builder.add_node(..., retry=...)"""
+```
 
-(To be filled by the team)
+## Contracts
 
----
+### BaseAgent Error Behavior
 
-## Error Handling Patterns
+- `BaseAgent.__call__` raises `AgentError` on failure (does NOT swallow)
+- LangGraph's `RetryPolicy` catches and retries based on exception type
+- After max retries, `AgentError` propagates — graph does NOT continue through fixed edges
+- Successful execution clears stale `error` field from state
 
-<!-- Try-catch patterns, error propagation -->
+### Cancel/Pause Guard
 
-(To be filled by the team)
+- `_check_cancelled(state)` in `backend/agents/nodes/_base.py` raises `WorkflowCancelledError` at node entry
+- `cancel_workflow` cancels the background `asyncio.Task` via `task.cancel()`
+- `pause_workflow` also cancels the background task (same as cancel)
+- Resume re-invokes the graph from the last checkpoint
 
----
+## Common Mistake: Pausing doesn't stop the running task
 
-## API Error Responses
+Pausing only sets `phase="paused"` in state. The background asyncio task continues executing until `_check_cancelled` is checked at the next node entry. Mid-execution LLM calls are NOT interrupted.
 
-<!-- Standard error response format -->
+**Fix:** Cancel the background task on pause:
+```python
+bg_task = _background_tasks.get(thread_id)
+if bg_task and not bg_task.done():
+    bg_task.cancel()
+```
 
-(To be filled by the team)
+## Common Mistake: Exception in node flows through conditional edges
 
----
+In LangGraph, an unhandled exception in a node does NOT route through conditional edges. The graph stops execution. The `_check_terminal` router only applies to normal (non-error) state transitions.
 
-## Common Mistakes
+## Tests Required
 
-<!-- Error handling mistakes your team has made -->
-
-(To be filled by the team)
+- `test_cancel_cancels_background_task`: cancel_workflow calls task.cancel()
+- `test_pause_cancels_background_task`: pause_workflow calls task.cancel()
+- `test_check_cancelled_raises`: _check_cancelled raises WorkflowCancelledError when phase=cancelled
+- `test_agent_error_propagates`: AgentError is not swallowed, graph stops

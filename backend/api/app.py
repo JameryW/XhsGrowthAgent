@@ -24,10 +24,13 @@ load_dotenv()
 async def lifespan(app: FastAPI):
     # 启动时编译图 — 基于 POSTGRES_URI 环境变量选择检查点
     db_uri = os.environ.get("POSTGRES_URI")
+    checkpointer = None
     if db_uri:
         try:
             from backend.graph.builder import compile_graph_prod
-            app.state.graph = await compile_graph_prod(db_uri)
+            graph, checkpointer = await compile_graph_prod(db_uri)
+            app.state.checkpointer = checkpointer
+            app.state.graph = graph
         except Exception as e:
             logging.getLogger("xhs_growth").warning(
                 f"Postgres checkpointer failed, using memory: {e}"
@@ -36,6 +39,12 @@ async def lifespan(app: FastAPI):
     else:
         app.state.graph = compile_graph_dev()
     yield
+    # Cleanup checkpointer if present
+    if checkpointer is not None:
+        try:
+            await checkpointer.__aexit__(None, None, None)
+        except Exception:
+            pass
 
 
 app = FastAPI(

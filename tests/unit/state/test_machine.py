@@ -11,12 +11,14 @@ def make_snapshot(
     values: dict,
     next: list[str] | None = None,
     tasks: list | None = None,
+    interrupts: list | None = None,
 ) -> MagicMock:
     """Create a mock StateSnapshot for testing."""
     snapshot = MagicMock()
     snapshot.values = values
     snapshot.next = next or []
     snapshot.tasks = tasks or []
+    snapshot.interrupts = interrupts or []
     return snapshot
 
 
@@ -32,18 +34,22 @@ class TestDeriveStatus:
         assert derive_status(snapshot) == WorkflowStatus.PAUSED
 
     def test_interrupt_at_review_gate_returns_awaiting_review(self):
+        interrupt_mock = MagicMock()
+        interrupt_mock.value = {"gate": "review"}
         snapshot = make_snapshot(
             values={"phase": WorkflowPhase.REVIEWING},
             next=["review_gate"],
-            tasks=[{"interrupts": [{}]}],
+            interrupts=[interrupt_mock],
         )
         assert derive_status(snapshot) == WorkflowStatus.AWAITING_REVIEW
 
     def test_interrupt_at_choice_gate_returns_awaiting_choice(self):
+        interrupt_mock = MagicMock()
+        interrupt_mock.value = {"gate": "choice"}
         snapshot = make_snapshot(
             values={"phase": WorkflowPhase.CREATING},
             next=["choice_gate"],
-            tasks=[{"interrupts": [{}]}],
+            interrupts=[interrupt_mock],
         )
         assert derive_status(snapshot) == WorkflowStatus.AWAITING_CHOICE
 

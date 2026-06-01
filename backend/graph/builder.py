@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -157,20 +159,27 @@ def compile_graph_dev() -> CompiledStateGraph:
     return graph
 
 
-async def compile_graph_prod(db_uri: str) -> CompiledStateGraph:
-    """生产模式编译 — 使用 Postgres 检查点"""
+async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
+    """生产模式编译 — 使用 Postgres 检查点
+
+    Returns:
+        Tuple of (compiled graph, checkpointer) so the caller can manage
+        the checkpointer lifecycle (must close on shutdown).
+        checkpointer is None when falling back to memory.
+    """
     builder = build_graph()
 
     try:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-        async with AsyncPostgresSaver.from_conn_string(db_uri) as checkpointer:
-            await checkpointer.setup()
-            graph = builder.compile(
-                checkpointer=checkpointer,
-                # Nodes use dynamic interrupt() instead of interrupt_before
-            )
-            return graph
+        checkpointer = AsyncPostgresSaver.from_conn_string(db_uri)
+        await checkpointer.setup()
+        graph = builder.compile(
+            checkpointer=checkpointer,
+            # Nodes use dynamic interrupt() instead of interrupt_before
+        )
+        return graph, checkpointer
     except ImportError:
         # Postgres 不可用时回退到内存
-        return compile_graph_dev()
+        graph = compile_graph_dev()
+        return graph, None

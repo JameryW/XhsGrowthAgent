@@ -47,10 +47,12 @@ def _mock_ripple_service():
             "backend.services.ripple_service.RippleService.get_instance",
             lambda: mock_service,
         )
-        mp.setattr(
-            "backend.tools.ripple.client.RippleService.get_instance",
-            lambda: mock_service,
-        )
+        # backend.tools.ripple.client is a module, not a package — mock the class directly
+        try:
+            from backend.tools.ripple.client import RippleService as ClientRippleService
+            mp.setattr(ClientRippleService, "get_instance", lambda: mock_service)
+        except ImportError:
+            pass
         yield
 
 

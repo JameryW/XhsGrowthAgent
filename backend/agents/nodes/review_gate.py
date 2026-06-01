@@ -7,7 +7,6 @@ from langgraph.store.base import BaseStore
 from langgraph.types import interrupt
 
 from backend.agents.nodes._base import NodeResult, _check_cancelled
-from backend.realtime import EventBusService, EventType
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
@@ -21,19 +20,8 @@ async def review_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
     visual = state.get("visual_plan", {})
     plan = state.get("content_plan", {})
 
-    # Emit review pending event before interrupt
-    thread_id = state.get("session_id")
-    EventBusService.get_instance().emit(
-        EventType.REVIEW_PENDING,
-        thread_id=thread_id,
-        payload={
-            "content_plan": plan,
-            "copy_content": copy,
-            "visual_plan": visual,
-        },
-    )
-
     review_payload = {
+        "gate": "review",
         "topic": plan.get("selected_topic", ""),
         "titles": copy.get("title_candidates", []),
         "body_preview": copy.get("body_text", "")[:200],

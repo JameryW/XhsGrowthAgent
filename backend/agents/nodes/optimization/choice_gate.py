@@ -7,7 +7,6 @@ from langgraph.store.base import BaseStore
 from langgraph.types import interrupt
 
 from backend.agents.nodes._base import NodeResult, _check_cancelled
-from backend.realtime import EventBusService, EventType
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
@@ -21,23 +20,9 @@ async def choice_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
     draft = state.get("draft_content", {})
     analysis = state.get("optimization_analysis", {})
 
-    # Emit choice pending event before interrupt
-    thread_id = state.get("session_id")
-    EventBusService.get_instance().emit(
-        EventType.WORKFLOW_DATA_UPDATED,
-        thread_id=thread_id,
-        payload={
-            "data_type": "choice_pending",
-            "data": {
-                "versions": versions,
-                "draft": draft,
-                "analysis": analysis,
-            },
-        },
-    )
-
     # Prepare choice payload for frontend
     choice_payload = {
+        "gate": "choice",
         "versions": [
             {
                 "version_id": v.get("version_id"),
@@ -92,10 +77,14 @@ async def choice_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
             "phase": WorkflowPhase.CREATING,
         }
     else:
-        # Selected version not found, keep original state
+        # Selected version not found, write original draft as fallback
         logger.warning(f"Selected version not found: {selected_version_id}")
         result = {
             "phase": WorkflowPhase.CREATING,
+            "copy_content": {
+                **(state.get("copy_content") or {}),
+                "selected_title": draft.get("title", ""),
+            },
         }
 
     return NodeResult(result, "choice_gate").to_dict()
