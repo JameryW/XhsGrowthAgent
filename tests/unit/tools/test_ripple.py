@@ -89,7 +89,7 @@ def test_ripple_settings_default():
 
     s = RippleSettings()
     assert s.base_url == "http://127.0.0.1:8081"
-    assert s.enabled is True
+    assert s.enabled is False
     assert s.default_max_waves == 8
     assert s.request_timeout == 300
 

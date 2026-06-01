@@ -19,6 +19,7 @@ export interface HealthCheck {
       status: string
       configured: boolean
       message: string
+      reason?: string  // "disabled" | "unconfigured" | "ok"
     }
     database: {
       status: string

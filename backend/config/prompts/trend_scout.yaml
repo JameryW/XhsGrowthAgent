@@ -16,10 +16,10 @@ system: |
 
   请输出 JSON：
   {
-    "hot_topics": [{"topic": "...", "heat_score": 0-100, "growth_rate": "...", "related_keywords": [...]}],
+    "hot_topics": [{"topic": "...", "heat_score": 0-100, "heat_percentage": 0-100, "growth_rate": 0.0-1.0, "related_keywords": [...]}],
     "trending_keywords": [...],
     "competitor_posts": [{"title": "...", "likes": N, "comments": N}],
-    "niche_opportunities": [{"topic": "...", "competition": "low/medium/high", "potential": "..."}],
+    "niche_opportunities": [{"topic": "...", "competition": "low/medium/high", "potential_score": 0-100, "audience_match": "...", "entry_barrier": "low/medium/high"}],
     "data_source": "real 或 llm_generated",
     "timestamp": "ISO-8601"
   }

@@ -16,10 +16,12 @@ logger = logging.getLogger("xhs_growth.services.ripple")
 
 class RippleHealthStatus(BaseModel):
     """Ripple 服务健康状态"""
+
     is_healthy: bool = False
     last_check: str = ""
     latency_ms: float = 0.0
     error: str = ""
+    reason: str = ""  # "disabled", "unreachable", "error", ""
 
 
 class RippleService:
@@ -94,13 +96,15 @@ class RippleService:
             self._health_status = RippleHealthStatus(
                 is_healthy=False,
                 last_check="disabled",
-                error="Ripple is disabled in settings"
+                error="Ripple is disabled in settings",
+                reason="disabled",
             )
             return self._health_status
 
         try:
             client = await self._get_client()
             import time
+
             start = time.time()
 
             # 尝试访问健康端点或根路径
@@ -110,32 +114,27 @@ class RippleService:
 
             if resp.status_code == 200:
                 self._health_status = RippleHealthStatus(
-                    is_healthy=True,
-                    last_check="ok",
-                    latency_ms=latency,
+                    is_healthy=True, last_check="ok", latency_ms=latency, reason=""
                 )
                 logger.info(f"Ripple health check passed: {latency:.0f}ms")
             else:
                 self._health_status = RippleHealthStatus(
                     is_healthy=False,
                     last_check="error",
-                    error=f"HTTP {resp.status_code}"
+                    error=f"HTTP {resp.status_code}",
+                    reason="unreachable",
                 )
                 logger.warning(f"Ripple health check failed: HTTP {resp.status_code}")
 
         except httpx.ConnectError as e:
             self._health_status = RippleHealthStatus(
-                is_healthy=False,
-                last_check="connect_error",
-                error=str(e)
+                is_healthy=False, last_check="connect_error", error=str(e), reason="unreachable"
             )
             logger.warning(f"Ripple service not reachable: {e}")
 
         except Exception as e:
             self._health_status = RippleHealthStatus(
-                is_healthy=False,
-                last_check="error",
-                error=str(e)
+                is_healthy=False, last_check="error", error=str(e), reason="error"
             )
             logger.error(f"Ripple health check error: {e}")
 
@@ -200,6 +199,11 @@ class RippleService:
 
     def _default_spread_prediction(self) -> dict[str, Any]:
         """默认传播预测（降级时使用）"""
+        reason = self._health_status.reason or "unreachable"
+        if reason == "disabled":
+            message = "Ripple is disabled"
+        else:
+            message = "Service unavailable, using default prediction"
         return {
             "ripple_prediction": {
                 "estimated_reach": 0,
@@ -211,11 +215,17 @@ class RippleService:
                 "spread_path": [],
             },
             "ripple_fallback": True,
-            "ripple_message": "Service unavailable, using default prediction"
+            "ripple_reason": reason,
+            "ripple_message": message,
         }
 
     def _default_pmf_result(self) -> dict[str, Any]:
         """默认 PMF 结果（降级时使用）"""
+        reason = self._health_status.reason or "unreachable"
+        if reason == "disabled":
+            message = "Ripple is disabled"
+        else:
+            message = "Service unavailable, using default PMF"
         return {
             "ripple_pmf": {
                 "pmf_score": 0.0,
@@ -225,7 +235,8 @@ class RippleService:
                 "confidence": 0.0,
             },
             "ripple_fallback": True,
-            "ripple_message": "Service unavailable, using default PMF"
+            "ripple_reason": reason,
+            "ripple_message": message,
         }
 
     # ── 高级 API ──
@@ -254,7 +265,12 @@ class RippleService:
 
         if not config["enabled"] or not self.is_healthy():
             if use_fallback:
-                logger.info("Ripple unavailable, using fallback prediction")
+                reason = (
+                    "disabled"
+                    if not config["enabled"]
+                    else self._health_status.reason or "unreachable"
+                )
+                logger.info(f"Ripple unavailable (reason={reason}), using fallback prediction")
                 return self._default_spread_prediction()
             return {"error": "Ripple service unavailable"}
 
@@ -303,6 +319,12 @@ class RippleService:
 
         if not config["enabled"] or not self.is_healthy():
             if use_fallback:
+                reason = (
+                    "disabled"
+                    if not config["enabled"]
+                    else self._health_status.reason or "unreachable"
+                )
+                logger.info(f"Ripple unavailable (reason={reason}), using fallback PMF")
                 return self._default_pmf_result()
             return {"error": "Ripple service unavailable"}
 
@@ -456,9 +478,7 @@ class RippleService:
         return {
             "ripple_job_id": job_id,
             "ripple_prediction": {
-                "estimated_reach": metrics.get(
-                    "estimated_reach", metrics.get("total_reach", 0)
-                ),
+                "estimated_reach": metrics.get("estimated_reach", metrics.get("total_reach", 0)),
                 "estimated_engagement": metrics.get(
                     "estimated_engagement", metrics.get("total_engagement", 0)
                 ),

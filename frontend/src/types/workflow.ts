@@ -95,7 +95,8 @@ export interface TrendData {
 export interface HotTopicItem {
   topic: string
   heat_score: number
-  growth_rate: number
+  heat_percentage?: number
+  growth_rate?: number
   related_keywords: string[]
 }
 
@@ -236,4 +237,5 @@ export interface WorkflowStateResponse {
   ripple_prediction?: RipplePrediction
   ripple_pmf?: RipplePMFResult
   ripple_comparison?: RippleComparison
+  ripple_reason?: string  // "disabled" | "unreachable" | ""
 }

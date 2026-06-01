@@ -47,6 +47,7 @@
       "llmMissing": "Set at least one LLM API key (e.g. ANTHROPIC_API_KEY) in .env to enable AI features.",
       "xhsMissing": "XHS credentials not set — publishing will be skipped (preview only). Set XHS_COOKIE and XHS_USER_ID in .env to enable publishing.",
       "rippleMissing": "Set RIPPLE_BASE_URL and RIPPLE_API_TOKEN in .env (optional, for content spread prediction).",
+      "rippleDisabled": "Ripple engine is not enabled. Set RIPPLE_ENABLED=true in .env to enable it.",
       "apiUnreachable": "Ensure the backend server is running: xhs-growth serve --port 8000"
     },
     "required": "Required",
@@ -253,7 +254,8 @@
       "noData": "No Ripple data available yet",
       "spreadPhases": "Spread Phases",
       "keyInfluencers": "Key Influencers",
-      "fallbackNotice": "Ripple engine unavailable, showing default predictions"
+      "fallbackNotice": "Ripple engine unavailable, showing default predictions",
+      "disabledNotice": "Ripple engine not enabled, showing default predictions"
     },
     "scouting": {
       "hotTopics": "Hot Topics",

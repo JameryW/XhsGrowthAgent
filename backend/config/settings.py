@@ -9,6 +9,7 @@ class ModelSettings(BaseSettings):
     openai_api_key: str = ""
     deepseek_api_key: str = ""
     dashscope_api_key: str = ""
+    xunfei_api_key: str = ""
 
     # 默认模型分配 — 全部使用 mimo-v2.5-pro
     model_routing: dict[str, str] = Field(
@@ -74,7 +75,7 @@ class RippleSettings(BaseSettings):
     default_simulation_horizon: str = "48h"
     default_ensemble_runs: int = 1
     request_timeout: int = 300
-    enabled: bool = True
+    enabled: bool = False
 
     model_config = {"env_prefix": "RIPPLE_", "env_file": ".env", "extra": "ignore"}
 

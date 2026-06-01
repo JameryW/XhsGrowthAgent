@@ -1,14 +1,12 @@
 {
-  "xhs_test_account_c630aba9": {
-    "thread_id": "xhs_test_account_c630aba9",
+  "xhs_test_api_pause_001": {
+    "thread_id": "xhs_test_api_pause_001",
     "account_id": "test_account",
-    "phase": "scouting",
-    "status": "error",
-    "dry_run": false,
-    "auto_publish": false,
-    "progress_percent": 0,
-    "created_at": "2026-05-31T14:51:56.161516+00:00",
-    "updated_at": "2026-05-31T14:51:56.161516+00:00",
+    "phase": "paused",
+    "status": "paused",
+    "progress_percent": 10,
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-06-01T09:00:31.676256+00:00",
     "error": null
   }
 }

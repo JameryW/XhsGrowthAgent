@@ -33,6 +33,7 @@ const analytics = computed(() => (workflowStore.workflowState as any)?.analytics
 const ripplePrediction = computed(() => workflowStore.ripplePrediction)
 const ripplePmf = computed(() => workflowStore.ripplePmf)
 const rippleComparison = computed(() => workflowStore.rippleComparison)
+const rippleReason = computed(() => workflowStore.rippleReason)
 
 // Check if specific data exists
 const hasTrendData = computed(() => Object.keys(trendData.value).length > 0)
@@ -130,7 +131,7 @@ function heatBg(score?: number): string {
               <div :class="['px-2 py-0.5 rounded text-xs font-medium', heatBg(topic.heat_score), heatColor(topic.heat_score)]">
                 {{ t('dashboard.scouting.heatScore') }} {{ topic.heat_score?.toFixed(0) || '—' }}
               </div>
-              <div v-if="topic.growth_rate !== undefined" class="text-xs" :class="topic.growth_rate > 0 ? 'text-emerald-600' : 'text-rose-600'">
+              <div v-if="topic.growth_rate != null && !isNaN(topic.growth_rate)" class="text-xs" :class="topic.growth_rate > 0 ? 'text-emerald-600' : 'text-rose-600'">
                 {{ topic.growth_rate > 0 ? '+' : '' }}{{ (topic.growth_rate * 100).toFixed(0) }}%
               </div>
             </div>
@@ -155,7 +156,7 @@ function heatBg(score?: number): string {
           <div v-for="(opp, idx) in trendData.niche_opportunities.slice(0, 3)" :key="idx" class="flex items-center justify-between p-2 rounded-lg bg-violet-50 border border-violet-100">
             <span class="text-sm text-slate-700">{{ opp.topic }}</span>
             <div class="flex items-center gap-2 text-xs">
-              <span class="text-violet-600 font-medium">{{ t('dashboard.scouting.potentialScore') }} {{ opp.potential_score?.toFixed(0) || '—' }}</span>
+              <span class="text-violet-600 font-medium">{{ t('dashboard.scouting.potentialScore') }} {{ opp.potential_score != null && !isNaN(opp.potential_score) ? opp.potential_score.toFixed(0) : '—' }}</span>
               <span class="text-slate-400">{{ opp.entry_barrier }}</span>
             </div>
           </div>
@@ -216,6 +217,7 @@ function heatBg(score?: number): string {
         <RipplePanel
           :prediction="ripplePrediction"
           :pmf="ripplePmf"
+          :ripple-reason="rippleReason"
           variant="planning"
         />
       </div>
@@ -301,6 +303,7 @@ function heatBg(score?: number): string {
     <div v-if="hasRippleComparison && showForPhase('analyzing')" class="mt-4">
       <RipplePanel
         :comparison="rippleComparison"
+        :ripple-reason="rippleReason"
         variant="analyzing"
       />
     </div>

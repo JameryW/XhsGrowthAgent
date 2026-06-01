@@ -56,18 +56,33 @@ def _check_ripple() -> dict:
     """Check Ripple CAS engine availability."""
     base_url = os.environ.get("RIPPLE_BASE_URL")
     api_token = os.environ.get("RIPPLE_API_TOKEN")
-    enabled = os.environ.get("RIPPLE_ENABLED", "true").lower() == "true"
+    enabled = os.environ.get("RIPPLE_ENABLED", "false").lower() == "true"
 
     if not enabled:
-        return {"status": "disabled", "configured": False, "message": "Ripple 服务已禁用"}
+        return {
+            "status": "disabled",
+            "configured": False,
+            "message": "Ripple 服务未启用",
+            "reason": "disabled",
+        }
 
     # Local services don't need an API token
     is_local = bool(base_url) and ("127.0.0.1" in base_url or "localhost" in base_url)
     configured = bool(base_url and (api_token or is_local))
+
+    if not configured:
+        return {
+            "status": "warning",
+            "configured": False,
+            "message": "Ripple CAS 未配置（可选）",
+            "reason": "unconfigured",
+        }
+
     return {
-        "status": "ok" if configured else "warning",
-        "configured": configured,
-        "message": "Ripple CAS 已配置" if configured else "Ripple CAS 未配置（可选）",
+        "status": "ok",
+        "configured": True,
+        "message": "Ripple CAS 已配置",
+        "reason": "ok",
     }
 
 
@@ -99,9 +114,11 @@ async def system_health():
         },
     }
 
-    return success(data={
-        "status": overall,
-        "checks": checks,
-        "version": "0.1.0",
-        "timestamp": datetime.now(UTC).isoformat(),
-    })
+    return success(
+        data={
+            "status": overall,
+            "checks": checks,
+            "version": "0.1.0",
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )

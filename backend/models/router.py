@@ -22,6 +22,7 @@ _PROVIDER_ENV_VARS: dict[ModelProvider, str] = {
     ModelProvider.DEEPSEEK: "DEEPSEEK_API_KEY",
     ModelProvider.DASHSCOPE: "DASHSCOPE_API_KEY",
     ModelProvider.XIAOMIMIMO: "XIAOMIMIMO_API_KEY",
+    ModelProvider.XUNFEI: "XUNFEI_API_KEY",
 }
 
 
@@ -78,6 +79,15 @@ def _create_model(config: ModelConfig) -> BaseChatModel:
                 timeout=config.timeout,
                 api_key=api_key,
                 base_url=os.environ.get("XIAOMIMIMO_BASE_URL", "https://token-plan-sgp.xiaomimimo.com/v1"),
+            )
+        case ModelProvider.XUNFEI:
+            return ChatOpenAI(
+                model=config.model_name,
+                temperature=config.temperature,
+                max_tokens=config.max_tokens,
+                timeout=config.timeout,
+                api_key=api_key,
+                base_url=os.environ.get("XUNFEI_BASE_URL", "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2"),
             )
 
 

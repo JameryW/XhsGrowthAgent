@@ -11,6 +11,7 @@ interface Props {
   pmf?: RipplePMFResult
   comparison?: RippleComparison
   variant?: 'planning' | 'analyzing'
+  rippleReason?: string  // "disabled" | "unreachable" | ""
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -18,6 +19,7 @@ const props = withDefaults(defineProps<Props>(), {
   pmf: () => ({}),
   comparison: () => ({}),
   variant: 'planning',
+  rippleReason: '',
 })
 
 const showDetails = ref(false)
@@ -32,6 +34,8 @@ const isFallback = computed(() => {
   const p = props.prediction
   return p.viral_probability === 0 && p.estimated_reach === 0 && p.confidence === 0
 })
+
+const isDisabled = computed(() => props.rippleReason === 'disabled')
 
 // Format large numbers
 function formatNumber(n?: number): string {
@@ -103,9 +107,14 @@ function progressWidth(value?: number, max: number = 1): string {
     </div>
 
     <!-- Fallback notice -->
-    <div v-if="isFallback" class="mx-5 mt-3 p-2.5 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-2">
-      <AppIcon name="AlertTriangle" size="sm" variant="peach" />
-      <span class="text-xs text-amber-700">{{ t('dashboard.ripple.fallbackNotice') }}</span>
+    <div v-if="isFallback" :class="[
+      'mx-5 mt-3 p-2.5 rounded-lg flex items-center gap-2',
+      isDisabled ? 'bg-slate-50 border border-slate-200' : 'bg-amber-50 border border-amber-200'
+    ]">
+      <AppIcon :name="isDisabled ? 'ZapOff' : 'AlertTriangle'" size="sm" :variant="isDisabled ? 'cyan' : 'peach'" />
+      <span :class="['text-xs', isDisabled ? 'text-slate-500' : 'text-amber-700']">
+        {{ isDisabled ? t('dashboard.ripple.disabledNotice') : t('dashboard.ripple.fallbackNotice') }}
+      </span>
     </div>
 
     <!-- Summary cards -->

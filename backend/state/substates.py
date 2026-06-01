@@ -10,6 +10,7 @@ class HotTopicItem(TypedDict, total=False):
 
     topic: str
     heat_score: float
+    heat_percentage: float
     growth_rate: float
     related_keywords: list[str]
 

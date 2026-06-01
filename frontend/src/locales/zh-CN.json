@@ -47,6 +47,7 @@
       "llmMissing": "请在 .env 文件中设置至少一个 LLM API Key（如 ANTHROPIC_API_KEY）以启用 AI 功能。",
       "xhsMissing": "未配置小红书凭证，发布阶段将自动跳过（仅生成预览）。如需发布，请在 .env 中设置 XHS_COOKIE 和 XHS_USER_ID。",
       "rippleMissing": "请在 .env 文件中设置 RIPPLE_BASE_URL 和 RIPPLE_API_TOKEN（可选，用于内容传播预测）。",
+      "rippleDisabled": "Ripple 引擎未启用。如需使用，请在 .env 中设置 RIPPLE_ENABLED=true。",
       "apiUnreachable": "请确保后端服务已启动：xhs-growth serve --port 8000"
     },
     "required": "必需",
@@ -253,7 +254,8 @@
       "noData": "暂无 Ripple 数据",
       "spreadPhases": "传播阶段",
       "keyInfluencers": "关键影响者",
-      "fallbackNotice": "Ripple 引擎暂不可用，以下为默认预测值"
+      "fallbackNotice": "Ripple 引擎暂不可用，以下为默认预测值",
+      "disabledNotice": "Ripple 引擎未启用，以下为默认预测值"
     },
     "scouting": {
       "hotTopics": "热门话题",

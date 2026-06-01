@@ -53,6 +53,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const ripplePrediction = computed(() => workflowState.value?.ripple_prediction || {})
   const ripplePmf = computed(() => workflowState.value?.ripple_pmf || {})
   const rippleComparison = computed(() => workflowState.value?.ripple_comparison || {})
+  const rippleReason = computed(() => workflowState.value?.ripple_reason || '')
   const hasRippleData = computed(() =>
     Object.keys(ripplePrediction.value).length > 0 ||
     Object.keys(ripplePmf.value).length > 0 ||
@@ -384,6 +385,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     ripplePrediction,
     ripplePmf,
     rippleComparison,
+    rippleReason,
     hasRippleData,
     startWorkflow,
     refreshStatus,
