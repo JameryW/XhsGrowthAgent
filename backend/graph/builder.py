@@ -27,6 +27,7 @@ from backend.agents.nodes import (
 )
 from backend.graph.error_handling import get_retry_policy
 from backend.graph.routers import (
+    engagement_router,
     orchestrator_router,
     review_outcome,
     should_continue,
@@ -139,8 +140,15 @@ def build_graph() -> StateGraph:
         },
     )
 
-    # ── 互动完成后回到编排器 ──
-    builder.add_edge("engagement", "orchestrator")
+    # ── 互动完成后根据执行模式决定下一步 ──
+    builder.add_conditional_edges(
+        "engagement",
+        engagement_router,
+        {
+            "orchestrator": "orchestrator",
+            "__end__": END,
+        },
+    )
 
     return builder
 
@@ -154,7 +162,7 @@ def compile_graph_dev() -> CompiledStateGraph:
     graph = builder.compile(
         checkpointer=checkpointer,
         store=store,
-        # Nodes use dynamic interrupt() instead of interrupt_before
+        interrupt_before=["review_gate", "choice_gate"],
     )
     return graph
 
@@ -176,7 +184,7 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         await checkpointer.setup()
         graph = builder.compile(
             checkpointer=checkpointer,
-            # Nodes use dynamic interrupt() instead of interrupt_before
+            interrupt_before=["review_gate", "choice_gate"],
         )
         return graph, checkpointer
     except ImportError:

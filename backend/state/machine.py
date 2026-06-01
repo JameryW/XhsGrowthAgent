@@ -44,9 +44,12 @@ def derive_status(snapshot: StateSnapshot) -> WorkflowStatus:
     phase = values.get("phase")
     next_nodes = snapshot.next or []
 
-    # Check for interrupts — use snapshot.interrupts (top-level field)
-    # instead of iterating snapshot.tasks (PregelTask is a dataclass, not a dict)
+    # Check for interrupts — two sources:
+    # 1. snapshot.interrupts: non-empty when dynamic interrupt() was called inside a node
+    # 2. next_nodes containing gate names: happens with interrupt_before, where
+    #    the graph pauses before the node runs and interrupts tuple is empty
     has_interrupt = bool(snapshot.interrupts)
+    is_awaiting_gate = has_interrupt or bool(next_nodes)
 
     # Priority 1: Cancelled
     if phase == WorkflowPhase.CANCELLED:
@@ -57,26 +60,30 @@ def derive_status(snapshot: StateSnapshot) -> WorkflowStatus:
         return WorkflowStatus.PAUSED
 
     # Priority 3 & 4: Interrupt at specific gates
-    if has_interrupt:
+    # With interrupt_before: snapshot.interrupts is empty but next_nodes has gate name
+    # With dynamic interrupt(): snapshot.interrupts is non-empty
+    if is_awaiting_gate:
         if next_nodes:
             if "review_gate" in next_nodes:
                 return WorkflowStatus.AWAITING_REVIEW
             if "choice_gate" in next_nodes:
                 return WorkflowStatus.AWAITING_CHOICE
-        # Fallback: determine gate type from interrupt value
-        gate_type = None
-        if snapshot.interrupts:
-            interrupt_val = snapshot.interrupts[0].value
-            if isinstance(interrupt_val, dict):
-                gate_type = interrupt_val.get("gate")
-        if gate_type == "choice":
-            return WorkflowStatus.AWAITING_CHOICE
-        if gate_type == "review":
-            return WorkflowStatus.AWAITING_REVIEW
-        # Unknown gate type with interrupt — fall through to remaining checks
+        # Fallback: determine gate type from interrupt value (dynamic interrupt only)
+        if has_interrupt:
+            gate_type = None
+            if snapshot.interrupts:
+                interrupt_val = snapshot.interrupts[0].value
+                if isinstance(interrupt_val, dict):
+                    gate_type = interrupt_val.get("gate")
+            if gate_type == "choice":
+                return WorkflowStatus.AWAITING_CHOICE
+            if gate_type == "review":
+                return WorkflowStatus.AWAITING_REVIEW
+            # Unknown gate type with interrupt — fall through to remaining checks
 
-    # Priority 5: Error
-    if values.get("error"):
+    # Priority 5: Error (only when terminal — phase is ERROR or no next nodes)
+    # If there are next nodes, the error may be retried, so treat as RUNNING
+    if values.get("error") and (phase == WorkflowPhase.ERROR or not next_nodes):
         return WorkflowStatus.ERROR
 
     # Priority 6: Completed phase

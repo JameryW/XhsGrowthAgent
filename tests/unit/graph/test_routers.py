@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 from backend.graph.routers import (
+    engagement_router,
     orchestrator_router,
     review_outcome,
     should_continue,
@@ -166,3 +167,42 @@ class TestShouldContinue:
         state = {"phase": WorkflowPhase.ANALYZING, "error": "Failed"}
         result = should_continue(state)
         assert result == "__end__"
+
+
+class TestEngagementRouter:
+    """Tests for engagement_router conditional edge."""
+
+    def test_single_mode_routes_to_end(self):
+        """Single execution mode → END (no infinite loop)."""
+        state = {"execution_mode": "single", "phase": WorkflowPhase.ENGAGING}
+        assert engagement_router(state) == "__end__"
+
+    def test_continuous_mode_routes_to_orchestrator(self):
+        """Continuous execution mode → orchestrator (next cycle)."""
+        state = {"execution_mode": "continuous", "phase": WorkflowPhase.ENGAGING}
+        assert engagement_router(state) == "orchestrator"
+
+    def test_cancelled_routes_to_end(self):
+        """CANCELLED phase → END even in continuous mode."""
+        state = {"execution_mode": "continuous", "phase": WorkflowPhase.CANCELLED}
+        assert engagement_router(state) == "__end__"
+
+    def test_default_is_single(self):
+        """No execution_mode specified defaults to single → END."""
+        state = {"phase": WorkflowPhase.ENGAGING}
+        assert engagement_router(state) == "__end__"
+
+    def test_error_routes_to_end(self):
+        """ERROR phase → END even in continuous mode."""
+        state = {"execution_mode": "continuous", "phase": WorkflowPhase.ERROR}
+        assert engagement_router(state) == "__end__"
+
+    def test_paused_routes_to_end(self):
+        """PAUSED phase → END even in continuous mode."""
+        state = {"execution_mode": "continuous", "phase": WorkflowPhase.PAUSED}
+        assert engagement_router(state) == "__end__"
+
+    def test_error_field_routes_to_end(self):
+        """Error field set → END even in continuous mode."""
+        state = {"execution_mode": "continuous", "phase": WorkflowPhase.ENGAGING, "error": "boom"}
+        assert engagement_router(state) == "__end__"

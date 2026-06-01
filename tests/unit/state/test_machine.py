@@ -1,10 +1,9 @@
 """Tests for workflow status derivation."""
 
-import pytest
 from unittest.mock import MagicMock
 
-from backend.state.machine import WorkflowStatus, derive_status
 from backend.state.enums import WorkflowPhase
+from backend.state.machine import WorkflowStatus, derive_status
 
 
 def make_snapshot(
@@ -56,7 +55,7 @@ class TestDeriveStatus:
     def test_error_in_state_returns_error(self):
         snapshot = make_snapshot(
             values={"phase": WorkflowPhase.SCOUTING, "error": "API failed"},
-            next=["trend_scout"],
+            next=[],
         )
         assert derive_status(snapshot) == WorkflowStatus.ERROR
 
@@ -80,10 +79,27 @@ class TestDeriveStatus:
         )
         assert derive_status(snapshot) == WorkflowStatus.COMPLETED
 
-    def test_error_takes_precedence_over_running(self):
+    def test_error_with_next_nodes_returns_running(self):
+        """Error in non-terminal state (has next nodes) → RUNNING (may retry)."""
         snapshot = make_snapshot(
-            values={"phase": WorkflowPhase.SCOUTING, "error": "Failed"},
-            next=["content_strategist"],
+            values={"phase": WorkflowPhase.SCOUTING, "error": "Transient failure"},
+            next=["trend_scout"],
+        )
+        assert derive_status(snapshot) == WorkflowStatus.RUNNING
+
+    def test_error_with_no_next_nodes_returns_error(self):
+        """Error in terminal state (no next nodes) → ERROR."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.SCOUTING, "error": "API failed"},
+            next=[],
+        )
+        assert derive_status(snapshot) == WorkflowStatus.ERROR
+
+    def test_error_phase_returns_error(self):
+        """Phase == ERROR always returns ERROR, even with next nodes."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.ERROR, "error": "Critical failure"},
+            next=["trend_scout"],
         )
         assert derive_status(snapshot) == WorkflowStatus.ERROR
 
@@ -92,3 +108,21 @@ class TestDeriveStatus:
             values={"phase": WorkflowPhase.CANCELLED, "error": "Some error"},
         )
         assert derive_status(snapshot) == WorkflowStatus.CANCELLED
+
+    def test_interrupt_before_review_gate_returns_awaiting_review(self):
+        """With interrupt_before, snapshot.interrupts is empty but next has review_gate."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.REVIEWING},
+            next=["review_gate"],
+            interrupts=[],  # interrupt_before produces no Interrupt objects
+        )
+        assert derive_status(snapshot) == WorkflowStatus.AWAITING_REVIEW
+
+    def test_interrupt_before_choice_gate_returns_awaiting_choice(self):
+        """With interrupt_before, snapshot.interrupts is empty but next has choice_gate."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.CREATING},
+            next=["choice_gate"],
+            interrupts=[],  # interrupt_before produces no Interrupt objects
+        )
+        assert derive_status(snapshot) == WorkflowStatus.AWAITING_CHOICE

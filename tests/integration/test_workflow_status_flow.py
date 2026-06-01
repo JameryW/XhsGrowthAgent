@@ -105,11 +105,19 @@ class TestFullWorkflowLifecycle:
         snap = make_snapshot({"phase": WorkflowPhase.CANCELLED}, next=["content_strategist"])
         assert derive_status(snap) == WorkflowStatus.CANCELLED
 
-    def test_error_during_scouting(self):
-        """Error during scouting sets error status."""
+    def test_error_during_scouting_with_next_nodes_returns_running(self):
+        """Error during scouting with next nodes → RUNNING (may retry)."""
         snap = make_snapshot(
             {"phase": WorkflowPhase.SCOUTING, "error": "API timeout"},
             next=["trend_scout"],
+        )
+        assert derive_status(snap) == WorkflowStatus.RUNNING
+
+    def test_error_during_scouting_terminal_returns_error(self):
+        """Error during scouting with no next nodes → ERROR (terminal)."""
+        snap = make_snapshot(
+            {"phase": WorkflowPhase.SCOUTING, "error": "API timeout"},
+            next=[],
         )
         assert derive_status(snap) == WorkflowStatus.ERROR
 

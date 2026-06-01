@@ -24,6 +24,8 @@ def _check_terminal(state: XHSGrowthState) -> str | None:
         return "__end__"
     if phase == WorkflowPhase.PAUSED:
         return "__end__"
+    if phase == WorkflowPhase.ERROR:
+        return "__end__"
     if state.get("error"):
         return "__end__"
     return None
@@ -98,6 +100,21 @@ def should_continue(state: XHSGrowthState) -> Literal["orchestrator", "engagemen
             return "orchestrator"
         return "engagement"
 
+    return "__end__"
+
+
+def engagement_router(state: XHSGrowthState) -> Literal["orchestrator", "__end__"]:
+    """Engagement completion router — loop back or end based on execution mode.
+
+    In single-execution mode (default), engagement is the final node → END.
+    In continuous mode, engagement feeds back to orchestrator for the next cycle.
+    """
+    if terminal := _check_terminal(state):
+        return terminal
+
+    mode = state.get("execution_mode", "single")
+    if mode == "continuous":
+        return "orchestrator"
     return "__end__"
 
 

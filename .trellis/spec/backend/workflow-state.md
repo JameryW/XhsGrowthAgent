@@ -13,8 +13,7 @@
 The single source of truth for computing workflow status from a LangGraph StateSnapshot.
 
 ```python
-class WorkflowStatus(str, Enum):
-    PENDING = "pending"
+class WorkflowStatus(StrEnum):
     RUNNING = "running"
     AWAITING_REVIEW = "awaiting_review"
     AWAITING_CHOICE = "awaiting_choice"
@@ -32,31 +31,36 @@ Location: `backend/state/machine.py`
 - `values: dict` — current graph state (phase, error, execution_mode, etc.)
 - `next: tuple[str, ...]` — node names scheduled to run next
 - `tasks: tuple[PregelTask, ...]` — task objects (dataclass, NOT dict)
-- `interrupts: tuple[Interrupt, ...]` — interrupt objects from `interrupt()` calls
+- `interrupts: tuple[Interrupt, ...]` — interrupt objects (empty with `interrupt_before`)
 
 **Output:** A `WorkflowStatus` enum value.
 
 **Priority chain** (checked in order, first match wins):
-1. `snapshot.interrupts` non-empty → inspect `.value["gate"]` → `awaiting_review` or `awaiting_choice`
-2. `phase == COMPLETED` and `next` empty → `completed`
-3. `phase == CANCELLED` → `cancelled`
-4. `phase == PAUSED` → `paused`
-5. `error` present and terminal → `error`
-6. `next` non-empty and phase not terminal → `running`
-7. Fallback → `completed`
+1. `phase == CANCELLED` → `cancelled`
+2. `phase == PAUSED` → `paused`
+3. `next` contains `"review_gate"` (with interrupt or interrupt_before) → `awaiting_review`
+4. `next` contains `"choice_gate"` (with interrupt or interrupt_before) → `awaiting_choice`
+5. Interrupt with gate value fallback (dynamic `interrupt()` only) → `awaiting_review` or `awaiting_choice`
+6. `error` present AND (`phase == ERROR` OR `next` empty) → `error`
+7. `phase == COMPLETED` → `completed`
+8. `next` non-empty → `running`
+9. Fallback → `completed`
 
 ## Validation & Error Matrix
 
 | Condition | Status | Notes |
 |-----------|--------|-------|
-| `snapshot.interrupts` has items, gate="review" | `awaiting_review` | Human-in-the-loop at review gate |
-| `snapshot.interrupts` has items, gate="choice" | `awaiting_choice` | Human-in-the-loop at choice gate |
+| `phase=CANCELLED` | `cancelled` | Takes priority over everything |
+| `phase=PAUSED` | `paused` | Takes priority over error |
+| `next` contains `"review_gate"` | `awaiting_review` | Works for both `interrupt_before` and dynamic `interrupt()` |
+| `next` contains `"choice_gate"` | `awaiting_choice` | Works for both `interrupt_before` and dynamic `interrupt()` |
+| `snapshot.interrupts` has items, gate="review" | `awaiting_review` | Fallback when `next` doesn't contain gate name |
+| `snapshot.interrupts` has items, gate="choice" | `awaiting_choice` | Fallback when `next` doesn't contain gate name |
 | `snapshot.interrupts` has items, gate unknown | Falls to phase check | Unknown gate type does NOT default to review |
 | `phase=COMPLETED, next=[]` | `completed` | Normal terminal state |
-| `phase=CANCELLED` | `cancelled` | Takes priority over error |
-| `phase=PAUSED` | `paused` | Takes priority over error |
-| `error` present, `next=[]` | `error` | Error in terminal node |
-| `error` present, `next` non-empty | `running` | Error in non-terminal — may retry |
+| `error` present, `phase=ERROR` | `error` | Explicit error phase |
+| `error` present, `next=[]`, phase≠ERROR | `error` | Terminal error (no retry possible) |
+| `error` present, `next` non-empty, phase≠ERROR | `running` | **Non-terminal error — may retry** |
 | `next` non-empty, phase not terminal | `running` | Normal in-progress |
 | `next=[], no error, phase not terminal` | `completed` | Fallback |
 
@@ -70,14 +74,18 @@ for task in snapshot.tasks:
         ...
 ```
 
-### Correct: Use snapshot.interrupts
+### Correct: Use snapshot.interrupts + next_nodes
 ```python
-# CORRECT — StateSnapshot has a top-level interrupts field
+# CORRECT — Two signals for gate detection:
+# 1. snapshot.interrupts (non-empty with dynamic interrupt())
+# 2. snapshot.next containing gate name (works with interrupt_before too)
 has_interrupt = bool(snapshot.interrupts)
-if has_interrupt:
-    interrupt_val = snapshot.interrupts[0].value
-    if isinstance(interrupt_val, dict):
-        gate_type = interrupt_val.get("gate")
+is_awaiting_gate = has_interrupt or bool(snapshot.next)
+if is_awaiting_gate and snapshot.next:
+    if "review_gate" in snapshot.next:
+        return WorkflowStatus.AWAITING_REVIEW
+    if "choice_gate" in snapshot.next:
+        return WorkflowStatus.AWAITING_CHOICE
 ```
 
 ### Wrong: Hardcoding status after graph.ainvoke()
@@ -92,6 +100,21 @@ status = "completed"  # Interrupts return here too!
 result = await graph.ainvoke(state, config)
 snapshot = await graph.aget_state(config)
 status = derive_status(snapshot)
+```
+
+### Wrong: Returning ERROR for any truthy error field
+```python
+# WRONG — stale error from a previous node causes false ERROR
+if values.get("error"):
+    return WorkflowStatus.ERROR
+```
+
+### Correct: Only return ERROR when terminal
+```python
+# CORRECT — error is terminal only when phase=ERROR or no next nodes
+if values.get("error") and (phase == WorkflowPhase.ERROR or not next_nodes):
+    return WorkflowStatus.ERROR
+# Non-terminal error with next nodes → RUNNING (may retry)
 ```
 
 ## Common Mistake: Mock StateSnapshot without interrupts field
@@ -109,34 +132,78 @@ def make_snapshot(values, next=None, interrupts=None):
     return snapshot
 ```
 
+## Common Mistake: Stale error field overrides current phase
+
+`BaseAgent.__call__` sets `result["error"] = None` on success, but if a snapshot is taken between nodes or a reducer partially merges, `values.get("error")` can be truthy even when the workflow has recovered. Always check `phase` and `next_nodes` alongside the error field.
+
+**Symptom:** `derive_status` returns `ERROR` for a workflow that is actually running or completed.
+
+**Fix:** Only return ERROR when `phase == ERROR` or `next` is empty (terminal).
+
 ## Interrupt Mechanism
 
-### Two interrupt styles (use dynamic only)
+### Two interrupt styles (use `interrupt_before`)
 
-| Style | How | Re-executes on resume? | Events emitted twice? |
-|-------|-----|----------------------|----------------------|
-| `interrupt_before=["node"]` | Static, in `graph.compile()` | No (node never ran) | N/A |
-| `interrupt(value)` inside node | Dynamic, in node body | **Yes** (node re-runs from top) | **Yes**, if events emitted before `interrupt()` |
+| Style | How | Re-executes on resume? | Side effects before pause? | `snapshot.interrupts` populated? |
+|-------|-----|----------------------|---------------------------|-------------------------------|
+| `interrupt_before=["node"]` | Static, in `graph.compile()` | No (node never ran) | No | **No** (empty tuple) |
+| `interrupt(value)` inside node | Dynamic, in node body | **Yes** (node re-runs from top) | **Yes**, if code runs before `interrupt()` | Yes |
 
-**Convention:** Use dynamic `interrupt()` only. `interrupt_before` was removed to fix event timing issues.
+**Convention:** Use `interrupt_before=["review_gate", "choice_gate"]` in `graph.compile()`. Inside the node, `interrupt(None)` is a pure resume-receiver — it receives the value from `Command(resume=value)`. Do NOT put any side-effect code before `interrupt()` inside the node.
 
-**Critical:** Code before `interrupt()` inside a node runs TWICE — once on initial execution (interrupt raises `GraphInterrupt`) and once on resume (interrupt returns the resume value). Events must NOT be emitted from inside interrupt nodes.
+**Why `interrupt_before`:** Dynamic `interrupt()` inside nodes causes code before the call to execute twice (once on initial execution, once on resume). This leads to double event emission, double payload construction, and other side-effect bugs. `interrupt_before` prevents the node from executing at all until resumed, eliminating these issues.
+
+**Critical:** With `interrupt_before`, `snapshot.interrupts` is always an empty tuple. The graph pause must be detected via `snapshot.next` containing the gate node name (e.g., `"review_gate"`). `derive_status` uses `next_nodes` as the primary detection signal, with `snapshot.interrupts` as a fallback.
 
 ### Event emission pattern
 
 Events like `REVIEW_PENDING` and `WORKFLOW_DATA_UPDATED` (choice_pending) must be emitted from the API layer (`workflow.py`) when `derive_status` detects a status transition, NOT from inside the interrupt node.
 
 ```
-Node calls interrupt() → graph pauses → API calls derive_status() →
-  detects AWAITING_REVIEW → emits REVIEW_PENDING event
+Graph pauses at review_gate (interrupt_before) → API calls derive_status() →
+  next contains "review_gate" → returns AWAITING_REVIEW →
+  _emit_status_transition() emits REVIEW_PENDING event
 ```
+
+The `_emit_status_transition` function in `workflow.py:110` handles this automatically. It tracks the last known status per thread and only emits on transitions.
+
+## Engagement Routing
+
+### Single-exec vs continuous mode
+
+The engagement node's outgoing edge is **conditional**, not fixed:
+
+- **Single-exec** mode (default): `engagement → END` — workflow terminates after engagement
+- **Continuous** mode: `engagement → orchestrator` — loops back for the next cycle
+
+```python
+# backend/graph/routers.py
+def engagement_router(state: XHSGrowthState) -> Literal["orchestrator", "__end__"]:
+    if terminal := _check_terminal(state):
+        return terminal
+    mode = state.get("execution_mode", "single")
+    if mode == "continuous":
+        return "orchestrator"
+    return "__end__"
+```
+
+**Common Mistake:** Using `add_edge("engagement", "orchestrator")` creates an infinite loop in single-exec mode because engagement always routes back to orchestrator.
+
+**Fix:** Use `add_conditional_edges("engagement", engagement_router, ...)` instead.
 
 ## Tests Required
 
 - `test_derive_status_running`: scouting phase with next nodes, no interrupts → RUNNING
-- `test_derive_status_awaiting_review`: snapshot with interrupts, gate="review" → AWAITING_REVIEW
-- `test_derive_status_awaiting_choice`: snapshot with interrupts, gate="choice" → AWAITING_CHOICE
+- `test_derive_status_awaiting_review`: next contains "review_gate" → AWAITING_REVIEW
+- `test_derive_status_awaiting_choice`: next contains "choice_gate" → AWAITING_CHOICE
+- `test_derive_status_awaiting_review_from_interrupt_value`: snapshot.interrupts with gate="review" → AWAITING_REVIEW
+- `test_derive_status_awaiting_choice_from_interrupt_value`: snapshot.interrupts with gate="choice" → AWAITING_CHOICE
 - `test_derive_status_interrupt_unknown_gate`: interrupts with unknown gate → falls to phase check
 - `test_derive_status_completed`: phase=COMPLETED, next=[] → COMPLETED
 - `test_derive_status_cancelled_over_error`: phase=CANCELLED + error → CANCELLED (not ERROR)
 - `test_derive_status_paused_over_error`: phase=PAUSED + error → PAUSED (not ERROR)
+- `test_derive_status_error_terminal`: phase=ERROR or next=[] + error → ERROR
+- `test_derive_status_error_non_terminal`: error present + next non-empty + phase≠ERROR → RUNNING
+- `test_engagement_router_single_mode`: execution_mode="single" → "__end__"
+- `test_engagement_router_continuous_mode`: execution_mode="continuous" → "orchestrator"
+- `test_engagement_router_default_single`: no execution_mode → "__end__"
