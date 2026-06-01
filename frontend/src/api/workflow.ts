@@ -73,3 +73,29 @@ export async function cancelWorkflow(threadId: string): Promise<{ thread_id: str
 export async function deleteWorkflow(threadId: string): Promise<{ thread_id: string; message: string }> {
   return client.delete(`/workflow/${threadId}`) as unknown as { thread_id: string; message: string }
 }
+
+// 提交草稿到优化流程
+export async function submitDraft(threadId: string, data: {
+  title?: string
+  text: string
+  hashtags?: string[]
+  viral_links?: string[]
+}): Promise<{ thread_id: string; status: string }> {
+  const { retryWithBackoff } = useRetry()
+  return retryWithBackoff(async () => {
+    const result = await client.post(`/optimization/draft/${threadId}`, data) as { thread_id: string; status: string }
+    return result
+  })
+}
+
+// 选择优化版本
+export async function selectVersion(threadId: string, choice: {
+  version_id: string
+  version_type?: string
+}): Promise<{ thread_id: string; status: string; next_phase: string }> {
+  const { retryWithBackoff } = useRetry()
+  return retryWithBackoff(async () => {
+    const result = await client.post(`/optimization/select/${threadId}`, choice) as { thread_id: string; status: string; next_phase: string }
+    return result
+  })
+}

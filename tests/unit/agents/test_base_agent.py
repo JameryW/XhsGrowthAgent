@@ -205,7 +205,9 @@ Some text after"""
 
     @pytest.mark.asyncio
     async def test_call_handles_exception(self):
-        """__call__ catches exceptions and returns error dict."""
+        """__call__ propagates exceptions as AgentError."""
+        from backend.core.error_handling import AgentError
+
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "failing_agent"
@@ -218,13 +220,11 @@ Some text after"""
         mock_state = {"retry_count": 0}
         mock_store = AsyncMock()
 
-        result = await agent(mock_state, store=mock_store)
+        with pytest.raises(AgentError) as exc_info:
+            await agent(mock_state, store=mock_store)
 
-        assert "error" in result
-        assert "failing_agent" in result["error"]
-        assert "ValueError" in result["error"]
-        assert result["retry_count"] == 1
-        assert result["current_agent"] == "failing_agent"
+        assert "failing_agent" in str(exc_info.value)
+        assert "Test error" in str(exc_info.value)
 
     def test_model_property_returns_model(self):
         """model property returns configured LLM."""

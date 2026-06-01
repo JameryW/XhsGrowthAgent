@@ -17,6 +17,48 @@ import pytest
 from backend.state.schema import WorkflowPhase
 
 
+# ── Global LLM/Ripple mock ──────────────────────────────────────────────────
+# Prevent any test from accidentally calling real LLM or Ripple APIs.
+
+
+@pytest.fixture(autouse=True)
+def _mock_get_model():
+    """Auto-mock get_model in all import locations to prevent real LLM calls."""
+    mock_model = MagicMock()
+    mock_model.ainvoke = AsyncMock(return_value=MagicMock(content='{"result": "mocked"}'))
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("backend.models.router.get_model", lambda *a, **kw: mock_model)
+        mp.setattr("backend.agents.base.get_model", lambda *a, **kw: mock_model)
+        mp.setattr("backend.services.llm_enrichment.get_model", lambda *a, **kw: mock_model)
+        mp.setattr("backend.core.base_agent.get_model", lambda *a, **kw: mock_model)
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _mock_ripple_service():
+    """Auto-mock RippleService.get_instance to prevent real Ripple API calls."""
+    mock_service = MagicMock()
+    mock_service.is_healthy = MagicMock(return_value=False)
+    mock_service.predict_spread = AsyncMock(return_value={"ripple_fallback": True})
+    mock_service.validate_pmf = AsyncMock(return_value={"ripple_fallback": True})
+    mock_service.health_check = AsyncMock()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "backend.services.ripple_service.RippleService.get_instance",
+            lambda: mock_service,
+        )
+        # backend.tools.ripple.client is a module, not a package — mock the class directly
+        try:
+            from backend.tools.ripple.client import RippleService as ClientRippleService
+            mp.setattr(ClientRippleService, "get_instance", lambda: mock_service)
+        except ImportError:
+            pass
+        yield
+
+
+# ── Standard fixtures ────────────────────────────────────────────────────────
+
+
 @pytest.fixture
 def initial_state() -> dict:
     """标准初始状态"""

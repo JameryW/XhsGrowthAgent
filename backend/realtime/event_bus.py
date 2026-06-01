@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 from collections import deque
 from collections.abc import Callable
@@ -14,7 +15,7 @@ from backend.realtime.events import Event, EventType
 class EventBusService:
     """单例服务 - 事件收集、分发、存储.
 
-    用于业务模块emit事件，WebSocket订阅推送。
+    用于业务模块emit事件，WebSocket/SSE订阅推送。
     内存保留最近100条事件用于补传。
     """
 
@@ -24,6 +25,7 @@ class EventBusService:
     def __init__(self) -> None:
         self._events: deque[Event] = deque(maxlen=self.MAX_EVENTS)
         self._subscribers: list[Callable[[Event], None]] = []
+        self._thread_queues: dict[str, list[asyncio.Queue]] = {}
         self._seq = 0
         self._lock = threading.Lock()
 
@@ -61,19 +63,23 @@ class EventBusService:
             self._seq += 1
             self._events.append(event)
             handlers = self._subscribers.copy()
+            queues = self._thread_queues.get(thread_id, []).copy() if thread_id else []
 
         # 分发给所有订阅者（在锁外执行以避免阻塞）
         for handler in handlers:
             handler(event)
 
+        # 分发给线程队列（用于SSE）
+        for q in queues:
+            try:
+                q.put_nowait(event)
+            except asyncio.QueueFull:
+                pass
+
         return event
 
     def subscribe(self, handler: Callable[[Event], None]) -> None:
-        """订阅事件.
-
-        Args:
-            handler: 事件处理函数，接收Event参数
-        """
+        """订阅事件（全局）."""
         with self._lock:
             self._subscribers.append(handler)
 
@@ -83,14 +89,31 @@ class EventBusService:
             if handler in self._subscribers:
                 self._subscribers.remove(handler)
 
-    def get_events_since(self, since_seq: int) -> list[Event]:
-        """获取seq > since_seq的所有事件（用于补传）.
-
-        Args:
-            since_seq: 最后收到的事件seq
+    def subscribe_thread(self, thread_id: str) -> asyncio.Queue:
+        """订阅特定线程的事件（用于SSE）.
 
         Returns:
-            事件列表（按seq排序）
+            asyncio.Queue that will receive events for this thread
         """
+        q = asyncio.Queue(maxsize=100)
+        with self._lock:
+            if thread_id not in self._thread_queues:
+                self._thread_queues[thread_id] = []
+            self._thread_queues[thread_id].append(q)
+        return q
+
+    def unsubscribe_thread(self, thread_id: str, queue: asyncio.Queue) -> None:
+        """取消线程订阅."""
+        with self._lock:
+            if thread_id in self._thread_queues:
+                try:
+                    self._thread_queues[thread_id].remove(queue)
+                except ValueError:
+                    pass
+                if not self._thread_queues[thread_id]:
+                    del self._thread_queues[thread_id]
+
+    def get_events_since(self, since_seq: int) -> list[Event]:
+        """获取seq > since_seq的所有事件（用于补传）."""
         with self._lock:
             return [e for e in self._events if e.seq > since_seq]

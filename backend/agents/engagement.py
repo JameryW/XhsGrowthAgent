@@ -33,16 +33,18 @@ class EngagementAgent(BaseAgent):
 
         if not publish_result.get("post_id"):
             logger.info("无已发布帖子，跳过互动处理")
+            mode = state.get("execution_mode", "single")
             return {
                 "engagement_actions": engagement_actions,
-                "phase": WorkflowPhase.ENGAGING,
+                "phase": WorkflowPhase.COMPLETED if mode == "single" else WorkflowPhase.ENGAGING,
             }
 
         if not use_browser:
             logger.warning("use_browser=False，跳过真实互动")
+            mode = state.get("execution_mode", "single")
             return {
                 "engagement_actions": engagement_actions,
-                "phase": WorkflowPhase.ENGAGING,
+                "phase": WorkflowPhase.COMPLETED if mode == "single" else WorkflowPhase.ENGAGING,
             }
 
         # 调用真实互动服务
@@ -116,6 +118,14 @@ class EngagementAgent(BaseAgent):
 
         finally:
             await client.close()
+
+        mode = state.get("execution_mode", "single")
+
+        if mode == "single":
+            return {
+                "engagement_actions": engagement_actions,
+                "phase": WorkflowPhase.COMPLETED,
+            }
 
         return {
             "engagement_actions": engagement_actions,

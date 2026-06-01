@@ -5,7 +5,7 @@ from typing import Any
 from langgraph.store.base import BaseStore
 
 from backend.agents.content_analyzer import ContentAnalyzerAgent
-from backend.agents.nodes._base import NodeResult
+from backend.agents.nodes._base import NodeResult, _check_cancelled
 from backend.realtime import EventBusService, EventType
 from backend.state.schema import XHSGrowthState
 
@@ -14,6 +14,7 @@ _content_analyzer = ContentAnalyzerAgent()
 
 async def content_analyzer_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
     """Execute content analyzer agent and emit data updated event."""
+    _check_cancelled(state)
     result = await _content_analyzer(state, store=store)
 
     # Emit data updated event for optimization_analysis

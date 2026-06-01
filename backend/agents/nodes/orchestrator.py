@@ -4,7 +4,7 @@ from typing import Any
 
 from langgraph.store.base import BaseStore
 
-from backend.agents.nodes._base import NodeResult
+from backend.agents.nodes._base import NodeResult, _check_cancelled
 from backend.agents.orchestrator import OrchestratorAgent
 from backend.realtime import EventBusService, EventType
 from backend.state.schema import XHSGrowthState
@@ -14,6 +14,7 @@ _orchestrator = OrchestratorAgent()
 
 async def orchestrator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
     """Execute orchestrator agent and emit phase change event."""
+    _check_cancelled(state)
     result = await _orchestrator(state, store=store)
 
     thread_id = state.get("session_id")

@@ -6,8 +6,7 @@ from typing import Any
 from langgraph.store.base import BaseStore
 from langgraph.types import interrupt
 
-from backend.agents.nodes._base import NodeResult
-from backend.realtime import EventBusService, EventType
+from backend.agents.nodes._base import NodeResult, _check_cancelled
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
@@ -15,36 +14,17 @@ logger = logging.getLogger("xhs_growth.graph.nodes")
 
 
 async def review_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
-    """Human-in-the-loop review gate - graph interrupts before this node."""
-    copy = state.get("copy_content", {})
-    visual = state.get("visual_plan", {})
-    plan = state.get("content_plan", {})
+    """Human-in-the-loop review gate - graph interrupts before this node.
 
-    # Emit review pending event before interrupt
-    thread_id = state.get("session_id")
-    EventBusService.get_instance().emit(
-        EventType.REVIEW_PENDING,
-        thread_id=thread_id,
-        payload={
-            "content_plan": plan,
-            "copy_content": copy,
-            "visual_plan": visual,
-        },
-    )
+    With interrupt_before, this node only runs on resume. interrupt(None)
+    simply receives the resume value (the review decision).
+    """
+    _check_cancelled(state)
 
-    review_payload = {
-        "topic": plan.get("selected_topic", ""),
-        "titles": copy.get("title_candidates", []),
-        "body_preview": copy.get("body_text", "")[:200],
-        "cover_prompt": visual.get("cover_prompt", ""),
-        "hashtags": copy.get("hashtags", []),
-    }
+    # Receive the review decision from Command(resume=decision)
+    # decision format: {"action": "approve"} or {"action": "revise", "feedback": "..."}
+    decision = interrupt(None)
 
-    # interrupt() pauses execution, sends payload to caller
-    decision = interrupt(review_payload)
-
-    # decision format: {"decision": "approved/needs_revision/rejected",
-    #                    "comments": "...", "revisions": [...]}
     result = {
         "human_feedback": decision,
         "phase": WorkflowPhase.REVIEWING,

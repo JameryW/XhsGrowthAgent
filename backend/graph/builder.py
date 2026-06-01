@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -23,7 +25,9 @@ from backend.agents.nodes import (
     viral_matcher_node,
     visual_designer_node,
 )
+from backend.graph.error_handling import get_retry_policy
 from backend.graph.routers import (
+    engagement_router,
     orchestrator_router,
     review_outcome,
     should_continue,
@@ -38,15 +42,15 @@ def build_graph() -> StateGraph:
     builder = StateGraph(XHSGrowthState)
 
     # ── 添加节点 ──
-    builder.add_node("orchestrator", orchestrator_node)
-    builder.add_node("trend_scout", trend_scout_node)
-    builder.add_node("content_strategist", content_strategist_node)
-    builder.add_node("copywriter", copywriter_node)
-    builder.add_node("visual_designer", visual_designer_node)
-    builder.add_node("review_gate", review_gate_node)
-    builder.add_node("publisher", publisher_node)
-    builder.add_node("analyst", analyst_node)
-    builder.add_node("engagement", engagement_node)
+    builder.add_node("orchestrator", orchestrator_node, retry_policy=get_retry_policy("orchestrator"))
+    builder.add_node("trend_scout", trend_scout_node, retry_policy=get_retry_policy("trend_scout"))
+    builder.add_node("content_strategist", content_strategist_node, retry_policy=get_retry_policy("content_strategist"))
+    builder.add_node("copywriter", copywriter_node, retry_policy=get_retry_policy("copywriter"))
+    builder.add_node("visual_designer", visual_designer_node, retry_policy=get_retry_policy("visual_designer"))
+    builder.add_node("review_gate", review_gate_node, retry_policy=get_retry_policy("review_gate"))
+    builder.add_node("publisher", publisher_node, retry_policy=get_retry_policy("publisher"))
+    builder.add_node("analyst", analyst_node, retry_policy=get_retry_policy("analyst"))
+    builder.add_node("engagement", engagement_node, retry_policy=get_retry_policy("engagement"))
     builder.add_node("revise_content", revise_content_node)
     # 发布前优化节点
     builder.add_node("viral_matcher", viral_matcher_node)
@@ -136,8 +140,15 @@ def build_graph() -> StateGraph:
         },
     )
 
-    # ── 互动完成后回到编排器 ──
-    builder.add_edge("engagement", "orchestrator")
+    # ── 互动完成后根据执行模式决定下一步 ──
+    builder.add_conditional_edges(
+        "engagement",
+        engagement_router,
+        {
+            "orchestrator": "orchestrator",
+            "__end__": END,
+        },
+    )
 
     return builder
 
@@ -151,25 +162,32 @@ def compile_graph_dev() -> CompiledStateGraph:
     graph = builder.compile(
         checkpointer=checkpointer,
         store=store,
-        interrupt_before=["review_gate", "choice_gate"],  # human-in-the-loop 审核门 + 版本选择门
+        interrupt_before=["review_gate", "choice_gate"],
     )
     return graph
 
 
-async def compile_graph_prod(db_uri: str) -> CompiledStateGraph:
-    """生产模式编译 — 使用 Postgres 检查点"""
+async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
+    """生产模式编译 — 使用 Postgres 检查点
+
+    Returns:
+        Tuple of (compiled graph, checkpointer) so the caller can manage
+        the checkpointer lifecycle (must close on shutdown).
+        checkpointer is None when falling back to memory.
+    """
     builder = build_graph()
 
     try:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-        async with AsyncPostgresSaver.from_conn_string(db_uri) as checkpointer:
-            await checkpointer.setup()
-            graph = builder.compile(
-                checkpointer=checkpointer,
-                interrupt_before=["review_gate", "choice_gate"],
-            )
-            return graph
+        checkpointer = AsyncPostgresSaver.from_conn_string(db_uri)
+        await checkpointer.setup()
+        graph = builder.compile(
+            checkpointer=checkpointer,
+            interrupt_before=["review_gate", "choice_gate"],
+        )
+        return graph, checkpointer
     except ImportError:
         # Postgres 不可用时回退到内存
-        return compile_graph_dev()
+        graph = compile_graph_dev()
+        return graph, None

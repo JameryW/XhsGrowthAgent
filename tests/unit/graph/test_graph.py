@@ -36,10 +36,11 @@ def test_graph_compiles_dev():
     assert graph is not None
 
 
-def test_graph_has_interrupt():
-    """编译后的图在 review_gate 前有中断"""
+def test_graph_uses_interrupt_before():
+    """编译后的图使用 interrupt_before 在 review_gate 和 choice_gate 处中断。"""
     from backend.graph.builder import compile_graph_dev
 
     graph = compile_graph_dev()
-    # interrupt_before 应包含 review_gate
+    # interrupt_before 包含 gate 节点
     assert "review_gate" in graph.interrupt_before_nodes
+    assert "choice_gate" in graph.interrupt_before_nodes
