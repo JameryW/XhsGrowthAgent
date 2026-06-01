@@ -78,6 +78,10 @@ class XHSGrowthState(TypedDict, total=False):
     # 用户选择的版本ID
     selected_version: str
 
+    # Optional optimization control
+    skip_optimization: bool
+    optimization_error: str | None
+
     # History
     content_history: Annotated[list[dict], _append_list]
     performance_log: Annotated[list[dict], _append_list]

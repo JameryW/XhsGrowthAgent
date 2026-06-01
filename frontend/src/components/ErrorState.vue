@@ -42,8 +42,12 @@ const recoverySuggestions = computed(() => {
   return t(key) as unknown as string[]
 })
 
-const retryAction = () => {
-  workflowStore.refreshStatus()
+const retryAction = async () => {
+  if (workflowStore.currentStatus === 'error' && workflowStore.currentThreadId) {
+    await workflowStore.resumeWorkflow()
+  } else {
+    await workflowStore.refreshStatus()
+  }
   toastStore.info(t('errorState.retrying'), t('errorState.retryingMessage'))
 }
 

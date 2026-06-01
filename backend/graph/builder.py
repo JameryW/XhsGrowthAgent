@@ -44,11 +44,26 @@ def build_graph() -> StateGraph:
     builder = StateGraph(XHSGrowthState)
 
     # ── 添加节点 ──
-    builder.add_node("orchestrator", orchestrator_node, retry_policy=get_retry_policy("orchestrator"))
-    builder.add_node("trend_scout", trend_scout_node, retry_policy=get_retry_policy("trend_scout"))
-    builder.add_node("content_strategist", content_strategist_node, retry_policy=get_retry_policy("content_strategist"))
-    builder.add_node("copywriter", copywriter_node, retry_policy=get_retry_policy("copywriter"))
-    builder.add_node("visual_designer", visual_designer_node, retry_policy=get_retry_policy("visual_designer"))
+    builder.add_node(
+        "orchestrator", orchestrator_node,
+        retry_policy=get_retry_policy("orchestrator"),
+    )
+    builder.add_node(
+        "trend_scout", trend_scout_node,
+        retry_policy=get_retry_policy("trend_scout"),
+    )
+    builder.add_node(
+        "content_strategist", content_strategist_node,
+        retry_policy=get_retry_policy("content_strategist"),
+    )
+    builder.add_node(
+        "copywriter", copywriter_node,
+        retry_policy=get_retry_policy("copywriter"),
+    )
+    builder.add_node(
+        "visual_designer", visual_designer_node,
+        retry_policy=get_retry_policy("visual_designer"),
+    )
     builder.add_node("review_gate", review_gate_node, retry_policy=get_retry_policy("review_gate"))
     builder.add_node("publisher", publisher_node, retry_policy=get_retry_policy("publisher"))
     builder.add_node("analyst", analyst_node, retry_policy=get_retry_policy("analyst"))
@@ -150,6 +165,7 @@ def build_graph() -> StateGraph:
         should_continue,
         {
             "orchestrator": "orchestrator",
+            "engagement": "engagement",
             "__end__": END,
         },
     )

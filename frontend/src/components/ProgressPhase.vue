@@ -3,34 +3,22 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLoading } from '@/composables/useLoading'
 import AnimatedCounter from '@/components/AnimatedCounter.vue'
-import type { WorkflowPhase } from '@/types'
+import type { WorkflowPhase, WorkflowStatus } from '@/types'
 
 const { t } = useI18n()
 
 interface Props {
   percent: number
   currentPhase?: WorkflowPhase
+  currentStatus?: WorkflowStatus
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  currentPhase: 'idle'
+  currentPhase: 'idle',
+  currentStatus: 'running',
 })
 
 const { phaseToColor } = useLoading()
-
-const phaseLabels: Record<string, string> = {
-  idle: t('dashboard.phase.idle'),
-  scouting: t('dashboard.phase.scouting'),
-  planning: t('dashboard.phase.planning'),
-  creating: t('dashboard.phase.creating'),
-  reviewing: t('dashboard.phase.reviewing'),
-  publishing: t('dashboard.phase.publishing'),
-  analyzing: t('dashboard.phase.analyzing'),
-  engaging: t('dashboard.phase.engaging'),
-  completed: t('dashboard.phase.completed'),
-  error: t('dashboard.phase.error'),
-  cancelled: t('dashboard.phase.cancelled'),
-}
 
 const progressColor = computed(() => {
   return phaseToColor(props.currentPhase)
@@ -40,7 +28,15 @@ const progressWidth = computed(() => {
   return `${props.percent}%`
 })
 
-const phaseDisplay = computed(() => phaseLabels[props.currentPhase] || props.currentPhase)
+const phaseDisplay = computed(() => {
+  if (props.currentStatus === 'awaiting_draft') return t('dashboard.phase.awaitingDraft')
+  if (props.currentStatus === 'awaiting_choice') return t('dashboard.phase.awaitingChoice')
+  if (props.currentStatus === 'awaiting_review') return t('dashboard.phase.awaitingReview')
+
+  const key = `dashboard.phase.${props.currentPhase}`
+  const translated = t(key)
+  return translated !== key ? translated : props.currentPhase
+})
 </script>
 
 <template>
@@ -51,6 +47,7 @@ const phaseDisplay = computed(() => phaseLabels[props.currentPhase] || props.cur
         :style="{ width: progressWidth, background: progressColor }"
         role="progressbar"
         :aria-valuenow="percent"
+        :aria-valuetext="`${phaseDisplay} ${percent}%`"
         aria-valuemin="0"
         aria-valuemax="100"
       />

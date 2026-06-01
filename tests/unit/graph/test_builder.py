@@ -50,6 +50,13 @@ class TestBuildGraph:
         # This is implicit in the graph structure
         assert "orchestrator" in graph.nodes
 
+    def test_analyst_can_route_to_engagement(self):
+        """Analyst routing includes every branch returned by should_continue."""
+        graph = build_graph()
+
+        ends = graph.branches["analyst"]["should_continue"].ends
+        assert ends["engagement"] == "engagement"
+
 
 class TestCompileGraphDev:
     """Tests for dev graph compilation."""

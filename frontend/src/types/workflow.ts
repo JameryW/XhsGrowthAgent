@@ -1,3 +1,5 @@
+import type { ContentVersion, DraftContent, OptimizationAnalysis } from './optimization'
+
 // Workflow phase - matches backend WorkflowPhase enum
 export type WorkflowPhase =
   | 'idle'
@@ -18,6 +20,7 @@ export type WorkflowStatus =
   | 'running'
   | 'awaiting_review'
   | 'awaiting_choice'
+  | 'awaiting_draft'
   | 'paused'
   | 'completed'
   | 'error'
@@ -52,7 +55,7 @@ export interface WorkflowListItem {
   thread_id: string
   account_id: string
   phase: WorkflowPhase
-  status: 'running' | 'completed' | 'error' | 'cancelled'
+  status: WorkflowStatus
   dry_run: boolean
   auto_publish: boolean
   progress_percent: number
@@ -197,6 +200,9 @@ export interface WorkflowState {
   trend_data?: TrendData
   content_plan?: ContentPlan
   copy_content?: CopyContent
+  draft_content?: DraftContent
+  optimization_analysis?: OptimizationAnalysis
+  content_versions?: ContentVersion[]
   visual_plan?: VisualPlan
   ripple_prediction?: RipplePrediction
   ripple_pmf?: RipplePMFResult
@@ -231,6 +237,9 @@ export interface WorkflowStateResponse {
   trend_data?: TrendData
   content_plan?: ContentPlan
   copy_content?: CopyContent
+  draft_content?: DraftContent
+  optimization_analysis?: OptimizationAnalysis
+  content_versions?: ContentVersion[]
   visual_plan?: VisualPlan
   publish_result?: Record<string, unknown>
   analytics?: Record<string, unknown>

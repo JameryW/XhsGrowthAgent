@@ -43,7 +43,16 @@ export const useOptimizationStore = defineStore('optimization', () => {
     const threadId = getThreadId()
     if (msg.thread_id === threadId) {
       const p = msg.payload as { data_type?: string; data?: unknown }
-      if (p.data_type && p.data) {
+      if (!p.data_type && p.data && typeof p.data === 'object') {
+        const choiceData = p.data as {
+          versions?: ContentVersion[]
+          draft?: DraftContent
+          analysis?: OptimizationAnalysis
+        }
+        if (choiceData.versions) contentVersions.value = choiceData.versions
+        if (choiceData.draft) draftContent.value = choiceData.draft
+        if (choiceData.analysis) optimizationAnalysis.value = choiceData.analysis
+      } else if (p.data_type && p.data) {
         switch (p.data_type) {
           case 'draft_content':
             draftContent.value = p.data as DraftContent
@@ -70,7 +79,8 @@ export const useOptimizationStore = defineStore('optimization', () => {
 
   // Actions
   async function submitDraft(draft: DraftContent, viralLinks: string[]) {
-    const threadId = getThreadId()
+    const workflowStore = useWorkflowStore()
+    const threadId = workflowStore.currentThreadId
     if (!threadId) {
       error.value = 'No active workflow thread'
       return
@@ -88,6 +98,8 @@ export const useOptimizationStore = defineStore('optimization', () => {
         hashtags: draft.hashtags || [],
         viral_links: viralLinks || [],
       })
+      await workflowStore.refreshStatus()
+      if (workflowStore.isRunning) workflowStore.startPolling()
     } catch (e: any) {
       error.value = e.message
       throw e
@@ -97,7 +109,8 @@ export const useOptimizationStore = defineStore('optimization', () => {
   }
 
   async function selectVersion(choice: VersionChoice) {
-    const threadId = getThreadId()
+    const workflowStore = useWorkflowStore()
+    const threadId = workflowStore.currentThreadId
     if (!threadId) {
       error.value = 'No active workflow thread'
       return
@@ -112,6 +125,8 @@ export const useOptimizationStore = defineStore('optimization', () => {
         version_id: choice.version_id,
         version_type: choice.selected_version,
       })
+      await workflowStore.refreshStatus()
+      if (workflowStore.isRunning) workflowStore.startPolling()
     } catch (e: any) {
       error.value = e.message
       throw e

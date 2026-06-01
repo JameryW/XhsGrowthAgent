@@ -80,11 +80,14 @@ def _emit_status_transition(
     bus = EventBusService.get_instance()
 
     # Build payload — snapshot enrichment placeholder
-    payload: dict[str, Any] = {}
+    payload: dict[str, Any] = {
+        "status": new_status.value,
+    }
     if snapshot is not None:
         values = snapshot.values or {}
         payload["phase"] = values.get("phase")
         payload["current_agent"] = values.get("current_agent")
+        payload["next_steps"] = list(snapshot.next) if snapshot.next else []
 
     if new_status == WorkflowStatus.AWAITING_REVIEW:
         # Enrich payload with content data so frontend can display review UI

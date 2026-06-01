@@ -25,12 +25,26 @@ async def draft_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[st
     _check_cancelled(state)
 
     draft_content = state.get("draft_content")
+    copy_content = state.get("copy_content") or {}
 
     # If draft already exists, skip interrupt and proceed
-    if draft_content and draft_content.get("title"):
+    if draft_content and draft_content.get("text"):
         logger.debug("Draft content already present, skipping draft_gate interrupt")
         return NodeResult({
             "phase": WorkflowPhase.CREATING,
+        }, "draft_gate").to_dict()
+
+    # Generated copy is a valid default draft. The user can still edit it from
+    # the UI, but the workflow should not require retyping AI-generated copy.
+    if copy_content.get("body_text"):
+        logger.debug("Using generated copy_content as default draft")
+        return NodeResult({
+            "phase": WorkflowPhase.CREATING,
+            "draft_content": {
+                "title": copy_content.get("selected_title") or "",
+                "text": copy_content.get("body_text") or "",
+                "hashtags": copy_content.get("hashtags") or [],
+            },
         }, "draft_gate").to_dict()
 
     # No draft - interrupt and wait for user submission

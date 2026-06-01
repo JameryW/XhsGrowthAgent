@@ -119,6 +119,75 @@ def _emit_status_transition(new_status: WorkflowStatus, thread_id: str) -> None:
     _runner._emit_status_transition(new_status, thread_id)
 
 
+def _resume_phase_for_next_nodes(
+    next_nodes: tuple[str, ...],
+    fallback: str | WorkflowPhase,
+) -> str | WorkflowPhase:
+    """Infer a non-terminal phase when retrying from a checkpointed next node."""
+    phase_by_node: dict[str, WorkflowPhase] = {
+        "orchestrator": WorkflowPhase.SCOUTING,
+        "trend_scout": WorkflowPhase.SCOUTING,
+        "content_strategist": WorkflowPhase.PLANNING,
+        "copywriter": WorkflowPhase.CREATING,
+        "draft_gate": WorkflowPhase.CREATING,
+        "viral_matcher": WorkflowPhase.CREATING,
+        "content_analyzer": WorkflowPhase.CREATING,
+        "version_generator": WorkflowPhase.CREATING,
+        "choice_gate": WorkflowPhase.CREATING,
+        "visual_designer": WorkflowPhase.CREATING,
+        "review_gate": WorkflowPhase.REVIEWING,
+        "revise_content": WorkflowPhase.REVIEWING,
+        "publisher": WorkflowPhase.PUBLISHING,
+        "analyst": WorkflowPhase.ANALYZING,
+        "engagement": WorkflowPhase.ENGAGING,
+    }
+    for node in next_nodes:
+        if node in phase_by_node:
+            return phase_by_node[node]
+    return fallback
+
+
+def _persisted_status(phase: str | WorkflowPhase, error: str | None = None) -> str:
+    """Derive status for persisted history/registry records without live snapshot."""
+    if phase == WorkflowPhase.ERROR or error:
+        return WorkflowStatus.ERROR.value
+    if phase == WorkflowPhase.CANCELLED:
+        return WorkflowStatus.CANCELLED.value
+    if phase == WorkflowPhase.PAUSED:
+        return WorkflowStatus.PAUSED.value
+    if phase == WorkflowPhase.COMPLETED:
+        return WorkflowStatus.COMPLETED.value
+    return WorkflowStatus.RUNNING.value
+
+
+async def _start_resume_task(
+    thread_id: str,
+    graph,
+    config: dict,
+    phase: str | WorkflowPhase,
+) -> None:
+    """Mark a workflow running and resume graph execution in the background."""
+    now = datetime.now(UTC).isoformat()
+    entry = _workflow_registry.setdefault(thread_id, {
+        "thread_id": thread_id,
+        "created_at": now,
+        "progress_percent": 0,
+    })
+    entry["status"] = "running"
+    entry["phase"] = phase
+    entry["error"] = None
+    entry["updated_at"] = now
+    _save_registry()
+
+    async def _resume_async():
+        await _runner._run_graph_and_persist(
+            thread_id, graph, config, None, source="resume",
+        )
+
+    task = asyncio.create_task(_resume_async())
+    _background_tasks[thread_id] = task
+
+
 class WorkflowStartRequest(BaseModel):
     account_id: str = Field(default="default", description="账号 ID")
     phase: WorkflowPhase = Field(default=WorkflowPhase.SCOUTING, description="起始阶段")
@@ -157,6 +226,9 @@ class WorkflowStatusResponse(BaseModel):
     trend_data: dict = Field(default_factory=dict, description="趋势发现数据")
     content_plan: dict = Field(default_factory=dict, description="内容策略")
     copy_content: dict = Field(default_factory=dict, description="文案内容")
+    draft_content: dict = Field(default_factory=dict, description="用户草稿内容")
+    optimization_analysis: dict = Field(default_factory=dict, description="优化分析")
+    content_versions: list[dict] = Field(default_factory=list, description="优化版本")
     visual_plan: dict = Field(default_factory=dict, description="视觉方案")
     publish_result: dict = Field(default_factory=dict, description="发布结果")
     analytics: dict = Field(default_factory=dict, description="分析数据")
@@ -364,6 +436,9 @@ async def get_workflow_status(thread_id: str, request: Request):
             trend_data=state.values.get("trend_data") or {},
             content_plan=state.values.get("content_plan") or {},
             copy_content=state.values.get("copy_content") or {},
+            draft_content=state.values.get("draft_content") or {},
+            optimization_analysis=state.values.get("optimization_analysis") or {},
+            content_versions=state.values.get("content_versions") or [],
             visual_plan=state.values.get("visual_plan") or {},
             publish_result=state.values.get("publish_result") or {},
             analytics=state.values.get("analytics") or {},
@@ -391,6 +466,7 @@ async def get_workflow_status(thread_id: str, request: Request):
         return success(data=WorkflowStatusResponse(
             thread_id=thread_id,
             phase=phase,
+            status=_persisted_status(phase, saved.get("error")),
             current_agent=saved.get("current_agent", "unknown"),
             next_steps=[],
             error=saved.get("error"),
@@ -401,6 +477,9 @@ async def get_workflow_status(thread_id: str, request: Request):
             trend_data=saved.get("trend_data") or {},
             content_plan=saved.get("content_plan") or {},
             copy_content=saved.get("copy_content") or {},
+            draft_content=saved.get("draft_content") or {},
+            optimization_analysis=saved.get("optimization_analysis") or {},
+            content_versions=saved.get("content_versions") or [],
             visual_plan=saved.get("visual_plan") or {},
             publish_result=saved.get("publish_result") or {},
             analytics=saved.get("analytics") or {},
@@ -415,6 +494,10 @@ async def get_workflow_status(thread_id: str, request: Request):
         return success(data=WorkflowStatusResponse(
             thread_id=thread_id,
             phase=meta.get("phase", "unknown"),
+            status=meta.get("status") or _persisted_status(
+                meta.get("phase", "unknown"),
+                meta.get("error"),
+            ),
             current_agent="unknown",
             next_steps=[],
             error=meta.get("error"),
@@ -470,11 +553,12 @@ async def pause_workflow(thread_id: str, request: Request):
 
 @router.post("/resume/{thread_id}")
 async def resume_workflow(thread_id: str, request: Request):
-    """恢复暂停的工作流
+    """恢复暂停或可重试错误的工作流
 
-    清除暂停标志并重新启动工作流执行。
-    Only resumes from "paused" status. For "awaiting_review" or "awaiting_choice",
-    use the review/select endpoints instead.
+    清除暂停/错误标志并重新启动工作流执行。
+    Resumes from "paused" status, or from an "error" status if LangGraph still
+    has checkpointed next nodes. For awaiting states, use the matching submit
+    endpoint instead.
     """
     # Validate thread_id
     if not thread_id or thread_id.strip() == "":
@@ -487,7 +571,36 @@ async def resume_workflow(thread_id: str, request: Request):
 
     # Check if workflow exists
     if not state.values or state.values.get("session_id") is None:
-        raise WorkflowNotFoundError(thread_id)
+        saved = _load_workflow_result(thread_id)
+        if not saved or saved.get("phase") != WorkflowPhase.ERROR:
+            raise WorkflowNotFoundError(thread_id)
+
+        resume_node = saved.get("current_agent")
+        if not resume_node or resume_node == "unknown":
+            return success(data={
+                "thread_id": thread_id,
+                "status": "error",
+                "message": "工作流错误历史缺少可恢复节点，无法恢复。",
+            })
+
+        prev_phase = _resume_phase_for_next_nodes(
+            (resume_node,),
+            saved.get("prev_phase") or WorkflowPhase.CREATING,
+        )
+        restored_state = {
+            **saved,
+            "phase": prev_phase,
+            "error": None,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+        await graph.aupdate_state(config, restored_state, as_node=resume_node)
+        await _start_resume_task(thread_id, graph, config, prev_phase)
+
+        return success(data={
+            "thread_id": thread_id,
+            "status": "running",
+            "phase": prev_phase,
+        })
 
     # Derive current status for guard checks
     derived = derive_status(state)
@@ -516,36 +629,31 @@ async def resume_workflow(thread_id: str, request: Request):
             "message": "工作流正在等待草稿提交，请使用 /api/optimization/draft 端点提交草稿",
         })
 
-    # Only allow resume from paused status
-    if derived != WorkflowStatus.PAUSED:
+    next_nodes = tuple(state.next or ())
+    can_retry_error = derived == WorkflowStatus.ERROR and bool(next_nodes)
+
+    # Only allow resume from paused status or a checkpointed error with next nodes
+    if derived != WorkflowStatus.PAUSED and not can_retry_error:
         return success(data={
             "thread_id": thread_id,
             "status": str(derived.value),
             "message": (
                 f"工作流当前状态为 {derived.value}，无法恢复。"
-                "只有暂停状态的工作流可以恢复。"
+                "只有暂停状态或仍有可重试节点的错误状态可以恢复。"
             ),
         })
 
-    # Restore prev_phase before resuming
-    prev_phase = state.values.get("prev_phase") or "scouting"
-    await graph.aupdate_state(config, {"phase": prev_phase})
-
-    # Update registry to running
-    if thread_id in _workflow_registry:
-        _workflow_registry[thread_id]["status"] = "running"
-        _workflow_registry[thread_id]["phase"] = prev_phase
-        _workflow_registry[thread_id]["updated_at"] = datetime.now(UTC).isoformat()
-        _save_registry()
-
-    # Resume via _run_graph_and_persist
-    async def _resume_async():
-        await _runner._run_graph_and_persist(
-            thread_id, graph, config, None, source="resume",
+    # Restore prev_phase before resuming, or infer it from the next checkpointed node
+    if can_retry_error:
+        prev_phase = _resume_phase_for_next_nodes(
+            next_nodes,
+            state.values.get("prev_phase") or WorkflowPhase.CREATING,
         )
+    else:
+        prev_phase = state.values.get("prev_phase") or WorkflowPhase.SCOUTING
+    await graph.aupdate_state(config, {"phase": prev_phase, "error": None})
 
-    task = asyncio.create_task(_resume_async())
-    _background_tasks[thread_id] = task
+    await _start_resume_task(thread_id, graph, config, prev_phase)
 
     return success(data={
         "thread_id": thread_id,

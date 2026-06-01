@@ -66,6 +66,22 @@ async def test_viral_matcher_with_links(mock_state, mock_store):
 
 
 @pytest.mark.asyncio
+async def test_viral_matcher_timeout_skips_optimization(mock_state, mock_store):
+    """Should skip optional optimization when viral matching fails."""
+    agent = ViralMatcherAgent()
+
+    mock_model = MagicMock()
+    mock_model.ainvoke = AsyncMock(side_effect=TimeoutError("Request timed out."))
+
+    with patch.object(agent, '_model', mock_model):
+        result = await agent.execute(mock_state, mock_store)
+
+    assert result["viral_posts"] == []
+    assert result["skip_optimization"] is True
+    assert "Request timed out." in result["optimization_error"]
+
+
+@pytest.mark.asyncio
 async def test_viral_matcher_auto_keywords(mock_store):
     """Should use trend data keywords for auto-search."""
     agent = ViralMatcherAgent()
