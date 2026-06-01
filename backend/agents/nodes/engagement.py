@@ -23,7 +23,18 @@ async def engagement_node(state: XHSGrowthState, *, store: BaseStore) -> dict[st
         EventBusService.get_instance().emit(
             EventType.WORKFLOW_COMPLETED,
             thread_id=state.get("session_id"),
-            payload={"phase": "completed"},
+            payload={
+                "phase": "completed",
+                "copy_content": state.get("copy_content"),
+                "trend_data": state.get("trend_data"),
+                "content_plan": state.get("content_plan"),
+                "visual_plan": state.get("visual_plan"),
+                "publish_result": state.get("publish_result"),
+                "analytics": state.get("analytics"),
+                "ripple_prediction": state.get("ripple_prediction"),
+                "ripple_pmf": state.get("ripple_pmf"),
+                "ripple_comparison": state.get("ripple_comparison"),
+            },
         )
 
     return NodeResult(result, "engagement").to_dict()

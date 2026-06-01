@@ -40,7 +40,17 @@ async def publisher_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str
         event_bus.emit(
             EventType.WORKFLOW_COMPLETED,
             thread_id=thread_id,
-            payload={"publish_result": result.get("publish_result")},
+            payload={
+                "publish_result": result.get("publish_result"),
+                "copy_content": state.get("copy_content"),
+                "trend_data": state.get("trend_data"),
+                "content_plan": state.get("content_plan"),
+                "visual_plan": state.get("visual_plan"),
+                "analytics": state.get("analytics"),
+                "ripple_prediction": state.get("ripple_prediction"),
+                "ripple_pmf": state.get("ripple_pmf"),
+                "ripple_comparison": state.get("ripple_comparison"),
+            },
         )
 
     return NodeResult(result, "publisher").to_dict()
