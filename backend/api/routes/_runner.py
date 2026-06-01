@@ -116,6 +116,18 @@ def _emit_status_transition(
             payload=payload,
         )
 
+    elif new_status == WorkflowStatus.AWAITING_DRAFT:
+        # Enrich payload with copy_content for draft UI
+        if snapshot is not None:
+            values = snapshot.values or {}
+            payload["copy_content"] = values.get("copy_content", {})
+            payload["content_plan"] = values.get("content_plan", {})
+        bus.emit(
+            EventType.WORKFLOW_DATA_UPDATED,
+            thread_id=thread_id,
+            payload=payload,
+        )
+
 
 def _status_to_str(
     derived: WorkflowStatus,
@@ -129,6 +141,7 @@ def _status_to_str(
         WorkflowStatus.COMPLETED: "completed",
         WorkflowStatus.AWAITING_REVIEW: "awaiting_review",
         WorkflowStatus.AWAITING_CHOICE: "awaiting_choice",
+        WorkflowStatus.AWAITING_DRAFT: "awaiting_draft",
         WorkflowStatus.PAUSED: "paused",
         WorkflowStatus.RUNNING: "running",
     }
@@ -147,7 +160,7 @@ async def _run_graph_and_persist(
     config: dict,
     input_data: Any,  # initial_state dict, None (for resume), or Command
     *,
-    source: str = "start",  # for logging: "start", "resume", "review", "select"
+    source: str = "start",  # for logging: "start", "resume", "review", "select", "draft"
 ) -> dict:
     """Unified graph execution + status persistence + event emission.
 

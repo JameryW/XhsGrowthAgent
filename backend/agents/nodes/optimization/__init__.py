@@ -2,6 +2,7 @@
 
 from backend.agents.nodes.optimization.choice_gate import choice_gate_node
 from backend.agents.nodes.optimization.content_analyzer import content_analyzer_node
+from backend.agents.nodes.optimization.draft_gate import draft_gate_node
 from backend.agents.nodes.optimization.version_generator import version_generator_node
 from backend.agents.nodes.optimization.viral_matcher import viral_matcher_node
 
@@ -10,4 +11,5 @@ __all__ = [
     "content_analyzer_node",
     "version_generator_node",
     "choice_gate_node",
+    "draft_gate_node",
 ]

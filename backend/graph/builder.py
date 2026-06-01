@@ -15,6 +15,7 @@ from backend.agents.nodes import (
     content_analyzer_node,
     content_strategist_node,
     copywriter_node,
+    draft_gate_node,
     engagement_node,
     orchestrator_node,
     publisher_node,
@@ -54,6 +55,7 @@ def build_graph() -> StateGraph:
     builder.add_node("engagement", engagement_node, retry_policy=get_retry_policy("engagement"))
     builder.add_node("revise_content", revise_content_node)
     # 发布前优化节点
+    builder.add_node("draft_gate", draft_gate_node)
     builder.add_node("viral_matcher", viral_matcher_node)
     builder.add_node("content_analyzer", content_analyzer_node)
     builder.add_node("version_generator", version_generator_node)
@@ -89,8 +91,11 @@ def build_graph() -> StateGraph:
     builder.add_edge("content_strategist", "copywriter")
 
     # ── 发布前优化流程 ──
-    # copywriter → viral_matcher (搜索爆款参考)
-    builder.add_edge("copywriter", "viral_matcher")
+    # copywriter → draft_gate (wait for user draft if needed)
+    builder.add_edge("copywriter", "draft_gate")
+
+    # draft_gate → viral_matcher (search for viral references)
+    builder.add_edge("draft_gate", "viral_matcher")
 
     # viral_matcher → [content_analyzer | visual_designer] (条件路由)
     builder.add_conditional_edges(

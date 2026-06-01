@@ -27,7 +27,7 @@ class VersionChoice(BaseModel):
 
 @router.post("/draft/{thread_id}")
 async def submit_draft(thread_id: str, draft: DraftSubmission, request: Request):
-    """提交用户草稿 — 更新状态."""
+    """Submit user draft — update state and resume graph if interrupted at draft_gate."""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
 
@@ -38,10 +38,21 @@ async def submit_draft(thread_id: str, draft: DraftSubmission, request: Request)
     if not state.values or state.values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
+    # Write draft content and viral links to state
     await graph.aupdate_state(config, {
         "draft_content": draft.model_dump(),
         "user_viral_links": draft.viral_links,
     })
+
+    # If graph is interrupted at draft_gate, resume it via _run_graph_and_persist
+    if "draft_gate" in state.next:
+        result = await _runner._run_graph_and_persist(
+            thread_id, graph, config,
+            Command(resume=draft.model_dump()),
+            source="draft",
+        )
+        next_phase = result.get("phase", "unknown") if result else "unknown"
+        return success(data={"thread_id": thread_id, "status": "resumed", "next_phase": next_phase})
 
     return success(data={"thread_id": thread_id, "status": "draft_submitted"})
 

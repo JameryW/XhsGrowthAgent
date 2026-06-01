@@ -508,6 +508,14 @@ async def resume_workflow(thread_id: str, request: Request):
             "message": "工作流正在等待版本选择，请使用 /api/optimization/select 端点选择版本",
         })
 
+    # Guard: if awaiting draft, tell client to use draft endpoint
+    if derived == WorkflowStatus.AWAITING_DRAFT:
+        return success(data={
+            "thread_id": thread_id,
+            "status": "awaiting_draft",
+            "message": "工作流正在等待草稿提交，请使用 /api/optimization/draft 端点提交草稿",
+        })
+
     # Only allow resume from paused status
     if derived != WorkflowStatus.PAUSED:
         return success(data={
