@@ -69,9 +69,12 @@ class TestCompileGraphDev:
         assert graph.checkpointer is not None
 
     def test_compile_graph_dev_uses_interrupt_before(self):
-        """Dev graph uses interrupt_before for review_gate and choice_gate."""
+        """Dev graph uses interrupt_before for review_gate only.
+
+        choice_gate uses a conditional edge (should_present_choice) so only
+        enters when multiple versions exist; the node calls interrupt() itself.
+        """
         graph = compile_graph_dev()
 
-        # interrupt_before contains the gate nodes
         assert "review_gate" in graph.interrupt_before_nodes
-        assert "choice_gate" in graph.interrupt_before_nodes
+        assert "choice_gate" not in graph.interrupt_before_nodes

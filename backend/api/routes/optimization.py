@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from backend.api.errors import ChoiceNotPendingError, ValidationError, WorkflowNotFoundError
 from backend.api.responses import success
+from backend.api.routes import _runner
 
 router = APIRouter()
 
@@ -62,7 +63,11 @@ async def select_version(thread_id: str, choice: VersionChoice, request: Request
         current_phase = state.values.get("phase", "unknown")
         raise ChoiceNotPendingError(thread_id=thread_id, current_phase=current_phase)
 
-    result = await graph.ainvoke(Command(resume=choice.model_dump()), config)
+    result = await _runner._run_graph_and_persist(
+        thread_id, graph, config,
+        Command(resume=choice.model_dump()),
+        source="select",
+    )
     next_phase = result.get("phase", "unknown") if result else "unknown"
 
     return success(data={"thread_id": thread_id, "status": "resumed", "next_phase": next_phase})

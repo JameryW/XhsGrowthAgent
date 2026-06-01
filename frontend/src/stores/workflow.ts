@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import * as workflowApi from '@/api/workflow'
-import type { WorkflowStateResponse, WorkflowPhase } from '@/types/workflow'
+import type { WorkflowStateResponse, WorkflowPhase, WorkflowStatus } from '@/types/workflow'
 import { useRealtimeStore } from './realtime'
 import { useToastStore } from './toast'
 import { useOfflineStore } from './offline'
@@ -25,16 +25,28 @@ export const useWorkflowStore = defineStore('workflow', () => {
     workflowState.value?.phase || 'idle'
   )
 
+  const currentStatus = computed<WorkflowStatus>(() =>
+    workflowState.value?.status || 'running'
+  )
+
   const nextNodes = computed(() => workflowState.value?.next_steps || [])
 
   const isRunning = computed(() =>
-    (workflowState.value?.next_steps?.length ?? 0) > 0 && currentPhase.value !== 'completed'
+    currentStatus.value === 'running'
   )
 
-  const trendData = computed(() => (workflowState.value as any)?.trend_data || {})
-  const contentPlan = computed(() => (workflowState.value as any)?.content_plan || {})
-  const copyContent = computed(() => (workflowState.value as any)?.copy_content || {})
-  const visualPlan = computed(() => (workflowState.value as any)?.visual_plan || {})
+  const isAwaitingReview = computed(() =>
+    currentStatus.value === 'awaiting_review'
+  )
+
+  const isAwaitingChoice = computed(() =>
+    currentStatus.value === 'awaiting_choice'
+  )
+
+  const trendData = computed(() => workflowState.value?.trend_data || {})
+  const contentPlan = computed(() => workflowState.value?.content_plan || {})
+  const copyContent = computed(() => workflowState.value?.copy_content || {})
+  const visualPlan = computed(() => workflowState.value?.visual_plan || {})
   const agentTimeline = computed(() => workflowState.value?.agent_timeline || [])
 
   // Ripple CAS engine results
@@ -119,6 +131,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       workflowState.value = {
         ...workflowState.value,
         phase: 'completed',
+        status: 'completed',
         next_steps: [],
       }
       updateProgressFromPhase('completed')
@@ -132,6 +145,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       workflowState.value = {
         ...workflowState.value,
         phase: 'error',
+        status: 'error',
         error: p.error,
       }
       updateProgressFromPhase('error')
@@ -234,18 +248,17 @@ export const useWorkflowStore = defineStore('workflow', () => {
     error.value = null
     try {
       workflowState.value = await workflowApi.getWorkflowStatus(currentThreadId.value)
-      // Use backend progress_percent when available, fallback to local mapping
+      // Use status from backend for stale workflow detection
+      const status = workflowState.value?.status || 'running'
       const phase = workflowState.value?.phase || 'idle'
       const backendProgress = workflowState.value?.progress_percent
       updateProgressFromPhase(phase as WorkflowPhase, backendProgress)
-      // Stale/errored workflow: phase is active or error but next_steps is empty and no agent running,
-      // or phase is error — these are dead workflows that should not block the UI
-      const activePhases: WorkflowPhase[] = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging']
+      // Stale/errored workflow: status is running but no next_steps and no agent, or error status
       if (
-        (activePhases.includes(phase as WorkflowPhase) &&
+        (status === 'running' &&
         (workflowState.value?.next_steps?.length ?? 0) === 0 &&
         !workflowState.value?.current_agent) ||
-        phase === 'error'
+        status === 'error'
       ) {
         currentThreadId.value = null
         workflowState.value = null
@@ -310,6 +323,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       workflowState.value = {
         ...workflowState.value,
         phase: 'cancelled',
+        status: 'cancelled',
         next_steps: [],
       } as WorkflowStateResponse
       updateProgressFromPhase('cancelled')
@@ -356,8 +370,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
     progressPercent,
     isOverlayLoading,
     currentPhase,
+    currentStatus,
     nextNodes,
     isRunning,
+    isAwaitingReview,
+    isAwaitingChoice,
     trendData,
     contentPlan,
     copyContent,

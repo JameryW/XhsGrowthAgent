@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import fcntl
 import json
 import os
@@ -16,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from backend.api.errors import ValidationError, WorkflowNotFoundError
 from backend.api.responses import success
+from backend.api.routes import _runner
 from backend.realtime import EventBusService
 from backend.realtime.events import EventType
 from backend.state.enums import WorkflowPhase
@@ -106,31 +108,15 @@ _background_tasks: dict[str, asyncio.Task] = {}
 # Track last known status per thread to detect transitions
 _last_status: dict[str, WorkflowStatus] = {}
 
+# Bind shared mutable state into _runner so it can access registry/persistence
+_runner.bind_registry(_workflow_registry, _background_tasks, _last_status)
+_runner._save_registry_fn = _save_registry
+_runner._save_workflow_result_fn = _save_workflow_result
+
 
 def _emit_status_transition(new_status: WorkflowStatus, thread_id: str) -> None:
-    """Emit events when workflow status transitions to awaiting_review or awaiting_choice.
-
-    This replaces event emission that was previously done inside interrupt nodes,
-    which caused double emission on resume (Gap 3 fix).
-    """
-    old_status = _last_status.get(thread_id)
-    if old_status == new_status:
-        return  # No transition, skip
-    _last_status[thread_id] = new_status
-
-    bus = EventBusService.get_instance()
-    if new_status == WorkflowStatus.AWAITING_REVIEW:
-        bus.emit(
-            EventType.REVIEW_PENDING,
-            thread_id=thread_id,
-            payload={"gate": "review"},
-        )
-    elif new_status == WorkflowStatus.AWAITING_CHOICE:
-        bus.emit(
-            EventType.WORKFLOW_DATA_UPDATED,
-            thread_id=thread_id,
-            payload={"data_type": "choice_pending", "data": {}},
-        )
+    """Emit events when workflow status transitions — delegates to _runner."""
+    _runner._emit_status_transition(new_status, thread_id)
 
 
 class WorkflowStartRequest(BaseModel):
@@ -269,54 +255,12 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
 
     if req.async_mode:
         # 异步启动（立即返回，后台执行）
-        async def _run_and_persist():
-            try:
-                result = await graph.ainvoke(initial_state, config)
-                final_phase = result.get("phase", "unknown")
-                has_error = result.get("error")
-                # Use derive_status for consistent status derivation
-                snapshot = await graph.aget_state(config)
-                derived = derive_status(snapshot)
-                # Emit status transition events (e.g. awaiting_review, awaiting_choice)
-                _emit_status_transition(derived, thread_id)
-                if derived == WorkflowStatus.ERROR:
-                    final_status = "error"
-                elif derived == WorkflowStatus.CANCELLED:
-                    final_status = "cancelled"
-                elif derived == WorkflowStatus.COMPLETED:
-                    final_status = "completed"
-                elif derived == WorkflowStatus.AWAITING_REVIEW:
-                    final_status = "awaiting_review"
-                elif derived == WorkflowStatus.AWAITING_CHOICE:
-                    final_status = "awaiting_choice"
-                elif derived == WorkflowStatus.PAUSED:
-                    final_status = "paused"
-                else:
-                    # Phase stuck at early stage with error = premature termination
-                    final_status = (
-                        "error"
-                        if (has_error or final_phase in ("scouting", "error"))
-                        else "completed"
-                    )
-                _workflow_registry[thread_id]["phase"] = final_phase
-                _workflow_registry[thread_id]["status"] = final_status
-                progress = 100 if final_status == "completed" else 0
-                _workflow_registry[thread_id]["progress_percent"] = progress
-                _workflow_registry[thread_id]["error"] = has_error
-                _save_registry()
-                _save_workflow_result(thread_id, result)
-            except asyncio.CancelledError:
-                _workflow_registry[thread_id]["status"] = "cancelled"
-                _workflow_registry[thread_id]["error"] = "Task cancelled"
-                _save_registry()
-            except Exception as exc:
-                _workflow_registry[thread_id]["status"] = "error"
-                _workflow_registry[thread_id]["error"] = str(exc)
-                _save_registry()
-            finally:
-                _background_tasks.pop(thread_id, None)
+        async def _run_async():
+            await _runner._run_graph_and_persist(
+                thread_id, graph, config, initial_state, source="start",
+            )
 
-        task = asyncio.create_task(_run_and_persist())
+        task = asyncio.create_task(_run_async())
         _background_tasks[thread_id] = task
         return success(data={
             "thread_id": thread_id,
@@ -328,28 +272,16 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
         })
     else:
         # 同步执行（等待完成）
-        result = await graph.ainvoke(initial_state, config)
-        # Use derive_status for consistent status derivation
-        snapshot = await graph.aget_state(config)
-        derived = derive_status(snapshot)
-        final_status_map = {
-            WorkflowStatus.ERROR: "error",
-            WorkflowStatus.CANCELLED: "cancelled",
-            WorkflowStatus.COMPLETED: "completed",
-            WorkflowStatus.AWAITING_REVIEW: "awaiting_review",
-            WorkflowStatus.AWAITING_CHOICE: "awaiting_choice",
-            WorkflowStatus.PAUSED: "paused",
-            WorkflowStatus.RUNNING: "running",
-        }
-        final_status = final_status_map.get(derived, "completed")
-        final_phase = result.get("phase", "unknown")
-        _workflow_registry[thread_id]["phase"] = final_phase
-        _workflow_registry[thread_id]["status"] = final_status
-        progress = 100 if final_status == "completed" else 0
-        _workflow_registry[thread_id]["progress_percent"] = progress
-        _workflow_registry[thread_id]["error"] = result.get("error")
-        _save_registry()
-        _save_workflow_result(thread_id, result)
+        with contextlib.suppress(asyncio.CancelledError):
+            await _runner._run_graph_and_persist(
+                thread_id, graph, config, initial_state, source="start",
+            )
+
+        # Read final status from registry (set by _run_graph_and_persist)
+        reg_entry = _workflow_registry.get(thread_id, {})
+        final_status = reg_entry.get("status", "completed")
+        final_phase = reg_entry.get("phase", "unknown")
+
         return success(data={
             "thread_id": thread_id,
             "status": final_status,
@@ -513,19 +445,21 @@ async def pause_workflow(thread_id: str, request: Request):
     if not state.values or state.values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
-    # Update registry with paused flag
-    if thread_id in _workflow_registry:
-        _workflow_registry[thread_id]["status"] = "paused"
-        _workflow_registry[thread_id]["updated_at"] = datetime.now(UTC).isoformat()
-        _save_registry()
+    # Save prev_phase before pausing, then update graph state
+    current_phase = state.values.get("phase", "unknown")
+    await graph.aupdate_state(config, {"phase": "paused", "prev_phase": current_phase})
 
     # Cancel background task to actually stop execution
     bg_task = _background_tasks.get(thread_id)
     if bg_task and not bg_task.done():
         bg_task.cancel()
 
-    # Update graph state to signal pause
-    await graph.aupdate_state(config, {"phase": "paused"})
+    # Update registry with paused flag
+    if thread_id in _workflow_registry:
+        _workflow_registry[thread_id]["status"] = "paused"
+        _workflow_registry[thread_id]["phase"] = "paused"
+        _workflow_registry[thread_id]["updated_at"] = datetime.now(UTC).isoformat()
+        _save_registry()
 
     return success(data={
         "thread_id": thread_id,
@@ -539,6 +473,8 @@ async def resume_workflow(thread_id: str, request: Request):
     """恢复暂停的工作流
 
     清除暂停标志并重新启动工作流执行。
+    Only resumes from "paused" status. For "awaiting_review" or "awaiting_choice",
+    use the review/select endpoints instead.
     """
     # Validate thread_id
     if not thread_id or thread_id.strip() == "":
@@ -553,37 +489,60 @@ async def resume_workflow(thread_id: str, request: Request):
     if not state.values or state.values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
+    # Derive current status for guard checks
+    derived = derive_status(state)
+
+    # Guard: if awaiting review, tell client to use review endpoint
+    if derived == WorkflowStatus.AWAITING_REVIEW:
+        return success(data={
+            "thread_id": thread_id,
+            "status": "awaiting_review",
+            "message": "工作流正在等待审核，请使用 /api/review/submit 端点提交审核决定",
+        })
+
+    # Guard: if awaiting choice, tell client to use select endpoint
+    if derived == WorkflowStatus.AWAITING_CHOICE:
+        return success(data={
+            "thread_id": thread_id,
+            "status": "awaiting_choice",
+            "message": "工作流正在等待版本选择，请使用 /api/optimization/select 端点选择版本",
+        })
+
+    # Only allow resume from paused status
+    if derived != WorkflowStatus.PAUSED:
+        return success(data={
+            "thread_id": thread_id,
+            "status": str(derived.value),
+            "message": (
+                f"工作流当前状态为 {derived.value}，无法恢复。"
+                "只有暂停状态的工作流可以恢复。"
+            ),
+        })
+
+    # Restore prev_phase before resuming
+    prev_phase = state.values.get("prev_phase") or "scouting"
+    await graph.aupdate_state(config, {"phase": prev_phase})
+
     # Update registry to running
     if thread_id in _workflow_registry:
         _workflow_registry[thread_id]["status"] = "running"
+        _workflow_registry[thread_id]["phase"] = prev_phase
         _workflow_registry[thread_id]["updated_at"] = datetime.now(UTC).isoformat()
         _save_registry()
 
-    if state.next:
-        # Resume from next interrupt point
-        asyncio.create_task(graph.ainvoke(None, config))
-        return success(data={
-            "thread_id": thread_id,
-            "status": "running",
-            "phase": state.values.get("phase", "unknown"),
-        })
+    # Resume via _run_graph_and_persist
+    async def _resume_async():
+        await _runner._run_graph_and_persist(
+            thread_id, graph, config, None, source="resume",
+        )
 
-    # No next steps — re-invoke to continue
-    current_phase = state.values.get("phase", "unknown")
-    if current_phase in ("paused", "cancelled"):
-        # Restore to the phase before pause
-        prev_phase = state.values.get("prev_phase") or "scouting"
-        await graph.aupdate_state(config, {"phase": prev_phase})
-        asyncio.create_task(graph.ainvoke(None, config))
-        return success(data={
-            "thread_id": thread_id,
-            "status": "running",
-            "phase": prev_phase,
-        })
+    task = asyncio.create_task(_resume_async())
+    _background_tasks[thread_id] = task
 
     return success(data={
         "thread_id": thread_id,
-        "status": "completed",
+        "status": "running",
+        "phase": prev_phase,
     })
 
 
@@ -658,7 +617,8 @@ async def stream_workflow_progress(thread_id: str, request: Request):
         try:
             while True:
                 event = await queue.get()
-                yield f"event: {event.event_type.value}\ndata: {json.dumps(event.payload, ensure_ascii=False)}\n\n"
+                event_data = json.dumps(event.payload, ensure_ascii=False)
+                yield f"event: {event.event_type.value}\ndata: {event_data}\n\n"
 
                 # Terminal events close the stream
                 if event.event_type in (EventType.WORKFLOW_COMPLETED, EventType.WORKFLOW_ERROR):
@@ -757,11 +717,8 @@ async def delete_workflow(thread_id: str):
 
     # Remove persisted history file as well
     history_path = _HISTORY_DIR / f"{thread_id}.json"
-    if history_path.exists():
-        try:
-            history_path.unlink()
-        except OSError:
-            pass
+    with contextlib.suppress(OSError):
+        history_path.unlink()
 
     return success(data={
         "thread_id": thread_id,

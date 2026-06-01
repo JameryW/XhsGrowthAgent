@@ -37,10 +37,14 @@ def test_graph_compiles_dev():
 
 
 def test_graph_uses_interrupt_before():
-    """编译后的图使用 interrupt_before 在 review_gate 和 choice_gate 处中断。"""
+    """编译后的图使用 interrupt_before 在 review_gate 处中断。
+
+    choice_gate 不在 interrupt_before — 使用条件边路由，仅在多版本时进入，
+    节点内部动态调用 interrupt()。
+    """
     from backend.graph.builder import compile_graph_dev
 
     graph = compile_graph_dev()
-    # interrupt_before 包含 gate 节点
+    # interrupt_before 只包含 review_gate
     assert "review_gate" in graph.interrupt_before_nodes
-    assert "choice_gate" in graph.interrupt_before_nodes
+    assert "choice_gate" not in graph.interrupt_before_nodes

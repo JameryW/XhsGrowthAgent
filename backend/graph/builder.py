@@ -33,6 +33,7 @@ from backend.graph.routers import (
     should_continue,
     should_optimize,
     should_plan,
+    should_present_choice,
 )
 from backend.state.schema import XHSGrowthState
 
@@ -104,8 +105,16 @@ def build_graph() -> StateGraph:
     # content_analyzer → version_generator (生成版本)
     builder.add_edge("content_analyzer", "version_generator")
 
-    # version_generator → choice_gate (用户选择)
-    builder.add_edge("version_generator", "choice_gate")
+    # version_generator → [choice_gate | visual_designer]
+    # (conditional — only enter choice_gate if multiple versions)
+    builder.add_conditional_edges(
+        "version_generator",
+        should_present_choice,
+        {
+            "choice_gate": "choice_gate",
+            "visual_designer": "visual_designer",
+        },
+    )
 
     # choice_gate → visual_designer (选择后进入视觉设计)
     builder.add_edge("choice_gate", "visual_designer")
@@ -162,7 +171,7 @@ def compile_graph_dev() -> CompiledStateGraph:
     graph = builder.compile(
         checkpointer=checkpointer,
         store=store,
-        interrupt_before=["review_gate", "choice_gate"],
+        interrupt_before=["review_gate"],
     )
     return graph
 
@@ -184,7 +193,7 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         await checkpointer.setup()
         graph = builder.compile(
             checkpointer=checkpointer,
-            interrupt_before=["review_gate", "choice_gate"],
+            interrupt_before=["review_gate"],
         )
         return graph, checkpointer
     except ImportError:

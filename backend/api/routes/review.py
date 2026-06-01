@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from backend.api.errors import ReviewNotPendingError
 from backend.api.responses import success
+from backend.api.routes import _runner
 from backend.state.enums import ContentStatus
 
 router = APIRouter()
@@ -105,20 +106,17 @@ async def submit_review(thread_id: str, decision: ReviewDecision, request: Reque
             "publish_options": pub_opts.model_dump(),
         })
 
-    # 用 Command(resume=...) 恢复中断的图
-    result = await graph.ainvoke(
-        Command(resume=decision.model_dump()),
-        config,
-    )
+    # 用 Command(resume=...) 恢复中断的图 — via unified runner
+    try:
+        result = await _runner._run_graph_and_persist(
+            thread_id, graph, config,
+            Command(resume=decision.model_dump()),
+            source="review",
+        )
+    except Exception:
+        result = {}
 
     next_phase = result.get("phase", "unknown") if result else "unknown"
-
-    # Detect if publishing was skipped due to missing XHS configuration
-    publish_skipped = False
-    if decision.decision == "approved" and next_phase in ("reviewing", "unknown"):
-        import os
-        if not (os.environ.get("XHS_COOKIE") and os.environ.get("XHS_USER_ID")):
-            publish_skipped = True
 
     response_data = {
         "thread_id": thread_id,
@@ -126,9 +124,6 @@ async def submit_review(thread_id: str, decision: ReviewDecision, request: Reque
         "decision": decision.decision.value,
         "next_phase": next_phase,
     }
-    if publish_skipped:
-        response_data["publish_skipped"] = True
-        response_data["skip_reason"] = "XHS credentials not configured. Set XHS_COOKIE and XHS_USER_ID in .env to enable publishing."
 
     return success(data=response_data)
 

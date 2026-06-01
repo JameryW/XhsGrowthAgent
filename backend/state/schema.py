@@ -31,6 +31,7 @@ class XHSGrowthState(TypedDict, total=False):
 
     # Workflow control
     phase: WorkflowPhase
+    prev_phase: str  # Phase before pause/cancel, for resume
     current_agent: str
     error: str | None
     retry_count: int

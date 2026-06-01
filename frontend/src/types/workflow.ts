@@ -219,6 +219,7 @@ export interface AgentTimelineEntry {
 export interface WorkflowStateResponse {
   thread_id: string
   phase: WorkflowPhase
+  status: WorkflowStatus
   current_agent?: string
   next_steps: string[]
   error?: string | null
@@ -226,6 +227,12 @@ export interface WorkflowStateResponse {
   created_at?: string
   updated_at?: string
   agent_timeline: AgentTimelineEntry[]
+  trend_data?: TrendData
+  content_plan?: ContentPlan
+  copy_content?: CopyContent
+  visual_plan?: VisualPlan
+  publish_result?: Record<string, unknown>
+  analytics?: Record<string, unknown>
   ripple_prediction?: RipplePrediction
   ripple_pmf?: RipplePMFResult
   ripple_comparison?: RippleComparison
