@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed } from "vue"
+import { onMounted, onUnmounted, ref, computed, watch } from "vue"
 import { useRoute } from "vue-router"
 import { useI18n } from "vue-i18n"
 import ConnectionStatus from "@/components/ConnectionStatus.vue"
@@ -55,13 +55,25 @@ onMounted(async () => {
   // Validate token in background — don't block router navigation
   if (authStore.isAuthenticated) {
     authStore.initialize()
-    realtimeStore.connect()
   }
   // Add global keyboard listener
   window.addEventListener("keydown", handleGlobalKeyDown)
   // Initialize onboarding - check if user needs to see tour
   initOnboarding()
 })
+
+// Connect/disconnect WebSocket when auth state changes
+watch(
+  () => authStore.isAuthenticated,
+  (authenticated) => {
+    if (authenticated) {
+      realtimeStore.connect()
+    } else {
+      realtimeStore.disconnect()
+    }
+  },
+  { immediate: true }
+)
 
 onUnmounted(() => {
   // 应用卸载时断开WebSocket
