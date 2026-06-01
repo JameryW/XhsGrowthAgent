@@ -1,12 +1,10 @@
 """Tests for router terminal state guards."""
 
-import pytest
 from backend.graph.routers import (
-    should_continue,
-    should_plan,
     orchestrator_router,
     review_outcome,
-    should_optimize,
+    should_continue,
+    should_plan,
 )
 from backend.state.enums import WorkflowPhase
 
@@ -21,9 +19,17 @@ def test_should_continue_returns_end_on_paused():
     assert should_continue(state) == "__end__"
 
 
-def test_should_continue_returns_end_on_error():
-    state = {"phase": WorkflowPhase.ANALYZING, "error": "Something failed"}
+def test_should_continue_returns_end_on_error_phase():
+    """Only phase=ERROR is terminal, not just an error string with an active phase."""
+    state = {"phase": WorkflowPhase.ERROR}
     assert should_continue(state) == "__end__"
+
+
+def test_should_continue_continues_on_non_terminal_error():
+    """An error string with an active phase should not terminate — may retry."""
+    state = {"phase": WorkflowPhase.ANALYZING, "error": "Something failed"}
+    # With ANALYZING phase and error, should_continue routes to engagement (not __end__)
+    assert should_continue(state) != "__end__"
 
 
 def test_should_plan_returns_end_on_cancelled():

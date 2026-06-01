@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import * as reviewApi from '@/api/review'
 import type { PendingReview, ContentStatus, ReviewDecision, Revision, PublishOptions } from '@/types'
 import type { ContentPlan, CopyContent, VisualPlan } from '@/types/workflow'
+import type { ContentVersion } from '@/types/optimization'
 import { useRealtimeStore } from './realtime'
 import { useWorkflowStore } from './workflow'
 import { useToastStore } from './toast'
@@ -74,13 +75,15 @@ export const useReviewStore = defineStore('review', () => {
         content_plan?: ContentPlan
         copy_content?: CopyContent
         visual_plan?: VisualPlan
+        version_history?: ContentVersion[]
       }
-      // Update pendingReview with incoming content
+      // Update pendingReview with incoming content (enriched by backend)
       pendingReview.value = {
         status: 'awaiting_review',
         content_plan: p.content_plan,
         copy_content: p.copy_content,
         visual_plan: p.visual_plan,
+        version_history: p.version_history || [],
       }
       // 醒目通知: 内容已准备好，等待审核
       toastStore.info(t('workflow.awaitingReview'), t('workflow.awaitingReviewMessage'))

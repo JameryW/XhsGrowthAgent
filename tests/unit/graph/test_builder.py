@@ -50,6 +50,13 @@ class TestBuildGraph:
         # This is implicit in the graph structure
         assert "orchestrator" in graph.nodes
 
+    def test_analyst_can_route_to_engagement(self):
+        """Analyst routing includes every branch returned by should_continue."""
+        graph = build_graph()
+
+        ends = graph.branches["analyst"]["should_continue"].ends
+        assert ends["engagement"] == "engagement"
+
 
 class TestCompileGraphDev:
     """Tests for dev graph compilation."""
@@ -69,9 +76,12 @@ class TestCompileGraphDev:
         assert graph.checkpointer is not None
 
     def test_compile_graph_dev_uses_interrupt_before(self):
-        """Dev graph uses interrupt_before for review_gate and choice_gate."""
+        """Dev graph uses interrupt_before for review_gate only.
+
+        choice_gate uses a conditional edge (should_present_choice) so only
+        enters when multiple versions exist; the node calls interrupt() itself.
+        """
         graph = compile_graph_dev()
 
-        # interrupt_before contains the gate nodes
         assert "review_gate" in graph.interrupt_before_nodes
-        assert "choice_gate" in graph.interrupt_before_nodes
+        assert "choice_gate" not in graph.interrupt_before_nodes

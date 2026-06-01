@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from datetime import UTC, datetime
 
+import httpx
 from fastapi import APIRouter
 
 from backend.api.responses import success
@@ -52,23 +53,55 @@ def _check_xhs() -> dict:
     }
 
 
-def _check_ripple() -> dict:
+async def _check_ripple() -> dict:
     """Check Ripple CAS engine availability."""
     base_url = os.environ.get("RIPPLE_BASE_URL")
     api_token = os.environ.get("RIPPLE_API_TOKEN")
-    enabled = os.environ.get("RIPPLE_ENABLED", "true").lower() == "true"
+    enabled = os.environ.get("RIPPLE_ENABLED", "false").lower() == "true"
 
     if not enabled:
-        return {"status": "disabled", "configured": False, "message": "Ripple 服务已禁用"}
+        return {
+            "status": "disabled",
+            "configured": False,
+            "message": "Ripple 服务未启用",
+            "reason": "disabled",
+        }
 
-    # Local services don't need an API token
-    is_local = bool(base_url) and ("127.0.0.1" in base_url or "localhost" in base_url)
-    configured = bool(base_url and (api_token or is_local))
-    return {
-        "status": "ok" if configured else "warning",
-        "configured": configured,
-        "message": "Ripple CAS 已配置" if configured else "Ripple CAS 未配置（可选）",
-    }
+    if not base_url:
+        return {
+            "status": "warning",
+            "configured": False,
+            "message": "Ripple CAS 未配置（可选）",
+            "reason": "unconfigured",
+        }
+
+    headers = {"Accept": "application/json"}
+    if api_token:
+        headers["Authorization"] = f"Bearer {api_token}"
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0, headers=headers) as client:
+            resp = await client.get(f"{base_url.rstrip('/')}/healthz")
+        if resp.status_code == 200:
+            return {
+                "status": "ok",
+                "configured": True,
+                "message": "Ripple CAS 可用",
+                "reason": "ok",
+            }
+        return {
+            "status": "warning",
+            "configured": True,
+            "message": f"Ripple CAS 健康检查失败：HTTP {resp.status_code}",
+            "reason": "unreachable",
+        }
+    except httpx.HTTPError as exc:
+        return {
+            "status": "warning",
+            "configured": True,
+            "message": f"Ripple CAS 不可达：{exc}",
+            "reason": "unreachable",
+        }
 
 
 @router.get("/health")
@@ -83,7 +116,7 @@ async def system_health():
     """
     llm = _check_llm_providers()
     xhs = _check_xhs()
-    ripple = _check_ripple()
+    ripple = await _check_ripple()
 
     # Overall status: ok if LLM is configured (XHS is optional — preview-only without it)
     overall = "ok" if llm["status"] == "ok" else "degraded"
@@ -99,9 +132,11 @@ async def system_health():
         },
     }
 
-    return success(data={
-        "status": overall,
-        "checks": checks,
-        "version": "0.1.0",
-        "timestamp": datetime.now(UTC).isoformat(),
-    })
+    return success(
+        data={
+            "status": overall,
+            "checks": checks,
+            "version": "0.1.0",
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+    )

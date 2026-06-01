@@ -2,22 +2,18 @@
 
 from __future__ import annotations
 
-import os
 from typing import Literal
 
 from backend.state.enums import ContentStatus, WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
 
-def _xhs_configured() -> bool:
-    """Check if XHS platform credentials are available."""
-    return bool(os.environ.get("XHS_COOKIE") and os.environ.get("XHS_USER_ID"))
-
-
 def _check_terminal(state: XHSGrowthState) -> str | None:
     """Return '__end__' if workflow is in terminal state, else None.
 
-    Terminal states: cancelled, paused, error
+    Terminal states: cancelled, paused, error phase.
+    Note: state.get("error") alone is NOT terminal — the workflow may retry
+    or have next nodes that can recover. Only phase=ERROR is terminal.
     """
     phase = state.get("phase")
     if phase == WorkflowPhase.CANCELLED:
@@ -25,8 +21,6 @@ def _check_terminal(state: XHSGrowthState) -> str | None:
     if phase == WorkflowPhase.PAUSED:
         return "__end__"
     if phase == WorkflowPhase.ERROR:
-        return "__end__"
-    if state.get("error"):
         return "__end__"
     return None
 
@@ -71,7 +65,12 @@ def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "trend_s
 
 
 def review_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_content", "__end__"]:
-    """人工审核路由 — 根据审核结果决定下一步"""
+    """人工审核路由 — 根据审核结果决定下一步.
+
+    Always routes to publisher when approved — the PublisherAgent itself
+    handles dry_run mode, so dry_run=True workflows still go through the
+    full publish -> analyst chain.
+    """
     if terminal := _check_terminal(state):
         return terminal
 
@@ -79,8 +78,6 @@ def review_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_conten
     decision = feedback.get("decision", ContentStatus.REJECTED)
 
     if decision == ContentStatus.APPROVED or decision == "approved":
-        if not _xhs_configured():
-            return "__end__"
         return "publisher"
     if decision == ContentStatus.NEEDS_REVISION or decision == "needs_revision":
         return "revise_content"
@@ -120,7 +117,7 @@ def engagement_router(state: XHSGrowthState) -> Literal["orchestrator", "__end__
 
 def should_optimize(state: XHSGrowthState) -> Literal["content_analyzer", "visual_designer"]:
     """判断是否进入优化流程."""
-    if state.get("error"):
+    if state.get("error") and state.get("phase") == WorkflowPhase.ERROR:
         return "visual_designer"
 
     if state.get("skip_optimization"):
@@ -135,4 +132,23 @@ def should_optimize(state: XHSGrowthState) -> Literal["content_analyzer", "visua
 
 def choice_outcome(state: XHSGrowthState) -> Literal["visual_designer"]:
     """版本选择后路由 — 统一进入视觉设计."""
+    return "visual_designer"
+
+
+def should_present_choice(state: XHSGrowthState) -> Literal["choice_gate", "visual_designer"]:
+    """Route after version generation — only enter choice_gate if multiple versions exist.
+
+    When there is a single version or no versions, auto-select and skip
+    directly to visual_designer. This avoids an unnecessary interrupt when
+    there is nothing for the user to choose.
+    """
+    if _check_terminal(state):
+        # Terminal state — route to visual_designer which will eventually
+        # end via its own downstream routers
+        return "visual_designer"
+
+    versions = state.get("content_versions", [])
+    if len(versions) > 1:
+        return "choice_gate"
+    # Single or no versions — auto-select and skip to visual_designer
     return "visual_designer"

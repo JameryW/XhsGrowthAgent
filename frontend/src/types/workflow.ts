@@ -1,3 +1,5 @@
+import type { ContentVersion, DraftContent, OptimizationAnalysis } from './optimization'
+
 // Workflow phase - matches backend WorkflowPhase enum
 export type WorkflowPhase =
   | 'idle'
@@ -18,6 +20,7 @@ export type WorkflowStatus =
   | 'running'
   | 'awaiting_review'
   | 'awaiting_choice'
+  | 'awaiting_draft'
   | 'paused'
   | 'completed'
   | 'error'
@@ -52,7 +55,7 @@ export interface WorkflowListItem {
   thread_id: string
   account_id: string
   phase: WorkflowPhase
-  status: 'running' | 'completed' | 'error' | 'cancelled'
+  status: WorkflowStatus
   dry_run: boolean
   auto_publish: boolean
   progress_percent: number
@@ -95,7 +98,8 @@ export interface TrendData {
 export interface HotTopicItem {
   topic: string
   heat_score: number
-  growth_rate: number
+  heat_percentage?: number
+  growth_rate?: number
   related_keywords: string[]
 }
 
@@ -196,6 +200,9 @@ export interface WorkflowState {
   trend_data?: TrendData
   content_plan?: ContentPlan
   copy_content?: CopyContent
+  draft_content?: DraftContent
+  optimization_analysis?: OptimizationAnalysis
+  content_versions?: ContentVersion[]
   visual_plan?: VisualPlan
   ripple_prediction?: RipplePrediction
   ripple_pmf?: RipplePMFResult
@@ -219,6 +226,7 @@ export interface AgentTimelineEntry {
 export interface WorkflowStateResponse {
   thread_id: string
   phase: WorkflowPhase
+  status: WorkflowStatus
   current_agent?: string
   next_steps: string[]
   error?: string | null
@@ -226,7 +234,17 @@ export interface WorkflowStateResponse {
   created_at?: string
   updated_at?: string
   agent_timeline: AgentTimelineEntry[]
+  trend_data?: TrendData
+  content_plan?: ContentPlan
+  copy_content?: CopyContent
+  draft_content?: DraftContent
+  optimization_analysis?: OptimizationAnalysis
+  content_versions?: ContentVersion[]
+  visual_plan?: VisualPlan
+  publish_result?: Record<string, unknown>
+  analytics?: Record<string, unknown>
   ripple_prediction?: RipplePrediction
   ripple_pmf?: RipplePMFResult
   ripple_comparison?: RippleComparison
+  ripple_reason?: string  // "disabled" | "unreachable" | ""
 }

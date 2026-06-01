@@ -111,10 +111,12 @@ class TestOptimizationGraphIntegration:
     """Tests for optimization nodes in the graph."""
 
     def test_graph_has_optimization_nodes(self):
-        """Graph includes viral_matcher, content_analyzer, version_generator, choice_gate."""
+        """Graph includes optimization nodes: viral_matcher, content_analyzer,
+        version_generator, choice_gate, draft_gate."""
         graph = build_graph()
 
         expected_nodes = [
+            "draft_gate",
             "viral_matcher",
             "content_analyzer",
             "version_generator",
@@ -128,19 +130,27 @@ class TestOptimizationGraphIntegration:
         """Graph has correct edges for optimization pipeline."""
         graph = build_graph()
 
-        # copywriter → viral_matcher
+        # copywriter → draft_gate → viral_matcher
         edges = graph.edges
-        assert ("copywriter", "viral_matcher") in edges or any(
-            e[0] == "copywriter" and e[1] == "viral_matcher" for e in graph._edges
+        assert ("copywriter", "draft_gate") in edges or any(
+            e[0] == "copywriter" and e[1] == "draft_gate" for e in graph._edges
+        )
+        assert ("draft_gate", "viral_matcher") in edges or any(
+            e[0] == "draft_gate" and e[1] == "viral_matcher" for e in graph._edges
         )
 
     def test_compile_graph_uses_interrupt_before(self):
-        """Dev graph uses interrupt_before for review_gate and choice_gate."""
+        """Dev graph uses interrupt_before for review_gate only.
+
+        choice_gate is no longer in interrupt_before — it uses a conditional
+        edge (should_present_choice) so only enters choice_gate when multiple
+        versions exist, and the node itself calls interrupt() dynamically.
+        """
         graph = compile_graph_dev()
 
-        # interrupt_before contains the gate nodes
+        # interrupt_before contains review_gate only
         assert "review_gate" in graph.interrupt_before_nodes
-        assert "choice_gate" in graph.interrupt_before_nodes
+        assert "choice_gate" not in graph.interrupt_before_nodes
         assert graph.interrupt_after_nodes == []
 
 

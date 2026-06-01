@@ -19,6 +19,14 @@ const isPaused = computed(() => workflowStore.currentPhase === 'paused')
 const isCancelled = computed(() => workflowStore.currentPhase === 'cancelled')
 const needsReview = computed(() => reviewStore.hasPendingReview)
 const isStarting = ref(false)
+const canPause = computed(() => workflowStore.isRunning)
+const canReview = computed(() => workflowStore.isAwaitingReview || isReviewing.value)
+const waitingStatusText = computed(() => {
+  if (workflowStore.isAwaitingDraft) return t('dashboard.actionButtons.awaitingDraft')
+  if (workflowStore.isAwaitingChoice) return t('dashboard.actionButtons.awaitingChoice')
+  if (workflowStore.isAwaitingReview) return t('dashboard.actionButtons.awaitingReview')
+  return ''
+})
 
 // Phase-aware computed
 const currentPhase = computed(() => workflowStore.currentPhase)
@@ -106,6 +114,16 @@ const openPostUrl = () => {
       </span>
     </div>
 
+    <div
+      v-if="waitingStatusText"
+      class="flex items-center gap-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700"
+      role="status"
+      aria-live="polite"
+    >
+      <AppIcon name="Clock" size="sm" variant="cyan" aria-hidden="true" />
+      <span>{{ waitingStatusText }}</span>
+    </div>
+
     <!-- Action buttons -->
     <div class="flex flex-wrap gap-3">
       <!-- Start new workflow when no active workflow -->
@@ -127,7 +145,7 @@ const openPostUrl = () => {
 
       <!-- Prominent review button when workflow is in reviewing phase -->
       <NeonButton
-        v-if="isReviewing"
+        v-if="canReview"
         variant="cyan"
         size="lg"
         class="w-full sm:w-auto animate-pulse"
@@ -178,7 +196,7 @@ const openPostUrl = () => {
 
       <!-- Regular buttons when not reviewing, paused, or cancelled -->
       <NeonButton
-        v-if="!isReviewing && !isPaused && !isCancelled"
+        v-if="canPause"
         variant="pink"
         :title="t('dashboard.actionButtons.pauseDesc')"
         :aria-label="t('dashboard.actionButtons.pause')"
@@ -200,20 +218,6 @@ const openPostUrl = () => {
         <span class="inline-flex items-center gap-2">
           <AppIcon name="RefreshCw" size="sm" variant="white" />
           <span>{{ t('dashboard.actionButtons.refresh') }}</span>
-        </span>
-      </NeonButton>
-
-      <!-- Standard review button when not in reviewing/paused/cancelled phase -->
-      <NeonButton
-        v-if="!isReviewing && !isPaused && !isCancelled"
-        variant="purple"
-        :title="t('dashboard.actionButtons.goReviewDesc')"
-        :aria-label="t('dashboard.actionButtons.goReview')"
-        @click="goToReview"
-      >
-        <span class="inline-flex items-center gap-2">
-          <AppIcon name="CheckCircle" size="sm" variant="white" />
-          <span>{{ t('dashboard.actionButtons.goReview') }}</span>
         </span>
       </NeonButton>
 

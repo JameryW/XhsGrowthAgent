@@ -9,10 +9,12 @@ const { t } = useI18n()
 
 interface Props {
   isLoading?: boolean
+  initialDraft?: DraftContent | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   isLoading: false,
+  initialDraft: null,
 })
 
 const emit = defineEmits<{
@@ -20,9 +22,9 @@ const emit = defineEmits<{
 }>()
 
 // Form state
-const draftText = ref('')
-const draftTitle = ref('')
-const draftHashtags = ref('')
+const draftText = ref(props.initialDraft?.text || '')
+const draftTitle = ref(props.initialDraft?.title || '')
+const draftHashtags = ref(props.initialDraft?.hashtags?.join(' ') || '')
 const viralLinks = ref('')
 const showViralLinks = ref(false)
 
@@ -106,7 +108,7 @@ function toggleViralLinks() {
       </div>
       <div class="flex-1">
         <div class="text-slate-800 font-semibold text-sm">{{ t('draft.title') }}</div>
-        <div class="text-xs text-slate-400 uppercase tracking-wide">Pre-Publish Optimization</div>
+        <div class="text-xs text-slate-400 uppercase tracking-wide">{{ t('draft.subtitle') }}</div>
       </div>
     </div>
 

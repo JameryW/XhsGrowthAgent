@@ -10,6 +10,7 @@ from backend.agents.nodes.engagement import engagement_node
 from backend.agents.nodes.optimization import (
     choice_gate_node,
     content_analyzer_node,
+    draft_gate_node,
     version_generator_node,
     viral_matcher_node,
 )
@@ -40,4 +41,5 @@ __all__ = [
     "content_analyzer_node",
     "version_generator_node",
     "choice_gate_node",
+    "draft_gate_node",
 ]

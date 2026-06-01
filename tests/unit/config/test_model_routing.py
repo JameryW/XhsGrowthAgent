@@ -11,10 +11,10 @@ from backend.config.models import (
 
 def test_resolve_model_id_default():
     """默认路由：每个任务类型映射到正确的模型"""
-    assert resolve_model_id(TaskType.WRITING) == "mimo-v2.5-pro"
-    assert resolve_model_id(TaskType.SCOUTING) == "mimo-v2.5-pro"
-    assert resolve_model_id(TaskType.ANALYSIS) == "mimo-v2.5-pro"
-    assert resolve_model_id(TaskType.PUBLISHING) == "mimo-v2.5-pro"
+    assert resolve_model_id(TaskType.WRITING) == "astron-code-latest"
+    assert resolve_model_id(TaskType.SCOUTING) == "astron-code-latest"
+    assert resolve_model_id(TaskType.ANALYSIS) == "astron-code-latest"
+    assert resolve_model_id(TaskType.PUBLISHING) == "astron-code-latest"
 
 
 def test_resolve_model_id_override():

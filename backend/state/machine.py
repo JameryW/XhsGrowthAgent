@@ -15,6 +15,7 @@ class WorkflowStatus(StrEnum):
     RUNNING = "running"
     AWAITING_REVIEW = "awaiting_review"
     AWAITING_CHOICE = "awaiting_choice"
+    AWAITING_DRAFT = "awaiting_draft"
     PAUSED = "paused"
     COMPLETED = "completed"
     ERROR = "error"
@@ -29,10 +30,11 @@ def derive_status(snapshot: StateSnapshot) -> WorkflowStatus:
     2. Paused (phase flag)
     3. Interrupt at review_gate → awaiting_review
     4. Interrupt at choice_gate → awaiting_choice
-    5. Error in state → error
-    6. Phase is completed → completed
-    7. Has next nodes → running
-    8. No next nodes + no interrupt → completed
+    5. Interrupt at draft_gate → awaiting_draft
+    6. Error in state → error
+    7. Phase is completed → completed
+    8. Has next nodes → running
+    9. No next nodes + no interrupt → completed
 
     Args:
         snapshot: LangGraph StateSnapshot from graph.aget_state()
@@ -68,6 +70,8 @@ def derive_status(snapshot: StateSnapshot) -> WorkflowStatus:
                 return WorkflowStatus.AWAITING_REVIEW
             if "choice_gate" in next_nodes:
                 return WorkflowStatus.AWAITING_CHOICE
+            if "draft_gate" in next_nodes:
+                return WorkflowStatus.AWAITING_DRAFT
         # Fallback: determine gate type from interrupt value (dynamic interrupt only)
         if has_interrupt:
             gate_type = None
@@ -79,20 +83,22 @@ def derive_status(snapshot: StateSnapshot) -> WorkflowStatus:
                 return WorkflowStatus.AWAITING_CHOICE
             if gate_type == "review":
                 return WorkflowStatus.AWAITING_REVIEW
+            if gate_type == "draft":
+                return WorkflowStatus.AWAITING_DRAFT
             # Unknown gate type with interrupt — fall through to remaining checks
 
-    # Priority 5: Error (only when terminal — phase is ERROR or no next nodes)
+    # Priority 6: Error (only when terminal — phase is ERROR or no next nodes)
     # If there are next nodes, the error may be retried, so treat as RUNNING
     if values.get("error") and (phase == WorkflowPhase.ERROR or not next_nodes):
         return WorkflowStatus.ERROR
 
-    # Priority 6: Completed phase
+    # Priority 7: Completed phase
     if phase == WorkflowPhase.COMPLETED:
         return WorkflowStatus.COMPLETED
 
-    # Priority 7: Has next nodes (running)
+    # Priority 8: Has next nodes (running)
     if next_nodes:
         return WorkflowStatus.RUNNING
 
-    # Priority 8: No next nodes, no interrupt → completed
+    # Priority 9: No next nodes, no interrupt → completed
     return WorkflowStatus.COMPLETED

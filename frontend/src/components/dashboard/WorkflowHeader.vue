@@ -12,21 +12,6 @@ const workflowStore = useWorkflowStore()
 // Memoized phase order for performance
 const phaseOrder = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'completed'] as const
 
-// Phase display labels (i18n)
-const phaseLabels: Record<string, string> = {
-  idle: t('dashboard.phase.idle'),
-  scouting: t('dashboard.phase.scouting'),
-  planning: t('dashboard.phase.planning'),
-  creating: t('dashboard.phase.creating'),
-  reviewing: t('dashboard.phase.reviewing'),
-  publishing: t('dashboard.phase.publishing'),
-  analyzing: t('dashboard.phase.analyzing'),
-  engaging: t('dashboard.phase.engaging'),
-  completed: t('dashboard.phase.completed'),
-  error: t('dashboard.phase.error'),
-  cancelled: t('dashboard.phase.cancelled'),
-}
-
 // Default time estimates per phase (in seconds) - based on typical execution
 const phaseTimeEstimates: Record<string, number> = {
   idle: 0,
@@ -43,11 +28,30 @@ const phaseTimeEstimates: Record<string, number> = {
 
 // Use unified progress from store (backend progress_percent with local fallback)
 const workflowProgress = computed(() => workflowStore.progressPercent)
+const isWaitingForUser = computed(() =>
+  workflowStore.isAwaitingDraft ||
+  workflowStore.isAwaitingChoice ||
+  workflowStore.isAwaitingReview
+)
+const statusLabel = computed(() =>
+  isWaitingForUser.value ? t('dashboard.header.awaitingAction') :
+    workflowStore.isRunning ? t('dashboard.header.running') :
+      t('dashboard.header.idle')
+)
+const currentStageLabel = computed(() => {
+  if (workflowStore.isAwaitingDraft) return t('dashboard.phase.awaitingDraft')
+  if (workflowStore.isAwaitingChoice) return t('dashboard.phase.awaitingChoice')
+  if (workflowStore.isAwaitingReview) return t('dashboard.phase.awaitingReview')
+
+  const key = `dashboard.phase.${workflowStore.currentPhase}`
+  const translated = t(key)
+  return translated !== key ? translated : workflowStore.currentPhase
+})
 
 // Estimated time remaining calculation
 const estimatedTimeRemaining = computed(() => {
   const phase = workflowStore.currentPhase
-  if (phase === 'completed' || phase === 'error' || phase === 'idle' || phase === 'reviewing') {
+  if (isWaitingForUser.value || phase === 'completed' || phase === 'error' || phase === 'idle' || phase === 'reviewing') {
     return null
   }
 
@@ -107,7 +111,7 @@ const timeRemainingDisplay = computed(() => {
           <span class="text-xs text-slate-400">{{ workflowStore.currentThreadId || '—' }}</span>
         </div>
         <div class="text-xl font-semibold text-slate-800">
-          {{ phaseLabels[workflowStore.currentPhase] || workflowStore.currentPhase }}
+          {{ currentStageLabel }}
         </div>
         <!-- Estimated time remaining -->
         <div v-if="timeRemainingDisplay" class="flex items-center gap-2 text-sm text-slate-500">
@@ -123,14 +127,22 @@ const timeRemainingDisplay = computed(() => {
           'px-4 py-2.5 rounded-lg border font-medium flex items-center gap-2 transition-all duration-200',
           workflowStore.isRunning
             ? 'bg-gradient-to-r from-teal-500 to-teal-400 border-teal-200 text-white shadow-sm'
+            : isWaitingForUser
+              ? 'bg-amber-50 border-amber-200 text-amber-700'
             : 'bg-slate-50 border-slate-200 text-slate-500'
         ]"
         role="status"
         aria-live="polite"
-        :aria-label="workflowStore.isRunning ? t('dashboard.header.running') : t('dashboard.header.idle')"
+        :aria-label="statusLabel"
       >
-        <AppIcon :name="workflowStore.isRunning ? 'Circle' : 'Minus'" size="sm" :variant="workflowStore.isRunning ? 'white' : 'cyan'" :animate="workflowStore.isRunning" aria-hidden="true" />
-        <span>{{ workflowStore.isRunning ? t('dashboard.header.running') : t('dashboard.header.idle') }}</span>
+        <AppIcon
+          :name="workflowStore.isRunning ? 'Circle' : isWaitingForUser ? 'Clock' : 'Minus'"
+          size="sm"
+          :variant="workflowStore.isRunning ? 'white' : 'cyan'"
+          :animate="workflowStore.isRunning"
+          aria-hidden="true"
+        />
+        <span>{{ statusLabel }}</span>
       </div>
     </div>
   </div>

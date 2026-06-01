@@ -138,9 +138,24 @@ async def topic_scorer(
             for p in top_posts
         ]
 
+        # growth_rate: 0.0-1.0 scale based on trend phase
+        growth_rate_map = {
+            "爆发期": 0.8,
+            "上升期": 0.5,
+            "平稳期": 0.2,
+            "衰退期": -0.1,
+        }
+        growth_rate = growth_rate_map.get(growth_trend, 0.0)
+
+        # potential_score: composite of heat and growth
+        potential_score = round(final_score * max(growth_rate, 0) * 1.25, 1)
+        potential_score = min(potential_score, 100.0)
+
         return {
             "topic": topic,
             "heat_score": round(final_score, 1),
+            "heat_percentage": round(final_score, 1),
+            "potential_score": potential_score,
             "score_breakdown": {
                 "base": base_score,
                 "post_count_score": round(post_score, 1),
@@ -154,6 +169,7 @@ async def topic_scorer(
                 "avg_comments": round(avg_comments, 1) if search_posts else 0,
             },
             "growth_trend": growth_trend,
+            "growth_rate": growth_rate,
             "competition_level": competition_level,
             "recommendation": recommendation,
             "suggested_action": action,
@@ -169,6 +185,9 @@ async def topic_scorer(
         return {
             "topic": topic,
             "heat_score": 50,
+            "heat_percentage": 50.0,
+            "potential_score": 25.0,
+            "growth_rate": 0.0,
             "error": str(e),
             "recommendation": "数据获取失败，建议手动评估",
             "related_keywords": keywords[:5] if keywords else [f"#{topic}"],

@@ -29,6 +29,7 @@ class ViralMatcherAgent(BaseAgent):
         if not draft or not draft.get("text"):
             logger.info("No draft content provided, skipping optimization")
             return {
+                "viral_posts": [],
                 "skip_optimization": True,
                 "phase": WorkflowPhase.CREATING,
             }
@@ -49,10 +50,22 @@ class ViralMatcherAgent(BaseAgent):
 用户指定爆款链接：{', '.join(user_links) if user_links else '无'}
 自动搜索关键词：{', '.join(auto_keywords[:5]) if auto_keywords else '无'}"""
 
-        response = await self.model.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_msg),
-        ])
+        try:
+            response = await self.model.ainvoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_msg),
+            ])
+        except Exception as e:
+            logger.warning(
+                "Viral matching failed; skipping optional optimization: %s",
+                e,
+            )
+            return {
+                "viral_posts": [],
+                "skip_optimization": True,
+                "optimization_error": f"viral_matcher skipped: {e}",
+                "phase": WorkflowPhase.CREATING,
+            }
 
         result = self._parse_json_response(response.content)
         viral_posts = result.get("viral_posts", [])
@@ -61,6 +74,7 @@ class ViralMatcherAgent(BaseAgent):
 
         return {
             "viral_posts": viral_posts,
+            "skip_optimization": len(viral_posts) == 0,
             "phase": WorkflowPhase.CREATING,
         }
 

@@ -16,21 +16,61 @@ const optimizationStore = useOptimizationStore()
 const showDraftInput = ref(false)
 
 // Optimization flow computed
+const workflowVersions = computed(() =>
+  workflowStore.workflowState?.content_versions || []
+)
+const contentVersions = computed(() =>
+  optimizationStore.contentVersions.length > 0
+    ? optimizationStore.contentVersions
+    : workflowVersions.value
+)
+const optimizationAnalysis = computed(() =>
+  optimizationStore.optimizationAnalysis ||
+  workflowStore.workflowState?.optimization_analysis ||
+  null
+)
+const draftContent = computed(() =>
+  optimizationStore.draftContent ||
+  workflowStore.workflowState?.draft_content ||
+  null
+)
+const generatedDraft = computed<DraftContent | null>(() => {
+  const copy = workflowStore.workflowState?.copy_content || workflowStore.copyContent
+  const text = copy.body_text?.trim()
+  if (!text) return null
+
+  return {
+    title: copy.selected_title || copy.title_candidates?.[0] || undefined,
+    text,
+    hashtags: copy.hashtags || undefined,
+  }
+})
+const hasGeneratedDraft = computed(() => !!generatedDraft.value?.text)
+
 const isOptimizationPending = computed(() =>
-  workflowStore.currentPhase === 'creating' &&
-  optimizationStore.contentVersions.length > 0 &&
+  workflowStore.isAwaitingChoice &&
+  contentVersions.value.length > 0 &&
   !optimizationStore.selectedVersion
 )
 
 const isDraftInputPending = computed(() =>
-  workflowStore.currentPhase === 'creating' &&
-  !optimizationStore.draftContent &&
+  workflowStore.isAwaitingDraft &&
+  !draftContent.value &&
   !isOptimizationPending.value
 )
 
 // Operations
 const startOptimization = () => {
   showDraftInput.value = true
+}
+
+const useGeneratedDraft = () => {
+  if (!generatedDraft.value) return
+
+  optimizationStore.submitDraft({
+    ...generatedDraft.value,
+    provided_at: new Date().toISOString(),
+  }, [])
 }
 
 const handleDraftSubmit = (draft: DraftContent, viralLinks: string[]) => {
@@ -46,7 +86,7 @@ const handleVersionSelect = (choice: VersionChoice) => {
 </script>
 
 <template>
-  <div v-if="workflowStore.currentPhase === 'creating'" class="space-y-4" role="region" :aria-label="t('dashboard.optimization.title')">
+  <div v-if="isDraftInputPending || showDraftInput || isOptimizationPending" class="space-y-4" role="region" :aria-label="t('dashboard.optimization.title')">
     <!-- Optimization prompt when draft input is pending -->
     <div v-if="isDraftInputPending && !showDraftInput" class="rounded-xl p-5 bg-gradient-to-r from-neon-cyan/5 to-neon-purple/5 border border-neon-cyan/20" role="status" aria-live="polite">
       <div class="flex items-center justify-between">
@@ -57,10 +97,26 @@ const handleVersionSelect = (choice: VersionChoice) => {
             <span class="text-xs text-slate-400 ml-2">{{ t('dashboard.optimization.desc') }}</span>
           </div>
         </div>
-        <NeonButton variant="cyan" @click="startOptimization" :aria-label="t('dashboard.optimization.desc')">
-          <AppIcon name="Wand2" size="sm" variant="white" aria-hidden="true" />
-          <span>{{ t('draft.startOptimization') }}</span>
-        </NeonButton>
+        <div class="flex gap-2">
+          <NeonButton
+            v-if="hasGeneratedDraft"
+            variant="cyan"
+            :loading="optimizationStore.isLoading"
+            @click="useGeneratedDraft"
+            :aria-label="t('draft.useGeneratedDraft')"
+          >
+            <AppIcon name="Sparkles" size="sm" variant="white" aria-hidden="true" />
+            <span>{{ t('draft.useGeneratedDraft') }}</span>
+          </NeonButton>
+          <NeonButton
+            :variant="hasGeneratedDraft ? 'ghost' : 'cyan'"
+            @click="startOptimization"
+            :aria-label="hasGeneratedDraft ? t('draft.editGeneratedDraft') : t('dashboard.optimization.desc')"
+          >
+            <AppIcon name="Wand2" size="sm" :variant="hasGeneratedDraft ? 'cyan' : 'white'" aria-hidden="true" />
+            <span>{{ hasGeneratedDraft ? t('draft.editGeneratedDraft') : t('draft.startOptimization') }}</span>
+          </NeonButton>
+        </div>
       </div>
     </div>
 
@@ -68,14 +124,15 @@ const handleVersionSelect = (choice: VersionChoice) => {
     <DraftInput
       v-if="showDraftInput"
       :is-loading="optimizationStore.isLoading"
+      :initial-draft="generatedDraft"
       @submit="handleDraftSubmit"
     />
 
     <!-- Version Compare Component (when versions are available) -->
     <VersionCompare
       v-if="isOptimizationPending"
-      :versions="optimizationStore.contentVersions"
-      :analysis="optimizationStore.optimizationAnalysis"
+      :versions="contentVersions"
+      :analysis="optimizationAnalysis"
       :is-loading="optimizationStore.isLoading"
       @select="handleVersionSelect"
     />

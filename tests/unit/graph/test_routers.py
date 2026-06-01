@@ -1,13 +1,12 @@
 """Unit tests for graph routers."""
 
-from unittest.mock import patch
-
 from backend.graph.routers import (
     engagement_router,
     orchestrator_router,
     review_outcome,
     should_continue,
     should_plan,
+    should_present_choice,
 )
 from backend.state.enums import ContentStatus, WorkflowPhase
 
@@ -95,26 +94,23 @@ class TestShouldPlan:
 class TestReviewOutcome:
     """Tests for review_outcome conditional edge."""
 
-    @patch("backend.graph.routers._xhs_configured", return_value=True)
-    def test_routes_to_publisher_for_approved_enum(self, mock_xhs):
-        """APPROVED enum → publisher (when XHS configured)."""
+    def test_routes_to_publisher_for_approved_enum(self):
+        """APPROVED enum → publisher (always, even without XHS config)."""
         state = {"human_feedback": {"decision": ContentStatus.APPROVED}}
         result = review_outcome(state)
         assert result == "publisher"
 
-    @patch("backend.graph.routers._xhs_configured", return_value=True)
-    def test_routes_to_publisher_for_approved_string(self, mock_xhs):
-        """approved string → publisher (when XHS configured)."""
+    def test_routes_to_publisher_for_approved_string(self):
+        """approved string → publisher (always, even without XHS config)."""
         state = {"human_feedback": {"decision": "approved"}}
         result = review_outcome(state)
         assert result == "publisher"
 
-    def test_routes_to_end_for_approved_without_xhs(self):
-        """APPROVED → __end__ when XHS not configured (preview-only)."""
-        with patch("backend.graph.routers._xhs_configured", return_value=False):
-            state = {"human_feedback": {"decision": ContentStatus.APPROVED}}
-            result = review_outcome(state)
-            assert result == "__end__"
+    def test_routes_to_publisher_for_approved_without_xhs(self):
+        """APPROVED → publisher even without XHS config (dry_run handled by PublisherAgent)."""
+        state = {"human_feedback": {"decision": ContentStatus.APPROVED}}
+        result = review_outcome(state)
+        assert result == "publisher"
 
     def test_routes_to_revise_for_needs_revision(self):
         """NEEDS_REVISION → revise_content."""
@@ -138,11 +134,17 @@ class TestReviewOutcome:
 class TestShouldContinue:
     """Tests for should_continue conditional edge."""
 
-    def test_routes_to_end_with_error(self):
-        """Error exists → END."""
-        state = {"error": "Something failed"}
+    def test_routes_to_end_with_error_phase(self):
+        """ERROR phase → END."""
+        state = {"phase": WorkflowPhase.ERROR}
         result = should_continue(state)
         assert result == "__end__"
+
+    def test_continues_on_non_terminal_error(self):
+        """Error string with active phase should not terminate — may retry."""
+        state = {"phase": WorkflowPhase.ANALYZING, "error": "Something failed"}
+        result = should_continue(state)
+        assert result != "__end__"
 
     def test_routes_to_engagement_after_analyzing_single(self):
         """ANALYZING phase with single mode → engagement."""
@@ -162,9 +164,9 @@ class TestShouldContinue:
         result = should_continue(state)
         assert result == "__end__"
 
-    def test_error_takes_priority(self):
-        """Error takes priority over phase."""
-        state = {"phase": WorkflowPhase.ANALYZING, "error": "Failed"}
+    def test_error_phase_takes_priority(self):
+        """ERROR phase takes priority over active phase."""
+        state = {"phase": WorkflowPhase.ERROR, "error": "Failed"}
         result = should_continue(state)
         assert result == "__end__"
 
@@ -192,7 +194,7 @@ class TestEngagementRouter:
         state = {"phase": WorkflowPhase.ENGAGING}
         assert engagement_router(state) == "__end__"
 
-    def test_error_routes_to_end(self):
+    def test_error_phase_routes_to_end(self):
         """ERROR phase → END even in continuous mode."""
         state = {"execution_mode": "continuous", "phase": WorkflowPhase.ERROR}
         assert engagement_router(state) == "__end__"
@@ -202,7 +204,35 @@ class TestEngagementRouter:
         state = {"execution_mode": "continuous", "phase": WorkflowPhase.PAUSED}
         assert engagement_router(state) == "__end__"
 
-    def test_error_field_routes_to_end(self):
-        """Error field set → END even in continuous mode."""
+    def test_error_field_with_active_phase_not_terminal(self):
+        """Error field with ENGAGING phase is not terminal — _check_terminal only checks phase."""
         state = {"execution_mode": "continuous", "phase": WorkflowPhase.ENGAGING, "error": "boom"}
-        assert engagement_router(state) == "__end__"
+        # ENGAGING in continuous mode → orchestrator (error field alone is not terminal)
+        assert engagement_router(state) == "orchestrator"
+
+
+class TestShouldPresentChoice:
+    """Tests for should_present_choice conditional edge."""
+
+    def test_single_version_skips_choice_gate(self):
+        """Single version → visual_designer (skip choice_gate)."""
+        state = {"content_versions": [{"version_id": "v1"}]}
+        assert should_present_choice(state) == "visual_designer"
+
+    def test_no_versions_skips_choice_gate(self):
+        """No versions → visual_designer (skip choice_gate)."""
+        state = {"content_versions": []}
+        assert should_present_choice(state) == "visual_designer"
+
+    def test_multiple_versions_enters_choice_gate(self):
+        """Multiple versions → choice_gate."""
+        state = {"content_versions": [{"version_id": "v1"}, {"version_id": "v2"}]}
+        assert should_present_choice(state) == "choice_gate"
+
+    def test_terminal_state_routes_to_visual_designer(self):
+        """Terminal state → visual_designer (not __end__, which isn't in mapping)."""
+        state = {
+            "phase": WorkflowPhase.CANCELLED,
+            "content_versions": [{"version_id": "v1"}, {"version_id": "v2"}],
+        }
+        assert should_present_choice(state) == "visual_designer"

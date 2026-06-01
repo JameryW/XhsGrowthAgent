@@ -220,6 +220,9 @@ const issueCount = computed(() => {
           <p v-if="health.checks.ripple_cas.status === 'warning'" class="text-xs text-amber-600 mt-1">
             {{ t('health.guide.rippleMissing') }}
           </p>
+          <p v-else-if="health.checks.ripple_cas.status === 'disabled'" class="text-xs text-slate-400 mt-1">
+            {{ t('health.guide.rippleDisabled') }}
+          </p>
         </div>
 
         <!-- Database -->

@@ -15,6 +15,7 @@ from backend.agents.nodes import (
     content_analyzer_node,
     content_strategist_node,
     copywriter_node,
+    draft_gate_node,
     engagement_node,
     orchestrator_node,
     publisher_node,
@@ -33,6 +34,7 @@ from backend.graph.routers import (
     should_continue,
     should_optimize,
     should_plan,
+    should_present_choice,
 )
 from backend.state.schema import XHSGrowthState
 
@@ -42,17 +44,33 @@ def build_graph() -> StateGraph:
     builder = StateGraph(XHSGrowthState)
 
     # ── 添加节点 ──
-    builder.add_node("orchestrator", orchestrator_node, retry_policy=get_retry_policy("orchestrator"))
-    builder.add_node("trend_scout", trend_scout_node, retry_policy=get_retry_policy("trend_scout"))
-    builder.add_node("content_strategist", content_strategist_node, retry_policy=get_retry_policy("content_strategist"))
-    builder.add_node("copywriter", copywriter_node, retry_policy=get_retry_policy("copywriter"))
-    builder.add_node("visual_designer", visual_designer_node, retry_policy=get_retry_policy("visual_designer"))
+    builder.add_node(
+        "orchestrator", orchestrator_node,
+        retry_policy=get_retry_policy("orchestrator"),
+    )
+    builder.add_node(
+        "trend_scout", trend_scout_node,
+        retry_policy=get_retry_policy("trend_scout"),
+    )
+    builder.add_node(
+        "content_strategist", content_strategist_node,
+        retry_policy=get_retry_policy("content_strategist"),
+    )
+    builder.add_node(
+        "copywriter", copywriter_node,
+        retry_policy=get_retry_policy("copywriter"),
+    )
+    builder.add_node(
+        "visual_designer", visual_designer_node,
+        retry_policy=get_retry_policy("visual_designer"),
+    )
     builder.add_node("review_gate", review_gate_node, retry_policy=get_retry_policy("review_gate"))
     builder.add_node("publisher", publisher_node, retry_policy=get_retry_policy("publisher"))
     builder.add_node("analyst", analyst_node, retry_policy=get_retry_policy("analyst"))
     builder.add_node("engagement", engagement_node, retry_policy=get_retry_policy("engagement"))
     builder.add_node("revise_content", revise_content_node)
     # 发布前优化节点
+    builder.add_node("draft_gate", draft_gate_node)
     builder.add_node("viral_matcher", viral_matcher_node)
     builder.add_node("content_analyzer", content_analyzer_node)
     builder.add_node("version_generator", version_generator_node)
@@ -88,8 +106,11 @@ def build_graph() -> StateGraph:
     builder.add_edge("content_strategist", "copywriter")
 
     # ── 发布前优化流程 ──
-    # copywriter → viral_matcher (搜索爆款参考)
-    builder.add_edge("copywriter", "viral_matcher")
+    # copywriter → draft_gate (wait for user draft if needed)
+    builder.add_edge("copywriter", "draft_gate")
+
+    # draft_gate → viral_matcher (search for viral references)
+    builder.add_edge("draft_gate", "viral_matcher")
 
     # viral_matcher → [content_analyzer | visual_designer] (条件路由)
     builder.add_conditional_edges(
@@ -104,8 +125,16 @@ def build_graph() -> StateGraph:
     # content_analyzer → version_generator (生成版本)
     builder.add_edge("content_analyzer", "version_generator")
 
-    # version_generator → choice_gate (用户选择)
-    builder.add_edge("version_generator", "choice_gate")
+    # version_generator → [choice_gate | visual_designer]
+    # (conditional — only enter choice_gate if multiple versions)
+    builder.add_conditional_edges(
+        "version_generator",
+        should_present_choice,
+        {
+            "choice_gate": "choice_gate",
+            "visual_designer": "visual_designer",
+        },
+    )
 
     # choice_gate → visual_designer (选择后进入视觉设计)
     builder.add_edge("choice_gate", "visual_designer")
@@ -136,6 +165,7 @@ def build_graph() -> StateGraph:
         should_continue,
         {
             "orchestrator": "orchestrator",
+            "engagement": "engagement",
             "__end__": END,
         },
     )
@@ -162,7 +192,7 @@ def compile_graph_dev() -> CompiledStateGraph:
     graph = builder.compile(
         checkpointer=checkpointer,
         store=store,
-        interrupt_before=["review_gate", "choice_gate"],
+        interrupt_before=["review_gate"],
     )
     return graph
 
@@ -184,7 +214,7 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         await checkpointer.setup()
         graph = builder.compile(
             checkpointer=checkpointer,
-            interrupt_before=["review_gate", "choice_gate"],
+            interrupt_before=["review_gate"],
         )
         return graph, checkpointer
     except ImportError:

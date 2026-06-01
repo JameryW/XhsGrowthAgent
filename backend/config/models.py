@@ -26,6 +26,7 @@ class ModelProvider(StrEnum):
     DEEPSEEK = "deepseek"
     DASHSCOPE = "dashscope"
     XIAOMIMIMO = "xiaomimimo"
+    XUNFEI = "xunfei"
 
 
 class ModelConfig(BaseModel):
@@ -70,24 +71,30 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
         temperature=0.7,
         max_tokens=4096,
     ),
+    "astron-code-latest": ModelConfig(
+        provider=ModelProvider.XUNFEI,
+        model_name="astron-code-latest",
+        temperature=0.7,
+        max_tokens=4096,
+    ),
 }
 
 
 def resolve_model_id(task_type: TaskType, routing_overrides: dict[str, str] | None = None) -> str:
     """根据任务类型解析模型 ID，支持用户覆盖"""
     routing = {
-        TaskType.ROUTING: "mimo-v2.5-pro",
-        TaskType.SCOUTING: "mimo-v2.5-pro",
-        TaskType.STRATEGY: "mimo-v2.5-pro",
-        TaskType.WRITING: "mimo-v2.5-pro",
-        TaskType.VISUAL: "mimo-v2.5-pro",
-        TaskType.ANALYSIS: "mimo-v2.5-pro",
-        TaskType.PUBLISHING: "mimo-v2.5-pro",
-        TaskType.ENGAGEMENT: "mimo-v2.5-pro",
+        TaskType.ROUTING: "astron-code-latest",
+        TaskType.SCOUTING: "astron-code-latest",
+        TaskType.STRATEGY: "astron-code-latest",
+        TaskType.WRITING: "astron-code-latest",
+        TaskType.VISUAL: "astron-code-latest",
+        TaskType.ANALYSIS: "astron-code-latest",
+        TaskType.PUBLISHING: "astron-code-latest",
+        TaskType.ENGAGEMENT: "astron-code-latest",
         # 新增
-        TaskType.VIRAL_MATCHING: "mimo-v2.5-pro",
-        TaskType.CONTENT_ANALYSIS: "mimo-v2.5-pro",
-        TaskType.VERSION_GEN: "mimo-v2.5-pro",
+        TaskType.VIRAL_MATCHING: "astron-code-latest",
+        TaskType.CONTENT_ANALYSIS: "astron-code-latest",
+        TaskType.VERSION_GEN: "astron-code-latest",
     }
     if routing_overrides:
         for k, v in routing_overrides.items():
@@ -109,6 +116,7 @@ MODEL_COST_PER_1K: dict[str, dict[str, float]] = {
     "deepseek-chat": {"input": 0.00014, "output": 0.00028},
     "qwen-plus": {"input": 0.0004, "output": 0.0012},
     "mimo-v2.5-pro": {"input": 0.0002, "output": 0.0006},
+    "astron-code-latest": {"input": 0.0002, "output": 0.0006},
 }
 
 

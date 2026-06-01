@@ -41,6 +41,8 @@ class TestModelProvider:
         assert ModelProvider.OPENAI.value == "openai"
         assert ModelProvider.DEEPSEEK.value == "deepseek"
         assert ModelProvider.DASHSCOPE.value == "dashscope"
+        assert ModelProvider.XIAOMIMIMO.value == "xiaomimimo"
+        assert ModelProvider.XUNFEI.value == "xunfei"
 
 
 class TestModelConfig:
@@ -81,6 +83,7 @@ class TestModelRegistry:
             "deepseek-chat",
             "qwen-plus",
             "mimo-v2.5-pro",
+            "astron-code-latest",
         ]
         for model_id in expected_models:
             assert model_id in MODEL_REGISTRY
@@ -95,28 +98,28 @@ class TestModelRegistry:
 class TestResolveModelId:
     """Tests for resolve_model_id function."""
 
-    def test_routing_tasks_use_mimo(self):
-        """ROUTING and SCOUTING use mimo-v2.5-pro."""
-        assert resolve_model_id(TaskType.ROUTING) == "mimo-v2.5-pro"
-        assert resolve_model_id(TaskType.SCOUTING) == "mimo-v2.5-pro"
+    def test_routing_tasks_use_xunfei(self):
+        """ROUTING and SCOUTING use astron-code-latest."""
+        assert resolve_model_id(TaskType.ROUTING) == "astron-code-latest"
+        assert resolve_model_id(TaskType.SCOUTING) == "astron-code-latest"
 
-    def test_strategy_writing_use_mimo(self):
-        """STRATEGY and WRITING use mimo-v2.5-pro."""
-        assert resolve_model_id(TaskType.STRATEGY) == "mimo-v2.5-pro"
-        assert resolve_model_id(TaskType.WRITING) == "mimo-v2.5-pro"
+    def test_strategy_writing_use_xunfei(self):
+        """STRATEGY and WRITING use astron-code-latest."""
+        assert resolve_model_id(TaskType.STRATEGY) == "astron-code-latest"
+        assert resolve_model_id(TaskType.WRITING) == "astron-code-latest"
 
-    def test_visual_analysis_use_mimo(self):
-        """VISUAL and ANALYSIS use mimo-v2.5-pro."""
-        assert resolve_model_id(TaskType.VISUAL) == "mimo-v2.5-pro"
-        assert resolve_model_id(TaskType.ANALYSIS) == "mimo-v2.5-pro"
+    def test_visual_analysis_use_xunfei(self):
+        """VISUAL and ANALYSIS use astron-code-latest."""
+        assert resolve_model_id(TaskType.VISUAL) == "astron-code-latest"
+        assert resolve_model_id(TaskType.ANALYSIS) == "astron-code-latest"
 
-    def test_publishing_use_mimo(self):
-        """PUBLISHING uses mimo-v2.5-pro."""
-        assert resolve_model_id(TaskType.PUBLISHING) == "mimo-v2.5-pro"
+    def test_publishing_use_xunfei(self):
+        """PUBLISHING uses astron-code-latest."""
+        assert resolve_model_id(TaskType.PUBLISHING) == "astron-code-latest"
 
-    def test_engagement_use_mimo(self):
-        """ENGAGEMENT uses mimo-v2.5-pro."""
-        assert resolve_model_id(TaskType.ENGAGEMENT) == "mimo-v2.5-pro"
+    def test_engagement_use_xunfei(self):
+        """ENGAGEMENT uses astron-code-latest."""
+        assert resolve_model_id(TaskType.ENGAGEMENT) == "astron-code-latest"
 
     def test_routing_overrides(self):
         """Routing overrides allow custom model assignments."""

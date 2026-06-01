@@ -83,13 +83,23 @@ async def test_predict_spread_handles_failure():
         assert result["ripple_prediction"] is None
 
 
-def test_ripple_settings_default():
+def test_ripple_settings_default(monkeypatch):
     """Ripple 配置默认值"""
     from backend.config.settings import RippleSettings
 
-    s = RippleSettings()
+    for key in (
+        "RIPPLE_BASE_URL",
+        "RIPPLE_API_TOKEN",
+        "RIPPLE_DEFAULT_MAX_WAVES",
+        "RIPPLE_DEFAULT_SIMULATION_HORIZON",
+        "RIPPLE_REQUEST_TIMEOUT",
+        "RIPPLE_ENABLED",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    s = RippleSettings(_env_file=None)
     assert s.base_url == "http://127.0.0.1:8081"
-    assert s.enabled is True
+    assert s.enabled is False
     assert s.default_max_waves == 8
     assert s.request_timeout == 300
 

@@ -281,6 +281,9 @@ class HotTopicItem(BaseModel):
     heat_score: conint(ge=0, le=100, strict=True) = Field(
         ..., description='Topic heat/popularity score', examples=[85]
     )
+    heat_percentage: confloat(ge=0.0, le=100.0, strict=True) = Field(
+        ..., description='Heat score as percentage', examples=[85.0]
+    )
     growth_rate: StrictFloat = Field(
         ..., description='Growth rate percentage', examples=[0.23]
     )

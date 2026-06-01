@@ -10,7 +10,6 @@ import OptimizationPanel from '@/components/dashboard/OptimizationPanel.vue'
 import ActionButtons from '@/components/dashboard/ActionButtons.vue'
 import CelebrationModal from '@/components/CelebrationModal.vue'
 import ProgressPhase from '@/components/ProgressPhase.vue'
-import StepIndicator from '@/components/StepIndicator.vue'
 import { DashboardSkeleton } from '@/components/skeletons'
 import ErrorState from '@/components/ErrorState.vue'
 import ErrorCard from '@/components/ErrorCard.vue'
@@ -25,18 +24,6 @@ const errorStore = useErrorStore()
 const showOptimization = computed(() => workflowStore.currentPhase === 'creating')
 const isLoading = computed(() => workflowStore.isLoading && !workflowStore.workflowState)
 const hasError = computed(() => workflowStore.error !== null)
-
-// Workflow steps for step indicator
-const workflowSteps = computed(() => {
-  const phases = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging', 'completed']
-  const currentPhase = workflowStore.currentPhase || 'idle'
-  const currentIndex = phases.indexOf(currentPhase)
-  return phases.map((phase, index) => ({
-    name: phase,
-    status: (index < currentIndex ? 'completed' :
-            index === currentIndex ? 'active' : 'pending') as 'completed' | 'active' | 'pending'
-  }))
-})
 
 // Celebration state
 const showCelebration = ref(false)
@@ -159,10 +146,8 @@ onUnmounted(() => {
         <ProgressPhase
           :percent="workflowStore.progressPercent"
           :current-phase="workflowStore.currentPhase"
+          :current-status="workflowStore.currentStatus"
         />
-        <div class="mt-4">
-          <StepIndicator :steps="workflowSteps" layout="vertical" />
-        </div>
       </div>
 
       <WorkflowHeader />

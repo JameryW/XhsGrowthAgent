@@ -19,7 +19,16 @@ const phaseOrder = ['scouting', 'planning', 'creating', 'reviewing', 'publishing
 const workflowProgress = computed(() => workflowStore.progressPercent)
 
 // Current agent from workflow state
-const currentAgent = computed(() => workflowStore.workflowState?.current_agent || '')
+const currentAgent = computed(() => {
+  const status = workflowStore.currentStatus
+  const nextNode = workflowStore.nextNodes[0]
+
+  if (status === 'awaiting_draft') return nextNode || 'draft_gate'
+  if (status === 'awaiting_choice') return nextNode || 'choice_gate'
+  if (status === 'awaiting_review') return nextNode || 'review_gate'
+
+  return workflowStore.workflowState?.current_agent || nextNode || ''
+})
 
 // Has error
 const hasError = computed(() => workflowStore.currentPhase === 'error' || !!workflowStore.workflowState?.error)
@@ -29,25 +38,97 @@ const errorMessage = computed(() => workflowStore.workflowState?.error || '')
 const agentTimeline = computed(() => workflowStore.agentTimeline)
 const hasTimelineData = computed(() => agentTimeline.value.length > 0)
 
+interface TimelineNode {
+  icon: string
+  label: string
+  phase: string
+  description: string
+  agent: string
+}
+
 // Workflow nodes configuration
-const workflowNodes = computed(() => [
+const workflowNodes = computed<TimelineNode[]>(() => [
   { icon: 'Search', label: t('dashboard.timeline.scouting'), phase: 'scouting', description: t('dashboard.timeline.scoutingDesc'), agent: 'trend_scout' },
   { icon: 'ClipboardList', label: t('dashboard.timeline.planning'), phase: 'planning', description: t('dashboard.timeline.planningDesc'), agent: 'content_strategist' },
   { icon: 'Pencil', label: t('dashboard.timeline.creating'), phase: 'creating', description: t('dashboard.timeline.creatingDesc'), agent: 'copywriter' },
+  { icon: 'FileText', label: t('dashboard.timeline.draft'), phase: 'creating', description: t('dashboard.timeline.draftDesc'), agent: 'draft_gate' },
   { icon: 'Palette', label: t('dashboard.timeline.visual'), phase: 'creating', description: t('dashboard.timeline.visualDesc'), agent: 'visual_designer' },
   { icon: 'Clock', label: t('dashboard.timeline.reviewing'), phase: 'reviewing', description: t('dashboard.timeline.reviewingDesc'), agent: 'review_gate' },
   { icon: 'Upload', label: t('dashboard.timeline.publishing'), phase: 'publishing', description: t('dashboard.timeline.publishingDesc'), agent: 'publisher' },
   { icon: 'BarChart3', label: t('dashboard.timeline.analyzing'), phase: 'analyzing', description: t('dashboard.timeline.analyzingDesc'), agent: 'analyst' },
 ])
 
+type NodeStatus = 'completed' | 'running' | 'pending' | 'error'
+
+const agentOrder = [
+  'trend_scout',
+  'content_strategist',
+  'copywriter',
+  'draft_gate',
+  'viral_matcher',
+  'content_analyzer',
+  'version_generator',
+  'choice_gate',
+  'visual_designer',
+  'review_gate',
+  'publisher',
+  'analyst',
+  'engagement',
+] as const
+
+const hasData = (value: unknown) =>
+  !!value && typeof value === 'object' && Object.keys(value as Record<string, unknown>).length > 0
+
+const agentIndex = (agent: string) => agentOrder.indexOf(agent as typeof agentOrder[number])
+
+const isNodeCompleted = (node: TimelineNode) => {
+  const status = workflowStore.currentStatus
+
+  if (status === 'completed') return true
+  if (node.agent === 'trend_scout') return hasData(workflowStore.trendData)
+  if (node.agent === 'content_strategist') return hasData(workflowStore.contentPlan)
+  if (node.agent === 'copywriter') return hasData(workflowStore.copyContent)
+  if (node.agent === 'draft_gate') return hasData(workflowStore.workflowState?.draft_content)
+  if (node.agent === 'visual_designer') {
+    return (
+      status === 'awaiting_review' ||
+      currentAgent.value === 'review_gate' ||
+      (currentAgent.value === 'visual_designer' && hasData(workflowStore.visualPlan))
+    )
+  }
+  if (node.agent === 'review_gate') {
+    return (
+      workflowStore.currentPhase !== 'reviewing' &&
+      status !== 'awaiting_review' &&
+      agentIndex(currentAgent.value) > agentIndex('review_gate')
+    )
+  }
+  if (node.agent === 'publisher') return hasData(workflowStore.workflowState?.publish_result)
+  if (node.agent === 'analyst') return hasData(workflowStore.workflowState?.analytics)
+
+  return false
+}
+
 // Use memoized phaseOrder for consistent lookup
-const getNodeStatus = (phase: string) => {
+const getNodeStatus = (node: TimelineNode): NodeStatus => {
   // If workflow has error and this is the current phase, show error
-  if (hasError.value && phase === workflowStore.currentPhase) return 'error'
+  if (hasError.value && (node.agent === currentAgent.value || node.phase === workflowStore.currentPhase)) return 'error'
+
+  const activeAgentIndex = agentIndex(currentAgent.value)
+  const nodeAgentIndex = agentIndex(node.agent)
+
+  if (activeAgentIndex >= 0 && nodeAgentIndex >= 0) {
+    if (nodeAgentIndex < activeAgentIndex) return 'completed'
+    if (nodeAgentIndex > activeAgentIndex) return 'pending'
+    if (isNodeCompleted(node)) return 'completed'
+    return 'running'
+  }
+
+  if (isNodeCompleted(node)) return 'completed'
 
   const currentPhase = workflowStore.currentPhase
   const currentIndex = phaseOrder.indexOf(currentPhase as any)
-  const nodeIndex = phaseOrder.indexOf(phase as any)
+  const nodeIndex = phaseOrder.indexOf(node.phase as any)
 
   if (nodeIndex < currentIndex) return 'completed'
   if (nodeIndex === currentIndex) return 'running'
@@ -137,11 +218,11 @@ const isFocused = (index: number) => focusedIndex.value === index
         :key="`${node.phase}-${index}`"
         :icon="node.icon"
         :label="node.label"
-        :status="getNodeStatus(node.phase)"
+        :status="getNodeStatus(node)"
         :focused="isFocused(index)"
         role="listitem"
         :tabindex="isFocused(index) ? 0 : -1"
-        :aria-label="`${node.label} - ${getNodeStatus(node.phase) === 'completed' ? t('dashboard.timeline.completed') : getNodeStatus(node.phase) === 'running' ? t('dashboard.timeline.running') : getNodeStatus(node.phase) === 'error' ? t('dashboard.timeline.error') : t('dashboard.timeline.pending')}`"
+        :aria-label="`${node.label} - ${getNodeStatus(node) === 'completed' ? t('dashboard.timeline.completed') : getNodeStatus(node) === 'running' ? t('dashboard.timeline.running') : getNodeStatus(node) === 'error' ? t('dashboard.timeline.error') : t('dashboard.timeline.pending')}`"
         :aria-describedby="`node-desc-${index}`"
       />
 
