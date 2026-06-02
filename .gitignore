@@ -37,3 +37,9 @@ Thumbs.db
 .playwright-mcp/
 .serena/
 .superpowers/
+
+# Claude Code worktrees (temporary agent workspaces)
+.claude/worktrees/
+
+# AI-generated planning/spec docs (process artifacts, not source of truth)
+docs/superpowers/
