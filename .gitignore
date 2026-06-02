@@ -41,6 +41,9 @@ Thumbs.db
 # Dependencies & package stores
 .pnpm-store/
 node_modules/
+
+# Trellis workspace (personal journals, indices — per-developer)
+.trellis/workspace/
 .claude/worktrees/
 
 # AI-generated planning/spec docs (process artifacts, not source of truth)
