@@ -26,7 +26,7 @@ _PROVIDER_ENV_VARS: dict[ModelProvider, str] = {
 }
 
 
-def _create_model(config: ModelConfig) -> BaseChatModel:
+def _create_model(config: ModelConfig, timeout: int | None = None) -> BaseChatModel:
     """根据 ModelConfig 创建对应的 ChatModel 实例"""
     env_var = _PROVIDER_ENV_VARS.get(config.provider)
     api_key = os.environ.get(env_var, "") if env_var else ""
@@ -36,13 +36,15 @@ def _create_model(config: ModelConfig) -> BaseChatModel:
             f"Set the {env_var} environment variable or add it to your .env file."
         )
 
+    effective_timeout = timeout or config.timeout
+
     match config.provider:
         case ModelProvider.ANTHROPIC:
             return ChatAnthropic(
                 model=config.model_name,
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
-                timeout=config.timeout,
+                timeout=effective_timeout,
                 api_key=api_key,
             )
         case ModelProvider.OPENAI:
@@ -50,7 +52,7 @@ def _create_model(config: ModelConfig) -> BaseChatModel:
                 model=config.model_name,
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
-                timeout=config.timeout,
+                timeout=effective_timeout,
                 api_key=api_key,
             )
         case ModelProvider.DEEPSEEK:
@@ -58,7 +60,7 @@ def _create_model(config: ModelConfig) -> BaseChatModel:
                 model=config.model_name,
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
-                timeout=config.timeout,
+                timeout=effective_timeout,
                 api_key=api_key,
                 base_url="https://api.deepseek.com",
             )
@@ -67,7 +69,7 @@ def _create_model(config: ModelConfig) -> BaseChatModel:
                 model=config.model_name,
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
-                timeout=config.timeout,
+                timeout=effective_timeout,
                 api_key=api_key,
                 base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
             )
@@ -76,7 +78,7 @@ def _create_model(config: ModelConfig) -> BaseChatModel:
                 model=config.model_name,
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
-                timeout=config.timeout,
+                timeout=effective_timeout,
                 api_key=api_key,
                 base_url=os.environ.get("XIAOMIMIMO_BASE_URL", "https://token-plan-sgp.xiaomimimo.com/v1"),
             )
@@ -85,7 +87,7 @@ def _create_model(config: ModelConfig) -> BaseChatModel:
                 model=config.model_name,
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
-                timeout=config.timeout,
+                timeout=effective_timeout,
                 api_key=api_key,
                 base_url=os.environ.get("XUNFEI_BASE_URL", "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2"),
             )
@@ -100,13 +102,19 @@ class ModelRouter:
 
     def get_model(self, task_type: TaskType) -> BaseChatModel:
         """获取任务对应的模型实例（惰性初始化 + 缓存）"""
-        model_id = resolve_model_id(task_type, self._overrides)
-        if model_id not in self._cache:
-            from backend.config.models import get_model_config
+        from backend.config.models import TASK_TIMEOUT_OVERRIDES, get_model_config
 
+        model_id = resolve_model_id(task_type, self._overrides)
+
+        # Use task-specific timeout if configured
+        task_timeout = TASK_TIMEOUT_OVERRIDES.get(task_type.value)
+        # Cache key includes timeout to avoid reusing wrong timeout
+        cache_key = f"{model_id}:{task_timeout}" if task_timeout else model_id
+
+        if cache_key not in self._cache:
             config = get_model_config(model_id)
-            self._cache[model_id] = _create_model(config)
-        return self._cache[model_id]
+            self._cache[cache_key] = _create_model(config, timeout=task_timeout)
+        return self._cache[cache_key]
 
     def get_model_for_task(self, task: str) -> BaseChatModel:
         """字符串任务名 → 模型"""

@@ -60,7 +60,7 @@ const variantClasses = computed(() => {
     cyan: 'bg-gradient-to-r from-neon-cyan via-neon-cyanLight to-neon-green border-transparent shadow-neon-cyan-sm hover:shadow-neon-cyan hover:brightness-110 hover:scale-[1.03]',
     purple: 'bg-gradient-to-r from-neon-purple via-neon-purpleLight to-neon-blue border-transparent shadow-neon-purple-sm hover:shadow-neon-purple hover:brightness-110 hover:scale-[1.03]',
     peach: 'bg-gradient-to-r from-neon-peach via-neon-peachLight to-neon-yellow border-transparent shadow-neon-peach hover:shadow-neon-peach hover:brightness-110 hover:scale-[1.03]',
-    ghost: 'bg-white/80 border-gray-200 hover:bg-white hover:border-gray-300 text-text-primary hover:scale-[1.02]',
+    ghost: 'bg-white/80 border-gray-200 hover:bg-white hover:border-gray-300 hover:scale-[1.02]',
   }
   return variants[props.variant]
 })
@@ -94,11 +94,12 @@ const handleClick = () => {
     :aria-busy="loading"
     :title="title || undefined"
     :class="[
-      'relative rounded-xl border font-semibold text-white overflow-hidden',
+      'relative rounded-xl border font-semibold overflow-hidden',
       'transition-all duration-200 ease-out',
       'transform hover:scale-[1.02] active:scale-[0.98]',
       'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100',
       'focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-white',
+      variant === 'ghost' ? 'text-slate-700' : 'text-white',
       variantClasses,
       sizeClasses,
       { 'scale-bounce-animation': showSuccessAnimation },

@@ -97,8 +97,8 @@ const quickStart = () => {
 </script>
 
 <template>
-  <div class="min-h-[80vh] flex flex-col items-center justify-center">
-    <div class="w-full max-w-lg space-y-4 px-4 md:px-0">
+  <div class="min-h-[80vh] flex flex-col justify-center">
+    <div class="w-full max-w-4xl mx-auto space-y-4 px-4 md:px-8">
       <!-- Pre-Launch Checklist -->
       <PreLaunchChecklist ref="checklistRef" />
 
@@ -162,22 +162,25 @@ const quickStart = () => {
             </NeonButton>
           </template>
 
-          <NeonButton v-if="showForm" variant="ghost" size="sm" class="w-full" @click="showForm = false">
-            {{ t('home.quickStart') }}
+          <NeonButton v-if="showForm" variant="cyan" size="sm" class="w-full" @click="showForm = false">
+            <span class="inline-flex items-center gap-2">
+              <AppIcon name="Zap" size="sm" variant="white" aria-hidden="true" />
+              <span>{{ t('home.quickStart') }}</span>
+            </span>
           </NeonButton>
 
           <!-- Navigation buttons -->
           <div class="flex gap-3">
-            <NeonButton variant="ghost" size="md" class="flex-1" @click="goToDashboard" :disabled="isStarting" :aria-label="t('home.viewDashboard')">
+            <NeonButton variant="cyan" size="md" class="flex-1" @click="goToDashboard" :disabled="isStarting" :aria-label="t('home.viewDashboard')">
               <span class="inline-flex items-center gap-2">
-                <AppIcon name="BarChart3" size="sm" variant="cyan" aria-hidden="true" />
+                <AppIcon name="BarChart3" size="sm" variant="white" aria-hidden="true" />
                 <span class="text-sm">{{ t('home.viewDashboard') }}</span>
               </span>
             </NeonButton>
 
-            <NeonButton variant="ghost" size="md" class="flex-1" @click="goToHistory" :disabled="isStarting">
+            <NeonButton variant="purple" size="md" class="flex-1" @click="goToHistory" :disabled="isStarting">
               <span class="inline-flex items-center gap-2">
-                <AppIcon name="History" size="sm" variant="purple" aria-hidden="true" />
+                <AppIcon name="History" size="sm" variant="white" aria-hidden="true" />
                 <span class="text-sm">{{ t('home.history') }}</span>
               </span>
             </NeonButton>

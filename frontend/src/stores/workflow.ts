@@ -34,7 +34,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   )
 
   const currentStatus = computed<WorkflowStatus>(() =>
-    workflowState.value?.status || 'running'
+    workflowState.value?.status || 'idle'
   )
 
   const nextNodes = computed(() => workflowState.value?.next_steps || [])

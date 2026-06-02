@@ -39,6 +39,13 @@ class ModelConfig(BaseModel):
     timeout: int = 60
 
 
+# 任务类型特定的超时覆盖（秒）
+TASK_TIMEOUT_OVERRIDES: dict[str, int] = {
+    # 版本生成需要生成 A/B/C 三个完整版本，耗时较长
+    "version_gen": 180,
+}
+
+
 # 模型注册表 — model_id → ModelConfig
 MODEL_REGISTRY: dict[str, ModelConfig] = {
     "claude-sonnet-4-20250514": ModelConfig(

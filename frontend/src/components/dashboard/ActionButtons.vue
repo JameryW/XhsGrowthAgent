@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import NeonButton from '@/components/NeonButton.vue'
@@ -18,7 +18,6 @@ const isReviewing = computed(() => workflowStore.currentPhase === 'reviewing')
 const isPaused = computed(() => workflowStore.currentPhase === 'paused')
 const isCancelled = computed(() => workflowStore.currentPhase === 'cancelled')
 const needsReview = computed(() => reviewStore.hasPendingReview)
-const isStarting = ref(false)
 const canPause = computed(() => workflowStore.isRunning)
 const canReview = computed(() => workflowStore.isAwaitingReview || isReviewing.value)
 const waitingStatusText = computed(() => {
@@ -66,13 +65,8 @@ const statusSourceColor = computed(() => {
 })
 
 // Operations
-const startNewWorkflow = async () => {
-  isStarting.value = true
-  try {
-    await workflowStore.startWorkflow('default', 'scouting')
-  } finally {
-    isStarting.value = false
-  }
+const startNewWorkflow = () => {
+  router.push('/')
 }
 
 const pauseWorkflow = () => {
@@ -134,7 +128,6 @@ const openPostUrl = () => {
         class="w-full sm:w-auto"
         :title="t('dashboard.actionButtons.startNewDesc')"
         :aria-label="t('dashboard.actionButtons.startNew')"
-        :loading="isStarting"
         @click="startNewWorkflow"
       >
         <span class="inline-flex items-center gap-2">
@@ -185,7 +178,6 @@ const openPostUrl = () => {
         class="w-full sm:w-auto"
         :title="t('dashboard.actionButtons.startNewDesc')"
         :aria-label="t('dashboard.actionButtons.startNew')"
-        :loading="isStarting"
         @click="startNewWorkflow"
       >
         <span class="inline-flex items-center gap-2">
