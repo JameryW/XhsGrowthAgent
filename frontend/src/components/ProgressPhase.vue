@@ -15,7 +15,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   currentPhase: 'idle',
-  currentStatus: 'running',
+  currentStatus: 'idle',
 })
 
 const { phaseToColor } = useLoading()

@@ -17,6 +17,7 @@ export type WorkflowPhase =
 
 // Workflow status - matches backend WorkflowStatus enum
 export type WorkflowStatus =
+  | 'idle'
   | 'running'
   | 'awaiting_review'
   | 'awaiting_choice'
