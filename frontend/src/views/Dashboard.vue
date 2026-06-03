@@ -9,7 +9,6 @@ import ContentCards from '@/components/dashboard/ContentCards.vue'
 import OptimizationPanel from '@/components/dashboard/OptimizationPanel.vue'
 import ActionButtons from '@/components/dashboard/ActionButtons.vue'
 import CelebrationModal from '@/components/CelebrationModal.vue'
-import ProgressPhase from '@/components/ProgressPhase.vue'
 import { DashboardSkeleton } from '@/components/skeletons'
 import ErrorState from '@/components/ErrorState.vue'
 import ErrorCard from '@/components/ErrorCard.vue'
@@ -139,15 +138,6 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-      </div>
-
-      <!-- Progress Phase and Step Indicator -->
-      <div class="card">
-        <ProgressPhase
-          :percent="workflowStore.progressPercent"
-          :current-phase="workflowStore.currentPhase"
-          :current-status="workflowStore.currentStatus"
-        />
       </div>
 
       <WorkflowHeader />

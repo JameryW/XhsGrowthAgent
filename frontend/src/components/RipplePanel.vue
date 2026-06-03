@@ -36,6 +36,7 @@ const isFallback = computed(() => {
 })
 
 const isDisabled = computed(() => props.rippleReason === 'disabled')
+const isUnavailable = computed(() => props.rippleReason === 'timeout')
 
 // Format large numbers
 function formatNumber(n?: number): string {
@@ -261,8 +262,15 @@ function progressWidth(value?: number, max: number = 1): string {
     </div>
   </div>
 
+  <!-- Timeout/unavailable state -->
+  <div v-if="isUnavailable" class="rounded-xl p-4 bg-amber-50 border border-amber-200 text-center">
+    <AppIcon name="AlertTriangle" size="md" variant="peach" class="mb-2 mx-auto" />
+    <p class="text-xs text-amber-700 font-medium">Ripple 模拟不可用</p>
+    <p class="text-xs text-amber-500 mt-1">服务响应超时，传播预测已跳过</p>
+  </div>
+
   <!-- Empty state -->
-  <div v-else class="rounded-xl p-4 bg-slate-50 border border-slate-200 text-center">
+  <div v-else-if="!hasAnyData" class="rounded-xl p-4 bg-slate-50 border border-slate-200 text-center">
     <AppIcon name="Zap" size="md" variant="purple" class="mb-2 mx-auto opacity-40" />
     <p class="text-xs text-slate-400">{{ t('dashboard.ripple.noData') }}</p>
   </div>

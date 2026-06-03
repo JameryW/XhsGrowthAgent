@@ -142,14 +142,14 @@ const isLastStep = computed(() => props.currentStep === 3)
     <Transition name="onboarding">
       <div
         v-if="isActive"
-        class="fixed inset-0 z-50"
+        class="fixed inset-0 z-50 pointer-events-none"
         role="dialog"
         aria-modal="true"
         aria-labelledby="tour-title"
         aria-describedby="tour-desc"
       >
         <!-- Overlay mask with cutout for highlight -->
-        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm">
+        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm pointer-events-none">
           <!-- Highlight box cutout -->
           <div
             class="absolute rounded-lg ring-4 ring-neon-cyan ring-offset-2 ring-offset-transparent transition-all duration-300"
