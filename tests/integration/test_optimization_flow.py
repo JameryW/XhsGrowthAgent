@@ -140,17 +140,16 @@ class TestOptimizationGraphIntegration:
         )
 
     def test_compile_graph_uses_interrupt_before(self):
-        """Dev graph uses interrupt_before for review_gate only.
+        """Dev graph uses interrupt_before for review, choice, and draft gates.
 
-        choice_gate is no longer in interrupt_before — it uses a conditional
-        edge (should_present_choice) so only enters choice_gate when multiple
-        versions exist, and the node itself calls interrupt() dynamically.
+        All three gates require human confirmation before proceeding.
         """
         graph = compile_graph_dev()
 
-        # interrupt_before contains review_gate only
+        # interrupt_before contains review_gate, choice_gate, and draft_gate
         assert "review_gate" in graph.interrupt_before_nodes
-        assert "choice_gate" not in graph.interrupt_before_nodes
+        assert "choice_gate" in graph.interrupt_before_nodes
+        assert "draft_gate" in graph.interrupt_before_nodes
         assert graph.interrupt_after_nodes == []
 
 

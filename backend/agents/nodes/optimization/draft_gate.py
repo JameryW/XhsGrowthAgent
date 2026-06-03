@@ -1,4 +1,4 @@
-"""Draft gate node implementation - waits for user draft submission."""
+"""Draft gate node implementation - waits for user draft confirmation."""
 
 import logging
 from typing import Any
@@ -14,50 +14,48 @@ logger = logging.getLogger("xhs_growth.graph.nodes")
 
 
 async def draft_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
-    """Draft submission gate - waits for user draft via submit_draft endpoint.
+    """Draft confirmation gate — always pauses for user to confirm or edit.
 
-    This node checks if draft_content exists in state:
-    - If draft_content exists: proceed to viral_matcher (optimization flow)
-    - If no draft_content: interrupt and wait for user submission
+    If the user already submitted draft_content (via resume/submit_draft),
+    skip interrupt and proceed. Otherwise, interrupt so the user can review
+    the AI-generated copy and edit before continuing.
 
-    The interrupt is resumed via Command(resume=draft_data) from submit_draft endpoint.
+    The AI-generated copy is passed in the interrupt value as `default_draft`,
+    so the frontend can pre-populate the editor.
     """
     _check_cancelled(state)
 
     draft_content = state.get("draft_content")
     copy_content = state.get("copy_content") or {}
 
-    # If draft already exists, skip interrupt and proceed
-    if draft_content and draft_content.get("text"):
-        logger.debug("Draft content already present, skipping draft_gate interrupt")
+    # User already submitted a draft (via submit_draft endpoint) — proceed
+    if (
+        draft_content
+        and draft_content.get("text")
+        and draft_content.get("source") != "ai_generated"
+    ):
+        logger.debug("User-submitted draft_content present, skipping interrupt")
         return NodeResult({
             "phase": WorkflowPhase.CREATING,
         }, "draft_gate").to_dict()
 
-    # Generated copy is a valid default draft. The user can still edit it from
-    # the UI, but the workflow should not require retyping AI-generated copy.
-    if copy_content.get("body_text"):
-        logger.debug("Using generated copy_content as default draft")
-        return NodeResult({
-            "phase": WorkflowPhase.CREATING,
-            "draft_content": {
-                "title": copy_content.get("selected_title") or "",
-                "text": copy_content.get("body_text") or "",
-                "hashtags": copy_content.get("hashtags") or [],
-            },
-        }, "draft_gate").to_dict()
+    # Build default draft from AI-generated copy for user to confirm/edit
+    default_draft = {}
+    if copy_content and copy_content.get("body_text"):
+        default_draft = {
+            "title": copy_content.get("selected_title") or "",
+            "text": copy_content.get("body_text") or "",
+            "hashtags": copy_content.get("hashtags") or [],
+            "source": "ai_generated",
+        }
 
-    # No draft - interrupt and wait for user submission
-    # interrupt(None) pauses the graph until resumed via Command(resume=draft_data)
-    # The resume value is the draft data submitted via /api/optimization/draft endpoint
-    logger.info("No draft content found, interrupting at draft_gate")
-    decision = interrupt({"gate": "draft"})
+    # Always interrupt — user must confirm or edit before proceeding
+    logger.info("Interrupting at draft_gate for user confirmation")
+    decision = interrupt({"gate": "draft", "default_draft": default_draft})
 
     # On resume, decision contains the draft data from submit_draft
-    # The submit_draft endpoint writes draft_content to state before resuming,
-    # so we just need to signal that we're proceeding
-    if decision:
-        logger.debug("Draft gate resumed with decision: %s", decision.get("title", "no title"))
+    if decision and isinstance(decision, dict):
+        logger.debug("Draft gate resumed with user decision: %s", decision.get("title", "no title"))
 
     return NodeResult({
         "phase": WorkflowPhase.CREATING,
