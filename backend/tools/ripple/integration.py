@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from backend.services.ripple_service import RippleService
+from backend.services.ripple_service import RippleService, RippleTimeoutError
 
 logger = logging.getLogger("xhs_growth.tools.ripple")
 
@@ -68,6 +68,9 @@ async def predict_spread(
             max_wait=max_wait,
         )
         return result
+    except RippleTimeoutError:
+        # 让 RippleTimeoutError 传播到调用方，以便保存 job_id 并尝试取消
+        raise
     except Exception as e:
         logger.error(f"Ripple spread prediction failed: {e}")
         return {"error": str(e), "ripple_prediction": None}
@@ -104,6 +107,9 @@ async def validate_pmf(
             max_wait=max_wait,
         )
         return result
+    except RippleTimeoutError:
+        # 让 RippleTimeoutError 传播到调用方，以便保存 job_id 并尝试取消
+        raise
     except Exception as e:
         logger.error(f"Ripple PMF validation failed: {e}")
         return {"error": str(e), "ripple_pmf": None}
@@ -129,6 +135,45 @@ async def get_report(job_id: str) -> dict[str, Any]:
         return {"error": str(e)}
 
 
+async def cancel_simulation(job_id: str) -> dict[str, Any]:
+    """尝试取消 Ripple 模拟任务
+
+    乐观尝试 DELETE，对 404/405/网络错误做优雅降级。
+
+    Args:
+        job_id: 模拟任务 ID
+
+    Returns:
+        {"cancelled": bool, "job_id": str, "status": str, "error"?: str}
+    """
+    try:
+        service = await _get_service()
+        return await service.cancel_simulation(job_id)
+    except Exception as e:
+        logger.error(f"Ripple cancel failed for {job_id}: {e}")
+        return {"cancelled": False, "job_id": job_id, "status": "error", "error": str(e)}
+
+
+async def recover_result(job_id: str) -> dict[str, Any]:
+    """恢复超时模拟的结果 — 检查任务状态，若已完成则获取结果
+
+    返回结构化状态，支持未来后台轮询扩展。
+
+    Args:
+        job_id: 模拟任务 ID
+
+    Returns:
+        RecoveryStatus 的 dict 形式: {"job_id", "status", "result"?, "error"?}
+    """
+    try:
+        service = await _get_service()
+        recovery = await service.recover_result(job_id)
+        return recovery.model_dump()
+    except Exception as e:
+        logger.error(f"Ripple recover failed for {job_id}: {e}")
+        return {"job_id": job_id, "status": "failed", "error": str(e)}
+
+
 def parse_spread_prediction(result: dict[str, Any]) -> dict[str, Any]:
     """解析 Ripple 传播预测结果，映射到 XHS Growth 状态字段
 
@@ -150,10 +195,10 @@ def parse_spread_prediction(result: dict[str, Any]) -> dict[str, Any]:
         and isinstance(result["ripple_prediction"], dict)
         and result["ripple_prediction"].get("viral_probability") is not None
     ):
-            return {
-                "ripple_job_id": result.get("ripple_job_id", ""),
-                "ripple_prediction": result["ripple_prediction"],
-            }
+        return {
+            "ripple_job_id": result.get("ripple_job_id", ""),
+            "ripple_prediction": result["ripple_prediction"],
+        }
 
     # 原始 API 响应（未解析）
     output = result.get("output", result)
@@ -203,10 +248,10 @@ def parse_pmf_result(result: dict[str, Any]) -> dict[str, Any]:
         and isinstance(result["ripple_pmf"], dict)
         and result["ripple_pmf"].get("pmf_score") is not None
     ):
-            return {
-                "ripple_job_id": result.get("ripple_job_id", ""),
-                "ripple_pmf": result["ripple_pmf"],
-            }
+        return {
+            "ripple_job_id": result.get("ripple_job_id", ""),
+            "ripple_pmf": result["ripple_pmf"],
+        }
 
     # 原始 API 响应（未解析）
     output = result.get("output", result)

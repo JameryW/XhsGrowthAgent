@@ -1,0 +1,2 @@
+{"file": ".trellis/tasks/06-03-fix-ripple-synthesize-and-hard-timeout/prd.md", "reason": "Full PRD with requirements, technical approach, and file change list"}
+{"file": ".trellis/tasks/06-03-fix-ripple-synthesize-and-hard-timeout/research/ripple-codebase-audit.md", "reason": "Detailed audit of SYNTHESIZE, job lifecycle, LLM client, and config code — exact file paths, line numbers, current code"}

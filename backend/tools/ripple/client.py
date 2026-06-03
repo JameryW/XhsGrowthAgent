@@ -187,3 +187,41 @@ async def ripple_generate_report(
         )
         resp.raise_for_status()
         return resp.json()
+
+
+# ── 取消模拟 ──
+
+
+@tool
+async def ripple_cancel_simulation(job_id: str) -> dict[str, Any]:
+    """取消 Ripple 模拟任务 — 乐观尝试 DELETE，对不支持取消的服务端做优雅降级。
+
+    适用于模拟超时后清理遗留任务。
+    """
+    cfg = _get_config()
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            resp = await client.delete(
+                f"{cfg['base_url']}/v1/simulations/{job_id}",
+                headers=_headers(),
+            )
+
+            if resp.status_code in (200, 204):
+                return {"cancelled": True, "job_id": job_id, "status": "cancelled"}
+            if resp.status_code == 404:
+                return {"cancelled": False, "job_id": job_id, "status": "not_found"}
+            if resp.status_code == 405:
+                return {"cancelled": False, "job_id": job_id, "status": "not_supported"}
+
+            return {
+                "cancelled": False,
+                "job_id": job_id,
+                "status": "error",
+                "error": f"HTTP {resp.status_code}",
+            }
+
+        except httpx.ConnectError as e:
+            return {"cancelled": False, "job_id": job_id, "status": "error", "error": str(e)}
+
+        except Exception as e:
+            return {"cancelled": False, "job_id": job_id, "status": "error", "error": str(e)}

@@ -20,6 +20,31 @@ class AgentError(Exception):
 class WorkflowCancelledError(Exception):
     """Raised by _check_cancelled when workflow is cancelled/paused."""
     pass
+
+class RippleTimeoutError(TimeoutError):
+    """Raised when Ripple simulation exceeds max_wait. Carries job_id for cancel/recover."""
+    job_id: str
+    max_wait: float
+```
+
+### RippleTimeoutError Catch Order
+
+> **Warning**: `RippleTimeoutError` is a subclass of `TimeoutError`. When catching both, **always catch the subclass first**.
+
+```python
+# WRONG — TimeoutError catches RippleTimeoutError too, losing job_id
+except TimeoutError:
+    ...
+except RippleTimeoutError:  # UNREACHABLE
+    ...
+
+# CORRECT — subclass first
+except RippleTimeoutError as e:
+    # e.job_id is available for cancel/recover
+    ...
+except TimeoutError:
+    # generic asyncio timeout (no job_id)
+    ...
 ```
 
 ### Retry Policy Connection
@@ -52,7 +77,57 @@ def get_retry_policy(node_name: str) -> RetryPolicy | None:
 - `pause_workflow` also cancels the background task (same as cancel)
 - Resume re-invokes the graph from the last checkpoint
 
-### Stale Error Handling
+### Ripple Service Error Behavior
+
+#### Timeout → Cancel → Recover Pattern
+
+When an agent calls Ripple and the simulation times out:
+
+1. `RippleService.wait_for_completion` raises `RippleTimeoutError(job_id, max_wait)`
+2. Agent catches `RippleTimeoutError`, extracts `job_id`
+3. Agent calls `cancel_simulation(job_id)` — attempts `DELETE /v1/simulations/{job_id}`, graceful fallback on 404/405
+4. Agent saves `ripple_job_id` in result dict with `ripple_reason: "timeout"`
+5. Later, `recover_result(job_id)` can check if the job completed asynchronously
+
+#### cancel_simulation Contracts
+
+```python
+async def cancel_simulation(job_id: str) -> dict[str, Any]:
+    """Attempt to cancel a running Ripple simulation.
+
+    Returns:
+        {"cancelled": bool, "job_id": str, "status": str}
+        status: "cancelled" | "not_found" | "not_supported" | "error"
+    """
+```
+
+- DELETE 200/204 → `{"cancelled": True, "job_id": ..., "status": "cancelled"}`
+- DELETE 404 → `{"cancelled": False, "job_id": ..., "status": "not_found"}`
+- DELETE 405 → `{"cancelled": False, "job_id": ..., "status": "not_supported"}`
+- Network error → `{"cancelled": False, "job_id": ..., "status": "error", "error": str}`
+- Cancel failure is **never fatal** — logged but does not block the agent
+
+#### recover_result Contracts
+
+```python
+class RecoveryStatus(BaseModel):
+    job_id: str
+    status: str  # "completed" | "running" | "timed_out" | "failed" | "not_found"
+    result: dict[str, Any] | None = None
+    error: str = ""
+```
+
+- Designed for future background polling — callers check `status` and act accordingly
+- If `status == "completed"`, `result` contains the full simulation output
+- If `status == "running"`, no result yet (caller can retry later)
+
+#### ripple_reason field semantics
+
+The `ripple_reason` field in result dicts distinguishes timeout from other failures:
+- `"timeout"` — Ripple simulation exceeded the wait window
+- `None` or absent — Ripple succeeded, or failed for non-timeout reasons (service down, no topic, etc.)
+
+> **Warning**: Do NOT set `ripple_reason = "timeout"` for non-timeout failures. The content_strategist uses this field to decide whether to attempt cancel and save job_id for recovery.
 
 The `error` field in state can be stale — set by a failed node but not yet cleared by the next successful node. `derive_status` handles this by only returning ERROR when the error is terminal:
 

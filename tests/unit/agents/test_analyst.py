@@ -176,3 +176,50 @@ class TestAnalystAgent:
         """Verify agent class attributes."""
         assert agent.agent_name == "analyst"
         assert agent.prompt_file == "analyst.yaml"
+
+    @pytest.mark.asyncio
+    async def test_ripple_report_timeout_returns_none(self, agent):
+        """_ripple_report 超时时返回 None"""
+        state = {"content_plan": {"ripple_prediction": {"ripple_job_id": "job-timeout"}}}
+
+        with (
+            patch("backend.tools.ripple.integration.get_report", new_callable=AsyncMock),
+            patch.object(agent, "_ripple_cancel", new_callable=AsyncMock),
+            patch("asyncio.wait_for", side_effect=TimeoutError()),
+        ):
+            result = await agent._ripple_report(state)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_ripple_cancel_calls_service(self, agent):
+        """_ripple_cancel 调用 RippleService.cancel_simulation"""
+        mock_service = MagicMock()
+        mock_service.cancel_simulation = AsyncMock(
+            return_value={"cancelled": True, "job_id": "job-cancel", "status": "cancelled"}
+        )
+
+        with patch("backend.services.ripple_service.RippleService") as mock_cls:
+            mock_cls.get_instance.return_value = mock_service
+            await agent._ripple_cancel("job-cancel")
+
+        mock_service.cancel_simulation.assert_called_once_with("job-cancel")
+
+    @pytest.mark.asyncio
+    async def test_ripple_cancel_handles_empty_job_id(self, agent):
+        """_ripple_cancel 对空 job_id 不调用服务"""
+        with patch("backend.services.ripple_service.RippleService") as mock_cls:
+            await agent._ripple_cancel("")
+
+        mock_cls.get_instance.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_ripple_cancel_handles_exception(self, agent):
+        """_ripple_cancel 对异常做优雅降级（不抛出）"""
+        mock_service = MagicMock()
+        mock_service.cancel_simulation = AsyncMock(side_effect=Exception("Connection refused"))
+
+        with patch("backend.services.ripple_service.RippleService") as mock_cls:
+            mock_cls.get_instance.return_value = mock_service
+            # 不应抛出异常
+            await agent._ripple_cancel("job-err")

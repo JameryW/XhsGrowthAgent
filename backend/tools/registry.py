@@ -64,6 +64,7 @@ class ToolRegistry:
     def register_ripple_tools(cls) -> None:
         """注册所有 Ripple MCP 工具"""
         from backend.tools.ripple.client import (
+            ripple_cancel_simulation,
             ripple_generate_report,
             ripple_get_simulation_log,
             ripple_get_simulation_result,
@@ -72,23 +73,28 @@ class ToolRegistry:
             ripple_validate_pmf,
         )
 
-        cls.register_many([
-            ripple_predict_content_spread,
-            ripple_validate_pmf,
-            ripple_get_simulation_status,
-            ripple_get_simulation_result,
-            ripple_get_simulation_log,
-            ripple_generate_report,
-        ])
+        cls.register_many(
+            [
+                ripple_predict_content_spread,
+                ripple_validate_pmf,
+                ripple_get_simulation_status,
+                ripple_get_simulation_result,
+                ripple_get_simulation_log,
+                ripple_generate_report,
+                ripple_cancel_simulation,
+            ]
+        )
 
     @classmethod
     def register_scheduling_tools(cls) -> None:
         """注册所有调度工具"""
         from backend.tools.scheduling import timing_optimizer
 
-        cls.register_many([
-            timing_optimizer,
-        ])
+        cls.register_many(
+            [
+                timing_optimizer,
+            ]
+        )
 
     @classmethod
     def register_content_tools(cls) -> None:
@@ -101,13 +107,15 @@ class ToolRegistry:
             title_generator,
         )
 
-        cls.register_many([
-            hashtag_researcher,
-            title_generator,
-            image_prompt_generator,
-            layout_recommender,
-            style_library,
-        ])
+        cls.register_many(
+            [
+                hashtag_researcher,
+                title_generator,
+                image_prompt_generator,
+                layout_recommender,
+                style_library,
+            ]
+        )
 
     @classmethod
     def register_xhs_tools(cls) -> None:
@@ -118,11 +126,13 @@ class ToolRegistry:
             xhs_publisher,
         )
 
-        cls.register_many([
-            xhs_publisher,
-            ab_test_manager,
-            post_scheduler,
-        ])
+        cls.register_many(
+            [
+                xhs_publisher,
+                ab_test_manager,
+                post_scheduler,
+            ]
+        )
 
     @classmethod
     def register_all_tools(cls) -> None:
