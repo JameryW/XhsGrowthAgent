@@ -14,6 +14,24 @@ from backend.config.settings import Settings
 logger = logging.getLogger("xhs_growth.services.ripple")
 
 
+class RippleTimeoutError(TimeoutError):
+    """Ripple 模拟超时 — 携带 job_id 以便后续取消或恢复"""
+
+    def __init__(self, job_id: str, max_wait: float):
+        self.job_id = job_id
+        self.max_wait = max_wait
+        super().__init__(f"Ripple simulation {job_id} did not complete within {max_wait}s")
+
+
+class RecoveryStatus(BaseModel):
+    """Ripple 模拟恢复状态 — 支持未来后台轮询扩展"""
+
+    job_id: str
+    status: str  # "completed", "running", "timed_out", "failed", "not_found"
+    result: dict[str, Any] | None = None
+    error: str = ""
+
+
 class RippleHealthStatus(BaseModel):
     """Ripple 服务健康状态"""
 
@@ -293,6 +311,9 @@ class RippleService:
             result = await self.submit_and_wait(request_body, max_wait=max_wait)
             return self._parse_spread_result(result)
 
+        except RippleTimeoutError:
+            # 让 RippleTimeoutError 传播到调用方，以便保存 job_id 并尝试取消
+            raise
         except Exception as e:
             logger.error(f"Ripple spread prediction failed: {e}")
             if use_fallback:
@@ -346,6 +367,9 @@ class RippleService:
             result = await self.submit_and_wait(request_body, max_wait=max_wait)
             return self._parse_pmf_result(result)
 
+        except RippleTimeoutError:
+            # 让 RippleTimeoutError 传播到调用方，以便保存 job_id 并尝试取消
+            raise
         except Exception as e:
             logger.error(f"Ripple PMF validation failed: {e}")
             if use_fallback:
@@ -386,7 +410,7 @@ class RippleService:
             最终的模拟状态响应
 
         Raises:
-            TimeoutError: 超过最大等待时间
+            RippleTimeoutError: 超过最大等待时间（携带 job_id）
             RuntimeError: 模拟失败
         """
         elapsed = 0.0
@@ -405,7 +429,7 @@ class RippleService:
             await asyncio.sleep(poll_interval)
             elapsed += poll_interval
 
-        raise TimeoutError(f"Ripple simulation {job_id} did not complete within {max_wait}s")
+        raise RippleTimeoutError(job_id, max_wait)
 
     async def submit_and_wait(
         self,
@@ -462,6 +486,122 @@ class RippleService:
             )
         except Exception as e:
             return {"error": str(e)}
+
+    # ── 取消与恢复 ──
+
+    async def cancel_simulation(self, job_id: str) -> dict[str, Any]:
+        """尝试取消 Ripple 模拟任务
+
+        乐观尝试 DELETE /v1/simulations/{job_id}，对 404/405/网络错误做优雅降级。
+
+        Returns:
+            {"cancelled": bool, "job_id": str, "status": str, "error"?: str}
+        """
+        config = self._get_config()
+        url = f"{config['base_url']}/v1/simulations/{job_id}"
+
+        try:
+            client = await self._get_client()
+            resp = await client.delete(url)
+
+            if resp.status_code in (200, 204):
+                logger.info(f"Ripple simulation {job_id} cancelled successfully")
+                return {"cancelled": True, "job_id": job_id, "status": "cancelled"}
+
+            if resp.status_code == 404:
+                logger.warning(f"Ripple simulation {job_id} not found on cancel")
+                return {"cancelled": False, "job_id": job_id, "status": "not_found"}
+
+            if resp.status_code == 405:
+                logger.warning(f"Ripple server does not support cancel for {job_id}")
+                return {"cancelled": False, "job_id": job_id, "status": "not_supported"}
+
+            # 其他非成功状态码
+            logger.warning(
+                f"Ripple cancel returned unexpected status {resp.status_code} for {job_id}"
+            )
+            return {
+                "cancelled": False,
+                "job_id": job_id,
+                "status": "error",
+                "error": f"HTTP {resp.status_code}",
+            }
+
+        except httpx.ConnectError as e:
+            logger.warning(f"Ripple cancel failed (connection error) for {job_id}: {e}")
+            return {"cancelled": False, "job_id": job_id, "status": "error", "error": str(e)}
+
+        except Exception as e:
+            logger.warning(f"Ripple cancel failed for {job_id}: {e}")
+            return {"cancelled": False, "job_id": job_id, "status": "error", "error": str(e)}
+
+    async def recover_result(self, job_id: str) -> RecoveryStatus:
+        """恢复超时模拟的结果 — 检查任务状态，若已完成则获取结果
+
+        返回结构化的 RecoveryStatus，支持未来后台轮询扩展：
+        - status="completed": result 字段包含完整数据
+        - status="running": 任务仍在执行，可稍后重试
+        - status="failed": 任务失败，error 字段包含原因
+        - status="not_found": 任务不存在
+
+        Args:
+            job_id: 模拟任务 ID
+
+        Returns:
+            RecoveryStatus 结构化恢复状态
+        """
+        try:
+            status_resp = await self.get_simulation_status(job_id)
+            state = status_resp.get("status", "").lower()
+
+            if state in ("completed", "done", "finished"):
+                result = await self.get_result(job_id)
+                return RecoveryStatus(
+                    job_id=job_id,
+                    status="completed",
+                    result=result,
+                )
+
+            if state in ("failed", "error"):
+                error_msg = status_resp.get("error", "Unknown simulation error")
+                return RecoveryStatus(
+                    job_id=job_id,
+                    status="failed",
+                    error=error_msg,
+                )
+
+            if state in ("running", "pending", "submitted", "in_progress"):
+                return RecoveryStatus(
+                    job_id=job_id,
+                    status="running",
+                )
+
+            # 未知状态视为运行中
+            logger.warning(f"Ripple simulation {job_id} has unknown status: {state}")
+            return RecoveryStatus(
+                job_id=job_id,
+                status="running",
+            )
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return RecoveryStatus(
+                    job_id=job_id,
+                    status="not_found",
+                    error=f"Simulation {job_id} not found",
+                )
+            return RecoveryStatus(
+                job_id=job_id,
+                status="failed",
+                error=str(e),
+            )
+
+        except Exception as e:
+            return RecoveryStatus(
+                job_id=job_id,
+                status="failed",
+                error=str(e),
+            )
 
     # ── 结果解析 ──
 

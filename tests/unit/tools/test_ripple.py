@@ -5,9 +5,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.tools.ripple.integration import (
+    cancel_simulation,
     parse_pmf_result,
     parse_spread_prediction,
     predict_spread,
+    recover_result,
 )
 
 
@@ -114,6 +116,7 @@ def test_tool_registry_has_ripple():
     assert "ripple_validate_pmf" in names
     assert "ripple_get_simulation_result" in names
     assert "ripple_generate_report" in names
+    assert "ripple_cancel_simulation" in names
 
 
 def test_content_strategist_has_ripple_tools():
@@ -136,3 +139,78 @@ def test_analyst_has_ripple_tools():
     tool_names = [t.name for t in tools]
     assert "ripple_get_simulation_result" in tool_names
     assert "ripple_generate_report" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_cancel_simulation_wrapper():
+    """integration.py cancel_simulation 包装器"""
+    mock_service = MagicMock()
+    mock_service.is_healthy.return_value = True
+    mock_service.health_check = AsyncMock()
+    mock_service.cancel_simulation = AsyncMock(
+        return_value={"cancelled": True, "job_id": "job-123", "status": "cancelled"}
+    )
+
+    with patch("backend.tools.ripple.integration.RippleService") as mock_cls:
+        mock_cls.get_instance.return_value = mock_service
+        result = await cancel_simulation("job-123")
+
+    assert result["cancelled"] is True
+    assert result["job_id"] == "job-123"
+    mock_service.cancel_simulation.assert_called_once_with("job-123")
+
+
+@pytest.mark.asyncio
+async def test_cancel_simulation_wrapper_handles_failure():
+    """integration.py cancel_simulation 包装器处理异常"""
+    mock_service = MagicMock()
+    mock_service.is_healthy.return_value = True
+    mock_service.health_check = AsyncMock()
+    mock_service.cancel_simulation = AsyncMock(side_effect=Exception("Connection refused"))
+
+    with patch("backend.tools.ripple.integration.RippleService") as mock_cls:
+        mock_cls.get_instance.return_value = mock_service
+        result = await cancel_simulation("job-123")
+
+    assert result["cancelled"] is False
+    assert result["status"] == "error"
+    assert "Connection refused" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_recover_result_wrapper():
+    """integration.py recover_result 包装器"""
+    from backend.services.ripple_service import RecoveryStatus
+
+    mock_service = MagicMock()
+    mock_service.is_healthy.return_value = True
+    mock_service.health_check = AsyncMock()
+    mock_service.recover_result = AsyncMock(
+        return_value=RecoveryStatus(job_id="job-456", status="completed", result={"data": 1})
+    )
+
+    with patch("backend.tools.ripple.integration.RippleService") as mock_cls:
+        mock_cls.get_instance.return_value = mock_service
+        result = await recover_result("job-456")
+
+    assert result["job_id"] == "job-456"
+    assert result["status"] == "completed"
+    assert result["result"]["data"] == 1
+    mock_service.recover_result.assert_called_once_with("job-456")
+
+
+@pytest.mark.asyncio
+async def test_recover_result_wrapper_handles_failure():
+    """integration.py recover_result 包装器处理异常"""
+    mock_service = MagicMock()
+    mock_service.is_healthy.return_value = True
+    mock_service.health_check = AsyncMock()
+    mock_service.recover_result = AsyncMock(side_effect=Exception("Connection refused"))
+
+    with patch("backend.tools.ripple.integration.RippleService") as mock_cls:
+        mock_cls.get_instance.return_value = mock_service
+        result = await recover_result("job-789")
+
+    assert result["job_id"] == "job-789"
+    assert result["status"] == "failed"
+    assert "Connection refused" in result["error"]

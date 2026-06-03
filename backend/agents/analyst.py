@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -10,9 +11,13 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.services.ripple_service import RippleTimeoutError
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.analyst")
+
+# Ripple 报告获取超时（秒）— 报告生成是增值操作，不阻塞主流程
+_RIPPLE_REPORT_TIMEOUT = 120
 
 
 class AnalystAgent(BaseAgent):
@@ -94,7 +99,7 @@ class AnalystAgent(BaseAgent):
         return result_updates
 
     async def _ripple_report(self, state: XHSGrowthState) -> str | None:
-        """尝试获取 Ripple 模拟报告"""
+        """尝试获取 Ripple 模拟报告（带超时保护）"""
         ripple_prediction = state.get("content_plan", {}).get("ripple_prediction", {})
         job_id = (
             ripple_prediction.get("ripple_job_id") if isinstance(ripple_prediction, dict) else None
@@ -106,7 +111,10 @@ class AnalystAgent(BaseAgent):
         try:
             from backend.tools.ripple.integration import get_report
 
-            report = await get_report(job_id)
+            report = await asyncio.wait_for(
+                get_report(job_id),
+                timeout=_RIPPLE_REPORT_TIMEOUT,
+            )
             if "error" not in report:
                 # 提取报告文本
                 rounds = report.get("rounds", [])
@@ -114,10 +122,37 @@ class AnalystAgent(BaseAgent):
                 for r in rounds:
                     texts.append(r.get("content", r.get("text", str(r))))
                 return "\n".join(texts)
+
+        except RippleTimeoutError as e:
+            logger.warning(f"Ripple report timed out: job_id={e.job_id}")
+            await self._ripple_cancel(e.job_id)
+
+        except TimeoutError:
+            logger.warning(
+                f"Ripple report retrieval timed out after {_RIPPLE_REPORT_TIMEOUT}s for {job_id}"
+            )
+            # 尝试取消报告生成任务
+            await self._ripple_cancel(job_id)
+
         except Exception as e:
             logger.warning(f"Ripple report retrieval skipped: {e}")
 
         return None
+
+    async def _ripple_cancel(self, job_id: str) -> None:
+        """尝试取消 Ripple 模拟任务（报告超时时调用）"""
+        if not job_id:
+            return
+
+        try:
+            from backend.services.ripple_service import RippleService
+
+            service = RippleService.get_instance()
+            result = await service.cancel_simulation(job_id)
+            logger.info(f"Ripple cancel result for {job_id}: {result}")
+
+        except Exception as e:
+            logger.warning(f"Ripple cancel failed for {job_id}: {e}")
 
     def _compare_prediction_vs_actual(
         self, prediction: dict | None, actual: dict

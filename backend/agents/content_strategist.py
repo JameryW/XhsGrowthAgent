@@ -11,6 +11,7 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.services.ripple_service import RippleTimeoutError
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.content_strategist")
@@ -60,15 +61,25 @@ class ContentStrategistAgent(BaseAgent):
         # 使用 Ripple 预测传播效果 + PMF 验证（并行调用，带超时保护）
         ripple_timeout = _RIPPLE_TIMEOUT
 
+        result = {
+            "content_plan": content_plan,
+            "phase": WorkflowPhase.PLANNING,
+        }
+
         async def _predict():
             try:
                 return await asyncio.wait_for(
                     self._ripple_predict(content_plan, max_wait=ripple_timeout),
                     timeout=ripple_timeout,
                 )
-            except asyncio.TimeoutError:
-                logger.warning(f"Ripple spread prediction timed out after {ripple_timeout}s, skipping")
-                return None
+            except RippleTimeoutError as e:
+                logger.warning(f"Ripple spread prediction timed out: job_id={e.job_id}")
+                # 尝试取消任务
+                await self._ripple_cancel(e.job_id)
+                return {"ripple_job_id": e.job_id, "ripple_reason": "timeout"}
+            except TimeoutError:
+                logger.warning(f"Ripple spread prediction timed out after {ripple_timeout}s")
+                return {"ripple_job_id": "", "ripple_reason": "timeout"}
 
         async def _validate_pmf():
             try:
@@ -76,19 +87,86 @@ class ContentStrategistAgent(BaseAgent):
                     self._ripple_validate_pmf(content_plan, max_wait=ripple_timeout),
                     timeout=ripple_timeout,
                 )
-            except asyncio.TimeoutError:
-                logger.warning(f"Ripple PMF validation timed out after {ripple_timeout}s, skipping")
-                return None
+            except RippleTimeoutError as e:
+                logger.warning(f"Ripple PMF validation timed out: job_id={e.job_id}")
+                # 尝试取消任务
+                await self._ripple_cancel(e.job_id)
+                return {"ripple_job_id": e.job_id, "ripple_reason": "timeout"}
+            except TimeoutError:
+                logger.warning(f"Ripple PMF validation timed out after {ripple_timeout}s")
+                return {"ripple_job_id": "", "ripple_reason": "timeout"}
 
         ripple_prediction, ripple_pmf = await asyncio.gather(_predict(), _validate_pmf())
 
-        if ripple_prediction:
+        # Set Ripple data (including fallback when unavailable)
+        if ripple_prediction and not isinstance(ripple_prediction, dict):
+            # Should not happen, but guard against unexpected types
+            ripple_prediction = None
+
+        if ripple_prediction and "ripple_reason" not in ripple_prediction:
+            # 成功获取预测
             content_plan["ripple_prediction"] = ripple_prediction
-        if ripple_pmf:
+            result["ripple_prediction"] = ripple_prediction
+        else:
+            # 超时或无数据
+            fallback_pred = {
+                "estimated_reach": 0,
+                "estimated_engagement": 0,
+                "viral_probability": 0.0,
+                "confidence": 0.0,
+                "spread_path": [],
+                "key_influencers": [],
+            }
+            # 保存超时时的 job_id 以便后续恢复
+            is_timeout = (
+                isinstance(ripple_prediction, dict)
+                and ripple_prediction.get("ripple_reason") == "timeout"
+            )
+            if is_timeout and ripple_prediction.get("ripple_job_id"):
+                fallback_pred["ripple_job_id"] = ripple_prediction["ripple_job_id"]
+                result["ripple_job_id"] = ripple_prediction["ripple_job_id"]
+            content_plan["ripple_prediction"] = fallback_pred
+            result["ripple_prediction"] = fallback_pred
+            if is_timeout:
+                result["ripple_reason"] = "timeout"
+
+        if ripple_pmf and not isinstance(ripple_pmf, dict):
+            ripple_pmf = None
+
+        if ripple_pmf and "ripple_reason" not in ripple_pmf:
+            # 成功获取 PMF
             content_plan["ripple_pmf"] = ripple_pmf
+            result["ripple_pmf"] = ripple_pmf
+        else:
+            # 超时或无数据
+            is_pmf_timeout = (
+                isinstance(ripple_pmf, dict)
+                and ripple_pmf.get("ripple_reason") == "timeout"
+            )
+            fallback_pmf = {
+                "pmf_score": 0.0,
+                "risk_factors": [
+                    "Ripple 模拟超时，结果不可用" if is_pmf_timeout else "Ripple 服务不可用"
+                ],
+                "improvement_strategies": [],
+                "confidence": 0.0,
+            }
+            # 保存超时时的 job_id 以便后续恢复
+            if is_pmf_timeout and ripple_pmf.get("ripple_job_id"):
+                fallback_pmf["ripple_job_id"] = ripple_pmf["ripple_job_id"]
+                if not result.get("ripple_job_id"):
+                    result["ripple_job_id"] = ripple_pmf["ripple_job_id"]
+            content_plan["ripple_pmf"] = fallback_pmf
+            result["ripple_pmf"] = fallback_pmf
+            if is_pmf_timeout and result.get("ripple_reason") is None:
+                result["ripple_reason"] = "timeout"
 
         # 如果传播预测偏低，注入 Ripple 数据重新生成策略
-        if ripple_prediction and ripple_prediction.get("viral_probability", 1.0) < 0.3:
+        if (
+            ripple_prediction
+            and "ripple_reason" not in ripple_prediction
+            and ripple_prediction.get("viral_probability", 1.0) < 0.3
+        ):
             logger.info(
                 f"Low viral probability ({ripple_prediction['viral_probability']:.2f}), "
                 f"regenerating strategy with Ripple insights"
@@ -111,14 +189,15 @@ class ContentStrategistAgent(BaseAgent):
             revised_plan["ripple_revised"] = True
             content_plan = revised_plan
 
-        result = {
-            "content_plan": content_plan,
-            "phase": WorkflowPhase.PLANNING,
-        }
+        result["content_plan"] = content_plan
         # Also set top-level Ripple fields for API exposure
-        if ripple_prediction:
+        if (
+            ripple_prediction
+            and "ripple_reason" not in ripple_prediction
+            and "ripple_prediction" not in result
+        ):
             result["ripple_prediction"] = ripple_prediction
-        if ripple_pmf:
+        if ripple_pmf and "ripple_reason" not in ripple_pmf and "ripple_pmf" not in result:
             result["ripple_pmf"] = ripple_pmf
         return result
 
@@ -160,6 +239,9 @@ class ContentStrategistAgent(BaseAgent):
             if result.get("error"):
                 logger.warning(f"Ripple prediction error for '{topic}': {result['error']}")
 
+        except RippleTimeoutError:
+            # 让 RippleTimeoutError 传播到调用方，以便保存 job_id 并尝试取消
+            raise
         except Exception as e:
             logger.warning(f"Ripple prediction skipped: {e}")
 
@@ -193,10 +275,37 @@ class ContentStrategistAgent(BaseAgent):
             if result.get("error"):
                 logger.warning(f"Ripple PMF error for '{topic}': {result['error']}")
 
+        except RippleTimeoutError:
+            # 让 RippleTimeoutError 传播到调用方，以便保存 job_id 并尝试取消
+            raise
         except Exception as e:
             logger.warning(f"Ripple PMF validation skipped: {e}")
 
         return None
+
+    async def _ripple_cancel(self, job_id: str) -> dict[str, Any] | None:
+        """尝试取消 Ripple 模拟任务
+
+        Args:
+            job_id: 模拟任务 ID
+
+        Returns:
+            取消结果 dict，或 None（如果调用失败）
+        """
+        if not job_id:
+            return None
+
+        try:
+            from backend.services.ripple_service import RippleService
+
+            service = RippleService.get_instance()
+            result = await service.cancel_simulation(job_id)
+            logger.info(f"Ripple cancel result for {job_id}: {result}")
+            return result
+
+        except Exception as e:
+            logger.warning(f"Ripple cancel failed for {job_id}: {e}")
+            return None
 
     @staticmethod
     def _build_ripple_context(prediction: dict, pmf: dict | None) -> str:
