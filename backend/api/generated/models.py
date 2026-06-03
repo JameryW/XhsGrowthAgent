@@ -131,6 +131,7 @@ class Urgency(Enum):
 
 class WorkflowStatus(Enum):
     RUNNING = 'running'
+    STALE = 'stale'
     PAUSED = 'paused'
     COMPLETED = 'completed'
     ERROR = 'error'

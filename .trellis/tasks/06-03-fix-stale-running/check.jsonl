@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Verify derive_status priority chain correctly includes STALE, and test contracts cover stale detection"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify done callback exception handling and task cancellation patterns match spec contracts"}

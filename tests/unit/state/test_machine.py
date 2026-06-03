@@ -126,3 +126,78 @@ class TestDeriveStatus:
             interrupts=[],  # interrupt_before produces no Interrupt objects
         )
         assert derive_status(snapshot) == WorkflowStatus.AWAITING_CHOICE
+
+
+class TestDeriveStatusStale:
+    """Test STALE status detection with has_active_task parameter."""
+
+    def test_next_nodes_no_active_task_returns_stale(self):
+        """Next nodes present but no active background task → STALE."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.SCOUTING},
+            next=["trend_scout"],
+        )
+        assert derive_status(snapshot, has_active_task=False) == WorkflowStatus.STALE
+
+    def test_next_nodes_with_active_task_returns_running(self):
+        """Next nodes present with active background task → RUNNING."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.SCOUTING},
+            next=["trend_scout"],
+        )
+        assert derive_status(snapshot, has_active_task=True) == WorkflowStatus.RUNNING
+
+    def test_next_nodes_default_has_active_task_is_running(self):
+        """Default has_active_task=True means next_nodes → RUNNING."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.SCOUTING},
+            next=["trend_scout"],
+        )
+        assert derive_status(snapshot) == WorkflowStatus.RUNNING
+
+    def test_no_next_nodes_no_active_task_returns_completed(self):
+        """No next nodes + no active task → completed (not stale)."""
+        snapshot = make_snapshot({"phase": WorkflowPhase.COMPLETED})
+        assert derive_status(snapshot, has_active_task=False) == WorkflowStatus.COMPLETED
+
+    def test_stale_does_not_override_interrupt_gates(self):
+        """Interrupt gates take priority over stale detection."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.REVIEWING},
+            next=["review_gate"],
+            interrupts=[],
+        )
+        # Even with no active task, review gate → awaiting_review
+        assert derive_status(snapshot, has_active_task=False) == WorkflowStatus.AWAITING_REVIEW
+
+    def test_stale_does_not_override_error(self):
+        """Error phase takes priority over stale detection."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.ERROR, "error": "Critical"},
+            next=["trend_scout"],
+        )
+        assert derive_status(snapshot, has_active_task=False) == WorkflowStatus.ERROR
+
+    def test_stale_does_not_override_paused(self):
+        """Paused takes priority over stale detection."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.PAUSED},
+            next=["trend_scout"],
+        )
+        assert derive_status(snapshot, has_active_task=False) == WorkflowStatus.PAUSED
+
+    def test_stale_does_not_override_cancelled(self):
+        """Cancelled takes priority over stale detection."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.CANCELLED},
+            next=["trend_scout"],
+        )
+        assert derive_status(snapshot, has_active_task=False) == WorkflowStatus.CANCELLED
+
+    def test_stale_with_non_terminal_error_returns_stale(self):
+        """Non-terminal error (next nodes present) with no active task → STALE."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.SCOUTING, "error": "Transient"},
+            next=["trend_scout"],
+        )
+        assert derive_status(snapshot, has_active_task=False) == WorkflowStatus.STALE

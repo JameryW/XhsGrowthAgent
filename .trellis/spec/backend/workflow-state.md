@@ -8,15 +8,17 @@
 
 ## Signatures
 
-### derive_status(snapshot: StateSnapshot) -> WorkflowStatus
+### derive_status(snapshot: StateSnapshot, *, has_active_task: bool = True) -> WorkflowStatus
 
 The single source of truth for computing workflow status from a LangGraph StateSnapshot.
 
 ```python
 class WorkflowStatus(StrEnum):
     RUNNING = "running"
+    STALE = "stale"
     AWAITING_REVIEW = "awaiting_review"
     AWAITING_CHOICE = "awaiting_choice"
+    AWAITING_DRAFT = "awaiting_draft"
     PAUSED = "paused"
     CANCELLED = "cancelled"
     ERROR = "error"
@@ -43,8 +45,9 @@ Location: `backend/state/machine.py`
 5. Interrupt with gate value fallback (dynamic `interrupt()` only) → `awaiting_review` or `awaiting_choice`
 6. `error` present AND (`phase == ERROR` OR `next` empty) → `error`
 7. `phase == COMPLETED` → `completed`
-8. `next` non-empty → `running`
-9. Fallback → `completed`
+8. `next` non-empty AND `has_active_task=False` → `stale`
+9. `next` non-empty AND `has_active_task=True` → `running`
+10. Fallback → `completed`
 
 ## Validation & Error Matrix
 
@@ -61,7 +64,8 @@ Location: `backend/state/machine.py`
 | `error` present, `phase=ERROR` | `error` | Explicit error phase |
 | `error` present, `next=[]`, phase≠ERROR | `error` | Terminal error (no retry possible) |
 | `error` present, `next` non-empty, phase≠ERROR | `running` | **Non-terminal error — may retry** |
-| `next` non-empty, phase not terminal | `running` | Normal in-progress |
+| `next` non-empty, `has_active_task=True` | `running` | Normal in-progress |
+| `next` non-empty, `has_active_task=False` | `stale` | **Background task gone but checkpoint remains — resumable** |
 | `next=[], no error, phase not terminal` | `completed` | Fallback |
 
 ## Wrong vs Correct
@@ -203,6 +207,13 @@ def engagement_router(state: XHSGrowthState) -> Literal["orchestrator", "__end__
 - `test_derive_status_cancelled_over_error`: phase=CANCELLED + error → CANCELLED (not ERROR)
 - `test_derive_status_paused_over_error`: phase=PAUSED + error → PAUSED (not ERROR)
 - `test_derive_status_error_terminal`: phase=ERROR or next=[] + error → ERROR
+- `test_derive_status_stale_no_active_task`: next non-empty + has_active_task=False → STALE
+- `test_derive_status_stale_with_active_task`: next non-empty + has_active_task=True → RUNNING
+- `test_derive_status_stale_not_override_gates`: STALE does not override awaiting_review/awaiting_choice
+- `test_derive_status_stale_not_override_error`: STALE does not override ERROR/CANCELLED/PAUSED
+- `test_on_task_done_records_error`: done callback records task_error on exception
+- `test_on_task_done_marks_stale`: done callback marks registry as stale when task exits while running
+- `test_resume_accepts_stale`: resume endpoint allows resuming from STALE status
 - `test_derive_status_error_non_terminal`: error present + next non-empty + phase≠ERROR → RUNNING
 - `test_engagement_router_single_mode`: execution_mode="single" → "__end__"
 - `test_engagement_router_continuous_mode`: execution_mode="continuous" → "orchestrator"
