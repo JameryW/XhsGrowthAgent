@@ -1,10 +1,10 @@
 # Stage 1: Build frontend
 FROM node:22-slim AS frontend-build
 WORKDIR /app/frontend
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile
 COPY frontend/ ./
-RUN npx vite build
+RUN corepack enable && pnpm build
 
 # Stage 2: Python backend + serve frontend
 FROM python:3.11-slim

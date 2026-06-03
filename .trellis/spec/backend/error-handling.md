@@ -85,7 +85,7 @@ When an agent calls Ripple and the simulation times out:
 
 1. `RippleService.wait_for_completion` raises `RippleTimeoutError(job_id, max_wait)`
 2. Agent catches `RippleTimeoutError`, extracts `job_id`
-3. Agent calls `cancel_simulation(job_id)` — attempts `DELETE /v1/simulations/{job_id}`, graceful fallback on 404/405
+3. Agent calls `cancel_simulation(job_id)` — uses `cancel-request` + `cancel-confirm`, with legacy DELETE fallback on 405
 4. Agent saves `ripple_job_id` in result dict with `ripple_reason: "timeout"`
 5. Later, `recover_result(job_id)` can check if the job completed asynchronously
 
@@ -97,13 +97,17 @@ async def cancel_simulation(job_id: str) -> dict[str, Any]:
 
     Returns:
         {"cancelled": bool, "job_id": str, "status": str}
-        status: "cancelled" | "not_found" | "not_supported" | "error"
+        status: "cancelled" | "cancelling" | "not_found" | "not_supported" | "not_cancellable" | "error"
     """
 ```
 
-- DELETE 200/204 → `{"cancelled": True, "job_id": ..., "status": "cancelled"}`
-- DELETE 404 → `{"cancelled": False, "job_id": ..., "status": "not_found"}`
-- DELETE 405 → `{"cancelled": False, "job_id": ..., "status": "not_supported"}`
+- `POST /cancel-request` 200/201/202 with `cancel_token`, then `POST /cancel-confirm` 200/201/202/204 → `{"cancelled": True, "job_id": ..., "status": "cancelling" | ...}`
+- `POST /cancel-request` 404 → `{"cancelled": False, "job_id": ..., "status": "not_found"}`
+- `POST /cancel-request` 409 → `{"cancelled": False, "job_id": ..., "status": "not_cancellable"}`
+- `POST /cancel-request` 405 → fallback to legacy DELETE
+- legacy DELETE 200/204 → `{"cancelled": True, "job_id": ..., "status": "cancelled"}`
+- legacy DELETE 404 → `{"cancelled": False, "job_id": ..., "status": "not_found"}`
+- legacy DELETE 405 → `{"cancelled": False, "job_id": ..., "status": "not_supported"}`
 - Network error → `{"cancelled": False, "job_id": ..., "status": "error", "error": str}`
 - Cancel failure is **never fatal** — logged but does not block the agent
 
@@ -120,6 +124,7 @@ class RecoveryStatus(BaseModel):
 - Designed for future background polling — callers check `status` and act accordingly
 - If `status == "completed"`, `result` contains the full simulation output
 - If `status == "running"`, no result yet (caller can retry later)
+- If `status == "timed_out"`, Ripple has reached a server-side phase/job timeout and there is no result to recover
 
 #### ripple_reason field semantics
 
@@ -128,6 +133,8 @@ The `ripple_reason` field in result dicts distinguishes timeout from other failu
 - `None` or absent — Ripple succeeded, or failed for non-timeout reasons (service down, no topic, etc.)
 
 > **Warning**: Do NOT set `ripple_reason = "timeout"` for non-timeout failures. The content_strategist uses this field to decide whether to attempt cancel and save job_id for recovery.
+
+Completed Ripple jobs can still contain no legacy absolute metrics. That is not an error and must not set `ripple_reason`. Parse `prediction.relative_estimate`, `prediction.verdict`, and `observation.phase_vector` as valid result data; otherwise UI and downstream agents will mistake a completed job for service fallback.
 
 The `error` field in state can be stale — set by a failed node but not yet cleared by the next successful node. `derive_status` handles this by only returning ERROR when the error is terminal:
 

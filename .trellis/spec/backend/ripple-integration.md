@@ -12,14 +12,16 @@ XHS agents (`content_strategist`, `analyst`) call Ripple for content spread pred
 
 ```python
 # XHS side (RippleService)
-async def submit_and_wait(simulation_input: dict, max_wait: float = 900) -> dict
+async def submit_and_wait(simulation_input: dict, max_wait: float = 1800) -> dict
 async def cancel_simulation(job_id: str) -> dict[str, Any]
 async def recover_result(job_id: str) -> RecoveryStatus
 
 # Ripple side (API)
 POST   /v1/simulations                    → {"job_id": str, "status": "running"}
 GET    /v1/simulations/{job_id}           → {"job_id": str, "status": str, ...}
-DELETE /v1/simulations/{job_id}           → 405 (not supported) or 204 (if supported in future)
+POST   /v1/simulations/{job_id}/cancel-request → {"cancel_token": str}
+POST   /v1/simulations/{job_id}/cancel-confirm → {"status": "cancelling" | ...}
+DELETE /v1/simulations/{job_id}           → legacy fallback only
 GET    /v1/simulations/{job_id}/artifacts/output-json  → result dict
 ```
 
@@ -56,6 +58,13 @@ GET    /v1/simulations/{job_id}/artifacts/output-json  → result dict
 | `RIPPLE_SYNTHESIZE_MAX_OBS_CHARS` | 15000 | Max chars for observation JSON |
 | `RIPPLE_SYNTHESIZE_MAX_INPUT_CHARS` | 5000 | Max chars for input JSON |
 
+#### Environment Variables (XHS side)
+
+| Key | Default | Purpose |
+|-----|---------|---------|
+| `RIPPLE_REQUEST_TIMEOUT` | 300 | HTTP request timeout for individual Ripple calls |
+| `RIPPLE_WORKFLOW_TIMEOUT` | 1800 | Max wait for a submitted Ripple simulation inside XHS workflows |
+
 #### RecoveryStatus (XHS side)
 
 ```python
@@ -70,32 +79,82 @@ class RecoveryStatus(BaseModel):
 
 ```python
 {"cancelled": bool, "job_id": str, "status": str}
-# status: "cancelled" | "not_found" | "not_supported" | "error"
+# status: "cancelled" | "cancelling" | "not_found" | "not_supported" | "not_cancellable" | "error"
 ```
 
-Currently Ripple API returns 405 on DELETE — `status="not_supported"`. Cancel is best-effort, never fatal.
+XHS should use the current two-step cancel protocol first:
+1. `POST /cancel-request` to receive a `cancel_token`
+2. `POST /cancel-confirm` with that token
+
+If `cancel-request` returns 405, XHS may fall back to legacy `DELETE`. Cancel is best-effort, never fatal.
+
+#### output-json Result Shapes
+
+XHS must parse both the legacy metrics shape and the current Ripple artifact shape.
+
+Legacy shape:
+
+```python
+{
+    "job_id": "job_...",
+    "output": {
+        "metrics": {
+            "estimated_reach": 5000,
+            "total_engagement": 800,
+            "viral_probability": 0.35,
+            "confidence": 0.85,
+        },
+        "phase_analysis": {"phase": "growth", "spread_path": [...]},
+    },
+}
+```
+
+Current shape:
+
+```python
+{
+    "job_id": "job_...",
+    "prediction": {
+        "impact": "...",
+        "relative_estimate": {
+            "views_relative": "+15%~+30%",
+            "engagements_relative": "+25%~+45%",
+            "confidence": "medium",
+        },
+        "verdict": "growth",
+    },
+    "timeline": [...],
+    "observation": {"phase_vector": {"heat": "growth", ...}},
+    "bifurcation_points": [...],
+    "agent_insights": {...},
+}
+```
+
+When absolute reach/engagement metrics are absent, XHS should not synthesize `estimated_reach = 0` or `estimated_engagement = 0`. Preserve relative fields (`views_relative`, `engagements_relative`, etc.), `prediction_summary`, `verdict`, `phase_vector`, `total_waves`, and mark derived numeric scores with `score_source = "derived_from_verdict"`.
 
 ### 4. Validation & Error Matrix
 
 | Condition | Ripple Response | XHS Handling |
 |-----------|-----------------|--------------|
 | Job completes within XHS timeout | `completed` | Normal flow |
-| Job exceeds XHS 900s timeout but Ripple still running | `running` | `RippleTimeoutError` → cancel_simulation → save job_id → fallback |
+| Job exceeds configured XHS wait timeout but Ripple still running | `running` | `RippleTimeoutError` → cancel_simulation → save job_id → fallback |
+| Job completes with current relative-estimate output | `completed` + `prediction.relative_estimate` | Parse relative fields; do not treat missing absolute metrics as fallback |
 | Job exceeds Ripple phase timeout | `timed_out` | Fallback (no recovery possible) |
 | Job exceeds Ripple job timeout (1800s) | `timed_out` | Fallback |
 | LLM returns malformed JSON | Retried by Ripple with robust parser | Transparent to XHS |
-| DELETE on running job | 405 `not_supported` | Log, continue with fallback |
-| DELETE on completed/failed job | 404 `not_found` | Log, continue with fallback |
+| cancel-request on running job | `cancel_token` | confirm cancellation, log result, continue with fallback |
+| cancel-request on completed/failed/missing job | 404/409 | Log, continue with fallback |
+| cancel-request unsupported by legacy Ripple | 405 | Try legacy DELETE, then continue with fallback |
 
 ### 5. Good/Base/Bad Cases
 
-- **Good**: Job completes in 600s, XHS gets result before 900s timeout
-- **Base**: Job takes 1000s, XHS times out at 900s but saves job_id, later `recover_result` finds completed result
+- **Good**: Job completes within `RIPPLE_WORKFLOW_TIMEOUT`, XHS gets result before fallback
+- **Base**: XHS is configured with a shorter wait timeout, saves `job_id` on timeout, and later `recover_result` finds completed result
 - **Bad**: Job hangs indefinitely (pre-fix: stuck at `running`; post-fix: timed_out at 1800s)
 
 ### 6. Tests Required
 
-- XHS side: `test_ripple_timeout_saves_job_id`, `test_cancel_simulation_not_supported`, `test_recover_result_completed`, `test_recover_result_timed_out`
+- XHS side: `test_ripple_timeout_saves_job_id`, `test_cancel_simulation_success`, `test_cancel_simulation_legacy_delete_success`, `test_cancel_simulation_not_supported`, `test_recover_result_completed`, `test_recover_result_timed_out`, `test_parse_spread_result_current_ripple_shape`, `test_parse_pmf_result_current_ripple_shape`
 - Ripple side: `test_phase_timeout_exceeded`, `test_job_timeout_exceeded`, `test_timed_out_status`, `test_json_mode_chat_completions`, `test_truncate_json_over_limit`
 
 ### 7. Wrong vs Correct
@@ -127,18 +186,18 @@ else:  # failed, not_found
     return None
 ```
 
-## Design Decision: Optimistic Cancel with Graceful Fallback
+## Design Decision: Two-Step Cancel with Graceful Fallback
 
-**Context**: Ripple API does not reliably support DELETE on running simulations (returns 405).
+**Context**: Current Ripple API uses a two-step cancellation handshake. Older Ripple builds may only expose or reject the legacy DELETE route.
 
 **Options Considered**:
-1. Always attempt DELETE, handle 405 gracefully
+1. Use `cancel-request` + `cancel-confirm`, falling back to DELETE only when the new endpoint returns 405
 2. Skip cancel entirely, only save job_id for recovery
-3. Add a cancel endpoint to Ripple API first
+3. Always attempt DELETE and handle 405 gracefully
 
-**Decision**: Option 1 — attempt DELETE optimistically. The 405 response is harmless, and if Ripple adds cancel support in the future, XHS code works without changes.
+**Decision**: Option 1 — prefer the current Ripple protocol, keep DELETE as compatibility fallback.
 
-**Consequences**: One extra HTTP call on timeout path (non-blocking). Future-proof if cancel is added.
+**Consequences**: Timeout cleanup sends two HTTP calls on the successful cancel path. Cancellation remains best-effort and does not block fallback content generation.
 
 ## Design Decision: Structured JSON Output (json_mode)
 
@@ -150,8 +209,18 @@ else:  # failed, not_found
 
 ## Gotcha: XHS timeout vs Ripple timeout gap
 
-> **Warning**: XHS times out at 900s, but Ripple's job timeout is 1800s. There's a 900s window where the Ripple job is still running after XHS has fallen back.
+> **Warning**: Keep `RIPPLE_WORKFLOW_TIMEOUT` aligned with Ripple's job timeout unless there is a deliberate product reason to fall back earlier. A shorter XHS timeout creates a window where the Ripple job may still be running after XHS has fallen back.
 >
 > In this window, `recover_result(job_id)` can be used to check if the job eventually completed. The `ripple_job_id` field in content_strategist result must be preserved for this recovery path.
 >
 > After 1800s, Ripple marks the job as `timed_out` — no recovery possible after that point.
+
+## Gotcha: Result parser contract drift
+
+Ripple's current `output-json` may return qualitative and relative estimates instead of legacy absolute metrics. If XHS reads only `output.metrics`, completed jobs will appear as all-zero predictions and users will see a false "Ripple unavailable" state.
+
+Correct behavior:
+- Treat `prediction.relative_estimate` + `prediction.verdict` as valid completed data
+- Derive display-only numeric scores from `verdict` when absolute probabilities are absent
+- Keep `score_source = "derived_from_verdict"` so callers know the numeric field is not a raw Ripple metric
+- Frontend fallback detection must check `ripple_reason`/relative fields, not only `viral_probability == 0`

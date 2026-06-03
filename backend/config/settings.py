@@ -75,6 +75,7 @@ class RippleSettings(BaseSettings):
     default_simulation_horizon: str = "48h"
     default_ensemble_runs: int = 1
     request_timeout: int = 300
+    workflow_timeout: int = 1800
     enabled: bool = False
 
     model_config = {"env_prefix": "RIPPLE_", "env_file": ".env", "extra": "ignore"}

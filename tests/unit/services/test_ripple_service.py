@@ -1,6 +1,6 @@
 """Tests for RippleService."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import httpx
 import pytest
@@ -194,6 +194,47 @@ class TestRippleServiceParse:
         assert parsed["ripple_job_id"] == "test-job"
         assert parsed["ripple_prediction"]["estimated_reach"] == 5000
 
+    def test_parse_spread_result_current_ripple_shape(self):
+        """解析当前 Ripple output-json 结构"""
+        service = RippleService()
+        result = {
+            "job_id": "current-job",
+            "prediction": {
+                "impact": "内容在母婴圈层中呈增长扩散，收藏和评论会高于基线。",
+                "relative_estimate": {
+                    "views_relative": "+15%~+30%",
+                    "engagements_relative": "+25%~+45%",
+                    "favorites_relative": "+20%~+35%",
+                    "confidence": "medium",
+                },
+                "verdict": "growth",
+            },
+            "timeline": [{"wave": 1, "event": "种草用户开始讨论防晒成分"}],
+            "observation": {
+                "phase_vector": {
+                    "heat": "growth",
+                    "sentiment": "unified",
+                    "coherence": "ordered",
+                },
+            },
+            "agent_insights": {
+                "stars": {"mama_kol": {"role": "parenting"}},
+            },
+            "total_waves": 4,
+        }
+        parsed = service._parse_spread_result(result)
+        prediction = parsed["ripple_prediction"]
+
+        assert parsed["ripple_job_id"] == "current-job"
+        assert prediction["viral_probability"] == 0.55
+        assert prediction["confidence"] == 0.6
+        assert prediction["phase"] == "growth"
+        assert prediction["views_relative"] == "+15%~+30%"
+        assert prediction["spread_path"][0]["wave"] == 1
+        assert prediction["key_influencers"][0]["name"] == "mama_kol"
+        assert prediction["score_source"] == "derived_from_verdict"
+        assert "estimated_reach" not in prediction
+
     def test_parse_spread_result_error(self):
         """解析错误结果"""
         service = RippleService()
@@ -215,6 +256,44 @@ class TestRippleServiceParse:
         parsed = service._parse_pmf_result(result)
         assert parsed["ripple_job_id"] == "pmf-job"
         assert parsed["ripple_pmf"]["pmf_score"] == 0.72
+
+    def test_parse_pmf_result_current_ripple_shape(self):
+        """解析当前 Ripple PMF output-json 结构"""
+        service = RippleService()
+        result = {
+            "job_id": "pmf-current",
+            "prediction": {
+                "impact": "目标用户对夏季防晒需求明确，内容种草路径成立。",
+                "relative_estimate": {
+                    "views_relative": "+10%~+20%",
+                    "engagements_relative": "+15%~+25%",
+                    "confidence": "high",
+                },
+                "verdict": "growth",
+            },
+            "observation": {
+                "phase_vector": {"heat": "growth"},
+                "topology_recommendations": [
+                    {"action": "突出儿童可用和补涂便利性"},
+                ],
+            },
+            "bifurcation_points": [
+                {"turning_point": "若成分解释不足，评论区会转向安全性质疑"},
+            ],
+            "agent_insights": {"seas": {"segment": "母婴防晒决策人群"}},
+            "total_waves": 4,
+        }
+        parsed = service._parse_pmf_result(result)
+        pmf = parsed["ripple_pmf"]
+
+        assert parsed["ripple_job_id"] == "pmf-current"
+        assert pmf["pmf_score"] == 0.68
+        assert pmf["confidence"] == 0.8
+        assert pmf["views_relative"] == "+10%~+20%"
+        assert pmf["risk_factors"] == ["若成分解释不足，评论区会转向安全性质疑"]
+        assert pmf["improvement_strategies"] == ["突出儿童可用和补涂便利性"]
+        assert pmf["market_segment"]["segment"] == "母婴防晒决策人群"
+        assert pmf["score_source"] == "derived_from_verdict"
 
 
 class TestRippleServiceConnectionPool:
@@ -289,11 +368,16 @@ class TestRippleServiceCancelSimulation:
 
     @pytest.mark.asyncio
     async def test_cancel_simulation_success(self):
-        """DELETE 返回 204 — 取消成功"""
+        """两步取消协议成功"""
         service = RippleService()
 
-        mock_response = MagicMock()
-        mock_response.status_code = 204
+        request_response = MagicMock()
+        request_response.status_code = 200
+        request_response.json.return_value = {"cancel_token": "tok-123"}
+
+        confirm_response = MagicMock()
+        confirm_response.status_code = 202
+        confirm_response.json.return_value = {"status": "cancelling"}
 
         with (
             patch.object(
@@ -308,18 +392,27 @@ class TestRippleServiceCancelSimulation:
             patch.object(service, "_get_client") as mock_client,
         ):
             client = MagicMock()
-            client.delete = AsyncMock(return_value=mock_response)
+            client.post = AsyncMock(side_effect=[request_response, confirm_response])
+            client.delete = AsyncMock()
             mock_client.return_value = client
 
             result = await service.cancel_simulation("job-123")
 
         assert result["cancelled"] is True
         assert result["job_id"] == "job-123"
-        assert result["status"] == "cancelled"
+        assert result["status"] == "cancelling"
+        assert client.post.await_args_list == [
+            call("http://ripple-test/v1/simulations/job-123/cancel-request"),
+            call(
+                "http://ripple-test/v1/simulations/job-123/cancel-confirm",
+                json={"cancel_token": "tok-123"},
+            ),
+        ]
+        client.delete.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_cancel_simulation_not_found(self):
-        """DELETE 返回 404 — 任务不存在"""
+        """cancel-request 返回 404 — 任务不存在"""
         service = RippleService()
 
         mock_response = MagicMock()
@@ -338,7 +431,8 @@ class TestRippleServiceCancelSimulation:
             patch.object(service, "_get_client") as mock_client,
         ):
             client = MagicMock()
-            client.delete = AsyncMock(return_value=mock_response)
+            client.post = AsyncMock(return_value=mock_response)
+            client.delete = AsyncMock()
             mock_client.return_value = client
 
             result = await service.cancel_simulation("job-404")
@@ -346,14 +440,21 @@ class TestRippleServiceCancelSimulation:
         assert result["cancelled"] is False
         assert result["job_id"] == "job-404"
         assert result["status"] == "not_found"
+        client.post.assert_awaited_once_with(
+            "http://ripple-test/v1/simulations/job-404/cancel-request"
+        )
+        client.delete.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_cancel_simulation_not_supported(self):
-        """DELETE 返回 405 — 服务端不支持取消"""
+    async def test_cancel_simulation_legacy_delete_success(self):
+        """cancel-request 405 时回退到旧 DELETE 成功"""
         service = RippleService()
 
-        mock_response = MagicMock()
-        mock_response.status_code = 405
+        request_response = MagicMock()
+        request_response.status_code = 405
+
+        delete_response = MagicMock()
+        delete_response.status_code = 204
 
         with (
             patch.object(
@@ -368,7 +469,46 @@ class TestRippleServiceCancelSimulation:
             patch.object(service, "_get_client") as mock_client,
         ):
             client = MagicMock()
-            client.delete = AsyncMock(return_value=mock_response)
+            client.post = AsyncMock(return_value=request_response)
+            client.delete = AsyncMock(return_value=delete_response)
+            mock_client.return_value = client
+
+            result = await service.cancel_simulation("job-legacy")
+
+        assert result["cancelled"] is True
+        assert result["job_id"] == "job-legacy"
+        assert result["status"] == "cancelled"
+        client.post.assert_awaited_once_with(
+            "http://ripple-test/v1/simulations/job-legacy/cancel-request"
+        )
+        client.delete.assert_awaited_once_with("http://ripple-test/v1/simulations/job-legacy")
+
+    @pytest.mark.asyncio
+    async def test_cancel_simulation_not_supported(self):
+        """新旧取消协议都不可用"""
+        service = RippleService()
+
+        request_response = MagicMock()
+        request_response.status_code = 405
+
+        delete_response = MagicMock()
+        delete_response.status_code = 405
+
+        with (
+            patch.object(
+                service,
+                "_get_config",
+                return_value={
+                    "base_url": "http://ripple-test",
+                    "api_token": "",
+                    "timeout": 30,
+                },
+            ),
+            patch.object(service, "_get_client") as mock_client,
+        ):
+            client = MagicMock()
+            client.post = AsyncMock(return_value=request_response)
+            client.delete = AsyncMock(return_value=delete_response)
             mock_client.return_value = client
 
             result = await service.cancel_simulation("job-405")
@@ -379,7 +519,7 @@ class TestRippleServiceCancelSimulation:
 
     @pytest.mark.asyncio
     async def test_cancel_simulation_network_error(self):
-        """DELETE 网络错误 — 优雅降级"""
+        """cancel-request 网络错误 — 优雅降级"""
         service = RippleService()
 
         with (
@@ -395,7 +535,7 @@ class TestRippleServiceCancelSimulation:
             patch.object(service, "_get_client") as mock_client,
         ):
             client = MagicMock()
-            client.delete = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+            client.post = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
             mock_client.return_value = client
 
             result = await service.cancel_simulation("job-net")
@@ -458,6 +598,21 @@ class TestRippleServiceRecoverResult:
         assert recovery.job_id == "job-failed"
         assert recovery.status == "failed"
         assert "OOM" in recovery.error
+
+    @pytest.mark.asyncio
+    async def test_recover_result_timed_out(self):
+        """任务服务端超时 — 返回 timed_out 状态"""
+        service = RippleService()
+
+        with patch.object(service, "get_simulation_status", new_callable=AsyncMock) as mock_status:
+            mock_status.return_value = {"status": "timed_out", "error": "phase timeout"}
+
+            recovery = await service.recover_result("job-timeout")
+
+        assert isinstance(recovery, RecoveryStatus)
+        assert recovery.job_id == "job-timeout"
+        assert recovery.status == "timed_out"
+        assert "phase timeout" in recovery.error
 
     @pytest.mark.asyncio
     async def test_recover_result_not_found(self):

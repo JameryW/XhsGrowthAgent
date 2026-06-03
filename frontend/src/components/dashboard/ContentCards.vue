@@ -34,6 +34,7 @@ const ripplePrediction = computed(() => workflowStore.ripplePrediction)
 const ripplePmf = computed(() => workflowStore.ripplePmf)
 const rippleComparison = computed(() => workflowStore.rippleComparison)
 const rippleReason = computed(() => workflowStore.rippleReason)
+const rippleProgress = computed(() => workflowStore.rippleProgress)
 
 // Check if specific data exists
 const hasTrendData = computed(() => Object.keys(trendData.value).length > 0)
@@ -213,11 +214,12 @@ function heatBg(score?: number): string {
       </div>
 
       <!-- Ripple Analysis (planning phase) -->
-      <div v-if="hasRipplePrediction || hasRipplePmf" class="mt-4 pt-4 border-t border-slate-100">
+      <div v-if="hasRipplePrediction || hasRipplePmf || rippleProgress" class="mt-4 pt-4 border-t border-slate-100">
         <RipplePanel
           :prediction="ripplePrediction"
           :pmf="ripplePmf"
           :ripple-reason="rippleReason"
+          :progress="rippleProgress"
           variant="planning"
         />
       </div>
@@ -304,6 +306,7 @@ function heatBg(score?: number): string {
       <RipplePanel
         :comparison="rippleComparison"
         :ripple-reason="rippleReason"
+        :progress="rippleProgress"
         variant="analyzing"
       />
     </div>

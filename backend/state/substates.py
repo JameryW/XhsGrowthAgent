@@ -128,6 +128,7 @@ class RipplePrediction(TypedDict, total=False):
     """Ripple CAS prediction result."""
 
     job_id: str
+    ripple_job_id: str
     estimated_reach: int
     estimated_engagement: int
     viral_probability: float
@@ -135,17 +136,54 @@ class RipplePrediction(TypedDict, total=False):
     confidence: float
     key_influencers: list[dict[str, Any]]
     spread_path: list[dict[str, Any]]
+    prediction_summary: str
+    verdict: str
+    relative_estimate: dict[str, Any]
+    views_relative: str
+    engagements_relative: str
+    favorites_relative: str
+    comments_relative: str
+    shares_relative: str
+    follows_relative: str
+    phase_vector: dict[str, Any]
+    total_waves: int
+    score_source: str
 
 
 class RipplePMFResult(TypedDict, total=False):
     """Ripple PMF validation result."""
 
     job_id: str
+    ripple_job_id: str
     pmf_score: float
     risk_factors: list[str]
     improvement_strategies: list[str]
     market_segment: dict[str, Any]
     confidence: float
+    prediction_summary: str
+    verdict: str
+    phase: str
+    relative_estimate: dict[str, Any]
+    views_relative: str
+    engagements_relative: str
+    favorites_relative: str
+    comments_relative: str
+    shares_relative: str
+    follows_relative: str
+    phase_vector: dict[str, Any]
+    total_waves: int
+    score_source: str
+
+
+class RippleProgress(TypedDict, total=False):
+    """Ripple simulation progress — pushed during polling."""
+
+    job_id: str
+    current_wave: int
+    total_waves: int
+    progress: float
+    elapsed_seconds: float
+    status: str
 
 
 class RippleComparison(TypedDict, total=False):
@@ -241,6 +279,7 @@ __all__ = [
     "EngagementAction",
     "RipplePrediction",
     "RipplePMFResult",
+    "RippleProgress",
     "RippleComparison",
     # 发布前优化
     "DraftContent",

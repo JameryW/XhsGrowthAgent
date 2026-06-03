@@ -14,6 +14,9 @@ export enum EventType {
   WORKFLOW_COMPLETED = "workflow.completed",
   WORKFLOW_ERROR = "workflow.error",
 
+  // Ripple CAS engine
+  RIPPLE_PROGRESS = "ripple.progress",
+
   // Review
   REVIEW_PENDING = "review.pending",
   REVIEW_SUBMITTED = "review.submitted",
