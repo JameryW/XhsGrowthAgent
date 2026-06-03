@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend spec entry point and required checklist."}
+{"file": ".trellis/spec/backend/ripple-integration.md", "reason": "Defines Ripple lifecycle, timeout, cancel, and recovery contracts."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Defines RippleTimeoutError handling and cancellation semantics."}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Workflow status conventions that must not regress while changing timeout behavior."}
+{"file": "backend/services/ripple_service.py", "reason": "Aligned XHS wait timeout, two-step cancel, recovery states, and current/legacy Ripple result parsing."}
+{"file": "backend/agents/content_strategist.py", "reason": "Removed outer wait_for timeout so RippleTimeoutError preserves job_id and uses configurable workflow timeout."}
+{"file": "backend/tools/ripple/integration.py", "reason": "Delegates parser behavior to RippleService to avoid duplicate result-contract logic."}
+{"file": "frontend/src/components/RipplePanel.vue", "reason": "Displays relative Ripple estimates and avoids false fallback detection for completed current-shape results."}
+{"file": "tests/unit/services/test_ripple_service.py", "reason": "Covers two-step cancel, timed_out recovery, and current Ripple output-json parsing."}
+{"file": "tests/unit/tools/test_ripple.py", "reason": "Covers integration parser compatibility for current Ripple output-json shape."}

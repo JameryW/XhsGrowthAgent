@@ -11,30 +11,38 @@ from langgraph.store.memory import InMemoryStore
 
 from backend.agents.nodes import (
     analyst_node,
-    choice_gate_node,
-    content_analyzer_node,
+    brief_analyzer_node,
+    brief_gate_node,
     content_strategist_node,
     copywriter_node,
-    draft_gate_node,
     engagement_node,
     orchestrator_node,
     publisher_node,
     review_gate_node,
     revise_content_node,
+    shooting_planner_node,
     trend_scout_node,
+    visual_designer_node,
+)
+from backend.agents.nodes.optimization import (
+    choice_gate_node,
+    content_analyzer_node,
+    draft_gate_node,
     version_generator_node,
     viral_matcher_node,
-    visual_designer_node,
 )
 from backend.graph.error_handling import get_retry_policy
 from backend.graph.routers import (
+    copywriter_router,
     engagement_router,
     orchestrator_router,
     review_outcome,
+    should_brief_or_optimize,
     should_continue,
     should_optimize,
     should_plan,
     should_present_choice,
+    visual_designer_router,
 )
 from backend.state.schema import XHSGrowthState
 
@@ -76,6 +84,17 @@ def build_graph() -> StateGraph:
     builder.add_node("version_generator", version_generator_node)
     builder.add_node("choice_gate", choice_gate_node)
 
+    # 商单 Brief 模式节点
+    builder.add_node(
+        "brief_analyzer", brief_analyzer_node,
+        retry_policy=get_retry_policy("brief_analyzer"),
+    )
+    builder.add_node("brief_gate", brief_gate_node)
+    builder.add_node(
+        "shooting_planner", shooting_planner_node,
+        retry_policy=get_retry_policy("shooting_planner"),
+    )
+
     # ── 入口 ──
     builder.add_edge(START, "orchestrator")
 
@@ -85,6 +104,7 @@ def build_graph() -> StateGraph:
         orchestrator_router,
         {
             "trend_scout": "trend_scout",
+            "brief_analyzer": "brief_analyzer",
             "content_strategist": "content_strategist",
             "analyst": "analyst",
             "engagement": "engagement",
@@ -106,8 +126,15 @@ def build_graph() -> StateGraph:
     builder.add_edge("content_strategist", "copywriter")
 
     # ── 发布前优化流程 ──
-    # copywriter → draft_gate (wait for user draft if needed)
-    builder.add_edge("copywriter", "draft_gate")
+    # copywriter → [draft_gate | visual_designer] (brief mode skips draft_gate)
+    builder.add_conditional_edges(
+        "copywriter",
+        copywriter_router,
+        {
+            "draft_gate": "draft_gate",
+            "visual_designer": "visual_designer",
+        },
+    )
 
     # draft_gate → viral_matcher (search for viral references)
     builder.add_edge("draft_gate", "viral_matcher")
@@ -139,8 +166,38 @@ def build_graph() -> StateGraph:
     # choice_gate → visual_designer (选择后进入视觉设计)
     builder.add_edge("choice_gate", "visual_designer")
 
+    # ── 商单 Brief 模式流程 ──
+    # brief_analyzer → brief_gate (pause for clarification if needed)
+    builder.add_edge("brief_analyzer", "brief_gate")
+
+    # brief_gate → viral_matcher (search viral posts by brief style)
+    builder.add_edge("brief_gate", "viral_matcher")
+
+    # viral_matcher → shooting_planner (brief mode)
+    # or → content_analyzer (trend mode optimization)
+    builder.add_conditional_edges(
+        "viral_matcher",
+        should_brief_or_optimize,
+        {
+            "shooting_planner": "shooting_planner",
+            "content_analyzer": "content_analyzer",
+            "visual_designer": "visual_designer",
+        },
+    )
+
+    # shooting_planner → copywriter
+    builder.add_edge("shooting_planner", "copywriter")
+
     # visual_designer → review_gate
-    builder.add_edge("visual_designer", "review_gate")
+    # visual_designer → [review_gate | END] (brief mode ends here)
+    builder.add_conditional_edges(
+        "visual_designer",
+        visual_designer_router,
+        {
+            "review_gate": "review_gate",
+            "__end__": END,
+        },
+    )
 
     # ── 人工审核路由 ──
     builder.add_conditional_edges(
@@ -192,7 +249,7 @@ def compile_graph_dev() -> CompiledStateGraph:
     graph = builder.compile(
         checkpointer=checkpointer,
         store=store,
-        interrupt_before=["review_gate", "choice_gate", "draft_gate"],
+        interrupt_before=["review_gate", "choice_gate", "draft_gate", "brief_gate"],
     )
     return graph
 
@@ -214,7 +271,7 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         await checkpointer.setup()
         graph = builder.compile(
             checkpointer=checkpointer,
-            interrupt_before=["review_gate", "choice_gate", "draft_gate"],
+            interrupt_before=["review_gate", "choice_gate", "draft_gate", "brief_gate"],
         )
         return graph, checkpointer
     except ImportError:

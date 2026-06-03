@@ -13,6 +13,8 @@ const props = defineProps<{
   dryRun: boolean
   autoPublish: boolean
   niche?: string
+  workflowMode?: 'trend' | 'brief'
+  briefText?: string
   isLoading: boolean
 }>()
 
@@ -33,16 +35,30 @@ const phaseLabel = (phase: string) => {
   return t(map[phase] || `dashboard.timeline.${phase}`)
 }
 
-const allSteps = computed(() => [
-  { phase: 'scouting', label: t('dashboard.timeline.scouting') },
-  { phase: 'planning', label: t('dashboard.timeline.planning') },
-  { phase: 'creating', label: t('dashboard.timeline.creating') },
-  { phase: 'visual', label: t('dashboard.timeline.visual') },
-  { phase: 'reviewing', label: t('dashboard.timeline.reviewing') },
-  { phase: 'publishing', label: t('dashboard.timeline.publishing') },
-])
+const allSteps = computed(() => {
+  if (props.workflowMode === 'brief') {
+    return [
+      { phase: 'briefing', label: t('dashboard.phase.briefing') },
+      { phase: 'creating', label: t('dashboard.timeline.creating') },
+      { phase: 'visual', label: t('dashboard.timeline.visual') },
+      { phase: 'ripple', label: t('dashboard.ripple.title') },
+    ]
+  }
+  return [
+    { phase: 'scouting', label: t('dashboard.timeline.scouting') },
+    { phase: 'planning', label: t('dashboard.timeline.planning') },
+    { phase: 'creating', label: t('dashboard.timeline.creating') },
+    { phase: 'visual', label: t('dashboard.timeline.visual') },
+    { phase: 'reviewing', label: t('dashboard.timeline.reviewing') },
+    { phase: 'publishing', label: t('dashboard.timeline.publishing') },
+  ]
+})
 
 const expectedSteps = computed(() => {
+  if (props.workflowMode === 'brief') {
+    // Brief mode always starts from briefing
+    return allSteps.value
+  }
   const phaseOrder = ['scouting', 'planning', 'creating', 'visual', 'reviewing', 'publishing']
   const startIdx = phaseOrder.indexOf(props.phase)
   if (startIdx < 0) return allSteps.value
@@ -75,6 +91,12 @@ const expectedSteps = computed(() => {
           <!-- Config Summary -->
           <div class="p-5 space-y-3">
             <div class="flex items-center justify-between py-2">
+              <span class="text-sm text-slate-500">{{ t('home.form.workflowMode') }}</span>
+              <span class="text-sm font-medium text-rose-600 bg-rose-50 px-2 py-0.5 rounded">
+                {{ workflowMode === 'brief' ? t('home.briefMode') : t('home.trendMode') }}
+              </span>
+            </div>
+            <div class="flex items-center justify-between py-2">
               <span class="text-sm text-slate-500">{{ t('home.form.accountId') }}</span>
               <span class="text-sm font-medium text-slate-700">{{ accountId }}</span>
             </div>
@@ -82,9 +104,13 @@ const expectedSteps = computed(() => {
               <span class="text-sm text-slate-500">{{ t('home.form.niche') }}</span>
               <span class="text-sm font-medium text-rose-600 bg-rose-50 px-2 py-0.5 rounded">{{ niche }}</span>
             </div>
-            <div class="flex items-center justify-between py-2">
+            <div v-if="workflowMode !== 'brief'" class="flex items-center justify-between py-2">
               <span class="text-sm text-slate-500">{{ t('home.form.startPhase') }}</span>
               <span class="text-sm font-medium text-slate-700">{{ phaseLabel(phase) }}</span>
+            </div>
+            <div v-if="workflowMode === 'brief' && briefText" class="py-2">
+              <span class="text-sm text-slate-500 block mb-1">{{ t('home.form.briefText') }}</span>
+              <p class="text-xs text-slate-600 bg-slate-50 rounded-lg p-2 max-h-24 overflow-y-auto line-clamp-4">{{ briefText }}</p>
             </div>
             <div class="flex items-center justify-between py-2">
               <span class="text-sm text-slate-500">{{ t('home.form.dryRun') }}</span>

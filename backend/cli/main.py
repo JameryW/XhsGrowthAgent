@@ -28,6 +28,7 @@ PHASE_STYLES = {
     "engaging": "purple",
     "completed": "bold green",
     "error": "bold red",
+    "stale": "bold yellow",
 }
 
 PHASE_ICONS = {
@@ -41,6 +42,7 @@ PHASE_ICONS = {
     "engaging": "💬",
     "completed": "✅",
     "error": "❌",
+    "stale": "⚠️",
 }
 
 
@@ -179,27 +181,37 @@ def status(thread_id: str = typer.Argument(..., help="工作流线程 ID")):
     """查看工作流状态"""
     async def _status():
         from backend.graph.builder import compile_graph_dev
+        from backend.state.machine import derive_status
 
         graph = compile_graph_dev()
         config = {"configurable": {"thread_id": thread_id}}
-        state = await graph.aget_state(config)
+        snapshot = await graph.aget_state(config)
 
-        phase = state.values.get("phase", "unknown")
-        agent = state.values.get("current_agent", "unknown")
+        # Use derive_status for accurate status (handles stale, gates, etc.)
+        derived = derive_status(snapshot, has_active_task=False)
+        phase = snapshot.values.get("phase", "unknown")
+        agent = snapshot.values.get("current_agent", "unknown")
 
         table = Table(title=f"工作流状态: {thread_id}")
         table.add_column("属性", style="cyan")
         table.add_column("值", style="white")
 
+        table.add_row("状态", format_phase(derived.value))
         table.add_row("阶段", format_phase(phase))
         table.add_row("当前 Agent", agent)
-        table.add_row("下一步", ", ".join(state.next) if state.next else "完成")
-        table.add_row("错误", state.values.get("error", "无") or "无")
+        table.add_row("下一步", ", ".join(snapshot.next) if snapshot.next else "完成")
+        table.add_row("错误", snapshot.values.get("error", "无") or "无")
 
         console.print(table)
 
+        if derived.value == "stale":
+            console.print(
+                "\n[yellow]⚠️ 工作流处于 STALE 状态（后台任务已终止但仍有待执行节点）[/yellow]"
+            )
+            console.print("[dim]使用 xhs-growth resume <thread_id> 恢复执行[/dim]")
+
         # Show performance log if available
-        perf_log = state.values.get("performance_log", [])
+        perf_log = snapshot.values.get("performance_log", [])
         if perf_log and len(perf_log) > 0:
             console.print("\n[dim]性能日志:[/dim]")
             for entry in perf_log[-3:]:

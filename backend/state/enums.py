@@ -5,6 +5,7 @@ from enum import StrEnum
 class WorkflowPhase(StrEnum):
     """Workflow execution phase."""
     IDLE = "idle"
+    BRIEFING = "briefing"       # Brief mode: parsing/analyzing brief
     SCOUTING = "scouting"
     PLANNING = "planning"
     CREATING = "creating"
@@ -45,3 +46,9 @@ class ExecutionMode(StrEnum):
     """Workflow execution mode."""
     SINGLE = "single"          # One content cycle, then completed
     CONTINUOUS = "continuous"  # Loop back to orchestrator after each cycle
+
+
+class WorkflowMode(StrEnum):
+    """Workflow input mode — determines starting node and pipeline path."""
+    TREND = "trend"    # Trend discovery mode (existing flow: trend_scout → ...)
+    BRIEF = "brief"    # Brief-based mode (brief_analyzer → shooting_planner → ...)

@@ -52,10 +52,7 @@ const handleGlobalKeyDown = (e: KeyboardEvent) => {
 }
 
 onMounted(async () => {
-  // Validate token in background — don't block router navigation
-  if (authStore.isAuthenticated) {
-    authStore.initialize()
-  }
+  // Auth is already initialized by router guard on first navigation
   // Add global keyboard listener
   window.addEventListener("keydown", handleGlobalKeyDown)
   // Initialize onboarding - check if user needs to see tour

@@ -8,7 +8,7 @@ import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import PreLaunchChecklist from '@/components/PreLaunchChecklist.vue'
 import WorkflowStartForm from '@/components/WorkflowStartForm.vue'
 import ConfirmStartModal from '@/components/ConfirmStartModal.vue'
-import type { WorkflowConfig } from '@/components/WorkflowStartForm.vue'
+import type { WorkflowConfig, WorkflowMode } from '@/components/WorkflowStartForm.vue'
 import { useWorkflowStore } from '@/stores'
 
 const { t } = useI18n()
@@ -18,7 +18,7 @@ const route = useRoute()
 const workflowStore = useWorkflowStore()
 const isStarting = ref(false)
 const showConfirm = ref(false)
-const showForm = ref(true)
+const showForm = ref(false)
 const startFormRef = ref<InstanceType<typeof WorkflowStartForm> | null>(null)
 const checklistRef = ref<InstanceType<typeof PreLaunchChecklist> | null>(null)
 
@@ -32,6 +32,7 @@ const formConfig = ref<WorkflowConfig>({
   dryRun: true,
   autoPublish: false,
   niche: '母婴',
+  workflowMode: 'trend' as WorkflowMode,
 })
 
 // Check for topic and niche query params from analytics
@@ -74,7 +75,14 @@ const confirmStart = async () => {
     await workflowStore.startWorkflow(
       formConfig.value.accountId,
       formConfig.value.phase,
-      { dryRun: formConfig.value.dryRun, autoPublish: formConfig.value.autoPublish, topic: formConfig.value.topic, niche: formConfig.value.niche }
+      {
+        dryRun: formConfig.value.dryRun,
+        autoPublish: formConfig.value.autoPublish,
+        topic: formConfig.value.topic,
+        niche: formConfig.value.niche,
+        workflowMode: formConfig.value.workflowMode,
+        briefText: formConfig.value.briefText,
+      }
     )
     showConfirm.value = false
     router.push('/dashboard')
@@ -84,13 +92,13 @@ const confirmStart = async () => {
 }
 
 const quickStart = () => {
-  // Use default config but still go through confirmation
   formConfig.value = {
     accountId: 'default',
     phase: 'scouting',
     dryRun: true,
     autoPublish: false,
     niche: '母婴',
+    workflowMode: 'trend' as WorkflowMode,
   }
   showConfirm.value = true
 }
@@ -98,93 +106,111 @@ const quickStart = () => {
 
 <template>
   <div class="min-h-[80vh] flex flex-col justify-center">
-    <div class="w-full max-w-4xl mx-auto space-y-4 px-4 md:px-8">
-      <!-- Pre-Launch Checklist -->
-      <PreLaunchChecklist ref="checklistRef" />
-
-      <!-- Main Card -->
-      <div class="rounded-2xl p-6 md:p-8 bg-white border border-slate-200/50 shadow-sm">
-        <div class="text-center mb-8">
-          <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm mx-auto mb-4">
-            <AppIcon name="Rocket" size="xl" variant="white" />
-          </div>
-          <h1 class="text-2xl font-bold mb-2 text-slate-800">{{ t('home.title') }}</h1>
-          <p class="text-sm text-slate-500">{{ t('home.subtitle') }}</p>
+    <div class="w-full max-w-3xl mx-auto px-4 md:px-8">
+      <!-- Hero: title + primary CTA -->
+      <div class="text-center mb-8">
+        <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm mx-auto mb-4">
+          <AppIcon name="Rocket" size="lg" variant="white" />
         </div>
+        <h1 class="text-2xl font-bold text-slate-800 mb-1">{{ t('home.title') }}</h1>
+        <p class="text-sm text-slate-400">{{ t('home.subtitle') }}</p>
+      </div>
 
-        <!-- Pre-filled topic from analytics -->
-        <div v-if="prefilledTopic" class="mb-4 p-3 rounded-lg bg-teal-50 border border-teal-100 flex items-center gap-2">
-          <AppIcon name="Sparkles" size="sm" variant="cyan" />
-          <div class="flex-1">
-            <span class="text-xs text-teal-500 font-medium">{{ t('home.recommendedTopic') }}</span>
-            <p class="text-sm text-teal-700 font-semibold">{{ prefilledTopic }}</p>
-          </div>
-          <button @click="prefilledTopic = null" class="text-teal-400 hover:text-teal-600 transition-colors">
-            <AppIcon name="X" size="sm" variant="cyan" />
-          </button>
+      <!-- Pre-filled topic from analytics -->
+      <div v-if="prefilledTopic" class="mb-4 p-3 rounded-lg bg-teal-50 border border-teal-100 flex items-center gap-2">
+        <AppIcon name="Sparkles" size="sm" variant="cyan" />
+        <div class="flex-1">
+          <span class="text-xs text-teal-500 font-medium">{{ t('home.recommendedTopic') }}</span>
+          <p class="text-sm text-teal-700 font-semibold">{{ prefilledTopic }}</p>
         </div>
+        <button @click="prefilledTopic = null" class="text-teal-400 hover:text-teal-600 transition-colors">
+          <AppIcon name="X" size="sm" variant="cyan" />
+        </button>
+      </div>
 
-        <!-- Configuration Form (expandable) -->
-        <div v-if="showForm" class="mb-6">
-          <WorkflowStartForm ref="startFormRef" :initial-topic="prefilledTopic || undefined" />
-        </div>
-
-        <div class="space-y-3">
-          <!-- Primary: Start with config -->
+      <!-- Primary action card -->
+      <div class="rounded-2xl p-6 md:p-8 bg-white border border-slate-200/50 shadow-sm mb-4">
+        <!-- Quick start (default) -->
+        <template v-if="!showForm">
           <NeonButton
-            v-if="showForm"
             variant="pink"
             size="lg"
             class="w-full group/btn"
-            @click="handleFormSubmit()"
+            @click="quickStart"
+            :loading="isStarting"
             :aria-label="t('home.startWorkflow')"
           >
             <span class="inline-flex items-center gap-3 transition-transform duration-200 group-hover/btn:translate-x-1">
               <AppIcon name="Rocket" size="md" variant="white" aria-hidden="true" />
-              <span class="font-medium">{{ t('home.startWorkflow') }}</span>
+              <span class="font-semibold">{{ t('home.startWorkflow') }}</span>
             </span>
           </NeonButton>
+          <div class="mt-4 flex items-center justify-center gap-3">
+            <div class="h-px flex-1 bg-slate-100" />
+            <span class="text-xs text-slate-400">{{ t('home.form.options') }}</span>
+            <div class="h-px flex-1 bg-slate-100" />
+          </div>
+          <button
+            class="mt-3 w-full text-center text-sm text-slate-500 hover:text-cyan-600 transition-colors flex items-center justify-center gap-1.5"
+            @click="showForm = true"
+          >
+            <AppIcon name="Settings" size="sm" variant="cyan" />
+            <span>{{ t('home.customStart') }}</span>
+          </button>
+        </template>
 
-          <!-- Quick start or show config -->
-          <template v-if="!showForm">
-            <NeonButton variant="pink" size="lg" class="w-full group/btn" @click="quickStart" :loading="isStarting" :aria-label="t('home.startWorkflow')">
+        <!-- Configuration form (expanded) -->
+        <template v-else>
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-sm font-semibold text-slate-700">{{ t('home.customStart') }}</h2>
+            <button
+              class="text-xs text-slate-400 hover:text-slate-600 transition-colors flex items-center gap-1"
+              @click="showForm = false"
+            >
+              <AppIcon name="Zap" size="sm" variant="cyan" />
+              <span>{{ t('home.quickStart') }}</span>
+            </button>
+          </div>
+          <WorkflowStartForm ref="startFormRef" :initial-topic="prefilledTopic || undefined" />
+          <div class="mt-5">
+            <NeonButton
+              variant="pink"
+              size="lg"
+              class="w-full group/btn"
+              @click="handleFormSubmit()"
+              :aria-label="t('home.startWorkflow')"
+            >
               <span class="inline-flex items-center gap-3 transition-transform duration-200 group-hover/btn:translate-x-1">
                 <AppIcon name="Rocket" size="md" variant="white" aria-hidden="true" />
-                <span class="font-medium">{{ t('home.startWorkflow') }}</span>
-              </span>
-            </NeonButton>
-
-            <NeonButton variant="ghost" size="md" class="w-full" @click="showForm = true" :disabled="isStarting">
-              <span class="inline-flex items-center gap-3">
-                <AppIcon name="Settings" size="md" variant="cyan" aria-hidden="true" />
-                <span>{{ t('home.customStart') }}</span>
-              </span>
-            </NeonButton>
-          </template>
-
-          <NeonButton v-if="showForm" variant="cyan" size="sm" class="w-full" @click="showForm = false">
-            <span class="inline-flex items-center gap-2">
-              <AppIcon name="Zap" size="sm" variant="white" aria-hidden="true" />
-              <span>{{ t('home.quickStart') }}</span>
-            </span>
-          </NeonButton>
-
-          <!-- Navigation buttons -->
-          <div class="flex gap-3">
-            <NeonButton variant="cyan" size="md" class="flex-1" @click="goToDashboard" :disabled="isStarting" :aria-label="t('home.viewDashboard')">
-              <span class="inline-flex items-center gap-2">
-                <AppIcon name="BarChart3" size="sm" variant="white" aria-hidden="true" />
-                <span class="text-sm">{{ t('home.viewDashboard') }}</span>
-              </span>
-            </NeonButton>
-
-            <NeonButton variant="purple" size="md" class="flex-1" @click="goToHistory" :disabled="isStarting">
-              <span class="inline-flex items-center gap-2">
-                <AppIcon name="History" size="sm" variant="white" aria-hidden="true" />
-                <span class="text-sm">{{ t('home.history') }}</span>
+                <span class="font-semibold">{{ t('home.startWorkflow') }}</span>
               </span>
             </NeonButton>
           </div>
+        </template>
+      </div>
+
+      <!-- Secondary row: checklist + nav -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <!-- Pre-Launch Checklist -->
+        <div class="rounded-xl p-4 bg-white/80 border border-slate-200/40">
+          <PreLaunchChecklist ref="checklistRef" />
+        </div>
+
+        <!-- Navigation shortcuts -->
+        <div class="rounded-xl p-4 bg-white/80 border border-slate-200/40 flex flex-col gap-3">
+          <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">{{ t('home.systemStatus') }}</span>
+          <NeonButton variant="cyan" size="md" class="w-full" @click="goToDashboard" :disabled="isStarting" :aria-label="t('home.viewDashboard')">
+            <span class="inline-flex items-center gap-2">
+              <AppIcon name="BarChart3" size="sm" variant="white" aria-hidden="true" />
+              <span class="text-sm">{{ t('home.viewDashboard') }}</span>
+            </span>
+          </NeonButton>
+          <NeonButton variant="ghost" size="md" class="w-full" @click="goToHistory" :disabled="isStarting">
+            <span class="inline-flex items-center gap-2">
+              <AppIcon name="History" size="sm" variant="cyan" aria-hidden="true" />
+              <span class="text-sm">{{ t('home.history') }}</span>
+            </span>
+          </NeonButton>
         </div>
       </div>
     </div>
@@ -197,6 +223,8 @@ const quickStart = () => {
       :dry-run="formConfig.dryRun"
       :auto-publish="formConfig.autoPublish"
       :niche="formConfig.niche"
+      :workflow-mode="formConfig.workflowMode"
+      :brief-text="formConfig.briefText"
       :is-loading="isStarting"
       @confirm="confirmStart"
       @cancel="showConfirm = false"

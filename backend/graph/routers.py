@@ -26,23 +26,38 @@ def _check_terminal(state: XHSGrowthState) -> str | None:
 
 
 def orchestrator_router(state: XHSGrowthState) -> str:
-    """编排器路由 — 根据当前阶段决定下一个节点"""
+    """编排器路由 — 根据当前阶段和工作模式决定下一个节点"""
     if terminal := _check_terminal(state):
         return terminal
 
     phase = state.get("phase", WorkflowPhase.IDLE)
+    mode = state.get("workflow_mode", "trend")
 
-    routing = {
-        WorkflowPhase.SCOUTING: "trend_scout",
-        WorkflowPhase.PLANNING: "content_strategist",
-        WorkflowPhase.ANALYZING: "analyst",
-        WorkflowPhase.ENGAGING: "engagement",
-        WorkflowPhase.ERROR: "__end__",
-        WorkflowPhase.COMPLETED: "__end__",
-        WorkflowPhase.IDLE: "trend_scout",
-    }
+    # Brief mode: route to brief_analyzer instead of trend_scout
+    if mode == "brief":
+        routing = {
+            WorkflowPhase.BRIEFING: "brief_analyzer",
+            WorkflowPhase.PLANNING: "content_strategist",
+            WorkflowPhase.CREATING: "copywriter",
+            WorkflowPhase.ANALYZING: "analyst",
+            WorkflowPhase.ENGAGING: "engagement",
+            WorkflowPhase.ERROR: "__end__",
+            WorkflowPhase.COMPLETED: "__end__",
+            WorkflowPhase.IDLE: "brief_analyzer",
+        }
+    else:
+        # Trend mode (existing flow)
+        routing = {
+            WorkflowPhase.SCOUTING: "trend_scout",
+            WorkflowPhase.PLANNING: "content_strategist",
+            WorkflowPhase.ANALYZING: "analyst",
+            WorkflowPhase.ENGAGING: "engagement",
+            WorkflowPhase.ERROR: "__end__",
+            WorkflowPhase.COMPLETED: "__end__",
+            WorkflowPhase.IDLE: "trend_scout",
+        }
 
-    return routing.get(phase, "trend_scout")
+    return routing.get(phase, "trend_scout" if mode != "brief" else "brief_analyzer")
 
 
 def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "trend_scout", "__end__"]:
@@ -152,3 +167,52 @@ def should_present_choice(state: XHSGrowthState) -> Literal["choice_gate", "visu
         return "choice_gate"
     # Single or no versions — auto-select and skip to visual_designer
     return "visual_designer"
+
+
+def should_brief_or_optimize(
+    state: XHSGrowthState,
+) -> Literal["shooting_planner", "content_analyzer", "visual_designer"]:
+    """Route after viral_matcher — brief mode goes to shooting_planner,
+    trend mode goes to content_analyzer or visual_designer.
+    """
+    if _check_terminal(state):
+        return "visual_designer"
+
+    mode = state.get("workflow_mode", "trend")
+    if mode == "brief":
+        return "shooting_planner"
+
+    # Trend mode: existing optimization flow
+    return should_optimize(state)
+
+
+def copywriter_router(
+    state: XHSGrowthState,
+) -> Literal["draft_gate", "visual_designer"]:
+    """Route after copywriter — brief mode skips draft_gate, trend mode goes to draft_gate."""
+    if _check_terminal(state):
+        return "visual_designer"
+
+    mode = state.get("workflow_mode", "trend")
+    if mode == "brief":
+        # Brief mode: skip draft_gate, go directly to visual_designer
+        return "visual_designer"
+
+    return "draft_gate"
+
+
+def visual_designer_router(
+    state: XHSGrowthState,
+) -> Literal["review_gate", "__end__"]:
+    """Route after visual_designer — brief mode ends (no review/publish),
+    trend mode goes to review_gate.
+    """
+    if _check_terminal(state):
+        return "__end__"
+
+    mode = state.get("workflow_mode", "trend")
+    if mode == "brief":
+        # Brief mode: done after visual design + Ripple analysis
+        return "__end__"
+
+    return "review_gate"

@@ -6,6 +6,7 @@ export type WorkflowPhase =
   | 'scouting'
   | 'planning'
   | 'creating'
+  | 'briefing'
   | 'reviewing'
   | 'publishing'
   | 'analyzing'
@@ -23,6 +24,7 @@ export type WorkflowStatus =
   | 'awaiting_review'
   | 'awaiting_choice'
   | 'awaiting_draft'
+  | 'awaiting_brief'
   | 'paused'
   | 'completed'
   | 'error'
@@ -50,6 +52,8 @@ export interface WorkflowStartRequest {
   topic?: string
   niche?: string
   execution_mode?: 'single' | 'continuous'
+  workflow_mode?: 'trend' | 'brief'
+  brief_text?: string
 }
 
 // Workflow list item (from /workflow/list)
@@ -274,6 +278,10 @@ export interface WorkflowStateResponse {
   created_at?: string
   updated_at?: string
   agent_timeline: AgentTimelineEntry[]
+  workflow_mode?: 'trend' | 'brief'
+  brief_content?: BriefContent
+  brief_clarification?: BriefClarification
+  shooting_plan?: ShootingPlan
   trend_data?: TrendData
   content_plan?: ContentPlan
   copy_content?: CopyContent
@@ -288,4 +296,58 @@ export interface WorkflowStateResponse {
   ripple_comparison?: RippleComparison
   ripple_progress?: RippleProgress
   ripple_reason?: string  // "disabled" | "unreachable" | ""
+}
+
+// Brief content - parsed from brief text/PDF
+export interface BriefContent {
+  raw_text?: string
+  source_type?: string
+  brand_name?: string
+  product_name?: string
+  product_specs?: string
+  selling_points?: string[]
+  required_keywords?: string[]
+  required_hashtags?: string[]
+  optional_hashtags?: string[]
+  content_direction?: string
+  target_audience?: string
+  style_requirements?: string
+  shooting_requirements?: string
+  notes?: string
+  confidence?: number
+}
+
+// Brief clarification - when brief is vague
+export interface BriefClarification {
+  questions?: Array<{
+    field: string
+    question: string
+    options?: string[]
+    inferred_value?: string
+  }>
+  resolved?: boolean
+}
+
+// Shooting plan - generated from brief
+export interface ShootingPlan {
+  creator_nickname?: string
+  content_direction?: string
+  content_type_label?: string
+  profile_link?: string
+  creator_level?: string
+  planned_publish_date?: string
+  product_specification?: string
+  draft_requirements?: string
+  draft_notes?: string
+  title_candidates?: string[]
+  body_copy?: string
+  required_hashtags?: string[]
+  optional_hashtags?: string[]
+  suggested_hashtags?: string[]
+  outfits?: Record<string, string[]>
+  shooting_angles?: Array<{
+    angle: string
+    description: string
+    tips?: string
+  }>
 }

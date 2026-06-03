@@ -15,12 +15,14 @@ Agents:
 """
 
 from backend.agents.analyst import AnalystAgent
+from backend.agents.brief_analyzer import BriefAnalyzerAgent
 from backend.agents.content_analyzer import ContentAnalyzerAgent
 from backend.agents.content_strategist import ContentStrategistAgent
 from backend.agents.copywriter import CopywriterAgent
 from backend.agents.engagement import EngagementAgent
 from backend.agents.orchestrator import OrchestratorAgent
 from backend.agents.publisher import PublisherAgent
+from backend.agents.shooting_planner import ShootingPlannerAgent
 from backend.agents.trend_scout import TrendScoutAgent
 from backend.agents.version_generator import VersionGeneratorAgent
 from backend.agents.viral_matcher import ViralMatcherAgent
@@ -40,4 +42,6 @@ __all__ = [
     "ViralMatcherAgent",
     "ContentAnalyzerAgent",
     "VersionGeneratorAgent",
+    "BriefAnalyzerAgent",
+    "ShootingPlannerAgent",
 ]

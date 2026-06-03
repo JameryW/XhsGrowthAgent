@@ -18,6 +18,8 @@ class TaskType(StrEnum):
     VIRAL_MATCHING = "viral_matching"
     CONTENT_ANALYSIS = "content_analysis"
     VERSION_GEN = "version_gen"
+    BRIEF_ANALYSIS = "brief_analysis"
+    SHOOTING_PLAN = "shooting_plan"
 
 
 class ModelProvider(StrEnum):
@@ -102,6 +104,8 @@ def resolve_model_id(task_type: TaskType, routing_overrides: dict[str, str] | No
         TaskType.VIRAL_MATCHING: "astron-code-latest",
         TaskType.CONTENT_ANALYSIS: "astron-code-latest",
         TaskType.VERSION_GEN: "astron-code-latest",
+        TaskType.BRIEF_ANALYSIS: "astron-code-latest",
+        TaskType.SHOOTING_PLAN: "astron-code-latest",
     }
     if routing_overrides:
         for k, v in routing_overrides.items():

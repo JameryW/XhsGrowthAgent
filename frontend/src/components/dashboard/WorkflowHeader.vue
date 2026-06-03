@@ -31,17 +31,21 @@ const workflowProgress = computed(() => workflowStore.progressPercent)
 const isWaitingForUser = computed(() =>
   workflowStore.isAwaitingDraft ||
   workflowStore.isAwaitingChoice ||
-  workflowStore.isAwaitingReview
+  workflowStore.isAwaitingReview ||
+  workflowStore.isAwaitingBrief
 )
+const isStale = computed(() => workflowStore.isStale)
 const statusLabel = computed(() =>
-  isWaitingForUser.value ? t('dashboard.header.awaitingAction') :
-    workflowStore.isRunning ? t('dashboard.header.running') :
-      t('dashboard.header.idle')
+  isStale.value ? t('workflow.staleDetected') :
+    isWaitingForUser.value ? t('dashboard.header.awaitingAction') :
+      workflowStore.isRunning ? t('dashboard.header.running') :
+        t('dashboard.header.idle')
 )
 const currentStageLabel = computed(() => {
   if (workflowStore.isAwaitingDraft) return t('dashboard.phase.awaitingDraft')
   if (workflowStore.isAwaitingChoice) return t('dashboard.phase.awaitingChoice')
   if (workflowStore.isAwaitingReview) return t('dashboard.phase.awaitingReview')
+  if (workflowStore.isAwaitingBrief) return t('dashboard.phase.awaitingBrief')
 
   const key = `dashboard.phase.${workflowStore.currentPhase}`
   const translated = t(key)
@@ -127,18 +131,20 @@ const timeRemainingDisplay = computed(() => {
           'px-4 py-2.5 rounded-lg border font-medium flex items-center gap-2 transition-all duration-200',
           workflowStore.isRunning
             ? 'bg-gradient-to-r from-teal-500 to-teal-400 border-teal-200 text-white shadow-sm'
-            : isWaitingForUser
-              ? 'bg-amber-50 border-amber-200 text-amber-700'
-            : 'bg-slate-50 border-slate-200 text-slate-500'
+            : isStale
+              ? 'bg-amber-50 border-amber-300 text-amber-700'
+              : isWaitingForUser
+                ? 'bg-amber-50 border-amber-200 text-amber-700'
+                : 'bg-slate-50 border-slate-200 text-slate-500'
         ]"
         role="status"
         aria-live="polite"
         :aria-label="statusLabel"
       >
         <AppIcon
-          :name="workflowStore.isRunning ? 'Circle' : isWaitingForUser ? 'Clock' : 'Minus'"
+          :name="workflowStore.isRunning ? 'Circle' : isStale ? 'AlertTriangle' : isWaitingForUser ? 'Clock' : 'Minus'"
           size="sm"
-          :variant="workflowStore.isRunning ? 'white' : 'cyan'"
+          :variant="workflowStore.isRunning ? 'white' : isStale ? 'peach' : 'cyan'"
           :animate="workflowStore.isRunning"
           aria-hidden="true"
         />

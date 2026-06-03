@@ -265,6 +265,61 @@ class ContentVersion(TypedDict, total=False):
     predicted_score: float
 
 
+# ── 商单 Brief 模式子状态 ──
+
+
+class BriefContent(TypedDict, total=False):
+    """Parsed brief data — structured extraction from raw brief text/document."""
+
+    raw_text: str                   # Original brief text (or extracted from PDF)
+    source_type: str               # "text" | "pdf" | "image"
+    brand_name: str                # Brand from brief
+    product_name: str              # Product name
+    product_specs: list[str]       # Product specifications (e.g. "life3架子款/八爪鱼款+颜色")
+    selling_points: list[str]      # Key selling points / 必提卖点
+    required_keywords: list[str]   # Required keywords (e.g. "几素婴儿车风扇")
+    required_hashtags: list[str]   # 必带话题
+    optional_hashtags: list[str]   # 选带话题
+    content_direction: str         # Content direction hint
+    target_audience: str           # Target audience
+    style_requirements: str        # Style/visual requirements
+    shooting_requirements: str     # Shooting requirements (e.g. "都拍live图", "不可镜像")
+    notes: list[str]               # Special notes from brief
+    confidence: float              # Parsing confidence (0-1, low = needs clarification)
+
+
+class BriefClarification(TypedDict, total=False):
+    """Brief clarification questions — when brief is vague, LLM proposes choices."""
+
+    questions: list[dict[str, Any]]    # List of {field, question, options, inferred_value}
+    resolved: bool                     # Whether user has answered
+
+
+class ShootingPlan(TypedDict, total=False):
+    """Generated shooting plan — follows fixed template structure."""
+
+    creator_nickname: str           # 达人昵称
+    content_direction: str          # 内容方向
+    content_type_label: str         # 图文内容-几素Life3/4 etc.
+    profile_link: str               # 主页链接
+    creator_level: str              # 达人量级
+    planned_publish_date: str       # 预计发布日期
+    product_specification: str      # 产品规格
+    # 初稿要求
+    draft_requirements: list[str]   # 初稿要求 (e.g. "尽可能给到多的图", "都拍live图")
+    draft_notes: list[str]          # 初稿注意事项
+    # 大纲
+    title_candidates: list[str]     # 标题备选
+    body_copy: str                  # 文案
+    required_hashtags: list[str]    # 必带话题
+    optional_hashtags: list[str]    # 选带话题
+    suggested_hashtags: list[str]   # 其他热门话题
+    # 拍摄服装
+    outfits: dict[str, list[str]]   # {角色: [服装选项]} e.g. {"妈妈": ["..."], "宝宝": ["..."]}
+    # 拍摄角度
+    shooting_angles: list[dict[str, str]]  # [{description: "...", reference_image: "..."}]
+
+
 __all__ = [
     "HotTopicItem",
     "NicheOpportunity",
