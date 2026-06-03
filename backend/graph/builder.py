@@ -192,7 +192,7 @@ def compile_graph_dev() -> CompiledStateGraph:
     graph = builder.compile(
         checkpointer=checkpointer,
         store=store,
-        interrupt_before=["review_gate"],
+        interrupt_before=["review_gate", "choice_gate", "draft_gate"],
     )
     return graph
 
@@ -214,7 +214,7 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         await checkpointer.setup()
         graph = builder.compile(
             checkpointer=checkpointer,
-            interrupt_before=["review_gate"],
+            interrupt_before=["review_gate", "choice_gate", "draft_gate"],
         )
         return graph, checkpointer
     except ImportError:
