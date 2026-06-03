@@ -26,6 +26,9 @@ class EventType(StrEnum):
     REVIEW_REJECTED = "review.rejected"
     REVIEW_NEEDS_REVISION = "review.needs_revision"
 
+    # Ripple CAS engine events
+    RIPPLE_PROGRESS = "ripple.progress"
+
     # Analytics events
     ANALYTICS_REPORT_UPDATED = "analytics.report_updated"
     ANALYTICS_COST_ALERT = "analytics.cost_alert"

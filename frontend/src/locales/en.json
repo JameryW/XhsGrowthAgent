@@ -248,6 +248,8 @@
       "estimatedEngagement": "Estimated Engagement",
       "confidence": "Confidence",
       "pmfScore": "PMF Score",
+      "summary": "Summary",
+      "marketSignal": "Market Signal",
       "riskFactors": "Risk Factors",
       "improvementStrategies": "Improvement Strategies",
       "predictedReach": "Predicted Reach",
@@ -261,7 +263,10 @@
       "spreadPhases": "Spread Phases",
       "keyInfluencers": "Key Influencers",
       "fallbackNotice": "Ripple engine unavailable, showing default predictions",
-      "disabledNotice": "Ripple engine not enabled, showing default predictions"
+      "disabledNotice": "Ripple engine not enabled, showing default predictions",
+      "simulating": "Simulating",
+      "waveProgress": "Wave progress",
+      "elapsed": "Elapsed"
     },
     "scouting": {
       "hotTopics": "Hot Topics",

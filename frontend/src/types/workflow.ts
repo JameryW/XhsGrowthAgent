@@ -163,8 +163,20 @@ export interface VisualPlan {
 }
 
 // Ripple CAS prediction result
+// ── Ripple CAS Engine Types ──
+
+export interface RippleProgress {
+  job_id: string
+  current_wave: number
+  total_waves: number
+  progress: number
+  elapsed_seconds: number
+  status: string
+}
+
 export interface RipplePrediction {
   job_id?: string
+  ripple_job_id?: string
   estimated_reach?: number
   estimated_engagement?: number
   viral_probability?: number
@@ -172,16 +184,42 @@ export interface RipplePrediction {
   confidence?: number
   key_influencers?: Array<Record<string, unknown>>
   spread_path?: Array<Record<string, unknown>>
+  prediction_summary?: string
+  verdict?: string
+  relative_estimate?: Record<string, unknown>
+  views_relative?: string
+  engagements_relative?: string
+  favorites_relative?: string
+  comments_relative?: string
+  shares_relative?: string
+  follows_relative?: string
+  phase_vector?: Record<string, unknown>
+  total_waves?: number
+  score_source?: string
 }
 
 // Ripple PMF validation result
 export interface RipplePMFResult {
   job_id?: string
+  ripple_job_id?: string
   pmf_score?: number
   risk_factors?: string[]
   improvement_strategies?: string[]
   market_segment?: Record<string, unknown>
   confidence?: number
+  prediction_summary?: string
+  verdict?: string
+  phase?: string
+  relative_estimate?: Record<string, unknown>
+  views_relative?: string
+  engagements_relative?: string
+  favorites_relative?: string
+  comments_relative?: string
+  shares_relative?: string
+  follows_relative?: string
+  phase_vector?: Record<string, unknown>
+  total_waves?: number
+  score_source?: string
 }
 
 // Ripple prediction vs actual comparison
@@ -248,5 +286,6 @@ export interface WorkflowStateResponse {
   ripple_prediction?: RipplePrediction
   ripple_pmf?: RipplePMFResult
   ripple_comparison?: RippleComparison
+  ripple_progress?: RippleProgress
   ripple_reason?: string  // "disabled" | "unreachable" | ""
 }

@@ -20,7 +20,11 @@ const workflowStore = useWorkflowStore()
 const toastStore = useToastStore()
 const errorStore = useErrorStore()
 
-const showOptimization = computed(() => workflowStore.currentPhase === 'creating')
+const showOptimization = computed(() =>
+  workflowStore.currentPhase === 'creating' ||
+  workflowStore.isAwaitingDraft ||
+  workflowStore.isAwaitingChoice
+)
 const isLoading = computed(() => workflowStore.isLoading && !workflowStore.workflowState)
 const hasError = computed(() => workflowStore.error !== null)
 

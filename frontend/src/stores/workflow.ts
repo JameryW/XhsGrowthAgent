@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import * as workflowApi from '@/api/workflow'
 import type {
   ContentPlan,
@@ -9,6 +9,7 @@ import type {
   WorkflowStateResponse,
   WorkflowPhase,
   WorkflowStatus,
+  RippleProgress,
 } from '@/types/workflow'
 import { useRealtimeStore } from './realtime'
 import { useToastStore } from './toast'
@@ -66,6 +67,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const ripplePmf = computed(() => workflowState.value?.ripple_pmf || {})
   const rippleComparison = computed(() => workflowState.value?.ripple_comparison || {})
   const rippleReason = computed(() => workflowState.value?.ripple_reason || '')
+  const rippleProgress = ref<RippleProgress | null>(null)
   const hasRippleData = computed(() =>
     Object.keys(ripplePrediction.value).length > 0 ||
     Object.keys(ripplePmf.value).length > 0 ||
@@ -178,6 +180,18 @@ export const useWorkflowStore = defineStore('workflow', () => {
         )
       }
     }
+  })
+
+  // Ripple simulation progress
+  realtimeStore.wsService.onEvent(EventType.RIPPLE_PROGRESS, (msg) => {
+    if (msg.thread_id === currentThreadId.value) {
+      rippleProgress.value = msg.payload as RippleProgress
+    }
+  })
+
+  // Clear ripple progress when results arrive
+  watch(() => workflowState.value?.ripple_prediction, (val) => {
+    if (val && Object.keys(val).length > 0) rippleProgress.value = null
   })
 
   realtimeStore.wsService.onEvent(EventType.WORKFLOW_COMPLETED, (msg) => {
@@ -463,6 +477,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     ripplePmf,
     rippleComparison,
     rippleReason,
+    rippleProgress,
     hasRippleData,
     startWorkflow,
     refreshStatus,

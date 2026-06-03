@@ -248,6 +248,8 @@
       "estimatedEngagement": "预估互动",
       "confidence": "置信度",
       "pmfScore": "PMF 评分",
+      "summary": "摘要",
+      "marketSignal": "市场信号",
       "riskFactors": "风险因素",
       "improvementStrategies": "改进策略",
       "predictedReach": "预测触达",
@@ -261,7 +263,10 @@
       "spreadPhases": "传播阶段",
       "keyInfluencers": "关键影响者",
       "fallbackNotice": "Ripple 引擎暂不可用，以下为默认预测值",
-      "disabledNotice": "Ripple 引擎未启用，以下为默认预测值"
+      "disabledNotice": "Ripple 引擎未启用，以下为默认预测值",
+      "simulating": "模拟运行中",
+      "waveProgress": "Wave 进度",
+      "elapsed": "已用时"
     },
     "scouting": {
       "hotTopics": "热门话题",

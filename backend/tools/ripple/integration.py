@@ -23,6 +23,11 @@ from backend.services.ripple_service import RippleService, RippleTimeoutError
 logger = logging.getLogger("xhs_growth.tools.ripple")
 
 
+def _parser_service() -> RippleService:
+    """Create a stateless parser instance without touching RippleService's singleton."""
+    return object.__new__(RippleService)
+
+
 async def _get_service() -> RippleService:
     """获取 RippleService 实例并确保健康检查已执行"""
     service = RippleService.get_instance()
@@ -40,18 +45,18 @@ async def predict_spread(
     max_waves: int = 8,
     simulation_horizon: str = "48h",
     max_wait: float = 1800.0,
+    thread_id: str | None = None,
 ) -> dict[str, Any]:
     """预测内容传播效果 — 供 ContentStrategist 和 Copywriter 调用
 
-    通过 RippleService 提交模拟并等待完成，返回解析后的结果。
-
     Args:
         max_wait: 最大等待时间（秒），传递给 RippleService.submit_and_wait
+        thread_id: 关联的工作流线程 ID，用于推送进度事件
 
     Returns:
         - ripple_job_id: 模拟任务 ID
-        - ripple_prediction: 预测数据（estimated_reach, viral_probability 等）
-        - ripple_fallback: True if service was unavailable (降级)
+        - ripple_prediction: 预测数据
+        - ripple_fallback: True if service was unavailable
     """
     if tags is None:
         tags = []
@@ -66,6 +71,7 @@ async def predict_spread(
             max_waves=max_waves,
             simulation_horizon=simulation_horizon,
             max_wait=max_wait,
+            thread_id=thread_id,
         )
         return result
     except RippleTimeoutError:
@@ -82,8 +88,13 @@ async def validate_pmf(
     description: str,
     differentiators: list[str] | None = None,
     max_wait: float = 1800.0,
+    thread_id: str | None = None,
 ) -> dict[str, Any]:
     """验证产品市场契合度 — 供 ContentStrategist 调用
+
+    Args:
+        max_wait: 最大等待时间（秒），传递给 RippleService.submit_and_wait
+        thread_id: 关联的工作流线程 ID，用于推送进度事件
 
     通过 RippleService 提交模拟并等待完成，返回解析后的结果。
 
@@ -105,6 +116,7 @@ async def validate_pmf(
             description=description,
             differentiators=differentiators,
             max_wait=max_wait,
+            thread_id=thread_id,
         )
         return result
     except RippleTimeoutError:
@@ -138,7 +150,7 @@ async def get_report(job_id: str) -> dict[str, Any]:
 async def cancel_simulation(job_id: str) -> dict[str, Any]:
     """尝试取消 Ripple 模拟任务
 
-    乐观尝试 DELETE，对 404/405/网络错误做优雅降级。
+    使用 Ripple 两步取消协议，对旧服务回退 DELETE，并对 404/405/网络错误做优雅降级。
 
     Args:
         job_id: 模拟任务 ID
@@ -183,87 +195,9 @@ def parse_spread_prediction(result: dict[str, Any]) -> dict[str, Any]:
     - 传播路径特征
     - 关键影响节点
     """
-    # 降级或错误直接透传
-    if result.get("ripple_fallback"):
-        return result
-    if "error" in result and "ripple_prediction" not in result:
-        return {"ripple_prediction": None, "ripple_error": result["error"]}
-
-    # RippleService 已解析过的结果
-    if (
-        "ripple_prediction" in result
-        and isinstance(result["ripple_prediction"], dict)
-        and result["ripple_prediction"].get("viral_probability") is not None
-    ):
-        return {
-            "ripple_job_id": result.get("ripple_job_id", ""),
-            "ripple_prediction": result["ripple_prediction"],
-        }
-
-    # 原始 API 响应（未解析）
-    output = result.get("output", result)
-    job_id = result.get("job_id", result.get("id", result.get("ripple_job_id", "")))
-
-    metrics = output.get("metrics", output.get("summary", {}))
-    phase_analysis = output.get("phase_analysis", output.get("dynamics", {}))
-
-    if not metrics and not phase_analysis:
-        logger.warning(f"Ripple result has no metrics or phase_analysis: {list(result.keys())}")
-        return {
-            "ripple_job_id": job_id,
-            "ripple_prediction": None,
-            "ripple_error": "No prediction data in response",
-        }
-
-    return {
-        "ripple_job_id": job_id,
-        "ripple_prediction": {
-            "estimated_reach": metrics.get("estimated_reach", metrics.get("total_reach", 0)),
-            "estimated_engagement": metrics.get(
-                "estimated_engagement", metrics.get("total_engagement", 0)
-            ),
-            "viral_probability": metrics.get(
-                "viral_probability",
-                metrics.get("outbreak_probability", 0.0),
-            ),
-            "phase": phase_analysis.get("phase", phase_analysis.get("dominant_phase", "unknown")),
-            "confidence": metrics.get("confidence", 0.0),
-            "key_influencers": metrics.get("key_influencers", []),
-            "spread_path": phase_analysis.get("spread_path", []),
-        },
-    }
+    return _parser_service()._parse_spread_result(result)
 
 
 def parse_pmf_result(result: dict[str, Any]) -> dict[str, Any]:
     """解析 Ripple PMF 验证结果"""
-    # 降级或错误直接透传
-    if result.get("ripple_fallback"):
-        return result
-    if "error" in result and "ripple_pmf" not in result:
-        return {"ripple_pmf": None, "ripple_error": result["error"]}
-
-    # RippleService 已解析过的结果
-    if (
-        "ripple_pmf" in result
-        and isinstance(result["ripple_pmf"], dict)
-        and result["ripple_pmf"].get("pmf_score") is not None
-    ):
-        return {
-            "ripple_job_id": result.get("ripple_job_id", ""),
-            "ripple_pmf": result["ripple_pmf"],
-        }
-
-    # 原始 API 响应（未解析）
-    output = result.get("output", result)
-    job_id = result.get("job_id", result.get("id", result.get("ripple_job_id", "")))
-
-    return {
-        "ripple_job_id": job_id,
-        "ripple_pmf": {
-            "pmf_score": output.get("pmf_score", output.get("score", 0.0)),
-            "risk_factors": output.get("risk_factors", []),
-            "improvement_strategies": output.get("improvement_strategies", []),
-            "market_segment": output.get("market_segment", {}),
-            "confidence": output.get("confidence", 0.0),
-        },
-    }
+    return _parser_service()._parse_pmf_result(result)

@@ -37,6 +37,31 @@ def test_parse_spread_prediction_success():
     assert parsed["ripple_prediction"]["phase"] == "growth"
 
 
+def test_parse_spread_prediction_current_ripple_shape():
+    """解析当前 Ripple 传播预测结构"""
+    result = {
+        "job_id": "test-job-current",
+        "prediction": {
+            "impact": "圈层热度上升",
+            "relative_estimate": {
+                "views_relative": "+15%~+30%",
+                "engagements_relative": "+20%~+40%",
+                "confidence": "medium",
+            },
+            "verdict": "growth",
+        },
+        "observation": {"phase_vector": {"heat": "growth"}},
+        "timeline": [{"wave": 1, "event": "首轮扩散"}],
+    }
+    parsed = parse_spread_prediction(result)
+    prediction = parsed["ripple_prediction"]
+
+    assert parsed["ripple_job_id"] == "test-job-current"
+    assert prediction["viral_probability"] == 0.55
+    assert prediction["views_relative"] == "+15%~+30%"
+    assert prediction["confidence"] == 0.6
+
+
 def test_parse_spread_prediction_error():
     """解析传播预测错误"""
     result = {"error": "Connection refused"}
@@ -60,6 +85,34 @@ def test_parse_pmf_result_success():
     assert parsed["ripple_job_id"] == "pmf-job-456"
     assert parsed["ripple_pmf"]["pmf_score"] == 0.72
     assert "竞争激烈" in parsed["ripple_pmf"]["risk_factors"]
+
+
+def test_parse_pmf_result_current_ripple_shape():
+    """解析当前 Ripple PMF 结构"""
+    result = {
+        "job_id": "pmf-job-current",
+        "prediction": {
+            "impact": "品类需求明确",
+            "relative_estimate": {
+                "engagements_relative": "+15%~+25%",
+                "confidence": "high",
+            },
+            "verdict": "growth",
+        },
+        "observation": {
+            "phase_vector": {"heat": "growth"},
+            "topology_recommendations": ["强调安全背书"],
+        },
+        "bifurcation_points": [{"turning_point": "成分争议会降低转化"}],
+    }
+    parsed = parse_pmf_result(result)
+    pmf = parsed["ripple_pmf"]
+
+    assert parsed["ripple_job_id"] == "pmf-job-current"
+    assert pmf["pmf_score"] == 0.68
+    assert pmf["confidence"] == 0.8
+    assert pmf["risk_factors"] == ["成分争议会降低转化"]
+    assert pmf["improvement_strategies"] == ["强调安全背书"]
 
 
 def test_parse_pmf_result_error():
@@ -95,6 +148,7 @@ def test_ripple_settings_default(monkeypatch):
         "RIPPLE_DEFAULT_MAX_WAVES",
         "RIPPLE_DEFAULT_SIMULATION_HORIZON",
         "RIPPLE_REQUEST_TIMEOUT",
+        "RIPPLE_WORKFLOW_TIMEOUT",
         "RIPPLE_ENABLED",
     ):
         monkeypatch.delenv(key, raising=False)
@@ -104,6 +158,7 @@ def test_ripple_settings_default(monkeypatch):
     assert s.enabled is False
     assert s.default_max_waves == 8
     assert s.request_timeout == 300
+    assert s.workflow_timeout == 1800
 
 
 def test_tool_registry_has_ripple():

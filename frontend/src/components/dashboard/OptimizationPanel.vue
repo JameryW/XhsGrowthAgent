@@ -29,11 +29,14 @@ const optimizationAnalysis = computed(() =>
   workflowStore.workflowState?.optimization_analysis ||
   null
 )
-const draftContent = computed(() =>
-  optimizationStore.draftContent ||
-  workflowStore.workflowState?.draft_content ||
-  null
-)
+const draftContent = computed(() => {
+  const fromStore = optimizationStore.draftContent
+  if (fromStore) return fromStore
+  const fromState = workflowStore.workflowState?.draft_content
+  // Empty dict {} from backend means no draft submitted yet
+  if (fromState && typeof fromState === 'object' && Object.keys(fromState).length > 0) return fromState
+  return null
+})
 const generatedDraft = computed<DraftContent | null>(() => {
   const copy = workflowStore.workflowState?.copy_content || workflowStore.copyContent
   const text = copy.body_text?.trim()
