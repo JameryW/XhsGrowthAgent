@@ -6,46 +6,51 @@
 
 ## Overview
 
-<!--
-Document your project's database conventions here.
+This project does not use a traditional ORM. Persistence is handled by LangGraph's checkpointer system:
 
-Questions to answer:
-- What ORM/query library do you use?
-- How are migrations managed?
-- What are the naming conventions for tables/columns?
-- How do you handle transactions?
--->
+- **Dev mode**: `MemorySaver` (in-process, no external DB)
+- **Prod mode**: `AsyncPostgresSaver` (LangGraph-managed, requires `POSTGRES_URI`)
 
-(To be filled by the team)
+The checkpointer stores workflow state snapshots (thread-based). XHS does not define or manage tables/migrations — LangGraph handles that internally via `checkpointer.setup()`.
 
 ---
 
 ## Query Patterns
 
-<!-- How should queries be written? Batch operations? -->
+No direct SQL queries in the application code. All state reads/writes go through:
 
-(To be filled by the team)
+- `graph.aget_state(config)` — read current state snapshot
+- `graph.aupdate_state(config, values)` — update state (used by API routes)
+- `graph.ainvoke(initial_state, config)` — run workflow
+
+The API persistence layer (`WorkflowRegistry` in `backend/api/routes/workflow.py`) uses a JSON file (`~/.xhs-growth/workflow_registry.json`) for dev mode, with `fcntl` locking for concurrency safety.
 
 ---
 
 ## Migrations
 
-<!-- How to create and run migrations -->
+Not applicable — LangGraph manages the Postgres schema. The only setup call is:
 
-(To be filled by the team)
+```python
+checkpointer = AsyncPostgresSaver.from_conn_string(db_uri)
+await checkpointer.setup()  # Creates/updates LangGraph tables
+```
 
 ---
 
 ## Naming Conventions
 
-<!-- Table names, column names, index names -->
-
-(To be filled by the team)
+| Convention | Example |
+|-----------|---------|
+| Thread IDs | UUID format: `xhs-{uuid4}` |
+| State keys | snake_case matching `XHSGrowthState` TypedDict fields |
+| Registry files | `workflow_registry.json` |
 
 ---
 
 ## Common Mistakes
 
-<!-- Database-related mistakes your team has made -->
-
-(To be filled by the team)
+- **Don't** query the Postgres DB directly — always use LangGraph's state API
+- **Don't** forget `await checkpointer.setup()` before first use
+- **Don't** store secrets in state — `XHS_COOKIE`, `RIPPLE_API_TOKEN` go in env vars only
+- **Don't** use `MemorySaver` in production — it's process-scoped and doesn't survive restarts
