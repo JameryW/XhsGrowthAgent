@@ -701,6 +701,7 @@ components:
       type: string
       enum:
         - running
+        - stale
         - paused
         - completed
         - error

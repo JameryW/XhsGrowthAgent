@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Core spec for derive_status priority chain, WorkflowStatus enum, interrupt detection, and common mistakes with stale error fields"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error handling contracts, cancel/pause guard, background task cancellation, and stale error field patterns"}

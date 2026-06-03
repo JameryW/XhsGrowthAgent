@@ -114,6 +114,33 @@ _runner._save_registry_fn = _save_registry
 _runner._save_workflow_result_fn = _save_workflow_result
 
 
+def _on_task_done(thread_id: str):
+    """Create a done callback for a background asyncio.Task.
+
+    - Consumes exceptions to avoid "Task exception was never retrieved"
+    - Records task_done_at and task_error in the workflow registry
+    - If the task exited while derived status is still RUNNING, marks as STALE
+    """
+    def callback(task: asyncio.Task) -> None:
+        import logging
+        logger = logging.getLogger("xhs_growth.api.workflow")
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error("Background task for %s failed: %s", thread_id, e)
+            if thread_id in _workflow_registry:
+                _workflow_registry[thread_id]["task_error"] = str(e)
+        if thread_id in _workflow_registry:
+            _workflow_registry[thread_id]["task_done_at"] = datetime.now(UTC).isoformat()
+            # If registry still shows running but task is done, mark as stale
+            if _workflow_registry[thread_id].get("status") == "running":
+                _workflow_registry[thread_id]["status"] = "stale"
+            _save_registry()
+    return callback
+
+
 def _emit_status_transition(new_status: WorkflowStatus, thread_id: str) -> None:
     """Emit events when workflow status transitions — delegates to _runner."""
     _runner._emit_status_transition(new_status, thread_id)
@@ -185,6 +212,7 @@ async def _start_resume_task(
         )
 
     task = asyncio.create_task(_resume_async())
+    task.add_done_callback(_on_task_done(thread_id))
     _background_tasks[thread_id] = task
 
 
@@ -333,6 +361,7 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
             )
 
         task = asyncio.create_task(_run_async())
+        task.add_done_callback(_on_task_done(thread_id))
         _background_tasks[thread_id] = task
         return success(data={
             "thread_id": thread_id,
@@ -391,7 +420,10 @@ async def get_workflow_status(thread_id: str, request: Request):
         progress = get_progress(phase)
 
         # Derive status from snapshot for consistent results
-        derived_status = derive_status(state)
+        has_active = thread_id in _background_tasks and not _background_tasks[thread_id].done()
+        derived_status = derive_status(
+            state, has_active_task=has_active
+        )
         status_str = str(derived_status.value)
 
         # Persist completed workflow results
@@ -603,7 +635,10 @@ async def resume_workflow(thread_id: str, request: Request):
         })
 
     # Derive current status for guard checks
-    derived = derive_status(state)
+    has_active = thread_id in _background_tasks and not _background_tasks[thread_id].done()
+    derived = derive_status(
+        state, has_active_task=has_active
+    )
 
     # Guard: if awaiting review, tell client to use review endpoint
     if derived == WorkflowStatus.AWAITING_REVIEW:
@@ -631,20 +666,21 @@ async def resume_workflow(thread_id: str, request: Request):
 
     next_nodes = tuple(state.next or ())
     can_retry_error = derived == WorkflowStatus.ERROR and bool(next_nodes)
+    can_resume_stale = derived == WorkflowStatus.STALE
 
-    # Only allow resume from paused status or a checkpointed error with next nodes
-    if derived != WorkflowStatus.PAUSED and not can_retry_error:
+    # Only allow resume from paused, stale, or a checkpointed error with next nodes
+    if derived != WorkflowStatus.PAUSED and not can_retry_error and not can_resume_stale:
         return success(data={
             "thread_id": thread_id,
             "status": str(derived.value),
             "message": (
                 f"工作流当前状态为 {derived.value}，无法恢复。"
-                "只有暂停状态或仍有可重试节点的错误状态可以恢复。"
+                "只有暂停状态、过期状态或仍有可重试节点的错误状态可以恢复。"
             ),
         })
 
     # Restore prev_phase before resuming, or infer it from the next checkpointed node
-    if can_retry_error:
+    if can_retry_error or can_resume_stale:
         prev_phase = _resume_phase_for_next_nodes(
             next_nodes,
             state.values.get("prev_phase") or WorkflowPhase.CREATING,
@@ -824,8 +860,10 @@ async def delete_workflow(thread_id: str):
     if not in_registry and not in_history:
         raise WorkflowNotFoundError(thread_id)
 
-    if in_registry and _workflow_registry[thread_id]["status"] == "running":
-        raise ValidationError("thread_id", "Cannot delete a running workflow. Cancel it first.")
+    if in_registry and _workflow_registry[thread_id]["status"] in ("running", "stale"):
+        raise ValidationError(
+            "thread_id", "Cannot delete a running or stale workflow. Cancel it first."
+        )
 
     if in_registry:
         del _workflow_registry[thread_id]

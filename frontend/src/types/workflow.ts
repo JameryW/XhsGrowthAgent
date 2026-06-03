@@ -19,6 +19,7 @@ export type WorkflowPhase =
 export type WorkflowStatus =
   | 'idle'
   | 'running'
+  | 'stale'
   | 'awaiting_review'
   | 'awaiting_choice'
   | 'awaiting_draft'

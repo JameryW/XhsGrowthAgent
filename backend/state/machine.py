@@ -13,6 +13,7 @@ class WorkflowStatus(StrEnum):
     """Computed workflow status (derived from state, not stored)."""
 
     RUNNING = "running"
+    STALE = "stale"
     AWAITING_REVIEW = "awaiting_review"
     AWAITING_CHOICE = "awaiting_choice"
     AWAITING_DRAFT = "awaiting_draft"
@@ -22,7 +23,7 @@ class WorkflowStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
-def derive_status(snapshot: StateSnapshot) -> WorkflowStatus:
+def derive_status(snapshot: StateSnapshot, *, has_active_task: bool = True) -> WorkflowStatus:
     """Derive workflow status from LangGraph state snapshot.
 
     Priority order (highest to lowest):
@@ -33,11 +34,15 @@ def derive_status(snapshot: StateSnapshot) -> WorkflowStatus:
     5. Interrupt at draft_gate → awaiting_draft
     6. Error in state → error
     7. Phase is completed → completed
-    8. Has next nodes → running
-    9. No next nodes + no interrupt → completed
+    8. Has next nodes but no active task → stale
+    9. Has next nodes with active task → running
+    10. No next nodes + no interrupt → completed
 
     Args:
         snapshot: LangGraph StateSnapshot from graph.aget_state()
+        has_active_task: Whether a background asyncio.Task is actively running
+            for this workflow. When False, next_nodes without an active task
+            indicates a stale/orphaned state rather than genuine running.
 
     Returns:
         WorkflowStatus enum value
@@ -96,9 +101,13 @@ def derive_status(snapshot: StateSnapshot) -> WorkflowStatus:
     if phase == WorkflowPhase.COMPLETED:
         return WorkflowStatus.COMPLETED
 
-    # Priority 8: Has next nodes (running)
+    # Priority 8: Has next nodes but no active background task → stale
+    if next_nodes and not has_active_task:
+        return WorkflowStatus.STALE
+
+    # Priority 9: Has next nodes with active task → running
     if next_nodes:
         return WorkflowStatus.RUNNING
 
-    # Priority 9: No next nodes, no interrupt → completed
+    # Priority 10: No next nodes, no interrupt → completed
     return WorkflowStatus.COMPLETED

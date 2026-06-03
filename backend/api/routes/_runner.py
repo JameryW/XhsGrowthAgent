@@ -147,6 +147,7 @@ def _status_to_str(
         WorkflowStatus.AWAITING_DRAFT: "awaiting_draft",
         WorkflowStatus.PAUSED: "paused",
         WorkflowStatus.RUNNING: "running",
+        WorkflowStatus.STALE: "stale",
     }
     status = mapping.get(derived)
     if status:
@@ -179,7 +180,8 @@ async def _run_graph_and_persist(
 
         # Derive status from snapshot for consistent results
         snapshot = await graph.aget_state(config)
-        derived = derive_status(snapshot)
+        has_active = thread_id in _background_tasks and not _background_tasks[thread_id].done()
+        derived = derive_status(snapshot, has_active_task=has_active)
 
         # Emit status transition events (e.g. awaiting_review, awaiting_choice)
         _emit_status_transition(derived, thread_id, snapshot=snapshot)
