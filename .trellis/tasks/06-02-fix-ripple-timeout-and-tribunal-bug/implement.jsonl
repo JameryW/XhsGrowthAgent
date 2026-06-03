@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error handling patterns for RippleTimeoutError and cancel_simulation graceful fallback"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "State schema for ripple_job_id, ripple_reason fields in XHSGrowthState"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Logging patterns for cancel attempts, recovery, timeout warnings"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Test quality standards for new unit tests"}
+{"file": ".trellis/tasks/06-02-fix-ripple-timeout-and-tribunal-bug/research/ripple-cancel-endpoint.md", "reason": "Research findings on Ripple cancel endpoint availability and best practices"}
+{"file": ".trellis/tasks/06-02-fix-ripple-timeout-and-tribunal-bug/prd.md", "reason": "Full PRD with requirements, technical approach, and implementation plan"}

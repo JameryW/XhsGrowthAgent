@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify error handling patterns are followed in new code"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Verify state schema consistency with new ripple_job_id/ripple_reason fields"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify test coverage meets quality bar"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Verify logging follows project conventions"}
+{"file": ".trellis/tasks/06-02-fix-ripple-timeout-and-tribunal-bug/prd.md", "reason": "Check implementation against PRD requirements and acceptance criteria"}

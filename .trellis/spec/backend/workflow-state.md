@@ -207,3 +207,33 @@ def engagement_router(state: XHSGrowthState) -> Literal["orchestrator", "__end__
 - `test_engagement_router_single_mode`: execution_mode="single" → "__end__"
 - `test_engagement_router_continuous_mode`: execution_mode="continuous" → "orchestrator"
 - `test_engagement_router_default_single`: no execution_mode → "__end__"
+
+## Ripple State Fields
+
+### ripple_job_id and ripple_reason
+
+When a Ripple simulation times out, the agent must preserve the `job_id` in state for cancel/recover:
+
+| Field | Type | When Set | Purpose |
+|-------|------|----------|---------|
+| `ripple_job_id` | `str` | On timeout (even when fallback used) | Enable cancel_simulation and recover_result |
+| `ripple_reason` | `str` or `None` | `"timeout"` only on actual timeout | Distinguish timeout from service-down or other failures |
+| `ripple_prediction` | `dict` | On success or fallback | Prediction data (zeroed on fallback) |
+| `ripple_pmf` | `dict` | On success or fallback | PMF data (zeroed on fallback) |
+
+> **Warning**: `ripple_reason` must only be `"timeout"` when the simulation actually exceeded the wait window. Do not set it to `"timeout"` for other failures (service unavailable, no topic, etc.). This distinction matters because only timeout cases have a job_id that can be cancelled or recovered.
+
+### Common Mistake: Discarding job_id on timeout
+
+```python
+# WRONG — returns None on timeout, job_id lost forever
+except asyncio.TimeoutError:
+    return None
+
+# CORRECT — returns partial result with job_id for cancel/recover
+except RippleTimeoutError as e:
+    await self._ripple_cancel(e.job_id)
+    return {"ripple_job_id": e.job_id, "ripple_reason": "timeout"}
+except TimeoutError:
+    return {"ripple_job_id": "", "ripple_reason": "timeout"}
+```
