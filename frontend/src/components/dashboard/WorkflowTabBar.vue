@@ -26,17 +26,17 @@ const confirmCloseTabId = ref<string | null>(null)
 
 function statusIcon(status: WorkflowStatus): string {
   switch (status) {
-    case 'running': return 'loader'
-    case 'stale': return 'alert-circle'
+    case 'running': return 'Loader'
+    case 'stale': return 'AlertCircle'
     case 'awaiting_review':
     case 'awaiting_choice':
     case 'awaiting_draft':
-    case 'awaiting_brief': return 'clock'
-    case 'paused': return 'pause'
-    case 'cancelled': return 'x-circle'
-    case 'error': return 'alert-triangle'
-    case 'completed': return 'check-circle'
-    default: return 'circle'
+    case 'awaiting_brief': return 'Clock'
+    case 'paused': return 'Pause'
+    case 'cancelled': return 'XCircle'
+    case 'error': return 'AlertTriangle'
+    case 'completed': return 'CheckCircle'
+    default: return 'Circle'
   }
 }
 
@@ -140,12 +140,12 @@ function toggleOverflow() {
           @click="onCloseClick(tab.threadId, $event)"
           :title="t('workflow.closeTab')"
         >
-          <AppIcon name="x" size="xs" />
+          <AppIcon name="X" size="xs" />
         </button>
       </div>
 
       <div v-if="hasOverflow" class="tab-overflow-trigger" @click="toggleOverflow">
-        <AppIcon name="chevron-down" size="sm" />
+        <AppIcon name="ChevronDown" size="sm" />
         <span class="text-xs text-slate-400">{{ overflowTabs.length }}</span>
       </div>
     </div>
@@ -165,7 +165,7 @@ function toggleOverflow() {
         />
         <span class="tab-label">{{ tab.label }}</span>
         <button class="tab-close" @click="onCloseClick(tab.threadId, $event)">
-          <AppIcon name="x" size="xs" />
+          <AppIcon name="X" size="xs" />
         </button>
       </div>
     </div>
