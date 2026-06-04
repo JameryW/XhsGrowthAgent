@@ -16,6 +16,7 @@ const realtimeStore = useRealtimeStore()
 const hasActiveWorkflow = computed(() => !!workflowStore.currentThreadId)
 const isReviewing = computed(() => workflowStore.currentPhase === 'reviewing')
 const isPaused = computed(() => workflowStore.currentPhase === 'paused')
+const isStale = computed(() => workflowStore.isStale)
 const isCancelled = computed(() => workflowStore.currentPhase === 'cancelled')
 const needsReview = computed(() => reviewStore.hasPendingReview)
 const canPause = computed(() => workflowStore.isRunning)
@@ -24,6 +25,7 @@ const waitingStatusText = computed(() => {
   if (workflowStore.isAwaitingDraft) return t('dashboard.actionButtons.awaitingDraft')
   if (workflowStore.isAwaitingChoice) return t('dashboard.actionButtons.awaitingChoice')
   if (workflowStore.isAwaitingReview) return t('dashboard.actionButtons.awaitingReview')
+  if (workflowStore.isAwaitingBrief) return t('dashboard.actionButtons.awaitingBrief')
   return ''
 })
 
@@ -160,6 +162,23 @@ const openPostUrl = () => {
         size="lg"
         class="w-full sm:w-auto"
         :title="t('dashboard.actionButtons.resumeDesc')"
+        :aria-label="t('dashboard.actionButtons.resume')"
+        :loading="workflowStore.isLoading"
+        @click="resumeWorkflow"
+      >
+        <span class="inline-flex items-center gap-2">
+          <AppIcon name="Play" size="lg" variant="white" />
+          <span class="font-bold">{{ t('dashboard.actionButtons.resume') }}</span>
+        </span>
+      </NeonButton>
+
+      <!-- Resume button when stale -->
+      <NeonButton
+        v-if="isStale"
+        variant="peach"
+        size="lg"
+        class="w-full sm:w-auto"
+        :title="t('workflow.staleHint')"
         :aria-label="t('dashboard.actionButtons.resume')"
         :loading="workflowStore.isLoading"
         @click="resumeWorkflow"

@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Core spec for derive_status, interrupt mechanism, and WorkflowStatus enum — brief_gate and brief clarification interrupt must follow these patterns"}
+{"file": ".trellis/spec/backend/ripple-integration.md", "reason": "Ripple service contracts — brief mode's Ripple analysis step must follow timeout/cancel/recovery patterns and result shape parsing"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error handling patterns — new agents (brief_analyzer, shooting_planner) must follow established error handling conventions"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "File placement conventions — where to put new agents, nodes, tools, and state substates"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Code quality standards for new agent/node implementations"}
+{"file": ".trellis/tasks/06-03-brief-workflow/prd.md", "reason": "PRD with requirements, acceptance criteria, and technical decisions for brief-based workflow"}

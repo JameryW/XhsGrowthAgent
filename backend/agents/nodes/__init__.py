@@ -2,6 +2,8 @@
 
 from backend.agents.nodes._base import NodeContext, NodeResult
 from backend.agents.nodes.analyst import analyst_node
+from backend.agents.nodes.brief_analyzer import brief_analyzer_node
+from backend.agents.nodes.brief_gate import brief_gate_node
 from backend.agents.nodes.content_strategist import content_strategist_node
 from backend.agents.nodes.copywriter import copywriter_node
 from backend.agents.nodes.engagement import engagement_node
@@ -18,6 +20,7 @@ from backend.agents.nodes.orchestrator import orchestrator_node
 from backend.agents.nodes.publisher import publisher_node
 from backend.agents.nodes.review_gate import review_gate_node
 from backend.agents.nodes.revise_content import revise_content_node
+from backend.agents.nodes.shooting_planner import shooting_planner_node
 from backend.agents.nodes.trend_scout import trend_scout_node
 from backend.agents.nodes.visual_designer import visual_designer_node
 
@@ -36,6 +39,10 @@ __all__ = [
     "engagement_node",
     "review_gate_node",
     "revise_content_node",
+    # Brief mode nodes
+    "brief_analyzer_node",
+    "brief_gate_node",
+    "shooting_planner_node",
     # Optimization nodes
     "viral_matcher_node",
     "content_analyzer_node",

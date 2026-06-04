@@ -104,6 +104,8 @@
     "quickStart": "Quick Start (Default)",
     "history": "Workflow History",
     "recommendedTopic": "Recommended Topic",
+    "briefMode": "Brief Mode",
+    "trendMode": "Trend Discovery",
     "form": {
       "accountId": "Account ID",
       "accountIdPlaceholder": "Enter account identifier",
@@ -117,6 +119,12 @@
       "topic": "Topic",
       "topicPlaceholder": "Optional: enter content topic or keywords",
       "topicHelp": "Specify a topic to guide content strategy direction",
+      "briefText": "Brief Content",
+      "briefTextPlaceholder": "Paste brief content (product info, selling points, shooting requirements, etc.)",
+      "briefTextHelp": "The system will parse the brief to generate a shooting plan, copy, and visual design",
+      "briefFile": "Upload Brief File",
+      "briefFileHelp": "Supports PDF brief documents",
+      "workflowMode": "Workflow Mode",
       "niche": "Content Track",
       "nicheHelp": "Select a vertical track, affects trend discovery and content strategy",
       "niches": {
@@ -202,7 +210,8 @@
       "refreshDesc": "Refresh to get latest workflow status",
       "awaitingDraft": "Waiting for draft: fill in the optimization panel above to continue",
       "awaitingChoice": "Waiting for version choice: select a version to continue to visual design",
-      "awaitingReview": "Content is ready: go to review and confirm publishing"
+      "awaitingReview": "Content is ready: go to review and confirm publishing",
+      "awaitingBrief": "Waiting for brief: supplement or confirm the brief content to continue"
     },
     "optimization": {
       "title": "Pre-publish Optimization Panel",
@@ -295,6 +304,8 @@
       "awaitingDraft": "Waiting for Draft",
       "awaitingChoice": "Waiting for Version Choice",
       "awaitingReview": "Awaiting Review",
+      "awaitingBrief": "Awaiting Brief Supplement",
+      "briefing": "Brief Parsing",
       "publishing": "Publishing",
       "analyzing": "Analytics",
       "engaging": "Engagement",
@@ -387,7 +398,9 @@
       "phaseEngaging": "Engagement",
       "phaseCompleted": "Completed",
       "phaseError": "Error",
-      "phaseCancelled": "Cancelled"
+      "phaseCancelled": "Cancelled",
+      "phaseBriefing": "Brief Parsing",
+      "awaitingBrief": "Awaiting Brief Supplement"
     },
     "confirmReject": {
       "title": "Confirm Rejection",
@@ -426,6 +439,7 @@
     "title": "Analytics Center",
     "analyticsLabel": "Analytics",
     "postsPublished": "Posts Published",
+    "totalViews": "Total Views",
     "totalEngagement": "Total Engagement",
     "avgEngagementRate": "Avg Engagement Rate",
     "aiCost": "AI Cost (USD)",
@@ -433,6 +447,7 @@
     "thisMonth": "This Month",
     "thisYear": "This Year",
     "interactionTrend": "Interaction Trend",
+    "engagementBreakdown": "Engagement Breakdown",
     "recentPosts": "Recent Post Performance",
     "top10": "TOP 10",
     "cost": {
@@ -441,7 +456,8 @@
       "total": "Total Cost",
       "today": "Today's Cost",
       "remaining": "Budget Remaining",
-      "byModel": "By Model"
+      "byModel": "By Model",
+      "budgetUsed": "Budget Used"
     },
     "insights": {
       "title": "Growth Insights",
@@ -451,6 +467,7 @@
     "launch": "Launch",
     "table": {
       "title": "Title",
+      "views": "Views",
       "likes": "Likes",
       "comments": "Comments",
       "collects": "Collects",
@@ -474,7 +491,21 @@
     },
     "week": "This Week",
     "month": "This Month",
-    "year": "This Year"
+    "year": "This Year",
+    "account": "Account",
+    "period": "Period",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing...",
+    "empty": {
+      "title": "No Analytics Data",
+      "description": "Start a workflow to generate content and see performance analytics here.",
+      "startWorkflow": "Start New Workflow"
+    },
+    "error": {
+      "title": "Failed to Load Data",
+      "description": "Could not fetch analytics data. Please check your connection and try again.",
+      "retry": "Retry"
+    }
   },
   "versionCompare": {
     "analysisReport": "Optimization Analysis Report",
@@ -496,6 +527,7 @@
     "trendTable": "Chart Data Table",
     "trendData": "Trend Data",
     "noData": "No Data",
+    "noTrendData": "No trend data yet",
     "trendChart": "Trend Chart",
     "type": "Type",
     "count": "Count",
@@ -628,6 +660,8 @@
     "resumeFailed": "Resume failed",
     "cancelFailed": "Cancel failed",
     "statusRefreshFailed": "Status refresh failed",
+    "staleDetected": "Workflow Stale",
+    "staleHint": "Background task stopped with pending nodes. Click resume to continue.",
     "currentPhase": "Current Phase",
     "currentAgent": "Current Agent",
     "thread": "Thread",

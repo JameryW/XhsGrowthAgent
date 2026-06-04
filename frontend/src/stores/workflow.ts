@@ -44,6 +44,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
     currentStatus.value === 'running'
   )
 
+  const isStale = computed(() =>
+    currentStatus.value === 'stale'
+  )
+
   const isAwaitingReview = computed(() =>
     currentStatus.value === 'awaiting_review'
   )
@@ -54,6 +58,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   const isAwaitingDraft = computed(() =>
     currentStatus.value === 'awaiting_draft'
+  )
+
+  const isAwaitingBrief = computed(() =>
+    currentStatus.value === 'awaiting_brief'
   )
 
   const trendData = computed<Partial<TrendData>>(() => workflowState.value?.trend_data || {})
@@ -160,6 +168,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
         'ripple_pmf',
         'ripple_comparison',
         'ripple_reason',
+        'workflow_mode',
+        'brief_content',
+        'brief_clarification',
+        'shooting_plan',
       ] as const
       const updates: Partial<WorkflowStateResponse> = {}
 
@@ -270,7 +282,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   })
 
   // Actions
-  async function startWorkflow(accountId: string, phase: WorkflowPhase = 'scouting', options?: { dryRun?: boolean; autoPublish?: boolean; topic?: string; niche?: string }) {
+  async function startWorkflow(accountId: string, phase: WorkflowPhase = 'scouting', options?: { dryRun?: boolean; autoPublish?: boolean; topic?: string; niche?: string; workflowMode?: 'trend' | 'brief'; briefText?: string }) {
     // Check offline status
     if (!offlineStore.isOnline) {
       offlineStore.queueAction(
@@ -293,6 +305,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
         auto_publish: options?.autoPublish,
         topic: options?.topic,
         niche: options?.niche,
+        workflow_mode: options?.workflowMode,
+        brief_text: options?.briefText,
       })
       currentThreadId.value = result.thread_id
       localStorage.setItem('currentThreadId', result.thread_id)
@@ -330,7 +344,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
     error.value = null
     try {
       workflowState.value = await workflowApi.getWorkflowStatus(currentThreadId.value)
-      // Use status from backend for stale workflow detection
       const status = workflowState.value?.status || 'running'
       const phase = workflowState.value?.phase || 'idle'
       const backendProgress = workflowState.value?.progress_percent
@@ -339,16 +352,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
         error.value = workflowState.value?.error || t('workflow.error')
         return
       }
-      // Stale workflow: status is running but no next_steps and no agent
-      if (
-        (status === 'running' &&
-        (workflowState.value?.next_steps?.length ?? 0) === 0 &&
-        !workflowState.value?.current_agent)
-      ) {
-        currentThreadId.value = null
-        workflowState.value = null
-        localStorage.removeItem('currentThreadId')
-        updateProgressFromPhase('idle')
+      // Stale workflow: backend returns status === 'stale' directly
+      if (status === 'stale') {
+        toastStore.warning(t('workflow.staleDetected'), t('workflow.staleHint'))
+        // Keep threadId so user can resume
       }
     } catch (e: any) {
       // Workflow not found — clear stale threadId silently
@@ -464,9 +471,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
     currentStatus,
     nextNodes,
     isRunning,
+    isStale,
     isAwaitingReview,
     isAwaitingChoice,
     isAwaitingDraft,
+    isAwaitingBrief,
     trendData,
     contentPlan,
     copyContent,

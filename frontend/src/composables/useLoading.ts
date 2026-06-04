@@ -10,6 +10,7 @@ const PHASE_PERCENT_MAP: Record<WorkflowPhase, number> = {
   scouting: 10,
   planning: 20,
   creating: 40,
+  briefing: 15,
   reviewing: 60,
   publishing: 80,
   analyzing: 90,
@@ -29,6 +30,7 @@ const PHASE_COLOR_MAP: Record<WorkflowPhase, string> = {
   scouting: '#f43f5e',  // rose-500
   planning: '#8b5cf6',  // violet-500
   creating: '#14b8a6',  // teal-500
+  briefing: '#8b5cf6',  // violet-500
   reviewing: '#f59e0b', // amber-500
   publishing: '#3b82f6', // blue-500
   analyzing: '#22c55e', // green-500

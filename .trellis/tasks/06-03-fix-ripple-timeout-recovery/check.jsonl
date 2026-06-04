@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/ripple-integration.md", "reason": "Check implementation against Ripple timeout, cancel, and recovery contracts."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Check exception ordering and timeout job_id preservation."}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Check workflow status behavior is not affected by Ripple fallback changes."}
+{"file": "tests/unit/services/test_ripple_service.py", "reason": "Ran targeted Ripple service unit tests."}
+{"file": "tests/unit/tools/test_ripple.py", "reason": "Ran targeted Ripple integration unit tests."}
+{"file": "tests/unit/agents/test_content_strategist.py", "reason": "Ran content strategist tests to ensure timeout handling still preserves workflow behavior."}
+{"file": "frontend/src/components/RipplePanel.vue", "reason": "Ran vue-tsc and Vite build after adding relative-estimate display fields."}

@@ -19,11 +19,13 @@ interface DataItem {
 
 interface Props {
   data: DataItem[]
+  title?: string
   variant?: 'pink' | 'cyan' | 'purple' | 'peach'
   height?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  title: '',
   variant: 'pink',
   height: 300,
 })
@@ -107,11 +109,17 @@ const chartOption = computed(() => ({
 
 <template>
   <div
-    class="rounded-xl p-5 transition-all duration-200 hover:shadow-lg bg-white/98 backdrop-blur-sm border border-slate-200/50"
+    class="rounded-xl p-6 transition-all duration-200 hover:shadow-lg bg-white/98 backdrop-blur-sm border border-slate-200/50"
     :class="`border-${props.variant === 'pink' ? 'rose' : props.variant === 'cyan' ? 'teal' : props.variant === 'purple' ? 'violet' : 'amber'}-200/30`"
     role="figure"
     :aria-label="chartDescription"
   >
+    <!-- Title bar (matches TrendChart style) -->
+    <div v-if="props.title" class="text-xs text-slate-500 mb-4 flex items-center gap-2 font-medium uppercase tracking-wide">
+      <div class="w-2 h-2 rounded-full" :style="{ background: neonColors[props.variant] }" aria-hidden="true" />
+      {{ props.title }}
+    </div>
+
     <!-- Chart for visual users -->
     <VChart
       :option="chartOption"

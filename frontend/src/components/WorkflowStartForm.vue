@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import type { WorkflowPhase } from '@/types/workflow'
 
 const { t } = useI18n()
+
+export type WorkflowMode = 'trend' | 'brief'
 
 export interface WorkflowConfig {
   accountId: string
@@ -13,18 +15,30 @@ export interface WorkflowConfig {
   autoPublish: boolean
   topic?: string
   niche: string
+  workflowMode: WorkflowMode
+  briefText?: string
 }
 
 const props = defineProps<{
   initialTopic?: string
 }>()
 
+const workflowMode = ref<WorkflowMode>('trend')
 const accountId = ref('default')
 const phase = ref<WorkflowPhase>('scouting')
 const dryRun = ref(true)
 const autoPublish = ref(false)
 const topic = ref(props.initialTopic || '')
 const niche = ref('母婴')
+const briefText = ref('')
+
+// When switching to brief mode, auto-set phase to scouting (brief starts from orchestrator)
+// When switching to trend mode, keep current phase
+watch(workflowMode, (mode) => {
+  if (mode === 'brief') {
+    phase.value = 'scouting'
+  }
+})
 
 const niches = [
   { value: '母婴', key: 'baby', icon: 'Baby', color: 'rose' },
@@ -54,6 +68,8 @@ function getConfig(): WorkflowConfig {
     autoPublish: autoPublish.value,
     topic: topic.value.trim() || undefined,
     niche: niche.value,
+    workflowMode: workflowMode.value,
+    briefText: workflowMode.value === 'brief' ? briefText.value.trim() || undefined : undefined,
   }
 }
 
@@ -62,6 +78,46 @@ defineExpose({ getConfig })
 
 <template>
   <div class="space-y-6">
+    <!-- Workflow Mode Selector -->
+    <div>
+      <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">
+        <AppIcon name="Workflow" size="sm" variant="pink" />
+        {{ t('home.form.workflowMode') }}
+      </label>
+      <div class="grid grid-cols-2 gap-2">
+        <button
+          @click="workflowMode = 'trend'"
+          :class="[
+            'relative flex flex-col items-center gap-1.5 p-3.5 rounded-xl border-2 text-center',
+            'transition-all duration-300 ease-out cursor-pointer select-none',
+            workflowMode === 'trend'
+              ? 'border-neon-pink/50 bg-gradient-to-br from-neon-pink/10 to-neon-peach/5 shadow-neon-pink-sm'
+              : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50 hover:shadow-sm'
+          ]"
+        >
+          <AppIcon name="Compass" size="md" :variant="workflowMode === 'trend' ? 'pink' : 'cyan'" />
+          <span :class="['text-sm font-semibold', workflowMode === 'trend' ? 'text-neon-pinkDark' : 'text-slate-500']">
+            {{ t('home.trendMode') }}
+          </span>
+        </button>
+        <button
+          @click="workflowMode = 'brief'"
+          :class="[
+            'relative flex flex-col items-center gap-1.5 p-3.5 rounded-xl border-2 text-center',
+            'transition-all duration-300 ease-out cursor-pointer select-none',
+            workflowMode === 'brief'
+              ? 'border-neon-pink/50 bg-gradient-to-br from-neon-pink/10 to-neon-peach/5 shadow-neon-pink-sm'
+              : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50 hover:shadow-sm'
+          ]"
+        >
+          <AppIcon name="FileText" size="md" :variant="workflowMode === 'brief' ? 'pink' : 'cyan'" />
+          <span :class="['text-sm font-semibold', workflowMode === 'brief' ? 'text-neon-pinkDark' : 'text-slate-500']">
+            {{ t('home.briefMode') }}
+          </span>
+        </button>
+      </div>
+    </div>
+
     <!-- Account ID -->
     <div class="group">
       <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
@@ -83,8 +139,8 @@ defineExpose({ getConfig })
       <p class="text-xs text-slate-400 mt-1.5 pl-1">{{ t('home.form.accountIdHelp') }}</p>
     </div>
 
-    <!-- Topic (optional) -->
-    <div class="group">
+    <!-- Topic (optional, trend mode only) -->
+    <div v-if="workflowMode === 'trend'" class="group">
       <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
         <AppIcon name="Sparkles" size="sm" variant="purple" />
         {{ t('home.form.topic') }}
@@ -102,6 +158,26 @@ defineExpose({ getConfig })
         />
       </div>
       <p class="text-xs text-slate-400 mt-1.5 pl-1">{{ t('home.form.topicHelp') }}</p>
+    </div>
+
+    <!-- Brief text (brief mode only) -->
+    <div v-if="workflowMode === 'brief'" class="group">
+      <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
+        <AppIcon name="FileText" size="sm" variant="pink" />
+        {{ t('home.form.briefText') }}
+      </label>
+      <div class="relative">
+        <textarea
+          v-model="briefText"
+          rows="6"
+          class="w-full pl-4 pr-4 py-3 rounded-xl border-2 border-slate-100 bg-slate-50/50 text-sm text-slate-700 font-medium
+                 transition-all duration-300 ease-out resize-y
+                 focus:outline-none focus:border-neon-pink/40 focus:bg-white focus:shadow-neon-pink-sm
+                 placeholder:text-slate-300 placeholder:font-normal"
+          :placeholder="t('home.form.briefTextPlaceholder')"
+        />
+      </div>
+      <p class="text-xs text-slate-400 mt-1.5 pl-1">{{ t('home.form.briefTextHelp') }}</p>
     </div>
 
     <!-- Divider -->
@@ -148,8 +224,8 @@ defineExpose({ getConfig })
       <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
     </div>
 
-    <!-- Starting Phase -->
-    <div>
+    <!-- Starting Phase (trend mode only) -->
+    <div v-if="workflowMode === 'trend'">
       <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">
         <AppIcon name="GitBranch" size="sm" variant="purple" />
         {{ t('home.form.startPhase') }}

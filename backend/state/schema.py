@@ -4,14 +4,16 @@ from typing import Annotated, TypedDict
 
 from langgraph.graph.message import add_messages
 
-from backend.state.enums import WorkflowPhase
+from backend.state.enums import WorkflowMode, WorkflowPhase
 from backend.state.reducers import append_list as _append_list
+from backend.state.reducers import merge_dict as _merge_dict
 from backend.state.substates import (
     AnalyticsSnapshot,
+    BriefClarification,
+    BriefContent,
     ContentPlan,
     ContentVersion,
     CopyContent,
-    # 发布前优化系统
     DraftContent,
     EngagementAction,
     HumanFeedback,
@@ -20,6 +22,7 @@ from backend.state.substates import (
     RippleComparison,
     RipplePMFResult,
     RipplePrediction,
+    ShootingPlan,
     TrendData,
     ViralPost,
     VisualPlan,
@@ -36,6 +39,7 @@ class XHSGrowthState(TypedDict, total=False):
     error: str | None
     retry_count: int
     execution_mode: str  # "single" or "continuous" — from ExecutionMode enum
+    workflow_mode: WorkflowMode  # "trend" or "brief" — determines pipeline path
 
     # Message history (LangGraph built-in reducer)
     messages: Annotated[list, add_messages]
@@ -57,6 +61,12 @@ class XHSGrowthState(TypedDict, total=False):
     ripple_pmf: RipplePMFResult
     ripple_job_ids: Annotated[list[str], _append_list]
     ripple_comparison: RippleComparison
+
+    # ── 商单 Brief 模式 ──
+
+    brief_content: Annotated[BriefContent, _merge_dict]
+    brief_clarification: Annotated[BriefClarification, _merge_dict]
+    shooting_plan: Annotated[ShootingPlan, _merge_dict]
 
     # ── 发布前优化系统 ──
 

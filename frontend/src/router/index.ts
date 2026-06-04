@@ -49,10 +49,15 @@ const router = createRouter({
   ],
 })
 
-// Auth guard — non-blocking: uses cached token for instant redirects,
-// validates token asynchronously in the background (App.vue handles invalidation)
-router.beforeEach((to, _from, next) => {
+// Auth guard — wait for initialization to avoid flash with stale tokens
+router.beforeEach(async (to, _from, next) => {
   const authStore = useAuthStore()
+
+  // Wait for auth initialization on first navigation
+  if (!authStore.isInitialized) {
+    await authStore.initialize()
+  }
+
   const requiresAuth = to.meta.requiresAuth
 
   if (requiresAuth && !authStore.isAuthenticated) {

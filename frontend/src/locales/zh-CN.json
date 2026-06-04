@@ -104,6 +104,8 @@
     "quickStart": "快速启动（默认配置）",
     "history": "工作流历史",
     "recommendedTopic": "推荐话题",
+    "briefMode": "商单 Brief 模式",
+    "trendMode": "趋势发现模式",
     "form": {
       "accountId": "账号 ID",
       "accountIdPlaceholder": "输入账号标识",
@@ -117,6 +119,12 @@
       "topic": "话题主题",
       "topicPlaceholder": "可选：输入内容主题或关键词",
       "topicHelp": "指定主题可引导内容策略方向",
+      "briefText": "商单 Brief",
+      "briefTextPlaceholder": "粘贴商单 brief 内容（产品介绍、卖点、拍摄要求等）",
+      "briefTextHelp": "系统将解析 brief 生成拍摄计划、文案和视觉方案",
+      "briefFile": "上传 Brief 文件",
+      "briefFileHelp": "支持 PDF 格式的 brief 文档",
+      "workflowMode": "工作模式",
       "niche": "垂类赛道",
       "nicheHelp": "选择内容垂类，影响趋势发现和内容策略",
       "niches": {
@@ -202,7 +210,8 @@
       "refreshDesc": "刷新获取最新工作流状态",
       "awaitingDraft": "等待提交草稿：请在上方优化面板填写草稿后继续工作流",
       "awaitingChoice": "等待选择优化版本：请选择一个版本后进入视觉设计",
-      "awaitingReview": "内容已准备好：请前往审核页面确认发布"
+      "awaitingReview": "内容已准备好：请前往审核页面确认发布",
+      "awaitingBrief": "等待 Brief 补充：请补充或确认 Brief 内容后继续"
     },
     "optimization": {
       "title": "发布前优化面板",
@@ -295,6 +304,8 @@
       "awaitingDraft": "等待提交草稿",
       "awaitingChoice": "等待选择版本",
       "awaitingReview": "等待审核确认",
+      "awaitingBrief": "等待 Brief 补充",
+      "briefing": "Brief 解析",
       "publishing": "发布中",
       "analyzing": "数据分析",
       "engaging": "互动管理",
@@ -387,7 +398,9 @@
       "phaseEngaging": "互动管理",
       "phaseCompleted": "已完成",
       "phaseError": "错误",
-      "phaseCancelled": "已取消"
+      "phaseCancelled": "已取消",
+      "phaseBriefing": "Brief 解析",
+      "awaitingBrief": "等待 Brief 补充"
     },
     "confirmReject": {
       "title": "确认拒绝内容",
@@ -426,6 +439,7 @@
     "title": "数据分析中心",
     "analyticsLabel": "Analytics",
     "postsPublished": "已发布帖子",
+    "totalViews": "总浏览量",
     "totalEngagement": "总互动量",
     "avgEngagementRate": "平均互动率",
     "aiCost": "AI 费用 (USD)",
@@ -433,6 +447,7 @@
     "thisMonth": "本月",
     "thisYear": "全年",
     "interactionTrend": "互动趋势",
+    "engagementBreakdown": "互动构成",
     "recentPosts": "最近帖子表现",
     "top10": "TOP 10",
     "cost": {
@@ -441,7 +456,8 @@
       "total": "总成本",
       "today": "今日成本",
       "remaining": "预算剩余",
-      "byModel": "按模型"
+      "byModel": "按模型",
+      "budgetUsed": "预算使用"
     },
     "insights": {
       "title": "增长洞察",
@@ -451,6 +467,7 @@
     "launch": "发起",
     "table": {
       "title": "标题",
+      "views": "浏览量",
       "likes": "点赞",
       "comments": "评论",
       "collects": "收藏",
@@ -474,7 +491,21 @@
     },
     "week": "本周",
     "month": "本月",
-    "year": "全年"
+    "year": "全年",
+    "account": "账号",
+    "period": "周期",
+    "refresh": "刷新",
+    "refreshing": "刷新中...",
+    "empty": {
+      "title": "暂无分析数据",
+      "description": "启动工作流生成内容后，即可在此查看表现数据分析。",
+      "startWorkflow": "启动新工作流"
+    },
+    "error": {
+      "title": "数据加载失败",
+      "description": "无法获取分析数据，请检查网络连接后重试。",
+      "retry": "重试"
+    }
   },
   "versionCompare": {
     "analysisReport": "优化分析报告",
@@ -496,6 +527,7 @@
     "trendTable": "图表数据表",
     "trendData": "趋势数据",
     "noData": "无数据",
+    "noTrendData": "暂无趋势数据",
     "trendChart": "趋势图",
     "type": "类型",
     "count": "次数",
@@ -628,6 +660,8 @@
     "resumeFailed": "恢复失败",
     "cancelFailed": "取消失败",
     "statusRefreshFailed": "状态刷新失败",
+    "staleDetected": "工作流状态异常",
+    "staleHint": "后台任务已终止但仍有待执行节点，点击恢复继续执行",
     "currentPhase": "当前阶段",
     "currentAgent": "当前 Agent",
     "thread": "Thread",

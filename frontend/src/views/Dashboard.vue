@@ -7,6 +7,7 @@ import WorkflowHeader from '@/components/dashboard/WorkflowHeader.vue'
 import WorkflowTimeline from '@/components/dashboard/WorkflowTimeline.vue'
 import ContentCards from '@/components/dashboard/ContentCards.vue'
 import OptimizationPanel from '@/components/dashboard/OptimizationPanel.vue'
+import ShootingPlanPanel from '@/components/dashboard/ShootingPlanPanel.vue'
 import ActionButtons from '@/components/dashboard/ActionButtons.vue'
 import CelebrationModal from '@/components/CelebrationModal.vue'
 import { DashboardSkeleton } from '@/components/skeletons'
@@ -24,6 +25,10 @@ const showOptimization = computed(() =>
   workflowStore.currentPhase === 'creating' ||
   workflowStore.isAwaitingDraft ||
   workflowStore.isAwaitingChoice
+)
+const showShootingPlan = computed(() =>
+  !!workflowStore.workflowState?.shooting_plan &&
+  Object.keys(workflowStore.workflowState.shooting_plan).length > 0
 )
 const isLoading = computed(() => workflowStore.isLoading && !workflowStore.workflowState)
 const hasError = computed(() => workflowStore.error !== null)
@@ -85,6 +90,27 @@ onUnmounted(() => {
         @retry="handleErrorRetry"
         @dismiss="handleErrorDismiss"
       />
+
+      <!-- Stale Workflow Recovery -->
+      <div v-if="workflowStore.isStale" class="rounded-2xl p-4 bg-amber-50 border border-amber-200">
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+            <AppIcon name="AlertTriangle" size="md" variant="peach" />
+          </div>
+          <div class="flex-1">
+            <div class="text-amber-700 font-semibold text-sm mb-1">{{ t('workflow.staleDetected') }}</div>
+            <p class="text-amber-600 text-sm mb-2">{{ t('workflow.staleHint') }}</p>
+            <div class="flex items-center gap-2">
+              <button
+                @click="workflowStore.resumeWorkflow()"
+                class="btn-sm bg-amber-100 text-amber-600 hover:bg-amber-200"
+              >
+                {{ t('dashboard.actionButtons.resume') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- Publish Error Recovery -->
       <div v-if="workflowStore.publishError" class="card-error">
@@ -150,6 +176,7 @@ onUnmounted(() => {
         <WorkflowTimeline />
       </div>
       <ContentCards />
+      <ShootingPlanPanel v-if="showShootingPlan" />
       <OptimizationPanel v-if="showOptimization" />
       <!-- Action buttons with onboarding selector -->
       <div class="action-buttons">

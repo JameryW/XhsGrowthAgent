@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import fcntl
 import json
+import logging
 import os
 import uuid
 from datetime import UTC, datetime
@@ -22,6 +23,8 @@ from backend.realtime import EventBusService
 from backend.realtime.events import EventType
 from backend.state.enums import WorkflowPhase
 from backend.state.machine import WorkflowStatus, derive_status
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -225,6 +228,8 @@ class WorkflowStartRequest(BaseModel):
     topic: str | None = Field(default=None, description="内容主题/关键词")
     niche: str = Field(default="母婴", description="垂类赛道")
     execution_mode: str = Field(default="single", description="执行模式: single/continuous")
+    workflow_mode: str = Field(default="trend", description="工作模式: trend/brief")
+    brief_text: str | None = Field(default=None, description="商单 brief 文本内容")
 
 
 class AgentTimelineEntry(BaseModel):
@@ -264,6 +269,11 @@ class WorkflowStatusResponse(BaseModel):
     ripple_prediction: dict = Field(default_factory=dict, description="Ripple 传播预测")
     ripple_pmf: dict = Field(default_factory=dict, description="Ripple PMF 验证")
     ripple_comparison: dict = Field(default_factory=dict, description="Ripple 预测 vs 实际对比")
+    # Brief mode fields
+    workflow_mode: str = Field(default="trend", description="工作模式: trend/brief")
+    brief_content: dict = Field(default_factory=dict, description="解析后的 Brief 内容")
+    brief_clarification: dict = Field(default_factory=dict, description="Brief 补充问题")
+    shooting_plan: dict = Field(default_factory=dict, description="拍摄计划")
 
 
 PHASE_PROGRESS = {
@@ -313,6 +323,7 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
         "error": None,
         "retry_count": 0,
         "execution_mode": req.execution_mode,
+        "workflow_mode": req.workflow_mode,
         "messages": [],
         "trend_data": {},
         "content_plan": {},
@@ -334,6 +345,14 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
         "created_at": datetime.now(UTC).isoformat(),
         "updated_at": datetime.now(UTC).isoformat(),
     }
+
+    # If brief mode, include brief text in initial state
+    if req.workflow_mode == "brief" and req.brief_text:
+        initial_state["brief_content"] = {
+            "raw_text": req.brief_text,
+            "source_type": "text",
+        }
+        initial_state["phase"] = WorkflowPhase.BRIEFING
 
     config = {"configurable": {"thread_id": thread_id}}
     now = datetime.now(UTC).isoformat()
@@ -477,6 +496,10 @@ async def get_workflow_status(thread_id: str, request: Request):
             ripple_prediction=_extract_ripple(state.values, "ripple_prediction"),
             ripple_pmf=_extract_ripple(state.values, "ripple_pmf"),
             ripple_comparison=state.values.get("ripple_comparison") or {},
+            workflow_mode=state.values.get("workflow_mode") or "trend",
+            brief_content=state.values.get("brief_content") or {},
+            brief_clarification=state.values.get("brief_clarification") or {},
+            shooting_plan=state.values.get("shooting_plan") or {},
         ).model_dump())
 
     # Fallback: check persisted history (container restart case)
@@ -878,3 +901,208 @@ async def delete_workflow(thread_id: str):
         "thread_id": thread_id,
         "message": "Workflow deleted from history",
     })
+
+
+class BriefUploadResponse(BaseModel):
+    """Response for brief file upload."""
+    thread_id: str
+    brief_text: str
+    source_type: str
+
+
+@router.post("/brief/upload/{thread_id}")
+async def upload_brief_file(thread_id: str, request: Request):
+    """Upload a brief document (PDF) and extract text content.
+
+    Uses pdfplumber first, falls back to multimodal LLM for scanned documents.
+    """
+    if not thread_id or thread_id.strip() == "":
+        raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    form = await request.form()
+    file = form.get("file")
+    if not file:
+        raise ValidationError("file", "No file uploaded")
+
+    filename = file.filename or "unknown"
+    content_bytes = await file.read()
+
+    # Extract text based on file type
+    brief_text = ""
+    source_type = "text"
+
+    if filename.lower().endswith(".pdf"):
+        source_type = "pdf"
+        brief_text = await _extract_pdf_text(content_bytes)
+    else:
+        # Treat as plain text
+        try:
+            brief_text = content_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            brief_text = content_bytes.decode("gbk", errors="replace")
+
+    if not brief_text.strip():
+        raise ValidationError("file", "Could not extract text from the uploaded file")
+
+    # Update workflow state with brief content
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    await graph.aupdate_state(config, {
+        "brief_content": {
+            "raw_text": brief_text,
+            "source_type": source_type,
+        },
+    })
+
+    return success(data=BriefUploadResponse(
+        thread_id=thread_id,
+        brief_text=brief_text[:500] + "..." if len(brief_text) > 500 else brief_text,
+        source_type=source_type,
+    ).model_dump())
+
+
+async def _extract_pdf_text(content_bytes: bytes) -> str:
+    """Extract text from PDF using pdfplumber, with multimodal LLM fallback."""
+    try:
+        import io
+
+        import pdfplumber
+
+        text_parts = []
+        with pdfplumber.open(io.BytesIO(content_bytes)) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text() or ""
+                text_parts.append(page_text)
+
+        extracted = "\n".join(text_parts).strip()
+
+        # If extraction quality is poor (very little text for the page count),
+        # try multimodal LLM fallback
+        if extracted and len(extracted) > 50:
+            return extracted
+
+        # Poor extraction — try multimodal LLM
+        logger.info("PDF text extraction quality poor, attempting multimodal LLM fallback")
+        return await _extract_pdf_with_llm(content_bytes)
+
+    except ImportError:
+        logger.warning("pdfplumber not installed, using LLM fallback for PDF")
+        return await _extract_pdf_with_llm(content_bytes)
+    except Exception as e:
+        logger.error(f"PDF extraction failed: {e}")
+        return ""
+
+
+async def _extract_pdf_with_llm(content_bytes: bytes) -> str:
+    """Extract text from PDF using multimodal LLM (for scanned documents)."""
+    import base64
+
+    try:
+        from backend.config.models import TaskType
+        from backend.models.router import get_model
+
+        model = get_model(TaskType.BRIEF_ANALYSIS.value)
+        b64 = base64.b64encode(content_bytes).decode()
+
+        from langchain_core.messages import HumanMessage
+
+        response = await model.ainvoke([
+            HumanMessage(content=[
+                {"type": "text", "text": "请提取这份PDF文档中的所有文字内容，保持原始格式。"},
+                {"type": "image_url", "image_url": {"url": f"data:application/pdf;base64,{b64}"}},
+            ])
+        ])
+
+        return response.content or ""
+    except Exception as e:
+        logger.error(f"Multimodal LLM PDF extraction failed: {e}")
+        return ""
+
+
+@router.get("/brief/export/{thread_id}")
+async def export_shooting_plan(thread_id: str, request: Request):
+    """Export shooting plan as formatted text (for copy/download)."""
+    if not thread_id or thread_id.strip() == "":
+        raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    state = await graph.aget_state(config)
+
+    if not state.values or state.values.get("session_id") is None:
+        raise WorkflowNotFoundError(thread_id)
+
+    shooting_plan = state.values.get("shooting_plan", {})
+    if not shooting_plan:
+        return success(data={"text": "", "message": "No shooting plan available yet"})
+
+    # Format shooting plan as readable text
+    text = _format_shooting_plan(shooting_plan)
+
+    return success(data={"text": text, "format": "markdown"})
+
+
+def _format_shooting_plan(plan: dict) -> str:
+    """Format shooting plan dict into readable markdown text."""
+    lines = []
+
+    # Header
+    nickname = plan.get("creator_nickname", "")
+    direction = plan.get("content_direction", "")
+    type_label = plan.get("content_type_label", "")
+    header = f"# {nickname}-{direction}-{type_label}" if nickname else f"# {direction}-{type_label}"
+    lines.append(header)
+    lines.append("")
+
+    # Basic info
+    lines.append(f"主页链接：{plan.get('profile_link', '')}")
+    lines.append(f"达人量级：{plan.get('creator_level', '')}")
+    lines.append(f"预计发布日期：{plan.get('planned_publish_date', '')}")
+    lines.append(f"内容方向：{direction}")
+    lines.append(f"产品规格：{plan.get('product_specification', '')}")
+    lines.append("")
+
+    # Draft requirements
+    lines.append("---")
+    lines.append("初稿👇")
+    for req in plan.get("draft_requirements", []):
+        lines.append(f"- {req}")
+    for note in plan.get("draft_notes", []):
+        lines.append(f"⚠️ {note}")
+    lines.append("")
+
+    # Outline
+    lines.append("---")
+    lines.append("大纲👇")
+    titles = plan.get("title_candidates", [])
+    lines.append(f"标题（至少给到{len(titles)}个备选）：")
+    for i, title in enumerate(titles, 1):
+        lines.append(f"{i}. {title}")
+    lines.append("")
+    lines.append(f"文案：\n{plan.get('body_copy', '')}")
+    lines.append("")
+    lines.append("话题：")
+    lines.append(f"必带话题：{' '.join(plan.get('required_hashtags', []))}")
+    lines.append(f"选带话题：{' '.join(plan.get('optional_hashtags', []))}")
+    lines.append(f"其他热门话题：{' '.join(plan.get('suggested_hashtags', []))}")
+    lines.append("")
+
+    # Outfits
+    lines.append("---")
+    lines.append("拍摄服装")
+    outfits = plan.get("outfits", {})
+    for role, clothes in outfits.items():
+        lines.append(f"\n{role}")
+        for item in clothes:
+            lines.append(f"- {item}")
+    lines.append("")
+
+    # Shooting angles
+    lines.append("---")
+    lines.append("拍摄角度")
+    for angle in plan.get("shooting_angles", []):
+        lines.append(f"- {angle.get('description', '')}")
+
+    return "\n".join(lines)

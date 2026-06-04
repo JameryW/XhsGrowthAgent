@@ -17,6 +17,7 @@ class WorkflowStatus(StrEnum):
     AWAITING_REVIEW = "awaiting_review"
     AWAITING_CHOICE = "awaiting_choice"
     AWAITING_DRAFT = "awaiting_draft"
+    AWAITING_BRIEF = "awaiting_brief"
     PAUSED = "paused"
     COMPLETED = "completed"
     ERROR = "error"
@@ -77,6 +78,8 @@ def derive_status(snapshot: StateSnapshot, *, has_active_task: bool = True) -> W
                 return WorkflowStatus.AWAITING_CHOICE
             if "draft_gate" in next_nodes:
                 return WorkflowStatus.AWAITING_DRAFT
+            if "brief_gate" in next_nodes:
+                return WorkflowStatus.AWAITING_BRIEF
         # Fallback: determine gate type from interrupt value (dynamic interrupt only)
         if has_interrupt:
             gate_type = None
