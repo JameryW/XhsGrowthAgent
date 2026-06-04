@@ -439,7 +439,10 @@ async def get_workflow_status(thread_id: str, request: Request):
         progress = get_progress(phase)
 
         # Derive status from snapshot for consistent results
-        has_active = thread_id in _background_tasks and not _background_tasks[thread_id].done()
+        has_active = (
+            (thread_id in _background_tasks and not _background_tasks[thread_id].done())
+            or (thread_id in _runner._active_sync_executions)
+        )
         derived_status = derive_status(
             state, has_active_task=has_active
         )
@@ -658,7 +661,10 @@ async def resume_workflow(thread_id: str, request: Request):
         })
 
     # Derive current status for guard checks
-    has_active = thread_id in _background_tasks and not _background_tasks[thread_id].done()
+    has_active = (
+        (thread_id in _background_tasks and not _background_tasks[thread_id].done())
+        or (thread_id in _runner._active_sync_executions)
+    )
     derived = derive_status(
         state, has_active_task=has_active
     )

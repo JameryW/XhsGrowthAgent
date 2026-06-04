@@ -45,6 +45,10 @@ class ModelConfig(BaseModel):
 TASK_TIMEOUT_OVERRIDES: dict[str, int] = {
     # 版本生成需要生成 A/B/C 三个完整版本，耗时较长
     "version_gen": 180,
+    # Xunfei provider 响应较慢，内容分析/简报分析需要更长超时
+    "content_analysis": 120,
+    "brief_analysis": 120,
+    "shooting_plan": 120,
 }
 
 
@@ -85,6 +89,7 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
         model_name="astron-code-latest",
         temperature=0.7,
         max_tokens=4096,
+        timeout=90,
     ),
 }
 

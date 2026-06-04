@@ -22,6 +22,11 @@ _workflow_registry: dict[str, dict] = {}
 _background_tasks: dict[str, asyncio.Task] = {}
 _last_status: dict[str, WorkflowStatus] = {}
 
+# Track threads currently executing via synchronous request handlers
+# (submit_draft, select_version, etc.) so derive_status knows the graph
+# is actively running even without a background asyncio.Task entry.
+_active_sync_executions: set[str] = set()
+
 
 def bind_registry(
     registry: dict[str, dict],
@@ -175,12 +180,21 @@ async def _run_graph_and_persist(
     - Background task registration
     - Exception handling with graph state phase=ERROR fallback
     """
+    # Register sync execution so derive_status sees has_active_task=True
+    # even when called from request handlers (not background asyncio.Task)
+    is_sync = source not in ("start", "resume")
+    if is_sync:
+        _active_sync_executions.add(thread_id)
+
     try:
         result = await graph.ainvoke(input_data, config)
 
         # Derive status from snapshot for consistent results
         snapshot = await graph.aget_state(config)
-        has_active = thread_id in _background_tasks and not _background_tasks[thread_id].done()
+        has_active = (
+            (thread_id in _background_tasks and not _background_tasks[thread_id].done())
+            or (thread_id in _active_sync_executions)
+        )
         derived = derive_status(snapshot, has_active_task=has_active)
 
         # Emit status transition events (e.g. awaiting_review, awaiting_choice)
