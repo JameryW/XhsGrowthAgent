@@ -275,3 +275,47 @@ except RippleTimeoutError as e:
 except TimeoutError:
     return {"ripple_job_id": "", "ripple_reason": "timeout"}
 ```
+
+## Frontend Multi-Workflow Pattern
+
+### Store Architecture
+
+The `workflowStore` (frontend/src/stores/workflow.ts) supports multiple concurrent workflows:
+
+| State | Type | Purpose |
+|-------|------|---------|
+| `workflowStates` | `Map<string, WorkflowStateResponse>` | Per-thread state cache |
+| `activeThreadId` | `ref<string \| null>` | Currently viewed workflow tab |
+| `openTabIds` | `ref<string[]>` | Ordered list of open tab IDs |
+| `tabLabels` | `Record<string, string>` | Custom tab labels |
+| `rippleProgressMap` | `Map<string, RippleProgress>` | Per-thread ripple progress |
+
+### Computed backward-compat layer
+
+`currentThreadId` and `workflowState` are computed from `activeThreadId` + `workflowStates` map, keeping existing component code working without changes.
+
+### WebSocket event routing
+
+All WS event handlers use `msg.thread_id` to route to the correct entry in `workflowStates` map. The `if (msg.thread_id === activeThreadId.value)` guard ensures progress/overlay updates only affect the visible tab.
+
+### Tab persistence
+
+Open tab IDs and labels are persisted to `localStorage` keys: `activeThreadId`, `openTabIds`, `tabLabels`.
+
+### Tab fold limit
+
+When `openTabIds.length > 8`, tabs beyond index 8 move to an overflow dropdown (`overflowTabs` computed).
+
+### Common Mistake: Direct assignment to workflowState
+
+After the multi-workflow refactor, `workflowState` is a computed property (derived from `workflowStates[activeThreadId]`). It cannot be directly assigned. Use `workflowStates.set(threadId, newState)` or the `updateWorkflowState()` helper instead.
+
+```typescript
+// WRONG — workflowState is a computed, read-only
+workflowStore.workflowState = null
+
+// CORRECT — remove the tab or update the map
+workflowStore.closeTab(threadId)
+// or
+workflowStore.workflowStates.set(threadId, newState)
+```
