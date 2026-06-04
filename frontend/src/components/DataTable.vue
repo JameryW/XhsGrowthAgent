@@ -42,7 +42,7 @@ const hasData = computed(() => props.data.length > 0)
   <div class="rounded-xl overflow-hidden relative bg-white/98 backdrop-blur-sm border border-slate-200/50" role="table" :aria-label="t('dataTable.title')">
     <!-- 表头 -->
     <div
-      class="grid gap-4 p-3 bg-slate-50 border-b border-slate-100 text-xs text-slate-500 uppercase tracking-wide font-medium"
+      class="grid gap-4 px-4 py-3 bg-slate-50 border-b border-slate-100 text-xs text-slate-500 uppercase tracking-wide font-medium"
       :style="{ gridTemplateColumns: `repeat(${props.columns.length}, 1fr)` }"
       role="rowgroup"
     >
@@ -69,7 +69,7 @@ const hasData = computed(() => props.data.length > 0)
     <div
       v-for="(row, idx) in props.data"
       :key="getRowKey(row, idx)"
-      class="grid gap-4 p-3 border-b border-slate-50 text-xs hover:bg-slate-50/50 transition-colors duration-150"
+      class="grid gap-4 px-4 py-3 border-b border-slate-50 text-xs hover:bg-slate-50/50 transition-colors duration-150"
       :style="{ gridTemplateColumns: `repeat(${props.columns.length}, 1fr)` }"
       role="row"
     >
@@ -84,7 +84,7 @@ const hasData = computed(() => props.data.length > 0)
     </div>
 
     <!-- Footer -->
-    <div v-if="hasData" class="p-3 border-t border-slate-100 bg-slate-50/50 text-xs text-slate-500 text-center font-medium" role="rowgroup">
+    <div v-if="hasData" class="px-4 py-3 border-t border-slate-100 bg-slate-50/50 text-xs text-slate-500 text-center font-medium" role="rowgroup">
       {{ t('dataTable.records', { count: props.data.length }) }}
     </div>
   </div>

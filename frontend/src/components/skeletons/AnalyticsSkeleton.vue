@@ -4,7 +4,7 @@ import DataTableSkeleton from './DataTableSkeleton.vue'
 </script>
 
 <template>
-  <div class="relative space-y-4 md:space-y-6">
+  <div class="relative space-y-6 md:space-y-8">
     <!-- Header skeleton -->
     <div class="rounded-2xl p-4 md:p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
       <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
@@ -23,12 +23,12 @@ import DataTableSkeleton from './DataTableSkeleton.vue'
     </div>
 
     <!-- Metrics skeleton -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
       <MetricCardSkeleton v-for="i in 4" :key="i" />
     </div>
 
     <!-- Charts skeleton -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
       <div class="rounded-2xl p-5 bg-white/98 border border-slate-200/50 shadow-sm">
         <div class="flex items-center gap-3 mb-4">
           <div class="w-10 h-10 rounded-lg bg-slate-200 animate-pulse" />

@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
+import { onMounted, computed, defineAsyncComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import MetricCard from '@/components/MetricCard.vue'
 import DataTable from '@/components/DataTable.vue'
 import AppIcon from '@/components/AppIcon.vue'
-import { TrendChart, EngagementChart } from '@/components/charts'
 import { AnalyticsSkeleton } from '@/components/skeletons'
 import { useAnalyticsStore } from '@/stores'
+
+const TrendChart = defineAsyncComponent(() => import('@/components/charts/TrendChart.vue'))
+const EngagementChart = defineAsyncComponent(() => import('@/components/charts/EngagementChart.vue'))
 
 const { t } = useI18n()
 const router = useRouter()
@@ -142,7 +144,7 @@ function startWithTopic(topic: string, niche?: string) {
 
 <template>
   <AnalyticsSkeleton v-if="isLoading" />
-  <div v-else class="relative space-y-4 md:space-y-6">
+  <div v-else class="relative space-y-6 md:space-y-8">
     <!-- 顶部标题栏 -->
     <div class="card">
       <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
@@ -182,7 +184,7 @@ function startWithTopic(topic: string, niche?: string) {
     </div>
 
     <!-- 核心指标卡片 -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
       <MetricCard
         v-for="metric in metrics"
         :key="metric.title"
@@ -191,18 +193,32 @@ function startWithTopic(topic: string, niche?: string) {
     </div>
 
     <!-- 图表区域 -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <TrendChart
-        :data="trendData"
-        :title="t('analytics.interactionTrend')"
-        variant="cyan"
-        :height="280"
-      />
-      <EngagementChart
-        :data="engagementData"
-        variant="pink"
-        :height="280"
-      />
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <Suspense>
+        <TrendChart
+          :data="trendData"
+          :title="t('analytics.interactionTrend')"
+          variant="cyan"
+          :height="280"
+        />
+        <template #fallback>
+          <div class="rounded-2xl p-6 bg-white/98 backdrop-blur-sm border border-slate-200/50">
+            <div class="h-[280px] rounded-lg bg-slate-100 animate-pulse" />
+          </div>
+        </template>
+      </Suspense>
+      <Suspense>
+        <EngagementChart
+          :data="engagementData"
+          variant="pink"
+          :height="280"
+        />
+        <template #fallback>
+          <div class="rounded-2xl p-6 bg-white/98 backdrop-blur-sm border border-slate-200/50">
+            <div class="h-[280px] rounded-lg bg-slate-100 animate-pulse" />
+          </div>
+        </template>
+      </Suspense>
     </div>
 
     <!-- 成本明细 -->
