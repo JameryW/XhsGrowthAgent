@@ -17,7 +17,7 @@ from backend.api.responses import success
 from backend.graph.builder import compile_graph_dev
 
 # 加载 .env 文件（必须在其他导入之前）
-load_dotenv()
+load_dotenv(override=True)
 
 
 @asynccontextmanager

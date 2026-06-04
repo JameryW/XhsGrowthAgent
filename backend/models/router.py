@@ -14,7 +14,7 @@ from backend.config.models import ModelConfig, ModelProvider, TaskType, resolve_
 
 # 加载 .env 文件（确保环境变量可用）
 _project_root = Path(__file__).resolve().parent.parent.parent
-load_dotenv(_project_root / ".env")
+load_dotenv(_project_root / ".env", override=True)
 
 _PROVIDER_ENV_VARS: dict[ModelProvider, str] = {
     ModelProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
