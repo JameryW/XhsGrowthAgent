@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 
@@ -9,19 +9,24 @@ interface Column {
   key: string
   label: string
   align?: 'left' | 'center' | 'right'
+  sortable?: boolean
 }
 
 interface Props {
   columns: Column[]
   data: Record<string, any>[]
   rowKey?: string
+  highlightRowKey?: string
+  highlightKeyValue?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   rowKey: 'title',
 })
 
-// Memoize align classes to avoid repeated function calls
+const sortKey = ref('')
+const sortOrder = ref<'asc' | 'desc'>('desc')
+
 const alignClasses = computed(() => {
   const classes: Record<string, string> = {}
   for (const col of props.columns) {
@@ -30,17 +35,37 @@ const alignClasses = computed(() => {
   return classes
 })
 
-// Get unique row key
 const getRowKey = (row: Record<string, any>, idx: number) => {
   return props.rowKey && row[props.rowKey] ? row[props.rowKey] : `row-${idx}`
 }
 
 const hasData = computed(() => props.data.length > 0)
+
+const sortedData = computed(() => {
+  if (!sortKey.value) return props.data
+  const key = sortKey.value
+  const order = sortOrder.value === 'asc' ? 1 : -1
+  return [...props.data].sort((a, b) => {
+    const va = a[key]
+    const vb = b[key]
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * order
+    return String(va).localeCompare(String(vb)) * order
+  })
+})
+
+function toggleSort(key: string) {
+  if (sortKey.value === key) {
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortKey.value = key
+    sortOrder.value = 'desc'
+  }
+}
 </script>
 
 <template>
   <div class="rounded-xl overflow-hidden relative bg-white/98 backdrop-blur-sm border border-slate-200/50" role="table" :aria-label="t('dataTable.title')">
-    <!-- 表头 -->
+    <!-- Header -->
     <div
       class="grid gap-4 px-4 py-3 bg-slate-50 border-b border-slate-100 text-xs text-slate-500 uppercase tracking-wide font-medium"
       :style="{ gridTemplateColumns: `repeat(${props.columns.length}, 1fr)` }"
@@ -52,7 +77,18 @@ const hasData = computed(() => props.data.length > 0)
         :class="[alignClasses[col.key]]"
         role="columnheader"
       >
-        {{ col.label }}
+        <button
+          v-if="col.sortable"
+          @click="toggleSort(col.key)"
+          class="inline-flex items-center gap-1 hover:text-slate-700 transition-colors"
+        >
+          {{ col.label }}
+          <span class="inline-flex flex-col -space-y-1" aria-hidden="true">
+            <AppIcon name="ChevronUp" size="xs" :variant="sortKey === col.key && sortOrder === 'asc' ? 'pink' : 'cyan'" />
+            <AppIcon name="ChevronDown" size="xs" :variant="sortKey === col.key && sortOrder === 'desc' ? 'pink' : 'cyan'" />
+          </span>
+        </button>
+        <span v-else>{{ col.label }}</span>
       </div>
     </div>
 
@@ -65,11 +101,12 @@ const hasData = computed(() => props.data.length > 0)
       <div class="text-xs text-slate-400">{{ t('dataTable.noDataDesc') }}</div>
     </div>
 
-    <!-- 数据行 -->
+    <!-- Data rows -->
     <div
-      v-for="(row, idx) in props.data"
+      v-for="(row, idx) in sortedData"
       :key="getRowKey(row, idx)"
       class="grid gap-4 px-4 py-3 border-b border-slate-50 text-xs hover:bg-slate-50/50 transition-colors duration-150"
+      :class="{ 'bg-rose-50/50': highlightRowKey && highlightKeyValue && row[highlightRowKey] === highlightKeyValue }"
       :style="{ gridTemplateColumns: `repeat(${props.columns.length}, 1fr)` }"
       role="row"
     >

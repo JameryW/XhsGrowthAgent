@@ -439,6 +439,7 @@
     "title": "数据分析中心",
     "analyticsLabel": "Analytics",
     "postsPublished": "已发布帖子",
+    "totalViews": "总浏览量",
     "totalEngagement": "总互动量",
     "avgEngagementRate": "平均互动率",
     "aiCost": "AI 费用 (USD)",
@@ -466,6 +467,7 @@
     "launch": "发起",
     "table": {
       "title": "标题",
+      "views": "浏览量",
       "likes": "点赞",
       "comments": "评论",
       "collects": "收藏",
@@ -525,6 +527,7 @@
     "trendTable": "图表数据表",
     "trendData": "趋势数据",
     "noData": "无数据",
+    "noTrendData": "暂无趋势数据",
     "trendChart": "趋势图",
     "type": "类型",
     "count": "次数",

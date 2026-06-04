@@ -14,6 +14,7 @@ import {
   CheckCircle,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   Circle,
   ClipboardList,
   Clock,
@@ -72,6 +73,7 @@ import {
   X,
   XCircle,
   Zap,
+  Eye,
 } from '@lucide/vue'
 
 const iconMap: Record<string, Component> = {
@@ -102,6 +104,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const sizeMap = {
+  xs: 12,
   sm: 16,
   md: 20,
   lg: 24,

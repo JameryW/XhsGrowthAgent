@@ -25,17 +25,22 @@ const isLoading = computed(() => analyticsStore.isLoading && !analyticsStore.pos
 const hasError = computed(() => !!analyticsStore.error && !analyticsStore.posts.length)
 const isEmpty = computed(() => !analyticsStore.isLoading && !analyticsStore.error && !analyticsStore.posts.length)
 
+const totalViews = computed(() => analyticsStore.posts.reduce((sum, p) => sum + (p.views || 0), 0))
+
 const metrics = computed(() => [
   { icon: 'Upload', title: t('analytics.postsPublished'), value: analyticsStore.posts.length, subtitle: t('analytics.thisWeek'), variant: 'pink' as const },
-  { icon: 'MessageCircle', title: t('analytics.totalEngagement'), value: analyticsStore.totalEngagement.toLocaleString(), subtitle: `${analyticsStore.posts.length} ` + t('analytics.postsPublished'), variant: 'cyan' as const },
-  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: `${analyticsStore.avgEngagementRate.toFixed(1)}%`, subtitle: analyticsStore.posts.length > 0 ? `${analyticsStore.posts.length} ` + t('analytics.postsPublished') : t('analytics.thisWeek'), variant: 'purple' as const },
-  { icon: 'DollarSign', title: t('analytics.aiCost'), value: `$${analyticsStore.costData?.today_cost_usd?.toFixed(2) || '0.00'}`, subtitle: t('analytics.cost.today'), variant: 'peach' as const },
+  { icon: 'Eye', title: t('analytics.totalViews'), value: totalViews.value.toLocaleString(), subtitle: t('analytics.thisWeek'), variant: 'cyan' as const },
+  { icon: 'MessageCircle', title: t('analytics.totalEngagement'), value: analyticsStore.totalEngagement.toLocaleString(), subtitle: `${analyticsStore.posts.length} ` + t('analytics.postsPublished'), variant: 'purple' as const },
+  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: `${analyticsStore.avgEngagementRate.toFixed(1)}%`, subtitle: analyticsStore.posts.length > 0 ? `${analyticsStore.posts.length} ` + t('analytics.postsPublished') : t('analytics.thisWeek'), variant: 'peach' as const },
+  { icon: 'DollarSign', title: t('analytics.aiCost'), value: `$${analyticsStore.costData?.today_cost_usd?.toFixed(2) || '0.00'}`, subtitle: t('analytics.cost.today'), variant: 'pink' as const },
 ])
 
-// Derive trend data from actual posts
 const trendData = computed(() => {
   const posts = analyticsStore.posts
   if (!posts.length) return []
+
+  const hasPublishedPosts = posts.some(p => p.published_at)
+  if (!hasPublishedPosts) return []
 
   const dayNames = [
     t('analytics.weekdays.sun'),
@@ -64,7 +69,6 @@ const trendData = computed(() => {
   }))
 })
 
-// Derive engagement breakdown from actual posts
 const engagementData = computed(() => {
   const posts = analyticsStore.posts
   if (!posts.length) return []
@@ -87,7 +91,6 @@ const engagementData = computed(() => {
   ]
 })
 
-// Format date for display
 const formatDate = (isoDate: string | null | undefined) => {
   if (!isoDate) return '—'
   const d = new Date(isoDate)
@@ -96,20 +99,41 @@ const formatDate = (isoDate: string | null | undefined) => {
   return `${month} ${day}`
 }
 
+const bestPostTitle = computed(() => analyticsStore.growthReport?.metrics?.best_post_title || '')
+
 const tableColumns = computed(() => [
   { key: 'title', label: t('analytics.table.title'), align: 'left' as const },
-  { key: 'likes', label: t('analytics.table.likes'), align: 'center' as const },
-  { key: 'comments', label: t('analytics.table.comments'), align: 'center' as const },
-  { key: 'collects', label: t('analytics.table.collects'), align: 'center' as const },
-  { key: 'engagement_rate_display', label: t('analytics.table.engagementRate'), align: 'center' as const },
+  { key: 'views_display', label: t('analytics.table.views'), align: 'center' as const, sortable: true },
+  { key: 'likes', label: t('analytics.table.likes'), align: 'center' as const, sortable: true },
+  { key: 'comments', label: t('analytics.table.comments'), align: 'center' as const, sortable: true },
+  { key: 'collects', label: t('analytics.table.collects'), align: 'center' as const, sortable: true },
+  { key: 'engagement_rate_display', label: t('analytics.table.engagementRate'), align: 'center' as const, sortable: true },
   { key: 'published_at_display', label: t('analytics.table.publishedAt'), align: 'center' as const },
 ])
 
 const tableData = computed(() => analyticsStore.posts.slice(0, 10).map(post => ({
   ...post,
+  views_display: (post.views || 0).toLocaleString(),
   engagement_rate_display: `${post.engagement_rate.toFixed(1)}%`,
   published_at_display: formatDate(post.published_at),
 })))
+
+// Model cost bar data
+const modelCostData = computed(() => {
+  const byModel = analyticsStore.costData?.by_model
+  if (!byModel || !Object.keys(byModel).length) return []
+
+  const entries = Object.entries(byModel) as [string, number][]
+  const maxCost = Math.max(...entries.map(([, cost]) => cost))
+
+  return entries
+    .map(([model, cost]) => ({
+      model,
+      cost,
+      percent: maxCost > 0 ? (cost / maxCost) * 100 : 0,
+    }))
+    .sort((a, b) => b.cost - a.cost)
+})
 
 const setPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
   analyticsStore.setPeriod(period)
@@ -117,6 +141,10 @@ const setPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
 
 function refreshData() {
   analyticsStore.fetchAllData()
+}
+
+function goHome() {
+  router.push('/')
 }
 
 const budgetUsedPercent = computed(() => {
@@ -127,11 +155,6 @@ const budgetUsedPercent = computed(() => {
   return Math.round((total / budget) * 100)
 })
 
-function goHome() {
-  router.push('/')
-}
-
-// Insights from growth report
 const insights = computed(() => analyticsStore.growthReport?.insights || [])
 const trendTopics = computed(() => analyticsStore.growthReport?.metrics?.trend_topics || [])
 
@@ -264,8 +287,8 @@ function startWithTopic(topic: string, niche?: string) {
       </div>
     </div>
 
-    <!-- Metric cards -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+    <!-- Metric cards (5 columns on xl) -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
       <MetricCard
         v-for="metric in metrics"
         :key="metric.title"
@@ -345,17 +368,25 @@ function startWithTopic(topic: string, niche?: string) {
         </div>
       </div>
 
-      <!-- By model breakdown -->
-      <div v-if="analyticsStore.costData.by_model && Object.keys(analyticsStore.costData.by_model).length > 0">
+      <!-- By model breakdown (visual bars) -->
+      <div v-if="modelCostData.length > 0">
         <div class="text-xs text-slate-500 uppercase tracking-wide font-medium mb-3">{{ t('analytics.cost.byModel') }}</div>
-        <div class="space-y-2">
+        <div class="space-y-3">
           <div
-            v-for="(cost, model) in analyticsStore.costData.by_model"
-            :key="model"
-            class="flex items-center justify-between py-2 px-4 rounded-lg bg-slate-50 border border-slate-100"
+            v-for="item in modelCostData"
+            :key="item.model"
+            class="group"
           >
-            <span class="text-sm text-slate-700 font-medium">{{ model }}</span>
-            <span class="text-sm text-slate-600">${{ (cost as number).toFixed(2) }}</span>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-sm text-slate-700 font-medium">{{ item.model }}</span>
+              <span class="text-sm text-slate-600 tabular-nums">${{ item.cost.toFixed(2) }}</span>
+            </div>
+            <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+              <div
+                class="h-full rounded-full bg-gradient-to-r from-rose-400 to-rose-500 transition-all duration-500 group-hover:from-rose-500 group-hover:to-rose-600"
+                :style="{ width: `${item.percent}%` }"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -425,7 +456,12 @@ function startWithTopic(topic: string, niche?: string) {
         </div>
       </div>
 
-      <DataTable :columns="tableColumns" :data="tableData" />
+      <DataTable
+        :columns="tableColumns"
+        :data="tableData"
+        highlight-row-key="title"
+        :highlight-key-value="bestPostTitle"
+      />
     </div>
   </div>
 </template>

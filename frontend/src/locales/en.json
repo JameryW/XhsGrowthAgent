@@ -439,6 +439,7 @@
     "title": "Analytics Center",
     "analyticsLabel": "Analytics",
     "postsPublished": "Posts Published",
+    "totalViews": "Total Views",
     "totalEngagement": "Total Engagement",
     "avgEngagementRate": "Avg Engagement Rate",
     "aiCost": "AI Cost (USD)",
@@ -466,6 +467,7 @@
     "launch": "Launch",
     "table": {
       "title": "Title",
+      "views": "Views",
       "likes": "Likes",
       "comments": "Comments",
       "collects": "Collects",
@@ -525,6 +527,7 @@
     "trendTable": "Chart Data Table",
     "trendData": "Trend Data",
     "noData": "No Data",
+    "noTrendData": "No trend data yet",
     "trendChart": "Trend Chart",
     "type": "Type",
     "count": "Count",
