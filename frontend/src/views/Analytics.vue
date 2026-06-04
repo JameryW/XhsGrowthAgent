@@ -28,8 +28,8 @@ const isEmpty = computed(() => !analyticsStore.isLoading && !analyticsStore.erro
 const metrics = computed(() => [
   { icon: 'Upload', title: t('analytics.postsPublished'), value: analyticsStore.posts.length, subtitle: t('analytics.thisWeek'), variant: 'pink' as const },
   { icon: 'MessageCircle', title: t('analytics.totalEngagement'), value: analyticsStore.totalEngagement.toLocaleString(), subtitle: `${analyticsStore.posts.length} ` + t('analytics.postsPublished'), variant: 'cyan' as const },
-  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: `${analyticsStore.avgEngagementRate.toFixed(1)}%`, subtitle: t('analytics.thisWeek'), variant: 'purple' as const },
-  { icon: 'DollarSign', title: t('analytics.aiCost'), value: `$${analyticsStore.costData?.today_cost_usd?.toFixed(2) || '0.00'}`, subtitle: t('analytics.thisWeek'), variant: 'peach' as const },
+  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: `${analyticsStore.avgEngagementRate.toFixed(1)}%`, subtitle: analyticsStore.posts.length > 0 ? `${analyticsStore.posts.length} ` + t('analytics.postsPublished') : t('analytics.thisWeek'), variant: 'purple' as const },
+  { icon: 'DollarSign', title: t('analytics.aiCost'), value: `$${analyticsStore.costData?.today_cost_usd?.toFixed(2) || '0.00'}`, subtitle: t('analytics.cost.today'), variant: 'peach' as const },
 ])
 
 // Derive trend data from actual posts
@@ -118,6 +118,14 @@ const setPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
 function refreshData() {
   analyticsStore.fetchAllData()
 }
+
+const budgetUsedPercent = computed(() => {
+  const total = analyticsStore.costData?.total_cost_usd || 0
+  const remaining = analyticsStore.costData?.budget_remaining_usd || 0
+  const budget = total + remaining
+  if (budget <= 0) return 0
+  return Math.round((total / budget) * 100)
+})
 
 function goHome() {
   router.push('/')
@@ -283,6 +291,7 @@ function startWithTopic(topic: string, niche?: string) {
       <Suspense>
         <EngagementChart
           :data="engagementData"
+          :title="t('analytics.engagementBreakdown')"
           variant="pink"
           :height="280"
         />
@@ -318,6 +327,21 @@ function startWithTopic(topic: string, niche?: string) {
         <div class="rounded-lg p-4 bg-emerald-50 border border-emerald-100">
           <div class="text-xs text-emerald-500 font-medium">{{ t('analytics.cost.remaining') }}</div>
           <div class="text-xl font-bold text-emerald-700">${{ analyticsStore.costData.budget_remaining_usd?.toFixed(2) || '0.00' }}</div>
+        </div>
+      </div>
+
+      <!-- Budget progress bar -->
+      <div v-if="analyticsStore.costData.total_cost_usd" class="mb-5">
+        <div class="flex items-center justify-between text-xs text-slate-500 mb-2">
+          <span>{{ t('analytics.cost.budgetUsed') }}</span>
+          <span>{{ budgetUsedPercent }}%</span>
+        </div>
+        <div class="h-2 rounded-full bg-slate-100 overflow-hidden">
+          <div
+            class="h-full rounded-full transition-all duration-500"
+            :class="budgetUsedPercent > 90 ? 'bg-rose-500' : budgetUsedPercent > 70 ? 'bg-amber-500' : 'bg-emerald-500'"
+            :style="{ width: `${Math.min(budgetUsedPercent, 100)}%` }"
+          />
         </div>
       </div>
 

@@ -76,7 +76,7 @@ const hasData = computed(() => props.data.length > 0)
       <div
         v-for="col in props.columns"
         :key="col.key"
-        :class="[alignClasses[col.key], col.key === 'title' ? 'text-rose-500 font-medium' : 'text-slate-600']"
+        :class="[alignClasses[col.key], col.key === 'title' ? 'text-rose-500 font-medium truncate' : 'text-slate-600']"
         role="cell"
       >
         {{ row[col.key] }}

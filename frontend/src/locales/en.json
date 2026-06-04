@@ -446,6 +446,7 @@
     "thisMonth": "This Month",
     "thisYear": "This Year",
     "interactionTrend": "Interaction Trend",
+    "engagementBreakdown": "Engagement Breakdown",
     "recentPosts": "Recent Post Performance",
     "top10": "TOP 10",
     "cost": {
@@ -454,7 +455,8 @@
       "total": "Total Cost",
       "today": "Today's Cost",
       "remaining": "Budget Remaining",
-      "byModel": "By Model"
+      "byModel": "By Model",
+      "budgetUsed": "Budget Used"
     },
     "insights": {
       "title": "Growth Insights",

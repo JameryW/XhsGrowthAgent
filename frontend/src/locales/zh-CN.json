@@ -446,6 +446,7 @@
     "thisMonth": "本月",
     "thisYear": "全年",
     "interactionTrend": "互动趋势",
+    "engagementBreakdown": "互动构成",
     "recentPosts": "最近帖子表现",
     "top10": "TOP 10",
     "cost": {
@@ -454,7 +455,8 @@
       "total": "总成本",
       "today": "今日成本",
       "remaining": "预算剩余",
-      "byModel": "按模型"
+      "byModel": "按模型",
+      "budgetUsed": "预算使用"
     },
     "insights": {
       "title": "增长洞察",

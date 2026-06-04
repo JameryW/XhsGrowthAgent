@@ -63,8 +63,8 @@ const colors = {
       {{ props.value }}
     </div>
     <div v-if="props.subtitle" class="mt-3 flex items-center gap-2 group/sub">
-      <AppIcon name="TrendingUp" size="sm" variant="cyan" class="transition-transform duration-200 group-hover/sub:scale-110" aria-hidden="true" />
-      <span class="text-xs text-teal-600 font-medium bg-teal-50 px-2 py-0.5 rounded">{{ props.subtitle }}</span>
+      <AppIcon name="TrendingUp" size="sm" :variant="props.variant" class="transition-transform duration-200 group-hover/sub:scale-110" aria-hidden="true" />
+      <span :class="['text-xs font-medium px-2 py-0.5 rounded', colors[props.variant].bgLight, colors[props.variant].text]">{{ props.subtitle }}</span>
     </div>
   </div>
 </template>
