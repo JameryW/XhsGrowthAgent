@@ -668,7 +668,18 @@
     "publishFailed": "发布失败",
     "agentStarted": "Agent 已启动",
     "agentCompleted": "Agent 已完成",
-    "workflowStarted": "工作流已启动"
+    "workflowStarted": "工作流已启动",
+    "closeTab": "关闭标签",
+    "closeTabConfirm": "关闭工作流标签？",
+    "closeTabHint": "关闭标签不会删除后端数据，可随时重新打开。",
+    "renameTab": "重命名",
+    "tabRunning": "运行中",
+    "tabAwaiting": "等待中",
+    "tabError": "出错",
+    "tabCompleted": "已完成",
+    "tabStale": "异常",
+    "tabPaused": "已暂停",
+    "overflowMore": "更多"
   },
   "history": {
     "title": "工作流历史",

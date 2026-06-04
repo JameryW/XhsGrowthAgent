@@ -668,7 +668,18 @@
     "publishFailed": "Publish Failed",
     "agentStarted": "Agent Started",
     "agentCompleted": "Agent Completed",
-    "workflowStarted": "Workflow Started"
+    "workflowStarted": "Workflow Started",
+    "closeTab": "Close Tab",
+    "closeTabConfirm": "Close workflow tab?",
+    "closeTabHint": "Closing the tab does not delete backend data. You can reopen it anytime.",
+    "renameTab": "Rename",
+    "tabRunning": "Running",
+    "tabAwaiting": "Awaiting",
+    "tabError": "Error",
+    "tabCompleted": "Completed",
+    "tabStale": "Stale",
+    "tabPaused": "Paused",
+    "overflowMore": "More"
   },
   "history": {
     "title": "Workflow History",

@@ -52,8 +52,9 @@ const retryAction = async () => {
 }
 
 const goBackAction = () => {
-  workflowStore.setThreadId('')
-  workflowStore.workflowState = null
+  if (workflowStore.activeThreadId) {
+    workflowStore.closeTab(workflowStore.activeThreadId)
+  }
   workflowStore.error = null
   toastStore.info(t('errorState.returned'), t('errorState.returnedMessage'))
 }

@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+import WorkflowTabBar from '@/components/dashboard/WorkflowTabBar.vue'
 import WorkflowHeader from '@/components/dashboard/WorkflowHeader.vue'
 import WorkflowTimeline from '@/components/dashboard/WorkflowTimeline.vue'
 import ContentCards from '@/components/dashboard/ContentCards.vue'
@@ -78,8 +79,11 @@ function handleBriefClear() {
   workflowStore.clearBriefUpload()
 }
 
-onMounted(() => {
-  if (workflowStore.currentThreadId) {
+onMounted(async () => {
+  if (workflowStore.openTabIds.length > 0) {
+    await workflowStore.refreshAllTabs()
+    workflowStore.startPolling(5000)
+  } else if (workflowStore.activeThreadId) {
     workflowStore.refreshStatus()
     workflowStore.startPolling(5000)
   }
@@ -92,6 +96,18 @@ onUnmounted(() => {
 
 <template>
   <div class="dashboard-container">
+    <!-- Workflow Tab Bar -->
+    <WorkflowTabBar
+      v-if="workflowStore.openTabIds.length > 0"
+      :tabs="workflowStore.visibleTabs"
+      :active-thread-id="workflowStore.activeThreadId"
+      :has-overflow="workflowStore.hasOverflow"
+      :overflow-tabs="workflowStore.overflowTabs"
+      @switch="workflowStore.switchTab($event)"
+      @close="workflowStore.closeTab($event)"
+      @rename="(id, label) => workflowStore.renameTab(id, label)"
+    />
+
     <DashboardSkeleton v-if="isLoading" />
     <div v-else class="space-y-4 md:space-y-6">
       <ErrorState v-if="hasError" />
