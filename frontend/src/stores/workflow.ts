@@ -11,6 +11,7 @@ import type {
   WorkflowStatus,
   RippleProgress,
 } from '@/types/workflow'
+import type { BriefUploadResult } from '@/api/workflow'
 import { useRealtimeStore } from './realtime'
 import { useToastStore } from './toast'
 import { useOfflineStore } from './offline'
@@ -460,6 +461,43 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
+  // Brief PDF upload state
+  const briefUploadedText = ref<string | null>(null)
+  const briefSourceType = ref<string | null>(null)
+  const isBriefUploading = ref(false)
+
+  async function uploadBriefPdf(threadId: string, file: File): Promise<BriefUploadResult | null> {
+    const MAX_SIZE = 10 * 1024 * 1024 // 10MB
+    if (file.size > MAX_SIZE) {
+      toastStore.error(t('brief.fileTooLarge'), t('brief.fileTooLargeDesc'))
+      return null
+    }
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      toastStore.error(t('brief.unsupportedFormat'), t('brief.unsupportedFormatDesc'))
+      return null
+    }
+
+    isBriefUploading.value = true
+    try {
+      const result = await workflowApi.uploadBriefFile(threadId, file)
+      briefUploadedText.value = result.brief_text
+      briefSourceType.value = result.source_type
+      toastStore.success(t('brief.uploadSuccess'))
+      return result
+    } catch (e: any) {
+      toastStore.error(t('brief.uploadFailed'), e.message)
+      briefUploadedText.value = null
+      return null
+    } finally {
+      isBriefUploading.value = false
+    }
+  }
+
+  function clearBriefUpload() {
+    briefUploadedText.value = null
+    briefSourceType.value = null
+  }
+
   return {
     currentThreadId,
     workflowState,
@@ -497,5 +535,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
     stopPolling,
     setThreadId,
     updateProgressFromPhase,
+    briefUploadedText,
+    briefSourceType,
+    isBriefUploading,
+    uploadBriefPdf,
+    clearBriefUpload,
   }
 })

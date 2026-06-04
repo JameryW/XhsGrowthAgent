@@ -806,5 +806,25 @@
     },
     "suggestDryRun": "Dry-run mode recommended",
     "suggestDryRunReason": "XHS credentials not configured. Workflow will run in preview mode without actual publishing."
+  },
+  "brief": {
+    "uploadLabel": "Upload Brief PDF",
+    "dragHint": "Click or drag PDF file here",
+    "dragActive": "Drop PDF file here",
+    "dragFormatHint": "PDF format only, max 10MB",
+    "extracting": "Extracting text...",
+    "fileTooLarge": "File too large",
+    "fileTooLargeDesc": "Maximum file size is 10MB",
+    "unsupportedFormat": "Unsupported format",
+    "unsupportedFormatDesc": "Please upload a PDF file",
+    "uploadSuccess": "PDF uploaded successfully",
+    "uploadFailed": "Upload failed",
+    "removeFile": "Remove",
+    "previewLabel": "Extracted Text (editable)",
+    "previewPlaceholder": "Extracted text will appear here...",
+    "previewHint": "You can edit the text before confirming",
+    "confirm": "Confirm & Parse",
+    "orText": "or paste text",
+    "textDisabledByPdf": "PDF uploaded — text input disabled"
   }
 }

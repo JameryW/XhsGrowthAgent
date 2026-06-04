@@ -9,6 +9,7 @@ import ContentCards from '@/components/dashboard/ContentCards.vue'
 import OptimizationPanel from '@/components/dashboard/OptimizationPanel.vue'
 import ShootingPlanPanel from '@/components/dashboard/ShootingPlanPanel.vue'
 import ActionButtons from '@/components/dashboard/ActionButtons.vue'
+import BriefFileUpload from '@/components/BriefFileUpload.vue'
 import CelebrationModal from '@/components/CelebrationModal.vue'
 import { DashboardSkeleton } from '@/components/skeletons'
 import ErrorState from '@/components/ErrorState.vue'
@@ -29,6 +30,10 @@ const showOptimization = computed(() =>
 const showShootingPlan = computed(() =>
   !!workflowStore.workflowState?.shooting_plan &&
   Object.keys(workflowStore.workflowState.shooting_plan).length > 0
+)
+const showBriefUpload = computed(() =>
+  workflowStore.isAwaitingBrief ||
+  (workflowStore.currentPhase === 'briefing' && !workflowStore.briefUploadedText)
 )
 const isLoading = computed(() => workflowStore.isLoading && !workflowStore.workflowState)
 const hasError = computed(() => workflowStore.error !== null)
@@ -61,6 +66,16 @@ const handleErrorRetry = () => {
 
 const handleErrorDismiss = () => {
   errorStore.clearError()
+}
+
+async function handleBriefConfirm(_text: string) {
+  // Upload already updated state; resume workflow to proceed with brief_analyzer
+  await workflowStore.resumeWorkflow()
+  toastStore.success(t('brief.uploadSuccess'), t('brief.confirmed'))
+}
+
+function handleBriefClear() {
+  workflowStore.clearBriefUpload()
 }
 
 onMounted(() => {
@@ -171,6 +186,20 @@ onUnmounted(() => {
       </div>
 
       <WorkflowHeader />
+
+      <!-- Brief PDF Upload (shown when awaiting brief input) -->
+      <div v-if="showBriefUpload" class="rounded-2xl p-4 bg-gradient-to-br from-neon-pink/5 to-neon-peach/5 border border-neon-pink/20">
+        <BriefFileUpload
+          :is-uploading="workflowStore.isBriefUploading"
+          :uploaded-text="workflowStore.briefUploadedText"
+          :source-type="workflowStore.briefSourceType"
+          :thread-id="workflowStore.currentThreadId || ''"
+          @upload="(file: File) => workflowStore.uploadBriefPdf(workflowStore.currentThreadId!, file)"
+          @confirm="handleBriefConfirm"
+          @clear="handleBriefClear"
+        />
+      </div>
+
       <!-- Workflow timeline with onboarding selector -->
       <div class="workflow-timeline">
         <WorkflowTimeline />
