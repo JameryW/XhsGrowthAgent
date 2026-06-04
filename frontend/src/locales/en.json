@@ -487,7 +487,21 @@
     },
     "week": "This Week",
     "month": "This Month",
-    "year": "This Year"
+    "year": "This Year",
+    "account": "Account",
+    "period": "Period",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing...",
+    "empty": {
+      "title": "No Analytics Data",
+      "description": "Start a workflow to generate content and see performance analytics here.",
+      "startWorkflow": "Start New Workflow"
+    },
+    "error": {
+      "title": "Failed to Load Data",
+      "description": "Could not fetch analytics data. Please check your connection and try again.",
+      "retry": "Retry"
+    }
   },
   "versionCompare": {
     "analysisReport": "Optimization Analysis Report",

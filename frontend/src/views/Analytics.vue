@@ -16,13 +16,14 @@ const router = useRouter()
 const analyticsStore = useAnalyticsStore()
 
 onMounted(() => {
-  // Only fetch if data hasn't been loaded yet
-  if (!analyticsStore.posts.length && !analyticsStore.isLoading) {
+  if (!analyticsStore.posts.length && !analyticsStore.isLoading && !analyticsStore.error) {
     analyticsStore.fetchAllData()
   }
 })
 
 const isLoading = computed(() => analyticsStore.isLoading && !analyticsStore.posts.length)
+const hasError = computed(() => !!analyticsStore.error && !analyticsStore.posts.length)
+const isEmpty = computed(() => !analyticsStore.isLoading && !analyticsStore.error && !analyticsStore.posts.length)
 
 const metrics = computed(() => [
   { icon: 'Upload', title: t('analytics.postsPublished'), value: analyticsStore.posts.length, subtitle: t('analytics.thisWeek'), variant: 'pink' as const },
@@ -36,7 +37,6 @@ const trendData = computed(() => {
   const posts = analyticsStore.posts
   if (!posts.length) return []
 
-  // Group engagement by day of week
   const dayNames = [
     t('analytics.weekdays.sun'),
     t('analytics.weekdays.mon'),
@@ -58,7 +58,6 @@ const trendData = computed(() => {
     }
   })
 
-  // Use Mon-Sun order
   return [1, 2, 3, 4, 5, 6, 0].map(day => ({
     date: dayNames[day],
     value: dayCounts[day] > 0 ? Math.round(dayTotals[day] / dayCounts[day]) : 0,
@@ -88,19 +87,40 @@ const engagementData = computed(() => {
   ]
 })
 
+// Format date for display
+const formatDate = (isoDate: string | null | undefined) => {
+  if (!isoDate) return '—'
+  const d = new Date(isoDate)
+  const month = d.toLocaleDateString('en', { month: 'short' })
+  const day = d.getDate()
+  return `${month} ${day}`
+}
+
 const tableColumns = computed(() => [
   { key: 'title', label: t('analytics.table.title'), align: 'left' as const },
   { key: 'likes', label: t('analytics.table.likes'), align: 'center' as const },
   { key: 'comments', label: t('analytics.table.comments'), align: 'center' as const },
   { key: 'collects', label: t('analytics.table.collects'), align: 'center' as const },
-  { key: 'engagement_rate', label: t('analytics.table.engagementRate'), align: 'center' as const },
-  { key: 'published_at', label: t('analytics.table.publishedAt'), align: 'center' as const },
+  { key: 'engagement_rate_display', label: t('analytics.table.engagementRate'), align: 'center' as const },
+  { key: 'published_at_display', label: t('analytics.table.publishedAt'), align: 'center' as const },
 ])
 
-const tableData = computed(() => analyticsStore.posts.slice(0, 10))
+const tableData = computed(() => analyticsStore.posts.slice(0, 10).map(post => ({
+  ...post,
+  engagement_rate_display: `${post.engagement_rate.toFixed(1)}%`,
+  published_at_display: formatDate(post.published_at),
+})))
 
 const setPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
   analyticsStore.setPeriod(period)
+}
+
+function refreshData() {
+  analyticsStore.fetchAllData()
+}
+
+function goHome() {
+  router.push('/')
 }
 
 // Insights from growth report
@@ -134,7 +154,6 @@ const insightBg = (type: string) => {
   }
 }
 
-// Start new workflow with recommended topic (and optional niche)
 function startWithTopic(topic: string, niche?: string) {
   const query: Record<string, string> = { topic }
   if (niche) query.niche = niche
@@ -144,8 +163,51 @@ function startWithTopic(topic: string, niche?: string) {
 
 <template>
   <AnalyticsSkeleton v-if="isLoading" />
+
+  <!-- Error state -->
+  <div v-else-if="hasError" class="relative space-y-6 md:space-y-8">
+    <div class="card">
+      <div class="flex flex-col items-center gap-4 py-8">
+        <div class="w-14 h-14 rounded-xl bg-rose-50 flex items-center justify-center">
+          <AppIcon name="AlertTriangle" size="xl" variant="pink" />
+        </div>
+        <div class="text-lg font-semibold text-slate-800">{{ t('analytics.error.title') }}</div>
+        <div class="text-sm text-slate-500 text-center max-w-md">{{ t('analytics.error.description') }}</div>
+        <button
+          @click="refreshData"
+          :disabled="analyticsStore.isLoading"
+          class="px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600 transition-all duration-200 flex items-center gap-2 disabled:opacity-50"
+        >
+          <AppIcon name="RefreshCw" size="sm" variant="white" />
+          {{ analyticsStore.isLoading ? t('analytics.refreshing') : t('analytics.error.retry') }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Empty state -->
+  <div v-else-if="isEmpty" class="relative space-y-6 md:space-y-8">
+    <div class="card">
+      <div class="flex flex-col items-center gap-4 py-8">
+        <div class="w-14 h-14 rounded-xl bg-teal-50 flex items-center justify-center">
+          <AppIcon name="BarChart3" size="xl" variant="cyan" />
+        </div>
+        <div class="text-lg font-semibold text-slate-800">{{ t('analytics.empty.title') }}</div>
+        <div class="text-sm text-slate-500 text-center max-w-md">{{ t('analytics.empty.description') }}</div>
+        <button
+          @click="goHome"
+          class="px-4 py-2 rounded-lg bg-teal-500 text-white text-sm font-medium hover:bg-teal-600 transition-all duration-200 flex items-center gap-2"
+        >
+          <AppIcon name="Plus" size="sm" variant="white" />
+          {{ t('analytics.empty.startWorkflow') }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data view -->
   <div v-else class="relative space-y-6 md:space-y-8">
-    <!-- 顶部标题栏 -->
+    <!-- Header -->
     <div class="card">
       <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
         <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm flex-shrink-0">
@@ -157,12 +219,23 @@ function startWithTopic(topic: string, niche?: string) {
           </div>
           <div class="text-xl font-semibold text-slate-800">{{ t('analytics.title') }}</div>
           <div class="text-xs text-slate-400 mt-1">
-            Account: {{ analyticsStore.accountId }} | Period: {{ analyticsStore.period }}
+            {{ t('analytics.account') }}: {{ analyticsStore.accountId }} | {{ t('analytics.period') }}: {{ analyticsStore.period }}
           </div>
         </div>
 
-        <!-- Period selector -->
-        <div class="flex gap-2 flex-wrap">
+        <div class="flex items-center gap-2 flex-wrap">
+          <!-- Refresh button -->
+          <button
+            @click="refreshData"
+            :disabled="analyticsStore.isLoading"
+            class="px-3 py-2 rounded-lg text-xs border transition-all duration-200 flex items-center gap-1.5 font-medium bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50"
+            :aria-label="t('analytics.refresh')"
+          >
+            <AppIcon name="RefreshCw" size="sm" variant="cyan" :class="{ 'animate-spin': analyticsStore.isLoading }" />
+            {{ analyticsStore.isLoading ? t('analytics.refreshing') : t('analytics.refresh') }}
+          </button>
+
+          <!-- Period selector -->
           <button
             v-for="p in ['daily', 'weekly', 'monthly']"
             :key="p"
@@ -183,7 +256,7 @@ function startWithTopic(topic: string, niche?: string) {
       </div>
     </div>
 
-    <!-- 核心指标卡片 -->
+    <!-- Metric cards -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
       <MetricCard
         v-for="metric in metrics"
@@ -192,7 +265,7 @@ function startWithTopic(topic: string, niche?: string) {
       />
     </div>
 
-    <!-- 图表区域 -->
+    <!-- Charts -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
       <Suspense>
         <TrendChart
@@ -221,9 +294,9 @@ function startWithTopic(topic: string, niche?: string) {
       </Suspense>
     </div>
 
-    <!-- 成本明细 -->
+    <!-- Cost breakdown -->
     <div v-if="analyticsStore.costData" class="card">
-      <div class="flex items-center gap-3 mb-4">
+      <div class="flex items-center gap-3 mb-5">
         <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm">
           <AppIcon name="DollarSign" size="md" variant="white" :aria-label="t('analytics.cost.title')" />
         </div>
@@ -233,16 +306,16 @@ function startWithTopic(topic: string, niche?: string) {
         </div>
       </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-        <div class="rounded-lg p-3 bg-rose-50 border border-rose-100">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+        <div class="rounded-lg p-4 bg-rose-50 border border-rose-100">
           <div class="text-xs text-rose-500 font-medium">{{ t('analytics.cost.total') }}</div>
           <div class="text-xl font-bold text-rose-700">${{ analyticsStore.costData.total_cost_usd?.toFixed(2) || '0.00' }}</div>
         </div>
-        <div class="rounded-lg p-3 bg-amber-50 border border-amber-100">
+        <div class="rounded-lg p-4 bg-amber-50 border border-amber-100">
           <div class="text-xs text-amber-500 font-medium">{{ t('analytics.cost.today') }}</div>
           <div class="text-xl font-bold text-amber-700">${{ analyticsStore.costData.today_cost_usd?.toFixed(2) || '0.00' }}</div>
         </div>
-        <div class="rounded-lg p-3 bg-emerald-50 border border-emerald-100">
+        <div class="rounded-lg p-4 bg-emerald-50 border border-emerald-100">
           <div class="text-xs text-emerald-500 font-medium">{{ t('analytics.cost.remaining') }}</div>
           <div class="text-xl font-bold text-emerald-700">${{ analyticsStore.costData.budget_remaining_usd?.toFixed(2) || '0.00' }}</div>
         </div>
@@ -250,12 +323,12 @@ function startWithTopic(topic: string, niche?: string) {
 
       <!-- By model breakdown -->
       <div v-if="analyticsStore.costData.by_model && Object.keys(analyticsStore.costData.by_model).length > 0">
-        <div class="text-xs text-slate-500 uppercase tracking-wide font-medium mb-2">{{ t('analytics.cost.byModel') }}</div>
-        <div class="space-y-1.5">
+        <div class="text-xs text-slate-500 uppercase tracking-wide font-medium mb-3">{{ t('analytics.cost.byModel') }}</div>
+        <div class="space-y-2">
           <div
             v-for="(cost, model) in analyticsStore.costData.by_model"
             :key="model"
-            class="flex items-center justify-between py-1.5 px-3 rounded bg-slate-50 border border-slate-100"
+            class="flex items-center justify-between py-2 px-4 rounded-lg bg-slate-50 border border-slate-100"
           >
             <span class="text-sm text-slate-700 font-medium">{{ model }}</span>
             <span class="text-sm text-slate-600">${{ (cost as number).toFixed(2) }}</span>
@@ -264,9 +337,9 @@ function startWithTopic(topic: string, niche?: string) {
       </div>
     </div>
 
-    <!-- 增长洞察 -->
+    <!-- Growth insights -->
     <div v-if="insights.length > 0 || trendTopics.length > 0" class="card">
-      <div class="flex items-center gap-3 mb-4">
+      <div class="flex items-center gap-3 mb-5">
         <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center shadow-sm">
           <AppIcon name="Lightbulb" size="md" variant="white" :aria-label="t('analytics.insights.title')" />
         </div>
@@ -277,11 +350,11 @@ function startWithTopic(topic: string, niche?: string) {
       </div>
 
       <!-- Insight cards -->
-      <div class="space-y-2 mb-4">
+      <div class="space-y-3 mb-5">
         <div
           v-for="(insight, idx) in insights"
           :key="idx"
-          class="flex items-start gap-3 p-3 rounded-lg border"
+          class="flex items-start gap-3 p-4 rounded-lg border"
           :class="insightBg(insight.type)"
         >
           <div class="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 mt-0.5" :class="{
@@ -297,7 +370,7 @@ function startWithTopic(topic: string, niche?: string) {
       </div>
 
       <!-- Trending topics with workflow trigger -->
-      <div v-if="trendTopics.length > 0" class="border-t border-slate-100 pt-4">
+      <div v-if="trendTopics.length > 0" class="border-t border-slate-100 pt-5">
         <div class="flex items-center justify-between mb-3">
           <span class="text-xs text-slate-500 uppercase tracking-wide font-medium">{{ t('analytics.hotTopics') }}</span>
         </div>
@@ -316,9 +389,9 @@ function startWithTopic(topic: string, niche?: string) {
       </div>
     </div>
 
-    <!-- 帖子表现列表 -->
+    <!-- Post performance table -->
     <div class="card">
-      <div class="flex items-center gap-3 mb-4">
+      <div class="flex items-center gap-3 mb-5">
         <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
           <AppIcon name="FileText" size="md" variant="white" :aria-label="t('analytics.recentPosts')" />
         </div>
