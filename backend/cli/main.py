@@ -65,7 +65,7 @@ def run(
     from dotenv import load_dotenv
 
     # 加载 .env 文件
-    load_dotenv()
+    load_dotenv(override=True)
 
     console.print(Panel("🚀 小红书增长引擎", style="bold green"))
 
@@ -170,7 +170,7 @@ def serve(
     from dotenv import load_dotenv
 
     # 加载 .env 文件
-    load_dotenv()
+    load_dotenv(override=True)
 
     console.print(Panel(f"🌐 启动 API 服务: {host}:{port}", style="bold blue"))
     uvicorn.run("backend.api.app:app", host=host, port=port, reload=True)
@@ -351,7 +351,7 @@ def config():
     from dotenv import load_dotenv
 
     # 加载 .env 文件
-    load_dotenv()
+    load_dotenv(override=True)
 
     console.print(Panel("🔧 配置检查", style="bold blue"))
 
