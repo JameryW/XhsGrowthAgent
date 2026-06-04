@@ -78,19 +78,19 @@ import {
 
 const iconMap: Record<string, Component> = {
   AlertCircle, AlertTriangle, ArrowLeft, Baby, BarChart3, BookOpen, Calendar,
-  Check, CheckCircle, ChevronDown, ChevronRight, Circle, ClipboardList,
+  Check, CheckCircle, ChevronDown, ChevronRight, ChevronUp, Circle, ClipboardList,
   Clock, Columns, Compass, Copy, Cpu, Database, DollarSign, Dumbbell,
   Edit3, FileText, FlaskConical, GitBranch, Globe, HelpCircle, History,
   ExternalLink, Home, Inbox, Keyboard, Lightbulb, List, Loader, Loader2, Lock, LogIn,
   LogOut, MessageCircle, MessageSquare, Minus, Palette, Pause, PawPrint,
   Pencil, Plane, Plus, RefreshCw, Rocket, Scan, Search, SearchX, Send,
   Settings, Shirt, Smartphone, Sparkles, Star, Trash2, TrendingUp, Upload,
-  UtensilsCrossed, Wand2, Wifi, WifiOff, X, XCircle, Zap,
+  UtensilsCrossed, Wand2, Wifi, WifiOff, X, XCircle, Zap, Eye,
 }
 
 interface Props {
   name: string
-  size?: 'sm' | 'md' | 'lg' | 'xl'
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
   variant?: 'pink' | 'cyan' | 'purple' | 'peach' | 'white'
   animate?: boolean
   ariaLabel?: string
