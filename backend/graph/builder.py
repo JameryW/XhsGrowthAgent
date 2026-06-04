@@ -255,25 +255,32 @@ def compile_graph_dev() -> CompiledStateGraph:
 
 
 async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
-    """生产模式编译 — 使用 Postgres 检查点
+    """生产模式编译 — 使用 Postgres 检查点 + 连接池
+
+    Creates a separate AsyncConnectionPool for the checkpointer.
+    The pool is returned to app.py so it can be closed on shutdown
+    alongside the app-level DB pool.
 
     Returns:
-        Tuple of (compiled graph, checkpointer) so the caller can manage
-        the checkpointer lifecycle (must close on shutdown).
-        checkpointer is None when falling back to memory.
+        Tuple of (compiled graph, (checkpointer, pool)) or (compiled graph, None)
+        when falling back to memory.
     """
     builder = build_graph()
 
     try:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        from psycopg_pool import AsyncConnectionPool
 
-        checkpointer = AsyncPostgresSaver.from_conn_string(db_uri)
+        pool = AsyncConnectionPool(db_uri, min_size=2, max_size=10, open=False)
+        await pool.open()
+        checkpointer = AsyncPostgresSaver(conn=pool)
         await checkpointer.setup()
         graph = builder.compile(
             checkpointer=checkpointer,
             interrupt_before=["review_gate", "choice_gate", "draft_gate", "brief_gate"],
         )
-        return graph, checkpointer
+        # Return pool so app.py can close it on shutdown
+        return graph, (checkpointer, pool)
     except ImportError:
         # Postgres 不可用时回退到内存
         graph = compile_graph_dev()

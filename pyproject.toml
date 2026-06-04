@@ -18,6 +18,7 @@ dependencies = [
     "httpx>=0.28",
     "tenacity>=9.0",
     "psycopg[binary]>=3.2",
+    "psycopg-pool>=3.2",
     "redis>=5.2",
     "pyyaml>=6.0",
     "rich>=13.9",

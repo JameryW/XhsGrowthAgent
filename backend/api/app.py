@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -22,29 +23,45 @@ load_dotenv(override=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动时编译图 — 基于 POSTGRES_URI 环境变量选择检查点
+    # ── DB + checkpointer initialization ──
     db_uri = os.environ.get("POSTGRES_URI")
     checkpointer = None
+    checkpoint_pool = None
+
     if db_uri:
         try:
+            # 1) Initialize app-level DB pool (for workflows table)
+            from backend.db.pool import close_pool, init_pool
+            await init_pool()
+
+            # 2) Ensure workflows table exists
+            from backend.db.workflows import ensure_table
+            await ensure_table()
+
+            # 3) Compile graph with production checkpointer (uses its own pool)
             from backend.graph.builder import compile_graph_prod
-            graph, checkpointer = await compile_graph_prod(db_uri)
-            app.state.checkpointer = checkpointer
+            graph, result = await compile_graph_prod(db_uri)
+            if result is not None:
+                checkpointer, checkpoint_pool = result
+                app.state.checkpointer = checkpointer
             app.state.graph = graph
         except Exception as e:
             logging.getLogger("xhs_growth").warning(
-                f"Postgres checkpointer failed, using memory: {e}"
+                f"Postgres setup failed, using memory: {e}"
             )
             app.state.graph = compile_graph_dev()
     else:
         app.state.graph = compile_graph_dev()
     yield
-    # Cleanup checkpointer if present
-    if checkpointer is not None:
-        try:
-            await checkpointer.__aexit__(None, None, None)
-        except Exception:
-            pass
+    # ── Cleanup ──
+    # Close checkpointer pool first (owns its connections)
+    if checkpoint_pool is not None:
+        with contextlib.suppress(Exception):
+            await checkpoint_pool.close()
+    # Close app-level DB pool
+    with contextlib.suppress(Exception):
+        from backend.db.pool import close_pool
+        await close_pool()
 
 
 app = FastAPI(
@@ -63,7 +80,14 @@ app.add_middleware(
 
 app.middleware("http")(error_handler_middleware)
 
-from backend.api.routes import analytics, auth, optimization, realtime, review, workflow  # noqa: E402
+from backend.api.routes import (  # noqa: E402
+    analytics,
+    auth,
+    optimization,
+    realtime,
+    review,
+    workflow,
+)
 from backend.api.routes.system import router as system_router  # noqa: E402
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
@@ -77,7 +101,9 @@ app.include_router(optimization.router, prefix="/api/optimization", tags=["optim
 
 @app.get("/health")
 async def health():
-    return success({"status": "ok", "version": "0.1.0"})
+    from backend.db.pool import is_pool_ready
+    db_status = "connected" if is_pool_ready() else "unavailable"
+    return success({"status": "ok", "version": "0.1.0", "db": db_status})
 
 
 # 托管前端静态文件（生产环境）

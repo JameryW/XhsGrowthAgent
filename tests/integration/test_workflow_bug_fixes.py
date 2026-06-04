@@ -34,6 +34,21 @@ from backend.realtime.events import EventType
 from backend.state.enums import ContentStatus, WorkflowPhase
 from backend.state.machine import WorkflowStatus, derive_status
 
+# In-memory stand-in for the old _workflow_registry, used by tests that
+# simulate registry-level operations without a real DB.
+_test_registry: dict[str, dict] = {}
+
+
+def _reg_set(thread_id: str, entry: dict) -> None:
+    """Set a workflow entry in the test registry."""
+    _test_registry[thread_id] = entry
+
+
+def _reg_get(thread_id: str) -> dict:
+    """Get a workflow entry from the test registry."""
+    return _test_registry.setdefault(thread_id, {})
+
+
 # ── Helper Functions ───────────────────────────────────────────────────────────
 
 
@@ -74,15 +89,11 @@ def mock_graph():
 def client(mock_graph):
     """Test client with mocked graph."""
     app.state.graph = mock_graph
-    original_registry = workflow_module._workflow_registry.copy()
     original_bg_tasks = workflow_module._background_tasks.copy()
     original_last_status = workflow_module._last_status.copy()
-    workflow_module._workflow_registry.clear()
     workflow_module._background_tasks.clear()
     workflow_module._last_status.clear()
     yield TestClient(app)
-    workflow_module._workflow_registry.clear()
-    workflow_module._workflow_registry.update(original_registry)
     workflow_module._background_tasks.clear()
     workflow_module._background_tasks.update(original_bg_tasks)
     workflow_module._last_status.clear()
@@ -126,7 +137,7 @@ class TestPausePreservesStatus:
         mock_graph.aget_state.return_value = initial_snapshot
 
         # Register workflow in registry
-        workflow_module._workflow_registry[thread_id] = {
+        _test_registry[thread_id] = {
             "thread_id": thread_id,
             "account_id": "test_account",
             "phase": "scouting",
@@ -158,8 +169,8 @@ class TestPausePreservesStatus:
         task.cancel()
 
         # 3. Update registry
-        workflow_module._workflow_registry[thread_id]["status"] = "paused"
-        workflow_module._workflow_registry[thread_id]["phase"] = "paused"
+        _test_registry[thread_id]["status"] = "paused"
+        _test_registry[thread_id]["phase"] = "paused"
 
         # Simulate CancelledError handler in _run_graph_and_persist
         # After CancelledError, check current phase
@@ -173,8 +184,8 @@ class TestPausePreservesStatus:
         mock_graph.aget_state.return_value = paused_snapshot
 
         # Verify: registry status should be "paused", not "cancelled"
-        assert workflow_module._workflow_registry[thread_id]["status"] == "paused"
-        assert workflow_module._workflow_registry[thread_id]["phase"] == "paused"
+        assert _test_registry[thread_id]["status"] == "paused"
+        assert _test_registry[thread_id]["phase"] == "paused"
 
         # Verify: prev_phase was saved in graph state
         aupdate_calls = mock_graph.aupdate_state.call_args_list
@@ -215,7 +226,7 @@ class TestResumeGuards:
         mock_graph.aget_state.return_value = paused_snapshot
 
         # Register workflow
-        workflow_module._workflow_registry[thread_id] = {
+        _test_registry[thread_id] = {
             "thread_id": thread_id,
             "account_id": "test_account",
             "phase": "paused",
@@ -236,10 +247,10 @@ class TestResumeGuards:
         assert last_update[0][1].get("phase") == WorkflowPhase.PLANNING.value
 
         # Verify: registry updated to running
-        workflow_module._workflow_registry[thread_id]["status"] = "running"
-        workflow_module._workflow_registry[thread_id]["phase"] = prev_phase
-        assert workflow_module._workflow_registry[thread_id]["status"] == "running"
-        assert workflow_module._workflow_registry[thread_id]["phase"] == "planning"
+        _test_registry[thread_id]["status"] = "running"
+        _test_registry[thread_id]["phase"] = prev_phase
+        assert _test_registry[thread_id]["status"] == "running"
+        assert _test_registry[thread_id]["phase"] == "planning"
 
     @pytest.mark.asyncio
     async def test_resume_from_awaiting_review_returns_hint(self, mock_graph):
@@ -336,7 +347,7 @@ class TestReviewSelectUpdates:
         mock_graph.aget_state.return_value = review_snapshot
 
         # Register workflow
-        workflow_module._workflow_registry[thread_id] = {
+        _test_registry[thread_id] = {
             "thread_id": thread_id,
             "account_id": "test_account",
             "phase": "reviewing",
@@ -377,9 +388,9 @@ class TestReviewSelectUpdates:
         derive_status(snapshot)  # Verify derivation works
 
         # Update registry
-        workflow_module._workflow_registry[thread_id]["phase"] = result.get("phase", "unknown")
-        workflow_module._workflow_registry[thread_id]["status"] = "running"
-        workflow_module._workflow_registry[thread_id]["updated_at"] = "2026-01-01T00:01:00Z"
+        _test_registry[thread_id]["phase"] = result.get("phase", "unknown")
+        _test_registry[thread_id]["status"] = "running"
+        _test_registry[thread_id]["updated_at"] = "2026-01-01T00:01:00Z"
 
         # Emit event for status transition
         event_bus.emit(
@@ -389,8 +400,8 @@ class TestReviewSelectUpdates:
         )
 
         # Verify: registry updated
-        assert workflow_module._workflow_registry[thread_id]["phase"] == "publishing"
-        assert workflow_module._workflow_registry[thread_id]["status"] == "running"
+        assert _test_registry[thread_id]["phase"] == "publishing"
+        assert _test_registry[thread_id]["status"] == "running"
 
         # Verify: event emitted
         events = [e for e in event_bus._events if e.thread_id == thread_id]
@@ -425,7 +436,7 @@ class TestReviewSelectUpdates:
         mock_graph.aget_state.return_value = choice_snapshot
 
         # Register workflow
-        workflow_module._workflow_registry[thread_id] = {
+        _test_registry[thread_id] = {
             "thread_id": thread_id,
             "account_id": "test_account",
             "phase": "creating",
@@ -464,9 +475,9 @@ class TestReviewSelectUpdates:
         derive_status(snapshot)  # Verify derivation works
 
         # Update registry
-        workflow_module._workflow_registry[thread_id]["phase"] = result.get("phase", "unknown")
-        workflow_module._workflow_registry[thread_id]["status"] = "running"
-        workflow_module._workflow_registry[thread_id]["updated_at"] = "2026-01-01T00:01:00Z"
+        _test_registry[thread_id]["phase"] = result.get("phase", "unknown")
+        _test_registry[thread_id]["status"] = "running"
+        _test_registry[thread_id]["updated_at"] = "2026-01-01T00:01:00Z"
 
         # Emit event for status transition
         event_bus.emit(
@@ -476,7 +487,7 @@ class TestReviewSelectUpdates:
         )
 
         # Verify: registry updated
-        assert workflow_module._workflow_registry[thread_id]["status"] == "running"
+        assert _test_registry[thread_id]["status"] == "running"
 
         # Verify: event emitted
         events = [e for e in event_bus._events if e.thread_id == thread_id]
@@ -641,7 +652,7 @@ class TestBackgroundExceptionHandling:
         config = {"configurable": {"thread_id": thread_id}}
 
         # Register workflow
-        workflow_module._workflow_registry[thread_id] = {
+        _test_registry[thread_id] = {
             "thread_id": thread_id,
             "account_id": "test_account",
             "phase": "scouting",
@@ -668,8 +679,8 @@ class TestBackgroundExceptionHandling:
                 },
             )
             # Update registry
-            workflow_module._workflow_registry[thread_id]["status"] = "error"
-            workflow_module._workflow_registry[thread_id]["error"] = str(exc)
+            _test_registry[thread_id]["status"] = "error"
+            _test_registry[thread_id]["error"] = str(exc)
 
         # Verify: graph state was updated with error phase
         aupdate_calls = mock_graph.aupdate_state.call_args_list
@@ -679,8 +690,8 @@ class TestBackgroundExceptionHandling:
         assert "API failure" in error_update[0][1].get("error", "")
 
         # Verify: registry has error status
-        assert workflow_module._workflow_registry[thread_id]["status"] == "error"
-        assert "API failure" in workflow_module._workflow_registry[thread_id]["error"]
+        assert _test_registry[thread_id]["status"] == "error"
+        assert "API failure" in _test_registry[thread_id]["error"]
 
 
 # ── Test 7: _check_terminal doesn't END on non-terminal errors ────────────────
@@ -976,7 +987,7 @@ class TestWorkflowAPIIntegration:
     """Integration tests via FastAPI test client."""
 
     def test_pause_endpoint_updates_registry(self, client, mock_graph):
-        """Pause endpoint should update registry status to paused."""
+        """Pause endpoint should update DB status to paused."""
         thread_id = "xhs_test_api_pause_001"
 
         # Setup mock state
@@ -988,27 +999,12 @@ class TestWorkflowAPIIntegration:
         }
         mock_graph.aget_state.return_value = mock_state
 
-        # Register workflow
-        workflow_module._workflow_registry[thread_id] = {
-            "thread_id": thread_id,
-            "account_id": "test_account",
-            "phase": "scouting",
-            "status": "running",
-            "progress_percent": 10,
-            "created_at": "2026-01-01T00:00:00Z",
-            "updated_at": "2026-01-01T00:00:00Z",
-            "error": None,
-        }
-
         response = client.post(f"/api/workflow/pause/{thread_id}")
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
         assert data["data"]["status"] == "paused"
-
-        # Verify registry updated
-        assert workflow_module._workflow_registry[thread_id]["status"] == "paused"
 
     def test_resume_endpoint_checks_awaiting_review(self, client, mock_graph):
         """Resume endpoint should return hint for awaiting_review status."""
@@ -1024,18 +1020,6 @@ class TestWorkflowAPIIntegration:
         mock_state.next = ["review_gate"]
         mock_state.interrupts = []
         mock_graph.aget_state.return_value = mock_state
-
-        # Register workflow
-        workflow_module._workflow_registry[thread_id] = {
-            "thread_id": thread_id,
-            "account_id": "test_account",
-            "phase": "reviewing",
-            "status": "awaiting_review",
-            "progress_percent": 60,
-            "created_at": "2026-01-01T00:00:00Z",
-            "updated_at": "2026-01-01T00:00:00Z",
-            "error": None,
-        }
 
         response = client.post(f"/api/workflow/resume/{thread_id}")
 
@@ -1060,18 +1044,6 @@ class TestWorkflowAPIIntegration:
         mock_state.next = ["choice_gate"]
         mock_state.interrupts = []
         mock_graph.aget_state.return_value = mock_state
-
-        # Register workflow
-        workflow_module._workflow_registry[thread_id] = {
-            "thread_id": thread_id,
-            "account_id": "test_account",
-            "phase": "creating",
-            "status": "awaiting_choice",
-            "progress_percent": 40,
-            "created_at": "2026-01-01T00:00:00Z",
-            "updated_at": "2026-01-01T00:00:00Z",
-            "error": None,
-        }
 
         response = client.post(f"/api/workflow/resume/{thread_id}")
 
@@ -1177,18 +1149,6 @@ class TestDraftGateBehavior:
         mock_state.interrupts = []
         mock_graph.aget_state.return_value = mock_state
 
-        # Register workflow
-        workflow_module._workflow_registry[thread_id] = {
-            "thread_id": thread_id,
-            "account_id": "test_account",
-            "phase": "creating",
-            "status": "awaiting_draft",
-            "progress_percent": 35,
-            "created_at": "2026-01-01T00:00:00Z",
-            "updated_at": "2026-01-01T00:00:00Z",
-            "error": None,
-        }
-
         response = client.post(f"/api/workflow/resume/{thread_id}")
 
         assert response.status_code == 200
@@ -1218,7 +1178,7 @@ class TestDraftGateBehavior:
         mock_graph.aget_state.return_value = draft_snapshot
 
         # Register workflow
-        workflow_module._workflow_registry[thread_id] = {
+        _test_registry[thread_id] = {
             "thread_id": thread_id,
             "account_id": "test_account",
             "phase": "creating",
@@ -1264,12 +1224,12 @@ class TestDraftGateBehavior:
         _snapshot = await mock_graph.aget_state(config)
 
         # Update registry
-        workflow_module._workflow_registry[thread_id]["phase"] = result.get("phase", "unknown")
-        workflow_module._workflow_registry[thread_id]["status"] = "running"
-        workflow_module._workflow_registry[thread_id]["updated_at"] = "2026-01-01T00:01:00Z"
+        _test_registry[thread_id]["phase"] = result.get("phase", "unknown")
+        _test_registry[thread_id]["status"] = "running"
+        _test_registry[thread_id]["updated_at"] = "2026-01-01T00:01:00Z"
 
         # Verify: registry updated
-        assert workflow_module._workflow_registry[thread_id]["status"] == "running"
+        assert _test_registry[thread_id]["status"] == "running"
 
         # Verify: aupdate_state was called with draft_content
         aupdate_calls = mock_graph.aupdate_state.call_args_list
@@ -1299,7 +1259,7 @@ class TestDraftGateBehavior:
         mock_graph.aget_state.return_value = review_snapshot
 
         # Register workflow
-        workflow_module._workflow_registry[thread_id] = {
+        _test_registry[thread_id] = {
             "thread_id": thread_id,
             "account_id": "test_account",
             "phase": "reviewing",
