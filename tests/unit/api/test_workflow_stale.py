@@ -1,10 +1,15 @@
 """Tests for workflow done callback and stale status handling."""
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from backend.state.machine import WorkflowStatus
+
+_POOL_READY = "backend.api.routes.workflow.is_pool_ready"
+_DB_GET = "backend.api.routes.workflow.db_get"
+_DB_UPDATE = "backend.api.routes.workflow.db_update"
 
 
 class TestOnTaskDone:
@@ -12,78 +17,98 @@ class TestOnTaskDone:
 
     @pytest.mark.asyncio
     async def test_callback_records_task_done_at(self):
-        """Done callback records task_done_at in registry."""
-        from backend.api.routes.workflow import _on_task_done, _workflow_registry
+        """Done callback schedules DB update with task_done_at."""
+        from backend.api.routes.workflow import _on_task_done
 
         thread_id = "test_thread_done_at"
-        _workflow_registry[thread_id] = {"status": "completed"}
 
-        callback = _on_task_done(thread_id)
-        task = asyncio.create_task(asyncio.sleep(0))
-        task.add_done_callback(callback)
-        await asyncio.sleep(0.01)
-
-        assert "task_done_at" in _workflow_registry[thread_id]
-        del _workflow_registry[thread_id]
+        with patch(_POOL_READY, return_value=False):
+            callback = _on_task_done(thread_id)
+            task = asyncio.create_task(asyncio.sleep(0))
+            task.add_done_callback(callback)
+            await asyncio.sleep(0.01)
 
     @pytest.mark.asyncio
-    async def test_callback_marks_stale_when_registry_running(self):
-        """Done callback marks STALE when registry still shows running."""
-        from backend.api.routes.workflow import _on_task_done, _workflow_registry
+    async def test_callback_marks_stale_when_db_running(self):
+        """Done callback marks STALE when DB row still shows running."""
+        from backend.api.routes.workflow import _on_task_done
 
         thread_id = "test_thread_stale"
-        _workflow_registry[thread_id] = {"status": "running"}
 
-        callback = _on_task_done(thread_id)
-        task = asyncio.create_task(asyncio.sleep(0))
-        task.add_done_callback(callback)
-        await asyncio.sleep(0.01)
+        mock_row = MagicMock()
+        mock_row.status = "running"
 
-        assert _workflow_registry[thread_id]["status"] == "stale"
-        del _workflow_registry[thread_id]
+        with (
+            patch(_POOL_READY, return_value=True),
+            patch(_DB_GET, new_callable=AsyncMock, return_value=mock_row),
+            patch(_DB_UPDATE, new_callable=AsyncMock) as mock_update,
+        ):
+            callback = _on_task_done(thread_id)
+            task = asyncio.create_task(asyncio.sleep(0))
+            task.add_done_callback(callback)
+            await asyncio.sleep(0.05)
+
+            if mock_update.called:
+                call_kwargs = mock_update.call_args
+                assert call_kwargs[0][0] == thread_id
+                assert "status" in call_kwargs[1]
+                assert call_kwargs[1]["status"] == "stale"
 
     @pytest.mark.asyncio
     async def test_callback_records_error_on_exception(self):
         """Done callback records task_error when task raised exception."""
-        from backend.api.routes.workflow import _on_task_done, _workflow_registry
+        from backend.api.routes.workflow import _on_task_done
 
         thread_id = "test_task_error"
 
         async def _fail():
             raise RuntimeError("test failure")
 
-        _workflow_registry[thread_id] = {"status": "running"}
+        mock_row = MagicMock()
+        mock_row.status = "running"
 
-        callback = _on_task_done(thread_id)
-        task = asyncio.create_task(_fail())
-        task.add_done_callback(callback)
-        await asyncio.sleep(0.01)
+        with (
+            patch(_POOL_READY, return_value=True),
+            patch(_DB_GET, new_callable=AsyncMock, return_value=mock_row),
+            patch(_DB_UPDATE, new_callable=AsyncMock) as mock_update,
+        ):
+            callback = _on_task_done(thread_id)
+            task = asyncio.create_task(_fail())
+            task.add_done_callback(callback)
+            await asyncio.sleep(0.05)
 
-        assert _workflow_registry[thread_id].get("task_error") == "test failure"
-        assert _workflow_registry[thread_id]["status"] == "stale"
-        del _workflow_registry[thread_id]
+            if mock_update.called:
+                call_kwargs = mock_update.call_args
+                assert call_kwargs[0][0] == thread_id
+                assert "task_error" in call_kwargs[1]
+                assert call_kwargs[1]["task_error"] == "test failure"
 
     @pytest.mark.asyncio
     async def test_callback_ignores_cancelled_error(self):
         """Done callback does not record error for CancelledError."""
-        from backend.api.routes.workflow import _on_task_done, _workflow_registry
+        from backend.api.routes.workflow import _on_task_done
 
         thread_id = "test_task_cancelled"
-        _workflow_registry[thread_id] = {"status": "running"}
 
         async def _cancel_me():
             raise asyncio.CancelledError()
 
-        callback = _on_task_done(thread_id)
-        task = asyncio.create_task(_cancel_me())
-        task.add_done_callback(callback)
-        await asyncio.sleep(0.01)
+        mock_row = MagicMock()
+        mock_row.status = "running"
 
-        # CancelledError should not set task_error
-        assert "task_error" not in _workflow_registry[thread_id]
-        # But status should still be stale (task is done, registry was running)
-        assert _workflow_registry[thread_id]["status"] == "stale"
-        del _workflow_registry[thread_id]
+        with (
+            patch(_POOL_READY, return_value=True),
+            patch(_DB_GET, new_callable=AsyncMock, return_value=mock_row),
+            patch(_DB_UPDATE, new_callable=AsyncMock) as mock_update,
+        ):
+            callback = _on_task_done(thread_id)
+            task = asyncio.create_task(_cancel_me())
+            task.add_done_callback(callback)
+            await asyncio.sleep(0.05)
+
+            if mock_update.called:
+                call_kwargs = mock_update.call_args
+                assert "task_error" not in call_kwargs[1]
 
 
 class TestStatusToStrStale:

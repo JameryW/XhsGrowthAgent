@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Vue component conventions for building BriefFileUpload shared component"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Pinia store patterns for adding uploadBriefPdf action"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Workflow state schema — brief_content structure and source_type field"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error handling patterns for upload failures and validation"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Frontend-backend API integration patterns"}

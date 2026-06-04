@@ -16,49 +16,44 @@ from backend.state.machine import WorkflowStatus, derive_status
 
 logger = logging.getLogger("xhs_growth.api.runner")
 
-# These are set by the importing module (workflow.py) so the runner can access
-# the shared registry / persistence helpers without circular imports.
-_workflow_registry: dict[str, dict] = {}
+# Track threads currently executing via synchronous request handlers
+# (submit_draft, select_version, etc.) so derive_status knows the graph
+# is actively running even without a background asyncio.Task entry.
+_active_sync_executions: set[str] = set()
+
+# Background task registry (for cancellation + has_active checks)
 _background_tasks: dict[str, asyncio.Task] = {}
+
+# Track last known status per thread to detect transitions
 _last_status: dict[str, WorkflowStatus] = {}
 
 
-def bind_registry(
-    registry: dict[str, dict],
-    background_tasks: dict[str, asyncio.Task],
-    last_status: dict[str, WorkflowStatus],
-) -> None:
-    """Bind the shared mutable dicts from workflow.py into this module.
-
-    Must be called once at module import time (workflow.py does this at the
-    bottom of its module body).
-    """
-    global _workflow_registry, _background_tasks, _last_status
-    _workflow_registry = registry
-    _background_tasks = background_tasks
-    _last_status = last_status
-
-
-def _save_registry() -> None:
-    """Persist workflow registry — delegates to workflow.py's _save_registry.
-
-    This is a thin wrapper; the actual implementation is monkey-patched by
-    workflow.py after bind_registry() so we don't duplicate the file I/O logic.
-    """
-    _save_registry_fn()
-
-
-# Placeholder — overwritten by workflow.py after bind_registry
-_save_registry_fn = lambda: None  # noqa: E731
-
-
-def _save_workflow_result(thread_id: str, state_values: dict) -> None:
-    """Persist completed workflow result — delegates to workflow.py."""
-    _save_workflow_result_fn(thread_id, state_values)
-
-
-# Placeholder — overwritten by workflow.py after bind_registry
-_save_workflow_result_fn = lambda tid, sv: None  # noqa: E731
+async def _db_upsert(thread_id: str, **fields: Any) -> None:
+    """Create or update a workflow row in DB. No-ops if DB is unavailable."""
+    try:
+        from backend.db.pool import is_pool_ready
+        if not is_pool_ready():
+            return
+        from backend.db.workflows import (
+            WorkflowRow,
+        )
+        from backend.db.workflows import (
+            create_workflow as db_create,
+        )
+        from backend.db.workflows import (
+            get_workflow as db_get,
+        )
+        from backend.db.workflows import (
+            update_workflow as db_update,
+        )
+        existing = await db_get(thread_id)
+        if existing:
+            await db_update(thread_id, **fields)
+        else:
+            row = WorkflowRow(thread_id=thread_id, **fields)
+            await db_create(row)
+    except Exception:
+        logger.exception("DB upsert failed for %s", thread_id)
 
 
 def _emit_status_transition(
@@ -66,23 +61,15 @@ def _emit_status_transition(
     thread_id: str,
     snapshot: StateSnapshot | None = None,
 ) -> None:
-    """Emit events when workflow status transitions.
-
-    Enhanced to accept an optional snapshot for richer payloads (prepared for
-    Fix 4 — the actual payload enrichment will be done there, but the
-    signature is ready now).
-    """
+    """Emit events when workflow status transitions."""
     old_status = _last_status.get(thread_id)
     if old_status == new_status:
-        return  # No transition, skip
+        return
     _last_status[thread_id] = new_status
 
     bus = EventBusService.get_instance()
 
-    # Build payload — snapshot enrichment placeholder
-    payload: dict[str, Any] = {
-        "status": new_status.value,
-    }
+    payload: dict[str, Any] = {"status": new_status.value}
     if snapshot is not None:
         values = snapshot.values or {}
         payload["phase"] = values.get("phase")
@@ -90,20 +77,15 @@ def _emit_status_transition(
         payload["next_steps"] = list(snapshot.next) if snapshot.next else []
 
     if new_status == WorkflowStatus.AWAITING_REVIEW:
-        # Enrich payload with content data so frontend can display review UI
         if snapshot is not None:
             values = snapshot.values or {}
             payload["content_plan"] = values.get("content_plan", {})
             payload["copy_content"] = values.get("copy_content", {})
             payload["visual_plan"] = values.get("visual_plan", {})
             payload["version_history"] = values.get("content_versions", [])
-        bus.emit(
-            EventType.REVIEW_PENDING,
-            thread_id=thread_id,
-            payload=payload,
-        )
+        bus.emit(EventType.REVIEW_PENDING, thread_id=thread_id, payload=payload)
+
     elif new_status == WorkflowStatus.AWAITING_CHOICE:
-        # Enrich payload with versions/draft/analysis for choice UI
         if snapshot is not None:
             values = snapshot.values or {}
             payload["data"] = {
@@ -113,23 +95,14 @@ def _emit_status_transition(
             }
         else:
             payload["data"] = {}
-        bus.emit(
-            EventType.WORKFLOW_DATA_UPDATED,
-            thread_id=thread_id,
-            payload=payload,
-        )
+        bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
 
     elif new_status == WorkflowStatus.AWAITING_DRAFT:
-        # Enrich payload with copy_content for draft UI
         if snapshot is not None:
             values = snapshot.values or {}
             payload["copy_content"] = values.get("copy_content", {})
             payload["content_plan"] = values.get("content_plan", {})
-        bus.emit(
-            EventType.WORKFLOW_DATA_UPDATED,
-            thread_id=thread_id,
-            payload=payload,
-        )
+        bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
 
 
 def _status_to_str(
@@ -137,7 +110,7 @@ def _status_to_str(
     has_error: str | None = None,
     final_phase: str = "unknown",
 ) -> str:
-    """Map WorkflowStatus enum to the string stored in the registry."""
+    """Map WorkflowStatus enum to the string stored in DB."""
     mapping = {
         WorkflowStatus.ERROR: "error",
         WorkflowStatus.CANCELLED: "cancelled",
@@ -152,38 +125,57 @@ def _status_to_str(
     status = mapping.get(derived)
     if status:
         return status
-    # Fallback: phase stuck at early stage with error = premature termination
     if has_error or final_phase in ("scouting", "error"):
         return "error"
     return "completed"
+
+
+def _save_history_file(thread_id: str, state_values: dict) -> None:
+    """Persist completed workflow result to history file."""
+    try:
+        import json
+        import os
+        from pathlib import Path
+
+        history_dir = Path(os.environ.get("XHS_REGISTRY_PATH", ".xhs")) / "history"
+        history_dir.mkdir(parents=True, exist_ok=True)
+        path = history_dir / f"{thread_id}.json"
+        path.write_text(json.dumps(state_values, default=str, ensure_ascii=False))
+    except Exception:
+        logger.exception("Failed to save history for %s", thread_id)
 
 
 async def _run_graph_and_persist(
     thread_id: str,
     graph: Any,
     config: dict,
-    input_data: Any,  # initial_state dict, None (for resume), or Command
+    input_data: Any,
     *,
-    source: str = "start",  # for logging: "start", "resume", "review", "select", "draft"
+    source: str = "start",
 ) -> dict:
     """Unified graph execution + status persistence + event emission.
 
     All graph invocations should go through this function to ensure:
     - Consistent status derivation via derive_status()
-    - Registry/history updates
+    - DB updates
     - Status transition events (awaiting_review, awaiting_choice, etc.)
     - Background task registration
     - Exception handling with graph state phase=ERROR fallback
     """
+    is_sync = source not in ("start", "resume")
+    if is_sync:
+        _active_sync_executions.add(thread_id)
+
     try:
         result = await graph.ainvoke(input_data, config)
 
-        # Derive status from snapshot for consistent results
         snapshot = await graph.aget_state(config)
-        has_active = thread_id in _background_tasks and not _background_tasks[thread_id].done()
+        has_active = (
+            (thread_id in _background_tasks and not _background_tasks[thread_id].done())
+            or (thread_id in _active_sync_executions)
+        )
         derived = derive_status(snapshot, has_active_task=has_active)
 
-        # Emit status transition events (e.g. awaiting_review, awaiting_choice)
         _emit_status_transition(derived, thread_id, snapshot=snapshot)
 
         final_phase = result.get("phase", "unknown") if result else "unknown"
@@ -192,45 +184,50 @@ async def _run_graph_and_persist(
 
         progress = 100 if final_status == "completed" else 0
 
-        _workflow_registry[thread_id]["phase"] = final_phase
-        _workflow_registry[thread_id]["status"] = final_status
-        _workflow_registry[thread_id]["progress_percent"] = progress
-        _workflow_registry[thread_id]["error"] = has_error
-        _workflow_registry[thread_id]["updated_at"] = datetime.now(UTC).isoformat()
-        _save_registry()
+        await _db_upsert(
+            thread_id,
+            phase=final_phase,
+            status=final_status,
+            progress_percent=progress,
+            error=has_error,
+            updated_at=datetime.now(UTC).isoformat(),
+        )
 
         if final_status in ("completed", "error"):
-            _save_workflow_result(thread_id, result or {})
+            _save_history_file(thread_id, result or {})
 
         return result or {}
 
     except asyncio.CancelledError:
-        # Check current phase — if paused, keep paused (not cancelled)
         try:
             snapshot = await graph.aget_state(config)
             current_phase = (snapshot.values or {}).get("phase", "unknown")
             if current_phase == "paused":
-                _workflow_registry[thread_id]["status"] = "paused"
-                _workflow_registry[thread_id]["error"] = None
+                await _db_upsert(thread_id, status="paused", phase="paused", error=None)
             else:
-                _workflow_registry[thread_id]["status"] = "cancelled"
-                _workflow_registry[thread_id]["error"] = "Task cancelled"
+                await _db_upsert(
+                    thread_id, status="cancelled", phase="cancelled", error="Task cancelled"
+                )
         except Exception:
-            _workflow_registry[thread_id]["status"] = "cancelled"
-            _workflow_registry[thread_id]["error"] = "Task cancelled"
-        _save_registry()
+            await _db_upsert(
+                thread_id, status="cancelled", phase="cancelled", error="Task cancelled"
+            )
         raise
 
     except Exception as exc:
         logger.exception("Graph execution failed (source=%s, thread=%s)", source, thread_id)
-        # Write error to graph state so derive_status picks it up
         with contextlib.suppress(Exception):
             await graph.aupdate_state(config, {"phase": "error", "error": str(exc)})
-        _workflow_registry[thread_id]["status"] = "error"
-        _workflow_registry[thread_id]["error"] = str(exc)
-        _workflow_registry[thread_id]["updated_at"] = datetime.now(UTC).isoformat()
-        _save_registry()
+        await _db_upsert(
+            thread_id,
+            status="error",
+            phase="error",
+            error=str(exc),
+            updated_at=datetime.now(UTC).isoformat(),
+        )
         raise
 
     finally:
+        if is_sync:
+            _active_sync_executions.discard(thread_id)
         _background_tasks.pop(thread_id, None)

@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+import BriefFileUpload from '@/components/BriefFileUpload.vue'
+import { useWorkflowStore } from '@/stores/workflow'
 import type { WorkflowPhase } from '@/types/workflow'
 
 const { t } = useI18n()
+const workflowStore = useWorkflowStore()
 
 export type WorkflowMode = 'trend' | 'brief'
 
@@ -31,6 +34,23 @@ const autoPublish = ref(false)
 const topic = ref(props.initialTopic || '')
 const niche = ref('母婴')
 const briefText = ref('')
+const briefPdfText = ref<string | null>(null)
+const hasPdfUpload = computed(() => !!briefPdfText.value)
+
+function onBriefPdfUpload(file: File) {
+  if (!workflowStore.currentThreadId) return
+  workflowStore.uploadBriefPdf(workflowStore.currentThreadId, file)
+}
+
+function onBriefPdfConfirm(text: string) {
+  briefPdfText.value = text
+  briefText.value = '' // Clear text input when PDF confirmed
+}
+
+function onBriefPdfClear() {
+  briefPdfText.value = null
+  workflowStore.clearBriefUpload()
+}
 
 // When switching to brief mode, auto-set phase to scouting (brief starts from orchestrator)
 // When switching to trend mode, keep current phase
@@ -61,6 +81,7 @@ const phases: { value: WorkflowPhase; key: string; icon: string }[] = [
 ]
 
 function getConfig(): WorkflowConfig {
+  const effectiveBriefText = briefPdfText.value || briefText.value.trim() || undefined
   return {
     accountId: accountId.value.trim(),
     phase: phase.value,
@@ -69,7 +90,7 @@ function getConfig(): WorkflowConfig {
     topic: topic.value.trim() || undefined,
     niche: niche.value,
     workflowMode: workflowMode.value,
-    briefText: workflowMode.value === 'brief' ? briefText.value.trim() || undefined : undefined,
+    briefText: workflowMode.value === 'brief' ? effectiveBriefText : undefined,
   }
 }
 
@@ -160,24 +181,49 @@ defineExpose({ getConfig })
       <p class="text-xs text-slate-400 mt-1.5 pl-1">{{ t('home.form.topicHelp') }}</p>
     </div>
 
-    <!-- Brief text (brief mode only) -->
-    <div v-if="workflowMode === 'brief'" class="group">
-      <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
-        <AppIcon name="FileText" size="sm" variant="pink" />
-        {{ t('home.form.briefText') }}
-      </label>
-      <div class="relative">
-        <textarea
-          v-model="briefText"
-          rows="6"
-          class="w-full pl-4 pr-4 py-3 rounded-xl border-2 border-slate-100 bg-slate-50/50 text-sm text-slate-700 font-medium
-                 transition-all duration-300 ease-out resize-y
-                 focus:outline-none focus:border-neon-pink/40 focus:bg-white focus:shadow-neon-pink-sm
-                 placeholder:text-slate-300 placeholder:font-normal"
-          :placeholder="t('home.form.briefTextPlaceholder')"
-        />
+    <!-- Brief input (brief mode only) -->
+    <div v-if="workflowMode === 'brief'" class="space-y-4">
+      <!-- PDF upload -->
+      <BriefFileUpload
+        :is-uploading="workflowStore.isBriefUploading"
+        :uploaded-text="workflowStore.briefUploadedText"
+        :source-type="workflowStore.briefSourceType"
+        :thread-id="workflowStore.currentThreadId || ''"
+        @upload="onBriefPdfUpload"
+        @confirm="onBriefPdfConfirm"
+        @clear="onBriefPdfClear"
+      />
+
+      <!-- Divider between upload and text input -->
+      <div class="flex items-center gap-3 py-1">
+        <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+        <span class="text-xs text-slate-400 font-medium">{{ t('brief.orText') }}</span>
+        <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
       </div>
-      <p class="text-xs text-slate-400 mt-1.5 pl-1">{{ t('home.form.briefTextHelp') }}</p>
+
+      <!-- Text input (disabled when PDF is uploaded) -->
+      <div class="group">
+        <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
+          <AppIcon name="FileText" size="sm" variant="pink" />
+          {{ t('home.form.briefText') }}
+        </label>
+        <div class="relative">
+          <textarea
+            v-model="briefText"
+            rows="6"
+            :disabled="hasPdfUpload"
+            :class="[
+              'w-full pl-4 pr-4 py-3 rounded-xl border-2 text-sm text-slate-700 font-medium',
+              'transition-all duration-300 ease-out resize-y',
+              hasPdfUpload
+                ? 'border-slate-100 bg-slate-100/50 text-slate-400 cursor-not-allowed'
+                : 'bg-slate-50/50 border-slate-100 focus:outline-none focus:border-neon-pink/40 focus:bg-white focus:shadow-neon-pink-sm placeholder:text-slate-300 placeholder:font-normal'
+            ]"
+            :placeholder="hasPdfUpload ? t('brief.textDisabledByPdf') : t('home.form.briefTextPlaceholder')"
+          />
+        </div>
+        <p class="text-xs text-slate-400 mt-1.5 pl-1">{{ t('home.form.briefTextHelp') }}</p>
+      </div>
     </div>
 
     <!-- Divider -->

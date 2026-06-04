@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Verify component follows project conventions"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Verify store patterns and toast notifications"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Verify brief_content state structure is preserved"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify error handling matches project patterns"}

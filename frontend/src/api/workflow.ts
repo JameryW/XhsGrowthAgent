@@ -2,6 +2,13 @@ import client from './client'
 import type { WorkflowStartRequest, WorkflowResponse, WorkflowStateResponse, WorkflowListResponse } from '@/types/workflow'
 import { useRetry } from '@/composables/useRetry'
 
+// Brief upload result from backend
+export interface BriefUploadResult {
+  thread_id: string
+  brief_text: string
+  source_type: string
+}
+
 // 工作流列表
 export async function listWorkflows(params?: {
   account_id?: string
@@ -98,4 +105,25 @@ export async function selectVersion(threadId: string, choice: {
     const result = await client.post(`/optimization/select/${threadId}`, choice) as { thread_id: string; status: string; next_phase: string }
     return result
   })
+}
+
+// Upload brief PDF file — uses FormData, can't go through axios JSON interceptor
+export async function uploadBriefFile(threadId: string, file: File): Promise<BriefUploadResult> {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const res = await fetch(`/api/workflow/brief/upload/${threadId}`, {
+    method: 'POST',
+    body: formData,
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    const msg = body?.error?.message || body?.detail || `Upload failed: ${res.status}`
+    throw new Error(msg)
+  }
+
+  const json = await res.json()
+  // Backend wraps in ApiResponse: { success, data: {...} }
+  return json.data as BriefUploadResult
 }

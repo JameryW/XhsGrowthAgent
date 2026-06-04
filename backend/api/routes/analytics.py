@@ -9,7 +9,8 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from backend.api.responses import success
-from backend.api.routes.workflow import _workflow_registry
+from backend.db.pool import is_pool_ready
+from backend.db.workflows import list_workflows as db_list
 
 router = APIRouter()
 
@@ -41,18 +42,18 @@ async def _get_completed_workflows(
         return cached
 
     results = []
-    for wf in _workflow_registry.values():
-        if wf.get("status") != "completed":
-            continue
-        if account_id and wf.get("account_id") != account_id:
-            continue
-        try:
-            config = {"configurable": {"thread_id": wf["thread_id"]}}
-            state = await graph.aget_state(config)
-            if state.values:
-                results.append({**wf, "_state": state.values})
-        except Exception:
-            continue
+    if is_pool_ready():
+        rows, _ = await db_list(status="completed", limit=100)
+        for row in rows:
+            if account_id and row.account_id != account_id:
+                continue
+            try:
+                config = {"configurable": {"thread_id": row.thread_id}}
+                state = await graph.aget_state(config)
+                if state.values:
+                    results.append({**row.to_dict(), "_state": state.values})
+            except Exception:
+                continue
 
     _set_cached(cache_key, results)
     return results

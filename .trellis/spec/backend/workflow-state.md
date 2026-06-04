@@ -169,7 +169,34 @@ Graph pauses at review_gate (interrupt_before) → API calls derive_status() →
   _emit_status_transition() emits REVIEW_PENDING event
 ```
 
-The `_emit_status_transition` function in `workflow.py:110` handles this automatically. It tracks the last known status per thread and only emits on transitions.
+The `_emit_status_transition` function in `_runner.py` handles this automatically. It tracks the last known status per thread and only emits on transitions.
+
+## Workflow Metadata Persistence
+
+### Status writes go to DB
+
+All status updates (phase, status, progress_percent, error) are persisted to the `workflows` PostgreSQL table via `_db_upsert()` in `backend/api/routes/_runner.py`. The old JSON file registry (`_persist_registry` / `_save_registry`) has been removed.
+
+### Status reads: live snapshot first, DB/history fallback
+
+The `/status/{thread_id}` endpoint checks in order:
+1. **Live LangGraph snapshot** (`graph.aget_state`) — authoritative for active workflows
+2. **History file** (`_load_history_file`) — completed workflow results (pre-DB or fallback)
+3. **DB row** (`db_get`) — metadata-only entries (workflow created but not yet checkpointed)
+
+### Background task done callback
+
+`_on_task_done` runs as a sync callback from `asyncio.Task.add_done_callback`. It cannot `await` — use `asyncio.ensure_future()` to schedule DB updates on the running event loop.
+
+```python
+# CORRECT pattern for sync callbacks
+def callback(task):
+    async def _do_update():
+        existing = await db_get(thread_id)
+        if existing and existing.status == "running":
+            await db_update(thread_id, status="stale")
+    asyncio.ensure_future(_do_update())
+```
 
 ## Engagement Routing
 
@@ -247,4 +274,48 @@ except RippleTimeoutError as e:
     return {"ripple_job_id": e.job_id, "ripple_reason": "timeout"}
 except TimeoutError:
     return {"ripple_job_id": "", "ripple_reason": "timeout"}
+```
+
+## Frontend Multi-Workflow Pattern
+
+### Store Architecture
+
+The `workflowStore` (frontend/src/stores/workflow.ts) supports multiple concurrent workflows:
+
+| State | Type | Purpose |
+|-------|------|---------|
+| `workflowStates` | `Map<string, WorkflowStateResponse>` | Per-thread state cache |
+| `activeThreadId` | `ref<string \| null>` | Currently viewed workflow tab |
+| `openTabIds` | `ref<string[]>` | Ordered list of open tab IDs |
+| `tabLabels` | `Record<string, string>` | Custom tab labels |
+| `rippleProgressMap` | `Map<string, RippleProgress>` | Per-thread ripple progress |
+
+### Computed backward-compat layer
+
+`currentThreadId` and `workflowState` are computed from `activeThreadId` + `workflowStates` map, keeping existing component code working without changes.
+
+### WebSocket event routing
+
+All WS event handlers use `msg.thread_id` to route to the correct entry in `workflowStates` map. The `if (msg.thread_id === activeThreadId.value)` guard ensures progress/overlay updates only affect the visible tab.
+
+### Tab persistence
+
+Open tab IDs and labels are persisted to `localStorage` keys: `activeThreadId`, `openTabIds`, `tabLabels`.
+
+### Tab fold limit
+
+When `openTabIds.length > 8`, tabs beyond index 8 move to an overflow dropdown (`overflowTabs` computed).
+
+### Common Mistake: Direct assignment to workflowState
+
+After the multi-workflow refactor, `workflowState` is a computed property (derived from `workflowStates[activeThreadId]`). It cannot be directly assigned. Use `workflowStates.set(threadId, newState)` or the `updateWorkflowState()` helper instead.
+
+```typescript
+// WRONG — workflowState is a computed, read-only
+workflowStore.workflowState = null
+
+// CORRECT — remove the tab or update the map
+workflowStore.closeTab(threadId)
+// or
+workflowStore.workflowStates.set(threadId, newState)
 ```
