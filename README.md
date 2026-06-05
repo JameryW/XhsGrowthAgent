@@ -106,6 +106,45 @@ Copy `.env.example` to `.env` and fill in your values:
 cp .env.example .env
 ```
 
+### Ripple CAS Engine
+
+> **重要：本项目依赖 Ripple CAS 引擎的 fork 版本（[JameryW/Ripple](https://github.com/JameryW/Ripple)），不是上游原版。**
+
+Fork 版本相比上游新增了：
+- `providers/` 模块：HistoricalProvider、TopologyProvider 等数据源抽象
+- `provider_insights` 顶层输出字段（向后兼容）
+- Per-phase timeout 机制（`RIPPLE_PHASE_TIMEOUT_*` 环境变量）
+- `job.timed_out` 事件类型
+
+Ripple 提供以下 API：
+- 健康检查（`GET /healthz`，无需认证）
+- 心跳（`GET /v1/ping`）
+- 模拟任务提交（`POST /v1/simulations`）
+- 模拟状态查询（`GET /v1/simulations/{job_id}`）
+- 紧凑日志获取（`GET /v1/simulations/{job_id}/artifacts/compact-log`）
+- 模拟结果获取（`GET /v1/simulations/{job_id}/artifacts/output-json`）
+- 报告生成（`POST /v1/simulations/{job_id}/report`）
+- 事件流（`GET /v1/simulations/{job_id}/events`）
+- 取消请求（`POST /v1/simulations/{job_id}/cancel-request`）
+- 取消确认（`POST /v1/simulations/{job_id}/cancel-confirm`）
+
+**启动 Ripple 服务（必须本地构建，fork 版本无预构建镜像）：**
+
+```bash
+git clone https://github.com/JameryW/Ripple.git
+cd Ripple
+podman build -t ripple-service:local -f deploy/docker/Dockerfile .
+podman run -d --name ripple-service \
+  -p 127.0.0.1:8080:8080 \
+  -e RIPPLE_API_TOKEN=your_token \
+  localhost/ripple-service:local
+
+# 配置环境变量
+RIPPLE_BASE_URL=http://127.0.0.1:8080
+RIPPLE_API_TOKEN=your_token
+RIPPLE_ENABLED=true
+```
+
 ---
 
 ## Architecture

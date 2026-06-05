@@ -110,13 +110,19 @@ client.interceptors.response.use(
       apiError = new ApiError(message, 'NETWORK_ERROR')
     }
 
-    // Show toast notification for API errors
-    try {
-      const { useToastStore } = await import('@/stores/toast')
-      const toastStore = useToastStore()
-      toastStore.error(apiError.message)
-    } catch {
-      // Toast store not available, continue without toast
+    // Show toast notification for API errors (skip expected business-logic codes)
+    const silentCodes = new Set([
+      'ERROR_REVIEW_NOT_PENDING',
+      'ERROR_WORKFLOW_NOT_FOUND',
+    ])
+    if (!silentCodes.has(apiError.code)) {
+      try {
+        const { useToastStore } = await import('@/stores/toast')
+        const toastStore = useToastStore()
+        toastStore.error(apiError.message)
+      } catch {
+        // Toast store not available, continue without toast
+      }
     }
 
     return Promise.reject(apiError)

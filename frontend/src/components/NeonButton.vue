@@ -27,7 +27,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<{
-  click: []
+  click: [event: MouseEvent]
 }>()
 
 // Ripple effect state
@@ -74,14 +74,14 @@ const sizeClasses = computed(() => {
   return sizes[props.size]
 })
 
-const handleClick = () => {
+const handleClick = (e: MouseEvent) => {
   if (!props.disabled && !props.loading) {
     // Trigger ripple effect
     rippleActive.value = true
     setTimeout(() => {
       rippleActive.value = false
     }, 600)
-    emit('click')
+    emit('click', e)
   }
 }
 </script>

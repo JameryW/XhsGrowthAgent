@@ -81,6 +81,11 @@ export async function deleteWorkflow(threadId: string): Promise<{ thread_id: str
   return client.delete(`/workflow/${threadId}`) as unknown as { thread_id: string; message: string }
 }
 
+// 重试 Ripple 分析
+export async function retryRippleAnalysis(threadId: string): Promise<{ thread_id: string; status: string; message: string }> {
+  return client.post(`/workflow/ripple-retry/${threadId}`) as unknown as { thread_id: string; status: string; message: string }
+}
+
 // 提交草稿到优化流程
 export async function submitDraft(threadId: string, data: {
   title?: string

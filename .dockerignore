@@ -1,0 +1,13 @@
+.git
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.venv
+__pycache__
+*.pyc
+
+frontend/dist
+frontend/node_modules
+
+.env
+.trellis/workspace

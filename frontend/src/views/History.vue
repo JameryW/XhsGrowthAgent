@@ -259,7 +259,7 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
                 {{ t('history.replay') }}
               </NeonButton>
               <button
-                v-if="['completed', 'cancelled', 'error'].includes(wf.status)"
+                v-if="wf.status !== 'running'"
                 @click.stop="requestDelete(wf.thread_id)"
                 class="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors"
                 :aria-label="t('history.delete')"

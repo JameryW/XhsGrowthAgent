@@ -71,6 +71,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const activeCheckpointId = ref<string | null>(null)
   const hasMoreCheckpoints = ref(false)
   const isLoadingCheckpoints = ref(false)
+  const notifiedCheckpointLost = ref<Set<string>>(new Set())
 
   // Replay state: selected checkpoint's data, or null when not in replay
   const replayState = computed<WorkflowStateResponse | null>(() => {
@@ -551,9 +552,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
         return
       }
       if (state?.checkpoint_lost) {
-        error.value = t('workflow.checkpointLost')
-        toastStore.warning(t('workflow.checkpointLostTitle'), t('workflow.checkpointLost'))
-        return
+        const tid = activeThreadId.value
+        if (tid && !notifiedCheckpointLost.value.has(tid)) {
+          notifiedCheckpointLost.value.add(tid)
+          toastStore.warning(t('workflow.checkpointLostTitle'), t('workflow.checkpointLost'))
+        }
       }
       if (status === 'stale') {
         toastStore.warning(t('workflow.staleDetected'), t('workflow.staleHint'))

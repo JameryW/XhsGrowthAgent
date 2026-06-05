@@ -15,6 +15,7 @@ import CelebrationModal from '@/components/CelebrationModal.vue'
 import { DashboardSkeleton } from '@/components/skeletons'
 import ErrorState from '@/components/ErrorState.vue'
 import ErrorCard from '@/components/ErrorCard.vue'
+import NeonButton from '@/components/NeonButton.vue'
 import { useWorkflowStore, useToastStore, useErrorStore } from '@/stores'
 
 const { t } = useI18n()

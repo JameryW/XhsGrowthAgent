@@ -2,9 +2,16 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+import NeonButton from '@/components/NeonButton.vue'
+import { retryRippleAnalysis } from '@/api/workflow'
+import { useWorkflowStore, useToastStore } from '@/stores'
 import type { RipplePrediction, RipplePMFResult, RippleComparison, RippleProgress } from '@/types/workflow'
 
 const { t } = useI18n()
+const workflowStore = useWorkflowStore()
+const toastStore = useToastStore()
+
+const isRetrying = ref(false)
 
 interface Props {
   prediction?: RipplePrediction
@@ -75,7 +82,23 @@ const isFallback = computed(() => {
 })
 
 const isDisabled = computed(() => props.rippleReason === 'disabled')
-const isUnavailable = computed(() => props.rippleReason === 'timeout')
+const isUnavailable = computed(() => props.rippleReason === 'timeout' || props.rippleReason === 'unreachable')
+
+async function retryRipple() {
+  const threadId = workflowStore.activeThreadId
+  if (!threadId) return
+  isRetrying.value = true
+  try {
+    await retryRippleAnalysis(threadId)
+    toastStore.success(t('dashboard.ripple.retryStarted'))
+    // Refresh status after a short delay to pick up new results
+    setTimeout(() => workflowStore.refreshStatus(), 3000)
+  } catch (e: any) {
+    toastStore.error(t('dashboard.ripple.retryFailed'), e.message)
+  } finally {
+    isRetrying.value = false
+  }
+}
 
 // Progress display helpers
 const progressPercent = computed(() => {
@@ -212,13 +235,18 @@ function progressWidth(value?: number, max: number = 1): string {
 
     <!-- Fallback notice -->
     <div v-if="isFallback" :class="[
-      'mx-5 mt-3 p-2.5 rounded-lg flex items-center gap-2',
+      'mx-5 mt-3 p-2.5 rounded-lg flex items-center justify-between',
       isDisabled ? 'bg-slate-50 border border-slate-200' : 'bg-amber-50 border border-amber-200'
     ]">
-      <AppIcon :name="isDisabled ? 'ZapOff' : 'AlertTriangle'" size="sm" :variant="isDisabled ? 'cyan' : 'peach'" />
-      <span :class="['text-xs', isDisabled ? 'text-slate-500' : 'text-amber-700']">
-        {{ isDisabled ? t('dashboard.ripple.disabledNotice') : t('dashboard.ripple.fallbackNotice') }}
-      </span>
+      <div class="flex items-center gap-2">
+        <AppIcon :name="isDisabled ? 'ZapOff' : 'AlertTriangle'" size="sm" :variant="isDisabled ? 'cyan' : 'peach'" />
+        <span :class="['text-xs', isDisabled ? 'text-slate-500' : 'text-amber-700']">
+          {{ isDisabled ? t('dashboard.ripple.disabledNotice') : t('dashboard.ripple.fallbackNotice') }}
+        </span>
+      </div>
+      <NeonButton v-if="!isDisabled" variant="ghost" size="sm" :loading="isRetrying" @click="retryRipple">
+        <AppIcon name="RefreshCw" size="sm" variant="cyan" />
+      </NeonButton>
     </div>
 
     <!-- Summary cards -->
@@ -390,6 +418,12 @@ function progressWidth(value?: number, max: number = 1): string {
     <AppIcon name="AlertTriangle" size="md" variant="peach" class="mb-2 mx-auto" />
     <p class="text-xs text-amber-700 font-medium">Ripple 模拟不可用</p>
     <p class="text-xs text-amber-500 mt-1">服务响应超时，传播预测已跳过</p>
+    <NeonButton variant="cyan" size="sm" class="mt-3" :loading="isRetrying" @click="retryRipple">
+      <span class="inline-flex items-center gap-1">
+        <AppIcon name="RefreshCw" size="sm" variant="cyan" />
+        {{ t('common.retry') }}
+      </span>
+    </NeonButton>
   </div>
 
   <!-- Empty state -->

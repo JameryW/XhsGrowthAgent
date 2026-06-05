@@ -273,6 +273,8 @@
       "keyInfluencers": "Key Influencers",
       "fallbackNotice": "Ripple engine unavailable, showing default predictions",
       "disabledNotice": "Ripple engine not enabled, showing default predictions",
+      "retryStarted": "Ripple analysis restarted",
+      "retryFailed": "Ripple retry failed",
       "simulating": "Simulating",
       "waveProgress": "Wave progress",
       "elapsed": "Elapsed"

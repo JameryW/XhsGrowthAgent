@@ -145,6 +145,7 @@ const visualPlan = computed<Partial<VisualPlan>>(() => reviewStore.visualPlan ||
 // Ripple data from workflow store
 const ripplePrediction = computed(() => workflowStore.ripplePrediction)
 const ripplePmf = computed(() => workflowStore.ripplePmf)
+const rippleReason = computed(() => workflowStore.rippleReason)
 const hasRipple = computed(() =>
   Object.keys(ripplePrediction.value).length > 0 ||
   Object.keys(ripplePmf.value).length > 0
@@ -381,6 +382,7 @@ const handleCancelConfirm = () => {
       v-if="hasRipple"
       :prediction="ripplePrediction"
       :pmf="ripplePmf"
+      :ripple-reason="rippleReason"
       variant="planning"
     />
 
