@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Workflow state schema, phase/status enums, checkpoint patterns — core context for replay endpoint"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error response patterns for new endpoint (WorkflowNotFoundError, ValidationError)"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "DB query patterns for checkpoint history fallback"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Pinia store patterns — how to add replay state to workflow store"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Component conventions for replay banner, timeline click handling"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Backend-frontend type sync patterns for new CheckpointSnapshot type"}

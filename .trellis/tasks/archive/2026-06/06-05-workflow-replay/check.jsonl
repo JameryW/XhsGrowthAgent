@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Verify checkpoint snapshot response matches state schema fields"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Test coverage requirements for new endpoint"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Verify store additions follow existing patterns (ref naming, computed, actions)"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify frontend types match backend response model"}

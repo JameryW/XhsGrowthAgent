@@ -433,7 +433,9 @@
       "dryRunHelp": "Preview without actually publishing",
       "liveWarning": "Live mode is on. Content will be published to Xiaohongshu for real. Make sure everything is correct.",
       "confirm": "Approve & Publish"
-    }
+    },
+    "stateLost": "The review state was lost after a container restart. Please restart the workflow to regenerate review content.",
+    "errorStateLost": "Review State Lost"
   },
   "analytics": {
     "title": "Analytics Center",
@@ -662,6 +664,10 @@
     "statusRefreshFailed": "Status refresh failed",
     "staleDetected": "Workflow Stale",
     "staleHint": "Background task stopped with pending nodes. Click resume to continue.",
+    "replayMode": "Replay Mode",
+    "replayModeDesc": "Viewing historical state. Click a timeline node to inspect past results.",
+    "exitReplay": "Back to Live",
+    "replayLoadFailed": "Failed to load checkpoint history",
     "currentPhase": "Current Phase",
     "currentAgent": "Current Agent",
     "thread": "Thread",
@@ -679,7 +685,9 @@
     "tabCompleted": "Completed",
     "tabStale": "Stale",
     "tabPaused": "Paused",
-    "overflowMore": "More"
+    "overflowMore": "More",
+    "checkpointLost": "Workflow content data was lost after a container restart. Please restart the workflow.",
+    "checkpointLostTitle": "Data Lost"
   },
   "history": {
     "title": "Workflow History",
@@ -694,7 +702,14 @@
       "running": "Running",
       "completed": "Completed",
       "error": "Error",
-      "cancelled": "Cancelled"
+      "cancelled": "Cancelled",
+      "awaiting_review": "Awaiting Review",
+      "awaiting_choice": "Awaiting Choice",
+      "awaiting_draft": "Awaiting Draft",
+      "awaiting_brief": "Awaiting Brief",
+      "stale": "Stale",
+      "paused": "Paused",
+      "idle": "Idle"
     },
     "dryRun": "Dry Run",
     "live": "Live",
@@ -705,7 +720,8 @@
     "deleteMessage": "This will permanently remove this workflow from history. This action cannot be undone.",
     "deleteConfirm": "Delete",
     "deleteSuccess": "Workflow deleted",
-    "deleteFailed": "Failed to delete workflow"
+    "deleteFailed": "Failed to delete workflow",
+    "replay": "Replay"
   },
   "keyboard": {
     "global": "Global",

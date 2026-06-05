@@ -8,6 +8,49 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const workflowStore = useWorkflowStore()
 
+// Replay mode
+const isReplayMode = computed(() => workflowStore.isReplayMode)
+const activeCheckpointId = computed(() => workflowStore.activeCheckpointId)
+
+// Map agent names to checkpoint IDs (find latest checkpoint where that agent produced data)
+function findCheckpointForAgent(agent: string): string | null {
+  const checkpoints = workflowStore.replayCheckpoints
+  // Find the checkpoint where this agent's source matches, or where data is populated
+  for (const cp of checkpoints) {
+    if (cp.source === agent) return cp.checkpoint_id
+  }
+  // Fallback: find checkpoint where the phase matches the agent's phase
+  const agentPhases: Record<string, string> = {
+    trend_scout: 'scouting',
+    content_strategist: 'planning',
+    copywriter: 'creating',
+    visual_designer: 'creating',
+    review_gate: 'reviewing',
+    publisher: 'publishing',
+    analyst: 'analyzing',
+  }
+  const targetPhase = agentPhases[agent]
+  if (targetPhase) {
+    const cp = checkpoints.find(c => c.phase === targetPhase && c.source !== '')
+    if (cp) return cp.checkpoint_id
+  }
+  return null
+}
+
+function handleNodeClick(agent: string) {
+  if (!isReplayMode.value) return
+  const cpId = findCheckpointForAgent(agent)
+  if (cpId) {
+    workflowStore.selectCheckpoint(cpId)
+  }
+}
+
+function isNodeSelected(agent: string): boolean {
+  if (!activeCheckpointId.value) return false
+  const cpId = findCheckpointForAgent(agent)
+  return cpId === activeCheckpointId.value
+}
+
 // Keyboard navigation state
 const focusedIndex = ref(-1)
 const showTimelineDetails = ref(false)
@@ -220,10 +263,13 @@ const isFocused = (index: number) => focusedIndex.value === index
         :label="node.label"
         :status="getNodeStatus(node)"
         :focused="isFocused(index)"
+        :clickable="isReplayMode"
+        :selected="isNodeSelected(node.agent)"
         role="listitem"
         :tabindex="isFocused(index) ? 0 : -1"
         :aria-label="`${node.label} - ${getNodeStatus(node) === 'completed' ? t('dashboard.timeline.completed') : getNodeStatus(node) === 'running' ? t('dashboard.timeline.running') : getNodeStatus(node) === 'error' ? t('dashboard.timeline.error') : t('dashboard.timeline.pending')}`"
         :aria-describedby="`node-desc-${index}`"
+        @click="handleNodeClick(node.agent)"
       />
 
       <!-- Hidden descriptions for screen readers -->

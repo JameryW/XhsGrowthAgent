@@ -433,7 +433,9 @@
       "dryRunHelp": "预览效果，不实际发布",
       "liveWarning": "当前为实时模式，内容将真实发布到小红书平台。请确认所有内容无误。",
       "confirm": "批准并发布"
-    }
+    },
+    "stateLost": "该工作流审核状态因容器重启而丢失，请重新启动工作流以生成审核内容。",
+    "errorStateLost": "审核状态丢失"
   },
   "analytics": {
     "title": "数据分析中心",
@@ -662,6 +664,10 @@
     "statusRefreshFailed": "状态刷新失败",
     "staleDetected": "工作流状态异常",
     "staleHint": "后台任务已终止但仍有待执行节点，点击恢复继续执行",
+    "replayMode": "回放模式",
+    "replayModeDesc": "正在查看历史状态，点击时间轴节点查看当时执行结果",
+    "exitReplay": "返回实时",
+    "replayLoadFailed": "加载检查点历史失败",
     "currentPhase": "当前阶段",
     "currentAgent": "当前 Agent",
     "thread": "Thread",
@@ -679,7 +685,9 @@
     "tabCompleted": "已完成",
     "tabStale": "异常",
     "tabPaused": "已暂停",
-    "overflowMore": "更多"
+    "overflowMore": "更多",
+    "checkpointLost": "工作流内容数据因容器重启而丢失，请重新启动工作流。",
+    "checkpointLostTitle": "数据丢失"
   },
   "history": {
     "title": "工作流历史",
@@ -694,7 +702,14 @@
       "running": "运行中",
       "completed": "已完成",
       "error": "错误",
-      "cancelled": "已取消"
+      "cancelled": "已取消",
+      "awaiting_review": "待审核",
+      "awaiting_choice": "待选择",
+      "awaiting_draft": "待草稿",
+      "awaiting_brief": "待简报",
+      "stale": "已过期",
+      "paused": "已暂停",
+      "idle": "空闲"
     },
     "dryRun": "试运行",
     "live": "实时",
@@ -705,7 +720,8 @@
     "deleteMessage": "将从历史记录中永久删除此工作流。此操作不可撤销。",
     "deleteConfirm": "确认删除",
     "deleteSuccess": "工作流已删除",
-    "deleteFailed": "删除失败"
+    "deleteFailed": "删除失败",
+    "replay": "回放"
   },
   "keyboard": {
     "global": "全局",

@@ -296,6 +296,7 @@ export interface WorkflowStateResponse {
   ripple_comparison?: RippleComparison
   ripple_progress?: RippleProgress
   ripple_reason?: string  // "disabled" | "unreachable" | ""
+  checkpoint_lost?: boolean
 }
 
 // Brief content - parsed from brief text/PDF
@@ -350,4 +351,37 @@ export interface ShootingPlan {
     description: string
     tips?: string
   }>
+}
+
+// ── Checkpoint history (replay) ──
+
+export interface CheckpointSnapshot {
+  checkpoint_id: string
+  step: number
+  source: string
+  phase: WorkflowPhase
+  current_agent: string
+  created_at: string | null
+  next_nodes: string[]
+  trend_data: TrendData
+  content_plan: ContentPlan
+  copy_content: CopyContent
+  draft_content: DraftContent
+  optimization_analysis: OptimizationAnalysis
+  content_versions: ContentVersion[]
+  visual_plan: VisualPlan
+  publish_result: Record<string, unknown>
+  analytics: Record<string, unknown>
+  ripple_prediction: RipplePrediction
+  ripple_pmf: RipplePMFResult
+  ripple_comparison: RippleComparison
+  workflow_mode: 'trend' | 'brief'
+  brief_content: BriefContent
+  shooting_plan: ShootingPlan
+}
+
+export interface CheckpointHistoryResponse {
+  thread_id: string
+  checkpoints: CheckpointSnapshot[]
+  has_more: boolean
 }

@@ -11,12 +11,20 @@ interface Props {
   status: 'completed' | 'running' | 'pending' | 'error'
   focused?: boolean
   tabindex?: number
+  clickable?: boolean
+  selected?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   focused: false,
   tabindex: -1,
+  clickable: false,
+  selected: false,
 })
+
+const emit = defineEmits<{
+  click: []
+}>()
 
 // Badge type definition
 interface BadgeConfig {
@@ -67,19 +75,28 @@ const statusStyles: Record<string, {
 const currentStyle = computed(() => statusStyles[props.status])
 
 const focusClass = computed(() => {
+  if (props.selected) {
+    return 'ring-2 ring-violet-400 ring-offset-2 ring-offset-white scale-110 shadow-lg shadow-violet-200'
+  }
   if (props.focused) {
     return 'ring-2 ring-teal-400 ring-offset-2 ring-offset-white scale-105'
   }
   return ''
+})
+
+const clickableClass = computed(() => {
+  return props.clickable ? 'cursor-pointer' : ''
 })
 </script>
 
 <template>
   <div
     class="text-center group relative outline-none"
+    :class="clickableClass"
     :tabindex="props.tabindex"
     :aria-label="($attrs['aria-label'] as string | undefined)"
     :aria-describedby="($attrs['aria-describedby'] as string | undefined)"
+    @click="props.clickable && emit('click')"
   >
     <!-- Node shape -->
     <div :class="[
