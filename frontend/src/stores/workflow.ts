@@ -251,6 +251,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   realtimeStore.wsService.onEvent(EventType.WORKFLOW_PHASE_CHANGED, (msg) => {
+    if (!msg.thread_id) return
     const state = workflowStates.value.get(msg.thread_id)
     if (!state) return
     const p = msg.payload as { old_phase?: string; new_phase?: string; current_agent?: string }
@@ -270,6 +271,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   })
 
   realtimeStore.wsService.onEvent(EventType.WORKFLOW_DATA_UPDATED, (msg) => {
+    if (!msg.thread_id) return
     const state = workflowStates.value.get(msg.thread_id)
     if (!state) return
     const p = msg.payload as Partial<WorkflowStateResponse> & { data_type?: string; data?: unknown }
@@ -305,6 +307,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   })
 
   realtimeStore.wsService.onEvent(EventType.RIPPLE_PROGRESS, (msg) => {
+    if (!msg.thread_id) return
     rippleProgressMap.value.set(msg.thread_id, msg.payload as RippleProgress)
   })
 
@@ -315,6 +318,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   })
 
   realtimeStore.wsService.onEvent(EventType.WORKFLOW_COMPLETED, (msg) => {
+    if (!msg.thread_id) return
     const state = workflowStates.value.get(msg.thread_id)
     if (!state) return
     const p = msg.payload as Record<string, unknown>
@@ -341,6 +345,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   })
 
   realtimeStore.wsService.onEvent(EventType.WORKFLOW_ERROR, (msg) => {
+    if (!msg.thread_id) return
     const state = workflowStates.value.get(msg.thread_id)
     if (!state) return
     const p = msg.payload as { error?: string; agent?: string }
@@ -359,6 +364,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   })
 
   realtimeStore.wsService.onEvent(EventType.WORKFLOW_STARTED, (msg) => {
+    if (!msg.thread_id) return
     const state = workflowStates.value.get(msg.thread_id)
     if (!state) return
     const p = msg.payload as { phase?: string; account_id?: string; dry_run?: boolean }
@@ -372,6 +378,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   })
 
   realtimeStore.wsService.onEvent(EventType.WORKFLOW_AGENT_STARTED, (msg) => {
+    if (!msg.thread_id) return
     const state = workflowStates.value.get(msg.thread_id)
     if (!state) return
     const p = msg.payload as { agent?: string }
@@ -381,6 +388,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   })
 
   realtimeStore.wsService.onEvent(EventType.WORKFLOW_AGENT_COMPLETED, (msg) => {
+    if (!msg.thread_id) return
     const state = workflowStates.value.get(msg.thread_id)
     if (!state) return
     const p = msg.payload as { agent?: string; status?: string }
