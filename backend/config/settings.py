@@ -77,6 +77,7 @@ class RippleSettings(BaseSettings):
     request_timeout: int = 300
     workflow_timeout: int = 1800
     enabled: bool = False
+    health_check_interval: float = 30.0
 
     model_config = {"env_prefix": "RIPPLE_", "env_file": ".env", "extra": "ignore"}
 

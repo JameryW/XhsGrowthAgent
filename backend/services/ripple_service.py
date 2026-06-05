@@ -50,11 +50,14 @@ class RippleService:
     - 重试：失败自动重试 (max_retries=3)
     - 健康检查：启动时检测服务可用性
     - 降级策略：服务不可用时返回默认预测
+    - 自动恢复：请求成功时恢复健康状态，后台定期探测
+    - 连接池重建：服务恢复时关闭旧连接池，确保 DNS 重解析
     """
 
     _instance: RippleService | None = None
     _client: httpx.AsyncClient | None = None
     _health_status: RippleHealthStatus = RippleHealthStatus()
+    _bg_task: asyncio.Task | None = None
 
     def __new__(cls) -> RippleService:
         """单例模式"""
@@ -163,6 +166,91 @@ class RippleService:
         """检查服务是否健康"""
         return self._health_status.is_healthy
 
+    def _mark_healthy(self) -> None:
+        """Mark service as healthy — called on successful request completion."""
+        if not self._health_status.is_healthy:
+            logger.info("Ripple service recovered — marking healthy and rebuilding connection pool")
+            self._health_status = RippleHealthStatus(
+                is_healthy=True, last_check="recovered", reason=""
+            )
+            # Rebuild client: old pool may have stale connections to dead container IP
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._rebuild_client())
+            except RuntimeError:
+                # No event loop — will rebuild on next _get_client() call
+                self._client = None
+
+    def _mark_unreachable(self, error: str = "") -> None:
+        """Mark service as unreachable — called when ConnectError exhausts retries."""
+        self._health_status = RippleHealthStatus(
+            is_healthy=False,
+            last_check="connect_error",
+            error=error,
+            reason="unreachable",
+        )
+        logger.warning(f"Ripple service marked unreachable: {error}")
+
+    async def _rebuild_client(self) -> None:
+        """Close old httpx client and rebuild — ensures fresh DNS + TCP connections."""
+        if self._client and not self._client.is_closed:
+            try:
+                await self._client.aclose()
+            except Exception as e:
+                logger.debug(f"Error closing old Ripple client: {e}")
+        self._client = None
+        # Next _get_client() call will create a fresh client with new connections
+
+    async def _probe_before_fallback(self) -> bool:
+        """Quick health probe when is_healthy is False.
+
+        Returns True if service recovered, False if still unreachable.
+        On recovery, also rebuilds the connection pool.
+        """
+        if not self._get_config()["enabled"]:
+            return False
+        prev_healthy = self._health_status.is_healthy
+        await self.health_check()
+        if self._health_status.is_healthy and not prev_healthy:
+            await self._rebuild_client()
+        return self._health_status.is_healthy
+
+    # ── Background health check ──
+
+    def start_background_health_check(self, interval_seconds: float = 30.0) -> None:
+        """Start a background task that periodically probes Ripple health.
+
+        Safe to call multiple times — stops any previous task first.
+        """
+        self.stop_background_health_check()
+        config = self._get_config()
+        if not config["enabled"]:
+            return
+        self._bg_task = asyncio.create_task(self._health_check_loop(interval_seconds))
+        logger.info(f"Ripple background health check started (interval={interval_seconds}s)")
+
+    def stop_background_health_check(self) -> None:
+        """Stop the background health check task."""
+        if self._bg_task and not self._bg_task.done():
+            self._bg_task.cancel()
+            logger.info("Ripple background health check stopped")
+        self._bg_task = None
+
+    async def _health_check_loop(self, interval_seconds: float) -> None:
+        """Periodically check Ripple health. Rebuilds client on recovery."""
+        try:
+            while True:
+                await asyncio.sleep(interval_seconds)
+                prev_healthy = self._health_status.is_healthy
+                await self.health_check()
+                if self._health_status.is_healthy and not prev_healthy:
+                    logger.info("Ripple service recovered via background check — rebuilding client")
+                    await self._rebuild_client()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Ripple background health check crashed: {e}")
+
     def _emit_progress(
         self,
         job_id: str,
@@ -211,6 +299,8 @@ class RippleService:
                     continue
 
                 resp.raise_for_status()
+                # Request succeeded — service is reachable
+                self._mark_healthy()
                 return resp.json()
 
             except httpx.HTTPStatusError as e:
@@ -228,6 +318,8 @@ class RippleService:
                     logger.warning(f"Ripple connection failed (attempt {attempt + 1}): {e}")
                     await asyncio.sleep(retry_delay * (attempt + 1))
                     continue
+                # All retries exhausted — service unreachable
+                self._mark_unreachable(str(e))
                 raise
 
             except Exception as e:
@@ -307,15 +399,17 @@ class RippleService:
         config = self._get_config()
 
         if not config["enabled"] or not self.is_healthy():
-            if use_fallback:
-                reason = (
-                    "disabled"
-                    if not config["enabled"]
-                    else self._health_status.reason or "unreachable"
-                )
-                logger.info(f"Ripple unavailable (reason={reason}), using fallback prediction")
-                return self._default_spread_prediction()
-            return {"error": "Ripple service unavailable"}
+            # Probe before falling back — service may have recovered since last check
+            if not config["enabled"] or not await self._probe_before_fallback():
+                if use_fallback:
+                    reason = (
+                        "disabled"
+                        if not config["enabled"]
+                        else self._health_status.reason or "unreachable"
+                    )
+                    logger.info(f"Ripple unavailable (reason={reason}), using fallback prediction")
+                    return self._default_spread_prediction()
+                return {"error": "Ripple service unavailable"}
 
         try:
             event = {
@@ -368,15 +462,17 @@ class RippleService:
         config = self._get_config()
 
         if not config["enabled"] or not self.is_healthy():
-            if use_fallback:
-                reason = (
-                    "disabled"
-                    if not config["enabled"]
-                    else self._health_status.reason or "unreachable"
-                )
-                logger.info(f"Ripple unavailable (reason={reason}), using fallback PMF")
-                return self._default_pmf_result()
-            return {"error": "Ripple service unavailable"}
+            # Probe before falling back — service may have recovered since last check
+            if not config["enabled"] or not await self._probe_before_fallback():
+                if use_fallback:
+                    reason = (
+                        "disabled"
+                        if not config["enabled"]
+                        else self._health_status.reason or "unreachable"
+                    )
+                    logger.info(f"Ripple unavailable (reason={reason}), using fallback PMF")
+                    return self._default_pmf_result()
+                return {"error": "Ripple service unavailable"}
 
         try:
             event = {

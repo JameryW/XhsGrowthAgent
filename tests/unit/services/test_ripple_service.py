@@ -1,5 +1,7 @@
 """Tests for RippleService."""
 
+import asyncio
+import contextlib
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import httpx
@@ -646,3 +648,167 @@ class TestRippleServiceRecoverResult:
         assert recovery.job_id == "job-net"
         assert recovery.status == "failed"
         assert "Connection refused" in recovery.error
+
+
+class TestAutoRecovery:
+    """Tests for RippleService auto-recovery after container restart."""
+
+    @pytest.fixture
+    def service_unhealthy(self):
+        """RippleService instance marked as unreachable."""
+        svc = RippleService()
+        svc._health_status = RippleHealthStatus(
+            is_healthy=False, last_check="connect_error", error="Connection refused", reason="unreachable"
+        )
+        return svc
+
+    @pytest.mark.asyncio
+    async def test_mark_healthy_recovers_status(self, service_unhealthy):
+        """_mark_healthy should recover is_healthy to True."""
+        svc = service_unhealthy
+        assert not svc.is_healthy()
+        svc._mark_healthy()
+        assert svc.is_healthy()
+
+    @pytest.mark.asyncio
+    async def test_connect_error_exhausted_marks_unreachable(self):
+        """ConnectError that exhausts all retries should mark service as unreachable."""
+        svc = RippleService()
+        svc._health_status = RippleHealthStatus(is_healthy=True, last_check="ok", reason="")
+
+        with patch.object(svc, "_get_client") as mock_client:
+            mock_http_client = AsyncMock()
+            mock_http_client.post = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+            mock_client.return_value = mock_http_client
+
+            with pytest.raises(httpx.ConnectError):
+                await svc._request_with_retry("POST", "http://ripple-service:8080/api/test")
+
+        assert not svc.is_healthy()
+        assert svc._health_status.reason == "unreachable"
+
+    @pytest.mark.asyncio
+    async def test_request_success_auto_marks_healthy(self):
+        """A successful _request_with_retry call should mark service healthy."""
+        svc = RippleService()
+        svc._health_status = RippleHealthStatus(
+            is_healthy=False, last_check="connect_error", error="Connection refused", reason="unreachable"
+        )
+
+        with patch.object(svc, "_get_client") as mock_client:
+            mock_http_client = AsyncMock()
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"status": "ok"}
+            mock_response.raise_for_status = MagicMock()
+            mock_http_client.post = AsyncMock(return_value=mock_response)
+            mock_client.return_value = mock_http_client
+
+            with patch.object(svc, "_rebuild_client", new_callable=AsyncMock):
+                result = await svc._request_with_retry("POST", "http://ripple-service:8080/api/test")
+
+        assert svc.is_healthy()
+        assert result == {"status": "ok"}
+
+    @pytest.mark.asyncio
+    async def test_probe_before_fallback_recovers(self, service_unhealthy):
+        """_probe_before_fallback should return True when health_check recovers."""
+        svc = service_unhealthy
+        assert not svc.is_healthy()
+
+        with patch.object(svc, "health_check", new_callable=AsyncMock) as mock_hc:
+            async def make_healthy():
+                svc._health_status = RippleHealthStatus(is_healthy=True, last_check="ok", reason="")
+            mock_hc.side_effect = make_healthy
+
+            with patch.object(svc, "_rebuild_client", new_callable=AsyncMock):
+                result = await svc._probe_before_fallback()
+
+        assert result is True
+        assert svc.is_healthy()
+
+    @pytest.mark.asyncio
+    async def test_probe_before_fallback_still_unreachable(self, service_unhealthy):
+        """_probe_before_fallback should return False when service stays unreachable."""
+        svc = service_unhealthy
+
+        with patch.object(svc, "health_check", new_callable=AsyncMock):
+            result = await svc._probe_before_fallback()
+
+        assert result is False
+        assert not svc.is_healthy()
+
+    @pytest.mark.asyncio
+    async def test_rebuild_client_closes_old(self):
+        """_rebuild_client should close the old client and set _client to None."""
+        svc = RippleService()
+        old_client = AsyncMock()
+        old_client.is_closed = False
+        svc._client = old_client
+
+        await svc._rebuild_client()
+
+        old_client.aclose.assert_awaited_once()
+        assert svc._client is None
+
+    @pytest.mark.asyncio
+    async def test_rebuild_client_handles_already_closed(self):
+        """_rebuild_client should handle already-closed client gracefully."""
+        svc = RippleService()
+        old_client = AsyncMock()
+        old_client.is_closed = True
+        svc._client = old_client
+
+        await svc._rebuild_client()
+
+        old_client.aclose.assert_not_awaited()
+        assert svc._client is None
+
+    @pytest.mark.asyncio
+    async def test_background_health_check_loop(self):
+        """Background loop should call health_check periodically and rebuild on recovery."""
+        svc = RippleService()
+        svc._health_status = RippleHealthStatus(
+            is_healthy=False, last_check="connect_error", error="", reason="unreachable"
+        )
+
+        call_count = 0
+
+        async def mock_health_check():
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                svc._health_status = RippleHealthStatus(is_healthy=True, last_check="ok", reason="")
+
+        with patch.object(svc, "health_check", side_effect=mock_health_check):
+            with patch.object(svc, "_rebuild_client", new_callable=AsyncMock) as mock_rebuild:
+                task = asyncio.create_task(svc._health_check_loop(interval_seconds=0.05))
+                await asyncio.sleep(0.2)
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+
+        assert call_count >= 2
+        mock_rebuild.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_start_stop_background_health_check(self):
+        """start/stop should create and cancel the background task."""
+        svc = RippleService()
+
+        with patch.object(svc, "_get_config", return_value={"enabled": True, "base_url": "http://localhost:8081", "api_token": "", "timeout": 5}):
+            with patch.object(svc, "_health_check_loop", new_callable=AsyncMock):
+                svc.start_background_health_check(interval_seconds=1.0)
+                assert svc._bg_task is not None
+
+                svc.stop_background_health_check()
+                assert svc._bg_task is None
+
+    @pytest.mark.asyncio
+    async def test_start_background_skipped_when_disabled(self):
+        """start_background_health_check should not start when Ripple is disabled."""
+        svc = RippleService()
+
+        with patch.object(svc, "_get_config", return_value={"enabled": False, "base_url": "", "api_token": "", "timeout": 5}):
+            svc.start_background_health_check()
+            assert svc._bg_task is None
