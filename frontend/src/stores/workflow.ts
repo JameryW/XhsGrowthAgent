@@ -10,6 +10,7 @@ import type {
   WorkflowPhase,
   WorkflowStatus,
   RippleProgress,
+  CheckpointSnapshot,
 } from '@/types/workflow'
 import type { BriefUploadResult } from '@/api/workflow'
 import { useRealtimeStore } from './realtime'
@@ -64,6 +65,49 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const tabLabels = ref<Record<string, string>>(loadTabLabels())
   const rippleProgressMap = ref<Map<string, RippleProgress>>(new Map())
 
+  // ── Replay mode state ──
+  const isReplayMode = ref(false)
+  const replayCheckpoints = ref<CheckpointSnapshot[]>([])
+  const activeCheckpointId = ref<string | null>(null)
+  const hasMoreCheckpoints = ref(false)
+  const isLoadingCheckpoints = ref(false)
+
+  // Replay state: selected checkpoint's data, or null when not in replay
+  const replayState = computed<WorkflowStateResponse | null>(() => {
+    if (!isReplayMode.value || !activeCheckpointId.value) return null
+    const cp = replayCheckpoints.value.find(c => c.checkpoint_id === activeCheckpointId.value)
+    if (!cp) return null
+    return {
+      thread_id: activeThreadId.value || '',
+      phase: cp.phase,
+      status: 'completed' as WorkflowStatus,
+      current_agent: cp.current_agent,
+      next_steps: cp.next_nodes,
+      progress_percent: 0,
+      agent_timeline: [],
+      trend_data: cp.trend_data,
+      content_plan: cp.content_plan,
+      copy_content: cp.copy_content,
+      draft_content: cp.draft_content,
+      optimization_analysis: cp.optimization_analysis,
+      content_versions: cp.content_versions,
+      visual_plan: cp.visual_plan,
+      publish_result: cp.publish_result,
+      analytics: cp.analytics,
+      ripple_prediction: cp.ripple_prediction,
+      ripple_pmf: cp.ripple_pmf,
+      ripple_comparison: cp.ripple_comparison,
+      workflow_mode: cp.workflow_mode,
+      brief_content: cp.brief_content,
+      shooting_plan: cp.shooting_plan,
+    } as WorkflowStateResponse
+  })
+
+  // Effective state: replay overrides live when in replay mode
+  const effectiveState = computed<WorkflowStateResponse | null>(() =>
+    replayState.value || workflowState.value
+  )
+
   // ── Backward-compatible single-workflow computed ──
   const workflowState = computed<WorkflowStateResponse | null>(() =>
     activeThreadId.value ? workflowStates.value.get(activeThreadId.value) ?? null : null
@@ -78,14 +122,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   // Computed
   const currentPhase = computed<WorkflowPhase>(() =>
-    workflowState.value?.phase || 'idle'
+    effectiveState.value?.phase || 'idle'
   )
 
   const currentStatus = computed<WorkflowStatus>(() =>
-    workflowState.value?.status || 'idle'
+    effectiveState.value?.status || 'idle'
   )
 
-  const nextNodes = computed(() => workflowState.value?.next_steps || [])
+  const nextNodes = computed(() => effectiveState.value?.next_steps || [])
 
   const isRunning = computed(() =>
     currentStatus.value === 'running'
@@ -111,17 +155,17 @@ export const useWorkflowStore = defineStore('workflow', () => {
     currentStatus.value === 'awaiting_brief'
   )
 
-  const trendData = computed<Partial<TrendData>>(() => workflowState.value?.trend_data || {})
-  const contentPlan = computed<Partial<ContentPlan>>(() => workflowState.value?.content_plan || {})
-  const copyContent = computed<Partial<CopyContent>>(() => workflowState.value?.copy_content || {})
-  const visualPlan = computed<Partial<VisualPlan>>(() => workflowState.value?.visual_plan || {})
-  const agentTimeline = computed(() => workflowState.value?.agent_timeline || [])
+  const trendData = computed<Partial<TrendData>>(() => effectiveState.value?.trend_data || {})
+  const contentPlan = computed<Partial<ContentPlan>>(() => effectiveState.value?.content_plan || {})
+  const copyContent = computed<Partial<CopyContent>>(() => effectiveState.value?.copy_content || {})
+  const visualPlan = computed<Partial<VisualPlan>>(() => effectiveState.value?.visual_plan || {})
+  const agentTimeline = computed(() => effectiveState.value?.agent_timeline || [])
 
   // Ripple CAS engine results
-  const ripplePrediction = computed(() => workflowState.value?.ripple_prediction || {})
-  const ripplePmf = computed(() => workflowState.value?.ripple_pmf || {})
-  const rippleComparison = computed(() => workflowState.value?.ripple_comparison || {})
-  const rippleReason = computed(() => workflowState.value?.ripple_reason || '')
+  const ripplePrediction = computed(() => effectiveState.value?.ripple_prediction || {})
+  const ripplePmf = computed(() => effectiveState.value?.ripple_pmf || {})
+  const rippleComparison = computed(() => effectiveState.value?.ripple_comparison || {})
+  const rippleReason = computed(() => effectiveState.value?.ripple_reason || '')
 
   // Ripple progress for active thread
   const rippleProgress = computed<RippleProgress | null>(() =>
@@ -506,6 +550,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
         error.value = state?.error || t('workflow.error')
         return
       }
+      if (state?.checkpoint_lost) {
+        error.value = t('workflow.checkpointLost')
+        toastStore.warning(t('workflow.checkpointLostTitle'), t('workflow.checkpointLost'))
+        return
+      }
       if (status === 'stale') {
         toastStore.warning(t('workflow.staleDetected'), t('workflow.staleHint'))
       }
@@ -632,7 +681,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   function setThreadId(threadId: string) {
-    if (!workflowStates.value.has(threadId)) return
     activeThreadId.value = threadId
     localStorage.setItem(LS_ACTIVE_THREAD, threadId)
     if (!openTabIds.value.includes(threadId)) {
@@ -680,6 +728,62 @@ export const useWorkflowStore = defineStore('workflow', () => {
   function clearBriefUpload() {
     briefUploadedText.value = null
     briefSourceType.value = null
+  }
+
+  // ── Replay mode actions ──
+
+  async function enterReplayMode() {
+    if (!activeThreadId.value) return
+    isReplayMode.value = true
+    replayCheckpoints.value = []
+    activeCheckpointId.value = null
+    hasMoreCheckpoints.value = false
+    isLoadingCheckpoints.value = true
+    try {
+      const result = await workflowApi.getCheckpointHistory(activeThreadId.value, { limit: 20 })
+      replayCheckpoints.value = result.checkpoints
+      hasMoreCheckpoints.value = result.has_more
+      // Auto-select latest checkpoint
+      if (result.checkpoints.length > 0) {
+        activeCheckpointId.value = result.checkpoints[0].checkpoint_id
+      }
+    } catch (e: any) {
+      toastStore.error(t('workflow.replayLoadFailed'), e.message)
+    } finally {
+      isLoadingCheckpoints.value = false
+    }
+  }
+
+  function exitReplayMode() {
+    isReplayMode.value = false
+    activeCheckpointId.value = null
+    replayCheckpoints.value = []
+    hasMoreCheckpoints.value = false
+  }
+
+  function selectCheckpoint(checkpointId: string) {
+    if (!replayCheckpoints.value.find(c => c.checkpoint_id === checkpointId)) return
+    activeCheckpointId.value = checkpointId
+  }
+
+  async function loadMoreCheckpoints() {
+    if (!activeThreadId.value || !hasMoreCheckpoints.value || isLoadingCheckpoints.value) return
+    isLoadingCheckpoints.value = true
+    try {
+      // Use oldest checkpoint as cursor
+      const oldest = replayCheckpoints.value[replayCheckpoints.value.length - 1]
+      const result = await workflowApi.getCheckpointHistory(activeThreadId.value, {
+        limit: 20,
+        before: oldest?.checkpoint_id,
+      })
+      // Append older checkpoints
+      replayCheckpoints.value = [...replayCheckpoints.value, ...result.checkpoints]
+      hasMoreCheckpoints.value = result.has_more
+    } catch (e: any) {
+      toastStore.error(t('workflow.replayLoadFailed'), e.message)
+    } finally {
+      isLoadingCheckpoints.value = false
+    }
   }
 
   return {
@@ -743,5 +847,18 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isBriefUploading,
     uploadBriefPdf,
     clearBriefUpload,
+
+    // Replay mode
+    isReplayMode,
+    replayCheckpoints,
+    activeCheckpointId,
+    hasMoreCheckpoints,
+    isLoadingCheckpoints,
+    replayState,
+    effectiveState,
+    enterReplayMode,
+    exitReplayMode,
+    selectCheckpoint,
+    loadMoreCheckpoints,
   }
 })

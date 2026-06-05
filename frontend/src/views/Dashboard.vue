@@ -23,6 +23,12 @@ const workflowStore = useWorkflowStore()
 const toastStore = useToastStore()
 const errorStore = useErrorStore()
 
+// Auto-enter replay mode from URL query
+const route = router.currentRoute
+if (route.value.query.replay === 'true' && workflowStore.activeThreadId) {
+  workflowStore.enterReplayMode()
+}
+
 const showOptimization = computed(() =>
   workflowStore.currentPhase === 'creating' ||
   workflowStore.isAwaitingDraft ||
@@ -202,6 +208,24 @@ onUnmounted(() => {
       </div>
 
       <WorkflowHeader />
+
+      <!-- Replay mode banner -->
+      <div v-if="workflowStore.isReplayMode" class="rounded-2xl p-4 bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-200/50">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">
+              <AppIcon name="History" size="md" variant="purple" />
+            </div>
+            <div>
+              <div class="text-violet-700 font-semibold text-sm">{{ t('workflow.replayMode') }}</div>
+              <p class="text-violet-500 text-xs">{{ t('workflow.replayModeDesc') }}</p>
+            </div>
+          </div>
+          <NeonButton variant="ghost" size="sm" @click="workflowStore.exitReplayMode()">
+            {{ t('workflow.exitReplay') }}
+          </NeonButton>
+        </div>
+      </div>
 
       <!-- Brief PDF Upload (shown when awaiting brief input) -->
       <div v-if="showBriefUpload" class="rounded-2xl p-4 bg-gradient-to-br from-neon-pink/5 to-neon-peach/5 border border-neon-pink/20">

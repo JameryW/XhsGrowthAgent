@@ -226,6 +226,43 @@ class WorkflowStatusResponse(BaseModel):
     brief_content: dict = Field(default_factory=dict, description="解析后的 Brief 内容")
     brief_clarification: dict = Field(default_factory=dict, description="Brief 补充问题")
     shooting_plan: dict = Field(default_factory=dict, description="拍摄计划")
+    checkpoint_lost: bool = Field(
+        default=False, description="Checkpoint lost after container restart",
+    )
+
+
+class CheckpointSnapshot(BaseModel):
+    """A single checkpoint snapshot from workflow execution history."""
+    checkpoint_id: str = Field(description="Checkpoint ID for cursor-based pagination")
+    step: int = Field(default=0, description="LangGraph step number")
+    source: str = Field(default="", description="Node that produced this checkpoint")
+    phase: str = Field(default="unknown", description="Workflow phase at this checkpoint")
+    current_agent: str = Field(default="", description="Active agent at this checkpoint")
+    created_at: str | None = Field(default=None, description="Checkpoint creation timestamp")
+    next_nodes: list[str] = Field(default_factory=list, description="Nodes scheduled to run next")
+    # Stage data (non-empty only when populated by that point)
+    trend_data: dict = Field(default_factory=dict)
+    content_plan: dict = Field(default_factory=dict)
+    copy_content: dict = Field(default_factory=dict)
+    draft_content: dict = Field(default_factory=dict)
+    optimization_analysis: dict = Field(default_factory=dict)
+    content_versions: list[dict] = Field(default_factory=list)
+    visual_plan: dict = Field(default_factory=dict)
+    publish_result: dict = Field(default_factory=dict)
+    analytics: dict = Field(default_factory=dict)
+    ripple_prediction: dict = Field(default_factory=dict)
+    ripple_pmf: dict = Field(default_factory=dict)
+    ripple_comparison: dict = Field(default_factory=dict)
+    workflow_mode: str = Field(default="trend")
+    brief_content: dict = Field(default_factory=dict)
+    shooting_plan: dict = Field(default_factory=dict)
+
+
+class CheckpointHistoryResponse(BaseModel):
+    """Paginated response of checkpoint snapshots."""
+    thread_id: str
+    checkpoints: list[CheckpointSnapshot]
+    has_more: bool = Field(default=False, description="Whether older checkpoints exist")
 
 
 PHASE_PROGRESS = {
@@ -476,7 +513,22 @@ async def get_workflow_status(thread_id: str, request: Request):
     else:
         row = None
     if row:
-        return success(data=WorkflowStatusResponse(
+        # A workflow is only truly "checkpoint lost" if:
+        # - It has a non-terminal status in DB (meaning it was running/paused/awaiting)
+        # - AND there is no active background task for it in this process
+        # - AND there is no live LangGraph checkpoint (we already checked above)
+        has_active_task = (
+            thread_id in _background_tasks
+            and not _background_tasks[thread_id].done()
+        )
+        checkpoint_lost = (
+            row.status in (
+                "running", "stale", "paused", "awaiting_review",
+                "awaiting_choice", "awaiting_draft", "awaiting_brief",
+            )
+            and not has_active_task
+        )
+        data = WorkflowStatusResponse(
             thread_id=thread_id,
             phase=row.phase,
             status=row.status or _persisted_status(row.phase, row.error),
@@ -486,6 +538,135 @@ async def get_workflow_status(thread_id: str, request: Request):
             progress_percent=row.progress_percent,
             created_at=row.created_at,
             updated_at=row.updated_at,
+            checkpoint_lost=checkpoint_lost,
+        ).model_dump()
+        return success(data=data)
+
+    raise WorkflowNotFoundError(thread_id)
+
+
+def _snapshot_to_checkpoint(snapshot) -> CheckpointSnapshot:
+    """Convert a LangGraph StateSnapshot to a CheckpointSnapshot."""
+    values = snapshot.values or {}
+    meta = snapshot.metadata or {}
+    checkpoint_id = ""
+    if snapshot.config and snapshot.config.get("configurable"):
+        checkpoint_id = snapshot.config["configurable"].get("checkpoint_id", "")
+    return CheckpointSnapshot(
+        checkpoint_id=checkpoint_id,
+        step=meta.get("step", 0),
+        source=meta.get("source", ""),
+        phase=values.get("phase", "unknown"),
+        current_agent=values.get("current_agent", ""),
+        created_at=snapshot.created_at,
+        next_nodes=list(snapshot.next) if snapshot.next else [],
+        trend_data=values.get("trend_data") or {},
+        content_plan=values.get("content_plan") or {},
+        copy_content=values.get("copy_content") or {},
+        draft_content=values.get("draft_content") or {},
+        optimization_analysis=values.get("optimization_analysis") or {},
+        content_versions=values.get("content_versions") or [],
+        visual_plan=values.get("visual_plan") or {},
+        publish_result=values.get("publish_result") or {},
+        analytics=values.get("analytics") or {},
+        ripple_prediction=_extract_ripple(values, "ripple_prediction"),
+        ripple_pmf=_extract_ripple(values, "ripple_pmf"),
+        ripple_comparison=values.get("ripple_comparison") or {},
+        workflow_mode=values.get("workflow_mode") or "trend",
+        brief_content=values.get("brief_content") or {},
+        shooting_plan=values.get("shooting_plan") or {},
+    )
+
+
+@router.get("/history/{thread_id}")
+async def get_checkpoint_history(
+    thread_id: str,
+    request: Request,
+    limit: int = Query(20, ge=1, le=100, description="Max checkpoints to return"),
+    before: str | None = Query(None, description="Checkpoint ID cursor for pagination"),
+):
+    """获取工作流的检查点历史记录（用于回放）"""
+    if not thread_id or thread_id.strip() == "":
+        raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    # Build before_config for cursor-based pagination
+    before_config = None
+    if before:
+        before_config = {"configurable": {"thread_id": thread_id, "checkpoint_id": before}}
+
+    checkpoints: list[CheckpointSnapshot] = []
+    has_more = False
+    found_workflow = False
+
+    try:
+        count = 0
+        async for snapshot in graph.aget_state_history(
+            config, limit=limit + 1, before=before_config,
+        ):
+            found_workflow = True
+            if count >= limit:
+                has_more = True
+                break
+            checkpoints.append(_snapshot_to_checkpoint(snapshot))
+            count += 1
+    except ValueError:
+        # No checkpointer configured — fall through to history file fallback
+        pass
+
+    if found_workflow:
+        return success(data=CheckpointHistoryResponse(
+            thread_id=thread_id,
+            checkpoints=checkpoints,
+            has_more=has_more,
+        ).model_dump())
+
+    # Fallback: check history file for completed workflows (no live checkpoints)
+    saved = _load_history_file(thread_id)
+    if saved:
+        phase = saved.get("phase", "unknown")
+        checkpoint = CheckpointSnapshot(
+            checkpoint_id="history-final",
+            step=0,
+            source="history_file",
+            phase=phase,
+            current_agent=saved.get("current_agent", ""),
+            created_at=saved.get("updated_at") or saved.get("created_at"),
+            next_nodes=[],
+            trend_data=saved.get("trend_data") or {},
+            content_plan=saved.get("content_plan") or {},
+            copy_content=saved.get("copy_content") or {},
+            draft_content=saved.get("draft_content") or {},
+            optimization_analysis=saved.get("optimization_analysis") or {},
+            content_versions=saved.get("content_versions") or [],
+            visual_plan=saved.get("visual_plan") or {},
+            publish_result=saved.get("publish_result") or {},
+            analytics=saved.get("analytics") or {},
+            ripple_prediction=_extract_ripple(saved, "ripple_prediction"),
+            ripple_pmf=_extract_ripple(saved, "ripple_pmf"),
+            ripple_comparison=saved.get("ripple_comparison") or {},
+            workflow_mode=saved.get("workflow_mode") or "trend",
+            brief_content=saved.get("brief_content") or {},
+            shooting_plan=saved.get("shooting_plan") or {},
+        )
+        return success(data=CheckpointHistoryResponse(
+            thread_id=thread_id,
+            checkpoints=[checkpoint],
+            has_more=False,
+        ).model_dump())
+
+    # Fallback: check DB
+    if is_pool_ready():
+        row = await db_get(thread_id)
+    else:
+        row = None
+    if row:
+        return success(data=CheckpointHistoryResponse(
+            thread_id=thread_id,
+            checkpoints=[],
+            has_more=False,
         ).model_dump())
 
     raise WorkflowNotFoundError(thread_id)
@@ -727,7 +908,7 @@ async def list_workflows_endpoint(
 
 
 @router.delete("/{thread_id}")
-async def delete_workflow(thread_id: str):
+async def delete_workflow(thread_id: str, request: Request):
     """删除工作流记录 — 只能删除已完成/已取消/出错的工作流"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
@@ -738,17 +919,27 @@ async def delete_workflow(thread_id: str):
     if not row and not in_history:
         raise WorkflowNotFoundError(thread_id)
 
-    if row and row.status in ("running", "stale"):
+    if row and row.status not in ("completed", "cancelled", "error"):
         raise ValidationError(
-            "thread_id", "Cannot delete a running or stale workflow. Cancel it first."
+            "thread_id",
+            f"Cannot delete a workflow in '{row.status}' status. "
+            "Only completed, cancelled, or error workflows can be deleted.",
         )
 
+    # Delete from DB
     if row:
         await db_delete(thread_id)
 
+    # Delete history file
     history_path = _HISTORY_DIR / f"{thread_id}.json"
     with contextlib.suppress(OSError):
         history_path.unlink()
+
+    # Delete from LangGraph checkpointer
+    checkpointer = getattr(request.app.state, "checkpointer", None)
+    if checkpointer is not None:
+        with contextlib.suppress(Exception):
+            await checkpointer.adelete_thread(thread_id)
 
     return success(data={
         "thread_id": thread_id,

@@ -1,5 +1,5 @@
 import client from './client'
-import type { WorkflowStartRequest, WorkflowResponse, WorkflowStateResponse, WorkflowListResponse } from '@/types/workflow'
+import type { WorkflowStartRequest, WorkflowResponse, WorkflowStateResponse, WorkflowListResponse, CheckpointHistoryResponse } from '@/types/workflow'
 import { useRetry } from '@/composables/useRetry'
 
 // Brief upload result from backend
@@ -126,4 +126,12 @@ export async function uploadBriefFile(threadId: string, file: File): Promise<Bri
   const json = await res.json()
   // Backend wraps in ApiResponse: { success, data: {...} }
   return json.data as BriefUploadResult
+}
+
+// Get checkpoint history for replay
+export async function getCheckpointHistory(threadId: string, params?: {
+  limit?: number
+  before?: string
+}): Promise<CheckpointHistoryResponse> {
+  return client.get(`/workflow/history/${threadId}`, { params }) as unknown as CheckpointHistoryResponse
 }

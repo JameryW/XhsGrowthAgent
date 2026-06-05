@@ -89,9 +89,16 @@ async function resumeWorkflow(threadId: string) {
   router.push('/dashboard')
 }
 
-function viewWorkflow(threadId: string) {
+async function viewWorkflow(threadId: string) {
   workflowStore.setThreadId(threadId)
+  await workflowStore.refreshStatus()
   router.push('/dashboard')
+}
+
+async function replayWorkflow(threadId: string) {
+  workflowStore.setThreadId(threadId)
+  await workflowStore.refreshStatus()
+  router.push('/dashboard?replay=true')
 }
 
 function requestDelete(threadId: string) {
@@ -104,6 +111,8 @@ async function confirmDelete() {
   isDeleting.value = true
   try {
     await deleteWorkflow(deleteTarget.value)
+    // Clean up workflow store state for the deleted thread
+    workflowStore.closeTab(deleteTarget.value)
     workflows.value = workflows.value.filter(w => w.thread_id !== deleteTarget.value)
     total.value--
     toastStore.success(t('history.deleteSuccess'), deleteTarget.value)
@@ -241,8 +250,16 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
               >
                 {{ t('history.view') }}
               </NeonButton>
-              <button
+              <NeonButton
                 v-if="wf.status !== 'running'"
+                variant="cyan"
+                size="sm"
+                @click.stop="replayWorkflow(wf.thread_id)"
+              >
+                {{ t('history.replay') }}
+              </NeonButton>
+              <button
+                v-if="['completed', 'cancelled', 'error'].includes(wf.status)"
                 @click.stop="requestDelete(wf.thread_id)"
                 class="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors"
                 :aria-label="t('history.delete')"
