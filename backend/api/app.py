@@ -15,7 +15,9 @@ from starlette.responses import FileResponse, Response
 
 from backend.api.middleware import error_handler_middleware
 from backend.api.responses import success
+from backend.config.settings import Settings
 from backend.graph.builder import compile_graph_dev
+from backend.services.ripple_service import RippleService
 
 # 加载 .env 文件（必须在其他导入之前）
 load_dotenv(override=True)
@@ -52,8 +54,20 @@ async def lifespan(app: FastAPI):
             app.state.graph = compile_graph_dev()
     else:
         app.state.graph = compile_graph_dev()
+
+    # Start Ripple background health check
+    settings = Settings()
+    ripple = RippleService.get_instance()
+    interval = settings.ripple.health_check_interval
+    ripple.start_background_health_check(interval_seconds=interval)
+
     yield
     # ── Cleanup ──
+    # Stop Ripple background health check + close connections
+    ripple.stop_background_health_check()
+    with contextlib.suppress(Exception):
+        await ripple.close()
+
     # Close checkpointer pool first (owns its connections)
     if checkpoint_pool is not None:
         with contextlib.suppress(Exception):
