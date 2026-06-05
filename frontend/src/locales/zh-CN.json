@@ -273,6 +273,8 @@
       "keyInfluencers": "关键影响者",
       "fallbackNotice": "Ripple 引擎暂不可用，以下为默认预测值",
       "disabledNotice": "Ripple 引擎未启用，以下为默认预测值",
+      "retryStarted": "Ripple 分析已重新启动",
+      "retryFailed": "Ripple 重试失败",
       "simulating": "模拟运行中",
       "waveProgress": "Wave 进度",
       "elapsed": "已用时"

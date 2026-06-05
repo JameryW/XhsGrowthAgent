@@ -773,20 +773,21 @@ async def resume_workflow(thread_id: str, request: Request):
         })
 
     next_nodes = tuple(state.next or ())
-    can_retry_error = derived == WorkflowStatus.ERROR and bool(next_nodes)
+    can_retry_error = derived == WorkflowStatus.ERROR
     can_resume_stale = derived == WorkflowStatus.STALE
+    can_restart_terminal = derived in (WorkflowStatus.COMPLETED, WorkflowStatus.CANCELLED)
 
-    if derived != WorkflowStatus.PAUSED and not can_retry_error and not can_resume_stale:
+    if derived != WorkflowStatus.PAUSED and not can_retry_error and not can_resume_stale and not can_restart_terminal:
         return success(data={
             "thread_id": thread_id,
             "status": str(derived.value),
             "message": (
                 f"工作流当前状态为 {derived.value}，无法恢复。"
-                "只有暂停状态、过期状态或仍有可重试节点的错误状态可以恢复。"
+                "只有暂停、过期、错误、已完成或已取消状态可以恢复/重试。"
             ),
         })
 
-    if can_retry_error or can_resume_stale:
+    if (can_retry_error or can_resume_stale) and next_nodes:
         prev_phase = _resume_phase_for_next_nodes(
             next_nodes,
             state.values.get("prev_phase") or WorkflowPhase.CREATING,
@@ -919,11 +920,10 @@ async def delete_workflow(thread_id: str, request: Request):
     if not row and not in_history:
         raise WorkflowNotFoundError(thread_id)
 
-    if row and row.status not in ("completed", "cancelled", "error"):
+    if row and row.status == "running":
         raise ValidationError(
             "thread_id",
-            f"Cannot delete a workflow in '{row.status}' status. "
-            "Only completed, cancelled, or error workflows can be deleted.",
+            "Cannot delete a running workflow. Cancel it first.",
         )
 
     # Delete from DB
@@ -944,6 +944,99 @@ async def delete_workflow(thread_id: str, request: Request):
     return success(data={
         "thread_id": thread_id,
         "message": "Workflow deleted from history",
+    })
+
+
+@router.post("/ripple-retry/{thread_id}")
+async def retry_ripple_analysis(thread_id: str, request: Request):
+    """重新运行 Ripple 传播预测和 PMF 验证（当之前超时或不可用时）"""
+    if not thread_id or thread_id.strip() == "":
+        raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    state = await graph.aget_state(config)
+    if not state.values or state.values.get("session_id") is None:
+        raise WorkflowNotFoundError(thread_id)
+
+    values = state.values
+    ripple_reason = values.get("ripple_reason", "")
+    content_plan = values.get("content_plan") or values.get("content_plan", {})
+
+    # Only allow retry when Ripple previously failed or was unavailable
+    if not ripple_reason and not values.get("ripple_fallback"):
+        return success(data={
+            "thread_id": thread_id,
+            "status": "skipped",
+            "message": "Ripple 分析之前已成功，无需重试",
+        })
+
+    topic = content_plan.get("selected_topic", "") if isinstance(content_plan, dict) else ""
+    if not topic:
+        return success(data={
+            "thread_id": thread_id,
+            "status": "skipped",
+            "message": "无法重试：缺少 content_plan 或 selected_topic",
+        })
+
+    from backend.services.ripple_service import RippleService, RippleTimeoutError
+
+    ripple = RippleService()
+    ripple_timeout = 1800.0
+
+    async def _run_retry():
+        try:
+            pred, pmf = await asyncio.gather(
+                ripple.predict_spread(
+                    topic=topic,
+                    content_type=content_plan.get("content_type", "note"),
+                    tags=content_plan.get("hashtags", []),
+                    tone=content_plan.get("content_angle", ""),
+                    description=content_plan.get("content_angle", ""),
+                    max_waves=6,
+                    simulation_horizon="48h",
+                    use_fallback=True,
+                    max_wait=ripple_timeout,
+                    thread_id=thread_id,
+                ),
+                ripple.validate_pmf(
+                    product_name=content_plan.get("selected_topic", ""),
+                    category=content_plan.get("category", ""),
+                    description=content_plan.get("content_angle", ""),
+                    differentiators=content_plan.get("differentiators"),
+                    use_fallback=True,
+                    max_wait=ripple_timeout,
+                    thread_id=thread_id,
+                ),
+            )
+        except (RippleTimeoutError, TimeoutError):
+            logger.warning("Ripple retry timed out for %s", thread_id)
+            return
+
+        # Update workflow state with new Ripple results
+        updates: dict[str, Any] = {}
+        if pred and "ripple_prediction" in pred:
+            updates["ripple_prediction"] = pred["ripple_prediction"]
+        if pmf and "ripple_pmf" in pmf:
+            updates["ripple_pmf"] = pmf["ripple_pmf"]
+        if pred and not pred.get("ripple_fallback") and pmf and not pmf.get("ripple_fallback"):
+            updates["ripple_reason"] = None
+            updates["ripple_fallback"] = None
+        else:
+            reason = pred.get("ripple_reason") or pmf.get("ripple_reason") or "unreachable"
+            updates["ripple_reason"] = reason
+            updates["ripple_fallback"] = True
+
+        if updates:
+            await graph.aupdate_state(config, updates)
+
+    task = asyncio.create_task(_run_retry(), name=f"ripple-retry-{thread_id}")
+
+    return success(data={
+        "thread_id": thread_id,
+        "status": "retrying",
+        "message": "Ripple 分析正在重新运行",
     })
 
 

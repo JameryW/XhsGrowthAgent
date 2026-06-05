@@ -69,7 +69,7 @@ class WorkflowSettings(BaseSettings):
 class RippleSettings(BaseSettings):
     """Ripple CAS 引擎配置"""
 
-    base_url: str = "http://127.0.0.1:8081"
+    base_url: str = "http://127.0.0.1:8080"
     api_token: str = ""
     default_max_waves: int = 8
     default_simulation_horizon: str = "48h"
