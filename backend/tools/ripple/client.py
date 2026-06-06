@@ -24,6 +24,49 @@ def _get_config() -> dict[str, Any]:
     }
 
 
+def _llm_config() -> dict[str, Any] | None:
+    """构建 Ripple 引擎需要的 llm_config，自动从环境变量解析可用的 API key 和 URL"""
+    import os
+
+    from backend.config.settings import Settings
+
+    s = Settings()
+    model = s.ripple.llm_model
+    url = s.ripple.llm_url
+    api_key = s.ripple.llm_api_key
+
+    # Auto-resolve from model provider if not explicitly set
+    if not api_key or not url:
+        from backend.config.models import MODEL_REGISTRY, _PROVIDER_ENV_VARS
+        from backend.models.router import ModelProvider
+
+        cfg = MODEL_REGISTRY.get(model)
+        if cfg:
+            env_var = _PROVIDER_ENV_VARS.get(cfg.provider)
+            if env_var and not api_key:
+                api_key = os.environ.get(env_var, "")
+            if not url:
+                # Resolve base_url per provider
+                provider_urls = {
+                    ModelProvider.DEEPSEEK: "https://api.deepseek.com",
+                    ModelProvider.OPENAI: "https://api.openai.com/v1",
+                    ModelProvider.DASHSCOPE: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    ModelProvider.XIAOMIMIMO: os.environ.get(
+                        "XIAOMIMIMO_BASE_URL", "https://token-plan-sgp.xiaomimimo.com/v1"
+                    ),
+                    ModelProvider.XUNFEI: os.environ.get(
+                        "XUNFEI_BASE_URL", "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2"
+                    ),
+                }
+                url = provider_urls.get(cfg.provider, "")
+
+    if not api_key or not url:
+        return None
+
+    role_config = {"model_name": model, "url": url, "api_key": api_key, "max_tokens": 16384, "json_mode": True}
+    return {"omniscient": role_config, "dynamics": role_config, "star": role_config, "sea": role_config}
+
+
 def _headers() -> dict[str, str]:
     config = _get_config()
     h = {"Accept": "application/json", "Content-Type": "application/json"}
@@ -69,6 +112,9 @@ async def ripple_predict_content_spread(
         "simulation_horizon": simulation_horizon,
         "ensemble_runs": ensemble_runs,
     }
+    llm = _llm_config()
+    if llm:
+        request_body["llm_config"] = llm
     async with httpx.AsyncClient(timeout=cfg["timeout"]) as client:
         resp = await client.post(
             f"{cfg['base_url']}/v1/simulations",
@@ -113,6 +159,9 @@ async def ripple_validate_pmf(
         "event": event,
         "simulation_horizon": simulation_horizon,
     }
+    llm = _llm_config()
+    if llm:
+        request_body["llm_config"] = llm
     async with httpx.AsyncClient(timeout=cfg["timeout"]) as client:
         resp = await client.post(
             f"{cfg['base_url']}/v1/simulations",
