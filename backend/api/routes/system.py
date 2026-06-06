@@ -54,7 +54,7 @@ def _check_xhs() -> dict:
 
 
 async def _check_ripple() -> dict:
-    """Check Ripple CAS engine availability."""
+    """Check Ripple CAS engine availability and LLM config."""
     base_url = os.environ.get("RIPPLE_BASE_URL")
     api_token = os.environ.get("RIPPLE_API_TOKEN")
     enabled = os.environ.get("RIPPLE_ENABLED", "false").lower() == "true"
@@ -82,19 +82,13 @@ async def _check_ripple() -> dict:
     try:
         async with httpx.AsyncClient(timeout=5.0, headers=headers) as client:
             resp = await client.get(f"{base_url.rstrip('/')}/healthz")
-        if resp.status_code == 200:
+        if resp.status_code != 200:
             return {
-                "status": "ok",
+                "status": "warning",
                 "configured": True,
-                "message": "Ripple CAS 可用",
-                "reason": "ok",
+                "message": f"Ripple CAS 健康检查失败：HTTP {resp.status_code}",
+                "reason": "unreachable",
             }
-        return {
-            "status": "warning",
-            "configured": True,
-            "message": f"Ripple CAS 健康检查失败：HTTP {resp.status_code}",
-            "reason": "unreachable",
-        }
     except httpx.HTTPError as exc:
         return {
             "status": "warning",
@@ -102,6 +96,28 @@ async def _check_ripple() -> dict:
             "message": f"Ripple CAS 不可达：{exc}",
             "reason": "unreachable",
         }
+
+    # Healthz is OK — verify LLM config so simulations won't fail with "missing model_name"
+    llm_platform = os.environ.get("RIPPLE_LLM_MODEL_PLATFORM", "")
+    llm_name = os.environ.get("RIPPLE_LLM_MODEL_NAME", "")
+    llm_key = os.environ.get("RIPPLE_LLM_API_KEY", "")
+    llm_configured = bool(llm_platform and llm_name and llm_key)
+
+    if llm_configured:
+        return {
+            "status": "ok",
+            "configured": True,
+            "message": "Ripple CAS 可用，LLM 配置完整",
+            "reason": "ok",
+            "llm_config": {"platform": llm_platform, "model": llm_name},
+        }
+    return {
+        "status": "warning",
+        "configured": True,
+        "message": "Ripple CAS 可用但缺少 LLM 配置（模拟将失败）",
+        "reason": "llm_missing",
+        "llm_config": {"platform": llm_platform, "model": llm_name},
+    }
 
 
 @router.get("/health")

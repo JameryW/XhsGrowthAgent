@@ -91,6 +91,20 @@ class RippleService:
             headers["Authorization"] = f"Bearer {config['api_token']}"
         return headers
 
+    def _build_llm_config(self) -> dict[str, Any] | None:
+        """从 Settings 构建 Ripple LLM 配置（双保险：即使容器缺 llm_config.yaml 也能工作）"""
+        s = Settings()
+        if not (s.ripple.llm_model_platform and s.ripple.llm_model_name and s.ripple.llm_api_key):
+            return None
+        cfg: dict[str, Any] = {
+            "model_platform": s.ripple.llm_model_platform,
+            "model_name": s.ripple.llm_model_name,
+            "api_key": s.ripple.llm_api_key,
+        }
+        if s.ripple.llm_url:
+            cfg["url"] = s.ripple.llm_url
+        return {"_default": cfg}
+
     async def _get_client(self) -> httpx.AsyncClient:
         """获取共享 AsyncClient（连接池）"""
         if self._client is None or self._client.is_closed:
@@ -504,6 +518,11 @@ class RippleService:
     async def submit_simulation(self, request_body: dict[str, Any]) -> dict[str, Any]:
         """提交模拟任务，返回含 job_id 的响应"""
         config = self._get_config()
+        # Inject llm_config if not already provided by caller
+        if "llm_config" not in request_body:
+            llm_cfg = self._build_llm_config()
+            if llm_cfg:
+                request_body["llm_config"] = llm_cfg
         return await self._request_with_retry(
             "POST",
             f"{config['base_url']}/v1/simulations",
