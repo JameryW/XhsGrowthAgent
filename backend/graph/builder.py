@@ -271,7 +271,9 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         from psycopg_pool import AsyncConnectionPool
 
-        pool = AsyncConnectionPool(db_uri, min_size=2, max_size=10, open=False)
+        pool = AsyncConnectionPool(
+            db_uri, min_size=2, max_size=10, open=False, kwargs={"autocommit": True}
+        )
         await pool.open()
         checkpointer = AsyncPostgresSaver(conn=pool)
         await checkpointer.setup()

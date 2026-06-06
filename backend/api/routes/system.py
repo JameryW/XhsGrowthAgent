@@ -137,15 +137,43 @@ async def system_health():
     # Overall status: ok if LLM is configured (XHS is optional — preview-only without it)
     overall = "ok" if llm["status"] == "ok" else "degraded"
 
+    # Detect checkpointer mode from app state
+    try:
+        from backend.api.app import app as fastapi_app
+
+        cp = getattr(fastapi_app.state, "checkpointer", None)
+        if cp is not None:
+            cp_type = type(cp).__name__
+            if "Postgres" in cp_type:
+                database_check = {
+                    "status": "ok",
+                    "mode": "postgres",
+                    "message": f"Postgres 检查点（{cp_type}）",
+                }
+            else:
+                database_check = {
+                    "status": "ok",
+                    "mode": cp_type,
+                    "message": f"检查点：{cp_type}",
+                }
+        else:
+            database_check = {
+                "status": "ok",
+                "mode": "memory",
+                "message": "开发模式（内存检查点）",
+            }
+    except Exception:
+        database_check = {
+            "status": "ok",
+            "mode": "unknown",
+            "message": "无法检测检查点模式",
+        }
+
     checks = {
         "llm_providers": llm,
         "xhs_platform": xhs,
         "ripple_cas": ripple,
-        "database": {
-            "status": "ok",
-            "mode": "memory",
-            "message": "开发模式（内存检查点）",
-        },
+        "database": database_check,
     }
 
     return success(
