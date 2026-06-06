@@ -82,6 +82,7 @@ cmd_start() {
         -e RIPPLE_LLM_API_KEY="${RIPPLE_LLM_API_KEY:-}" \
         -e RIPPLE_LLM_URL="${RIPPLE_LLM_URL:-}" \
         -e POSTGRES_URI="${POSTGRES_URI:-postgresql://xhs:xhs@postgres-xhs:5432/xhs_growth}" \
+        -e TAVILY_API_KEY="${TAVILY_API_KEY:-}" \
         -e REDIS_URI="${REDIS_URI:-redis://redis:6379/0}" \
         "$BACKEND_IMG"
 

@@ -270,6 +270,7 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
     try:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         from psycopg_pool import AsyncConnectionPool
+        from langgraph.store.memory import InMemoryStore
 
         pool = AsyncConnectionPool(
             db_uri, min_size=2, max_size=10, open=False, kwargs={"autocommit": True}
@@ -277,8 +278,10 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         await pool.open()
         checkpointer = AsyncPostgresSaver(conn=pool)
         await checkpointer.setup()
+        store = InMemoryStore()
         graph = builder.compile(
             checkpointer=checkpointer,
+            store=store,
             interrupt_before=["review_gate", "choice_gate", "draft_gate", "brief_gate"],
         )
         # Return pool so app.py can close it on shutdown

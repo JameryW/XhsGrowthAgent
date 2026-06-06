@@ -120,6 +120,17 @@ async def _check_ripple() -> dict:
     }
 
 
+def _check_search() -> dict:
+    """Check search API availability (Tavily)."""
+    tavily = os.environ.get("TAVILY_API_KEY")
+    configured = bool(tavily)
+    return {
+        "status": "ok" if configured else "warning",
+        "configured": configured,
+        "message": "搜索 API 已配置" if configured else "缺少 TAVILY_API_KEY（趋势发现将使用 LLM 生成数据）",
+    }
+
+
 @router.get("/health")
 async def system_health():
     """系统健康检查
@@ -129,10 +140,12 @@ async def system_health():
     - XHS 平台凭证
     - Ripple CAS 引擎
     - 数据库/存储
+    - 搜索 API (Tavily)
     """
     llm = _check_llm_providers()
     xhs = _check_xhs()
     ripple = await _check_ripple()
+    search = _check_search()
 
     # Overall status: ok if LLM is configured (XHS is optional — preview-only without it)
     overall = "ok" if llm["status"] == "ok" else "degraded"
@@ -173,6 +186,7 @@ async def system_health():
         "llm_providers": llm,
         "xhs_platform": xhs,
         "ripple_cas": ripple,
+        "search_api": search,
         "database": database_check,
     }
 
