@@ -19,21 +19,9 @@ function findCheckpointForAgent(agent: string): string | null {
   for (const cp of checkpoints) {
     if (cp.source === agent) return cp.checkpoint_id
   }
-  // Fallback: find checkpoint where the phase matches the agent's phase
-  const agentPhases: Record<string, string> = {
-    trend_scout: 'scouting',
-    content_strategist: 'planning',
-    copywriter: 'creating',
-    visual_designer: 'creating',
-    review_gate: 'reviewing',
-    publisher: 'publishing',
-    analyst: 'analyzing',
-  }
-  const targetPhase = agentPhases[agent]
-  if (targetPhase) {
-    const cp = checkpoints.find(c => c.phase === targetPhase && c.source !== '')
-    if (cp) return cp.checkpoint_id
-  }
+  // Fallback: find checkpoint where the phase matches and source matches the agent
+  const cp = checkpoints.find(c => c.source === agent)
+  if (cp) return cp.checkpoint_id
   return null
 }
 
