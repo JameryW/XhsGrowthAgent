@@ -156,6 +156,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
     currentStatus.value === 'awaiting_brief'
   )
 
+  const isAwaitingRippleDecision = computed(() =>
+    currentStatus.value === 'awaiting_ripple_decision'
+  )
+
+  const reselectCount = computed(() =>
+    (effectiveState.value as any)?.reselect_count ?? 0
+  )
+
   const trendData = computed<Partial<TrendData>>(() => effectiveState.value?.trend_data || {})
   const contentPlan = computed<Partial<ContentPlan>>(() => effectiveState.value?.content_plan || {})
   const copyContent = computed<Partial<CopyContent>>(() => effectiveState.value?.copy_content || {})
@@ -822,6 +830,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isAwaitingChoice,
     isAwaitingDraft,
     isAwaitingBrief,
+    isAwaitingRippleDecision,
+    reselectCount,
     trendData,
     contentPlan,
     copyContent,

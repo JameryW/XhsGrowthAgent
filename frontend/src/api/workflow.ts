@@ -86,6 +86,27 @@ export async function retryRippleAnalysis(threadId: string): Promise<{ thread_id
   return client.post(`/workflow/ripple-retry/${threadId}`) as unknown as { thread_id: string; status: string; message: string }
 }
 
+// 提交 Ripple 决策（接受/换角度/换话题）
+export async function submitRippleDecision(threadId: string, action: 'accept' | 'reangle' | 'retopic'): Promise<{ thread_id: string; status: string; action: string; next_phase: string }> {
+  const { retryWithBackoff } = useRetry()
+  return retryWithBackoff(async () => {
+    const result = await client.post(`/review/ripple-decision/${threadId}`, { action }) as { thread_id: string; status: string; action: string; next_phase: string }
+    return result
+  })
+}
+
+// 获取 Ripple 决策等待状态
+export async function getPendingRippleDecision(threadId: string): Promise<{
+  status: string
+  ripple_prediction: Record<string, unknown>
+  ripple_pmf: Record<string, unknown>
+  reselect_count: number
+  max_reselect: number
+  options: string[]
+}> {
+  return client.get(`/review/ripple-pending/${threadId}`) as unknown as any
+}
+
 // 提交草稿到优化流程
 export async function submitDraft(threadId: string, data: {
   title?: string

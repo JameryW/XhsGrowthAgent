@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -13,6 +14,8 @@ from backend.api.errors import ReviewNotPendingError
 from backend.api.responses import success
 from backend.api.routes import _runner
 from backend.state.enums import ContentStatus
+
+logger = logging.getLogger("xhs_growth.api.review")
 
 router = APIRouter()
 
@@ -27,6 +30,10 @@ class ReviewDecision(BaseModel):
     comments: str = ""
     revisions: list[str] = []
     publish_options: PublishOptions | None = None
+
+
+class RippleDecision(BaseModel):
+    action: str  # "accept" | "reangle" | "retopic"
 
 
 def _build_version_entry(copy_content: dict, visual_plan: dict, label: str = "draft") -> dict:
@@ -151,4 +158,88 @@ async def get_version_history(thread_id: str, request: Request):
             "body": current_copy.get("body_text", ""),
             "hashtags": current_copy.get("hashtags", []),
         },
+    })
+
+
+@router.get("/ripple-pending/{thread_id}")
+async def get_pending_ripple_decision(thread_id: str, request: Request):
+    """获取 Ripple 决策等待状态 — Ripple 结果 + 决策选项"""
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    state = await graph.aget_state(config)
+
+    if "ripple_gate" not in state.next:
+        from backend.api.errors import ValidationError
+        raise ValidationError("ripple_gate", f"Workflow is not awaiting Ripple decision (next: {state.next})")
+
+    values = state.values
+    prediction = values.get("ripple_prediction") or {}
+    pmf = values.get("ripple_pmf") or {}
+    reselect_count = values.get("reselect_count", 0)
+
+    return success(data={
+        "status": "awaiting_ripple_decision",
+        "ripple_prediction": prediction,
+        "ripple_pmf": pmf,
+        "ripple_reason": values.get("ripple_reason", ""),
+        "reselect_count": reselect_count,
+        "max_reselect": 2,
+        "options": ["accept", "reangle", "retopic"],
+    })
+
+
+@router.post("/ripple-decision/{thread_id}")
+async def submit_ripple_decision(thread_id: str, decision: RippleDecision, request: Request):
+    """提交 Ripple 决策 — 用户选择接受/换角度/换话题"""
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    # Verify workflow is awaiting ripple gate decision
+    state = await graph.aget_state(config)
+    if "ripple_gate" not in state.next:
+        from backend.api.errors import ValidationError
+        raise ValidationError("ripple_gate", f"Workflow is not awaiting Ripple decision (next: {state.next})")
+
+    action = decision.action
+    if action not in ("accept", "reangle", "retopic"):
+        from backend.api.errors import ValidationError
+        raise ValidationError("action", f"Invalid action: {action}. Must be accept, reangle, or retopic")
+
+    values = state.values or {}
+    reselect_count = values.get("reselect_count", 0)
+
+    # Enforce reselect limit
+    if action in ("reangle", "retopic") and reselect_count >= 2:
+        logger.warning(f"Reselect limit reached for {thread_id}, forcing accept")
+        action = "accept"
+
+    # Update state before resuming for reangle/retopic
+    if action in ("reangle", "retopic"):
+        updates: dict = {"reselect_count": reselect_count + 1}
+        # For retopic: clear trend data and content plan so trend_scout starts fresh
+        if action == "retopic":
+            updates["trend_data"] = {}
+            updates["content_plan"] = {}
+            updates["ripple_prediction"] = {}
+            updates["ripple_pmf"] = {}
+        await graph.aupdate_state(config, updates)
+
+    # Resume the graph with the user's decision
+    try:
+        result = await _runner._run_graph_and_persist(
+            thread_id, graph, config,
+            Command(resume={"action": action}),
+            source="ripple_gate",
+        )
+    except Exception:
+        result = {}
+
+    next_phase = result.get("phase", "unknown") if result else "unknown"
+
+    return success(data={
+        "thread_id": thread_id,
+        "status": "resumed",
+        "action": action,
+        "next_phase": next_phase,
     })

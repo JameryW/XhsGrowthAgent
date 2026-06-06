@@ -20,6 +20,7 @@ from backend.agents.nodes.orchestrator import orchestrator_node
 from backend.agents.nodes.publisher import publisher_node
 from backend.agents.nodes.review_gate import review_gate_node
 from backend.agents.nodes.revise_content import revise_content_node
+from backend.agents.nodes.ripple_gate import ripple_gate_node
 from backend.agents.nodes.shooting_planner import shooting_planner_node
 from backend.agents.nodes.trend_scout import trend_scout_node
 from backend.agents.nodes.visual_designer import visual_designer_node
@@ -39,6 +40,8 @@ __all__ = [
     "engagement_node",
     "review_gate_node",
     "revise_content_node",
+    # Ripple gate
+    "ripple_gate_node",
     # Brief mode nodes
     "brief_analyzer_node",
     "brief_gate_node",

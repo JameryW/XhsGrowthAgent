@@ -25,6 +25,7 @@ export type WorkflowStatus =
   | 'awaiting_choice'
   | 'awaiting_draft'
   | 'awaiting_brief'
+  | 'awaiting_ripple_decision'
   | 'paused'
   | 'completed'
   | 'error'
@@ -296,6 +297,7 @@ export interface WorkflowStateResponse {
   ripple_comparison?: RippleComparison
   ripple_progress?: RippleProgress
   ripple_reason?: string  // "disabled" | "unreachable" | ""
+  reselect_count?: number
   checkpoint_lost?: boolean
 }
 

@@ -35,6 +35,8 @@ const ripplePmf = computed(() => workflowStore.ripplePmf)
 const rippleComparison = computed(() => workflowStore.rippleComparison)
 const rippleReason = computed(() => workflowStore.rippleReason)
 const rippleProgress = computed(() => workflowStore.rippleProgress)
+const isAwaitingRippleDecision = computed(() => workflowStore.isAwaitingRippleDecision)
+const reselectCount = computed(() => workflowStore.reselectCount)
 
 // Check if specific data exists
 const hasTrendData = computed(() => Object.keys(trendData.value).length > 0)
@@ -165,6 +167,26 @@ function heatBg(score?: number): string {
       </div>
     </div>
 
+    <!-- ═══ PLANNING: Ripple Progress (shown while simulating, before content_plan arrives) ═══ -->
+    <div v-if="rippleProgress && !hasContentPlan && showForPhase('planning')" class="rounded-xl p-5 bg-white/98 border border-cyan-100/50">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-teal-400 flex items-center justify-center">
+          <AppIcon name="ClipboardList" size="md" variant="white" />
+        </div>
+        <div>
+          <div class="text-sm font-semibold text-slate-800">{{ t('dashboard.contentCards.strategyPlanning') }}</div>
+          <div class="text-xs text-slate-400">{{ t('dashboard.timeline.running') }}</div>
+        </div>
+      </div>
+      <RipplePanel
+        :progress="rippleProgress"
+        :awaiting-decision="isAwaitingRippleDecision"
+        :reselect-count="reselectCount"
+        :max-reselect="2"
+        variant="planning"
+      />
+    </div>
+
     <!-- ═══ PLANNING: Content Plan + Ripple ═══ -->
     <div v-if="hasContentPlan && showForPhase('planning')" class="rounded-xl p-5 bg-white/98 border border-cyan-100/50">
       <div class="flex items-center gap-3 mb-4">
@@ -220,6 +242,9 @@ function heatBg(score?: number): string {
           :pmf="ripplePmf"
           :ripple-reason="rippleReason"
           :progress="rippleProgress"
+          :awaiting-decision="isAwaitingRippleDecision"
+          :reselect-count="reselectCount"
+          :max-reselect="2"
           variant="planning"
         />
       </div>

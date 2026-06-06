@@ -84,6 +84,7 @@ cmd_start() {
         -e POSTGRES_URI="${POSTGRES_URI:-postgresql://xhs:xhs@postgres-xhs:5432/xhs_growth}" \
         -e TAVILY_API_KEY="${TAVILY_API_KEY:-}" \
         -e REDIS_URI="${REDIS_URI:-redis://redis:6379/0}" \
+        -v "$PROJECT_DIR/frontend/dist:/app/frontend/dist:ro" \
         "$BACKEND_IMG"
 
     echo ">>> 等待后端就绪..."

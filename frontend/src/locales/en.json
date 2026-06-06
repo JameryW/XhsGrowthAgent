@@ -277,7 +277,16 @@
       "retryFailed": "Ripple retry failed",
       "simulating": "Simulating",
       "waveProgress": "Wave progress",
-      "elapsed": "Elapsed"
+      "elapsed": "Elapsed",
+      "decisionPrompt": "Ripple results are suboptimal — choose your next step",
+      "reselectInfo": "Reselect count: {count}/{max}",
+      "accept": "Accept current topic",
+      "reangle": "Try a different angle",
+      "retopic": "Choose a new topic",
+      "accepted": "Accepted current topic",
+      "reangling": "Re-planning with a different angle...",
+      "retopicing": "Searching for new topics...",
+      "decisionFailed": "Decision submission failed"
     },
     "scouting": {
       "hotTopics": "Hot Topics",

@@ -277,7 +277,16 @@
       "retryFailed": "Ripple 重试失败",
       "simulating": "模拟运行中",
       "waveProgress": "Wave 进度",
-      "elapsed": "已用时"
+      "elapsed": "已用时",
+      "decisionPrompt": "Ripple 分析结果不理想，请选择下一步操作",
+      "reselectInfo": "已重新选题 {count}/{max} 次",
+      "accept": "接受当前选题",
+      "reangle": "换角度重新规划",
+      "retopic": "换话题重新搜索",
+      "accepted": "已接受当前选题",
+      "reangling": "正在换角度重新规划...",
+      "retopicing": "正在换话题重新搜索...",
+      "decisionFailed": "决策提交失败"
     },
     "scouting": {
       "hotTopics": "热门话题",
