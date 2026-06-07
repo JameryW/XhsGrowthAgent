@@ -1,0 +1,3 @@
+{"file": "prd.md", "reason": "Acceptance criteria: conditional interrupt threshold, three-way routing, 2-cycle limit, Brief mode"}
+{"file": "spec/backend/ripple-integration.md", "reason": "Verify Ripple service API contract for re-invocation after reselect"}
+{"file": "spec/backend/workflow-state.md", "reason": "Verify state schema for new fields (ripple_decision, reselect_count) and reducer compatibility"}
