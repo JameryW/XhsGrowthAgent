@@ -177,6 +177,15 @@ export interface RippleProgress {
   progress: number
   elapsed_seconds: number
   status: string
+  skill?: string
+}
+
+// Aggregated progress for all running Ripple jobs on a thread
+export interface RippleThreadProgress {
+  jobs: Record<string, RippleProgress>
+  overall_progress: number
+  active_jobs: number
+  total_jobs: number
 }
 
 export interface RipplePrediction {

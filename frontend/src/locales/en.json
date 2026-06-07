@@ -276,6 +276,7 @@
       "retryStarted": "Ripple analysis restarted",
       "retryFailed": "Ripple retry failed",
       "simulating": "Simulating",
+      "preparing": "Preparing Ripple simulation...",
       "waveProgress": "Wave progress",
       "elapsed": "Elapsed",
       "decisionPrompt": "Ripple results are suboptimal — choose your next step",

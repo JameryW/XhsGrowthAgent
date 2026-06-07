@@ -965,9 +965,15 @@ async def retry_ripple_analysis(thread_id: str, request: Request):
     values = state.values
     ripple_reason = values.get("ripple_reason", "")
     content_plan = values.get("content_plan") or values.get("content_plan", {})
+    ripple_prediction = values.get("ripple_prediction") or {}
 
-    # Only allow retry when Ripple previously failed or was unavailable
-    if not ripple_reason and not values.get("ripple_fallback"):
+    # Check if Ripple previously failed — explicit flags or fallback-looking prediction
+    is_fallback_prediction = (
+        ripple_prediction.get("viral_probability") == 0
+        and ripple_prediction.get("confidence") == 0
+        and ripple_prediction.get("estimated_reach") in (0, None)
+    )
+    if not ripple_reason and not values.get("ripple_fallback") and not is_fallback_prediction:
         return success(data={
             "thread_id": thread_id,
             "status": "skipped",
@@ -984,56 +990,83 @@ async def retry_ripple_analysis(thread_id: str, request: Request):
 
     from backend.services.ripple_service import RippleService, RippleTimeoutError
 
-    ripple = RippleService()
+    ripple = RippleService.get_instance()
     ripple_timeout = 1800.0
 
     async def _run_retry():
+        print(f"[ripple-retry] Started for {thread_id}, topic={topic}", flush=True)
         try:
-            pred, pmf = await asyncio.gather(
-                ripple.predict_spread(
-                    topic=topic,
-                    content_type=content_plan.get("content_type", "note"),
-                    tags=content_plan.get("hashtags", []),
-                    tone=content_plan.get("content_angle", ""),
-                    description=content_plan.get("content_angle", ""),
-                    max_waves=6,
-                    simulation_horizon="48h",
-                    use_fallback=True,
-                    max_wait=ripple_timeout,
-                    thread_id=thread_id,
-                ),
-                ripple.validate_pmf(
-                    product_name=content_plan.get("selected_topic", ""),
-                    category=content_plan.get("category", ""),
-                    description=content_plan.get("content_angle", ""),
-                    differentiators=content_plan.get("differentiators"),
-                    use_fallback=True,
-                    max_wait=ripple_timeout,
-                    thread_id=thread_id,
-                ),
+            # Bypass health-check/fallback — retry means we want a real simulation
+            pred_task = ripple.submit_and_wait(
+                {
+                    "skill": "social-media",
+                    "platform": "xiaohongshu",
+                    "event": {
+                        "topic": topic,
+                        "content_type": content_plan.get("content_type", "note"),
+                        "tags": content_plan.get("hashtags", []),
+                        "tone": content_plan.get("content_angle", ""),
+                        "description": content_plan.get("content_angle", ""),
+                    },
+                    "max_waves": 6,
+                    "simulation_horizon": "48h",
+                },
+                max_wait=ripple_timeout,
+                thread_id=thread_id,
             )
+            pmf_task = ripple.submit_and_wait(
+                {
+                    "skill": "pmf-validation",
+                    "channel": "content-seeding",
+                    "vertical": "fmcg",
+                    "platform": "xiaohongshu",
+                    "event": {
+                        "name": content_plan.get("selected_topic", ""),
+                        "category": content_plan.get("category", ""),
+                        "description": content_plan.get("content_angle", ""),
+                        "differentiators": content_plan.get("key_points", []),
+                    },
+                    "simulation_horizon": "72h",
+                },
+                max_wait=ripple_timeout,
+                thread_id=thread_id,
+            )
+            raw_pred, raw_pmf = await asyncio.gather(pred_task, pmf_task)
+            print(f"[ripple-retry] Simulations completed for {thread_id}", flush=True)
+
+            pred = ripple._parse_spread_result(raw_pred)
+            pmf_result = ripple._parse_pmf_result(raw_pmf)
         except (RippleTimeoutError, TimeoutError):
             logger.warning("Ripple retry timed out for %s", thread_id)
+            return
+        except Exception as e:
+            print(f"[ripple-retry] FAILED for {thread_id}: {type(e).__name__}: {e}", flush=True)
             return
 
         # Update workflow state with new Ripple results
         updates: dict[str, Any] = {}
-        if pred and "ripple_prediction" in pred:
-            updates["ripple_prediction"] = pred["ripple_prediction"]
-        if pmf and "ripple_pmf" in pmf:
-            updates["ripple_pmf"] = pmf["ripple_pmf"]
-        if pred and not pred.get("ripple_fallback") and pmf and not pmf.get("ripple_fallback"):
+        ripple_pred_data = pred.get("ripple_prediction")
+        if ripple_pred_data:
+            updates["ripple_prediction"] = ripple_pred_data
+        ripple_pmf_data = pmf_result.get("ripple_pmf")
+        if ripple_pmf_data:
+            updates["ripple_pmf"] = ripple_pmf_data
+
+        # Both succeeded — clear fallback flags
+        if ripple_pred_data and ripple_pmf_data:
             updates["ripple_reason"] = None
             updates["ripple_fallback"] = None
         else:
-            reason = pred.get("ripple_reason") or pmf.get("ripple_reason") or "unreachable"
+            reason = pred.get("ripple_reason") or pmf_result.get("ripple_reason") or "unreachable"
             updates["ripple_reason"] = reason
             updates["ripple_fallback"] = True
 
         if updates:
             await graph.aupdate_state(config, updates)
+            print(f"[ripple-retry] State updated for {thread_id}: {list(updates.keys())}", flush=True)
 
     task = asyncio.create_task(_run_retry(), name=f"ripple-retry-{thread_id}")
+    print(f"[ripple-retry] Task created for {thread_id}: {task.get_name()}", flush=True)
 
     return success(data={
         "thread_id": thread_id,

@@ -284,6 +284,7 @@ class RippleService:
             "progress": float(status.get("progress", 0)),
             "elapsed_seconds": round(elapsed_seconds, 1),
             "status": status.get("status", "unknown"),
+            "skill": status.get("skill", ""),
         }
         bus.emit(EventType.RIPPLE_PROGRESS, thread_id=thread_id, payload=payload)
 
@@ -503,7 +504,7 @@ class RippleService:
                 "event": event,
             }
 
-            result = await self.submit_and_wait(request_body, max_wait=max_wait)
+            result = await self.submit_and_wait(request_body, max_wait=max_wait, thread_id=thread_id)
             return self._parse_pmf_result(result)
 
         except RippleTimeoutError:
@@ -540,7 +541,7 @@ class RippleService:
     async def wait_for_completion(
         self,
         job_id: str,
-        poll_interval: float = 10.0,
+        poll_interval: float = 3.0,
         max_wait: float = 1800.0,
         thread_id: str | None = None,
     ) -> dict[str, Any]:
@@ -587,7 +588,7 @@ class RippleService:
     async def submit_and_wait(
         self,
         request_body: dict[str, Any],
-        poll_interval: float = 10.0,
+        poll_interval: float = 3.0,
         max_wait: float = 1800.0,
         thread_id: str | None = None,
     ) -> dict[str, Any]:

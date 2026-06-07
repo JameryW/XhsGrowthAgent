@@ -129,6 +129,8 @@ class ContentStrategistAgent(BaseAgent):
             result["ripple_prediction"] = fallback_pred
             if is_timeout:
                 result["ripple_reason"] = "timeout"
+            else:
+                result["ripple_reason"] = "unreachable"
 
         if ripple_pmf and not isinstance(ripple_pmf, dict):
             ripple_pmf = None
@@ -158,8 +160,8 @@ class ContentStrategistAgent(BaseAgent):
                     result["ripple_job_id"] = ripple_pmf["ripple_job_id"]
             content_plan["ripple_pmf"] = fallback_pmf
             result["ripple_pmf"] = fallback_pmf
-            if is_pmf_timeout and result.get("ripple_reason") is None:
-                result["ripple_reason"] = "timeout"
+            if result.get("ripple_reason") is None:
+                result["ripple_reason"] = "timeout" if is_pmf_timeout else "unreachable"
 
         # 如果传播预测偏低，注入 Ripple 数据重新生成策略
         if (

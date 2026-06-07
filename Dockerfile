@@ -1,10 +1,10 @@
-# Stage 1: Build frontend
-FROM node:22-slim AS frontend-build
-WORKDIR /app/frontend
-COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
-RUN corepack enable && pnpm install --frozen-lockfile
-COPY frontend/ ./
-RUN corepack enable && pnpm build
+# Stage 1: Build frontend (skip if dist/ already exists locally)
+# FROM node:22-slim AS frontend-build
+# WORKDIR /app/frontend
+# COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
+# RUN corepack enable && pnpm install --frozen-lockfile
+# COPY frontend/ ./
+# RUN corepack enable && NODE_OPTIONS="--max-old-space-size=768" npx vite build
 
 # Stage 2: Python backend + serve frontend
 FROM python:3.11-slim
@@ -21,8 +21,8 @@ COPY backend/ backend/
 RUN pip install --no-cache-dir hatchling && \
     pip install --no-cache-dir .
 
-# Copy built frontend into the expected path
-COPY --from=frontend-build /app/frontend/dist ./frontend/dist
+# Copy built frontend from local dist (built outside container to avoid OOM)
+COPY frontend/dist ./frontend/dist
 
 EXPOSE 8889
 

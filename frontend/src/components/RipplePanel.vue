@@ -4,8 +4,8 @@ import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { retryRippleAnalysis, submitRippleDecision } from '@/api/workflow'
-import { useWorkflowStore, useToastStore } from '@/stores'
-import type { RipplePrediction, RipplePMFResult, RippleComparison, RippleProgress } from '@/types/workflow'
+import { useWorkflowStore, useToastStore, useRealtimeStore } from '@/stores'
+import type { RipplePrediction, RipplePMFResult, RippleComparison, RippleThreadProgress } from '@/types/workflow'
 
 const { t } = useI18n()
 const workflowStore = useWorkflowStore()
@@ -20,10 +20,11 @@ interface Props {
   comparison?: RippleComparison
   variant?: 'planning' | 'analyzing'
   rippleReason?: string
-  progress?: RippleProgress | null
+  progress?: RippleThreadProgress | null
   awaitingDecision?: boolean
   reselectCount?: number
   maxReselect?: number
+  loading?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -36,6 +37,7 @@ const props = withDefaults(defineProps<Props>(), {
   awaitingDecision: false,
   reselectCount: 0,
   maxReselect: 2,
+  loading: false,
 })
 
 const showDetails = ref(false)
@@ -44,10 +46,15 @@ const hasPrediction = computed(() => Object.keys(props.prediction).length > 0)
 const hasPmf = computed(() => Object.keys(props.pmf).length > 0)
 const hasComparison = computed(() => Object.keys(props.comparison).length > 0)
 const hasAnyData = computed(() => hasPrediction.value || hasPmf.value || hasComparison.value)
-const hasProgress = computed(() => props.progress !== null && props.progress !== undefined)
+const hasProgress = computed(() => props.progress !== null && props.progress !== undefined && props.progress.active_jobs > 0)
 
-// Show progress when sim is running but results haven't arrived yet
-const showProgress = computed(() => hasProgress.value && !hasAnyData.value)
+// Show progress when sim is running but results haven't arrived yet,
+// or when partial results exist but another sim is still running
+const showProgress = computed(() => {
+  if (!hasProgress.value) return false
+  if (!hasAnyData.value) return true
+  return true // has active jobs
+})
 
 function relativeText(source: RipplePrediction | RipplePMFResult, key: string): string | undefined {
   const sourceRecord = source as Record<string, unknown>
@@ -96,10 +103,28 @@ async function retryRipple() {
   if (!threadId) return
   isRetrying.value = true
   try {
+    // Re-subscribe WebSocket to ensure progress events arrive
+    const realtimeStore = useRealtimeStore()
+    realtimeStore.connect()
+    realtimeStore.subscribeWorkflow(threadId)
+
     await retryRippleAnalysis(threadId)
     toastStore.success(t('dashboard.ripple.retryStarted'))
-    // Refresh status after a short delay to pick up new results
-    setTimeout(() => workflowStore.refreshStatus(), 3000)
+    // Start polling until retry completes (progress events drive display,
+    // but polling ensures final state is reflected)
+    let pollCount = 0
+    const pollInterval = setInterval(async () => {
+      pollCount++
+      await workflowStore.refreshStatus()
+      const progress = workflowStore.rippleProgress
+      // Stop polling when no active jobs or after 120 polls (~10 min)
+      if ((!progress || progress.active_jobs === 0) && pollCount > 3) {
+        clearInterval(pollInterval)
+      }
+      if (pollCount > 120) {
+        clearInterval(pollInterval)
+      }
+    }, 5000)
   } catch (e: any) {
     toastStore.error(t('dashboard.ripple.retryFailed'), e.message)
   } finally {
@@ -110,27 +135,28 @@ async function retryRipple() {
 // Progress display helpers
 const progressPercent = computed(() => {
   if (!props.progress) return 0
-  // Use progress field if available, otherwise estimate from wave count
-  if (props.progress.progress > 0) return Math.round(props.progress.progress * 100)
-  const total = props.progress.total_waves || 8
-  if (total > 0) return Math.round((props.progress.current_wave / total) * 100)
-  return 0
+  return Math.round(props.progress.overall_progress * 100)
 })
 
 const elapsedDisplay = computed(() => {
   if (!props.progress) return ''
-  const s = props.progress.elapsed_seconds
-  if (s < 60) return `${Math.round(s)}s`
-  const m = Math.floor(s / 60)
-  const sec = Math.round(s % 60)
+  // Show max elapsed across all jobs
+  const jobs = Object.values(props.progress.jobs)
+  const maxElapsed = jobs.reduce((max, j) => Math.max(max, j.elapsed_seconds), 0)
+  if (maxElapsed < 60) return `${Math.round(maxElapsed)}s`
+  const m = Math.floor(maxElapsed / 60)
+  const sec = Math.round(maxElapsed % 60)
   return `${m}m ${sec}s`
 })
 
 const waveDisplay = computed(() => {
   if (!props.progress) return ''
-  const { current_wave, total_waves } = props.progress
-  if (total_waves > 0) return `${current_wave}/${total_waves}`
-  return `Wave ${current_wave}`
+  const jobs = Object.values(props.progress.jobs)
+  // Show combined wave info
+  const totalCurrent = jobs.reduce((sum, j) => sum + j.current_wave, 0)
+  const totalWaves = jobs.reduce((sum, j) => sum + (j.total_waves || 8), 0)
+  if (totalWaves > 0) return `${totalCurrent}/${totalWaves}`
+  return `Wave ${totalCurrent}`
 })
 
 // Format large numbers
@@ -505,6 +531,25 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
         {{ t('common.retry') }}
       </span>
     </NeonButton>
+  </div>
+
+  <!-- Loading state — shown when agent is running but no progress/results yet -->
+  <div v-if="props.loading && !showProgress && !hasAnyData" class="rounded-xl bg-gradient-to-r from-violet-50/80 to-indigo-50/80 border border-violet-200/50 overflow-hidden">
+    <div class="px-5 py-3 flex items-center gap-2.5 border-b border-violet-100/50">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center animate-pulse">
+        <AppIcon name="Zap" size="sm" variant="white" />
+      </div>
+      <div>
+        <span class="text-sm font-semibold text-violet-800">{{ t('dashboard.ripple.title') }}</span>
+        <span class="text-xs text-violet-500 ml-2">{{ t('dashboard.ripple.simulating') }}</span>
+      </div>
+    </div>
+    <div class="px-5 py-4 flex items-center gap-3">
+      <div class="h-2.5 w-2.5 rounded-full bg-violet-400 animate-bounce" style="animation-delay: 0ms" />
+      <div class="h-2.5 w-2.5 rounded-full bg-violet-400 animate-bounce" style="animation-delay: 150ms" />
+      <div class="h-2.5 w-2.5 rounded-full bg-violet-400 animate-bounce" style="animation-delay: 300ms" />
+      <span class="text-xs text-violet-600 ml-1">{{ t('dashboard.ripple.preparing') }}</span>
+    </div>
   </div>
 
   <!-- Empty state -->

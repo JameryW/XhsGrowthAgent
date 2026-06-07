@@ -22,6 +22,12 @@ const getNodeStatus = (phase: string) => {
 
 const isIdle = computed(() => workflowStore.currentPhase === 'idle')
 
+// Detect when content_strategist is actively running (for early progress display)
+const isStrategyRunning = computed(() =>
+  workflowStore.currentPhase === 'planning' &&
+  (workflowStore.workflowState as any)?.current_agent === 'content_strategist'
+)
+
 // Data accessors
 const trendData = computed(() => workflowStore.trendData)
 const contentPlan = computed(() => workflowStore.contentPlan)
@@ -168,7 +174,7 @@ function heatBg(score?: number): string {
     </div>
 
     <!-- ═══ PLANNING: Ripple Progress (shown while simulating, before content_plan arrives) ═══ -->
-    <div v-if="rippleProgress && !hasContentPlan && showForPhase('planning')" class="rounded-xl p-5 bg-white/98 border border-cyan-100/50">
+    <div v-if="isStrategyRunning && !hasContentPlan" class="rounded-xl p-5 bg-white/98 border border-cyan-100/50">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-teal-400 flex items-center justify-center">
           <AppIcon name="ClipboardList" size="md" variant="white" />
@@ -183,6 +189,7 @@ function heatBg(score?: number): string {
         :awaiting-decision="isAwaitingRippleDecision"
         :reselect-count="reselectCount"
         :max-reselect="2"
+        :loading="isStrategyRunning && !rippleProgress"
         variant="planning"
       />
     </div>
@@ -364,6 +371,29 @@ function heatBg(score?: number): string {
           <div class="text-lg font-bold text-teal-600">{{ (analytics.engagement_rate * 100).toFixed(1) }}%</div>
         </div>
       </div>
+    </div>
+
+    <!-- ═══ Ripple Retry Progress (shown at any phase when retry is running) ═══ -->
+    <div v-if="rippleProgress && !isStrategyRunning" class="rounded-xl p-5 bg-white/98 border border-violet-100/50">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-indigo-400 flex items-center justify-center">
+          <AppIcon name="Zap" size="md" variant="white" />
+        </div>
+        <div>
+          <div class="text-sm font-semibold text-slate-800">{{ t('dashboard.ripple.title') }}</div>
+          <div class="text-xs text-violet-500">{{ t('dashboard.ripple.simulating') }}</div>
+        </div>
+      </div>
+      <RipplePanel
+        :prediction="ripplePrediction"
+        :pmf="ripplePmf"
+        :ripple-reason="rippleReason"
+        :progress="rippleProgress"
+        :awaiting-decision="isAwaitingRippleDecision"
+        :reselect-count="reselectCount"
+        :max-reselect="2"
+        variant="planning"
+      />
     </div>
   </TransitionGroup>
 </template>
