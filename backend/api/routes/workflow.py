@@ -226,6 +226,7 @@ class WorkflowStatusResponse(BaseModel):
     brief_content: dict = Field(default_factory=dict, description="解析后的 Brief 内容")
     brief_clarification: dict = Field(default_factory=dict, description="Brief 补充问题")
     shooting_plan: dict = Field(default_factory=dict, description="拍摄计划")
+    reselect_count: int = Field(default=0, description="重新选题次数")
     checkpoint_lost: bool = Field(
         default=False, description="Checkpoint lost after container restart",
     )
@@ -463,6 +464,7 @@ async def get_workflow_status(thread_id: str, request: Request):
             brief_content=state.values.get("brief_content") or {},
             brief_clarification=state.values.get("brief_clarification") or {},
             shooting_plan=state.values.get("shooting_plan") or {},
+            reselect_count=state.values.get("reselect_count", 0),
         ).model_dump())
 
     # Fallback 1: check history file (pre-DB completed workflows)

@@ -216,3 +216,34 @@ def visual_designer_router(
         return "__end__"
 
     return "review_gate"
+
+
+def ripple_gate_router(
+    state: XHSGrowthState,
+) -> Literal["copywriter", "content_strategist", "brief_analyzer", "trend_scout", "__end__"]:
+    """Route after ripple_gate — based on user's reselect decision.
+
+    Trend mode:
+      accept   → copywriter (normal flow)
+      reangle  → content_strategist (re-plan with same trend data)
+      retopic  → trend_scout (go back and find new trends)
+
+    Brief mode:
+      accept   → copywriter (normal flow)
+      reangle  → brief_analyzer (re-analyze brief with new direction)
+      retopic  → trend_scout (switch to trend mode entirely)
+    """
+    if terminal := _check_terminal(state):
+        return terminal
+
+    decision = state.get("ripple_decision") or {}
+    action = decision.get("action", "accept")
+
+    if action == "reangle":
+        mode = state.get("workflow_mode", "trend")
+        return "brief_analyzer" if mode == "brief" else "content_strategist"
+    if action == "retopic":
+        return "trend_scout"
+
+    # Default: accept → continue to copywriter
+    return "copywriter"

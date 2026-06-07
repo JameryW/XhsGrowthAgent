@@ -61,6 +61,8 @@ class XHSGrowthState(TypedDict, total=False):
     ripple_pmf: RipplePMFResult
     ripple_job_ids: Annotated[list[str], _append_list]
     ripple_comparison: RippleComparison
+    ripple_decision: dict  # {"action": "accept"|"reangle"|"retopic"} from ripple_gate
+    reselect_count: int  # Tracks reselect cycles (max 2)
 
     # ── 商单 Brief 模式 ──
 

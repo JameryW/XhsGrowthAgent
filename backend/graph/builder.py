@@ -20,6 +20,7 @@ from backend.agents.nodes import (
     publisher_node,
     review_gate_node,
     revise_content_node,
+    ripple_gate_node,
     shooting_planner_node,
     trend_scout_node,
     visual_designer_node,
@@ -37,6 +38,7 @@ from backend.graph.routers import (
     engagement_router,
     orchestrator_router,
     review_outcome,
+    ripple_gate_router,
     should_brief_or_optimize,
     should_continue,
     should_optimize,
@@ -77,6 +79,8 @@ def build_graph() -> StateGraph:
     builder.add_node("analyst", analyst_node, retry_policy=get_retry_policy("analyst"))
     builder.add_node("engagement", engagement_node, retry_policy=get_retry_policy("engagement"))
     builder.add_node("revise_content", revise_content_node)
+    # Ripple gate — conditional interrupt when Ripple results are suboptimal
+    builder.add_node("ripple_gate", ripple_gate_node)
     # 发布前优化节点
     builder.add_node("draft_gate", draft_gate_node)
     builder.add_node("viral_matcher", viral_matcher_node)
@@ -123,7 +127,21 @@ def build_graph() -> StateGraph:
     )
 
     # ── 内容创作流水线 ──
-    builder.add_edge("content_strategist", "copywriter")
+    # content_strategist → ripple_gate (conditional interrupt for suboptimal Ripple results)
+    builder.add_edge("content_strategist", "ripple_gate")
+
+    # ripple_gate → [copywriter | content_strategist | trend_scout] (user decision)
+    builder.add_conditional_edges(
+        "ripple_gate",
+        ripple_gate_router,
+        {
+            "copywriter": "copywriter",
+            "content_strategist": "content_strategist",
+            "brief_analyzer": "brief_analyzer",
+            "trend_scout": "trend_scout",
+            "__end__": END,
+        },
+    )
 
     # ── 发布前优化流程 ──
     # copywriter → [draft_gate | visual_designer] (brief mode skips draft_gate)
@@ -185,8 +203,8 @@ def build_graph() -> StateGraph:
         },
     )
 
-    # shooting_planner → copywriter
-    builder.add_edge("shooting_planner", "copywriter")
+    # shooting_planner → ripple_gate (brief mode also checks Ripple results)
+    builder.add_edge("shooting_planner", "ripple_gate")
 
     # visual_designer → review_gate
     # visual_designer → [review_gate | END] (brief mode ends here)
@@ -249,7 +267,7 @@ def compile_graph_dev() -> CompiledStateGraph:
     graph = builder.compile(
         checkpointer=checkpointer,
         store=store,
-        interrupt_before=["review_gate", "choice_gate", "draft_gate", "brief_gate"],
+        interrupt_before=["review_gate", "choice_gate", "draft_gate", "brief_gate", "ripple_gate"],
     )
     return graph
 
@@ -270,14 +288,19 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
     try:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         from psycopg_pool import AsyncConnectionPool
+        from langgraph.store.memory import InMemoryStore
 
-        pool = AsyncConnectionPool(db_uri, min_size=2, max_size=10, open=False)
+        pool = AsyncConnectionPool(
+            db_uri, min_size=2, max_size=10, open=False, kwargs={"autocommit": True}
+        )
         await pool.open()
         checkpointer = AsyncPostgresSaver(conn=pool)
         await checkpointer.setup()
+        store = InMemoryStore()
         graph = builder.compile(
             checkpointer=checkpointer,
-            interrupt_before=["review_gate", "choice_gate", "draft_gate", "brief_gate"],
+            store=store,
+            interrupt_before=["review_gate", "choice_gate", "draft_gate", "brief_gate", "ripple_gate"],
         )
         # Return pool so app.py can close it on shutdown
         return graph, (checkpointer, pool)

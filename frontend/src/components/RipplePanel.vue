@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
-import { retryRippleAnalysis } from '@/api/workflow'
+import { retryRippleAnalysis, submitRippleDecision } from '@/api/workflow'
 import { useWorkflowStore, useToastStore } from '@/stores'
 import type { RipplePrediction, RipplePMFResult, RippleComparison, RippleProgress } from '@/types/workflow'
 
@@ -12,6 +12,7 @@ const workflowStore = useWorkflowStore()
 const toastStore = useToastStore()
 
 const isRetrying = ref(false)
+const isSubmittingDecision = ref(false)
 
 interface Props {
   prediction?: RipplePrediction
@@ -20,6 +21,9 @@ interface Props {
   variant?: 'planning' | 'analyzing'
   rippleReason?: string
   progress?: RippleProgress | null
+  awaitingDecision?: boolean
+  reselectCount?: number
+  maxReselect?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -29,6 +33,9 @@ const props = withDefaults(defineProps<Props>(), {
   variant: 'planning',
   rippleReason: '',
   progress: null,
+  awaitingDecision: false,
+  reselectCount: 0,
+  maxReselect: 2,
 })
 
 const showDetails = ref(false)
@@ -170,6 +177,29 @@ function progressWidth(value?: number, max: number = 1): string {
   if (value === undefined) return '0%'
   return `${Math.min(100, (value / max) * 100)}%`
 }
+
+// Ripple decision helpers
+const canReselect = computed(() => (props.reselectCount ?? 0) < (props.maxReselect ?? 2))
+
+async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
+  const threadId = workflowStore.activeThreadId
+  if (!threadId) return
+  isSubmittingDecision.value = true
+  try {
+    await submitRippleDecision(threadId, action)
+    const actionLabels: Record<string, string> = {
+      accept: t('dashboard.ripple.accepted'),
+      reangle: t('dashboard.ripple.reangling'),
+      retopic: t('dashboard.ripple.retopicing'),
+    }
+    toastStore.success(actionLabels[action] || action)
+    setTimeout(() => workflowStore.refreshStatus(), 1000)
+  } catch (e: any) {
+    toastStore.error(t('dashboard.ripple.decisionFailed'), e.message)
+  } finally {
+    isSubmittingDecision.value = false
+  }
+}
 </script>
 
 <template>
@@ -247,6 +277,57 @@ function progressWidth(value?: number, max: number = 1): string {
       <NeonButton v-if="!isDisabled" variant="ghost" size="sm" :loading="isRetrying" @click="retryRipple">
         <AppIcon name="RefreshCw" size="sm" variant="cyan" />
       </NeonButton>
+    </div>
+
+    <!-- Decision panel — shown when awaiting user choice after suboptimal Ripple results -->
+    <div v-if="awaitingDecision && hasAnyData" class="mx-5 mt-3 p-3 rounded-lg bg-violet-50 border border-violet-200">
+      <div class="text-xs text-violet-700 font-medium mb-2">{{ t('dashboard.ripple.decisionPrompt') }}</div>
+      <div class="text-xs text-violet-500 mb-3">
+        {{ t('dashboard.ripple.reselectInfo', { count: reselectCount, max: maxReselect }) }}
+      </div>
+      <div class="flex flex-col gap-2">
+        <NeonButton
+          variant="cyan"
+          size="sm"
+          :loading="isSubmittingDecision && false"
+          :disabled="isSubmittingDecision"
+          @click="handleRippleDecision('accept')"
+          class="w-full"
+        >
+          <span class="inline-flex items-center gap-1.5 justify-center">
+            <AppIcon name="Check" size="sm" variant="white" />
+            {{ t('dashboard.ripple.accept') }}
+          </span>
+        </NeonButton>
+        <NeonButton
+          v-if="canReselect"
+          variant="purple"
+          size="sm"
+          :loading="isSubmittingDecision"
+          :disabled="isSubmittingDecision"
+          @click="handleRippleDecision('reangle')"
+          class="w-full"
+        >
+          <span class="inline-flex items-center gap-1.5 justify-center">
+            <AppIcon name="RefreshCw" size="sm" variant="white" />
+            {{ t('dashboard.ripple.reangle') }}
+          </span>
+        </NeonButton>
+        <NeonButton
+          v-if="canReselect"
+          variant="peach"
+          size="sm"
+          :loading="isSubmittingDecision"
+          :disabled="isSubmittingDecision"
+          @click="handleRippleDecision('retopic')"
+          class="w-full"
+        >
+          <span class="inline-flex items-center gap-1.5 justify-center">
+            <AppIcon name="Search" size="sm" variant="white" />
+            {{ t('dashboard.ripple.retopic') }}
+          </span>
+        </NeonButton>
+      </div>
     </div>
 
     <!-- Summary cards -->

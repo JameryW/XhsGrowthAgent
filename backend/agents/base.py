@@ -72,6 +72,8 @@ class BaseAgent(ABC):
         namespace: str,
         limit: int = 5,
     ) -> list[dict]:
+        if store is None:
+            return []
         mm = MemoryManager(account_id)
         ns_map = {
             "content_history": mm.content_history_ns,

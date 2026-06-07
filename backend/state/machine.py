@@ -18,6 +18,7 @@ class WorkflowStatus(StrEnum):
     AWAITING_CHOICE = "awaiting_choice"
     AWAITING_DRAFT = "awaiting_draft"
     AWAITING_BRIEF = "awaiting_brief"
+    AWAITING_RIPPLE_DECISION = "awaiting_ripple_decision"
     PAUSED = "paused"
     COMPLETED = "completed"
     ERROR = "error"
@@ -80,6 +81,8 @@ def derive_status(snapshot: StateSnapshot, *, has_active_task: bool = True) -> W
                 return WorkflowStatus.AWAITING_DRAFT
             if "brief_gate" in next_nodes:
                 return WorkflowStatus.AWAITING_BRIEF
+            if "ripple_gate" in next_nodes:
+                return WorkflowStatus.AWAITING_RIPPLE_DECISION
         # Fallback: determine gate type from interrupt value (dynamic interrupt only)
         if has_interrupt:
             gate_type = None
@@ -93,6 +96,8 @@ def derive_status(snapshot: StateSnapshot, *, has_active_task: bool = True) -> W
                 return WorkflowStatus.AWAITING_REVIEW
             if gate_type == "draft":
                 return WorkflowStatus.AWAITING_DRAFT
+            if gate_type == "ripple":
+                return WorkflowStatus.AWAITING_RIPPLE_DECISION
             # Unknown gate type with interrupt — fall through to remaining checks
 
     # Priority 6: Error (only when terminal — phase is ERROR or no next nodes)

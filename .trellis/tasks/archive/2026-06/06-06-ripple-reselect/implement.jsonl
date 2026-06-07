@@ -1,0 +1,6 @@
+{"file": "prd.md", "reason": "Full requirements: conditional interrupt, three-way choice, 2-cycle limit, Brief mode support"}
+{"file": "spec/backend/ripple-integration.md", "reason": "Ripple CAS integration patterns, service API, event emission conventions"}
+{"file": "spec/backend/workflow-state.md", "reason": "State schema definition, reducer patterns, phase enum values"}
+{"file": "spec/backend/error-handling.md", "reason": "Error handling patterns for gate nodes and API endpoints"}
+{"file": "spec/frontend/state-management.md", "reason": "Pinia store patterns, how workflow state maps to UI, event handling"}
+{"file": "spec/frontend/component-patterns.md", "reason": "Vue component conventions, gate UI patterns, i18n usage"}
