@@ -49,22 +49,23 @@ const colors = {
 </script>
 
 <template>
-  <div :class="['rounded-2xl p-6 relative overflow-hidden bg-white/80 backdrop-blur-sm border transition-all duration-300 hover:shadow-lg group', colors[props.variant].border, colors[props.variant].shadow]" role="region" :aria-label="t('metricCard.ariaLabel', { title })">
+  <div :class="['rounded-xl md:rounded-2xl p-3 md:p-6 relative overflow-hidden bg-white/80 backdrop-blur-sm border transition-all duration-300 hover:shadow-lg group', colors[props.variant].border, colors[props.variant].shadow]" role="region" :aria-label="t('metricCard.ariaLabel', { title })">
     <!-- Hover glow -->
     <div class="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" :style="{ background: `radial-gradient(circle at 50% 0%, ${props.variant === 'pink' ? 'rgba(244,63,94,0.08)' : props.variant === 'cyan' ? 'rgba(20,184,166,0.08)' : props.variant === 'purple' ? 'rgba(139,92,246,0.08)' : 'rgba(245,158,11,0.08)'} 0%, transparent 50%)` }" aria-hidden="true" />
 
-    <div class="flex items-center gap-3 mb-5">
-      <div :class="['w-10 h-10 rounded-xl bg-gradient-to-br flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:-translate-y-0.5', colors[props.variant].bg, `shadow-${props.variant === 'pink' ? 'rose' : props.variant === 'cyan' ? 'teal' : props.variant === 'purple' ? 'violet' : 'amber'}-500/20`]" aria-hidden="true">
-        <AppIcon :name="props.icon" size="md" variant="white" />
+    <div class="flex items-center gap-2 md:gap-3 mb-3 md:mb-5">
+      <div :class="['w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-gradient-to-br flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:-translate-y-0.5', colors[props.variant].bg, `shadow-${props.variant === 'pink' ? 'rose' : props.variant === 'cyan' ? 'teal' : props.variant === 'purple' ? 'violet' : 'amber'}-500/20`]" aria-hidden="true">
+        <AppIcon :name="props.icon" size="sm" variant="white" class="md:hidden" />
+        <AppIcon :name="props.icon" size="md" variant="white" class="hidden md:block" />
       </div>
-      <div class="text-xs text-slate-500 uppercase tracking-wide font-medium">{{ props.title }}</div>
+      <div class="text-[10px] md:text-xs text-slate-500 uppercase tracking-wide font-medium">{{ props.title }}</div>
     </div>
-    <div :class="['text-3xl font-bold tabular-nums transition-all duration-300 group-hover:translate-x-1', colors[props.variant].text]" aria-live="polite">
+    <div :class="['text-xl md:text-3xl font-bold tabular-nums transition-all duration-300 group-hover:translate-x-1', colors[props.variant].text]" aria-live="polite">
       {{ props.value }}
     </div>
-    <div v-if="props.subtitle" class="mt-3 flex items-center gap-2 group/sub">
+    <div v-if="props.subtitle" class="mt-1.5 md:mt-3 flex items-center gap-1.5 md:gap-2 group/sub">
       <AppIcon name="TrendingUp" size="sm" :variant="props.variant" class="transition-transform duration-200 group-hover/sub:scale-110" aria-hidden="true" />
-      <span :class="['text-xs font-medium px-2 py-0.5 rounded', colors[props.variant].bgLight, colors[props.variant].text]">{{ props.subtitle }}</span>
+      <span :class="['text-[10px] md:text-xs font-medium px-1.5 md:px-2 py-0.5 rounded', colors[props.variant].bgLight, colors[props.variant].text]">{{ props.subtitle }}</span>
     </div>
   </div>
 </template>

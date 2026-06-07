@@ -100,7 +100,7 @@ const clickableClass = computed(() => {
   >
     <!-- Node shape -->
     <div :class="[
-      'w-16 h-16 rounded-xl flex items-center justify-center mx-auto transition-all duration-300 ease-out group-hover:scale-105',
+      'w-10 h-10 md:w-16 md:h-16 rounded-lg md:rounded-xl flex items-center justify-center mx-auto transition-all duration-300 ease-out group-hover:scale-105',
       currentStyle.shape,
       focusClass,
     ]">
@@ -114,14 +114,14 @@ const clickableClass = computed(() => {
     </div>
 
     <!-- Label -->
-    <div :class="['mt-2 text-xs font-medium transition-colors duration-200', currentStyle.labelClass]">
+    <div :class="['mt-1 md:mt-2 text-[10px] md:text-xs font-medium transition-colors duration-200 leading-tight', currentStyle.labelClass]">
       {{ props.label }}
     </div>
 
     <!-- Status badge -->
-    <div v-if="currentStyle.badge.show && currentStyle.badge.icon" class="mt-1.5 flex items-center justify-center gap-1">
+    <div v-if="currentStyle.badge.show && currentStyle.badge.icon" class="mt-0.5 md:mt-1.5 flex items-center justify-center gap-0.5 md:gap-1">
       <AppIcon :name="currentStyle.badge.icon" size="sm" :variant="props.status === 'completed' ? 'cyan' : 'peach'" :animate="currentStyle.badge.animate" />
-      <span v-if="currentStyle.badge.color" :class="['text-xs', currentStyle.badge.color]">
+      <span v-if="currentStyle.badge.color" :class="['text-[10px] md:text-xs', currentStyle.badge.color]">
         {{ props.status === 'completed' ? t('workflowNode.completed') : props.status === 'error' ? t('workflowNode.error') : t('workflowNode.running') }}
       </span>
     </div>

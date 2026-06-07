@@ -217,18 +217,18 @@ const isFocused = (index: number) => focusedIndex.value === index
 
 <template>
   <div
-    class="bg-white/98 backdrop-blur-sm rounded-2xl p-4 md:p-6 border border-slate-200/50 shadow-sm"
+    class="bg-white/98 backdrop-blur-sm rounded-xl p-3 md:p-6 md:rounded-2xl border border-slate-200/50 shadow-sm"
     role="region"
     :aria-label="t('dashboard.timeline.title')"
     @keydown="handleKeyDown"
   >
-    <div class="flex items-center gap-2 mb-5">
+    <div class="flex items-center gap-2 mb-3 md:mb-5">
       <AppIcon name="GitBranch" size="md" variant="cyan" aria-hidden="true" />
       <span class="text-xs text-slate-500 uppercase tracking-wide font-medium">{{ t('dashboard.timeline.title') }}</span>
-      <span v-if="currentAgent" class="text-xs px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-600 border border-cyan-100">
+      <span v-if="currentAgent" class="text-xs px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-600 border border-cyan-100 hidden sm:inline">
         {{ currentAgent }}
       </span>
-      <span class="text-xs text-slate-400 ml-auto">{{ t('dashboard.timeline.keyboardHint') }}</span>
+      <span class="text-xs text-slate-400 ml-auto hidden sm:inline">{{ t('dashboard.timeline.keyboardHint') }}</span>
     </div>
 
     <!-- Error banner -->
@@ -249,7 +249,7 @@ const isFocused = (index: number) => focusedIndex.value === index
     </div>
 
     <!-- Nodes with keyboard navigation -->
-    <div class="flex justify-between items-center relative px-2 md:px-4 overflow-x-auto" role="list" :aria-label="t('dashboard.timeline.stages')">
+    <div class="flex justify-between items-start relative px-1 md:px-4 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-2 -mx-1" role="list" :aria-label="t('dashboard.timeline.stages')">
       <WorkflowNode
         v-for="(node, index) in workflowNodes"
         :key="`${node.phase}-${index}`"
@@ -259,6 +259,7 @@ const isFocused = (index: number) => focusedIndex.value === index
         :focused="isFocused(index)"
         :clickable="isReplayMode"
         :selected="isNodeSelected(node.agent)"
+        class="snap-start shrink-0 min-w-[60px] md:min-w-0"
         role="listitem"
         :tabindex="isFocused(index) ? 0 : -1"
         :aria-label="`${node.label} - ${getNodeStatus(node) === 'completed' ? t('dashboard.timeline.completed') : getNodeStatus(node) === 'running' ? t('dashboard.timeline.running') : getNodeStatus(node) === 'error' ? t('dashboard.timeline.error') : t('dashboard.timeline.pending')}`"

@@ -96,26 +96,27 @@ const timeRemainingDisplay = computed(() => {
 
 <template>
   <div
-    class="rounded-2xl p-4 md:p-6 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm"
+    class="rounded-xl p-3 md:p-6 md:rounded-2xl relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm"
     role="region"
     :aria-label="t('dashboard.header.status')"
   >
-    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
+    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5">
       <!-- Progress & Logo -->
-      <div class="flex items-center gap-4">
+      <div class="flex items-center gap-3 md:gap-4">
         <CircularProgress :value="workflowProgress" variant="cyan" size="lg" show-value :aria-label="t('dashboard.header.progress')" />
-        <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-rose-400 via-rose-500 to-amber-400 flex items-center justify-center shadow-sm" aria-hidden="true">
-          <AppIcon name="Rocket" size="xl" variant="white" />
+        <div class="w-10 h-10 md:w-16 md:h-16 rounded-lg md:rounded-xl bg-gradient-to-br from-rose-400 via-rose-500 to-amber-400 flex items-center justify-center shadow-sm" aria-hidden="true">
+          <AppIcon name="Rocket" size="lg" variant="white" class="md:hidden" />
+          <AppIcon name="Rocket" size="xl" variant="white" class="hidden md:block" />
         </div>
       </div>
 
       <!-- Info -->
-      <div class="flex-1 space-y-2">
-        <div class="flex items-center gap-3">
+      <div class="flex-1 min-w-0 space-y-1 md:space-y-2">
+        <div class="flex items-center gap-2 md:gap-3">
           <span class="px-2 py-1 rounded bg-teal-50 text-teal-600 text-xs uppercase tracking-wide font-medium">{{ t('dashboard.header.workflow') }}</span>
-          <span class="text-xs text-slate-400">{{ workflowStore.currentThreadId || '—' }}</span>
+          <span class="text-xs text-slate-400 truncate">{{ workflowStore.currentThreadId || '—' }}</span>
         </div>
-        <div class="text-xl font-semibold text-slate-800">
+        <div class="text-lg md:text-xl font-semibold text-slate-800">
           {{ currentStageLabel }}
         </div>
         <!-- Estimated time remaining -->
@@ -123,13 +124,13 @@ const timeRemainingDisplay = computed(() => {
           <AppIcon name="Clock" size="sm" variant="cyan" aria-hidden="true" />
           <span>{{ timeRemainingDisplay }}</span>
         </div>
-        <MiniProgress :value="workflowProgress" variant="cyan" class="max-w-xs" aria-hidden="true" />
+        <MiniProgress :value="workflowProgress" variant="cyan" class="max-w-full md:max-w-xs" aria-hidden="true" />
       </div>
 
       <!-- Status Badge with aria-live -->
       <div
         :class="[
-          'px-4 py-2.5 rounded-lg border font-medium flex items-center gap-2 transition-all duration-200',
+          'px-3 py-2 md:px-4 md:py-2.5 rounded-lg border font-medium flex items-center gap-1.5 md:gap-2 transition-all duration-200 text-sm md:text-base',
           workflowStore.isRunning
             ? 'bg-gradient-to-r from-teal-500 to-teal-400 border-teal-200 text-white shadow-sm'
             : isStale

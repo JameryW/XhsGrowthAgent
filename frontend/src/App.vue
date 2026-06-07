@@ -109,7 +109,7 @@ const handleErrorBoundaryRefresh = () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-50/80 flex relative overflow-hidden">
+  <div class="h-screen bg-slate-50/80 flex relative overflow-hidden">
     <!-- Skip to main content link for keyboard users -->
     <a
       href="#main-content"
@@ -154,8 +154,8 @@ const handleErrorBoundaryRefresh = () => {
     <!-- 主内容区 -->
     <main
       id="main-content"
-      class="flex-1 overflow-auto relative z-10"
-      :class="isMobile ? 'p-4 pb-20' : isTablet ? 'p-6' : 'p-8'"
+      class="flex-1 overflow-y-auto relative z-10"
+      :class="isMobile ? 'p-3 pb-20' : isTablet ? 'p-4' : 'p-6'"
       tabindex="-1"
     >
       <ErrorBoundary

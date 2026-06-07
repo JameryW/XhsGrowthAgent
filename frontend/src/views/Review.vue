@@ -307,8 +307,8 @@ const handleCancelConfirm = () => {
 
   <!-- Empty State -->
   <div v-else-if="isLoaded && !hasPendingReview" class="flex items-center justify-center min-h-[60vh]">
-    <div class="rounded-2xl p-10 max-w-md w-full bg-white/98 border border-slate-200/50 text-center">
-      <div class="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5" :class="{
+    <div class="rounded-xl md:rounded-2xl p-6 md:p-10 max-w-md w-full bg-white/98 border border-slate-200/50 text-center">
+      <div class="w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-2xl flex items-center justify-center mx-auto mb-3 md:mb-5" :class="{
         'bg-slate-100': emptyStateHint.color === 'slate',
         'bg-emerald-50': emptyStateHint.color === 'emerald',
         'bg-rose-50': emptyStateHint.color === 'rose',
@@ -317,11 +317,11 @@ const handleCancelConfirm = () => {
       }">
         <AppIcon :name="emptyStateHint.icon" size="xl" :variant="(emptyStateHint.color === 'slate' ? 'cyan' : emptyStateHint.color) as any" />
       </div>
-      <h2 class="text-xl font-semibold text-slate-700 mb-2">{{ t('review.emptyState.title') }}</h2>
-      <p class="text-sm text-slate-500 mb-4">{{ emptyStateHint.text }}</p>
+      <h2 class="text-lg md:text-xl font-semibold text-slate-700 mb-1.5 md:mb-2">{{ t('review.emptyState.title') }}</h2>
+      <p class="text-xs md:text-sm text-slate-500 mb-3 md:mb-4">{{ emptyStateHint.text }}</p>
 
       <!-- Workflow phase indicator -->
-      <div v-if="hasThread" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-100 mb-5">
+      <div v-if="hasThread" class="inline-flex items-center gap-1.5 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 rounded-full bg-slate-50 border border-slate-100 mb-3 md:mb-5">
         <span class="w-2 h-2 rounded-full" :class="{
           'bg-slate-400': currentPhase === 'idle' || currentPhase === 'cancelled',
           'bg-teal-500 animate-pulse': isWorkflowRunning,
@@ -329,28 +329,28 @@ const handleCancelConfirm = () => {
           'bg-rose-500': currentPhase === 'error',
           'bg-amber-500': currentPhase === 'reviewing',
         }" />
-        <span class="text-xs text-slate-600">{{ t('review.emptyState.currentPhase') }}: {{ phaseLabels[currentPhase] || currentPhase }}</span>
+        <span class="text-[10px] md:text-xs text-slate-600">{{ t('review.emptyState.currentPhase') }}: {{ phaseLabels[currentPhase] || currentPhase }}</span>
       </div>
 
-      <div class="space-y-2 text-left mb-6">
-        <div class="flex items-center gap-2 text-sm text-slate-500">
+      <div class="space-y-1.5 md:space-y-2 text-left mb-4 md:mb-6">
+        <div class="flex items-center gap-1.5 md:gap-2 text-xs md:text-sm text-slate-500">
           <AppIcon name="Circle" size="sm" variant="cyan" />
           <span>{{ t('review.emptyState.reason1') }}</span>
         </div>
-        <div class="flex items-center gap-2 text-sm text-slate-500">
+        <div class="flex items-center gap-1.5 md:gap-2 text-xs md:text-sm text-slate-500">
           <AppIcon name="Circle" size="sm" variant="cyan" />
           <span>{{ t('review.emptyState.reason2') }}</span>
         </div>
-        <div v-if="!hasThread" class="flex items-center gap-2 text-sm text-slate-500">
+        <div v-if="!hasThread" class="flex items-center gap-1.5 md:gap-2 text-xs md:text-sm text-slate-500">
           <AppIcon name="Circle" size="sm" variant="cyan" />
           <span>{{ t('review.emptyState.reason3') }}</span>
         </div>
       </div>
-      <div class="flex gap-3 justify-center">
-        <NeonButton variant="pink" @click="router.push('/dashboard')">
+      <div class="flex gap-2 md:gap-3 justify-center">
+        <NeonButton variant="pink" size="sm" class="md:size-md" @click="router.push('/dashboard')">
           {{ t('review.emptyState.goDashboard') }}
         </NeonButton>
-        <NeonButton variant="ghost" @click="router.push('/')">
+        <NeonButton variant="ghost" size="sm" class="md:size-md" @click="router.push('/')">
           {{ t('review.emptyState.goHome') }}
         </NeonButton>
       </div>
@@ -358,19 +358,20 @@ const handleCancelConfirm = () => {
   </div>
 
   <!-- Review Content -->
-  <div v-else class="relative space-y-4 md:space-y-5">
+  <div v-else class="relative space-y-3 md:space-y-5">
     <!-- 审核状态栏 -->
     <div class="card">
-      <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
-        <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-400 to-rose-400 flex items-center justify-center shadow-sm flex-shrink-0">
-          <AppIcon name="Clock" size="xl" variant="white" :aria-label="t('review.title')" />
+      <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5">
+        <div class="w-10 h-10 md:w-14 md:h-14 rounded-lg md:rounded-xl bg-gradient-to-br from-amber-400 to-rose-400 flex items-center justify-center shadow-sm flex-shrink-0">
+          <AppIcon name="Clock" size="md" variant="white" class="md:hidden" :aria-label="t('review.title')" />
+          <AppIcon name="Clock" size="xl" variant="white" class="hidden md:block" :aria-label="t('review.title')" />
         </div>
         <div class="flex-1">
-          <div class="flex items-center gap-2 mb-1">
-            <span class="px-2 py-1 rounded bg-amber-50 text-amber-600 text-xs uppercase tracking-wide font-medium">{{ t('review.pendingApproval') }}</span>
+          <div class="flex items-center gap-1.5 md:gap-2 mb-1">
+            <span class="px-1.5 md:px-2 py-0.5 md:py-1 rounded bg-amber-50 text-amber-600 text-[10px] md:text-xs uppercase tracking-wide font-medium">{{ t('review.pendingApproval') }}</span>
           </div>
-          <div class="text-xl font-semibold text-slate-800">{{ t('review.title') }} · {{ t('review.subtitle') }}</div>
-          <div class="text-xs text-slate-400 mt-1">
+          <div class="text-lg md:text-xl font-semibold text-slate-800">{{ t('review.title') }} · {{ t('review.subtitle') }}</div>
+          <div class="text-[10px] md:text-xs text-slate-400 mt-1">
             Thread: {{ workflowStore.currentThreadId || '—' }}
           </div>
         </div>
@@ -387,28 +388,29 @@ const handleCancelConfirm = () => {
     />
 
     <!-- 内容预览 -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 review-content">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 review-content">
       <!-- 文案预览 -->
-      <div class="rounded-xl p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
-        <div class="flex items-center gap-3 mb-4">
-          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
-            <AppIcon name="Pencil" size="md" variant="white" :aria-label="t('review.copyContent')" />
+      <div class="rounded-xl p-3 md:p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
+        <div class="flex items-center gap-2 md:gap-3 mb-3 md:mb-4">
+          <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
+            <AppIcon name="Pencil" size="sm" variant="white" class="md:hidden" :aria-label="t('review.copyContent')" />
+            <AppIcon name="Pencil" size="md" variant="white" class="hidden md:block" :aria-label="t('review.copyContent')" />
           </div>
           <div class="flex-1">
-            <div class="text-slate-800 font-semibold text-sm">{{ t('review.copyContent') }}</div>
-            <div class="text-xs text-slate-400 uppercase tracking-wide">{{ t('review.copyContentEn') }}</div>
+            <div class="text-slate-800 font-semibold text-xs md:text-sm">{{ t('review.copyContent') }}</div>
+            <div class="text-[10px] md:text-xs text-slate-400 uppercase tracking-wide">{{ t('review.copyContentEn') }}</div>
           </div>
         </div>
 
-        <div class="bg-slate-50 rounded-lg p-4 border-l-2 border-rose-400">
-          <div v-if="copyContent.selected_title" class="text-rose-500 font-bold text-lg mb-2">
+        <div class="bg-slate-50 rounded-lg p-3 md:p-4 border-l-2 border-rose-400">
+          <div v-if="copyContent.selected_title" class="text-rose-500 font-bold text-base md:text-lg mb-1.5 md:mb-2">
             {{ copyContent.selected_title }}
           </div>
-          <div v-if="copyContent.body_text" class="text-slate-600 text-sm mb-3 leading-relaxed whitespace-pre-wrap">
+          <div v-if="copyContent.body_text" class="text-slate-600 text-xs md:text-sm mb-2 md:mb-3 leading-relaxed whitespace-pre-wrap">
             {{ copyContent.body_text }}
           </div>
-          <div v-if="copyContent.hashtags?.length" class="flex gap-2 flex-wrap">
-            <span v-for="tag in copyContent.hashtags" :key="tag" class="px-2 py-1 rounded bg-rose-50 border border-rose-100 text-rose-500 text-xs font-medium">
+          <div v-if="copyContent.hashtags?.length" class="flex gap-1.5 md:gap-2 flex-wrap">
+            <span v-for="tag in copyContent.hashtags" :key="tag" class="px-1.5 md:px-2 py-0.5 md:py-1 rounded bg-rose-50 border border-rose-100 text-rose-500 text-[10px] md:text-xs font-medium">
               {{ tag }}
             </span>
           </div>
@@ -420,26 +422,27 @@ const handleCancelConfirm = () => {
       </div>
 
       <!-- 视觉方案预览 -->
-      <div class="rounded-xl p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
-        <div class="flex items-center gap-3 mb-4">
-          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm">
-            <AppIcon name="Palette" size="md" variant="white" :aria-label="t('review.visualPlan')" />
+      <div class="rounded-xl p-3 md:p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
+        <div class="flex items-center gap-2 md:gap-3 mb-3 md:mb-4">
+          <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm">
+            <AppIcon name="Palette" size="sm" variant="white" class="md:hidden" :aria-label="t('review.visualPlan')" />
+            <AppIcon name="Palette" size="md" variant="white" class="hidden md:block" :aria-label="t('review.visualPlan')" />
           </div>
           <div class="flex-1">
-            <div class="text-slate-800 font-semibold text-sm">{{ t('review.visualPlan') }}</div>
-            <div class="text-xs text-slate-400 uppercase tracking-wide">{{ t('review.visualPlanEn') }}</div>
+            <div class="text-slate-800 font-semibold text-xs md:text-sm">{{ t('review.visualPlan') }}</div>
+            <div class="text-[10px] md:text-xs text-slate-400 uppercase tracking-wide">{{ t('review.visualPlanEn') }}</div>
           </div>
         </div>
 
-        <div class="bg-slate-50 rounded-lg p-4 border-l-2 border-teal-400">
-          <div v-if="visualPlan.layout_style" class="text-teal-500 font-bold mb-2">
+        <div class="bg-slate-50 rounded-lg p-3 md:p-4 border-l-2 border-teal-400">
+          <div v-if="visualPlan.layout_style" class="text-teal-500 font-bold text-sm md:text-base mb-1.5 md:mb-2">
             {{ visualPlan.layout_style }}
           </div>
-          <div v-if="visualPlan.cover_prompt" class="text-slate-600 text-sm mb-3 leading-relaxed">
+          <div v-if="visualPlan.cover_prompt" class="text-slate-600 text-xs md:text-sm mb-2 md:mb-3 leading-relaxed">
             {{ visualPlan.cover_prompt }}
           </div>
-          <div v-if="visualPlan.color_palette?.length" class="flex gap-2 mt-2">
-            <div v-for="color in visualPlan.color_palette" :key="color" class="w-6 h-6 rounded-lg border border-slate-200 hover:scale-110 transition-transform cursor-pointer" :style="{ background: color }" :title="color" />
+          <div v-if="visualPlan.color_palette?.length" class="flex gap-1.5 md:gap-2 mt-1.5 md:mt-2">
+            <div v-for="color in visualPlan.color_palette" :key="color" class="w-5 h-5 md:w-6 md:h-6 rounded-md md:rounded-lg border border-slate-200 hover:scale-110 transition-transform cursor-pointer" :style="{ background: color }" :title="color" />
           </div>
           <div v-if="!visualPlan.layout_style && !visualPlan.cover_prompt" class="space-y-2">
             <div class="h-4 w-1/2 rounded bg-slate-200 animate-pulse" />
@@ -451,15 +454,16 @@ const handleCancelConfirm = () => {
 
     <!-- 版本历史对比 -->
     <div v-if="reviewStore.versionHistory.length > 0" class="card">
-      <div class="flex items-center gap-3 mb-4">
-        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-400 to-indigo-500 flex items-center justify-center shadow-sm">
-          <AppIcon name="GitBranch" size="md" variant="white" :aria-label="t('review.versionHistory.title')" />
+      <div class="flex items-center gap-2 md:gap-3 mb-3 md:mb-4">
+        <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-to-br from-indigo-400 to-indigo-500 flex items-center justify-center shadow-sm">
+          <AppIcon name="GitBranch" size="sm" variant="white" class="md:hidden" :aria-label="t('review.versionHistory.title')" />
+          <AppIcon name="GitBranch" size="md" variant="white" class="hidden md:block" :aria-label="t('review.versionHistory.title')" />
         </div>
         <div class="flex-1">
-          <div class="text-indigo-500 font-semibold text-sm">{{ t('review.versionHistory.title') }}</div>
-          <div class="text-xs text-slate-400">{{ reviewStore.versionHistory.length }} {{ t('review.versionHistory.count') }}</div>
+          <div class="text-indigo-500 font-semibold text-xs md:text-sm">{{ t('review.versionHistory.title') }}</div>
+          <div class="text-[10px] md:text-xs text-slate-400">{{ reviewStore.versionHistory.length }} {{ t('review.versionHistory.count') }}</div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5 md:gap-2">
           <button
             v-if="reviewStore.versionHistory.length >= 2"
             @click="compareMode = !compareMode; selectedForCompare = []"
@@ -499,7 +503,7 @@ const handleCancelConfirm = () => {
             class="w-full flex items-center justify-between p-3 hover:bg-slate-50 transition-colors"
             @click="compareMode ? toggleCompareVersion(version.version_id) : (expandedVersion = expandedVersion === version.version_id ? null : version.version_id)"
           >
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1.5 md:gap-2">
               <!-- Compare checkbox -->
               <span
                 v-if="compareMode"
@@ -518,7 +522,7 @@ const handleCancelConfirm = () => {
               <span class="text-sm font-medium text-slate-700">{{ version.changes_summary || t('review.versionLabel', { n: reviewStore.versionHistory.length - idx }) }}</span>
               <span v-if="version.title" class="text-xs text-slate-400 truncate max-w-[200px]">— {{ version.title }}</span>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1.5 md:gap-2">
               <span class="text-xs text-slate-400">{{ formatDate(version.created_at || '') }}</span>
               <AppIcon :name="expandedVersion === version.version_id ? 'ChevronUp' : 'ChevronDown'" size="sm" variant="cyan" />
             </div>
@@ -620,26 +624,27 @@ const handleCancelConfirm = () => {
 
     <!-- 操作按钮区 -->
     <div class="card">
-      <div class="flex items-center gap-3 mb-4">
-        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-rose-400 to-amber-400 flex items-center justify-center shadow-sm">
-          <AppIcon name="GitBranch" size="md" variant="white" :aria-label="t('review.actions')" />
+      <div class="flex items-center gap-2 md:gap-3 mb-3 md:mb-4">
+        <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-to-br from-rose-400 to-amber-400 flex items-center justify-center shadow-sm">
+          <AppIcon name="GitBranch" size="sm" variant="white" class="md:hidden" :aria-label="t('review.actions')" />
+          <AppIcon name="GitBranch" size="md" variant="white" class="hidden md:block" :aria-label="t('review.actions')" />
         </div>
         <div>
-          <div class="text-rose-500 font-semibold text-sm">{{ t('review.actions') }}</div>
-          <div class="text-xs text-slate-400">{{ t('review.selectAction') }}</div>
+          <div class="text-rose-500 font-semibold text-xs md:text-sm">{{ t('review.actions') }}</div>
+          <div class="text-[10px] md:text-xs text-slate-400">{{ t('review.selectAction') }}</div>
         </div>
       </div>
 
       <!-- Error display -->
-      <div v-if="error" class="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-100 text-rose-500 text-sm flex items-center gap-2">
-        <div class="w-6 h-6 rounded bg-rose-100 flex items-center justify-center">
-          <AppIcon name="AlertTriangle" size="md" variant="pink" animate />
+      <div v-if="error" class="mb-3 md:mb-4 p-2 md:p-3 rounded-lg bg-rose-50 border border-rose-100 text-rose-500 text-xs md:text-sm flex items-center gap-1.5 md:gap-2">
+        <div class="w-5 h-5 md:w-6 md:h-6 rounded bg-rose-100 flex items-center justify-center">
+          <AppIcon name="AlertTriangle" size="sm" variant="pink" animate />
         </div>
         <span>{{ error }}</span>
       </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-        <NeonButton variant="cyan" size="lg" class="w-full" @click="requestDecision('approved')" :loading="isSubmitting" :disabled="isSubmitting">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3 mb-3 md:mb-4">
+        <NeonButton variant="cyan" size="md" class="w-full md:size-lg" @click="requestDecision('approved')" :loading="isSubmitting" :disabled="isSubmitting">
           <span class="flex flex-col items-center gap-1">
             <AppIcon name="CheckCircle" size="lg" variant="white" />
             <span class="font-semibold">{{ t('review.approve') }}</span>
@@ -647,7 +652,7 @@ const handleCancelConfirm = () => {
           </span>
         </NeonButton>
 
-        <NeonButton variant="purple" size="lg" class="w-full" @click="showStructuredFeedback = true; requestDecision('needs_revision')" :loading="isSubmitting" :disabled="isSubmitting">
+        <NeonButton variant="purple" size="md" class="w-full md:size-lg" @click="showStructuredFeedback = true; requestDecision('needs_revision')" :loading="isSubmitting" :disabled="isSubmitting">
           <span class="flex flex-col items-center gap-1">
             <AppIcon name="Edit3" size="lg" variant="white" />
             <span class="font-semibold">{{ t('review.revise') }}</span>
@@ -655,7 +660,7 @@ const handleCancelConfirm = () => {
           </span>
         </NeonButton>
 
-        <NeonButton variant="ghost" size="lg" class="w-full border border-rose-200 !text-rose-500 hover:bg-rose-50" @click="showStructuredFeedback = true; requestDecision('rejected')" :disabled="isSubmitting">
+        <NeonButton variant="ghost" size="md" class="w-full md:size-lg border border-rose-200 !text-rose-500 hover:bg-rose-50" @click="showStructuredFeedback = true; requestDecision('rejected')" :disabled="isSubmitting">
           <span class="flex flex-col items-center gap-1">
             <AppIcon name="XCircle" size="lg" variant="pink" />
             <span class="font-semibold">{{ t('review.reject') }}</span>
@@ -665,10 +670,10 @@ const handleCancelConfirm = () => {
       </div>
 
       <!-- General feedback -->
-      <div class="bg-slate-50 rounded-lg p-4 border border-slate-100 mb-4">
-        <div class="flex items-center gap-2 mb-2">
+      <div class="bg-slate-50 rounded-lg p-3 md:p-4 border border-slate-100 mb-3 md:mb-4">
+        <div class="flex items-center gap-1.5 md:gap-2 mb-1.5 md:mb-2">
           <AppIcon name="MessageSquare" size="sm" variant="purple" />
-          <span class="text-xs text-violet-600 uppercase tracking-wide font-medium">{{ t('review.feedbackLabel') }}</span>
+          <span class="text-[10px] md:text-xs text-violet-600 uppercase tracking-wide font-medium">{{ t('review.feedbackLabel') }}</span>
         </div>
         <textarea
           v-model="comments"
@@ -680,22 +685,22 @@ const handleCancelConfirm = () => {
       </div>
 
       <!-- Structured Feedback (for revise/reject) -->
-      <div class="bg-slate-50 rounded-lg p-4 border border-slate-100">
+      <div class="bg-slate-50 rounded-lg p-3 md:p-4 border border-slate-100">
         <button
-          class="flex items-center justify-between w-full mb-3"
+          class="flex items-center justify-between w-full mb-2 md:mb-3"
           @click="showStructuredFeedback = !showStructuredFeedback"
         >
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1.5 md:gap-2">
             <AppIcon name="List" size="sm" variant="cyan" />
-            <span class="text-xs text-slate-600 uppercase tracking-wide font-medium">{{ t('review.structuredFeedback') }}</span>
+            <span class="text-[10px] md:text-xs text-slate-600 uppercase tracking-wide font-medium">{{ t('review.structuredFeedback') }}</span>
           </div>
           <AppIcon :name="showStructuredFeedback ? 'ChevronUp' : 'ChevronDown'" size="sm" variant="cyan" />
         </button>
 
-        <div v-if="showStructuredFeedback" class="space-y-3">
+        <div v-if="showStructuredFeedback" class="space-y-2 md:space-y-3">
           <!-- Revision reason (required for revise) -->
           <div>
-            <label class="block text-xs font-medium text-slate-600 mb-1">{{ t('review.revisionReason') }}</label>
+            <label class="block text-[10px] md:text-xs font-medium text-slate-600 mb-1">{{ t('review.revisionReason') }}</label>
             <input
               v-model="revisionReason"
               type="text"
@@ -706,7 +711,7 @@ const handleCancelConfirm = () => {
 
           <!-- Reject reason (required for reject) -->
           <div>
-            <label class="block text-xs font-medium text-slate-600 mb-1">{{ t('review.rejectReason') }}</label>
+            <label class="block text-[10px] md:text-xs font-medium text-slate-600 mb-1">{{ t('review.rejectReason') }}</label>
             <input
               v-model="rejectReason"
               type="text"
@@ -715,8 +720,8 @@ const handleCancelConfirm = () => {
             />
           </div>
 
-          <div class="border-t border-slate-200 pt-3">
-            <p class="text-xs text-slate-400 mb-2">{{ t('review.structuredFeedbackLabel') }}</p>
+          <div class="border-t border-slate-200 pt-2 md:pt-3">
+            <p class="text-[10px] md:text-xs text-slate-400 mb-1.5 md:mb-2">{{ t('review.structuredFeedbackLabel') }}</p>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <input v-model="titleIssue" :placeholder="t('review.titleIssue')" class="px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all" />
               <input v-model="bodyIssue" :placeholder="t('review.bodyIssue')" class="px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all" />
@@ -745,32 +750,33 @@ const handleCancelConfirm = () => {
       <Transition name="modal">
         <div v-if="showPublishConfirm" class="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showPublishConfirm = false" />
-          <div class="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-            <div class="p-5 border-b border-slate-100">
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-400 flex items-center justify-center">
-                  <AppIcon name="CheckCircle" size="md" variant="white" />
+          <div class="relative bg-white rounded-xl md:rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div class="p-4 md:p-5 border-b border-slate-100">
+              <div class="flex items-center gap-2 md:gap-3">
+                <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-gradient-to-br from-emerald-400 to-teal-400 flex items-center justify-center">
+                  <AppIcon name="CheckCircle" size="sm" variant="white" class="md:hidden" />
+                  <AppIcon name="CheckCircle" size="md" variant="white" class="hidden md:block" />
                 </div>
                 <div>
-                  <h3 class="text-lg font-semibold text-slate-800">{{ t('review.publishConfirm.title') }}</h3>
+                  <h3 class="text-base md:text-lg font-semibold text-slate-800">{{ t('review.publishConfirm.title') }}</h3>
                   <p class="text-xs text-slate-400">{{ t('review.publishConfirm.subtitle') }}</p>
                 </div>
               </div>
             </div>
 
-            <div class="p-5 space-y-4">
+            <div class="p-4 md:p-5 space-y-3 md:space-y-4">
               <!-- Target info -->
               <div class="flex items-center justify-between py-2">
-                <span class="text-sm text-slate-500">{{ t('review.publishConfirm.target') }}</span>
-                <span class="text-sm font-medium text-slate-700">{{ workflowStore.currentThreadId }}</span>
+                <span class="text-xs md:text-sm text-slate-500">{{ t('review.publishConfirm.target') }}</span>
+                <span class="text-xs md:text-sm font-medium text-slate-700 truncate">{{ workflowStore.currentThreadId }}</span>
               </div>
 
               <!-- Dry Run toggle -->
               <div class="flex items-center justify-between py-2 px-3 rounded-lg bg-slate-50 border border-slate-100">
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-1.5 md:gap-2">
                   <AppIcon name="FlaskConical" size="sm" variant="cyan" />
                   <div>
-                    <span class="text-sm text-slate-700">{{ t('review.publishConfirm.dryRun') }}</span>
+                    <span class="text-xs md:text-sm text-slate-700">{{ t('review.publishConfirm.dryRun') }}</span>
                     <p class="text-xs text-slate-400">{{ t('review.publishConfirm.dryRunHelp') }}</p>
                   </div>
                 </div>
@@ -801,7 +807,7 @@ const handleCancelConfirm = () => {
               </div>
             </div>
 
-            <div class="p-5 border-t border-slate-100 flex gap-3">
+            <div class="p-4 md:p-5 border-t border-slate-100 flex gap-2 md:gap-3">
               <NeonButton variant="ghost" class="flex-1" @click="showPublishConfirm = false" :disabled="isSubmitting">
                 {{ t('common.cancel') }}
               </NeonButton>

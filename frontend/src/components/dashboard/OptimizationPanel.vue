@@ -91,7 +91,7 @@ const handleVersionSelect = (choice: VersionChoice) => {
 <template>
   <div v-if="isDraftInputPending || showDraftInput || isOptimizationPending" class="space-y-4" role="region" :aria-label="t('dashboard.optimization.title')">
     <!-- Optimization prompt when draft input is pending -->
-    <div v-if="isDraftInputPending && !showDraftInput" class="rounded-xl p-5 bg-gradient-to-r from-neon-cyan/5 to-neon-purple/5 border border-neon-cyan/20" role="status" aria-live="polite">
+    <div v-if="isDraftInputPending && !showDraftInput" class="rounded-xl p-3 md:p-5 bg-gradient-to-r from-neon-cyan/5 to-neon-purple/5 border border-neon-cyan/20" role="status" aria-live="polite">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
           <AppIcon name="Sparkles" size="md" variant="cyan" aria-hidden="true" />

@@ -196,14 +196,15 @@ function startWithTopic(topic: string, niche?: string) {
   <AnalyticsSkeleton v-if="isLoading" />
 
   <!-- Error state -->
-  <div v-else-if="hasError" class="relative space-y-6 md:space-y-8">
+  <div v-else-if="hasError" class="relative space-y-4 md:space-y-6">
     <div class="card">
-      <div class="flex flex-col items-center gap-4 py-8">
-        <div class="w-14 h-14 rounded-xl bg-rose-50 flex items-center justify-center">
-          <AppIcon name="AlertTriangle" size="xl" variant="pink" />
+      <div class="flex flex-col items-center gap-3 md:gap-4 py-6 md:py-8">
+        <div class="w-10 h-10 md:w-14 md:h-14 rounded-lg md:rounded-xl bg-rose-50 flex items-center justify-center">
+          <AppIcon name="AlertTriangle" size="md" variant="pink" class="md:hidden" />
+          <AppIcon name="AlertTriangle" size="xl" variant="pink" class="hidden md:block" />
         </div>
-        <div class="text-lg font-semibold text-slate-800">{{ t('analytics.error.title') }}</div>
-        <div class="text-sm text-slate-500 text-center max-w-md">{{ t('analytics.error.description') }}</div>
+        <div class="text-base md:text-lg font-semibold text-slate-800">{{ t('analytics.error.title') }}</div>
+        <div class="text-xs md:text-sm text-slate-500 text-center max-w-md">{{ t('analytics.error.description') }}</div>
         <button
           @click="refreshData"
           :disabled="analyticsStore.isLoading"
@@ -217,14 +218,15 @@ function startWithTopic(topic: string, niche?: string) {
   </div>
 
   <!-- Empty state -->
-  <div v-else-if="isEmpty" class="relative space-y-6 md:space-y-8">
+  <div v-else-if="isEmpty" class="relative space-y-4 md:space-y-6">
     <div class="card">
-      <div class="flex flex-col items-center gap-4 py-8">
-        <div class="w-14 h-14 rounded-xl bg-teal-50 flex items-center justify-center">
-          <AppIcon name="BarChart3" size="xl" variant="cyan" />
+      <div class="flex flex-col items-center gap-3 md:gap-4 py-6 md:py-8">
+        <div class="w-10 h-10 md:w-14 md:h-14 rounded-lg md:rounded-xl bg-teal-50 flex items-center justify-center">
+          <AppIcon name="BarChart3" size="md" variant="cyan" class="md:hidden" />
+          <AppIcon name="BarChart3" size="xl" variant="cyan" class="hidden md:block" />
         </div>
-        <div class="text-lg font-semibold text-slate-800">{{ t('analytics.empty.title') }}</div>
-        <div class="text-sm text-slate-500 text-center max-w-md">{{ t('analytics.empty.description') }}</div>
+        <div class="text-base md:text-lg font-semibold text-slate-800">{{ t('analytics.empty.title') }}</div>
+        <div class="text-xs md:text-sm text-slate-500 text-center max-w-md">{{ t('analytics.empty.description') }}</div>
         <button
           @click="goHome"
           class="px-4 py-2 rounded-lg bg-teal-500 text-white text-sm font-medium hover:bg-teal-600 transition-all duration-200 flex items-center gap-2"
@@ -237,19 +239,20 @@ function startWithTopic(topic: string, niche?: string) {
   </div>
 
   <!-- Data view -->
-  <div v-else class="relative space-y-6 md:space-y-8">
+  <div v-else class="relative space-y-4 md:space-y-6">
     <!-- Header -->
     <div class="card">
-      <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
-        <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm flex-shrink-0">
-          <AppIcon name="BarChart3" size="xl" variant="white" :aria-label="t('analytics.title')" />
+      <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5">
+        <div class="w-10 h-10 md:w-14 md:h-14 rounded-lg md:rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm flex-shrink-0">
+          <AppIcon name="BarChart3" size="md" variant="white" class="md:hidden" :aria-label="t('analytics.title')" />
+          <AppIcon name="BarChart3" size="xl" variant="white" class="hidden md:block" :aria-label="t('analytics.title')" />
         </div>
         <div class="flex-1">
           <div class="flex items-center gap-2 mb-1">
-            <span class="px-2 py-1 rounded bg-teal-50 text-teal-600 text-xs uppercase tracking-wide font-medium">{{ t('analytics.analyticsLabel') }}</span>
+            <span class="px-1.5 md:px-2 py-0.5 md:py-1 rounded bg-teal-50 text-teal-600 text-[10px] md:text-xs uppercase tracking-wide font-medium">{{ t('analytics.analyticsLabel') }}</span>
           </div>
-          <div class="text-xl font-semibold text-slate-800">{{ t('analytics.title') }}</div>
-          <div class="text-xs text-slate-400 mt-1">
+          <div class="text-lg md:text-xl font-semibold text-slate-800">{{ t('analytics.title') }}</div>
+          <div class="text-[10px] md:text-xs text-slate-400 mt-1">
             {{ t('analytics.account') }}: {{ analyticsStore.accountId }} | {{ t('analytics.period') }}: {{ analyticsStore.period }}
           </div>
         </div>
@@ -288,7 +291,7 @@ function startWithTopic(topic: string, niche?: string) {
     </div>
 
     <!-- Metric cards (5 columns on xl) -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-5">
       <MetricCard
         v-for="metric in metrics"
         :key="metric.title"
@@ -297,17 +300,17 @@ function startWithTopic(topic: string, niche?: string) {
     </div>
 
     <!-- Charts -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-5">
       <Suspense>
         <TrendChart
           :data="trendData"
           :title="t('analytics.interactionTrend')"
           variant="cyan"
-          :height="280"
+          :height="220"
         />
         <template #fallback>
-          <div class="rounded-2xl p-6 bg-white/98 backdrop-blur-sm border border-slate-200/50">
-            <div class="h-[280px] rounded-lg bg-slate-100 animate-pulse" />
+          <div class="rounded-xl md:rounded-2xl p-3 md:p-6 bg-white/98 backdrop-blur-sm border border-slate-200/50">
+            <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse" />
           </div>
         </template>
       </Suspense>
@@ -316,11 +319,11 @@ function startWithTopic(topic: string, niche?: string) {
           :data="engagementData"
           :title="t('analytics.engagementBreakdown')"
           variant="pink"
-          :height="280"
+          :height="220"
         />
         <template #fallback>
-          <div class="rounded-2xl p-6 bg-white/98 backdrop-blur-sm border border-slate-200/50">
-            <div class="h-[280px] rounded-lg bg-slate-100 animate-pulse" />
+          <div class="rounded-xl md:rounded-2xl p-3 md:p-6 bg-white/98 backdrop-blur-sm border border-slate-200/50">
+            <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse" />
           </div>
         </template>
       </Suspense>
@@ -328,34 +331,35 @@ function startWithTopic(topic: string, niche?: string) {
 
     <!-- Cost breakdown -->
     <div v-if="analyticsStore.costData" class="card">
-      <div class="flex items-center gap-3 mb-5">
-        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm">
-          <AppIcon name="DollarSign" size="md" variant="white" :aria-label="t('analytics.cost.title')" />
+      <div class="flex items-center gap-2 md:gap-3 mb-3 md:mb-5">
+        <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm">
+          <AppIcon name="DollarSign" size="sm" variant="white" class="md:hidden" :aria-label="t('analytics.cost.title')" />
+          <AppIcon name="DollarSign" size="md" variant="white" class="hidden md:block" :aria-label="t('analytics.cost.title')" />
         </div>
         <div class="flex-1">
-          <div class="text-rose-500 font-semibold text-sm">{{ t('analytics.cost.title') }}</div>
-          <div class="text-xs text-slate-400">{{ t('analytics.cost.subtitle') }}</div>
+          <div class="text-rose-500 font-semibold text-xs md:text-sm">{{ t('analytics.cost.title') }}</div>
+          <div class="text-[10px] md:text-xs text-slate-400">{{ t('analytics.cost.subtitle') }}</div>
         </div>
       </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
-        <div class="rounded-lg p-4 bg-rose-50 border border-rose-100">
-          <div class="text-xs text-rose-500 font-medium">{{ t('analytics.cost.total') }}</div>
-          <div class="text-xl font-bold text-rose-700">${{ analyticsStore.costData.total_cost_usd?.toFixed(2) || '0.00' }}</div>
+      <div class="grid grid-cols-3 gap-2 md:gap-4 mb-3 md:mb-5">
+        <div class="rounded-lg p-2 md:p-4 bg-rose-50 border border-rose-100">
+          <div class="text-[10px] md:text-xs text-rose-500 font-medium">{{ t('analytics.cost.total') }}</div>
+          <div class="text-base md:text-xl font-bold text-rose-700">${{ analyticsStore.costData.total_cost_usd?.toFixed(2) || '0.00' }}</div>
         </div>
-        <div class="rounded-lg p-4 bg-amber-50 border border-amber-100">
-          <div class="text-xs text-amber-500 font-medium">{{ t('analytics.cost.today') }}</div>
-          <div class="text-xl font-bold text-amber-700">${{ analyticsStore.costData.today_cost_usd?.toFixed(2) || '0.00' }}</div>
+        <div class="rounded-lg p-2 md:p-4 bg-amber-50 border border-amber-100">
+          <div class="text-[10px] md:text-xs text-amber-500 font-medium">{{ t('analytics.cost.today') }}</div>
+          <div class="text-base md:text-xl font-bold text-amber-700">${{ analyticsStore.costData.today_cost_usd?.toFixed(2) || '0.00' }}</div>
         </div>
-        <div class="rounded-lg p-4 bg-emerald-50 border border-emerald-100">
-          <div class="text-xs text-emerald-500 font-medium">{{ t('analytics.cost.remaining') }}</div>
-          <div class="text-xl font-bold text-emerald-700">${{ analyticsStore.costData.budget_remaining_usd?.toFixed(2) || '0.00' }}</div>
+        <div class="rounded-lg p-2 md:p-4 bg-emerald-50 border border-emerald-100">
+          <div class="text-[10px] md:text-xs text-emerald-500 font-medium">{{ t('analytics.cost.remaining') }}</div>
+          <div class="text-base md:text-xl font-bold text-emerald-700">${{ analyticsStore.costData.budget_remaining_usd?.toFixed(2) || '0.00' }}</div>
         </div>
       </div>
 
       <!-- Budget progress bar -->
-      <div v-if="analyticsStore.costData.total_cost_usd" class="mb-5">
-        <div class="flex items-center justify-between text-xs text-slate-500 mb-2">
+      <div v-if="analyticsStore.costData.total_cost_usd" class="mb-3 md:mb-5">
+        <div class="flex items-center justify-between text-[10px] md:text-xs text-slate-500 mb-1.5 md:mb-2">
           <span>{{ t('analytics.cost.budgetUsed') }}</span>
           <span>{{ budgetUsedPercent }}%</span>
         </div>
@@ -370,16 +374,16 @@ function startWithTopic(topic: string, niche?: string) {
 
       <!-- By model breakdown (visual bars) -->
       <div v-if="modelCostData.length > 0">
-        <div class="text-xs text-slate-500 uppercase tracking-wide font-medium mb-3">{{ t('analytics.cost.byModel') }}</div>
-        <div class="space-y-3">
+        <div class="text-[10px] md:text-xs text-slate-500 uppercase tracking-wide font-medium mb-2 md:mb-3">{{ t('analytics.cost.byModel') }}</div>
+        <div class="space-y-2 md:space-y-3">
           <div
             v-for="item in modelCostData"
             :key="item.model"
             class="group"
           >
             <div class="flex items-center justify-between mb-1">
-              <span class="text-sm text-slate-700 font-medium">{{ item.model }}</span>
-              <span class="text-sm text-slate-600 tabular-nums">${{ item.cost.toFixed(2) }}</span>
+              <span class="text-xs md:text-sm text-slate-700 font-medium truncate">{{ item.model }}</span>
+              <span class="text-xs md:text-sm text-slate-600 tabular-nums">${{ item.cost.toFixed(2) }}</span>
             </div>
             <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
               <div
@@ -394,22 +398,23 @@ function startWithTopic(topic: string, niche?: string) {
 
     <!-- Growth insights -->
     <div v-if="insights.length > 0 || trendTopics.length > 0" class="card">
-      <div class="flex items-center gap-3 mb-5">
-        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center shadow-sm">
-          <AppIcon name="Lightbulb" size="md" variant="white" :aria-label="t('analytics.insights.title')" />
+      <div class="flex items-center gap-2 md:gap-3 mb-3 md:mb-5">
+        <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center shadow-sm">
+          <AppIcon name="Lightbulb" size="sm" variant="white" class="md:hidden" :aria-label="t('analytics.insights.title')" />
+          <AppIcon name="Lightbulb" size="md" variant="white" class="hidden md:block" :aria-label="t('analytics.insights.title')" />
         </div>
         <div class="flex-1">
-          <div class="text-amber-600 font-semibold text-sm">{{ t('analytics.insights.title') }}</div>
-          <div class="text-xs text-slate-400">{{ t('analytics.insights.subtitle') }}</div>
+          <div class="text-amber-600 font-semibold text-xs md:text-sm">{{ t('analytics.insights.title') }}</div>
+          <div class="text-[10px] md:text-xs text-slate-400">{{ t('analytics.insights.subtitle') }}</div>
         </div>
       </div>
 
       <!-- Insight cards -->
-      <div class="space-y-3 mb-5">
+      <div class="space-y-2 md:space-y-3 mb-3 md:mb-5">
         <div
           v-for="(insight, idx) in insights"
           :key="idx"
-          class="flex items-start gap-3 p-4 rounded-lg border"
+          class="flex items-start gap-2 md:gap-3 p-2.5 md:p-4 rounded-lg border"
           :class="insightBg(insight.type)"
         >
           <div class="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 mt-0.5" :class="{
@@ -420,14 +425,14 @@ function startWithTopic(topic: string, niche?: string) {
           }">
             <AppIcon :name="insightIcon(insight.type)" size="sm" :variant="insightVariant(insight.type) as any" />
           </div>
-          <p class="text-sm text-slate-700">{{ insight.message }}</p>
+          <p class="text-xs md:text-sm text-slate-700">{{ insight.message }}</p>
         </div>
       </div>
 
       <!-- Trending topics with workflow trigger -->
-      <div v-if="trendTopics.length > 0" class="border-t border-slate-100 pt-5">
-        <div class="flex items-center justify-between mb-3">
-          <span class="text-xs text-slate-500 uppercase tracking-wide font-medium">{{ t('analytics.hotTopics') }}</span>
+      <div v-if="trendTopics.length > 0" class="border-t border-slate-100 pt-3 md:pt-5">
+        <div class="flex items-center justify-between mb-2 md:mb-3">
+          <span class="text-[10px] md:text-xs text-slate-500 uppercase tracking-wide font-medium">{{ t('analytics.hotTopics') }}</span>
         </div>
         <div class="flex flex-wrap gap-2">
           <button
@@ -446,13 +451,14 @@ function startWithTopic(topic: string, niche?: string) {
 
     <!-- Post performance table -->
     <div class="card">
-      <div class="flex items-center gap-3 mb-5">
-        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
-          <AppIcon name="FileText" size="md" variant="white" :aria-label="t('analytics.recentPosts')" />
+      <div class="flex items-center gap-2 md:gap-3 mb-3 md:mb-5">
+        <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
+          <AppIcon name="FileText" size="sm" variant="white" class="md:hidden" :aria-label="t('analytics.recentPosts')" />
+          <AppIcon name="FileText" size="md" variant="white" class="hidden md:block" :aria-label="t('analytics.recentPosts')" />
         </div>
         <div>
-          <div class="text-violet-600 font-semibold text-sm">{{ t('analytics.recentPosts') }}</div>
-          <div class="text-xs text-slate-400">{{ t('analytics.top10') }}</div>
+          <div class="text-violet-600 font-semibold text-xs md:text-sm">{{ t('analytics.recentPosts') }}</div>
+          <div class="text-[10px] md:text-xs text-slate-400">{{ t('analytics.top10') }}</div>
         </div>
       </div>
 

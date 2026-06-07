@@ -8,7 +8,7 @@ const { t } = useI18n()
 
 interface Props {
   variant?: 'pink' | 'cyan' | 'purple' | 'peach' | 'ghost'
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'xs' | 'sm' | 'md' | 'lg'
   disabled?: boolean
   loading?: boolean
   success?: boolean
@@ -67,6 +67,7 @@ const variantClasses = computed(() => {
 
 const sizeClasses = computed(() => {
   const sizes = {
+    xs: 'px-3 py-1.5 text-xs rounded-lg',
     sm: 'px-4 py-2 text-sm rounded-lg',
     md: 'px-6 py-3 text-base rounded-xl',
     lg: 'px-8 py-4 text-lg rounded-xl',

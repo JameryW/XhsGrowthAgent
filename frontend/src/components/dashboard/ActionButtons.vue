@@ -95,7 +95,7 @@ const openPostUrl = () => {
 </script>
 
 <template>
-  <div class="space-y-3" role="group" :aria-label="t('dashboard.actionButtons.ariaLabel')">
+  <div class="space-y-2 md:space-y-3" role="group" :aria-label="t('dashboard.actionButtons.ariaLabel')">
     <!-- Status source indicator -->
     <div class="flex items-center justify-between px-1">
       <div class="flex items-center gap-2">
@@ -210,12 +210,13 @@ const openPostUrl = () => {
       <NeonButton
         v-if="canPause"
         variant="pink"
+        size="sm"
         :title="t('dashboard.actionButtons.pauseDesc')"
         :aria-label="t('dashboard.actionButtons.pause')"
         @click="pauseWorkflow"
         :loading="workflowStore.isLoading"
       >
-        <span class="inline-flex items-center gap-2">
+        <span class="inline-flex items-center gap-1.5">
           <AppIcon name="Pause" size="sm" variant="white" />
           <span>{{ t('dashboard.actionButtons.pause') }}</span>
         </span>
@@ -223,11 +224,12 @@ const openPostUrl = () => {
 
       <NeonButton
         variant="cyan"
+        size="sm"
         :title="t('dashboard.actionButtons.refreshDesc')"
         :aria-label="t('dashboard.actionButtons.refresh')"
         @click="workflowStore.refreshStatus()"
       >
-        <span class="inline-flex items-center gap-2">
+        <span class="inline-flex items-center gap-1.5">
           <AppIcon name="RefreshCw" size="sm" variant="white" />
           <span>{{ t('dashboard.actionButtons.refresh') }}</span>
         </span>

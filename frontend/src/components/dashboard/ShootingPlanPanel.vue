@@ -54,7 +54,7 @@ const exportPlan = () => {
 </script>
 
 <template>
-  <div v-if="hasPlan" class="rounded-2xl p-5 md:p-6 bg-white border border-slate-200/50 shadow-sm">
+  <div v-if="hasPlan" class="rounded-xl p-3 md:p-5 md:rounded-2xl bg-white border border-slate-200/50 shadow-sm">
     <div class="flex items-center justify-between mb-4">
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">

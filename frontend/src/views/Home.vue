@@ -106,36 +106,37 @@ const quickStart = () => {
 
 <template>
   <div class="min-h-[80vh] flex flex-col justify-center">
-    <div class="w-full max-w-3xl mx-auto px-4 md:px-8">
+    <div class="w-full max-w-3xl mx-auto px-3 md:px-8">
       <!-- Hero: title + primary CTA -->
-      <div class="text-center mb-8">
-        <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm mx-auto mb-4">
-          <AppIcon name="Rocket" size="lg" variant="white" />
+      <div class="text-center mb-6 md:mb-8">
+        <div class="w-10 h-10 md:w-14 md:h-14 rounded-lg md:rounded-xl bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm mx-auto mb-3 md:mb-4">
+          <AppIcon name="Rocket" size="md" variant="white" class="md:hidden" />
+          <AppIcon name="Rocket" size="lg" variant="white" class="hidden md:block" />
         </div>
-        <h1 class="text-2xl font-bold text-slate-800 mb-1">{{ t('home.title') }}</h1>
-        <p class="text-sm text-slate-400">{{ t('home.subtitle') }}</p>
+        <h1 class="text-xl md:text-2xl font-bold text-slate-800 mb-1">{{ t('home.title') }}</h1>
+        <p class="text-xs md:text-sm text-slate-400">{{ t('home.subtitle') }}</p>
       </div>
 
       <!-- Pre-filled topic from analytics -->
-      <div v-if="prefilledTopic" class="mb-4 p-3 rounded-lg bg-teal-50 border border-teal-100 flex items-center gap-2">
+      <div v-if="prefilledTopic" class="mb-3 md:mb-4 p-2.5 md:p-3 rounded-lg bg-teal-50 border border-teal-100 flex items-center gap-2">
         <AppIcon name="Sparkles" size="sm" variant="cyan" />
-        <div class="flex-1">
-          <span class="text-xs text-teal-500 font-medium">{{ t('home.recommendedTopic') }}</span>
-          <p class="text-sm text-teal-700 font-semibold">{{ prefilledTopic }}</p>
+        <div class="flex-1 min-w-0">
+          <span class="text-[10px] md:text-xs text-teal-500 font-medium">{{ t('home.recommendedTopic') }}</span>
+          <p class="text-xs md:text-sm text-teal-700 font-semibold truncate">{{ prefilledTopic }}</p>
         </div>
-        <button @click="prefilledTopic = null" class="text-teal-400 hover:text-teal-600 transition-colors">
+        <button @click="prefilledTopic = null" class="text-teal-400 hover:text-teal-600 transition-colors flex-shrink-0">
           <AppIcon name="X" size="sm" variant="cyan" />
         </button>
       </div>
 
       <!-- Primary action card -->
-      <div class="rounded-2xl p-6 md:p-8 bg-white border border-slate-200/50 shadow-sm mb-4">
+      <div class="rounded-xl md:rounded-2xl p-4 md:p-6 lg:p-8 bg-white border border-slate-200/50 shadow-sm mb-3 md:mb-4">
         <!-- Quick start (default) -->
         <template v-if="!showForm">
           <NeonButton
             variant="pink"
-            size="lg"
-            class="w-full group/btn"
+            size="md"
+            class="w-full group/btn md:size-lg"
             @click="quickStart"
             :loading="isStarting"
             :aria-label="t('home.startWorkflow')"
@@ -145,13 +146,13 @@ const quickStart = () => {
               <span class="font-semibold">{{ t('home.startWorkflow') }}</span>
             </span>
           </NeonButton>
-          <div class="mt-4 flex items-center justify-center gap-3">
+          <div class="mt-3 md:mt-4 flex items-center justify-center gap-3">
             <div class="h-px flex-1 bg-slate-100" />
             <span class="text-xs text-slate-400">{{ t('home.form.options') }}</span>
             <div class="h-px flex-1 bg-slate-100" />
           </div>
           <button
-            class="mt-3 w-full text-center text-sm text-slate-500 hover:text-cyan-600 transition-colors flex items-center justify-center gap-1.5"
+            class="mt-2 md:mt-3 w-full text-center text-xs md:text-sm text-slate-500 hover:text-cyan-600 transition-colors flex items-center justify-center gap-1.5"
             @click="showForm = true"
           >
             <AppIcon name="Settings" size="sm" variant="cyan" />
@@ -175,8 +176,8 @@ const quickStart = () => {
           <div class="mt-5">
             <NeonButton
               variant="pink"
-              size="lg"
-              class="w-full group/btn"
+              size="md"
+              class="w-full group/btn md:size-lg"
               @click="handleFormSubmit()"
               :aria-label="t('home.startWorkflow')"
             >
@@ -190,25 +191,25 @@ const quickStart = () => {
       </div>
 
       <!-- Secondary row: checklist + nav -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
         <!-- Pre-Launch Checklist -->
-        <div class="rounded-xl p-4 bg-white/80 border border-slate-200/40">
+        <div class="rounded-xl p-3 md:p-4 bg-white/80 border border-slate-200/40">
           <PreLaunchChecklist ref="checklistRef" />
         </div>
 
         <!-- Navigation shortcuts -->
-        <div class="rounded-xl p-4 bg-white/80 border border-slate-200/40 flex flex-col gap-3">
-          <span class="text-xs font-medium text-slate-500 uppercase tracking-wide">{{ t('home.systemStatus') }}</span>
-          <NeonButton variant="cyan" size="md" class="w-full" @click="goToDashboard" :disabled="isStarting" :aria-label="t('home.viewDashboard')">
-            <span class="inline-flex items-center gap-2">
+        <div class="rounded-xl p-3 md:p-4 bg-white/80 border border-slate-200/40 flex flex-col gap-2 md:gap-3">
+          <span class="text-[10px] md:text-xs font-medium text-slate-500 uppercase tracking-wide">{{ t('home.systemStatus') }}</span>
+          <NeonButton variant="cyan" size="sm" class="w-full md:size-md" @click="goToDashboard" :disabled="isStarting" :aria-label="t('home.viewDashboard')">
+            <span class="inline-flex items-center gap-1.5 md:gap-2">
               <AppIcon name="BarChart3" size="sm" variant="white" aria-hidden="true" />
-              <span class="text-sm">{{ t('home.viewDashboard') }}</span>
+              <span class="text-xs md:text-sm">{{ t('home.viewDashboard') }}</span>
             </span>
           </NeonButton>
-          <NeonButton variant="ghost" size="md" class="w-full" @click="goToHistory" :disabled="isStarting">
-            <span class="inline-flex items-center gap-2">
+          <NeonButton variant="ghost" size="sm" class="w-full md:size-md" @click="goToHistory" :disabled="isStarting">
+            <span class="inline-flex items-center gap-1.5 md:gap-2">
               <AppIcon name="History" size="sm" variant="cyan" aria-hidden="true" />
-              <span class="text-sm">{{ t('home.history') }}</span>
+              <span class="text-xs md:text-sm">{{ t('home.history') }}</span>
             </span>
           </NeonButton>
         </div>
