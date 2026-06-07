@@ -10,6 +10,7 @@ import ContentCards from '@/components/dashboard/ContentCards.vue'
 import OptimizationPanel from '@/components/dashboard/OptimizationPanel.vue'
 import ShootingPlanPanel from '@/components/dashboard/ShootingPlanPanel.vue'
 import ActionButtons from '@/components/dashboard/ActionButtons.vue'
+import BloggerSelectionPanel from '@/components/dashboard/BloggerSelectionPanel.vue'
 import BriefFileUpload from '@/components/BriefFileUpload.vue'
 import CelebrationModal from '@/components/CelebrationModal.vue'
 import { DashboardSkeleton } from '@/components/skeletons'
@@ -34,6 +35,9 @@ const showOptimization = computed(() =>
   workflowStore.currentPhase === 'creating' ||
   workflowStore.isAwaitingDraft ||
   workflowStore.isAwaitingChoice
+)
+const showBloggerSelection = computed(() =>
+  workflowStore.isAwaitingBloggerSelection
 )
 const showShootingPlan = computed(() =>
   !!workflowStore.workflowState?.shooting_plan &&
@@ -246,6 +250,7 @@ onUnmounted(() => {
         <WorkflowTimeline />
       </div>
       <ContentCards />
+      <BloggerSelectionPanel v-if="showBloggerSelection" />
       <ShootingPlanPanel v-if="showShootingPlan" />
       <OptimizationPanel v-if="showOptimization" />
       <!-- Action buttons with onboarding selector -->

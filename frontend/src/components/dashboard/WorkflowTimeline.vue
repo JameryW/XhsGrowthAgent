@@ -57,6 +57,7 @@ const currentAgent = computed(() => {
   if (status === 'awaiting_draft') return nextNode || 'draft_gate'
   if (status === 'awaiting_choice') return nextNode || 'choice_gate'
   if (status === 'awaiting_review') return nextNode || 'review_gate'
+  if (status === 'awaiting_blogger_selection') return nextNode || 'blogger_gate'
 
   return workflowStore.workflowState?.current_agent || nextNode || ''
 })
@@ -83,6 +84,9 @@ const workflowNodes = computed<TimelineNode[]>(() => [
   { icon: 'ClipboardList', label: t('dashboard.timeline.planning'), phase: 'planning', description: t('dashboard.timeline.planningDesc'), agent: 'content_strategist' },
   { icon: 'Pencil', label: t('dashboard.timeline.creating'), phase: 'creating', description: t('dashboard.timeline.creatingDesc'), agent: 'copywriter' },
   { icon: 'FileText', label: t('dashboard.timeline.draft'), phase: 'creating', description: t('dashboard.timeline.draftDesc'), agent: 'draft_gate' },
+  { icon: 'Flame', label: t('dashboard.timeline.viralMatch'), phase: 'creating', description: t('dashboard.timeline.viralMatchDesc'), agent: 'viral_matcher' },
+  { icon: 'Users', label: t('dashboard.timeline.bloggerScout'), phase: 'creating', description: t('dashboard.timeline.bloggerScoutDesc'), agent: 'blogger_scout' },
+  { icon: 'UserCheck', label: t('dashboard.timeline.bloggerGate'), phase: 'creating', description: t('dashboard.timeline.bloggerGateDesc'), agent: 'blogger_gate' },
   { icon: 'Palette', label: t('dashboard.timeline.visual'), phase: 'creating', description: t('dashboard.timeline.visualDesc'), agent: 'visual_designer' },
   { icon: 'Clock', label: t('dashboard.timeline.reviewing'), phase: 'reviewing', description: t('dashboard.timeline.reviewingDesc'), agent: 'review_gate' },
   { icon: 'Upload', label: t('dashboard.timeline.publishing'), phase: 'publishing', description: t('dashboard.timeline.publishingDesc'), agent: 'publisher' },
@@ -97,6 +101,8 @@ const agentOrder = [
   'copywriter',
   'draft_gate',
   'viral_matcher',
+  'blogger_scout',
+  'blogger_gate',
   'content_analyzer',
   'version_generator',
   'choice_gate',

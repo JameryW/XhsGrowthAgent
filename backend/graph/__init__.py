@@ -11,6 +11,8 @@ Note: Node functions are now in xhs_growth.agents.nodes
 # Node functions are now imported from agents.nodes
 from backend.agents.nodes import (
     analyst_node,
+    blogger_gate_node,
+    blogger_scout_node,
     choice_gate_node,
     content_analyzer_node,
     content_strategist_node,
@@ -47,4 +49,6 @@ __all__ = [
     "content_analyzer_node",
     "version_generator_node",
     "choice_gate_node",
+    "blogger_scout_node",
+    "blogger_gate_node",
 ]

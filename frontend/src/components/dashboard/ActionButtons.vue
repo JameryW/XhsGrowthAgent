@@ -26,6 +26,7 @@ const waitingStatusText = computed(() => {
   if (workflowStore.isAwaitingChoice) return t('dashboard.actionButtons.awaitingChoice')
   if (workflowStore.isAwaitingReview) return t('dashboard.actionButtons.awaitingReview')
   if (workflowStore.isAwaitingBrief) return t('dashboard.actionButtons.awaitingBrief')
+  if (workflowStore.isAwaitingBloggerSelection) return t('dashboard.actionButtons.awaitingBlogger')
   return ''
 })
 

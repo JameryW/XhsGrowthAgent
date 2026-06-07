@@ -12,9 +12,11 @@ Agents:
 - ViralMatcherAgent: 爆款匹配 (发布前优化)
 - ContentAnalyzerAgent: 对比分析 (发布前优化)
 - VersionGeneratorAgent: 版本生成 (发布前优化)
+- BloggerScoutAgent: 博主发现 (热门博主参考)
 """
 
 from backend.agents.analyst import AnalystAgent
+from backend.agents.blogger_scout import BloggerScoutAgent
 from backend.agents.brief_analyzer import BriefAnalyzerAgent
 from backend.agents.content_analyzer import ContentAnalyzerAgent
 from backend.agents.content_strategist import ContentStrategistAgent
@@ -44,4 +46,5 @@ __all__ = [
     "VersionGeneratorAgent",
     "BriefAnalyzerAgent",
     "ShootingPlannerAgent",
+    "BloggerScoutAgent",
 ]

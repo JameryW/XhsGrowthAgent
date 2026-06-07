@@ -186,6 +186,25 @@ def should_brief_or_optimize(
     return should_optimize(state)
 
 
+def blogger_gate_router(
+    state: XHSGrowthState,
+) -> Literal["shooting_planner", "content_analyzer", "visual_designer"]:
+    """Route after blogger_gate — brief mode goes to shooting_planner,
+    trend mode goes to content_analyzer or visual_designer.
+
+    Same routing logic as should_brief_or_optimize, applied after
+    blogger selection is complete.
+    """
+    if _check_terminal(state):
+        return "visual_designer"
+
+    mode = state.get("workflow_mode", "trend")
+    if mode == "brief":
+        return "shooting_planner"
+
+    return should_optimize(state)
+
+
 def copywriter_router(
     state: XHSGrowthState,
 ) -> Literal["draft_gate", "visual_designer"]:

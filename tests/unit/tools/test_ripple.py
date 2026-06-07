@@ -154,7 +154,7 @@ def test_ripple_settings_default(monkeypatch):
         monkeypatch.delenv(key, raising=False)
 
     s = RippleSettings(_env_file=None)
-    assert s.base_url == "http://127.0.0.1:8081"
+    assert s.base_url == "http://127.0.0.1:8080"
     assert s.enabled is False
     assert s.default_max_waves == 8
     assert s.request_timeout == 300

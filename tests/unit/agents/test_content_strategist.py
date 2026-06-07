@@ -154,8 +154,8 @@ class TestContentStrategistAgent:
         # Should have fallback ripple_prediction with zeros
         assert result["content_plan"]["ripple_prediction"]["estimated_reach"] == 0
         assert result["content_plan"]["ripple_prediction"]["viral_probability"] == 0.0
-        # Generic error (not timeout) should NOT set ripple_reason
-        assert result.get("ripple_reason") is None
+        # Generic error (not timeout) sets ripple_reason to "unreachable"
+        assert result.get("ripple_reason") == "unreachable"
 
     @pytest.mark.asyncio
     async def test_ripple_predict_skipped_no_topic(self, agent, mock_store):

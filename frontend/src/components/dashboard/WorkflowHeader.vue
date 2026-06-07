@@ -46,6 +46,7 @@ const currentStageLabel = computed(() => {
   if (workflowStore.isAwaitingChoice) return t('dashboard.phase.awaitingChoice')
   if (workflowStore.isAwaitingReview) return t('dashboard.phase.awaitingReview')
   if (workflowStore.isAwaitingBrief) return t('dashboard.phase.awaitingBrief')
+  if (workflowStore.isAwaitingBloggerSelection) return t('dashboard.phase.awaitingBlogger')
 
   const key = `dashboard.phase.${workflowStore.currentPhase}`
   const translated = t(key)

@@ -2,6 +2,8 @@
 
 from backend.agents.nodes._base import NodeContext, NodeResult
 from backend.agents.nodes.analyst import analyst_node
+from backend.agents.nodes.blogger_gate import blogger_gate_node
+from backend.agents.nodes.blogger_scout import blogger_scout_node
 from backend.agents.nodes.brief_analyzer import brief_analyzer_node
 from backend.agents.nodes.brief_gate import brief_gate_node
 from backend.agents.nodes.content_strategist import content_strategist_node
@@ -46,6 +48,9 @@ __all__ = [
     "brief_analyzer_node",
     "brief_gate_node",
     "shooting_planner_node",
+    # Blogger reference nodes
+    "blogger_scout_node",
+    "blogger_gate_node",
     # Optimization nodes
     "viral_matcher_node",
     "content_analyzer_node",

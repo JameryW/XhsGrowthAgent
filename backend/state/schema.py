@@ -9,6 +9,8 @@ from backend.state.reducers import append_list as _append_list
 from backend.state.reducers import merge_dict as _merge_dict
 from backend.state.substates import (
     AnalyticsSnapshot,
+    BloggerNote,
+    BloggerProfile,
     BriefClarification,
     BriefContent,
     ContentPlan,
@@ -93,6 +95,23 @@ class XHSGrowthState(TypedDict, total=False):
     # Optional optimization control
     skip_optimization: bool
     optimization_error: str | None
+
+    # ── 博主参考系统 ──
+
+    # 候选博主列表 (供用户选择)
+    blogger_candidates: Annotated[list[BloggerProfile], _append_list]
+
+    # 用户选中的博主
+    selected_blogger: Annotated[dict, _merge_dict]
+
+    # 选中博主的 top 笔记
+    blogger_notes: Annotated[list[BloggerNote], _append_list]
+
+    # 候选博主数量限制 (默认 5)
+    blogger_candidate_limit: int
+
+    # 博主笔记获取深度 (默认 20)
+    blogger_note_limit: int
 
     # History
     content_history: Annotated[list[dict], _append_list]

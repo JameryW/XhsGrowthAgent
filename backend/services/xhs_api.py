@@ -139,3 +139,28 @@ class XHSApiParams:
             "num": 20,
             "image_scenes": "CRD,CRD_DT",
         }
+
+    @staticmethod
+    def search_users_params(keyword: str, page: int = 1) -> dict:
+        """搜索用户参数"""
+        return {
+            "keyword": keyword,
+            "page": page,
+            "page_size": 20,
+        }
+
+    @staticmethod
+    def user_info_params(user_id: str) -> dict:
+        """用户信息参数"""
+        return {
+            "user_id": user_id,
+        }
+
+    @staticmethod
+    def user_notes_params(user_id: str, cursor: str = "", num: int = 30) -> dict:
+        """用户笔记列表参数"""
+        return {
+            "user_id": user_id,
+            "cursor": cursor,
+            "num": num,
+        }
