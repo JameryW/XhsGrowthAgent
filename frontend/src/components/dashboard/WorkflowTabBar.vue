@@ -208,7 +208,7 @@ function toggleOverflow() {
 }
 
 .tab-item.active {
-  @apply bg-white/98 text-slate-800 shadow-sm ring-1 ring-slate-200/60;
+  @apply bg-white/[.98] text-slate-800 shadow-sm ring-1 ring-slate-200/60;
 }
 
 .tab-icon {
@@ -233,7 +233,7 @@ function toggleOverflow() {
 }
 
 .overflow-dropdown {
-  @apply absolute right-2 top-full mt-1 bg-white/98 backdrop-blur-sm rounded-xl border border-slate-200/50 shadow-xl
+  @apply absolute right-2 top-full mt-1 bg-white/[.98] backdrop-blur-sm rounded-xl border border-slate-200/50 shadow-xl
          py-1 min-w-[200px] max-h-[300px] overflow-y-auto z-40;
 }
 

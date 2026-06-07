@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/06-07-hot-blogger-reference/prd.md", "reason": "PRD with acceptance criteria to validate against"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality bar for code review and test coverage"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify error handling follows project conventions"}

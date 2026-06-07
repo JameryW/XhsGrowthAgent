@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/06-07-frontend-blogger-gate-ui/prd.md", "reason": "Full PRD with requirements and technical approach"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Directory conventions for placing new API route files"}
+{"file": "backend/api/routes/optimization.py", "reason": "Pattern reference for gate resume API (draft_gate, choice_gate)"}
+{"file": "frontend/src/api/workflow.ts", "reason": "Pattern reference for frontend API functions"}
+{"file": "frontend/src/stores/workflow.ts", "reason": "Pattern reference for workflow store computed properties and state handling"}

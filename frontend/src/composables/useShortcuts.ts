@@ -68,6 +68,12 @@ export function useShortcuts() {
    * Handle keyboard press event
    */
   function handleKeyPress(event: KeyboardEvent): void {
+    // Skip shortcuts when typing in input/textarea/contenteditable
+    const target = event.target as HTMLElement
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+      return
+    }
+
     const keyString = parseKeyEvent(event)
     lastKeyPressed.value = keyString
 

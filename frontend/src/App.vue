@@ -38,6 +38,12 @@ const onboardingCurrentStep = computed(() => onboardingStore.currentStep)
 const isOnboardingActive = computed(() => onboardingStore.isOnboardingActive)
 
 const handleGlobalKeyDown = (e: KeyboardEvent) => {
+  // Skip shortcuts when typing in input/textarea/contenteditable
+  const target = e.target as HTMLElement
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+    return
+  }
+
   // Show shortcuts help with "?" key (Shift+/)
   if (e.key === "?" || (e.shiftKey && e.key === "/")) {
     showShortcutsHelp.value = true

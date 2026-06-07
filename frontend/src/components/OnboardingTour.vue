@@ -99,6 +99,13 @@ const updatePositions = async () => {
         }
         break
     }
+  } else {
+    // Target element not found — center tooltip on screen
+    highlightBox.value = { top: 0, left: 0, width: 0, height: 0 }
+    tooltipPosition.value = {
+      top: window.innerHeight / 2 - 100,
+      left: window.innerWidth / 2 - 160,
+    }
   }
 }
 
@@ -165,7 +172,7 @@ const isLastStep = computed(() => props.currentStep === 3)
 
         <!-- Tooltip card -->
         <div
-          class="absolute w-80 bg-white rounded-2xl shadow-xl border border-slate-200/50 p-5 transition-all duration-300"
+          class="absolute w-80 bg-white rounded-2xl shadow-xl border border-slate-200/50 p-5 transition-all duration-300 pointer-events-auto"
           :style="{
             top: `${tooltipPosition.top}px`,
             left: `${tooltipPosition.left}px`,
