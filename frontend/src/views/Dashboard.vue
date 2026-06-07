@@ -108,7 +108,7 @@ onUnmounted(() => {
 <template>
   <div class="dashboard-container max-w-5xl mx-auto">
     <!-- Workflow Tab Bar (sticky) -->
-    <div class="sticky top-0 z-30 -mx-3 md:-mx-4 -mt-3 md:-mt-6 px-3 md:px-4 pt-3 md:pt-6 pb-2 bg-slate-50/90 backdrop-blur-sm">
+    <div class="pb-1">
       <WorkflowTabBar
         v-if="workflowStore.openTabIds.length > 0"
         :tabs="workflowStore.visibleTabs"

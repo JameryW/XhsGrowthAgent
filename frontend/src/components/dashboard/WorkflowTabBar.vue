@@ -197,18 +197,18 @@ function toggleOverflow() {
 }
 
 .tabs-scroll {
-  @apply flex items-center gap-1 overflow-x-auto px-2 py-1;
+  @apply flex items-center gap-1.5 overflow-x-auto px-1 py-1;
   scrollbar-width: thin;
 }
 
 .tab-item {
-  @apply flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg cursor-pointer
-         bg-white/70 text-slate-500 hover:bg-white hover:text-slate-700 border border-slate-200/50 border-b-0
+  @apply flex items-center gap-1.5 px-3 py-1.5 rounded-lg cursor-pointer
+         bg-slate-100/80 text-slate-500 hover:bg-slate-200/80 hover:text-slate-700
          transition-colors max-w-[180px] min-w-[100px] shrink-0 select-none;
 }
 
 .tab-item.active {
-  @apply bg-white text-slate-800 border-b-2 border-rose-400 shadow-sm;
+  @apply bg-white/98 text-slate-800 shadow-sm ring-1 ring-slate-200/60;
 }
 
 .tab-icon {
@@ -220,20 +220,20 @@ function toggleOverflow() {
 }
 
 .tab-edit-input {
-  @apply bg-slate-50 text-slate-800 text-xs px-1 py-0.5 rounded w-full outline-none border border-rose-300;
+  @apply bg-slate-50 text-slate-800 text-xs px-1 py-0.5 rounded w-full outline-none ring-1 ring-rose-300;
 }
 
 .tab-close {
-  @apply shrink-0 p-0.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors;
+  @apply shrink-0 p-0.5 rounded hover:bg-slate-200/80 text-slate-400 hover:text-slate-600 transition-colors;
 }
 
 .tab-overflow-trigger {
-  @apply flex items-center gap-1 px-2 py-1.5 rounded cursor-pointer
-         hover:bg-white/80 text-slate-400 hover:text-slate-600 transition-colors shrink-0;
+  @apply flex items-center gap-1 px-2 py-1.5 rounded-lg cursor-pointer
+         hover:bg-slate-200/80 text-slate-400 hover:text-slate-600 transition-colors shrink-0;
 }
 
 .overflow-dropdown {
-  @apply absolute right-2 top-full mt-1 bg-white rounded-lg border border-slate-200 shadow-xl
+  @apply absolute right-2 top-full mt-1 bg-white/98 backdrop-blur-sm rounded-xl border border-slate-200/50 shadow-xl
          py-1 min-w-[200px] max-h-[300px] overflow-y-auto z-40;
 }
 
@@ -243,6 +243,6 @@ function toggleOverflow() {
 }
 
 .overflow-item.active {
-  @apply bg-rose-50/60 text-slate-800;
+  @apply bg-slate-50/80 text-slate-800;
 }
 </style>
