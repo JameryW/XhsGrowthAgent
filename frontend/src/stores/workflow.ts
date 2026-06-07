@@ -10,6 +10,7 @@ import type {
   WorkflowPhase,
   WorkflowStatus,
   RippleProgress,
+  RippleThreadProgress,
   CheckpointSnapshot,
 } from '@/types/workflow'
 import type { BriefUploadResult } from '@/api/workflow'
@@ -63,7 +64,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const activeThreadId = ref<string | null>(localStorage.getItem(LS_ACTIVE_THREAD))
   const openTabIds = ref<string[]>(loadOpenTabs())
   const tabLabels = ref<Record<string, string>>(loadTabLabels())
-  const rippleProgressMap = ref<Map<string, RippleProgress>>(new Map())
+  const rippleProgressMap = ref<Map<string, Record<string, RippleProgress>>>(new Map())
 
   // ── Replay mode state ──
   const isReplayMode = ref(false)
@@ -176,10 +177,23 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const rippleComparison = computed(() => effectiveState.value?.ripple_comparison || {})
   const rippleReason = computed(() => effectiveState.value?.ripple_reason || '')
 
-  // Ripple progress for active thread
-  const rippleProgress = computed<RippleProgress | null>(() =>
-    activeThreadId.value ? rippleProgressMap.value.get(activeThreadId.value) ?? null : null
-  )
+  // Ripple progress for active thread — aggregated across parallel jobs
+  const rippleProgress = computed<RippleThreadProgress | null>(() => {
+    if (!activeThreadId.value) return null
+    const jobs = rippleProgressMap.value.get(activeThreadId.value)
+    if (!jobs || Object.keys(jobs).length === 0) return null
+    const entries = Object.values(jobs)
+    const active = entries.filter(j => j.status !== 'completed' && j.status !== 'done' && j.status !== 'finished')
+    const avgProgress = entries.length > 0
+      ? entries.reduce((sum, j) => sum + (j.progress || (j.total_waves > 0 ? j.current_wave / j.total_waves : 0)), 0) / entries.length
+      : 0
+    return {
+      jobs,
+      overall_progress: avgProgress,
+      active_jobs: active.length,
+      total_jobs: entries.length,
+    }
+  })
 
   const hasRippleData = computed(() =>
     Object.keys(ripplePrediction.value).length > 0 ||
@@ -361,12 +375,24 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   realtimeStore.wsService.onEvent(EventType.RIPPLE_PROGRESS, (msg) => {
     if (!msg.thread_id) return
-    rippleProgressMap.value.set(msg.thread_id, msg.payload as RippleProgress)
+    const progress = msg.payload as RippleProgress
+    const current = rippleProgressMap.value.get(msg.thread_id) || {}
+    current[progress.job_id] = progress
+    rippleProgressMap.value.set(msg.thread_id, { ...current })
   })
 
   watch(() => workflowState.value?.ripple_prediction, (val) => {
     if (val && Object.keys(val).length > 0 && activeThreadId.value) {
-      rippleProgressMap.value.delete(activeThreadId.value)
+      // Only clear progress when ALL jobs are done
+      const jobs = rippleProgressMap.value.get(activeThreadId.value)
+      if (jobs) {
+        const hasActive = Object.values(jobs).some(
+          j => j.status !== 'completed' && j.status !== 'done' && j.status !== 'finished'
+        )
+        if (!hasActive) {
+          rippleProgressMap.value.delete(activeThreadId.value)
+        }
+      }
     }
   })
 

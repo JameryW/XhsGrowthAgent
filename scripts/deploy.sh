@@ -51,6 +51,18 @@ cmd_start() {
 
     echo ">>> 等待 Ripple 就绪..."
     sleep 3
+    # Patch llm_config.yaml: add max_tokens and json_mode to prevent truncated/malformed LLM output
+    podman exec ripple-service sh -c "cat > /app/llm_config.yaml <<'LLMEOF'
+_default:
+  model_platform: ${RIPPLE_LLM_MODEL_PLATFORM:-openai}
+  model_name: ${RIPPLE_LLM_MODEL_NAME:-}
+  api_key: ${RIPPLE_LLM_API_KEY:-}
+  temperature: 0.7
+  max_retries: 3
+  url: ${RIPPLE_LLM_URL:-}
+  max_tokens: 8192
+  json_mode: true
+LLMEOF"
     podman exec ripple-service cat /app/llm_config.yaml 2>/dev/null || echo "[warn] llm_config.yaml not found"
 
     echo ">>> 启动 XhsGrowthAgent 后端..."
