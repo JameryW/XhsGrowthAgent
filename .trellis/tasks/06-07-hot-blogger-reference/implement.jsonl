@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/06-07-hot-blogger-reference/prd.md", "reason": "Full PRD with requirements, decisions, acceptance criteria, and technical approach"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Directory conventions for placing new agent/node/state files"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "State schema conventions and reducer patterns for new state fields"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error handling patterns for new XHS API methods and nodes"}
+{"file": ".trellis/spec/backend/ripple-integration.md", "reason": "Pattern reference for external service integration (similar to XHS blogger API)"}
