@@ -161,3 +161,26 @@ export async function getCheckpointHistory(threadId: string, params?: {
 }): Promise<CheckpointHistoryResponse> {
   return client.get(`/workflow/history/${threadId}`, { params }) as unknown as CheckpointHistoryResponse
 }
+
+// Select a blogger from candidates — resume blogger_gate
+export async function selectBlogger(threadId: string, selection: {
+  user_id: string
+  nickname: string
+} | { skip: true }): Promise<{ thread_id: string; status: string; next_phase?: string }> {
+  const { retryWithBackoff } = useRetry()
+  return retryWithBackoff(async () => {
+    const result = await client.post(`/optimization/blogger-select/${threadId}`, selection) as { thread_id: string; status: string; next_phase?: string }
+    return result
+  })
+}
+
+// Get pending blogger selection — candidate list and config
+export async function getPendingBloggerSelection(threadId: string): Promise<{
+  thread_id: string
+  blogger_candidates: Array<Record<string, unknown>>
+  blogger_candidate_limit: number
+  blogger_note_limit: number
+  is_pending: boolean
+}> {
+  return client.get(`/optimization/blogger-pending/${threadId}`) as unknown as any
+}

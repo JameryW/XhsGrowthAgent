@@ -161,6 +161,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
     currentStatus.value === 'awaiting_ripple_decision'
   )
 
+  const isAwaitingBloggerSelection = computed(() =>
+    currentStatus.value === 'awaiting_blogger_selection'
+  )
+
+  const bloggerCandidates = computed(() =>
+    (effectiveState.value as any)?.blogger_candidates || []
+  )
+
   const reselectCount = computed(() =>
     (effectiveState.value as any)?.reselect_count ?? 0
   )
@@ -332,6 +340,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
     if (newPhase === 'reviewing') {
       toastStore.info(t('workflow.awaitingReview'), t('workflow.awaitingReviewMessage'))
+    } else if (newPhase === 'creating' && p.current_agent === 'blogger_gate') {
+      toastStore.info(t('workflow.awaitingBloggerSelection'), t('workflow.awaitingBloggerSelectionMessage'))
     } else {
       toastStore.info(`${t('workflow.phaseChange')}: ${p.old_phase} → ${newPhase}`, `${t('workflow.currentAgent')}: ${p.current_agent}`)
     }
@@ -857,6 +867,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isAwaitingDraft,
     isAwaitingBrief,
     isAwaitingRippleDecision,
+    isAwaitingBloggerSelection,
+    bloggerCandidates,
     reselectCount,
     trendData,
     contentPlan,

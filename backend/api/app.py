@@ -97,6 +97,7 @@ app.middleware("http")(error_handler_middleware)
 from backend.api.routes import (  # noqa: E402
     analytics,
     auth,
+    blogger,
     optimization,
     realtime,
     review,
@@ -111,6 +112,7 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"]
 app.include_router(system_router, prefix="/api/system", tags=["system"])
 app.include_router(realtime.router, tags=["realtime"])  # WebSocket 不需要 /api 前缀
 app.include_router(optimization.router, prefix="/api/optimization", tags=["optimization"])
+app.include_router(blogger.router, prefix="/api/optimization", tags=["blogger"])
 
 
 @app.get("/health")

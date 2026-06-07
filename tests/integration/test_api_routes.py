@@ -226,9 +226,9 @@ class TestWorkflowRoutes:
         assert data["error"] is None
 
     def test_resume_workflow_completed(self, client, mock_graph, mock_state_values):
-        """Resume completed workflow returns completed status."""
+        """Resume completed workflow restarts it and returns running status."""
         mock_state = MagicMock()
-        mock_state.values = mock_state_values
+        mock_state.values = {**mock_state_values, "phase": WorkflowPhase.COMPLETED.value}
         mock_state.next = []  # No pending steps
         mock_graph.aget_state.return_value = mock_state
 
@@ -238,7 +238,8 @@ class TestWorkflowRoutes:
         data = response.json()
 
         assert data["success"] is True
-        assert data["data"]["status"] == "completed"
+        # Completed workflows are restartable via resume, so status becomes "running"
+        assert data["data"]["status"] == "running"
 
     def test_resume_workflow_not_found(self, client, mock_graph):
         """Resume non-existent workflow returns error."""

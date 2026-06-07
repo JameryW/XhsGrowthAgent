@@ -26,21 +26,25 @@ logger = logging.getLogger("xhs_growth.xhs_client")
 
 class XHSRateLimitError(Exception):
     """请求频率限制"""
+
     pass
 
 
 class XHSAuthError(Exception):
     """认证失败"""
+
     pass
 
 
 class XHSPublishError(Exception):
     """发布失败"""
+
     pass
 
 
 class XHSApiError(Exception):
     """API 请求失败"""
+
     pass
 
 
@@ -50,6 +54,7 @@ class XHSApiError(Exception):
 @dataclass
 class XHSPost:
     """小红书帖子"""
+
     title: str
     body: str
     hashtags: list[str] = field(default_factory=list)
@@ -63,6 +68,7 @@ class XHSPost:
 @dataclass
 class XHSAnalytics:
     """帖子数据分析"""
+
     post_id: str
     views: int = 0
     likes: int = 0
@@ -76,6 +82,7 @@ class XHSAnalytics:
 @dataclass
 class XHSComment:
     """评论"""
+
     comment_id: str
     post_id: str
     user_name: str
@@ -89,6 +96,7 @@ class XHSComment:
 @dataclass
 class XHSDirectMessage:
     """私信"""
+
     message_id: str
     sender_id: str
     sender_name: str
@@ -99,6 +107,7 @@ class XHSDirectMessage:
 @dataclass
 class XHSTrendingTopic:
     """热门话题"""
+
     topic_id: str
     title: str
     heat_score: int
@@ -110,6 +119,7 @@ class XHSTrendingTopic:
 @dataclass
 class XHSSearchResult:
     """搜索结果"""
+
     note_id: str
     title: str
     user_name: str
@@ -213,6 +223,37 @@ class _HTTPClient:
         params = {"note_id": note_id}
         return await self._request(XHSApiEndpoints.NOTE_DETAIL, params)
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=2, min=5, max=60),
+        retry=retry_if_exception_type((XHSRateLimitError, ConnectionError, TimeoutError)),
+    )
+    async def search_users(self, keyword: str, page: int = 1) -> list[dict]:
+        """搜索用户"""
+        params = XHSApiParams.search_users_params(keyword=keyword, page=page)
+        data = await self._request(XHSApiEndpoints.SEARCH_USER, params)
+        return data.get("users", [])
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=2, min=5, max=60),
+        retry=retry_if_exception_type((XHSRateLimitError, ConnectionError, TimeoutError)),
+    )
+    async def get_user_info(self, user_id: str) -> dict:
+        """获取用户信息"""
+        params = XHSApiParams.user_info_params(user_id=user_id)
+        return await self._request(XHSApiEndpoints.USER_INFO, params)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=2, min=5, max=60),
+        retry=retry_if_exception_type((XHSRateLimitError, ConnectionError, TimeoutError)),
+    )
+    async def get_user_notes(self, user_id: str, cursor: str = "") -> dict:
+        """获取用户笔记列表"""
+        params = XHSApiParams.user_notes_params(user_id=user_id, cursor=cursor)
+        return await self._request(XHSApiEndpoints.USER_NOTES, params)
+
 
 # ── Main XHSClient ───────────────────────────────────────────────────────────
 
@@ -267,14 +308,16 @@ class XHSClient:
             # 解析为 XHSTrendingTopic
             topics = []
             for note in notes[:20]:  # 取前 20 个
-                topics.append(XHSTrendingTopic(
-                    topic_id=note.get("note_id", ""),
-                    title=note.get("display_title", ""),
-                    heat_score=note.get("like_count", 0),
-                    growth_rate=0.0,
-                    related_keywords=note.get("tag_list", []),
-                    category=category,
-                ))
+                topics.append(
+                    XHSTrendingTopic(
+                        topic_id=note.get("note_id", ""),
+                        title=note.get("display_title", ""),
+                        heat_score=note.get("like_count", 0),
+                        growth_rate=0.0,
+                        related_keywords=note.get("tag_list", []),
+                        category=category,
+                    )
+                )
 
             return topics
 
@@ -296,17 +339,19 @@ class XHSClient:
             results = []
             for note in notes[:limit]:
                 note_id = note.get("id", note.get("note_id", ""))
-                results.append(XHSSearchResult(
-                    note_id=note_id,
-                    title=note.get("display_title", ""),
-                    user_name=note.get("user", {}).get("nickname", ""),
-                    user_id=note.get("user", {}).get("user_id", ""),
-                    likes=note.get("like_count", 0),
-                    comments=note.get("comment_count", 0),
-                    collects=note.get("collect_count", 0),
-                    cover_url=note.get("cover", {}).get("url", ""),
-                    note_url=f"https://www.xiaohongshu.com/explore/{note_id}",
-                ))
+                results.append(
+                    XHSSearchResult(
+                        note_id=note_id,
+                        title=note.get("display_title", ""),
+                        user_name=note.get("user", {}).get("nickname", ""),
+                        user_id=note.get("user", {}).get("user_id", ""),
+                        likes=note.get("like_count", 0),
+                        comments=note.get("comment_count", 0),
+                        collects=note.get("collect_count", 0),
+                        cover_url=note.get("cover", {}).get("url", ""),
+                        note_url=f"https://www.xiaohongshu.com/explore/{note_id}",
+                    )
+                )
 
             return results
 
@@ -326,16 +371,18 @@ class XHSClient:
 
             comments = []
             for item in comments_data[:limit]:
-                comments.append(XHSComment(
-                    comment_id=item.get("id", ""),
-                    post_id=post_id,
-                    user_name=item.get("user", {}).get("nickname", ""),
-                    user_id=item.get("user", {}).get("user_id", ""),
-                    content=item.get("content", ""),
-                    like_count=item.get("like_count", 0),
-                    created_at=item.get("create_time", ""),
-                    is_reply=item.get("target_comment", {}).get("id", ""),
-                ))
+                comments.append(
+                    XHSComment(
+                        comment_id=item.get("id", ""),
+                        post_id=post_id,
+                        user_name=item.get("user", {}).get("nickname", ""),
+                        user_id=item.get("user", {}).get("user_id", ""),
+                        content=item.get("content", ""),
+                        like_count=item.get("like_count", 0),
+                        created_at=item.get("create_time", ""),
+                        is_reply=item.get("target_comment", {}).get("id", ""),
+                    )
+                )
 
             return comments
 
@@ -375,17 +422,76 @@ class XHSClient:
             try:
                 posts = await self.search_posts(keyword=keyword, limit=10)
                 total_likes = sum(p.likes for p in posts)
-                results.append({
-                    "keyword": keyword,
-                    "post_count": len(posts),
-                    "total_likes": total_likes,
-                    "avg_likes": total_likes / len(posts) if posts else 0,
-                    "top_posts": posts[:3],
-                })
+                results.append(
+                    {
+                        "keyword": keyword,
+                        "post_count": len(posts),
+                        "total_likes": total_likes,
+                        "avg_likes": total_likes / len(posts) if posts else 0,
+                        "top_posts": posts[:3],
+                    }
+                )
             except Exception as e:
                 logger.warning(f"关键词 {keyword} 监控失败: {e}")
 
         return results
+
+    # ── 博主搜索方法 ──────────────────────────────────────────────────────
+
+    async def search_users(self, keyword: str, limit: int = 20) -> list[dict[str, Any]]:
+        """搜索博主 (HTTP API)"""
+        if not self._http:
+            logger.warning("未配置 Cookie，无法搜索用户")
+            return []
+
+        logger.info(f"Searching users for keyword: {keyword}")
+
+        try:
+            users = await self._http.search_users(keyword=keyword)
+            return users[:limit]
+        except Exception as e:
+            logger.error(f"搜索用户失败: {e}")
+            return []
+
+    async def get_user_info(self, user_id: str) -> dict[str, Any]:
+        """获取博主信息 (HTTP API)"""
+        if not self._http:
+            logger.warning("未配置 Cookie，无法获取用户信息")
+            return {}
+
+        logger.info(f"Fetching user info for: {user_id}")
+
+        try:
+            return await self._http.get_user_info(user_id=user_id)
+        except Exception as e:
+            logger.error(f"获取用户信息失败: {e}")
+            return {}
+
+    async def get_user_notes(self, user_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        """获取博主笔记列表 (HTTP API, 自动翻页)"""
+        if not self._http:
+            logger.warning("未配置 Cookie，无法获取用户笔记")
+            return []
+
+        logger.info(f"Fetching notes for user: {user_id}, limit: {limit}")
+
+        try:
+            all_notes: list[dict] = []
+            cursor = ""
+            while len(all_notes) < limit:
+                data = await self._http.get_user_notes(user_id=user_id, cursor=cursor)
+                notes = data.get("notes", [])
+                if not notes:
+                    break
+                all_notes.extend(notes)
+                cursor = data.get("cursor", "")
+                has_more = data.get("has_more", False)
+                if not has_more:
+                    break
+            return all_notes[:limit]
+        except Exception as e:
+            logger.error(f"获取用户笔记失败: {e}")
+            return []
 
     # ── Playwright 方法 (复杂操作) ───────────────────────────────────────────
 
@@ -393,6 +499,7 @@ class XHSClient:
         """确保发布器已初始化"""
         if self._publisher is None and self.use_browser:
             from backend.services.xhs_publisher import XHSPublisher
+
             self._publisher = XHSPublisher(
                 cookie=self.cookie,
                 headless=self.headless,
@@ -403,6 +510,7 @@ class XHSClient:
         """确保互动器已初始化"""
         if self._engagement is None and self.use_browser:
             from backend.services.xhs_engagement import XHSEngagement
+
             self._engagement = XHSEngagement(
                 cookie=self.cookie,
                 headless=self.headless,
@@ -473,13 +581,15 @@ class XHSClient:
 
         messages = []
         for msg in unread[:limit]:
-            messages.append(XHSDirectMessage(
-                message_id=f"dm_{int(time.time())}",
-                sender_id=msg.get("sender_id", ""),
-                sender_name=msg.get("sender_name", ""),
-                content=msg.get("preview", ""),
-                timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
-            ))
+            messages.append(
+                XHSDirectMessage(
+                    message_id=f"dm_{int(time.time())}",
+                    sender_id=msg.get("sender_id", ""),
+                    sender_name=msg.get("sender_name", ""),
+                    content=msg.get("preview", ""),
+                    timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+                )
+            )
 
         return messages
 

@@ -211,7 +211,8 @@
       "awaitingDraft": "Waiting for draft: fill in the optimization panel above to continue",
       "awaitingChoice": "Waiting for version choice: select a version to continue to visual design",
       "awaitingReview": "Content is ready: go to review and confirm publishing",
-      "awaitingBrief": "Waiting for brief: supplement or confirm the brief content to continue"
+      "awaitingBrief": "Waiting for brief: supplement or confirm the brief content to continue",
+      "awaitingBlogger": "Waiting for blogger selection: choose a reference blogger to continue"
     },
     "optimization": {
       "title": "Pre-publish Optimization Panel",
@@ -235,6 +236,12 @@
       "creatingDesc": "AI generates copy content",
       "draft": "Draft Confirmation",
       "draftDesc": "Confirm or edit generated copy",
+      "viralMatch": "Viral Match",
+      "viralMatchDesc": "Match trending viral content for reference",
+      "bloggerScout": "Blogger Discovery",
+      "bloggerScoutDesc": "Find top bloggers in the niche",
+      "bloggerGate": "Blogger Selection",
+      "bloggerGateDesc": "Select a reference blogger for content creation",
       "visual": "Visual Design",
       "visualDesc": "Design cover and image layouts",
       "reviewing": "Review",
@@ -307,6 +314,21 @@
       "status": "Status",
       "viewPost": "View Post"
     },
+    "blogger": {
+      "title": "Select Reference Blogger",
+      "subtitle": "Choose a blogger whose top notes will be used as reference",
+      "nickname": "Nickname",
+      "followers": "Followers",
+      "notes": "Notes",
+      "interaction": "Interaction",
+      "select": "Select",
+      "skip": "Skip",
+      "skipAll": "Skip blogger selection",
+      "noCandidates": "No blogger candidates found",
+      "selected": "Blogger selected",
+      "skipped": "Blogger selection skipped",
+      "selectFailed": "Failed to select blogger"
+    },
     "phase": {
       "idle": "Idle",
       "scouting": "Trend Scouting",
@@ -317,6 +339,7 @@
       "awaitingChoice": "Waiting for Version Choice",
       "awaitingReview": "Awaiting Review",
       "awaitingBrief": "Awaiting Brief Supplement",
+      "awaitingBlogger": "Awaiting Blogger Selection",
       "briefing": "Brief Parsing",
       "publishing": "Publishing",
       "analyzing": "Analytics",
@@ -719,6 +742,7 @@
       "awaiting_choice": "Awaiting Choice",
       "awaiting_draft": "Awaiting Draft",
       "awaiting_brief": "Awaiting Brief",
+      "awaiting_blogger_selection": "Awaiting Blogger",
       "stale": "Stale",
       "paused": "Paused",
       "idle": "Idle"
@@ -865,5 +889,24 @@
     "confirm": "Confirm & Parse",
     "orText": "or paste text",
     "textDisabledByPdf": "PDF uploaded — text input disabled"
+  },
+  "blogger": {
+    "selectTitle": "Select Reference Blogger",
+    "subtitle": "Choose a blogger whose top notes will be used as reference",
+    "nickname": "Nickname",
+    "followers": "Followers",
+    "notes": "Notes",
+    "interaction": "Interaction",
+    "select": "Select",
+    "skip": "Skip",
+    "skipAll": "Skip blogger selection",
+    "noCandidates": "No blogger candidates found",
+    "selected": "Blogger selected",
+    "skipped": "Blogger selection skipped",
+    "selectFailed": "Failed to select blogger",
+    "selectError": "Failed to select blogger",
+    "wan": "W",
+    "qian": "K",
+    "topNote": "Top note"
   }
 }

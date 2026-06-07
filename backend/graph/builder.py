@@ -11,6 +11,8 @@ from langgraph.store.memory import InMemoryStore
 
 from backend.agents.nodes import (
     analyst_node,
+    blogger_gate_node,
+    blogger_scout_node,
     brief_analyzer_node,
     brief_gate_node,
     content_strategist_node,
@@ -34,14 +36,13 @@ from backend.agents.nodes.optimization import (
 )
 from backend.graph.error_handling import get_retry_policy
 from backend.graph.routers import (
+    blogger_gate_router,
     copywriter_router,
     engagement_router,
     orchestrator_router,
     review_outcome,
     ripple_gate_router,
-    should_brief_or_optimize,
     should_continue,
-    should_optimize,
     should_plan,
     should_present_choice,
     visual_designer_router,
@@ -55,23 +56,28 @@ def build_graph() -> StateGraph:
 
     # ── 添加节点 ──
     builder.add_node(
-        "orchestrator", orchestrator_node,
+        "orchestrator",
+        orchestrator_node,
         retry_policy=get_retry_policy("orchestrator"),
     )
     builder.add_node(
-        "trend_scout", trend_scout_node,
+        "trend_scout",
+        trend_scout_node,
         retry_policy=get_retry_policy("trend_scout"),
     )
     builder.add_node(
-        "content_strategist", content_strategist_node,
+        "content_strategist",
+        content_strategist_node,
         retry_policy=get_retry_policy("content_strategist"),
     )
     builder.add_node(
-        "copywriter", copywriter_node,
+        "copywriter",
+        copywriter_node,
         retry_policy=get_retry_policy("copywriter"),
     )
     builder.add_node(
-        "visual_designer", visual_designer_node,
+        "visual_designer",
+        visual_designer_node,
         retry_policy=get_retry_policy("visual_designer"),
     )
     builder.add_node("review_gate", review_gate_node, retry_policy=get_retry_policy("review_gate"))
@@ -84,18 +90,22 @@ def build_graph() -> StateGraph:
     # 发布前优化节点
     builder.add_node("draft_gate", draft_gate_node)
     builder.add_node("viral_matcher", viral_matcher_node)
+    builder.add_node("blogger_scout", blogger_scout_node)
+    builder.add_node("blogger_gate", blogger_gate_node)
     builder.add_node("content_analyzer", content_analyzer_node)
     builder.add_node("version_generator", version_generator_node)
     builder.add_node("choice_gate", choice_gate_node)
 
     # 商单 Brief 模式节点
     builder.add_node(
-        "brief_analyzer", brief_analyzer_node,
+        "brief_analyzer",
+        brief_analyzer_node,
         retry_policy=get_retry_policy("brief_analyzer"),
     )
     builder.add_node("brief_gate", brief_gate_node)
     builder.add_node(
-        "shooting_planner", shooting_planner_node,
+        "shooting_planner",
+        shooting_planner_node,
         retry_policy=get_retry_policy("shooting_planner"),
     )
 
@@ -157,11 +167,19 @@ def build_graph() -> StateGraph:
     # draft_gate → viral_matcher (search for viral references)
     builder.add_edge("draft_gate", "viral_matcher")
 
-    # viral_matcher → [content_analyzer | visual_designer] (条件路由)
+    # viral_matcher → blogger_scout (discover bloggers from viral notes)
+    builder.add_edge("viral_matcher", "blogger_scout")
+
+    # blogger_scout → blogger_gate (interrupt for user selection)
+    builder.add_edge("blogger_scout", "blogger_gate")
+
+    # blogger_gate → [shooting_planner | content_analyzer | visual_designer]
+    # (routes based on workflow mode, same logic as should_brief_or_optimize)
     builder.add_conditional_edges(
-        "viral_matcher",
-        should_optimize,
+        "blogger_gate",
+        blogger_gate_router,
         {
+            "shooting_planner": "shooting_planner",
             "content_analyzer": "content_analyzer",
             "visual_designer": "visual_designer",
         },
@@ -191,17 +209,8 @@ def build_graph() -> StateGraph:
     # brief_gate → viral_matcher (search viral posts by brief style)
     builder.add_edge("brief_gate", "viral_matcher")
 
-    # viral_matcher → shooting_planner (brief mode)
-    # or → content_analyzer (trend mode optimization)
-    builder.add_conditional_edges(
-        "viral_matcher",
-        should_brief_or_optimize,
-        {
-            "shooting_planner": "shooting_planner",
-            "content_analyzer": "content_analyzer",
-            "visual_designer": "visual_designer",
-        },
-    )
+    # viral_matcher already routes to blogger_scout above (trend and brief modes share this path)
+    # blogger_gate routes based on workflow mode via blogger_gate_router
 
     # shooting_planner → ripple_gate (brief mode also checks Ripple results)
     builder.add_edge("shooting_planner", "ripple_gate")
@@ -267,7 +276,14 @@ def compile_graph_dev() -> CompiledStateGraph:
     graph = builder.compile(
         checkpointer=checkpointer,
         store=store,
-        interrupt_before=["review_gate", "choice_gate", "draft_gate", "brief_gate", "ripple_gate"],
+        interrupt_before=[
+            "review_gate",
+            "choice_gate",
+            "draft_gate",
+            "brief_gate",
+            "ripple_gate",
+            "blogger_gate",
+        ],
     )
     return graph
 
@@ -287,8 +303,8 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
 
     try:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-        from psycopg_pool import AsyncConnectionPool
         from langgraph.store.memory import InMemoryStore
+        from psycopg_pool import AsyncConnectionPool
 
         pool = AsyncConnectionPool(
             db_uri, min_size=2, max_size=10, open=False, kwargs={"autocommit": True}
@@ -300,7 +316,14 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         graph = builder.compile(
             checkpointer=checkpointer,
             store=store,
-            interrupt_before=["review_gate", "choice_gate", "draft_gate", "brief_gate", "ripple_gate"],
+            interrupt_before=[
+                "review_gate",
+                "choice_gate",
+                "draft_gate",
+                "brief_gate",
+                "ripple_gate",
+                "blogger_gate",
+            ],
         )
         # Return pool so app.py can close it on shutdown
         return graph, (checkpointer, pool)

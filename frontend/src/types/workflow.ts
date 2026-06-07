@@ -26,6 +26,7 @@ export type WorkflowStatus =
   | 'awaiting_draft'
   | 'awaiting_brief'
   | 'awaiting_ripple_decision'
+  | 'awaiting_blogger_selection'
   | 'paused'
   | 'completed'
   | 'error'
@@ -246,7 +247,33 @@ export interface RippleComparison {
   calibration_insight?: string
 }
 
-// Workflow state
+// ── Blogger reference system ──
+
+// Blogger profile — candidate for user selection
+export interface BloggerProfile {
+  user_id: string
+  nickname: string
+  avatar_url?: string
+  follower_count?: number
+  note_count?: number
+  total_engagement?: number
+  top_note_title?: string
+}
+
+// Blogger note — top notes from selected blogger
+export interface BloggerNote {
+  note_id: string
+  title: string
+  body?: string
+  hashtags?: string[]
+  likes?: number
+  collects?: number
+  comments?: number
+  engagement_rate?: number
+  cover_url?: string
+}
+
+// Workflow state (matches XHSGrowthState)
 export interface WorkflowState {
   thread_id: string
   phase: WorkflowPhase
@@ -308,6 +335,11 @@ export interface WorkflowStateResponse {
   ripple_reason?: string  // "disabled" | "unreachable" | ""
   reselect_count?: number
   checkpoint_lost?: boolean
+  blogger_candidates?: BloggerProfile[]
+  selected_blogger?: Record<string, unknown>
+  blogger_notes?: BloggerNote[]
+  blogger_candidate_limit?: number
+  blogger_note_limit?: number
 }
 
 // Brief content - parsed from brief text/PDF

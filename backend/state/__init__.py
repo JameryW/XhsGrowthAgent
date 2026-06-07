@@ -18,6 +18,8 @@ from backend.state.reducers import append_list, max_value, merge_dict, replace
 from backend.state.schema import XHSGrowthState
 from backend.state.substates import (
     AnalyticsSnapshot,
+    BloggerNote,
+    BloggerProfile,
     CompetitorPost,
     ContentPlan,
     ContentVersion,
@@ -73,6 +75,9 @@ __all__ = [
     "SuggestionItem",
     "OptimizationAnalysis",
     "ContentVersion",
+    # 博主参考
+    "BloggerProfile",
+    "BloggerNote",
     # Reducers
     "merge_dict",
     "append_list",

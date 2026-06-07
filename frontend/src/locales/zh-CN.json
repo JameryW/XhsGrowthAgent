@@ -211,7 +211,8 @@
       "awaitingDraft": "等待提交草稿：请在上方优化面板填写草稿后继续工作流",
       "awaitingChoice": "等待选择优化版本：请选择一个版本后进入视觉设计",
       "awaitingReview": "内容已准备好：请前往审核页面确认发布",
-      "awaitingBrief": "等待 Brief 补充：请补充或确认 Brief 内容后继续"
+      "awaitingBrief": "等待 Brief 补充：请补充或确认 Brief 内容后继续",
+      "awaitingBlogger": "等待博主选择：请选择参考博主后继续工作流"
     },
     "optimization": {
       "title": "发布前优化面板",
@@ -235,6 +236,12 @@
       "creatingDesc": "AI生成文案内容",
       "draft": "草稿确认",
       "draftDesc": "确认或编辑已生成文案",
+      "viralMatch": "爆款匹配",
+      "viralMatchDesc": "匹配热门爆款内容作为参考",
+      "bloggerScout": "博主发现",
+      "bloggerScoutDesc": "发现赛道热门博主",
+      "bloggerGate": "博主选择",
+      "bloggerGateDesc": "选择参考博主用于内容创作",
       "visual": "视觉设计",
       "visualDesc": "设计封面和图片方案",
       "reviewing": "审核",
@@ -307,6 +314,21 @@
       "status": "状态",
       "viewPost": "查看帖子"
     },
+    "blogger": {
+      "title": "选择参考博主",
+      "subtitle": "选择一位博主，其热门笔记将作为创作参考",
+      "nickname": "昵称",
+      "followers": "粉丝数",
+      "notes": "笔记数",
+      "interaction": "互动量",
+      "select": "选择",
+      "skip": "跳过",
+      "skipAll": "跳过博主选择",
+      "noCandidates": "未找到候选博主",
+      "selected": "已选择博主",
+      "skipped": "已跳过博主选择",
+      "selectFailed": "博主选择失败"
+    },
     "phase": {
       "idle": "空闲",
       "scouting": "趋势侦察",
@@ -317,6 +339,7 @@
       "awaitingChoice": "等待选择版本",
       "awaitingReview": "等待审核确认",
       "awaitingBrief": "等待 Brief 补充",
+      "awaitingBlogger": "等待选择博主",
       "briefing": "Brief 解析",
       "publishing": "发布中",
       "analyzing": "数据分析",
@@ -719,6 +742,7 @@
       "awaiting_choice": "待选择",
       "awaiting_draft": "待草稿",
       "awaiting_brief": "待简报",
+      "awaiting_blogger_selection": "待选博主",
       "stale": "已过期",
       "paused": "已暂停",
       "idle": "空闲"
@@ -865,5 +889,24 @@
     "confirm": "确认并解析",
     "orText": "或粘贴文本",
     "textDisabledByPdf": "已上传 PDF — 文本输入已禁用"
+  },
+  "blogger": {
+    "selectTitle": "选择参考博主",
+    "subtitle": "选择一位博主，其热门笔记将作为创作参考",
+    "nickname": "昵称",
+    "followers": "粉丝数",
+    "notes": "笔记数",
+    "interaction": "互动量",
+    "select": "选择",
+    "skip": "跳过",
+    "skipAll": "跳过博主选择",
+    "noCandidates": "未找到候选博主",
+    "selected": "已选择博主",
+    "skipped": "已跳过博主选择",
+    "selectFailed": "博主选择失败",
+    "selectError": "博主选择失败",
+    "wan": "万",
+    "qian": "千",
+    "topNote": "热门笔记"
   }
 }
