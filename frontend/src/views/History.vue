@@ -129,17 +129,18 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
 </script>
 
 <template>
-  <div class="space-y-4 md:space-y-5">
+  <div class="space-y-3 md:space-y-5">
     <!-- Header -->
-    <div class="rounded-2xl p-4 md:p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+    <div class="rounded-xl md:rounded-2xl p-3 md:p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
       <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
-        <div class="flex items-center gap-4">
-          <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
-            <AppIcon name="History" size="xl" variant="white" />
+        <div class="flex items-center gap-3 md:gap-4">
+          <div class="w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
+            <AppIcon name="History" size="md" variant="white" class="md:hidden" />
+            <AppIcon name="History" size="xl" variant="white" class="hidden md:block" />
           </div>
           <div>
-            <h1 class="text-xl font-semibold text-slate-800">{{ t('history.title') }}</h1>
-            <p class="text-xs text-slate-400 mt-0.5">{{ t('history.subtitle') }}</p>
+            <h1 class="text-lg md:text-xl font-semibold text-slate-800">{{ t('history.title') }}</h1>
+            <p class="text-[10px] md:text-xs text-slate-400 mt-0.5">{{ t('history.subtitle') }}</p>
           </div>
         </div>
         <div class="flex gap-2">
@@ -162,7 +163,7 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" class="rounded-xl p-6 bg-rose-50 border border-rose-100 text-center">
+    <div v-else-if="error" class="rounded-xl p-4 md:p-6 bg-rose-50 border border-rose-100 text-center">
       <AppIcon name="AlertTriangle" size="lg" variant="pink" />
       <p class="text-sm text-rose-600 mt-2">{{ error }}</p>
       <NeonButton variant="ghost" size="sm" class="mt-3" @click="fetchWorkflows">
@@ -171,12 +172,13 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
     </div>
 
     <!-- Empty State -->
-    <div v-else-if="isEmpty" class="rounded-2xl p-10 bg-white/98 border border-slate-200/50 text-center">
-      <div class="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-        <AppIcon name="Inbox" size="xl" variant="cyan" />
+    <div v-else-if="isEmpty" class="rounded-xl md:rounded-2xl p-6 md:p-10 bg-white/98 border border-slate-200/50 text-center">
+      <div class="w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-3 md:mb-4">
+        <AppIcon name="Inbox" size="lg" variant="cyan" class="md:hidden" />
+        <AppIcon name="Inbox" size="xl" variant="cyan" class="hidden md:block" />
       </div>
-      <h3 class="text-lg font-semibold text-slate-700 mb-1">{{ t('history.empty') }}</h3>
-      <p class="text-sm text-slate-400 mb-5">{{ t('history.emptyDesc') }}</p>
+      <h3 class="text-base md:text-lg font-semibold text-slate-700 mb-1">{{ t('history.empty') }}</h3>
+      <p class="text-xs md:text-sm text-slate-400 mb-4 md:mb-5">{{ t('history.emptyDesc') }}</p>
       <div class="flex justify-center gap-3">
         <NeonButton variant="pink" @click="router.push('/')">
           {{ t('history.startNew') }}
@@ -188,30 +190,30 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
     </div>
 
     <!-- Workflow List -->
-    <div v-else class="space-y-3">
+    <div v-else class="space-y-2 md:space-y-3">
       <div
         v-for="wf in workflows"
         :key="wf.thread_id"
-        class="rounded-xl p-4 bg-white/98 border border-slate-200/50 hover:border-slate-300 hover:shadow-md transition-all duration-200 cursor-pointer"
+        class="rounded-xl p-3 md:p-4 bg-white/98 border border-slate-200/50 hover:border-slate-300 hover:shadow-md transition-all duration-200 cursor-pointer"
         @click="viewWorkflow(wf.thread_id)"
       >
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3 flex-1 min-w-0">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
             <!-- Status dot -->
-            <span :class="[statusColor(wf.status), 'w-3 h-3 rounded-full flex-shrink-0']" />
+            <span :class="[statusColor(wf.status), 'w-2.5 h-2.5 md:w-3 md:h-3 rounded-full flex-shrink-0']" />
 
             <!-- Info -->
             <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-medium text-slate-700 truncate">{{ wf.thread_id }}</span>
-                <span v-if="wf.dry_run" class="text-xs px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100">
+              <div class="flex items-center gap-1.5 md:gap-2 flex-wrap">
+                <span class="text-xs md:text-sm font-medium text-slate-700 truncate">{{ wf.thread_id }}</span>
+                <span v-if="wf.dry_run" class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100">
                   {{ t('history.dryRun') }}
                 </span>
-                <span v-else class="text-xs px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100">
+                <span v-else class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100">
                   {{ t('history.live') }}
                 </span>
               </div>
-              <div class="flex items-center gap-3 mt-1 text-xs text-slate-400">
+              <div class="flex items-center gap-2 md:gap-3 mt-0.5 md:mt-1 text-[10px] md:text-xs text-slate-400">
                 <span>{{ phaseLabel(wf.phase) }}</span>
                 <span>{{ statusLabel(wf.status) }}</span>
                 <span>{{ formatDate(wf.created_at) }}</span>
@@ -220,20 +222,20 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
           </div>
 
           <!-- Progress & Actions -->
-          <div class="flex items-center gap-3 flex-shrink-0">
+          <div class="flex items-center gap-2 md:gap-3 flex-shrink-0">
             <!-- Progress bar -->
-            <div class="w-20 hidden sm:block">
-              <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+            <div class="w-16 md:w-20 hidden sm:block">
+              <div class="h-1 md:h-1.5 rounded-full bg-slate-100 overflow-hidden">
                 <div
                   class="h-full rounded-full bg-gradient-to-r from-rose-400 to-teal-400 transition-all"
                   :style="{ width: `${wf.progress_percent}%` }"
                 />
               </div>
-              <span class="text-xs text-slate-400 mt-0.5 block text-right">{{ wf.progress_percent }}%</span>
+              <span class="text-[10px] md:text-xs text-slate-400 mt-0.5 block text-right">{{ wf.progress_percent }}%</span>
             </div>
 
             <!-- Action buttons -->
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1.5 md:gap-2">
               <NeonButton
                 v-if="wf.status === 'running'"
                 variant="cyan"
@@ -271,7 +273,7 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
         </div>
 
         <!-- Error message -->
-        <div v-if="wf.error" class="mt-2 p-2 rounded bg-rose-50 border border-rose-100 text-xs text-rose-600">
+        <div v-if="wf.error" class="mt-1.5 md:mt-2 p-1.5 md:p-2 rounded bg-rose-50 border border-rose-100 text-[10px] md:text-xs text-rose-600">
           {{ wf.error }}
         </div>
       </div>

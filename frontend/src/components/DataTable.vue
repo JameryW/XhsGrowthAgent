@@ -64,10 +64,10 @@ function toggleSort(key: string) {
 </script>
 
 <template>
-  <div class="rounded-xl overflow-hidden relative bg-white/98 backdrop-blur-sm border border-slate-200/50" role="table" :aria-label="t('dataTable.title')">
+  <div class="rounded-xl overflow-x-auto relative bg-white/98 backdrop-blur-sm border border-slate-200/50" role="table" :aria-label="t('dataTable.title')">
     <!-- Header -->
     <div
-      class="grid gap-4 px-4 py-3 bg-slate-50 border-b border-slate-100 text-xs text-slate-500 uppercase tracking-wide font-medium"
+      class="grid gap-2 md:gap-4 px-3 md:px-4 py-2 md:py-3 bg-slate-50 border-b border-slate-100 text-[10px] md:text-xs text-slate-500 uppercase tracking-wide font-medium min-w-[500px]"
       :style="{ gridTemplateColumns: `repeat(${props.columns.length}, 1fr)` }"
       role="rowgroup"
     >
@@ -105,7 +105,7 @@ function toggleSort(key: string) {
     <div
       v-for="(row, idx) in sortedData"
       :key="getRowKey(row, idx)"
-      class="grid gap-4 px-4 py-3 border-b border-slate-50 text-xs hover:bg-slate-50/50 transition-colors duration-150"
+      class="grid gap-2 md:gap-4 px-3 md:px-4 py-2 md:py-3 border-b border-slate-50 text-[10px] md:text-xs hover:bg-slate-50/50 transition-colors duration-150 min-w-[500px]"
       :class="{ 'bg-rose-50/50': highlightRowKey && highlightKeyValue && row[highlightRowKey] === highlightKeyValue }"
       :style="{ gridTemplateColumns: `repeat(${props.columns.length}, 1fr)` }"
       role="row"
@@ -121,7 +121,7 @@ function toggleSort(key: string) {
     </div>
 
     <!-- Footer -->
-    <div v-if="hasData" class="px-4 py-3 border-t border-slate-100 bg-slate-50/50 text-xs text-slate-500 text-center font-medium" role="rowgroup">
+    <div v-if="hasData" class="px-3 md:px-4 py-2 md:py-3 border-t border-slate-100 bg-slate-50/50 text-[10px] md:text-xs text-slate-500 text-center font-medium" role="rowgroup">
       {{ t('dataTable.records', { count: props.data.length }) }}
     </div>
   </div>

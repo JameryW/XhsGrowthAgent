@@ -102,21 +102,23 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="dashboard-container">
-    <!-- Workflow Tab Bar -->
-    <WorkflowTabBar
-      v-if="workflowStore.openTabIds.length > 0"
-      :tabs="workflowStore.visibleTabs"
-      :active-thread-id="workflowStore.activeThreadId"
-      :has-overflow="workflowStore.hasOverflow"
-      :overflow-tabs="workflowStore.overflowTabs"
-      @switch="workflowStore.switchTab($event)"
-      @close="workflowStore.closeTab($event)"
-      @rename="(id, label) => workflowStore.renameTab(id, label)"
-    />
+  <div class="dashboard-container max-w-5xl mx-auto">
+    <!-- Workflow Tab Bar (sticky) -->
+    <div class="sticky top-0 z-30 -mx-3 md:-mx-4 px-3 md:px-4 pb-2 bg-slate-50/90 backdrop-blur-sm">
+      <WorkflowTabBar
+        v-if="workflowStore.openTabIds.length > 0"
+        :tabs="workflowStore.visibleTabs"
+        :active-thread-id="workflowStore.activeThreadId"
+        :has-overflow="workflowStore.hasOverflow"
+        :overflow-tabs="workflowStore.overflowTabs"
+        @switch="workflowStore.switchTab($event)"
+        @close="workflowStore.closeTab($event)"
+        @rename="(id, label) => workflowStore.renameTab(id, label)"
+      />
+    </div>
 
     <DashboardSkeleton v-if="isLoading" />
-    <div v-else class="space-y-4 md:space-y-6">
+    <div v-else class="space-y-3 md:space-y-5">
       <ErrorState v-if="hasError" />
 
       <!-- ErrorCard for API errors -->
@@ -130,75 +132,68 @@ onUnmounted(() => {
       />
 
       <!-- Stale Workflow Recovery -->
-      <div v-if="workflowStore.isStale" class="rounded-2xl p-4 bg-amber-50 border border-amber-200">
-        <div class="flex items-start gap-3">
-          <div class="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+      <div v-if="workflowStore.isStale" class="rounded-xl p-3 md:p-4 bg-amber-50 border border-amber-200">
+        <div class="flex items-start gap-2 md:gap-3">
+          <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
             <AppIcon name="AlertTriangle" size="md" variant="peach" />
           </div>
-          <div class="flex-1">
+          <div class="flex-1 min-w-0">
             <div class="text-amber-700 font-semibold text-sm mb-1">{{ t('workflow.staleDetected') }}</div>
-            <p class="text-amber-600 text-sm mb-2">{{ t('workflow.staleHint') }}</p>
-            <div class="flex items-center gap-2">
-              <button
-                @click="workflowStore.resumeWorkflow()"
-                class="btn-sm bg-amber-100 text-amber-600 hover:bg-amber-200"
-              >
-                {{ t('dashboard.actionButtons.resume') }}
-              </button>
-            </div>
+            <p class="text-amber-600 text-xs md:text-sm mb-2">{{ t('workflow.staleHint') }}</p>
+            <button
+              @click="workflowStore.resumeWorkflow()"
+              class="btn-sm bg-amber-100 text-amber-600 hover:bg-amber-200 text-xs"
+            >
+              {{ t('dashboard.actionButtons.resume') }}
+            </button>
           </div>
         </div>
       </div>
 
       <!-- Publish Error Recovery -->
-      <div v-if="workflowStore.publishError" class="card-error">
-        <div class="flex items-start gap-3">
-          <div class="w-10 h-10 rounded-lg bg-rose-100 flex items-center justify-center flex-shrink-0">
+      <div v-if="workflowStore.publishError" class="card-error rounded-xl p-3 md:p-4">
+        <div class="flex items-start gap-2 md:gap-3">
+          <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-rose-100 flex items-center justify-center flex-shrink-0">
             <AppIcon name="AlertTriangle" size="md" variant="pink" />
           </div>
-          <div class="flex-1">
+          <div class="flex-1 min-w-0">
             <div class="text-rose-700 font-semibold text-sm mb-1">{{ t('dashboard.publishFailed') }}</div>
-            <p class="text-rose-600 text-sm mb-2">{{ workflowStore.publishError.message }}</p>
+            <p class="text-rose-600 text-xs md:text-sm mb-2">{{ workflowStore.publishError.message }}</p>
             <div v-if="workflowStore.publishError.recovery" class="space-y-2">
               <p class="text-xs text-rose-500">{{ workflowStore.publishError.recovery.hint }}</p>
-              <div class="flex items-center gap-2">
-                <!-- Retry (network errors) -->
+              <div class="flex flex-wrap items-center gap-2">
                 <button
                   v-if="workflowStore.publishError.recovery.action === 'retry'"
                   @click="workflowStore.resumeWorkflow()"
-                  class="btn-sm bg-rose-100 text-rose-600 hover:bg-rose-200"
+                  class="btn-sm bg-rose-100 text-rose-600 hover:bg-rose-200 text-xs"
                 >
                   {{ workflowStore.publishError.recovery.action_label }}
                 </button>
-                <!-- Revise content (content violation) -->
                 <button
                   v-if="workflowStore.publishError.recovery.action === 'revise_content'"
                   @click="router.push('/review')"
-                  class="btn-sm bg-amber-100 text-amber-600 hover:bg-amber-200"
+                  class="btn-sm bg-amber-100 text-amber-600 hover:bg-amber-200 text-xs"
                 >
                   {{ workflowStore.publishError.recovery.action_label }}
                 </button>
-                <!-- Reconfigure (auth expired) -->
                 <button
                   v-if="workflowStore.publishError.recovery.action === 'reconfigure'"
                   @click="router.push('/')"
-                  class="btn-sm bg-violet-100 text-violet-600 hover:bg-violet-200"
+                  class="btn-sm bg-violet-100 text-violet-600 hover:bg-violet-200 text-xs"
                 >
                   {{ workflowStore.publishError.recovery.action_label }}
                 </button>
-                <!-- Retry later (rate limited) -->
                 <button
                   v-if="workflowStore.publishError.recovery.action === 'retry_later'"
                   @click="workflowStore.resumeWorkflow()"
-                  class="btn-sm bg-amber-100 text-amber-600 hover:bg-amber-200"
+                  class="btn-sm bg-amber-100 text-amber-600 hover:bg-amber-200 text-xs"
                 >
                   {{ workflowStore.publishError.recovery.action_label }}
                 </button>
-                <!-- Provide images -->
                 <button
                   v-if="workflowStore.publishError.recovery.action === 'provide_images'"
                   @click="router.push('/review')"
-                  class="btn-sm bg-teal-100 text-teal-600 hover:bg-teal-200"
+                  class="btn-sm bg-teal-100 text-teal-600 hover:bg-teal-200 text-xs"
                 >
                   {{ workflowStore.publishError.recovery.action_label }}
                 </button>
@@ -211,15 +206,15 @@ onUnmounted(() => {
       <WorkflowHeader />
 
       <!-- Replay mode banner -->
-      <div v-if="workflowStore.isReplayMode" class="rounded-2xl p-4 bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-200/50">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">
+      <div v-if="workflowStore.isReplayMode" class="rounded-xl p-3 md:p-4 bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-200/50">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2 md:gap-3 min-w-0">
+            <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">
               <AppIcon name="History" size="md" variant="purple" />
             </div>
-            <div>
+            <div class="min-w-0">
               <div class="text-violet-700 font-semibold text-sm">{{ t('workflow.replayMode') }}</div>
-              <p class="text-violet-500 text-xs">{{ t('workflow.replayModeDesc') }}</p>
+              <p class="text-violet-500 text-xs truncate">{{ t('workflow.replayModeDesc') }}</p>
             </div>
           </div>
           <NeonButton variant="ghost" size="sm" @click="workflowStore.exitReplayMode()">
@@ -229,7 +224,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Brief PDF Upload (shown when awaiting brief input) -->
-      <div v-if="showBriefUpload" class="rounded-2xl p-4 bg-gradient-to-br from-neon-pink/5 to-neon-peach/5 border border-neon-pink/20">
+      <div v-if="showBriefUpload" class="rounded-xl p-3 md:p-4 bg-gradient-to-br from-neon-pink/5 to-neon-peach/5 border border-neon-pink/20">
         <BriefFileUpload
           :is-uploading="workflowStore.isBriefUploading"
           :uploaded-text="workflowStore.briefUploadedText"
@@ -241,17 +236,11 @@ onUnmounted(() => {
         />
       </div>
 
-      <!-- Workflow timeline with onboarding selector -->
-      <div class="workflow-timeline">
-        <WorkflowTimeline />
-      </div>
+      <WorkflowTimeline />
       <ContentCards />
       <ShootingPlanPanel v-if="showShootingPlan" />
       <OptimizationPanel v-if="showOptimization" />
-      <!-- Action buttons with onboarding selector -->
-      <div class="action-buttons">
-        <ActionButtons />
-      </div>
+      <ActionButtons />
     </div>
 
     <!-- Celebration Modal -->
