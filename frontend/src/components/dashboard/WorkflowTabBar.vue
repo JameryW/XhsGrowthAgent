@@ -173,15 +173,15 @@ function toggleOverflow() {
     </div>
 
     <Teleport to="body">
-      <div v-if="confirmCloseTabId" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" @click.self="cancelClose">
-        <div class="bg-slate-800 rounded-lg p-5 shadow-xl max-w-sm w-full border border-slate-700">
-          <h3 class="text-white font-medium mb-2">{{ t('workflow.closeTabConfirm') }}</h3>
-          <p class="text-slate-400 text-sm mb-4">{{ t('workflow.closeTabHint') }}</p>
+      <div v-if="confirmCloseTabId" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" @click.self="cancelClose">
+        <div class="bg-white rounded-xl p-5 shadow-2xl max-w-sm w-full border border-slate-200">
+          <h3 class="text-slate-800 font-medium mb-2">{{ t('workflow.closeTabConfirm') }}</h3>
+          <p class="text-slate-500 text-sm mb-4">{{ t('workflow.closeTabHint') }}</p>
           <div class="flex gap-3 justify-end">
-            <button class="px-3 py-1.5 text-sm rounded bg-slate-700 text-slate-300 hover:bg-slate-600" @click="cancelClose">
+            <button class="px-3 py-1.5 text-sm rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200" @click="cancelClose">
               {{ t('common.cancel') }}
             </button>
-            <button class="px-3 py-1.5 text-sm rounded bg-red-600 text-white hover:bg-red-500" @click="confirmClose">
+            <button class="px-3 py-1.5 text-sm rounded-lg bg-rose-500 text-white hover:bg-rose-600" @click="confirmClose">
               {{ t('workflow.closeTab') }}
             </button>
           </div>
@@ -203,12 +203,12 @@ function toggleOverflow() {
 
 .tab-item {
   @apply flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg cursor-pointer
-         bg-slate-800/60 text-slate-400 hover:bg-slate-700/60 hover:text-slate-300
+         bg-white/70 text-slate-500 hover:bg-white hover:text-slate-700 border border-slate-200/50 border-b-0
          transition-colors max-w-[180px] min-w-[100px] shrink-0 select-none;
 }
 
 .tab-item.active {
-  @apply bg-slate-700 text-white border-b-2 border-indigo-500;
+  @apply bg-white text-slate-800 border-b-2 border-rose-400 shadow-sm;
 }
 
 .tab-icon {
@@ -220,29 +220,29 @@ function toggleOverflow() {
 }
 
 .tab-edit-input {
-  @apply bg-slate-600 text-white text-xs px-1 py-0.5 rounded w-full outline-none border border-indigo-500;
+  @apply bg-slate-50 text-slate-800 text-xs px-1 py-0.5 rounded w-full outline-none border border-rose-300;
 }
 
 .tab-close {
-  @apply shrink-0 p-0.5 rounded hover:bg-slate-600 text-slate-500 hover:text-slate-300 transition-colors;
+  @apply shrink-0 p-0.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors;
 }
 
 .tab-overflow-trigger {
   @apply flex items-center gap-1 px-2 py-1.5 rounded cursor-pointer
-         hover:bg-slate-700/60 text-slate-400 hover:text-slate-300 transition-colors shrink-0;
+         hover:bg-white/80 text-slate-400 hover:text-slate-600 transition-colors shrink-0;
 }
 
 .overflow-dropdown {
-  @apply absolute right-2 top-full mt-1 bg-slate-800 rounded-lg border border-slate-700
-         shadow-xl py-1 min-w-[200px] max-h-[300px] overflow-y-auto z-40;
+  @apply absolute right-2 top-full mt-1 bg-white rounded-lg border border-slate-200 shadow-xl
+         py-1 min-w-[200px] max-h-[300px] overflow-y-auto z-40;
 }
 
 .overflow-item {
-  @apply flex items-center gap-1.5 px-3 py-2 cursor-pointer text-slate-400
-         hover:bg-slate-700 hover:text-slate-300 transition-colors;
+  @apply flex items-center gap-1.5 px-3 py-2 cursor-pointer text-slate-500
+         hover:bg-slate-50 hover:text-slate-700 transition-colors;
 }
 
 .overflow-item.active {
-  @apply bg-slate-700/60 text-white;
+  @apply bg-rose-50/60 text-slate-800;
 }
 </style>
