@@ -1095,6 +1095,10 @@ async def upload_brief_file(thread_id: str, request: Request):
     filename = file.filename or "unknown"
     content_bytes = await file.read()
 
+    max_upload_size = 20 * 1024 * 1024
+    if len(content_bytes) > max_upload_size:
+        raise ValidationError("file", f"File too large (max {max_upload_size // 1024 // 1024}MB)")
+
     brief_text = ""
     source_type = "text"
 

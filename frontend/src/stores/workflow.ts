@@ -746,7 +746,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const isBriefUploading = ref(false)
 
   async function uploadBriefPdf(threadId: string, file: File): Promise<BriefUploadResult | null> {
-    const MAX_SIZE = 10 * 1024 * 1024
+    const MAX_SIZE = 20 * 1024 * 1024
     if (file.size > MAX_SIZE) {
       toastStore.error(t('brief.fileTooLarge'), t('brief.fileTooLargeDesc'))
       return null
