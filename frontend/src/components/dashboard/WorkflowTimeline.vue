@@ -14,10 +14,7 @@ const activeCheckpointId = computed(() => workflowStore.activeCheckpointId)
 
 function findCheckpointForAgent(agent: string): string | null {
   const checkpoints = workflowStore.replayCheckpoints
-  for (const cp of checkpoints) {
-    if (cp.source === agent) return cp.checkpoint_id
-  }
-  const cp = checkpoints.find(c => c.source === agent)
+  const cp = checkpoints.find(c => c.current_agent === agent)
   if (cp) return cp.checkpoint_id
   return null
 }

@@ -347,74 +347,70 @@ defineExpose({ getConfig })
     </div>
 
     <!-- Options -->
-    <div class="space-y-2.5">
+    <div>
       <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
         <AppIcon name="Settings" size="sm" variant="cyan" />
         {{ t('home.form.options') }}
       </label>
 
-      <!-- Dry Run toggle -->
-      <div class="flex items-center justify-between p-3.5 rounded-xl border-2 border-slate-100 bg-white
-                    hover:border-slate-200 hover:shadow-sm transition-all duration-300 group/opt">
-        <div class="flex items-center gap-3">
-          <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-teal-50 group-hover/opt:bg-teal-100 transition-colors">
-            <AppIcon name="FlaskConical" size="sm" variant="cyan" />
+      <div class="grid grid-cols-2 gap-2.5">
+        <!-- Dry Run toggle -->
+        <div class="flex items-center justify-between p-3 rounded-xl border-2 border-slate-100 bg-white
+                      hover:border-slate-200 hover:shadow-sm transition-all duration-300 group/opt">
+          <div class="flex items-center gap-2 min-w-0">
+            <div class="flex items-center justify-center w-7 h-7 rounded-lg bg-teal-50 group-hover/opt:bg-teal-100 transition-colors shrink-0">
+              <AppIcon name="FlaskConical" size="sm" variant="cyan" />
+            </div>
+            <span class="text-xs font-semibold text-slate-700 truncate">{{ t('home.form.dryRun') }}</span>
           </div>
-          <div>
-            <span class="text-sm font-semibold text-slate-700 block">{{ t('home.form.dryRun') }}</span>
-            <p class="text-xs text-slate-400 mt-0.5">{{ t('home.form.dryRunHelp') }}</p>
-          </div>
-        </div>
-        <button
-          @click="dryRun = !dryRun"
-          :class="[
-            'relative w-12 h-7 rounded-full transition-all duration-300 ease-out cursor-pointer shrink-0',
-            dryRun
-              ? 'bg-gradient-to-r from-teal-400 to-teal-500 shadow-neon-cyan-sm'
-              : 'bg-slate-200'
-          ]"
-          role="switch"
-          :aria-checked="dryRun"
-        >
-          <span
+          <button
+            @click="dryRun = !dryRun"
             :class="[
-              'absolute top-1 left-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-300 ease-out',
-              dryRun ? 'translate-x-5' : 'translate-x-0'
+              'relative w-10 h-6 rounded-full transition-all duration-300 ease-out cursor-pointer shrink-0',
+              dryRun
+                ? 'bg-gradient-to-r from-teal-400 to-teal-500 shadow-neon-cyan-sm'
+                : 'bg-slate-200'
             ]"
-          />
-        </button>
-      </div>
+            role="switch"
+            :aria-checked="dryRun"
+          >
+            <span
+              :class="[
+                'absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-md transition-all duration-300 ease-out',
+                dryRun ? 'translate-x-4' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
 
-      <!-- Auto Publish toggle -->
-      <div class="flex items-center justify-between p-3.5 rounded-xl border-2 border-slate-100 bg-white
-                    hover:border-slate-200 hover:shadow-sm transition-all duration-300 group/opt">
-        <div class="flex items-center gap-3">
-          <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-rose-50 group-hover/opt:bg-rose-100 transition-colors">
-            <AppIcon name="Upload" size="sm" variant="pink" />
+        <!-- Auto Publish toggle -->
+        <div class="flex items-center justify-between p-3 rounded-xl border-2 border-slate-100 bg-white
+                      hover:border-slate-200 hover:shadow-sm transition-all duration-300 group/opt">
+          <div class="flex items-center gap-2 min-w-0">
+            <div class="flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 group-hover/opt:bg-rose-100 transition-colors shrink-0">
+              <AppIcon name="Upload" size="sm" variant="pink" />
+            </div>
+            <span class="text-xs font-semibold text-slate-700 truncate">{{ t('home.form.autoPublish') }}</span>
           </div>
-          <div>
-            <span class="text-sm font-semibold text-slate-700 block">{{ t('home.form.autoPublish') }}</span>
-            <p class="text-xs text-slate-400 mt-0.5">{{ t('home.form.autoPublishHelp') }}</p>
-          </div>
-        </div>
-        <button
-          @click="autoPublish = !autoPublish"
-          :class="[
-            'relative w-12 h-7 rounded-full transition-all duration-300 ease-out cursor-pointer shrink-0',
-            autoPublish
-              ? 'bg-gradient-to-r from-neon-pink to-neon-peach shadow-neon-pink-sm'
-              : 'bg-slate-200'
-          ]"
-          role="switch"
-          :aria-checked="autoPublish"
-        >
-          <span
+          <button
+            @click="autoPublish = !autoPublish"
             :class="[
-              'absolute top-1 left-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-300 ease-out',
-              autoPublish ? 'translate-x-5' : 'translate-x-0'
+              'relative w-10 h-6 rounded-full transition-all duration-300 ease-out cursor-pointer shrink-0',
+              autoPublish
+                ? 'bg-gradient-to-r from-neon-pink to-neon-peach shadow-neon-pink-sm'
+                : 'bg-slate-200'
             ]"
-          />
-        </button>
+            role="switch"
+            :aria-checked="autoPublish"
+          >
+            <span
+              :class="[
+                'absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-md transition-all duration-300 ease-out',
+                autoPublish ? 'translate-x-4' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
       </div>
     </div>
   </div>

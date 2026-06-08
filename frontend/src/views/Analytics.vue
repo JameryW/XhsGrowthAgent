@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import MetricCard from '@/components/MetricCard.vue'
 import DataTable from '@/components/DataTable.vue'
 import AppIcon from '@/components/AppIcon.vue'
+import NeonButton from '@/components/NeonButton.vue'
 import { AnalyticsSkeleton } from '@/components/skeletons'
 import { useAnalyticsStore } from '@/stores'
 
@@ -259,33 +260,28 @@ function startWithTopic(topic: string, niche?: string) {
 
         <div class="flex items-center gap-2 flex-wrap">
           <!-- Refresh button -->
-          <button
-            @click="refreshData"
-            :disabled="analyticsStore.isLoading"
-            class="px-3 py-2 rounded-lg text-xs border transition-all duration-200 flex items-center gap-1.5 font-medium bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50"
-            :aria-label="t('analytics.refresh')"
-          >
-            <AppIcon name="RefreshCw" size="sm" variant="cyan" :class="{ 'animate-spin': analyticsStore.isLoading }" />
-            {{ analyticsStore.isLoading ? t('analytics.refreshing') : t('analytics.refresh') }}
-          </button>
+          <NeonButton variant="cyan" size="sm" @click="refreshData" :disabled="analyticsStore.isLoading">
+            <span class="inline-flex items-center gap-1.5">
+              <AppIcon name="RefreshCw" size="sm" variant="white" :class="{ 'animate-spin': analyticsStore.isLoading }" />
+              {{ analyticsStore.isLoading ? t('analytics.refreshing') : t('analytics.refresh') }}
+            </span>
+          </NeonButton>
 
           <!-- Period selector -->
-          <button
+          <NeonButton
             v-for="p in ['daily', 'weekly', 'monthly']"
             :key="p"
+            :variant="analyticsStore.period === p ? 'cyan' : 'ghost'"
+            size="sm"
             @click="setPeriod(p as any)"
             :aria-pressed="analyticsStore.period === p"
             :aria-label="`${p === 'daily' ? t('analytics.thisWeek') : p === 'weekly' ? t('analytics.thisMonth') : t('analytics.thisYear')}`"
-            :class="[
-              'px-3 py-2 rounded-lg text-xs border transition-all duration-200 flex items-center gap-1.5 font-medium',
-              analyticsStore.period === p
-                ? 'bg-teal-50 border-teal-200 text-teal-600'
-                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300'
-            ]"
           >
-            <AppIcon name="Calendar" size="sm" variant="cyan" />
-            {{ p === 'daily' ? t('analytics.thisWeek') : p === 'weekly' ? t('analytics.thisMonth') : t('analytics.thisYear') }}
-          </button>
+            <span class="inline-flex items-center gap-1.5">
+              <AppIcon name="Calendar" size="sm" :variant="analyticsStore.period === p ? 'white' : 'cyan'" />
+              {{ p === 'daily' ? t('analytics.thisWeek') : p === 'weekly' ? t('analytics.thisMonth') : t('analytics.thisYear') }}
+            </span>
+          </NeonButton>
         </div>
       </div>
     </div>

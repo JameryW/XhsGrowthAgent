@@ -154,71 +154,56 @@ const handleLogout = async () => {
     </div>
 
     <!-- 底部信息 -->
-    <div class="mt-auto pt-6 border-t border-slate-100" :aria-label="t('nav.systemInfo')">
-      <!-- Desktop: full bottom section -->
+    <div class="mt-auto pt-4 border-t border-slate-100" :aria-label="t('nav.systemInfo')">
+      <!-- Desktop: compact bottom section -->
       <template v-if="!isTablet">
-        <!-- Logout button -->
-        <button
-          v-if="authStore.isAuthenticated"
-          @click="handleLogout"
-          class="mb-3 w-full p-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-500 transition-all duration-200 flex items-center justify-center gap-2 text-sm font-medium"
-          :aria-label="t('nav.logout')"
-        >
-          <AppIcon name="LogOut" size="sm" variant="pink" />
-          <span>{{ t('nav.logout') }}</span>
-        </button>
-
-        <!-- HelpCenter -->
-        <div class="mb-3 flex justify-center">
-          <HelpCenter
-            @open-faq="handleOpenFaq"
-            @open-shortcuts="handleOpenShortcuts"
-            @send-feedback="handleSendFeedback"
-          />
+        <!-- Account & version -->
+        <div class="flex items-center justify-between px-1 mb-2">
+          <span class="text-xs text-slate-400">{{ authStore.user?.username || 'default' }}</span>
+          <span class="text-[10px] text-slate-300">v0.2.0</span>
         </div>
 
-        <!-- WebSocket Connection Status -->
-        <div class="mb-3 flex items-center justify-between px-3 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
-          <div class="flex items-center gap-2">
+        <!-- Utilities row: WS status + language -->
+        <div class="flex items-center justify-between px-1 mb-2">
+          <div class="flex items-center gap-1.5">
             <span
-              class="w-2 h-2 rounded-full"
+              class="w-1.5 h-1.5 rounded-full"
               :class="{
                 'bg-emerald-500': realtimeStore.connectionStatus === 'connected',
                 'bg-amber-500 animate-pulse': realtimeStore.connectionStatus === 'connecting' || realtimeStore.connectionStatus === 'reconnecting',
                 'bg-rose-500': realtimeStore.connectionStatus === 'disconnected',
               }"
             />
-            <span class="text-xs text-slate-500">
+            <span class="text-[10px] text-slate-400">
               {{ realtimeStore.connectionStatus === 'connected' ? t('nav.ws.connected') : realtimeStore.connectionStatus === 'reconnecting' ? t('nav.ws.reconnecting') : realtimeStore.connectionStatus === 'connecting' ? t('nav.ws.connecting') : t('nav.ws.disconnected') }}
             </span>
-          </div>
-          <button
-            v-if="realtimeStore.connectionStatus === 'disconnected'"
-            @click="realtimeStore.connect()"
-            class="text-xs text-rose-500 hover:text-rose-600 font-medium transition-colors"
-          >
-            {{ t('nav.ws.reconnect') }}
-          </button>
-        </div>
-
-        <!-- Language Switcher -->
-        <div class="mb-3 flex items-center justify-between px-3 py-2 rounded-lg border border-slate-100 bg-slate-50/50">
-          <div class="flex items-center gap-2">
-            <AppIcon name="Globe" size="sm" variant="cyan" />
-            <span class="text-xs text-slate-500">{{ t('nav.language') }}</span>
+            <button
+              v-if="realtimeStore.connectionStatus === 'disconnected'"
+              @click="realtimeStore.connect()"
+              class="text-[10px] text-rose-400 hover:text-rose-500 transition-colors"
+            >
+              {{ t('nav.ws.reconnect') }}
+            </button>
           </div>
           <LanguageSwitcher />
         </div>
 
-        <div class="bg-gradient-to-r from-slate-50 to-white rounded-lg p-3 text-xs border border-slate-100 hover:border-slate-200 transition-all duration-200">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-slate-400">{{ t('nav.account') }}</span>
-            <span class="text-teal-600 font-medium bg-teal-50 px-2 py-0.5 rounded">{{ authStore.user?.username || 'default' }}</span>
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="text-slate-400">{{ t('nav.version') }}</span>
-            <span class="text-violet-600 font-medium bg-violet-50 px-2 py-0.5 rounded">v0.2.0</span>
-          </div>
+        <!-- Actions: Help + Logout -->
+        <div class="flex items-center gap-2">
+          <HelpCenter
+            @open-faq="handleOpenFaq"
+            @open-shortcuts="handleOpenShortcuts"
+            @send-feedback="handleSendFeedback"
+          />
+          <button
+            v-if="authStore.isAuthenticated"
+            @click="handleLogout"
+            class="ml-auto text-xs text-slate-400 hover:text-rose-500 transition-colors flex items-center gap-1"
+            :aria-label="t('nav.logout')"
+          >
+            <AppIcon name="LogOut" size="xs" variant="pink" />
+            <span>{{ t('nav.logout') }}</span>
+          </button>
         </div>
       </template>
 
