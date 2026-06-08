@@ -252,7 +252,19 @@
       "analyzingDesc": "Analyze performance data",
       "engaging": "Engagement",
       "engagingDesc": "Audience interaction",
-      "agentDetails": "Agent Execution Details"
+      "agentDetails": "Agent Execution Details",
+      "short": {
+        "copywriting": "Copy",
+        "draft": "Draft",
+        "viralMatch": "Viral",
+        "bloggerScout": "Discover",
+        "bloggerGate": "Select",
+        "visual": "Visual",
+        "reviewGate": "Review",
+        "reviseContent": "Revise",
+        "publisher": "Publish",
+        "engagement": "Engage"
+      }
     },
     "ripple": {
       "title": "Ripple CAS Analysis",

@@ -252,7 +252,19 @@
       "analyzingDesc": "分析表现数据",
       "engaging": "互动管理",
       "engagingDesc": "受众互动管理",
-      "agentDetails": "Agent 执行详情"
+      "agentDetails": "Agent 执行详情",
+      "short": {
+        "copywriting": "文案",
+        "draft": "草稿",
+        "viralMatch": "爆款",
+        "bloggerScout": "发现",
+        "bloggerGate": "选择",
+        "visual": "视觉",
+        "reviewGate": "审核",
+        "reviseContent": "修改",
+        "publisher": "发布",
+        "engagement": "互动"
+      }
     },
     "ripple": {
       "title": "Ripple 传播分析",
