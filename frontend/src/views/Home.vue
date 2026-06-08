@@ -107,15 +107,8 @@ const quickStart = () => {
 <template>
   <div class="min-h-[80vh] flex flex-col justify-center">
     <div class="w-full max-w-3xl mx-auto px-3 md:px-8">
-      <!-- Hero: title + primary CTA -->
-      <div class="text-center mb-6 md:mb-8">
-        <div class="w-10 h-10 md:w-14 md:h-14 rounded-lg md:rounded-xl bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm mx-auto mb-3 md:mb-4">
-          <AppIcon name="Rocket" size="md" variant="white" class="md:hidden" />
-          <AppIcon name="Rocket" size="lg" variant="white" class="hidden md:block" />
-        </div>
-        <h1 class="text-xl md:text-2xl font-bold text-slate-800 mb-1">{{ t('home.title') }}</h1>
-        <p class="text-xs md:text-sm text-slate-400">{{ t('home.subtitle') }}</p>
-      </div>
+      <!-- Hero: compact tagline (Navbar already has logo) -->
+      <p class="text-center text-xs md:text-sm text-slate-400 mb-4 md:mb-5">{{ t('home.subtitle') }}</p>
 
       <!-- Pre-filled topic from analytics -->
       <div v-if="prefilledTopic" class="mb-3 md:mb-4 p-2.5 md:p-3 rounded-lg bg-teal-50 border border-teal-100 flex items-center gap-2">
