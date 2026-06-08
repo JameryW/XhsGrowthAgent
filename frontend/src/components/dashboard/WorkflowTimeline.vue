@@ -40,30 +40,13 @@ function isNodeSelected(agent: string): boolean {
 const focusedIndex = ref(-1)
 const showTimelineDetails = ref(false)
 
-// Progress tracking
-const workflowProgress = computed(() => workflowStore.progressPercent)
-
-const currentAgent = computed(() => {
-  const status = workflowStore.currentStatus
-  const nextNode = workflowStore.nextNodes[0]
-  if (status === 'awaiting_draft') return nextNode || 'draft_gate'
-  if (status === 'awaiting_choice') return nextNode || 'choice_gate'
-  if (status === 'awaiting_review') return nextNode || 'review_gate'
-  if (status === 'awaiting_blogger_selection') return nextNode || 'blogger_gate'
-  return workflowStore.workflowState?.current_agent || nextNode || ''
-})
-
-const hasError = computed(() => workflowStore.currentPhase === 'error' || !!workflowStore.workflowState?.error)
-const errorMessage = computed(() => workflowStore.workflowState?.error || '')
-const agentTimeline = computed(() => workflowStore.agentTimeline)
-const hasTimelineData = computed(() => agentTimeline.value.length > 0)
-
 // ── Phase + sub-step structure ──
 
 interface SubStep {
   icon: string
   label: string
   agent: string
+  description: string
 }
 
 interface PhaseNode {
@@ -90,28 +73,28 @@ const workflowPhases = computed<PhaseNode[]>(() => [
     icon: 'Pencil', label: t('dashboard.timeline.creating'), phase: 'creating',
     description: t('dashboard.timeline.creatingDesc'), agent: 'copywriter',
     subSteps: [
-      { icon: 'Pencil', label: t('dashboard.timeline.short.copywriting'), agent: 'copywriter' },
-      { icon: 'FileText', label: t('dashboard.timeline.short.draft'), agent: 'draft_gate' },
-      { icon: 'Flame', label: t('dashboard.timeline.short.viralMatch'), agent: 'viral_matcher' },
-      { icon: 'Users', label: t('dashboard.timeline.short.bloggerScout'), agent: 'blogger_scout' },
-      { icon: 'UserCheck', label: t('dashboard.timeline.short.bloggerGate'), agent: 'blogger_gate' },
-      { icon: 'Palette', label: t('dashboard.timeline.short.visual'), agent: 'visual_designer' },
+      { icon: 'Pencil', label: t('dashboard.timeline.short.copywriting'), agent: 'copywriter', description: t('dashboard.timeline.creatingDesc') },
+      { icon: 'FileText', label: t('dashboard.timeline.short.draft'), agent: 'draft_gate', description: t('dashboard.timeline.draftDesc') },
+      { icon: 'Flame', label: t('dashboard.timeline.short.viralMatch'), agent: 'viral_matcher', description: t('dashboard.timeline.viralMatchDesc') },
+      { icon: 'Users', label: t('dashboard.timeline.short.bloggerScout'), agent: 'blogger_scout', description: t('dashboard.timeline.bloggerScoutDesc') },
+      { icon: 'UserCheck', label: t('dashboard.timeline.short.bloggerGate'), agent: 'blogger_gate', description: t('dashboard.timeline.bloggerGateDesc') },
+      { icon: 'Palette', label: t('dashboard.timeline.short.visual'), agent: 'visual_designer', description: t('dashboard.timeline.visualDesc') },
     ],
   },
   {
     icon: 'Clock', label: t('dashboard.timeline.reviewing'), phase: 'reviewing',
     description: t('dashboard.timeline.reviewingDesc'), agent: 'review_gate',
     subSteps: [
-      { icon: 'Clock', label: t('dashboard.timeline.short.reviewGate'), agent: 'review_gate' },
-      { icon: 'RotateCcw', label: t('dashboard.timeline.short.reviseContent'), agent: 'revise_content' },
+      { icon: 'Clock', label: t('dashboard.timeline.short.reviewGate'), agent: 'review_gate', description: t('dashboard.timeline.reviewingDesc') },
+      { icon: 'RotateCcw', label: t('dashboard.timeline.short.reviseContent'), agent: 'revise_content', description: t('dashboard.timeline.reviseContentDesc') },
     ],
   },
   {
     icon: 'Upload', label: t('dashboard.timeline.publishing'), phase: 'publishing',
     description: t('dashboard.timeline.publishingDesc'), agent: 'publisher',
     subSteps: [
-      { icon: 'Upload', label: t('dashboard.timeline.short.publisher'), agent: 'publisher' },
-      { icon: 'MessageCircle', label: t('dashboard.timeline.short.engagement'), agent: 'engagement' },
+      { icon: 'Upload', label: t('dashboard.timeline.short.publisher'), agent: 'publisher', description: t('dashboard.timeline.publishingDesc') },
+      { icon: 'MessageCircle', label: t('dashboard.timeline.short.engagement'), agent: 'engagement', description: t('dashboard.timeline.engaging') },
     ],
   },
   {
@@ -121,13 +104,33 @@ const workflowPhases = computed<PhaseNode[]>(() => [
   },
 ])
 
+// Progress tracking
+const workflowProgress = computed(() => workflowStore.progressPercent)
+
+const currentAgent = computed(() => {
+  const status = workflowStore.currentStatus
+  const nextNode = workflowStore.nextNodes[0]
+  if (status === 'awaiting_draft') return nextNode || 'draft_gate'
+  if (status === 'awaiting_choice') return nextNode || 'choice_gate'
+  if (status === 'awaiting_review') return nextNode || 'review_gate'
+  if (status === 'awaiting_blogger_selection') return nextNode || 'blogger_gate'
+  return workflowStore.workflowState?.current_agent || nextNode || ''
+})
+
+const hasError = computed(() => workflowStore.currentPhase === 'error' || !!workflowStore.workflowState?.error)
+const errorMessage = computed(() => workflowStore.workflowState?.error || '')
+const agentTimeline = computed(() => workflowStore.agentTimeline)
+const hasTimelineData = computed(() => agentTimeline.value.length > 0)
+
 type NodeStatus = 'completed' | 'running' | 'pending' | 'error'
+
+const phaseOrder = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging', 'completed'] as const
 
 const agentOrder = [
   'trend_scout', 'content_strategist', 'copywriter', 'draft_gate',
   'viral_matcher', 'blogger_scout', 'blogger_gate', 'content_analyzer',
   'version_generator', 'choice_gate', 'visual_designer', 'review_gate',
-  'revise_content', 'publisher', 'analyst', 'engagement',
+  'revise_content', 'publisher', 'engagement', 'analyst',
 ] as const
 
 const hasData = (value: unknown) =>
@@ -158,6 +161,10 @@ function isSubStepCompleted(agent: string): boolean {
   }
   if (agent === 'publisher') return hasData(workflowStore.workflowState?.publish_result)
   if (agent === 'analyst') return hasData(workflowStore.workflowState?.analytics)
+  if (agent === 'revise_content') return false
+  if (agent === 'engagement') {
+    return workflowStore.currentPhase === 'completed' || agentIndex(currentAgent.value) > agentIndex('engagement')
+  }
   return false
 }
 
@@ -172,16 +179,27 @@ function getStatus(agent: string): NodeStatus {
     return 'running'
   }
   if (isSubStepCompleted(agent)) return 'completed'
+  const currentPhaseIdx = phaseOrder.indexOf(workflowStore.currentPhase as any)
+  const nodePhase = agent === 'engagement' ? 'publishing' : 'creating'
+  const nodePhaseIdx = phaseOrder.indexOf(nodePhase as any)
+  if (nodePhaseIdx < currentPhaseIdx) return 'completed'
+  if (nodePhaseIdx === currentPhaseIdx) return 'running'
   return 'pending'
 }
 
 function getPhaseStatus(phase: PhaseNode): NodeStatus {
+  if (phase.subSteps.length > 0) {
+    const statuses = phase.subSteps.map(s => getStatus(s.agent))
+    if (statuses.some(s => s === 'error')) return 'error'
+    if (statuses.some(s => s === 'running')) return 'running'
+    if (statuses.every(s => s === 'completed')) return 'completed'
+    return 'pending'
+  }
   return getStatus(phase.agent)
 }
 
 function shouldExpandSubSteps(phase: PhaseNode): boolean {
   const phaseStatus = getPhaseStatus(phase)
-  // Expand when phase is running or completed and has sub-steps
   return phase.subSteps.length > 0 && (phaseStatus === 'running' || phaseStatus === 'completed')
 }
 
@@ -225,6 +243,13 @@ const handleKeyDown = (e: KeyboardEvent) => {
 }
 
 const isFocused = (index: number) => focusedIndex.value === index
+
+// Substep section labels (from PR #54)
+const substepSectionLabels: Record<string, string> = {
+  creating: '内容创作步骤',
+  reviewing: '审核步骤',
+  publishing: '发布步骤',
+}
 </script>
 
 <template>
@@ -260,16 +285,16 @@ const isFocused = (index: number) => focusedIndex.value === index
       />
     </div>
 
-    <!-- Phase nodes row -->
-    <div class="flex justify-between items-start relative px-1 md:px-4 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-2 -mx-1" role="list" :aria-label="t('dashboard.timeline.stages')">
+    <!-- Main phase nodes -->
+    <div class="flex justify-between items-start relative px-1 md:px-4" role="list" :aria-label="t('dashboard.timeline.stages')">
       <div
         v-for="(phase, index) in workflowPhases"
         :key="phase.phase"
-        class="snap-start shrink-0 min-w-[60px] md:min-w-0 flex-1"
+        class="min-w-[60px] md:min-w-0 flex-1"
         role="listitem"
       >
         <WorkflowNode
-          :icon="phase.icon"
+          :icon="phase.subSteps.length > 0 && shouldExpandSubSteps(phase) ? 'ChevronDown' : phase.icon"
           :label="phase.label"
           :status="getPhaseStatus(phase)"
           :focused="isFocused(index)"
@@ -279,23 +304,10 @@ const isFocused = (index: number) => focusedIndex.value === index
           :aria-label="`${phase.label} - ${getPhaseStatus(phase) === 'completed' ? t('dashboard.timeline.completed') : getPhaseStatus(phase) === 'running' ? t('dashboard.timeline.running') : getPhaseStatus(phase) === 'error' ? t('dashboard.timeline.error') : t('dashboard.timeline.pending')}`"
           @click="handleNodeClick(phase.agent)"
         />
-
-        <!-- Expand indicator -->
-        <div
-          v-if="phase.subSteps.length > 0"
-          class="flex justify-center mt-1"
-        >
-          <AppIcon
-            :name="shouldExpandSubSteps(phase) ? 'ChevronDown' : 'ChevronRight'"
-            size="sm"
-            variant="cyan"
-            class="transition-transform duration-200"
-          />
-        </div>
       </div>
     </div>
 
-    <!-- Sub-steps for expanded phases -->
+    <!-- Expanded substeps (with transition) -->
     <div class="mt-2 space-y-2">
       <TransitionGroup name="substep-expand">
         <div
@@ -304,65 +316,59 @@ const isFocused = (index: number) => focusedIndex.value === index
         >
           <div
             v-if="shouldExpandSubSteps(phase)"
-            class="border border-slate-100 rounded-lg p-2 md:p-3 bg-slate-50/50"
+            class="mt-2 mx-1 md:mx-6 p-2.5 md:p-3 rounded-xl bg-slate-50/80 border border-slate-100"
           >
-            <div class="text-[10px] text-slate-400 uppercase tracking-wide font-medium mb-2 md:mb-3">
-              {{ phase.label }}
+            <div class="flex items-center gap-1.5 mb-2">
+              <AppIcon name="Layers" size="sm" variant="cyan" />
+              <span class="text-[11px] text-slate-500 font-medium uppercase tracking-wide">{{ substepSectionLabels[phase.phase] || phase.label }}</span>
             </div>
-            <div class="flex items-start gap-0 overflow-x-auto">
-              <div
-                v-for="(step, si) in phase.subSteps"
-                :key="step.agent"
-                class="flex items-center shrink-0"
-              >
-                <!-- Sub-step node -->
-                <button
-                  class="flex flex-col items-center gap-1 px-2 md:px-3 py-1.5 md:py-2 rounded-md transition-all duration-200"
+            <div class="flex flex-wrap gap-2 md:gap-3 justify-center">
+              <template v-for="(step, si) in phase.subSteps" :key="step.agent">
+                <!-- SVG connector arrow between steps (from PR #54) -->
+                <div v-if="si > 0" class="hidden md:flex items-center text-slate-300 -mx-0.5">
+                  <svg width="16" height="8" viewBox="0 0 16 8" class="opacity-40">
+                    <line x1="0" y1="4" x2="12" y2="4" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2" />
+                    <polyline points="10,1 13,4 10,7" fill="none" stroke="currentColor" stroke-width="1.5" />
+                  </svg>
+                </div>
+                <div
+                  class="flex flex-col items-center gap-0.5 md:gap-1 min-w-[40px] md:min-w-[48px]"
                   :class="[
-                    getStatus(step.agent) === 'running'
-                      ? 'bg-amber-50 border border-amber-200'
-                      : getStatus(step.agent) === 'completed'
-                        ? 'bg-emerald-50/50 border border-emerald-100'
-                        : getStatus(step.agent) === 'error'
-                          ? 'bg-rose-50 border border-rose-200'
-                          : 'bg-white border border-slate-100',
-                    isReplayMode ? 'cursor-pointer hover:bg-cyan-50' : 'cursor-default',
-                    isNodeSelected(step.agent) ? 'ring-2 ring-violet-400 ring-offset-1' : '',
+                    isReplayMode ? 'cursor-pointer' : '',
+                    isReplayMode && isNodeSelected(step.agent) ? 'ring-2 ring-violet-400 ring-offset-1 ring-offset-slate-50 rounded-lg' : '',
                   ]"
-                  :disabled="!isReplayMode"
-                  @click="handleNodeClick(step.agent)"
-                  :aria-label="`${step.label} - ${getStatus(step.agent)}`"
+                  :title="step.description"
+                  @click="isReplayMode && handleNodeClick(step.agent)"
                 >
-                  <!-- Icon + status dot row -->
-                  <div class="relative">
+                  <!-- Substep icon with gradient style (from PR #54) -->
+                  <div
+                    class="w-7 h-7 md:w-9 md:h-9 rounded-lg flex items-center justify-center transition-all duration-200"
+                    :class="{
+                      'bg-gradient-to-br from-rose-400 to-amber-400 shadow-sm': getStatus(step.agent) === 'completed',
+                      'bg-gradient-to-br from-amber-300 to-amber-400 shadow-sm animate-pulse': getStatus(step.agent) === 'running',
+                      'bg-slate-100 border border-slate-200': getStatus(step.agent) === 'pending',
+                      'bg-gradient-to-br from-rose-400 to-rose-500 shadow-sm': getStatus(step.agent) === 'error',
+                    }"
+                  >
                     <AppIcon
                       :name="getStatus(step.agent) === 'running' ? 'Loader2' : step.icon"
                       size="sm"
-                      :variant="getStatus(step.agent) === 'completed' ? 'cyan' : getStatus(step.agent) === 'running' ? 'peach' : getStatus(step.agent) === 'error' ? 'pink' : 'cyan'"
+                      :variant="getStatus(step.agent) === 'pending' ? 'cyan' : 'white'"
                       :animate="getStatus(step.agent) === 'running'"
                     />
-                    <span
-                      v-if="getStatus(step.agent) === 'completed'"
-                      class="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-white"
-                    />
                   </div>
-                  <span class="text-[10px] md:text-xs font-medium" :class="getStatus(step.agent) === 'pending' ? 'text-slate-300' : getStatus(step.agent) === 'running' ? 'text-amber-600' : 'text-slate-600'">
-                    {{ step.label }}
-                  </span>
-                </button>
-
-                <!-- Connector line between sub-steps -->
-                <div
-                  v-if="si < phase.subSteps.length - 1"
-                  class="flex items-center px-0.5 md:px-1"
-                >
-                  <div
-                    class="w-4 md:w-6 h-px"
-                    :class="getStatus(step.agent) === 'completed' ? 'bg-emerald-300' : 'bg-slate-200'"
-                    style="border-top: 1px dashed"
-                  />
+                  <!-- Substep label -->
+                  <span
+                    class="text-[10px] md:text-xs leading-tight text-center"
+                    :class="{
+                      'text-slate-800': getStatus(step.agent) === 'completed',
+                      'text-amber-600 font-semibold': getStatus(step.agent) === 'running',
+                      'text-slate-400': getStatus(step.agent) === 'pending',
+                      'text-rose-600 font-semibold': getStatus(step.agent) === 'error',
+                    }"
+                  >{{ step.label }}</span>
                 </div>
-              </div>
+              </template>
             </div>
           </div>
         </div>
@@ -420,6 +426,29 @@ const isFocused = (index: number) => focusedIndex.value === index
 </template>
 
 <style scoped>
+/* Expand/collapse transition for substep panel */
+.substep-expand-enter-active {
+  transition: all 0.25s ease-out;
+  overflow: hidden;
+}
+.substep-expand-leave-active {
+  transition: all 0.2s ease-in;
+  overflow: hidden;
+}
+.substep-expand-enter-from,
+.substep-expand-leave-to {
+  opacity: 0;
+  max-height: 0;
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.substep-expand-enter-to,
+.substep-expand-leave-from {
+  opacity: 1;
+  max-height: 200px;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -430,23 +459,5 @@ const isFocused = (index: number) => focusedIndex.value === index
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
-}
-
-/* Sub-step expand/collapse animation */
-.substep-expand-enter-active {
-  transition: all 0.3s ease-out;
-}
-.substep-expand-leave-active {
-  transition: all 0.2s ease-in;
-}
-.substep-expand-enter-from {
-  opacity: 0;
-  transform: translateY(-8px);
-  max-height: 0;
-}
-.substep-expand-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-  max-height: 0;
 }
 </style>
