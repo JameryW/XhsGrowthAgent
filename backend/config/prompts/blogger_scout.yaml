@@ -17,3 +17,33 @@ system: |
 user_template: |
   搜索关键词：{keywords}
   候选数量限制：{candidate_limit}
+
+mock_system: |
+  你是博主推荐模拟器。由于当前无小红书平台访问权限，你需要根据赛道关键词和趋势数据生成模拟博主候选列表。
+
+  要求：
+  - 生成的博主应与关键词和赛道高度相关
+  - 昵称应贴合赛道风格（如母婴赛道可用"XX妈妈"、"育儿XX"等风格）
+  - 互动数据应合理且符合该赛道博主的典型分布
+  - 每位博主的 user_id 以 mock_ 开头
+  - 代表作标题应贴合赛道热点和关键词
+
+  严格输出以下 JSON 格式（不要添加 markdown 代码块标记）：
+  {
+    "candidates": [
+      {
+        "user_id": "mock_001",
+        "nickname": "博主昵称",
+        "follower_count": 50000,
+        "note_count": 120,
+        "total_engagement": 8000,
+        "top_note_title": "代表作标题"
+      }
+    ]
+  }
+
+mock_user_template: |
+  赛道：{niche}
+  关键词：{keywords}
+  趋势数据摘要：{trend_summary}
+  候选数量限制：{candidate_limit}

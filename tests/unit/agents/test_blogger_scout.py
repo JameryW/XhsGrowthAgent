@@ -178,13 +178,87 @@ class TestBloggerScoutAgent:
         assert result["phase"] == WorkflowPhase.CREATING
 
     @pytest.mark.asyncio
-    async def test_execute_no_cookie_returns_empty(self, agent, trend_state, mock_store):
-        """Returns empty candidates when no XHS cookie available."""
+    async def test_execute_no_cookie_falls_back_to_llm(self, agent, trend_state, mock_store):
+        """Falls back to LLM mock generation when no XHS cookie available."""
         trend_state["xhs_cookie"] = ""
 
+        mock_response = MagicMock()
+        mock_response.content = '{"candidates": [{"user_id": "mock_001", "nickname": "测试博主", "follower_count": 5000, "note_count": 50, "total_engagement": 3000, "top_note_title": "测试笔记标题"}]}'
+
+        agent._model = AsyncMock()
+        agent._model.ainvoke = AsyncMock(return_value=mock_response)
+        result = await agent.execute(trend_state, store=mock_store)
+
+        assert len(result["blogger_candidates"]) == 1
+        assert result["blogger_candidates"][0]["user_id"].startswith("mock_")
+        assert result["blogger_candidates"][0]["nickname"] == "测试博主"
+        assert result["phase"] == WorkflowPhase.CREATING
+
+    @pytest.mark.asyncio
+    async def test_execute_llm_fallback_ensures_mock_prefix(self, agent, trend_state, mock_store):
+        """LLM fallback ensures all user_ids have mock_ prefix even if LLM omits it."""
+        trend_state["xhs_cookie"] = ""
+
+        mock_response = MagicMock()
+        mock_response.content = '{"candidates": [{"user_id": "001", "nickname": "博主A", "follower_count": 1000, "note_count": 20, "total_engagement": 500, "top_note_title": "标题"}]}'
+
+        agent._model = AsyncMock()
+        agent._model.ainvoke = AsyncMock(return_value=mock_response)
+        result = await agent.execute(trend_state, store=mock_store)
+
+        assert result["blogger_candidates"][0]["user_id"] == "mock_001"
+
+    @pytest.mark.asyncio
+    async def test_execute_llm_fallback_adds_avatar_url(self, agent, trend_state, mock_store):
+        """LLM fallback adds empty avatar_url if not present in LLM response."""
+        trend_state["xhs_cookie"] = ""
+
+        mock_response = MagicMock()
+        mock_response.content = '{"candidates": [{"user_id": "mock_001", "nickname": "博主A", "follower_count": 1000, "note_count": 20, "total_engagement": 500, "top_note_title": "标题"}]}'
+
+        agent._model = AsyncMock()
+        agent._model.ainvoke = AsyncMock(return_value=mock_response)
+        result = await agent.execute(trend_state, store=mock_store)
+
+        assert "avatar_url" in result["blogger_candidates"][0]
+
+    @pytest.mark.asyncio
+    async def test_execute_llm_fallback_failure_returns_empty(self, agent, trend_state, mock_store):
+        """Returns empty candidates if LLM fallback also fails."""
+        trend_state["xhs_cookie"] = ""
+
+        agent._model = AsyncMock()
+        agent._model.ainvoke = AsyncMock(side_effect=Exception("LLM error"))
         result = await agent.execute(trend_state, store=mock_store)
 
         assert result["blogger_candidates"] == []
+        assert result["phase"] == WorkflowPhase.CREATING
+
+    @pytest.mark.asyncio
+    async def test_execute_xhs_cookie_takes_priority(self, agent, trend_state, mock_store):
+        """Real XHS client takes priority over LLM fallback."""
+        mock_search_results = [
+            XHSSearchResult(
+                note_id="n1", title="真实笔记", user_name="真实博主", user_id="real_u1",
+                likes=200, comments=30, collects=50, cover_url="", note_url="",
+            ),
+        ]
+
+        mock_model = AsyncMock()
+
+        with patch("backend.services.xhs_client.XHSClient") as MockClient:
+            mock_client = MagicMock()
+            mock_client._http = MagicMock()
+            mock_client.search_posts = AsyncMock(return_value=mock_search_results)
+            mock_client.get_user_info = AsyncMock(return_value={})
+            mock_client.close = AsyncMock()
+            MockClient.return_value = mock_client
+
+            agent._model = mock_model
+            result = await agent.execute(trend_state, store=mock_store)
+
+        mock_model.ainvoke.assert_not_called()
+        assert result["blogger_candidates"][0]["user_id"] == "real_u1"
 
     @pytest.mark.asyncio
     async def test_execute_api_error_returns_empty(self, agent, trend_state, mock_store):
@@ -228,3 +302,33 @@ class TestBloggerScoutAgent:
 
         assert len(result["blogger_candidates"]) == 1
         assert result["blogger_candidates"][0]["top_note_title"] == "高互动笔记"
+
+    def test_summarize_trend_data_empty(self, agent):
+        """Returns default message for empty trend data."""
+        summary = agent._summarize_trend_data({})
+        assert summary == "无趋势数据"
+
+    def test_summarize_trend_data_with_keywords(self, agent):
+        """Summarizes trend data with keywords."""
+        trend_data = {"trending_keywords": ["美食", "咖啡", "甜品"]}
+        summary = agent._summarize_trend_data(trend_data)
+        assert "热门关键词" in summary
+        assert "美食" in summary
+
+    def test_summarize_trend_data_with_hot_topics(self, agent):
+        """Summarizes trend data with hot topics."""
+        trend_data = {"hot_topics": ["夏日穿搭", "防晒推荐"]}
+        summary = agent._summarize_trend_data(trend_data)
+        assert "热门话题" in summary
+
+    def test_summarize_trend_data_with_notes(self, agent):
+        """Summarizes trend data with trending notes."""
+        trend_data = {
+            "trending_notes": [
+                {"title": "爆款笔记A"},
+                {"title": "爆款笔记B"},
+            ]
+        }
+        summary = agent._summarize_trend_data(trend_data)
+        assert "热门笔记" in summary
+        assert "爆款笔记A" in summary
