@@ -199,8 +199,14 @@ function getPhaseStatus(phase: PhaseNode): NodeStatus {
 }
 
 function shouldExpandSubSteps(phase: PhaseNode): boolean {
+  if (phase.subSteps.length === 0) return false
   const phaseStatus = getPhaseStatus(phase)
-  return phase.subSteps.length > 0 && (phaseStatus === 'running' || phaseStatus === 'completed')
+  if (phaseStatus === 'running') return true
+  if (phaseStatus === 'completed') {
+    // Only expand completed phase if it contains a currently running substep
+    return phase.subSteps.some(s => getStatus(s.agent) === 'running')
+  }
+  return false
 }
 
 function formatDuration(seconds: number): string {

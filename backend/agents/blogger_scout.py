@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
@@ -36,14 +37,11 @@ class BloggerScoutAgent(BaseAgent):
         try:
             from backend.services.xhs_client import XHSClient
 
-            cookie = state.get("xhs_cookie", "")
+            cookie = str(state.get("xhs_cookie", "") or "")
             client = XHSClient(cookie=cookie) if cookie else None
             if not client or not client._http:
-                logger.warning("No XHS client available, returning empty candidates")
-                return {
-                    "blogger_candidates": [],
-                    "phase": WorkflowPhase.CREATING,
-                }
+                logger.warning("No XHS client available, falling back to LLM mock generation")
+                return await self._generate_mock_candidates(state, keywords, limit)
 
             # Step 1: Search notes by each keyword and collect user_ids with engagement
             user_engagement: dict[str, dict[str, Any]] = {}
@@ -143,6 +141,77 @@ class BloggerScoutAgent(BaseAgent):
                 unique.append(kw)
 
         return unique[:5]
+
+    async def _generate_mock_candidates(
+        self, state: XHSGrowthState, keywords: list[str], limit: int
+    ) -> dict[str, Any]:
+        """Generate mock blogger candidates using LLM when XHS client is unavailable."""
+        niche = state.get("niche", "母婴")
+        trend_data = dict(state.get("trend_data") or {})
+        trend_summary = self._summarize_trend_data(trend_data)
+
+        system_prompt = self.prompt_template.get("mock_system", "")
+        user_template = self.prompt_template.get("mock_user_template", "")
+
+        user_prompt = user_template.format(
+            niche=niche,
+            keywords=", ".join(keywords),
+            trend_summary=trend_summary,
+            candidate_limit=limit,
+        )
+
+        try:
+            response = await self.model.ainvoke(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_prompt),
+                ]
+            )
+
+            content = response.content
+            if isinstance(content, list):
+                content = str(content)
+            parsed = self._parse_json_response(content)
+
+            candidates = parsed.get("candidates", [])
+            # Ensure mock_ prefix on all user_ids
+            for c in candidates:
+                if not c.get("user_id", "").startswith("mock_"):
+                    c["user_id"] = f"mock_{c.get('user_id', 'unknown')}"
+                # Ensure avatar_url field exists
+                if "avatar_url" not in c:
+                    c["avatar_url"] = ""
+
+            logger.info(f"Generated {len(candidates)} mock blogger candidates via LLM")
+            return {
+                "blogger_candidates": candidates,
+                "phase": WorkflowPhase.CREATING,
+            }
+        except Exception as e:
+            logger.error(f"LLM mock generation failed: {e}")
+            return {
+                "blogger_candidates": [],
+                "phase": WorkflowPhase.CREATING,
+            }
+
+    def _summarize_trend_data(self, trend_data: dict[str, Any]) -> str:
+        """Create a brief summary of trend_data for LLM context."""
+        if not trend_data:
+            return "无趋势数据"
+
+        parts = []
+        if trend_data.get("trending_keywords"):
+            parts.append(f"热门关键词: {', '.join(trend_data['trending_keywords'][:5])}")
+        if trend_data.get("hot_topics"):
+            topics = trend_data["hot_topics"][:3]
+            parts.append(f"热门话题: {', '.join(topics)}")
+        if trend_data.get("trending_notes"):
+            notes = trend_data["trending_notes"][:2]
+            titles = [n.get("title", "") for n in notes if n.get("title")]
+            if titles:
+                parts.append(f"热门笔记: {', '.join(titles)}")
+
+        return " | ".join(parts) if parts else "无趋势数据"
 
 
 __all__ = ["BloggerScoutAgent"]
