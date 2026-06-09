@@ -1029,6 +1029,20 @@
     "estReach": "Est. Reach",
     "viralProb": "Viral Prob.",
     "confidence": "Confidence",
-    "riskFactors": "Risk Factors"
+    "riskFactors": "Risk Factors",
+    "estEngagement": "Est. Engagement",
+    "totalWaves": "Total Waves",
+    "phase": "Phase",
+    "verdict": "Verdict",
+    "spreadPhases": "Spread Phases",
+    "keyInfluencers": "Key Influencers",
+    "improvementStrategies": "Improvement Strategies",
+    "comparison": "Comparison",
+    "predictedReach": "Predicted Reach",
+    "actualEngRate": "Actual Eng. Rate",
+    "reachDeviation": "Reach Deviation",
+    "engDeviation": "Eng. Deviation",
+    "accuracyRating": "Accuracy Rating",
+    "scoreSource": "Score Source"
   }
 }

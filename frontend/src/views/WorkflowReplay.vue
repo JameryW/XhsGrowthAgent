@@ -491,40 +491,196 @@ onUnmounted(() => {
             </div>
           </template>
 
-          <!-- ═══ RIPPLE (shown when prediction/pmf data exists, regardless of agent) ═══ -->
+          <!-- ═══ RIPPLE PREDICTION ═══ -->
           <template v-if="selectedCheckpoint.ripple_prediction && Object.keys(selectedCheckpoint.ripple_prediction).length > 0">
             <div class="p-3 rounded-lg bg-violet-50 border border-violet-100">
-              <div class="text-xs text-violet-600 font-medium mb-1.5">Ripple {{ t('replay.prediction') }}</div>
-              <div class="grid grid-cols-2 gap-2">
-                <div v-if="selectedCheckpoint.ripple_prediction.viral_probability != null" class="p-2 rounded bg-white/60">
-                  <div class="text-[10px] text-slate-400">Viral Prob.</div>
-                  <div class="text-xs font-semibold text-violet-700">{{ (selectedCheckpoint.ripple_prediction.viral_probability * 100).toFixed(1) }}%</div>
+              <div class="text-xs text-violet-600 font-medium mb-2">Ripple {{ t('replay.prediction') }}</div>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div v-if="selectedCheckpoint.ripple_prediction.viral_probability != null" class="p-2 rounded bg-white/60 text-center">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.viralProb') }}</div>
+                  <div class="text-base font-bold" :class="selectedCheckpoint.ripple_prediction.viral_probability >= 0.7 ? 'text-emerald-600' : selectedCheckpoint.ripple_prediction.viral_probability >= 0.4 ? 'text-amber-600' : 'text-rose-600'">
+                    {{ (selectedCheckpoint.ripple_prediction.viral_probability * 100).toFixed(1) }}%
+                  </div>
                 </div>
-                <div v-if="selectedCheckpoint.ripple_prediction.estimated_reach != null" class="p-2 rounded bg-white/60">
+                <div v-if="selectedCheckpoint.ripple_prediction.estimated_reach != null" class="p-2 rounded bg-white/60 text-center">
                   <div class="text-[10px] text-slate-400">{{ t('replay.estReach') }}</div>
-                  <div class="text-xs font-semibold text-violet-700">{{ formatNum(selectedCheckpoint.ripple_prediction.estimated_reach) }}</div>
+                  <div class="text-base font-bold text-indigo-700">{{ formatNum(selectedCheckpoint.ripple_prediction.estimated_reach) }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_prediction.estimated_engagement != null" class="p-2 rounded bg-white/60 text-center">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.estEngagement') }}</div>
+                  <div class="text-base font-bold text-indigo-700">{{ formatNum(selectedCheckpoint.ripple_prediction.estimated_engagement) }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_prediction.confidence != null" class="p-2 rounded bg-white/60 text-center">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.confidence') }}</div>
+                  <div class="text-base font-bold text-slate-700">{{ (selectedCheckpoint.ripple_prediction.confidence * 100).toFixed(0) }}%</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_prediction.total_waves != null" class="p-2 rounded bg-white/60 text-center">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.totalWaves') }}</div>
+                  <div class="text-base font-bold text-slate-700">{{ selectedCheckpoint.ripple_prediction.total_waves }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_prediction.phase" class="p-2 rounded bg-white/60">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.phase') }}</div>
+                  <div class="text-xs font-medium text-slate-700">{{ selectedCheckpoint.ripple_prediction.phase }}</div>
                 </div>
               </div>
-              <div v-if="selectedCheckpoint.ripple_prediction.prediction_summary" class="mt-1.5 text-xs text-slate-600">{{ selectedCheckpoint.ripple_prediction.prediction_summary }}</div>
+              <div v-if="selectedCheckpoint.ripple_prediction.verdict" class="mt-2 flex items-center justify-between text-xs">
+                <span class="text-slate-500">{{ t('replay.verdict') }}</span>
+                <span class="font-medium text-slate-700">{{ selectedCheckpoint.ripple_prediction.verdict }}</span>
+              </div>
+              <div v-if="selectedCheckpoint.ripple_prediction.prediction_summary" class="mt-1.5 p-2 rounded bg-white/60 text-xs text-slate-600">{{ selectedCheckpoint.ripple_prediction.prediction_summary }}</div>
+              <!-- Relative estimates -->
+              <div v-if="selectedCheckpoint.ripple_prediction.views_relative || selectedCheckpoint.ripple_prediction.engagements_relative || selectedCheckpoint.ripple_prediction.favorites_relative" class="mt-2 grid grid-cols-2 gap-1.5">
+                <div v-if="selectedCheckpoint.ripple_prediction.views_relative" class="p-1.5 rounded bg-white/40">
+                  <div class="text-[10px] text-slate-400">Views</div>
+                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.ripple_prediction.views_relative }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_prediction.engagements_relative" class="p-1.5 rounded bg-white/40">
+                  <div class="text-[10px] text-slate-400">Engagements</div>
+                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.ripple_prediction.engagements_relative }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_prediction.favorites_relative" class="p-1.5 rounded bg-white/40">
+                  <div class="text-[10px] text-slate-400">Favorites</div>
+                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.ripple_prediction.favorites_relative }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_prediction.comments_relative" class="p-1.5 rounded bg-white/40">
+                  <div class="text-[10px] text-slate-400">Comments</div>
+                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.ripple_prediction.comments_relative }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_prediction.shares_relative" class="p-1.5 rounded bg-white/40">
+                  <div class="text-[10px] text-slate-400">Shares</div>
+                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.ripple_prediction.shares_relative }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_prediction.follows_relative" class="p-1.5 rounded bg-white/40">
+                  <div class="text-[10px] text-slate-400">Follows</div>
+                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.ripple_prediction.follows_relative }}</div>
+                </div>
+              </div>
+              <!-- Spread path -->
+              <div v-if="selectedCheckpoint.ripple_prediction.spread_path?.length" class="mt-2">
+                <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('replay.spreadPhases') }}</div>
+                <div class="space-y-0.5">
+                  <div v-for="(sp, i) in selectedCheckpoint.ripple_prediction.spread_path" :key="i" class="text-xs text-slate-600 flex gap-1.5">
+                    <span class="w-4 h-4 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center text-[10px] font-medium shrink-0">{{ i + 1 }}</span>
+                    <span>{{ typeof sp === 'object' ? (sp.phase || sp.name || JSON.stringify(sp)) : String(sp) }}</span>
+                  </div>
+                </div>
+              </div>
+              <!-- Key influencers -->
+              <div v-if="selectedCheckpoint.ripple_prediction.key_influencers?.length" class="mt-2">
+                <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('replay.keyInfluencers') }}</div>
+                <div class="flex flex-wrap gap-1.5">
+                  <span v-for="(inf, i) in selectedCheckpoint.ripple_prediction.key_influencers" :key="i" class="text-[11px] px-2 py-0.5 rounded-md bg-violet-100 text-violet-600 border border-violet-200">
+                    {{ typeof inf === 'object' ? (inf.name || inf.handle || JSON.stringify(inf)) : String(inf) }}
+                  </span>
+                </div>
+              </div>
             </div>
           </template>
+
+          <!-- ═══ RIPPLE PMF ═══ -->
           <template v-if="selectedCheckpoint.ripple_pmf && Object.keys(selectedCheckpoint.ripple_pmf).length > 0">
             <div class="p-3 rounded-lg bg-indigo-50 border border-indigo-100">
-              <div class="text-xs text-indigo-600 font-medium mb-1.5">Ripple PMF</div>
-              <div class="grid grid-cols-2 gap-2">
-                <div v-if="selectedCheckpoint.ripple_pmf.pmf_score != null" class="p-2 rounded bg-white/60">
+              <div class="text-xs text-indigo-600 font-medium mb-2">Ripple PMF</div>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div v-if="selectedCheckpoint.ripple_pmf.pmf_score != null" class="p-2 rounded bg-white/60 text-center">
                   <div class="text-[10px] text-slate-400">PMF Score</div>
-                  <div class="text-xs font-semibold text-indigo-700">{{ selectedCheckpoint.ripple_pmf.pmf_score.toFixed(2) }}</div>
+                  <div class="text-base font-bold" :class="selectedCheckpoint.ripple_pmf.pmf_score >= 0.7 ? 'text-emerald-600' : selectedCheckpoint.ripple_pmf.pmf_score >= 0.4 ? 'text-amber-600' : 'text-rose-600'">
+                    {{ (selectedCheckpoint.ripple_pmf.pmf_score * 100).toFixed(0) }}%
+                  </div>
                 </div>
-                <div v-if="selectedCheckpoint.ripple_pmf.confidence != null" class="p-2 rounded bg-white/60">
+                <div v-if="selectedCheckpoint.ripple_pmf.confidence != null" class="p-2 rounded bg-white/60 text-center">
                   <div class="text-[10px] text-slate-400">{{ t('replay.confidence') }}</div>
-                  <div class="text-xs font-semibold text-indigo-700">{{ (selectedCheckpoint.ripple_pmf.confidence * 100).toFixed(0) }}%</div>
+                  <div class="text-base font-bold text-indigo-700">{{ (selectedCheckpoint.ripple_pmf.confidence * 100).toFixed(0) }}%</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_pmf.total_waves != null" class="p-2 rounded bg-white/60 text-center">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.totalWaves') }}</div>
+                  <div class="text-base font-bold text-slate-700">{{ selectedCheckpoint.ripple_pmf.total_waves }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_pmf.phase" class="p-2 rounded bg-white/60">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.phase') }}</div>
+                  <div class="text-xs font-medium text-slate-700">{{ selectedCheckpoint.ripple_pmf.phase }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_pmf.score_source" class="p-2 rounded bg-white/60">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.scoreSource') }}</div>
+                  <div class="text-xs font-medium text-slate-700">{{ selectedCheckpoint.ripple_pmf.score_source }}</div>
                 </div>
               </div>
-              <div v-if="selectedCheckpoint.ripple_pmf.risk_factors?.length" class="mt-1.5">
-                <div class="text-[10px] text-slate-400 mb-0.5">{{ t('replay.riskFactors') }}</div>
-                <div v-for="risk in selectedCheckpoint.ripple_pmf.risk_factors.slice(0, 3)" :key="risk" class="text-xs text-slate-500">• {{ risk }}</div>
+              <div v-if="selectedCheckpoint.ripple_pmf.verdict" class="mt-2 flex items-center justify-between text-xs">
+                <span class="text-slate-500">{{ t('replay.verdict') }}</span>
+                <span class="font-medium text-slate-700">{{ selectedCheckpoint.ripple_pmf.verdict }}</span>
               </div>
+              <div v-if="selectedCheckpoint.ripple_pmf.prediction_summary" class="mt-1.5 p-2 rounded bg-white/60 text-xs text-slate-600">{{ selectedCheckpoint.ripple_pmf.prediction_summary }}</div>
+              <div v-if="selectedCheckpoint.ripple_pmf.risk_factors?.length" class="mt-2">
+                <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('replay.riskFactors') }}</div>
+                <div class="space-y-0.5">
+                  <div v-for="risk in selectedCheckpoint.ripple_pmf.risk_factors" :key="risk" class="text-xs text-slate-500 flex gap-1.5">
+                    <span class="text-rose-400">⚠</span>
+                    <span>{{ risk }}</span>
+                  </div>
+                </div>
+              </div>
+              <div v-if="selectedCheckpoint.ripple_pmf.improvement_strategies?.length" class="mt-2">
+                <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('replay.improvementStrategies') }}</div>
+                <div class="space-y-0.5">
+                  <div v-for="strategy in selectedCheckpoint.ripple_pmf.improvement_strategies" :key="strategy" class="text-xs text-slate-500 flex gap-1.5">
+                    <span class="text-cyan-400">💡</span>
+                    <span>{{ strategy }}</span>
+                  </div>
+                </div>
+              </div>
+              <!-- PMF relative estimates -->
+              <div v-if="selectedCheckpoint.ripple_pmf.views_relative || selectedCheckpoint.ripple_pmf.engagements_relative || selectedCheckpoint.ripple_pmf.favorites_relative" class="mt-2 grid grid-cols-2 gap-1.5">
+                <div v-if="selectedCheckpoint.ripple_pmf.views_relative" class="p-1.5 rounded bg-white/40">
+                  <div class="text-[10px] text-slate-400">Views</div>
+                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.ripple_pmf.views_relative }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_pmf.engagements_relative" class="p-1.5 rounded bg-white/40">
+                  <div class="text-[10px] text-slate-400">Engagements</div>
+                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.ripple_pmf.engagements_relative }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_pmf.favorites_relative" class="p-1.5 rounded bg-white/40">
+                  <div class="text-[10px] text-slate-400">Favorites</div>
+                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.ripple_pmf.favorites_relative }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_pmf.comments_relative" class="p-1.5 rounded bg-white/40">
+                  <div class="text-[10px] text-slate-400">Comments</div>
+                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.ripple_pmf.comments_relative }}</div>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- ═══ RIPPLE COMPARISON ═══ -->
+          <template v-if="selectedCheckpoint.ripple_comparison && Object.keys(selectedCheckpoint.ripple_comparison).length > 0">
+            <div class="p-3 rounded-lg bg-amber-50 border border-amber-100">
+              <div class="text-xs text-amber-600 font-medium mb-2">Ripple {{ t('replay.comparison') }}</div>
+              <div class="grid grid-cols-2 gap-2">
+                <div v-if="selectedCheckpoint.ripple_comparison.predicted_reach != null" class="p-2 rounded bg-white/60 text-center">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.predictedReach') }}</div>
+                  <div class="text-base font-bold text-sky-700">{{ formatNum(selectedCheckpoint.ripple_comparison.predicted_reach) }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_comparison.actual_engagement_rate != null" class="p-2 rounded bg-white/60 text-center">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.actualEngRate') }}</div>
+                  <div class="text-base font-bold text-slate-700">{{ (selectedCheckpoint.ripple_comparison.actual_engagement_rate * 100).toFixed(1) }}%</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_comparison.reach_deviation != null" class="p-2 rounded bg-white/60">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.reachDeviation') }}</div>
+                  <div class="text-xs font-semibold" :class="selectedCheckpoint.ripple_comparison.reach_deviation > 0 ? 'text-emerald-600' : 'text-rose-600'">
+                    {{ selectedCheckpoint.ripple_comparison.reach_deviation > 0 ? '+' : '' }}{{ (selectedCheckpoint.ripple_comparison.reach_deviation * 100).toFixed(1) }}%
+                  </div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_comparison.engagement_deviation != null" class="p-2 rounded bg-white/60">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.engDeviation') }}</div>
+                  <div class="text-xs font-semibold" :class="selectedCheckpoint.ripple_comparison.engagement_deviation > 0 ? 'text-emerald-600' : 'text-rose-600'">
+                    {{ selectedCheckpoint.ripple_comparison.engagement_deviation > 0 ? '+' : '' }}{{ (selectedCheckpoint.ripple_comparison.engagement_deviation * 100).toFixed(1) }}%
+                  </div>
+                </div>
+              </div>
+              <div v-if="selectedCheckpoint.ripple_comparison.accuracy_rating" class="mt-2 flex items-center justify-between text-xs">
+                <span class="text-slate-500">{{ t('replay.accuracyRating') }}</span>
+                <span class="font-medium" :class="selectedCheckpoint.ripple_comparison.accuracy_rating === '准确' || selectedCheckpoint.ripple_comparison.accuracy_rating === 'accurate' ? 'text-emerald-600' : 'text-amber-600'">{{ selectedCheckpoint.ripple_comparison.accuracy_rating }}</span>
+              </div>
+              <div v-if="selectedCheckpoint.ripple_comparison.calibration_insight" class="mt-1.5 p-2 rounded bg-white/60 text-xs text-amber-700">{{ selectedCheckpoint.ripple_comparison.calibration_insight }}</div>
             </div>
           </template>
 

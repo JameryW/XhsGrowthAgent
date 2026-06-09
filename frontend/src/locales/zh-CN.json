@@ -1029,6 +1029,20 @@
     "estReach": "预估触达",
     "viralProb": "病毒概率",
     "confidence": "置信度",
-    "riskFactors": "风险因素"
+    "riskFactors": "风险因素",
+    "estEngagement": "预估互动",
+    "totalWaves": "总波次",
+    "phase": "阶段",
+    "verdict": "判定",
+    "spreadPhases": "传播阶段",
+    "keyInfluencers": "关键影响者",
+    "improvementStrategies": "改进策略",
+    "comparison": "预测对比",
+    "predictedReach": "预测触达",
+    "actualEngRate": "实际互动率",
+    "reachDeviation": "触达偏差",
+    "engDeviation": "互动偏差",
+    "accuracyRating": "准确度评级",
+    "scoreSource": "评分来源"
   }
 }
