@@ -1,0 +1,6 @@
+{"check":"route /replay/:threadId is public (meta.public=true) and no auth required"}
+{"check":"Showcase cards clickable and navigate to /replay/:threadId"}
+{"check":"Replay page enters replay mode and loads checkpoints on mount"}
+{"check":"Clicking pipeline nodes selects checkpoint and shows state panel"}
+{"check":"Unauthenticated users see no action buttons (no pause/resume/cancel)"}
+{"check":"Authenticated users see 'go dashboard' button in replay page nav"}

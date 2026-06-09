@@ -11,6 +11,12 @@ const router = createRouter({
       meta: { transition: 'fade-slide', public: true },
     },
     {
+      path: '/replay/:threadId',
+      name: 'replay',
+      component: () => import('@/views/WorkflowReplay.vue'),
+      meta: { transition: 'fade-slide', public: true },
+    },
+    {
       path: '/start',
       name: 'home',
       component: () => import('@/views/Home.vue'),
