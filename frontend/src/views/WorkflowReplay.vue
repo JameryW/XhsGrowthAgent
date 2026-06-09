@@ -122,11 +122,19 @@ function hasDataForAgent(agent: string, cp: CheckpointSnapshot): boolean {
   const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Record<string, unknown>).length > 0
   if (agent === 'trend_scout') return has(cp.trend_data)
   if (agent === 'content_strategist') return has(cp.content_plan)
-  if (['copywriter', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'visual_designer'].includes(agent)) return has(cp.copy_content) || has(cp.visual_plan)
+  if (['copywriter', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'choice_gate', 'content_analyzer', 'version_generator'].includes(agent)) return has(cp.copy_content) || has(cp.visual_plan)
+  if (agent === 'visual_designer') return has(cp.copy_content) || has(cp.visual_plan)
   if (['review_gate', 'revise_content'].includes(agent)) return has(cp.copy_content)
   if (['publisher', 'engagement'].includes(agent)) return has(cp.publish_result)
   if (agent === 'analyst') return has(cp.analytics)
   return false
+}
+
+function formatNum(n?: number): string {
+  if (n === undefined || n === null) return '—'
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return n.toLocaleString()
 }
 
 function goBack() { router.push('/') }
@@ -229,94 +237,294 @@ onUnmounted(() => {
           <span v-if="selectedCheckpoint.created_at" class="text-xs text-slate-400 ml-auto">{{ formatDate(selectedCheckpoint.created_at) }}</span>
         </div>
 
-        <div class="px-4 md:px-5 py-4 space-y-3">
-          <!-- Scouting: Trend data -->
+        <div class="px-4 md:px-5 py-4 space-y-4">
+          <!-- ═══ SCOUTING ═══ -->
           <template v-if="selectedAgent === 'trend_scout' && selectedCheckpoint.trend_data">
-            <div v-if="selectedCheckpoint.trend_data.hot_topics?.length" class="mb-2">
-              <div class="text-xs text-slate-400 font-medium mb-1.5">{{ t('showcase.detail.hotTopics') }}</div>
+            <div v-if="selectedCheckpoint.trend_data.hot_topics?.length">
+              <div class="text-xs text-slate-400 font-medium mb-1.5 uppercase tracking-wide">{{ t('showcase.detail.hotTopics') }}</div>
+              <div class="space-y-1.5">
+                <div v-for="ht in selectedCheckpoint.trend_data.hot_topics" :key="ht.topic" class="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-100">
+                  <span class="text-xs font-medium text-slate-700">{{ ht.topic }}</span>
+                  <div class="flex items-center gap-2">
+                    <span class="text-[11px] px-1.5 py-0.5 rounded" :class="ht.heat_score >= 80 ? 'bg-rose-50 text-rose-600' : ht.heat_score >= 60 ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'">{{ ht.heat_score }}</span>
+                    <span v-if="ht.growth_rate != null" class="text-[11px]" :class="ht.growth_rate > 0 ? 'text-emerald-500' : 'text-rose-500'">{{ ht.growth_rate > 0 ? '+' : '' }}{{ (ht.growth_rate * 100).toFixed(0) }}%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-if="selectedCheckpoint.trend_data.trending_keywords?.length">
+              <div class="text-xs text-slate-400 font-medium mb-1.5 uppercase tracking-wide">{{ t('replay.trendingKeywords') }}</div>
               <div class="flex flex-wrap gap-1.5">
-                <span v-for="ht in selectedCheckpoint.trend_data.hot_topics.slice(0, 5)" :key="ht.topic" class="text-[11px] px-2 py-0.5 rounded-full bg-rose-50 text-rose-600">
-                  {{ ht.topic }} {{ ht.heat_score }}
-                </span>
+                <span v-for="kw in selectedCheckpoint.trend_data.trending_keywords" :key="kw" class="text-[11px] px-2 py-0.5 rounded-md bg-pink-50 text-pink-600 border border-pink-100">{{ kw }}</span>
               </div>
             </div>
-            <div v-if="selectedCheckpoint.trend_data.competitor_posts?.length" class="p-3 rounded-lg bg-slate-50 border border-slate-100">
-              <div class="text-xs text-slate-400 mb-0.5 font-medium">{{ t('showcase.detail.topCompetitor') }}</div>
-              <div class="text-xs text-slate-700">{{ selectedCheckpoint.trend_data.competitor_posts[0].title }}</div>
-              <div class="text-[11px] text-slate-400 mt-0.5">
-                {{ (selectedCheckpoint.trend_data.competitor_posts[0].likes / 1000).toFixed(1) }}k likes
+            <div v-if="selectedCheckpoint.trend_data.competitor_posts?.length">
+              <div class="text-xs text-slate-400 font-medium mb-1.5 uppercase tracking-wide">{{ t('showcase.detail.topCompetitor') }}</div>
+              <div class="space-y-1.5">
+                <div v-for="post in selectedCheckpoint.trend_data.competitor_posts" :key="post.title" class="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                  <div class="text-xs text-slate-700 font-medium">{{ post.title }}</div>
+                  <div class="text-[11px] text-slate-400 mt-0.5 flex gap-3">
+                    <span>{{ (post.likes / 1000).toFixed(1) }}k likes</span>
+                    <span>{{ post.comments }} comments</span>
+                    <span>{{ post.author }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-if="selectedCheckpoint.trend_data.niche_opportunities?.length">
+              <div class="text-xs text-slate-400 font-medium mb-1.5 uppercase tracking-wide">{{ t('replay.nicheOpportunities') }}</div>
+              <div class="space-y-1.5">
+                <div v-for="opp in selectedCheckpoint.trend_data.niche_opportunities" :key="opp.topic" class="flex items-center justify-between p-2 rounded-lg bg-violet-50 border border-violet-100">
+                  <span class="text-xs text-slate-700">{{ opp.topic }}</span>
+                  <div class="flex items-center gap-2 text-[11px]">
+                    <span class="text-violet-600 font-medium">{{ t('replay.potential') }} {{ opp.potential_score }}</span>
+                    <span class="text-slate-400">{{ opp.entry_barrier }}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </template>
 
-          <!-- Planning: Content plan -->
+          <!-- ═══ PLANNING ═══ -->
           <template v-if="selectedAgent === 'content_strategist' && selectedCheckpoint.content_plan">
-            <div class="mb-2">
+            <div>
               <div class="text-base font-bold text-slate-800 leading-snug">{{ selectedCheckpoint.content_plan.selected_topic }}</div>
-              <div class="text-xs text-slate-500 mt-1 line-clamp-2">{{ selectedCheckpoint.content_plan.content_angle }}</div>
+              <div class="text-xs text-slate-500 mt-1">{{ selectedCheckpoint.content_plan.content_angle }}</div>
             </div>
-            <div class="flex flex-wrap gap-1.5">
-              <span class="text-[11px] px-2 py-0.5 rounded-full bg-teal-50 text-teal-700">{{ selectedCheckpoint.content_plan.content_type }}</span>
-              <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{{ selectedCheckpoint.content_plan.target_audience }}</span>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <div v-if="selectedCheckpoint.content_plan.content_type" class="p-2 rounded-lg bg-teal-50 border border-teal-100">
+                <div class="text-[10px] text-teal-500 font-medium">{{ t('replay.contentType') }}</div>
+                <div class="text-xs text-teal-700 font-medium">{{ selectedCheckpoint.content_plan.content_type }}</div>
+              </div>
+              <div v-if="selectedCheckpoint.content_plan.target_audience" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                <div class="text-[10px] text-slate-400 font-medium">{{ t('replay.targetAudience') }}</div>
+                <div class="text-xs text-slate-700">{{ selectedCheckpoint.content_plan.target_audience }}</div>
+              </div>
+              <div v-if="selectedCheckpoint.content_plan.urgency" class="p-2 rounded-lg bg-rose-50 border border-rose-100">
+                <div class="text-[10px] text-rose-500 font-medium">{{ t('replay.urgency') }}</div>
+                <div class="text-xs text-rose-700 font-medium">{{ selectedCheckpoint.content_plan.urgency }}</div>
+              </div>
+              <div v-if="selectedCheckpoint.content_plan.suggested_timing" class="p-2 rounded-lg bg-amber-50 border border-amber-100">
+                <div class="text-[10px] text-amber-500 font-medium">{{ t('replay.suggestedTiming') }}</div>
+                <div class="text-xs text-amber-700">{{ selectedCheckpoint.content_plan.suggested_timing }}</div>
+              </div>
+            </div>
+            <div v-if="selectedCheckpoint.content_plan.key_points?.length">
+              <div class="text-xs text-slate-400 font-medium mb-1.5 uppercase tracking-wide">{{ t('replay.keyPoints') }}</div>
+              <div class="space-y-1">
+                <div v-for="(point, i) in selectedCheckpoint.content_plan.key_points" :key="i" class="text-xs text-slate-600 flex gap-1.5">
+                  <span class="text-cyan-400">▸</span>
+                  <span>{{ point }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-if="selectedCheckpoint.content_plan.hashtags?.length" class="flex flex-wrap gap-1.5">
+              <span v-for="tag in selectedCheckpoint.content_plan.hashtags" :key="tag" class="text-[11px] px-2 py-0.5 rounded-md bg-cyan-50 text-cyan-600 border border-cyan-100">#{{ tag }}</span>
             </div>
           </template>
 
-          <!-- Creating: Copy content -->
-          <template v-if="['copywriter', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'choice_gate'].includes(selectedAgent) && selectedCheckpoint.copy_content">
-            <div v-if="selectedCheckpoint.copy_content.selected_title" class="mb-2">
-              <div class="text-sm font-semibold text-rose-600 leading-snug">{{ selectedCheckpoint.copy_content.selected_title }}</div>
-              <div v-if="selectedCheckpoint.copy_content.body_text" class="text-xs text-slate-500 mt-2 line-clamp-4 whitespace-pre-line">{{ selectedCheckpoint.copy_content.body_text }}</div>
-              <div v-if="selectedCheckpoint.copy_content.hashtags?.length" class="flex flex-wrap gap-1 mt-2">
-                <span v-for="tag in selectedCheckpoint.copy_content.hashtags.slice(0, 8)" :key="tag" class="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700">#{{ tag }}</span>
+          <!-- ═══ CREATING (copywriter + sub-agents) ═══ -->
+          <template v-if="['copywriter', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'choice_gate', 'content_analyzer', 'version_generator'].includes(selectedAgent) && selectedCheckpoint.copy_content">
+            <div v-if="selectedCheckpoint.copy_content.selected_title" class="text-sm font-semibold text-rose-600 leading-snug">{{ selectedCheckpoint.copy_content.selected_title }}</div>
+            <div v-if="selectedCheckpoint.copy_content.title_candidates?.length && selectedCheckpoint.copy_content.title_candidates.length > 1">
+              <div class="text-xs text-slate-400 font-medium mb-1">{{ t('replay.titleCandidates') }}</div>
+              <div class="space-y-0.5">
+                <div v-for="(title, i) in selectedCheckpoint.copy_content.title_candidates" :key="i" class="text-xs" :class="title === selectedCheckpoint.copy_content.selected_title ? 'text-violet-600 font-semibold' : 'text-slate-500'">
+                  {{ i + 1 }}. {{ title }}
+                </div>
+              </div>
+            </div>
+            <div v-if="selectedCheckpoint.copy_content.body_text" class="p-3 rounded-lg bg-slate-50 border border-slate-100">
+              <p class="text-xs text-slate-600 whitespace-pre-line">{{ selectedCheckpoint.copy_content.body_text }}</p>
+            </div>
+            <div v-if="selectedCheckpoint.copy_content.hashtags?.length" class="flex flex-wrap gap-1.5">
+              <span v-for="tag in selectedCheckpoint.copy_content.hashtags" :key="tag" class="text-[11px] px-2 py-0.5 rounded-md bg-teal-50 text-teal-600 border border-teal-100">#{{ tag }}</span>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <div v-if="selectedCheckpoint.copy_content.cta" class="p-2 rounded-lg bg-rose-50 border border-rose-100">
+                <div class="text-[10px] text-rose-500 font-medium">CTA</div>
+                <div class="text-xs text-rose-700">{{ selectedCheckpoint.copy_content.cta }}</div>
+              </div>
+              <div v-if="selectedCheckpoint.copy_content.tone" class="p-2 rounded-lg bg-violet-50 border border-violet-100">
+                <div class="text-[10px] text-violet-500 font-medium">{{ t('replay.tone') }}</div>
+                <div class="text-xs text-violet-700">{{ selectedCheckpoint.copy_content.tone }}</div>
+              </div>
+              <div v-if="selectedCheckpoint.copy_content.emoji_usage?.length" class="p-2 rounded-lg bg-amber-50 border border-amber-100">
+                <div class="text-[10px] text-amber-500 font-medium">{{ t('replay.emoji') }}</div>
+                <div class="text-xs text-amber-700">{{ selectedCheckpoint.copy_content.emoji_usage.join(' ') }}</div>
               </div>
             </div>
           </template>
 
-          <!-- Visual plan -->
+          <!-- ═══ VISUAL DESIGNER ═══ -->
           <template v-if="selectedAgent === 'visual_designer'">
-            <div v-if="selectedCheckpoint.copy_content?.selected_title" class="mb-2">
-              <div class="text-sm font-semibold text-rose-600 leading-snug">{{ selectedCheckpoint.copy_content!.selected_title }}</div>
-              <div v-if="selectedCheckpoint.copy_content.body_text" class="text-xs text-slate-500 mt-2 line-clamp-3 whitespace-pre-line">{{ selectedCheckpoint.copy_content!.body_text }}</div>
-            </div>
-            <div v-if="selectedCheckpoint.visual_plan" class="p-3 rounded-lg bg-slate-50 border border-slate-100">
-              <div class="text-xs text-slate-400 mb-0.5 font-medium">{{ t('showcase.detail.visual') }}</div>
-              <div class="text-xs text-slate-700">{{ selectedCheckpoint.visual_plan.layout_style }}</div>
-              <div class="text-[11px] text-slate-400 mt-0.5">{{ t('showcase.detail.imageCount', { count: selectedCheckpoint.visual_plan.image_count }) }}</div>
-              <div v-if="selectedCheckpoint.visual_plan.color_palette?.length" class="flex gap-1 mt-1">
-                <div v-for="color in selectedCheckpoint.visual_plan.color_palette.slice(0, 5)" :key="color" class="w-4 h-4 rounded-full border border-white shadow-sm" :style="{ backgroundColor: color }" />
+            <template v-if="selectedCheckpoint.copy_content">
+              <div v-if="selectedCheckpoint.copy_content.selected_title" class="text-sm font-semibold text-rose-600 leading-snug">{{ selectedCheckpoint.copy_content!.selected_title }}</div>
+              <div v-if="selectedCheckpoint.copy_content.body_text" class="p-3 rounded-lg bg-slate-50 border border-slate-100">
+                <p class="text-xs text-slate-600 whitespace-pre-line">{{ selectedCheckpoint.copy_content!.body_text }}</p>
+              </div>
+            </template>
+            <div v-if="selectedCheckpoint.visual_plan">
+              <div class="text-xs text-slate-400 font-medium mb-1.5 uppercase tracking-wide">{{ t('showcase.detail.visual') }}</div>
+              <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                <div class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                  <div class="text-[10px] text-slate-400 font-medium">{{ t('replay.layout') }}</div>
+                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.visual_plan.layout_style }}</div>
+                </div>
+                <div class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                  <div class="text-[10px] text-slate-400 font-medium">{{ t('replay.imageCount') }}</div>
+                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.visual_plan.image_count }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.visual_plan.font_suggestion" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                  <div class="text-[10px] text-slate-400 font-medium">{{ t('replay.font') }}</div>
+                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.visual_plan.font_suggestion }}</div>
+                </div>
+              </div>
+              <div v-if="selectedCheckpoint.visual_plan.color_palette?.length" class="mt-2">
+                <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('replay.colorPalette') }}</div>
+                <div class="flex gap-1.5">
+                  <div v-for="color in selectedCheckpoint.visual_plan.color_palette" :key="color" class="w-6 h-6 rounded-full border-2 border-white shadow-sm" :style="{ backgroundColor: color }" :title="color" />
+                </div>
+              </div>
+              <div v-if="selectedCheckpoint.visual_plan.cover_prompt" class="mt-2 p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                <div class="text-[10px] text-slate-400 font-medium mb-0.5">{{ t('replay.coverPrompt') }}</div>
+                <div class="text-xs text-slate-600">{{ selectedCheckpoint.visual_plan.cover_prompt }}</div>
+              </div>
+              <div v-if="selectedCheckpoint.visual_plan.image_prompts?.length" class="mt-2">
+                <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('replay.imagePrompts') }}</div>
+                <div class="space-y-1">
+                  <div v-for="(prompt, i) in selectedCheckpoint.visual_plan.image_prompts" :key="i" class="text-xs text-slate-500 flex gap-1">
+                    <span class="text-slate-300 shrink-0">{{ i + 1 }}.</span>
+                    <span class="line-clamp-2">{{ prompt }}</span>
+                  </div>
+                </div>
+              </div>
+              <div v-if="selectedCheckpoint.visual_plan.brand_elements?.length" class="mt-2 flex flex-wrap gap-1.5">
+                <span v-for="el in selectedCheckpoint.visual_plan.brand_elements" :key="el" class="text-[11px] px-2 py-0.5 rounded-md bg-amber-50 text-amber-600 border border-amber-100">{{ el }}</span>
               </div>
             </div>
           </template>
 
-          <!-- Review -->
+          <!-- ═══ REVIEWING ═══ -->
           <template v-if="['review_gate', 'revise_content'].includes(selectedAgent) && selectedCheckpoint.copy_content">
-            <div v-if="selectedCheckpoint.copy_content.selected_title" class="mb-2">
-              <div class="text-sm font-semibold text-rose-600 leading-snug">{{ selectedCheckpoint.copy_content.selected_title }}</div>
-              <div v-if="selectedCheckpoint.copy_content.body_text" class="text-xs text-slate-500 mt-2 line-clamp-4 whitespace-pre-line">{{ selectedCheckpoint.copy_content.body_text }}</div>
-              <div v-if="selectedCheckpoint.copy_content.hashtags?.length" class="flex flex-wrap gap-1 mt-2">
-                <span v-for="tag in selectedCheckpoint.copy_content.hashtags.slice(0, 8)" :key="tag" class="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700">#{{ tag }}</span>
+            <div v-if="selectedCheckpoint.copy_content.selected_title" class="text-sm font-semibold text-rose-600 leading-snug">{{ selectedCheckpoint.copy_content.selected_title }}</div>
+            <div v-if="selectedCheckpoint.copy_content.body_text" class="p-3 rounded-lg bg-slate-50 border border-slate-100">
+              <p class="text-xs text-slate-600 whitespace-pre-line">{{ selectedCheckpoint.copy_content.body_text }}</p>
+            </div>
+            <div v-if="selectedCheckpoint.copy_content.hashtags?.length" class="flex flex-wrap gap-1.5">
+              <span v-for="tag in selectedCheckpoint.copy_content.hashtags" :key="tag" class="text-[11px] px-2 py-0.5 rounded-md bg-teal-50 text-teal-600 border border-teal-100">#{{ tag }}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div v-if="selectedCheckpoint.copy_content.cta" class="p-2 rounded-lg bg-rose-50 border border-rose-100">
+                <div class="text-[10px] text-rose-500 font-medium">CTA</div>
+                <div class="text-xs text-rose-700">{{ selectedCheckpoint.copy_content.cta }}</div>
+              </div>
+              <div v-if="selectedCheckpoint.copy_content.tone" class="p-2 rounded-lg bg-violet-50 border border-violet-100">
+                <div class="text-[10px] text-violet-500 font-medium">{{ t('replay.tone') }}</div>
+                <div class="text-xs text-violet-700">{{ selectedCheckpoint.copy_content.tone }}</div>
               </div>
             </div>
           </template>
 
-          <!-- Publishing -->
+          <!-- ═══ PUBLISHING ═══ -->
           <template v-if="['publisher', 'engagement'].includes(selectedAgent) && selectedCheckpoint.publish_result">
-            <div class="p-3 rounded-lg bg-emerald-50 border border-emerald-100">
-              <div class="text-xs text-emerald-600 font-medium mb-1">{{ t('showcase.status.completed') }}</div>
-              <div v-if="(selectedCheckpoint.publish_result as any).post_url" class="text-xs text-slate-700">{{ (selectedCheckpoint.publish_result as any).post_url }}</div>
+            <div class="grid grid-cols-2 gap-2">
+              <div v-if="(selectedCheckpoint.publish_result as any).post_id" class="p-2 rounded-lg bg-emerald-50 border border-emerald-100">
+                <div class="text-[10px] text-emerald-500 font-medium">Post ID</div>
+                <div class="text-xs text-emerald-700 font-mono">{{ (selectedCheckpoint.publish_result as any).post_id }}</div>
+              </div>
+              <div v-if="(selectedCheckpoint.publish_result as any).status" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                <div class="text-[10px] text-slate-400 font-medium">{{ t('replay.status') }}</div>
+                <div class="text-xs font-medium" :class="(selectedCheckpoint.publish_result as any).status === 'published' ? 'text-emerald-600' : 'text-amber-600'">{{ (selectedCheckpoint.publish_result as any).status }}</div>
+              </div>
+              <div v-if="(selectedCheckpoint.publish_result as any).published_at" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                <div class="text-[10px] text-slate-400 font-medium">{{ t('replay.publishedAt') }}</div>
+                <div class="text-xs text-slate-600">{{ new Date((selectedCheckpoint.publish_result as any).published_at).toLocaleString() }}</div>
+              </div>
+            </div>
+            <div v-if="(selectedCheckpoint.publish_result as any).post_url" class="mt-1">
+              <a :href="(selectedCheckpoint.publish_result as any).post_url" target="_blank" rel="noopener" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 text-xs font-medium hover:bg-emerald-100 transition-colors border border-emerald-100">
+                <AppIcon name="ExternalLink" size="sm" />
+                {{ t('replay.viewPost') }}
+              </a>
             </div>
           </template>
 
-          <!-- Analytics -->
+          <!-- ═══ ANALYTICS ═══ -->
           <template v-if="selectedAgent === 'analyst' && selectedCheckpoint.analytics">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div v-if="(selectedCheckpoint.analytics as any).views !== undefined" class="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-center">
+                <div class="text-[10px] text-slate-400">Views</div>
+                <div class="text-base font-bold text-slate-700">{{ formatNum((selectedCheckpoint.analytics as any).views) }}</div>
+              </div>
+              <div v-if="(selectedCheckpoint.analytics as any).likes !== undefined" class="p-2.5 rounded-lg bg-pink-50 border border-pink-100 text-center">
+                <div class="text-[10px] text-slate-400">Likes</div>
+                <div class="text-base font-bold text-pink-600">{{ formatNum((selectedCheckpoint.analytics as any).likes) }}</div>
+              </div>
+              <div v-if="(selectedCheckpoint.analytics as any).collects !== undefined" class="p-2.5 rounded-lg bg-amber-50 border border-amber-100 text-center">
+                <div class="text-[10px] text-slate-400">Collects</div>
+                <div class="text-base font-bold text-amber-600">{{ formatNum((selectedCheckpoint.analytics as any).collects) }}</div>
+              </div>
+              <div v-if="(selectedCheckpoint.analytics as any).engagement_rate !== undefined" class="p-2.5 rounded-lg bg-teal-50 border border-teal-100 text-center">
+                <div class="text-[10px] text-slate-400">Engagement</div>
+                <div class="text-base font-bold text-teal-600">{{ ((selectedCheckpoint.analytics as any).engagement_rate * 100).toFixed(1) }}%</div>
+              </div>
+            </div>
+            <div v-if="(selectedCheckpoint.analytics as any).comments !== undefined || (selectedCheckpoint.analytics as any).shares !== undefined" class="grid grid-cols-2 gap-2">
+              <div v-if="(selectedCheckpoint.analytics as any).comments !== undefined" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                <div class="text-[10px] text-slate-400">Comments</div>
+                <div class="text-xs font-semibold text-slate-700">{{ (selectedCheckpoint.analytics as any).comments }}</div>
+              </div>
+              <div v-if="(selectedCheckpoint.analytics as any).shares !== undefined" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                <div class="text-[10px] text-slate-400">Shares</div>
+                <div class="text-xs font-semibold text-slate-700">{{ (selectedCheckpoint.analytics as any).shares }}</div>
+              </div>
+            </div>
             <div v-if="(selectedCheckpoint.analytics as any).insights?.length">
-              <div class="text-xs text-emerald-600 font-medium mb-1">{{ t('showcase.detail.insights') }}</div>
+              <div class="text-xs text-slate-400 font-medium mb-1.5 uppercase tracking-wide">{{ t('showcase.detail.insights') }}</div>
               <ul class="space-y-1">
-                <li v-for="(insight, i) in (selectedCheckpoint.analytics as any).insights.slice(0, 3)" :key="i" class="text-xs text-slate-500 flex gap-1.5">
+                <li v-for="(insight, i) in (selectedCheckpoint.analytics as any).insights" :key="i" class="text-xs text-slate-500 flex gap-1.5">
                   <span class="text-emerald-500">+</span>
-                  <span class="line-clamp-2">{{ insight }}</span>
+                  <span>{{ insight }}</span>
                 </li>
               </ul>
+            </div>
+          </template>
+
+          <!-- ═══ RIPPLE (shown when prediction/pmf data exists, regardless of agent) ═══ -->
+          <template v-if="selectedCheckpoint.ripple_prediction && Object.keys(selectedCheckpoint.ripple_prediction).length > 0">
+            <div class="p-3 rounded-lg bg-violet-50 border border-violet-100">
+              <div class="text-xs text-violet-600 font-medium mb-1.5">Ripple {{ t('replay.prediction') }}</div>
+              <div class="grid grid-cols-2 gap-2">
+                <div v-if="selectedCheckpoint.ripple_prediction.viral_probability != null" class="p-2 rounded bg-white/60">
+                  <div class="text-[10px] text-slate-400">Viral Prob.</div>
+                  <div class="text-xs font-semibold text-violet-700">{{ (selectedCheckpoint.ripple_prediction.viral_probability * 100).toFixed(1) }}%</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_prediction.estimated_reach != null" class="p-2 rounded bg-white/60">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.estReach') }}</div>
+                  <div class="text-xs font-semibold text-violet-700">{{ formatNum(selectedCheckpoint.ripple_prediction.estimated_reach) }}</div>
+                </div>
+              </div>
+              <div v-if="selectedCheckpoint.ripple_prediction.prediction_summary" class="mt-1.5 text-xs text-slate-600">{{ selectedCheckpoint.ripple_prediction.prediction_summary }}</div>
+            </div>
+          </template>
+          <template v-if="selectedCheckpoint.ripple_pmf && Object.keys(selectedCheckpoint.ripple_pmf).length > 0">
+            <div class="p-3 rounded-lg bg-indigo-50 border border-indigo-100">
+              <div class="text-xs text-indigo-600 font-medium mb-1.5">Ripple PMF</div>
+              <div class="grid grid-cols-2 gap-2">
+                <div v-if="selectedCheckpoint.ripple_pmf.pmf_score != null" class="p-2 rounded bg-white/60">
+                  <div class="text-[10px] text-slate-400">PMF Score</div>
+                  <div class="text-xs font-semibold text-indigo-700">{{ selectedCheckpoint.ripple_pmf.pmf_score.toFixed(2) }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.ripple_pmf.confidence != null" class="p-2 rounded bg-white/60">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.confidence') }}</div>
+                  <div class="text-xs font-semibold text-indigo-700">{{ (selectedCheckpoint.ripple_pmf.confidence * 100).toFixed(0) }}%</div>
+                </div>
+              </div>
+              <div v-if="selectedCheckpoint.ripple_pmf.risk_factors?.length" class="mt-1.5">
+                <div class="text-[10px] text-slate-400 mb-0.5">{{ t('replay.riskFactors') }}</div>
+                <div v-for="risk in selectedCheckpoint.ripple_pmf.risk_factors.slice(0, 3)" :key="risk" class="text-xs text-slate-500">• {{ risk }}</div>
+              </div>
             </div>
           </template>
 

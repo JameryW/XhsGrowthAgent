@@ -109,6 +109,13 @@ function formatDate(iso: string) {
 function goDashboard() { router.push('/login') }
 function goReplay(threadId: string) { router.push({ name: 'replay', params: { threadId } }) }
 
+function formatNum(n?: number): string {
+  if (n === undefined || n === null) return '—'
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return n.toLocaleString()
+}
+
 const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
 </script>
 
@@ -206,26 +213,57 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
                 </div>
               </div>
               <!-- Card body -->
-              <div class="px-4 md:px-5 py-4 space-y-3">
+              <div class="px-4 md:px-5 py-4">
                 <template v-if="getDetail(wf.thread_id)">
-                  <!-- Topic -->
-                  <div v-if="getDetail(wf.thread_id)!.content_plan?.selected_topic" class="mb-2">
-                    <div class="text-base font-bold text-slate-800 leading-snug">{{ getDetail(wf.thread_id)!.content_plan!.selected_topic }}</div>
-                    <div v-if="getDetail(wf.thread_id)!.content_plan?.content_angle" class="text-xs text-slate-500 mt-1 line-clamp-2">{{ getDetail(wf.thread_id)!.content_plan!.content_angle }}</div>
-                  </div>
-                  <!-- Generated title -->
-                  <div v-if="getDetail(wf.thread_id)!.copy_content?.selected_title">
-                    <div class="text-sm font-semibold text-rose-600 leading-snug">{{ getDetail(wf.thread_id)!.copy_content!.selected_title }}</div>
-                    <div v-if="getDetail(wf.thread_id)!.copy_content?.body_text" class="text-xs text-slate-500 mt-2 line-clamp-3 whitespace-pre-line">{{ getDetail(wf.thread_id)!.copy_content!.body_text }}</div>
-                    <div v-if="getDetail(wf.thread_id)!.copy_content?.hashtags?.length" class="flex flex-wrap gap-1 mt-2">
-                      <span v-for="tag in getDetail(wf.thread_id)!.copy_content!.hashtags!.slice(0, 6)" :key="tag" class="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700">#{{ tag }}</span>
+                  <div class="md:grid md:grid-cols-5 md:gap-4 space-y-3 md:space-y-0">
+                    <!-- Left: main content -->
+                    <div class="md:col-span-3 space-y-2">
+                      <div v-if="getDetail(wf.thread_id)!.content_plan?.selected_topic" class="mb-1">
+                        <div class="text-base font-bold text-slate-800 leading-snug">{{ getDetail(wf.thread_id)!.content_plan!.selected_topic }}</div>
+                        <div v-if="getDetail(wf.thread_id)!.content_plan?.content_angle" class="text-xs text-slate-500 mt-1 line-clamp-2">{{ getDetail(wf.thread_id)!.content_plan!.content_angle }}</div>
+                      </div>
+                      <div v-if="getDetail(wf.thread_id)!.copy_content?.selected_title">
+                        <div class="text-sm font-semibold text-rose-600 leading-snug">{{ getDetail(wf.thread_id)!.copy_content!.selected_title }}</div>
+                        <div v-if="getDetail(wf.thread_id)!.copy_content?.body_text" class="text-xs text-slate-500 mt-1.5 line-clamp-4 whitespace-pre-line">{{ getDetail(wf.thread_id)!.copy_content!.body_text }}</div>
+                      </div>
+                      <div v-if="getDetail(wf.thread_id)!.copy_content?.hashtags?.length" class="flex flex-wrap gap-1">
+                        <span v-for="tag in getDetail(wf.thread_id)!.copy_content!.hashtags!.slice(0, 10)" :key="tag" class="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700">#{{ tag }}</span>
+                      </div>
+                      <div v-if="getDetail(wf.thread_id)!.content_plan?.key_points?.length" class="space-y-0.5">
+                        <div v-for="(point, i) in getDetail(wf.thread_id)!.content_plan!.key_points!.slice(0, 3)" :key="i" class="text-xs text-slate-500 flex gap-1">
+                          <span class="text-cyan-400">▸</span>
+                          <span class="line-clamp-1">{{ point }}</span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <!-- Hot topics -->
-                  <div v-if="getDetail(wf.thread_id)!.trend_data?.hot_topics?.length" class="flex flex-wrap gap-1.5 mt-2">
-                    <span v-for="ht in getDetail(wf.thread_id)!.trend_data!.hot_topics!.slice(0, 3)" :key="ht.topic" class="text-[11px] px-2 py-0.5 rounded-full bg-rose-50 text-rose-600">
-                      {{ ht.topic }} {{ ht.heat_score }}
-                    </span>
+                    <!-- Right: metadata -->
+                    <div class="md:col-span-2 space-y-2">
+                      <div v-if="getDetail(wf.thread_id)!.trend_data?.hot_topics?.length">
+                        <div class="text-[10px] text-slate-400 font-medium mb-1 uppercase tracking-wide">{{ t('showcase.detail.hotTopics') }}</div>
+                        <div class="flex flex-wrap gap-1">
+                          <span v-for="ht in getDetail(wf.thread_id)!.trend_data!.hot_topics!.slice(0, 4)" :key="ht.topic" class="text-[11px] px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600">{{ ht.topic }}</span>
+                        </div>
+                      </div>
+                      <div v-if="getDetail(wf.thread_id)!.trend_data?.trending_keywords?.length">
+                        <div class="text-[10px] text-slate-400 font-medium mb-1 uppercase tracking-wide">{{ t('replay.trendingKeywords') }}</div>
+                        <div class="flex flex-wrap gap-1">
+                          <span v-for="kw in getDetail(wf.thread_id)!.trend_data!.trending_keywords!.slice(0, 5)" :key="kw" class="text-[11px] px-1.5 py-0.5 rounded-md bg-pink-50 text-pink-600 border border-pink-100">{{ kw }}</span>
+                        </div>
+                      </div>
+                      <div v-if="getDetail(wf.thread_id)!.visual_plan" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                        <div class="text-[10px] text-slate-400 font-medium mb-0.5">{{ t('showcase.detail.visual') }}</div>
+                        <div class="text-xs text-slate-700">{{ getDetail(wf.thread_id)!.visual_plan!.layout_style }}</div>
+                        <div class="text-[11px] text-slate-400">{{ t('showcase.detail.imageCount', { count: getDetail(wf.thread_id)!.visual_plan!.image_count }) }}</div>
+                        <div v-if="getDetail(wf.thread_id)!.visual_plan!.color_palette?.length" class="flex gap-1 mt-1">
+                          <div v-for="color in getDetail(wf.thread_id)!.visual_plan!.color_palette!.slice(0, 5)" :key="color" class="w-3.5 h-3.5 rounded-full border border-white shadow-sm" :style="{ backgroundColor: color }" />
+                        </div>
+                      </div>
+                      <div v-if="getDetail(wf.thread_id)!.ripple_prediction && Object.keys(getDetail(wf.thread_id)!.ripple_prediction!).length > 0" class="p-2 rounded-lg bg-violet-50 border border-violet-100">
+                        <div class="text-[10px] text-violet-500 font-medium mb-0.5">Ripple</div>
+                        <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.viral_probability != null">{{ t('replay.viralProb') }} {{ (getDetail(wf.thread_id)!.ripple_prediction!.viral_probability! * 100).toFixed(1) }}%</div>
+                        <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.estimated_reach != null">{{ t('replay.estReach') }} {{ formatNum(getDetail(wf.thread_id)!.ripple_prediction!.estimated_reach!) }}</div>
+                      </div>
+                    </div>
                   </div>
                 </template>
                 <div v-else class="text-xs text-slate-400">{{ t('common.loadingState') }}</div>
@@ -252,44 +290,78 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
                 </div>
               </div>
               <!-- Card body -->
-              <div class="px-4 md:px-5 py-4 space-y-3">
+              <div class="px-4 md:px-5 py-4">
                 <template v-if="getDetail(wf.thread_id)">
-                  <!-- Topic -->
-                  <div v-if="getDetail(wf.thread_id)!.content_plan?.selected_topic" class="mb-2">
-                    <div class="text-base font-bold text-slate-800 leading-snug">{{ getDetail(wf.thread_id)!.content_plan!.selected_topic }}</div>
-                    <div v-if="getDetail(wf.thread_id)!.content_plan?.content_angle" class="text-xs text-slate-500 mt-1 line-clamp-2">{{ getDetail(wf.thread_id)!.content_plan!.content_angle }}</div>
-                  </div>
-                  <!-- Generated title -->
-                  <div v-if="getDetail(wf.thread_id)!.copy_content?.selected_title">
-                    <div class="text-sm font-semibold text-rose-600 leading-snug">{{ getDetail(wf.thread_id)!.copy_content!.selected_title }}</div>
-                    <div v-if="getDetail(wf.thread_id)!.copy_content?.body_text" class="text-xs text-slate-500 mt-2 line-clamp-4 whitespace-pre-line">{{ getDetail(wf.thread_id)!.copy_content!.body_text }}</div>
-                    <div v-if="getDetail(wf.thread_id)!.copy_content?.hashtags?.length" class="flex flex-wrap gap-1 mt-2">
-                      <span v-for="tag in getDetail(wf.thread_id)!.copy_content!.hashtags!.slice(0, 8)" :key="tag" class="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700">#{{ tag }}</span>
+                  <div class="md:grid md:grid-cols-5 md:gap-4 space-y-3 md:space-y-0">
+                    <!-- Left: main content -->
+                    <div class="md:col-span-3 space-y-2">
+                      <div v-if="getDetail(wf.thread_id)!.content_plan?.selected_topic" class="mb-1">
+                        <div class="text-base font-bold text-slate-800 leading-snug">{{ getDetail(wf.thread_id)!.content_plan!.selected_topic }}</div>
+                        <div v-if="getDetail(wf.thread_id)!.content_plan?.content_angle" class="text-xs text-slate-500 mt-1 line-clamp-2">{{ getDetail(wf.thread_id)!.content_plan!.content_angle }}</div>
+                      </div>
+                      <div v-if="getDetail(wf.thread_id)!.copy_content?.selected_title">
+                        <div class="text-sm font-semibold text-rose-600 leading-snug">{{ getDetail(wf.thread_id)!.copy_content!.selected_title }}</div>
+                        <div v-if="getDetail(wf.thread_id)!.copy_content?.body_text" class="text-xs text-slate-500 mt-1.5 line-clamp-5 whitespace-pre-line">{{ getDetail(wf.thread_id)!.copy_content!.body_text }}</div>
+                      </div>
+                      <div v-if="getDetail(wf.thread_id)!.copy_content?.hashtags?.length" class="flex flex-wrap gap-1">
+                        <span v-for="tag in getDetail(wf.thread_id)!.copy_content!.hashtags!" :key="tag" class="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700">#{{ tag }}</span>
+                      </div>
+                      <div v-if="getDetail(wf.thread_id)!.content_plan?.key_points?.length" class="space-y-0.5">
+                        <div v-for="(point, i) in getDetail(wf.thread_id)!.content_plan!.key_points!.slice(0, 3)" :key="i" class="text-xs text-slate-500 flex gap-1">
+                          <span class="text-cyan-400">▸</span>
+                          <span class="line-clamp-1">{{ point }}</span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <!-- Hot topics -->
-                  <div v-if="getDetail(wf.thread_id)!.trend_data?.hot_topics?.length" class="flex flex-wrap gap-1.5">
-                    <span v-for="ht in getDetail(wf.thread_id)!.trend_data!.hot_topics!.slice(0, 4)" :key="ht.topic" class="text-[11px] px-2 py-0.5 rounded-full bg-rose-50 text-rose-600">
-                      {{ ht.topic }} {{ ht.heat_score }}
-                    </span>
-                  </div>
-                  <!-- Top competitor -->
-                  <div v-if="getDetail(wf.thread_id)!.trend_data?.competitor_posts?.[0]" class="mt-2 p-3 rounded-lg bg-slate-50 border border-slate-100">
-                    <div class="text-xs text-slate-400 mb-0.5 font-medium">{{ t('showcase.detail.topCompetitor') }}</div>
-                    <div class="text-xs text-slate-700">{{ getDetail(wf.thread_id)!.trend_data!.competitor_posts![0].title }}</div>
-                    <div class="text-[11px] text-slate-400 mt-0.5">
-                      {{ (getDetail(wf.thread_id)!.trend_data!.competitor_posts![0].likes / 1000).toFixed(1) }}k likes
+                    <!-- Right: metadata -->
+                    <div class="md:col-span-2 space-y-2">
+                      <div v-if="getDetail(wf.thread_id)!.trend_data?.hot_topics?.length">
+                        <div class="text-[10px] text-slate-400 font-medium mb-1 uppercase tracking-wide">{{ t('showcase.detail.hotTopics') }}</div>
+                        <div class="flex flex-wrap gap-1">
+                          <span v-for="ht in getDetail(wf.thread_id)!.trend_data!.hot_topics!.slice(0, 5)" :key="ht.topic" class="text-[11px] px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600">{{ ht.topic }}</span>
+                        </div>
+                      </div>
+                      <div v-if="getDetail(wf.thread_id)!.trend_data?.trending_keywords?.length">
+                        <div class="text-[10px] text-slate-400 font-medium mb-1 uppercase tracking-wide">{{ t('replay.trendingKeywords') }}</div>
+                        <div class="flex flex-wrap gap-1">
+                          <span v-for="kw in getDetail(wf.thread_id)!.trend_data!.trending_keywords!.slice(0, 5)" :key="kw" class="text-[11px] px-1.5 py-0.5 rounded-md bg-pink-50 text-pink-600 border border-pink-100">{{ kw }}</span>
+                        </div>
+                      </div>
+                      <div v-if="getDetail(wf.thread_id)!.trend_data?.competitor_posts?.[0]" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                        <div class="text-[10px] text-slate-400 font-medium mb-0.5">{{ t('showcase.detail.topCompetitor') }}</div>
+                        <div class="text-xs text-slate-700">{{ getDetail(wf.thread_id)!.trend_data!.competitor_posts![0].title }}</div>
+                        <div class="text-[11px] text-slate-400 mt-0.5">{{ (getDetail(wf.thread_id)!.trend_data!.competitor_posts![0].likes / 1000).toFixed(1) }}k likes</div>
+                      </div>
+                      <div v-if="getDetail(wf.thread_id)!.visual_plan" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+                        <div class="text-[10px] text-slate-400 font-medium mb-0.5">{{ t('showcase.detail.visual') }}</div>
+                        <div class="text-xs text-slate-700">{{ getDetail(wf.thread_id)!.visual_plan!.layout_style }}</div>
+                        <div class="text-[11px] text-slate-400">{{ t('showcase.detail.imageCount', { count: getDetail(wf.thread_id)!.visual_plan!.image_count }) }}</div>
+                      </div>
+                      <div v-if="(getDetail(wf.thread_id)!.analytics as any)?.views !== undefined" class="grid grid-cols-2 gap-1.5">
+                        <div class="p-1.5 rounded bg-slate-50 text-center">
+                          <div class="text-[10px] text-slate-400">Views</div>
+                          <div class="text-xs font-bold text-slate-700">{{ formatNum((getDetail(wf.thread_id)!.analytics as any).views) }}</div>
+                        </div>
+                        <div class="p-1.5 rounded bg-pink-50 text-center">
+                          <div class="text-[10px] text-slate-400">Likes</div>
+                          <div class="text-xs font-bold text-pink-600">{{ formatNum((getDetail(wf.thread_id)!.analytics as any).likes) }}</div>
+                        </div>
+                      </div>
+                      <div v-if="(getDetail(wf.thread_id)!.analytics as any)?.insights?.length">
+                        <div class="text-[10px] text-emerald-500 font-medium mb-0.5">{{ t('showcase.detail.insights') }}</div>
+                        <ul class="space-y-0.5">
+                          <li v-for="(insight, i) in (getDetail(wf.thread_id)!.analytics as any).insights.slice(0, 3)" :key="i" class="text-xs text-slate-500 flex gap-1">
+                            <span class="text-emerald-500">+</span>
+                            <span class="line-clamp-1">{{ insight }}</span>
+                          </li>
+                        </ul>
+                      </div>
+                      <div v-if="getDetail(wf.thread_id)!.ripple_prediction && Object.keys(getDetail(wf.thread_id)!.ripple_prediction!).length > 0" class="p-2 rounded-lg bg-violet-50 border border-violet-100">
+                        <div class="text-[10px] text-violet-500 font-medium mb-0.5">Ripple</div>
+                        <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.viral_probability != null">{{ t('replay.viralProb') }} {{ (getDetail(wf.thread_id)!.ripple_prediction!.viral_probability! * 100).toFixed(1) }}%</div>
+                        <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.estimated_reach != null">{{ t('replay.estReach') }} {{ formatNum(getDetail(wf.thread_id)!.ripple_prediction!.estimated_reach!) }}</div>
+                      </div>
                     </div>
-                  </div>
-                  <!-- Insights -->
-                  <div v-if="(getDetail(wf.thread_id)!.analytics as any)?.insights?.length" class="mt-2">
-                    <div class="text-xs text-emerald-600 font-medium mb-1">{{ t('showcase.detail.insights') }}</div>
-                    <ul class="space-y-1">
-                      <li v-for="(insight, i) in (getDetail(wf.thread_id)!.analytics as any).insights.slice(0, 2)" :key="i" class="text-xs text-slate-500 flex gap-1.5">
-                        <span class="text-emerald-500">+</span>
-                        <span class="line-clamp-2">{{ insight }}</span>
-                      </li>
-                    </ul>
                   </div>
                 </template>
                 <div v-else class="text-xs text-slate-400">{{ t('common.loadingState') }}</div>
