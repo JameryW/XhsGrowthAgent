@@ -1,0 +1,5 @@
+{"file":"frontend/src/views/WorkflowReplay.vue","reason":"New replay page view"}
+{"file":"frontend/src/router/index.ts","reason":"Add replay route"}
+{"file":"frontend/src/views/Showcase.vue","reason":"Add click handlers on cards"}
+{"file":"frontend/src/locales/zh-CN.json","reason":"Add replay translations"}
+{"file":"frontend/src/locales/en.json","reason":"Add replay translations"}

@@ -993,5 +993,17 @@
     "wan": "万",
     "qian": "千",
     "topNote": "热门笔记"
+  },
+  "replay": {
+    "title": "工作流回放",
+    "goDashboard": "进入管控台",
+    "mode": "回放模式",
+    "modeDesc": "点击流程节点查看当时的执行状态",
+    "pipeline": "执行流程",
+    "clickHint": "点击节点查看详情",
+    "clickHintDesc": "选择上方流程中的任意节点，查看该步骤的执行状态",
+    "noData": "该节点暂无数据",
+    "step": "步骤",
+    "back": "返回"
   }
 }

@@ -107,6 +107,7 @@ function formatDate(iso: string) {
 }
 
 function goDashboard() { router.push('/login') }
+function goReplay(threadId: string) { router.push({ name: 'replay', params: { threadId } }) }
 
 const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
 </script>
@@ -184,7 +185,7 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
         <div class="space-y-4 md:space-y-5">
           <!-- Active workflows -->
           <template v-if="runningWorkflows.length > 0">
-            <div v-for="wf in runningWorkflows" :key="wf.thread_id" class="rounded-xl bg-white border border-teal-200/50 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+            <div v-for="wf in runningWorkflows" :key="wf.thread_id" class="rounded-xl bg-white border border-teal-200/50 shadow-sm overflow-hidden hover:shadow-md transition-shadow cursor-pointer" @click="goReplay(wf.thread_id)">
               <!-- Card header -->
               <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-slate-100 bg-teal-50/40">
                 <div class="flex items-center gap-2">
@@ -234,7 +235,7 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
 
           <!-- Completed workflows -->
           <template v-if="completedWorkflows.length > 0">
-            <div v-for="wf in completedWorkflows" :key="wf.thread_id" class="rounded-xl bg-white border border-emerald-200/40 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+            <div v-for="wf in completedWorkflows" :key="wf.thread_id" class="rounded-xl bg-white border border-emerald-200/40 shadow-sm overflow-hidden hover:shadow-md transition-shadow cursor-pointer" @click="goReplay(wf.thread_id)">
               <!-- Card header -->
               <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-slate-100 bg-emerald-50/30">
                 <div class="flex items-center gap-2">
@@ -298,7 +299,7 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
 
           <!-- Other workflows -->
           <template v-if="otherWorkflows.length > 0">
-            <div v-for="wf in otherWorkflows" :key="wf.thread_id" class="rounded-xl bg-white border border-slate-200/60 shadow-sm p-4 hover:shadow-md transition-shadow">
+            <div v-for="wf in otherWorkflows" :key="wf.thread_id" class="rounded-xl bg-white border border-slate-200/60 shadow-sm p-4 hover:shadow-md transition-shadow cursor-pointer" @click="goReplay(wf.thread_id)">
               <div class="flex items-center gap-2">
                 <span class="w-2 h-2 rounded-full bg-slate-400" />
                 <span class="text-sm text-slate-600 font-mono">{{ wf.thread_id.slice(0, 8) }}</span>

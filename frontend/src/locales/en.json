@@ -993,5 +993,17 @@
     "wan": "W",
     "qian": "K",
     "topNote": "Top note"
+  },
+  "replay": {
+    "title": "Workflow Replay",
+    "goDashboard": "Go to Dashboard",
+    "mode": "Replay Mode",
+    "modeDesc": "Click a pipeline node to view execution state at that step",
+    "pipeline": "Pipeline",
+    "clickHint": "Click a node to inspect",
+    "clickHintDesc": "Select any node in the pipeline above to view its execution state",
+    "noData": "No data for this node",
+    "step": "Step",
+    "back": "Back"
   }
 }
