@@ -919,6 +919,16 @@
   "showcase": {
     "title": "小红书增长引擎",
     "subtitle": "AI 驱动的自动化内容创作平台",
+    "heroTagline": "AI驱动的6步自动化工作流",
+    "howItWorks": "工作原理",
+    "steps": {
+      "scouting": "发现热门趋势和关键词，洞察内容方向",
+      "planning": "AI制定内容策略，选题、定角度、选受众",
+      "creating": "AI生成文案标题、正文、标签和视觉方案",
+      "reviewing": "人工审核确认，确保内容质量和合规性",
+      "publishing": "一键发布到小红书平台，支持定时发布",
+      "analyzing": "实时追踪内容表现，AI分析优化策略"
+    },
     "dashboard": "管控台",
     "empty": "暂无工作流",
     "emptyDesc": "工作流启动后将在此展示",

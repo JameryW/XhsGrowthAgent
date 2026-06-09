@@ -117,6 +117,17 @@ function formatNum(n?: number): string {
 }
 
 const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
+
+type IconVariant = 'pink' | 'cyan' | 'purple' | 'peach' | 'white'
+
+const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVariant: IconVariant }> = [
+  { key: 'scouting', icon: 'Search', iconBg: 'bg-rose-50', iconVariant: 'pink' },
+  { key: 'planning', icon: 'ClipboardList', iconBg: 'bg-teal-50', iconVariant: 'cyan' },
+  { key: 'creating', icon: 'Pencil', iconBg: 'bg-amber-50', iconVariant: 'peach' },
+  { key: 'reviewing', icon: 'Clock', iconBg: 'bg-violet-50', iconVariant: 'purple' },
+  { key: 'publishing', icon: 'Upload', iconBg: 'bg-emerald-50', iconVariant: 'cyan' },
+  { key: 'analyzing', icon: 'BarChart3', iconBg: 'bg-blue-50', iconVariant: 'purple' },
+]
 </script>
 
 <template>
@@ -173,6 +184,11 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
 
       <!-- Content -->
       <template v-else>
+        <!-- Hero tagline -->
+        <div class="text-center mb-8">
+          <h2 class="text-2xl md:text-3xl font-extrabold gradient-text-animate leading-tight">{{ t('showcase.heroTagline') }}</h2>
+        </div>
+
         <!-- Summary bar -->
         <div class="flex items-center gap-4 mb-6 text-xs">
           <span class="flex items-center gap-1.5 text-teal-600 font-medium">
@@ -186,6 +202,24 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
           <span v-if="otherWorkflows.length > 0" class="flex items-center gap-1.5 text-slate-400">
             {{ otherWorkflows.length }} {{ t('showcase.stats.other') }}
           </span>
+        </div>
+
+        <!-- How it Works -->
+        <div class="mb-8">
+          <h3 class="text-sm font-semibold text-slate-600 mb-4 text-center">{{ t('showcase.howItWorks') }}</h3>
+          <div class="grid grid-cols-2 md:grid-cols-6 gap-3 md:gap-4">
+            <div v-for="(step, i) in howItWorksSteps" :key="step.key" class="fade-slide-up-animation relative flex flex-col items-center text-center p-3 rounded-xl bg-white border border-slate-100 shadow-sm" :style="{ animationDelay: `${i * 100}ms` }">
+              <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-2 shadow-sm" :class="step.iconBg">
+                <AppIcon :name="step.icon" size="sm" :variant="step.iconVariant" />
+              </div>
+              <div class="text-xs font-semibold text-slate-700 mb-1">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
+              <div class="text-[10px] text-slate-400 leading-relaxed">{{ t(`showcase.steps.${step.key}`) }}</div>
+              <!-- Connecting arrow on md+ -->
+              <div v-if="i < 5" class="hidden md:block absolute -right-3 top-1/2 -translate-y-1/2 text-slate-300 z-10">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6h8M8 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Workflow cards -->
@@ -260,8 +294,16 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
                       </div>
                       <div v-if="getDetail(wf.thread_id)!.ripple_prediction && Object.keys(getDetail(wf.thread_id)!.ripple_prediction!).length > 0" class="p-2 rounded-lg bg-violet-50 border border-violet-100">
                         <div class="text-[10px] text-violet-500 font-medium mb-0.5">Ripple</div>
-                        <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.viral_probability != null">{{ t('replay.viralProb') }} {{ (getDetail(wf.thread_id)!.ripple_prediction!.viral_probability! * 100).toFixed(1) }}%</div>
-                        <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.estimated_reach != null">{{ t('replay.estReach') }} {{ formatNum(getDetail(wf.thread_id)!.ripple_prediction!.estimated_reach!) }}</div>
+                        <div class="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                          <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.viral_probability != null">{{ t('replay.viralProb') }} {{ (getDetail(wf.thread_id)!.ripple_prediction!.viral_probability! * 100).toFixed(1) }}%</div>
+                          <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.estimated_reach != null">{{ t('replay.estReach') }} {{ formatNum(getDetail(wf.thread_id)!.ripple_prediction!.estimated_reach!) }}</div>
+                          <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.estimated_engagement != null">{{ t('replay.estEngagement') }} {{ formatNum(getDetail(wf.thread_id)!.ripple_prediction!.estimated_engagement!) }}</div>
+                          <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.confidence != null">{{ t('replay.confidence') }} {{ (getDetail(wf.thread_id)!.ripple_prediction!.confidence! * 100).toFixed(1) }}%</div>
+                          <div class="text-xs text-violet-700 col-span-2" v-if="getDetail(wf.thread_id)!.ripple_prediction!.verdict">{{ t('replay.verdict') }} {{ getDetail(wf.thread_id)!.ripple_prediction!.verdict }}</div>
+                        </div>
+                        <div v-if="getDetail(wf.thread_id)!.ripple_pmf?.pmf_score != null" class="mt-1 pt-1 border-t border-violet-100">
+                          <div class="text-xs text-violet-700">{{ t('dashboard.ripple.pmfScore') }} {{ (getDetail(wf.thread_id)!.ripple_pmf!.pmf_score! * 100).toFixed(1) }}%</div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -358,8 +400,16 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
                       </div>
                       <div v-if="getDetail(wf.thread_id)!.ripple_prediction && Object.keys(getDetail(wf.thread_id)!.ripple_prediction!).length > 0" class="p-2 rounded-lg bg-violet-50 border border-violet-100">
                         <div class="text-[10px] text-violet-500 font-medium mb-0.5">Ripple</div>
-                        <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.viral_probability != null">{{ t('replay.viralProb') }} {{ (getDetail(wf.thread_id)!.ripple_prediction!.viral_probability! * 100).toFixed(1) }}%</div>
-                        <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.estimated_reach != null">{{ t('replay.estReach') }} {{ formatNum(getDetail(wf.thread_id)!.ripple_prediction!.estimated_reach!) }}</div>
+                        <div class="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                          <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.viral_probability != null">{{ t('replay.viralProb') }} {{ (getDetail(wf.thread_id)!.ripple_prediction!.viral_probability! * 100).toFixed(1) }}%</div>
+                          <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.estimated_reach != null">{{ t('replay.estReach') }} {{ formatNum(getDetail(wf.thread_id)!.ripple_prediction!.estimated_reach!) }}</div>
+                          <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.estimated_engagement != null">{{ t('replay.estEngagement') }} {{ formatNum(getDetail(wf.thread_id)!.ripple_prediction!.estimated_engagement!) }}</div>
+                          <div class="text-xs text-violet-700" v-if="getDetail(wf.thread_id)!.ripple_prediction!.confidence != null">{{ t('replay.confidence') }} {{ (getDetail(wf.thread_id)!.ripple_prediction!.confidence! * 100).toFixed(1) }}%</div>
+                          <div class="text-xs text-violet-700 col-span-2" v-if="getDetail(wf.thread_id)!.ripple_prediction!.verdict">{{ t('replay.verdict') }} {{ getDetail(wf.thread_id)!.ripple_prediction!.verdict }}</div>
+                        </div>
+                        <div v-if="getDetail(wf.thread_id)!.ripple_pmf?.pmf_score != null" class="mt-1 pt-1 border-t border-violet-100">
+                          <div class="text-xs text-violet-700">{{ t('dashboard.ripple.pmfScore') }} {{ (getDetail(wf.thread_id)!.ripple_pmf!.pmf_score! * 100).toFixed(1) }}%</div>
+                        </div>
                       </div>
                     </div>
                   </div>

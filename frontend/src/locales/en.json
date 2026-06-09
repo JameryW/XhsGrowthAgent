@@ -919,6 +919,16 @@
   "showcase": {
     "title": "XHS Growth Engine",
     "subtitle": "AI-powered automated content creation platform",
+    "heroTagline": "6-Step AI-Powered Automated Workflow",
+    "howItWorks": "How It Works",
+    "steps": {
+      "scouting": "Discover trending topics and keywords",
+      "planning": "AI crafts content strategy: topic, angle, audience",
+      "creating": "AI generates titles, copy, hashtags and visuals",
+      "reviewing": "Human review ensures content quality and compliance",
+      "publishing": "One-click publish to Xiaohongshu with scheduling",
+      "analyzing": "Track performance in real-time with AI analytics"
+    },
     "dashboard": "Dashboard",
     "empty": "No workflows yet",
     "emptyDesc": "Workflows will appear here once started",
