@@ -916,6 +916,65 @@
     "orText": "or paste text",
     "textDisabledByPdf": "PDF uploaded — text input disabled"
   },
+  "showcase": {
+    "title": "XHS Growth Engine",
+    "subtitle": "AI-powered automated content creation platform",
+    "dashboard": "Dashboard",
+    "empty": "No workflows yet",
+    "emptyDesc": "Workflows will appear here once started",
+    "footer": "XHS Growth Engine — AI-powered automated content creation platform",
+    "detail": {
+      "topic": "Topic Direction",
+      "hotTopics": "Hot Topics",
+      "title": "Generated Title",
+      "visual": "Visual Plan",
+      "imageCount": "{count} images",
+      "topCompetitor": "Top Competitor Post",
+      "insights": "Growth Insights",
+      "created": "Created",
+      "updated": "Updated"
+    },
+    "stats": {
+      "running": "Running",
+      "completed": "Completed",
+      "other": "Other"
+    },
+    "section": {
+      "running": "Active Workflows",
+      "completed": "Completed Workflows",
+      "other": "Other Workflows"
+    },
+    "status": {
+      "running": "Running",
+      "completed": "Completed",
+      "error": "Error",
+      "cancelled": "Cancelled",
+      "paused": "Paused",
+      "stale": "Stale",
+      "awaitingReview": "Awaiting Review",
+      "awaitingChoice": "Awaiting Choice",
+      "awaitingDraft": "Awaiting Draft",
+      "awaitingBrief": "Awaiting Brief",
+      "awaitingRipple": "Awaiting Ripple Decision",
+      "awaitingBlogger": "Awaiting Blogger Selection",
+      "idle": "Idle"
+    },
+    "phase": {
+      "idle": "Idle",
+      "scouting": "Trend Scouting",
+      "planning": "Strategy Planning",
+      "creating": "Content Creation",
+      "briefing": "Brief Parsing",
+      "reviewing": "Content Review",
+      "publishing": "Publishing",
+      "analyzing": "Analytics",
+      "engaging": "Engagement",
+      "completed": "Completed",
+      "error": "Error",
+      "paused": "Paused",
+      "cancelled": "Cancelled"
+    }
+  },
   "blogger": {
     "selectTitle": "Select Reference Blogger",
     "subtitle": "Choose a blogger whose top notes will be used as reference",

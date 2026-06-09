@@ -6,6 +6,12 @@ const router = createRouter({
   routes: [
     {
       path: '/',
+      name: 'showcase',
+      component: () => import('@/views/Showcase.vue'),
+      meta: { transition: 'fade-slide', public: true },
+    },
+    {
+      path: '/start',
       name: 'home',
       component: () => import('@/views/Home.vue'),
       meta: { transition: 'fade-slide', requiresAuth: true },
