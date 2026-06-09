@@ -9,7 +9,7 @@ const { t } = useI18n()
 const router = useRouter()
 
 const goHome = () => {
-  router.push('/')
+  router.push('/start')
 }
 </script>
 

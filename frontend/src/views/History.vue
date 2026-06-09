@@ -174,10 +174,10 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
       <h3 class="text-base md:text-lg font-semibold text-slate-700 mb-1">{{ t('history.empty') }}</h3>
       <p class="text-xs md:text-sm text-slate-400 mb-4 md:mb-5">{{ t('history.emptyDesc') }}</p>
       <div class="flex justify-center gap-3">
-        <NeonButton variant="pink" size="sm" @click="router.push('/')">
+        <NeonButton variant="pink" size="sm" @click="router.push('/start')">
           {{ t('history.startNew') }}
         </NeonButton>
-        <NeonButton variant="ghost" size="sm" @click="router.push('/')">
+        <NeonButton variant="ghost" size="sm" @click="router.push('/start')">
           {{ t('history.backHome') }}
         </NeonButton>
       </div>
