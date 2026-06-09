@@ -135,6 +135,24 @@ const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVa
   { key: 'publishing', icon: 'Upload', iconBg: 'bg-emerald-100', iconVariant: 'cyan', glowColor: 'shadow-emerald-200/50' },
   { key: 'analyzing', icon: 'BarChart3', iconBg: 'bg-sky-100', iconVariant: 'purple', glowColor: 'shadow-sky-200/50' },
 ]
+
+// Ellipse parameters for desktop loop layout (percentage-based for responsive)
+const ellipseA = 44  // semi-major axis as % of container width
+const ellipseB = 40  // semi-minor axis as % of container height (440px)
+const stepCardW = 140 // card width in px
+const stepCardH = 88  // approximate card height in px
+
+function stepStyle(i: number): Record<string, string> {
+  const angleDeg = i * 60 - 90
+  const angleRad = angleDeg * Math.PI / 180
+  const x = ellipseA * Math.cos(angleRad)
+  const y = ellipseB * Math.sin(angleRad)
+  return {
+    transitionDelay: `${i * 120}ms`,
+    left: `calc(50% + ${x}% - ${stepCardW / 2}px)`,
+    top: `calc(50% + ${y}% - ${stepCardH / 2}px)`,
+  }
+}
 </script>
 
 <template>
@@ -144,15 +162,15 @@ const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVa
     <div class="absolute bottom-0 left-0 w-[400px] h-[400px] pointer-events-none opacity-20" style="background: radial-gradient(circle, rgba(20,184,166,0.08) 0%, transparent 60%);" />
 
     <!-- Nav -->
-    <nav class="relative z-20 bg-white/70 backdrop-blur-lg border-b border-slate-200/60">
+    <nav class="relative z-20 bg-white border-b border-slate-200/60">
       <div class="max-w-[1200px] mx-auto px-3 md:px-6 h-14 flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-amber-400 flex items-center justify-center shadow-md shadow-rose-500/20">
             <AppIcon name="Rocket" size="sm" variant="white" />
           </div>
           <div>
-            <h1 class="text-sm font-bold tracking-tight text-slate-800">{{ t('showcase.title') }}</h1>
-            <p class="text-[10px] text-slate-400 -mt-0.5">{{ t('showcase.subtitle') }}</p>
+            <h1 class="text-base font-bold tracking-tight text-slate-800">{{ t('showcase.title') }}</h1>
+            <p class="text-[11px] text-slate-400 -mt-0.5">{{ t('showcase.subtitle') }}</p>
           </div>
         </div>
         <button @click="goDashboard" class="px-4 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-xs font-medium text-white transition-colors shadow-sm shadow-rose-500/20">
@@ -161,7 +179,7 @@ const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVa
       </div>
     </nav>
 
-    <main class="max-w-[1200px] mx-auto px-3 md:px-6 py-6 md:py-8 relative z-10" :class="error || isEmpty ? 'flex items-center justify-center min-h-[calc(100vh-3.5rem)]' : ''">
+    <main class="max-w-[1200px] mx-auto px-3 md:px-6 py-4 md:py-6 relative z-10" :class="error || isEmpty ? 'flex items-center justify-center min-h-[calc(100vh-3.5rem)]' : ''">
       <!-- Loading -->
       <div v-if="isLoading" class="space-y-4 animate-in">
         <div class="h-6 w-40 rounded-lg bg-slate-100 animate-pulse" />
@@ -193,87 +211,107 @@ const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVa
       <template v-else>
         <!-- Closed-loop pipeline animation -->
         <div class="mb-10 relative">
-          <!-- Outer glow -->
-          <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(ellipse 80% 60% at 50% 40%, rgba(244,63,94,0.05) 0%, rgba(20,184,166,0.04) 30%, transparent 60%);" />
+          <!-- Desktop: elliptical loop layout -->
+          <div class="hidden md:block relative" style="height: 440px;">
+            <!-- Background SVG: full elliptical loop path + animated dots -->
+            <!-- Uses viewBox 0 0 100 100 to match percentage positioning of step cards -->
+            <svg class="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="ellipse-loop-grad" x1="0" y1="50" x2="100" y2="50" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#f43f5e" />
+                  <stop offset="0.35" stop-color="#14b8a6" />
+                  <stop offset="0.65" stop-color="#8b5cf6" />
+                  <stop offset="1" stop-color="#f43f5e" />
+                </linearGradient>
+                <filter id="dot-glow" x="-100%" y="-100%" width="300%" height="300%">
+                  <feGaussianBlur in="SourceGraphic" stdDeviation="0.4" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+              <!-- Main elliptical loop path (matches 44% x 40% of container) -->
+              <ellipse cx="50" cy="50" rx="44" ry="40" stroke="url(#ellipse-loop-grad)" stroke-width="0.2" stroke-dasharray="1 0.5" fill="none" opacity="0.4">
+                <animate attributeName="stroke-dashoffset" from="0" to="-3" dur="3s" repeatCount="indefinite" />
+              </ellipse>
+              <!-- Faint second loop for depth -->
+              <ellipse cx="50" cy="50" rx="44" ry="40" stroke="url(#ellipse-loop-grad)" stroke-width="0.08" stroke-dasharray="0.4 0.8" fill="none" opacity="0.15">
+                <animate attributeName="stroke-dashoffset" from="0" to="3" dur="5s" repeatCount="indefinite" />
+              </ellipse>
+              <!-- Animated dot 1: rose, traveling the full ellipse -->
+              <circle r="0.6" fill="#f43f5e" opacity="0.9" filter="url(#dot-glow)">
+                <animateMotion dur="8s" repeatCount="indefinite">
+                  <mpath href="#ellipse-loop-path" />
+                </animateMotion>
+              </circle>
+              <!-- Animated dot 2: teal, offset by half -->
+              <circle r="0.6" fill="#14b8a6" opacity="0.9" filter="url(#dot-glow)">
+                <animateMotion dur="8s" repeatCount="indefinite" begin="4s">
+                  <mpath href="#ellipse-loop-path" />
+                </animateMotion>
+              </circle>
+              <!-- Hidden path for animateMotion reference: full ellipse from top, clockwise -->
+              <path id="ellipse-loop-path" d="M50,10 A44,40 0 1,1 49.99,10" fill="none" stroke="none" />
+              <!-- Center label -->
+              <text x="50" y="49" text-anchor="middle" fill="#94a3b8" font-size="1.8" font-weight="600" opacity="0.7">&#x27F3; {{ t('showcase.closedLoop') }}</text>
+              <text x="50" y="52" text-anchor="middle" fill="#cbd5e1" font-size="1.2" opacity="0.5">Analytics &#x2192; Scouting</text>
+            </svg>
 
-          <!-- Loop layout: top row 1-3, bottom row 6-4 (reversed), with return arc -->
-          <div class="relative z-10">
-            <!-- Top row: scouting → planning → creating -->
-            <div class="flex justify-center items-center gap-2 md:gap-3 mb-2 md:mb-3">
+            <!-- Step cards positioned on the ellipse (percentage-based) -->
+            <div
+              v-for="(step, i) in howItWorksSteps"
+              :key="step.key"
+              class="absolute w-[140px] flex flex-col items-center text-center p-3 rounded-2xl bg-white/90 backdrop-blur-sm border border-white/60 transition-all duration-600 ease-out group"
+              :class="[
+                stepsVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-6 scale-95',
+                stepsVisible ? step.glowColor : ''
+              ]"
+              :style="stepStyle(i)"
+            >
+              <div class="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" :class="step.iconBg" />
+              <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:shadow-xl" :class="step.iconBg">
+                <AppIcon :name="step.icon" size="sm" :variant="step.iconVariant" />
+              </div>
+              <div class="text-[11px] font-bold text-slate-700 mb-0.5 relative z-10">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
+              <div class="text-[9px] text-slate-400 leading-relaxed relative z-10 line-clamp-2">{{ t(`showcase.steps.${step.key}`) }}</div>
+              <div class="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full bg-white border border-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-400 shadow-sm z-20">{{ i + 1 }}</div>
+            </div>
+          </div>
+
+          <!-- Mobile: 2x3 grid with return arrow -->
+          <div class="md:hidden relative z-10">
+            <div class="grid grid-cols-2 gap-2.5 mb-3">
               <div
-                v-for="(step, i) in howItWorksSteps.slice(0, 3)"
+                v-for="(step, i) in howItWorksSteps"
                 :key="step.key"
-                class="relative flex flex-col items-center text-center p-3 md:p-5 rounded-2xl bg-white/90 backdrop-blur-sm border border-white/60 transition-all duration-600 ease-out group flex-1 max-w-[200px]"
+                class="relative flex flex-col items-center text-center p-2.5 rounded-xl bg-white/90 backdrop-blur-sm border border-white/60 transition-all duration-600 ease-out group"
                 :class="[
                   stepsVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-6 scale-95',
                   stepsVisible ? step.glowColor : ''
                 ]"
-                :style="{ transitionDelay: `${i * 120}ms` }"
+                :style="{ transitionDelay: `${i * 100}ms` }"
               >
-                <div class="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" :class="step.iconBg" />
-                <div class="w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center mb-2 shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:shadow-xl" :class="step.iconBg">
-                  <AppIcon :name="step.icon" size="sm" :variant="step.iconVariant" />
+                <div class="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" :class="step.iconBg" />
+                <div class="w-8 h-8 rounded-lg flex items-center justify-center mb-1 shadow-md transition-all duration-300 group-hover:scale-110" :class="step.iconBg">
+                  <AppIcon :name="step.icon" size="xs" :variant="step.iconVariant" />
                 </div>
-                <div class="text-xs font-bold text-slate-700 mb-0.5 relative z-10">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
-                <div class="text-[10px] text-slate-400 leading-relaxed hidden md:block relative z-10">{{ t(`showcase.steps.${step.key}`) }}</div>
-                <div class="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full bg-white border border-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-400 shadow-sm z-20">{{ i + 1 }}</div>
-                <!-- Arrow right between top steps -->
-                <div v-if="i < 2" class="hidden md:flex absolute -right-[18px] top-1/2 -translate-y-1/2 z-20 items-center justify-center">
-                  <svg width="18" height="12" viewBox="0 0 18 12" fill="none"><path d="M1 6h14m0 0l-4-4m4 4l-4 4" stroke="url(#arrow-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="arrow-grad" x1="0" y1="6" x2="16" y2="6"><stop stop-color="#f43f5e"/><stop offset="1" stop-color="#14b8a6"/></linearGradient></defs></svg>
-                </div>
+                <div class="text-[10px] font-bold text-slate-700 relative z-10">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
+                <div class="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-white border border-slate-200 flex items-center justify-center text-[8px] font-bold text-slate-400 shadow-sm z-20">{{ i + 1 }}</div>
               </div>
             </div>
-
-            <!-- Center: return arc visual (SVG) -->
-            <div class="flex justify-center my-1 md:my-2">
-              <svg class="w-[280px] md:w-[480px] h-6 md:h-8" viewBox="0 0 480 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <!-- Left curve: analyzing → scouting (feedback loop) -->
-                <path d="M40 2 C40 28, 440 28, 440 2" stroke="url(#loop-grad)" stroke-width="1.5" stroke-dasharray="6 3" fill="none" opacity="0.5">
-                  <animate attributeName="stroke-dashoffset" from="0" to="-18" dur="2s" repeatCount="indefinite" />
-                </path>
-                <!-- Animated dot traveling the loop -->
-                <circle r="3" fill="#f43f5e" opacity="0.8">
-                  <animateMotion dur="4s" repeatCount="indefinite" path="M40 2 C40 28, 440 28, 440 2" />
-                </circle>
-                <circle r="3" fill="#14b8a6" opacity="0.8">
-                  <animateMotion dur="4s" repeatCount="indefinite" begin="2s" path="M40 2 C40 28, 440 28, 440 2" />
-                </circle>
-                <!-- Label -->
-                <text x="240" y="22" text-anchor="middle" fill="#94a3b8" font-size="9" font-weight="500">⟳ {{ t('showcase.closedLoop') }}</text>
+            <!-- Return loop indicator for mobile -->
+            <div class="flex items-center justify-center gap-2 py-1">
+              <svg width="180" height="20" viewBox="0 0 180 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M10 10 H170 M170 10 L164 5 M170 10 L164 15" stroke="url(#mobile-loop-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
                 <defs>
-                  <linearGradient id="loop-grad" x1="0" y1="0" x2="480" y2="0">
-                    <stop stop-color="#f43f5e" />
-                    <stop offset="0.5" stop-color="#14b8a6" />
-                    <stop offset="1" stop-color="#8b5cf6" />
+                  <linearGradient id="mobile-loop-grad" x1="0" y1="0" x2="180" y2="0">
+                    <stop stop-color="#8b5cf6" />
+                    <stop offset="1" stop-color="#f43f5e" />
                   </linearGradient>
                 </defs>
               </svg>
-            </div>
-
-            <!-- Bottom row: analyzing ← publishing ← reviewing (reversed for loop visual) -->
-            <div class="flex justify-center items-center gap-2 md:gap-3 mt-2 md:mt-3">
-              <div
-                v-for="(step, i) in [...howItWorksSteps].reverse().slice(0, 3)"
-                :key="step.key"
-                class="relative flex flex-col items-center text-center p-3 md:p-5 rounded-2xl bg-white/90 backdrop-blur-sm border border-white/60 transition-all duration-600 ease-out group flex-1 max-w-[200px]"
-                :class="[
-                  stepsVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-6 scale-95',
-                  stepsVisible ? step.glowColor : ''
-                ]"
-                :style="{ transitionDelay: `${(5 - howItWorksSteps.findIndex(s => s.key === step.key)) * 120}ms` }"
-              >
-                <div class="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" :class="step.iconBg" />
-                <div class="w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center mb-2 shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:shadow-xl" :class="step.iconBg">
-                  <AppIcon :name="step.icon" size="sm" :variant="step.iconVariant" />
-                </div>
-                <div class="text-xs font-bold text-slate-700 mb-0.5 relative z-10">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
-                <div class="text-[10px] text-slate-400 leading-relaxed hidden md:block relative z-10">{{ t(`showcase.steps.${step.key}`) }}</div>
-                <div class="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full bg-white border border-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-400 shadow-sm z-20">{{ howItWorksSteps.findIndex(s => s.key === step.key) + 1 }}</div>
-                <!-- Arrow right (visual flow) between bottom steps -->
-                <div v-if="i < 2" class="hidden md:flex absolute -right-[18px] top-1/2 -translate-y-1/2 z-20 items-center justify-center">
-                  <svg width="18" height="12" viewBox="0 0 18 12" fill="none"><path d="M1 6h14m0 0l-4-4m4 4l-4 4" stroke="url(#arrow-grad2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="arrow-grad2" x1="0" y1="6" x2="16" y2="6"><stop stop-color="#8b5cf6"/><stop offset="1" stop-color="#14b8a6"/></linearGradient></defs></svg>
-                </div>
-              </div>
+              <span class="text-[9px] text-slate-400 font-medium">&#x27F3; {{ t('showcase.closedLoop') }}</span>
             </div>
           </div>
         </div>
