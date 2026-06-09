@@ -153,7 +153,7 @@ defineExpose({ readiness, suggestedDryRun })
 <template>
   <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm overflow-hidden">
     <!-- Header -->
-    <div class="p-4 border-b border-slate-100">
+    <div class="px-3 py-2.5 md:px-4 md:py-3 border-b border-slate-100">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-teal-400 flex items-center justify-center">
@@ -210,57 +210,55 @@ defineExpose({ readiness, suggestedDryRun })
     </div>
 
     <!-- Checklist items -->
-    <div v-else class="divide-y divide-slate-100">
+    <div v-else class="grid grid-cols-2 gap-0">
       <div
-        v-for="item in checklistItems"
+        v-for="(item, idx) in checklistItems"
         :key="item.id"
-        class="p-4 hover:bg-slate-50/50 transition-colors"
+        class="px-3 py-2 md:px-4 md:py-2.5 hover:bg-slate-50/50 transition-colors"
+        :class="{
+          'border-r border-slate-100': idx % 2 === 0,
+          'border-b border-slate-100': idx < checklistItems.length - 2
+        }"
       >
-        <div class="flex items-start gap-3">
+        <div class="flex items-start gap-2">
           <!-- Status icon -->
-          <div class="mt-0.5">
+          <div class="mt-0.5 shrink-0">
             <AppIcon
               :name="statusIcon(item.status)"
-              size="md"
+              size="sm"
               :class="statusColor(item.status)"
             />
           </div>
 
           <!-- Content -->
           <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 mb-1">
-              <span class="text-sm font-medium text-slate-700">{{ item.label }}</span>
+            <div class="flex items-center gap-1.5 mb-0.5">
+              <span class="text-xs font-medium text-slate-700 truncate">{{ item.label }}</span>
               <span
                 v-if="item.required"
-                class="px-1.5 py-0.5 rounded text-xs font-medium bg-rose-50 text-rose-500"
+                class="px-1 py-0.5 rounded text-[10px] font-medium bg-rose-50 text-rose-500 shrink-0"
               >
                 {{ t('checklist.required') }}
               </span>
               <span
                 v-else
-                class="px-1.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-500"
+                class="px-1 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 shrink-0"
               >
                 {{ t('checklist.optional') }}
               </span>
             </div>
 
-            <p class="text-xs text-slate-500 mb-1.5">{{ item.description }}</p>
-
-            <!-- Impact -->
-            <div class="flex items-center gap-1.5 text-xs">
-              <AppIcon name="Info" size="sm" variant="cyan" />
-              <span class="text-slate-500">{{ item.impact }}</span>
-            </div>
+            <p class="text-[10px] text-slate-400 leading-tight">{{ item.impact }}</p>
 
             <!-- Fix guide -->
             <div
               v-if="item.fixGuide && item.status !== 'ok'"
-              class="mt-2 p-2 rounded text-xs border"
+              class="mt-1.5 p-1.5 rounded text-[10px] border"
               :class="statusBg(item.status)"
             >
-              <div class="flex items-start gap-1.5">
-                <AppIcon name="Lightbulb" size="sm" variant="peach" class="mt-0.5" />
-                <span class="text-slate-600">{{ item.fixGuide }}</span>
+              <div class="flex items-start gap-1">
+                <AppIcon name="Lightbulb" size="sm" variant="peach" class="mt-0.5 shrink-0" />
+                <span class="text-slate-600 leading-tight">{{ item.fixGuide }}</span>
               </div>
             </div>
           </div>
@@ -269,7 +267,7 @@ defineExpose({ readiness, suggestedDryRun })
     </div>
 
     <!-- Summary & Actions -->
-    <div v-if="!isLoading && !error" class="p-4 bg-slate-50/50 border-t border-slate-100">
+    <div v-if="!isLoading && !error" class="px-3 py-2.5 md:px-4 md:py-3 bg-slate-50/50 border-t border-slate-100">
       <!-- Dry-run suggestion -->
       <div
         v-if="suggestedDryRun && readiness.canStart"

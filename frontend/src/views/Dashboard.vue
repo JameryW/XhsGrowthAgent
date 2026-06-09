@@ -106,7 +106,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="dashboard-container max-w-5xl mx-auto">
+  <div class="dashboard-container">
     <!-- Workflow Tab Bar (sticky) -->
     <div class="pb-1">
       <WorkflowTabBar

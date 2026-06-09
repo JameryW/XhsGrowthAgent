@@ -643,28 +643,25 @@ const handleCancelConfirm = () => {
         <span>{{ error }}</span>
       </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3 mb-3 md:mb-4">
-        <NeonButton variant="cyan" size="md" class="w-full md:size-lg" @click="requestDecision('approved')" :loading="isSubmitting" :disabled="isSubmitting">
-          <span class="flex flex-col items-center gap-1">
-            <AppIcon name="CheckCircle" size="lg" variant="white" />
+      <div class="flex flex-wrap gap-3 mb-3 md:mb-4">
+        <NeonButton variant="cyan" size="md" @click="requestDecision('approved')" :loading="isSubmitting" :disabled="isSubmitting">
+          <span class="inline-flex items-center gap-2">
+            <AppIcon name="CheckCircle" size="md" variant="white" />
             <span class="font-semibold">{{ t('review.approve') }}</span>
-            <span class="text-xs opacity-70">{{ t('review.approveDesc') }}</span>
           </span>
         </NeonButton>
 
-        <NeonButton variant="purple" size="md" class="w-full md:size-lg" @click="showStructuredFeedback = true; requestDecision('needs_revision')" :loading="isSubmitting" :disabled="isSubmitting">
-          <span class="flex flex-col items-center gap-1">
-            <AppIcon name="Edit3" size="lg" variant="white" />
+        <NeonButton variant="purple" size="md" @click="showStructuredFeedback = true; requestDecision('needs_revision')" :loading="isSubmitting" :disabled="isSubmitting">
+          <span class="inline-flex items-center gap-2">
+            <AppIcon name="Edit3" size="md" variant="white" />
             <span class="font-semibold">{{ t('review.revise') }}</span>
-            <span class="text-xs opacity-70">{{ t('review.reviseDesc') }}</span>
           </span>
         </NeonButton>
 
-        <NeonButton variant="ghost" size="md" class="w-full md:size-lg border border-rose-200 !text-rose-500 hover:bg-rose-50" @click="showStructuredFeedback = true; requestDecision('rejected')" :disabled="isSubmitting">
-          <span class="flex flex-col items-center gap-1">
-            <AppIcon name="XCircle" size="lg" variant="pink" />
+        <NeonButton variant="ghost" size="md" class="border border-rose-200 !text-rose-500 hover:bg-rose-50" @click="showStructuredFeedback = true; requestDecision('rejected')" :disabled="isSubmitting">
+          <span class="inline-flex items-center gap-2">
+            <AppIcon name="XCircle" size="md" variant="pink" />
             <span class="font-semibold">{{ t('review.reject') }}</span>
-            <span class="text-xs !opacity-100 text-rose-400">{{ t('review.rejectDesc') }}</span>
           </span>
         </NeonButton>
       </div>

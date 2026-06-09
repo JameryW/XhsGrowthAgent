@@ -147,12 +147,6 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
           <NeonButton variant="ghost" size="sm" @click="fetchWorkflows" :loading="isLoading">
             <AppIcon name="RefreshCw" size="sm" variant="cyan" />
           </NeonButton>
-          <NeonButton variant="pink" size="sm" @click="router.push('/')">
-            <span class="inline-flex items-center gap-1.5">
-              <AppIcon name="Plus" size="sm" variant="white" />
-              {{ t('history.startNew') }}
-            </span>
-          </NeonButton>
         </div>
       </div>
     </div>
@@ -180,10 +174,10 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
       <h3 class="text-base md:text-lg font-semibold text-slate-700 mb-1">{{ t('history.empty') }}</h3>
       <p class="text-xs md:text-sm text-slate-400 mb-4 md:mb-5">{{ t('history.emptyDesc') }}</p>
       <div class="flex justify-center gap-3">
-        <NeonButton variant="pink" @click="router.push('/')">
+        <NeonButton variant="pink" size="sm" @click="router.push('/')">
           {{ t('history.startNew') }}
         </NeonButton>
-        <NeonButton variant="ghost" @click="router.push('/')">
+        <NeonButton variant="ghost" size="sm" @click="router.push('/')">
           {{ t('history.backHome') }}
         </NeonButton>
       </div>

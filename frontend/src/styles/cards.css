@@ -2,7 +2,7 @@
 
 /* Base card - clean, minimal */
 .card {
-  @apply rounded-xl bg-white border border-slate-200/60 shadow-sm;
+  @apply rounded-xl md:rounded-2xl p-3 md:p-6 bg-white border border-slate-200/60 shadow-sm;
 }
 
 /* Card with hover effect */
