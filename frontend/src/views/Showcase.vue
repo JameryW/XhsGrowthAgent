@@ -127,13 +127,13 @@ onMounted(() => {
 
 type IconVariant = 'pink' | 'cyan' | 'purple' | 'peach' | 'white'
 
-const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVariant: IconVariant }> = [
-  { key: 'scouting', icon: 'Search', iconBg: 'bg-rose-50', iconVariant: 'pink' },
-  { key: 'planning', icon: 'ClipboardList', iconBg: 'bg-teal-50', iconVariant: 'cyan' },
-  { key: 'creating', icon: 'Pencil', iconBg: 'bg-amber-50', iconVariant: 'peach' },
-  { key: 'reviewing', icon: 'Clock', iconBg: 'bg-violet-50', iconVariant: 'purple' },
-  { key: 'publishing', icon: 'Upload', iconBg: 'bg-emerald-50', iconVariant: 'cyan' },
-  { key: 'analyzing', icon: 'BarChart3', iconBg: 'bg-blue-50', iconVariant: 'purple' },
+const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVariant: IconVariant; glowColor: string }> = [
+  { key: 'scouting', icon: 'Search', iconBg: 'bg-rose-100', iconVariant: 'pink', glowColor: 'shadow-rose-200/50' },
+  { key: 'planning', icon: 'ClipboardList', iconBg: 'bg-teal-100', iconVariant: 'cyan', glowColor: 'shadow-teal-200/50' },
+  { key: 'creating', icon: 'Pencil', iconBg: 'bg-amber-100', iconVariant: 'peach', glowColor: 'shadow-amber-200/50' },
+  { key: 'reviewing', icon: 'Clock', iconBg: 'bg-violet-100', iconVariant: 'purple', glowColor: 'shadow-violet-200/50' },
+  { key: 'publishing', icon: 'Upload', iconBg: 'bg-emerald-100', iconVariant: 'cyan', glowColor: 'shadow-emerald-200/50' },
+  { key: 'analyzing', icon: 'BarChart3', iconBg: 'bg-sky-100', iconVariant: 'purple', glowColor: 'shadow-sky-200/50' },
 ]
 </script>
 
@@ -191,52 +191,64 @@ const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVa
 
       <!-- Content -->
       <template v-else>
-        <!-- Hero tagline -->
-        <div class="text-center mb-8">
-          <h2 class="text-2xl md:text-3xl font-extrabold gradient-text-animate leading-tight">{{ t('showcase.heroTagline') }}</h2>
+        <!-- Hero section -->
+        <div class="text-center mb-10">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-50 border border-rose-100 mb-4">
+            <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+            <span class="text-[11px] text-rose-600 font-medium">{{ t('showcase.subtitle') }}</span>
+          </div>
+          <h2 class="text-3xl md:text-4xl font-black gradient-text-animate leading-tight mb-3">{{ t('showcase.heroTagline') }}</h2>
+          <p class="text-sm text-slate-400 max-w-md mx-auto">{{ t('showcase.subtitle') }}</p>
         </div>
 
-        <!-- Summary bar -->
-        <div class="flex items-center gap-4 mb-6 text-xs">
-          <span class="flex items-center gap-1.5 text-teal-600 font-medium">
-            <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
-            {{ runningWorkflows.length }} {{ t('showcase.stats.running') }}
-          </span>
-          <span class="flex items-center gap-1.5 text-emerald-600 font-medium">
-            <span class="w-2 h-2 rounded-full bg-emerald-500" />
-            {{ completedWorkflows.length }} {{ t('showcase.stats.completed') }}
-          </span>
-          <span v-if="otherWorkflows.length > 0" class="flex items-center gap-1.5 text-slate-400">
-            {{ otherWorkflows.length }} {{ t('showcase.stats.other') }}
-          </span>
-        </div>
-
-        <!-- How it Works -->
-        <div class="mb-8">
-          <h3 class="text-sm font-semibold text-slate-600 mb-4 text-center">{{ t('showcase.howItWorks') }}</h3>
-          <div class="grid grid-cols-2 md:grid-cols-6 gap-3 md:gap-4">
+        <!-- Pipeline animation -->
+        <div class="mb-10 p-5 md:p-6 rounded-2xl bg-gradient-to-br from-slate-50/80 to-white border border-slate-200/50 shadow-sm relative overflow-hidden">
+          <!-- Animated background glow -->
+          <div class="absolute inset-0 pointer-events-none opacity-30" style="background: radial-gradient(ellipse 60% 50% at 50% 50%, rgba(244,63,94,0.06) 0%, rgba(20,184,166,0.06) 40%, transparent 70%);" />
+          <div class="grid grid-cols-3 md:grid-cols-6 gap-3 md:gap-4 relative z-10">
             <div
               v-for="(step, i) in howItWorksSteps"
               :key="step.key"
-              class="relative flex flex-col items-center text-center p-3 rounded-xl bg-white border border-slate-100 shadow-sm transition-all duration-500 ease-out"
-              :class="stepsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'"
+              class="relative flex flex-col items-center text-center p-3 md:p-4 rounded-xl bg-white/90 backdrop-blur-sm border border-white/60 transition-all duration-600 ease-out group"
+              :class="[
+                stepsVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-8 scale-95',
+                stepsVisible ? step.glowColor : ''
+              ]"
               :style="{ transitionDelay: `${i * 120}ms` }"
             >
-              <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-2 shadow-sm transition-transform duration-300 hover:scale-110" :class="step.iconBg">
+              <!-- Glow ring behind icon -->
+              <div class="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" :class="step.iconBg" />
+              <div class="w-11 h-11 rounded-2xl flex items-center justify-center mb-2.5 shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:shadow-xl" :class="step.iconBg">
                 <AppIcon :name="step.icon" size="sm" :variant="step.iconVariant" />
               </div>
-              <div class="text-xs font-semibold text-slate-700 mb-1">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
-              <div class="text-[10px] text-slate-400 leading-relaxed">{{ t(`showcase.steps.${step.key}`) }}</div>
-              <!-- Connecting arrow on md+ -->
-              <div v-if="i < 5" class="hidden md:block absolute -right-3 top-1/2 -translate-y-1/2 text-slate-300 z-10">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6h8M8 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div class="text-xs font-bold text-slate-700 mb-1 relative z-10">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
+              <div class="text-[10px] text-slate-400 leading-relaxed hidden md:block relative z-10">{{ t(`showcase.steps.${step.key}`) }}</div>
+              <!-- Step number badge -->
+              <div class="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full bg-white border border-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-400 shadow-sm z-20">{{ i + 1 }}</div>
+              <!-- Connecting chevron on md+ -->
+              <div v-if="i < 5" class="hidden md:flex absolute -right-2.5 top-1/2 -translate-y-1/2 z-20 items-center justify-center w-3 h-3 rounded-full bg-gradient-to-br from-rose-400/30 to-teal-400/30">
+                <svg width="6" height="6" viewBox="0 0 6 6" fill="none"><path d="M1 3l2-2 2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400"/></svg>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Workflow cards -->
+        <!-- Status bar + Workflow cards -->
         <div class="space-y-4 md:space-y-5">
+          <!-- Status summary -->
+          <div class="flex items-center gap-4 text-xs">
+            <span class="flex items-center gap-1.5 text-teal-600 font-medium">
+              <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
+              {{ runningWorkflows.length }} {{ t('showcase.stats.running') }}
+            </span>
+            <span class="flex items-center gap-1.5 text-emerald-600 font-medium">
+              <span class="w-2 h-2 rounded-full bg-emerald-500" />
+              {{ completedWorkflows.length }} {{ t('showcase.stats.completed') }}
+            </span>
+            <span v-if="otherWorkflows.length > 0" class="flex items-center gap-1.5 text-slate-400">
+              {{ otherWorkflows.length }} {{ t('showcase.stats.other') }}
+            </span>
+          </div>
           <!-- Active workflows -->
           <template v-if="runningWorkflows.length > 0">
             <div v-for="wf in runningWorkflows" :key="wf.thread_id" class="rounded-xl bg-white border border-teal-200/50 shadow-sm overflow-hidden hover:shadow-md transition-shadow cursor-pointer" @click="goReplay(wf.thread_id)">
