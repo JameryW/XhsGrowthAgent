@@ -943,7 +943,10 @@
       "topCompetitor": "竞品爆款",
       "insights": "增长洞察",
       "created": "创建",
-      "updated": "更新"
+      "updated": "更新",
+      "collects": "收藏",
+      "comments": "评论",
+      "engagementRate": "互动率"
     },
     "stats": {
       "running": "进行中",

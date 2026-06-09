@@ -136,22 +136,74 @@ const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVa
   { key: 'analyzing', icon: 'BarChart3', iconBg: 'bg-sky-100', iconVariant: 'purple', glowColor: 'shadow-sky-200/50' },
 ]
 
-// Ellipse parameters for desktop loop layout (percentage-based for responsive)
-const ellipseA = 44  // semi-major axis as % of container width
-const ellipseB = 40  // semi-minor axis as % of container height (440px)
-const stepCardW = 140 // card width in px
-const stepCardH = 88  // approximate card height in px
+// Ellipse parameters for desktop loop layout
+// Container is max-w-[1200px] at 440px height; ellipse uses percentage of container
+const ellipseRxPct = 38  // semi-major axis as % of container width (px-based at runtime)
+const ellipseRyPct = 42  // semi-minor axis as % of container height (440px)
+const cardW = 136        // card width in px
+const cardH = 96         // approximate card height in px
 
-function stepStyle(i: number): Record<string, string> {
+function stepStyle(i: number, containerW: number): Record<string, string> {
+  const rx = containerW * ellipseRxPct / 100
+  const ry = 440 * ellipseRyPct / 100
   const angleDeg = i * 60 - 90
   const angleRad = angleDeg * Math.PI / 180
-  const x = ellipseA * Math.cos(angleRad)
-  const y = ellipseB * Math.sin(angleRad)
+  const x = rx * Math.cos(angleRad)
+  const y = ry * Math.sin(angleRad)
   return {
     transitionDelay: `${i * 120}ms`,
-    left: `calc(50% + ${x}% - ${stepCardW / 2}px)`,
-    top: `calc(50% + ${y}% - ${stepCardH / 2}px)`,
+    left: `calc(50% + ${x}px - ${cardW / 2}px)`,
+    top: `calc(50% + ${y}px - ${cardH / 2}px)`,
   }
+}
+
+// Container width ref for responsive ellipse positioning
+const containerW = ref(1200)
+const loopContainer = ref<HTMLElement | null>(null)
+
+onMounted(() => {
+  const updateW = () => {
+    if (loopContainer.value) containerW.value = loopContainer.value.clientWidth
+  }
+  updateW()
+  window.addEventListener('resize', updateW)
+})
+
+// Generate animateMotion path: full clockwise ellipse from top
+// Two half-elliptical arcs to form a closed loop
+const loopMotionPath = computed(() => {
+  const cx = containerW.value / 2
+  const cy = 220
+  const rx = containerW.value * ellipseRxPct / 100
+  const ry = 440 * ellipseRyPct / 100
+  const topY = cy - ry
+  // Arc 1: top → bottom (clockwise, large-arc-flag=1, sweep=1)
+  // Arc 2: bottom → top (clockwise, large-arc-flag=1, sweep=1)
+  return `M${cx},${topY} A${rx},${ry} 0 1,1 ${cx},${cy + ry} A${rx},${ry} 0 1,1 ${cx},${topY}`
+})
+
+// Direction arrows: small triangular markers on the ellipse between steps
+function arrowPoints(stepIdx: number): string {
+  const cx = containerW.value / 2
+  const cy = 220
+  const rx = containerW.value * ellipseRxPct / 100
+  const ry = 440 * ellipseRyPct / 100
+  // Arrow positioned at midpoint angle between step and next step
+  const midAngle = (stepIdx * 60 + 30 - 90) * Math.PI / 180
+  const ax = cx + rx * Math.cos(midAngle)
+  const ay = cy + ry * Math.sin(midAngle)
+  // Arrow points along tangent direction (perpendicular to radius, clockwise)
+  const tangX = -Math.sin(midAngle)
+  const tangY = Math.cos(midAngle)
+  const size = 6
+  // Triangle: tip at (ax + tangX*size, ay + tangY*size), base perpendicular
+  const p1x = ax + tangX * size
+  const p1y = ay + tangY * size
+  const p2x = ax - tangX * size * 0.3 - tangY * size * 0.5
+  const p2y = ay - tangY * size * 0.3 + tangX * size * 0.5
+  const p3x = ax - tangX * size * 0.3 + tangY * size * 0.5
+  const p3y = ay - tangY * size * 0.3 - tangX * size * 0.5
+  return `${p1x},${p1y} ${p2x},${p2y} ${p3x},${p3y}`
 }
 </script>
 
@@ -212,62 +264,70 @@ function stepStyle(i: number): Record<string, string> {
         <!-- Closed-loop pipeline animation -->
         <div class="mb-10 relative">
           <!-- Desktop: elliptical loop layout -->
-          <div class="hidden md:block relative" style="height: 440px;">
-            <!-- Background SVG: full elliptical loop path + animated dots -->
-            <!-- Uses viewBox 0 0 100 100 to match percentage positioning of step cards -->
-            <svg class="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <div ref="loopContainer" class="hidden md:block relative" style="height: 440px;">
+            <!-- SVG overlay: elliptical path + animated dots -->
+            <!-- viewBox matches container dimensions for proper aspect ratio -->
+            <svg class="absolute inset-0 w-full h-full pointer-events-none" :viewBox="`0 0 ${containerW} 440`" preserveAspectRatio="xMidYMid meet" fill="none" xmlns="http://www.w3.org/2000/svg">
               <defs>
-                <linearGradient id="ellipse-loop-grad" x1="0" y1="50" x2="100" y2="50" gradientUnits="userSpaceOnUse">
+                <linearGradient id="loop-grad" x1="0" y1="220" :x2="containerW" y2="220" gradientUnits="userSpaceOnUse">
                   <stop stop-color="#f43f5e" />
-                  <stop offset="0.35" stop-color="#14b8a6" />
-                  <stop offset="0.65" stop-color="#8b5cf6" />
+                  <stop offset="0.3" stop-color="#14b8a6" />
+                  <stop offset="0.6" stop-color="#8b5cf6" />
                   <stop offset="1" stop-color="#f43f5e" />
                 </linearGradient>
                 <filter id="dot-glow" x="-100%" y="-100%" width="300%" height="300%">
-                  <feGaussianBlur in="SourceGraphic" stdDeviation="0.4" result="blur" />
+                  <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
                   <feMerge>
                     <feMergeNode in="blur" />
                     <feMergeNode in="SourceGraphic" />
                   </feMerge>
                 </filter>
               </defs>
-              <!-- Main elliptical loop path (matches 44% x 40% of container) -->
-              <ellipse cx="50" cy="50" rx="44" ry="40" stroke="url(#ellipse-loop-grad)" stroke-width="0.2" stroke-dasharray="1 0.5" fill="none" opacity="0.4">
-                <animate attributeName="stroke-dashoffset" from="0" to="-3" dur="3s" repeatCount="indefinite" />
+              <!-- Main elliptical loop path -->
+              <ellipse :cx="containerW / 2" cy="220" :rx="containerW * ellipseRxPct / 100" :ry="440 * ellipseRyPct / 100" stroke="url(#loop-grad)" stroke-width="1.5" stroke-dasharray="8 4" fill="none" opacity="0.35">
+                <animate attributeName="stroke-dashoffset" from="0" to="-24" dur="3s" repeatCount="indefinite" />
               </ellipse>
-              <!-- Faint second loop for depth -->
-              <ellipse cx="50" cy="50" rx="44" ry="40" stroke="url(#ellipse-loop-grad)" stroke-width="0.08" stroke-dasharray="0.4 0.8" fill="none" opacity="0.15">
-                <animate attributeName="stroke-dashoffset" from="0" to="3" dur="5s" repeatCount="indefinite" />
+              <!-- Faint inner loop for depth -->
+              <ellipse :cx="containerW / 2" cy="220" :rx="containerW * ellipseRxPct / 100 - 8" :ry="440 * ellipseRyPct / 100 - 8" stroke="url(#loop-grad)" stroke-width="0.6" stroke-dasharray="3 6" fill="none" opacity="0.12">
+                <animate attributeName="stroke-dashoffset" from="0" to="18" dur="5s" repeatCount="indefinite" />
               </ellipse>
-              <!-- Animated dot 1: rose, traveling the full ellipse -->
-              <circle r="0.6" fill="#f43f5e" opacity="0.9" filter="url(#dot-glow)">
+              <!-- Animated dot 1: rose, clockwise around the ellipse -->
+              <circle r="5" fill="#f43f5e" opacity="0.85" filter="url(#dot-glow)">
                 <animateMotion dur="8s" repeatCount="indefinite">
-                  <mpath href="#ellipse-loop-path" />
+                  <mpath href="#loop-motion-path" />
                 </animateMotion>
               </circle>
-              <!-- Animated dot 2: teal, offset by half -->
-              <circle r="0.6" fill="#14b8a6" opacity="0.9" filter="url(#dot-glow)">
+              <!-- Animated dot 2: teal, offset by half period -->
+              <circle r="5" fill="#14b8a6" opacity="0.85" filter="url(#dot-glow)">
                 <animateMotion dur="8s" repeatCount="indefinite" begin="4s">
-                  <mpath href="#ellipse-loop-path" />
+                  <mpath href="#loop-motion-path" />
                 </animateMotion>
               </circle>
-              <!-- Hidden path for animateMotion reference: full ellipse from top, clockwise -->
-              <path id="ellipse-loop-path" d="M50,10 A44,40 0 1,1 49.99,10" fill="none" stroke="none" />
-              <!-- Center label -->
-              <text x="50" y="49" text-anchor="middle" fill="#94a3b8" font-size="1.8" font-weight="600" opacity="0.7">&#x27F3; {{ t('showcase.closedLoop') }}</text>
-              <text x="50" y="52" text-anchor="middle" fill="#cbd5e1" font-size="1.2" opacity="0.5">Analytics &#x2192; Scouting</text>
+              <!-- Hidden path for animateMotion: full ellipse clockwise from top -->
+              <!-- Two half-ellipses to form a complete closed loop -->
+              <path id="loop-motion-path" :d="loopMotionPath" fill="none" stroke="none" />
+              <!-- Direction arrows between steps -->
+              <polygon v-for="i in 6" :key="'arrow-'+i" :points="arrowPoints(i)" fill="#94a3b8" opacity="0.25" />
             </svg>
 
-            <!-- Step cards positioned on the ellipse (percentage-based) -->
+            <!-- Center label (HTML overlay for proper text rendering) -->
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div class="text-center">
+                <div class="text-sm font-semibold text-slate-400/70">&#x27F3; {{ t('showcase.closedLoop') }}</div>
+                <div class="text-xs text-slate-300/50 mt-0.5">Analytics &#x2192; Scouting</div>
+              </div>
+            </div>
+
+            <!-- Step cards positioned on the ellipse -->
             <div
               v-for="(step, i) in howItWorksSteps"
               :key="step.key"
-              class="absolute w-[140px] flex flex-col items-center text-center p-3 rounded-2xl bg-white/90 backdrop-blur-sm border border-white/60 transition-all duration-600 ease-out group"
+              class="absolute w-[136px] flex flex-col items-center text-center p-3 rounded-2xl bg-white/90 backdrop-blur-sm border border-white/60 transition-all duration-600 ease-out group"
               :class="[
                 stepsVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-6 scale-95',
                 stepsVisible ? step.glowColor : ''
               ]"
-              :style="stepStyle(i)"
+              :style="stepStyle(i, containerW)"
             >
               <div class="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" :class="step.iconBg" />
               <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:shadow-xl" :class="step.iconBg">
@@ -366,10 +426,10 @@ function stepStyle(i: number): Record<string, string> {
                       </div>
                       <div v-if="getDetail(wf.thread_id)!.copy_content?.selected_title">
                         <div class="text-sm font-semibold text-rose-600 leading-snug">{{ getDetail(wf.thread_id)!.copy_content!.selected_title }}</div>
-                        <div v-if="getDetail(wf.thread_id)!.copy_content?.body_text" class="text-xs text-slate-500 mt-1.5 line-clamp-4 whitespace-pre-line">{{ getDetail(wf.thread_id)!.copy_content!.body_text }}</div>
+                        <div v-if="getDetail(wf.thread_id)!.copy_content?.body_text" class="text-xs text-slate-500 mt-1.5 line-clamp-6 whitespace-pre-line">{{ getDetail(wf.thread_id)!.copy_content!.body_text }}</div>
                       </div>
                       <div v-if="getDetail(wf.thread_id)!.copy_content?.hashtags?.length" class="flex flex-wrap gap-1">
-                        <span v-for="tag in getDetail(wf.thread_id)!.copy_content!.hashtags!.slice(0, 10)" :key="tag" class="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700">#{{ tag }}</span>
+                        <span v-for="tag in getDetail(wf.thread_id)!.copy_content!.hashtags!" :key="tag" class="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700">#{{ tag }}</span>
                       </div>
                       <div v-if="getDetail(wf.thread_id)!.content_plan?.key_points?.length" class="space-y-0.5">
                         <div v-for="(point, i) in getDetail(wf.thread_id)!.content_plan!.key_points!.slice(0, 3)" :key="i" class="text-xs text-slate-500 flex gap-1">
@@ -383,13 +443,13 @@ function stepStyle(i: number): Record<string, string> {
                       <div v-if="getDetail(wf.thread_id)!.trend_data?.hot_topics?.length">
                         <div class="text-[10px] text-slate-400 font-medium mb-1 uppercase tracking-wide">{{ t('showcase.detail.hotTopics') }}</div>
                         <div class="flex flex-wrap gap-1">
-                          <span v-for="ht in getDetail(wf.thread_id)!.trend_data!.hot_topics!.slice(0, 4)" :key="ht.topic" class="text-[11px] px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600">{{ ht.topic }}</span>
+                          <span v-for="ht in getDetail(wf.thread_id)!.trend_data!.hot_topics!" :key="ht.topic" class="text-[11px] px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600">{{ ht.topic }}</span>
                         </div>
                       </div>
                       <div v-if="getDetail(wf.thread_id)!.trend_data?.trending_keywords?.length">
                         <div class="text-[10px] text-slate-400 font-medium mb-1 uppercase tracking-wide">{{ t('replay.trendingKeywords') }}</div>
                         <div class="flex flex-wrap gap-1">
-                          <span v-for="kw in getDetail(wf.thread_id)!.trend_data!.trending_keywords!.slice(0, 5)" :key="kw" class="text-[11px] px-1.5 py-0.5 rounded-md bg-pink-50 text-pink-600 border border-pink-100">{{ kw }}</span>
+                          <span v-for="kw in getDetail(wf.thread_id)!.trend_data!.trending_keywords!" :key="kw" class="text-[11px] px-1.5 py-0.5 rounded-md bg-pink-50 text-pink-600 border border-pink-100">{{ kw }}</span>
                         </div>
                       </div>
                       <div v-if="getDetail(wf.thread_id)!.visual_plan" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
@@ -474,7 +534,7 @@ function stepStyle(i: number): Record<string, string> {
                       <div v-if="getDetail(wf.thread_id)!.trend_data?.trending_keywords?.length">
                         <div class="text-[10px] text-slate-400 font-medium mb-1 uppercase tracking-wide">{{ t('replay.trendingKeywords') }}</div>
                         <div class="flex flex-wrap gap-1">
-                          <span v-for="kw in getDetail(wf.thread_id)!.trend_data!.trending_keywords!.slice(0, 5)" :key="kw" class="text-[11px] px-1.5 py-0.5 rounded-md bg-pink-50 text-pink-600 border border-pink-100">{{ kw }}</span>
+                          <span v-for="kw in getDetail(wf.thread_id)!.trend_data!.trending_keywords!" :key="kw" class="text-[11px] px-1.5 py-0.5 rounded-md bg-pink-50 text-pink-600 border border-pink-100">{{ kw }}</span>
                         </div>
                       </div>
                       <div v-if="getDetail(wf.thread_id)!.trend_data?.competitor_posts?.[0]" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
@@ -495,6 +555,18 @@ function stepStyle(i: number): Record<string, string> {
                         <div class="p-1.5 rounded bg-pink-50 text-center">
                           <div class="text-[10px] text-slate-400">Likes</div>
                           <div class="text-xs font-bold text-pink-600">{{ formatNum((getDetail(wf.thread_id)!.analytics as any).likes) }}</div>
+                        </div>
+                        <div v-if="(getDetail(wf.thread_id)!.analytics as any).collects !== undefined" class="p-1.5 rounded bg-amber-50 text-center">
+                          <div class="text-[10px] text-slate-400">{{ t('showcase.detail.collects') }}</div>
+                          <div class="text-xs font-bold text-amber-600">{{ formatNum((getDetail(wf.thread_id)!.analytics as any).collects) }}</div>
+                        </div>
+                        <div v-if="(getDetail(wf.thread_id)!.analytics as any).comments !== undefined" class="p-1.5 rounded bg-teal-50 text-center">
+                          <div class="text-[10px] text-slate-400">{{ t('showcase.detail.comments') }}</div>
+                          <div class="text-xs font-bold text-teal-600">{{ formatNum((getDetail(wf.thread_id)!.analytics as any).comments) }}</div>
+                        </div>
+                        <div v-if="(getDetail(wf.thread_id)!.analytics as any).engagement_rate !== undefined" class="p-1.5 rounded bg-violet-50 text-center col-span-2">
+                          <div class="text-[10px] text-slate-400">{{ t('showcase.detail.engagementRate') }}</div>
+                          <div class="text-xs font-bold text-violet-600">{{ ((getDetail(wf.thread_id)!.analytics as any).engagement_rate * 100).toFixed(1) }}%</div>
                         </div>
                       </div>
                       <div v-if="(getDetail(wf.thread_id)!.analytics as any)?.insights?.length">

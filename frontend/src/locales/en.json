@@ -943,7 +943,10 @@
       "topCompetitor": "Top Competitor Post",
       "insights": "Growth Insights",
       "created": "Created",
-      "updated": "Updated"
+      "updated": "Updated",
+      "collects": "Collects",
+      "comments": "Comments",
+      "engagementRate": "Engagement Rate"
     },
     "stats": {
       "running": "Running",
