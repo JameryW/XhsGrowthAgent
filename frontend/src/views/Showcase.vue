@@ -118,6 +118,13 @@ function formatNum(n?: number): string {
 
 const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
 
+const stepsVisible = ref(false)
+
+onMounted(() => {
+  // Trigger staggered animation after short delay
+  setTimeout(() => { stepsVisible.value = true }, 300)
+})
+
 type IconVariant = 'pink' | 'cyan' | 'purple' | 'peach' | 'white'
 
 const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVariant: IconVariant }> = [
@@ -208,8 +215,14 @@ const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVa
         <div class="mb-8">
           <h3 class="text-sm font-semibold text-slate-600 mb-4 text-center">{{ t('showcase.howItWorks') }}</h3>
           <div class="grid grid-cols-2 md:grid-cols-6 gap-3 md:gap-4">
-            <div v-for="(step, i) in howItWorksSteps" :key="step.key" class="fade-slide-up-animation relative flex flex-col items-center text-center p-3 rounded-xl bg-white border border-slate-100 shadow-sm" :style="{ animationDelay: `${i * 100}ms` }">
-              <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-2 shadow-sm" :class="step.iconBg">
+            <div
+              v-for="(step, i) in howItWorksSteps"
+              :key="step.key"
+              class="relative flex flex-col items-center text-center p-3 rounded-xl bg-white border border-slate-100 shadow-sm transition-all duration-500 ease-out"
+              :class="stepsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'"
+              :style="{ transitionDelay: `${i * 120}ms` }"
+            >
+              <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-2 shadow-sm transition-transform duration-300 hover:scale-110" :class="step.iconBg">
                 <AppIcon :name="step.icon" size="sm" :variant="step.iconVariant" />
               </div>
               <div class="text-xs font-semibold text-slate-700 mb-1">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
