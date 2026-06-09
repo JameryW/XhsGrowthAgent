@@ -145,7 +145,7 @@ function refreshData() {
 }
 
 function goHome() {
-  router.push('/')
+  router.push('/start')
 }
 
 const budgetUsedPercent = computed(() => {
@@ -189,7 +189,7 @@ const insightBg = (type: string) => {
 function startWithTopic(topic: string, niche?: string) {
   const query: Record<string, string> = { topic }
   if (niche) query.niche = niche
-  router.push({ path: '/', query })
+  router.push({ path: '/start', query })
 }
 </script>
 

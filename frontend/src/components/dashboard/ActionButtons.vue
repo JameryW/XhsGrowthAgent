@@ -69,7 +69,7 @@ const statusSourceColor = computed(() => {
 
 // Operations
 const startNewWorkflow = () => {
-  router.push('/')
+  router.push('/start')
 }
 
 const pauseWorkflow = () => {

@@ -350,7 +350,7 @@ const handleCancelConfirm = () => {
         <NeonButton variant="pink" size="sm" class="md:size-md" @click="router.push('/dashboard')">
           {{ t('review.emptyState.goDashboard') }}
         </NeonButton>
-        <NeonButton variant="ghost" size="sm" class="md:size-md" @click="router.push('/')">
+        <NeonButton variant="ghost" size="sm" class="md:size-md" @click="router.push('/start')">
           {{ t('review.emptyState.goHome') }}
         </NeonButton>
       </div>

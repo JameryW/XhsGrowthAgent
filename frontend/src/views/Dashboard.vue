@@ -182,7 +182,7 @@ onUnmounted(() => {
                 </button>
                 <button
                   v-if="workflowStore.publishError.recovery.action === 'reconfigure'"
-                  @click="router.push('/')"
+                  @click="router.push('/start')"
                   class="btn-sm bg-violet-100 text-violet-600 hover:bg-violet-200 text-xs"
                 >
                   {{ workflowStore.publishError.recovery.action_label }}
