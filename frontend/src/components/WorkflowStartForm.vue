@@ -276,68 +276,44 @@ defineExpose({ getConfig })
         <AppIcon name="GitBranch" size="sm" variant="purple" />
         {{ t('home.form.startPhase') }}
       </label>
-      <div class="relative">
-        <!-- Timeline connector line -->
-        <div class="absolute left-[23px] top-4 bottom-4 w-px bg-gradient-to-b from-neon-pink/30 via-neon-purple/20 to-slate-200" />
-
-        <div class="space-y-1.5">
-          <button
-            v-for="(p, idx) in phases"
-            :key="p.value"
-            @click="phase = p.value"
-            :class="[
-              'relative w-full flex items-center gap-3.5 p-3 pl-3 rounded-xl border-2 text-left',
-              'transition-all duration-300 ease-out cursor-pointer select-none',
-              phase === p.value
-                ? 'border-neon-pink/30 bg-gradient-to-r from-neon-pink/[0.04] to-transparent shadow-sm'
-                : 'border-transparent bg-transparent hover:bg-slate-50 hover:border-slate-100'
-            ]"
-          >
-            <!-- Step indicator -->
-            <div :class="[
-              'relative z-10 flex items-center justify-center w-[22px] h-[22px] rounded-full border-2 shrink-0',
-              'transition-all duration-300',
-              phase === p.value
-                ? 'border-neon-pink bg-neon-pink shadow-neon-pink-sm'
-                : 'border-slate-200 bg-white'
-            ]">
-              <AppIcon
-                v-if="phase === p.value"
-                :name="p.icon"
-                size="sm"
-                variant="white"
-              />
-              <span
-                v-else
-                class="text-[10px] font-bold text-slate-400"
-              >{{ idx + 1 }}</span>
-            </div>
-
-            <!-- Text -->
-            <div class="flex-1 min-w-0">
-              <span :class="[
-                'text-sm font-semibold block',
-                phase === p.value ? 'text-neon-pinkDark' : 'text-slate-600'
-              ]">
-                {{ t(`home.form.phases.${p.key}.label`) }}
-              </span>
-              <span :class="[
-                'text-xs block mt-0.5',
-                phase === p.value ? 'text-slate-500' : 'text-slate-400'
-              ]">
-                {{ t(`home.form.phases.${p.key}.desc`) }}
-              </span>
-            </div>
-
-            <!-- Selected checkmark -->
-            <div
+      <div class="grid grid-cols-4 gap-2">
+        <button
+          v-for="(p, idx) in phases"
+          :key="p.value"
+          @click="phase = p.value"
+          :class="[
+            'relative flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 text-center',
+            'transition-all duration-300 ease-out cursor-pointer select-none',
+            phase === p.value
+              ? 'border-neon-pink/50 bg-gradient-to-br from-neon-pink/10 to-neon-peach/5 shadow-neon-pink-sm'
+              : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50 hover:shadow-sm'
+          ]"
+        >
+          <div :class="[
+            'flex items-center justify-center w-6 h-6 rounded-full border-2 shrink-0',
+            'transition-all duration-300',
+            phase === p.value
+              ? 'border-neon-pink bg-neon-pink'
+              : 'border-slate-200 bg-white'
+          ]">
+            <AppIcon
               v-if="phase === p.value"
-              class="flex items-center justify-center w-5 h-5 rounded-full bg-neon-pink/10 shrink-0"
-            >
-              <AppIcon name="Check" size="sm" variant="pink" />
-            </div>
-          </button>
-        </div>
+              :name="p.icon"
+              size="sm"
+              variant="white"
+            />
+            <span
+              v-else
+              class="text-[9px] font-bold text-slate-400"
+            >{{ idx + 1 }}</span>
+          </div>
+          <span :class="[
+            'text-[11px] font-semibold leading-tight',
+            phase === p.value ? 'text-neon-pinkDark' : 'text-slate-500'
+          ]">
+            {{ t(`home.form.phases.${p.key}.label`) }}
+          </span>
+        </button>
       </div>
     </div>
 
