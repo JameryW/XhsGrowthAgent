@@ -26,7 +26,7 @@ const route = useRoute()
 const { isMobile, isTablet } = useBreakpoints()
 
 // Hide Navbar and chrome on login page
-const showChrome = computed(() => authStore.isAuthenticated && route.name !== 'login')
+const showChrome = computed(() => authStore.isAuthenticated && route.name !== 'login' && route.name !== 'showcase')
 const { initOnboarding, skipTour, completeTour, advanceStep } = useOnboarding()
 useShortcuts()
 

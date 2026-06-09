@@ -916,6 +916,65 @@
     "orText": "或粘贴文本",
     "textDisabledByPdf": "已上传 PDF — 文本输入已禁用"
   },
+  "showcase": {
+    "title": "小红书增长引擎",
+    "subtitle": "AI 驱动的自动化内容创作平台",
+    "dashboard": "管控台",
+    "empty": "暂无工作流",
+    "emptyDesc": "工作流启动后将在此展示",
+    "footer": "小红书增长引擎 — AI 驱动的自动化内容创作平台",
+    "detail": {
+      "topic": "选题方向",
+      "hotTopics": "热门话题",
+      "title": "生成标题",
+      "visual": "视觉方案",
+      "imageCount": "{count} 张图",
+      "topCompetitor": "竞品爆款",
+      "insights": "增长洞察",
+      "created": "创建",
+      "updated": "更新"
+    },
+    "stats": {
+      "running": "进行中",
+      "completed": "已完成",
+      "other": "其他"
+    },
+    "section": {
+      "running": "进行中的工作流",
+      "completed": "已完成的工作流",
+      "other": "其他工作流"
+    },
+    "status": {
+      "running": "运行中",
+      "completed": "已完成",
+      "error": "出错",
+      "cancelled": "已取消",
+      "paused": "已暂停",
+      "stale": "异常",
+      "awaitingReview": "待审核",
+      "awaitingChoice": "待选择",
+      "awaitingDraft": "待草稿",
+      "awaitingBrief": "待简报",
+      "awaitingRipple": "待 Ripple 决策",
+      "awaitingBlogger": "待选博主",
+      "idle": "空闲"
+    },
+    "phase": {
+      "idle": "空闲",
+      "scouting": "趋势发现",
+      "planning": "策略规划",
+      "creating": "内容创作",
+      "briefing": "Brief 解析",
+      "reviewing": "内容审核",
+      "publishing": "发布中",
+      "analyzing": "数据分析",
+      "engaging": "互动管理",
+      "completed": "已完成",
+      "error": "错误",
+      "paused": "已暂停",
+      "cancelled": "已取消"
+    }
+  },
   "blogger": {
     "selectTitle": "选择参考博主",
     "subtitle": "选择一位博主，其热门笔记将作为创作参考",
