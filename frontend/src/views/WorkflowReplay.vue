@@ -75,36 +75,40 @@ function phaseToIndex(phase: string): number {
 }
 
 function getNodeStatus(phase: string): NodeStatus {
+  // In replay mode, determine status based on the selected checkpoint's position
+  const cp = selectedCheckpoint.value
+  if (cp) {
+    const cpPhase = cp.phase
+    const cpStatus = effectiveState.value?.status
+
+    // Workflow fully completed → all nodes completed
+    if (cpPhase === 'completed' || cpStatus === 'completed') return 'completed'
+
+    const idx = phaseToIndex(phase)
+    const cpIdx = phaseToIndex(cpPhase)
+
+    if (idx < 0 || cpIdx < 0) return 'pending'
+
+    // Error: mark the error phase, prior completed
+    if (cpPhase === 'error') {
+      if (idx < cpIdx) return 'completed'
+      if (idx === cpIdx) return 'error'
+      return 'pending'
+    }
+
+    // Normal: prior phases completed, current running, later pending
+    if (idx < cpIdx) return 'completed'
+    if (idx === cpIdx) return 'running'
+    return 'pending'
+  }
+
+  // Fallback: no checkpoint selected, use effectiveState
   if (!effectiveState.value) return 'pending'
   const currentPhase = effectiveState.value.phase
   const currentStatus = effectiveState.value.status
 
-  // Completed workflow: all nodes completed
   if (currentPhase === 'completed' || currentStatus === 'completed') return 'completed'
 
-  // Error workflow: mark current phase as error, prior as completed
-  if (currentPhase === 'error') {
-    const idx = phaseToIndex(phase)
-    const errIdx = phaseToIndex(effectiveState.value.phase === 'error' ? (effectiveState.value as any).phase || 'scouting' : currentPhase)
-    if (idx < 0) return 'pending'
-    if (idx < errIdx) return 'completed'
-    if (idx === errIdx) return 'error'
-    return 'pending'
-  }
-
-  // Cancelled/paused: treat as frozen, prior phases completed
-  if (currentPhase === 'cancelled' || currentPhase === 'paused') {
-    const idx = phaseToIndex(phase)
-    // Use stored phase to determine progress (via effectiveState metadata)
-    const storedPhase = effectiveState.value.phase
-    const storedIdx = phaseToIndex(storedPhase)
-    if (idx < 0 || storedIdx < 0) return 'pending'
-    if (idx < storedIdx) return 'completed'
-    if (idx === storedIdx) return 'running'
-    return 'pending'
-  }
-
-  // Normal linear flow
   const idx = phaseToIndex(phase)
   const currentIdx = phaseToIndex(currentPhase)
   if (idx < 0 || currentIdx < 0) return 'pending'
