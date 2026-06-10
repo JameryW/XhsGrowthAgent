@@ -20,7 +20,6 @@ async function fetchWorkflows() {
   try {
     const result = await listWorkflows({ limit: 50 })
     workflows.value = result.workflows
-    // Load all details in parallel
     const promises = result.workflows.map(async (wf) => {
       try {
         const state = await getWorkflowStatus(wf.thread_id)
@@ -91,7 +90,6 @@ function phaseLabel(phase: WorkflowPhase): string {
   return map[phase] || phase
 }
 
-// Pipeline phase steps
 const pipelineSteps = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'analyzing']
 
 function pipelineProgress(phase: WorkflowPhase): number {
@@ -119,22 +117,73 @@ function formatNum(n?: number): string {
 const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
 
 const stepsVisible = ref(false)
-
 onMounted(() => {
-  // Trigger staggered animation after short delay
-  setTimeout(() => { stepsVisible.value = true }, 300)
+  setTimeout(() => { stepsVisible.value = true }, 200)
 })
 
 type IconVariant = 'pink' | 'cyan' | 'purple' | 'peach' | 'white'
 
-const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVariant: IconVariant; glowColor: string }> = [
-  { key: 'scouting', icon: 'Search', iconBg: 'bg-rose-100', iconVariant: 'pink', glowColor: 'shadow-rose-200/50' },
-  { key: 'planning', icon: 'ClipboardList', iconBg: 'bg-teal-100', iconVariant: 'cyan', glowColor: 'shadow-teal-200/50' },
-  { key: 'creating', icon: 'Pencil', iconBg: 'bg-amber-100', iconVariant: 'peach', glowColor: 'shadow-amber-200/50' },
-  { key: 'reviewing', icon: 'Clock', iconBg: 'bg-violet-100', iconVariant: 'purple', glowColor: 'shadow-violet-200/50' },
-  { key: 'publishing', icon: 'Upload', iconBg: 'bg-emerald-100', iconVariant: 'cyan', glowColor: 'shadow-emerald-200/50' },
-  { key: 'analyzing', icon: 'BarChart3', iconBg: 'bg-sky-100', iconVariant: 'purple', glowColor: 'shadow-sky-200/50' },
+// Pipeline step definitions
+const howItWorksSteps: Array<{
+  key: string
+  icon: string
+  color: string        // primary color class for glow
+  iconVariant: IconVariant
+  borderColor: string  // border color class for station node
+  iconColor: string    // text color class for icon
+}> = [
+  { key: 'scouting', icon: 'Search', color: 'bg-rose-500', iconVariant: 'pink', borderColor: 'border-rose-400', iconColor: 'text-rose-500' },
+  { key: 'planning', icon: 'ClipboardList', color: 'bg-teal-500', iconVariant: 'cyan', borderColor: 'border-teal-400', iconColor: 'text-teal-500' },
+  { key: 'creating', icon: 'Pencil', color: 'bg-amber-500', iconVariant: 'peach', borderColor: 'border-amber-400', iconColor: 'text-amber-500' },
+  { key: 'reviewing', icon: 'Clock', color: 'bg-violet-500', iconVariant: 'purple', borderColor: 'border-violet-400', iconColor: 'text-violet-500' },
+  { key: 'publishing', icon: 'Upload', color: 'bg-emerald-500', iconVariant: 'cyan', borderColor: 'border-emerald-400', iconColor: 'text-emerald-500' },
+  { key: 'analyzing', icon: 'BarChart3', color: 'bg-sky-500', iconVariant: 'cyan', borderColor: 'border-sky-400', iconColor: 'text-sky-500' },
 ]
+
+// Ellipse parameters for desktop loop layout
+const ellipseRxPct = 36   // semi-major axis as % of container width
+const ellipseRyPct = 38   // semi-minor axis as % of container height
+const nodeSize = 48       // circle node diameter in px
+
+function stepStyle(i: number, containerW: number): Record<string, string> {
+  const rx = containerW * ellipseRxPct / 100
+  const ry = 420 * ellipseRyPct / 100
+  const angleDeg = i * 60 - 90
+  const angleRad = angleDeg * Math.PI / 180
+  const x = rx * Math.cos(angleRad)
+  const y = ry * Math.sin(angleRad)
+  return {
+    transitionDelay: `${i * 100}ms`,
+    left: `calc(50% + ${x}px - ${nodeSize / 2}px)`,
+    top: `calc(50% + ${y}px - ${nodeSize / 2}px)`,
+  }
+}
+
+// Container width ref for responsive ellipse
+const containerW = ref(1200)
+const loopContainer = ref<HTMLElement | null>(null)
+
+onMounted(() => {
+  const updateW = () => {
+    if (loopContainer.value) containerW.value = loopContainer.value.clientWidth
+  }
+  updateW()
+  window.addEventListener('resize', updateW)
+})
+
+// SVG viewBox dimensions (match container)
+const svgCx = computed(() => containerW.value / 2)
+const svgCy = 210
+const svgRx = computed(() => containerW.value * ellipseRxPct / 100)
+const svgRy = computed(() => 420 * ellipseRyPct / 100)
+
+// animateMotion path: full clockwise ellipse from top
+const loopMotionPath = computed(() => {
+  const cx = svgCx.value
+  const topY = svgCy - svgRy.value
+  const bottomY = svgCy + svgRy.value
+  return `M${cx},${topY} A${svgRx.value},${svgRy.value} 0 1,1 ${cx},${bottomY} A${svgRx.value},${svgRy.value} 0 1,1 ${cx},${topY}`
+})
 </script>
 
 <template>
@@ -144,15 +193,15 @@ const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVa
     <div class="absolute bottom-0 left-0 w-[400px] h-[400px] pointer-events-none opacity-20" style="background: radial-gradient(circle, rgba(20,184,166,0.08) 0%, transparent 60%);" />
 
     <!-- Nav -->
-    <nav class="relative z-20 bg-white/70 backdrop-blur-lg border-b border-slate-200/60">
+    <nav class="relative z-20 bg-white border-b border-slate-200/60">
       <div class="max-w-[1200px] mx-auto px-3 md:px-6 h-14 flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-amber-400 flex items-center justify-center shadow-md shadow-rose-500/20">
             <AppIcon name="Rocket" size="sm" variant="white" />
           </div>
           <div>
-            <h1 class="text-sm font-bold tracking-tight text-slate-800">{{ t('showcase.title') }}</h1>
-            <p class="text-[10px] text-slate-400 -mt-0.5">{{ t('showcase.subtitle') }}</p>
+            <h1 class="text-base font-bold tracking-tight text-slate-800">{{ t('showcase.title') }}</h1>
+            <p class="text-[11px] text-slate-400 -mt-0.5">{{ t('showcase.subtitle') }}</p>
           </div>
         </div>
         <button @click="goDashboard" class="px-4 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-xs font-medium text-white transition-colors shadow-sm shadow-rose-500/20">
@@ -161,7 +210,7 @@ const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVa
       </div>
     </nav>
 
-    <main class="max-w-[1200px] mx-auto px-3 md:px-6 py-6 md:py-8 relative z-10" :class="error || isEmpty ? 'flex items-center justify-center min-h-[calc(100vh-3.5rem)]' : ''">
+    <main class="max-w-[1200px] mx-auto px-3 md:px-6 py-4 md:py-6 relative z-10" :class="error || isEmpty ? 'flex items-center justify-center min-h-[calc(100vh-3.5rem)]' : ''">
       <!-- Loading -->
       <div v-if="isLoading" class="space-y-4 animate-in">
         <div class="h-6 w-40 rounded-lg bg-slate-100 animate-pulse" />
@@ -191,108 +240,166 @@ const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVa
 
       <!-- Content -->
       <template v-else>
-        <!-- Closed-loop pipeline animation -->
-        <div class="mb-10 relative">
-          <!-- Outer glow -->
-          <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(ellipse 80% 60% at 50% 40%, rgba(244,63,94,0.05) 0%, rgba(20,184,166,0.04) 30%, transparent 60%);" />
+        <!-- Hero: title + subtitle -->
+        <div class="mb-6 md:mb-8">
+          <h2 class="text-2xl md:text-3xl font-bold text-slate-800 tracking-tight">{{ t('showcase.heroTitle') }}</h2>
+          <p class="text-sm text-slate-500 mt-1.5 max-w-lg">{{ t('showcase.heroDesc') }}</p>
+        </div>
 
-          <!-- Loop layout: top row 1-3, bottom row 6-4 (reversed), with return arc -->
-          <div class="relative z-10">
-            <!-- Top row: scouting → planning → creating -->
-            <div class="flex justify-center items-center gap-2 md:gap-3 mb-2 md:mb-3">
-              <div
-                v-for="(step, i) in howItWorksSteps.slice(0, 3)"
-                :key="step.key"
-                class="relative flex flex-col items-center text-center p-3 md:p-5 rounded-2xl bg-white/90 backdrop-blur-sm border border-white/60 transition-all duration-600 ease-out group flex-1 max-w-[200px]"
-                :class="[
-                  stepsVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-6 scale-95',
-                  stepsVisible ? step.glowColor : ''
-                ]"
-                :style="{ transitionDelay: `${i * 120}ms` }"
-              >
-                <div class="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" :class="step.iconBg" />
-                <div class="w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center mb-2 shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:shadow-xl" :class="step.iconBg">
-                  <AppIcon :name="step.icon" size="sm" :variant="step.iconVariant" />
-                </div>
-                <div class="text-xs font-bold text-slate-700 mb-0.5 relative z-10">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
-                <div class="text-[10px] text-slate-400 leading-relaxed hidden md:block relative z-10">{{ t(`showcase.steps.${step.key}`) }}</div>
-                <div class="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full bg-white border border-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-400 shadow-sm z-20">{{ i + 1 }}</div>
-                <!-- Arrow right between top steps -->
-                <div v-if="i < 2" class="hidden md:flex absolute -right-[18px] top-1/2 -translate-y-1/2 z-20 items-center justify-center">
-                  <svg width="18" height="12" viewBox="0 0 18 12" fill="none"><path d="M1 6h14m0 0l-4-4m4 4l-4 4" stroke="url(#arrow-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="arrow-grad" x1="0" y1="6" x2="16" y2="6"><stop stop-color="#f43f5e"/><stop offset="1" stop-color="#14b8a6"/></linearGradient></defs></svg>
-                </div>
+        <!-- Closed-loop pipeline: elliptical loop with circular nodes -->
+        <div class="mb-8 md:mb-10 relative">
+          <!-- Section title -->
+          <div class="text-xs font-medium text-slate-400 uppercase tracking-widest mb-3">{{ t('showcase.pipelineLabel') }}</div>
+
+          <!-- Desktop: elliptical loop with SVG path + circular nodes -->
+          <div ref="loopContainer" class="hidden md:block relative" style="height: 420px;">
+            <!-- Background SVG: elliptical path + comet animation -->
+            <svg class="absolute inset-0 w-full h-full pointer-events-none" :viewBox="`0 0 ${containerW} 420`" preserveAspectRatio="xMidYMid meet" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="loop-grad" x1="0" :y1="svgCy" :x2="containerW" :y2="svgCy" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#f43f5e" />
+                  <stop offset="0.2" stop-color="#f59e0b" />
+                  <stop offset="0.4" stop-color="#10b981" />
+                  <stop offset="0.6" stop-color="#0ea5e9" />
+                  <stop offset="0.8" stop-color="#8b5cf6" />
+                  <stop offset="1" stop-color="#f43f5e" />
+                </linearGradient>
+                <!-- Comet gradient: bright head → fading tail -->
+                <linearGradient id="comet-grad" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#fff" stop-opacity="1" />
+                  <stop offset="20%" stop-color="#f43f5e" stop-opacity="0.9" />
+                  <stop offset="60%" stop-color="#8b5cf6" stop-opacity="0.3" />
+                  <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0" />
+                </linearGradient>
+                <!-- Soft glow for the comet head -->
+                <filter id="comet-glow" x="-200%" y="-200%" width="500%" height="500%">
+                  <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="b" />
+                  <feMerge>
+                    <feMergeNode in="b" />
+                    <feMergeNode in="b" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+                <!-- Subtle ambient glow for the arc -->
+                <filter id="arc-glow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="b" />
+                  <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+                </filter>
+              </defs>
+
+              <!-- Soft ambient glow arc -->
+              <ellipse :cx="svgCx" :cy="svgCy" :rx="svgRx" :ry="svgRy" stroke="url(#loop-grad)" stroke-width="8" fill="none" opacity="0.07" filter="url(#arc-glow)">
+                <animate attributeName="opacity" values="0.05;0.09;0.05" dur="5s" repeatCount="indefinite" />
+              </ellipse>
+
+              <!-- Main elliptical loop path: clean flowing dashed line -->
+              <ellipse :cx="svgCx" :cy="svgCy" :rx="svgRx" :ry="svgRy" stroke="url(#loop-grad)" stroke-width="1.5" stroke-dasharray="16 8" stroke-linecap="round" fill="none" opacity="0.45">
+                <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="3s" repeatCount="indefinite" />
+              </ellipse>
+
+              <!-- Single comet: bright head with elongated gradient trail -->
+              <!-- Trail line (elongated behind the comet) -->
+              <line x1="-50" y1="0" x2="0" y2="0" stroke="url(#comet-grad)" stroke-width="3" stroke-linecap="round" opacity="0.8" filter="url(#comet-glow)">
+                <animateMotion dur="6s" repeatCount="indefinite" rotate="auto"><mpath href="#loop-motion-path" /></animateMotion>
+              </line>
+              <!-- Comet head: bright core -->
+              <circle r="4" fill="#fff" opacity="0.95" filter="url(#comet-glow)">
+                <animateMotion dur="6s" repeatCount="indefinite"><mpath href="#loop-motion-path" /></animateMotion>
+              </circle>
+              <!-- Comet outer halo -->
+              <circle r="8" fill="none" stroke="#f43f5e" stroke-width="1.5" opacity="0.4">
+                <animateMotion dur="6s" repeatCount="indefinite"><mpath href="#loop-motion-path" /></animateMotion>
+                <animate attributeName="r" values="6;10;6" dur="1.5s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.3;0.5;0.3" dur="1.5s" repeatCount="indefinite" />
+              </circle>
+
+              <!-- Second comet (offset, different color) -->
+              <line x1="-40" y1="0" x2="0" y2="0" stroke="url(#comet-grad)" stroke-width="2.5" stroke-linecap="round" opacity="0.7" filter="url(#comet-glow)">
+                <animateMotion dur="6s" repeatCount="indefinite" begin="3s" rotate="auto"><mpath href="#loop-motion-path" /></animateMotion>
+              </line>
+              <circle r="3.5" fill="#fff" opacity="0.9" filter="url(#comet-glow)">
+                <animateMotion dur="6s" repeatCount="indefinite" begin="3s"><mpath href="#loop-motion-path" /></animateMotion>
+              </circle>
+              <circle r="7" fill="none" stroke="#14b8a6" stroke-width="1.5" opacity="0.35">
+                <animateMotion dur="6s" repeatCount="indefinite" begin="3s"><mpath href="#loop-motion-path" /></animateMotion>
+                <animate attributeName="r" values="5;9;5" dur="1.8s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.25;0.45;0.25" dur="1.8s" repeatCount="indefinite" />
+              </circle>
+
+              <path id="loop-motion-path" :d="loopMotionPath" fill="none" stroke="none" />
+            </svg>
+
+            <!-- Center label -->
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div class="text-center px-5 py-3 rounded-2xl bg-white/70 backdrop-blur-sm border border-slate-200/40 shadow-sm">
+                <div class="text-sm font-bold text-slate-500">&#x27F3; {{ t('showcase.closedLoop') }}</div>
+                <div class="text-[10px] text-slate-400 mt-0.5">{{ t('showcase.closedLoopDesc') }}</div>
               </div>
             </div>
 
-            <!-- Center: return arc visual (SVG) -->
-            <div class="flex justify-center my-1 md:my-2">
-              <svg class="w-[280px] md:w-[480px] h-6 md:h-8" viewBox="0 0 480 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <!-- Left curve: analyzing → scouting (feedback loop) -->
-                <path d="M40 2 C40 28, 440 28, 440 2" stroke="url(#loop-grad)" stroke-width="1.5" stroke-dasharray="6 3" fill="none" opacity="0.5">
-                  <animate attributeName="stroke-dashoffset" from="0" to="-18" dur="2s" repeatCount="indefinite" />
-                </path>
-                <!-- Animated dot traveling the loop -->
-                <circle r="3" fill="#f43f5e" opacity="0.8">
-                  <animateMotion dur="4s" repeatCount="indefinite" path="M40 2 C40 28, 440 28, 440 2" />
-                </circle>
-                <circle r="3" fill="#14b8a6" opacity="0.8">
-                  <animateMotion dur="4s" repeatCount="indefinite" begin="2s" path="M40 2 C40 28, 440 28, 440 2" />
-                </circle>
-                <!-- Label -->
-                <text x="240" y="22" text-anchor="middle" fill="#94a3b8" font-size="9" font-weight="500">⟳ {{ t('showcase.closedLoop') }}</text>
-                <defs>
-                  <linearGradient id="loop-grad" x1="0" y1="0" x2="480" y2="0">
-                    <stop stop-color="#f43f5e" />
-                    <stop offset="0.5" stop-color="#14b8a6" />
-                    <stop offset="1" stop-color="#8b5cf6" />
-                  </linearGradient>
-                </defs>
-              </svg>
+            <!-- Step nodes: station-style markers on the ellipse orbit -->
+            <div
+              v-for="(step, i) in howItWorksSteps"
+              :key="step.key"
+              class="absolute transition-all duration-700 ease-out group"
+              :class="stepsVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-50'"
+              :style="stepStyle(i, containerW)"
+            >
+              <!-- Outer glow ring (subtle, on hover) -->
+              <div class="absolute inset-[-6px] rounded-full opacity-0 group-hover:opacity-30 transition-opacity duration-300 blur-sm" :class="step.color" />
+              <!-- Station node: white bg with colored border and icon -->
+              <div class="w-[48px] h-[48px] rounded-full flex items-center justify-center bg-white border-2 shadow-md transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg relative z-10" :class="[step.borderColor, step.iconColor]">
+                <AppIcon :name="step.icon" size="md" :variant="step.iconVariant" />
+              </div>
+              <!-- Label below the node -->
+              <div class="text-center mt-2">
+                <div class="text-[11px] font-semibold text-slate-700 whitespace-nowrap">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
+              </div>
             </div>
+          </div>
 
-            <!-- Bottom row: analyzing ← publishing ← reviewing (reversed for loop visual) -->
-            <div class="flex justify-center items-center gap-2 md:gap-3 mt-2 md:mt-3">
+          <!-- Mobile: 2x3 grid with compact circular nodes -->
+          <div class="md:hidden">
+            <div class="grid grid-cols-3 gap-4 mb-3">
               <div
-                v-for="(step, i) in [...howItWorksSteps].reverse().slice(0, 3)"
+                v-for="(step, i) in howItWorksSteps"
                 :key="step.key"
-                class="relative flex flex-col items-center text-center p-3 md:p-5 rounded-2xl bg-white/90 backdrop-blur-sm border border-white/60 transition-all duration-600 ease-out group flex-1 max-w-[200px]"
-                :class="[
-                  stepsVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-6 scale-95',
-                  stepsVisible ? step.glowColor : ''
-                ]"
-                :style="{ transitionDelay: `${(5 - howItWorksSteps.findIndex(s => s.key === step.key)) * 120}ms` }"
+                class="flex flex-col items-center text-center transition-all duration-500 ease-out"
+                :class="stepsVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-80'"
+                :style="{ transitionDelay: `${i * 80}ms` }"
               >
-                <div class="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" :class="step.iconBg" />
-                <div class="w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center mb-2 shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:shadow-xl" :class="step.iconBg">
+                <div class="w-[40px] h-[40px] rounded-full flex items-center justify-center bg-white border-2 shadow-sm" :class="[step.borderColor, step.iconColor]">
                   <AppIcon :name="step.icon" size="sm" :variant="step.iconVariant" />
                 </div>
-                <div class="text-xs font-bold text-slate-700 mb-0.5 relative z-10">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
-                <div class="text-[10px] text-slate-400 leading-relaxed hidden md:block relative z-10">{{ t(`showcase.steps.${step.key}`) }}</div>
-                <div class="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full bg-white border border-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-400 shadow-sm z-20">{{ howItWorksSteps.findIndex(s => s.key === step.key) + 1 }}</div>
-                <!-- Arrow right (visual flow) between bottom steps -->
-                <div v-if="i < 2" class="hidden md:flex absolute -right-[18px] top-1/2 -translate-y-1/2 z-20 items-center justify-center">
-                  <svg width="18" height="12" viewBox="0 0 18 12" fill="none"><path d="M1 6h14m0 0l-4-4m4 4l-4 4" stroke="url(#arrow-grad2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="arrow-grad2" x1="0" y1="6" x2="16" y2="6"><stop stop-color="#8b5cf6"/><stop offset="1" stop-color="#14b8a6"/></linearGradient></defs></svg>
-                </div>
+                <div class="text-[11px] font-bold text-slate-600 mt-1">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
+                <div class="text-[9px] text-slate-400 line-clamp-2 mt-0.5">{{ t(`showcase.steps.${step.key}`) }}</div>
               </div>
+            </div>
+            <div class="flex items-center justify-center gap-2 py-1">
+              <svg width="140" height="14" viewBox="0 0 140 14" fill="none"><path d="M6 7h128m0 0l-4-4m4 4l-4 4" stroke="#8b5cf6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4" /></svg>
+              <span class="text-[10px] text-slate-400 font-medium">&#x27F3; {{ t('showcase.closedLoop') }}</span>
             </div>
           </div>
         </div>
 
-        <!-- Status bar + Workflow cards -->
+        <!-- Workflow cards section -->
         <div class="space-y-4 md:space-y-5">
-          <!-- Status summary -->
-          <div class="flex items-center gap-4 text-xs">
-            <span class="flex items-center gap-1.5 text-teal-600 font-medium">
-              <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
-              {{ runningWorkflows.length }} {{ t('showcase.stats.running') }}
-            </span>
-            <span class="flex items-center gap-1.5 text-emerald-600 font-medium">
-              <span class="w-2 h-2 rounded-full bg-emerald-500" />
-              {{ completedWorkflows.length }} {{ t('showcase.stats.completed') }}
-            </span>
-            <span v-if="otherWorkflows.length > 0" class="flex items-center gap-1.5 text-slate-400">
-              {{ otherWorkflows.length }} {{ t('showcase.stats.other') }}
-            </span>
+          <!-- Section title -->
+          <div class="flex items-center justify-between">
+            <h3 class="text-base font-bold text-slate-800">{{ t('showcase.sectionTitle') }}</h3>
+            <div class="flex items-center gap-3 text-xs">
+              <span class="flex items-center gap-1.5 text-teal-600 font-medium">
+                <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
+                {{ runningWorkflows.length }} {{ t('showcase.stats.running') }}
+              </span>
+              <span class="flex items-center gap-1.5 text-emerald-600 font-medium">
+                <span class="w-2 h-2 rounded-full bg-emerald-500" />
+                {{ completedWorkflows.length }} {{ t('showcase.stats.completed') }}
+              </span>
+              <span v-if="otherWorkflows.length > 0" class="flex items-center gap-1.5 text-slate-400">
+                {{ otherWorkflows.length }} {{ t('showcase.stats.other') }}
+              </span>
+            </div>
           </div>
           <!-- Active workflows -->
           <template v-if="runningWorkflows.length > 0">
@@ -328,10 +435,10 @@ const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVa
                       </div>
                       <div v-if="getDetail(wf.thread_id)!.copy_content?.selected_title">
                         <div class="text-sm font-semibold text-rose-600 leading-snug">{{ getDetail(wf.thread_id)!.copy_content!.selected_title }}</div>
-                        <div v-if="getDetail(wf.thread_id)!.copy_content?.body_text" class="text-xs text-slate-500 mt-1.5 line-clamp-4 whitespace-pre-line">{{ getDetail(wf.thread_id)!.copy_content!.body_text }}</div>
+                        <div v-if="getDetail(wf.thread_id)!.copy_content?.body_text" class="text-xs text-slate-500 mt-1.5 line-clamp-6 whitespace-pre-line">{{ getDetail(wf.thread_id)!.copy_content!.body_text }}</div>
                       </div>
                       <div v-if="getDetail(wf.thread_id)!.copy_content?.hashtags?.length" class="flex flex-wrap gap-1">
-                        <span v-for="tag in getDetail(wf.thread_id)!.copy_content!.hashtags!.slice(0, 10)" :key="tag" class="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700">#{{ tag }}</span>
+                        <span v-for="tag in getDetail(wf.thread_id)!.copy_content!.hashtags!" :key="tag" class="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700">#{{ tag }}</span>
                       </div>
                       <div v-if="getDetail(wf.thread_id)!.content_plan?.key_points?.length" class="space-y-0.5">
                         <div v-for="(point, i) in getDetail(wf.thread_id)!.content_plan!.key_points!.slice(0, 3)" :key="i" class="text-xs text-slate-500 flex gap-1">
@@ -345,13 +452,13 @@ const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVa
                       <div v-if="getDetail(wf.thread_id)!.trend_data?.hot_topics?.length">
                         <div class="text-[10px] text-slate-400 font-medium mb-1 uppercase tracking-wide">{{ t('showcase.detail.hotTopics') }}</div>
                         <div class="flex flex-wrap gap-1">
-                          <span v-for="ht in getDetail(wf.thread_id)!.trend_data!.hot_topics!.slice(0, 4)" :key="ht.topic" class="text-[11px] px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600">{{ ht.topic }}</span>
+                          <span v-for="ht in getDetail(wf.thread_id)!.trend_data!.hot_topics!" :key="ht.topic" class="text-[11px] px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600">{{ ht.topic }}</span>
                         </div>
                       </div>
                       <div v-if="getDetail(wf.thread_id)!.trend_data?.trending_keywords?.length">
                         <div class="text-[10px] text-slate-400 font-medium mb-1 uppercase tracking-wide">{{ t('replay.trendingKeywords') }}</div>
                         <div class="flex flex-wrap gap-1">
-                          <span v-for="kw in getDetail(wf.thread_id)!.trend_data!.trending_keywords!.slice(0, 5)" :key="kw" class="text-[11px] px-1.5 py-0.5 rounded-md bg-pink-50 text-pink-600 border border-pink-100">{{ kw }}</span>
+                          <span v-for="kw in getDetail(wf.thread_id)!.trend_data!.trending_keywords!" :key="kw" class="text-[11px] px-1.5 py-0.5 rounded-md bg-pink-50 text-pink-600 border border-pink-100">{{ kw }}</span>
                         </div>
                       </div>
                       <div v-if="getDetail(wf.thread_id)!.visual_plan" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
@@ -436,7 +543,7 @@ const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVa
                       <div v-if="getDetail(wf.thread_id)!.trend_data?.trending_keywords?.length">
                         <div class="text-[10px] text-slate-400 font-medium mb-1 uppercase tracking-wide">{{ t('replay.trendingKeywords') }}</div>
                         <div class="flex flex-wrap gap-1">
-                          <span v-for="kw in getDetail(wf.thread_id)!.trend_data!.trending_keywords!.slice(0, 5)" :key="kw" class="text-[11px] px-1.5 py-0.5 rounded-md bg-pink-50 text-pink-600 border border-pink-100">{{ kw }}</span>
+                          <span v-for="kw in getDetail(wf.thread_id)!.trend_data!.trending_keywords!" :key="kw" class="text-[11px] px-1.5 py-0.5 rounded-md bg-pink-50 text-pink-600 border border-pink-100">{{ kw }}</span>
                         </div>
                       </div>
                       <div v-if="getDetail(wf.thread_id)!.trend_data?.competitor_posts?.[0]" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
@@ -457,6 +564,18 @@ const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVa
                         <div class="p-1.5 rounded bg-pink-50 text-center">
                           <div class="text-[10px] text-slate-400">Likes</div>
                           <div class="text-xs font-bold text-pink-600">{{ formatNum((getDetail(wf.thread_id)!.analytics as any).likes) }}</div>
+                        </div>
+                        <div v-if="(getDetail(wf.thread_id)!.analytics as any).collects !== undefined" class="p-1.5 rounded bg-amber-50 text-center">
+                          <div class="text-[10px] text-slate-400">{{ t('showcase.detail.collects') }}</div>
+                          <div class="text-xs font-bold text-amber-600">{{ formatNum((getDetail(wf.thread_id)!.analytics as any).collects) }}</div>
+                        </div>
+                        <div v-if="(getDetail(wf.thread_id)!.analytics as any).comments !== undefined" class="p-1.5 rounded bg-teal-50 text-center">
+                          <div class="text-[10px] text-slate-400">{{ t('showcase.detail.comments') }}</div>
+                          <div class="text-xs font-bold text-teal-600">{{ formatNum((getDetail(wf.thread_id)!.analytics as any).comments) }}</div>
+                        </div>
+                        <div v-if="(getDetail(wf.thread_id)!.analytics as any).engagement_rate !== undefined" class="p-1.5 rounded bg-violet-50 text-center col-span-2">
+                          <div class="text-[10px] text-slate-400">{{ t('showcase.detail.engagementRate') }}</div>
+                          <div class="text-xs font-bold text-violet-600">{{ ((getDetail(wf.thread_id)!.analytics as any).engagement_rate * 100).toFixed(1) }}%</div>
                         </div>
                       </div>
                       <div v-if="(getDetail(wf.thread_id)!.analytics as any)?.insights?.length">
@@ -511,3 +630,10 @@ const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVa
     </main>
   </div>
 </template>
+
+<style scoped>
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.12; }
+  50% { transform: scale(1.15); opacity: 0.22; }
+}
+</style>
