@@ -20,7 +20,6 @@ async function fetchWorkflows() {
   try {
     const result = await listWorkflows({ limit: 50 })
     workflows.value = result.workflows
-    // Load all details in parallel
     const promises = result.workflows.map(async (wf) => {
       try {
         const state = await getWorkflowStatus(wf.thread_id)
@@ -91,7 +90,6 @@ function phaseLabel(phase: WorkflowPhase): string {
   return map[phase] || phase
 }
 
-// Pipeline phase steps
 const pipelineSteps = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'analyzing']
 
 function pipelineProgress(phase: WorkflowPhase): number {
@@ -119,45 +117,49 @@ function formatNum(n?: number): string {
 const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
 
 const stepsVisible = ref(false)
-
 onMounted(() => {
-  // Trigger staggered animation after short delay
-  setTimeout(() => { stepsVisible.value = true }, 300)
+  setTimeout(() => { stepsVisible.value = true }, 200)
 })
 
 type IconVariant = 'pink' | 'cyan' | 'purple' | 'peach' | 'white'
 
-const howItWorksSteps: Array<{ key: string; icon: string; iconBg: string; iconVariant: IconVariant; glowColor: string }> = [
-  { key: 'scouting', icon: 'Search', iconBg: 'bg-rose-100', iconVariant: 'pink', glowColor: 'shadow-rose-200/50' },
-  { key: 'planning', icon: 'ClipboardList', iconBg: 'bg-teal-100', iconVariant: 'cyan', glowColor: 'shadow-teal-200/50' },
-  { key: 'creating', icon: 'Pencil', iconBg: 'bg-amber-100', iconVariant: 'peach', glowColor: 'shadow-amber-200/50' },
-  { key: 'reviewing', icon: 'Clock', iconBg: 'bg-violet-100', iconVariant: 'purple', glowColor: 'shadow-violet-200/50' },
-  { key: 'publishing', icon: 'Upload', iconBg: 'bg-emerald-100', iconVariant: 'cyan', glowColor: 'shadow-emerald-200/50' },
-  { key: 'analyzing', icon: 'BarChart3', iconBg: 'bg-sky-100', iconVariant: 'purple', glowColor: 'shadow-sky-200/50' },
+// Pipeline step definitions
+const howItWorksSteps: Array<{
+  key: string
+  icon: string
+  color: string        // primary color class for glow
+  iconVariant: IconVariant
+  borderColor: string  // border color class for station node
+  iconColor: string    // text color class for icon
+}> = [
+  { key: 'scouting', icon: 'Search', color: 'bg-rose-500', iconVariant: 'pink', borderColor: 'border-rose-400', iconColor: 'text-rose-500' },
+  { key: 'planning', icon: 'ClipboardList', color: 'bg-teal-500', iconVariant: 'cyan', borderColor: 'border-teal-400', iconColor: 'text-teal-500' },
+  { key: 'creating', icon: 'Pencil', color: 'bg-amber-500', iconVariant: 'peach', borderColor: 'border-amber-400', iconColor: 'text-amber-500' },
+  { key: 'reviewing', icon: 'Clock', color: 'bg-violet-500', iconVariant: 'purple', borderColor: 'border-violet-400', iconColor: 'text-violet-500' },
+  { key: 'publishing', icon: 'Upload', color: 'bg-emerald-500', iconVariant: 'cyan', borderColor: 'border-emerald-400', iconColor: 'text-emerald-500' },
+  { key: 'analyzing', icon: 'BarChart3', color: 'bg-sky-500', iconVariant: 'cyan', borderColor: 'border-sky-400', iconColor: 'text-sky-500' },
 ]
 
 // Ellipse parameters for desktop loop layout
-// Container is max-w-[1200px] at 440px height; ellipse uses percentage of container
-const ellipseRxPct = 38  // semi-major axis as % of container width (px-based at runtime)
-const ellipseRyPct = 42  // semi-minor axis as % of container height (440px)
-const cardW = 136        // card width in px
-const cardH = 96         // approximate card height in px
+const ellipseRxPct = 36   // semi-major axis as % of container width
+const ellipseRyPct = 38   // semi-minor axis as % of container height
+const nodeSize = 48       // circle node diameter in px
 
 function stepStyle(i: number, containerW: number): Record<string, string> {
   const rx = containerW * ellipseRxPct / 100
-  const ry = 440 * ellipseRyPct / 100
+  const ry = 420 * ellipseRyPct / 100
   const angleDeg = i * 60 - 90
   const angleRad = angleDeg * Math.PI / 180
   const x = rx * Math.cos(angleRad)
   const y = ry * Math.sin(angleRad)
   return {
-    transitionDelay: `${i * 120}ms`,
-    left: `calc(50% + ${x}px - ${cardW / 2}px)`,
-    top: `calc(50% + ${y}px - ${cardH / 2}px)`,
+    transitionDelay: `${i * 100}ms`,
+    left: `calc(50% + ${x}px - ${nodeSize / 2}px)`,
+    top: `calc(50% + ${y}px - ${nodeSize / 2}px)`,
   }
 }
 
-// Container width ref for responsive ellipse positioning
+// Container width ref for responsive ellipse
 const containerW = ref(1200)
 const loopContainer = ref<HTMLElement | null>(null)
 
@@ -169,42 +171,19 @@ onMounted(() => {
   window.addEventListener('resize', updateW)
 })
 
-// Generate animateMotion path: full clockwise ellipse from top
-// Two half-elliptical arcs to form a closed loop
-const loopMotionPath = computed(() => {
-  const cx = containerW.value / 2
-  const cy = 220
-  const rx = containerW.value * ellipseRxPct / 100
-  const ry = 440 * ellipseRyPct / 100
-  const topY = cy - ry
-  // Arc 1: top → bottom (clockwise, large-arc-flag=1, sweep=1)
-  // Arc 2: bottom → top (clockwise, large-arc-flag=1, sweep=1)
-  return `M${cx},${topY} A${rx},${ry} 0 1,1 ${cx},${cy + ry} A${rx},${ry} 0 1,1 ${cx},${topY}`
-})
+// SVG viewBox dimensions (match container)
+const svgCx = computed(() => containerW.value / 2)
+const svgCy = 210
+const svgRx = computed(() => containerW.value * ellipseRxPct / 100)
+const svgRy = computed(() => 420 * ellipseRyPct / 100)
 
-// Direction arrows: small triangular markers on the ellipse between steps
-function arrowPoints(stepIdx: number): string {
-  const cx = containerW.value / 2
-  const cy = 220
-  const rx = containerW.value * ellipseRxPct / 100
-  const ry = 440 * ellipseRyPct / 100
-  // Arrow positioned at midpoint angle between step and next step
-  const midAngle = (stepIdx * 60 + 30 - 90) * Math.PI / 180
-  const ax = cx + rx * Math.cos(midAngle)
-  const ay = cy + ry * Math.sin(midAngle)
-  // Arrow points along tangent direction (perpendicular to radius, clockwise)
-  const tangX = -Math.sin(midAngle)
-  const tangY = Math.cos(midAngle)
-  const size = 6
-  // Triangle: tip at (ax + tangX*size, ay + tangY*size), base perpendicular
-  const p1x = ax + tangX * size
-  const p1y = ay + tangY * size
-  const p2x = ax - tangX * size * 0.3 - tangY * size * 0.5
-  const p2y = ay - tangY * size * 0.3 + tangX * size * 0.5
-  const p3x = ax - tangX * size * 0.3 + tangY * size * 0.5
-  const p3y = ay - tangY * size * 0.3 - tangX * size * 0.5
-  return `${p1x},${p1y} ${p2x},${p2y} ${p3x},${p3y}`
-}
+// animateMotion path: full clockwise ellipse from top
+const loopMotionPath = computed(() => {
+  const cx = svgCx.value
+  const topY = svgCy - svgRy.value
+  const bottomY = svgCy + svgRy.value
+  return `M${cx},${topY} A${svgRx.value},${svgRy.value} 0 1,1 ${cx},${bottomY} A${svgRx.value},${svgRy.value} 0 1,1 ${cx},${topY}`
+})
 </script>
 
 <template>
@@ -261,136 +240,166 @@ function arrowPoints(stepIdx: number): string {
 
       <!-- Content -->
       <template v-else>
-        <!-- Closed-loop pipeline animation -->
-        <div class="mb-10 relative">
-          <!-- Desktop: elliptical loop layout -->
-          <div ref="loopContainer" class="hidden md:block relative" style="height: 440px;">
-            <!-- SVG overlay: elliptical path + animated dots -->
-            <!-- viewBox matches container dimensions for proper aspect ratio -->
-            <svg class="absolute inset-0 w-full h-full pointer-events-none" :viewBox="`0 0 ${containerW} 440`" preserveAspectRatio="xMidYMid meet" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Hero: title + subtitle -->
+        <div class="mb-6 md:mb-8">
+          <h2 class="text-2xl md:text-3xl font-bold text-slate-800 tracking-tight">{{ t('showcase.heroTitle') }}</h2>
+          <p class="text-sm text-slate-500 mt-1.5 max-w-lg">{{ t('showcase.heroDesc') }}</p>
+        </div>
+
+        <!-- Closed-loop pipeline: elliptical loop with circular nodes -->
+        <div class="mb-8 md:mb-10 relative">
+          <!-- Section title -->
+          <div class="text-xs font-medium text-slate-400 uppercase tracking-widest mb-3">{{ t('showcase.pipelineLabel') }}</div>
+
+          <!-- Desktop: elliptical loop with SVG path + circular nodes -->
+          <div ref="loopContainer" class="hidden md:block relative" style="height: 420px;">
+            <!-- Background SVG: elliptical path + comet animation -->
+            <svg class="absolute inset-0 w-full h-full pointer-events-none" :viewBox="`0 0 ${containerW} 420`" preserveAspectRatio="xMidYMid meet" fill="none" xmlns="http://www.w3.org/2000/svg">
               <defs>
-                <linearGradient id="loop-grad" x1="0" y1="220" :x2="containerW" y2="220" gradientUnits="userSpaceOnUse">
+                <linearGradient id="loop-grad" x1="0" :y1="svgCy" :x2="containerW" :y2="svgCy" gradientUnits="userSpaceOnUse">
                   <stop stop-color="#f43f5e" />
-                  <stop offset="0.3" stop-color="#14b8a6" />
-                  <stop offset="0.6" stop-color="#8b5cf6" />
+                  <stop offset="0.2" stop-color="#f59e0b" />
+                  <stop offset="0.4" stop-color="#10b981" />
+                  <stop offset="0.6" stop-color="#0ea5e9" />
+                  <stop offset="0.8" stop-color="#8b5cf6" />
                   <stop offset="1" stop-color="#f43f5e" />
                 </linearGradient>
-                <filter id="dot-glow" x="-100%" y="-100%" width="300%" height="300%">
-                  <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
+                <!-- Comet gradient: bright head → fading tail -->
+                <linearGradient id="comet-grad" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#fff" stop-opacity="1" />
+                  <stop offset="20%" stop-color="#f43f5e" stop-opacity="0.9" />
+                  <stop offset="60%" stop-color="#8b5cf6" stop-opacity="0.3" />
+                  <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0" />
+                </linearGradient>
+                <!-- Soft glow for the comet head -->
+                <filter id="comet-glow" x="-200%" y="-200%" width="500%" height="500%">
+                  <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="b" />
                   <feMerge>
-                    <feMergeNode in="blur" />
+                    <feMergeNode in="b" />
+                    <feMergeNode in="b" />
                     <feMergeNode in="SourceGraphic" />
                   </feMerge>
                 </filter>
+                <!-- Subtle ambient glow for the arc -->
+                <filter id="arc-glow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="b" />
+                  <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+                </filter>
               </defs>
-              <!-- Main elliptical loop path -->
-              <ellipse :cx="containerW / 2" cy="220" :rx="containerW * ellipseRxPct / 100" :ry="440 * ellipseRyPct / 100" stroke="url(#loop-grad)" stroke-width="1.5" stroke-dasharray="8 4" fill="none" opacity="0.35">
-                <animate attributeName="stroke-dashoffset" from="0" to="-24" dur="3s" repeatCount="indefinite" />
+
+              <!-- Soft ambient glow arc -->
+              <ellipse :cx="svgCx" :cy="svgCy" :rx="svgRx" :ry="svgRy" stroke="url(#loop-grad)" stroke-width="8" fill="none" opacity="0.07" filter="url(#arc-glow)">
+                <animate attributeName="opacity" values="0.05;0.09;0.05" dur="5s" repeatCount="indefinite" />
               </ellipse>
-              <!-- Faint inner loop for depth -->
-              <ellipse :cx="containerW / 2" cy="220" :rx="containerW * ellipseRxPct / 100 - 8" :ry="440 * ellipseRyPct / 100 - 8" stroke="url(#loop-grad)" stroke-width="0.6" stroke-dasharray="3 6" fill="none" opacity="0.12">
-                <animate attributeName="stroke-dashoffset" from="0" to="18" dur="5s" repeatCount="indefinite" />
+
+              <!-- Main elliptical loop path: clean flowing dashed line -->
+              <ellipse :cx="svgCx" :cy="svgCy" :rx="svgRx" :ry="svgRy" stroke="url(#loop-grad)" stroke-width="1.5" stroke-dasharray="16 8" stroke-linecap="round" fill="none" opacity="0.45">
+                <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="3s" repeatCount="indefinite" />
               </ellipse>
-              <!-- Animated dot 1: rose, clockwise around the ellipse -->
-              <circle r="5" fill="#f43f5e" opacity="0.85" filter="url(#dot-glow)">
-                <animateMotion dur="8s" repeatCount="indefinite">
-                  <mpath href="#loop-motion-path" />
-                </animateMotion>
+
+              <!-- Single comet: bright head with elongated gradient trail -->
+              <!-- Trail line (elongated behind the comet) -->
+              <line x1="-50" y1="0" x2="0" y2="0" stroke="url(#comet-grad)" stroke-width="3" stroke-linecap="round" opacity="0.8" filter="url(#comet-glow)">
+                <animateMotion dur="6s" repeatCount="indefinite" rotate="auto"><mpath href="#loop-motion-path" /></animateMotion>
+              </line>
+              <!-- Comet head: bright core -->
+              <circle r="4" fill="#fff" opacity="0.95" filter="url(#comet-glow)">
+                <animateMotion dur="6s" repeatCount="indefinite"><mpath href="#loop-motion-path" /></animateMotion>
               </circle>
-              <!-- Animated dot 2: teal, offset by half period -->
-              <circle r="5" fill="#14b8a6" opacity="0.85" filter="url(#dot-glow)">
-                <animateMotion dur="8s" repeatCount="indefinite" begin="4s">
-                  <mpath href="#loop-motion-path" />
-                </animateMotion>
+              <!-- Comet outer halo -->
+              <circle r="8" fill="none" stroke="#f43f5e" stroke-width="1.5" opacity="0.4">
+                <animateMotion dur="6s" repeatCount="indefinite"><mpath href="#loop-motion-path" /></animateMotion>
+                <animate attributeName="r" values="6;10;6" dur="1.5s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.3;0.5;0.3" dur="1.5s" repeatCount="indefinite" />
               </circle>
-              <!-- Hidden path for animateMotion: full ellipse clockwise from top -->
-              <!-- Two half-ellipses to form a complete closed loop -->
+
+              <!-- Second comet (offset, different color) -->
+              <line x1="-40" y1="0" x2="0" y2="0" stroke="url(#comet-grad)" stroke-width="2.5" stroke-linecap="round" opacity="0.7" filter="url(#comet-glow)">
+                <animateMotion dur="6s" repeatCount="indefinite" begin="3s" rotate="auto"><mpath href="#loop-motion-path" /></animateMotion>
+              </line>
+              <circle r="3.5" fill="#fff" opacity="0.9" filter="url(#comet-glow)">
+                <animateMotion dur="6s" repeatCount="indefinite" begin="3s"><mpath href="#loop-motion-path" /></animateMotion>
+              </circle>
+              <circle r="7" fill="none" stroke="#14b8a6" stroke-width="1.5" opacity="0.35">
+                <animateMotion dur="6s" repeatCount="indefinite" begin="3s"><mpath href="#loop-motion-path" /></animateMotion>
+                <animate attributeName="r" values="5;9;5" dur="1.8s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.25;0.45;0.25" dur="1.8s" repeatCount="indefinite" />
+              </circle>
+
               <path id="loop-motion-path" :d="loopMotionPath" fill="none" stroke="none" />
-              <!-- Direction arrows between steps -->
-              <polygon v-for="i in 6" :key="'arrow-'+i" :points="arrowPoints(i)" fill="#94a3b8" opacity="0.25" />
             </svg>
 
-            <!-- Center label (HTML overlay for proper text rendering) -->
+            <!-- Center label -->
             <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div class="text-center">
-                <div class="text-sm font-semibold text-slate-400/70">&#x27F3; {{ t('showcase.closedLoop') }}</div>
-                <div class="text-xs text-slate-300/50 mt-0.5">Analytics &#x2192; Scouting</div>
+              <div class="text-center px-5 py-3 rounded-2xl bg-white/70 backdrop-blur-sm border border-slate-200/40 shadow-sm">
+                <div class="text-sm font-bold text-slate-500">&#x27F3; {{ t('showcase.closedLoop') }}</div>
+                <div class="text-[10px] text-slate-400 mt-0.5">{{ t('showcase.closedLoopDesc') }}</div>
               </div>
             </div>
 
-            <!-- Step cards positioned on the ellipse -->
+            <!-- Step nodes: station-style markers on the ellipse orbit -->
             <div
               v-for="(step, i) in howItWorksSteps"
               :key="step.key"
-              class="absolute w-[136px] flex flex-col items-center text-center p-3 rounded-2xl bg-white/90 backdrop-blur-sm border border-white/60 transition-all duration-600 ease-out group"
-              :class="[
-                stepsVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-6 scale-95',
-                stepsVisible ? step.glowColor : ''
-              ]"
+              class="absolute transition-all duration-700 ease-out group"
+              :class="stepsVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-50'"
               :style="stepStyle(i, containerW)"
             >
-              <div class="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" :class="step.iconBg" />
-              <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:shadow-xl" :class="step.iconBg">
-                <AppIcon :name="step.icon" size="sm" :variant="step.iconVariant" />
+              <!-- Outer glow ring (subtle, on hover) -->
+              <div class="absolute inset-[-6px] rounded-full opacity-0 group-hover:opacity-30 transition-opacity duration-300 blur-sm" :class="step.color" />
+              <!-- Station node: white bg with colored border and icon -->
+              <div class="w-[48px] h-[48px] rounded-full flex items-center justify-center bg-white border-2 shadow-md transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg relative z-10" :class="[step.borderColor, step.iconColor]">
+                <AppIcon :name="step.icon" size="md" :variant="step.iconVariant" />
               </div>
-              <div class="text-[11px] font-bold text-slate-700 mb-0.5 relative z-10">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
-              <div class="text-[9px] text-slate-400 leading-relaxed relative z-10 line-clamp-2">{{ t(`showcase.steps.${step.key}`) }}</div>
-              <div class="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full bg-white border border-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-400 shadow-sm z-20">{{ i + 1 }}</div>
+              <!-- Label below the node -->
+              <div class="text-center mt-2">
+                <div class="text-[11px] font-semibold text-slate-700 whitespace-nowrap">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
+              </div>
             </div>
           </div>
 
-          <!-- Mobile: 2x3 grid with return arrow -->
-          <div class="md:hidden relative z-10">
-            <div class="grid grid-cols-2 gap-2.5 mb-3">
+          <!-- Mobile: 2x3 grid with compact circular nodes -->
+          <div class="md:hidden">
+            <div class="grid grid-cols-3 gap-4 mb-3">
               <div
                 v-for="(step, i) in howItWorksSteps"
                 :key="step.key"
-                class="relative flex flex-col items-center text-center p-2.5 rounded-xl bg-white/90 backdrop-blur-sm border border-white/60 transition-all duration-600 ease-out group"
-                :class="[
-                  stepsVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-6 scale-95',
-                  stepsVisible ? step.glowColor : ''
-                ]"
-                :style="{ transitionDelay: `${i * 100}ms` }"
+                class="flex flex-col items-center text-center transition-all duration-500 ease-out"
+                :class="stepsVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-80'"
+                :style="{ transitionDelay: `${i * 80}ms` }"
               >
-                <div class="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" :class="step.iconBg" />
-                <div class="w-8 h-8 rounded-lg flex items-center justify-center mb-1 shadow-md transition-all duration-300 group-hover:scale-110" :class="step.iconBg">
-                  <AppIcon :name="step.icon" size="xs" :variant="step.iconVariant" />
+                <div class="w-[40px] h-[40px] rounded-full flex items-center justify-center bg-white border-2 shadow-sm" :class="[step.borderColor, step.iconColor]">
+                  <AppIcon :name="step.icon" size="sm" :variant="step.iconVariant" />
                 </div>
-                <div class="text-[10px] font-bold text-slate-700 relative z-10">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
-                <div class="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-white border border-slate-200 flex items-center justify-center text-[8px] font-bold text-slate-400 shadow-sm z-20">{{ i + 1 }}</div>
+                <div class="text-[11px] font-bold text-slate-600 mt-1">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
+                <div class="text-[9px] text-slate-400 line-clamp-2 mt-0.5">{{ t(`showcase.steps.${step.key}`) }}</div>
               </div>
             </div>
-            <!-- Return loop indicator for mobile -->
             <div class="flex items-center justify-center gap-2 py-1">
-              <svg width="180" height="20" viewBox="0 0 180 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M10 10 H170 M170 10 L164 5 M170 10 L164 15" stroke="url(#mobile-loop-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                <defs>
-                  <linearGradient id="mobile-loop-grad" x1="0" y1="0" x2="180" y2="0">
-                    <stop stop-color="#8b5cf6" />
-                    <stop offset="1" stop-color="#f43f5e" />
-                  </linearGradient>
-                </defs>
-              </svg>
-              <span class="text-[9px] text-slate-400 font-medium">&#x27F3; {{ t('showcase.closedLoop') }}</span>
+              <svg width="140" height="14" viewBox="0 0 140 14" fill="none"><path d="M6 7h128m0 0l-4-4m4 4l-4 4" stroke="#8b5cf6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4" /></svg>
+              <span class="text-[10px] text-slate-400 font-medium">&#x27F3; {{ t('showcase.closedLoop') }}</span>
             </div>
           </div>
         </div>
 
-        <!-- Status bar + Workflow cards -->
+        <!-- Workflow cards section -->
         <div class="space-y-4 md:space-y-5">
-          <!-- Status summary -->
-          <div class="flex items-center gap-4 text-xs">
-            <span class="flex items-center gap-1.5 text-teal-600 font-medium">
-              <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
-              {{ runningWorkflows.length }} {{ t('showcase.stats.running') }}
-            </span>
-            <span class="flex items-center gap-1.5 text-emerald-600 font-medium">
-              <span class="w-2 h-2 rounded-full bg-emerald-500" />
-              {{ completedWorkflows.length }} {{ t('showcase.stats.completed') }}
-            </span>
-            <span v-if="otherWorkflows.length > 0" class="flex items-center gap-1.5 text-slate-400">
-              {{ otherWorkflows.length }} {{ t('showcase.stats.other') }}
-            </span>
+          <!-- Section title -->
+          <div class="flex items-center justify-between">
+            <h3 class="text-base font-bold text-slate-800">{{ t('showcase.sectionTitle') }}</h3>
+            <div class="flex items-center gap-3 text-xs">
+              <span class="flex items-center gap-1.5 text-teal-600 font-medium">
+                <span class="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
+                {{ runningWorkflows.length }} {{ t('showcase.stats.running') }}
+              </span>
+              <span class="flex items-center gap-1.5 text-emerald-600 font-medium">
+                <span class="w-2 h-2 rounded-full bg-emerald-500" />
+                {{ completedWorkflows.length }} {{ t('showcase.stats.completed') }}
+              </span>
+              <span v-if="otherWorkflows.length > 0" class="flex items-center gap-1.5 text-slate-400">
+                {{ otherWorkflows.length }} {{ t('showcase.stats.other') }}
+              </span>
+            </div>
           </div>
           <!-- Active workflows -->
           <template v-if="runningWorkflows.length > 0">
@@ -621,3 +630,10 @@ function arrowPoints(stepIdx: number): string {
     </main>
   </div>
 </template>
+
+<style scoped>
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.12; }
+  50% { transform: scale(1.15); opacity: 0.22; }
+}
+</style>

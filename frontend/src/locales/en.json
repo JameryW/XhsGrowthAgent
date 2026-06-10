@@ -920,7 +920,12 @@
     "title": "XHS Growth Engine",
     "subtitle": "AI-powered automated content creation platform",
     "heroTagline": "6-Step AI-Powered Automated Workflow",
+    "heroTitle": "Automated Content Creation Workflow",
+    "heroDesc": "From trend scouting to publishing analytics, fully AI-driven with a self-evolving closed loop",
+    "pipelineLabel": "Closed-loop Workflow",
     "closedLoop": "Self-evolving Loop",
+    "closedLoopDesc": "Analytics drives the next round of trend scouting",
+    "sectionTitle": "Workflow Instances",
     "howItWorks": "How It Works",
     "steps": {
       "scouting": "Discover trending topics and keywords",

@@ -920,7 +920,12 @@
     "title": "小红书增长引擎",
     "subtitle": "AI 驱动的自动化内容创作平台",
     "heroTagline": "AI驱动的6步自动化工作流",
+    "heroTitle": "自动化内容创作工作流",
+    "heroDesc": "从趋势洞察到发布分析，全流程 AI 驱动，闭环自我进化",
+    "pipelineLabel": "闭环工作流",
     "closedLoop": "闭环自我进化",
+    "closedLoopDesc": "数据分析驱动下一轮趋势洞察",
+    "sectionTitle": "工作流实例",
     "howItWorks": "工作原理",
     "steps": {
       "scouting": "发现热门趋势和关键词，洞察内容方向",
