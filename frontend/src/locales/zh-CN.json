@@ -1062,6 +1062,12 @@
     "reachDeviation": "触达偏差",
     "engDeviation": "互动偏差",
     "accuracyRating": "准确度评级",
-    "scoreSource": "评分来源"
+    "scoreSource": "评分来源",
+    "draftContent": "提交的草稿",
+    "optimizationAnalysis": "优化分析",
+    "gapAnalysis": "差距分析",
+    "suggestions": "优化建议",
+    "viralPatterns": "爆文模式",
+    "contentVersions": "内容版本"
   }
 }
