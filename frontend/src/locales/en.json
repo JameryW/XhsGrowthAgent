@@ -1062,6 +1062,12 @@
     "reachDeviation": "Reach Deviation",
     "engDeviation": "Eng. Deviation",
     "accuracyRating": "Accuracy Rating",
-    "scoreSource": "Score Source"
+    "scoreSource": "Score Source",
+    "draftContent": "Submitted Draft",
+    "optimizationAnalysis": "Optimization Analysis",
+    "gapAnalysis": "Gap Analysis",
+    "suggestions": "Suggestions",
+    "viralPatterns": "Viral Patterns",
+    "contentVersions": "Content Versions"
   }
 }

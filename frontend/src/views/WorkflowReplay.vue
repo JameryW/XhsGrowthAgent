@@ -393,6 +393,73 @@ onUnmounted(() => {
                 <div class="text-xs text-amber-700">{{ selectedCheckpoint.copy_content.emoji_usage.join(' ') }}</div>
               </div>
             </div>
+
+            <!-- Draft content (user-submitted draft) -->
+            <div v-if="selectedCheckpoint.draft_content" class="p-3 rounded-lg bg-blue-50 border border-blue-100">
+              <div class="text-[10px] text-blue-500 font-medium mb-1">{{ t('replay.draftContent') }}</div>
+              <div v-if="selectedCheckpoint.draft_content.title" class="text-xs font-semibold text-blue-700 mb-0.5">{{ selectedCheckpoint.draft_content.title }}</div>
+              <div v-if="selectedCheckpoint.draft_content.text" class="text-xs text-blue-600 whitespace-pre-line line-clamp-6">{{ selectedCheckpoint.draft_content.text }}</div>
+              <div v-if="selectedCheckpoint.draft_content.hashtags?.length" class="flex flex-wrap gap-1 mt-1">
+                <span v-for="tag in selectedCheckpoint.draft_content.hashtags" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-600">#{{ tag }}</span>
+              </div>
+            </div>
+
+            <!-- Optimization analysis -->
+            <div v-if="selectedCheckpoint.optimization_analysis" class="p-3 rounded-lg bg-violet-50 border border-violet-100">
+              <div class="text-[10px] text-violet-500 font-medium mb-1.5">{{ t('replay.optimizationAnalysis') }}</div>
+              <div v-if="selectedCheckpoint.optimization_analysis.gaps?.length" class="mb-2">
+                <div class="text-[10px] text-violet-400 mb-0.5">{{ t('replay.gapAnalysis') }}</div>
+                <div class="space-y-1">
+                  <div v-for="(gap, i) in selectedCheckpoint.optimization_analysis.gaps" :key="i" class="text-xs flex gap-1.5">
+                    <span class="shrink-0 px-1 rounded text-[10px] font-medium" :class="gap.severity === 'high' ? 'bg-red-100 text-red-600' : gap.severity === 'medium' ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-600'">{{ gap.severity }}</span>
+                    <div>
+                      <div class="text-slate-700 font-medium">{{ gap.dimension }}</div>
+                      <div class="text-slate-500">{{ gap.description }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="selectedCheckpoint.optimization_analysis.suggestions?.length" class="mb-2">
+                <div class="text-[10px] text-violet-400 mb-0.5">{{ t('replay.suggestions') }}</div>
+                <div class="space-y-1">
+                  <div v-for="(sug, i) in selectedCheckpoint.optimization_analysis.suggestions" :key="i" class="text-xs flex gap-1.5">
+                    <span class="shrink-0 text-violet-400">P{{ sug.priority }}</span>
+                    <div>
+                      <div class="text-slate-700">{{ sug.action }}</div>
+                      <div class="text-slate-500 text-[11px]">{{ sug.reasoning }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="selectedCheckpoint.optimization_analysis.viral_patterns?.length">
+                <div class="text-[10px] text-violet-400 mb-0.5">{{ t('replay.viralPatterns') }}</div>
+                <div class="flex flex-wrap gap-1">
+                  <span v-for="p in selectedCheckpoint.optimization_analysis.viral_patterns" :key="p" class="text-[11px] px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-600">{{ p }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Content versions (A/B/C) -->
+            <div v-if="selectedCheckpoint.content_versions?.length">
+              <div class="text-xs text-slate-400 font-medium mb-1.5 uppercase tracking-wide">{{ t('replay.contentVersions') }} ({{ selectedCheckpoint.content_versions.length }})</div>
+              <div class="space-y-2">
+                <div v-for="(ver, i) in selectedCheckpoint.content_versions" :key="ver.version_id || i" class="p-2.5 rounded-lg border" :class="ver.version_type === 'A' ? 'bg-rose-50 border-rose-100' : ver.version_type === 'B' ? 'bg-blue-50 border-blue-100' : 'bg-emerald-50 border-emerald-100'">
+                  <div class="flex items-center justify-between mb-1">
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" :class="ver.version_type === 'A' ? 'bg-rose-200 text-rose-700' : ver.version_type === 'B' ? 'bg-blue-200 text-blue-700' : 'bg-emerald-200 text-emerald-700'">{{ t('review.versionLabel', { n: ver.version_type || (i + 1) }) }}</span>
+                      <span class="text-xs font-semibold" :class="ver.version_type === 'A' ? 'text-rose-700' : ver.version_type === 'B' ? 'text-blue-700' : 'text-emerald-700'">{{ ver.title }}</span>
+                    </div>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{{ ver.predicted_score }}{{ t('versionCompare.scoreUnit') }}</span>
+                  </div>
+                  <div v-if="ver.body" class="text-xs text-slate-600 whitespace-pre-line line-clamp-4 mb-1">{{ ver.body }}</div>
+                  <div v-if="ver.changes_summary" class="text-[11px] text-slate-400 mb-1">↻ {{ ver.changes_summary }}</div>
+                  <div class="flex flex-wrap gap-1">
+                    <span v-for="tag in ver.hashtags" :key="tag" class="text-[10px] px-1 py-0.5 rounded bg-teal-50 text-teal-600">#{{ tag }}</span>
+                    <span v-if="ver.style_suggestion" class="text-[10px] px-1 py-0.5 rounded bg-violet-50 text-violet-600">{{ ver.style_suggestion }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </template>
 
           <!-- ═══ VISUAL DESIGNER ═══ -->

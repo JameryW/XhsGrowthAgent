@@ -35,6 +35,38 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
         <div v-if="detail.copy_content?.hashtags?.length" class="flex flex-wrap gap-1">
           <span v-for="tag in detail.copy_content.hashtags" :key="tag" class="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700">#{{ tag }}</span>
         </div>
+        <!-- Draft content -->
+        <div v-if="detail.draft_content" class="p-2 rounded-lg bg-blue-50 border border-blue-100">
+          <div class="text-[10px] text-blue-500 font-medium mb-0.5">{{ t('replay.draftContent') }}</div>
+          <div v-if="detail.draft_content.title" class="text-xs font-semibold text-blue-700">{{ detail.draft_content.title }}</div>
+          <div v-if="detail.draft_content.text" class="text-xs text-blue-600 whitespace-pre-line line-clamp-4">{{ detail.draft_content.text }}</div>
+        </div>
+        <!-- Optimization analysis -->
+        <div v-if="detail.optimization_analysis" class="p-2 rounded-lg bg-violet-50 border border-violet-100">
+          <div class="text-[10px] text-violet-500 font-medium mb-0.5">{{ t('replay.optimizationAnalysis') }}</div>
+          <div v-if="detail.optimization_analysis.gaps?.length" class="space-y-0.5 mb-1">
+            <div v-for="(gap, i) in detail.optimization_analysis.gaps.slice(0, 3)" :key="i" class="text-xs flex gap-1">
+              <span class="shrink-0 px-1 rounded text-[10px] font-medium" :class="gap.severity === 'high' ? 'bg-red-100 text-red-600' : gap.severity === 'medium' ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-600'">{{ gap.severity }}</span>
+              <span class="text-slate-600">{{ gap.dimension }}</span>
+            </div>
+          </div>
+          <div v-if="detail.optimization_analysis.viral_patterns?.length" class="flex flex-wrap gap-1">
+            <span v-for="p in detail.optimization_analysis.viral_patterns" :key="p" class="text-[10px] px-1 py-0.5 rounded bg-violet-100 text-violet-600">{{ p }}</span>
+          </div>
+        </div>
+        <!-- Content versions -->
+        <div v-if="detail.content_versions?.length">
+          <div class="text-[10px] text-slate-400 font-medium mb-0.5">{{ t('replay.contentVersions') }} ({{ detail.content_versions.length }})</div>
+          <div class="space-y-1">
+            <div v-for="(ver, i) in detail.content_versions" :key="ver.version_id || i" class="p-1.5 rounded border text-xs" :class="ver.version_type === 'A' ? 'bg-rose-50 border-rose-100' : ver.version_type === 'B' ? 'bg-blue-50 border-blue-100' : 'bg-emerald-50 border-emerald-100'">
+              <div class="flex items-center justify-between">
+                <span class="font-semibold" :class="ver.version_type === 'A' ? 'text-rose-700' : ver.version_type === 'B' ? 'text-blue-700' : 'text-emerald-700'">{{ ver.title }}</span>
+                <span class="text-[10px] text-slate-400">{{ ver.predicted_score }}pts</span>
+              </div>
+              <div v-if="ver.changes_summary" class="text-[11px] text-slate-400 mt-0.5">{{ ver.changes_summary }}</div>
+            </div>
+          </div>
+        </div>
         <div v-if="detail.content_plan?.key_points?.length" class="space-y-0.5">
           <div v-for="(point, i) in detail.content_plan.key_points.slice(0, 3)" :key="i" class="text-xs text-slate-500 flex gap-1">
             <span class="text-cyan-400">▸</span>
