@@ -136,7 +136,7 @@ onUnmounted(() => {
       />
 
       <!-- Stale Workflow Recovery -->
-      <div v-if="workflowStore.isStale" class="rounded-xl p-3 md:p-4 bg-amber-50 border border-amber-200">
+      <div v-if="workflowStore.isStale" class="rounded-xl p-3 md:p-4 liquid-glass-amber liquid-glass-hover">
         <div class="flex items-start gap-2 md:gap-3">
           <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
             <AppIcon name="AlertTriangle" size="md" variant="peach" />
@@ -155,7 +155,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Publish Error Recovery -->
-      <div v-if="workflowStore.publishError" class="card-error rounded-xl p-3 md:p-4">
+      <div v-if="workflowStore.publishError" class="liquid-glass-rose rounded-xl p-3 md:p-4">
         <div class="flex items-start gap-2 md:gap-3">
           <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-rose-100 flex items-center justify-center flex-shrink-0">
             <AppIcon name="AlertTriangle" size="md" variant="pink" />
@@ -210,7 +210,7 @@ onUnmounted(() => {
       <WorkflowHeader />
 
       <!-- Replay mode banner -->
-      <div v-if="workflowStore.isReplayMode" class="rounded-xl p-3 md:p-4 bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-200/50">
+      <div v-if="workflowStore.isReplayMode" class="rounded-xl p-3 md:p-4 liquid-glass-violet liquid-glass-hover">
         <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-2 md:gap-3 min-w-0">
             <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">

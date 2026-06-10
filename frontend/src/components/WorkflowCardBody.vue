@@ -42,7 +42,7 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
           </div>
         </div>
         <!-- Publish result -->
-        <div v-if="has(detail.publish_result)" class="p-2.5 rounded-lg bg-emerald-50 border border-emerald-100">
+        <div v-if="has(detail.publish_result)" class="p-2.5 rounded-lg liquid-glass-inset">
           <div class="text-[10px] text-emerald-500 font-medium mb-1">{{ t('replay.status') }}</div>
           <div class="grid grid-cols-2 gap-2">
             <div v-if="(detail.publish_result as any).post_id" class="text-xs">
@@ -81,12 +81,12 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
             <span v-for="kw in detail.trend_data.trending_keywords" :key="kw" class="text-[11px] px-1.5 py-0.5 rounded-md bg-pink-50 text-pink-600 border border-pink-100">{{ kw }}</span>
           </div>
         </div>
-        <div v-if="detail.trend_data?.competitor_posts?.[0]" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+        <div v-if="detail.trend_data?.competitor_posts?.[0]" class="p-2 rounded-lg liquid-glass-inset">
           <div class="text-[10px] text-slate-400 font-medium mb-0.5">{{ t('showcase.detail.topCompetitor') }}</div>
           <div class="text-xs text-slate-700">{{ detail.trend_data.competitor_posts[0].title }}</div>
           <div class="text-[11px] text-slate-400 mt-0.5">{{ (detail.trend_data.competitor_posts[0].likes / 1000).toFixed(1) }}k likes</div>
         </div>
-        <div v-if="detail.visual_plan" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+        <div v-if="detail.visual_plan" class="p-2 rounded-lg liquid-glass-inset">
           <div class="text-[10px] text-slate-400 font-medium mb-0.5">{{ t('showcase.detail.visual') }}</div>
           <div class="text-xs text-slate-700">{{ detail.visual_plan.layout_style }}</div>
           <div class="text-[11px] text-slate-400">{{ t('showcase.detail.imageCount', { count: detail.visual_plan.image_count }) }}</div>
@@ -97,7 +97,7 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
         <!-- Analytics -->
         <div v-if="has(detail.analytics)" class="space-y-1.5">
           <div v-if="(detail.analytics as any).views !== undefined" class="grid grid-cols-2 gap-1.5">
-            <div class="p-1.5 rounded bg-slate-50 text-center">
+            <div class="p-1.5 rounded liquid-glass-inset text-center">
               <div class="text-[10px] text-slate-400">Views</div>
               <div class="text-xs font-bold text-slate-700">{{ formatNum((detail.analytics as any).views) }}</div>
             </div>
@@ -129,7 +129,7 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
           </div>
         </div>
         <!-- Ripple -->
-        <div v-if="has(detail.ripple_prediction)" class="p-2 rounded-lg bg-violet-50 border border-violet-100">
+        <div v-if="has(detail.ripple_prediction)" class="p-2 rounded-lg liquid-glass-inset">
           <div class="text-[10px] text-violet-500 font-medium mb-0.5">Ripple</div>
           <div class="grid grid-cols-2 gap-x-3 gap-y-0.5">
             <div class="text-xs text-violet-700" v-if="detail.ripple_prediction!.viral_probability != null">{{ t('replay.viralProb') }} {{ (detail.ripple_prediction!.viral_probability * 100).toFixed(1) }}%</div>

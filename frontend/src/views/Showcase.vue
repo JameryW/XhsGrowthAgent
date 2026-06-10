@@ -187,7 +187,7 @@ const loopMotionPath = computed(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gradient-to-b from-slate-50 to-white text-slate-800 relative overflow-hidden">
+  <div class="min-h-screen text-slate-800 relative overflow-hidden">
     <!-- Subtle decorative elements -->
     <div class="absolute top-0 right-0 w-[500px] h-[500px] pointer-events-none opacity-30" style="background: radial-gradient(circle, rgba(244,63,94,0.08) 0%, transparent 60%);" />
     <div class="absolute bottom-0 left-0 w-[400px] h-[400px] pointer-events-none opacity-20" style="background: radial-gradient(circle, rgba(20,184,166,0.08) 0%, transparent 60%);" />
@@ -197,7 +197,7 @@ const loopMotionPath = computed(() => {
     <div class="absolute bottom-[15%] left-[30%] w-[200px] h-[200px] rounded-full pointer-events-none opacity-[0.03] bg-teal-400" style="animation: float-orb 18s ease-in-out infinite 6s;" />
 
     <!-- Nav -->
-    <nav class="relative z-20 bg-white border-b border-slate-200/60">
+    <nav class="relative z-20 liquid-glass-nav border-b border-white/15">
       <div class="max-w-[1200px] mx-auto px-3 md:px-6 h-14 flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-amber-400 flex items-center justify-center shadow-md shadow-rose-500/20">
@@ -224,7 +224,7 @@ const loopMotionPath = computed(() => {
       </div>
 
       <!-- Error -->
-      <div v-else-if="error" class="rounded-xl p-8 bg-rose-50 border border-rose-200/60 text-center max-w-md w-full">
+      <div v-else-if="error" class="rounded-xl p-8 liquid-glass-rose liquid-glass-hover text-center max-w-md w-full">
         <div class="w-12 h-12 rounded-xl bg-rose-100 flex items-center justify-center mx-auto mb-4">
           <AppIcon name="AlertCircle" size="lg" variant="pink" />
         </div>
@@ -343,7 +343,7 @@ const loopMotionPath = computed(() => {
 
             <!-- Center label -->
             <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div class="text-center px-5 py-3 rounded-2xl bg-white/70 backdrop-blur-sm border border-slate-200/40 shadow-sm">
+              <div class="text-center px-5 py-3 rounded-2xl liquid-glass">
                 <div class="text-sm font-bold text-slate-500">&#x27F3; {{ t('showcase.closedLoop') }}</div>
                 <div class="text-[10px] text-slate-400 mt-0.5">{{ t('showcase.closedLoopDesc') }}</div>
               </div>
@@ -420,9 +420,9 @@ const loopMotionPath = computed(() => {
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <!-- Running workflows -->
             <template v-if="runningWorkflows.length > 0">
-              <div v-for="wf in runningWorkflows" :key="wf.thread_id" class="rounded-xl bg-white border border-teal-200/50 shadow-sm overflow-hidden hover:shadow-md transition-shadow cursor-pointer" @click="goReplay(wf.thread_id)">
+              <div v-for="wf in runningWorkflows" :key="wf.thread_id" class="rounded-xl liquid-glass-teal liquid-glass-hover overflow-hidden cursor-pointer" @click="goReplay(wf.thread_id)">
                 <!-- Card header -->
-                <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-slate-100 bg-teal-50/40">
+                <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-white/10 liquid-glass-inset">
                   <div class="flex items-center gap-2">
                     <span class="w-2.5 h-2.5 rounded-full bg-teal-500 animate-pulse" />
                     <span class="text-sm font-semibold text-slate-800">{{ phaseLabel(wf.phase) }}</span>
@@ -446,9 +446,9 @@ const loopMotionPath = computed(() => {
 
             <!-- Completed workflows -->
             <template v-if="completedWorkflows.length > 0">
-              <div v-for="wf in completedWorkflows" :key="wf.thread_id" class="rounded-xl bg-white border border-emerald-200/40 shadow-sm overflow-hidden hover:shadow-md transition-shadow cursor-pointer" @click="goReplay(wf.thread_id)">
+              <div v-for="wf in completedWorkflows" :key="wf.thread_id" class="rounded-xl liquid-glass-teal liquid-glass-hover overflow-hidden cursor-pointer" @click="goReplay(wf.thread_id)">
                 <!-- Card header -->
-                <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-slate-100 bg-emerald-50/30">
+                <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-white/10 liquid-glass-inset">
                   <div class="flex items-center gap-2">
                     <span class="w-2.5 h-2.5 rounded-full bg-emerald-500" />
                     <span class="text-sm font-semibold text-slate-800">{{ t('showcase.status.completed') }}</span>
@@ -469,9 +469,9 @@ const loopMotionPath = computed(() => {
 
             <!-- Other workflows (error/paused/cancelled/stale/awaiting_*) -->
             <template v-if="otherWorkflows.length > 0">
-              <div v-for="wf in otherWorkflows" :key="wf.thread_id" class="rounded-xl bg-white border border-slate-200/60 shadow-sm overflow-hidden hover:shadow-md transition-shadow cursor-pointer" @click="goReplay(wf.thread_id)">
+              <div v-for="wf in otherWorkflows" :key="wf.thread_id" class="rounded-xl liquid-glass liquid-glass-hover overflow-hidden cursor-pointer" @click="goReplay(wf.thread_id)">
                 <!-- Card header -->
-                <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-slate-100" :class="wf.status === 'error' ? 'bg-rose-50/40' : 'bg-slate-50/40'">
+                <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-white/10 liquid-glass-inset" :class="wf.status === 'error' ? '' : ''">
                   <div class="flex items-center gap-2">
                     <span class="w-2.5 h-2.5 rounded-full" :class="wf.status === 'error' ? 'bg-rose-500' : wf.status === 'paused' ? 'bg-slate-400' : 'bg-amber-400'" />
                     <span class="text-sm font-semibold text-slate-800">{{ phaseLabel(wf.phase) }}</span>
@@ -489,7 +489,7 @@ const loopMotionPath = computed(() => {
                   </div>
                 </div>
                 <!-- Error message -->
-                <div v-if="wf.error" class="px-4 md:px-5 py-2 bg-rose-50/60 border-b border-rose-100/60">
+              <div v-if="wf.error" class="px-4 md:px-5 py-2 liquid-glass-rose border-b border-white/10">
                   <p class="text-xs text-rose-600">{{ wf.error }}</p>
                 </div>
                 <!-- Card body (shared) -->

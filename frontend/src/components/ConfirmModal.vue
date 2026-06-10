@@ -125,7 +125,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
         />
 
         <!-- Modal -->
-        <div class="relative w-full max-w-md p-6 rounded-2xl bg-white/98 shadow-xl border border-slate-200/50">
+        <div class="relative w-full max-w-md p-6 rounded-2xl liquid-glass-elevated">
           <!-- Icon -->
           <div class="flex items-center gap-4 mb-4">
             <div
@@ -145,7 +145,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
           <p id="modal-message" class="text-slate-600 mb-4">{{ message }}</p>
 
           <!-- Action Preview -->
-          <div v-if="confirmAction" class="mb-4 p-3 rounded-lg bg-slate-50 border border-slate-200">
+          <div v-if="confirmAction" class="mb-4 p-3 rounded-lg liquid-glass-inset">
             <p class="text-xs text-slate-500 uppercase tracking-wide mb-1">{{ t('common.actionPreview') }}</p>
             <p class="text-sm text-slate-700">{{ confirmAction }}</p>
           </div>

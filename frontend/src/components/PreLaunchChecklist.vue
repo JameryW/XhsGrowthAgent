@@ -151,7 +151,7 @@ defineExpose({ readiness, suggestedDryRun })
 </script>
 
 <template>
-  <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm overflow-hidden">
+  <div class="rounded-xl liquid-glass overflow-hidden">
     <!-- Header -->
     <div class="px-3 py-2.5 md:px-4 md:py-3 border-b border-slate-100">
       <div class="flex items-center justify-between">
@@ -196,7 +196,7 @@ defineExpose({ readiness, suggestedDryRun })
 
     <!-- Error state -->
     <div v-else-if="error" class="p-4">
-      <div class="rounded-lg p-3 bg-rose-50 border border-rose-100">
+      <div class="rounded-lg p-3 liquid-glass-rose liquid-glass-hover">
         <div class="flex items-center gap-2 mb-1">
           <AppIcon name="WifiOff" size="sm" variant="pink" />
           <span class="text-sm font-medium text-rose-700">{{ t('checklist.apiError') }}</span>
@@ -267,11 +267,11 @@ defineExpose({ readiness, suggestedDryRun })
     </div>
 
     <!-- Summary & Actions -->
-    <div v-if="!isLoading && !error" class="px-3 py-2.5 md:px-4 md:py-3 bg-slate-50/50 border-t border-slate-100">
+    <div v-if="!isLoading && !error" class="px-3 py-2.5 md:px-4 md:py-3 liquid-glass-inset border-t border-white/10">
       <!-- Dry-run suggestion -->
       <div
         v-if="suggestedDryRun && readiness.canStart"
-        class="mb-3 p-2.5 rounded-lg bg-amber-50 border border-amber-100"
+        class="mb-3 p-2.5 rounded-lg liquid-glass-amber liquid-glass-hover"
       >
         <div class="flex items-start gap-2">
           <AppIcon name="FlaskConical" size="sm" variant="peach" class="mt-0.5" />

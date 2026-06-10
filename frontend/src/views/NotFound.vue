@@ -19,7 +19,7 @@ const goHome = () => {
     <div class="absolute top-1/3 left-1/3 w-[400px] h-[400px] rounded-full opacity-40 pointer-events-none" style="background: radial-gradient(circle, rgba(244,63,94,0.1) 0%, transparent 60%); filter: blur(80px);" />
     <div class="absolute bottom-1/3 right-1/3 w-[350px] h-[350px] rounded-full opacity-30 pointer-events-none" style="background: radial-gradient(circle, rgba(20,184,166,0.08) 0%, transparent 60%); filter: blur(100px);" />
 
-    <div class="rounded-2xl p-8 max-w-md w-full text-center relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-lg">
+    <div class="rounded-2xl p-8 max-w-md w-full text-center relative overflow-hidden liquid-glass">
       <!-- Error icon -->
       <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-rose-400 to-amber-400 flex items-center justify-center mx-auto mb-6 shadow-sm">
         <AppIcon name="SearchX" size="xl" variant="white" aria-label="404" />
