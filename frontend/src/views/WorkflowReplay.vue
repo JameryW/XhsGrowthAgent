@@ -48,6 +48,8 @@ const agentLabels: Record<string, string> = {
   publisher: t('showcase.phase.publishing'),
   engagement: 'Engagement',
   analyst: t('showcase.phase.analyzing'),
+  orchestrator: 'Orchestrator',
+  brief_parser: t('showcase.phase.briefing'),
 }
 
 const phaseIcons: Record<string, string> = {
@@ -61,15 +63,51 @@ const phaseIcons: Record<string, string> = {
 
 type NodeStatus = 'completed' | 'running' | 'pending' | 'error'
 
+const phaseAlias: Record<string, string> = {
+  briefing: 'scouting',
+  engaging: 'publishing',
+}
+
+function phaseToIndex(phase: string): number {
+  const mapped = phaseAlias[phase] || phase
+  const idx = pipelineSteps.indexOf(mapped as any)
+  return idx
+}
+
 function getNodeStatus(phase: string): NodeStatus {
   if (!effectiveState.value) return 'pending'
   const currentPhase = effectiveState.value.phase
   const currentStatus = effectiveState.value.status
+
+  // Completed workflow: all nodes completed
   if (currentPhase === 'completed' || currentStatus === 'completed') return 'completed'
-  const idx = pipelineSteps.indexOf(phase as any)
-  const currentIdx = pipelineSteps.indexOf(currentPhase as any)
-  if (idx < 0) return 'pending'
-  if (currentIdx < 0) return 'pending'
+
+  // Error workflow: mark current phase as error, prior as completed
+  if (currentPhase === 'error') {
+    const idx = phaseToIndex(phase)
+    const errIdx = phaseToIndex(effectiveState.value.phase === 'error' ? (effectiveState.value as any).phase || 'scouting' : currentPhase)
+    if (idx < 0) return 'pending'
+    if (idx < errIdx) return 'completed'
+    if (idx === errIdx) return 'error'
+    return 'pending'
+  }
+
+  // Cancelled/paused: treat as frozen, prior phases completed
+  if (currentPhase === 'cancelled' || currentPhase === 'paused') {
+    const idx = phaseToIndex(phase)
+    // Use stored phase to determine progress (via effectiveState metadata)
+    const storedPhase = effectiveState.value.phase
+    const storedIdx = phaseToIndex(storedPhase)
+    if (idx < 0 || storedIdx < 0) return 'pending'
+    if (idx < storedIdx) return 'completed'
+    if (idx === storedIdx) return 'running'
+    return 'pending'
+  }
+
+  // Normal linear flow
+  const idx = phaseToIndex(phase)
+  const currentIdx = phaseToIndex(currentPhase)
+  if (idx < 0 || currentIdx < 0) return 'pending'
   if (idx < currentIdx) return 'completed'
   if (idx === currentIdx) return 'running'
   return 'pending'
@@ -83,6 +121,7 @@ function findCheckpointForAgent(agent: string): string | null {
 // Map phase to primary agent for checkpoint lookup
 const phaseAgentMap: Record<string, string> = {
   scouting: 'trend_scout',
+  briefing: 'brief_parser',
   planning: 'content_strategist',
   creating: 'copywriter',
   reviewing: 'review_gate',
