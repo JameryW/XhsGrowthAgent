@@ -79,10 +79,9 @@ function getNodeStatus(phase: string): NodeStatus {
   const cp = selectedCheckpoint.value
   if (cp) {
     const cpPhase = cp.phase
-    const cpStatus = effectiveState.value?.status
 
     // Workflow fully completed → all nodes completed
-    if (cpPhase === 'completed' || cpStatus === 'completed') return 'completed'
+    if (cpPhase === 'completed') return 'completed'
 
     const idx = phaseToIndex(phase)
     const cpIdx = phaseToIndex(cpPhase)
