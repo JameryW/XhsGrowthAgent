@@ -127,7 +127,7 @@ const phaseAgentMap: Record<string, string> = {
   scouting: 'trend_scout',
   briefing: 'brief_parser',
   planning: 'content_strategist',
-  creating: 'copywriter',
+  creating: 'version_generator',
   reviewing: 'review_gate',
   publishing: 'publisher',
   analyzing: 'analyst',
@@ -135,7 +135,19 @@ const phaseAgentMap: Record<string, string> = {
 
 function handleNodeClick(phase: string) {
   const agent = phaseAgentMap[phase] || phase
-  const cpId = findCheckpointForAgent(agent)
+  let cpId = findCheckpointForAgent(agent)
+  // Fallback: if primary agent checkpoint not found, try other agents in this phase
+  if (!cpId) {
+    const phaseAgents: Record<string, string[]> = {
+      creating: ['copywriter', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'choice_gate', 'content_analyzer', 'version_generator'],
+      reviewing: ['review_gate', 'revise_content'],
+      publishing: ['publisher', 'engagement'],
+    }
+    for (const fallback of phaseAgents[phase] || []) {
+      cpId = findCheckpointForAgent(fallback)
+      if (cpId) break
+    }
+  }
   if (cpId) {
     workflowStore.selectCheckpoint(cpId)
   }
