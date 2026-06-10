@@ -118,7 +118,7 @@ const handleErrorBoundaryRefresh = () => {
   <div class="h-screen flex relative overflow-hidden">
     <!-- Liquid glass background mesh -->
     <div class="liquid-mesh-bg">
-      <div class="absolute w-[55vw] h-[55vw] top-[30%] left-[30%] rounded-full" style="background: radial-gradient(circle, rgba(139,92,246,0.05) 0%, transparent 60%); animation: mesh-drift-3 22s ease-in-out infinite;" />
+      <div class="absolute w-[55vw] h-[55vw] top-[30%] left-[30%] rounded-full" style="background: radial-gradient(circle, rgba(139,92,246,0.20) 0%, transparent 60%); animation: mesh-drift-3 22s ease-in-out infinite;" />
     </div>
 
     <!-- Skip to main content link for keyboard users -->

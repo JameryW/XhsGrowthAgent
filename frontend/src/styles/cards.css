@@ -8,10 +8,10 @@
 /* Base card - liquid glass surface */
 .card {
   @apply rounded-xl md:rounded-2xl p-3 md:p-6;
-  background: rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(40px) saturate(180%) brightness(110%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(110%);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.38);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.04),
     0 4px 16px rgba(0, 0, 0, 0.03),
@@ -118,10 +118,10 @@
 /* Compact card for dense layouts */
 .card-compact {
   @apply rounded-lg p-3;
-  background: rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(40px) saturate(180%) brightness(110%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(110%);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.38);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.04),
     0 4px 16px rgba(0, 0, 0, 0.03),

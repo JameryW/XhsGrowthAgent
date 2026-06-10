@@ -71,7 +71,10 @@ const phaseAlias: Record<string, string> = {
 function phaseToIndex(phase: string): number {
   const mapped = phaseAlias[phase] || phase
   const idx = pipelineSteps.indexOf(mapped as any)
-  return idx
+  if (idx >= 0) return idx
+  if (phase === 'completed') return pipelineSteps.length
+  // paused/cancelled/error: use stored phase to determine progress
+  return -1
 }
 
 function getNodeStatus(phase: string): NodeStatus {
@@ -86,7 +89,21 @@ function getNodeStatus(phase: string): NodeStatus {
     const idx = phaseToIndex(phase)
     const cpIdx = phaseToIndex(cpPhase)
 
-    if (idx < 0 || cpIdx < 0) return 'pending'
+    // For paused/cancelled checkpoints, the stored phase tells us which step was active
+    // Treat paused/cancelled same as their underlying phase for progress display
+    if (cpIdx < 0) {
+      // Check if the checkpoint has a current_agent that maps to a known step
+      const cpAgent = cp.current_agent
+      const agentPhase = Object.entries(phaseAgentMap).find(([_, agent]) => agent === cpAgent)
+      if (agentPhase) {
+        const resolvedIdx = phaseToIndex(agentPhase[0])
+        if (idx < 0 || resolvedIdx < 0) return 'pending'
+        if (idx < resolvedIdx) return 'completed'
+        if (idx === resolvedIdx) return cpPhase === 'paused' ? 'running' : 'running'
+        return 'pending'
+      }
+      return 'pending'
+    }
 
     // Error: mark the error phase, prior completed
     if (cpPhase === 'error') {
@@ -110,7 +127,22 @@ function getNodeStatus(phase: string): NodeStatus {
 
   const idx = phaseToIndex(phase)
   const currentIdx = phaseToIndex(currentPhase)
-  if (idx < 0 || currentIdx < 0) return 'pending'
+
+  if (currentIdx < 0) {
+    // Same logic for effectiveState paused/cancelled
+    const cpAgent = (effectiveState.value as any).current_agent
+    const agentPhase = Object.entries(phaseAgentMap).find(([_, agent]) => agent === cpAgent)
+    if (agentPhase) {
+      const resolvedIdx = phaseToIndex(agentPhase[0])
+      if (idx < 0 || resolvedIdx < 0) return 'pending'
+      if (idx < resolvedIdx) return 'completed'
+      if (idx === resolvedIdx) return 'running'
+      return 'pending'
+    }
+    return 'pending'
+  }
+
+  if (idx < 0) return 'pending'
   if (idx < currentIdx) return 'completed'
   if (idx === currentIdx) return 'running'
   return 'pending'
