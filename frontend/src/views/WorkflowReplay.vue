@@ -395,7 +395,7 @@ onUnmounted(() => {
             </div>
 
             <!-- Draft content (user-submitted draft) -->
-            <div v-if="selectedCheckpoint.draft_content" class="p-3 rounded-lg bg-blue-50 border border-blue-100">
+            <div v-if="selectedCheckpoint.draft_content?.text" class="p-3 rounded-lg bg-blue-50 border border-blue-100">
               <div class="text-[10px] text-blue-500 font-medium mb-1">{{ t('replay.draftContent') }}</div>
               <div v-if="selectedCheckpoint.draft_content.title" class="text-xs font-semibold text-blue-700 mb-0.5">{{ selectedCheckpoint.draft_content.title }}</div>
               <div v-if="selectedCheckpoint.draft_content.text" class="text-xs text-blue-600 whitespace-pre-line line-clamp-6">{{ selectedCheckpoint.draft_content.text }}</div>
@@ -405,7 +405,7 @@ onUnmounted(() => {
             </div>
 
             <!-- Optimization analysis -->
-            <div v-if="selectedCheckpoint.optimization_analysis" class="p-3 rounded-lg bg-violet-50 border border-violet-100">
+            <div v-if="selectedCheckpoint.optimization_analysis && (selectedCheckpoint.optimization_analysis.gaps?.length || selectedCheckpoint.optimization_analysis.suggestions?.length || selectedCheckpoint.optimization_analysis.viral_patterns?.length)" class="p-3 rounded-lg bg-violet-50 border border-violet-100">
               <div class="text-[10px] text-violet-500 font-medium mb-1.5">{{ t('replay.optimizationAnalysis') }}</div>
               <div v-if="selectedCheckpoint.optimization_analysis.gaps?.length" class="mb-2">
                 <div class="text-[10px] text-violet-400 mb-0.5">{{ t('replay.gapAnalysis') }}</div>
