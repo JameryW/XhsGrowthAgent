@@ -169,52 +169,46 @@ def should_present_choice(state: XHSGrowthState) -> Literal["choice_gate", "visu
     return "visual_designer"
 
 
+def shooting_planner_router(
+    state: XHSGrowthState,
+) -> Literal["content_analyzer", "visual_designer"]:
+    """Route after shooting_planner — both modes go to content_analyzer
+    for optimization (content analysis → version generation → choice → visual).
+    Falls back to visual_designer if skip_optimization or no viral posts.
+    """
+    if terminal := _check_terminal(state):
+        return "visual_designer"
+
+    return should_optimize(state)
+
+
 def should_brief_or_optimize(
     state: XHSGrowthState,
 ) -> Literal["shooting_planner", "content_analyzer", "visual_designer"]:
-    """Route after viral_matcher — brief mode goes to shooting_planner,
-    trend mode goes to content_analyzer or visual_designer.
-    """
+    """Route after viral_matcher — both modes go to shooting_planner."""
     if _check_terminal(state):
         return "visual_designer"
 
-    mode = state.get("workflow_mode", "trend")
-    if mode == "brief":
-        return "shooting_planner"
-
-    # Trend mode: existing optimization flow
-    return should_optimize(state)
+    return "shooting_planner"
 
 
 def blogger_gate_router(
     state: XHSGrowthState,
 ) -> Literal["shooting_planner", "content_analyzer", "visual_designer"]:
-    """Route after blogger_gate — brief mode goes to shooting_planner,
-    trend mode goes to content_analyzer or visual_designer.
-
-    Same routing logic as should_brief_or_optimize, applied after
-    blogger selection is complete.
-    """
+    """Route after blogger_gate — both modes go to shooting_planner."""
     if _check_terminal(state):
         return "visual_designer"
 
-    mode = state.get("workflow_mode", "trend")
-    if mode == "brief":
-        return "shooting_planner"
-
-    return should_optimize(state)
+    return "shooting_planner"
 
 
 def copywriter_router(
     state: XHSGrowthState,
 ) -> Literal["draft_gate", "visual_designer"]:
-    """Route after copywriter — brief mode skips draft_gate, trend mode goes to draft_gate."""
-    if _check_terminal(state):
-        return "visual_designer"
-
-    mode = state.get("workflow_mode", "trend")
-    if mode == "brief":
-        # Brief mode: skip draft_gate, go directly to visual_designer
+    """Route after copywriter — both modes go to draft_gate for review.
+    Returns visual_designer only for terminal states.
+    """
+    if terminal := _check_terminal(state):
         return "visual_designer"
 
     return "draft_gate"
@@ -223,15 +217,10 @@ def copywriter_router(
 def visual_designer_router(
     state: XHSGrowthState,
 ) -> Literal["review_gate", "__end__"]:
-    """Route after visual_designer — brief mode ends (no review/publish),
-    trend mode goes to review_gate.
+    """Route after visual_designer — both modes go to review_gate.
+    Returns __end__ only for terminal states (paused/cancelled/error).
     """
     if _check_terminal(state):
-        return "__end__"
-
-    mode = state.get("workflow_mode", "trend")
-    if mode == "brief":
-        # Brief mode: done after visual design + Ripple analysis
         return "__end__"
 
     return "review_gate"
