@@ -129,5 +129,9 @@ class XHSGrowthState(TypedDict, total=False):
     dry_run: bool
     auto_publish: bool
 
+    # User-specified config
+    niche: str  # Track/category (e.g. 母婴, 美妆, 穿搭)
+    topic: str  # Optional user-provided topic override
+
 
 __all__ = ["XHSGrowthState"]

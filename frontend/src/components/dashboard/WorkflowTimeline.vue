@@ -55,60 +55,80 @@ interface PhaseNode {
   subSteps: SubStep[]
 }
 
-const workflowPhases = computed<PhaseNode[]>(() => [
-  {
-    icon: 'Search', label: t('dashboard.timeline.scouting'), phase: 'scouting',
-    description: t('dashboard.timeline.scoutingDesc'), agent: 'trend_scout',
-    subSteps: [],
-  },
-  {
-    icon: 'ClipboardList', label: t('dashboard.timeline.planning'), phase: 'planning',
-    description: t('dashboard.timeline.planningDesc'), agent: 'content_strategist',
-    subSteps: [],
-  },
-  {
-    icon: 'FileText', label: t('dashboard.timeline.briefing'), phase: 'briefing',
-    description: t('dashboard.timeline.briefingDesc'), agent: 'brief_analyzer',
-    subSteps: [],
-  },
-  {
+const workflowMode = computed<'trend' | 'brief'>(() => workflowStore.workflowState?.workflow_mode || 'trend')
+
+const workflowPhases = computed<PhaseNode[]>(() => {
+  const isBrief = workflowMode.value === 'brief'
+  const trendCreatingSubSteps: SubStep[] = [
+    { icon: 'Pencil', label: t('dashboard.timeline.short.copywriting'), agent: 'copywriter', description: t('dashboard.timeline.creatingDesc') },
+    { icon: 'FileText', label: t('dashboard.timeline.short.draft'), agent: 'draft_gate', description: t('dashboard.timeline.draftDesc') },
+    { icon: 'Flame', label: t('dashboard.timeline.short.viralMatch'), agent: 'viral_matcher', description: t('dashboard.timeline.viralMatchDesc') },
+    { icon: 'Users', label: t('dashboard.timeline.short.bloggerScout'), agent: 'blogger_scout', description: t('dashboard.timeline.bloggerScoutDesc') },
+    { icon: 'UserCheck', label: t('dashboard.timeline.short.bloggerGate'), agent: 'blogger_gate', description: t('dashboard.timeline.bloggerGateDesc') },
+    { icon: 'Scan', label: t('dashboard.timeline.short.shootingPlan'), agent: 'shooting_planner', description: t('dashboard.timeline.shootingPlanDesc') },
+    { icon: 'BarChart3', label: t('dashboard.timeline.short.contentAnalysis'), agent: 'content_analyzer', description: t('dashboard.timeline.contentAnalysisDesc') },
+    { icon: 'Palette', label: t('dashboard.timeline.short.visual'), agent: 'visual_designer', description: t('dashboard.timeline.visualDesc') },
+  ]
+  const briefCreatingSubSteps: SubStep[] = [
+    { icon: 'Pencil', label: t('dashboard.timeline.short.copywriting'), agent: 'copywriter', description: t('dashboard.timeline.creatingDesc') },
+    { icon: 'FileText', label: t('dashboard.timeline.short.draft'), agent: 'draft_gate', description: t('dashboard.timeline.draftDesc') },
+    { icon: 'Flame', label: t('dashboard.timeline.short.viralMatch'), agent: 'viral_matcher', description: t('dashboard.timeline.viralMatchDesc') },
+    { icon: 'Users', label: t('dashboard.timeline.short.bloggerScout'), agent: 'blogger_scout', description: t('dashboard.timeline.bloggerScoutDesc') },
+    { icon: 'UserCheck', label: t('dashboard.timeline.short.bloggerGate'), agent: 'blogger_gate', description: t('dashboard.timeline.bloggerGateDesc') },
+    { icon: 'Palette', label: t('dashboard.timeline.short.visual'), agent: 'visual_designer', description: t('dashboard.timeline.visualDesc') },
+  ]
+  const phases: PhaseNode[] = []
+  if (!isBrief) {
+    phases.push({
+      icon: 'Search', label: t('dashboard.timeline.scouting'), phase: 'scouting',
+      description: t('dashboard.timeline.scoutingDesc'), agent: 'trend_scout',
+      subSteps: [],
+    })
+    phases.push({
+      icon: 'ClipboardList', label: t('dashboard.timeline.planning'), phase: 'planning',
+      description: t('dashboard.timeline.planningDesc'), agent: 'content_strategist',
+      subSteps: [],
+    })
+  } else {
+    phases.push({
+      icon: 'FileText', label: t('dashboard.timeline.briefing'), phase: 'briefing',
+      description: t('dashboard.timeline.briefingDesc'), agent: 'brief_analyzer',
+      subSteps: [
+        { icon: 'FileText', label: t('dashboard.timeline.short.briefAnalyze'), agent: 'brief_analyzer', description: t('dashboard.timeline.briefAnalyzeDesc') },
+        { icon: 'HelpCircle', label: t('dashboard.timeline.short.briefGate'), agent: 'brief_gate', description: t('dashboard.timeline.briefGateDesc') },
+        { icon: 'Scan', label: t('dashboard.timeline.short.shootingPlan'), agent: 'shooting_planner', description: t('dashboard.timeline.shootingPlanDesc') },
+        { icon: 'BarChart3', label: t('dashboard.timeline.short.contentAnalysis'), agent: 'content_analyzer', description: t('dashboard.timeline.contentAnalysisDesc') },
+      ],
+    })
+  }
+  phases.push({
     icon: 'Pencil', label: t('dashboard.timeline.creating'), phase: 'creating',
-    description: t('dashboard.timeline.creatingDesc'), agent: 'copywriter',
-    subSteps: [
-      { icon: 'Pencil', label: t('dashboard.timeline.short.copywriting'), agent: 'copywriter', description: t('dashboard.timeline.creatingDesc') },
-      { icon: 'FileText', label: t('dashboard.timeline.short.briefAnalyze'), agent: 'brief_analyzer', description: t('dashboard.timeline.briefAnalyzeDesc') },
-      { icon: 'HelpCircle', label: t('dashboard.timeline.short.briefGate'), agent: 'brief_gate', description: t('dashboard.timeline.briefGateDesc') },
-      { icon: 'FileText', label: t('dashboard.timeline.short.draft'), agent: 'draft_gate', description: t('dashboard.timeline.draftDesc') },
-      { icon: 'Flame', label: t('dashboard.timeline.short.viralMatch'), agent: 'viral_matcher', description: t('dashboard.timeline.viralMatchDesc') },
-      { icon: 'Users', label: t('dashboard.timeline.short.bloggerScout'), agent: 'blogger_scout', description: t('dashboard.timeline.bloggerScoutDesc') },
-      { icon: 'UserCheck', label: t('dashboard.timeline.short.bloggerGate'), agent: 'blogger_gate', description: t('dashboard.timeline.bloggerGateDesc') },
-      { icon: 'Scan', label: t('dashboard.timeline.short.shootingPlan'), agent: 'shooting_planner', description: t('dashboard.timeline.shootingPlanDesc') },
-      { icon: 'BarChart3', label: t('dashboard.timeline.short.contentAnalysis'), agent: 'content_analyzer', description: t('dashboard.timeline.contentAnalysisDesc') },
-      { icon: 'Palette', label: t('dashboard.timeline.short.visual'), agent: 'visual_designer', description: t('dashboard.timeline.visualDesc') },
-    ],
-  },
-  {
+    description: t('dashboard.timeline.creatingDesc'), agent: isBrief ? 'brief_analyzer' : 'copywriter',
+    subSteps: isBrief ? briefCreatingSubSteps : trendCreatingSubSteps,
+  })
+  phases.push({
     icon: 'Clock', label: t('dashboard.timeline.reviewing'), phase: 'reviewing',
     description: t('dashboard.timeline.reviewingDesc'), agent: 'review_gate',
     subSteps: [
       { icon: 'Clock', label: t('dashboard.timeline.short.reviewGate'), agent: 'review_gate', description: t('dashboard.timeline.reviewingDesc') },
       { icon: 'RotateCcw', label: t('dashboard.timeline.short.reviseContent'), agent: 'revise_content', description: t('dashboard.timeline.reviseContentDesc') },
     ],
-  },
-  {
+  })
+  phases.push({
     icon: 'Upload', label: t('dashboard.timeline.publishing'), phase: 'publishing',
     description: t('dashboard.timeline.publishingDesc'), agent: 'publisher',
     subSteps: [
       { icon: 'Upload', label: t('dashboard.timeline.short.publisher'), agent: 'publisher', description: t('dashboard.timeline.publishingDesc') },
       { icon: 'MessageCircle', label: t('dashboard.timeline.short.engagement'), agent: 'engagement', description: t('dashboard.timeline.engaging') },
     ],
-  },
-  {
+  })
+  phases.push({
     icon: 'BarChart3', label: t('dashboard.timeline.analyzing'), phase: 'analyzing',
     description: t('dashboard.timeline.analyzingDesc'), agent: 'analyst',
     subSteps: [],
-  },
-])
+  })
+  return phases
+})
 
 // Progress tracking
 const workflowProgress = computed(() => workflowStore.progressPercent)
@@ -130,20 +150,36 @@ const hasTimelineData = computed(() => agentTimeline.value.length > 0)
 
 type NodeStatus = 'completed' | 'running' | 'pending' | 'error'
 
-const phaseOrder = ['scouting', 'planning', 'briefing', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging', 'completed'] as const
+const phaseOrder = computed<string[]>(() => {
+  const isBrief = workflowMode.value === 'brief'
+  const base = isBrief
+    ? ['briefing', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging', 'completed']
+    : ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging', 'completed']
+  return base
+})
 
-const agentOrder = [
-  'trend_scout', 'content_strategist', 'copywriter', 'draft_gate',
-  'brief_analyzer', 'brief_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate',
-  'shooting_planner', 'content_analyzer',
-  'version_generator', 'choice_gate', 'visual_designer', 'review_gate',
-  'revise_content', 'publisher', 'engagement', 'analyst',
-] as const
+const agentOrder = computed<string[]>(() => {
+  const isBrief = workflowMode.value === 'brief'
+  if (isBrief) {
+    return [
+      'brief_analyzer', 'brief_gate', 'copywriter', 'draft_gate',
+      'viral_matcher', 'blogger_scout', 'blogger_gate',
+      'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer',
+      'review_gate', 'revise_content', 'publisher', 'engagement', 'analyst',
+    ]
+  }
+  return [
+    'trend_scout', 'content_strategist', 'copywriter', 'draft_gate',
+    'viral_matcher', 'blogger_scout', 'blogger_gate',
+    'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer',
+    'review_gate', 'revise_content', 'publisher', 'engagement', 'analyst',
+  ]
+})
 
 const hasData = (value: unknown) =>
   !!value && typeof value === 'object' && Object.keys(value as Record<string, unknown>).length > 0
 
-const agentIndex = (agent: string) => agentOrder.indexOf(agent as typeof agentOrder[number])
+const agentIndex = (agent: string) => agentOrder.value.indexOf(agent)
 
 function isSubStepCompleted(agent: string): boolean {
   const status = workflowStore.currentStatus
@@ -189,9 +225,13 @@ function getStatus(agent: string): NodeStatus {
     return 'running'
   }
   if (isSubStepCompleted(agent)) return 'completed'
-  const currentPhaseIdx = phaseOrder.indexOf(workflowStore.currentPhase as any)
-  const nodePhase = agent === 'engagement' ? 'publishing' : 'creating'
-  const nodePhaseIdx = phaseOrder.indexOf(nodePhase as any)
+  const currentPhaseIdx = phaseOrder.value.indexOf(workflowStore.currentPhase)
+  const briefAgents = new Set(['brief_analyzer', 'brief_gate', 'shooting_planner', 'content_analyzer'])
+  let nodePhase: string
+  if (agent === 'engagement') nodePhase = 'publishing'
+  else if (workflowMode.value === 'brief' && briefAgents.has(agent)) nodePhase = 'briefing'
+  else nodePhase = 'creating'
+  const nodePhaseIdx = phaseOrder.value.indexOf(nodePhase)
   if (nodePhaseIdx < currentPhaseIdx) return 'completed'
   if (nodePhaseIdx === currentPhaseIdx) return 'running'
   return 'pending'
@@ -261,11 +301,12 @@ const handleKeyDown = (e: KeyboardEvent) => {
 const isFocused = (index: number) => focusedIndex.value === index
 
 // Substep section labels (from PR #54)
-const substepSectionLabels: Record<string, string> = {
-  creating: '内容创作步骤',
+const substepSectionLabels = computed<Record<string, string>>(() => ({
+  briefing: '商单解析步骤',
+  creating: workflowMode.value === 'brief' ? '商单创作步骤' : '内容创作步骤',
   reviewing: '审核步骤',
   publishing: '发布步骤',
-}
+}))
 </script>
 
 <template>

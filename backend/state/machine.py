@@ -103,6 +103,8 @@ def derive_status(snapshot: StateSnapshot, *, has_active_task: bool = True) -> W
                 return WorkflowStatus.AWAITING_RIPPLE_DECISION
             if gate_type == "blogger":
                 return WorkflowStatus.AWAITING_BLOGGER_SELECTION
+            if gate_type == "brief_clarification":
+                return WorkflowStatus.AWAITING_BRIEF
             # Unknown gate type with interrupt — fall through to remaining checks
 
     # Priority 6: Error (only when terminal — phase is ERROR or no next nodes)

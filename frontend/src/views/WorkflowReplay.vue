@@ -20,16 +20,34 @@ const replayCheckpoints = computed(() => workflowStore.replayCheckpoints)
 const effectiveState = computed(() => workflowStore.effectiveState)
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 
-const pipelineSteps = ['scouting', 'planning', 'briefing', 'creating', 'reviewing', 'publishing', 'analyzing'] as const
+const workflowMode = computed<'trend' | 'brief'>(() => effectiveState.value?.workflow_mode || 'trend')
 
-const phaseLabels: Record<string, string> = {
+const pipelineSteps = computed<string[]>(() => {
+  const isBrief = workflowMode.value === 'brief'
+  return isBrief
+    ? ['briefing', 'creating', 'reviewing', 'publishing', 'analyzing']
+    : ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'analyzing']
+})
+
+const phaseLabels = computed<Record<string, string>>(() => ({
   scouting: t('showcase.phase.scouting'),
   planning: t('showcase.phase.planning'),
+  briefing: t('dashboard.timeline.briefing'),
   creating: t('showcase.phase.creating'),
   reviewing: t('showcase.phase.reviewing'),
   publishing: t('showcase.phase.publishing'),
   analyzing: t('showcase.phase.analyzing'),
-}
+}))
+
+const phaseIcons = computed<Record<string, string>>(() => ({
+  scouting: 'Search',
+  planning: 'ClipboardList',
+  briefing: 'FileText',
+  creating: 'Pencil',
+  reviewing: 'Clock',
+  publishing: 'Upload',
+  analyzing: 'BarChart3',
+}))
 
 const agentLabels: Record<string, string> = {
   trend_scout: t('showcase.phase.scouting'),
@@ -54,15 +72,6 @@ const agentLabels: Record<string, string> = {
   orchestrator: t('dashboard.timeline.orchestrator'),
 }
 
-const phaseIcons: Record<string, string> = {
-  scouting: 'Search',
-  planning: 'ClipboardList',
-  creating: 'Pencil',
-  reviewing: 'Clock',
-  publishing: 'Upload',
-  analyzing: 'BarChart3',
-}
-
 type NodeStatus = 'completed' | 'running' | 'pending' | 'error'
 
 const phaseAlias: Record<string, string> = {
@@ -71,9 +80,9 @@ const phaseAlias: Record<string, string> = {
 
 function phaseToIndex(phase: string): number {
   const mapped = phaseAlias[phase] || phase
-  const idx = pipelineSteps.indexOf(mapped as any)
+  const idx = pipelineSteps.value.indexOf(mapped)
   if (idx >= 0) return idx
-  if (phase === 'completed') return pipelineSteps.length
+  if (phase === 'completed') return pipelineSteps.value.length
   // paused/cancelled/error: use stored phase to determine progress
   return -1
 }
@@ -155,23 +164,27 @@ function findCheckpointForAgent(agent: string): string | null {
 }
 
 // Map phase to primary agent for checkpoint lookup (dynamic based on workflow_mode)
-const phaseAgentMap = computed<Record<string, string>>(() => ({
-  scouting: 'trend_scout',
-  planning: 'content_strategist',
-  briefing: 'brief_analyzer',
-  creating: effectiveState.value?.workflow_mode === 'brief' ? 'shooting_planner' : 'copywriter',
-  reviewing: 'review_gate',
-  publishing: 'publisher',
-  analyzing: 'analyst',
-}))
+const phaseAgentMap = computed<Record<string, string>>(() => {
+  const isBrief = workflowMode.value === 'brief'
+  return {
+    ...(isBrief ? { briefing: 'brief_analyzer' } : { scouting: 'trend_scout', planning: 'content_strategist' }),
+    creating: isBrief ? 'brief_analyzer' : 'copywriter',
+    reviewing: 'review_gate',
+    publishing: 'publisher',
+    analyzing: 'analyst',
+  }
+})
 
 function handleNodeClick(phase: string) {
   const agent = phaseAgentMap.value[phase] || phase
   let cpId = findCheckpointForAgent(agent)
   // Fallback: if primary agent checkpoint not found, try other agents in this phase
   if (!cpId) {
+    const isBrief = workflowMode.value === 'brief'
     const phaseAgents: Record<string, string[]> = {
-      creating: ['copywriter', 'brief_analyzer', 'brief_gate', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'shooting_planner', 'content_analyzer', 'choice_gate', 'version_generator'],
+      creating: isBrief
+        ? ['brief_analyzer', 'brief_gate', 'copywriter', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer']
+        : ['copywriter', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer'],
       reviewing: ['review_gate', 'revise_content', 'visual_designer', 'copywriter'],
       publishing: ['publisher', 'engagement'],
     }
