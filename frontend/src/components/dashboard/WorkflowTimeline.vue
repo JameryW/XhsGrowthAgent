@@ -67,14 +67,23 @@ const workflowPhases = computed<PhaseNode[]>(() => [
     subSteps: [],
   },
   {
+    icon: 'FileText', label: t('dashboard.timeline.briefing'), phase: 'briefing',
+    description: t('dashboard.timeline.briefingDesc'), agent: 'brief_analyzer',
+    subSteps: [],
+  },
+  {
     icon: 'Pencil', label: t('dashboard.timeline.creating'), phase: 'creating',
     description: t('dashboard.timeline.creatingDesc'), agent: 'copywriter',
     subSteps: [
       { icon: 'Pencil', label: t('dashboard.timeline.short.copywriting'), agent: 'copywriter', description: t('dashboard.timeline.creatingDesc') },
+      { icon: 'FileText', label: t('dashboard.timeline.short.briefAnalyze'), agent: 'brief_analyzer', description: t('dashboard.timeline.briefAnalyzeDesc') },
+      { icon: 'HelpCircle', label: t('dashboard.timeline.short.briefGate'), agent: 'brief_gate', description: t('dashboard.timeline.briefGateDesc') },
       { icon: 'FileText', label: t('dashboard.timeline.short.draft'), agent: 'draft_gate', description: t('dashboard.timeline.draftDesc') },
       { icon: 'Flame', label: t('dashboard.timeline.short.viralMatch'), agent: 'viral_matcher', description: t('dashboard.timeline.viralMatchDesc') },
       { icon: 'Users', label: t('dashboard.timeline.short.bloggerScout'), agent: 'blogger_scout', description: t('dashboard.timeline.bloggerScoutDesc') },
       { icon: 'UserCheck', label: t('dashboard.timeline.short.bloggerGate'), agent: 'blogger_gate', description: t('dashboard.timeline.bloggerGateDesc') },
+      { icon: 'Scan', label: t('dashboard.timeline.short.shootingPlan'), agent: 'shooting_planner', description: t('dashboard.timeline.shootingPlanDesc') },
+      { icon: 'BarChart3', label: t('dashboard.timeline.short.contentAnalysis'), agent: 'content_analyzer', description: t('dashboard.timeline.contentAnalysisDesc') },
       { icon: 'Palette', label: t('dashboard.timeline.short.visual'), agent: 'visual_designer', description: t('dashboard.timeline.visualDesc') },
     ],
   },
@@ -121,11 +130,12 @@ const hasTimelineData = computed(() => agentTimeline.value.length > 0)
 
 type NodeStatus = 'completed' | 'running' | 'pending' | 'error'
 
-const phaseOrder = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging', 'completed'] as const
+const phaseOrder = ['scouting', 'planning', 'briefing', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging', 'completed'] as const
 
 const agentOrder = [
   'trend_scout', 'content_strategist', 'copywriter', 'draft_gate',
-  'viral_matcher', 'blogger_scout', 'blogger_gate', 'content_analyzer',
+  'brief_analyzer', 'brief_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate',
+  'shooting_planner', 'content_analyzer',
   'version_generator', 'choice_gate', 'visual_designer', 'review_gate',
   'revise_content', 'publisher', 'engagement', 'analyst',
 ] as const
@@ -142,6 +152,9 @@ function isSubStepCompleted(agent: string): boolean {
   if (agent === 'content_strategist') return hasData(workflowStore.contentPlan)
   if (agent === 'copywriter') return hasData(workflowStore.copyContent)
   if (agent === 'draft_gate') return hasData(workflowStore.workflowState?.draft_content)
+  if (agent === 'brief_analyzer') return hasData((workflowStore.workflowState as any)?.brief_content)
+  if (agent === 'brief_gate') return hasData((workflowStore.workflowState as any)?.brief_clarification) || hasData((workflowStore.workflowState as any)?.brief_content)
+  if (agent === 'shooting_planner') return hasData((workflowStore.workflowState as any)?.shooting_plan)
   if (agent === 'visual_designer') {
     return (
       status === 'awaiting_review' ||

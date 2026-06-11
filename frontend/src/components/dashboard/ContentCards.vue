@@ -32,6 +32,7 @@ const isStrategyRunning = computed(() =>
 const trendData = computed(() => workflowStore.trendData)
 const contentPlan = computed(() => workflowStore.contentPlan)
 const copyContent = computed(() => workflowStore.copyContent)
+const shootingPlan = computed(() => (workflowStore.workflowState as any)?.shooting_plan || {})
 const publishResult = computed(() => (workflowStore.workflowState as any)?.publish_result || {})
 const analytics = computed(() => (workflowStore.workflowState as any)?.analytics || {})
 
@@ -48,6 +49,7 @@ const reselectCount = computed(() => workflowStore.reselectCount)
 const hasTrendData = computed(() => Object.keys(trendData.value).length > 0)
 const hasContentPlan = computed(() => Object.keys(contentPlan.value).length > 0)
 const hasCopyContent = computed(() => Object.keys(copyContent.value).length > 0)
+const hasShootingPlan = computed(() => Object.keys(shootingPlan.value).length > 0)
 const hasPublishResult = computed(() => Object.keys(publishResult.value).length > 0)
 const hasAnalytics = computed(() => Object.keys(analytics.value).length > 0)
 const hasRipplePrediction = computed(() => Object.keys(ripplePrediction.value).length > 0)
@@ -98,7 +100,7 @@ function heatBg(score?: number): string {
   </div>
 
   <!-- Loading state with skeleton -->
-  <div v-else-if="!hasTrendData && !hasContentPlan && !hasCopyContent && !hasPublishResult" class="grid grid-cols-1 lg:grid-cols-3 gap-4" role="status">
+  <div v-else-if="!hasTrendData && !hasContentPlan && !hasCopyContent && !hasShootingPlan && !hasPublishResult" class="grid grid-cols-1 lg:grid-cols-3 gap-4" role="status">
     <div v-for="i in 3" :key="i" class="rounded-xl p-3 md:p-5 bg-white/98 border border-slate-200/50">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-slate-200 animate-pulse" />
@@ -294,6 +296,48 @@ function heatBg(score?: number): string {
         <span v-for="(tag, idx) in copyContent.hashtags" :key="idx" class="px-2 py-1 rounded-md bg-violet-50 text-violet-600 text-xs border border-violet-100">
           #{{ tag }}
         </span>
+      </div>
+    </div>
+
+    <!-- ═══ SHOOTING PLAN (brief mode) ═══ -->
+    <div v-if="hasShootingPlan && !hasCopyContent && showForPhase('creating')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-violet-100/50">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-indigo-400 flex items-center justify-center">
+          <AppIcon name="Pencil" size="md" variant="white" />
+        </div>
+        <div>
+          <div class="text-sm font-semibold text-slate-800">{{ t('shootingPlan.title') }}</div>
+          <div class="text-xs text-slate-400">{{ shootingPlan.content_direction || '' }}</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 mb-3">
+        <div v-if="shootingPlan.creator_nickname" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+          <div class="text-[10px] text-slate-400 uppercase">{{ t('shootingPlan.creator') }}</div>
+          <div class="text-xs text-slate-700 font-medium">{{ shootingPlan.creator_nickname }}</div>
+        </div>
+        <div v-if="shootingPlan.content_type_label" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+          <div class="text-[10px] text-slate-400 uppercase">{{ t('shootingPlan.type') }}</div>
+          <div class="text-xs text-slate-700 font-medium">{{ shootingPlan.content_type_label }}</div>
+        </div>
+      </div>
+
+      <div v-if="shootingPlan.title_candidates?.length" class="mb-3">
+        <div class="text-xs text-slate-500 mb-1.5">{{ t('shootingPlan.titleCandidates') }}</div>
+        <div class="space-y-1">
+          <div v-for="(title, idx) in shootingPlan.title_candidates" :key="idx" class="text-xs text-slate-600">
+            <span class="text-violet-400 font-medium">{{ idx + 1 }}.</span> {{ title }}
+          </div>
+        </div>
+      </div>
+
+      <div v-if="shootingPlan.body_copy" class="p-3 rounded-lg bg-slate-50 border border-slate-100 mb-3">
+        <p class="text-xs text-slate-600 line-clamp-4 whitespace-pre-line">{{ shootingPlan.body_copy }}</p>
+      </div>
+
+      <div v-if="shootingPlan.required_hashtags?.length || shootingPlan.optional_hashtags?.length" class="flex flex-wrap gap-1.5">
+        <span v-for="tag in (shootingPlan.required_hashtags || [])" :key="'r-'+tag" class="px-2 py-1 rounded-md bg-rose-50 text-rose-600 text-xs border border-rose-200 font-medium">#{{ tag }}</span>
+        <span v-for="tag in (shootingPlan.optional_hashtags || [])" :key="'o-'+tag" class="px-2 py-1 rounded-md bg-slate-50 text-slate-500 text-xs border border-slate-200">#{{ tag }}</span>
       </div>
     </div>
 
