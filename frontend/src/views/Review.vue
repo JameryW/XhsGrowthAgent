@@ -139,7 +139,22 @@ onMounted(() => {
   }
 })
 
-const copyContent = computed<Partial<CopyContent>>(() => reviewStore.copyContent || {})
+const copyContent = computed<Partial<CopyContent>>(() => {
+  const raw: any = reviewStore.copyContent || {}
+  // Brief mode: shooting_plan contains the copy (title_candidates, body_copy, hashtags)
+  if (!raw.selected_title && !raw.body_text) {
+    const sp = (workflowStore.workflowState as any)?.shooting_plan || {}
+    if (sp.title_candidates?.length || sp.body_copy) {
+      return {
+        selected_title: sp.title_candidates?.[0] || '',
+        title_candidates: sp.title_candidates || [],
+        body_text: sp.body_copy || '',
+        hashtags: [...(sp.required_hashtags || []), ...(sp.optional_hashtags || [])],
+      }
+    }
+  }
+  return raw as Partial<CopyContent>
+})
 const visualPlan = computed<Partial<VisualPlan>>(() => reviewStore.visualPlan || {})
 
 // Ripple data from workflow store

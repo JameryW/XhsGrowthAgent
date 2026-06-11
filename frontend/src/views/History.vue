@@ -126,6 +126,9 @@ async function confirmDelete() {
 }
 
 const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
+
+const modeLabel = (mode: string) => mode === 'brief' ? t('home.briefMode') : t('home.trendMode')
+const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600 border-pink-100' : 'bg-cyan-50 text-cyan-600 border-cyan-100'
 </script>
 
 <template>
@@ -206,12 +209,17 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
                 <span v-else class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100">
                   {{ t('history.live') }}
                 </span>
+                <span v-if="wf.workflow_mode" class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded border"
+                  :class="modeColor(wf.workflow_mode)">
+                  {{ modeLabel(wf.workflow_mode) }}
+                </span>
               </div>
               <div class="flex items-center gap-2 md:gap-3 mt-0.5 md:mt-1 text-[10px] md:text-xs text-slate-400">
                 <span>{{ phaseLabel(wf.phase) }}</span>
                 <span>{{ statusLabel(wf.status) }}</span>
                 <span>{{ formatDate(wf.created_at) }}</span>
               </div>
+              <p v-if="wf.label" class="text-xs md:text-sm text-slate-600 font-medium truncate mt-0.5">{{ wf.label }}</p>
             </div>
           </div>
 

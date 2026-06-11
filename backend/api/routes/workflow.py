@@ -226,6 +226,9 @@ class WorkflowStatusResponse(BaseModel):
     brief_content: dict = Field(default_factory=dict, description="解析后的 Brief 内容")
     brief_clarification: dict = Field(default_factory=dict, description="Brief 补充问题")
     shooting_plan: dict = Field(default_factory=dict, description="拍摄计划")
+    blogger_candidates: list[dict] = Field(default_factory=list, description="候选博主列表")
+    selected_blogger: dict = Field(default_factory=dict, description="选中的博主")
+    blogger_notes: list[dict] = Field(default_factory=list, description="博主笔记")
     reselect_count: int = Field(default=0, description="重新选题次数")
     checkpoint_lost: bool = Field(
         default=False, description="Checkpoint lost after container restart",
@@ -347,6 +350,8 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
         dry_run=req.dry_run,
         auto_publish=req.auto_publish,
         progress_percent=get_progress(req.phase.value),
+        workflow_mode=req.workflow_mode,
+        label="",
         created_at=now,
         updated_at=now,
     )
@@ -422,6 +427,21 @@ async def get_workflow_status(thread_id: str, request: Request):
         }
         if state.values.get("error"):
             update_fields["error"] = state.values.get("error")
+
+        # Update label with content summary (brand name for brief, topic for trend)
+        values = state.values
+        if not update_fields.get("label"):
+            bc = values.get("brief_content") or {}
+            cp = values.get("content_plan") or {}
+            if bc.get("brand_name"):
+                update_fields["label"] = bc["brand_name"]
+            elif cp.get("selected_topic"):
+                update_fields["label"] = cp["selected_topic"]
+        if "workflow_mode" not in update_fields:
+            wm = values.get("workflow_mode")
+            if wm:
+                update_fields["workflow_mode"] = wm
+
         await _db_upsert(thread_id, **update_fields)
 
         perf_log = state.values.get("performance_log") or []
@@ -464,6 +484,9 @@ async def get_workflow_status(thread_id: str, request: Request):
             brief_content=state.values.get("brief_content") or {},
             brief_clarification=state.values.get("brief_clarification") or {},
             shooting_plan=state.values.get("shooting_plan") or {},
+            blogger_candidates=state.values.get("blogger_candidates") or [],
+            selected_blogger=state.values.get("selected_blogger") or {},
+            blogger_notes=state.values.get("blogger_notes") or [],
             reselect_count=state.values.get("reselect_count", 0),
         ).model_dump())
 
