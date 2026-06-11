@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Verify Vue component patterns are followed in new template sections (brief_content/shooting_plan cards)"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Verify store computed props correctly access brief_content/shooting_plan from effectiveState/replayState"}

@@ -21,6 +21,7 @@ class WorkflowRow:
     phase: str = "scouting"
     progress_percent: int = 0
     label: str = ""
+    workflow_mode: str = "trend"
     dry_run: bool = False
     auto_publish: bool = False
     error: str | None = None
@@ -38,6 +39,7 @@ class WorkflowRow:
             "phase": self.phase,
             "progress_percent": self.progress_percent,
             "label": self.label,
+            "workflow_mode": self.workflow_mode,
             "dry_run": self.dry_run,
             "auto_publish": self.auto_publish,
             "error": self.error,
@@ -56,6 +58,7 @@ CREATE TABLE IF NOT EXISTS workflows (
     phase           TEXT NOT NULL DEFAULT 'scouting',
     progress_percent INTEGER NOT NULL DEFAULT 0,
     label           TEXT NOT NULL DEFAULT '',
+    workflow_mode   TEXT NOT NULL DEFAULT 'trend',
     dry_run         BOOLEAN NOT NULL DEFAULT FALSE,
     auto_publish    BOOLEAN NOT NULL DEFAULT FALSE,
     error           TEXT DEFAULT NULL,
@@ -97,15 +100,16 @@ async def create_workflow(row: WorkflowRow) -> WorkflowRow:
             """
             INSERT INTO workflows
                 (thread_id, account_id, status, phase, progress_percent,
-                 label, dry_run, auto_publish, error, task_error, task_done_at,
+                 label, workflow_mode, dry_run, auto_publish, error, task_error, task_done_at,
                  created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (thread_id) DO UPDATE SET
                 account_id      = EXCLUDED.account_id,
                 status          = EXCLUDED.status,
                 phase           = EXCLUDED.phase,
                 progress_percent = EXCLUDED.progress_percent,
                 label           = EXCLUDED.label,
+                workflow_mode   = EXCLUDED.workflow_mode,
                 dry_run         = EXCLUDED.dry_run,
                 auto_publish    = EXCLUDED.auto_publish,
                 error           = EXCLUDED.error,
@@ -113,7 +117,7 @@ async def create_workflow(row: WorkflowRow) -> WorkflowRow:
             """,
             (
                 row.thread_id, row.account_id, row.status, row.phase,
-                row.progress_percent, row.label, row.dry_run, row.auto_publish,
+                row.progress_percent, row.label, row.workflow_mode, row.dry_run, row.auto_publish,
                 row.error, row.task_error, row.task_done_at,
                 row.created_at, row.updated_at,
             ),
@@ -215,6 +219,7 @@ def _row_from_dict(d: dict) -> WorkflowRow:
         phase=d.get("phase", "scouting"),
         progress_percent=d.get("progress_percent", 0),
         label=d.get("label", ""),
+        workflow_mode=d.get("workflow_mode", "trend"),
         dry_run=d.get("dry_run", False),
         auto_publish=d.get("auto_publish", False),
         error=d.get("error"),

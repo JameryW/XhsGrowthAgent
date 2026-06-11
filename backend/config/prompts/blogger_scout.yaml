@@ -45,5 +45,8 @@ mock_system: |
 mock_user_template: |
   赛道：{niche}
   关键词：{keywords}
+  商单信息：{brief_summary}
   趋势数据摘要：{trend_summary}
   候选数量限制：{candidate_limit}
+
+  请严格输出JSON，不要有任何其他文字。

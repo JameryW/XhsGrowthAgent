@@ -42,6 +42,7 @@ from backend.graph.routers import (
     orchestrator_router,
     review_outcome,
     ripple_gate_router,
+    shooting_planner_router,
     should_continue,
     should_plan,
     should_present_choice,
@@ -212,11 +213,17 @@ def build_graph() -> StateGraph:
     # viral_matcher already routes to blogger_scout above (trend and brief modes share this path)
     # blogger_gate routes based on workflow mode via blogger_gate_router
 
-    # shooting_planner → ripple_gate (brief mode also checks Ripple results)
-    builder.add_edge("shooting_planner", "ripple_gate")
+    # shooting_planner → [content_analyzer | visual_designer] (trend→analyzer, brief→visual)
+    builder.add_conditional_edges(
+        "shooting_planner",
+        shooting_planner_router,
+        {
+            "content_analyzer": "content_analyzer",
+            "visual_designer": "visual_designer",
+        },
+    )
 
-    # visual_designer → review_gate
-    # visual_designer → [review_gate | END] (brief mode ends here)
+    # visual_designer → review_gate (both modes go through review)
     builder.add_conditional_edges(
         "visual_designer",
         visual_designer_router,
@@ -280,7 +287,6 @@ def compile_graph_dev() -> CompiledStateGraph:
             "review_gate",
             "choice_gate",
             "draft_gate",
-            "brief_gate",
             "ripple_gate",
             "blogger_gate",
         ],
@@ -320,7 +326,6 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
                 "review_gate",
                 "choice_gate",
                 "draft_gate",
-                "brief_gate",
                 "ripple_gate",
                 "blogger_gate",
             ],

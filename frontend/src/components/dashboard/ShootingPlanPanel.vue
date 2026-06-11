@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { useWorkflowStore } from '@/stores'
 import type { ShootingPlan } from '@/types/workflow'
 
+const { t } = useI18n()
 const workflowStore = useWorkflowStore()
 
 const shootingPlan = computed<ShootingPlan>(() =>
@@ -22,30 +24,29 @@ const shootingAngles = computed(() => shootingPlan.value.shooting_angles || [])
 
 const exportPlan = () => {
   if (!workflowStore.currentThreadId) return
-  // Copy formatted shooting plan to clipboard
   const plan = shootingPlan.value
   const lines: string[] = []
-  if (plan.creator_nickname) lines.push(`Creator: ${plan.creator_nickname}`)
-  if (plan.content_direction) lines.push(`Direction: ${plan.content_direction}`)
-  if (plan.content_type_label) lines.push(`Type: ${plan.content_type_label}`)
-  if (plan.product_specification) lines.push(`Product: ${plan.product_specification}`)
-  if (plan.draft_requirements) lines.push(`Requirements: ${plan.draft_requirements}`)
+  if (plan.creator_nickname) lines.push(`${t('shootingPlan.creator')}: ${plan.creator_nickname}`)
+  if (plan.content_direction) lines.push(`${t('shootingPlan.direction')}: ${plan.content_direction}`)
+  if (plan.content_type_label) lines.push(`${t('shootingPlan.type')}: ${plan.content_type_label}`)
+  if (plan.product_specification) lines.push(`${t('shootingPlan.product')}: ${plan.product_specification}`)
+  if (plan.draft_requirements) lines.push(`${t('shootingPlan.requirements')}: ${plan.draft_requirements}`)
   if (plan.title_candidates?.length) {
-    lines.push(`\nTitle Candidates:`)
+    lines.push(`\n${t('shootingPlan.titleCandidates')}:`)
     plan.title_candidates.forEach((tc, i) => lines.push(`  ${i + 1}. ${tc}`))
   }
-  if (plan.body_copy) lines.push(`\nBody Copy:\n${plan.body_copy}`)
-  if (plan.required_hashtags?.length) lines.push(`\nRequired Tags: ${plan.required_hashtags.join(' ')}`)
-  if (plan.optional_hashtags?.length) lines.push(`Optional Tags: ${plan.optional_hashtags.join(' ')}`)
+  if (plan.body_copy) lines.push(`\n${t('shootingPlan.bodyCopy')}:\n${plan.body_copy}`)
+  if (plan.required_hashtags?.length) lines.push(`\n${t('shootingPlan.requiredTags')}: ${plan.required_hashtags.join(' ')}`)
+  if (plan.optional_hashtags?.length) lines.push(`${t('shootingPlan.optionalTags')}: ${plan.optional_hashtags.join(' ')}`)
   if (outfits.value.length) {
-    lines.push(`\nOutfits:`)
+    lines.push(`\n${t('shootingPlan.outfits')}:`)
     outfits.value.forEach(o => lines.push(`  ${o.scene}: ${o.items.join(', ')}`))
   }
   if (shootingAngles.value.length) {
-    lines.push(`\nShooting Angles:`)
+    lines.push(`\n${t('shootingPlan.shootingAngles')}:`)
     shootingAngles.value.forEach(a => {
       lines.push(`  ${a.angle}: ${a.description}`)
-      if (a.tips) lines.push(`    Tips: ${a.tips}`)
+      if (a.tips) lines.push(`    ${t('shootingPlan.tip')}: ${a.tips}`)
     })
   }
 
@@ -61,14 +62,14 @@ const exportPlan = () => {
           <AppIcon name="Camera" size="md" variant="white" />
         </div>
         <div>
-          <h3 class="text-base font-semibold text-slate-800">Shooting Plan</h3>
+          <h3 class="text-base font-semibold text-slate-800">{{ t('shootingPlan.title') }}</h3>
           <p class="text-xs text-slate-400">{{ shootingPlan.content_direction || '' }}</p>
         </div>
       </div>
       <NeonButton variant="cyan" size="sm" @click="exportPlan">
         <span class="inline-flex items-center gap-1.5">
           <AppIcon name="Copy" size="sm" variant="white" />
-          <span class="text-xs">Copy</span>
+          <span class="text-xs">{{ t('shootingPlan.copy') }}</span>
         </span>
       </NeonButton>
     </div>
@@ -76,28 +77,28 @@ const exportPlan = () => {
     <!-- Creator info -->
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
       <div v-if="shootingPlan.creator_nickname" class="p-3 rounded-xl bg-slate-50 border border-slate-100">
-        <span class="text-xs text-slate-400 uppercase tracking-wide">Creator</span>
+        <span class="text-xs text-slate-400 uppercase tracking-wide">{{ t('shootingPlan.creator') }}</span>
         <p class="text-sm font-medium text-slate-700 mt-1">{{ shootingPlan.creator_nickname }}</p>
       </div>
       <div v-if="shootingPlan.content_type_label" class="p-3 rounded-xl bg-slate-50 border border-slate-100">
-        <span class="text-xs text-slate-400 uppercase tracking-wide">Type</span>
+        <span class="text-xs text-slate-400 uppercase tracking-wide">{{ t('shootingPlan.type') }}</span>
         <p class="text-sm font-medium text-slate-700 mt-1">{{ shootingPlan.content_type_label }}</p>
       </div>
       <div v-if="shootingPlan.planned_publish_date" class="p-3 rounded-xl bg-slate-50 border border-slate-100">
-        <span class="text-xs text-slate-400 uppercase tracking-wide">Date</span>
+        <span class="text-xs text-slate-400 uppercase tracking-wide">{{ t('shootingPlan.date') }}</span>
         <p class="text-sm font-medium text-slate-700 mt-1">{{ shootingPlan.planned_publish_date }}</p>
       </div>
     </div>
 
     <!-- Product specs -->
     <div v-if="shootingPlan.product_specification" class="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-100">
-      <span class="text-xs text-rose-500 uppercase tracking-wide font-medium">Product</span>
+      <span class="text-xs text-rose-500 uppercase tracking-wide font-medium">{{ t('shootingPlan.product') }}</span>
       <p class="text-sm text-rose-700 mt-1">{{ shootingPlan.product_specification }}</p>
     </div>
 
     <!-- Title candidates -->
     <div v-if="shootingPlan.title_candidates?.length" class="mb-4">
-      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">Title Candidates</h4>
+      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">{{ t('shootingPlan.titleCandidates') }}</h4>
       <div class="space-y-1.5">
         <div v-for="(title, idx) in shootingPlan.title_candidates" :key="idx"
           class="flex items-center gap-2 p-2 rounded-lg bg-white border border-slate-100 hover:border-slate-200 transition-colors">
@@ -109,13 +110,13 @@ const exportPlan = () => {
 
     <!-- Body copy -->
     <div v-if="shootingPlan.body_copy" class="mb-4">
-      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">Body Copy</h4>
+      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">{{ t('shootingPlan.bodyCopy') }}</h4>
       <div class="p-3 rounded-xl bg-slate-50 border border-slate-100 text-sm text-slate-600 whitespace-pre-wrap">{{ shootingPlan.body_copy }}</div>
     </div>
 
     <!-- Hashtags -->
     <div v-if="shootingPlan.required_hashtags?.length || shootingPlan.optional_hashtags?.length" class="mb-4">
-      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">Hashtags</h4>
+      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">{{ t('shootingPlan.hashtags') }}</h4>
       <div class="flex flex-wrap gap-1.5">
         <span v-for="tag in (shootingPlan.required_hashtags || [])" :key="tag"
           class="text-xs px-2 py-1 rounded-full bg-rose-50 text-rose-600 border border-rose-200 font-medium">
@@ -130,7 +131,7 @@ const exportPlan = () => {
 
     <!-- Outfits -->
     <div v-if="outfits.length" class="mb-4">
-      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">Outfit Suggestions</h4>
+      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">{{ t('shootingPlan.outfits') }}</h4>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div v-for="o in outfits" :key="o.scene"
           class="p-2.5 rounded-lg bg-violet-50 border border-violet-100">
@@ -142,7 +143,7 @@ const exportPlan = () => {
 
     <!-- Shooting angles -->
     <div v-if="shootingAngles.length" class="mb-4">
-      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">Shooting Angles</h4>
+      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">{{ t('shootingPlan.shootingAngles') }}</h4>
       <div class="space-y-2">
         <div v-for="(angle, idx) in shootingAngles" :key="idx"
           class="p-3 rounded-xl bg-slate-50 border border-slate-100">
@@ -151,7 +152,7 @@ const exportPlan = () => {
             <span class="text-sm font-medium text-slate-700">{{ angle.angle }}</span>
           </div>
           <p class="text-xs text-slate-500">{{ angle.description }}</p>
-          <p v-if="angle.tips" class="text-xs text-teal-500 mt-1">Tip: {{ angle.tips }}</p>
+          <p v-if="angle.tips" class="text-xs text-teal-500 mt-1">{{ t('shootingPlan.tip') }}: {{ angle.tips }}</p>
         </div>
       </div>
     </div>

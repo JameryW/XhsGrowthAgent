@@ -1,0 +1,4 @@
+{"file": "frontend/src/views/Showcase.vue", "reason": "Verify running/completed/other cards show identical data sections when data exists. Check pipelineProgress() maps briefing→0, engaging→4."}
+{"file": "frontend/src/views/WorkflowReplay.vue", "reason": "Verify getNodeStatus() handles briefing, engaging, paused, cancelled, error correctly."}
+{"file": "frontend/src/locales/en.json", "reason": "Check no missing i18n keys for new sections."}
+{"file": "frontend/src/locales/zh-CN.json", "reason": "Check no missing i18n keys for new sections."}

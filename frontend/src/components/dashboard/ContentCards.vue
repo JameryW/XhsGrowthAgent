@@ -32,6 +32,7 @@ const isStrategyRunning = computed(() =>
 const trendData = computed(() => workflowStore.trendData)
 const contentPlan = computed(() => workflowStore.contentPlan)
 const copyContent = computed(() => workflowStore.copyContent)
+const shootingPlan = computed(() => (workflowStore.workflowState as any)?.shooting_plan || {})
 const publishResult = computed(() => (workflowStore.workflowState as any)?.publish_result || {})
 const analytics = computed(() => (workflowStore.workflowState as any)?.analytics || {})
 
@@ -44,15 +45,27 @@ const rippleProgress = computed(() => workflowStore.rippleProgress)
 const isAwaitingRippleDecision = computed(() => workflowStore.isAwaitingRippleDecision)
 const reselectCount = computed(() => workflowStore.reselectCount)
 
+// Brief content accessor
+const briefContent = computed(() => (workflowStore.workflowState as any)?.brief_content || {})
+const hasBriefContent = computed(() => Object.keys(briefContent.value).length > 0)
+const isBriefMode = computed(() => (workflowStore.workflowState as any)?.workflow_mode === 'brief')
+
 // Check if specific data exists
 const hasTrendData = computed(() => Object.keys(trendData.value).length > 0)
 const hasContentPlan = computed(() => Object.keys(contentPlan.value).length > 0)
 const hasCopyContent = computed(() => Object.keys(copyContent.value).length > 0)
+const hasShootingPlan = computed(() => Object.keys(shootingPlan.value).length > 0)
 const hasPublishResult = computed(() => Object.keys(publishResult.value).length > 0)
 const hasAnalytics = computed(() => Object.keys(analytics.value).length > 0)
 const hasRipplePrediction = computed(() => Object.keys(ripplePrediction.value).length > 0)
 const hasRipplePmf = computed(() => Object.keys(ripplePmf.value).length > 0)
 const hasRippleComparison = computed(() => Object.keys(rippleComparison.value).length > 0)
+
+// Whether any content card data exists (including brief mode)
+const hasAnyContent = computed(() =>
+  hasTrendData.value || hasContentPlan.value || hasCopyContent.value ||
+  hasShootingPlan.value || hasPublishResult.value || hasBriefContent.value
+)
 
 // Show a section only when its phase is active or completed
 function showForPhase(phase: string): boolean {
@@ -98,7 +111,7 @@ function heatBg(score?: number): string {
   </div>
 
   <!-- Loading state with skeleton -->
-  <div v-else-if="!hasTrendData && !hasContentPlan && !hasCopyContent && !hasPublishResult" class="grid grid-cols-1 lg:grid-cols-3 gap-4" role="status">
+  <div v-else-if="!hasAnyContent" class="grid grid-cols-1 lg:grid-cols-3 gap-4" role="status">
     <div v-for="i in 3" :key="i" class="rounded-xl p-3 md:p-5 bg-white/98 border border-slate-200/50">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-slate-200 animate-pulse" />
@@ -117,6 +130,53 @@ function heatBg(score?: number): string {
 
   <!-- Phase-specific content -->
   <TransitionGroup v-else name="phase-card" tag="div" class="space-y-4">
+
+    <!-- ═══ BRIEF MODE: Brief Content ═══ -->
+    <div v-if="hasBriefContent && isBriefMode" class="rounded-xl p-3 md:p-5 bg-white/98 border border-pink-100/50">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-400 to-rose-400 flex items-center justify-center">
+          <AppIcon name="FileText" size="md" variant="white" />
+        </div>
+        <div>
+          <div class="text-sm font-semibold text-slate-800">{{ t('brief.contentTitle') }}</div>
+          <div class="text-xs text-slate-400">{{ briefContent.brand_name || '' }}</div>
+        </div>
+        <span v-if="briefContent.confidence != null" class="ml-auto text-[10px] px-1.5 py-0.5 rounded-full"
+          :class="briefContent.confidence >= 0.6 ? 'bg-teal-50 text-teal-600' : 'bg-amber-50 text-amber-600'">
+          {{ Math.round(briefContent.confidence * 100) }}%
+        </span>
+      </div>
+
+      <div class="space-y-2">
+        <div v-if="briefContent.product_name" class="flex items-start gap-2 text-sm">
+          <span class="text-pink-500 font-medium shrink-0">{{ t('brief.product') }}</span>
+          <span class="text-slate-700">{{ briefContent.product_name }}</span>
+        </div>
+        <div v-if="briefContent.content_direction" class="flex items-start gap-2 text-sm">
+          <span class="text-pink-500 font-medium shrink-0">{{ t('brief.direction') }}</span>
+          <span class="text-slate-600">{{ briefContent.content_direction }}</span>
+        </div>
+        <div v-if="briefContent.target_audience" class="flex items-start gap-2 text-sm">
+          <span class="text-pink-500 font-medium shrink-0">{{ t('brief.targetAudience') }}</span>
+          <span class="text-slate-600">{{ briefContent.target_audience }}</span>
+        </div>
+        <div v-if="briefContent.selling_points?.length" class="mt-2">
+          <div class="text-xs text-slate-500 uppercase tracking-wide font-medium mb-1.5">{{ t('brief.sellingPoints') }}</div>
+          <div class="flex flex-wrap gap-1">
+            <span v-for="sp in briefContent.selling_points" :key="sp" class="text-[11px] px-1.5 py-0.5 rounded bg-pink-50 text-pink-600">{{ sp }}</span>
+          </div>
+        </div>
+        <div v-if="briefContent.required_keywords?.length" class="mt-2">
+          <div class="flex flex-wrap gap-1">
+            <span v-for="kw in briefContent.required_keywords" :key="kw" class="text-[11px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100 font-medium">{{ kw }}</span>
+          </div>
+        </div>
+        <div v-if="briefContent.required_hashtags?.length || briefContent.optional_hashtags?.length" class="flex flex-wrap gap-1.5 mt-2">
+          <span v-for="tag in (briefContent.required_hashtags || [])" :key="'r-'+tag" class="px-2 py-1 rounded-md bg-rose-50 text-rose-600 text-xs border border-rose-200 font-medium">#{{ tag }}</span>
+          <span v-for="tag in (briefContent.optional_hashtags || [])" :key="'o-'+tag" class="px-2 py-1 rounded-md bg-slate-50 text-slate-500 text-xs border border-slate-200">#{{ tag }}</span>
+        </div>
+      </div>
+    </div>
 
     <!-- ═══ SCOUTING: Trend Data ═══ -->
     <div v-if="hasTrendData && showForPhase('scouting')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-pink-100/50">
@@ -294,6 +354,48 @@ function heatBg(score?: number): string {
         <span v-for="(tag, idx) in copyContent.hashtags" :key="idx" class="px-2 py-1 rounded-md bg-violet-50 text-violet-600 text-xs border border-violet-100">
           #{{ tag }}
         </span>
+      </div>
+    </div>
+
+    <!-- ═══ SHOOTING PLAN (brief mode) ═══ -->
+    <div v-if="hasShootingPlan && !hasCopyContent && showForPhase('creating')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-violet-100/50">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-indigo-400 flex items-center justify-center">
+          <AppIcon name="Pencil" size="md" variant="white" />
+        </div>
+        <div>
+          <div class="text-sm font-semibold text-slate-800">{{ t('shootingPlan.title') }}</div>
+          <div class="text-xs text-slate-400">{{ shootingPlan.content_direction || '' }}</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 mb-3">
+        <div v-if="shootingPlan.creator_nickname" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+          <div class="text-[10px] text-slate-400 uppercase">{{ t('shootingPlan.creator') }}</div>
+          <div class="text-xs text-slate-700 font-medium">{{ shootingPlan.creator_nickname }}</div>
+        </div>
+        <div v-if="shootingPlan.content_type_label" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+          <div class="text-[10px] text-slate-400 uppercase">{{ t('shootingPlan.type') }}</div>
+          <div class="text-xs text-slate-700 font-medium">{{ shootingPlan.content_type_label }}</div>
+        </div>
+      </div>
+
+      <div v-if="shootingPlan.title_candidates?.length" class="mb-3">
+        <div class="text-xs text-slate-500 mb-1.5">{{ t('shootingPlan.titleCandidates') }}</div>
+        <div class="space-y-1">
+          <div v-for="(title, idx) in shootingPlan.title_candidates" :key="idx" class="text-xs text-slate-600">
+            <span class="text-violet-400 font-medium">{{ idx + 1 }}.</span> {{ title }}
+          </div>
+        </div>
+      </div>
+
+      <div v-if="shootingPlan.body_copy" class="p-3 rounded-lg bg-slate-50 border border-slate-100 mb-3">
+        <p class="text-xs text-slate-600 line-clamp-4 whitespace-pre-line">{{ shootingPlan.body_copy }}</p>
+      </div>
+
+      <div v-if="shootingPlan.required_hashtags?.length || shootingPlan.optional_hashtags?.length" class="flex flex-wrap gap-1.5">
+        <span v-for="tag in (shootingPlan.required_hashtags || [])" :key="'r-'+tag" class="px-2 py-1 rounded-md bg-rose-50 text-rose-600 text-xs border border-rose-200 font-medium">#{{ tag }}</span>
+        <span v-for="tag in (shootingPlan.optional_hashtags || [])" :key="'o-'+tag" class="px-2 py-1 rounded-md bg-slate-50 text-slate-500 text-xs border border-slate-200">#{{ tag }}</span>
       </div>
     </div>
 

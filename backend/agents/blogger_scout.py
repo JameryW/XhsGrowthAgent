@@ -147,16 +147,20 @@ class BloggerScoutAgent(BaseAgent):
     ) -> dict[str, Any]:
         """Generate mock blogger candidates using LLM when XHS client is unavailable."""
         niche = state.get("niche", "母婴")
+        brief_content = state.get("brief_content") or {}
         trend_data = dict(state.get("trend_data") or {})
         trend_summary = self._summarize_trend_data(trend_data)
 
         system_prompt = self.prompt_template.get("mock_system", "")
         user_template = self.prompt_template.get("mock_user_template", "")
 
+        brief_summary = self._summarize_brief_content(brief_content)
+
         user_prompt = user_template.format(
             niche=niche,
             keywords=", ".join(keywords),
             trend_summary=trend_summary,
+            brief_summary=brief_summary,
             candidate_limit=limit,
         )
 
@@ -174,11 +178,16 @@ class BloggerScoutAgent(BaseAgent):
             parsed = self._parse_json_response(content)
 
             candidates = parsed.get("candidates", [])
+            if not candidates and parsed.get("raw_content"):
+                logger.warning(f"LLM did not return JSON, retrying with explicit instruction")
+                return await self._retry_mock_with_explicit_json(
+                    state, keywords, limit, niche, brief_summary, trend_summary
+                )
+
             # Ensure mock_ prefix on all user_ids
             for c in candidates:
                 if not c.get("user_id", "").startswith("mock_"):
                     c["user_id"] = f"mock_{c.get('user_id', 'unknown')}"
-                # Ensure avatar_url field exists
                 if "avatar_url" not in c:
                     c["avatar_url"] = ""
 
@@ -193,6 +202,74 @@ class BloggerScoutAgent(BaseAgent):
                 "blogger_candidates": [],
                 "phase": WorkflowPhase.CREATING,
             }
+
+    async def _retry_mock_with_explicit_json(
+        self,
+        state: XHSGrowthState,
+        keywords: list[str],
+        limit: int,
+        niche: str,
+        brief_summary: str,
+        trend_summary: str,
+    ) -> dict[str, Any]:
+        """Retry mock generation with a more explicit JSON-only prompt."""
+        prompt = (
+            f"你必须在回复中仅输出一个JSON对象，不要有任何其他文字。\n"
+            f"赛道：{niche}\n关键词：{', '.join(keywords)}\n"
+            f"商单信息：{brief_summary}\n趋势数据：{trend_summary}\n"
+            f"生成{limit}个该赛道风格的虚拟博主候选。\n\n"
+            f'输出格式：{{"candidates": [{{"user_id": "mock_001", '
+            f'"nickname": "博主昵称", "follower_count": 50000, '
+            f'"note_count": 120, "total_engagement": 8000, '
+            f'"top_note_title": "代表作标题"}}]}}\n'
+            f"只输出JSON，不要输出其他任何内容。"
+        )
+        try:
+            response = await self.model.ainvoke(
+                [HumanMessage(content=prompt)]
+            )
+            content = response.content
+            if isinstance(content, list):
+                content = str(content)
+            parsed = self._parse_json_response(content)
+            candidates = parsed.get("candidates", [])
+            for c in candidates:
+                if not c.get("user_id", "").startswith("mock_"):
+                    c["user_id"] = f"mock_{c.get('user_id', 'unknown')}"
+                if "avatar_url" not in c:
+                    c["avatar_url"] = ""
+            logger.info(f"Retry generated {len(candidates)} mock blogger candidates")
+            return {
+                "blogger_candidates": candidates,
+                "phase": WorkflowPhase.CREATING,
+            }
+        except Exception as e:
+            logger.error(f"Retry mock generation also failed: {e}")
+            return {
+                "blogger_candidates": [],
+                "phase": WorkflowPhase.CREATING,
+            }
+
+    def _summarize_brief_content(self, brief_content: dict[str, Any]) -> str:
+        """Create a brief summary of brief_content for LLM context."""
+        if not brief_content:
+            return "无商单信息"
+
+        parts = []
+        if brief_content.get("brand_name"):
+            parts.append(f"品牌: {brief_content['brand_name']}")
+        if brief_content.get("product_name"):
+            parts.append(f"产品: {brief_content['product_name']}")
+        if brief_content.get("target_audience"):
+            parts.append(f"目标受众: {brief_content['target_audience']}")
+        if brief_content.get("content_direction"):
+            parts.append(f"内容方向: {brief_content['content_direction'][:100]}")
+        if brief_content.get("selling_points"):
+            parts.append(f"卖点: {', '.join(brief_content['selling_points'][:3])}")
+        if brief_content.get("style_requirements"):
+            parts.append(f"风格要求: {brief_content['style_requirements'][:80]}")
+
+        return " | ".join(parts) if parts else "无商单信息"
 
     def _summarize_trend_data(self, trend_data: dict[str, Any]) -> str:
         """Create a brief summary of trend_data for LLM context."""

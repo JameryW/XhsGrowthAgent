@@ -47,6 +47,10 @@ const showBriefUpload = computed(() =>
   workflowStore.isAwaitingBrief ||
   (workflowStore.currentPhase === 'briefing' && !workflowStore.briefUploadedText)
 )
+const showBriefContent = computed(() => {
+  const bc = workflowStore.workflowState?.brief_content
+  return bc && Object.keys(bc).length > 0 && (bc.brand_name || bc.raw_text)
+})
 const isLoading = computed(() => workflowStore.isLoading && !workflowStore.workflowState)
 const hasError = computed(() => workflowStore.error !== null)
 
@@ -84,6 +88,12 @@ async function handleBriefConfirm(_text: string) {
   // Upload already updated state; resume workflow to proceed with brief_analyzer
   await workflowStore.resumeWorkflow()
   toastStore.success(t('brief.uploadSuccess'), t('brief.confirmed'))
+}
+
+async function handleBriefSkip() {
+  // Resume with skip decision — brief_gate will mark clarification as resolved
+  await workflowStore.resumeWorkflow({ action: 'skip' })
+  toastStore.success(t('brief.skipped'))
 }
 
 function handleBriefClear() {
@@ -227,6 +237,48 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <!-- Brief Content Summary (shown after brief is parsed) -->
+      <div v-if="showBriefContent && !showBriefUpload" class="rounded-xl p-3 md:p-4 liquid-glass">
+        <div class="flex items-center gap-2 mb-3">
+          <AppIcon name="FileText" size="sm" variant="pink" />
+          <span class="text-sm font-semibold text-slate-700">{{ t('brief.contentTitle') }}</span>
+          <span v-if="workflowStore.workflowState?.brief_content?.confidence != null" class="text-[10px] px-1.5 py-0.5 rounded-full"
+            :class="(workflowStore.workflowState?.brief_content?.confidence ?? 0) >= 0.6 ? 'bg-teal-50 text-teal-600' : 'bg-amber-50 text-amber-600'">
+            {{ Math.round((workflowStore.workflowState?.brief_content?.confidence ?? 0) * 100) }}%
+          </span>
+        </div>
+        <div class="space-y-2">
+          <div v-if="workflowStore.workflowState?.brief_content?.brand_name" class="flex items-start gap-2">
+            <span class="text-xs text-slate-400 min-w-[60px]">{{ t('brief.brand') }}</span>
+            <span class="text-sm text-slate-700 font-medium">{{ workflowStore.workflowState.brief_content.brand_name }}</span>
+          </div>
+          <div v-if="workflowStore.workflowState?.brief_content?.product_name" class="flex items-start gap-2">
+            <span class="text-xs text-slate-400 min-w-[60px]">{{ t('brief.product') }}</span>
+            <span class="text-sm text-slate-700 font-medium">{{ workflowStore.workflowState.brief_content.product_name }}</span>
+          </div>
+          <div v-if="workflowStore.workflowState?.brief_content?.content_direction" class="flex items-start gap-2">
+            <span class="text-xs text-slate-400 min-w-[60px]">{{ t('brief.direction') }}</span>
+            <span class="text-sm text-slate-700">{{ workflowStore.workflowState.brief_content.content_direction }}</span>
+          </div>
+          <div v-if="workflowStore.workflowState?.brief_content?.selling_points?.length" class="flex items-start gap-2">
+            <span class="text-xs text-slate-400 min-w-[60px]">{{ t('brief.sellingPoints') }}</span>
+            <div class="flex flex-wrap gap-1">
+              <span v-for="sp in workflowStore.workflowState.brief_content.selling_points" :key="sp" class="text-[11px] px-1.5 py-0.5 rounded bg-pink-50 text-pink-600">{{ sp }}</span>
+            </div>
+          </div>
+          <div v-if="workflowStore.workflowState?.brief_content?.required_hashtags?.length" class="flex items-start gap-2">
+            <span class="text-xs text-slate-400 min-w-[60px]">{{ t('brief.hashtags') }}</span>
+            <div class="flex flex-wrap gap-1">
+              <span v-for="tag in workflowStore.workflowState.brief_content.required_hashtags" :key="tag" class="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-600">#{{ tag }}</span>
+            </div>
+          </div>
+          <details v-if="workflowStore.workflowState?.brief_content?.raw_text" class="mt-2">
+            <summary class="text-xs text-slate-400 cursor-pointer hover:text-slate-600">{{ t('brief.viewRaw') }}</summary>
+            <pre class="mt-1.5 p-2.5 rounded-lg bg-slate-50 text-xs text-slate-600 whitespace-pre-wrap max-h-40 overflow-y-auto">{{ workflowStore.workflowState.brief_content.raw_text }}</pre>
+          </details>
+        </div>
+      </div>
+
       <!-- Brief PDF Upload (shown when awaiting brief input) -->
       <div v-if="showBriefUpload" class="rounded-xl p-3 md:p-4 bg-gradient-to-br from-neon-pink/5 to-neon-peach/5 border border-neon-pink/20">
         <BriefFileUpload
@@ -238,6 +290,12 @@ onUnmounted(() => {
           @confirm="handleBriefConfirm"
           @clear="handleBriefClear"
         />
+        <!-- Skip button when brief_gate interrupted (has clarification questions) -->
+        <div v-if="workflowStore.isAwaitingBrief && workflowStore.workflowState?.brief_content?.raw_text" class="flex justify-end mt-3">
+          <NeonButton variant="ghost" size="sm" @click="handleBriefSkip">
+            <span class="text-xs">{{ t('brief.skipClarification') }}</span>
+          </NeonButton>
+        </div>
       </div>
 
       <WorkflowTimeline />

@@ -1,0 +1,6 @@
+{"file": "frontend/src/views/Showcase.vue", "reason": "Primary file — workflow cards rendering, pipeline progress, phase mapping. All card content unification and otherWorkflows expansion happen here."}
+{"file": "frontend/src/views/WorkflowReplay.vue", "reason": "Node status logic fix — getNodeStatus() must handle briefing/engaging/paused/cancelled/error correctly. phaseAgentMap and agentLabels need briefing entry."}
+{"file": "frontend/src/components/dashboard/ContentCards.vue", "reason": "Reference implementation — already renders analytics, publish_result, competitor_posts correctly. Card layout patterns to reuse."}
+{"file": "frontend/src/types/workflow.ts", "reason": "WorkflowStateResponse, WorkflowPhase, WorkflowStatus type definitions. Data shape reference for what fields are available."}
+{"file": "frontend/src/locales/en.json", "reason": "English locale — may need new keys for otherWorkflows status messages, error display, publish_result labels."}
+{"file": "frontend/src/locales/zh-CN.json", "reason": "Chinese locale — same additions as en.json for i18n consistency."}

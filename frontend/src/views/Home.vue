@@ -70,7 +70,7 @@ const handleFormSubmit = () => {
 const confirmStart = async () => {
   isStarting.value = true
   try {
-    await workflowStore.startWorkflow(
+    const result = await workflowStore.startWorkflow(
       formConfig.value.accountId,
       formConfig.value.phase,
       {
@@ -82,6 +82,11 @@ const confirmStart = async () => {
         briefText: formConfig.value.briefText,
       }
     )
+    // If a PDF was queued before the workflow started, upload it now
+    const threadId = result?.thread_id
+    if (threadId && threadId !== 'pending' && startFormRef.value?.pendingPdfFile) {
+      await startFormRef.value.uploadPendingPdf(threadId)
+    }
     showConfirm.value = false
     router.push('/dashboard')
   } finally {

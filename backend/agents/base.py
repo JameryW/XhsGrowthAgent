@@ -98,6 +98,27 @@ class BaseAgent(ABC):
             json_str = re.sub(r'\[\s*#([^\s,\[\]"]+)', r'["#\1"', json_str)
             # 修复缺少引号的值结尾: , #value] -> , "#value"]
             json_str = re.sub(r',\s*#([^\s,\[\]"]+)\s*\]', r', "#\1"]', json_str)
+
+            # 修复括号不匹配：] 闭合 { 或 } 闭合 [
+            result = []
+            stack = []
+            for ch in json_str:
+                if ch in ('{', '['):
+                    stack.append(ch)
+                    result.append(ch)
+                elif ch == '}' and stack and stack[-1] == '[':
+                    stack.pop()
+                    result.append(']')
+                elif ch == ']' and stack and stack[-1] == '{':
+                    stack.pop()
+                    result.append('}')
+                elif ch in ('}', ']'):
+                    if stack:
+                        stack.pop()
+                    result.append(ch)
+                else:
+                    result.append(ch)
+            json_str = ''.join(result)
             return json_str
 
         def extract_json_from_markdown(text: str) -> str:
