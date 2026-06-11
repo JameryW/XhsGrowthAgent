@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Vue component patterns — how to structure computed props, v-if conditions, and template organization for the replay/dashboard components being modified"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Workflow store structure — effectiveState, replayState, copyContent, workflow_mode data flow that the fix depends on"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Backend CheckpointSnapshot → frontend display mapping — ensures brief_content/shooting_plan data flows correctly from API to UI"}
