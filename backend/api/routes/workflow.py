@@ -774,6 +774,42 @@ async def resume_workflow(thread_id: str, request: Request):
             "message": "工作流正在等待草稿提交，请使用 /api/optimization/draft 端点提交草稿",
         })
 
+    if derived == WorkflowStatus.AWAITING_BRIEF:
+        # Resume from brief_gate interrupt — pass resume value for skip/answer
+        body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+        resume_value = body.get("resume_value", {"action": "skip"})
+        from langgraph.types import Command
+        await graph.ainvoke(Command(resume=resume_value), config)
+        return success(data={
+            "thread_id": thread_id,
+            "status": "running",
+            "phase": WorkflowPhase.BRIEFING,
+        })
+
+    if derived == WorkflowStatus.AWAITING_RIPPLE_DECISION:
+        # Resume from ripple_gate interrupt — accept/reangle/retopic
+        body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+        resume_value = body.get("resume_value", {"action": "accept"})
+        from langgraph.types import Command
+        await graph.ainvoke(Command(resume=resume_value), config)
+        return success(data={
+            "thread_id": thread_id,
+            "status": "running",
+            "phase": WorkflowPhase.CREATING,
+        })
+
+    if derived == WorkflowStatus.AWAITING_BLOGGER_SELECTION:
+        # Resume from blogger_gate interrupt — accept/reselect
+        body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+        resume_value = body.get("resume_value", {"action": "accept"})
+        from langgraph.types import Command
+        await graph.ainvoke(Command(resume=resume_value), config)
+        return success(data={
+            "thread_id": thread_id,
+            "status": "running",
+            "phase": WorkflowPhase.BRIEFING,
+        })
+
     next_nodes = tuple(state.next or ())
     can_retry_error = derived == WorkflowStatus.ERROR
     can_resume_stale = derived == WorkflowStatus.STALE
@@ -1145,10 +1181,10 @@ async def _extract_pdf_text(content_bytes: bytes) -> str:
                 text_parts.append(page_text)
 
         extracted = "\n".join(text_parts).strip()
-        if extracted and len(extracted) > 50:
+        if extracted:
             return extracted
 
-        logger.info("PDF text extraction quality poor, attempting multimodal LLM fallback")
+        logger.info("PDF text extraction yielded no text, attempting multimodal LLM fallback")
         return await _extract_pdf_with_llm(content_bytes)
     except ImportError:
         logger.warning("pdfplumber not installed, using LLM fallback for PDF")

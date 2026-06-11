@@ -172,7 +172,7 @@ function handleNodeClick(phase: string) {
   if (!cpId) {
     const phaseAgents: Record<string, string[]> = {
       creating: ['copywriter', 'brief_analyzer', 'brief_gate', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'shooting_planner', 'content_analyzer', 'choice_gate', 'version_generator'],
-      reviewing: ['review_gate', 'revise_content'],
+      reviewing: ['review_gate', 'revise_content', 'visual_designer', 'copywriter'],
       publishing: ['publisher', 'engagement'],
     }
     for (const fallback of phaseAgents[phase] || []) {
@@ -199,6 +199,59 @@ const selectedCheckpoint = computed<CheckpointSnapshot | null>(() => {
 
 const selectedAgent = computed(() => selectedCheckpoint.value?.current_agent || '')
 
+// Resolve shooting_plan: if it only has raw_content, try to parse it as JSON
+const resolvedShootingPlan = computed(() => {
+  const sp = (selectedCheckpoint.value as any)?.shooting_plan
+  if (!sp || typeof sp !== 'object') return sp
+  const keys = Object.keys(sp)
+  if (keys.length === 1 && keys[0] === 'raw_content' && typeof sp.raw_content === 'string') {
+    try {
+      let raw = sp.raw_content.trim()
+      // Strip markdown code fence
+      if (raw.startsWith('```')) {
+        raw = raw.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '')
+      }
+      return JSON.parse(raw)
+    } catch {
+      // Try bracket repair then re-parse
+      try {
+        let raw = sp.raw_content.trim()
+        if (raw.startsWith('```')) {
+          raw = raw.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '')
+        }
+        const repaired = repairBrackets(raw)
+        return JSON.parse(repaired)
+      } catch {
+        return sp
+      }
+    }
+  }
+  return sp
+})
+
+function repairBrackets(jsonStr: string): string {
+  const result: string[] = []
+  const stack: string[] = []
+  for (const ch of jsonStr) {
+    if (ch === '{' || ch === '[') {
+      stack.push(ch)
+      result.push(ch)
+    } else if (ch === '}' && stack.length > 0 && stack[stack.length - 1] === '[') {
+      stack.pop()
+      result.push(']')
+    } else if (ch === ']' && stack.length > 0 && stack[stack.length - 1] === '{') {
+      stack.pop()
+      result.push('}')
+    } else if (ch === '}' || ch === ']') {
+      if (stack.length > 0) stack.pop()
+      result.push(ch)
+    } else {
+      result.push(ch)
+    }
+  }
+  return result.join('')
+}
+
 function formatDate(iso: string | null) {
   if (!iso) return '—'
   const d = new Date(iso)
@@ -211,7 +264,7 @@ function hasDataForAgent(agent: string, cp: CheckpointSnapshot): boolean {
   if (agent === 'content_strategist') return has(cp.content_plan)
   if (['copywriter', 'brief_analyzer', 'brief_gate', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'shooting_planner', 'content_analyzer', 'choice_gate', 'version_generator'].includes(agent)) return has(cp.copy_content) || has(cp.visual_plan) || has((cp as any).brief_content) || has((cp as any).shooting_plan)
   if (agent === 'visual_designer') return has(cp.copy_content) || has(cp.visual_plan)
-  if (['review_gate', 'revise_content'].includes(agent)) return has(cp.copy_content)
+  if (['review_gate', 'revise_content'].includes(agent)) return has(cp.copy_content) || has(cp.visual_plan) || has((cp as any).brief_content)
   if (['publisher', 'engagement'].includes(agent)) return has(cp.publish_result)
   if (agent === 'analyst') return has(cp.analytics)
   return false
@@ -411,7 +464,7 @@ onUnmounted(() => {
           </template>
 
           <!-- ═══ CREATING (copywriter + sub-agents) ═══ -->
-          <template v-if="['copywriter', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'choice_gate', 'content_analyzer', 'version_generator', 'brief_analyzer', 'brief_gate', 'shooting_planner'].includes(selectedAgent) && (selectedCheckpoint.copy_content && Object.keys(selectedCheckpoint.copy_content).length > 0 || selectedCheckpoint.brief_content && Object.keys(selectedCheckpoint.brief_content).length > 0 || selectedCheckpoint.shooting_plan && Object.keys(selectedCheckpoint.shooting_plan).length > 0)">
+          <template v-if="['copywriter', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'choice_gate', 'content_analyzer', 'version_generator', 'brief_analyzer', 'brief_gate', 'shooting_planner'].includes(selectedAgent) && (selectedCheckpoint.copy_content && Object.keys(selectedCheckpoint.copy_content).length > 0 || selectedCheckpoint.brief_content && Object.keys(selectedCheckpoint.brief_content).length > 0 || resolvedShootingPlan && Object.keys(resolvedShootingPlan).length > 0)">
             <!-- Brief content summary (brief mode) -->
             <div v-if="selectedCheckpoint.brief_content && Object.keys(selectedCheckpoint.brief_content).length > 0" class="p-3 rounded-lg bg-pink-50 border border-pink-100">
               <div class="text-xs text-pink-600 font-medium mb-2">{{ t('brief.contentTitle') }}</div>
@@ -447,53 +500,53 @@ onUnmounted(() => {
             </div>
 
             <!-- Shooting plan (brief mode) -->
-            <div v-if="selectedCheckpoint.shooting_plan && Object.keys(selectedCheckpoint.shooting_plan).length > 0" class="p-3 rounded-lg bg-violet-50 border border-violet-100">
+            <div v-if="resolvedShootingPlan && Object.keys(resolvedShootingPlan).length > 0" class="p-3 rounded-lg bg-violet-50 border border-violet-100">
               <div class="text-xs text-violet-600 font-medium mb-2">{{ t('shootingPlan.title') }}</div>
               <div class="grid grid-cols-2 gap-2 mb-2">
-                <div v-if="selectedCheckpoint.shooting_plan.creator_nickname" class="p-2 rounded liquid-glass-inset">
+                <div v-if="resolvedShootingPlan.creator_nickname" class="p-2 rounded liquid-glass-inset">
                   <div class="text-[10px] text-slate-400">{{ t('shootingPlan.creator') }}</div>
-                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.shooting_plan.creator_nickname }}</div>
+                  <div class="text-xs text-slate-700">{{ resolvedShootingPlan.creator_nickname }}</div>
                 </div>
-                <div v-if="selectedCheckpoint.shooting_plan.content_type_label" class="p-2 rounded liquid-glass-inset">
+                <div v-if="resolvedShootingPlan.content_type_label" class="p-2 rounded liquid-glass-inset">
                   <div class="text-[10px] text-slate-400">{{ t('shootingPlan.type') }}</div>
-                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.shooting_plan.content_type_label }}</div>
+                  <div class="text-xs text-slate-700">{{ resolvedShootingPlan.content_type_label }}</div>
                 </div>
-                <div v-if="selectedCheckpoint.shooting_plan.content_direction" class="p-2 rounded liquid-glass-inset">
+                <div v-if="resolvedShootingPlan.content_direction" class="p-2 rounded liquid-glass-inset">
                   <div class="text-[10px] text-slate-400">{{ t('shootingPlan.direction') }}</div>
-                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.shooting_plan.content_direction }}</div>
+                  <div class="text-xs text-slate-700">{{ resolvedShootingPlan.content_direction }}</div>
                 </div>
-                <div v-if="selectedCheckpoint.shooting_plan.product_specification" class="p-2 rounded bg-rose-50 border border-rose-100">
+                <div v-if="resolvedShootingPlan.product_specification" class="p-2 rounded bg-rose-50 border border-rose-100">
                   <div class="text-[10px] text-rose-500">{{ t('shootingPlan.product') }}</div>
-                  <div class="text-xs text-rose-700">{{ selectedCheckpoint.shooting_plan.product_specification }}</div>
+                  <div class="text-xs text-rose-700">{{ resolvedShootingPlan.product_specification }}</div>
                 </div>
               </div>
-              <div v-if="selectedCheckpoint.shooting_plan.title_candidates?.length" class="mb-2">
+              <div v-if="resolvedShootingPlan.title_candidates?.length" class="mb-2">
                 <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('shootingPlan.titleCandidates') }}</div>
                 <div class="space-y-0.5">
-                  <div v-for="(title, i) in selectedCheckpoint.shooting_plan.title_candidates" :key="i" class="text-xs text-slate-600">
+                  <div v-for="(title, i) in resolvedShootingPlan.title_candidates" :key="i" class="text-xs text-slate-600">
                     <span class="text-violet-400 font-medium">{{ i + 1 }}.</span> {{ title }}
                   </div>
                 </div>
               </div>
-              <div v-if="selectedCheckpoint.shooting_plan.body_copy" class="p-2.5 rounded-lg liquid-glass-inset mb-2">
-                <p class="text-xs text-slate-600 whitespace-pre-line line-clamp-6">{{ selectedCheckpoint.shooting_plan.body_copy }}</p>
+              <div v-if="resolvedShootingPlan.body_copy" class="p-2.5 rounded-lg liquid-glass-inset mb-2">
+                <p class="text-xs text-slate-600 whitespace-pre-line line-clamp-6">{{ resolvedShootingPlan.body_copy }}</p>
               </div>
-              <div v-if="selectedCheckpoint.shooting_plan.required_hashtags?.length || selectedCheckpoint.shooting_plan.optional_hashtags?.length" class="flex flex-wrap gap-1.5 mb-2">
-                <span v-for="tag in (selectedCheckpoint.shooting_plan.required_hashtags || [])" :key="'r-'+tag" class="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200 font-medium">#{{ tag }}</span>
-                <span v-for="tag in (selectedCheckpoint.shooting_plan.optional_hashtags || [])" :key="'o-'+tag" class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-500 border border-slate-200">#{{ tag }}</span>
+              <div v-if="resolvedShootingPlan.required_hashtags?.length || resolvedShootingPlan.optional_hashtags?.length" class="flex flex-wrap gap-1.5 mb-2">
+                <span v-for="tag in (resolvedShootingPlan.required_hashtags || [])" :key="'r-'+tag" class="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200 font-medium">#{{ tag }}</span>
+                <span v-for="tag in (resolvedShootingPlan.optional_hashtags || [])" :key="'o-'+tag" class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-500 border border-slate-200">#{{ tag }}</span>
               </div>
-              <div v-if="selectedCheckpoint.shooting_plan.outfits && Object.keys(selectedCheckpoint.shooting_plan.outfits).length > 0" class="mb-2">
+              <div v-if="resolvedShootingPlan.outfits && Object.keys(resolvedShootingPlan.outfits).length > 0" class="mb-2">
                 <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('shootingPlan.outfits') }}</div>
                 <div class="grid grid-cols-2 gap-1.5">
-                  <div v-for="(items, scene) in selectedCheckpoint.shooting_plan.outfits" :key="scene" class="p-1.5 rounded bg-violet-50 border border-violet-100">
+                  <div v-for="(items, scene) in resolvedShootingPlan.outfits" :key="scene" class="p-1.5 rounded bg-violet-50 border border-violet-100">
                     <span class="text-[10px] text-violet-500 font-medium">{{ scene }}</span>
                     <p class="text-[10px] text-violet-700">{{ (items as string[]).join(', ') }}</p>
                   </div>
                 </div>
               </div>
-              <div v-if="selectedCheckpoint.shooting_plan.shooting_angles?.length" class="space-y-1.5">
+              <div v-if="resolvedShootingPlan.shooting_angles?.length" class="space-y-1.5">
                 <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('shootingPlan.shootingAngles') }}</div>
-                <div v-for="(angle, i) in selectedCheckpoint.shooting_plan.shooting_angles" :key="i" class="p-2 rounded liquid-glass-inset">
+                <div v-for="(angle, i) in resolvedShootingPlan.shooting_angles" :key="i" class="p-2 rounded liquid-glass-inset">
                   <div class="flex items-center gap-1.5 mb-0.5">
                     <AppIcon name="Camera" size="xs" variant="cyan" />
                     <span class="text-xs font-medium text-slate-700">{{ angle.angle }}</span>
@@ -655,22 +708,71 @@ onUnmounted(() => {
           </template>
 
           <!-- ═══ REVIEWING ═══ -->
-          <template v-if="['review_gate', 'revise_content'].includes(selectedAgent) && selectedCheckpoint.copy_content">
-            <div v-if="selectedCheckpoint.copy_content.selected_title" class="text-sm font-semibold text-rose-600 leading-snug">{{ selectedCheckpoint.copy_content.selected_title }}</div>
-            <div v-if="selectedCheckpoint.copy_content.body_text" class="p-3 rounded-lg liquid-glass-inset">
-              <p class="text-xs text-slate-600 whitespace-pre-line">{{ selectedCheckpoint.copy_content.body_text }}</p>
-            </div>
-            <div v-if="selectedCheckpoint.copy_content.hashtags?.length" class="flex flex-wrap gap-1.5">
-              <span v-for="tag in selectedCheckpoint.copy_content.hashtags" :key="tag" class="text-[11px] px-2 py-0.5 rounded-md bg-teal-50 text-teal-600 border border-teal-100">#{{ tag }}</span>
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-              <div v-if="selectedCheckpoint.copy_content.cta" class="p-2 rounded-lg bg-rose-50 border border-rose-100">
-                <div class="text-[10px] text-rose-500 font-medium">CTA</div>
-                <div class="text-xs text-rose-700">{{ selectedCheckpoint.copy_content.cta }}</div>
+          <template v-if="['review_gate', 'revise_content', 'visual_designer', 'copywriter'].includes(selectedAgent) && (selectedCheckpoint.copy_content && Object.keys(selectedCheckpoint.copy_content).length > 0 || selectedCheckpoint.visual_plan && Object.keys(selectedCheckpoint.visual_plan).length > 0 || resolvedShootingPlan && Object.keys(resolvedShootingPlan).length > 0 || selectedCheckpoint.brief_content && Object.keys(selectedCheckpoint.brief_content).length > 0)">
+            <!-- Brief content summary (brief mode) -->
+            <div v-if="selectedCheckpoint.brief_content && Object.keys(selectedCheckpoint.brief_content).length > 0" class="p-3 rounded-lg bg-pink-50 border border-pink-100">
+              <div class="text-xs text-pink-600 font-medium mb-2">{{ t('brief.contentTitle') }}</div>
+              <div class="space-y-1.5">
+                <div v-if="selectedCheckpoint.brief_content.brand_name" class="flex items-start gap-2">
+                  <span class="text-[10px] text-slate-400 min-w-[60px]">{{ t('brief.brand') }}</span>
+                  <span class="text-xs text-slate-700 font-medium">{{ selectedCheckpoint.brief_content.brand_name }}</span>
+                </div>
+                <div v-if="selectedCheckpoint.brief_content.product_name" class="flex items-start gap-2">
+                  <span class="text-[10px] text-slate-400 min-w-[60px]">{{ t('brief.product') }}</span>
+                  <span class="text-xs text-slate-700 font-medium">{{ selectedCheckpoint.brief_content.product_name }}</span>
+                </div>
+                <div v-if="selectedCheckpoint.brief_content.content_direction" class="flex items-start gap-2">
+                  <span class="text-[10px] text-slate-400 min-w-[60px]">{{ t('brief.direction') }}</span>
+                  <span class="text-xs text-slate-700">{{ selectedCheckpoint.brief_content.content_direction }}</span>
+                </div>
+                <div v-if="selectedCheckpoint.brief_content.selling_points?.length" class="flex items-start gap-2">
+                  <span class="text-[10px] text-slate-400 min-w-[60px]">{{ t('brief.sellingPoints') }}</span>
+                  <div class="flex flex-wrap gap-1">
+                    <span v-for="sp in selectedCheckpoint.brief_content.selling_points" :key="sp" class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-600">{{ sp }}</span>
+                  </div>
+                </div>
+                <span v-if="selectedCheckpoint.brief_content.confidence != null" class="text-[10px] px-1.5 py-0.5 rounded-full" :class="(selectedCheckpoint.brief_content.confidence ?? 0) >= 0.6 ? 'bg-teal-50 text-teal-600' : 'bg-amber-50 text-amber-600'">
+                  {{ Math.round((selectedCheckpoint.brief_content.confidence ?? 0) * 100) }}%
+                </span>
               </div>
-              <div v-if="selectedCheckpoint.copy_content.tone" class="p-2 rounded-lg bg-violet-50 border border-violet-100">
-                <div class="text-[10px] text-violet-500 font-medium">{{ t('replay.tone') }}</div>
-                <div class="text-xs text-violet-700">{{ selectedCheckpoint.copy_content.tone }}</div>
+            </div>
+
+            <!-- Copy content -->
+            <div v-if="selectedCheckpoint.copy_content && Object.keys(selectedCheckpoint.copy_content).length > 0">
+              <div v-if="selectedCheckpoint.copy_content.selected_title" class="text-sm font-semibold text-rose-600 leading-snug">{{ selectedCheckpoint.copy_content.selected_title }}</div>
+              <div v-if="selectedCheckpoint.copy_content.body_text" class="p-3 rounded-lg liquid-glass-inset">
+                <p class="text-xs text-slate-600 whitespace-pre-line">{{ selectedCheckpoint.copy_content.body_text }}</p>
+              </div>
+              <div v-if="selectedCheckpoint.copy_content.hashtags?.length" class="flex flex-wrap gap-1.5">
+                <span v-for="tag in selectedCheckpoint.copy_content.hashtags" :key="tag" class="text-[11px] px-2 py-0.5 rounded-md bg-teal-50 text-teal-600 border border-teal-100">#{{ tag }}</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div v-if="selectedCheckpoint.copy_content.cta" class="p-2 rounded-lg bg-rose-50 border border-rose-100">
+                  <div class="text-[10px] text-rose-500 font-medium">CTA</div>
+                  <div class="text-xs text-rose-700">{{ selectedCheckpoint.copy_content.cta }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.copy_content.tone" class="p-2 rounded-lg bg-violet-50 border border-violet-100">
+                  <div class="text-[10px] text-violet-500 font-medium">{{ t('replay.tone') }}</div>
+                  <div class="text-xs text-violet-700">{{ selectedCheckpoint.copy_content.tone }}</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Visual plan -->
+            <div v-if="selectedCheckpoint.visual_plan && Object.keys(selectedCheckpoint.visual_plan).length > 0" class="p-3 rounded-lg bg-indigo-50 border border-indigo-100">
+              <div class="text-xs text-indigo-600 font-medium mb-2">{{ t('replay.visualPlan') }}</div>
+              <div class="grid grid-cols-2 gap-2">
+                <div v-if="selectedCheckpoint.visual_plan.layout_style" class="p-2 rounded liquid-glass-inset">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.layout') }}</div>
+                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.visual_plan.layout_style }}</div>
+                </div>
+                <div v-if="selectedCheckpoint.visual_plan.image_count" class="p-2 rounded liquid-glass-inset">
+                  <div class="text-[10px] text-slate-400">{{ t('replay.imageCount') }}</div>
+                  <div class="text-xs text-slate-700">{{ selectedCheckpoint.visual_plan.image_count }}</div>
+                </div>
+              </div>
+              <div v-if="selectedCheckpoint.visual_plan.color_palette?.length" class="flex gap-1.5 mt-2">
+                <div v-for="color in selectedCheckpoint.visual_plan.color_palette" :key="color" class="w-5 h-5 rounded-full border border-white/50" :style="{ backgroundColor: color }"></div>
               </div>
             </div>
           </template>
