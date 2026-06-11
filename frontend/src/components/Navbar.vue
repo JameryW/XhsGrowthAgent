@@ -71,7 +71,7 @@ const handleLogout = async () => {
 
 <template>
   <nav
-    class="bg-white/80 backdrop-blur-xl flex flex-col border-r border-slate-200/60 relative overflow-hidden transition-all duration-300"
+    class="liquid-glass-nav flex flex-col border-r border-white/15 relative overflow-hidden transition-all duration-300"
     :class="isTablet ? 'w-[68px] p-3' : 'w-64 p-6'"
     role="navigation"
     :aria-label="t('nav.home')"
@@ -90,7 +90,7 @@ const handleLogout = async () => {
           <div class="text-xs text-slate-400 mt-0.5">XHS Growth Agent</div>
         </div>
       </div>
-      <div v-if="!isTablet" class="mt-4 bg-gradient-to-r from-slate-50 to-white rounded-lg px-3 py-2 flex items-center gap-2 border border-slate-100 transition-all duration-200 hover:border-slate-200 hover:shadow-sm" role="status" aria-live="polite" :aria-label="t('nav.phase')">
+      <div v-if="!isTablet" class="mt-4 liquid-glass-inset rounded-lg px-3 py-2 flex items-center gap-2 transition-all duration-200" role="status" aria-live="polite" :aria-label="t('nav.phase')">
         <div class="w-2 h-2 rounded-full animate-pulse" :class="currentPhase === 'idle' ? 'bg-amber-400' : 'bg-teal-500'" aria-hidden="true" />
         <div class="text-xs text-slate-500">
           {{ t('nav.phase') }}: <span class="text-teal-600 font-medium">{{ phaseLabel }}</span>

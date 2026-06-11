@@ -131,7 +131,7 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
 <template>
   <div class="space-y-3 md:space-y-5">
     <!-- Header -->
-    <div class="rounded-xl md:rounded-2xl p-3 md:p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+    <div class="rounded-xl md:rounded-2xl p-3 md:p-5 relative overflow-hidden liquid-glass">
       <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
         <div class="flex items-center gap-3 md:gap-4">
           <div class="w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
@@ -157,7 +157,7 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" class="rounded-xl p-4 md:p-6 bg-rose-50 border border-rose-100 text-center">
+    <div v-else-if="error" class="rounded-xl p-4 md:p-6 liquid-glass-rose liquid-glass-hover text-center">
       <AppIcon name="AlertTriangle" size="lg" variant="pink" />
       <p class="text-sm text-rose-600 mt-2">{{ error }}</p>
       <NeonButton variant="ghost" size="sm" class="mt-3" @click="fetchWorkflows">
@@ -166,7 +166,7 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
     </div>
 
     <!-- Empty State -->
-    <div v-else-if="isEmpty" class="rounded-xl md:rounded-2xl p-6 md:p-10 bg-white/98 border border-slate-200/50 text-center">
+    <div v-else-if="isEmpty" class="rounded-xl md:rounded-2xl p-6 md:p-10 liquid-glass text-center">
       <div class="w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-3 md:mb-4">
         <AppIcon name="Inbox" size="lg" variant="cyan" class="md:hidden" />
         <AppIcon name="Inbox" size="xl" variant="cyan" class="hidden md:block" />
@@ -188,7 +188,7 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
       <div
         v-for="wf in workflows"
         :key="wf.thread_id"
-        class="rounded-xl p-3 md:p-4 bg-white/98 border border-slate-200/50 hover:border-slate-300 hover:shadow-md transition-all duration-200 cursor-pointer"
+        class="rounded-xl p-3 md:p-4 liquid-glass liquid-glass-hover hover:border-slate-300 transition-all duration-200 cursor-pointer"
         @click="viewWorkflow(wf.thread_id)"
       >
         <div class="flex items-center justify-between gap-2">
@@ -267,7 +267,7 @@ const isEmpty = computed(() => !isLoading.value && workflows.value.length === 0)
         </div>
 
         <!-- Error message -->
-        <div v-if="wf.error" class="mt-1.5 md:mt-2 p-1.5 md:p-2 rounded bg-rose-50 border border-rose-100 text-[10px] md:text-xs text-rose-600">
+        <div v-if="wf.error" class="mt-1.5 md:mt-2 p-1.5 md:p-2 rounded liquid-glass-rose text-[10px] md:text-xs text-rose-600">
           {{ wf.error }}
         </div>
       </div>

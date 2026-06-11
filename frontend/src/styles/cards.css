@@ -1,13 +1,35 @@
 /* Unified card styles for XHS Growth Agent */
 
-/* Base card - clean, minimal */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+/* Base card - liquid glass surface */
 .card {
-  @apply rounded-xl md:rounded-2xl p-3 md:p-6 bg-white border border-slate-200/60 shadow-sm;
+  @apply rounded-xl md:rounded-2xl p-3 md:p-6;
+  background: rgba(255, 255, 255, 0.38);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    0 4px 16px rgba(0, 0, 0, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Card with hover effect */
 .card-hover {
-  @apply card transition-all duration-200 hover:shadow-md hover:border-slate-300/60;
+  @apply card;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.06),
+    0 12px 32px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
 /* Card header section */
@@ -42,24 +64,70 @@
 
 /* Status cards */
 .card-success {
-  @apply card border-emerald-200/60 bg-emerald-50/30;
+  @apply card;
+  background: rgba(240, 253, 250, 0.50);
+  border: 1px solid rgba(94, 234, 212, 0.15);
+}
+.card-success:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.06),
+    0 12px 32px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
 .card-warning {
-  @apply card border-amber-200/60 bg-amber-50/30;
+  @apply card;
+  background: rgba(255, 251, 235, 0.50);
+  border: 1px solid rgba(252, 211, 77, 0.15);
+}
+.card-warning:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.06),
+    0 12px 32px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
 .card-error {
-  @apply card border-rose-200/60 bg-rose-50/30;
+  @apply card;
+  background: rgba(255, 240, 243, 0.50);
+  border: 1px solid rgba(251, 113, 133, 0.15);
+}
+.card-error:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.06),
+    0 12px 32px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
 .card-info {
-  @apply card border-cyan-200/60 bg-cyan-50/30;
+  @apply card;
+  background: rgba(245, 243, 255, 0.50);
+  border: 1px solid rgba(167, 139, 250, 0.15);
+}
+.card-info:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.06),
+    0 12px 32px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
 /* Compact card for dense layouts */
 .card-compact {
-  @apply rounded-lg bg-white border border-slate-200/60 shadow-sm p-3;
+  @apply rounded-lg p-3;
+  background: rgba(255, 255, 255, 0.38);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    0 4px 16px rgba(0, 0, 0, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Card grid layout */
@@ -187,8 +255,9 @@
 .skeleton-avatar {
   @apply skeleton h-10 w-10 rounded-full;
 }
+} /* end @layer components */
 
-/* Transition utilities */
+/* Transition utilities - not using @apply, so outside layer */
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease;
@@ -215,24 +284,34 @@
 }
 
 /* Focus styles for accessibility */
-:focus-visible {
-  @apply outline-none ring-2 ring-rose-500 ring-offset-2;
+@layer utilities {
+  :focus-visible {
+    @apply outline-none ring-2 ring-rose-500 ring-offset-2;
+  }
 }
 
-/* Scrollbar styles */
+/* Scrollbar styles - pseudo-elements, keep outside layer */
 ::-webkit-scrollbar {
-  @apply w-2 h-2;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-slate-100 rounded-full;
+  background: #f1f5f9;
+  border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-300 rounded-full hover:bg-slate-400;
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 /* Selection styles */
 ::selection {
-  @apply bg-rose-100 text-rose-900;
+  background: #ffe4e6;
+  color: #881337;
 }

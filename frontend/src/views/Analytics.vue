@@ -305,7 +305,7 @@ function startWithTopic(topic: string, niche?: string) {
           :height="220"
         />
         <template #fallback>
-          <div class="rounded-xl md:rounded-2xl p-3 md:p-6 bg-white/98 backdrop-blur-sm border border-slate-200/50">
+          <div class="rounded-xl md:rounded-2xl p-3 md:p-6 liquid-glass">
             <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse" />
           </div>
         </template>
@@ -318,7 +318,7 @@ function startWithTopic(topic: string, niche?: string) {
           :height="220"
         />
         <template #fallback>
-          <div class="rounded-xl md:rounded-2xl p-3 md:p-6 bg-white/98 backdrop-blur-sm border border-slate-200/50">
+          <div class="rounded-xl md:rounded-2xl p-3 md:p-6 liquid-glass">
             <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse" />
           </div>
         </template>
@@ -339,15 +339,15 @@ function startWithTopic(topic: string, niche?: string) {
       </div>
 
       <div class="grid grid-cols-3 gap-2 md:gap-4 mb-3 md:mb-5">
-        <div class="rounded-lg p-2 md:p-4 bg-rose-50 border border-rose-100">
+        <div class="rounded-lg p-2 md:p-4 liquid-glass-rose liquid-glass-hover">
           <div class="text-[10px] md:text-xs text-rose-500 font-medium">{{ t('analytics.cost.total') }}</div>
           <div class="text-base md:text-xl font-bold text-rose-700">${{ analyticsStore.costData.total_cost_usd?.toFixed(2) || '0.00' }}</div>
         </div>
-        <div class="rounded-lg p-2 md:p-4 bg-amber-50 border border-amber-100">
+        <div class="rounded-lg p-2 md:p-4 liquid-glass-amber liquid-glass-hover">
           <div class="text-[10px] md:text-xs text-amber-500 font-medium">{{ t('analytics.cost.today') }}</div>
           <div class="text-base md:text-xl font-bold text-amber-700">${{ analyticsStore.costData.today_cost_usd?.toFixed(2) || '0.00' }}</div>
         </div>
-        <div class="rounded-lg p-2 md:p-4 bg-emerald-50 border border-emerald-100">
+        <div class="rounded-lg p-2 md:p-4 liquid-glass-teal liquid-glass-hover">
           <div class="text-[10px] md:text-xs text-emerald-500 font-medium">{{ t('analytics.cost.remaining') }}</div>
           <div class="text-base md:text-xl font-bold text-emerald-700">${{ analyticsStore.costData.budget_remaining_usd?.toFixed(2) || '0.00' }}</div>
         </div>

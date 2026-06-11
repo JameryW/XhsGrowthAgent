@@ -68,7 +68,7 @@ onUnmounted(() => {
       <div
         v-for="toast in toastStore.toasts"
         :key="toast.id"
-        class="p-4 rounded-xl border backdrop-blur-sm bg-white/98 shadow-lg pointer-events-auto"
+        class="p-4 rounded-xl liquid-glass-elevated pointer-events-auto"
         :class="[toastStyles[toast.type].borderClass]"
         role="alert"
         :aria-live="toast.type === 'error' ? 'assertive' : 'polite'"

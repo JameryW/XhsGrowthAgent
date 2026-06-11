@@ -143,7 +143,7 @@ const howItWorksSteps: Array<{
 // Ellipse parameters for desktop loop layout
 const ellipseRxPct = 36   // semi-major axis as % of container width
 const ellipseRyPct = 38   // semi-minor axis as % of container height
-const nodeSize = 48       // circle node diameter in px
+const nodeSize = 68       // circle node diameter in px
 
 function stepStyle(i: number, containerW: number): Record<string, string> {
   const rx = containerW * ellipseRxPct / 100
@@ -187,13 +187,17 @@ const loopMotionPath = computed(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gradient-to-b from-slate-50 to-white text-slate-800 relative overflow-hidden">
+  <div class="min-h-screen text-slate-800 relative overflow-hidden">
     <!-- Subtle decorative elements -->
     <div class="absolute top-0 right-0 w-[500px] h-[500px] pointer-events-none opacity-30" style="background: radial-gradient(circle, rgba(244,63,94,0.08) 0%, transparent 60%);" />
     <div class="absolute bottom-0 left-0 w-[400px] h-[400px] pointer-events-none opacity-20" style="background: radial-gradient(circle, rgba(20,184,166,0.08) 0%, transparent 60%);" />
+    <!-- Floating ambient orbs for pipeline section -->
+    <div class="absolute top-[20%] left-[10%] w-[300px] h-[300px] rounded-full pointer-events-none opacity-[0.04] bg-violet-400" style="animation: float-orb 12s ease-in-out infinite;" />
+    <div class="absolute top-[40%] right-[5%] w-[250px] h-[250px] rounded-full pointer-events-none opacity-[0.04] bg-rose-400" style="animation: float-orb 15s ease-in-out infinite 3s;" />
+    <div class="absolute bottom-[15%] left-[30%] w-[200px] h-[200px] rounded-full pointer-events-none opacity-[0.03] bg-teal-400" style="animation: float-orb 18s ease-in-out infinite 6s;" />
 
     <!-- Nav -->
-    <nav class="relative z-20 bg-white border-b border-slate-200/60">
+    <nav class="relative z-20 liquid-glass-nav border-b border-white/15">
       <div class="max-w-[1200px] mx-auto px-3 md:px-6 h-14 flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-amber-400 flex items-center justify-center shadow-md shadow-rose-500/20">
@@ -220,7 +224,7 @@ const loopMotionPath = computed(() => {
       </div>
 
       <!-- Error -->
-      <div v-else-if="error" class="rounded-xl p-8 bg-rose-50 border border-rose-200/60 text-center max-w-md w-full">
+      <div v-else-if="error" class="rounded-xl p-8 liquid-glass-rose liquid-glass-hover text-center max-w-md w-full">
         <div class="w-12 h-12 rounded-xl bg-rose-100 flex items-center justify-center mx-auto mb-4">
           <AppIcon name="AlertCircle" size="lg" variant="pink" />
         </div>
@@ -287,6 +291,14 @@ const loopMotionPath = computed(() => {
                 </filter>
               </defs>
 
+              <!-- Background particle field -->
+              <g opacity="0.15">
+                <circle v-for="n in 12" :key="'p1-'+n" :cx="svgCx + (Math.sin(n * 2.1 + 0.5) * svgRx * 0.8)" :cy="svgCy + (Math.cos(n * 1.7 + 0.3) * svgRy * 0.8)" :r="1.5 + n * 0.2" :fill="['#f43f5e','#14b8a6','#8b5cf6','#f59e0b','#0ea5e9','#10b981'][n % 6]">
+                  <animate attributeName="opacity" values="0.3;0.8;0.3" :dur="`${2 + n * 0.3}s`" repeatCount="indefinite" />
+                  <animate attributeName="r" :values="`${1.5 + n * 0.2};${2.5 + n * 0.2};${1.5 + n * 0.2}`" :dur="`${3 + n * 0.2}s`" repeatCount="indefinite" />
+                </circle>
+              </g>
+
               <!-- Soft ambient glow arc -->
               <ellipse :cx="svgCx" :cy="svgCy" :rx="svgRx" :ry="svgRy" stroke="url(#loop-grad)" stroke-width="8" fill="none" opacity="0.07" filter="url(#arc-glow)">
                 <animate attributeName="opacity" values="0.05;0.09;0.05" dur="5s" repeatCount="indefinite" />
@@ -331,7 +343,7 @@ const loopMotionPath = computed(() => {
 
             <!-- Center label -->
             <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div class="text-center px-5 py-3 rounded-2xl bg-white/70 backdrop-blur-sm border border-slate-200/40 shadow-sm">
+              <div class="text-center px-5 py-3 rounded-2xl liquid-glass">
                 <div class="text-sm font-bold text-slate-500">&#x27F3; {{ t('showcase.closedLoop') }}</div>
                 <div class="text-[10px] text-slate-400 mt-0.5">{{ t('showcase.closedLoopDesc') }}</div>
               </div>
@@ -345,11 +357,13 @@ const loopMotionPath = computed(() => {
               :class="stepsVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-50'"
               :style="stepStyle(i, containerW)"
             >
-              <!-- Outer glow ring (subtle, on hover) -->
-              <div class="absolute inset-[-6px] rounded-full opacity-0 group-hover:opacity-30 transition-opacity duration-300 blur-sm" :class="step.color" />
+              <!-- Outer glow ring (always visible, pulse on hover) -->
+              <div class="absolute inset-[-8px] rounded-full opacity-25 group-hover:opacity-50 transition-opacity duration-300 blur-md" :class="step.color" />
+              <!-- Floating particle ring (ambient bg effect) -->
+              <div class="absolute inset-[-16px] rounded-full opacity-10 group-hover:opacity-20 transition-opacity duration-500" :class="step.color" style="filter: blur(8px);" />
               <!-- Station node: white bg with colored border and icon -->
-              <div class="w-[48px] h-[48px] rounded-full flex items-center justify-center bg-white border-2 shadow-md transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg relative z-10" :class="[step.borderColor, step.iconColor]">
-                <AppIcon :name="step.icon" size="md" :variant="step.iconVariant" />
+              <div class="w-[68px] h-[68px] rounded-full flex items-center justify-center bg-white border-2 shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:shadow-xl relative z-10" :class="[step.borderColor, step.iconColor]">
+                <AppIcon :name="step.icon" size="lg" :variant="step.iconVariant" />
               </div>
               <!-- Label below the node -->
               <div class="text-center mt-2">
@@ -368,8 +382,8 @@ const loopMotionPath = computed(() => {
                 :class="stepsVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-80'"
                 :style="{ transitionDelay: `${i * 80}ms` }"
               >
-                <div class="w-[40px] h-[40px] rounded-full flex items-center justify-center bg-white border-2 shadow-sm" :class="[step.borderColor, step.iconColor]">
-                  <AppIcon :name="step.icon" size="sm" :variant="step.iconVariant" />
+                <div class="w-[48px] h-[48px] rounded-full flex items-center justify-center bg-white border-2 shadow-sm" :class="[step.borderColor, step.iconColor]">
+                  <AppIcon :name="step.icon" size="md" :variant="step.iconVariant" />
                 </div>
                 <div class="text-[11px] font-bold text-slate-600 mt-1">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
                 <div class="text-[9px] text-slate-400 line-clamp-2 mt-0.5">{{ t(`showcase.steps.${step.key}`) }}</div>
@@ -382,7 +396,7 @@ const loopMotionPath = computed(() => {
           </div>
         </div>
 
-        <!-- Workflow cards section -->
+        <!-- Workflow cards section: dual-column feeds -->
         <div class="space-y-4 md:space-y-5">
           <!-- Section title -->
           <div class="flex items-center justify-between">
@@ -402,84 +416,87 @@ const loopMotionPath = computed(() => {
             </div>
           </div>
 
-          <!-- Running workflows -->
-          <template v-if="runningWorkflows.length > 0">
-            <div v-for="wf in runningWorkflows" :key="wf.thread_id" class="rounded-xl bg-white border border-teal-200/50 shadow-sm overflow-hidden hover:shadow-md transition-shadow cursor-pointer" @click="goReplay(wf.thread_id)">
-              <!-- Card header -->
-              <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-slate-100 bg-teal-50/40">
-                <div class="flex items-center gap-2">
-                  <span class="w-2.5 h-2.5 rounded-full bg-teal-500 animate-pulse" />
-                  <span class="text-sm font-semibold text-slate-800">{{ phaseLabel(wf.phase) }}</span>
-                  <span class="text-xs px-2 py-0.5 rounded-full bg-teal-100 text-teal-700">{{ statusLabel(wf.status) }}</span>
-                  <span v-if="wf.dry_run" class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">dry-run</span>
-                </div>
-                <div class="flex items-center gap-3">
-                  <div class="hidden md:flex items-center gap-1">
-                    <template v-for="(_step, i) in pipelineSteps" :key="i">
-                      <div class="w-4 h-1.5 rounded-full transition-colors" :class="i < pipelineProgress(wf.phase) ? 'bg-teal-500' : 'bg-slate-200'" />
-                    </template>
+          <!-- Dual-column feeds -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Running workflows -->
+            <template v-if="runningWorkflows.length > 0">
+              <div v-for="wf in runningWorkflows" :key="wf.thread_id" class="rounded-xl liquid-glass-teal liquid-glass-hover overflow-hidden cursor-pointer" @click="goReplay(wf.thread_id)">
+                <!-- Card header -->
+                <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-white/10 liquid-glass-inset">
+                  <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-teal-500 animate-pulse" />
+                    <span class="text-sm font-semibold text-slate-800">{{ phaseLabel(wf.phase) }}</span>
+                    <span class="text-xs px-2 py-0.5 rounded-full bg-teal-100 text-teal-700">{{ statusLabel(wf.status) }}</span>
+                    <span v-if="wf.dry_run" class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">dry-run</span>
                   </div>
-                  <span class="text-xs text-slate-500 tabular-nums font-medium">{{ wf.progress_percent }}%</span>
-                  <span class="text-xs text-slate-400">{{ formatDate(wf.created_at) }}</span>
+                  <div class="flex items-center gap-3">
+                    <div class="hidden md:flex items-center gap-1">
+                      <template v-for="(_step, i) in pipelineSteps" :key="i">
+                        <div class="w-4 h-1.5 rounded-full transition-colors" :class="i < pipelineProgress(wf.phase) ? 'bg-teal-500' : 'bg-slate-200'" />
+                      </template>
+                    </div>
+                    <span class="text-xs text-slate-500 tabular-nums font-medium">{{ wf.progress_percent }}%</span>
+                    <span class="text-xs text-slate-400">{{ formatDate(wf.created_at) }}</span>
+                  </div>
                 </div>
+                <!-- Card body (shared) -->
+                <WorkflowCardBody :detail="getDetail(wf.thread_id)" />
               </div>
-              <!-- Card body (shared) -->
-              <WorkflowCardBody :detail="getDetail(wf.thread_id)" />
-            </div>
-          </template>
+            </template>
 
-          <!-- Completed workflows -->
-          <template v-if="completedWorkflows.length > 0">
-            <div v-for="wf in completedWorkflows" :key="wf.thread_id" class="rounded-xl bg-white border border-emerald-200/40 shadow-sm overflow-hidden hover:shadow-md transition-shadow cursor-pointer" @click="goReplay(wf.thread_id)">
-              <!-- Card header -->
-              <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-slate-100 bg-emerald-50/30">
-                <div class="flex items-center gap-2">
-                  <span class="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                  <span class="text-sm font-semibold text-slate-800">{{ t('showcase.status.completed') }}</span>
-                  <span v-if="wf.dry_run" class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">dry-run</span>
-                  <span v-else class="text-xs px-2 py-0.5 rounded-full bg-rose-50 text-rose-600">live</span>
-                </div>
-                <div class="flex items-center gap-3">
-                  <div class="hidden md:flex items-center gap-1">
-                    <div v-for="_s in pipelineSteps" :key="_s" class="w-4 h-1.5 rounded-full bg-emerald-400" />
+            <!-- Completed workflows -->
+            <template v-if="completedWorkflows.length > 0">
+              <div v-for="wf in completedWorkflows" :key="wf.thread_id" class="rounded-xl liquid-glass-teal liquid-glass-hover overflow-hidden cursor-pointer" @click="goReplay(wf.thread_id)">
+                <!-- Card header -->
+                <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-white/10 liquid-glass-inset">
+                  <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                    <span class="text-sm font-semibold text-slate-800">{{ t('showcase.status.completed') }}</span>
+                    <span v-if="wf.dry_run" class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">dry-run</span>
+                    <span v-else class="text-xs px-2 py-0.5 rounded-full bg-rose-50 text-rose-600">live</span>
                   </div>
-                  <span class="text-xs text-slate-400">{{ formatDate(wf.created_at) }}</span>
+                  <div class="flex items-center gap-3">
+                    <div class="hidden md:flex items-center gap-1">
+                      <div v-for="_s in pipelineSteps" :key="_s" class="w-4 h-1.5 rounded-full bg-emerald-400" />
+                    </div>
+                    <span class="text-xs text-slate-400">{{ formatDate(wf.created_at) }}</span>
+                  </div>
                 </div>
+                <!-- Card body (shared) -->
+                <WorkflowCardBody :detail="getDetail(wf.thread_id)" />
               </div>
-              <!-- Card body (shared) -->
-              <WorkflowCardBody :detail="getDetail(wf.thread_id)" />
-            </div>
-          </template>
+            </template>
 
-          <!-- Other workflows (error/paused/cancelled/stale/awaiting_*) -->
-          <template v-if="otherWorkflows.length > 0">
-            <div v-for="wf in otherWorkflows" :key="wf.thread_id" class="rounded-xl bg-white border border-slate-200/60 shadow-sm overflow-hidden hover:shadow-md transition-shadow cursor-pointer" @click="goReplay(wf.thread_id)">
-              <!-- Card header -->
-              <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-slate-100" :class="wf.status === 'error' ? 'bg-rose-50/40' : 'bg-slate-50/40'">
-                <div class="flex items-center gap-2">
-                  <span class="w-2.5 h-2.5 rounded-full" :class="wf.status === 'error' ? 'bg-rose-500' : wf.status === 'paused' ? 'bg-slate-400' : 'bg-amber-400'" />
-                  <span class="text-sm font-semibold text-slate-800">{{ phaseLabel(wf.phase) }}</span>
-                  <span class="text-xs px-2 py-0.5 rounded-full" :class="wf.status === 'error' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'">{{ statusLabel(wf.status) }}</span>
-                  <span v-if="wf.dry_run" class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">dry-run</span>
-                </div>
-                <div class="flex items-center gap-3">
-                  <div class="hidden md:flex items-center gap-1">
-                    <template v-for="(_step, i) in pipelineSteps" :key="i">
-                      <div class="w-4 h-1.5 rounded-full transition-colors" :class="i < pipelineProgress(wf.phase) ? 'bg-slate-400' : 'bg-slate-200'" />
-                    </template>
+            <!-- Other workflows (error/paused/cancelled/stale/awaiting_*) -->
+            <template v-if="otherWorkflows.length > 0">
+              <div v-for="wf in otherWorkflows" :key="wf.thread_id" class="rounded-xl liquid-glass liquid-glass-hover overflow-hidden cursor-pointer" @click="goReplay(wf.thread_id)">
+                <!-- Card header -->
+                <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-white/10 liquid-glass-inset" :class="wf.status === 'error' ? '' : ''">
+                  <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full" :class="wf.status === 'error' ? 'bg-rose-500' : wf.status === 'paused' ? 'bg-slate-400' : 'bg-amber-400'" />
+                    <span class="text-sm font-semibold text-slate-800">{{ phaseLabel(wf.phase) }}</span>
+                    <span class="text-xs px-2 py-0.5 rounded-full" :class="wf.status === 'error' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'">{{ statusLabel(wf.status) }}</span>
+                    <span v-if="wf.dry_run" class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">dry-run</span>
                   </div>
-                  <span v-if="wf.progress_percent > 0" class="text-xs text-slate-500 tabular-nums font-medium">{{ wf.progress_percent }}%</span>
-                  <span class="text-xs text-slate-400">{{ formatDate(wf.created_at) }}</span>
+                  <div class="flex items-center gap-3">
+                    <div class="hidden md:flex items-center gap-1">
+                      <template v-for="(_step, i) in pipelineSteps" :key="i">
+                        <div class="w-4 h-1.5 rounded-full transition-colors" :class="i < pipelineProgress(wf.phase) ? 'bg-slate-400' : 'bg-slate-200'" />
+                      </template>
+                    </div>
+                    <span v-if="wf.progress_percent > 0" class="text-xs text-slate-500 tabular-nums font-medium">{{ wf.progress_percent }}%</span>
+                    <span class="text-xs text-slate-400">{{ formatDate(wf.created_at) }}</span>
+                  </div>
                 </div>
+                <!-- Error message -->
+              <div v-if="wf.error" class="px-4 md:px-5 py-2 liquid-glass-rose border-b border-white/10">
+                  <p class="text-xs text-rose-600">{{ wf.error }}</p>
+                </div>
+                <!-- Card body (shared) -->
+                <WorkflowCardBody :detail="getDetail(wf.thread_id)" />
               </div>
-              <!-- Error message -->
-              <div v-if="wf.error" class="px-4 md:px-5 py-2 bg-rose-50/60 border-b border-rose-100/60">
-                <p class="text-xs text-rose-600">{{ wf.error }}</p>
-              </div>
-              <!-- Card body (shared) -->
-              <WorkflowCardBody :detail="getDetail(wf.thread_id)" />
-            </div>
-          </template>
+            </template>
+          </div>
         </div>
 
         <!-- Footer -->
@@ -495,5 +512,15 @@ const loopMotionPath = computed(() => {
 @keyframes breathe {
   0%, 100% { transform: scale(1); opacity: 0.12; }
   50% { transform: scale(1.15); opacity: 0.22; }
+}
+</style>
+
+<style>
+/* Global keyframe for inline style animation references */
+@keyframes float-orb {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(20px, -30px) scale(1.05); }
+  50% { transform: translate(-10px, -15px) scale(0.95); }
+  75% { transform: translate(15px, 10px) scale(1.02); }
 }
 </style>

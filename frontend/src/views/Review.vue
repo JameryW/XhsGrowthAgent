@@ -307,7 +307,7 @@ const handleCancelConfirm = () => {
 
   <!-- Empty State -->
   <div v-else-if="isLoaded && !hasPendingReview" class="flex items-center justify-center min-h-[60vh]">
-    <div class="rounded-xl md:rounded-2xl p-6 md:p-10 max-w-md w-full bg-white/98 border border-slate-200/50 text-center">
+    <div class="rounded-xl md:rounded-2xl p-6 md:p-10 max-w-md w-full liquid-glass text-center">
       <div class="w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-2xl flex items-center justify-center mx-auto mb-3 md:mb-5" :class="{
         'bg-slate-100': emptyStateHint.color === 'slate',
         'bg-emerald-50': emptyStateHint.color === 'emerald',
@@ -390,7 +390,7 @@ const handleCancelConfirm = () => {
     <!-- 内容预览 -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 review-content">
       <!-- 文案预览 -->
-      <div class="rounded-xl p-3 md:p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
+      <div class="rounded-xl p-3 md:p-5 liquid-glass liquid-glass-hover transition-all duration-200">
         <div class="flex items-center gap-2 md:gap-3 mb-3 md:mb-4">
           <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
             <AppIcon name="Pencil" size="sm" variant="white" class="md:hidden" :aria-label="t('review.copyContent')" />
@@ -402,7 +402,7 @@ const handleCancelConfirm = () => {
           </div>
         </div>
 
-        <div class="bg-slate-50 rounded-lg p-3 md:p-4 border-l-2 border-rose-400">
+        <div class="liquid-glass-inset rounded-lg p-3 md:p-4 border-l-2 border-rose-400">
           <div v-if="copyContent.selected_title" class="text-rose-500 font-bold text-base md:text-lg mb-1.5 md:mb-2">
             {{ copyContent.selected_title }}
           </div>
@@ -422,7 +422,7 @@ const handleCancelConfirm = () => {
       </div>
 
       <!-- 视觉方案预览 -->
-      <div class="rounded-xl p-3 md:p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
+      <div class="rounded-xl p-3 md:p-5 liquid-glass liquid-glass-hover transition-all duration-200">
         <div class="flex items-center gap-2 md:gap-3 mb-3 md:mb-4">
           <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm">
             <AppIcon name="Palette" size="sm" variant="white" class="md:hidden" :aria-label="t('review.visualPlan')" />
@@ -636,7 +636,7 @@ const handleCancelConfirm = () => {
       </div>
 
       <!-- Error display -->
-      <div v-if="error" class="mb-3 md:mb-4 p-2 md:p-3 rounded-lg bg-rose-50 border border-rose-100 text-rose-500 text-xs md:text-sm flex items-center gap-1.5 md:gap-2">
+      <div v-if="error" class="mb-3 md:mb-4 p-2 md:p-3 rounded-lg liquid-glass-rose text-rose-500 text-xs md:text-sm flex items-center gap-1.5 md:gap-2">
         <div class="w-5 h-5 md:w-6 md:h-6 rounded bg-rose-100 flex items-center justify-center">
           <AppIcon name="AlertTriangle" size="sm" variant="pink" animate />
         </div>
@@ -667,7 +667,7 @@ const handleCancelConfirm = () => {
       </div>
 
       <!-- General feedback -->
-      <div class="bg-slate-50 rounded-lg p-3 md:p-4 border border-slate-100 mb-3 md:mb-4">
+      <div class="liquid-glass-inset rounded-lg p-3 md:p-4 mb-3 md:mb-4">
         <div class="flex items-center gap-1.5 md:gap-2 mb-1.5 md:mb-2">
           <AppIcon name="MessageSquare" size="sm" variant="purple" />
           <span class="text-[10px] md:text-xs text-violet-600 uppercase tracking-wide font-medium">{{ t('review.feedbackLabel') }}</span>
@@ -682,7 +682,7 @@ const handleCancelConfirm = () => {
       </div>
 
       <!-- Structured Feedback (for revise/reject) -->
-      <div class="bg-slate-50 rounded-lg p-3 md:p-4 border border-slate-100">
+      <div class="liquid-glass-inset rounded-lg p-3 md:p-4">
         <button
           class="flex items-center justify-between w-full mb-2 md:mb-3"
           @click="showStructuredFeedback = !showStructuredFeedback"
@@ -747,7 +747,7 @@ const handleCancelConfirm = () => {
       <Transition name="modal">
         <div v-if="showPublishConfirm" class="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showPublishConfirm = false" />
-          <div class="relative bg-white rounded-xl md:rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+          <div class="relative liquid-glass-elevated rounded-xl md:rounded-2xl max-w-md w-full overflow-hidden">
             <div class="p-4 md:p-5 border-b border-slate-100">
               <div class="flex items-center gap-2 md:gap-3">
                 <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-gradient-to-br from-emerald-400 to-teal-400 flex items-center justify-center">
@@ -769,7 +769,7 @@ const handleCancelConfirm = () => {
               </div>
 
               <!-- Dry Run toggle -->
-              <div class="flex items-center justify-between py-2 px-3 rounded-lg bg-slate-50 border border-slate-100">
+              <div class="flex items-center justify-between py-2 px-3 rounded-lg liquid-glass-inset">
                 <div class="flex items-center gap-1.5 md:gap-2">
                   <AppIcon name="FlaskConical" size="sm" variant="cyan" />
                   <div>
@@ -796,7 +796,7 @@ const handleCancelConfirm = () => {
               </div>
 
               <!-- Live warning -->
-              <div v-if="!publishDryRun" class="p-3 rounded-lg bg-amber-50 border border-amber-100">
+      <div v-if="!publishDryRun" class="p-3 rounded-lg liquid-glass-amber liquid-glass-hover">
                 <div class="flex items-start gap-2">
                   <AppIcon name="AlertTriangle" size="sm" variant="peach" />
                   <p class="text-xs text-amber-700">{{ t('review.publishConfirm.liveWarning') }}</p>

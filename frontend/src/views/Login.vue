@@ -53,7 +53,7 @@ const handleDismissError = () => {
 
 <template>
   <div class="min-h-[80vh] flex flex-col items-center justify-center px-4">
-    <div class="rounded-2xl p-6 md:p-10 max-w-md w-full bg-white/85 backdrop-blur-xl border border-slate-200/50 shadow-2xl">
+    <div class="rounded-2xl p-6 md:p-10 max-w-md w-full liquid-glass-elevated">
       <!-- Header -->
       <div class="text-center mb-8">
         <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-rose-400 via-rose-500 to-amber-400 flex items-center justify-center mb-4 shadow-lg shadow-rose-500/20">
@@ -93,7 +93,7 @@ const handleDismissError = () => {
         </div>
 
         <!-- Error display -->
-        <div v-if="localError" class="p-3 rounded-lg bg-rose-50 border border-rose-100 text-rose-500 text-sm flex items-center gap-3">
+        <div v-if="localError" class="p-3 rounded-lg liquid-glass-rose text-rose-500 text-sm flex items-center gap-3">
           <div class="w-6 h-6 rounded bg-rose-100 flex items-center justify-center">
             <AppIcon name="AlertCircle" size="sm" variant="pink" />
           </div>

@@ -94,7 +94,7 @@ const confirmStart = async () => {
   <div class="min-h-[80vh] flex flex-col justify-center">
     <div class="w-full">
       <!-- Pre-filled topic from analytics -->
-      <div v-if="prefilledTopic" class="mb-3 md:mb-4 p-2.5 md:p-3 rounded-lg bg-teal-50 border border-teal-100 flex items-center gap-2">
+      <div v-if="prefilledTopic" class="mb-3 md:mb-4 p-2.5 md:p-3 rounded-lg liquid-glass-teal liquid-glass-hover flex items-center gap-2">
         <AppIcon name="Sparkles" size="sm" variant="cyan" />
         <div class="flex-1 min-w-0">
           <span class="text-[10px] md:text-xs text-teal-500 font-medium">{{ t('home.recommendedTopic') }}</span>
@@ -106,7 +106,7 @@ const confirmStart = async () => {
       </div>
 
       <!-- Configuration form -->
-      <div class="rounded-xl md:rounded-2xl p-4 md:p-6 bg-white border border-slate-200/50 shadow-sm mb-3 md:mb-4">
+      <div class="rounded-xl md:rounded-2xl p-4 md:p-6 liquid-glass liquid-glass-hover mb-3 md:mb-4">
         <div class="flex items-center gap-2 mb-4">
           <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-400 to-amber-400 flex items-center justify-center shadow-sm">
             <AppIcon name="Rocket" size="sm" variant="white" />

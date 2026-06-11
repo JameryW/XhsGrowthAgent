@@ -74,7 +74,7 @@ const expectedSteps = computed(() => {
         <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="emit('cancel')" />
 
         <!-- Modal -->
-        <div class="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+        <div class="relative liquid-glass-elevated rounded-2xl max-w-md w-full overflow-hidden">
           <!-- Header -->
           <div class="p-5 border-b border-slate-100">
             <div class="flex items-center gap-3">
@@ -126,13 +126,13 @@ const expectedSteps = computed(() => {
             </div>
 
             <!-- Warnings -->
-            <div v-if="!dryRun" class="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-100">
+            <div v-if="!dryRun" class="mt-3 p-3 rounded-lg liquid-glass-amber liquid-glass-hover">
               <div class="flex items-start gap-2">
                 <AppIcon name="AlertTriangle" size="sm" variant="peach" />
                 <p class="text-xs text-amber-700">{{ t('home.confirm.liveWarning') }}</p>
               </div>
             </div>
-            <div v-if="autoPublish" class="mt-2 p-3 rounded-lg bg-rose-50 border border-rose-100">
+            <div v-if="autoPublish" class="mt-2 p-3 rounded-lg liquid-glass-rose liquid-glass-hover">
               <div class="flex items-start gap-2">
                 <AppIcon name="AlertTriangle" size="sm" variant="pink" />
                 <p class="text-xs text-rose-700">{{ t('home.confirm.autoPublishWarning') }}</p>
@@ -140,7 +140,7 @@ const expectedSteps = computed(() => {
             </div>
 
             <!-- Steps preview -->
-            <div class="mt-3 p-3 rounded-lg bg-slate-50 border border-slate-100">
+            <div class="mt-3 p-3 rounded-lg liquid-glass-inset">
               <p class="text-xs font-medium text-slate-500 mb-2">{{ t('home.confirm.expectedSteps') }}</p>
               <div class="flex flex-wrap gap-1.5">
                 <span v-for="(step, idx) in expectedSteps" :key="step.phase"
