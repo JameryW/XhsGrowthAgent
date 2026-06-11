@@ -67,6 +67,8 @@ export interface WorkflowListItem {
   dry_run: boolean
   auto_publish: boolean
   progress_percent: number
+  workflow_mode: 'trend' | 'brief'
+  label: string
   created_at: string
   updated_at: string
   error: string | null

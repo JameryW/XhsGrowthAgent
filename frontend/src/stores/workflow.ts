@@ -660,13 +660,19 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
-  async function resumeWorkflow() {
+  async function resumeWorkflow(resumeValue?: Record<string, unknown>) {
     if (!activeThreadId.value) return
     const threadId = activeThreadId.value
     isLoading.value = true
     error.value = null
     try {
-      const result = await workflowApi.resumeWorkflow(threadId)
+      const result = resumeValue
+        ? await fetch(`/api/workflow/resume/${threadId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ resume_value: resumeValue }),
+          }).then(r => r.json())
+        : await workflowApi.resumeWorkflow(threadId)
       const state = workflowStates.value.get(threadId)
       if (state) {
         workflowStates.value.set(threadId, { ...state, status: 'running' })
@@ -775,6 +781,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
   function clearBriefUpload() {
     briefUploadedText.value = null
     briefSourceType.value = null
+  }
+
+  function simulateBriefUploadStart() {
+    isBriefUploading.value = true
   }
 
   // ── Replay mode actions ──
@@ -898,6 +908,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isBriefUploading,
     uploadBriefPdf,
     clearBriefUpload,
+    simulateBriefUploadStart,
 
     // Replay mode
     isReplayMode,

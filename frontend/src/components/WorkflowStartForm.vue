@@ -37,9 +37,25 @@ const briefText = ref('')
 const briefPdfText = ref<string | null>(null)
 const hasPdfUpload = computed(() => !!briefPdfText.value)
 
+const pendingPdfFile = ref<File | null>(null)
+
 function onBriefPdfUpload(file: File) {
-  if (!workflowStore.currentThreadId) return
-  workflowStore.uploadBriefPdf(workflowStore.currentThreadId, file)
+  const threadId = workflowStore.currentThreadId
+  if (threadId) {
+    workflowStore.uploadBriefPdf(threadId, file)
+    return
+  }
+  // No active thread yet — queue the file for upload after workflow starts
+  pendingPdfFile.value = file
+  // Trigger PDF upload UI flow immediately (shows extracting spinner)
+  workflowStore.simulateBriefUploadStart()
+}
+
+async function uploadPendingPdf(threadId: string) {
+  const file = pendingPdfFile.value
+  if (!file) return
+  pendingPdfFile.value = null
+  await workflowStore.uploadBriefPdf(threadId, file)
 }
 
 function onBriefPdfConfirm(text: string) {
@@ -94,7 +110,7 @@ function getConfig(): WorkflowConfig {
   }
 }
 
-defineExpose({ getConfig })
+defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
 </script>
 
 <template>

@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from langgraph.store.base import BaseStore
+from langgraph.types import interrupt
 
 from backend.agents.nodes._base import NodeResult, _check_cancelled
 from backend.state.enums import WorkflowPhase
@@ -16,23 +17,30 @@ async def brief_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[st
     """Brief clarification gate — interrupts when brief needs user input.
 
     If brief_clarification.resolved is True, skip interrupt and proceed.
-    Otherwise, interrupt so the user can answer clarification questions.
-    Uses interrupt_before pattern (configured in graph.compile()).
+    Otherwise, interrupt so the user can answer clarification questions or skip.
     """
     _check_cancelled(state)
 
     clarification = state.get("brief_clarification", {})
 
-    # Already resolved or no clarification needed — proceed
+    # Already resolved or no clarification needed — proceed without interrupt
     if not clarification or clarification.get("resolved", True):
         logger.debug("Brief clarification resolved or not needed, proceeding")
         return NodeResult({
             "phase": WorkflowPhase.BRIEFING,
         }, "brief_gate").to_dict()
 
-    # Brief needs clarification — the interrupt is handled by interrupt_before
-    # in graph.compile(), so this code runs after the user resumes
-    logger.info("Brief gate: clarification needed, user will be prompted")
+    # Brief needs clarification — interrupt for user input
+    logger.info("Brief gate: clarification needed, interrupting for user input")
+    decision = interrupt({"type": "brief_clarification", "questions": clarification.get("questions", [])})
+
+    # decision format: {"action": "answer", "answers": {...}} or {"action": "skip"}
+    if decision and decision.get("action") == "skip":
+        logger.info("Brief gate: user skipped clarification")
+    elif decision and decision.get("action") == "answer":
+        logger.info("Brief gate: user provided clarification answers")
+
     return NodeResult({
         "phase": WorkflowPhase.BRIEFING,
+        "brief_clarification": {"questions": [], "resolved": True},
     }, "brief_gate").to_dict()

@@ -122,7 +122,10 @@ class BriefAnalyzerAgent(BaseAgent):
         ])
 
         parsed = self._parse_json_response(response.content)
-        questions = parsed.get("questions", [])
+        if isinstance(parsed, list):
+            questions = parsed
+        else:
+            questions = parsed.get("questions", [])
 
         return {
             "questions": questions,
