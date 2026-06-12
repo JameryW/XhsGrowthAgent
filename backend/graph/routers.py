@@ -131,18 +131,14 @@ def engagement_router(state: XHSGrowthState) -> Literal["orchestrator", "__end__
 
 
 def should_optimize(state: XHSGrowthState) -> Literal["content_analyzer", "visual_designer"]:
-    """判断是否进入优化流程."""
+    """判断是否进入优化流程 — always optimize unless explicitly skipped."""
     if state.get("error") and state.get("phase") == WorkflowPhase.ERROR:
         return "visual_designer"
 
     if state.get("skip_optimization"):
         return "visual_designer"
 
-    viral_posts = state.get("viral_posts", [])
-    if viral_posts and len(viral_posts) > 0:
-        return "content_analyzer"
-
-    return "visual_designer"
+    return "content_analyzer"
 
 
 def choice_outcome(state: XHSGrowthState) -> Literal["visual_designer"]:

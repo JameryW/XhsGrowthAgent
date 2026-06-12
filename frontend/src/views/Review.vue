@@ -387,7 +387,9 @@ const handleCancelConfirm = () => {
           </div>
           <div class="text-lg md:text-xl font-semibold text-slate-800">{{ t('review.title') }} · {{ t('review.subtitle') }}</div>
           <div class="text-[10px] md:text-xs text-slate-400 mt-1">
-            Thread: {{ workflowStore.currentThreadId || '—' }}
+            <span v-if="workflowStore.workflowState?.label" class="font-medium text-slate-600">{{ workflowStore.workflowState.label }}</span>
+            <span v-if="workflowStore.workflowState?.label && workflowStore.currentThreadId" class="mx-1">·</span>
+            <span class="font-mono">{{ (workflowStore.currentThreadId || '—').slice(-8) }}</span>
           </div>
         </div>
       </div>
@@ -780,7 +782,10 @@ const handleCancelConfirm = () => {
               <!-- Target info -->
               <div class="flex items-center justify-between py-2">
                 <span class="text-xs md:text-sm text-slate-500">{{ t('review.publishConfirm.target') }}</span>
-                <span class="text-xs md:text-sm font-medium text-slate-700 truncate">{{ workflowStore.currentThreadId }}</span>
+                <div class="flex items-center gap-1.5">
+                  <span v-if="workflowStore.workflowState?.label" class="text-xs md:text-sm font-medium text-slate-700 truncate">{{ workflowStore.workflowState.label }}</span>
+                  <span class="text-xs font-mono text-slate-400">{{ (workflowStore.currentThreadId || '').slice(-8) }}</span>
+                </div>
               </div>
 
               <!-- Dry Run toggle -->

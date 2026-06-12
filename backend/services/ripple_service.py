@@ -58,6 +58,8 @@ class RippleService:
     _client: httpx.AsyncClient | None = None
     _health_status: RippleHealthStatus = RippleHealthStatus()
     _bg_task: asyncio.Task | None = None
+    # Track active simulation progress per (thread_id, job_id)
+    _progress_store: dict[str, dict[str, Any]] = {}
 
     def __new__(cls) -> RippleService:
         """单例模式"""
@@ -280,7 +282,6 @@ class RippleService:
         from backend.realtime import EventBusService
         from backend.realtime.events import EventType
 
-        bus = EventBusService.get_instance()
         payload = {
             "job_id": job_id,
             "current_wave": current_wave,
@@ -290,7 +291,37 @@ class RippleService:
             "status": status,
             "skill": skill,
         }
+        # Store progress for status API queries
+        key = f"{thread_id}:{job_id}"
+        if status in ("completed", "done", "finished"):
+            RippleService._progress_store.pop(key, None)
+        else:
+            RippleService._progress_store[key] = {**payload, "thread_id": thread_id}
+        bus = EventBusService.get_instance()
         bus.emit(EventType.RIPPLE_PROGRESS, thread_id=thread_id, payload=payload)
+
+    @classmethod
+    def get_thread_progress(cls, thread_id: str) -> dict[str, Any]:
+        """Get aggregated Ripple progress for a thread (for status API).
+
+        Returns dict with 'jobs', 'overall_progress', 'active_jobs', 'total_jobs'.
+        """
+        jobs: dict[str, Any] = {}
+        for key, data in cls._progress_store.items():
+            if data.get("thread_id") == thread_id:
+                job_id = data["job_id"]
+                jobs[job_id] = {k: v for k, v in data.items() if k != "thread_id"}
+        if not jobs:
+            return {}
+        entries = list(jobs.values())
+        active = [j for j in entries if j.get("status") not in ("completed", "done", "finished")]
+        avg = sum(j.get("progress", 0) for j in entries) / len(entries) if entries else 0
+        return {
+            "jobs": jobs,
+            "overall_progress": avg,
+            "active_jobs": len(active),
+            "total_jobs": len(entries),
+        }
 
     async def _stream_progress(
         self,

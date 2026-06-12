@@ -104,10 +104,10 @@ function handleBriefClear() {
 onMounted(async () => {
   if (workflowStore.openTabIds.length > 0) {
     await workflowStore.refreshAllTabs()
-    workflowStore.startPolling(5000)
+    workflowStore.startPolling(workflowStore.currentPhase === 'planning' ? 3000 : 5000)
   } else if (workflowStore.activeThreadId) {
     workflowStore.refreshStatus()
-    workflowStore.startPolling(5000)
+    workflowStore.startPolling(workflowStore.currentPhase === 'planning' ? 3000 : 5000)
   }
 })
 

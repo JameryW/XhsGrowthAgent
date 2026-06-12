@@ -333,7 +333,7 @@ export interface WorkflowStateResponse {
   ripple_prediction?: RipplePrediction
   ripple_pmf?: RipplePMFResult
   ripple_comparison?: RippleComparison
-  ripple_progress?: RippleProgress
+  ripple_progress?: RippleThreadProgress
   ripple_reason?: string  // "disabled" | "unreachable" | ""
   reselect_count?: number
   label?: string
