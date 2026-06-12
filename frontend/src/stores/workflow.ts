@@ -599,6 +599,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
         tabLabels.value[activeThreadId.value] = state.label
         saveTabLabels(tabLabels.value)
       }
+      // Sync Ripple progress from status API (fills gap when WebSocket events missed)
+      if (state.ripple_progress && Object.keys(state.ripple_progress).length > 0) {
+        const rp = state.ripple_progress as { jobs?: Record<string, RippleProgress> }
+        if (rp.jobs) {
+          const existing = rippleProgressMap.value.get(activeThreadId.value) || {}
+          rippleProgressMap.value.set(activeThreadId.value, { ...existing, ...rp.jobs })
+        }
+      }
       const status = state?.status || 'running'
       const phase = state?.phase || 'idle'
       const backendProgress = state?.progress_percent

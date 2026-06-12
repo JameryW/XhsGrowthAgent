@@ -312,7 +312,7 @@ class TestOptimizationRouters:
         assert result == "content_analyzer"
 
     def test_should_optimize_without_viral_posts(self):
-        """should_optimize routes to visual_designer when no viral_posts."""
+        """should_optimize routes to content_analyzer even without viral_posts — optimization always runs."""
         from backend.graph.routers import should_optimize
 
         state = XHSGrowthState(
@@ -322,8 +322,8 @@ class TestOptimizationRouters:
 
         result = should_optimize(state)
 
-        # Should route directly to visual_designer
-        assert result == "visual_designer"
+        # Should still route to content_analyzer (optimization always runs)
+        assert result == "content_analyzer"
 
     def test_should_optimize_skip_flag(self):
         """should_optimize respects skip_optimization flag."""

@@ -222,6 +222,7 @@ class WorkflowStatusResponse(BaseModel):
     ripple_prediction: dict = Field(default_factory=dict, description="Ripple 传播预测")
     ripple_pmf: dict = Field(default_factory=dict, description="Ripple PMF 验证")
     ripple_comparison: dict = Field(default_factory=dict, description="Ripple 预测 vs 实际对比")
+    ripple_progress: dict = Field(default_factory=dict, description="Ripple 模拟进度")
     workflow_mode: str = Field(default="trend", description="工作模式: trend/brief")
     brief_content: dict = Field(default_factory=dict, description="解析后的 Brief 内容")
     brief_clarification: dict = Field(default_factory=dict, description="Brief 补充问题")
@@ -290,6 +291,15 @@ def get_progress(phase: str) -> int:
 
 def _extract_ripple(values: dict, key: str) -> dict:
     return values.get(key) or values.get("content_plan", {}).get(key) or {}
+
+
+def _get_ripple_progress(thread_id: str) -> dict:
+    """Get current Ripple simulation progress for a thread from RippleService."""
+    try:
+        from backend.services.ripple_service import RippleService
+        return RippleService.get_thread_progress(thread_id)
+    except Exception:
+        return {}
 
 
 # ── Endpoints ──
@@ -487,6 +497,7 @@ async def get_workflow_status(thread_id: str, request: Request):
             ripple_prediction=_extract_ripple(state.values, "ripple_prediction"),
             ripple_pmf=_extract_ripple(state.values, "ripple_pmf"),
             ripple_comparison=state.values.get("ripple_comparison") or {},
+            ripple_progress=_get_ripple_progress(thread_id),
             workflow_mode=state.values.get("workflow_mode") or "trend",
             brief_content=state.values.get("brief_content") or {},
             brief_clarification=state.values.get("brief_clarification") or {},
@@ -537,6 +548,7 @@ async def get_workflow_status(thread_id: str, request: Request):
             ripple_prediction=_extract_ripple(saved, "ripple_prediction"),
             ripple_pmf=_extract_ripple(saved, "ripple_pmf"),
             ripple_comparison=saved.get("ripple_comparison") or {},
+            ripple_progress={},  # History file has no live Ripple progress
             label="",
         ).model_dump())
 
