@@ -217,9 +217,16 @@ export const useWorkflowStore = defineStore('workflow', () => {
     const items: Array<{ threadId: string; label: string; status: WorkflowStatus; phase: WorkflowPhase; progress: number }> = []
     for (const id of openTabIds.value) {
       const state = workflowStates.value.get(id)
+      // Skip tabs with no state data (workflow may have been deleted)
+      if (!state) continue
+      const label = tabLabels.value[id] || generateTabLabel(
+        (state as any).trend_data?.selected_topic || (state as any).brief_content?.brand_name,
+        (state as any).workflow_mode,
+        state.created_at,
+      )
       items.push({
         threadId: id,
-        label: tabLabels.value[id] || id.slice(-8),
+        label,
         status: state?.status || 'idle',
         phase: state?.phase || 'idle',
         progress: state?.progress_percent ?? 0,
@@ -620,15 +627,30 @@ export const useWorkflowStore = defineStore('workflow', () => {
   /** Refresh status for all open tabs */
   async function refreshAllTabs() {
     const ids = openTabIds.value
+    const failedIds: string[] = []
     const promises = ids.map(async (id) => {
       try {
         const state = await workflowApi.getWorkflowStatus(id)
         workflowStates.value.set(id, state)
       } catch {
-        // Individual tab refresh failure is non-critical
+        // 404 or other error — workflow no longer exists
+        failedIds.push(id)
       }
     })
     await Promise.allSettled(promises)
+    // Auto-close tabs for workflows that no longer exist
+    for (const id of failedIds) {
+      const idx = openTabIds.value.indexOf(id)
+      if (idx >= 0) {
+        openTabIds.value.splice(idx, 1)
+        workflowStates.value.delete(id)
+        delete tabLabels.value[id]
+      }
+    }
+    if (failedIds.length > 0) {
+      saveOpenTabs(openTabIds.value)
+      saveTabLabels(tabLabels.value)
+    }
     // Update active tab progress
     if (activeThreadId.value) {
       const state = workflowStates.value.get(activeThreadId.value)

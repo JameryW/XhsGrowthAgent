@@ -168,7 +168,7 @@ const phaseAgentMap = computed<Record<string, string>>(() => {
   const isBrief = workflowMode.value === 'brief'
   return {
     ...(isBrief ? { briefing: 'brief_analyzer' } : { scouting: 'trend_scout', planning: 'content_strategist' }),
-    creating: isBrief ? 'brief_analyzer' : 'copywriter',
+    creating: isBrief ? 'copywriter' : 'copywriter',
     reviewing: 'review_gate',
     publishing: 'publisher',
     analyzing: 'analyst',
@@ -275,12 +275,23 @@ function hasDataForAgent(agent: string, cp: CheckpointSnapshot): boolean {
   const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Record<string, unknown>).length > 0
   if (agent === 'trend_scout') return has(cp.trend_data)
   if (agent === 'content_strategist') return has(cp.content_plan)
-  if (['copywriter', 'brief_analyzer', 'brief_gate', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'shooting_planner', 'content_analyzer', 'choice_gate', 'version_generator'].includes(agent)) return has(cp.copy_content) || has(cp.visual_plan) || has((cp as any).brief_content) || has((cp as any).shooting_plan)
-  if (agent === 'visual_designer') return has(cp.copy_content) || has(cp.visual_plan)
-  if (['review_gate', 'revise_content'].includes(agent)) return has(cp.copy_content) || has(cp.visual_plan) || has((cp as any).brief_content)
+  if (['copywriter', 'brief_analyzer', 'brief_gate', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'shooting_planner', 'content_analyzer', 'choice_gate', 'version_generator'].includes(agent)) return has(cp.copy_content) || hasMeaningfulData(cp.visual_plan) || has((cp as any).brief_content) || has((cp as any).shooting_plan)
+  if (agent === 'visual_designer') return has(cp.copy_content) || hasMeaningfulData(cp.visual_plan)
+  if (['review_gate', 'revise_content'].includes(agent)) return has(cp.copy_content) || hasMeaningfulData(cp.visual_plan) || has((cp as any).brief_content)
   if (['publisher', 'engagement'].includes(agent)) return has(cp.publish_result)
   if (agent === 'analyst') return has(cp.analytics)
   return false
+}
+
+function hasMeaningfulData(v: unknown): boolean {
+  if (!v || typeof v !== 'object') return false
+  const obj = v as Record<string, unknown>
+  return Object.values(obj).some(val => {
+    if (val === undefined || val === null || val === '') return false
+    if (Array.isArray(val)) return val.length > 0
+    if (typeof val === 'object') return Object.keys(val).length > 0
+    return true
+  })
 }
 
 function formatNum(n?: number): string {
@@ -721,7 +732,7 @@ onUnmounted(() => {
           </template>
 
           <!-- ═══ REVIEWING ═══ -->
-          <template v-if="['review_gate', 'revise_content', 'visual_designer', 'copywriter'].includes(selectedAgent) && (selectedCheckpoint.copy_content && Object.keys(selectedCheckpoint.copy_content).length > 0 || selectedCheckpoint.visual_plan && Object.keys(selectedCheckpoint.visual_plan).length > 0 || resolvedShootingPlan && Object.keys(resolvedShootingPlan).length > 0 || selectedCheckpoint.brief_content && Object.keys(selectedCheckpoint.brief_content).length > 0)">
+          <template v-if="['review_gate', 'revise_content', 'visual_designer', 'copywriter'].includes(selectedAgent) && (selectedCheckpoint.copy_content && Object.keys(selectedCheckpoint.copy_content).length > 0 || hasMeaningfulData(selectedCheckpoint.visual_plan) || resolvedShootingPlan && Object.keys(resolvedShootingPlan).length > 0 || selectedCheckpoint.brief_content && Object.keys(selectedCheckpoint.brief_content).length > 0)">
             <!-- Brief content summary (brief mode) -->
             <div v-if="selectedCheckpoint.brief_content && Object.keys(selectedCheckpoint.brief_content).length > 0" class="p-3 rounded-lg bg-pink-50 border border-pink-100">
               <div class="text-xs text-pink-600 font-medium mb-2">{{ t('brief.contentTitle') }}</div>
@@ -772,7 +783,7 @@ onUnmounted(() => {
             </div>
 
             <!-- Visual plan -->
-            <div v-if="selectedCheckpoint.visual_plan && Object.keys(selectedCheckpoint.visual_plan).length > 0" class="p-3 rounded-lg bg-indigo-50 border border-indigo-100">
+            <div v-if="hasMeaningfulData(selectedCheckpoint.visual_plan)" class="p-3 rounded-lg bg-indigo-50 border border-indigo-100">
               <div class="text-xs text-indigo-600 font-medium mb-2">{{ t('replay.visualPlan') }}</div>
               <div class="grid grid-cols-2 gap-2">
                 <div v-if="selectedCheckpoint.visual_plan.layout_style" class="p-2 rounded liquid-glass-inset">
