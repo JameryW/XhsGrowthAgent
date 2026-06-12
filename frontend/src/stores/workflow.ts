@@ -219,7 +219,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       const state = workflowStates.value.get(id)
       // Skip tabs with no state data (workflow may have been deleted)
       if (!state) continue
-      const label = tabLabels.value[id] || generateTabLabel(
+      const label = tabLabels.value[id] || state.label || generateTabLabel(
         (state as any).trend_data?.selected_topic || (state as any).brief_content?.brand_name,
         (state as any).workflow_mode,
         state.created_at,
@@ -594,6 +594,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
     try {
       const state = await workflowApi.getWorkflowStatus(activeThreadId.value)
       workflowStates.value.set(activeThreadId.value, state)
+      // Sync backend label to tab label (only if no user rename)
+      if (state.label && !tabLabels.value[activeThreadId.value]) {
+        tabLabels.value[activeThreadId.value] = state.label
+        saveTabLabels(tabLabels.value)
+      }
       const status = state?.status || 'running'
       const phase = state?.phase || 'idle'
       const backendProgress = state?.progress_percent
@@ -632,6 +637,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
       try {
         const state = await workflowApi.getWorkflowStatus(id)
         workflowStates.value.set(id, state)
+        // Sync backend label to tab label (only if no user rename)
+        if (state.label && !tabLabels.value[id]) {
+          tabLabels.value[id] = state.label
+        }
       } catch {
         // 404 or other error — workflow no longer exists
         failedIds.push(id)
@@ -651,6 +660,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
       saveOpenTabs(openTabIds.value)
       saveTabLabels(tabLabels.value)
     }
+    // Persist any synced labels from API
+    saveTabLabels(tabLabels.value)
     // Update active tab progress
     if (activeThreadId.value) {
       const state = workflowStates.value.get(activeThreadId.value)

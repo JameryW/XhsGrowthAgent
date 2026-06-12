@@ -18,6 +18,7 @@ const threadId = route.params.threadId as string
 const activeCheckpointId = computed(() => workflowStore.activeCheckpointId)
 const replayCheckpoints = computed(() => workflowStore.replayCheckpoints)
 const effectiveState = computed(() => workflowStore.effectiveState)
+const workflowLabel = computed(() => workflowStore.workflowState?.label || '')
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 
 const workflowMode = computed<'trend' | 'brief'>(() => effectiveState.value?.workflow_mode || 'trend')
@@ -183,7 +184,7 @@ function handleNodeClick(phase: string) {
     const isBrief = workflowMode.value === 'brief'
     const phaseAgents: Record<string, string[]> = {
       creating: isBrief
-        ? ['brief_analyzer', 'brief_gate', 'copywriter', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer']
+        ? ['copywriter', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer']
         : ['copywriter', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer'],
       reviewing: ['review_gate', 'revise_content', 'visual_designer', 'copywriter'],
       publishing: ['publisher', 'engagement'],
@@ -337,7 +338,10 @@ onUnmounted(() => {
           </div>
           <div>
             <h1 class="text-sm font-bold tracking-tight text-slate-800">{{ t('replay.title') }}</h1>
-            <p class="text-[10px] text-slate-400 -mt-0.5 font-mono">{{ threadId.slice(0, 8) }}</p>
+            <div class="flex items-center gap-1.5 -mt-0.5">
+              <span v-if="workflowLabel" class="text-[10px] text-slate-600 font-medium truncate max-w-[120px]">{{ workflowLabel }}</span>
+              <span class="text-[10px] text-slate-400 font-mono">{{ threadId.slice(-8) }}</span>
+            </div>
           </div>
         </div>
         <button v-if="isAuthenticated" @click="goDashboard" class="px-4 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-xs font-medium text-white transition-colors shadow-sm shadow-rose-500/20">

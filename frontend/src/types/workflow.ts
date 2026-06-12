@@ -336,6 +336,7 @@ export interface WorkflowStateResponse {
   ripple_progress?: RippleProgress
   ripple_reason?: string  // "disabled" | "unreachable" | ""
   reselect_count?: number
+  label?: string
   checkpoint_lost?: boolean
   blogger_candidates?: BloggerProfile[]
   selected_blogger?: Record<string, unknown>
