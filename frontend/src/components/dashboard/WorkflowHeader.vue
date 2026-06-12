@@ -26,21 +26,34 @@ const phaseTimeEstimates: Record<string, number> = {
   error: 0,
 }
 
-// Use unified progress from store (backend progress_percent with local fallback)
-const workflowProgress = computed(() => workflowStore.progressPercent)
+// Use effectiveState progress (replay-aware) instead of global progressPercent
+const workflowProgress = computed(() => {
+  const es = workflowStore.effectiveState
+  return es?.progress_percent ?? workflowStore.progressPercent
+})
 const isWaitingForUser = computed(() =>
   workflowStore.isAwaitingDraft ||
   workflowStore.isAwaitingChoice ||
   workflowStore.isAwaitingReview ||
-  workflowStore.isAwaitingBrief
+  workflowStore.isAwaitingBrief ||
+  workflowStore.isAwaitingBloggerSelection ||
+  workflowStore.isAwaitingRippleDecision
 )
 const isStale = computed(() => workflowStore.isStale)
-const statusLabel = computed(() =>
-  isStale.value ? t('workflow.staleDetected') :
-    isWaitingForUser.value ? t('dashboard.header.awaitingAction') :
-      workflowStore.isRunning ? t('dashboard.header.running') :
-        t('dashboard.header.idle')
-)
+const statusLabel = computed(() => {
+  const status = workflowStore.currentStatus
+  const phase = workflowStore.currentPhase
+  if (isStale.value) return t('workflow.staleDetected')
+  if (phase === 'completed') return t('dashboard.phase.completed')
+  if (phase === 'error') return t('dashboard.phase.error')
+  if (status === 'paused') return t('workflow.tabPaused')
+  if (status === 'cancelled') return t('dashboard.phase.cancelled')
+  if (workflowStore.isAwaitingRippleDecision) return t('showcase.status.awaitingRipple')
+  if (workflowStore.isAwaitingBloggerSelection) return t('dashboard.phase.awaitingBlogger')
+  if (isWaitingForUser.value) return t('dashboard.header.awaitingAction')
+  if (workflowStore.isRunning) return t('dashboard.header.running')
+  return t('dashboard.header.idle')
+})
 const currentStageLabel = computed(() => {
   if (workflowStore.isAwaitingDraft) return t('dashboard.phase.awaitingDraft')
   if (workflowStore.isAwaitingChoice) return t('dashboard.phase.awaitingChoice')
@@ -137,18 +150,26 @@ const timeRemainingDisplay = computed(() => {
             ? 'bg-gradient-to-r from-teal-500 to-teal-400 border-teal-200 text-white shadow-sm'
             : isStale
               ? 'bg-amber-50 border-amber-300 text-amber-700'
-              : isWaitingForUser
-                ? 'bg-amber-50 border-amber-200 text-amber-700'
-                : 'bg-slate-50 border-slate-200 text-slate-500'
+              : workflowStore.currentPhase === 'completed'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                : workflowStore.currentPhase === 'error'
+                  ? 'bg-rose-50 border-rose-200 text-rose-700'
+                  : workflowStore.currentStatus === 'paused'
+                    ? 'bg-slate-50 border-slate-300 text-slate-600'
+                    : workflowStore.currentStatus === 'cancelled'
+                      ? 'bg-slate-50 border-slate-300 text-slate-500'
+                      : isWaitingForUser
+                        ? 'bg-amber-50 border-amber-200 text-amber-700'
+                        : 'bg-slate-50 border-slate-200 text-slate-500'
         ]"
         role="status"
         aria-live="polite"
         :aria-label="statusLabel"
       >
         <AppIcon
-          :name="workflowStore.isRunning ? 'Circle' : isStale ? 'AlertTriangle' : isWaitingForUser ? 'Clock' : 'Minus'"
+          :name="workflowStore.isRunning ? 'Circle' : isStale ? 'AlertTriangle' : workflowStore.currentPhase === 'completed' ? 'CheckCircle' : workflowStore.currentPhase === 'error' ? 'AlertCircle' : isWaitingForUser ? 'Clock' : 'Minus'"
           size="sm"
-          :variant="workflowStore.isRunning ? 'white' : isStale ? 'peach' : 'cyan'"
+          :variant="workflowStore.isRunning ? 'white' : workflowStore.currentPhase === 'completed' ? 'cyan' : workflowStore.currentPhase === 'error' ? 'pink' : isStale ? 'peach' : 'cyan'"
           :animate="workflowStore.isRunning"
           aria-hidden="true"
         />

@@ -79,13 +79,15 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (!isReplayMode.value || !activeCheckpointId.value) return null
     const cp = replayCheckpoints.value.find(c => c.checkpoint_id === activeCheckpointId.value)
     if (!cp) return null
+    // Derive progress from checkpoint phase instead of hardcoding 0
+    const cpProgress = phaseToPercent(cp.phase)
     return {
       thread_id: activeThreadId.value || '',
       phase: cp.phase,
       status: 'completed' as WorkflowStatus,
       current_agent: cp.current_agent,
       next_steps: cp.next_nodes,
-      progress_percent: 0,
+      progress_percent: cpProgress,
       agent_timeline: [],
       trend_data: cp.trend_data,
       content_plan: cp.content_plan,
@@ -707,13 +709,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isLoading.value = true
     error.value = null
     try {
-      const result = resumeValue
-        ? await fetch(`/api/workflow/resume/${threadId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ resume_value: resumeValue }),
-          }).then(r => r.json())
-        : await workflowApi.resumeWorkflow(threadId)
+      const result = await workflowApi.resumeWorkflow(threadId, resumeValue)
       const state = workflowStates.value.get(threadId)
       if (state) {
         workflowStates.value.set(threadId, { ...state, status: 'running' })

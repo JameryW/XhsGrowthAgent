@@ -277,22 +277,22 @@ function heatBg(score?: number): string {
       <!-- Topic & Angle -->
       <div class="space-y-2 mb-4">
         <div v-if="contentPlan.selected_topic" class="flex items-start gap-2 text-sm">
-          <span class="text-cyan-500 font-medium shrink-0">Topic:</span>
+          <span class="text-cyan-500 font-medium shrink-0">{{ t('dashboard.contentCards.topic') }}</span>
           <span class="text-slate-700 font-medium">{{ contentPlan.selected_topic }}</span>
         </div>
         <div v-if="contentPlan.content_angle" class="flex items-start gap-2 text-sm">
-          <span class="text-cyan-500 font-medium shrink-0">Angle:</span>
+          <span class="text-cyan-500 font-medium shrink-0">{{ t('dashboard.contentCards.angle') }}</span>
           <span class="text-slate-600">{{ contentPlan.content_angle }}</span>
         </div>
         <div v-if="contentPlan.target_audience" class="flex items-start gap-2 text-sm">
-          <span class="text-cyan-500 font-medium shrink-0">Audience:</span>
+          <span class="text-cyan-500 font-medium shrink-0">{{ t('dashboard.contentCards.audience') }}</span>
           <span class="text-slate-600">{{ contentPlan.target_audience }}</span>
         </div>
       </div>
 
       <!-- Key Points -->
       <div v-if="contentPlan.key_points && contentPlan.key_points.length > 0" class="mb-4">
-        <div class="text-xs text-slate-500 uppercase tracking-wide font-medium mb-2">Key Points</div>
+        <div class="text-xs text-slate-500 uppercase tracking-wide font-medium mb-2">{{ t('dashboard.contentCards.keyPoints') }}</div>
         <div class="space-y-1">
           <div v-for="(point, idx) in contentPlan.key_points" :key="idx" class="flex items-start gap-2 text-xs">
             <span class="text-cyan-400 mt-0.5">▸</span>
@@ -344,7 +344,7 @@ function heatBg(score?: number): string {
 
       <!-- Title candidates -->
       <div v-if="copyContent.title_candidates && copyContent.title_candidates.length > 1" class="mb-3">
-        <div class="text-xs text-slate-500 mb-1.5">Title Candidates:</div>
+        <div class="text-xs text-slate-500 mb-1.5">{{ t('dashboard.contentCards.titleCandidates') }}</div>
         <div class="space-y-1">
           <div v-for="(title, idx) in copyContent.title_candidates" :key="idx" class="text-xs text-slate-600" :class="title === copyContent.selected_title ? 'font-semibold text-violet-600' : ''">
             {{ idx + 1 }}. {{ title }}
@@ -485,24 +485,24 @@ function heatBg(score?: number): string {
           <AppIcon name="BarChart3" size="md" variant="white" />
         </div>
         <div>
-          <div class="text-sm font-semibold text-slate-800">Analytics</div>
+          <div class="text-sm font-semibold text-slate-800">{{ t('dashboard.contentCards.analytics') }}</div>
         </div>
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div v-if="analytics.views !== undefined" class="rounded-lg p-3 bg-slate-50 border border-slate-100 text-center">
-          <div class="text-xs text-slate-500">Views</div>
+          <div class="text-xs text-slate-500">{{ t('dashboard.contentCards.views') }}</div>
           <div class="text-lg font-bold text-slate-700">{{ formatNum(analytics.views) }}</div>
         </div>
         <div v-if="analytics.likes !== undefined" class="rounded-lg p-3 bg-pink-50 border border-pink-100 text-center">
-          <div class="text-xs text-slate-500">Likes</div>
+          <div class="text-xs text-slate-500">{{ t('dashboard.contentCards.likes') }}</div>
           <div class="text-lg font-bold text-pink-600">{{ formatNum(analytics.likes) }}</div>
         </div>
         <div v-if="analytics.collects !== undefined" class="rounded-lg p-3 bg-amber-50 border border-amber-100 text-center">
-          <div class="text-xs text-slate-500">Collects</div>
+          <div class="text-xs text-slate-500">{{ t('dashboard.contentCards.collects') }}</div>
           <div class="text-lg font-bold text-amber-600">{{ formatNum(analytics.collects) }}</div>
         </div>
         <div v-if="analytics.engagement_rate !== undefined" class="rounded-lg p-3 bg-teal-50 border border-teal-100 text-center">
-          <div class="text-xs text-slate-500">Engagement</div>
+          <div class="text-xs text-slate-500">{{ t('dashboard.contentCards.engagement') }}</div>
           <div class="text-lg font-bold text-teal-600">{{ (analytics.engagement_rate * 100).toFixed(1) }}%</div>
         </div>
       </div>
