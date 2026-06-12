@@ -13,13 +13,21 @@ const shootingPlan = computed<ShootingPlan>(() =>
   workflowStore.workflowState?.shooting_plan || {}
 )
 
+// Whether ContentCards already shows copywriting data (trend mode)
+const hasCopyContent = computed(() =>
+  Object.keys(workflowStore.copyContent || {}).length > 0
+)
+
 // Whether copywriting data exists in the shooting plan (title_candidates, body_copy, hashtags)
+// Hide when ContentCards already shows it to avoid duplicates
 const hasCopyInPlan = computed(() =>
-  !!shootingPlan.value.title_candidates?.length ||
-  !!shootingPlan.value.body_copy ||
-  !!shootingPlan.value.required_hashtags?.length ||
-  !!shootingPlan.value.optional_hashtags?.length ||
-  !!shootingPlan.value.suggested_hashtags?.length
+  !hasCopyContent.value && (
+    !!shootingPlan.value.title_candidates?.length ||
+    !!shootingPlan.value.body_copy ||
+    !!shootingPlan.value.required_hashtags?.length ||
+    !!shootingPlan.value.optional_hashtags?.length ||
+    !!shootingPlan.value.suggested_hashtags?.length
+  )
 )
 
 const outfits = computed(() => {
