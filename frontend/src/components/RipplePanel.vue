@@ -311,17 +311,16 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
       <div class="text-xs text-violet-500 mb-3">
         {{ t('dashboard.ripple.reselectInfo', { count: reselectCount, max: maxReselect }) }}
       </div>
-      <div class="flex flex-col gap-2">
+      <div class="flex flex-wrap gap-1.5">
         <NeonButton
           variant="cyan"
           size="sm"
           :loading="isSubmittingDecision && false"
           :disabled="isSubmittingDecision"
           @click="handleRippleDecision('accept')"
-          class="w-full"
         >
-          <span class="inline-flex items-center gap-1.5 justify-center">
-            <AppIcon name="Check" size="sm" variant="white" />
+          <span class="inline-flex items-center gap-1 justify-center text-xs">
+            <AppIcon name="Check" size="xs" variant="white" />
             {{ t('dashboard.ripple.accept') }}
           </span>
         </NeonButton>
@@ -332,10 +331,9 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
           :loading="isSubmittingDecision"
           :disabled="isSubmittingDecision"
           @click="handleRippleDecision('reangle')"
-          class="w-full"
         >
-          <span class="inline-flex items-center gap-1.5 justify-center">
-            <AppIcon name="RefreshCw" size="sm" variant="white" />
+          <span class="inline-flex items-center gap-1 justify-center text-xs">
+            <AppIcon name="RefreshCw" size="xs" variant="white" />
             {{ t('dashboard.ripple.reangle') }}
           </span>
         </NeonButton>
@@ -346,10 +344,9 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
           :loading="isSubmittingDecision"
           :disabled="isSubmittingDecision"
           @click="handleRippleDecision('retopic')"
-          class="w-full"
         >
-          <span class="inline-flex items-center gap-1.5 justify-center">
-            <AppIcon name="Search" size="sm" variant="white" />
+          <span class="inline-flex items-center gap-1 justify-center text-xs">
+            <AppIcon name="Search" size="xs" variant="white" />
             {{ t('dashboard.ripple.retopic') }}
           </span>
         </NeonButton>

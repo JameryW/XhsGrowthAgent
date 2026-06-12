@@ -268,9 +268,13 @@ class RippleService:
     def _emit_progress(
         self,
         job_id: str,
-        status: dict[str, Any],
+        progress: float,
+        current_wave: int,
+        total_waves: int,
         elapsed_seconds: float,
         thread_id: str,
+        status: str = "running",
+        skill: str = "",
     ) -> None:
         """通过 EventBus 推送 Ripple 模拟进度事件"""
         from backend.realtime import EventBusService
@@ -279,14 +283,94 @@ class RippleService:
         bus = EventBusService.get_instance()
         payload = {
             "job_id": job_id,
-            "current_wave": status.get("current_wave", 0),
-            "total_waves": status.get("total_waves", status.get("max_waves", 0)),
-            "progress": float(status.get("progress", 0)),
+            "current_wave": current_wave,
+            "total_waves": total_waves,
+            "progress": float(progress),
             "elapsed_seconds": round(elapsed_seconds, 1),
-            "status": status.get("status", "unknown"),
-            "skill": status.get("skill", ""),
+            "status": status,
+            "skill": skill,
         }
         bus.emit(EventType.RIPPLE_PROGRESS, thread_id=thread_id, payload=payload)
+
+    async def _stream_progress(
+        self,
+        job_id: str,
+        thread_id: str,
+        progress_state: dict[str, Any],
+        done_event: asyncio.Event,
+    ) -> None:
+        """Consume Ripple SSE event stream and update progress_state.
+
+        Reads from ``GET /v1/simulations/{job_id}/events`` — each event
+        carries ``progress`` (0~1), ``wave``, ``total_waves`` etc.
+
+        On any error (connection refused, timeout, parse failure) the method
+        returns silently so that the caller can fall back to time-based
+        estimation.
+        """
+        config = self._get_config()
+        url = f"{config['base_url']}/v1/simulations/{job_id}/events"
+        headers = self._get_headers()
+
+        try:
+            async with (
+                httpx.AsyncClient(
+                    timeout=httpx.Timeout(30.0, connect=10.0, read=60.0),
+                    headers=headers,
+                ) as client,
+                client.stream("GET", url) as resp,
+            ):
+                    if resp.status_code != 200:
+                        logger.warning(
+                            f"Ripple SSE stream returned HTTP {resp.status_code}, falling back"
+                        )
+                        return
+
+                    event_type = ""
+                    async for line in resp.aiter_lines():
+                        if done_event.is_set():
+                            return
+
+                        line = line.strip()
+                        if line.startswith("event:"):
+                            event_type = line[len("event:"):].strip()
+                        elif line.startswith("data:"):
+                            import json as _json
+
+                            data_str = line[len("data:"):].strip()
+                            try:
+                                payload = _json.loads(data_str)
+                            except _json.JSONDecodeError:
+                                continue
+
+                            # Lifecycle events signal completion
+                            if event_type in (
+                                "job.completed",
+                                "job.failed",
+                                "job.cancelled",
+                                "job.timed_out",
+                            ):
+                                done_event.set()
+                                return
+
+                            # Progress events carry simulation progress
+                            if event_type.startswith("progress."):
+                                p = payload.get("progress")
+                                if p is not None:
+                                    progress_state["progress"] = float(p)
+                                w = payload.get("wave")
+                                if w is not None:
+                                    progress_state["current_wave"] = int(w)
+                                tw = payload.get("total_waves")
+                                if tw is not None:
+                                    progress_state["total_waves"] = int(tw)
+                                progress_state["phase"] = payload.get("phase", "")
+                                progress_state["last_update"] = True
+
+        except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout) as exc:
+            logger.warning(f"Ripple SSE stream error, falling back: {exc}")
+        except Exception as exc:
+            logger.warning(f"Ripple SSE stream unexpected error: {exc}")
 
     # ── 重试机制 ──
 
@@ -545,7 +629,16 @@ class RippleService:
         max_wait: float = 1800.0,
         thread_id: str | None = None,
     ) -> dict[str, Any]:
-        """轮询等待模拟完成
+        """Wait for simulation completion with SSE-driven progress.
+
+        Uses two channels in parallel:
+        - **SSE event stream** (``/v1/simulations/{job_id}/events``) for
+          real-time progress updates (progress 0~1, wave, total_waves).
+        - **Polling** (``/v1/simulations/{job_id}``) for terminal status
+          detection (completed / failed / timed_out).
+
+        If the SSE stream fails or is unavailable, falls back to a
+        time-based progress estimate (``elapsed / max_wait``).
 
         Args:
             job_id: 模拟任务 ID
@@ -562,28 +655,109 @@ class RippleService:
         """
         import time as _time
 
-        start_time = _time.monotonic()
-        elapsed = 0.0
-        while elapsed < max_wait:
-            status = await self.get_simulation_status(job_id)
-            state = status.get("status", "").lower()
+        # Shared state updated by SSE consumer
+        progress_state: dict[str, Any] = {
+            "progress": 0.0,
+            "current_wave": 0,
+            "total_waves": 0,
+            "phase": "",
+            "last_update": False,
+        }
+        done_event = asyncio.Event()
 
-            # Push progress event via EventBus
-            if thread_id:
-                self._emit_progress(job_id, status, elapsed, thread_id)
+        # Start SSE consumer (fire-and-forget; errors handled internally)
+        if thread_id:
+            sse_task = asyncio.create_task(
+                self._stream_progress(job_id, thread_id, progress_state, done_event)
+            )
+        else:
+            sse_task = None
 
-            if state in ("completed", "done", "finished"):
-                logger.info(f"Ripple simulation {job_id} completed after {elapsed:.0f}s")
-                return status
-            if state in ("failed", "error", "timed_out", "timeout"):
-                error_msg = status.get("error", "Unknown simulation error")
-                raise RuntimeError(f"Ripple simulation {job_id} failed: {error_msg}")
+        try:
+            start_time = _time.monotonic()
+            elapsed = 0.0
+            while elapsed < max_wait:
+                # Check terminal state via polling
+                status = await self.get_simulation_status(job_id)
+                state = status.get("status", "").lower()
 
-            logger.debug(f"Ripple simulation {job_id} status: {state}, waiting {poll_interval}s...")
-            await asyncio.sleep(poll_interval)
-            elapsed = _time.monotonic() - start_time
+                if state in ("completed", "done", "finished"):
+                    logger.info(f"Ripple simulation {job_id} completed after {elapsed:.0f}s")
+                    # Emit 100% progress on completion
+                    if thread_id:
+                        self._emit_progress(
+                            job_id,
+                            progress=1.0,
+                            current_wave=progress_state.get("total_waves", 0),
+                            total_waves=progress_state.get("total_waves", 0),
+                            elapsed_seconds=elapsed,
+                            thread_id=thread_id,
+                            status="completed",
+                        )
+                    return status
+                if state in ("failed", "error", "timed_out", "timeout"):
+                    error_msg = status.get("error", "Unknown simulation error")
+                    raise RuntimeError(f"Ripple simulation {job_id} failed: {error_msg}")
 
-        raise RippleTimeoutError(job_id, max_wait)
+                # Emit progress from SSE data (or time-based fallback)
+                if thread_id:
+                    if progress_state.get("last_update"):
+                        # SSE provided real progress data
+                        self._emit_progress(
+                            job_id,
+                            progress=progress_state["progress"],
+                            current_wave=progress_state["current_wave"],
+                            total_waves=progress_state["total_waves"],
+                            elapsed_seconds=elapsed,
+                            thread_id=thread_id,
+                            status=state,
+                            skill=progress_state.get("phase", ""),
+                        )
+                    else:
+                        # Fallback: estimate progress from elapsed time
+                        est = min(0.95, elapsed / max_wait)
+                        self._emit_progress(
+                            job_id,
+                            progress=est,
+                            current_wave=0,
+                            total_waves=0,
+                            elapsed_seconds=elapsed,
+                            thread_id=thread_id,
+                            status=state,
+                        )
+
+                if done_event.is_set():
+                    # SSE reported completion — do one final poll to get result
+                    status = await self.get_simulation_status(job_id)
+                    state = status.get("status", "").lower()
+                    if state in ("completed", "done", "finished"):
+                        if thread_id:
+                            self._emit_progress(
+                                job_id,
+                                progress=1.0,
+                                current_wave=progress_state.get("total_waves", 0),
+                                total_waves=progress_state.get("total_waves", 0),
+                                elapsed_seconds=elapsed,
+                                thread_id=thread_id,
+                                status="completed",
+                            )
+                        return status
+                    if state in ("failed", "error", "timed_out", "timeout"):
+                        error_msg = status.get("error", "Unknown simulation error")
+                        raise RuntimeError(f"Ripple simulation {job_id} failed: {error_msg}")
+
+                logger.debug(f"Ripple simulation {job_id} status: {state}, waiting {poll_interval}s...")
+                await asyncio.sleep(poll_interval)
+                elapsed = _time.monotonic() - start_time
+
+            raise RippleTimeoutError(job_id, max_wait)
+        finally:
+            if sse_task and not sse_task.done():
+                sse_task.cancel()
+                try:
+                    await sse_task
+                except asyncio.CancelledError:
+                    pass
 
     async def submit_and_wait(
         self,

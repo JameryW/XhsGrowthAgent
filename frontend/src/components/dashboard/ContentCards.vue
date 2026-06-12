@@ -35,6 +35,9 @@ const copyContent = computed(() => workflowStore.copyContent)
 const shootingPlan = computed(() => (workflowStore.workflowState as any)?.shooting_plan || {})
 const publishResult = computed(() => (workflowStore.workflowState as any)?.publish_result || {})
 const analytics = computed(() => (workflowStore.workflowState as any)?.analytics || {})
+const optimizationAnalysis = computed(() => (workflowStore.workflowState as any)?.optimization_analysis || {})
+const contentVersions = computed(() => (workflowStore.workflowState as any)?.content_versions || [])
+const draftContent = computed(() => (workflowStore.workflowState as any)?.draft_content || {})
 
 // Ripple data
 const ripplePrediction = computed(() => workflowStore.ripplePrediction)
@@ -57,6 +60,11 @@ const hasCopyContent = computed(() => Object.keys(copyContent.value).length > 0)
 const hasShootingPlan = computed(() => Object.keys(shootingPlan.value).length > 0)
 const hasPublishResult = computed(() => Object.keys(publishResult.value).length > 0)
 const hasAnalytics = computed(() => Object.keys(analytics.value).length > 0)
+const hasOptimizationAnalysis = computed(() => {
+  const oa = optimizationAnalysis.value
+  return (oa.gaps?.length > 0) || (oa.suggestions?.length > 0) || (oa.viral_patterns?.length > 0)
+})
+const hasContentVersions = computed(() => contentVersions.value.length > 0)
 const hasRipplePrediction = computed(() => Object.keys(ripplePrediction.value).length > 0)
 const hasRipplePmf = computed(() => Object.keys(ripplePmf.value).length > 0)
 const hasRippleComparison = computed(() => Object.keys(rippleComparison.value).length > 0)
@@ -350,52 +358,77 @@ function heatBg(score?: number): string {
       </div>
 
       <!-- Hashtags -->
-      <div v-if="copyContent.hashtags && copyContent.hashtags.length > 0" class="flex flex-wrap gap-1.5">
+      <div v-if="copyContent.hashtags && copyContent.hashtags.length > 0" class="flex flex-wrap gap-1.5 mb-3">
         <span v-for="(tag, idx) in copyContent.hashtags" :key="idx" class="px-2 py-1 rounded-md bg-violet-50 text-violet-600 text-xs border border-violet-100">
           #{{ tag }}
         </span>
       </div>
-    </div>
 
-    <!-- ═══ SHOOTING PLAN (brief mode) ═══ -->
-    <div v-if="hasShootingPlan && !hasCopyContent && showForPhase('creating')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-violet-100/50">
-      <div class="flex items-center gap-3 mb-4">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-indigo-400 flex items-center justify-center">
-          <AppIcon name="Pencil" size="md" variant="white" />
-        </div>
-        <div>
-          <div class="text-sm font-semibold text-slate-800">{{ t('shootingPlan.title') }}</div>
-          <div class="text-xs text-slate-400">{{ shootingPlan.content_direction || '' }}</div>
+      <!-- Draft content (user-submitted draft) -->
+      <div v-if="draftContent.text" class="p-3 rounded-lg bg-blue-50 border border-blue-100 mb-3">
+        <div class="text-[10px] text-blue-500 font-medium mb-1">{{ t('replay.draftContent') }}</div>
+        <div v-if="draftContent.title" class="text-xs font-semibold text-blue-700 mb-0.5">{{ draftContent.title }}</div>
+        <div class="text-xs text-blue-600 whitespace-pre-line line-clamp-6">{{ draftContent.text }}</div>
+        <div v-if="draftContent.hashtags?.length" class="flex flex-wrap gap-1 mt-1">
+          <span v-for="tag in draftContent.hashtags" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-600">#{{ tag }}</span>
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-2 mb-3">
-        <div v-if="shootingPlan.creator_nickname" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
-          <div class="text-[10px] text-slate-400 uppercase">{{ t('shootingPlan.creator') }}</div>
-          <div class="text-xs text-slate-700 font-medium">{{ shootingPlan.creator_nickname }}</div>
+      <!-- Optimization analysis -->
+      <div v-if="hasOptimizationAnalysis" class="p-3 rounded-lg bg-violet-50 border border-violet-100 mb-3">
+        <div class="text-[10px] text-violet-500 font-medium mb-1.5">{{ t('replay.optimizationAnalysis') }}</div>
+        <div v-if="optimizationAnalysis.gaps?.length" class="mb-2">
+          <div class="text-[10px] text-violet-400 mb-0.5">{{ t('replay.gapAnalysis') }}</div>
+          <div class="space-y-1">
+            <div v-for="(gap, i) in optimizationAnalysis.gaps" :key="i" class="text-xs flex gap-1.5">
+              <span class="shrink-0 px-1 rounded text-[10px] font-medium" :class="gap.severity === 'high' ? 'bg-red-100 text-red-600' : gap.severity === 'medium' ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-600'">{{ gap.severity }}</span>
+              <div>
+                <div class="text-slate-700 font-medium">{{ gap.dimension }}</div>
+                <div class="text-slate-500">{{ gap.description }}</div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div v-if="shootingPlan.content_type_label" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
-          <div class="text-[10px] text-slate-400 uppercase">{{ t('shootingPlan.type') }}</div>
-          <div class="text-xs text-slate-700 font-medium">{{ shootingPlan.content_type_label }}</div>
+        <div v-if="optimizationAnalysis.suggestions?.length" class="mb-2">
+          <div class="text-[10px] text-violet-400 mb-0.5">{{ t('replay.suggestions') }}</div>
+          <div class="space-y-1">
+            <div v-for="(sug, i) in optimizationAnalysis.suggestions" :key="i" class="text-xs flex gap-1.5">
+              <span class="shrink-0 text-violet-400">P{{ sug.priority }}</span>
+              <div>
+                <div class="text-slate-700">{{ sug.action }}</div>
+                <div class="text-slate-500 text-[11px]">{{ sug.reasoning }}</div>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-
-      <div v-if="shootingPlan.title_candidates?.length" class="mb-3">
-        <div class="text-xs text-slate-500 mb-1.5">{{ t('shootingPlan.titleCandidates') }}</div>
-        <div class="space-y-1">
-          <div v-for="(title, idx) in shootingPlan.title_candidates" :key="idx" class="text-xs text-slate-600">
-            <span class="text-violet-400 font-medium">{{ idx + 1 }}.</span> {{ title }}
+        <div v-if="optimizationAnalysis.viral_patterns?.length">
+          <div class="text-[10px] text-violet-400 mb-0.5">{{ t('replay.viralPatterns') }}</div>
+          <div class="flex flex-wrap gap-1">
+            <span v-for="p in optimizationAnalysis.viral_patterns" :key="p" class="text-[11px] px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-600">{{ p }}</span>
           </div>
         </div>
       </div>
 
-      <div v-if="shootingPlan.body_copy" class="p-3 rounded-lg bg-slate-50 border border-slate-100 mb-3">
-        <p class="text-xs text-slate-600 line-clamp-4 whitespace-pre-line">{{ shootingPlan.body_copy }}</p>
-      </div>
-
-      <div v-if="shootingPlan.required_hashtags?.length || shootingPlan.optional_hashtags?.length" class="flex flex-wrap gap-1.5">
-        <span v-for="tag in (shootingPlan.required_hashtags || [])" :key="'r-'+tag" class="px-2 py-1 rounded-md bg-rose-50 text-rose-600 text-xs border border-rose-200 font-medium">#{{ tag }}</span>
-        <span v-for="tag in (shootingPlan.optional_hashtags || [])" :key="'o-'+tag" class="px-2 py-1 rounded-md bg-slate-50 text-slate-500 text-xs border border-slate-200">#{{ tag }}</span>
+      <!-- Content versions (A/B/C) -->
+      <div v-if="hasContentVersions">
+        <div class="text-xs text-slate-400 font-medium mb-1.5 uppercase tracking-wide">{{ t('replay.contentVersions') }} ({{ contentVersions.length }})</div>
+        <div class="space-y-2">
+          <div v-for="(ver, i) in contentVersions" :key="ver.version_id || i" class="p-2.5 rounded-lg border" :class="ver.version_type === 'A' ? 'bg-rose-50 border-rose-100' : ver.version_type === 'B' ? 'bg-blue-50 border-blue-100' : 'bg-emerald-50 border-emerald-100'">
+            <div class="flex items-center justify-between mb-1">
+              <div class="flex items-center gap-1.5">
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" :class="ver.version_type === 'A' ? 'bg-rose-200 text-rose-700' : ver.version_type === 'B' ? 'bg-blue-200 text-blue-700' : 'bg-emerald-200 text-emerald-700'">{{ t('review.versionLabel', { n: ver.version_type || (i + 1) }) }}</span>
+                <span class="text-xs font-semibold" :class="ver.version_type === 'A' ? 'text-rose-700' : ver.version_type === 'B' ? 'text-blue-700' : 'text-emerald-700'">{{ ver.title }}</span>
+              </div>
+              <span v-if="ver.predicted_score" class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{{ ver.predicted_score }}{{ t('versionCompare.scoreUnit') }}</span>
+            </div>
+            <div v-if="ver.body" class="text-xs text-slate-600 whitespace-pre-line line-clamp-4 mb-1">{{ ver.body }}</div>
+            <div v-if="ver.changes_summary" class="text-[11px] text-slate-400 mb-1">↻ {{ ver.changes_summary }}</div>
+            <div class="flex flex-wrap gap-1">
+              <span v-for="tag in ver.hashtags" :key="tag" class="text-[10px] px-1 py-0.5 rounded bg-teal-50 text-teal-600">#{{ tag }}</span>
+              <span v-if="ver.style_suggestion" class="text-[10px] px-1 py-0.5 rounded bg-violet-50 text-violet-600">{{ ver.style_suggestion }}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 

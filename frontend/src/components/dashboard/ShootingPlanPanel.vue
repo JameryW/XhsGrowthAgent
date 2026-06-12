@@ -13,7 +13,14 @@ const shootingPlan = computed<ShootingPlan>(() =>
   workflowStore.workflowState?.shooting_plan || {}
 )
 
-const hasPlan = computed(() => Object.keys(shootingPlan.value).length > 0)
+// Whether copywriting data exists in the shooting plan (title_candidates, body_copy, hashtags)
+const hasCopyInPlan = computed(() =>
+  !!shootingPlan.value.title_candidates?.length ||
+  !!shootingPlan.value.body_copy ||
+  !!shootingPlan.value.required_hashtags?.length ||
+  !!shootingPlan.value.optional_hashtags?.length ||
+  !!shootingPlan.value.suggested_hashtags?.length
+)
 
 const outfits = computed(() => {
   const o = shootingPlan.value.outfits || {}
@@ -21,6 +28,17 @@ const outfits = computed(() => {
 })
 
 const shootingAngles = computed(() => shootingPlan.value.shooting_angles || [])
+
+// Whether shooting-specific data exists (creator, product, outfits, angles)
+const hasShootingData = computed(() =>
+  !!shootingPlan.value.creator_nickname ||
+  !!shootingPlan.value.content_type_label ||
+  !!shootingPlan.value.product_specification ||
+  !!shootingPlan.value.draft_requirements ||
+  !!shootingPlan.value.planned_publish_date ||
+  outfits.value.length > 0 ||
+  shootingAngles.value.length > 0
+)
 
 const exportPlan = () => {
   if (!workflowStore.currentThreadId) return
@@ -55,15 +73,66 @@ const exportPlan = () => {
 </script>
 
 <template>
-  <div v-if="hasPlan" class="rounded-xl p-3 md:p-5 md:rounded-2xl bg-white border border-slate-200/50 shadow-sm">
+  <!-- ═══ BRIEF MODE: Copywriting from shooting plan ═══ -->
+  <div v-if="hasCopyInPlan" class="rounded-xl p-3 md:p-5 md:rounded-2xl bg-white border border-violet-100/50 shadow-sm">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-purple-400 flex items-center justify-center shadow-sm">
+        <AppIcon name="Pencil" size="md" variant="white" />
+      </div>
+      <div>
+        <h3 class="text-base font-semibold text-slate-800">{{ t('shootingPlan.copyTitle') }}</h3>
+        <p class="text-xs text-slate-400">{{ shootingPlan.content_direction || '' }}</p>
+      </div>
+    </div>
+
+    <!-- Title candidates -->
+    <div v-if="shootingPlan.title_candidates?.length" class="mb-4">
+      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">{{ t('shootingPlan.titleCandidates') }}</h4>
+      <div class="space-y-1.5">
+        <div v-for="(title, idx) in shootingPlan.title_candidates" :key="idx"
+          class="flex items-center gap-2 p-2 rounded-lg bg-white border border-slate-100 hover:border-slate-200 transition-colors">
+          <span class="text-xs font-bold text-violet-500 w-5">{{ idx + 1 }}</span>
+          <span class="text-sm text-slate-700">{{ title }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Body copy -->
+    <div v-if="shootingPlan.body_copy" class="mb-4">
+      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">{{ t('shootingPlan.bodyCopy') }}</h4>
+      <div class="p-3 rounded-xl bg-slate-50 border border-slate-100 text-sm text-slate-600 whitespace-pre-wrap">{{ shootingPlan.body_copy }}</div>
+    </div>
+
+    <!-- Hashtags -->
+    <div v-if="shootingPlan.required_hashtags?.length || shootingPlan.optional_hashtags?.length || shootingPlan.suggested_hashtags?.length" class="mb-4">
+      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">{{ t('shootingPlan.hashtags') }}</h4>
+      <div class="flex flex-wrap gap-1.5">
+        <span v-for="tag in (shootingPlan.required_hashtags || [])" :key="'r-'+tag"
+          class="text-xs px-2 py-1 rounded-full bg-rose-50 text-rose-600 border border-rose-200 font-medium">
+          #{{ tag }}
+        </span>
+        <span v-for="tag in (shootingPlan.suggested_hashtags || [])" :key="'s-'+tag"
+          class="text-xs px-2 py-1 rounded-full bg-teal-50 text-teal-600 border border-teal-200">
+          #{{ tag }}
+        </span>
+        <span v-for="tag in (shootingPlan.optional_hashtags || [])" :key="'o-'+tag"
+          class="text-xs px-2 py-1 rounded-full bg-slate-50 text-slate-500 border border-slate-200">
+          #{{ tag }}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ BRIEF MODE: Shooting plan (logistics) ═══ -->
+  <div v-if="hasShootingData" class="rounded-xl p-3 md:p-5 md:rounded-2xl bg-white border border-slate-200/50 shadow-sm">
     <div class="flex items-center justify-between mb-4">
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-400 flex items-center justify-center shadow-sm">
           <AppIcon name="Camera" size="md" variant="white" />
         </div>
         <div>
           <h3 class="text-base font-semibold text-slate-800">{{ t('shootingPlan.title') }}</h3>
-          <p class="text-xs text-slate-400">{{ shootingPlan.content_direction || '' }}</p>
+          <p class="text-xs text-slate-400">{{ shootingPlan.content_type_label || '' }}</p>
         </div>
       </div>
       <NeonButton variant="cyan" size="sm" @click="exportPlan">
@@ -96,37 +165,10 @@ const exportPlan = () => {
       <p class="text-sm text-rose-700 mt-1">{{ shootingPlan.product_specification }}</p>
     </div>
 
-    <!-- Title candidates -->
-    <div v-if="shootingPlan.title_candidates?.length" class="mb-4">
-      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">{{ t('shootingPlan.titleCandidates') }}</h4>
-      <div class="space-y-1.5">
-        <div v-for="(title, idx) in shootingPlan.title_candidates" :key="idx"
-          class="flex items-center gap-2 p-2 rounded-lg bg-white border border-slate-100 hover:border-slate-200 transition-colors">
-          <span class="text-xs font-bold text-neon-pink w-5">{{ idx + 1 }}</span>
-          <span class="text-sm text-slate-700">{{ title }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Body copy -->
-    <div v-if="shootingPlan.body_copy" class="mb-4">
-      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">{{ t('shootingPlan.bodyCopy') }}</h4>
-      <div class="p-3 rounded-xl bg-slate-50 border border-slate-100 text-sm text-slate-600 whitespace-pre-wrap">{{ shootingPlan.body_copy }}</div>
-    </div>
-
-    <!-- Hashtags -->
-    <div v-if="shootingPlan.required_hashtags?.length || shootingPlan.optional_hashtags?.length" class="mb-4">
-      <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">{{ t('shootingPlan.hashtags') }}</h4>
-      <div class="flex flex-wrap gap-1.5">
-        <span v-for="tag in (shootingPlan.required_hashtags || [])" :key="tag"
-          class="text-xs px-2 py-1 rounded-full bg-rose-50 text-rose-600 border border-rose-200 font-medium">
-          #{{ tag }}
-        </span>
-        <span v-for="tag in (shootingPlan.optional_hashtags || [])" :key="tag"
-          class="text-xs px-2 py-1 rounded-full bg-slate-50 text-slate-500 border border-slate-200">
-          #{{ tag }}
-        </span>
-      </div>
+    <!-- Draft requirements -->
+    <div v-if="shootingPlan.draft_requirements" class="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-100">
+      <span class="text-xs text-amber-500 uppercase tracking-wide font-medium">{{ t('shootingPlan.requirements') }}</span>
+      <p class="text-sm text-amber-700 mt-1">{{ shootingPlan.draft_requirements }}</p>
     </div>
 
     <!-- Outfits -->

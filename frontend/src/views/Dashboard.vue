@@ -44,8 +44,9 @@ const showShootingPlan = computed(() =>
   Object.keys(workflowStore.workflowState.shooting_plan).length > 0
 )
 const showBriefUpload = computed(() =>
-  workflowStore.isAwaitingBrief ||
-  (workflowStore.currentPhase === 'briefing' && !workflowStore.briefUploadedText)
+  !workflowStore.isReplayMode &&
+  (workflowStore.isAwaitingBrief ||
+  (workflowStore.currentPhase === 'briefing' && !workflowStore.briefUploadedText))
 )
 const showBriefContent = computed(() => {
   const bc = workflowStore.workflowState?.brief_content

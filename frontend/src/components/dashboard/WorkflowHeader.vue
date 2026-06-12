@@ -114,7 +114,9 @@ const timeRemainingDisplay = computed(() => {
       <div class="flex-1 min-w-0 space-y-1 md:space-y-2">
         <div class="flex items-center gap-2 md:gap-3">
           <span class="px-2 py-1 rounded bg-teal-50 text-teal-600 text-xs uppercase tracking-wide font-medium">{{ t('dashboard.header.workflow') }}</span>
-          <span class="text-xs text-slate-400 truncate">{{ workflowStore.currentThreadId || '—' }}</span>
+          <span v-if="workflowStore.workflowState?.label" class="text-sm font-medium text-slate-700 truncate">{{ workflowStore.workflowState.label }}</span>
+          <span v-else class="text-xs text-slate-400 truncate">{{ workflowStore.currentThreadId || '—' }}</span>
+          <span v-if="workflowStore.workflowState?.label && workflowStore.currentThreadId" class="text-[10px] text-slate-400 font-mono truncate">{{ workflowStore.currentThreadId.slice(-8) }}</span>
         </div>
         <div class="text-lg md:text-xl font-semibold text-slate-800">
           {{ currentStageLabel }}

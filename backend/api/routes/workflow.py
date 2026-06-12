@@ -230,6 +230,7 @@ class WorkflowStatusResponse(BaseModel):
     selected_blogger: dict = Field(default_factory=dict, description="选中的博主")
     blogger_notes: list[dict] = Field(default_factory=list, description="博主笔记")
     reselect_count: int = Field(default=0, description="重新选题次数")
+    label: str = Field(default="", description="工作流名称")
     checkpoint_lost: bool = Field(
         default=False, description="Checkpoint lost after container restart",
     )
@@ -444,6 +445,12 @@ async def get_workflow_status(thread_id: str, request: Request):
 
         await _db_upsert(thread_id, **update_fields)
 
+        # Resolve label for response: prefer DB/persisted label, then auto-generated
+        label = update_fields.get("label", "")
+        if not label:
+            row = await db_get(thread_id) if is_pool_ready() else None
+            label = row.label if row else ""
+
         perf_log = state.values.get("performance_log") or []
         agent_timeline = [
             AgentTimelineEntry(
@@ -488,6 +495,7 @@ async def get_workflow_status(thread_id: str, request: Request):
             selected_blogger=state.values.get("selected_blogger") or {},
             blogger_notes=state.values.get("blogger_notes") or [],
             reselect_count=state.values.get("reselect_count", 0),
+            label=label,
         ).model_dump())
 
     # Fallback 1: check history file (pre-DB completed workflows)
@@ -529,6 +537,7 @@ async def get_workflow_status(thread_id: str, request: Request):
             ripple_prediction=_extract_ripple(saved, "ripple_prediction"),
             ripple_pmf=_extract_ripple(saved, "ripple_pmf"),
             ripple_comparison=saved.get("ripple_comparison") or {},
+            label="",
         ).model_dump())
 
     # Fallback 2: check DB for metadata-only entries (e.g. workflows created but
@@ -563,6 +572,7 @@ async def get_workflow_status(thread_id: str, request: Request):
             progress_percent=row.progress_percent,
             created_at=row.created_at,
             updated_at=row.updated_at,
+            label=row.label or "",
             checkpoint_lost=checkpoint_lost,
         ).model_dump()
         return success(data=data)

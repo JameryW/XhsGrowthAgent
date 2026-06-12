@@ -202,7 +202,8 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
             <!-- Info -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5 md:gap-2 flex-wrap">
-                <span class="text-xs md:text-sm font-medium text-slate-700 truncate">{{ wf.thread_id }}</span>
+                <span class="text-xs md:text-sm font-medium text-slate-700 truncate">{{ wf.label || wf.thread_id }}</span>
+                <span class="text-[10px] md:text-xs font-mono text-slate-400 truncate">{{ wf.thread_id }}</span>
                 <span v-if="wf.dry_run" class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100">
                   {{ t('history.dryRun') }}
                 </span>
@@ -219,7 +220,6 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
                 <span>{{ statusLabel(wf.status) }}</span>
                 <span>{{ formatDate(wf.created_at) }}</span>
               </div>
-              <p v-if="wf.label" class="text-xs md:text-sm text-slate-600 font-medium truncate mt-0.5">{{ wf.label }}</p>
             </div>
           </div>
 

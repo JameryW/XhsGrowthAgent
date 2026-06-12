@@ -812,3 +812,294 @@ class TestAutoRecovery:
         with patch.object(svc, "_get_config", return_value={"enabled": False, "base_url": "", "api_token": "", "timeout": 5}):
             svc.start_background_health_check()
             assert svc._bg_task is None
+
+
+class TestStreamProgress:
+    """Test _stream_progress SSE consumer."""
+
+    @pytest.mark.asyncio
+    async def test_stream_progress_updates_state_from_sse(self):
+        """SSE events update progress_state with progress/wave/total_waves."""
+        svc = RippleService()
+        progress_state: dict = {
+            "progress": 0.0,
+            "current_wave": 0,
+            "total_waves": 0,
+            "phase": "",
+            "last_update": False,
+        }
+        done_event = asyncio.Event()
+
+        sse_lines = [
+            "event: progress.wave_start",
+            'data: {"phase":"RIPPLE","wave":2,"progress":0.25,"total_waves":8}',
+            "",
+            "event: progress.wave_end",
+            'data: {"phase":"RIPPLE","wave":3,"progress":0.45,"total_waves":8}',
+            "",
+        ]
+
+        mock_resp = AsyncMock()
+        mock_resp.status_code = 200
+        mock_resp.aiter_lines = MagicMock(return_value=AsyncIterator(sse_lines))
+
+        with (
+            patch.object(svc, "_get_config", return_value={"base_url": "http://localhost:8080"}),
+            patch.object(svc, "_get_headers", return_value={}),
+            patch("httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.stream = MagicMock(return_value=AsyncContextManagerMock(mock_resp))
+            mock_client_cls.return_value = mock_client
+
+            await svc._stream_progress("job_123", "thread_abc", progress_state, done_event)
+
+        assert progress_state["progress"] == 0.45
+        assert progress_state["current_wave"] == 3
+        assert progress_state["total_waves"] == 8
+        assert progress_state["last_update"] is True
+
+    @pytest.mark.asyncio
+    async def test_stream_progress_sets_done_on_job_completed(self):
+        """SSE job.completed event sets done_event."""
+        svc = RippleService()
+        progress_state: dict = {
+            "progress": 0.8,
+            "current_wave": 6,
+            "total_waves": 8,
+            "phase": "",
+            "last_update": True,
+        }
+        done_event = asyncio.Event()
+
+        sse_lines = [
+            "event: job.completed",
+            'data: {"result":"ok"}',
+            "",
+        ]
+
+        mock_resp = AsyncMock()
+        mock_resp.status_code = 200
+        mock_resp.aiter_lines = MagicMock(return_value=AsyncIterator(sse_lines))
+
+        with (
+            patch.object(svc, "_get_config", return_value={"base_url": "http://localhost:8080"}),
+            patch.object(svc, "_get_headers", return_value={}),
+            patch("httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.stream = MagicMock(return_value=AsyncContextManagerMock(mock_resp))
+            mock_client_cls.return_value = mock_client
+
+            await svc._stream_progress("job_123", "thread_abc", progress_state, done_event)
+
+        assert done_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_stream_progress_fallback_on_connection_error(self):
+        """SSE connection error returns silently (caller falls back to time estimate)."""
+        svc = RippleService()
+        progress_state: dict = {
+            "progress": 0.0,
+            "current_wave": 0,
+            "total_waves": 0,
+            "phase": "",
+            "last_update": False,
+        }
+        done_event = asyncio.Event()
+
+        with (
+            patch.object(svc, "_get_config", return_value={"base_url": "http://localhost:8080"}),
+            patch.object(svc, "_get_headers", return_value={}),
+            patch("httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(side_effect=httpx.ConnectError("refused"))
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            # Should not raise
+            await svc._stream_progress("job_123", "thread_abc", progress_state, done_event)
+
+        # State should remain unchanged
+        assert progress_state["progress"] == 0.0
+        assert progress_state["last_update"] is False
+
+    @pytest.mark.asyncio
+    async def test_stream_progress_stops_on_done_event(self):
+        """SSE consumer stops reading when done_event is set externally."""
+        svc = RippleService()
+        progress_state: dict = {
+            "progress": 0.0,
+            "current_wave": 0,
+            "total_waves": 0,
+            "phase": "",
+            "last_update": False,
+        }
+        done_event = asyncio.Event()
+
+        # Set done_event before stream starts — consumer should exit immediately
+        done_event.set()
+
+        mock_resp = AsyncMock()
+        mock_resp.status_code = 200
+        lines = [
+            "event: progress.wave_start",
+            'data: {"phase":"RIPPLE","wave":1,"progress":0.1,"total_waves":8}',
+            "",
+        ]
+        mock_resp.aiter_lines = AsyncMock(return_value=AsyncIterator(lines))
+
+        with (
+            patch.object(svc, "_get_config", return_value={"base_url": "http://localhost:8080"}),
+            patch.object(svc, "_get_headers", return_value={}),
+            patch("httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.stream = MagicMock(return_value=AsyncContextManagerMock(mock_resp))
+            mock_client_cls.return_value = mock_client
+
+            await svc._stream_progress("job_123", "thread_abc", progress_state, done_event)
+
+        # Should not have processed any events
+        assert progress_state["progress"] == 0.0
+
+
+class TestWaitForCompletionWithSSE:
+    """Test wait_for_completion SSE + polling dual-channel."""
+
+    @pytest.mark.asyncio
+    async def test_emit_progress_with_sse_data(self):
+        """Progress events use SSE data when available."""
+        svc = RippleService()
+        emitted: list[dict] = []
+
+        def mock_emit(job_id, progress, current_wave, total_waves, elapsed_seconds, thread_id, status="running", skill=""):
+            emitted.append({"progress": progress, "current_wave": current_wave, "total_waves": total_waves})
+
+        with (
+            patch.object(svc, "get_simulation_status", new_callable=AsyncMock) as mock_status,
+            patch.object(svc, "_stream_progress", new_callable=AsyncMock) as mock_sse,
+            patch.object(svc, "_emit_progress", side_effect=mock_emit),
+            patch.object(svc, "_get_config", return_value={"base_url": "http://localhost:8080"}),
+        ):
+            # Simulate: first poll running, second running (with SSE data now available), third completed
+            mock_status.side_effect = [
+                {"status": "running"},
+                {"status": "running"},
+                {"status": "completed"},
+            ]
+
+            # Simulate SSE updating progress_state immediately
+            async def sse_update(job_id, thread_id, progress_state, done_event):
+                progress_state["progress"] = 0.5
+                progress_state["current_wave"] = 4
+                progress_state["total_waves"] = 8
+                progress_state["last_update"] = True
+
+            mock_sse.side_effect = sse_update
+
+            result = await svc.wait_for_completion("job_123", thread_id="thread_abc", poll_interval=0.01)
+
+        assert result["status"] == "completed"
+        # At least one emit should use SSE data (progress=0.5, wave=4/8)
+        sse_emits = [e for e in emitted if e["progress"] == 0.5 and e["current_wave"] == 4]
+        assert len(sse_emits) >= 1
+
+    @pytest.mark.asyncio
+    async def test_emit_progress_time_fallback_when_no_sse(self):
+        """Falls back to time-based estimate when SSE provides no data."""
+        svc = RippleService()
+        emitted: list[dict] = []
+
+        def mock_emit(job_id, progress, current_wave, total_waves, elapsed_seconds, thread_id, status="running", skill=""):
+            emitted.append({"progress": progress})
+
+        with (
+            patch.object(svc, "get_simulation_status", new_callable=AsyncMock) as mock_status,
+            patch.object(svc, "_stream_progress", new_callable=AsyncMock) as mock_sse,
+            patch.object(svc, "_emit_progress", side_effect=mock_emit),
+            patch.object(svc, "_get_config", return_value={"base_url": "http://localhost:8080"}),
+        ):
+            # More polls so elapsed time grows
+            mock_status.side_effect = [
+                {"status": "running"},
+                {"status": "running"},
+                {"status": "running"},
+                {"status": "completed"},
+            ]
+
+            # SSE does nothing (simulating connection failure)
+            async def sse_noop(job_id, thread_id, progress_state, done_event):
+                pass
+
+            mock_sse.side_effect = sse_noop
+
+            result = await svc.wait_for_completion("job_123", thread_id="thread_abc", poll_interval=0.05)
+
+        assert result["status"] == "completed"
+        # The last emit should be 1.0 (completion)
+        assert emitted[-1]["progress"] == 1.0
+        # Non-final emits should use time-based estimate (progress >= 0)
+        non_final = [e for e in emitted if e["progress"] < 1.0]
+        assert all(0 <= e["progress"] <= 0.95 for e in non_final)
+
+    @pytest.mark.asyncio
+    async def test_sse_task_cancelled_on_completion(self):
+        """SSE task is cancelled when wait_for_completion finishes."""
+        svc = RippleService()
+
+        with (
+            patch.object(svc, "get_simulation_status", new_callable=AsyncMock) as mock_status,
+            patch.object(svc, "_stream_progress", new_callable=AsyncMock) as mock_sse,
+            patch.object(svc, "_emit_progress"),
+            patch.object(svc, "_get_config", return_value={"base_url": "http://localhost:8080"}),
+        ):
+            mock_status.return_value = {"status": "completed"}
+
+            # SSE task that would run forever
+            async def sse_hang(job_id, thread_id, progress_state, done_event):
+                await asyncio.sleep(100)
+
+            mock_sse.side_effect = sse_hang
+
+            result = await svc.wait_for_completion("job_123", thread_id="thread_abc", poll_interval=0.01)
+
+        assert result["status"] == "completed"
+
+
+class AsyncIterator:
+    """Helper to make an async iterator from a list for mocking aiter_lines."""
+
+    def __init__(self, items):
+        self._items = list(items)
+        self._index = 0
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self._index >= len(self._items):
+            raise StopAsyncIteration
+        item = self._items[self._index]
+        self._index += 1
+        return item
+
+
+class AsyncContextManagerMock:
+    """Helper to mock async context managers (e.g., httpx client.stream)."""
+
+    def __init__(self, return_value):
+        self._return_value = return_value
+
+    async def __aenter__(self):
+        return self._return_value
+
+    async def __aexit__(self, *args):
+        return False
