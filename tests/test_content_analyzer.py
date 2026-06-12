@@ -84,10 +84,17 @@ async def test_content_analyzer_no_draft(mock_state_no_draft, mock_store):
 
 @pytest.mark.asyncio
 async def test_content_analyzer_no_viral(mock_state_no_viral, mock_store):
-    """Should skip analysis when no viral posts provided."""
+    """Should analyze draft against brief/strategy context when no viral posts provided."""
     agent = ContentAnalyzerAgent()
-    result = await agent.execute(mock_state_no_viral, mock_store)
-    assert result.get("skip_analysis")
+
+    mock_model = MagicMock()
+    mock_model.ainvoke = AsyncMock(return_value=MagicMock(
+        content='{"optimization_analysis": {"gaps": [], "suggestions": [], "viral_patterns": []}}'
+    ))
+
+    with patch.object(agent, '_model', mock_model):
+        result = await agent.execute(mock_state_no_viral, mock_store)
+    assert "optimization_analysis" in result
 
 
 @pytest.mark.asyncio
@@ -147,7 +154,7 @@ async def test_content_analyzer_phase_update(mock_state_with_draft_and_viral, mo
 
 @pytest.mark.asyncio
 async def test_content_analyzer_empty_viral_posts(mock_store):
-    """Should skip analysis when viral_posts is empty list."""
+    """Should analyze draft against brief/strategy context when viral_posts is empty list."""
     agent = ContentAnalyzerAgent()
 
     state_with_empty_viral = {
@@ -159,8 +166,14 @@ async def test_content_analyzer_empty_viral_posts(mock_store):
         "viral_posts": [],  # Empty list
     }
 
-    result = await agent.execute(state_with_empty_viral, mock_store)
-    assert result.get("skip_analysis")
+    mock_model = MagicMock()
+    mock_model.ainvoke = AsyncMock(return_value=MagicMock(
+        content='{"optimization_analysis": {"gaps": [], "suggestions": [], "viral_patterns": []}}'
+    ))
+
+    with patch.object(agent, '_model', mock_model):
+        result = await agent.execute(state_with_empty_viral, mock_store)
+    assert "optimization_analysis" in result
 
 
 @pytest.mark.asyncio

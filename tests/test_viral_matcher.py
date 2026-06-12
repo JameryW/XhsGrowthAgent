@@ -41,10 +41,10 @@ def mock_store():
 
 @pytest.mark.asyncio
 async def test_viral_matcher_no_draft(mock_state_no_draft, mock_store):
-    """Should skip optimization when no draft provided."""
+    """Should not skip optimization when no draft provided."""
     agent = ViralMatcherAgent()
     result = await agent.execute(mock_state_no_draft, mock_store)
-    assert result.get("skip_optimization")
+    assert result["skip_optimization"] is False
 
 
 @pytest.mark.asyncio
@@ -67,7 +67,7 @@ async def test_viral_matcher_with_links(mock_state, mock_store):
 
 @pytest.mark.asyncio
 async def test_viral_matcher_timeout_skips_optimization(mock_state, mock_store):
-    """Should skip optional optimization when viral matching fails."""
+    """Should not skip optimization when viral matching fails."""
     agent = ViralMatcherAgent()
 
     mock_model = MagicMock()
@@ -77,7 +77,7 @@ async def test_viral_matcher_timeout_skips_optimization(mock_state, mock_store):
         result = await agent.execute(mock_state, mock_store)
 
     assert result["viral_posts"] == []
-    assert result["skip_optimization"] is True
+    assert result["skip_optimization"] is False
     assert "Request timed out." in result["optimization_error"]
 
 

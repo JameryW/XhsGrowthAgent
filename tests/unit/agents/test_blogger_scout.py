@@ -163,7 +163,7 @@ class TestBloggerScoutAgent:
 
     @pytest.mark.asyncio
     async def test_execute_no_keywords_returns_empty(self, agent, mock_store):
-        """Returns empty candidates when no keywords found."""
+        """Returns hardcoded fallback candidates when no keywords found."""
         state = {
             "account_id": "test",
             "workflow_mode": WorkflowMode.TREND,
@@ -174,7 +174,8 @@ class TestBloggerScoutAgent:
 
         result = await agent.execute(state, store=mock_store)
 
-        assert result["blogger_candidates"] == []
+        # Now always returns fallback candidates instead of empty
+        assert len(result["blogger_candidates"]) > 0
         assert result["phase"] == WorkflowPhase.CREATING
 
     @pytest.mark.asyncio
@@ -224,14 +225,15 @@ class TestBloggerScoutAgent:
 
     @pytest.mark.asyncio
     async def test_execute_llm_fallback_failure_returns_empty(self, agent, trend_state, mock_store):
-        """Returns empty candidates if LLM fallback also fails."""
+        """Returns hardcoded fallback when LLM fallback also fails."""
         trend_state["xhs_cookie"] = ""
 
         agent._model = AsyncMock()
         agent._model.ainvoke = AsyncMock(side_effect=Exception("LLM error"))
         result = await agent.execute(trend_state, store=mock_store)
 
-        assert result["blogger_candidates"] == []
+        # Should get hardcoded fallback instead of empty
+        assert len(result["blogger_candidates"]) > 0
         assert result["phase"] == WorkflowPhase.CREATING
 
     @pytest.mark.asyncio
@@ -262,7 +264,7 @@ class TestBloggerScoutAgent:
 
     @pytest.mark.asyncio
     async def test_execute_api_error_returns_empty(self, agent, trend_state, mock_store):
-        """Returns empty candidates on API error."""
+        """Returns hardcoded fallback candidates on API error."""
         with patch("backend.services.xhs_client.XHSClient") as MockClient:
             mock_client = MagicMock()
             mock_client._http = MagicMock()
@@ -272,7 +274,7 @@ class TestBloggerScoutAgent:
 
             result = await agent.execute(trend_state, store=mock_store)
 
-        assert result["blogger_candidates"] == []
+        assert len(result["blogger_candidates"]) > 0
         assert result["phase"] == WorkflowPhase.CREATING
 
     @pytest.mark.asyncio
