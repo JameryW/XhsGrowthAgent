@@ -28,11 +28,9 @@ class BloggerScoutAgent(BaseAgent):
 
         keywords = self._extract_keywords(state)
         if not keywords:
-            logger.info("No keywords found, skipping blogger scout")
-            return {
-                "blogger_candidates": [],
-                "phase": WorkflowPhase.CREATING,
-            }
+            niche = state.get("niche", "母婴")
+            logger.info(f"No keywords found, using fallback candidates for niche: {niche}")
+            return self._hardcoded_fallback_candidates(niche, [], limit)
 
         try:
             from backend.services.xhs_client import XHSClient
@@ -67,11 +65,10 @@ class BloggerScoutAgent(BaseAgent):
                         user_engagement[uid]["top_note_engagement"] = engagement
 
             if not user_engagement:
-                logger.info("No bloggers found from search results")
-                return {
-                    "blogger_candidates": [],
-                    "phase": WorkflowPhase.CREATING,
-                }
+                logger.info("No bloggers found from search results, using fallback")
+                return self._hardcoded_fallback_candidates(
+                    state.get("niche", "母婴"), keywords, limit
+                )
 
             # Step 2: Sort by total engagement, take top N
             sorted_users = sorted(
@@ -106,11 +103,10 @@ class BloggerScoutAgent(BaseAgent):
             }
 
         except Exception as e:
-            logger.warning(f"Blogger scout failed, returning empty candidates: {e}")
-            return {
-                "blogger_candidates": [],
-                "phase": WorkflowPhase.CREATING,
-            }
+            logger.warning(f"Blogger scout failed, using fallback candidates: {e}")
+            return self._hardcoded_fallback_candidates(
+                state.get("niche", "母婴"), keywords, limit
+            )
 
     def _extract_keywords(self, state: XHSGrowthState) -> list[str]:
         """Extract search keywords from state based on workflow mode."""
@@ -132,13 +128,14 @@ class BloggerScoutAgent(BaseAgent):
         if brief_content.get("brand_name"):
             keywords.append(brief_content["brand_name"])
 
-        # Deduplicate while preserving order
+        # Deduplicate while preserving order, coerce to str
         seen = set()
         unique = []
         for kw in keywords:
-            if kw not in seen:
-                seen.add(kw)
-                unique.append(kw)
+            kw_str = str(kw) if not isinstance(kw, str) else kw
+            if kw_str and kw_str not in seen:
+                seen.add(kw_str)
+                unique.append(kw_str)
 
         return unique[:5]
 
