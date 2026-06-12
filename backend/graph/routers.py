@@ -132,18 +132,12 @@ def engagement_router(state: XHSGrowthState) -> Literal["orchestrator", "__end__
 
 def should_optimize(state: XHSGrowthState) -> Literal["content_analyzer", "visual_designer"]:
     """判断是否进入优化流程 — always optimize unless explicitly skipped."""
-    import logging
-    _log = logging.getLogger("xhs_growth.routers")
-
     if state.get("error") and state.get("phase") == WorkflowPhase.ERROR:
-        _log.warning(f"should_optimize: ERROR phase detected, routing to visual_designer")
         return "visual_designer"
 
     if state.get("skip_optimization"):
-        _log.warning(f"should_optimize: skip_optimization=True, routing to visual_designer")
         return "visual_designer"
 
-    _log.warning(f"should_optimize: routing to content_analyzer (phase={state.get('phase')})")
     return "content_analyzer"
 
 
@@ -179,19 +173,9 @@ def shooting_planner_router(
     Falls back to visual_designer if skip_optimization or terminal state.
     """
     if terminal := _check_terminal(state):
-        import logging
-        logging.getLogger("xhs_growth.routers").warning(
-            f"shooting_planner_router: terminal state detected (phase={state.get('phase')}), routing to visual_designer"
-        )
         return "visual_designer"
 
-    result = should_optimize(state)
-    import logging
-    logging.getLogger("xhs_growth.routers").warning(
-        f"shooting_planner_router: phase={state.get('phase')} error={state.get('error')} "
-        f"skip={state.get('skip_optimization')} viral={len(state.get('viral_posts', []))} → {result}"
-    )
-    return result
+    return should_optimize(state)
 
 
 def should_brief_or_optimize(
