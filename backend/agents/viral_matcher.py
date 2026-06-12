@@ -30,7 +30,7 @@ class ViralMatcherAgent(BaseAgent):
             logger.info("No draft content provided, skipping optimization")
             return {
                 "viral_posts": [],
-                "skip_optimization": True,
+                "skip_optimization": False,
                 "phase": WorkflowPhase.CREATING,
             }
 
@@ -62,7 +62,7 @@ class ViralMatcherAgent(BaseAgent):
             )
             return {
                 "viral_posts": [],
-                "skip_optimization": True,
+                "skip_optimization": False,
                 "optimization_error": f"viral_matcher skipped: {e}",
                 "phase": WorkflowPhase.CREATING,
             }
@@ -74,7 +74,7 @@ class ViralMatcherAgent(BaseAgent):
 
         return {
             "viral_posts": viral_posts,
-            "skip_optimization": len(viral_posts) == 0,
+            "skip_optimization": False,
             "phase": WorkflowPhase.CREATING,
         }
 

@@ -27,34 +27,39 @@ class ContentAnalyzerAgent(BaseAgent):
         draft = state.get("draft_content")
         viral_posts = state.get("viral_posts", [])
 
-        # 无草稿或无爆款参考时跳过分析
+        # Build synthetic draft from shooting_plan when draft_content is empty (brief mode)
         if not draft or not draft.get("text"):
-            logger.info("No draft content provided, skipping analysis")
+            draft = self._build_draft_from_shooting_plan(state)
+            if draft:
+                logger.info("Using synthetic draft from shooting_plan for analysis")
+
+        if not draft or not draft.get("text"):
+            logger.info("No draft content available, skipping analysis")
             return {
                 "skip_analysis": True,
                 "phase": WorkflowPhase.CREATING,
             }
 
-        if not viral_posts or len(viral_posts) == 0:
-            logger.info("No viral posts provided, skipping analysis")
-            return {
-                "skip_analysis": True,
-                "phase": WorkflowPhase.CREATING,
-            }
+        # Analyze without viral_posts too — use brief_content or content_plan as reference
+        if not viral_posts:
+            logger.info("No viral posts, analyzing draft against brief/strategy context")
 
         system_prompt = self._build_system_prompt(state)
 
-        # 构建爆款摘要 JSON
-        viral_summary = self._build_viral_summary(viral_posts)
+        # 构建爆款摘要或内容参考
+        if viral_posts:
+            viral_summary = self._build_viral_summary(viral_posts)
+            context_section = f"爆款参考摘要（JSON格式）：\n{viral_summary}"
+        else:
+            context_section = self._build_content_context(state)
 
         user_msg = f"""用户草稿标题：{draft.get('title', '未提供')}
 用户草稿内容：{draft.get('text', '')[:500]}
 用户草稿标签：{', '.join(draft.get('hashtags', []))}
 
-爆款参考摘要（JSON格式）：
-{viral_summary}
+{context_section}
 
-请分析用户草稿与爆款笔记之间的差距，并提供优化建议。"""
+请分析用户草稿与参考内容之间的差距，并提供优化建议。"""
 
         response = await self.model.ainvoke([
             SystemMessage(content=system_prompt),
@@ -83,6 +88,39 @@ class ContentAnalyzerAgent(BaseAgent):
             "optimization_analysis": optimization_analysis,
             "phase": WorkflowPhase.CREATING,
         }
+
+    def _build_draft_from_shooting_plan(self, state: XHSGrowthState) -> dict[str, Any] | None:
+        """Build a synthetic draft_content from shooting_plan (brief mode)."""
+        sp = state.get("shooting_plan")
+        if not sp or not sp.get("body_copy"):
+            return None
+        titles = sp.get("title_candidates", [])
+        return {
+            "title": titles[0] if titles else "",
+            "text": sp.get("body_copy", ""),
+            "hashtags": (sp.get("required_hashtags", []) or []) + (sp.get("optional_hashtags", []) or []),
+        }
+
+    def _build_content_context(self, state: XHSGrowthState) -> str:
+        """Build content reference context from brief_content / content_plan when no viral_posts."""
+        parts = []
+        brief = state.get("brief_content") or {}
+        plan = state.get("content_plan") or {}
+        if brief.get("brand_name"):
+            parts.append(f"品牌: {brief['brand_name']}")
+        if brief.get("selling_points"):
+            parts.append(f"核心卖点: {', '.join(brief['selling_points'][:5])}")
+        if brief.get("target_audience"):
+            parts.append(f"目标受众: {brief['target_audience']}")
+        if brief.get("content_direction"):
+            parts.append(f"内容方向: {brief['content_direction'][:200]}")
+        if brief.get("style_requirements"):
+            parts.append(f"风格要求: {brief['style_requirements'][:100]}")
+        if plan.get("selected_topic"):
+            parts.append(f"选题: {plan['selected_topic']}")
+        if plan.get("content_angle"):
+            parts.append(f"角度: {plan['content_angle']}")
+        return "内容参考上下文：\n" + "\n".join(parts) if parts else "无额外参考上下文"
 
     def _build_viral_summary(self, viral_posts: list[dict]) -> str:
         """构建爆款摘要 JSON 字符串."""

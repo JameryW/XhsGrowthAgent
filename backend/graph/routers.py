@@ -170,7 +170,7 @@ def shooting_planner_router(
 ) -> Literal["content_analyzer", "visual_designer"]:
     """Route after shooting_planner — both modes go to content_analyzer
     for optimization (content analysis → version generation → choice → visual).
-    Falls back to visual_designer if skip_optimization or no viral posts.
+    Falls back to visual_designer if skip_optimization or terminal state.
     """
     if terminal := _check_terminal(state):
         return "visual_designer"

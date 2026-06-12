@@ -33,9 +33,15 @@ class VersionGeneratorAgent(BaseAgent):
         draft = state.get("draft_content")
         analysis = state.get("optimization_analysis")
 
-        # 缺少草稿或分析时返回空版本
+        # Build synthetic draft from shooting_plan when draft_content is empty (brief mode)
         if not draft or not draft.get("text"):
-            logger.info("No draft content provided, skipping version generation")
+            draft = self._build_draft_from_shooting_plan(state)
+            if draft:
+                logger.info("Using synthetic draft from shooting_plan for version generation")
+
+        # 缺少草稿时返回空版本
+        if not draft or not draft.get("text"):
+            logger.info("No draft content available, skipping version generation")
             return {
                 "content_versions": [],
                 "phase": WorkflowPhase.CREATING,
@@ -99,4 +105,16 @@ class VersionGeneratorAgent(BaseAgent):
         return {
             "content_versions": versions,
             "phase": WorkflowPhase.CREATING,
+        }
+
+    def _build_draft_from_shooting_plan(self, state: XHSGrowthState) -> dict[str, Any] | None:
+        """Build a synthetic draft_content from shooting_plan (brief mode)."""
+        sp = state.get("shooting_plan")
+        if not sp or not sp.get("body_copy"):
+            return None
+        titles = sp.get("title_candidates", [])
+        return {
+            "title": titles[0] if titles else "",
+            "text": sp.get("body_copy", ""),
+            "hashtags": (sp.get("required_hashtags", []) or []) + (sp.get("optional_hashtags", []) or []),
         }
