@@ -170,12 +170,22 @@ def shooting_planner_router(
 ) -> Literal["content_analyzer", "visual_designer"]:
     """Route after shooting_planner — both modes go to content_analyzer
     for optimization (content analysis → version generation → choice → visual).
-    Falls back to visual_designer if skip_optimization or no viral posts.
+    Falls back to visual_designer if skip_optimization or terminal state.
     """
     if terminal := _check_terminal(state):
+        import logging
+        logging.getLogger("xhs_growth.routers").warning(
+            f"shooting_planner_router: terminal state detected (phase={state.get('phase')}), routing to visual_designer"
+        )
         return "visual_designer"
 
-    return should_optimize(state)
+    result = should_optimize(state)
+    import logging
+    logging.getLogger("xhs_growth.routers").info(
+        f"shooting_planner_router: phase={state.get('phase')} error={state.get('error')} "
+        f"skip={state.get('skip_optimization')} viral={len(state.get('viral_posts', []))} → {result}"
+    )
+    return result
 
 
 def should_brief_or_optimize(
