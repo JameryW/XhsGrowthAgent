@@ -380,8 +380,8 @@ onUnmounted(() => {
           />
         </div>
 
-        <div class="flex justify-between items-start relative px-1 md:px-4">
-          <div v-for="phase in pipelineSteps" :key="phase" class="min-w-[60px] md:min-w-0 flex-1">
+        <div class="flex justify-between items-start relative px-1 md:px-4 overflow-x-auto -mx-3 md:mx-0">
+          <div v-for="phase in pipelineSteps" :key="phase" class="min-w-[48px] md:min-w-0 flex-1">
             <WorkflowNode
               :icon="phaseIcons[phase]"
               :label="phaseLabels[phase]"

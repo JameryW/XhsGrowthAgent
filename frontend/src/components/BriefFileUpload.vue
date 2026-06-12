@@ -32,11 +32,10 @@ const displayError = computed(() => localError.value || props.error)
 const hasUploadedText = computed(() => !!props.uploadedText)
 const isConfirmable = computed(() => editableText.value.trim().length > 0)
 
-// When uploaded text arrives, auto-confirm to resume the workflow
+// When uploaded text arrives, populate the editable preview (do NOT auto-confirm)
 watch(() => props.uploadedText, (text) => {
   if (text && text.trim()) {
     editableText.value = text
-    emit('confirm', text.trim())
   }
 })
 

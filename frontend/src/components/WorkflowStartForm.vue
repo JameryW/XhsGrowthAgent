@@ -40,12 +40,10 @@ const hasPdfUpload = computed(() => !!briefPdfText.value)
 const pendingPdfFile = ref<File | null>(null)
 
 function onBriefPdfUpload(file: File) {
-  const threadId = workflowStore.currentThreadId
-  if (threadId) {
-    workflowStore.uploadBriefPdf(threadId, file)
-    return
-  }
-  // No active thread yet — queue the file for upload after workflow starts
+  // Always queue the file — it will be uploaded with the correct thread ID
+  // after startWorkflow returns (see Home.vue confirmStart).
+  // Using workflowStore.currentThreadId here is unsafe: if the user has an
+  // active workflow, the PDF would upload to the wrong thread.
   pendingPdfFile.value = file
   // Trigger PDF upload UI flow immediately (shows extracting spinner)
   workflowStore.simulateBriefUploadStart()

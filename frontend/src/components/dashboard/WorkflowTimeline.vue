@@ -130,8 +130,11 @@ const workflowPhases = computed<PhaseNode[]>(() => {
   return phases
 })
 
-// Progress tracking
-const workflowProgress = computed(() => workflowStore.progressPercent)
+// Progress tracking (replay-aware)
+const workflowProgress = computed(() => {
+  const es = workflowStore.effectiveState
+  return es?.progress_percent ?? workflowStore.progressPercent
+})
 
 const currentAgent = computed(() => {
   const status = workflowStore.currentStatus
@@ -343,11 +346,11 @@ const substepSectionLabels = computed<Record<string, string>>(() => ({
     </div>
 
     <!-- Main phase nodes -->
-    <div class="flex justify-between items-start relative px-1 md:px-4" role="list" :aria-label="t('dashboard.timeline.stages')">
+    <div class="flex justify-between items-start relative px-1 md:px-4 overflow-x-auto -mx-3 md:mx-0" role="list" :aria-label="t('dashboard.timeline.stages')">
       <div
         v-for="(phase, index) in workflowPhases"
         :key="phase.phase"
-        class="min-w-[60px] md:min-w-0 flex-1"
+        class="min-w-[48px] md:min-w-0 flex-1"
         role="listitem"
       >
         <WorkflowNode

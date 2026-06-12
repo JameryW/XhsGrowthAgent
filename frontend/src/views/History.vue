@@ -194,7 +194,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
         class="rounded-xl p-3 md:p-4 liquid-glass liquid-glass-hover hover:border-slate-300 transition-all duration-200 cursor-pointer"
         @click="viewWorkflow(wf.thread_id)"
       >
-        <div class="flex items-center justify-between gap-2">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-2">
           <div class="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
             <!-- Status dot -->
             <span :class="[statusColor(wf.status), 'w-2.5 h-2.5 md:w-3 md:h-3 rounded-full flex-shrink-0']" />
@@ -202,8 +202,8 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
             <!-- Info -->
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5 md:gap-2 flex-wrap">
-                <span class="text-xs md:text-sm font-medium text-slate-700 truncate">{{ wf.label || wf.thread_id }}</span>
-                <span class="text-[10px] md:text-xs font-mono text-slate-400 truncate">{{ wf.thread_id }}</span>
+                <span class="text-xs md:text-sm font-medium text-slate-700 truncate">{{ wf.label || wf.thread_id.slice(-8) }}</span>
+                <span class="text-[10px] md:text-xs font-mono text-slate-400 hidden sm:inline truncate">{{ wf.thread_id }}</span>
                 <span v-if="wf.dry_run" class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100">
                   {{ t('history.dryRun') }}
                 </span>

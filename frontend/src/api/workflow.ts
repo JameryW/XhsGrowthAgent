@@ -51,11 +51,12 @@ export async function pauseWorkflow(threadId: string): Promise<{ thread_id: stri
 }
 
 // 恢复工作流
-export async function resumeWorkflow(threadId: string): Promise<WorkflowResponse> {
+export async function resumeWorkflow(threadId: string, resumeValue?: Record<string, unknown>): Promise<WorkflowResponse> {
   const { retryWithBackoff } = useRetry()
   return retryWithBackoff(async () => {
     try {
-      const result = await client.post(`/workflow/resume/${threadId}`) as WorkflowResponse
+      const payload = resumeValue ? { resume_value: resumeValue } : undefined
+      const result = await client.post(`/workflow/resume/${threadId}`, payload) as WorkflowResponse
       return result
     } catch (error) {
       throw error

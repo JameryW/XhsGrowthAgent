@@ -192,7 +192,17 @@
       "cards": "工作流内容卡片",
       "trendScouting": "趋势发现",
       "strategyPlanning": "策略规划",
-      "copywriting": "文案创作"
+      "copywriting": "文案创作",
+      "topic": "选题：",
+      "angle": "角度：",
+      "audience": "受众：",
+      "keyPoints": "关键要点",
+      "titleCandidates": "标题候选：",
+      "analytics": "数据分析",
+      "views": "浏览量",
+      "likes": "点赞",
+      "collects": "收藏",
+      "engagement": "互动率"
     },
     "actionButtons": {
       "ariaLabel": "工作流操作按钮",

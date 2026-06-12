@@ -192,7 +192,17 @@
       "cards": "Workflow content cards",
       "trendScouting": "Trend Discovery",
       "strategyPlanning": "Strategy Planning",
-      "copywriting": "Copywriting"
+      "copywriting": "Copywriting",
+      "topic": "Topic:",
+      "angle": "Angle:",
+      "audience": "Audience:",
+      "keyPoints": "Key Points",
+      "titleCandidates": "Title Candidates:",
+      "analytics": "Analytics",
+      "views": "Views",
+      "likes": "Likes",
+      "collects": "Collects",
+      "engagement": "Engagement"
     },
     "actionButtons": {
       "ariaLabel": "Workflow action buttons",
