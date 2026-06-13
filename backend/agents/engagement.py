@@ -119,6 +119,22 @@ class EngagementAgent(BaseAgent):
         finally:
             await client.close()
 
+        # 沉淀受众偏好到长期记忆
+        if store is not None and engagement_actions:
+            try:
+                from backend.memory.store import MemoryManager
+                account_id = state.get("account_id", "default")
+                mm = MemoryManager(account_id)
+                reply_count = sum(1 for a in engagement_actions if a.action_type == "reply_comment")
+                dm_count = sum(1 for a in engagement_actions if a.action_type == "reply_dm")
+                await mm.store_audience_preference(
+                    store,
+                    f"互动偏好: {reply_count} 评论回复, {dm_count} 私信回复",
+                    {"source": "engagement", "post_id": publish_result.get("post_id", "")},
+                )
+            except Exception as e:
+                logger.warning(f"Failed to store audience preference: {e}")
+
         mode = state.get("execution_mode", "single")
 
         if mode == "single":
