@@ -25,8 +25,10 @@ class BriefAnalyzerAgent(BaseAgent):
     prompt_file = "brief_analyzer.yaml"
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
+        account_id = state.get("account_id", "default")
         brief_content = state.get("brief_content", {})
         raw_text = brief_content.get("raw_text", "")
+        niche = state.get("niche", "")
 
         if not raw_text:
             return {
@@ -34,8 +36,15 @@ class BriefAnalyzerAgent(BaseAgent):
                 "phase": WorkflowPhase.ERROR,
             }
 
-        # Parse the brief using LLM
-        system_prompt = self._build_system_prompt(state)
+        # ── Creative Memory: 读取风格指纹 + 行业基准 ──
+        from backend.memory.creative import CreativeMemory
+
+        cm = CreativeMemory(account_id, store=store)
+        styles = await cm.recall_style(query="商单 brief 风格")
+        benchmark = await cm.recall_benchmark(niche) if niche else None
+
+        creative_ctx = cm.build_creative_context(styles, [], [], benchmark)
+        system_prompt = self._build_system_prompt(state, extra_context=creative_ctx)
         user_msg = f"""请解析以下商单 brief，提取结构化信息：
 
 ---
@@ -57,10 +66,12 @@ class BriefAnalyzerAgent(BaseAgent):
 - notes: 特殊注意事项列表
 - confidence: 解析置信度 (0-1，信息越模糊越低)"""
 
-        response = await self.model.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_msg),
-        ])
+        response = await self.model.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_msg),
+            ]
+        )
 
         parsed = self._parse_json_response(response.content)
 
@@ -95,6 +106,17 @@ class BriefAnalyzerAgent(BaseAgent):
         else:
             result["brief_clarification"] = {"questions": [], "resolved": True}
 
+        # ── Creative Memory: 沉淀商单风格偏好 ──
+        style_req = brief_result.get("style_requirements", "")
+        if style_req:
+            from backend.memory.types import StyleDNA
+
+            await cm.deposit_style(
+                StyleDNA(
+                    tone=style_req,
+                )
+            )
+
         return result
 
     async def _generate_clarification(
@@ -116,16 +138,15 @@ class BriefAnalyzerAgent(BaseAgent):
 - options: 2-3个建议选项列表
 - inferred_value: LLM 推断的默认值"""
 
-        response = await self.model.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_msg),
-        ])
+        response = await self.model.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_msg),
+            ]
+        )
 
         parsed = self._parse_json_response(response.content)
-        if isinstance(parsed, list):
-            questions = parsed
-        else:
-            questions = parsed.get("questions", [])
+        questions = parsed if isinstance(parsed, list) else parsed.get("questions", [])
 
         return {
             "questions": questions,

@@ -21,7 +21,14 @@ class CopywriterAgent(BaseAgent):
         account_id = state.get("account_id", "default")
         plan = state.get("content_plan", {})
 
-        # 召回相似历史内容
+        # ── Creative Memory: 读取 ──
+        from backend.memory.creative import CreativeMemory
+
+        cm = CreativeMemory(account_id, store=store)
+        styles = await cm.recall_style(query=plan.get("selected_topic", ""))
+        materials = await cm.recall_materials(category="文案片段", tags=["高转化", "爆款标题"])
+
+        # 保留原有的 _recall_memory 召回
         past_content = await self._recall_memory(
             store,
             account_id,
@@ -29,7 +36,6 @@ class CopywriterAgent(BaseAgent):
             namespace="content_history",
             limit=3,
         )
-        # 召回受众偏好
         audience_prefs = await self._recall_memory(
             store,
             account_id,
@@ -38,6 +44,7 @@ class CopywriterAgent(BaseAgent):
             limit=3,
         )
 
+        # 构建完整 memory context
         memory_context = ""
         if past_content:
             memory_context += "\n历史爆款参考：\n"
@@ -49,6 +56,11 @@ class CopywriterAgent(BaseAgent):
             memory_context += "\n受众偏好：\n"
             for ap in audience_prefs:
                 memory_context += f"- {ap.get('preference', '')}\n"
+
+        # 拼接 creative memory 上下文
+        creative_ctx = cm.build_creative_context(styles, [], materials)
+        if creative_ctx:
+            memory_context += f"\n{creative_ctx}"
 
         system_prompt = self._build_system_prompt(state, extra_context=memory_context)
 
@@ -71,6 +83,31 @@ class CopywriterAgent(BaseAgent):
         )
 
         copy_content = self._parse_json_response(response.content)
+
+        # ── Creative Memory: 沉淀 ──
+        from backend.memory.types import MaterialEntry
+
+        selected_title = copy_content.get("selected_title", "")
+        if selected_title:
+            await cm.deposit_material(
+                MaterialEntry(
+                    category="标题模板",
+                    content=selected_title,
+                    source_post_id="",
+                    tags=["auto_deposit", "标题"],
+                )
+            )
+        body_text = copy_content.get("body_text", "")
+        if body_text:
+            opening = body_text[:100]
+            await cm.deposit_material(
+                MaterialEntry(
+                    category="文案片段",
+                    content=opening,
+                    source_post_id="",
+                    tags=["auto_deposit", "开头"],
+                )
+            )
 
         return {
             "copy_content": copy_content,
