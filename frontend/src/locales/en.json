@@ -295,6 +295,13 @@
       "engaging": "Engagement",
       "engagingDesc": "Audience interaction",
       "agentDetails": "Agent Execution Details",
+      "substepSections": {
+        "briefing": "Brief Parsing Steps",
+        "creatingBrief": "Brief Creation Steps",
+        "creatingTrend": "Content Creation Steps",
+        "reviewing": "Review Steps",
+        "publishing": "Publishing Steps"
+      },
       "short": {
         "copywriting": "Copy",
         "draft": "Draft",
@@ -958,7 +965,9 @@
     "viewRaw": "View raw text",
     "skipped": "Brief clarification skipped",
     "skipClarification": "Skip clarification",
-    "targetAudience": "Target Audience"
+    "targetAudience": "Target Audience",
+    "sourcePdf": "PDF",
+    "sourceText": "Text"
   },
   "shootingPlan": {
     "title": "Shooting Plan",
@@ -1165,6 +1174,7 @@
     "engagements": "Engagements",
     "favorites": "Favorites",
     "pmfScore": "PMF Score",
+    "pmfLabel": "PMF",
     "ripplePmf": "Ripple PMF",
     "badgeTrend": "Trend",
     "badgeStrategy": "Strategy",

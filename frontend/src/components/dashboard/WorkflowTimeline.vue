@@ -316,12 +316,12 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
 const isFocused = (index: number) => focusedIndex.value === index
 
-// Substep section labels (from PR #54)
+// Substep section labels
 const substepSectionLabels = computed<Record<string, string>>(() => ({
-  briefing: '商单解析步骤',
-  creating: workflowMode.value === 'brief' ? '商单创作步骤' : '内容创作步骤',
-  reviewing: '审核步骤',
-  publishing: '发布步骤',
+  briefing: t('dashboard.timeline.substepSections.briefing'),
+  creating: workflowMode.value === 'brief' ? t('dashboard.timeline.substepSections.creatingBrief') : t('dashboard.timeline.substepSections.creatingTrend'),
+  reviewing: t('dashboard.timeline.substepSections.reviewing'),
+  publishing: t('dashboard.timeline.substepSections.publishing'),
 }))
 </script>
 
@@ -359,11 +359,11 @@ const substepSectionLabels = computed<Record<string, string>>(() => ({
     </div>
 
     <!-- Main phase nodes -->
-    <div class="flex justify-between items-start relative px-1 md:px-4 overflow-x-auto -mx-3 md:mx-0" role="list" :aria-label="t('dashboard.timeline.stages')">
+    <div class="flex justify-between items-start relative px-1 md:px-4 overflow-x-auto -mx-3 md:mx-0 scrollbar-thin" role="list" :aria-label="t('dashboard.timeline.stages')">
       <div
         v-for="(phase, index) in workflowPhases"
         :key="phase.phase"
-        class="min-w-[48px] md:min-w-0 flex-1"
+        class="min-w-[56px] md:min-w-0 flex-1 shrink-0 md:shrink"
         role="listitem"
       >
         <WorkflowNode

@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "New memory files must follow existing backend/ package layout conventions"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Agent integration must respect state schema, reducers, and phase transitions"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Graceful fallback when BaseStore unavailable must follow project error handling patterns"}
+{"file": ".trellis/spec/backend/ripple-integration.md", "reason": "Async calibration task pattern may reference Ripple's async timeout/retry approach"}
+{"file": ".trellis/tasks/06-13-design-creative-memory-layer/prd.md", "reason": "Full requirements, TypedDict definitions, namespace design, and acceptance criteria for this task"}
