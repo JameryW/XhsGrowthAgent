@@ -309,7 +309,9 @@
         "briefAnalyze": "Parse",
         "briefGate": "Clarify",
         "shootingPlan": "Shoot",
-        "contentAnalysis": "Analyze"
+        "contentAnalysis": "Analyze",
+        "versionGen": "Version",
+        "choiceGate": "Choose"
       }
     },
     "ripple": {
@@ -981,7 +983,7 @@
     "title": "XHS Growth Engine",
     "subtitle": "AI-powered automated content creation platform",
     "heroTagline": "6-Step AI-Powered Automated Workflow",
-    "heroTitle": "Automated Content Creation Workflow",
+    "heroTitle": "",
     "heroDesc": "From trend scouting to publishing analytics, fully AI-driven with a self-evolving closed loop",
     "pipelineLabel": "Closed-loop Workflow",
     "closedLoop": "Self-evolving Loop",
@@ -1017,7 +1019,10 @@
     "stats": {
       "running": "Running",
       "completed": "Completed",
-      "other": "Other"
+      "other": "Other",
+      "total": "Total",
+      "needsAttention": "Needs Attention",
+      "avgProgress": "Avg Progress"
     },
     "section": {
       "running": "Active Workflows",
@@ -1053,7 +1058,20 @@
       "error": "Error",
       "paused": "Paused",
       "cancelled": "Cancelled"
-    }
+    },
+    "filter": {
+      "all": "All",
+      "allMode": "All Modes"
+    },
+    "sort": {
+      "updated": "Recently Updated",
+      "progress": "Progress",
+      "created": "Created"
+    },
+    "featured": "Featured Workflow",
+    "loadMore": "Load More",
+    "noResults": "No matching workflows",
+    "viewDetail": "View Detail"
   },
   "blogger": {
     "selectTitle": "Select Reference Blogger",
@@ -1125,10 +1143,35 @@
     "accuracyRating": "Accuracy Rating",
     "scoreSource": "Score Source",
     "draftContent": "Submitted Draft",
+    "finalCopy": "Final Copy",
     "optimizationAnalysis": "Optimization Analysis",
     "gapAnalysis": "Gap Analysis",
     "suggestions": "Suggestions",
     "viralPatterns": "Viral Patterns",
-    "contentVersions": "Content Versions"
+    "contentVersions": "Content Versions",
+    "checkpoints": "Checkpoints",
+    "loadMore": "Load More",
+    "outputSummary": "Output Summary",
+    "keyMetrics": "Key Metrics",
+    "publishResult": "Publish Result",
+    "status": "Status",
+    "views": "Views",
+    "likes": "Likes",
+    "collects": "Collects",
+    "shares": "Shares",
+    "engagement": "Engagement",
+    "comments": "Comments",
+    "postId": "Post ID",
+    "engagements": "Engagements",
+    "favorites": "Favorites",
+    "pmfScore": "PMF Score",
+    "ripplePmf": "Ripple PMF",
+    "badgeTrend": "Trend",
+    "badgeStrategy": "Strategy",
+    "badgeCopy": "Copy",
+    "badgeShooting": "Shooting",
+    "badgeVisual": "Visual",
+    "badgePublish": "Publish",
+    "badgeAnalytics": "Analytics"
   }
 }

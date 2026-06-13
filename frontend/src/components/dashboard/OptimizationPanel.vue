@@ -12,12 +12,17 @@ const { t } = useI18n()
 const workflowStore = useWorkflowStore()
 const optimizationStore = useOptimizationStore()
 
+// Replay-aware: use effectiveState when in replay mode
+const es = computed(() =>
+  (workflowStore.isReplayMode ? workflowStore.effectiveState : workflowStore.workflowState) as any
+)
+
 // Optimization flow state
 const showDraftInput = ref(false)
 
 // Optimization flow computed
 const workflowVersions = computed(() =>
-  workflowStore.workflowState?.content_versions || []
+  es.value?.content_versions || []
 )
 const contentVersions = computed(() =>
   optimizationStore.contentVersions.length > 0
@@ -26,19 +31,19 @@ const contentVersions = computed(() =>
 )
 const optimizationAnalysis = computed(() =>
   optimizationStore.optimizationAnalysis ||
-  workflowStore.workflowState?.optimization_analysis ||
+  es.value?.optimization_analysis ||
   null
 )
 const draftContent = computed(() => {
   const fromStore = optimizationStore.draftContent
   if (fromStore) return fromStore
-  const fromState = workflowStore.workflowState?.draft_content
+  const fromState = es.value?.draft_content
   // Empty dict {} from backend means no draft submitted yet
   if (fromState && typeof fromState === 'object' && Object.keys(fromState).length > 0) return fromState
   return null
 })
 const generatedDraft = computed<DraftContent | null>(() => {
-  const copy = workflowStore.workflowState?.copy_content || workflowStore.copyContent
+  const copy = workflowStore.copyContent
   const text = copy.body_text?.trim()
   if (!text) return null
 

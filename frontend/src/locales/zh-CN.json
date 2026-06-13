@@ -309,7 +309,9 @@
         "briefAnalyze": "解析",
         "briefGate": "补充",
         "shootingPlan": "拍摄",
-        "contentAnalysis": "分析"
+        "contentAnalysis": "分析",
+        "versionGen": "版本",
+        "choiceGate": "选择"
       }
     },
     "ripple": {
@@ -981,7 +983,7 @@
     "title": "小红书增长引擎",
     "subtitle": "AI 驱动的自动化内容创作平台",
     "heroTagline": "AI驱动的6步自动化工作流",
-    "heroTitle": "自动化内容创作工作流",
+    "heroTitle": "",
     "heroDesc": "从趋势洞察到发布分析，全流程 AI 驱动，闭环自我进化",
     "pipelineLabel": "闭环工作流",
     "closedLoop": "闭环自我进化",
@@ -1017,7 +1019,10 @@
     "stats": {
       "running": "进行中",
       "completed": "已完成",
-      "other": "其他"
+      "other": "其他",
+      "total": "总工作流",
+      "needsAttention": "需关注",
+      "avgProgress": "平均进度"
     },
     "section": {
       "running": "进行中的工作流",
@@ -1053,7 +1058,20 @@
       "error": "错误",
       "paused": "已暂停",
       "cancelled": "已取消"
-    }
+    },
+    "filter": {
+      "all": "全部",
+      "allMode": "全部模式"
+    },
+    "sort": {
+      "updated": "最近更新",
+      "progress": "进度",
+      "created": "创建时间"
+    },
+    "featured": "精选工作流",
+    "loadMore": "加载更多",
+    "noResults": "没有匹配的工作流",
+    "viewDetail": "查看详情"
   },
   "blogger": {
     "selectTitle": "选择参考博主",
@@ -1125,10 +1143,35 @@
     "accuracyRating": "准确度评级",
     "scoreSource": "评分来源",
     "draftContent": "提交的草稿",
+    "finalCopy": "最终文案",
     "optimizationAnalysis": "优化分析",
     "gapAnalysis": "差距分析",
     "suggestions": "优化建议",
     "viralPatterns": "爆文模式",
-    "contentVersions": "内容版本"
+    "contentVersions": "内容版本",
+    "checkpoints": "检查点",
+    "loadMore": "加载更多",
+    "outputSummary": "产出摘要",
+    "keyMetrics": "关键指标",
+    "publishResult": "发布结果",
+    "status": "状态",
+    "views": "浏览",
+    "likes": "点赞",
+    "collects": "收藏",
+    "shares": "分享",
+    "engagement": "互动率",
+    "comments": "评论",
+    "postId": "帖子 ID",
+    "engagements": "互动",
+    "favorites": "收藏",
+    "pmfScore": "PMF 分数",
+    "ripplePmf": "Ripple PMF",
+    "badgeTrend": "趋势",
+    "badgeStrategy": "策略",
+    "badgeCopy": "文案",
+    "badgeShooting": "拍摄",
+    "badgeVisual": "视觉",
+    "badgePublish": "发布",
+    "badgeAnalytics": "分析"
   }
 }

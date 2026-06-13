@@ -57,6 +57,9 @@ interface PhaseNode {
 
 const workflowMode = computed<'trend' | 'brief'>(() => workflowStore.workflowState?.workflow_mode || 'trend')
 
+// Replay-aware state: use effectiveState when in replay mode
+const es = computed(() => (isReplayMode.value ? workflowStore.effectiveState : workflowStore.workflowState) as any)
+
 const workflowPhases = computed<PhaseNode[]>(() => {
   const isBrief = workflowMode.value === 'brief'
   const trendCreatingSubSteps: SubStep[] = [
@@ -67,6 +70,8 @@ const workflowPhases = computed<PhaseNode[]>(() => {
     { icon: 'UserCheck', label: t('dashboard.timeline.short.bloggerGate'), agent: 'blogger_gate', description: t('dashboard.timeline.bloggerGateDesc') },
     { icon: 'Scan', label: t('dashboard.timeline.short.shootingPlan'), agent: 'shooting_planner', description: t('dashboard.timeline.shootingPlanDesc') },
     { icon: 'BarChart3', label: t('dashboard.timeline.short.contentAnalysis'), agent: 'content_analyzer', description: t('dashboard.timeline.contentAnalysisDesc') },
+    { icon: 'Layers', label: t('dashboard.timeline.short.versionGen'), agent: 'version_generator', description: t('dashboard.timeline.versionGen') },
+    { icon: 'CheckSquare', label: t('dashboard.timeline.short.choiceGate'), agent: 'choice_gate', description: t('dashboard.timeline.choiceGate') },
     { icon: 'Palette', label: t('dashboard.timeline.short.visual'), agent: 'visual_designer', description: t('dashboard.timeline.visualDesc') },
   ]
   const briefCreatingSubSteps: SubStep[] = [
@@ -75,6 +80,9 @@ const workflowPhases = computed<PhaseNode[]>(() => {
     { icon: 'Flame', label: t('dashboard.timeline.short.viralMatch'), agent: 'viral_matcher', description: t('dashboard.timeline.viralMatchDesc') },
     { icon: 'Users', label: t('dashboard.timeline.short.bloggerScout'), agent: 'blogger_scout', description: t('dashboard.timeline.bloggerScoutDesc') },
     { icon: 'UserCheck', label: t('dashboard.timeline.short.bloggerGate'), agent: 'blogger_gate', description: t('dashboard.timeline.bloggerGateDesc') },
+    { icon: 'BarChart3', label: t('dashboard.timeline.short.contentAnalysis'), agent: 'content_analyzer', description: t('dashboard.timeline.contentAnalysisDesc') },
+    { icon: 'Layers', label: t('dashboard.timeline.short.versionGen'), agent: 'version_generator', description: t('dashboard.timeline.versionGen') },
+    { icon: 'CheckSquare', label: t('dashboard.timeline.short.choiceGate'), agent: 'choice_gate', description: t('dashboard.timeline.choiceGate') },
     { icon: 'Palette', label: t('dashboard.timeline.short.visual'), agent: 'visual_designer', description: t('dashboard.timeline.visualDesc') },
   ]
   const phases: PhaseNode[] = []
@@ -98,6 +106,8 @@ const workflowPhases = computed<PhaseNode[]>(() => {
         { icon: 'HelpCircle', label: t('dashboard.timeline.short.briefGate'), agent: 'brief_gate', description: t('dashboard.timeline.briefGateDesc') },
         { icon: 'Scan', label: t('dashboard.timeline.short.shootingPlan'), agent: 'shooting_planner', description: t('dashboard.timeline.shootingPlanDesc') },
         { icon: 'BarChart3', label: t('dashboard.timeline.short.contentAnalysis'), agent: 'content_analyzer', description: t('dashboard.timeline.contentAnalysisDesc') },
+        { icon: 'Layers', label: t('dashboard.timeline.short.versionGen'), agent: 'version_generator', description: t('dashboard.timeline.versionGen') },
+        { icon: 'CheckSquare', label: t('dashboard.timeline.short.choiceGate'), agent: 'choice_gate', description: t('dashboard.timeline.choiceGate') },
       ],
     })
   }
@@ -190,10 +200,13 @@ function isSubStepCompleted(agent: string): boolean {
   if (agent === 'trend_scout') return hasData(workflowStore.trendData)
   if (agent === 'content_strategist') return hasData(workflowStore.contentPlan)
   if (agent === 'copywriter') return hasData(workflowStore.copyContent)
-  if (agent === 'draft_gate') return hasData(workflowStore.workflowState?.draft_content)
-  if (agent === 'brief_analyzer') return hasData((workflowStore.workflowState as any)?.brief_content)
-  if (agent === 'brief_gate') return hasData((workflowStore.workflowState as any)?.brief_clarification) || hasData((workflowStore.workflowState as any)?.brief_content)
-  if (agent === 'shooting_planner') return hasData((workflowStore.workflowState as any)?.shooting_plan)
+  if (agent === 'draft_gate') return hasData(es.value?.draft_content)
+  if (agent === 'brief_analyzer') return hasData(es.value?.brief_content)
+  if (agent === 'brief_gate') return hasData(es.value?.brief_clarification) || hasData(es.value?.brief_content)
+  if (agent === 'shooting_planner') return hasData(es.value?.shooting_plan)
+  if (agent === 'content_analyzer') return hasData(es.value?.optimization_analysis)
+  if (agent === 'version_generator') return (es.value?.content_versions?.length > 0)
+  if (agent === 'choice_gate') return hasData(es.value?.content_versions)
   if (agent === 'visual_designer') {
     return (
       status === 'awaiting_review' ||
@@ -208,8 +221,8 @@ function isSubStepCompleted(agent: string): boolean {
       agentIndex(currentAgent.value) > agentIndex('review_gate')
     )
   }
-  if (agent === 'publisher') return hasData(workflowStore.workflowState?.publish_result)
-  if (agent === 'analyst') return hasData(workflowStore.workflowState?.analytics)
+  if (agent === 'publisher') return hasData(es.value?.publish_result)
+  if (agent === 'analyst') return hasData(es.value?.analytics)
   if (agent === 'revise_content') return false
   if (agent === 'engagement') {
     return workflowStore.currentPhase === 'completed' || agentIndex(currentAgent.value) > agentIndex('engagement')
