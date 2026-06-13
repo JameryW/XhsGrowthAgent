@@ -16,7 +16,12 @@ const getNodeStatus = (phase: string) => {
   const currentIndex = phaseOrder.indexOf(currentPhase as any)
   const nodeIndex = phaseOrder.indexOf(phase as any)
   if (nodeIndex < currentIndex) return 'completed'
-  if (nodeIndex === currentIndex) return 'running'
+  if (nodeIndex === currentIndex) {
+    // Check if we're at a gate (interrupt) — gate nodes mean we're waiting, not running
+    const currentAgent = (workflowStore.workflowState as any)?.current_agent || ''
+    if (currentAgent.includes('_gate')) return 'completed'
+    return 'running'
+  }
   return 'pending'
 }
 
@@ -511,7 +516,7 @@ function heatBg(score?: number): string {
     </div>
 
     <!-- ═══ Ripple Retry Progress (shown at any phase when retry is running) ═══ -->
-    <div v-if="rippleProgress && !isStrategyRunning" class="rounded-xl p-3 md:p-5 bg-white/98 border border-violet-100/50">
+    <div v-if="rippleProgress && !isStrategyRunning && !(hasContentPlan && (hasRipplePrediction || hasRipplePmf || rippleProgress))" class="rounded-xl p-3 md:p-5 bg-white/98 border border-violet-100/50">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-indigo-400 flex items-center justify-center">
           <AppIcon name="Zap" size="md" variant="white" />
