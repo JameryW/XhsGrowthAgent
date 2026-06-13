@@ -8,14 +8,17 @@
 /* Base card - liquid glass surface */
 .card {
   @apply rounded-xl md:rounded-2xl p-3 md:p-6;
-  background: rgba(255, 255, 255, 0.38);
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.46)),
+    rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(20px) saturate(165%);
+  -webkit-backdrop-filter: blur(20px) saturate(165%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
   box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.04),
-    0 4px 16px rgba(0, 0, 0, 0.03),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 32px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -1px 0 rgba(15, 23, 42, 0.04);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
               box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -25,11 +28,11 @@
   @apply card;
 }
 .card-hover:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
   box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.06),
-    0 12px 32px rgba(0, 0, 0, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    0 6px 18px rgba(15, 23, 42, 0.07),
+    0 18px 42px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 /* Card header section */
@@ -69,11 +72,11 @@
   border: 1px solid rgba(94, 234, 212, 0.15);
 }
 .card-success:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
   box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.06),
-    0 12px 32px rgba(0, 0, 0, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    0 6px 18px rgba(15, 23, 42, 0.07),
+    0 18px 42px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .card-warning {
@@ -82,11 +85,11 @@
   border: 1px solid rgba(252, 211, 77, 0.15);
 }
 .card-warning:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
   box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.06),
-    0 12px 32px rgba(0, 0, 0, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    0 6px 18px rgba(15, 23, 42, 0.07),
+    0 18px 42px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .card-error {
@@ -95,11 +98,11 @@
   border: 1px solid rgba(251, 113, 133, 0.15);
 }
 .card-error:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
   box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.06),
-    0 12px 32px rgba(0, 0, 0, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    0 6px 18px rgba(15, 23, 42, 0.07),
+    0 18px 42px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .card-info {
@@ -108,24 +111,26 @@
   border: 1px solid rgba(167, 139, 250, 0.15);
 }
 .card-info:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
   box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.06),
-    0 12px 32px rgba(0, 0, 0, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+    0 6px 18px rgba(15, 23, 42, 0.07),
+    0 18px 42px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 /* Compact card for dense layouts */
 .card-compact {
   @apply rounded-lg p-3;
-  background: rgba(255, 255, 255, 0.38);
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.46)),
+    rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
   box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.04),
-    0 4px 16px rgba(0, 0, 0, 0.03),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 10px 26px rgba(15, 23, 42, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.66);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
               box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
