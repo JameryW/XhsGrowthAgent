@@ -58,6 +58,19 @@ function generateTabLabel(niche?: string, workflowMode?: string, createdAt?: str
   return nicheStr ? `${nicheStr}-${modeStr}-${dateStr}` : `${modeStr}-${dateStr}`
 }
 
+/** Keep only the latest checkpoint per agent (first occurrence = most recent in LangGraph history).
+ *  Also filters out empty-agent checkpoints (e.g. Step -1 with no current_agent). */
+function deduplicateCheckpoints(cps: CheckpointSnapshot[]): CheckpointSnapshot[] {
+  const seen = new Set<string>()
+  return cps.filter(cp => {
+    const agent = cp.current_agent
+    if (!agent) return false
+    if (seen.has(agent)) return false
+    seen.add(agent)
+    return true
+  })
+}
+
 export const useWorkflowStore = defineStore('workflow', () => {
   // ── Multi-workflow state ──
   const workflowStates = ref<Map<string, WorkflowStateResponse>>(new Map())
@@ -835,7 +848,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isLoadingCheckpoints.value = true
     try {
       const result = await workflowApi.getCheckpointHistory(activeThreadId.value, { limit: 20 })
-      replayCheckpoints.value = result.checkpoints
+      replayCheckpoints.value = deduplicateCheckpoints(result.checkpoints)
       hasMoreCheckpoints.value = result.has_more
       // Auto-select latest checkpoint
       if (result.checkpoints.length > 0) {
@@ -870,8 +883,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
         limit: 20,
         before: oldest?.checkpoint_id,
       })
-      // Append older checkpoints
-      replayCheckpoints.value = [...replayCheckpoints.value, ...result.checkpoints]
+      // Append older checkpoints, then deduplicate
+      const merged = [...replayCheckpoints.value, ...result.checkpoints]
+      replayCheckpoints.value = deduplicateCheckpoints(merged)
       hasMoreCheckpoints.value = result.has_more
     } catch (e: any) {
       toastStore.error(t('workflow.replayLoadFailed'), e.message)

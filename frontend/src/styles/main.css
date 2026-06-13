@@ -9,7 +9,7 @@
     padding: 0;
     background: #F8FAFC;
     color: #1E293B;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
     overflow-x: hidden;
     -webkit-tap-highlight-color: transparent;
   }
@@ -177,6 +177,11 @@
   .liquid-glass-amber {
     background: rgba(255, 251, 235, 0.35);
     border: 1px solid rgba(252, 211, 77, 0.2);
+  }
+
+  .liquid-glass-emerald {
+    background: rgba(236, 253, 245, 0.35);
+    border: 1px solid rgba(110, 231, 183, 0.2);
   }
 
   /* Monospace font */

@@ -9,8 +9,13 @@ import type { ShootingPlan } from '@/types/workflow'
 const { t } = useI18n()
 const workflowStore = useWorkflowStore()
 
+// Replay-aware: use effectiveState when in replay mode
+const es = computed(() =>
+  (workflowStore.isReplayMode ? workflowStore.effectiveState : workflowStore.workflowState) as any
+)
+
 const shootingPlan = computed<ShootingPlan>(() =>
-  workflowStore.workflowState?.shooting_plan || {}
+  es.value?.shooting_plan || {}
 )
 
 // Whether copywriting data exists in the shooting plan (title_candidates, body_copy, hashtags)

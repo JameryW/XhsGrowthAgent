@@ -28,16 +28,18 @@ const isStrategyRunning = computed(() =>
   (workflowStore.workflowState as any)?.current_agent === 'content_strategist'
 )
 
-// Data accessors
+// Data accessors — use effectiveState (replay-aware) instead of workflowState
+const es = computed(() => workflowStore.effectiveState as any)
+
 const trendData = computed(() => workflowStore.trendData)
 const contentPlan = computed(() => workflowStore.contentPlan)
 const copyContent = computed(() => workflowStore.copyContent)
-const shootingPlan = computed(() => (workflowStore.workflowState as any)?.shooting_plan || {})
-const publishResult = computed(() => (workflowStore.workflowState as any)?.publish_result || {})
-const analytics = computed(() => (workflowStore.workflowState as any)?.analytics || {})
-const optimizationAnalysis = computed(() => (workflowStore.workflowState as any)?.optimization_analysis || {})
-const contentVersions = computed(() => (workflowStore.workflowState as any)?.content_versions || [])
-const draftContent = computed(() => (workflowStore.workflowState as any)?.draft_content || {})
+const shootingPlan = computed(() => es.value?.shooting_plan || {})
+const publishResult = computed(() => es.value?.publish_result || {})
+const analytics = computed(() => es.value?.analytics || {})
+const optimizationAnalysis = computed(() => es.value?.optimization_analysis || {})
+const contentVersions = computed(() => es.value?.content_versions || [])
+const draftContent = computed(() => es.value?.draft_content || {})
 
 // Ripple data
 const ripplePrediction = computed(() => workflowStore.ripplePrediction)
@@ -49,9 +51,9 @@ const isAwaitingRippleDecision = computed(() => workflowStore.isAwaitingRippleDe
 const reselectCount = computed(() => workflowStore.reselectCount)
 
 // Brief content accessor
-const briefContent = computed(() => (workflowStore.workflowState as any)?.brief_content || {})
+const briefContent = computed(() => es.value?.brief_content || {})
 const hasBriefContent = computed(() => Object.keys(briefContent.value).length > 0)
-const isBriefMode = computed(() => (workflowStore.workflowState as any)?.workflow_mode === 'brief')
+const isBriefMode = computed(() => es.value?.workflow_mode === 'brief')
 
 // Check if specific data exists
 const hasTrendData = computed(() => Object.keys(trendData.value).length > 0)
