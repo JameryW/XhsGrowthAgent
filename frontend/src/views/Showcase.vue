@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, watch } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
@@ -28,13 +28,36 @@ const sortKey = ref<SortKey>('updated')
 // Pagination
 const visibleCount = ref(8)
 const ITEMS_PER_PAGE = 8
+const DETAIL_CONCURRENCY = 3
+const RUNNING_STATUSES: WorkflowStatus[] = [
+  'running',
+  'awaiting_review',
+  'awaiting_choice',
+  'awaiting_draft',
+  'awaiting_brief',
+  'awaiting_ripple_decision',
+  'awaiting_blogger_selection',
+]
+const NEEDS_ATTENTION_STATUSES: WorkflowStatus[] = ['error', 'stale', 'paused', 'cancelled']
+
+const pendingDetailIds = new Set<string>()
+let activeDetailLoads = 0
+let detailPumpTimer: number | null = null
+
+function isRunningStatus(status: WorkflowStatus): boolean {
+  return RUNNING_STATUSES.includes(status)
+}
+
+function isNeedsAttentionStatus(status: WorkflowStatus): boolean {
+  return NEEDS_ATTENTION_STATUSES.includes(status)
+}
 
 // Stats computed from list data (no detail fetch needed)
 const stats = computed(() => {
   const all = workflows.value
-  const running = all.filter(w => ['running', 'awaiting_review', 'awaiting_choice', 'awaiting_draft', 'awaiting_brief', 'awaiting_ripple_decision', 'awaiting_blogger_selection'].includes(w.status))
+  const running = all.filter(w => isRunningStatus(w.status))
   const completed = all.filter(w => w.status === 'completed')
-  const needsAttention = all.filter(w => ['error', 'stale', 'paused', 'cancelled'].includes(w.status))
+  const needsAttention = all.filter(w => isNeedsAttentionStatus(w.status))
   const avgProgress = all.length > 0
     ? Math.round(all.reduce((sum, w) => sum + w.progress_percent, 0) / all.length)
     : 0
@@ -53,11 +76,11 @@ const filteredWorkflows = computed(() => {
 
   // Status filter
   if (statusFilter.value === 'running') {
-    result = result.filter(w => ['running', 'awaiting_review', 'awaiting_choice', 'awaiting_draft', 'awaiting_brief', 'awaiting_ripple_decision', 'awaiting_blogger_selection'].includes(w.status))
+    result = result.filter(w => isRunningStatus(w.status))
   } else if (statusFilter.value === 'completed') {
     result = result.filter(w => w.status === 'completed')
   } else if (statusFilter.value === 'needs_attention') {
-    result = result.filter(w => ['error', 'stale', 'paused', 'cancelled'].includes(w.status))
+    result = result.filter(w => isNeedsAttentionStatus(w.status))
   }
 
   // Mode filter
@@ -96,41 +119,53 @@ async function fetchWorkflows() {
   }
 }
 
-// Lazy-load detail for a specific workflow
-async function loadDetail(threadId: string) {
+function queueDetail(threadId: string) {
   if (workflowDetails.value.has(threadId) || loadingDetailIds.value.has(threadId)) return
+  pendingDetailIds.add(threadId)
   loadingDetailIds.value.add(threadId)
-  try {
-    const state = await getWorkflowStatus(threadId)
-    workflowDetails.value.set(threadId, state)
-  } catch {
-    // Skip failed detail fetches
-  } finally {
-    loadingDetailIds.value.delete(threadId)
+  scheduleDetailPump()
+}
+
+function scheduleDetailPump() {
+  if (detailPumpTimer !== null) return
+  detailPumpTimer = window.setTimeout(() => {
+    detailPumpTimer = null
+    pumpDetailQueue()
+  }, 24)
+}
+
+function pumpDetailQueue() {
+  while (activeDetailLoads < DETAIL_CONCURRENCY && pendingDetailIds.size > 0) {
+    const threadId = pendingDetailIds.values().next().value as string
+    pendingDetailIds.delete(threadId)
+    activeDetailLoads += 1
+
+    getWorkflowStatus(threadId)
+      .then((state) => {
+        workflowDetails.value.set(threadId, state)
+      })
+      .catch(() => {
+        // Skip failed detail fetches
+      })
+      .finally(() => {
+        loadingDetailIds.value.delete(threadId)
+        activeDetailLoads -= 1
+        if (pendingDetailIds.size > 0) scheduleDetailPump()
+      })
   }
 }
 
-// Load details for visible cards
+// Load details for visible cards with a small concurrency cap to keep first paint responsive.
 function loadVisibleDetails() {
+  if (featuredWorkflow.value) {
+    queueDetail(featuredWorkflow.value.thread_id)
+  }
   for (const wf of visibleWorkflows.value) {
-    loadDetail(wf.thread_id)
+    queueDetail(wf.thread_id)
   }
 }
-
-// Watch visible list and load details on change
-watch(visibleWorkflows, () => {
-  loadVisibleDetails()
-}, { immediate: true })
 
 onMounted(fetchWorkflows)
-
-function getDetail(threadId: string): WorkflowStateResponse | undefined {
-  return workflowDetails.value.get(threadId)
-}
-
-function isDetailLoading(threadId: string): boolean {
-  return loadingDetailIds.value.has(threadId)
-}
 
 function statusLabel(status: WorkflowStatus): string {
   const map: Record<string, string> = {
@@ -209,6 +244,11 @@ const featuredDetail = computed<WorkflowStateResponse | undefined>(() => {
   return workflowDetails.value.get(featuredWorkflow.value.thread_id)
 })
 
+// Watch visible list and load details on change
+watch([visibleWorkflows, featuredWorkflow], () => {
+  loadVisibleDetails()
+}, { immediate: true })
+
 // Pipeline step definitions (for both strip and ellipse)
 type IconVariant = 'pink' | 'cyan' | 'purple' | 'peach' | 'white'
 
@@ -219,36 +259,37 @@ const howItWorksSteps: Array<{
   iconVariant: IconVariant
   borderColor: string
   iconColor: string
-  glowColor: string
 }> = [
-  { key: 'scouting', icon: 'Search', color: 'bg-rose-500', iconVariant: 'pink', borderColor: 'border-rose-400', iconColor: 'text-rose-500', glowColor: 'rose' },
-  { key: 'planning', icon: 'ClipboardList', color: 'bg-teal-500', iconVariant: 'cyan', borderColor: 'border-teal-400', iconColor: 'text-teal-500', glowColor: 'teal' },
-  { key: 'creating', icon: 'Pencil', color: 'bg-amber-500', iconVariant: 'peach', borderColor: 'border-amber-400', iconColor: 'text-amber-500', glowColor: 'amber' },
-  { key: 'reviewing', icon: 'Clock', color: 'bg-violet-500', iconVariant: 'purple', borderColor: 'border-violet-400', iconColor: 'text-violet-500', glowColor: 'violet' },
-  { key: 'publishing', icon: 'Upload', color: 'bg-emerald-500', iconVariant: 'cyan', borderColor: 'border-emerald-400', iconColor: 'text-emerald-500', glowColor: 'emerald' },
-  { key: 'analyzing', icon: 'BarChart3', color: 'bg-sky-500', iconVariant: 'cyan', borderColor: 'border-sky-400', iconColor: 'text-sky-500', glowColor: 'sky' },
+  { key: 'scouting', icon: 'Search', color: 'bg-rose-500', iconVariant: 'pink', borderColor: 'border-rose-200', iconColor: 'text-rose-500' },
+  { key: 'planning', icon: 'ClipboardList', color: 'bg-teal-500', iconVariant: 'cyan', borderColor: 'border-teal-200', iconColor: 'text-teal-500' },
+  { key: 'creating', icon: 'Pencil', color: 'bg-amber-500', iconVariant: 'peach', borderColor: 'border-amber-200', iconColor: 'text-amber-500' },
+  { key: 'reviewing', icon: 'Clock', color: 'bg-violet-500', iconVariant: 'purple', borderColor: 'border-violet-200', iconColor: 'text-violet-500' },
+  { key: 'publishing', icon: 'Upload', color: 'bg-emerald-500', iconVariant: 'cyan', borderColor: 'border-emerald-200', iconColor: 'text-emerald-500' },
+  { key: 'analyzing', icon: 'BarChart3', color: 'bg-sky-500', iconVariant: 'cyan', borderColor: 'border-sky-200', iconColor: 'text-sky-500' },
 ]
 
-// Node state classes for hover / active / completed effects
-function nodeGlowClass(step: { glowColor: string }): string {
+function nodeGlowClass(step: { color: string }): string {
   const map: Record<string, string> = {
-    rose: 'node-glow-rose',
-    teal: 'node-glow-teal',
-    amber: 'node-glow-amber',
-    violet: 'node-glow-violet',
-    emerald: 'node-glow-emerald',
-    sky: 'node-glow-sky',
+    'bg-rose-500': 'node-glow-rose',
+    'bg-teal-500': 'node-glow-teal',
+    'bg-amber-500': 'node-glow-amber',
+    'bg-violet-500': 'node-glow-violet',
+    'bg-emerald-500': 'node-glow-emerald',
+    'bg-sky-500': 'node-glow-sky',
   }
-  return map[step.glowColor] || ''
+  return map[step.color] || ''
 }
 
 // Ellipse parameters for desktop loop layout
 const ellipseRxPct = 36
 const ellipseRyPct = 38
 const nodeSize = 68
+const containerW = ref(1200)
+const loopContainer = ref<HTMLElement | null>(null)
+const stepsVisible = ref(false)
 
-function stepStyle(i: number, containerW: number): Record<string, string> {
-  const rx = containerW * ellipseRxPct / 100
+function stepStyle(i: number, containerWidth: number): Record<string, string> {
+  const rx = containerWidth * ellipseRxPct / 100
   const ry = 420 * ellipseRyPct / 100
   const angleDeg = i * 60 - 90
   const angleRad = angleDeg * Math.PI / 180
@@ -261,18 +302,18 @@ function stepStyle(i: number, containerW: number): Record<string, string> {
   }
 }
 
-const containerW = ref(1200)
-const loopContainer = ref<HTMLElement | null>(null)
-
-const stepsVisible = ref(false)
+const updateLoopWidth = () => {
+  if (loopContainer.value) containerW.value = loopContainer.value.clientWidth
+}
 
 onMounted(() => {
-  const updateW = () => {
-    if (loopContainer.value) containerW.value = loopContainer.value.clientWidth
-  }
-  updateW()
-  window.addEventListener('resize', updateW)
-  setTimeout(() => { stepsVisible.value = true }, 200)
+  updateLoopWidth()
+  window.addEventListener('resize', updateLoopWidth)
+  window.setTimeout(() => { stepsVisible.value = true }, 200)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateLoopWidth)
 })
 
 const svgCx = computed(() => containerW.value / 2)
@@ -288,14 +329,14 @@ const loopMotionPath = computed(() => {
 })
 
 function cardStatusColor(wf: WorkflowListItem): string {
-  if (['running', 'awaiting_review', 'awaiting_choice', 'awaiting_draft', 'awaiting_brief', 'awaiting_ripple_decision', 'awaiting_blogger_selection'].includes(wf.status)) return 'liquid-glass-teal'
+  if (isRunningStatus(wf.status)) return 'liquid-glass-teal'
   if (wf.status === 'completed') return 'liquid-glass-emerald'
   if (wf.status === 'error') return 'liquid-glass-rose'
   return 'liquid-glass'
 }
 
 function cardDotClass(wf: WorkflowListItem): string {
-  if (['running', 'awaiting_review', 'awaiting_choice', 'awaiting_draft', 'awaiting_brief', 'awaiting_ripple_decision', 'awaiting_blogger_selection'].includes(wf.status)) return 'bg-teal-500 animate-pulse'
+  if (isRunningStatus(wf.status)) return 'bg-teal-500 animate-pulse'
   if (wf.status === 'completed') return 'bg-emerald-500'
   if (wf.status === 'error') return 'bg-rose-500'
   if (wf.status === 'paused') return 'bg-slate-400'
@@ -303,21 +344,38 @@ function cardDotClass(wf: WorkflowListItem): string {
 }
 
 function cardBadgeClass(wf: WorkflowListItem): string {
-  if (['running', 'awaiting_review', 'awaiting_choice', 'awaiting_draft', 'awaiting_brief', 'awaiting_ripple_decision', 'awaiting_blogger_selection'].includes(wf.status)) return 'bg-teal-100 text-teal-700'
+  if (isRunningStatus(wf.status)) return 'bg-teal-100 text-teal-700'
   if (wf.status === 'completed') return 'bg-emerald-100 text-emerald-700'
   if (wf.status === 'error') return 'bg-rose-100 text-rose-700'
   return 'bg-slate-100 text-slate-600'
 }
+
+function cardProgressClass(wf: WorkflowListItem): string {
+  if (wf.status === 'completed') return 'bg-emerald-400'
+  if (isRunningStatus(wf.status)) return 'bg-teal-400'
+  return 'bg-slate-300'
+}
+
+const visibleCards = computed(() =>
+  visibleWorkflows.value.map((wf) => ({
+    wf,
+    detail: workflowDetails.value.get(wf.thread_id),
+    isLoading: loadingDetailIds.value.has(wf.thread_id),
+    statusClass: cardStatusColor(wf),
+    dotClass: cardDotClass(wf),
+    badgeClass: cardBadgeClass(wf),
+    progressClass: cardProgressClass(wf),
+    pipelineProgress: pipelineProgress(wf.phase),
+    title: wf.label || phaseLabel(wf.phase),
+    updatedLabel: formatDate(wf.updated_at || wf.created_at),
+    phaseText: phaseLabel(wf.phase),
+    statusText: statusLabel(wf.status),
+  }))
+)
 </script>
 
 <template>
-  <div class="min-h-screen text-slate-800 relative overflow-hidden">
-    <!-- Subtle decorative elements -->
-    <div class="absolute top-0 right-0 w-[500px] h-[500px] pointer-events-none opacity-30" style="background: radial-gradient(circle, rgba(244,63,94,0.08) 0%, transparent 60%);" />
-    <div class="absolute bottom-0 left-0 w-[400px] h-[400px] pointer-events-none opacity-20" style="background: radial-gradient(circle, rgba(20,184,166,0.08) 0%, transparent 60%);" />
-    <!-- Subtle ambient orb -->
-	    <div class="absolute top-[30%] left-[15%] w-[250px] h-[250px] rounded-full pointer-events-none opacity-[0.03] bg-violet-400" />
-
+  <div class="showcase-page min-h-screen text-slate-800 relative overflow-hidden">
     <!-- Nav -->
     <nav class="relative z-20 liquid-glass-nav border-b border-white/15">
       <div class="max-w-[1200px] mx-auto px-3 md:px-6 h-14 flex items-center justify-between">
@@ -378,47 +436,47 @@ function cardBadgeClass(wf: WorkflowListItem): string {
                 </linearGradient>
                 <linearGradient id="comet-grad" gradientUnits="userSpaceOnUse">
                   <stop offset="0%" stop-color="#fff" stop-opacity="1" />
-                  <stop offset="15%" stop-color="#f43f5e" stop-opacity="0.9" />
-                  <stop offset="50%" stop-color="#8b5cf6" stop-opacity="0.3" />
+                  <stop offset="18%" stop-color="#f43f5e" stop-opacity="0.82" />
+                  <stop offset="55%" stop-color="#8b5cf6" stop-opacity="0.24" />
                   <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0" />
                 </linearGradient>
-                <filter id="comet-glow" x="-200%" y="-200%" width="500%" height="500%">
-                  <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b" />
+                <filter id="comet-glow" x="-160%" y="-160%" width="420%" height="420%">
+                  <feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="b" />
                   <feMerge>
                     <feMergeNode in="b" />
                     <feMergeNode in="SourceGraphic" />
                   </feMerge>
                 </filter>
-                <filter id="arc-glow" x="-20%" y="-20%" width="140%" height="140%">
-                  <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="b" />
+                <filter id="arc-glow" x="-16%" y="-16%" width="132%" height="132%">
+                  <feGaussianBlur in="SourceGraphic" stdDeviation="1.6" result="b" />
                   <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
                 </filter>
               </defs>
 
               <!-- Layer 1: soft glow path -->
-              <ellipse :cx="svgCx" :cy="svgCy" :rx="svgRx" :ry="svgRy" stroke="url(#loop-grad)" stroke-width="12" fill="none" opacity="0.06" filter="url(#arc-glow)">
-                <animate attributeName="opacity" values="0.04;0.08;0.04" dur="6s" repeatCount="indefinite" />
+              <ellipse :cx="svgCx" :cy="svgCy" :rx="svgRx" :ry="svgRy" stroke="url(#loop-grad)" stroke-width="10" fill="none" opacity="0.055" filter="url(#arc-glow)">
+                <animate attributeName="opacity" values="0.035;0.07;0.035" dur="7s" repeatCount="indefinite" />
               </ellipse>
 
               <!-- Layer 2: fine dashed flow -->
-              <ellipse :cx="svgCx" :cy="svgCy" :rx="svgRx" :ry="svgRy" stroke="url(#loop-grad)" stroke-width="1.5" stroke-dasharray="16 8" stroke-linecap="round" fill="none" opacity="0.4">
-                <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="3s" repeatCount="indefinite" />
+              <ellipse :cx="svgCx" :cy="svgCy" :rx="svgRx" :ry="svgRy" stroke="url(#loop-grad)" stroke-width="1.5" stroke-dasharray="16 8" stroke-linecap="round" fill="none" opacity="0.34">
+                <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="4.5s" repeatCount="indefinite" />
               </ellipse>
 
               <!-- Energy pulses at node positions -->
-              <g opacity="0.25">
+              <g opacity="0.2">
                 <circle v-for="n in 6" :key="'pulse-'+n" :cx="svgCx + (Math.cos((n * 60 - 90) * Math.PI / 180) * svgRx)" :cy="svgCy + (Math.sin((n * 60 - 90) * Math.PI / 180) * svgRy)" r="0" fill="none" :stroke="['#f43f5e','#14b8a6','#f59e0b','#8b5cf6','#10b981','#0ea5e9'][n]" stroke-width="1">
-                  <animate attributeName="r" values="0;10;0" :dur="`${4 + n * 0.5}s`" repeatCount="indefinite" />
-                  <animate attributeName="opacity" values="0;0.4;0" :dur="`${4 + n * 0.5}s`" repeatCount="indefinite" />
+                  <animate attributeName="r" values="0;8;0" :dur="`${5 + n * 0.5}s`" repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="0;0.32;0" :dur="`${5 + n * 0.5}s`" repeatCount="indefinite" />
                 </circle>
               </g>
 
               <!-- Comet -->
-              <line x1="-60" y1="0" x2="0" y2="0" stroke="url(#comet-grad)" stroke-width="3" stroke-linecap="round" opacity="0.7" filter="url(#comet-glow)">
-                <animateMotion dur="8s" repeatCount="indefinite" rotate="auto"><mpath href="#loop-motion-path" /></animateMotion>
+              <line x1="-56" y1="0" x2="0" y2="0" stroke="url(#comet-grad)" stroke-width="2.5" stroke-linecap="round" opacity="0.62" filter="url(#comet-glow)">
+                <animateMotion dur="10s" repeatCount="indefinite" rotate="auto"><mpath href="#loop-motion-path" /></animateMotion>
               </line>
-              <circle r="4" fill="#fff" opacity="0.9" filter="url(#comet-glow)">
-                <animateMotion dur="8s" repeatCount="indefinite"><mpath href="#loop-motion-path" /></animateMotion>
+              <circle r="3.5" fill="#fff" opacity="0.86" filter="url(#comet-glow)">
+                <animateMotion dur="10s" repeatCount="indefinite"><mpath href="#loop-motion-path" /></animateMotion>
               </circle>
 
               <path id="loop-motion-path" :d="loopMotionPath" fill="none" stroke="none" />
@@ -441,12 +499,12 @@ function cardBadgeClass(wf: WorkflowListItem): string {
               :style="stepStyle(i, containerW)"
             >
               <!-- Hover: outer glow -->
-	              <div class="absolute inset-[-8px] rounded-full opacity-0 group-hover:opacity-50 transition-opacity duration-300 blur-md" :class="step.color" />
-	              <!-- Node circle -->
-	              <div class="w-[68px] h-[68px] rounded-full flex items-center justify-center bg-white border-2 shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:shadow-xl relative z-10" :class="[step.borderColor, step.iconColor]">
-	                <AppIcon :name="step.icon" size="lg" :variant="step.iconVariant" />
-	              </div>
-	              <div class="text-center mt-2">
+              <div class="absolute inset-[-8px] rounded-full opacity-0 group-hover:opacity-40 transition-opacity duration-300 blur-sm" :class="step.color" />
+              <!-- Node circle -->
+              <div class="w-[68px] h-[68px] rounded-full flex items-center justify-center bg-white/90 border-2 shadow-md transition-all duration-300 group-hover:scale-105 group-hover:shadow-lg relative z-10" :class="[step.borderColor, step.iconColor]">
+                <AppIcon :name="step.icon" size="lg" :variant="step.iconVariant" />
+              </div>
+              <div class="text-center mt-2">
                 <div class="text-[11px] font-semibold text-slate-700 whitespace-nowrap">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
               </div>
             </div>
@@ -463,9 +521,9 @@ function cardBadgeClass(wf: WorkflowListItem): string {
                 :style="{ transitionDelay: `${i * 80}ms` }"
               >
                 <!-- Mobile node glow -->
-	                <div class="relative">
-	                  <div class="absolute inset-[-6px] rounded-full opacity-10 group-hover:opacity-35 transition-opacity duration-300 blur-sm" :class="step.color" />
-                  <div class="w-[48px] h-[48px] rounded-full flex items-center justify-center bg-white border-2 shadow-sm group-hover:shadow-md transition-all duration-300 group-hover:scale-105" :class="[step.borderColor, step.iconColor]">
+                <div class="relative">
+                  <div class="absolute inset-[-6px] rounded-full opacity-10 group-hover:opacity-28 transition-opacity duration-300 blur-sm" :class="step.color" />
+                  <div class="w-[48px] h-[48px] rounded-full flex items-center justify-center bg-white/90 border-2 shadow-sm group-hover:shadow-md transition-all duration-300 group-hover:scale-105" :class="[step.borderColor, step.iconColor]">
                     <AppIcon :name="step.icon" size="md" :variant="step.iconVariant" />
                   </div>
                 </div>
@@ -487,12 +545,12 @@ function cardBadgeClass(wf: WorkflowListItem): string {
                 <path d="M6 9h148m0 0l-4-4m4 4l-4 4" stroke="url(#mobile-loop-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.5" />
                 <!-- Animated traveling dot -->
                 <circle r="2.5" fill="#14b8a6" opacity="0.7">
-                  <animateMotion dur="4s" repeatCount="indefinite" path="M6 9 L154 9" />
-                  <animate attributeName="opacity" values="0.5;0.9;0.5" dur="2s" repeatCount="indefinite" />
+                  <animateMotion dur="5.5s" repeatCount="indefinite" path="M6 9 L154 9" />
+                  <animate attributeName="opacity" values="0.5;0.85;0.5" dur="2.4s" repeatCount="indefinite" />
                 </circle>
                 <circle r="2" fill="#8b5cf6" opacity="0.5">
-                  <animateMotion dur="4s" repeatCount="indefinite" begin="2s" path="M6 9 L154 9" />
-                  <animate attributeName="opacity" values="0.3;0.7;0.3" dur="2s" repeatCount="indefinite" />
+                  <animateMotion dur="5.5s" repeatCount="indefinite" begin="2.75s" path="M6 9 L154 9" />
+                  <animate attributeName="opacity" values="0.3;0.65;0.3" dur="2.4s" repeatCount="indefinite" />
                 </circle>
               </svg>
               <span class="text-[10px] text-slate-400 font-medium">&#x27F3; {{ t('showcase.closedLoop') }}</span>
@@ -593,48 +651,49 @@ function cardBadgeClass(wf: WorkflowListItem): string {
              ══════════════════════════════════════════════════════════════ -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div
-            v-for="wf in visibleWorkflows"
-            :key="wf.thread_id"
-            class="rounded-xl liquid-glass-hover overflow-hidden cursor-pointer transition-shadow hover:shadow-md"
-            :class="[cardStatusColor(wf)]"
-            @click="goReplay(wf.thread_id)"
+            v-for="card in visibleCards"
+            :key="card.wf.thread_id"
+            v-memo="[card.wf.thread_id, card.wf.status, card.wf.progress_percent, card.detail, card.isLoading]"
+            class="showcase-card rounded-xl liquid-glass-hover overflow-hidden cursor-pointer transition-shadow hover:shadow-md"
+            :class="[card.statusClass]"
+            @click="goReplay(card.wf.thread_id)"
           >
             <!-- Card header -->
             <div class="px-4 md:px-5 py-2.5 flex items-center justify-between border-b border-white/10 liquid-glass-inset">
               <div class="flex items-center gap-1.5 min-w-0">
-                <span class="w-2 h-2 rounded-full shrink-0" :class="cardDotClass(wf)" />
-                <span class="text-xs font-semibold text-slate-800 truncate">{{ wf.label || phaseLabel(wf.phase) }}</span>
-                <span class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0" :class="cardBadgeClass(wf)">{{ statusLabel(wf.status) }}</span>
-                <span v-if="wf.workflow_mode" class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 shrink-0">{{ wf.workflow_mode }}</span>
+                <span class="w-2 h-2 rounded-full shrink-0" :class="card.dotClass" />
+                <span class="text-xs font-semibold text-slate-800 truncate">{{ card.title }}</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0" :class="card.badgeClass">{{ card.statusText }}</span>
+                <span v-if="card.wf.workflow_mode" class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 shrink-0">{{ card.wf.workflow_mode }}</span>
               </div>
-              <span class="text-[10px] text-slate-400 shrink-0 ml-2">{{ formatDate(wf.updated_at || wf.created_at) }}</span>
+              <span class="text-[10px] text-slate-400 shrink-0 ml-2">{{ card.updatedLabel }}</span>
             </div>
             <!-- Progress bar -->
             <div class="px-4 pt-2 flex items-center gap-2">
               <div class="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                <div class="h-full rounded-full transition-all duration-500" :class="wf.status === 'completed' ? 'bg-emerald-400' : ['running', 'awaiting_review', 'awaiting_choice', 'awaiting_draft', 'awaiting_brief', 'awaiting_ripple_decision', 'awaiting_blogger_selection'].includes(wf.status) ? 'bg-teal-400' : 'bg-slate-300'" :style="{ width: `${wf.progress_percent}%` }" />
+                <div class="h-full rounded-full transition-all duration-500" :class="card.progressClass" :style="{ width: `${card.wf.progress_percent}%` }" />
               </div>
-              <span class="text-[10px] text-slate-400 tabular-nums shrink-0">{{ wf.progress_percent }}%</span>
+              <span class="text-[10px] text-slate-400 tabular-nums shrink-0">{{ card.wf.progress_percent }}%</span>
             </div>
             <!-- Card body -->
             <div class="relative min-h-[60px]">
-              <WorkflowCardBody v-if="getDetail(wf.thread_id)" :detail="getDetail(wf.thread_id)" />
-              <div v-else-if="isDetailLoading(wf.thread_id)" class="px-4 py-4 space-y-2">
+              <WorkflowCardBody v-if="card.detail" :detail="card.detail" />
+              <div v-else-if="card.isLoading" class="px-4 py-4 space-y-2">
                 <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse" />
                 <div class="h-3 w-1/2 rounded bg-slate-100 animate-pulse" />
                 <div class="h-3 w-2/3 rounded bg-slate-100 animate-pulse" />
               </div>
-              <div v-else class="px-4 py-3 text-xs text-slate-400">{{ phaseLabel(wf.phase) }}</div>
+              <div v-else class="px-4 py-3 text-xs text-slate-400">{{ card.phaseText }}</div>
             </div>
             <!-- Error message -->
-            <div v-if="wf.error" class="px-4 pb-2">
-              <p class="text-[10px] text-rose-500 line-clamp-1">{{ wf.error }}</p>
+            <div v-if="card.wf.error" class="px-4 pb-2">
+              <p class="text-[10px] text-rose-500 line-clamp-1">{{ card.wf.error }}</p>
             </div>
             <!-- Card footer -->
             <div class="px-4 pb-2.5 pt-1 flex items-center justify-between">
               <div class="hidden md:flex items-center gap-0.5">
                 <template v-for="(_step, i) in pipelineSteps" :key="i">
-                  <div class="w-3 h-1 rounded-full transition-colors" :class="i < pipelineProgress(wf.phase) ? (wf.status === 'completed' ? 'bg-emerald-400' : 'bg-teal-400') : 'bg-slate-200'" />
+                  <div class="w-3 h-1 rounded-full transition-colors" :class="i < card.pipelineProgress ? (card.wf.status === 'completed' ? 'bg-emerald-400' : 'bg-teal-400') : 'bg-slate-200'" />
                 </template>
               </div>
               <span class="text-[10px] text-rose-500 font-medium ml-auto flex items-center gap-0.5 hover:text-rose-600">
@@ -667,31 +726,43 @@ function cardBadgeClass(wf: WorkflowListItem): string {
 </template>
 
 <style scoped>
-@keyframes breathe {
-  0%, 100% { transform: scale(1); opacity: 0.12; }
-  50% { transform: scale(1.15); opacity: 0.22; }
+.showcase-page {
+  background:
+    linear-gradient(135deg, rgba(255, 241, 242, 0.54), transparent 34%),
+    linear-gradient(225deg, rgba(240, 253, 250, 0.58), transparent 38%),
+    linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
 }
 
-/* Node hover glow — per-color variant */
-.node-glow-rose:hover { box-shadow: 0 0 20px 4px rgba(244, 63, 94, 0.15); }
-.node-glow-teal:hover { box-shadow: 0 0 20px 4px rgba(20, 184, 166, 0.15); }
-.node-glow-amber:hover { box-shadow: 0 0 20px 4px rgba(245, 158, 11, 0.15); }
-.node-glow-violet:hover { box-shadow: 0 0 20px 4px rgba(139, 92, 246, 0.15); }
-.node-glow-emerald:hover { box-shadow: 0 0 20px 4px rgba(16, 185, 129, 0.15); }
-.node-glow-sky:hover { box-shadow: 0 0 20px 4px rgba(14, 165, 233, 0.15); }
+.showcase-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 280px;
+}
 
-/* Center glass highlight */
+.node-glow-rose:hover { box-shadow: 0 0 16px 3px rgba(244, 63, 94, 0.12); }
+.node-glow-teal:hover { box-shadow: 0 0 16px 3px rgba(20, 184, 166, 0.12); }
+.node-glow-amber:hover { box-shadow: 0 0 16px 3px rgba(245, 158, 11, 0.12); }
+.node-glow-violet:hover { box-shadow: 0 0 16px 3px rgba(139, 92, 246, 0.12); }
+.node-glow-emerald:hover { box-shadow: 0 0 16px 3px rgba(16, 185, 129, 0.12); }
+.node-glow-sky:hover { box-shadow: 0 0 16px 3px rgba(14, 165, 233, 0.12); }
+
 .node-center-glass {
-  background: rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(30px) saturate(180%);
-  -webkit-backdrop-filter: blur(30px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.46)),
+    rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
   box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.04),
-    0 4px 16px rgba(0, 0, 0, 0.02),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 10px 28px rgba(15, 23, 42, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
-</style>
 
-<style>
+@media (prefers-reduced-motion: reduce) {
+  .showcase-page :deep(*) {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 </style>

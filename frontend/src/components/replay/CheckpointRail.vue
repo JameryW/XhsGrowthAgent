@@ -89,29 +89,42 @@ function phaseColor(phase: string): string {
   }
   return map[phase] || 'bg-slate-100 text-slate-600 border-slate-200'
 }
+
+const checkpointItems = computed(() =>
+  checkpoints.value.map((cp) => ({
+    cp,
+    label: agentLabel(cp.current_agent),
+    badges: dataBadges(cp),
+    hasData: hasData(cp),
+    phaseClass: phaseColor(cp.phase),
+    isActive: cp.checkpoint_id === activeId.value,
+    dateLabel: formatDate(cp.created_at),
+  }))
+)
 </script>
 
 <template>
   <div class="space-y-1">
     <div class="text-[10px] text-slate-400 font-medium uppercase tracking-widest mb-2">{{ t('replay.checkpoints') }}</div>
     <div
-      v-for="cp in checkpoints"
-      :key="cp.checkpoint_id"
+      v-for="item in checkpointItems"
+      :key="item.cp.checkpoint_id"
+      v-memo="[item.isActive, item.label, item.badges.length, item.hasData]"
       class="p-2 rounded-lg cursor-pointer transition-all duration-150 border"
-      :class="cp.checkpoint_id === activeId
+      :class="item.isActive
         ? 'liquid-glass-violet border-violet-200 shadow-sm'
         : 'border-transparent hover:bg-slate-50'"
-      @click="selectCp(cp.checkpoint_id)"
+      @click="selectCp(item.cp.checkpoint_id)"
     >
       <div class="flex items-center gap-1.5 mb-0.5">
-        <span class="text-[10px] font-medium px-1.5 py-0.5 rounded border" :class="phaseColor(cp.phase)">{{ agentLabel(cp.current_agent) }}</span>
-        <span class="text-[10px] text-slate-400 ml-auto">{{ t('replay.step') }} {{ cp.step }}</span>
+        <span class="text-[10px] font-medium px-1.5 py-0.5 rounded border" :class="item.phaseClass">{{ item.label }}</span>
+        <span class="text-[10px] text-slate-400 ml-auto">{{ t('replay.step') }} {{ item.cp.step }}</span>
       </div>
-      <div v-if="cp.created_at" class="text-[10px] text-slate-400">{{ formatDate(cp.created_at) }}</div>
-      <div v-if="dataBadges(cp).length" class="flex flex-wrap gap-0.5 mt-1">
-        <span v-for="badge in dataBadges(cp)" :key="badge" class="text-[9px] px-1 py-0 rounded bg-slate-100 text-slate-500">{{ badge }}</span>
+      <div v-if="item.cp.created_at" class="text-[10px] text-slate-400">{{ item.dateLabel }}</div>
+      <div v-if="item.badges.length" class="flex flex-wrap gap-0.5 mt-1">
+        <span v-for="badge in item.badges" :key="badge" class="text-[9px] px-1 py-0 rounded bg-slate-100 text-slate-500">{{ badge }}</span>
       </div>
-      <div v-if="!hasData(cp)" class="text-[9px] text-slate-300 mt-0.5">{{ t('replay.noData') }}</div>
+      <div v-if="!item.hasData" class="text-[9px] text-slate-300 mt-0.5">{{ t('replay.noData') }}</div>
     </div>
     <button
       v-if="hasMore"

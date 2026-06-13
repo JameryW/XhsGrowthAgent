@@ -16,7 +16,14 @@ RIPPLE_IMG="localhost/ripple-service:local"
 
 # ── 子命令 ──
 
+cmd_frontend() {
+    echo ">>> 构建前端..."
+    (cd "$PROJECT_DIR/frontend" && npm run build)
+    echo ">>> 前端构建完成"
+}
+
 cmd_rebuild() {
+    cmd_frontend
     echo ">>> 重新构建后端镜像..."
     podman build -t "$BACKEND_IMG" "$PROJECT_DIR"
     echo ">>> 镜像构建完成: $BACKEND_IMG"
@@ -139,20 +146,28 @@ except:
 " || echo "  Ripple 未响应"
 }
 
+cmd_deploy() {
+    cmd_frontend
+    cmd_rebuild
+    cmd_restart
+}
+
 # ── 入口 ──
 
 CMD="${1:-status}"
 
 case "$CMD" in
     rebuild) cmd_rebuild ;;
+    deploy)  cmd_deploy ;;
     start)   cmd_start ;;
     stop)    cmd_stop ;;
     restart) cmd_restart ;;
     status)  cmd_status ;;
     *)
-        echo "用法: $0 [rebuild|start|stop|restart|status]"
+        echo "用法: $0 [rebuild|deploy|start|stop|restart|status]"
         echo ""
-        echo "  rebuild — 重新构建后端镜像"
+        echo "  rebuild — 构建前端 + 重新构建后端镜像"
+        echo "  deploy  — 构建前端 + 重建镜像 + 重启服务（一键部署）"
         echo "  start   — 启动所有服务（Ripple + 后端）"
         echo "  stop    — 停止所有服务"
         echo "  restart — 停止 + 重新启动"

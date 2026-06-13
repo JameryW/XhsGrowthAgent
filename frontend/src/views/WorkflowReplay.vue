@@ -86,6 +86,60 @@ const agentLabels: Record<string, string> = {
   orchestrator: t('dashboard.timeline.orchestrator'),
 }
 
+const creativeAgents = new Set([
+  'copywriter',
+  'draft_gate',
+  'viral_matcher',
+  'blogger_scout',
+  'blogger_gate',
+  'choice_gate',
+  'content_analyzer',
+  'version_generator',
+  'brief_analyzer',
+  'brief_gate',
+  'shooting_planner',
+])
+const reviewAgents = new Set(['review_gate', 'revise_content'])
+const publishAgents = new Set(['publisher', 'engagement'])
+
+function hasObjectData(value: unknown): boolean {
+  return !!value && typeof value === 'object' && Object.keys(value as Record<string, unknown>).length > 0
+}
+
+const pipelineNodes = computed(() =>
+  pipelineSteps.value.map((phase) => ({
+    phase,
+    icon: phaseIcons.value[phase],
+    label: phaseLabels.value[phase] || phase,
+    status: getNodeStatus(phase),
+    selected: isNodeSelected(phase),
+  }))
+)
+
+const mobileCheckpointChips = computed(() =>
+  workflowStore.replayCheckpoints.map((cp) => ({
+    id: cp.checkpoint_id,
+    label: agentLabels[cp.current_agent] || cp.current_agent,
+    active: cp.checkpoint_id === activeCheckpointId.value,
+  }))
+)
+
+const selectedAgentLabel = computed(() => agentLabels[selectedAgent.value] || selectedAgent.value)
+const isCreativeAgent = computed(() => creativeAgents.has(selectedAgent.value))
+const isReviewAgent = computed(() => reviewAgents.has(selectedAgent.value))
+const isPublishAgent = computed(() => publishAgents.has(selectedAgent.value))
+const hasRippleResult = computed(() => {
+  const cp = selectedCheckpoint.value
+  return !!cp && (
+    hasObjectData(cp.ripple_prediction) ||
+    hasObjectData(cp.ripple_pmf) ||
+    hasObjectData(cp.ripple_comparison)
+  )
+})
+const hasSelectedAgentData = computed(() =>
+  selectedCheckpoint.value ? hasDataForAgent(selectedAgent.value, selectedCheckpoint.value) : false
+)
+
 function goBack() { router.push('/') }
 function goDashboard() { router.push('/dashboard') }
 
@@ -126,10 +180,7 @@ const finalSummary = computed(() => {
 </script>
 
 <template>
-  <div class="min-h-screen text-slate-800 relative overflow-hidden">
-    <div class="absolute top-0 right-0 w-[500px] h-[500px] pointer-events-none opacity-30" style="background: radial-gradient(circle, rgba(244,63,94,0.08) 0%, transparent 60%);" />
-    <div class="absolute bottom-0 left-0 w-[400px] h-[400px] pointer-events-none opacity-20" style="background: radial-gradient(circle, rgba(20,184,166,0.08) 0%, transparent 60%);" />
-
+  <div class="replay-page min-h-screen text-slate-800 relative overflow-hidden">
     <!-- Nav -->
     <nav class="relative z-20 liquid-glass-nav border-b border-white/15">
       <div class="max-w-[1400px] mx-auto px-4 md:px-8 h-14 flex items-center justify-between">
@@ -164,7 +215,7 @@ const finalSummary = computed(() => {
 
     <main class="max-w-[1400px] mx-auto px-4 md:px-8 py-4 md:py-6 relative z-10">
       <!-- Pipeline timeline -->
-      <div class="liquid-glass rounded-xl p-3 md:p-4 mb-5">
+      <div class="liquid-glass replay-panel rounded-xl p-3 md:p-4 mb-5">
         <div class="flex items-center gap-2 mb-3">
           <AppIcon name="GitBranch" size="md" variant="cyan" />
           <span class="text-xs text-slate-500 uppercase tracking-wide font-medium">{{ t('replay.pipeline') }}</span>
@@ -180,14 +231,14 @@ const finalSummary = computed(() => {
         </div>
 
         <div class="flex justify-between items-start relative px-1 md:px-4 overflow-x-auto -mx-3 md:mx-0">
-          <div v-for="phase in pipelineSteps" :key="phase" class="min-w-[48px] md:min-w-0 flex-1">
+          <div v-for="node in pipelineNodes" :key="node.phase" v-memo="[node.status, node.selected, node.label]" class="min-w-[48px] md:min-w-0 flex-1">
             <WorkflowNode
-              :icon="phaseIcons[phase]"
-              :label="phaseLabels[phase]"
-              :status="getNodeStatus(phase)"
+              :icon="node.icon"
+              :label="node.label"
+              :status="node.status"
               :clickable="true"
-              :selected="isNodeSelected(phase)"
-              @click="handleNodeClick(phase)"
+              :selected="node.selected"
+              @click="handleNodeClick(node.phase)"
             />
           </div>
         </div>
@@ -197,7 +248,7 @@ const finalSummary = computed(() => {
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
         <!-- Left: Checkpoint rail (3 cols desktop) -->
         <div class="lg:col-span-3 hidden lg:block">
-          <div class="sticky top-20">
+          <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-1">
             <CheckpointRail />
           </div>
         </div>
@@ -207,15 +258,16 @@ const finalSummary = computed(() => {
           <div class="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-thin">
             <div class="text-[10px] text-slate-400 font-medium uppercase tracking-widest shrink-0 mr-1">{{ t('replay.checkpoints') }}</div>
             <button
-              v-for="cp in workflowStore.replayCheckpoints"
-              :key="cp.checkpoint_id"
-              @click="workflowStore.selectCheckpoint(cp.checkpoint_id)"
+              v-for="chip in mobileCheckpointChips"
+              :key="chip.id"
+              v-memo="[chip.active, chip.label]"
+              @click="workflowStore.selectCheckpoint(chip.id)"
               class="px-2 py-1 rounded-lg text-[10px] font-medium transition-colors whitespace-nowrap shrink-0 border"
-              :class="cp.checkpoint_id === activeCheckpointId
+              :class="chip.active
                 ? 'bg-violet-50 text-violet-700 border-violet-200 shadow-sm'
                 : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'"
             >
-              {{ agentLabels[cp.current_agent] || cp.current_agent }}
+              {{ chip.label }}
             </button>
             <button
               v-if="workflowStore.hasMoreCheckpoints"
@@ -229,13 +281,13 @@ const finalSummary = computed(() => {
 
         <!-- Center: Detail panel (6 cols desktop) -->
         <div class="lg:col-span-6">
-          <div v-if="selectedCheckpoint" class="rounded-xl liquid-glass overflow-hidden">
+          <div v-if="selectedCheckpoint" class="rounded-xl liquid-glass replay-panel replay-detail-panel overflow-hidden">
             <!-- Checkpoint header -->
             <div class="px-4 md:px-5 py-3 flex items-center gap-2 border-b border-white/10 liquid-glass-inset">
               <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-400 to-indigo-400 flex items-center justify-center shadow-sm">
                 <AppIcon name="Eye" size="sm" variant="white" />
               </div>
-              <span class="text-sm font-semibold text-slate-800">{{ agentLabels[selectedAgent] || selectedAgent }}</span>
+              <span class="text-sm font-semibold text-slate-800">{{ selectedAgentLabel }}</span>
               <span class="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">{{ t('replay.step') }} {{ selectedCheckpoint.step }}</span>
               <span v-if="selectedCheckpoint.created_at" class="text-xs text-slate-400 ml-auto">{{ formatDate(selectedCheckpoint.created_at) }}</span>
             </div>
@@ -250,7 +302,7 @@ const finalSummary = computed(() => {
 
               <!-- Creating phase agents -->
               <AgentResultCreative
-                v-if="['copywriter', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'choice_gate', 'content_analyzer', 'version_generator', 'brief_analyzer', 'brief_gate', 'shooting_planner'].includes(selectedAgent)"
+                v-if="isCreativeAgent"
                 :cp="selectedCheckpoint"
                 :shooting-plan="resolvedShootingPlan"
                 :hide-draft="true"
@@ -261,32 +313,32 @@ const finalSummary = computed(() => {
               <AgentResultVisual v-if="selectedAgent === 'visual_designer'" :cp="selectedCheckpoint" />
 
               <!-- Review gate / revise -->
-              <template v-if="['review_gate', 'revise_content'].includes(selectedAgent)">
+              <template v-if="isReviewAgent">
                 <AgentResultCreative :cp="selectedCheckpoint" :shooting-plan="resolvedShootingPlan" :hide-draft="true" />
                 <AgentResultVisual v-if="hasMeaningfulData(selectedCheckpoint.visual_plan)" :cp="selectedCheckpoint" />
               </template>
 
               <!-- Publishing -->
-              <AgentResultPublish v-if="['publisher', 'engagement'].includes(selectedAgent)" :cp="selectedCheckpoint" />
+              <AgentResultPublish v-if="isPublishAgent" :cp="selectedCheckpoint" />
 
               <!-- Analytics -->
               <AgentResultAnalytics v-if="selectedAgent === 'analyst'" :cp="selectedCheckpoint" />
 
               <!-- Ripple (shown for any checkpoint that has ripple data) -->
               <AgentResultRipple
-                v-if="selectedCheckpoint.ripple_prediction && Object.keys(selectedCheckpoint.ripple_prediction).length > 0 || selectedCheckpoint.ripple_pmf && Object.keys(selectedCheckpoint.ripple_pmf).length > 0 || selectedCheckpoint.ripple_comparison && Object.keys(selectedCheckpoint.ripple_comparison).length > 0"
+                v-if="hasRippleResult"
                 :cp="selectedCheckpoint"
               />
 
               <!-- No data -->
-              <div v-if="!hasDataForAgent(selectedAgent, selectedCheckpoint)" class="text-xs text-slate-400 text-center py-4">
+              <div v-if="!hasSelectedAgentData" class="text-xs text-slate-400 text-center py-4">
                 {{ t('replay.noData') }}
               </div>
             </div>
           </div>
 
           <!-- No checkpoint selected -->
-          <div v-else class="rounded-xl liquid-glass p-8 text-center">
+          <div v-else class="rounded-xl liquid-glass replay-panel p-8 text-center">
             <div class="w-12 h-12 rounded-xl bg-violet-100 flex items-center justify-center mx-auto mb-4">
               <AppIcon name="MousePointerClick" size="lg" variant="purple" />
             </div>
@@ -299,7 +351,7 @@ const finalSummary = computed(() => {
         <div class="lg:col-span-3">
           <div class="sticky top-4 space-y-3">
             <!-- Final output summary -->
-            <div v-if="finalSummary && (finalSummary.title || finalSummary.topic || finalSummary.brand)" class="rounded-xl liquid-glass p-3 space-y-2">
+            <div v-if="finalSummary && (finalSummary.title || finalSummary.topic || finalSummary.brand)" class="rounded-xl liquid-glass replay-panel replay-sidebar-panel p-3 space-y-2">
               <div class="text-[10px] text-slate-400 font-medium uppercase tracking-widest">{{ t('replay.outputSummary') }}</div>
               <div v-if="finalSummary.title" class="text-sm font-semibold text-rose-600 leading-snug">{{ finalSummary.title }}</div>
               <div v-if="finalSummary.topic" class="text-xs text-slate-600">{{ finalSummary.topic }}</div>
@@ -310,7 +362,7 @@ const finalSummary = computed(() => {
             </div>
 
             <!-- Key metrics -->
-            <div v-if="finalSummary && (finalSummary.views != null || finalSummary.likes != null || finalSummary.viralProb != null || finalSummary.pmfScore != null)" class="rounded-xl liquid-glass p-3 space-y-2">
+            <div v-if="finalSummary && (finalSummary.views != null || finalSummary.likes != null || finalSummary.viralProb != null || finalSummary.pmfScore != null)" class="rounded-xl liquid-glass replay-panel replay-sidebar-panel p-3 space-y-2">
               <div class="text-[10px] text-slate-400 font-medium uppercase tracking-widest">{{ t('replay.keyMetrics') }}</div>
               <div class="grid grid-cols-2 gap-1.5">
                 <div v-if="finalSummary.viralProb != null" class="p-1.5 rounded liquid-glass-inset text-center">
@@ -337,7 +389,7 @@ const finalSummary = computed(() => {
             </div>
 
             <!-- Publish link -->
-            <div v-if="finalSummary?.publishUrl" class="rounded-xl liquid-glass p-3">
+            <div v-if="finalSummary?.publishUrl" class="rounded-xl liquid-glass replay-panel p-3">
               <a :href="finalSummary.publishUrl" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-xs text-emerald-600 hover:text-emerald-700 font-medium">
                 <AppIcon name="ExternalLink" size="sm" />
                 {{ t('replay.viewPost') }}
@@ -363,3 +415,32 @@ const finalSummary = computed(() => {
     </main>
   </div>
 </template>
+
+<style scoped>
+.replay-page {
+  background:
+    linear-gradient(135deg, rgba(255, 241, 242, 0.48), transparent 32%),
+    linear-gradient(225deg, rgba(240, 253, 250, 0.5), transparent 36%),
+    linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+.replay-panel {
+  content-visibility: auto;
+}
+
+.replay-detail-panel {
+  contain-intrinsic-size: 680px;
+}
+
+.replay-sidebar-panel {
+  contain-intrinsic-size: 180px;
+}
+
+.replay-page :deep(.liquid-glass-inset) {
+  background: rgba(248, 250, 252, 0.66);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-color: rgba(226, 232, 240, 0.72);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+</style>
