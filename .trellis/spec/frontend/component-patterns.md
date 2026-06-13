@@ -87,12 +87,80 @@ Never use `alert()` or `confirm()`.
 
 ---
 
+## API Call Rules
+
+> **Forbidden**: Raw `fetch()` for backend API calls. Always use `client.post()` / `client.get()` from `src/api/client.ts`.
+
+Using raw `fetch()` bypasses:
+- `ApiResponse` envelope unwrapping
+- Automatic retry on network errors
+- Consistent error handling and toast notifications
+
+```typescript
+// Wrong — silent failure, no retry, no unwrap
+const res = await fetch(`/api/workflow/${threadId}/resume`, { method: 'POST', body: JSON.stringify({ resume_value }) })
+toastStore.success(...)
+
+// Correct — goes through axios client with retry + unwrap
+await workflowApi.resumeWorkflow(threadId, resumeValue)
+toastStore.success(...)
+```
+
+---
+
+## Replay-Aware Data Access
+
+Components displaying workflow data **must** check `workflowStore.isReplayMode` and read from `workflowStore.effectiveState` (replay-aware) instead of raw `workflowStore.workflowState` (live-only).
+
+```typescript
+// Wrong — shows live data during replay
+const analytics = computed(() => workflowStore.workflowState?.analytics || {})
+
+// Correct — shows checkpoint data during replay, live data otherwise
+const es = computed(() => workflowStore.effectiveState as any)
+const analytics = computed(() => es.value?.analytics || {})
+```
+
+`effectiveState` is the union of the replay checkpoint state (when in replay mode) or the live state. `progress_percent` in replay is derived from `phaseToPercent(cp.phase)`, never hardcoded.
+
+---
+
+## Mobile Overflow Pattern
+
+For horizontal layouts that overflow on mobile (< 320px viewport):
+
+1. Add `overflow-x-auto` on the scroll container
+2. Use `shrink-0 md:shrink` on child nodes so they don't compress below `min-w-[56px]`
+3. Add `scrollbar-thin` CSS class for thin scrollbar indicator (custom utility in `main.css`, no tailwindcss-scrollbar plugin)
+
+```html
+<!-- WorkflowTimeline, WorkflowReplay, etc. -->
+<div class="overflow-x-auto scrollbar-thin">
+  <div class="flex justify-between">
+    <div v-for="..." class="shrink-0 md:shrink min-w-[56px]">...</div>
+  </div>
+</div>
+```
+
+---
+
 ## i18n Rules
 
 1. All user-visible strings must use `t('key')`
 2. Keys go in both `en.json` and `zh-CN.json`
 3. Nested keys: `workflow.started`, `ripple.progressTitle`
 4. New features require both locale files updated in the same PR
+5. **Forbidden**: Hardcoded English or Chinese string literals in `<template>` or `<script>` — even for section headers, labels, or badges
+
+```vue
+<!-- Wrong -->
+<span>Topic</span>
+<span>商单解析步骤</span>
+
+<!-- Correct -->
+<span>{{ t('contentCards.topicLabel') }}</span>
+<span>{{ t('dashboard.timeline.substepSections.briefParse') }}</span>
+```
 
 ---
 
