@@ -30,7 +30,16 @@ class ContentStrategistAgent(BaseAgent):
         account_id = state.get("account_id", "default")
         thread_id = state.get("session_id")
 
-        # 召回历史表现洞察
+        # ── Creative Memory: 读取 ──
+        from backend.memory.creative import CreativeMemory
+
+        cm = CreativeMemory(account_id, store=store)
+        niche = state.get("niche", "母婴")
+        styles = await cm.recall_style(query=f"content strategy {niche}")
+        plays = await cm.recall_plays(condition="content strategy", niche=niche)
+        benchmark = await cm.recall_benchmark(niche)
+
+        # 保留原有的 _recall_memory 召回
         insights = await self._recall_memory(
             store, account_id, query="content strategy", namespace="performance_insights", limit=5
         )
@@ -40,11 +49,15 @@ class ContentStrategistAgent(BaseAgent):
             for i in insights:
                 memory_context += f"- {i.get('insight', '')}\n"
 
+        # 拼接 creative memory 上下文
+        creative_ctx = cm.build_creative_context(styles, plays, [], benchmark)
+        if creative_ctx:
+            memory_context += f"\n{creative_ctx}"
+
         # 先用基础 prompt 生成初版策略（暂无 Ripple 数据）
         system_prompt = self._build_system_prompt(state, extra_context=memory_context)
         system_prompt = system_prompt.replace("{ripple_context}", "")
 
-        niche = state.get("niche", "母婴")
         trend_data = state.get("trend_data", {})
         user_msg = f"""趋势数据：{trend_data}
 账号定位：{account_id}
@@ -71,7 +84,9 @@ class ContentStrategistAgent(BaseAgent):
         async def _predict():
             try:
                 return await self._ripple_predict(
-                    content_plan, max_wait=ripple_timeout, thread_id=thread_id,
+                    content_plan,
+                    max_wait=ripple_timeout,
+                    thread_id=thread_id,
                 )
             except RippleTimeoutError as e:
                 logger.warning(f"Ripple spread prediction timed out: job_id={e.job_id}")
@@ -85,7 +100,9 @@ class ContentStrategistAgent(BaseAgent):
         async def _validate_pmf():
             try:
                 return await self._ripple_validate_pmf(
-                    content_plan, max_wait=ripple_timeout, thread_id=thread_id,
+                    content_plan,
+                    max_wait=ripple_timeout,
+                    thread_id=thread_id,
                 )
             except RippleTimeoutError as e:
                 logger.warning(f"Ripple PMF validation timed out: job_id={e.job_id}")
@@ -142,8 +159,7 @@ class ContentStrategistAgent(BaseAgent):
         else:
             # 超时或无数据
             is_pmf_timeout = (
-                isinstance(ripple_pmf, dict)
-                and ripple_pmf.get("ripple_reason") == "timeout"
+                isinstance(ripple_pmf, dict) and ripple_pmf.get("ripple_reason") == "timeout"
             )
             fallback_pmf = {
                 "pmf_score": 0.0,
@@ -201,10 +217,29 @@ class ContentStrategistAgent(BaseAgent):
             result["ripple_prediction"] = ripple_prediction
         if ripple_pmf and "ripple_reason" not in ripple_pmf and "ripple_pmf" not in result:
             result["ripple_pmf"] = ripple_pmf
+
+        # ── Creative Memory: 沉淀策略 ──
+        angle = content_plan.get("content_angle", "")
+        topic = content_plan.get("selected_topic", "")
+        if angle or topic:
+            from backend.memory.types import ConversionPlay
+
+            await cm.deposit_play(
+                ConversionPlay(
+                    trigger_condition=topic,
+                    title_formula=content_plan.get("title_formula", ""),
+                    opening_hook=content_plan.get("opening_hook", ""),
+                    niche=niche,
+                    content_type=str(content_plan.get("content_type", "note")),
+                )
+            )
+
         return result
 
     async def _ripple_predict(
-        self, content_plan: dict, max_wait: float = _DEFAULT_RIPPLE_TIMEOUT,
+        self,
+        content_plan: dict,
+        max_wait: float = _DEFAULT_RIPPLE_TIMEOUT,
         thread_id: str | None = None,
     ) -> dict | None:
         """调用 Ripple 预测内容传播效果
@@ -254,7 +289,9 @@ class ContentStrategistAgent(BaseAgent):
         return None
 
     async def _ripple_validate_pmf(
-        self, content_plan: dict, max_wait: float = _DEFAULT_RIPPLE_TIMEOUT,
+        self,
+        content_plan: dict,
+        max_wait: float = _DEFAULT_RIPPLE_TIMEOUT,
         thread_id: str | None = None,
     ) -> dict | None:
         """调用 Ripple 验证产品市场契合度

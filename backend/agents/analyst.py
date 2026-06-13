@@ -65,6 +65,7 @@ class AnalystAgent(BaseAgent):
         }
 
         ripple_prediction = state.get("content_plan", {}).get("ripple_prediction")
+        ripple_comparison: dict[str, Any] | None = None
         if ripple_prediction:
             ripple_comparison = self._compare_prediction_vs_actual(
                 ripple_prediction, publish_result
@@ -73,7 +74,7 @@ class AnalystAgent(BaseAgent):
                 analytics["ripple_comparison"] = ripple_comparison
                 result_updates["ripple_comparison"] = ripple_comparison
 
-                # 将校准洞察存入记忆，供未来策略参考
+                # 将校准洞察存入原有记忆（保持兼容）
                 calibration = ripple_comparison.get("calibration_insight", "")
                 if calibration:
                     from backend.memory.store import MemoryManager
@@ -85,7 +86,7 @@ class AnalystAgent(BaseAgent):
                         {"source": "analyst", "type": "ripple_calibration"},
                     )
 
-        # 将洞察存入长期记忆
+        # 将洞察存入原有记忆（保持兼容）
         from backend.memory.store import MemoryManager
 
         mm = MemoryManager(account_id)
@@ -95,6 +96,29 @@ class AnalystAgent(BaseAgent):
 
         for rec in analytics.get("recommendations", []):
             await mm.store_strategy_note(store, rec, {"source": "analyst"})
+
+        # ── Creative Memory: 输出 calibration_payload（异步回写）──
+        from backend.memory.calibrator import build_calibration_payload, schedule_calibration
+
+        actual_engagement_rate = 0.0
+        actual_save_rate = 0.0
+        if ripple_comparison:
+            actual_engagement_rate = ripple_comparison.get("actual_engagement_rate", 0.0)
+        actual_collects: int = publish_result.get("collects", publish_result.get("bookmarks", 0))  # type: ignore[assignment]
+        actual_views: int = publish_result.get("views", publish_result.get("impressions", 0))  # type: ignore[assignment]
+        if actual_views > 0:
+            actual_save_rate = actual_collects / actual_views
+
+        calibration_payload = build_calibration_payload(
+            state,  # type: ignore[arg-type]
+            actual_engagement_rate,
+            actual_save_rate,
+        )
+        result_updates["calibration_payload"] = calibration_payload
+
+        # 异步回写（不阻塞主流程）
+        if store is not None:
+            await schedule_calibration(store, calibration_payload)
 
         return result_updates
 
