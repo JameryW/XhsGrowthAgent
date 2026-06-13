@@ -13,6 +13,8 @@ from backend.config.settings import Settings
 
 logger = logging.getLogger("xhs_growth.services.ripple")
 
+SSE_STALE_THRESHOLD = 15.0  # Seconds before treating SSE progress as stale
+
 
 class RippleTimeoutError(TimeoutError):
     """Ripple 模拟超时 — 携带 job_id 以便后续取消或恢复"""
@@ -386,6 +388,8 @@ class RippleService:
 
                             # Progress events carry simulation progress
                             if event_type.startswith("progress."):
+                                import time as _time
+
                                 p = payload.get("progress")
                                 if p is not None:
                                     progress_state["progress"] = float(p)
@@ -396,7 +400,7 @@ class RippleService:
                                 if tw is not None:
                                     progress_state["total_waves"] = int(tw)
                                 progress_state["phase"] = payload.get("phase", "")
-                                progress_state["last_update"] = True
+                                progress_state["last_update_at"] = _time.monotonic()
 
         except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout) as exc:
             logger.warning(f"Ripple SSE stream error, falling back: {exc}")
@@ -692,7 +696,7 @@ class RippleService:
             "current_wave": 0,
             "total_waves": 0,
             "phase": "",
-            "last_update": False,
+            "last_update_at": None,
         }
         done_event = asyncio.Event()
 
@@ -732,11 +736,18 @@ class RippleService:
 
                 # Emit progress from SSE data (or time-based fallback)
                 if thread_id:
-                    if progress_state.get("last_update"):
-                        # SSE provided real progress data
+                    sse_updated_at = progress_state.get("last_update_at")
+                    sse_progress = progress_state.get("progress", 0.0)
+                    use_sse = False
+                    if sse_updated_at is not None:
+                        sse_age = _time.monotonic() - sse_updated_at
+                        # Use SSE data if fresh AND meaningful (progress > 0)
+                        if sse_age < SSE_STALE_THRESHOLD and sse_progress > 0:
+                            use_sse = True
+                    if use_sse:
                         self._emit_progress(
                             job_id,
-                            progress=progress_state["progress"],
+                            progress=sse_progress,
                             current_wave=progress_state["current_wave"],
                             total_waves=progress_state["total_waves"],
                             elapsed_seconds=elapsed,

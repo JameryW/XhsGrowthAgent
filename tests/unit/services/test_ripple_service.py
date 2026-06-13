@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import time
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import httpx
@@ -826,7 +827,7 @@ class TestStreamProgress:
             "current_wave": 0,
             "total_waves": 0,
             "phase": "",
-            "last_update": False,
+            "last_update_at": None,
         }
         done_event = asyncio.Event()
 
@@ -859,7 +860,7 @@ class TestStreamProgress:
         assert progress_state["progress"] == 0.45
         assert progress_state["current_wave"] == 3
         assert progress_state["total_waves"] == 8
-        assert progress_state["last_update"] is True
+        assert progress_state["last_update_at"] is not None
 
     @pytest.mark.asyncio
     async def test_stream_progress_sets_done_on_job_completed(self):
@@ -870,7 +871,7 @@ class TestStreamProgress:
             "current_wave": 6,
             "total_waves": 8,
             "phase": "",
-            "last_update": True,
+            "last_update_at": 100.0,
         }
         done_event = asyncio.Event()
 
@@ -908,7 +909,7 @@ class TestStreamProgress:
             "current_wave": 0,
             "total_waves": 0,
             "phase": "",
-            "last_update": False,
+            "last_update_at": None,
         }
         done_event = asyncio.Event()
 
@@ -927,7 +928,7 @@ class TestStreamProgress:
 
         # State should remain unchanged
         assert progress_state["progress"] == 0.0
-        assert progress_state["last_update"] is False
+        assert progress_state["last_update_at"] is None
 
     @pytest.mark.asyncio
     async def test_stream_progress_stops_on_done_event(self):
@@ -938,7 +939,7 @@ class TestStreamProgress:
             "current_wave": 0,
             "total_waves": 0,
             "phase": "",
-            "last_update": False,
+            "last_update_at": None,
         }
         done_event = asyncio.Event()
 
@@ -1001,7 +1002,7 @@ class TestWaitForCompletionWithSSE:
                 progress_state["progress"] = 0.5
                 progress_state["current_wave"] = 4
                 progress_state["total_waves"] = 8
-                progress_state["last_update"] = True
+                progress_state["last_update_at"] = time.monotonic()
 
             mock_sse.side_effect = sse_update
 
@@ -1072,6 +1073,88 @@ class TestWaitForCompletionWithSSE:
             result = await svc.wait_for_completion("job_123", thread_id="thread_abc", poll_interval=0.01)
 
         assert result["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_stale_sse_zero_progress_falls_back_to_time_estimate(self):
+        """When SSE sends progress=0 and goes stale, falls back to time-based estimate."""
+        from backend.services.ripple_service import SSE_STALE_THRESHOLD
+
+        svc = RippleService()
+        emitted: list[dict] = []
+
+        def mock_emit(job_id, progress, current_wave, total_waves, elapsed_seconds, thread_id, status="running", skill=""):
+            emitted.append({"progress": progress, "current_wave": current_wave, "elapsed": elapsed_seconds})
+
+        with (
+            patch.object(svc, "get_simulation_status", new_callable=AsyncMock) as mock_status,
+            patch.object(svc, "_stream_progress", new_callable=AsyncMock) as mock_sse,
+            patch.object(svc, "_emit_progress", side_effect=mock_emit),
+            patch.object(svc, "_get_config", return_value={"base_url": "http://localhost:8080"}),
+        ):
+            mock_status.side_effect = [
+                {"status": "running"},
+                {"status": "running"},
+                {"status": "running"},
+                {"status": "completed"},
+            ]
+
+            # SSE sends progress=0 once (long ago), then goes stale
+            async def sse_stale_zero(job_id, thread_id, progress_state, done_event):
+                progress_state["progress"] = 0.0
+                progress_state["current_wave"] = 0
+                progress_state["total_waves"] = 0
+                # Set last_update_at far in the past → stale
+                progress_state["last_update_at"] = time.monotonic() - SSE_STALE_THRESHOLD - 10
+
+            mock_sse.side_effect = sse_stale_zero
+
+            # Use a small max_wait so time-based estimate is visible
+            result = await svc.wait_for_completion("job_123", thread_id="thread_abc", poll_interval=0.05, max_wait=1.0)
+
+        assert result["status"] == "completed"
+        # Non-final emits should use time-based estimate (progress based on elapsed/max_wait)
+        non_final = [e for e in emitted if e["progress"] < 1.0]
+        assert len(non_final) > 0
+        # With max_wait=1.0 and poll_interval=0.05, at least the 2nd/3rd poll
+        # should have elapsed > 0.05s, so progress > 0.05
+        assert any(e["progress"] >= 0.03 for e in non_final), f"Time-based fallback not working: {non_final}"
+
+    @pytest.mark.asyncio
+    async def test_fresh_sse_nonzero_progress_used_directly(self):
+        """When SSE sends progress > 0 and is fresh, the SSE value is used directly."""
+        svc = RippleService()
+        emitted: list[dict] = []
+
+        def mock_emit(job_id, progress, current_wave, total_waves, elapsed_seconds, thread_id, status="running", skill=""):
+            emitted.append({"progress": progress, "current_wave": current_wave})
+
+        with (
+            patch.object(svc, "get_simulation_status", new_callable=AsyncMock) as mock_status,
+            patch.object(svc, "_stream_progress", new_callable=AsyncMock) as mock_sse,
+            patch.object(svc, "_emit_progress", side_effect=mock_emit),
+            patch.object(svc, "_get_config", return_value={"base_url": "http://localhost:8080"}),
+        ):
+            mock_status.side_effect = [
+                {"status": "running"},
+                {"status": "running"},
+                {"status": "completed"},
+            ]
+
+            # SSE sends meaningful progress (fresh)
+            async def sse_fresh(job_id, thread_id, progress_state, done_event):
+                progress_state["progress"] = 0.6
+                progress_state["current_wave"] = 5
+                progress_state["total_waves"] = 8
+                progress_state["last_update_at"] = time.monotonic()
+
+            mock_sse.side_effect = sse_fresh
+
+            result = await svc.wait_for_completion("job_123", thread_id="thread_abc", poll_interval=0.01)
+
+        assert result["status"] == "completed"
+        # At least one emit should use SSE data (progress=0.6, wave=5)
+        sse_emits = [e for e in emitted if e["progress"] == 0.6 and e["current_wave"] == 5]
+        assert len(sse_emits) >= 1
 
 
 class AsyncIterator:

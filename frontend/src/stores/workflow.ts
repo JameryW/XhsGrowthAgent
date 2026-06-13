@@ -664,6 +664,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
         if (state.label && !tabLabels.value[id]) {
           tabLabels.value[id] = state.label
         }
+        // Sync Ripple progress from status API (fills gap when WebSocket events missed)
+        if (state.ripple_progress && Object.keys(state.ripple_progress).length > 0) {
+          const rp = state.ripple_progress as { jobs?: Record<string, RippleProgress> }
+          if (rp.jobs) {
+            const existing = rippleProgressMap.value.get(id) || {}
+            rippleProgressMap.value.set(id, { ...existing, ...rp.jobs })
+          }
+        }
       } catch {
         // 404 or other error — workflow no longer exists
         failedIds.push(id)

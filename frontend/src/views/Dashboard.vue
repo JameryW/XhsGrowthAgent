@@ -18,6 +18,7 @@ import ErrorState from '@/components/ErrorState.vue'
 import ErrorCard from '@/components/ErrorCard.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { useWorkflowStore, useToastStore, useErrorStore } from '@/stores'
+import { useRealtimeStore } from '@/stores/realtime'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -102,10 +103,17 @@ function handleBriefClear() {
 }
 
 onMounted(async () => {
+  const realtimeStore = useRealtimeStore()
+  realtimeStore.connect()
   if (workflowStore.openTabIds.length > 0) {
     await workflowStore.refreshAllTabs()
+    // Subscribe WebSocket for all open tabs to receive progress events
+    for (const id of workflowStore.openTabIds) {
+      realtimeStore.subscribeWorkflow(id)
+    }
     workflowStore.startPolling(workflowStore.currentPhase === 'planning' ? 3000 : 5000)
   } else if (workflowStore.activeThreadId) {
+    realtimeStore.subscribeWorkflow(workflowStore.activeThreadId)
     workflowStore.refreshStatus()
     workflowStore.startPolling(workflowStore.currentPhase === 'planning' ? 3000 : 5000)
   }
