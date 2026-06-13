@@ -93,6 +93,11 @@ def _extract_post_data(wf_state: dict) -> dict | None:
     copy = wf_state.get("copy_content") or {}
     plan = wf_state.get("content_plan") or {}
 
+    # Skip mock (dry_run) and failed publishes
+    status = publish.get("status", "")
+    if status in ("mock_published", "failed"):
+        return None
+
     title = (
         copy.get("selected_title")
         or plan.get("selected_topic")

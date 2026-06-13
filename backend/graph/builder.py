@@ -295,7 +295,7 @@ def compile_graph_dev() -> CompiledStateGraph:
 
 
 async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
-    """生产模式编译 — 使用 Postgres 检查点 + 连接池
+    """生产模式编译 — 使用 Postgres 检查点 + Postgres 存储 + 连接池
 
     Creates a separate AsyncConnectionPool for the checkpointer.
     The pool is returned to app.py so it can be closed on shutdown
@@ -305,11 +305,13 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         Tuple of (compiled graph, (checkpointer, pool)) or (compiled graph, None)
         when falling back to memory.
     """
+    import logging
+
     builder = build_graph()
 
     try:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-        from langgraph.store.memory import InMemoryStore
+        from langgraph.store.postgres import PostgresStore
         from psycopg_pool import AsyncConnectionPool
 
         pool = AsyncConnectionPool(
@@ -318,7 +320,8 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         await pool.open()
         checkpointer = AsyncPostgresSaver(conn=pool)
         await checkpointer.setup()
-        store = InMemoryStore()
+        store = PostgresStore.from_conn_string(db_uri)
+        await store.setup()
         graph = builder.compile(
             checkpointer=checkpointer,
             store=store,
@@ -334,5 +337,9 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         return graph, (checkpointer, pool)
     except ImportError:
         # Postgres 不可用时回退到内存
+        logging.getLogger("xhs_growth.graph").warning(
+            "PostgresStore not available, falling back to InMemoryStore — "
+            "memory will NOT persist across restarts"
+        )
         graph = compile_graph_dev()
         return graph, None

@@ -144,6 +144,21 @@ class TrendScoutAgent(BaseAgent):
         trend_data = self._parse_json_response(response.content)
         trend_data["data_source"] = data_source
 
+        # 沉淀趋势洞察到长期记忆
+        if store is not None:
+            try:
+                from backend.memory.store import MemoryManager
+                mm = MemoryManager(account_id)
+                topics = trend_data.get("trending_topics", trend_data.get("topics", []))
+                summary = ", ".join(t.get("topic", str(t))[:20] for t in topics[:3]) if topics else niche
+                await mm.store_insight(
+                    store,
+                    f"趋势信号: {summary}",
+                    {"source": "trend_scout", "niche": niche, "data_source": data_source},
+                )
+            except Exception as e:
+                logger.warning(f"Failed to store trend insight: {e}")
+
         return {
             "trend_data": trend_data,
             "phase": WorkflowPhase.SCOUTING,
