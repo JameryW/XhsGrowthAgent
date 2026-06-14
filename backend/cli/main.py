@@ -73,7 +73,7 @@ def run(
         from backend.graph.builder import compile_graph_dev
         from backend.state.schema import WorkflowPhase
 
-        graph = compile_graph_dev()
+        graph = await compile_graph_dev()
         thread_id = f"xhs_{account_id}_{uuid.uuid4().hex[:8]}"
 
         initial_state = {
@@ -183,7 +183,7 @@ def status(thread_id: str = typer.Argument(..., help="工作流线程 ID")):
         from backend.graph.builder import compile_graph_dev
         from backend.state.machine import derive_status
 
-        graph = compile_graph_dev()
+        graph = await compile_graph_dev()
         config = {"configurable": {"thread_id": thread_id}}
         snapshot = await graph.aget_state(config)
 
@@ -252,7 +252,7 @@ def resume(
     async def _resume():
         from backend.graph.builder import compile_graph_dev
 
-        graph = compile_graph_dev()
+        graph = await compile_graph_dev()
         config = {"configurable": {"thread_id": thread_id}}
 
         state = await graph.aget_state(config)
@@ -298,7 +298,7 @@ def logs(
     async def _logs():
         from backend.graph.builder import compile_graph_dev
 
-        graph = compile_graph_dev()
+        graph = await compile_graph_dev()
         config = {"configurable": {"thread_id": thread_id}}
 
         state = await graph.aget_state(config)

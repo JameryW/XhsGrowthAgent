@@ -1,5 +1,6 @@
 """Unit tests for graph builder."""
 
+import pytest
 
 from backend.graph.builder import build_graph, compile_graph_dev
 
@@ -61,27 +62,30 @@ class TestBuildGraph:
 class TestCompileGraphDev:
     """Tests for dev graph compilation."""
 
-    def test_compile_graph_dev_returns_compiled_graph(self):
+    @pytest.mark.asyncio
+    async def test_compile_graph_dev_returns_compiled_graph(self):
         """compile_graph_dev returns a CompiledStateGraph."""
         from langgraph.graph.state import CompiledStateGraph
 
-        graph = compile_graph_dev()
+        graph = await compile_graph_dev()
         assert isinstance(graph, CompiledStateGraph)
 
-    def test_compile_graph_dev_has_checkpointer(self):
-        """Dev graph uses MemorySaver checkpointer."""
-        graph = compile_graph_dev()
+    @pytest.mark.asyncio
+    async def test_compile_graph_dev_has_checkpointer(self):
+        """Dev graph uses SQLite checkpointer."""
+        graph = await compile_graph_dev()
 
         # Checkpointer should be present
         assert graph.checkpointer is not None
 
-    def test_compile_graph_dev_uses_interrupt_before(self):
+    @pytest.mark.asyncio
+    async def test_compile_graph_dev_uses_interrupt_before(self):
         """Dev graph uses interrupt_before for review, choice, and draft gates.
 
         review_gate, choice_gate, and draft_gate all require human confirmation
         before proceeding, so they are listed in interrupt_before.
         """
-        graph = compile_graph_dev()
+        graph = await compile_graph_dev()
 
         assert "review_gate" in graph.interrupt_before_nodes
         assert "choice_gate" in graph.interrupt_before_nodes

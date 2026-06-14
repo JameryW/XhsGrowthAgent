@@ -49,11 +49,16 @@ async def lifespan(app: FastAPI):
             app.state.graph = graph
         except Exception as e:
             logging.getLogger("xhs_growth").warning(
-                f"Postgres setup failed, using memory: {e}"
+                f"Postgres setup failed, using SQLite: {e}"
             )
-            app.state.graph = compile_graph_dev()
+            graph = await compile_graph_dev()
+            app.state.graph = graph
+            app.state.checkpointer = graph.checkpointer
     else:
-        app.state.graph = compile_graph_dev()
+        graph = await compile_graph_dev()
+        app.state.graph = graph
+        # Expose checkpointer for health check (SQLite in dev mode)
+        app.state.checkpointer = graph.checkpointer
 
     # Start Ripple background health check
     settings = Settings()

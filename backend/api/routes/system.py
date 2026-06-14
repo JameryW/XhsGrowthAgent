@@ -163,6 +163,12 @@ async def system_health():
                     "mode": "postgres",
                     "message": f"Postgres 检查点（{cp_type}）",
                 }
+            elif "Sqlite" in cp_type or "SQLite" in cp_type:
+                database_check = {
+                    "status": "ok",
+                    "mode": "sqlite",
+                    "message": f"SQLite 持久化检查点（{cp_type}）",
+                }
             else:
                 database_check = {
                     "status": "ok",
