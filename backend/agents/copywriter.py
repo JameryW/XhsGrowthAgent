@@ -87,27 +87,38 @@ class CopywriterAgent(BaseAgent):
         # ── Creative Memory: 沉淀 ──
         from backend.memory.types import MaterialEntry
 
+        deposited_material_ids: list[str] = []
+
         selected_title = copy_content.get("selected_title", "")
         if selected_title:
-            await cm.deposit_material(
-                MaterialEntry(
-                    category="标题模板",
-                    content=selected_title,
-                    source_post_id="",
-                    tags=["auto_deposit", "标题"],
-                )
+            title_entry = MaterialEntry(
+                category="标题模板",
+                content=selected_title,
+                source_post_id="",
+                tags=["auto_deposit", "标题"],
             )
+            await cm.deposit_material(title_entry)
+            mid = title_entry.get("material_id", "")
+            if mid:
+                deposited_material_ids.append(mid)
+
         body_text = copy_content.get("body_text", "")
         if body_text:
             opening = body_text[:100]
-            await cm.deposit_material(
-                MaterialEntry(
-                    category="文案片段",
-                    content=opening,
-                    source_post_id="",
-                    tags=["auto_deposit", "开头"],
-                )
+            opening_entry = MaterialEntry(
+                category="文案片段",
+                content=opening,
+                source_post_id="",
+                tags=["auto_deposit", "开头"],
             )
+            await cm.deposit_material(opening_entry)
+            mid = opening_entry.get("material_id", "")
+            if mid:
+                deposited_material_ids.append(mid)
+
+        # Write material IDs back to copy_content for calibration chain
+        if deposited_material_ids:
+            copy_content["used_material_ids"] = deposited_material_ids
 
         return {
             "copy_content": copy_content,

@@ -97,6 +97,32 @@ class AnalystAgent(BaseAgent):
         for rec in analytics.get("recommendations", []):
             await mm.store_strategy_note(store, rec, {"source": "analyst"})
 
+        # ── Update content history with actual engagement metrics ──
+        post_id = publish_result.get("post_id", "")
+        if post_id:
+            try:
+                existing = await store.aget(mm.content_history_ns, key=post_id)
+                if existing:
+                    record = existing.value
+                    record["views"] = publish_result.get(
+                        "views", publish_result.get("impressions", 0)
+                    )
+                    record["likes"] = publish_result.get("likes", 0)
+                    record["collects"] = publish_result.get(
+                        "collects", publish_result.get("bookmarks", 0)
+                    )
+                    record["comments"] = publish_result.get("comments", 0)
+                    record["shares"] = publish_result.get("shares", 0)
+                    record_views = record["views"] or 0
+                    if record_views > 0:
+                        total_engagement = (record.get("likes", 0) or 0) + (
+                            record.get("collects", 0) or 0
+                        ) + (record.get("comments", 0) or 0) + (record.get("shares", 0) or 0)
+                        record["engagement_rate"] = round(total_engagement / record_views, 4)
+                    await store.aput(mm.content_history_ns, key=post_id, value=record)
+            except Exception as e:
+                logger.warning(f"更新内容历史互动数据失败: {e}")
+
         # ── Creative Memory: 输出 calibration_payload（异步回写）──
         from backend.memory.calibrator import build_calibration_payload, schedule_calibration
 

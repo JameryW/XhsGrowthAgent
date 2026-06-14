@@ -139,9 +139,12 @@ class CreativeMemory:
             if existing:
                 key, old = existing
                 merged = self._merge_style(old, style)
+                # Write the existing key back so caller can read style_id
+                style["style_id"] = key
                 await self._store.aput(self.style_dna_ns, key=key, value=merged)  # type: ignore[union-attr]
             else:
-                key = style.get("style_id", str(uuid.uuid4()))
+                key = style.get("style_id") or str(uuid.uuid4())
+                style["style_id"] = key
                 style.setdefault("sample_count", 1)
                 style.setdefault("last_used", datetime.now(UTC).isoformat())
                 await self._store.aput(self.style_dna_ns, key=key, value=style)  # type: ignore[union-attr,arg-type]
@@ -153,7 +156,8 @@ class CreativeMemory:
         if not self._available:
             return
         try:
-            key = play.get("play_id", str(uuid.uuid4()))
+            key = play.get("play_id") or str(uuid.uuid4())
+            play["play_id"] = key
             play.setdefault("proven_count", 0)
             play.setdefault("last_proven", datetime.now(UTC).isoformat())
             await self._store.aput(self.playbook_ns, key=key, value=play)  # type: ignore[union-attr,arg-type]
@@ -165,7 +169,8 @@ class CreativeMemory:
         if not self._available:
             return
         try:
-            key = entry.get("material_id", str(uuid.uuid4()))
+            key = entry.get("material_id") or str(uuid.uuid4())
+            entry["material_id"] = key
             entry.setdefault("reuse_count", 0)
             entry.setdefault("effectiveness", 0.5)
             entry.setdefault("weight", 1.0)
@@ -187,10 +192,14 @@ class CreativeMemory:
 
     # ── 校准：analyst 回写 ──
 
-    async def calibrate(self, payload: CalibrationPayload) -> None:
-        """根据校准数据更新三个 namespace"""
+    async def calibrate(self, payload: CalibrationPayload) -> dict[str, int]:
+        """根据校准数据更新三个 namespace.
+
+        Returns update stats: {"styles": N, "plays": N, "materials": N}
+        """
+        stats = {"styles": 0, "plays": 0, "materials": 0}
         if not self._available:
-            return
+            return stats
 
         # 1. 更新 Style DNA engagement_rate
         style_id = payload.get("style_id", "")
@@ -212,6 +221,7 @@ class CreativeMemory:
                         await self._store.aput(  # type: ignore[union-attr]
                             self.style_dna_ns, key=item.key, value=old
                         )
+                        stats["styles"] = 1
                         break
             except Exception as e:
                 logger.warning(f"calibrate style failed: {e}")
@@ -232,6 +242,7 @@ class CreativeMemory:
                         await self._store.aput(  # type: ignore[union-attr]
                             self.playbook_ns, key=item.key, value=old
                         )
+                        stats["plays"] = 1
                         break
             except Exception as e:
                 logger.warning(f"calibrate play failed: {e}")
@@ -254,9 +265,12 @@ class CreativeMemory:
                         await self._store.aput(  # type: ignore[union-attr]
                             self.vault_ns, key=item.key, value=old
                         )
+                        stats["materials"] += 1
                         break
             except Exception as e:
                 logger.warning(f"calibrate material {mid} failed: {e}")
+
+        return stats
 
     # ── 内部方法 ──
 

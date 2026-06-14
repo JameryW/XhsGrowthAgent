@@ -280,13 +280,49 @@ _SQLITE_DB = os.environ.get("XHS_SQLITE_PATH", ".xhs/checkpoints.sqlite")
 
 
 async def compile_graph_dev() -> CompiledStateGraph:
-    """开发模式编译 — 使用 SQLite 持久化检查点 + 内存存储
+    """开发模式编译 — 使用 SQLite 持久化检查点 + 存储（带语义搜索）
 
     SQLite file location defaults to .xhs/checkpoints.sqlite (configurable
     via XHS_SQLITE_PATH env var).  Falls back to MemorySaver on ImportError.
+
+    Store: If XHS_POSTGRES_URI is set, uses AsyncPostgresStore with semantic
+    search index.  Otherwise uses InMemoryStore with index (semantic search
+    enabled, but memory resets on restart).
     """
     builder = build_graph()
-    store = InMemoryStore()
+
+    from backend.memory.index import get_prod_store_index, get_store_index
+
+    store_index = get_store_index()
+    store = InMemoryStore(index=store_index)
+
+    # If Postgres URI is available, use persistent store with semantic search
+    pg_uri = os.environ.get("XHS_POSTGRES_URI", "")
+    store_context = None
+    store_context_entered = False
+
+    if pg_uri:
+        try:
+            from langgraph.store.postgres.aio import AsyncPostgresStore
+
+            prod_index = get_prod_store_index()
+            store_context = AsyncPostgresStore.from_conn_string(
+                pg_uri,
+                pool_config={"min_size": 1, "max_size": 5},
+                index=prod_index,
+            )
+            store = await store_context.__aenter__()
+            store_context_entered = True
+            await store.setup()
+        except Exception as e:
+            import logging
+            logging.getLogger("xhs_growth").warning(
+                f"Failed to create Postgres store for dev, falling back to InMemoryStore: {e}"
+            )
+            if store_context_entered and store_context is not None:
+                await store_context.__aexit__(None, None, None)
+            # Reset store to InMemoryStore since Postgres store failed
+            store = InMemoryStore(index=store_index)
 
     try:
         import aiosqlite
@@ -321,7 +357,7 @@ async def compile_graph_dev() -> CompiledStateGraph:
 
 
 async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
-    """生产模式编译 — 使用 Postgres 检查点 + Postgres 存储 + 连接池
+    """生产模式编译 — 使用 Postgres 检查点 + Postgres 存储 + 语义搜索 + 连接池
 
     Creates a separate AsyncConnectionPool for the checkpointer.
     The pool is returned to app.py so it can be closed on shutdown
@@ -337,6 +373,8 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         from langgraph.store.postgres.aio import AsyncPostgresStore
         from psycopg_pool import AsyncConnectionPool
+
+        from backend.memory.index import get_prod_store_index
 
         pool = None
         store_context = None
@@ -356,9 +394,11 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         checkpointer = AsyncPostgresSaver(conn=pool)
         await checkpointer.setup()
 
+        prod_index = get_prod_store_index()
         store_context = AsyncPostgresStore.from_conn_string(
             db_uri,
             pool_config={"min_size": 2, "max_size": 10},
+            index=prod_index,
         )
         store = await store_context.__aenter__()
         store_context_entered = True

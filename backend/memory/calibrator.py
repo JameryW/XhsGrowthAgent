@@ -42,10 +42,13 @@ async def calibrate_creative_memory(
 
     for attempt in range(1, max_retries + 1):
         try:
-            await cm.calibrate(payload)
+            stats = await cm.calibrate(payload)
+            updated = sum(v for v in stats.values() if v)
             logger.info(
                 f"Creative memory calibrated for account={account_id}, "
-                f"post={payload.get('post_id', '')} (attempt {attempt})"
+                f"post={payload.get('post_id', '')} (attempt {attempt}): "
+                f"styles={stats.get('styles', 0)}, plays={stats.get('plays', 0)}, "
+                f"materials={stats.get('materials', 0)} — {updated} object(s) updated"
             )
             return True
         except Exception as e:
@@ -89,9 +92,17 @@ def build_calibration_payload(
     content_plan = state.get("content_plan", {})
     style_id = content_plan.get("style_id", "")
 
-    # 从 copy_content 提取 play_id（如果有）
+    # style_id 可能在 visual_plan 中（visual_designer 写入）
+    if not style_id:
+        visual_plan = state.get("visual_plan", {})
+        style_id = visual_plan.get("style_id", "")
+
+    # 从 content_plan 提取 play_id（content_strategist 写入）
+    # 也在 copy_content 中查找（旧版本兼容）
     copy_content = state.get("copy_content", {})
-    play_id = copy_content.get("play_id", "")
+    play_id = content_plan.get("play_id", "")
+    if not play_id:
+        play_id = copy_content.get("play_id", "")
 
     # 从 publish_result 提取 post_id
     publish_result = state.get("publish_result", {})
@@ -103,6 +114,20 @@ def build_calibration_payload(
     # 素材 ID 和效果（从 copy_content 提取）
     material_ids = copy_content.get("used_material_ids", [])
     material_effectiveness = copy_content.get("material_effectiveness", {})
+
+    # Log missing IDs for observability
+    missing = []
+    if not style_id:
+        missing.append("style_id")
+    if not play_id:
+        missing.append("play_id")
+    if not material_ids:
+        missing.append("material_ids")
+    if missing:
+        logger.info(
+            f"Calibration payload missing IDs: {', '.join(missing)} "
+            f"(account={account_id}, post={post_id})"
+        )
 
     return CalibrationPayload(
         account_id=account_id,

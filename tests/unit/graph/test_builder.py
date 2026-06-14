@@ -100,6 +100,9 @@ class TestCompileGraphProd:
         """Prod graph enters the async Postgres store context before compile."""
         from backend.graph import builder as builder_module
 
+        # Set OPENAI_API_KEY so get_prod_store_index() returns a real index config
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
         calls = {}
         fake_graph = object()
 
@@ -147,9 +150,10 @@ class TestCompileGraphProd:
 
         class FakeAsyncPostgresStore:
             @classmethod
-            def from_conn_string(cls, db_uri, *, pool_config=None):
+            def from_conn_string(cls, db_uri, *, pool_config=None, index=None):
                 calls["store_db_uri"] = db_uri
                 calls["store_pool_config"] = pool_config
+                calls["store_index"] = index
                 return store_context
 
         class FakeBuilder:
@@ -177,6 +181,7 @@ class TestCompileGraphProd:
         assert calls["saver_setup"] is True
         assert calls["store_setup"] is True
         assert calls["store_pool_config"] == {"min_size": 2, "max_size": 10}
+        assert calls["store_index"] is not None  # prod store must receive index
         assert calls["compile_kwargs"]["checkpointer"] is checkpointer
         assert calls["compile_kwargs"]["store"] is store_context.store
         assert "ripple_gate" in calls["compile_kwargs"]["interrupt_before"]
