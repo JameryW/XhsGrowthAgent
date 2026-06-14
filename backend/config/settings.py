@@ -79,7 +79,7 @@ class RippleSettings(BaseSettings):
     enabled: bool = False
     health_check_interval: float = 30.0
     # LLM config passed to Ripple engine for simulation roles
-    llm_model: str = "mimo-v2.5-pro"
+    llm_model: str = "deepseek-v4-flash"
     llm_url: str = ""
     llm_api_key: str = ""
 

@@ -48,6 +48,11 @@ cmd_start() {
         --network "$NET" \
         --restart always \
         -p 8080:8080 \
+        --health-cmd "python -c \"import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz').status==200 else 1)\"" \
+        --health-interval 15s \
+        --health-timeout 3s \
+        --health-retries 10 \
+        --health-start-period 10s \
         -e RIPPLE_PHASE_TIMEOUT_INIT="${RIPPLE_PHASE_TIMEOUT_INIT:-300}" \
         -e RIPPLE_INIT_MERGED=true \
         -e RIPPLE_LLM_MODEL_PLATFORM="${RIPPLE_LLM_MODEL_PLATFORM:-openai}" \

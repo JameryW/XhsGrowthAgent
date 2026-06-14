@@ -90,3 +90,93 @@ class TestCompileGraphDev:
         assert "review_gate" in graph.interrupt_before_nodes
         assert "choice_gate" in graph.interrupt_before_nodes
         assert "draft_gate" in graph.interrupt_before_nodes
+
+
+class TestCompileGraphProd:
+    """Tests for production graph compilation."""
+
+    @pytest.mark.asyncio
+    async def test_compile_graph_prod_uses_async_postgres_store_context(self, monkeypatch):
+        """Prod graph enters the async Postgres store context before compile."""
+        from backend.graph import builder as builder_module
+
+        calls = {}
+        fake_graph = object()
+
+        class FakePool:
+            def __init__(self, db_uri, min_size, max_size, open, kwargs):
+                calls["pool_args"] = {
+                    "db_uri": db_uri,
+                    "min_size": min_size,
+                    "max_size": max_size,
+                    "open": open,
+                    "kwargs": kwargs,
+                }
+
+            async def open(self):
+                calls["pool_opened"] = True
+
+            async def close(self):
+                calls["pool_closed"] = True
+
+        class FakeSaver:
+            def __init__(self, conn):
+                calls["saver_conn"] = conn
+
+            async def setup(self):
+                calls["saver_setup"] = True
+
+        class FakeStore:
+            async def setup(self):
+                calls["store_setup"] = True
+
+        class FakeStoreContext:
+            def __init__(self):
+                self.store = FakeStore()
+                self.entered = False
+                self.exited = False
+
+            async def __aenter__(self):
+                self.entered = True
+                return self.store
+
+            async def __aexit__(self, exc_type, exc, tb):
+                self.exited = True
+
+        store_context = FakeStoreContext()
+
+        class FakeAsyncPostgresStore:
+            @classmethod
+            def from_conn_string(cls, db_uri, *, pool_config=None):
+                calls["store_db_uri"] = db_uri
+                calls["store_pool_config"] = pool_config
+                return store_context
+
+        class FakeBuilder:
+            def compile(self, **kwargs):
+                calls["compile_kwargs"] = kwargs
+                return fake_graph
+
+        import langgraph.checkpoint.postgres.aio as checkpoint_postgres_aio
+        import langgraph.store.postgres.aio as store_postgres_aio
+        import psycopg_pool
+
+        monkeypatch.setattr(builder_module, "build_graph", lambda: FakeBuilder())
+        monkeypatch.setattr(psycopg_pool, "AsyncConnectionPool", FakePool)
+        monkeypatch.setattr(checkpoint_postgres_aio, "AsyncPostgresSaver", FakeSaver)
+        monkeypatch.setattr(store_postgres_aio, "AsyncPostgresStore", FakeAsyncPostgresStore)
+
+        graph, resources = await builder_module.compile_graph_prod("postgresql://test")
+
+        checkpointer, checkpoint_pool, returned_store_context = resources
+        assert graph is fake_graph
+        assert returned_store_context is store_context
+        assert store_context.entered is True
+        assert store_context.exited is False
+        assert calls["saver_conn"] is checkpoint_pool
+        assert calls["saver_setup"] is True
+        assert calls["store_setup"] is True
+        assert calls["store_pool_config"] == {"min_size": 2, "max_size": 10}
+        assert calls["compile_kwargs"]["checkpointer"] is checkpointer
+        assert calls["compile_kwargs"]["store"] is store_context.store
+        assert "ripple_gate" in calls["compile_kwargs"]["interrupt_before"]
