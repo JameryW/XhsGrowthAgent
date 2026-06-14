@@ -342,12 +342,13 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
         "updated_at": datetime.now(UTC).isoformat(),
     }
 
-    if req.workflow_mode == "brief" and req.brief_text:
-        initial_state["brief_content"] = {
-            "raw_text": req.brief_text,
-            "source_type": "text",
-        }
+    if req.workflow_mode == "brief":
         initial_state["phase"] = WorkflowPhase.BRIEFING
+        if req.brief_text:
+            initial_state["brief_content"] = {
+                "raw_text": req.brief_text,
+                "source_type": "text",
+            }
 
     config = {"configurable": {"thread_id": thread_id}}
     now = datetime.now(UTC).isoformat()
@@ -356,16 +357,33 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
     await _db_upsert(
         thread_id,
         account_id=req.account_id,
-        phase=req.phase.value,
+        phase=initial_state["phase"].value if isinstance(initial_state["phase"], WorkflowPhase) else initial_state["phase"],
         status="running",
         dry_run=req.dry_run,
         auto_publish=req.auto_publish,
-        progress_percent=get_progress(req.phase.value),
+        progress_percent=get_progress(initial_state["phase"].value if isinstance(initial_state["phase"], WorkflowPhase) else initial_state["phase"]),
         workflow_mode=req.workflow_mode,
         label="",
         created_at=now,
         updated_at=now,
     )
+
+    # Brief mode without text: save initial state to checkpoint but don't start
+    # execution yet — the PDF upload will trigger the actual start via aupdate_state.
+    brief_waiting_for_upload = (
+        req.workflow_mode == "brief" and not req.brief_text
+    )
+
+    if brief_waiting_for_upload:
+        await graph.aupdate_state(config, initial_state, as_node="orchestrator")
+        return success(data={
+            "thread_id": thread_id,
+            "status": "running",
+            "phase": WorkflowPhase.BRIEFING.value,
+            "progress_percent": get_progress(WorkflowPhase.BRIEFING.value),
+            "sse_url": f"/api/workflow/stream/{thread_id}",
+            "websocket_url": "/api/realtime/ws",
+        })
 
     if req.async_mode:
         async def _run_async():
@@ -1204,6 +1222,19 @@ async def upload_brief_file(thread_id: str, request: Request):
             "source_type": source_type,
         },
     })
+
+    # If the workflow was started without brief_text (waiting for PDF upload),
+    # it paused at the initial checkpoint — start execution now
+    state = await graph.aget_state(config)
+    next_nodes = state.next if state.next else ()
+    has_active = (
+        (thread_id in _background_tasks and not _background_tasks[thread_id].done())
+        or (thread_id in _runner._active_sync_executions)
+    )
+
+    if not has_active and next_nodes:
+        # Workflow is paused and waiting — resume execution
+        await _start_resume_task(thread_id, graph, config, WorkflowPhase.BRIEFING)
 
     return success(data=BriefUploadResponse(
         thread_id=thread_id,

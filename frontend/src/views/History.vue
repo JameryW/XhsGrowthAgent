@@ -200,8 +200,8 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
             <span :class="[statusColor(wf.status), 'w-2.5 h-2.5 md:w-3 md:h-3 rounded-full flex-shrink-0']" />
 
             <!-- Info -->
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-1.5 md:gap-2 flex-wrap">
+            <div class="flex-1 min-w-0 overflow-hidden">
+              <div class="flex items-center gap-1.5 md:gap-2 flex-wrap min-w-0">
                 <span class="text-xs md:text-sm font-medium text-slate-700 truncate">{{ wf.label || wf.thread_id.slice(-8) }}</span>
                 <span class="text-[10px] md:text-xs font-mono text-slate-400 hidden sm:inline truncate">{{ wf.thread_id }}</span>
                 <span v-if="wf.dry_run" class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100">
@@ -224,7 +224,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
           </div>
 
           <!-- Progress & Actions -->
-          <div class="flex items-center gap-2 md:gap-3 flex-shrink-0">
+          <div class="flex items-center gap-2 md:gap-3 flex-shrink-0 flex-wrap">
             <!-- Progress bar -->
             <div class="w-16 md:w-20 hidden sm:block">
               <div class="h-1 md:h-1.5 rounded-full bg-slate-100 overflow-hidden">

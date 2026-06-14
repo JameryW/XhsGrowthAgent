@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -274,11 +276,35 @@ def build_graph() -> StateGraph:
     return builder
 
 
-def compile_graph_dev() -> CompiledStateGraph:
-    """开发模式编译 — 使用内存检查点和内存存储"""
+_SQLITE_DB = os.environ.get("XHS_SQLITE_PATH", ".xhs/checkpoints.sqlite")
+
+
+async def compile_graph_dev() -> CompiledStateGraph:
+    """开发模式编译 — 使用 SQLite 持久化检查点 + 内存存储
+
+    SQLite file location defaults to .xhs/checkpoints.sqlite (configurable
+    via XHS_SQLITE_PATH env var).  Falls back to MemorySaver on ImportError.
+    """
     builder = build_graph()
-    checkpointer = MemorySaver()
     store = InMemoryStore()
+
+    try:
+        import aiosqlite
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        # Ensure parent directory exists
+        db_path = Path(_SQLITE_DB)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        conn = await aiosqlite.connect(str(db_path))
+        checkpointer = AsyncSqliteSaver(conn=conn)
+        await checkpointer.setup()
+    except ImportError:
+        import logging
+        logging.getLogger("xhs_growth").warning(
+            "langgraph-checkpoint-sqlite not installed, using MemorySaver"
+        )
+        checkpointer = MemorySaver()
 
     graph = builder.compile(
         checkpointer=checkpointer,
@@ -336,10 +362,6 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         # Return pool so app.py can close it on shutdown
         return graph, (checkpointer, pool)
     except ImportError:
-        # Postgres 不可用时回退到内存
-        logging.getLogger("xhs_growth.graph").warning(
-            "PostgresStore not available, falling back to InMemoryStore — "
-            "memory will NOT persist across restarts"
-        )
-        graph = compile_graph_dev()
+        # Postgres 不可用时回退到 SQLite
+        graph = await compile_graph_dev()
         return graph, None

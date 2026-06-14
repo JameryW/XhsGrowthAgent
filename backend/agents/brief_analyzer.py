@@ -31,9 +31,11 @@ class BriefAnalyzerAgent(BaseAgent):
         niche = state.get("niche", "")
 
         if not raw_text:
+            # Brief content not yet available (e.g. PDF still uploading) —
+            # stay in BRIEFING phase; brief_gate will interrupt and wait
             return {
-                "error": "No brief content provided",
-                "phase": WorkflowPhase.ERROR,
+                "phase": WorkflowPhase.BRIEFING,
+                "brief_clarification": {"questions": [], "resolved": False},
             }
 
         # ── Creative Memory: 读取风格指纹 + 行业基准 ──

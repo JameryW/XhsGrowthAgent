@@ -295,6 +295,13 @@
       "engaging": "互动管理",
       "engagingDesc": "受众互动管理",
       "agentDetails": "Agent 执行详情",
+      "substepSections": {
+        "briefing": "商单解析步骤",
+        "creatingBrief": "商单创作步骤",
+        "creatingTrend": "内容创作步骤",
+        "reviewing": "审核步骤",
+        "publishing": "发布步骤"
+      },
       "short": {
         "copywriting": "文案",
         "draft": "草稿",
@@ -958,7 +965,9 @@
     "viewRaw": "查看原始文本",
     "skipped": "已跳过 Brief 补充",
     "skipClarification": "跳过补充",
-    "targetAudience": "目标受众"
+    "targetAudience": "目标受众",
+    "sourcePdf": "PDF",
+    "sourceText": "文本"
   },
   "shootingPlan": {
     "title": "拍摄方案",
@@ -1165,6 +1174,7 @@
     "engagements": "互动",
     "favorites": "收藏",
     "pmfScore": "PMF 分数",
+    "pmfLabel": "PMF",
     "ripplePmf": "Ripple PMF",
     "badgeTrend": "趋势",
     "badgeStrategy": "策略",

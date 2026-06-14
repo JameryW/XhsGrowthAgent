@@ -141,12 +141,13 @@ class TestOptimizationGraphIntegration:
         # draft_gate → viral_matcher is a direct edge
         assert ("draft_gate", "viral_matcher") in edges
 
-    def test_compile_graph_uses_interrupt_before(self):
+    @pytest.mark.asyncio
+    async def test_compile_graph_uses_interrupt_before(self):
         """Dev graph uses interrupt_before for review, choice, and draft gates.
 
         All three gates require human confirmation before proceeding.
         """
-        graph = compile_graph_dev()
+        graph = await compile_graph_dev()
 
         # interrupt_before contains review_gate, choice_gate, and draft_gate
         assert "review_gate" in graph.interrupt_before_nodes

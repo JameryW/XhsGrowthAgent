@@ -230,8 +230,8 @@ const finalSummary = computed(() => {
           />
         </div>
 
-        <div class="flex justify-between items-start relative px-1 md:px-4 overflow-x-auto -mx-3 md:mx-0">
-          <div v-for="node in pipelineNodes" :key="node.phase" v-memo="[node.status, node.selected, node.label]" class="min-w-[48px] md:min-w-0 flex-1">
+        <div class="flex justify-between items-start relative px-1 md:px-4 overflow-x-auto -mx-3 md:mx-0 scrollbar-thin">
+          <div v-for="node in pipelineNodes" :key="node.phase" v-memo="[node.status, node.selected, node.label]" class="min-w-[56px] md:min-w-0 flex-1 shrink-0 md:shrink">
             <WorkflowNode
               :icon="node.icon"
               :label="node.label"
@@ -370,7 +370,7 @@ const finalSummary = computed(() => {
                   <div class="text-xs font-bold" :class="finalSummary.viralProb >= 0.7 ? 'text-emerald-600' : finalSummary.viralProb >= 0.4 ? 'text-amber-600' : 'text-rose-600'">{{ (finalSummary.viralProb * 100).toFixed(0) }}%</div>
                 </div>
                 <div v-if="finalSummary.pmfScore != null" class="p-1.5 rounded liquid-glass-inset text-center">
-                  <div class="text-[9px] text-slate-400">PMF</div>
+                  <div class="text-[9px] text-slate-400">{{ t('replay.pmfLabel') }}</div>
                   <div class="text-xs font-bold" :class="finalSummary.pmfScore >= 0.7 ? 'text-emerald-600' : finalSummary.pmfScore >= 0.4 ? 'text-amber-600' : 'text-rose-600'">{{ (finalSummary.pmfScore * 100).toFixed(0) }}%</div>
                 </div>
                 <div v-if="finalSummary.views != null" class="p-1.5 rounded liquid-glass-inset text-center">

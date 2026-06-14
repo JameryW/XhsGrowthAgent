@@ -1,5 +1,7 @@
 """Graph topology tests — verify node/edge structure."""
 
+import pytest
+
 from backend.graph.builder import build_graph
 
 
@@ -28,22 +30,24 @@ def test_graph_has_all_nodes():
     assert expected_nodes.issubset(set(graph.nodes.keys()))
 
 
-def test_graph_compiles_dev():
+@pytest.mark.asyncio
+async def test_graph_compiles_dev():
     """开发模式图可以正常编译"""
     from backend.graph.builder import compile_graph_dev
 
-    graph = compile_graph_dev()
+    graph = await compile_graph_dev()
     assert graph is not None
 
 
-def test_graph_uses_interrupt_before():
+@pytest.mark.asyncio
+async def test_graph_uses_interrupt_before():
     """编译后的图使用 interrupt_before 在 review_gate, choice_gate, draft_gate 处中断。
 
     所有三个 gate 都需要人工确认才能继续。
     """
     from backend.graph.builder import compile_graph_dev
 
-    graph = compile_graph_dev()
+    graph = await compile_graph_dev()
     assert "review_gate" in graph.interrupt_before_nodes
     assert "choice_gate" in graph.interrupt_before_nodes
     assert "draft_gate" in graph.interrupt_before_nodes

@@ -48,8 +48,12 @@ const statusLabel = computed(() => {
   if (phase === 'error') return t('dashboard.phase.error')
   if (status === 'paused') return t('workflow.tabPaused')
   if (status === 'cancelled') return t('dashboard.phase.cancelled')
-  if (workflowStore.isAwaitingRippleDecision) return t('showcase.status.awaitingRipple')
-  if (workflowStore.isAwaitingBloggerSelection) return t('dashboard.phase.awaitingBlogger')
+  if (status === 'awaiting_ripple_decision') return t('showcase.status.awaitingRipple')
+  if (status === 'awaiting_blogger_selection') return t('dashboard.phase.awaitingBlogger')
+  if (status === 'awaiting_review') return t('dashboard.phase.awaitingReview')
+  if (status === 'awaiting_choice') return t('dashboard.phase.awaitingChoice')
+  if (status === 'awaiting_draft') return t('dashboard.phase.awaitingDraft')
+  if (status === 'awaiting_brief') return t('dashboard.phase.awaitingBrief')
   if (isWaitingForUser.value) return t('dashboard.header.awaitingAction')
   if (workflowStore.isRunning) return t('dashboard.header.running')
   return t('dashboard.header.idle')
@@ -158,18 +162,22 @@ const timeRemainingDisplay = computed(() => {
                     ? 'bg-slate-50 border-slate-300 text-slate-600'
                     : workflowStore.currentStatus === 'cancelled'
                       ? 'bg-slate-50 border-slate-300 text-slate-500'
-                      : isWaitingForUser
-                        ? 'bg-amber-50 border-amber-200 text-amber-700'
-                        : 'bg-slate-50 border-slate-200 text-slate-500'
+                      : workflowStore.isAwaitingRippleDecision
+                        ? 'bg-violet-50 border-violet-200 text-violet-700'
+                        : workflowStore.isAwaitingBloggerSelection
+                          ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                          : isWaitingForUser
+                            ? 'bg-amber-50 border-amber-200 text-amber-700'
+                            : 'bg-slate-50 border-slate-200 text-slate-500'
         ]"
         role="status"
         aria-live="polite"
         :aria-label="statusLabel"
       >
         <AppIcon
-          :name="workflowStore.isRunning ? 'Circle' : isStale ? 'AlertTriangle' : workflowStore.currentPhase === 'completed' ? 'CheckCircle' : workflowStore.currentPhase === 'error' ? 'AlertCircle' : isWaitingForUser ? 'Clock' : 'Minus'"
+          :name="workflowStore.isRunning ? 'Circle' : isStale ? 'AlertTriangle' : workflowStore.currentPhase === 'completed' ? 'CheckCircle' : workflowStore.currentPhase === 'error' ? 'AlertCircle' : workflowStore.isAwaitingRippleDecision ? 'Zap' : workflowStore.isAwaitingBloggerSelection ? 'Users' : isWaitingForUser ? 'Clock' : 'Minus'"
           size="sm"
-          :variant="workflowStore.isRunning ? 'white' : workflowStore.currentPhase === 'completed' ? 'cyan' : workflowStore.currentPhase === 'error' ? 'pink' : isStale ? 'peach' : 'cyan'"
+          :variant="workflowStore.isRunning ? 'white' : workflowStore.currentPhase === 'completed' ? 'cyan' : workflowStore.currentPhase === 'error' ? 'pink' : isStale ? 'peach' : workflowStore.isAwaitingRippleDecision ? 'purple' : workflowStore.isAwaitingBloggerSelection ? 'purple' : 'cyan'"
           :animate="workflowStore.isRunning"
           aria-hidden="true"
         />
