@@ -51,7 +51,7 @@ export default defineConfig({
       },
     },
     hmr: {
-      clientPort: 3000,
+      port: 3000,
     },
   },
 })
