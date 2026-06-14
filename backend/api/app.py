@@ -29,6 +29,7 @@ async def lifespan(app: FastAPI):
     db_uri = os.environ.get("POSTGRES_URI")
     checkpointer = None
     checkpoint_pool = None
+    store_context = None
 
     if db_uri:
         try:
@@ -44,7 +45,7 @@ async def lifespan(app: FastAPI):
             from backend.graph.builder import compile_graph_prod
             graph, result = await compile_graph_prod(db_uri)
             if result is not None:
-                checkpointer, checkpoint_pool = result
+                checkpointer, checkpoint_pool, store_context = result
                 app.state.checkpointer = checkpointer
             app.state.graph = graph
         except Exception as e:
@@ -73,7 +74,10 @@ async def lifespan(app: FastAPI):
     with contextlib.suppress(Exception):
         await ripple.close()
 
-    # Close checkpointer pool first (owns its connections)
+    # Close graph persistence resources first (own their connections)
+    if store_context is not None:
+        with contextlib.suppress(Exception):
+            await store_context.__aexit__(None, None, None)
     if checkpoint_pool is not None:
         with contextlib.suppress(Exception):
             await checkpoint_pool.close()

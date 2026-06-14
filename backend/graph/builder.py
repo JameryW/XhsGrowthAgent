@@ -328,17 +328,26 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
     alongside the app-level DB pool.
 
     Returns:
-        Tuple of (compiled graph, (checkpointer, pool)) or (compiled graph, None)
-        when falling back to memory.
+        Tuple of (compiled graph, (checkpointer, pool, store_context)) or
+        (compiled graph, None) when falling back to memory.
     """
-    import logging
-
     builder = build_graph()
 
     try:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-        from langgraph.store.postgres import PostgresStore
+        from langgraph.store.postgres.aio import AsyncPostgresStore
         from psycopg_pool import AsyncConnectionPool
+
+        pool = None
+        store_context = None
+        store_context_entered = False
+        graph_interrupts = [
+            "review_gate",
+            "choice_gate",
+            "draft_gate",
+            "ripple_gate",
+            "blogger_gate",
+        ]
 
         pool = AsyncConnectionPool(
             db_uri, min_size=2, max_size=10, open=False, kwargs={"autocommit": True}
@@ -346,22 +355,28 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         await pool.open()
         checkpointer = AsyncPostgresSaver(conn=pool)
         await checkpointer.setup()
-        store = PostgresStore.from_conn_string(db_uri)
+
+        store_context = AsyncPostgresStore.from_conn_string(
+            db_uri,
+            pool_config={"min_size": 2, "max_size": 10},
+        )
+        store = await store_context.__aenter__()
+        store_context_entered = True
         await store.setup()
         graph = builder.compile(
             checkpointer=checkpointer,
             store=store,
-            interrupt_before=[
-                "review_gate",
-                "choice_gate",
-                "draft_gate",
-                "ripple_gate",
-                "blogger_gate",
-            ],
+            interrupt_before=graph_interrupts,
         )
-        # Return pool so app.py can close it on shutdown
-        return graph, (checkpointer, pool)
+        # Return resources so app.py can close them on shutdown.
+        return graph, (checkpointer, pool, store_context)
     except ImportError:
         # Postgres 不可用时回退到 SQLite
         graph = await compile_graph_dev()
         return graph, None
+    except Exception:
+        if store_context_entered and store_context is not None:
+            await store_context.__aexit__(None, None, None)
+        if pool is not None:
+            await pool.close()
+        raise
