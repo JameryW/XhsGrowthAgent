@@ -283,14 +283,14 @@ function nodeGlowClass(step: { color: string }): string {
 // Ellipse parameters for desktop loop layout
 const ellipseRxPct = 36
 const ellipseRyPct = 38
-const nodeSize = 68
+const nodeSize = 88
 const containerW = ref(1200)
 const loopContainer = ref<HTMLElement | null>(null)
 const stepsVisible = ref(false)
 
 function stepStyle(i: number, containerWidth: number): Record<string, string> {
   const rx = containerWidth * ellipseRxPct / 100
-  const ry = 420 * ellipseRyPct / 100
+  const ry = 460 * ellipseRyPct / 100
   const angleDeg = i * 60 - 90
   const angleRad = angleDeg * Math.PI / 180
   const x = rx * Math.cos(angleRad)
@@ -317,9 +317,9 @@ onUnmounted(() => {
 })
 
 const svgCx = computed(() => containerW.value / 2)
-const svgCy = 210
+const svgCy = 230
 const svgRx = computed(() => containerW.value * ellipseRxPct / 100)
-const svgRy = computed(() => 420 * ellipseRyPct / 100)
+const svgRy = computed(() => 460 * ellipseRyPct / 100)
 
 const loopMotionPath = computed(() => {
   const cx = svgCx.value
@@ -376,6 +376,8 @@ const visibleCards = computed(() =>
 
 <template>
   <div class="showcase-page min-h-screen text-slate-800 relative overflow-hidden">
+    <!-- Ambient glow orbs -->
+    <div class="showcase-glow-mid" aria-hidden="true" />
     <!-- Nav -->
     <nav class="relative z-20 liquid-glass-nav border-b border-white/15">
       <div class="max-w-[1200px] mx-auto px-3 md:px-6 h-14 flex items-center justify-between">
@@ -423,8 +425,8 @@ const visibleCards = computed(() =>
           <div class="text-xs font-medium text-slate-400 uppercase tracking-widest mb-3">{{ t('showcase.pipelineLabel') }}</div>
 
           <!-- Desktop: elliptical loop with SVG path + circular nodes -->
-          <div ref="loopContainer" class="hidden md:block relative" style="height: 420px;">
-            <svg class="absolute inset-0 w-full h-full pointer-events-none" :viewBox="`0 0 ${containerW} 420`" preserveAspectRatio="xMidYMid meet" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <div ref="loopContainer" class="hidden md:block relative" style="height: 460px;">
+            <svg class="absolute inset-0 w-full h-full pointer-events-none" :viewBox="`0 0 ${containerW} 460`" preserveAspectRatio="xMidYMid meet" fill="none" xmlns="http://www.w3.org/2000/svg">
               <defs>
                 <linearGradient id="loop-grad" x1="0" :y1="svgCy" :x2="containerW" :y2="svgCy" gradientUnits="userSpaceOnUse">
                   <stop stop-color="#f43f5e" />
@@ -501,11 +503,11 @@ const visibleCards = computed(() =>
               <!-- Hover: outer glow -->
               <div class="absolute inset-[-8px] rounded-full opacity-0 group-hover:opacity-40 transition-opacity duration-300 blur-sm" :class="step.color" />
               <!-- Node circle -->
-              <div class="w-[68px] h-[68px] rounded-full flex items-center justify-center bg-white/90 border-2 shadow-md transition-all duration-300 group-hover:scale-105 group-hover:shadow-lg relative z-10" :class="[step.borderColor, step.iconColor]">
+              <div class="w-[88px] h-[88px] rounded-full flex items-center justify-center bg-white/90 border-2 shadow-md transition-all duration-300 group-hover:scale-105 group-hover:shadow-lg relative z-10" :class="[step.borderColor, step.iconColor]">
                 <AppIcon :name="step.icon" size="lg" :variant="step.iconVariant" />
               </div>
               <div class="text-center mt-2">
-                <div class="text-[11px] font-semibold text-slate-700 whitespace-nowrap">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
+                <div class="text-xs font-semibold text-slate-700 whitespace-nowrap">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
               </div>
             </div>
           </div>
@@ -649,7 +651,7 @@ const visibleCards = computed(() =>
         <!-- ══════════════════════════════════════════════════════════════
              Layer 5: Card grid
              ══════════════════════════════════════════════════════════════ -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div
             v-for="card in visibleCards"
             :key="card.wf.thread_id"
@@ -733,6 +735,64 @@ const visibleCards = computed(() =>
     linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
 }
 
+.showcase-page::before,
+.showcase-page::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.showcase-page::before {
+  width: 600px;
+  height: 600px;
+  top: -120px;
+  left: -80px;
+  background: radial-gradient(circle, rgba(244, 63, 94, 0.08) 0%, transparent 70%);
+  animation: glow-drift-1 12s ease-in-out infinite alternate;
+}
+
+.showcase-page::after {
+  width: 500px;
+  height: 500px;
+  bottom: -100px;
+  right: -60px;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.08) 0%, transparent 70%);
+  animation: glow-drift-2 15s ease-in-out infinite alternate;
+}
+
+@keyframes glow-drift-1 {
+  0% { transform: translate(0, 0); opacity: 0.6; }
+  50% { transform: translate(60px, 40px); opacity: 0.9; }
+  100% { transform: translate(-30px, 80px); opacity: 0.5; }
+}
+
+@keyframes glow-drift-2 {
+  0% { transform: translate(0, 0); opacity: 0.5; }
+  50% { transform: translate(-50px, -30px); opacity: 0.85; }
+  100% { transform: translate(40px, -60px); opacity: 0.55; }
+}
+
+.showcase-glow-mid {
+  position: absolute;
+  width: 450px;
+  height: 450px;
+  top: 40%;
+  left: 45%;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.06) 0%, transparent 70%);
+  animation: glow-drift-3 10s ease-in-out infinite alternate;
+}
+
+@keyframes glow-drift-3 {
+  0% { transform: translate(0, 0); opacity: 0.4; }
+  50% { transform: translate(30px, -50px); opacity: 0.75; }
+  100% { transform: translate(-40px, 30px); opacity: 0.45; }
+}
+
 .showcase-card {
   content-visibility: auto;
   contain-intrinsic-size: 280px;
@@ -763,6 +823,12 @@ const visibleCards = computed(() =>
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+  .showcase-page::before,
+  .showcase-page::after,
+  .showcase-glow-mid {
+    animation: none !important;
+    opacity: 0.6;
   }
 }
 </style>
