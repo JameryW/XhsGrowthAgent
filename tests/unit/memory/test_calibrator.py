@@ -82,6 +82,7 @@ class TestCalibrateCreativeMemory:
             call_count += 1
             if call_count < 3:
                 raise RuntimeError("transient error")
+            return {"styles": 0, "plays": 0, "materials": 0}
 
         with patch("backend.memory.calibrator.CreativeMemory") as mock_cm:
             instance = MagicMock()

@@ -113,6 +113,8 @@ class PublisherAgent(BaseAgent):
                 from backend.memory.content_history import ContentHistory
 
                 history = ContentHistory(account_id)
+                # Include IDs for calibration chain and content_type for recall filtering
+                visual_plan = state.get("visual_plan", {})
                 await history.record(
                     store,
                     post_id=publish_result["post_id"],
@@ -122,6 +124,9 @@ class PublisherAgent(BaseAgent):
                         "hashtags": copy.get("hashtags", []),
                         "published_at": publish_result.get("published_at", ""),
                         "status": publish_result.get("status", ""),
+                        "content_type": plan.get("content_type", ""),
+                        "style_id": visual_plan.get("style_id", ""),
+                        "play_id": plan.get("play_id", ""),
                     },
                 )
             except Exception as e:

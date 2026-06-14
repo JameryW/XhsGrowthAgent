@@ -224,15 +224,18 @@ class ContentStrategistAgent(BaseAgent):
         if angle or topic:
             from backend.memory.types import ConversionPlay
 
-            await cm.deposit_play(
-                ConversionPlay(
-                    trigger_condition=topic,
-                    title_formula=content_plan.get("title_formula", ""),
-                    opening_hook=content_plan.get("opening_hook", ""),
-                    niche=niche,
-                    content_type=str(content_plan.get("content_type", "note")),
-                )
+            play = ConversionPlay(
+                trigger_condition=topic,
+                title_formula=content_plan.get("title_formula", ""),
+                opening_hook=content_plan.get("opening_hook", ""),
+                niche=niche,
+                content_type=str(content_plan.get("content_type", "note")),
             )
+            await cm.deposit_play(play)
+            # Write play_id back to content_plan for calibration chain
+            play_id = play.get("play_id", "")
+            if play_id:
+                content_plan["play_id"] = play_id
 
         return result
 

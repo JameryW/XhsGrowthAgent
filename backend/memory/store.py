@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
 from langgraph.store.base import BaseStore
+
+logger = logging.getLogger("xhs_growth.memory.store")
 
 
 class MemoryManager:
@@ -75,31 +78,47 @@ class MemoryManager:
     async def recall_similar_content(
         self, store: BaseStore, query: str, limit: int = 5
     ) -> list[dict]:
-        items = await store.asearch(
-            self.content_history_ns, query=query, limit=limit
-        )
-        return [item.value for item in items]
+        try:
+            items = await store.asearch(
+                self.content_history_ns, query=query, limit=limit
+            )
+            return [item.value for item in items]
+        except Exception as e:
+            logger.warning(f"recall_similar_content failed: {e}")
+            return []
 
     async def recall_audience_preferences(
         self, store: BaseStore, query: str, limit: int = 3
     ) -> list[dict]:
-        items = await store.asearch(
-            self.audience_ns, query=query, limit=limit
-        )
-        return [item.value for item in items]
+        try:
+            items = await store.asearch(
+                self.audience_ns, query=query, limit=limit
+            )
+            return [item.value for item in items]
+        except Exception as e:
+            logger.warning(f"recall_audience_preferences failed: {e}")
+            return []
 
     async def recall_insights(
         self, store: BaseStore, query: str, limit: int = 5
     ) -> list[dict]:
-        items = await store.asearch(
-            self.insights_ns, query=query, limit=limit
-        )
-        return [item.value for item in items]
+        try:
+            items = await store.asearch(
+                self.insights_ns, query=query, limit=limit
+            )
+            return [item.value for item in items]
+        except Exception as e:
+            logger.warning(f"recall_insights failed: {e}")
+            return []
 
     async def recall_strategy_notes(
         self, store: BaseStore, query: str, limit: int = 3
     ) -> list[dict]:
-        items = await store.asearch(
-            self.strategy_ns, query=query, limit=limit
-        )
-        return [item.value for item in items]
+        try:
+            items = await store.asearch(
+                self.strategy_ns, query=query, limit=limit
+            )
+            return [item.value for item in items]
+        except Exception as e:
+            logger.warning(f"recall_strategy_notes failed: {e}")
+            return []

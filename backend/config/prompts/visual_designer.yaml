@@ -11,12 +11,15 @@ system: |
   - 图文笔记推荐3:4竖版比例
   - 风格要与账号整体调性一致
 
+  {memory_context}
+
   【重要】请直接输出以下 JSON 格式，不要包含任何其他文字、解释或 markdown 标记：
   {
     "cover_prompt": "AI绘画提示词",
     "image_count": N,
     "image_prompts": ["提示词1", "提示词2"],
-    "layout_style": "九宫格/四宫格/单图",
+    "visual_style": "ins风/极简/复古/温暖治愈等",
+    "layout_preference": "九宫格/四宫格/单图",
     "color_palette": ["#色1", "#色2"],
     "font_suggestion": "字体建议",
     "brand_elements": ["元素1"]

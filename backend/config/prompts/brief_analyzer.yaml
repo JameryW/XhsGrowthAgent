@@ -17,6 +17,8 @@ system: |
   4. 话题标签需要区分"必带"和"选带"
   5. 拍摄要求要保留原始描述（如"都拍live图"、"不可镜像"等）
 
+  {memory_context}
+
 user_template: |
   请解析以下商单 brief：
   {brief_text}

@@ -392,3 +392,30 @@ class TestNamespaces:
 
     def test_benchmark_ns(self):
         assert CreativeMemory.benchmark_ns("母婴") == ("benchmarks", "母婴")
+
+
+class TestCalibrateStats:
+    """calibrate() returns update stats dict."""
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_stats_when_no_store(self):
+        cm = CreativeMemory("test", store=None)
+        payload = CalibrationPayload(account_id="test")
+        stats = await cm.calibrate(payload)
+        assert stats == {"styles": 0, "plays": 0, "materials": 0}
+
+    @pytest.mark.asyncio
+    async def test_returns_stats_on_style_update(self):
+        style = StyleDNA(style_id="s1", tone="治愈", sample_count=1, engagement_rate=0.05)
+        store = _make_store(search_results=[style])
+        cm = CreativeMemory("test_acct", store=store)
+        payload = CalibrationPayload(
+            account_id="test_acct",
+            style_id="s1",
+            actual_engagement_rate=0.08,
+            actual_save_rate=0.02,
+        )
+        stats = await cm.calibrate(payload)
+        assert stats["styles"] == 1
+        assert stats["plays"] == 0
+        assert stats["materials"] == 0

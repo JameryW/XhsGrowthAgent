@@ -74,16 +74,20 @@ class BaseAgent(ABC):
     ) -> list[dict]:
         if store is None:
             return []
-        mm = MemoryManager(account_id)
-        ns_map = {
-            "content_history": mm.content_history_ns,
-            "audience_preferences": mm.audience_ns,
-            "performance_insights": mm.insights_ns,
-            "strategy_notes": mm.strategy_ns,
-        }
-        ns = ns_map.get(namespace, mm.insights_ns)
-        items = await store.asearch(ns, query=query, limit=limit)
-        return [item.value for item in items]
+        try:
+            mm = MemoryManager(account_id)
+            ns_map = {
+                "content_history": mm.content_history_ns,
+                "audience_preferences": mm.audience_ns,
+                "performance_insights": mm.insights_ns,
+                "strategy_notes": mm.strategy_ns,
+            }
+            ns = ns_map.get(namespace, mm.insights_ns)
+            items = await store.asearch(ns, query=query, limit=limit)
+            return [item.value for item in items]
+        except Exception as e:
+            logger.warning(f"_recall_memory failed (ns={namespace}): {e}")
+            return []
 
     def _parse_json_response(self, content: str) -> dict[str, Any]:
         """从 LLM 响应中提取 JSON（增强版，处理多种格式和常见语法错误）"""

@@ -52,15 +52,20 @@ class VisualDesignerAgent(BaseAgent):
         # ── Creative Memory: 沉淀风格选择 ──
         from backend.memory.types import StyleDNA
 
-        visual_style = visual_plan.get("style_name", "")
+        visual_style = visual_plan.get("style_name", visual_plan.get("visual_style", ""))
         if visual_style:
-            await cm.deposit_style(
-                StyleDNA(
-                    visual_style=visual_style,
-                    color_palette=visual_plan.get("color_palette", []),
-                    layout_preference=visual_plan.get("layout_type", ""),
-                )
+            style = StyleDNA(
+                visual_style=visual_style,
+                color_palette=visual_plan.get("color_palette", []),
+                layout_preference=visual_plan.get(
+                    "layout_type", visual_plan.get("layout_preference", "")
+                ),
             )
+            await cm.deposit_style(style)
+            # Write style_id back to visual_plan for calibration chain
+            style_id = style.get("style_id", "")
+            if style_id:
+                visual_plan["style_id"] = style_id
 
         return {
             "visual_plan": visual_plan,
