@@ -42,7 +42,7 @@ async def submit_draft(thread_id: str, draft: DraftSubmission, request: Request)
     await graph.aupdate_state(config, {
         "draft_content": draft.model_dump(),
         "user_viral_links": draft.viral_links,
-    })
+    }, as_node=_runner._get_as_node(state))
 
     # If graph is interrupted at draft_gate, resume it via _run_graph_and_persist
     if "draft_gate" in state.next:

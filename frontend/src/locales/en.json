@@ -215,6 +215,7 @@
       "goReviewDesc": "Go to Review",
       "goReviewPending": "Go to review page to review and decide",
       "goReviewPendingDesc": "Review content - ready for your decision",
+      "editDraft": "Edit Draft",
       "pause": "Pause Workflow",
       "pauseDesc": "Pause current workflow execution",
       "resume": "Resume Workflow",
@@ -972,7 +973,9 @@
     "skipClarification": "Skip clarification",
     "targetAudience": "Target Audience",
     "sourcePdf": "PDF",
-    "sourceText": "Text"
+    "sourceText": "Text",
+    "queued": "Queued",
+    "queuedHint": "PDF will be uploaded and text extracted when the workflow starts"
   },
   "shootingPlan": {
     "title": "Shooting Plan",

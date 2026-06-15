@@ -34,14 +34,6 @@ const optimizationAnalysis = computed(() =>
   es.value?.optimization_analysis ||
   null
 )
-const draftContent = computed(() => {
-  const fromStore = optimizationStore.draftContent
-  if (fromStore) return fromStore
-  const fromState = es.value?.draft_content
-  // Empty dict {} from backend means no draft submitted yet
-  if (fromState && typeof fromState === 'object' && Object.keys(fromState).length > 0) return fromState
-  return null
-})
 const generatedDraft = computed<DraftContent | null>(() => {
   const copy = workflowStore.copyContent
   const text = copy.body_text?.trim()
@@ -63,14 +55,14 @@ const isOptimizationPending = computed(() =>
 
 const isDraftInputPending = computed(() =>
   workflowStore.isAwaitingDraft &&
-  !draftContent.value &&
   !isOptimizationPending.value
 )
 
+const shouldShowDraftInput = computed(() =>
+  workflowStore.isAwaitingDraft && (showDraftInput.value || isDraftInputPending.value)
+)
+
 // Operations
-const startOptimization = () => {
-  showDraftInput.value = true
-}
 
 const useGeneratedDraft = () => {
   if (!generatedDraft.value) return
@@ -94,8 +86,8 @@ const handleVersionSelect = (choice: VersionChoice) => {
 </script>
 
 <template>
-  <div v-if="isDraftInputPending || showDraftInput || isOptimizationPending" class="space-y-4" role="region" :aria-label="t('dashboard.optimization.title')">
-    <!-- Optimization prompt when draft input is pending -->
+  <div v-if="shouldShowDraftInput || isOptimizationPending" class="space-y-4" role="region" :aria-label="t('dashboard.optimization.title')">
+    <!-- Draft input when awaiting draft -->
     <div v-if="isDraftInputPending && !showDraftInput" class="rounded-xl p-3 md:p-5 bg-gradient-to-r from-neon-cyan/5 to-neon-purple/5 border border-neon-cyan/20" role="status" aria-live="polite">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
@@ -118,7 +110,7 @@ const handleVersionSelect = (choice: VersionChoice) => {
           </NeonButton>
           <NeonButton
             :variant="hasGeneratedDraft ? 'ghost' : 'cyan'"
-            @click="startOptimization"
+            @click="showDraftInput = true"
             :aria-label="hasGeneratedDraft ? t('draft.editGeneratedDraft') : t('dashboard.optimization.desc')"
           >
             <AppIcon name="Wand2" size="sm" :variant="hasGeneratedDraft ? 'cyan' : 'white'" aria-hidden="true" />

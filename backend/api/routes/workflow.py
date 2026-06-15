@@ -70,8 +70,9 @@ def _load_history_file(thread_id: str) -> dict | None:
 
 # ── DB-aware helpers ──
 
-# Re-export _db_upsert from _runner for use in this module
+# Re-export shared helpers from _runner for use in this module
 _db_upsert = _runner._db_upsert
+_get_as_node = _runner._get_as_node
 
 
 def _on_task_done(thread_id: str):
@@ -737,6 +738,7 @@ async def get_checkpoint_history(
     raise WorkflowNotFoundError(thread_id)
 
 
+
 @router.post("/pause/{thread_id}")
 async def pause_workflow(thread_id: str, request: Request):
     """暂停工作流"""
@@ -752,7 +754,7 @@ async def pause_workflow(thread_id: str, request: Request):
         raise WorkflowNotFoundError(thread_id)
 
     current_phase = state.values.get("phase", "unknown")
-    await graph.aupdate_state(config, {"phase": "paused", "prev_phase": current_phase})
+    await graph.aupdate_state(config, {"phase": "paused", "prev_phase": current_phase}, as_node=_get_as_node(state))
 
     bg_task = _background_tasks.get(thread_id)
     if bg_task and not bg_task.done():
@@ -895,7 +897,7 @@ async def resume_workflow(thread_id: str, request: Request):
         )
     else:
         prev_phase = state.values.get("prev_phase") or WorkflowPhase.SCOUTING
-    await graph.aupdate_state(config, {"phase": prev_phase, "error": None})
+    await graph.aupdate_state(config, {"phase": prev_phase, "error": None}, as_node=_get_as_node(state))
 
     await _start_resume_task(thread_id, graph, config, prev_phase)
 
@@ -925,7 +927,7 @@ async def cancel_workflow(thread_id: str, request: Request):
         "phase": "cancelled",
         "error": "User cancelled",
         "prev_phase": current_phase,
-    })
+    }, as_node=_get_as_node(state))
 
     await _db_upsert(
         thread_id,
@@ -1161,7 +1163,8 @@ async def retry_ripple_analysis(thread_id: str, request: Request):
             updates["ripple_fallback"] = True
 
         if updates:
-            await graph.aupdate_state(config, updates)
+            ripple_state = await graph.aget_state(config)
+            await graph.aupdate_state(config, updates, as_node=_get_as_node(ripple_state))
             print(f"[ripple-retry] State updated for {thread_id}: {list(updates.keys())}", flush=True)
 
     task = asyncio.create_task(_run_retry(), name=f"ripple-retry-{thread_id}")
@@ -1172,6 +1175,51 @@ async def retry_ripple_analysis(thread_id: str, request: Request):
         "status": "retrying",
         "message": "Ripple 分析正在重新运行",
     })
+
+
+class BriefExtractResponse(BaseModel):
+    brief_text: str
+    source_type: str
+
+
+@router.post("/brief/extract")
+async def extract_brief_file(request: Request):
+    """Extract text from a brief document (PDF) without requiring a thread ID.
+
+    Used by the frontend for immediate preview after file selection.
+    The extracted text is then passed as briefText when starting the workflow.
+    """
+    form = await request.form()
+    file = form.get("file")
+    if not file:
+        raise ValidationError("file", "No file uploaded")
+
+    filename = file.filename or "unknown"
+    content_bytes = await file.read()
+
+    max_upload_size = 20 * 1024 * 1024
+    if len(content_bytes) > max_upload_size:
+        raise ValidationError("file", f"File too large (max {max_upload_size // 1024 // 1024}MB)")
+
+    brief_text = ""
+    source_type = "text"
+
+    if filename.lower().endswith(".pdf"):
+        source_type = "pdf"
+        brief_text = await _extract_pdf_text(content_bytes)
+    else:
+        try:
+            brief_text = content_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            brief_text = content_bytes.decode("gbk", errors="replace")
+
+    if not brief_text.strip():
+        raise ValidationError("file", "Could not extract text from the uploaded file")
+
+    return success(data=BriefExtractResponse(
+        brief_text=brief_text[:500] + "..." if len(brief_text) > 500 else brief_text,
+        source_type=source_type,
+    ).model_dump())
 
 
 class BriefUploadResponse(BaseModel):
@@ -1216,12 +1264,20 @@ async def upload_brief_file(thread_id: str, request: Request):
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
-    await graph.aupdate_state(config, {
-        "brief_content": {
-            "raw_text": brief_text,
-            "source_type": source_type,
+    as_node = _get_as_node(await graph.aget_state(config))
+
+    update_kwargs: dict[str, Any] = {
+        "values": {
+            "brief_content": {
+                "raw_text": brief_text,
+                "source_type": source_type,
+            },
         },
-    })
+    }
+    if as_node:
+        update_kwargs["as_node"] = as_node
+
+    await graph.aupdate_state(config, **update_kwargs)
 
     # If the workflow was started without brief_text (waiting for PDF upload),
     # it paused at the initial checkpoint — start execution now

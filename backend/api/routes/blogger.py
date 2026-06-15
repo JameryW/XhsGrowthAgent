@@ -87,7 +87,7 @@ async def select_blogger(thread_id: str, selection: BloggerSelection, request: R
     # Not at blogger_gate — just update state
     await graph.aupdate_state(config, {
         "selected_blogger": resume_value if not selection.skip else {},
-    })
+    }, as_node=_runner._get_as_node(state))
 
     return success(data={
         "thread_id": thread_id,

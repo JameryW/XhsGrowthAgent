@@ -130,6 +130,20 @@ def _status_to_str(
     return "completed"
 
 
+def _get_as_node(state) -> str | None:
+    """Determine as_node for aupdate_state from the current state checkpoint.
+
+    LangGraph requires as_node when updating state on a workflow paused at
+    an interrupt (multiple nodes in state). Without it, raises
+    InvalidUpdateError: Ambiguous update, specify as_node.
+    """
+    if state.tasks:
+        return state.tasks[0].name
+    if state.values:
+        return state.values.get("_last_node", "orchestrator")
+    return "orchestrator"
+
+
 def _save_history_file(thread_id: str, state_values: dict) -> None:
     """Persist completed workflow result to history file."""
     try:
@@ -217,7 +231,8 @@ async def _run_graph_and_persist(
     except Exception as exc:
         logger.exception("Graph execution failed (source=%s, thread=%s)", source, thread_id)
         with contextlib.suppress(Exception):
-            await graph.aupdate_state(config, {"phase": "error", "error": str(exc)})
+            snapshot = await graph.aget_state(config)
+            await graph.aupdate_state(config, {"phase": "error", "error": str(exc)}, as_node=_get_as_node(snapshot))
         await _db_upsert(
             thread_id,
             status="error",

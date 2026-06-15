@@ -29,7 +29,7 @@ const props = defineProps<{
 const workflowMode = ref<WorkflowMode>('trend')
 const accountId = ref('default')
 const phase = ref<WorkflowPhase>('scouting')
-const dryRun = ref(true)
+const dryRun = ref(false)
 const autoPublish = ref(false)
 const topic = ref(props.initialTopic || '')
 const niche = ref('母婴')
@@ -38,15 +38,13 @@ const briefPdfText = ref<string | null>(null)
 const hasPdfUpload = computed(() => !!briefPdfText.value)
 
 const pendingPdfFile = ref<File | null>(null)
+const pendingPdfName = computed(() => pendingPdfFile.value?.name ?? null)
 
-function onBriefPdfUpload(file: File) {
-  // Always queue the file — it will be uploaded with the correct thread ID
-  // after startWorkflow returns (see Home.vue confirmStart).
-  // Using workflowStore.currentThreadId here is unsafe: if the user has an
-  // active workflow, the PDF would upload to the wrong thread.
+async function onBriefPdfUpload(file: File) {
+  // Extract text immediately for preview — no thread ID needed
+  await workflowStore.extractBriefPdf(file)
+  // Also queue the file for upload to the workflow after it starts
   pendingPdfFile.value = file
-  // Trigger PDF upload UI flow immediately (shows extracting spinner)
-  workflowStore.simulateBriefUploadStart()
 }
 
 async function uploadPendingPdf(threadId: string) {
@@ -63,6 +61,7 @@ function onBriefPdfConfirm(text: string) {
 
 function onBriefPdfClear() {
   briefPdfText.value = null
+  pendingPdfFile.value = null
   workflowStore.clearBriefUpload()
 }
 
@@ -95,7 +94,12 @@ const phases: { value: WorkflowPhase; key: string; icon: string }[] = [
 ]
 
 function getConfig(): WorkflowConfig {
-  const effectiveBriefText = briefPdfText.value || briefText.value.trim() || undefined
+  // When PDF is uploaded, don't pass preview text as briefText — it's truncated.
+  // The workflow starts without brief_text (triggers "waiting for upload" path),
+  // then the full PDF is uploaded via /brief/upload which writes the complete text.
+  const effectiveBriefText = hasPdfUpload.value
+    ? undefined
+    : (briefText.value.trim() || undefined)
   return {
     accountId: accountId.value.trim(),
     phase: phase.value,
@@ -203,6 +207,7 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
         :uploaded-text="workflowStore.briefUploadedText"
         :source-type="workflowStore.briefSourceType"
         :thread-id="workflowStore.currentThreadId || ''"
+        :pending-file-name="pendingPdfName"
         @upload="onBriefPdfUpload"
         @confirm="onBriefPdfConfirm"
         @clear="onBriefPdfClear"

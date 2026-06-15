@@ -169,10 +169,10 @@ def shooting_planner_router(
     state: XHSGrowthState,
 ) -> Literal["content_analyzer", "visual_designer"]:
     """Route after shooting_planner — both modes go to content_analyzer
-    for optimization (content analysis → version generation → choice → visual).
+    for optimization (content analysis -> version generation -> choice -> visual).
     Falls back to visual_designer if skip_optimization or terminal state.
     """
-    if terminal := _check_terminal(state):
+    if _check_terminal(state):
         return "visual_designer"
 
     return should_optimize(state)
@@ -190,12 +190,44 @@ def should_brief_or_optimize(
 
 def blogger_gate_router(
     state: XHSGrowthState,
-) -> Literal["shooting_planner", "content_analyzer", "visual_designer"]:
-    """Route after blogger_gate — both modes go to shooting_planner."""
+) -> Literal["copywriter", "draft_gate", "visual_designer"]:
+    """Route after blogger_gate — brief mode goes to copywriter, trend mode to draft_gate.
+
+    Brief mode: blogger_gate → copywriter (AI generates copy from brief + blogger notes)
+    Trend mode: blogger_gate → draft_gate (user writes draft manually)
+    """
     if _check_terminal(state):
         return "visual_designer"
 
-    return "shooting_planner"
+    mode = state.get("workflow_mode", "trend")
+    if mode == "brief":
+        return "copywriter"
+
+    return "draft_gate"
+
+
+def draft_gate_router(
+    state: XHSGrowthState,
+) -> Literal["viral_matcher", "shooting_planner"]:
+    """Route after draft_gate — based on which path entered draft_gate.
+
+    From copywriter (trend mode, no selected_blogger) → viral_matcher
+    From blogger_gate (selected_blogger present) → shooting_planner
+    From copywriter (brief mode) → shooting_planner (skip blogger selection)
+
+    Brief mode skips the viral_matcher → blogger_scout → blogger_gate loop
+    entirely, going directly to shooting_planner.
+    """
+    selected_blogger = state.get("selected_blogger")
+    if selected_blogger and isinstance(selected_blogger, dict) and selected_blogger.get("user_id"):
+        return "shooting_planner"
+
+    # Brief mode: skip blogger selection loop
+    mode = state.get("workflow_mode", "trend")
+    if mode == "brief":
+        return "shooting_planner"
+
+    return "viral_matcher"
 
 
 def copywriter_router(
@@ -204,7 +236,7 @@ def copywriter_router(
     """Route after copywriter — both modes go to draft_gate for review.
     Returns visual_designer only for terminal states.
     """
-    if terminal := _check_terminal(state):
+    if _check_terminal(state):
         return "visual_designer"
 
     return "draft_gate"

@@ -156,6 +156,21 @@ const openPostUrl = () => {
         </span>
       </NeonButton>
 
+      <!-- Draft edit button when awaiting draft confirmation -->
+      <NeonButton
+        v-if="workflowStore.isAwaitingDraft"
+        variant="pink"
+        size="lg"
+        class="w-full sm:w-auto animate-pulse"
+        :aria-label="t('dashboard.actionButtons.editDraft')"
+        @click="router.push('/dashboard')"
+      >
+        <span class="inline-flex items-center gap-2">
+          <AppIcon name="Pencil" size="lg" variant="white" />
+          <span class="font-bold">{{ t('dashboard.actionButtons.editDraft') }}</span>
+        </span>
+      </NeonButton>
+
       <!-- Resume button when paused -->
       <NeonButton
         v-if="isPaused"

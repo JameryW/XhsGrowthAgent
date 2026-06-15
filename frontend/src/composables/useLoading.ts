@@ -42,12 +42,6 @@ const PHASE_COLOR_MAP: Record<WorkflowPhase, string> = {
 }
 
 /**
- * Phases that should show loading overlay
- * These are typically phases with longer processing times
- */
-const OVERLAY_PHASES: WorkflowPhase[] = ['scouting', 'planning', 'publishing']
-
-/**
  * Composable for loading state management
  * Provides phase-to-progress and phase-to-color mappings
  */
@@ -70,19 +64,9 @@ export function useLoading() {
     return PHASE_COLOR_MAP[phase] || '#94a3b8'
   }
 
-  /**
-   * Check if phase should show loading overlay
-   * @param phase - Current workflow phase
-   * @returns True if overlay should be shown
-   */
-  const isOverlayPhase = (phase: WorkflowPhase): boolean => {
-    return OVERLAY_PHASES.includes(phase)
-  }
-
   return {
     phaseToPercent,
     phaseToColor,
-    isOverlayPhase,
     PHASE_PERCENT_MAP,
     PHASE_COLOR_MAP
   }

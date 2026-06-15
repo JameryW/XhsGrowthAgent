@@ -1,4 +1,5 @@
 """Standardized error codes and exception classes."""
+
 from enum import StrEnum
 from typing import Any
 
@@ -7,6 +8,7 @@ from backend.api.responses import ApiResponse, error
 
 class ErrorCode(StrEnum):
     """Standard error codes."""
+
     WORKFLOW_NOT_FOUND = "ERROR_WORKFLOW_NOT_FOUND"
     WORKFLOW_ALREADY_RUNNING = "ERROR_WORKFLOW_ALREADY_RUNNING"
     WORKFLOW_PHASE_INVALID = "ERROR_WORKFLOW_PHASE_INVALID"
@@ -28,8 +30,10 @@ class ErrorCode(StrEnum):
     AUTH_TOKEN_EXPIRED = "ERROR_AUTH_TOKEN_EXPIRED"
     AUTH_LOGIN_FAILED = "ERROR_AUTH_LOGIN_FAILED"
 
+
 class APIError(Exception):
     """Base API exception."""
+
     def __init__(
         self,
         code: ErrorCode,
@@ -52,8 +56,10 @@ class APIError(Exception):
             request_id=request_id,
         )
 
+
 class WorkflowNotFoundError(APIError):
     """Workflow not found exception."""
+
     def __init__(self, thread_id: str):
         super().__init__(
             code=ErrorCode.WORKFLOW_NOT_FOUND,
@@ -62,8 +68,10 @@ class WorkflowNotFoundError(APIError):
             status_code=404,
         )
 
+
 class ReviewNotPendingError(APIError):
     """No pending review exception."""
+
     def __init__(self, thread_id: str, current_phase: str):
         super().__init__(
             code=ErrorCode.REVIEW_NOT_PENDING,
@@ -72,8 +80,10 @@ class ReviewNotPendingError(APIError):
             status_code=400,
         )
 
+
 class ChoiceNotPendingError(APIError):
     """No pending version selection exception."""
+
     def __init__(self, thread_id: str, current_phase: str):
         super().__init__(
             code=ErrorCode.REVIEW_NOT_PENDING,
@@ -82,19 +92,23 @@ class ChoiceNotPendingError(APIError):
             status_code=400,
         )
 
+
 class ValidationError(APIError):
     """Validation error exception."""
+
     def __init__(self, field: str, reason: str):
         super().__init__(
             code=ErrorCode.VALIDATION_ERROR,
-            message=f"Validation failed: {field}",
+            message=reason,
             details={"field": field, "reason": reason},
             status_code=400,
         )
 
+
 # Authentication exceptions
 class AuthenticationError(APIError):
     """Base authentication exception."""
+
     def __init__(
         self,
         code: ErrorCode,
@@ -103,8 +117,10 @@ class AuthenticationError(APIError):
     ):
         super().__init__(code=code, message=message, details=details, status_code=401)
 
+
 class TokenMissingError(AuthenticationError):
     """Token missing in request."""
+
     def __init__(self):
         super().__init__(
             code=ErrorCode.AUTH_TOKEN_MISSING,
@@ -112,8 +128,10 @@ class TokenMissingError(AuthenticationError):
             details={"hint": "Include Authorization: Bearer <token> header"},
         )
 
+
 class TokenInvalidError(AuthenticationError):
     """Token invalid or expired."""
+
     def __init__(self, reason: str = "invalid"):
         super().__init__(
             code=ErrorCode.AUTH_TOKEN_INVALID,
@@ -121,8 +139,10 @@ class TokenInvalidError(AuthenticationError):
             details={"reason": reason},
         )
 
+
 class LoginFailedError(AuthenticationError):
     """Login failed."""
+
     def __init__(self, reason: str = "Invalid credentials"):
         super().__init__(
             code=ErrorCode.AUTH_LOGIN_FAILED,
@@ -133,8 +153,10 @@ class LoginFailedError(AuthenticationError):
 
 # ── Publish error classification ──
 
+
 class PublishErrorType(StrEnum):
     """Structured publish error types for actionable recovery."""
+
     AUTH_EXPIRED = "auth_expired"
     RATE_LIMITED = "rate_limited"
     CONTENT_VIOLATION = "content_violation"

@@ -20,26 +20,29 @@ class CopywriterAgent(BaseAgent):
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         account_id = state.get("account_id", "default")
         plan = state.get("content_plan", {})
+        brief = state.get("brief_content") or {}
+        is_brief_mode = state.get("workflow_mode") == "brief" and bool(brief)
 
         # ── Creative Memory: 读取 ──
         from backend.memory.creative import CreativeMemory
 
         cm = CreativeMemory(account_id, store=store)
-        styles = await cm.recall_style(query=plan.get("selected_topic", ""))
+        recall_query = plan.get("selected_topic", "") or brief.get("product_name", "")
+        styles = await cm.recall_style(query=recall_query)
         materials = await cm.recall_materials(category="文案片段", tags=["高转化", "爆款标题"])
 
         # 保留原有的 _recall_memory 召回
         past_content = await self._recall_memory(
             store,
             account_id,
-            query=plan.get("selected_topic", ""),
+            query=recall_query,
             namespace="content_history",
             limit=3,
         )
         audience_prefs = await self._recall_memory(
             store,
             account_id,
-            query=f"audience preference for {plan.get('content_type', 'note')}",
+            query=f"audience preference for {plan.get('content_type', 'note') or brief.get('style_requirements', 'note')}",
             namespace="audience_preferences",
             limit=3,
         )
@@ -69,7 +72,28 @@ class CopywriterAgent(BaseAgent):
         system_prompt = system_prompt.replace("{ripple_context}", ripple_context)
 
         niche = state.get("niche", "母婴")
-        user_msg = f"""选题：{plan.get("selected_topic", "")}
+
+        if is_brief_mode:
+            # Brief mode: build user message from brief_content + blogger references
+            selected_blogger = state.get("selected_blogger") or {}
+            blogger_notes = state.get("blogger_notes") or []
+            notes_context = ""
+            for i, note in enumerate(blogger_notes[:3], 1):
+                notes_context += f"\n参考笔记{i}：{note.get('title', '')}\n{note.get('body', '')[:500]}\n"
+
+            user_msg = f"""品牌：{brief.get("brand_name", "")}
+产品：{brief.get("product_name", "")}
+卖点：{", ".join(brief.get("selling_points", [])[:5])}
+内容方向：{brief.get("content_direction", "")}
+目标受众：{brief.get("target_audience", "")}
+风格要求：{brief.get("style_requirements", "")}
+注意事项：{brief.get("notes", "")}
+参考博主：{selected_blogger.get("nickname", "")}
+垂类赛道：{niche}
+{notes_context}"""
+        else:
+            # Trend mode: build from content_plan
+            user_msg = f"""选题：{plan.get("selected_topic", "")}
 角度：{plan.get("content_angle", "")}
 目标受众：{plan.get("target_audience", "")}
 内容类型：{plan.get("content_type", "note")}

@@ -4,7 +4,6 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
-import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import PreLaunchChecklist from '@/components/PreLaunchChecklist.vue'
 import WorkflowStartForm from '@/components/WorkflowStartForm.vue'
 import ConfirmStartModal from '@/components/ConfirmStartModal.vue'
@@ -28,7 +27,7 @@ const prefilledTopic = ref<string | null>(null)
 const formConfig = ref<WorkflowConfig>({
   accountId: 'default',
   phase: 'scouting',
-  dryRun: true,
+  dryRun: false,
   autoPublish: false,
   niche: '母婴',
   workflowMode: 'trend' as WorkflowMode,
@@ -57,11 +56,6 @@ const goToHistory = () => {
 const handleFormSubmit = () => {
   if (startFormRef.value) {
     formConfig.value = startFormRef.value.getConfig()
-  }
-
-  // Auto-set dry-run based on checklist recommendation
-  if (checklistRef.value?.suggestedDryRun) {
-    formConfig.value.dryRun = true
   }
 
   showConfirm.value = true
@@ -172,11 +166,5 @@ const confirmStart = async () => {
       @cancel="showConfirm = false"
     />
 
-    <!-- Loading Overlay -->
-    <LoadingOverlay
-      :is-visible="workflowStore.isOverlayLoading"
-      :message="t('home.loadingOverlay', { phase: workflowStore.currentPhase })"
-      @cancel="workflowStore.cancelWorkflow"
-    />
   </div>
 </template>

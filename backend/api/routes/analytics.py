@@ -32,9 +32,7 @@ def _set_cached(key: str, value: Any) -> None:
     _cache[key] = (time.time(), value)
 
 
-async def _get_completed_workflows(
-    graph, account_id: str | None = None
-) -> list[dict[str, Any]]:
+async def _get_completed_workflows(graph, account_id: str | None = None) -> list[dict[str, Any]]:
     """Read full state for completed workflows, with caching."""
     cache_key = f"completed_{account_id or 'all'}"
     cached = _get_cached(cache_key)
@@ -43,17 +41,19 @@ async def _get_completed_workflows(
 
     results = []
     if is_pool_ready():
-        rows, _ = await db_list(status="completed", limit=100)
-        for row in rows:
-            if account_id and row.account_id != account_id:
-                continue
-            try:
-                config = {"configurable": {"thread_id": row.thread_id}}
-                state = await graph.aget_state(config)
-                if state.values:
-                    results.append({**row.to_dict(), "_state": state.values})
-            except Exception:
-                continue
+        # Include completed and analyzing workflows (both have publish_result)
+        for status_filter in ("completed", "analyzing"):
+            rows, _ = await db_list(status=status_filter, limit=100)
+            for row in rows:
+                if account_id and row.account_id != account_id:
+                    continue
+                try:
+                    config = {"configurable": {"thread_id": row.thread_id}}
+                    state = await graph.aget_state(config)
+                    if state.values:
+                        results.append({**row.to_dict(), "_state": state.values})
+                except Exception:
+                    continue
 
     _set_cached(cache_key, results)
     return results
@@ -93,19 +93,17 @@ def _extract_post_data(wf_state: dict) -> dict | None:
     copy = wf_state.get("copy_content") or {}
     plan = wf_state.get("content_plan") or {}
 
-    # Skip mock (dry_run) and failed publishes
+    # Skip failed publishes (but include dry_run/mock)
     status = publish.get("status", "")
-    if status in ("mock_published", "failed"):
+    if status == "failed":
         return None
 
-    title = (
-        copy.get("selected_title")
-        or plan.get("selected_topic")
-        or publish.get("title", "")
-    )
+    title = copy.get("selected_title") or plan.get("selected_topic") or publish.get("title", "")
 
     if not title and not analytics:
         return None
+
+    is_dry_run = status == "mock_published"
 
     return {
         "id": publish.get("post_id", wf_state.get("session_id", "")),
@@ -117,13 +115,12 @@ def _extract_post_data(wf_state: dict) -> dict | None:
         "views": analytics.get("views", 0),
         "engagement_rate": round(analytics.get("engagement_rate", 0.0), 2),
         "published_at": publish.get("published_at", wf_state.get("updated_at", "")),
+        "dry_run": is_dry_run,
     }
 
 
 @router.get("/report/{account_id}")
-async def get_growth_report(
-    account_id: str, period: str = "weekly", request: Request = None
-):
+async def get_growth_report(account_id: str, period: str = "weekly", request: Request = None):
     """获取增长报告 — from real completed workflows."""
     graph = request.app.state.graph
     workflows = await _get_completed_workflows(graph, account_id)
@@ -143,9 +140,7 @@ async def get_growth_report(
     # Filter by period
     filtered_posts = _filter_by_period(posts, period)
 
-    total_engagement = sum(
-        p["likes"] + p["comments"] + p["collects"] for p in filtered_posts
-    )
+    total_engagement = sum(p["likes"] + p["comments"] + p["collects"] for p in filtered_posts)
     avg_rate = (
         sum(p["engagement_rate"] for p in filtered_posts) / len(filtered_posts)
         if filtered_posts
@@ -167,19 +162,21 @@ async def get_growth_report(
     if not filtered_posts:
         insights.append({"type": "info", "message": "暂无已完成的工作流数据，请先完成一次内容发布"})
 
-    return success(data={
-        "account_id": account_id,
-        "period": period,
-        "metrics": {
-            "total_posts": len(filtered_posts),
-            "total_engagement": total_engagement,
-            "avg_engagement_rate": round(avg_rate, 1),
-            "best_post_title": best["title"] if best else "",
-            "trend_topics": trend_topics,
-        },
-        "insights": insights,
-        "generated_at": datetime.now().isoformat(),
-    })
+    return success(
+        data={
+            "account_id": account_id,
+            "period": period,
+            "metrics": {
+                "total_posts": len(filtered_posts),
+                "total_engagement": total_engagement,
+                "avg_engagement_rate": round(avg_rate, 1),
+                "best_post_title": best["title"] if best else "",
+                "trend_topics": trend_topics,
+            },
+            "insights": insights,
+            "generated_at": datetime.now().isoformat(),
+        }
+    )
 
 
 @router.get("/performance/{account_id}")
@@ -204,13 +201,15 @@ async def get_performance(
     posts.sort(key=lambda p: p.get("published_at", ""), reverse=True)
     posts = posts[:limit]
 
-    return success(data={
-        "account_id": account_id,
-        "period": period,
-        "posts": posts,
-        "total": len(posts),
-        "fetched_at": datetime.now().isoformat(),
-    })
+    return success(
+        data={
+            "account_id": account_id,
+            "period": period,
+            "posts": posts,
+            "total": len(posts),
+            "fetched_at": datetime.now().isoformat(),
+        }
+    )
 
 
 @router.get("/costs")
@@ -253,13 +252,15 @@ async def get_costs(period: str = "weekly", request: Request = None):
             except (ValueError, AttributeError):
                 pass
 
-    return success(data={
-        "total_cost_usd": round(total_cost, 2),
-        "period_cost_usd": round(period_cost, 2),
-        "today_cost_usd": round(today_cost, 2),
-        "period": period,
-        "by_model": {k: round(v, 2) for k, v in by_model.items()},
-        "circuit_open": False,
-        "budget_remaining_usd": round(max(0, 10.0 - total_cost), 2),
-        "updated_at": datetime.now().isoformat(),
-    })
+    return success(
+        data={
+            "total_cost_usd": round(total_cost, 2),
+            "period_cost_usd": round(period_cost, 2),
+            "today_cost_usd": round(today_cost, 2),
+            "period": period,
+            "by_model": {k: round(v, 2) for k, v in by_model.items()},
+            "circuit_open": False,
+            "budget_remaining_usd": round(max(0, 10.0 - total_cost), 2),
+            "updated_at": datetime.now().isoformat(),
+        }
+    )

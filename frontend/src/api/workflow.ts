@@ -134,6 +134,26 @@ export async function selectVersion(threadId: string, choice: {
   })
 }
 
+// Extract brief text from PDF without requiring a thread ID
+export async function extractBriefFile(file: File): Promise<{ brief_text: string; source_type: string }> {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const res = await fetch(`/api/workflow/brief/extract`, {
+    method: 'POST',
+    body: formData,
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    const msg = body?.error?.message || body?.detail || `Extraction failed: ${res.status}`
+    throw new Error(msg)
+  }
+
+  const json = await res.json()
+  return json.data as { brief_text: string; source_type: string }
+}
+
 // Upload brief PDF file — uses FormData, can't go through axios JSON interceptor
 export async function uploadBriefFile(threadId: string, file: File): Promise<BriefUploadResult> {
   const formData = new FormData()

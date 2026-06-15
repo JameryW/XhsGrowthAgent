@@ -135,7 +135,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const progressPercent = ref(0)
-  const isOverlayLoading = ref(false)
 
   // Computed
   const currentPhase = computed<WorkflowPhase>(() =>
@@ -299,7 +298,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
       } else {
         localStorage.removeItem(LS_ACTIVE_THREAD)
         progressPercent.value = 0
-        isOverlayLoading.value = false
       }
     }
   }
@@ -325,18 +323,16 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const realtimeStore = useRealtimeStore()
   const toastStore = useToastStore()
   const offlineStore = useOfflineStore()
-  const { phaseToPercent, isOverlayPhase } = useLoading()
+  const { phaseToPercent } = useLoading()
 
   // Phases that should NOT reset progress — preserve last valid value
   const PRESERVE_PROGRESS_PHASES: WorkflowPhase[] = ['paused', 'cancelled']
 
   function updateProgressFromPhase(phase: WorkflowPhase, backendProgress?: number) {
     if (PRESERVE_PROGRESS_PHASES.includes(phase) && !backendProgress) {
-      isOverlayLoading.value = false
       return
     }
     progressPercent.value = backendProgress ?? phaseToPercent(phase)
-    isOverlayLoading.value = isOverlayPhase(phase)
   }
 
   // ── WebSocket event handlers (multi-thread aware) ──
@@ -766,7 +762,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
       toastStore.error(t('workflow.cancelFailed'), e.message)
     } finally {
       isLoading.value = false
-      isOverlayLoading.value = false
     }
   }
 
@@ -809,6 +804,33 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const briefSourceType = ref<string | null>(null)
   const isBriefUploading = ref(false)
 
+  async function extractBriefPdf(file: File): Promise<{ brief_text: string; source_type: string } | null> {
+    const MAX_SIZE = 20 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      toastStore.error(t('brief.fileTooLarge'), t('brief.fileTooLargeDesc'))
+      return null
+    }
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      toastStore.error(t('brief.unsupportedFormat'), t('brief.unsupportedFormatDesc'))
+      return null
+    }
+
+    isBriefUploading.value = true
+    try {
+      const result = await workflowApi.extractBriefFile(file)
+      briefUploadedText.value = result.brief_text
+      briefSourceType.value = result.source_type
+      toastStore.success(t('brief.uploadSuccess'))
+      return result
+    } catch (e: any) {
+      toastStore.error(t('brief.uploadFailed'), e.message)
+      briefUploadedText.value = null
+      return null
+    } finally {
+      isBriefUploading.value = false
+    }
+  }
+
   async function uploadBriefPdf(threadId: string, file: File): Promise<BriefUploadResult | null> {
     const MAX_SIZE = 20 * 1024 * 1024
     if (file.size > MAX_SIZE) {
@@ -839,10 +861,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   function clearBriefUpload() {
     briefUploadedText.value = null
     briefSourceType.value = null
-  }
-
-  function simulateBriefUploadStart() {
-    isBriefUploading.value = true
+    isBriefUploading.value = false
   }
 
   // ── Replay mode actions ──
@@ -925,7 +944,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isLoading,
     error,
     progressPercent,
-    isOverlayLoading,
     currentPhase,
     currentStatus,
     nextNodes,
@@ -965,9 +983,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
     briefUploadedText,
     briefSourceType,
     isBriefUploading,
+    extractBriefPdf,
     uploadBriefPdf,
     clearBriefUpload,
-    simulateBriefUploadStart,
 
     // Replay mode
     isReplayMode,

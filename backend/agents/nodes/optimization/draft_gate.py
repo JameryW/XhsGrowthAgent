@@ -27,27 +27,73 @@ async def draft_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[st
 
     draft_content = state.get("draft_content")
     copy_content = state.get("copy_content") or {}
+    selected_blogger = state.get("selected_blogger") or {}
 
-    # User already submitted a draft (via submit_draft endpoint) — proceed
+    # When entering from blogger_gate (selected_blogger present), always
+    # re-interrupt so the user can review/edit the draft in the new context
+    # (blogger notes, shooting plan may have changed).
+    # Otherwise, if the user already submitted a draft, skip interrupt.
+    from_blogger_gate = bool(selected_blogger and selected_blogger.get("user_id"))
     if (
-        draft_content
+        not from_blogger_gate
+        and draft_content
         and draft_content.get("text")
         and draft_content.get("source") != "ai_generated"
     ):
         logger.debug("User-submitted draft_content present, skipping interrupt")
-        return NodeResult({
-            "phase": WorkflowPhase.CREATING,
-        }, "draft_gate").to_dict()
+        return NodeResult(
+            {
+                "phase": WorkflowPhase.CREATING,
+            },
+            "draft_gate",
+        ).to_dict()
 
     # Build default draft from AI-generated copy for user to confirm/edit
+    # Priority: draft_content > copy_content > shooting_plan > content_plan
     default_draft = {}
-    if copy_content and copy_content.get("body_text"):
+    if draft_content and draft_content.get("text"):
+        # User previously submitted a draft — use it as the base for re-editing
+        default_draft = {
+            "title": draft_content.get("title") or "",
+            "text": draft_content.get("text") or "",
+            "hashtags": draft_content.get("hashtags") or [],
+            "source": "ai_generated",
+        }
+    elif copy_content and copy_content.get("body_text"):
         default_draft = {
             "title": copy_content.get("selected_title") or "",
             "text": copy_content.get("body_text") or "",
             "hashtags": copy_content.get("hashtags") or [],
             "source": "ai_generated",
         }
+    else:
+        # Fallback: build from shooting_plan (blogger_gate path)
+        # or from blogger_notes/content_plan when shooting_plan not yet available
+        shooting_plan = state.get("shooting_plan") or {}
+        has_shooting = shooting_plan.get("body_copy") or shooting_plan.get("title_candidates")
+        if has_shooting:
+            titles = shooting_plan.get("title_candidates") or []
+            required = shooting_plan.get("required_hashtags") or []
+            optional = shooting_plan.get("optional_hashtags") or []
+            default_draft = {
+                "title": titles[0] if titles else "",
+                "text": shooting_plan.get("body_copy") or "",
+                "hashtags": required + optional,
+                "source": "ai_generated",
+            }
+        else:
+            # No shooting_plan yet (blogger_gate runs before shooting_planner).
+            # Build from content_plan + blogger_notes as best-effort defaults.
+            content_plan = state.get("content_plan") or {}
+            blogger_notes = state.get("blogger_notes") or []
+            # Use first blogger note as style reference
+            note = blogger_notes[0] if blogger_notes else {}
+            default_draft = {
+                "title": (content_plan.get("selected_topic") or note.get("title", "")),
+                "text": note.get("body", ""),
+                "hashtags": note.get("hashtags", []),
+                "source": "ai_generated",
+            }
 
     # Always interrupt — user must confirm or edit before proceeding
     logger.info("Interrupting at draft_gate for user confirmation")
@@ -57,6 +103,9 @@ async def draft_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[st
     if decision and isinstance(decision, dict):
         logger.debug("Draft gate resumed with user decision: %s", decision.get("title", "no title"))
 
-    return NodeResult({
-        "phase": WorkflowPhase.CREATING,
-    }, "draft_gate").to_dict()
+    return NodeResult(
+        {
+            "phase": WorkflowPhase.CREATING,
+        },
+        "draft_gate",
+    ).to_dict()
