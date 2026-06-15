@@ -148,6 +148,8 @@ class RipplePrediction(TypedDict, total=False):
     phase_vector: dict[str, Any]
     total_waves: int
     score_source: str
+    confidence_gate: dict[str, Any]
+    quality: dict[str, Any]
 
 
 class RipplePMFResult(TypedDict, total=False):
@@ -173,6 +175,8 @@ class RipplePMFResult(TypedDict, total=False):
     phase_vector: dict[str, Any]
     total_waves: int
     score_source: str
+    confidence_gate: dict[str, Any]
+    quality: dict[str, Any]
 
 
 class RippleProgress(TypedDict, total=False):

@@ -404,21 +404,27 @@ class RippleService:
                             if event_type.startswith("progress."):
                                 import time as _time
 
-                                p = payload.get("progress")
+                                # Ripple event_bus wraps SimulationEvent fields in a
+                                # "payload" sub-dict: {"type":"progress.wave_start",
+                                # "payload":{"wave":3,"total_waves":8,...}}
+                                inner = payload.get("payload", payload)
+
+                                p = inner.get("progress")
                                 if p is not None:
                                     progress_state["progress"] = float(p)
-                                w = payload.get("wave")
+                                w = inner.get("wave")
                                 if w is not None:
                                     progress_state["current_wave"] = int(w)
-                                tw = payload.get("total_waves")
+                                tw = inner.get("total_waves")
                                 if tw is not None:
                                     progress_state["total_waves"] = int(tw)
-                                progress_state["phase"] = payload.get("phase", "")
+                                progress_state["phase"] = inner.get("phase", "")
                                 # R8: Quality fields in SSE events
-                                quality = payload.get("quality")
+                                detail = inner.get("detail") or {}
+                                quality = detail.get("quality")
                                 if isinstance(quality, dict):
                                     progress_state["quality"] = quality
-                                cg = payload.get("confidence_gate_result")
+                                cg = detail.get("confidence_gate_result")
                                 if isinstance(cg, dict):
                                     progress_state["confidence_gate_result"] = cg
                                 progress_state["last_update_at"] = _time.monotonic()

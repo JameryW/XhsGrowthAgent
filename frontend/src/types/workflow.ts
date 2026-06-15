@@ -213,6 +213,14 @@ export interface RipplePrediction {
   phase_vector?: Record<string, unknown>
   total_waves?: number
   score_source?: string
+  confidence_gate?: {
+    gate_applied?: boolean
+    original_confidence?: string
+    final_confidence?: string
+    reason?: string
+    factors?: Array<{ name: string; level: string; reason: string; passed: boolean }>
+  }
+  quality?: Record<string, unknown>
 }
 
 // Ripple PMF validation result
@@ -237,6 +245,14 @@ export interface RipplePMFResult {
   phase_vector?: Record<string, unknown>
   total_waves?: number
   score_source?: string
+  confidence_gate?: {
+    gate_applied?: boolean
+    original_confidence?: string
+    final_confidence?: string
+    reason?: string
+    factors?: Array<{ name: string; level: string; reason: string; passed: boolean }>
+  }
+  quality?: Record<string, unknown>
 }
 
 // Ripple prediction vs actual comparison

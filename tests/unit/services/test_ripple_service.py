@@ -863,6 +863,52 @@ class TestStreamProgress:
         assert progress_state["last_update_at"] is not None
 
     @pytest.mark.asyncio
+    async def test_stream_progress_nested_payload_format(self):
+        """Ripple event_bus wraps fields in a 'payload' sub-dict — ensure we unwrap correctly."""
+        svc = RippleService()
+        progress_state: dict = {
+            "progress": 0.0,
+            "current_wave": 0,
+            "total_waves": 0,
+            "phase": "",
+            "last_update_at": None,
+        }
+        done_event = asyncio.Event()
+
+        # Real Ripple SSE format: outer envelope has job_id, seq, type, ts, payload
+        sse_lines = [
+            "event: progress.wave_start",
+            'data: {"job_id":"job_abc","seq":3,"type":"progress.wave_start","ts":"2026-06-15T04:00:00Z","payload":{"phase":"RIPPLE","wave":4,"progress":0.55,"total_waves":8,"detail":{}}}',
+            "",
+            "event: progress.wave_end",
+            'data: {"job_id":"job_abc","seq":4,"type":"progress.wave_end","ts":"2026-06-15T04:00:05Z","payload":{"phase":"RIPPLE","wave":5,"progress":0.7,"total_waves":8,"detail":{"quality":{"input_completeness":0.8}}}}',
+            "",
+        ]
+
+        mock_resp = AsyncMock()
+        mock_resp.status_code = 200
+        mock_resp.aiter_lines = MagicMock(return_value=AsyncIterator(sse_lines))
+
+        with (
+            patch.object(svc, "_get_config", return_value={"base_url": "http://localhost:8080"}),
+            patch.object(svc, "_get_headers", return_value={}),
+            patch("httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.stream = MagicMock(return_value=AsyncContextManagerMock(mock_resp))
+            mock_client_cls.return_value = mock_client
+
+            await svc._stream_progress("job_abc", "thread_xyz", progress_state, done_event)
+
+        assert progress_state["progress"] == 0.7
+        assert progress_state["current_wave"] == 5
+        assert progress_state["total_waves"] == 8
+        assert progress_state["phase"] == "RIPPLE"
+        assert progress_state["quality"]["input_completeness"] == 0.8
+
+    @pytest.mark.asyncio
     async def test_stream_progress_sets_done_on_job_completed(self):
         """SSE job.completed event sets done_event."""
         svc = RippleService()

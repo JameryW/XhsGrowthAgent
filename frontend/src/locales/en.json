@@ -330,6 +330,8 @@
       "estimatedReach": "Estimated Reach",
       "estimatedEngagement": "Estimated Engagement",
       "confidence": "Confidence",
+      "confidenceGate": "Confidence Gate",
+      "gateDowngraded": "Downgraded",
       "pmfScore": "PMF Score",
       "summary": "Summary",
       "marketSignal": "Market Signal",
