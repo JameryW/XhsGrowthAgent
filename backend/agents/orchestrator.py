@@ -36,5 +36,10 @@ class OrchestratorAgent(BaseAgent):
             # 清除错误，重新开始侦察周期
             return {"phase": WorkflowPhase.SCOUTING, "error": None, "retry_count": 0}
 
+        # 商单模式 → 进入 BRIEFING
+        mode = state.get("workflow_mode", "trend")
+        if mode == "brief":
+            return {"phase": WorkflowPhase.BRIEFING}
+
         # 默认 → 开始侦察周期
         return {"phase": WorkflowPhase.SCOUTING}

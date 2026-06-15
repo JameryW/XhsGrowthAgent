@@ -44,7 +44,7 @@ export function useWorkflowReplay() {
     const isBrief = workflowMode.value === 'brief'
     return {
       ...(isBrief ? { briefing: 'brief_analyzer' } : { scouting: 'trend_scout', planning: 'content_strategist' }),
-      creating: 'copywriter',
+      creating: isBrief ? 'viral_matcher' : 'copywriter',
       reviewing: 'review_gate',
       publishing: 'publisher',
       analyzing: 'analyst',
@@ -112,11 +112,12 @@ export function useWorkflowReplay() {
     const agent = phaseAgentMap.value[phase] || phase
     let cpId = findCheckpointForAgent(agent)
     if (!cpId) {
+      // Order matches backend graph: brief = viral_matcher → blogger_scout → blogger_gate → copywriter → draft_gate → shooting_planner → content_analyzer → version_generator → choice_gate → visual_designer
       const phaseAgents: Record<string, string[]> = {
-        creating: ['version_generator', 'content_analyzer', 'shooting_planner', 'choice_gate', 'visual_designer', 'blogger_gate', 'blogger_scout', 'viral_matcher', 'draft_gate', 'copywriter'],
+        creating: ['viral_matcher', 'blogger_scout', 'blogger_gate', 'copywriter', 'draft_gate', 'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer'],
         reviewing: ['review_gate', 'revise_content', 'visual_designer', 'copywriter'],
         publishing: ['publisher', 'engagement'],
-        briefing: ['choice_gate', 'version_generator', 'content_analyzer', 'shooting_planner', 'brief_gate', 'brief_analyzer'],
+        briefing: ['brief_analyzer', 'brief_gate'],
       }
       for (const fallback of phaseAgents[phase] || []) {
         cpId = findCheckpointForAgent(fallback)
@@ -136,9 +137,10 @@ export function useWorkflowReplay() {
     if (agentPhase) return agentPhase[0] === phase
     // Fallback: match the FIRST phase whose agent list includes this agent
     // (prevents briefing & creating both being selected for shared agents)
+    // Brief mode: briefing = brief_analyzer + brief_gate; creating = all post-gate agents
     const phaseAgents: Record<string, string[]> = {
-      creating: ['copywriter', 'draft_gate', 'viral_matcher', 'blogger_scout', 'blogger_gate', 'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer'],
-      briefing: ['brief_analyzer', 'brief_gate', 'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate'],
+      creating: ['viral_matcher', 'blogger_scout', 'blogger_gate', 'copywriter', 'draft_gate', 'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer'],
+      briefing: ['brief_analyzer', 'brief_gate'],
     }
     for (const [p, agents] of Object.entries(phaseAgents)) {
       if (agents.includes(cpAgent)) return p === phase

@@ -36,9 +36,9 @@ class VisualDesignerAgent(BaseAgent):
 
         niche = state.get("niche", "母婴")
         body_summary = copy.get("body_text", "")[:200] if copy else ""
-        brief_brand = brief.get("brand", "") if brief else ""
-        brief_requirements = brief.get("visual_requirements", "") if brief else ""
-        shooting_notes = shooting_plan.get("shooting_notes", "") if shooting_plan else ""
+        brief_brand = brief.get("brand_name", "") if brief else ""
+        brief_requirements = brief.get("style_requirements", "") if brief else ""
+        shooting_notes = brief.get("shooting_requirements", "") if brief else ""
         user_msg = f"""选题：{plan.get("selected_topic", "")}
 角度：{plan.get("content_angle", "")}
 内容类型：{plan.get("content_type", "note")}

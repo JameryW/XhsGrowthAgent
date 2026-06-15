@@ -61,7 +61,7 @@ const exportPlan = () => {
   if (plan.content_direction) lines.push(`${t('shootingPlan.direction')}: ${plan.content_direction}`)
   if (plan.content_type_label) lines.push(`${t('shootingPlan.type')}: ${plan.content_type_label}`)
   if (plan.product_specification) lines.push(`${t('shootingPlan.product')}: ${plan.product_specification}`)
-  if (plan.draft_requirements) lines.push(`${t('shootingPlan.requirements')}: ${plan.draft_requirements}`)
+  if (plan.draft_requirements) lines.push(`${t('shootingPlan.requirements')}: ${Array.isArray(plan.draft_requirements) ? plan.draft_requirements.join(', ') : plan.draft_requirements}`)
   if (plan.title_candidates?.length) {
     lines.push(`\n${t('shootingPlan.titleCandidates')}:`)
     plan.title_candidates.forEach((tc, i) => lines.push(`  ${i + 1}. ${tc}`))
@@ -181,7 +181,10 @@ const exportPlan = () => {
     <!-- Draft requirements -->
     <div v-if="shootingPlan.draft_requirements" class="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-100">
       <span class="text-xs text-amber-500 uppercase tracking-wide font-medium">{{ t('shootingPlan.requirements') }}</span>
-      <p class="text-sm text-amber-700 mt-1">{{ shootingPlan.draft_requirements }}</p>
+      <p v-if="Array.isArray(shootingPlan.draft_requirements)" class="text-sm text-amber-700 mt-1">
+        {{ shootingPlan.draft_requirements.join('、') }}
+      </p>
+      <p v-else class="text-sm text-amber-700 mt-1">{{ shootingPlan.draft_requirements }}</p>
     </div>
 
     <!-- Outfits -->

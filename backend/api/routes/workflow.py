@@ -851,11 +851,15 @@ async def resume_workflow(thread_id: str, request: Request):
         body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
         resume_value = body.get("resume_value", {"action": "skip"})
         from langgraph.types import Command
-        await graph.ainvoke(Command(resume=resume_value), config)
+        result = await _runner._run_graph_and_persist(
+            thread_id, graph, config,
+            Command(resume=resume_value),
+            source="brief_resume",
+        )
         return success(data={
             "thread_id": thread_id,
             "status": "running",
-            "phase": WorkflowPhase.BRIEFING,
+            "phase": result.get("phase", WorkflowPhase.BRIEFING) if result else WorkflowPhase.BRIEFING,
         })
 
     if derived == WorkflowStatus.AWAITING_RIPPLE_DECISION:
@@ -863,11 +867,15 @@ async def resume_workflow(thread_id: str, request: Request):
         body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
         resume_value = body.get("resume_value", {"action": "accept"})
         from langgraph.types import Command
-        await graph.ainvoke(Command(resume=resume_value), config)
+        result = await _runner._run_graph_and_persist(
+            thread_id, graph, config,
+            Command(resume=resume_value),
+            source="ripple_resume",
+        )
         return success(data={
             "thread_id": thread_id,
             "status": "running",
-            "phase": WorkflowPhase.CREATING,
+            "phase": result.get("phase", WorkflowPhase.CREATING) if result else WorkflowPhase.CREATING,
         })
 
     if derived == WorkflowStatus.AWAITING_BLOGGER_SELECTION:
@@ -875,11 +883,15 @@ async def resume_workflow(thread_id: str, request: Request):
         body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
         resume_value = body.get("resume_value", {"action": "accept"})
         from langgraph.types import Command
-        await graph.ainvoke(Command(resume=resume_value), config)
+        result = await _runner._run_graph_and_persist(
+            thread_id, graph, config,
+            Command(resume=resume_value),
+            source="blogger_resume",
+        )
         return success(data={
             "thread_id": thread_id,
             "status": "running",
-            "phase": WorkflowPhase.CREATING,
+            "phase": result.get("phase", WorkflowPhase.CREATING) if result else WorkflowPhase.CREATING,
         })
 
     next_nodes = tuple(state.next or ())

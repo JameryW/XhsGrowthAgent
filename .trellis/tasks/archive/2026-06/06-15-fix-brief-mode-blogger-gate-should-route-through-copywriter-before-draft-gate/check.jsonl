@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Test coverage requirements for new routing paths and copywriter brief-mode behavior"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Verify state transitions are correct after adding copywriter to brief mode path"}

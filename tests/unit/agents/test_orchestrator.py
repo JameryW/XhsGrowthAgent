@@ -77,7 +77,7 @@ class TestOrchestratorAgent:
 
     @pytest.mark.asyncio
     async def test_routes_to_scouting_by_default(self, agent, mock_store):
-        """Routes to SCOUTING for default case."""
+        """Routes to SCOUTING for default case (trend mode)."""
         state = {
             "engagement_actions": [],
             "analytics": {},
@@ -87,6 +87,20 @@ class TestOrchestratorAgent:
         result = await agent.execute(state, store=mock_store)
 
         assert result["phase"] == WorkflowPhase.SCOUTING
+
+    @pytest.mark.asyncio
+    async def test_routes_to_briefing_in_brief_mode(self, agent, mock_store):
+        """Routes to BRIEFING when workflow_mode is 'brief'."""
+        state = {
+            "engagement_actions": [],
+            "analytics": {},
+            "error": None,
+            "workflow_mode": "brief",
+        }
+
+        result = await agent.execute(state, store=mock_store)
+
+        assert result["phase"] == WorkflowPhase.BRIEFING
 
     @pytest.mark.asyncio
     async def test_prioritizes_engagement_over_analytics(self, agent, mock_store):
