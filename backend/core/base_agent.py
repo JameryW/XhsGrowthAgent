@@ -61,8 +61,7 @@ class BaseAgent(ABC):
 
     def _build_system_prompt(self, state: XHSGrowthState, extra_context: str = "") -> str:
         template = self.prompt_template.get("system", "")
-        if extra_context:
-            template = template.replace("{memory_context}", extra_context)
+        template = template.replace("{memory_context}", extra_context)
         return template
 
     async def _recall_memory(

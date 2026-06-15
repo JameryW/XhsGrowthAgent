@@ -7,6 +7,8 @@ Configuration via environment variables:
   XHS_EMBED_MODEL: embedding provider string (default: "openai:text-embedding-3-small")
   XHS_EMBED_DIMS: embedding dimensions (default: 1536)
   OPENAI_API_KEY: required for OpenAI embeddings
+  DEEPSEEK_API_KEY: required when XHS_EMBED_MODEL starts with "deepseek:"
+  DASHSCOPE_API_KEY: required when XHS_EMBED_MODEL starts with "dashscope:"
 
 If the embedding provider is unavailable (e.g. missing API key), get_store_index()
 returns None and the store operates without semantic search.
@@ -25,6 +27,13 @@ logger = logging.getLogger("xhs_growth.memory.index")
 _DEFAULT_EMBED_MODEL = "openai:text-embedding-3-small"
 _DEFAULT_EMBED_DIMS = 1536
 
+# Provider → required env var for API key
+_PROVIDER_KEY_MAP: dict[str, str] = {
+    "openai": "OPENAI_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "dashscope": "DASHSCOPE_API_KEY",
+}
+
 # Fields to index across all namespace value shapes
 _INDEX_FIELDS = [
     "title",
@@ -35,7 +44,25 @@ _INDEX_FIELDS = [
     "content",
     "tone",
     "visual_style",
+    # Creative memory fields
+    "topic",
+    "tags",
+    "hashtag_style",
+    "trigger_condition",
+    "title_formula",
+    "opening_hook",
+    "niche",
+    "category",
+    "voice_patterns",
+    "layout_preference",
 ]
+
+
+def _resolve_provider(embed_model: str) -> str:
+    """Extract provider prefix from embed model string (e.g. 'openai' from 'openai:text-embedding-3-small')."""
+    if ":" in embed_model:
+        return embed_model.split(":", 1)[0]
+    return ""
 
 
 def get_store_index() -> IndexConfig | None:
@@ -47,10 +74,20 @@ def get_store_index() -> IndexConfig | None:
     embed_dims = int(os.environ.get("XHS_EMBED_DIMS", str(_DEFAULT_EMBED_DIMS)))
 
     # Check if the embedding provider has required credentials
-    if embed_model.startswith("openai:") and not os.environ.get("OPENAI_API_KEY"):
+    provider = _resolve_provider(embed_model)
+    required_key = _PROVIDER_KEY_MAP.get(provider)
+
+    if required_key and not os.environ.get(required_key):
         logger.warning(
-            "OPENAI_API_KEY not set — store semantic search disabled. "
-            "Set OPENAI_API_KEY or XHS_EMBED_MODEL to enable."
+            f"{required_key} not set — store semantic search disabled. "
+            f"Set {required_key} or XHS_EMBED_MODEL to enable."
+        )
+        return None
+
+    if not provider:
+        logger.warning(
+            f"Cannot determine provider from XHS_EMBED_MODEL={embed_model!r} — "
+            "store semantic search disabled. Use format 'provider:model' (e.g. 'openai:text-embedding-3-small')."
         )
         return None
 
