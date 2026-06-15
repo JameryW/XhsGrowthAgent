@@ -102,10 +102,30 @@ class VersionGeneratorAgent(BaseAgent):
 
         logger.info(f"Generated {len(versions)} content versions (A/B/C)")
 
-        return {
+        # When only 1 version is generated, auto-apply it to copy_content and
+        # visual_plan so the result isn't lost when should_present_choice skips
+        # choice_gate and routes directly to visual_designer.
+        updates: dict[str, Any] = {
             "content_versions": versions,
             "phase": WorkflowPhase.CREATING,
         }
+        if len(versions) == 1:
+            v = versions[0]
+            updates["copy_content"] = {
+                **(state.get("copy_content") or {}),
+                "selected_title": v.get("title", ""),
+                "title_candidates": [v.get("title", "")],
+                "body_text": v.get("body", ""),
+                "hashtags": v.get("hashtags", []),
+                "tone": v.get("tone", ""),
+            }
+            updates["visual_plan"] = {
+                "cover_prompt": v.get("style_suggestion", ""),
+                "style": v.get("visual_style", ""),
+                "color_palette": v.get("color_palette", {}),
+            }
+
+        return updates
 
     def _build_draft_from_shooting_plan(self, state: XHSGrowthState) -> dict[str, Any] | None:
         """Build a synthetic draft_content from shooting_plan (brief mode)."""

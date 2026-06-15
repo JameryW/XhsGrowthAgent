@@ -135,6 +135,12 @@ class WorkflowStatus(Enum):
     PAUSED = 'paused'
     COMPLETED = 'completed'
     ERROR = 'error'
+    AWAITING_REVIEW = 'awaiting_review'
+    AWAITING_CHOICE = 'awaiting_choice'
+    AWAITING_DRAFT = 'awaiting_draft'
+    AWAITING_BRIEF = 'awaiting_brief'
+    AWAITING_RIPPLE_DECISION = 'awaiting_ripple_decision'
+    AWAITING_BLOGGER_SELECTION = 'awaiting_blogger_selection'
 
 
 class ReviewDecision(Enum):
