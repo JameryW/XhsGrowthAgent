@@ -70,8 +70,9 @@ def get_store_index() -> IndexConfig | None:
 
     Returns None if the embedding provider is not available (e.g. missing API key).
     """
-    embed_model = os.environ.get("XHS_EMBED_MODEL", _DEFAULT_EMBED_MODEL)
-    embed_dims = int(os.environ.get("XHS_EMBED_DIMS", str(_DEFAULT_EMBED_DIMS)))
+    embed_model = os.environ.get("XHS_EMBED_MODEL") or _DEFAULT_EMBED_MODEL
+    embed_dims_str = os.environ.get("XHS_EMBED_DIMS", str(_DEFAULT_EMBED_DIMS))
+    embed_dims = int(embed_dims_str) if embed_dims_str else _DEFAULT_EMBED_DIMS
 
     # Check if the embedding provider has required credentials
     provider = _resolve_provider(embed_model)
