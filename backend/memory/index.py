@@ -5,10 +5,15 @@ With an index, asearch() performs true semantic similarity search.
 
 Configuration via environment variables:
   XHS_EMBED_MODEL: embedding provider string (default: "openai:text-embedding-3-small")
+    Supported: "openai:<model>", "openai_compatible:<model>"
   XHS_EMBED_DIMS: embedding dimensions (default: 1536)
   OPENAI_API_KEY: required for OpenAI embeddings
-  DEEPSEEK_API_KEY: required when XHS_EMBED_MODEL starts with "deepseek:"
-  DASHSCOPE_API_KEY: required when XHS_EMBED_MODEL starts with "dashscope:"
+  XHS_EMBED_BASE_URL: optional base URL for OpenAI-compatible APIs (e.g. DeepSeek)
+
+For OpenAI-compatible providers (DeepSeek, etc.), set:
+  XHS_EMBED_MODEL=openai_compatible:<model_name>
+  XHS_EMBED_BASE_URL=https://api.deepseek.com  (or other compatible endpoint)
+  OPENAI_API_KEY=sk-...  (the key for that endpoint)
 
 If the embedding provider is unavailable (e.g. missing API key), get_store_index()
 returns None and the store operates without semantic search.
@@ -18,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Any
 
 from langgraph.store.base import IndexConfig
 
@@ -30,8 +36,7 @@ _DEFAULT_EMBED_DIMS = 1536
 # Provider → required env var for API key
 _PROVIDER_KEY_MAP: dict[str, str] = {
     "openai": "OPENAI_API_KEY",
-    "deepseek": "DEEPSEEK_API_KEY",
-    "dashscope": "DASHSCOPE_API_KEY",
+    "openai_compatible": "OPENAI_API_KEY",
 }
 
 # Fields to index across all namespace value shapes
@@ -59,14 +64,42 @@ _INDEX_FIELDS = [
 
 
 def _resolve_provider(embed_model: str) -> str:
-    """Extract provider prefix from embed model string (e.g. 'openai' from 'openai:text-embedding-3-small')."""
+    """Extract provider prefix from embed model string."""
     if ":" in embed_model:
         return embed_model.split(":", 1)[0]
     return ""
 
 
+def _build_embeddings(provider: str, model_name: str) -> Any:
+    """Build a langchain Embeddings object for the given provider.
+
+    Returns the Embeddings object directly, bypassing the string-based
+    resolution that requires the langchain meta-package.
+    """
+    if provider == "openai":
+        from langchain_openai import OpenAIEmbeddings
+
+        return OpenAIEmbeddings(model=model_name)
+    elif provider == "openai_compatible":
+        from langchain_openai import OpenAIEmbeddings
+
+        base_url = os.environ.get("XHS_EMBED_BASE_URL", "")
+        kwargs: dict[str, Any] = {"model": model_name}
+        if base_url:
+            kwargs["base_url"] = base_url
+        return OpenAIEmbeddings(**kwargs)
+    else:
+        raise ValueError(
+            f"Unsupported embed provider: {provider!r}. "
+            "Use 'openai' or 'openai_compatible'."
+        )
+
+
 def get_store_index() -> IndexConfig | None:
     """Build an IndexConfig for LangGraph store semantic search.
+
+    Builds Embeddings object directly (requires langchain-openai) instead of
+    passing a string that would need the langchain meta-package.
 
     Returns None if the embedding provider is not available (e.g. missing API key).
     """
@@ -92,8 +125,16 @@ def get_store_index() -> IndexConfig | None:
         )
         return None
 
+    # Build Embeddings object directly
+    model_name = embed_model.split(":", 1)[1] if ":" in embed_model else embed_model
+    try:
+        embeddings = _build_embeddings(provider, model_name)
+    except Exception as e:
+        logger.warning(f"Failed to create embeddings ({provider}:{model_name}): {e}")
+        return None
+
     index_config: IndexConfig = {
-        "embed": embed_model,
+        "embed": embeddings,
         "dims": embed_dims,
         "fields": _INDEX_FIELDS,
     }

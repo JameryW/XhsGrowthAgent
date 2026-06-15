@@ -93,6 +93,7 @@ LLMEOF"
         -e XUNFEI_BASE_URL="${XUNFEI_BASE_URL:-}" \
         -e XHS_EMBED_MODEL="${XHS_EMBED_MODEL:-}" \
         -e XHS_EMBED_DIMS="${XHS_EMBED_DIMS:-}" \
+        -e XHS_EMBED_BASE_URL="${XHS_EMBED_BASE_URL:-}" \
         -e XHS_COOKIE="${XHS_COOKIE:-}" \
         -e XHS_USER_ID="${XHS_USER_ID:-}" \
         -e RIPPLE_BASE_URL=http://ripple-service:8080 \
