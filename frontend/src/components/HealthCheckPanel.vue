@@ -239,6 +239,37 @@ const issueCount = computed(() => {
           </div>
         </div>
 
+        <!-- Memory Store -->
+        <div class="rounded-lg p-3 border" :class="statusBg(health.checks.memory_store.status)">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <AppIcon name="Brain" size="sm" variant="cyan" />
+              <span class="text-sm font-medium text-slate-700">{{ t('health.memory') }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span :class="[statusColor(health.checks.memory_store.status), 'w-2 h-2 rounded-full']" />
+              <span class="text-xs font-medium" :class="{
+                'text-emerald-600': health.checks.memory_store.status === 'ok',
+                'text-amber-600': health.checks.memory_store.status === 'degraded' || health.checks.memory_store.status === 'warning',
+                'text-rose-600': health.checks.memory_store.status === 'error',
+              }">
+                {{ health.checks.memory_store.backend }}
+              </span>
+            </div>
+          </div>
+          <div class="mt-2 flex gap-4 text-xs text-slate-500">
+            <span :class="health.checks.memory_store.semantic_index ? 'text-emerald-600' : 'text-amber-500'">
+              Semantic: {{ health.checks.memory_store.semantic_index ? t('health.enabled') : t('health.disabled') }}
+            </span>
+            <span v-if="health.checks.memory_store.semantic_index && health.checks.memory_store.embed_model">
+              {{ health.checks.memory_store.embed_model }}
+            </span>
+            <span v-if="health.checks.memory_store.total_items != null">
+              {{ health.checks.memory_store.total_items }} items
+            </span>
+          </div>
+        </div>
+
         <!-- Version & refresh -->
         <div class="flex items-center justify-between text-xs text-slate-400 pt-1">
           <span>v{{ health.version }}</span>

@@ -195,6 +195,10 @@ class CreativeMemory:
     async def calibrate(self, payload: CalibrationPayload) -> dict[str, int]:
         """根据校准数据更新三个 namespace.
 
+        Uses aget(key=id) for direct ID lookup instead of asearch(query=id),
+        which is more reliable and avoids missing items when semantic search
+        is disabled or data volume is large.
+
         Returns update stats: {"styles": N, "plays": N, "materials": N}
         """
         stats = {"styles": 0, "plays": 0, "materials": 0}
@@ -205,24 +209,21 @@ class CreativeMemory:
         style_id = payload.get("style_id", "")
         if style_id:
             try:
-                items = await self._store.asearch(  # type: ignore[union-attr]
-                    self.style_dna_ns, query=style_id, limit=5
+                item = await self._store.aget(  # type: ignore[union-attr]
+                    self.style_dna_ns, key=style_id
                 )
-                for item in items:
-                    if item.value.get("style_id") == style_id:
-                        old = item.value
-                        old_rate = old.get("engagement_rate", 0.0)
-                        new_rate = payload.get("actual_engagement_rate", old_rate)
-                        n = old.get("sample_count", 1)
-                        # 加权移动平均
-                        old["engagement_rate"] = round((old_rate * n + new_rate) / (n + 1), 4)
-                        old["sample_count"] = n + 1
-                        old["last_used"] = datetime.now(UTC).isoformat()
-                        await self._store.aput(  # type: ignore[union-attr]
-                            self.style_dna_ns, key=item.key, value=old
-                        )
-                        stats["styles"] = 1
-                        break
+                if item is not None:
+                    old = item.value
+                    old_rate = old.get("engagement_rate", 0.0)
+                    new_rate = payload.get("actual_engagement_rate", old_rate)
+                    n = old.get("sample_count", 1)
+                    old["engagement_rate"] = round((old_rate * n + new_rate) / (n + 1), 4)
+                    old["sample_count"] = n + 1
+                    old["last_used"] = datetime.now(UTC).isoformat()
+                    await self._store.aput(  # type: ignore[union-attr]
+                        self.style_dna_ns, key=style_id, value=old
+                    )
+                    stats["styles"] = 1
             except Exception as e:
                 logger.warning(f"calibrate style failed: {e}")
 
@@ -230,20 +231,18 @@ class CreativeMemory:
         play_id = payload.get("play_id", "")
         if play_id:
             try:
-                items = await self._store.asearch(  # type: ignore[union-attr]
-                    self.playbook_ns, query=play_id, limit=5
+                item = await self._store.aget(  # type: ignore[union-attr]
+                    self.playbook_ns, key=play_id
                 )
-                for item in items:
-                    if item.value.get("play_id") == play_id:
-                        old = item.value
-                        if payload.get("play_success", False):
-                            old["proven_count"] = old.get("proven_count", 0) + 1
-                            old["last_proven"] = datetime.now(UTC).isoformat()
-                        await self._store.aput(  # type: ignore[union-attr]
-                            self.playbook_ns, key=item.key, value=old
-                        )
-                        stats["plays"] = 1
-                        break
+                if item is not None:
+                    old = item.value
+                    if payload.get("play_success", False):
+                        old["proven_count"] = old.get("proven_count", 0) + 1
+                        old["last_proven"] = datetime.now(UTC).isoformat()
+                    await self._store.aput(  # type: ignore[union-attr]
+                        self.playbook_ns, key=play_id, value=old
+                    )
+                    stats["plays"] = 1
             except Exception as e:
                 logger.warning(f"calibrate play failed: {e}")
 
@@ -251,22 +250,19 @@ class CreativeMemory:
         material_effectiveness = payload.get("material_effectiveness", {})
         for mid, eff in material_effectiveness.items():
             try:
-                items = await self._store.asearch(  # type: ignore[union-attr]
-                    self.vault_ns, query=mid, limit=5
+                item = await self._store.aget(  # type: ignore[union-attr]
+                    self.vault_ns, key=mid
                 )
-                for item in items:
-                    if item.value.get("material_id") == mid:
-                        old = item.value
-                        old["effectiveness"] = eff
-                        old["reuse_count"] = old.get("reuse_count", 0) + 1
-                        # 软降权
-                        if eff < EFFECTIVENESS_THRESHOLD:
-                            old["weight"] = round(old.get("weight", 1.0) * DOWNGRADE_FACTOR, 4)
-                        await self._store.aput(  # type: ignore[union-attr]
-                            self.vault_ns, key=item.key, value=old
-                        )
-                        stats["materials"] += 1
-                        break
+                if item is not None:
+                    old = item.value
+                    old["effectiveness"] = eff
+                    old["reuse_count"] = old.get("reuse_count", 0) + 1
+                    if eff < EFFECTIVENESS_THRESHOLD:
+                        old["weight"] = round(old.get("weight", 1.0) * DOWNGRADE_FACTOR, 4)
+                    await self._store.aput(  # type: ignore[union-attr]
+                        self.vault_ns, key=mid, value=old
+                    )
+                    stats["materials"] += 1
             except Exception as e:
                 logger.warning(f"calibrate material {mid} failed: {e}")
 

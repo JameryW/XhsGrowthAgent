@@ -21,8 +21,8 @@ from backend.memory.types import (
 # ── Helpers ──
 
 
-def _make_store(search_results: list[dict] | None = None) -> AsyncMock:
-    """Create a mock BaseStore with configurable asearch results."""
+def _make_store(search_results: list[dict] | None = None, get_result: dict | None = None) -> AsyncMock:
+    """Create a mock BaseStore with configurable asearch/aget results."""
     store = AsyncMock()
     if search_results is not None:
         items = []
@@ -32,6 +32,14 @@ def _make_store(search_results: list[dict] | None = None) -> AsyncMock:
             item.key = r.get("style_id", r.get("play_id", r.get("material_id", "key")))
             items.append(item)
         store.asearch = AsyncMock(return_value=items)
+    # aget returns a single item or None
+    if get_result is not None:
+        item = MagicMock()
+        item.value = get_result
+        item.key = get_result.get("style_id", get_result.get("play_id", get_result.get("material_id", "key")))
+        store.aget = AsyncMock(return_value=item)
+    else:
+        store.aget = AsyncMock(return_value=None)
     store.aput = AsyncMock()
     return store
 
@@ -207,7 +215,7 @@ class TestSoftDowngrade:
             weight=1.0,
             reuse_count=0,
         )
-        store = _make_store(search_results=[material])
+        store = _make_store(get_result=material)
         cm = CreativeMemory("test_acct", store=store)
 
         payload = CalibrationPayload(
@@ -243,7 +251,7 @@ class TestSoftDowngrade:
             weight=0.8,
             reuse_count=2,
         )
-        store = _make_store(search_results=[material])
+        store = _make_store(get_result=material)
         cm = CreativeMemory("test_acct", store=store)
 
         payload = CalibrationPayload(
@@ -293,7 +301,7 @@ class TestConversionPlaybook:
             trigger_condition="新品首发",
             proven_count=2,
         )
-        store = _make_store(search_results=[play])
+        store = _make_store(get_result=play)
         cm = CreativeMemory("test_acct", store=store)
 
         payload = CalibrationPayload(
@@ -407,7 +415,7 @@ class TestCalibrateStats:
     @pytest.mark.asyncio
     async def test_returns_stats_on_style_update(self):
         style = StyleDNA(style_id="s1", tone="治愈", sample_count=1, engagement_rate=0.05)
-        store = _make_store(search_results=[style])
+        store = _make_store(get_result=style)
         cm = CreativeMemory("test_acct", store=store)
         payload = CalibrationPayload(
             account_id="test_acct",

@@ -131,6 +131,90 @@ def _check_search() -> dict:
     }
 
 
+async def _check_memory_store() -> dict:
+    """Check memory store status: backend type, semantic index, namespace counts."""
+    from backend.memory.index import get_store_index
+
+    store = None
+    try:
+        from backend.api.app import app as fastapi_app
+        graph = getattr(fastapi_app.state, "graph", None)
+        if graph is not None:
+            store = getattr(graph, "store", None)
+    except Exception:
+        pass
+
+    # Determine store backend
+    if store is not None:
+        store_type = type(store).__name__
+        if "Postgres" in store_type:
+            backend = "postgres"
+        elif "InMemory" in store_type:
+            backend = "memory"
+        else:
+            backend = store_type
+    else:
+        backend = "unavailable"
+
+    # Check semantic index availability
+    index_config = get_store_index()
+    semantic_enabled = index_config is not None
+    embed_model = ""
+    embed_dims = 0
+    if index_config:
+        embed_model = index_config.get("embed", "")
+        embed_dims = index_config.get("dims", 0)
+
+    # Count items per namespace (best-effort)
+    namespace_counts: dict[str, int] = {}
+    total_items = 0
+    if store is not None:
+        try:
+            # List all namespaces and count items
+            # InMemoryStore and AsyncPostgresStore both support alist with namespace prefix
+            known_prefixes = [
+                ("accounts",),      # All account-scoped data
+                ("benchmarks",),    # Niche benchmarks
+            ]
+            for prefix in known_prefixes:
+                try:
+                    items = await store.alist(namespace_prefix=prefix, limit=1000)
+                    for item in items:
+                        ns_key = "/".join(str(p) for p in item.namespace)
+                        namespace_counts[ns_key] = namespace_counts.get(ns_key, 0) + 1
+                        total_items += 1
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # Build status
+    if backend == "unavailable":
+        status = "warning"
+        message = "Memory store 不可用"
+    elif not semantic_enabled:
+        status = "degraded"
+        message = f"Memory store 可用（{backend}），语义索引未启用"
+    else:
+        status = "ok"
+        message = f"Memory store 可用（{backend}），语义索引已启用"
+
+    result: dict = {
+        "status": status,
+        "backend": backend,
+        "semantic_index": semantic_enabled,
+        "message": message,
+    }
+    if semantic_enabled:
+        result["embed_model"] = embed_model
+        result["embed_dims"] = embed_dims
+    if namespace_counts:
+        result["namespace_counts"] = namespace_counts
+        result["total_items"] = total_items
+
+    return result
+
+
 @router.get("/health")
 async def system_health():
     """系统健康检查
@@ -146,6 +230,7 @@ async def system_health():
     xhs = _check_xhs()
     ripple = await _check_ripple()
     search = _check_search()
+    memory = await _check_memory_store()
 
     # Overall status: ok if LLM is configured (XHS is optional — preview-only without it)
     overall = "ok" if llm["status"] == "ok" else "degraded"
@@ -194,6 +279,7 @@ async def system_health():
         "ripple_cas": ripple,
         "search_api": search,
         "database": database_check,
+        "memory_store": memory,
     }
 
     return success(

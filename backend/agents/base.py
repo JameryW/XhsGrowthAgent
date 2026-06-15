@@ -60,8 +60,7 @@ class BaseAgent(ABC):
         template = self.prompt_template.get("system", "")
         niche = state.get("niche", "母婴")
         template = template.replace("{account_niche}", niche)
-        if extra_context:
-            template = template.replace("{memory_context}", extra_context)
+        template = template.replace("{memory_context}", extra_context)
         return template
 
     async def _recall_memory(

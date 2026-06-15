@@ -26,6 +26,16 @@ export interface HealthCheck {
       mode: string
       message: string
     }
+    memory_store: {
+      status: string
+      backend: string
+      semantic_index: boolean
+      message: string
+      embed_model?: string
+      embed_dims?: number
+      namespace_counts?: Record<string, number>
+      total_items?: number
+    }
   }
   version: string
   timestamp: string
