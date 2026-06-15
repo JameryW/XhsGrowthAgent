@@ -94,7 +94,12 @@ const phases: { value: WorkflowPhase; key: string; icon: string }[] = [
 ]
 
 function getConfig(): WorkflowConfig {
-  const effectiveBriefText = briefPdfText.value || briefText.value.trim() || undefined
+  // When PDF is uploaded, don't pass preview text as briefText — it's truncated.
+  // The workflow starts without brief_text (triggers "waiting for upload" path),
+  // then the full PDF is uploaded via /brief/upload which writes the complete text.
+  const effectiveBriefText = hasPdfUpload.value
+    ? undefined
+    : (briefText.value.trim() || undefined)
   return {
     accountId: accountId.value.trim(),
     phase: phase.value,

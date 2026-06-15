@@ -104,14 +104,14 @@ async def submit_review(thread_id: str, decision: ReviewDecision, request: Reque
         # Append version to state before resuming (reducer appends to existing)
         await graph.aupdate_state(config, {
             "content_versions": [version_entry],
-        })
+        }, as_node=_runner._get_as_node(state))
 
     # On 'approved', write publish options to state so publisher can read them
     if decision.decision == "approved":
         pub_opts = decision.publish_options or PublishOptions(dry_run=True)
         await graph.aupdate_state(config, {
             "publish_options": pub_opts.model_dump(),
-        })
+        }, as_node=_runner._get_as_node(state))
 
     # 用 Command(resume=...) 恢复中断的图 — via unified runner
     try:
@@ -223,7 +223,7 @@ async def submit_ripple_decision(thread_id: str, decision: RippleDecision, reque
             updates["content_plan"] = {}
             updates["ripple_prediction"] = {}
             updates["ripple_pmf"] = {}
-        await graph.aupdate_state(config, updates)
+        await graph.aupdate_state(config, updates, as_node=_runner._get_as_node(state))
 
     # Resume the graph with the user's decision
     try:

@@ -70,8 +70,9 @@ def _load_history_file(thread_id: str) -> dict | None:
 
 # ── DB-aware helpers ──
 
-# Re-export _db_upsert from _runner for use in this module
+# Re-export shared helpers from _runner for use in this module
 _db_upsert = _runner._db_upsert
+_get_as_node = _runner._get_as_node
 
 
 def _on_task_done(thread_id: str):
@@ -736,19 +737,6 @@ async def get_checkpoint_history(
 
     raise WorkflowNotFoundError(thread_id)
 
-
-def _get_as_node(state) -> str | None:
-    """Determine as_node for aupdate_state from the current state checkpoint.
-
-    LangGraph requires as_node when updating state on a workflow paused at
-    an interrupt (multiple nodes in state). Without it, raises
-    InvalidUpdateError: Ambiguous update, specify as_node.
-    """
-    if state.tasks:
-        return state.tasks[0].name
-    if state.values:
-        return state.values.get("_last_node", "orchestrator")
-    return "orchestrator"
 
 
 @router.post("/pause/{thread_id}")
