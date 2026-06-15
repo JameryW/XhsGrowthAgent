@@ -40,6 +40,7 @@ from backend.graph.error_handling import get_retry_policy
 from backend.graph.routers import (
     blogger_gate_router,
     copywriter_router,
+    draft_gate_router,
     engagement_router,
     orchestrator_router,
     review_outcome,
@@ -167,8 +168,16 @@ def build_graph() -> StateGraph:
         },
     )
 
-    # draft_gate → viral_matcher (search for viral references)
-    builder.add_edge("draft_gate", "viral_matcher")
+    # draft_gate → [viral_matcher | shooting_planner]
+    # (from copywriter → viral_matcher; from blogger_gate → shooting_planner)
+    builder.add_conditional_edges(
+        "draft_gate",
+        draft_gate_router,
+        {
+            "viral_matcher": "viral_matcher",
+            "shooting_planner": "shooting_planner",
+        },
+    )
 
     # viral_matcher → blogger_scout (discover bloggers from viral notes)
     builder.add_edge("viral_matcher", "blogger_scout")
@@ -176,14 +185,13 @@ def build_graph() -> StateGraph:
     # blogger_scout → blogger_gate (interrupt for user selection)
     builder.add_edge("blogger_scout", "blogger_gate")
 
-    # blogger_gate → [shooting_planner | content_analyzer | visual_designer]
-    # (routes based on workflow mode, same logic as should_brief_or_optimize)
+    # blogger_gate → [draft_gate | visual_designer]
+    # (routes to draft_gate for user to confirm/edit note style before proceeding)
     builder.add_conditional_edges(
         "blogger_gate",
         blogger_gate_router,
         {
-            "shooting_planner": "shooting_planner",
-            "content_analyzer": "content_analyzer",
+            "draft_gate": "draft_gate",
             "visual_designer": "visual_designer",
         },
     )
@@ -316,6 +324,7 @@ async def compile_graph_dev() -> CompiledStateGraph:
             await store.setup()
         except Exception as e:
             import logging
+
             logging.getLogger("xhs_growth").warning(
                 f"Failed to create Postgres store for dev, falling back to InMemoryStore: {e}"
             )
@@ -337,6 +346,7 @@ async def compile_graph_dev() -> CompiledStateGraph:
         await checkpointer.setup()
     except ImportError:
         import logging
+
         logging.getLogger("xhs_growth").warning(
             "langgraph-checkpoint-sqlite not installed, using MemorySaver"
         )

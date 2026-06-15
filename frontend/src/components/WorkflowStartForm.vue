@@ -29,7 +29,7 @@ const props = defineProps<{
 const workflowMode = ref<WorkflowMode>('trend')
 const accountId = ref('default')
 const phase = ref<WorkflowPhase>('scouting')
-const dryRun = ref(true)
+const dryRun = ref(false)
 const autoPublish = ref(false)
 const topic = ref(props.initialTopic || '')
 const niche = ref('母婴')
@@ -45,8 +45,6 @@ function onBriefPdfUpload(file: File) {
   // Using workflowStore.currentThreadId here is unsafe: if the user has an
   // active workflow, the PDF would upload to the wrong thread.
   pendingPdfFile.value = file
-  // Trigger PDF upload UI flow immediately (shows extracting spinner)
-  workflowStore.simulateBriefUploadStart()
 }
 
 async function uploadPendingPdf(threadId: string) {

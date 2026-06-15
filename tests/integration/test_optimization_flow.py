@@ -135,11 +135,15 @@ class TestOptimizationGraphIntegration:
         nodes = graph.nodes
         assert "draft_gate" in nodes
         assert "viral_matcher" in nodes
+        assert "shooting_planner" in nodes
 
         # Verify edges by checking the graph's edge list
         edges = graph.edges
-        # draft_gate → viral_matcher is a direct edge
-        assert ("draft_gate", "viral_matcher") in edges
+        # draft_gate -> viral_matcher is now a conditional edge
+        # (draft_gate -> [viral_matcher | shooting_planner] via draft_gate_router)
+        # Direct edges that remain:
+        assert ("viral_matcher", "blogger_scout") in edges
+        assert ("blogger_scout", "blogger_gate") in edges
 
     @pytest.mark.asyncio
     async def test_compile_graph_uses_interrupt_before(self):

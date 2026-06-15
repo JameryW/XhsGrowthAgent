@@ -135,7 +135,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const progressPercent = ref(0)
-  const isOverlayLoading = ref(false)
 
   // Computed
   const currentPhase = computed<WorkflowPhase>(() =>
@@ -299,7 +298,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
       } else {
         localStorage.removeItem(LS_ACTIVE_THREAD)
         progressPercent.value = 0
-        isOverlayLoading.value = false
       }
     }
   }
@@ -325,18 +323,16 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const realtimeStore = useRealtimeStore()
   const toastStore = useToastStore()
   const offlineStore = useOfflineStore()
-  const { phaseToPercent, isOverlayPhase } = useLoading()
+  const { phaseToPercent } = useLoading()
 
   // Phases that should NOT reset progress — preserve last valid value
   const PRESERVE_PROGRESS_PHASES: WorkflowPhase[] = ['paused', 'cancelled']
 
   function updateProgressFromPhase(phase: WorkflowPhase, backendProgress?: number) {
     if (PRESERVE_PROGRESS_PHASES.includes(phase) && !backendProgress) {
-      isOverlayLoading.value = false
       return
     }
     progressPercent.value = backendProgress ?? phaseToPercent(phase)
-    isOverlayLoading.value = isOverlayPhase(phase)
   }
 
   // ── WebSocket event handlers (multi-thread aware) ──
@@ -766,7 +762,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
       toastStore.error(t('workflow.cancelFailed'), e.message)
     } finally {
       isLoading.value = false
-      isOverlayLoading.value = false
     }
   }
 
@@ -839,10 +834,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   function clearBriefUpload() {
     briefUploadedText.value = null
     briefSourceType.value = null
-  }
-
-  function simulateBriefUploadStart() {
-    isBriefUploading.value = true
+    isBriefUploading.value = false
   }
 
   // ── Replay mode actions ──
@@ -925,7 +917,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isLoading,
     error,
     progressPercent,
-    isOverlayLoading,
     currentPhase,
     currentStatus,
     nextNodes,
@@ -967,7 +958,6 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isBriefUploading,
     uploadBriefPdf,
     clearBriefUpload,
-    simulateBriefUploadStart,
 
     // Replay mode
     isReplayMode,
