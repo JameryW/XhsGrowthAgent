@@ -185,12 +185,14 @@ def build_graph() -> StateGraph:
     # blogger_scout → blogger_gate (interrupt for user selection)
     builder.add_edge("blogger_scout", "blogger_gate")
 
-    # blogger_gate → [draft_gate | visual_designer]
-    # (routes to draft_gate for user to confirm/edit note style before proceeding)
+    # blogger_gate → [copywriter | draft_gate | visual_designer]
+    # Brief mode: copywriter (AI generates copy from brief + blogger notes)
+    # Trend mode: draft_gate (user writes draft manually)
     builder.add_conditional_edges(
         "blogger_gate",
         blogger_gate_router,
         {
+            "copywriter": "copywriter",
             "draft_gate": "draft_gate",
             "visual_designer": "visual_designer",
         },

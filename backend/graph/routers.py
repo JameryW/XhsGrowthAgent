@@ -190,10 +190,18 @@ def should_brief_or_optimize(
 
 def blogger_gate_router(
     state: XHSGrowthState,
-) -> Literal["draft_gate", "visual_designer"]:
-    """Route after blogger_gate — go to draft_gate for user to confirm/edit note style."""
+) -> Literal["copywriter", "draft_gate", "visual_designer"]:
+    """Route after blogger_gate — brief mode goes to copywriter, trend mode to draft_gate.
+
+    Brief mode: blogger_gate → copywriter (AI generates copy from brief + blogger notes)
+    Trend mode: blogger_gate → draft_gate (user writes draft manually)
+    """
     if _check_terminal(state):
         return "visual_designer"
+
+    mode = state.get("workflow_mode", "trend")
+    if mode == "brief":
+        return "copywriter"
 
     return "draft_gate"
 
