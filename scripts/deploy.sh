@@ -22,7 +22,7 @@ BACKUP_DIR="$PROJECT_DIR/.backups"
 # ── Postgres 管理 ──
 
 cmd_ensure_postgres() {
-    """确保 Postgres 容器运行，带 pgvector 支持"""
+    # 确保 Postgres 容器运行，带 pgvector 支持
     if podman ps --filter name=postgres-xhs --format '{{.Names}}' | grep -q postgres-xhs; then
         return 0
     fi
@@ -52,7 +52,7 @@ cmd_ensure_postgres() {
 # ── 备份与恢复 ──
 
 cmd_backup() {
-    """备份 Postgres 数据到 .backups/ 目录"""
+    # 备份 Postgres 数据到 .backups/ 目录
     mkdir -p "$BACKUP_DIR"
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
     BACKUP_FILE="$BACKUP_DIR/xhs_growth_${TIMESTAMP}.sql.gz"
@@ -73,7 +73,7 @@ cmd_backup() {
 }
 
 cmd_restore() {
-    """从最近的备份恢复 Postgres 数据"""
+    # 从最近的备份恢复 Postgres 数据
     LATEST=$(ls -t "$BACKUP_DIR"/xhs_growth_*.sql.gz 2>/dev/null | head -1)
     if [ -z "$LATEST" ]; then
         echo "错误: 没有找到备份文件（$BACKUP_DIR/xhs_growth_*.sql.gz）"
