@@ -427,3 +427,68 @@ class TestCalibrateStats:
         assert stats["styles"] == 1
         assert stats["plays"] == 0
         assert stats["materials"] == 0
+
+
+# ── Keyword Recall ──
+
+
+class TestKeywordRecall:
+    """Tests for keyword-filtered recall in CreativeMemory."""
+
+    @pytest.mark.asyncio
+    async def test_recall_style_with_keywords(self):
+        """recall_style filters by keywords."""
+        s1 = _sample_style(tone="治愈", visual="温暖治愈")
+        s2 = _sample_style(tone="专业", visual="现代简约")
+        store = _make_store(search_results=[s1, s2])
+        cm = CreativeMemory("test_acct", store=store)
+
+        result = await cm.recall_style(query="style", keywords=["治愈"])
+        assert len(result) == 1
+        assert result[0]["tone"] == "治愈"
+
+    @pytest.mark.asyncio
+    async def test_recall_style_with_filter(self):
+        """recall_style passes filter to asearch."""
+        s1 = _sample_style(tone="治愈")
+        store = _make_store(search_results=[s1])
+        cm = CreativeMemory("test_acct", store=store)
+
+        await cm.recall_style(query="style", filter={"tone": "治愈"})
+        call = store.asearch.call_args
+        assert call.kwargs.get("filter") == {"tone": "治愈"}
+
+    @pytest.mark.asyncio
+    async def test_recall_plays_with_keywords(self):
+        """recall_plays filters by keywords."""
+        p1 = ConversionPlay(play_id="p1", trigger_condition="新品首发", niche="母婴")
+        p2 = ConversionPlay(play_id="p2", trigger_condition="节日促销", niche="美妆")
+        store = _make_store(search_results=[p1, p2])
+        cm = CreativeMemory("test_acct", store=store)
+
+        result = await cm.recall_plays(keywords=["母婴"])
+        assert len(result) == 1
+        assert result[0]["trigger_condition"] == "新品首发"
+
+    @pytest.mark.asyncio
+    async def test_recall_materials_with_keywords(self):
+        """recall_materials filters by keywords."""
+        m1 = MaterialEntry(material_id="m1", category="标题模板", content="护肤秘籍")
+        m2 = MaterialEntry(material_id="m2", category="封面", content="穿搭灵感", weight=1.2)
+        store = _make_store(search_results=[m1, m2])
+        cm = CreativeMemory("test_acct", store=store)
+
+        result = await cm.recall_materials(keywords=["护肤"])
+        assert len(result) == 1
+        assert "护肤" in result[0]["content"]
+
+    @pytest.mark.asyncio
+    async def test_recall_no_keywords_returns_all(self):
+        """recall without keywords returns all results (no filtering)."""
+        s1 = _sample_style(tone="治愈")
+        s2 = _sample_style(tone="专业")
+        store = _make_store(search_results=[s1, s2])
+        cm = CreativeMemory("test_acct", store=store)
+
+        result = await cm.recall_style(query="style", limit=3)
+        assert len(result) == 2

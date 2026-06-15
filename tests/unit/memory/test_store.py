@@ -4,7 +4,50 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.memory.store import MemoryManager
+from backend.memory.store import MemoryManager, _keyword_filter
+
+
+class TestKeywordFilter:
+    """Tests for _keyword_filter helper."""
+
+    def test_no_keywords_returns_all(self):
+        """Empty keywords list returns all items unchanged."""
+        items = [MagicMock(value={"title": "a"}), MagicMock(value={"title": "b"})]
+        assert _keyword_filter(items, []) == items
+
+    def test_none_keywords_returns_all(self):
+        """None keywords returns all items unchanged."""
+        items = [MagicMock(value={"title": "a"})]
+        assert _keyword_filter(items, None) == items
+
+    def test_single_keyword_match(self):
+        """Single keyword filters to matching items."""
+        i1 = MagicMock(value={"title": "护肤指南", "tone": "治愈"})
+        i2 = MagicMock(value={"title": "穿搭分享", "tone": "活泼"})
+        result = _keyword_filter([i1, i2], ["护肤"])
+        assert len(result) == 1
+        assert result[0].value["title"] == "护肤指南"
+
+    def test_multiple_keywords_all_must_match(self):
+        """All keywords must appear in item text."""
+        i1 = MagicMock(value={"title": "宝宝护肤指南", "category": "母婴"})
+        i2 = MagicMock(value={"title": "成人护肤技巧", "category": "美妆"})
+        i3 = MagicMock(value={"title": "宝宝穿搭", "category": "母婴"})
+        result = _keyword_filter([i1, i2, i3], ["宝宝", "护肤"])
+        assert len(result) == 1
+        assert result[0].value["title"] == "宝宝护肤指南"
+
+    def test_keyword_matching_is_case_insensitive(self):
+        """Keyword matching ignores case."""
+        i1 = MagicMock(value={"title": "SKINCARE guide"})
+        result = _keyword_filter([i1], ["skincare"])
+        assert len(result) == 1
+
+    def test_keyword_matches_numeric_values(self):
+        """Keyword matching includes numeric/bool values converted to strings."""
+        i1 = MagicMock(value={"title": "test", "count": 42, "active": True})
+        result = _keyword_filter([i1], ["42"])
+        assert len(result) == 1
 
 
 class TestMemoryManager:
@@ -113,7 +156,7 @@ class TestMemoryManager:
         assert len(result) == 1
         assert result[0]["title"] == "美食探店"
         mock_store.asearch.assert_called_once_with(
-            manager.content_history_ns, query="美食", limit=5
+            manager.content_history_ns, query="美食", limit=5, filter=None
         )
 
     @pytest.mark.asyncio
@@ -139,7 +182,38 @@ class TestMemoryManager:
 
         assert len(result) == 1
         mock_store.asearch.assert_called_once_with(
-            manager.insights_ns, query="发布", limit=3
+            manager.insights_ns, query="发布", limit=3, filter=None
+        )
+
+    @pytest.mark.asyncio
+    async def test_recall_with_keywords_overfetches(self, manager, mock_store):
+        """recall with keywords over-fetches then filters."""
+        i1 = MagicMock(value={"insight": "护肤效果好", "category": "美妆"})
+        i2 = MagicMock(value={"insight": "穿搭推荐多", "category": "时尚"})
+        mock_store.asearch = AsyncMock(return_value=[i1, i2])
+
+        result = await manager.recall_insights(
+            mock_store, "效果", limit=3, keywords=["护肤"]
+        )
+        # Only the "护肤" item should survive keyword filter
+        assert len(result) == 1
+        assert result[0]["insight"] == "护肤效果好"
+        # Should have over-fetched (limit*2=6)
+        call = mock_store.asearch.call_args
+        assert call.kwargs.get("limit") == 6
+
+    @pytest.mark.asyncio
+    async def test_recall_with_filter_passthrough(self, manager, mock_store):
+        """recall passes filter dict to asearch."""
+        mock_item = MagicMock()
+        mock_item.value = {"insight": "test"}
+        mock_store.asearch = AsyncMock(return_value=[mock_item])
+
+        result = await manager.recall_insights(
+            mock_store, "效果", limit=5, filter={"category": "美妆"}
+        )
+        mock_store.asearch.assert_called_once_with(
+            manager.insights_ns, query="效果", limit=5, filter={"category": "美妆"}
         )
 
     @pytest.mark.asyncio

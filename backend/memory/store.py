@@ -1,4 +1,4 @@
-"""Long-term memory manager — namespace-based memory with semantic search."""
+"""Long-term memory manager — namespace-based memory with semantic + keyword search."""
 
 from __future__ import annotations
 
@@ -9,6 +9,22 @@ from typing import Any
 from langgraph.store.base import BaseStore
 
 logger = logging.getLogger("xhs_growth.memory.store")
+
+
+def _keyword_filter(items: list, keywords: list[str]) -> list:
+    """Post-filter asearch results by keywords — all keywords must appear in any value field."""
+    if not keywords:
+        return items
+    kw_lower = [k.lower() for k in keywords]
+    filtered = []
+    for item in items:
+        # Concatenate all string values for keyword matching
+        text = " ".join(
+            str(v) for v in item.value.values() if isinstance(v, (str, int, float, bool))
+        ).lower()
+        if all(kw in text for kw in kw_lower):
+            filtered.append(item)
+    return filtered
 
 
 class MemoryManager:
@@ -73,52 +89,69 @@ class MemoryManager:
             value={"note": note, **data},
         )
 
-    # ── Read (semantic search) ──
+    # ── Read (semantic search + keyword filter) ──
 
     async def recall_similar_content(
-        self, store: BaseStore, query: str, limit: int = 5
+        self, store: BaseStore, query: str, limit: int = 5,
+        *, keywords: list[str] | None = None, filter: dict[str, Any] | None = None,
     ) -> list[dict]:
         try:
+            # Over-fetch to compensate for keyword filtering
+            fetch_limit = limit * 2 if keywords else limit
             items = await store.asearch(
-                self.content_history_ns, query=query, limit=limit
+                self.content_history_ns, query=query, limit=fetch_limit, filter=filter,
             )
-            return [item.value for item in items]
+            if keywords:
+                items = _keyword_filter(items, keywords)
+            return [item.value for item in items[:limit]]
         except Exception as e:
             logger.warning(f"recall_similar_content failed: {e}")
             return []
 
     async def recall_audience_preferences(
-        self, store: BaseStore, query: str, limit: int = 3
+        self, store: BaseStore, query: str, limit: int = 3,
+        *, keywords: list[str] | None = None, filter: dict[str, Any] | None = None,
     ) -> list[dict]:
         try:
+            fetch_limit = limit * 2 if keywords else limit
             items = await store.asearch(
-                self.audience_ns, query=query, limit=limit
+                self.audience_ns, query=query, limit=fetch_limit, filter=filter,
             )
-            return [item.value for item in items]
+            if keywords:
+                items = _keyword_filter(items, keywords)
+            return [item.value for item in items[:limit]]
         except Exception as e:
             logger.warning(f"recall_audience_preferences failed: {e}")
             return []
 
     async def recall_insights(
-        self, store: BaseStore, query: str, limit: int = 5
+        self, store: BaseStore, query: str, limit: int = 5,
+        *, keywords: list[str] | None = None, filter: dict[str, Any] | None = None,
     ) -> list[dict]:
         try:
+            fetch_limit = limit * 2 if keywords else limit
             items = await store.asearch(
-                self.insights_ns, query=query, limit=limit
+                self.insights_ns, query=query, limit=fetch_limit, filter=filter,
             )
-            return [item.value for item in items]
+            if keywords:
+                items = _keyword_filter(items, keywords)
+            return [item.value for item in items[:limit]]
         except Exception as e:
             logger.warning(f"recall_insights failed: {e}")
             return []
 
     async def recall_strategy_notes(
-        self, store: BaseStore, query: str, limit: int = 3
+        self, store: BaseStore, query: str, limit: int = 3,
+        *, keywords: list[str] | None = None, filter: dict[str, Any] | None = None,
     ) -> list[dict]:
         try:
+            fetch_limit = limit * 2 if keywords else limit
             items = await store.asearch(
-                self.strategy_ns, query=query, limit=limit
+                self.strategy_ns, query=query, limit=fetch_limit, filter=filter,
             )
-            return [item.value for item in items]
+            if keywords:
+                items = _keyword_filter(items, keywords)
+            return [item.value for item in items[:limit]]
         except Exception as e:
             logger.warning(f"recall_strategy_notes failed: {e}")
             return []
