@@ -49,6 +49,16 @@ function formatNum(n?: number): string {
       <span class="font-medium text-slate-700">{{ cp.ripple_prediction.verdict }}</span>
     </div>
     <div v-if="cp.ripple_prediction.prediction_summary" class="mt-1.5 p-2 rounded liquid-glass-inset text-xs text-slate-600">{{ cp.ripple_prediction.prediction_summary }}</div>
+    <!-- Confidence gate -->
+    <div v-if="cp.ripple_prediction.confidence_gate" class="mt-2 p-2 rounded liquid-glass-inset">
+      <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('replay.confidenceGate') }}</div>
+      <div class="flex items-center gap-2 text-xs">
+        <span class="text-slate-500">{{ cp.ripple_prediction.confidence_gate.original_confidence }}</span>
+        <span class="text-slate-300">&rarr;</span>
+        <span class="font-medium" :class="cp.ripple_prediction.confidence_gate.final_confidence === 'high' ? 'text-emerald-600' : cp.ripple_prediction.confidence_gate.final_confidence === 'medium' ? 'text-amber-600' : 'text-rose-600'">{{ cp.ripple_prediction.confidence_gate.final_confidence }}</span>
+        <span v-if="cp.ripple_prediction.confidence_gate.reason" class="text-slate-400 ml-1">({{ cp.ripple_prediction.confidence_gate.reason }})</span>
+      </div>
+    </div>
     <!-- Relative estimates -->
     <div v-if="cp.ripple_prediction.views_relative || cp.ripple_prediction.engagements_relative || cp.ripple_prediction.favorites_relative" class="mt-2 grid grid-cols-2 gap-1.5">
       <div v-if="cp.ripple_prediction.views_relative" class="p-1.5 rounded liquid-glass-inset">
@@ -121,6 +131,16 @@ function formatNum(n?: number): string {
       <span class="font-medium text-slate-700">{{ cp.ripple_pmf.verdict }}</span>
     </div>
     <div v-if="cp.ripple_pmf.prediction_summary" class="mt-1.5 p-2 rounded liquid-glass-inset text-xs text-slate-600">{{ cp.ripple_pmf.prediction_summary }}</div>
+    <!-- Confidence gate -->
+    <div v-if="cp.ripple_pmf.confidence_gate" class="mt-2 p-2 rounded liquid-glass-inset">
+      <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('replay.confidenceGate') }}</div>
+      <div class="flex items-center gap-2 text-xs">
+        <span class="text-slate-500">{{ cp.ripple_pmf.confidence_gate.original_confidence }}</span>
+        <span class="text-slate-300">&rarr;</span>
+        <span class="font-medium" :class="cp.ripple_pmf.confidence_gate.final_confidence === 'high' ? 'text-emerald-600' : cp.ripple_pmf.confidence_gate.final_confidence === 'medium' ? 'text-amber-600' : 'text-rose-600'">{{ cp.ripple_pmf.confidence_gate.final_confidence }}</span>
+        <span v-if="cp.ripple_pmf.confidence_gate.reason" class="text-slate-400 ml-1">({{ cp.ripple_pmf.confidence_gate.reason }})</span>
+      </div>
+    </div>
     <div v-if="cp.ripple_pmf.risk_factors?.length" class="mt-2">
       <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('replay.riskFactors') }}</div>
       <div class="space-y-0.5">

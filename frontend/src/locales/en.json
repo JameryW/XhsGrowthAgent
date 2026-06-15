@@ -1151,6 +1151,7 @@
     "engDeviation": "Eng. Deviation",
     "accuracyRating": "Accuracy Rating",
     "scoreSource": "Score Source",
+    "confidenceGate": "Confidence Gate",
     "draftContent": "Submitted Draft",
     "finalCopy": "Final Copy",
     "optimizationAnalysis": "Optimization Analysis",
