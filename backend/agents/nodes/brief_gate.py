@@ -35,12 +35,22 @@ async def brief_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[st
     decision = interrupt({"type": "brief_clarification", "questions": clarification.get("questions", [])})
 
     # decision format: {"action": "answer", "answers": {...}} or {"action": "skip"}
+    result: dict[str, Any] = {
+        "phase": WorkflowPhase.BRIEFING,
+        "brief_clarification": {"questions": [], "resolved": True},
+    }
+
     if decision and decision.get("action") == "skip":
         logger.info("Brief gate: user skipped clarification")
     elif decision and decision.get("action") == "answer":
         logger.info("Brief gate: user provided clarification answers")
+        # Merge answers into brief_content so downstream agents see them
+        answers = decision.get("answers", {})
+        if answers:
+            brief_content = dict(state.get("brief_content", {}))
+            for field, value in answers.items():
+                if value is not None and value != "":
+                    brief_content[field] = value
+            result["brief_content"] = brief_content
 
-    return NodeResult({
-        "phase": WorkflowPhase.BRIEFING,
-        "brief_clarification": {"questions": [], "resolved": True},
-    }, "brief_gate").to_dict()
+    return NodeResult(result, "brief_gate").to_dict()

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Contains workflow phase/state conventions — needed for draft_gate_router and phase transitions"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Error handling patterns for router functions and node implementations"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Ensures backend draft_gate changes align with frontend isAwaitingDraft/submitDraft"}
+{"file": "prd.md", "reason": "Full requirements, flow diagrams, and ADR-lite decision for this task"}

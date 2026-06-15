@@ -367,7 +367,7 @@ export interface BriefContent {
   source_type?: string
   brand_name?: string
   product_name?: string
-  product_specs?: string
+  product_specs?: string[]
   selling_points?: string[]
   required_keywords?: string[]
   required_hashtags?: string[]
@@ -376,7 +376,7 @@ export interface BriefContent {
   target_audience?: string
   style_requirements?: string
   shooting_requirements?: string
-  notes?: string
+  notes?: string[]
   confidence?: number
 }
 
@@ -400,8 +400,8 @@ export interface ShootingPlan {
   creator_level?: string
   planned_publish_date?: string
   product_specification?: string
-  draft_requirements?: string
-  draft_notes?: string
+  draft_requirements?: string[]
+  draft_notes?: string[]
   title_candidates?: string[]
   body_copy?: string
   required_hashtags?: string[]

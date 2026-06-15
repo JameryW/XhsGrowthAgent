@@ -75,11 +75,12 @@ const workflowPhases = computed<PhaseNode[]>(() => {
     { icon: 'Palette', label: t('dashboard.timeline.short.visual'), agent: 'visual_designer', description: t('dashboard.timeline.visualDesc') },
   ]
   const briefCreatingSubSteps: SubStep[] = [
-    { icon: 'Pencil', label: t('dashboard.timeline.short.copywriting'), agent: 'copywriter', description: t('dashboard.timeline.creatingDesc') },
-    { icon: 'FileText', label: t('dashboard.timeline.short.draft'), agent: 'draft_gate', description: t('dashboard.timeline.draftDesc') },
     { icon: 'Flame', label: t('dashboard.timeline.short.viralMatch'), agent: 'viral_matcher', description: t('dashboard.timeline.viralMatchDesc') },
     { icon: 'Users', label: t('dashboard.timeline.short.bloggerScout'), agent: 'blogger_scout', description: t('dashboard.timeline.bloggerScoutDesc') },
     { icon: 'UserCheck', label: t('dashboard.timeline.short.bloggerGate'), agent: 'blogger_gate', description: t('dashboard.timeline.bloggerGateDesc') },
+    { icon: 'Pencil', label: t('dashboard.timeline.short.copywriting'), agent: 'copywriter', description: t('dashboard.timeline.creatingDesc') },
+    { icon: 'FileText', label: t('dashboard.timeline.short.draft'), agent: 'draft_gate', description: t('dashboard.timeline.draftDesc') },
+    { icon: 'Scan', label: t('dashboard.timeline.short.shootingPlan'), agent: 'shooting_planner', description: t('dashboard.timeline.shootingPlanDesc') },
     { icon: 'BarChart3', label: t('dashboard.timeline.short.contentAnalysis'), agent: 'content_analyzer', description: t('dashboard.timeline.contentAnalysisDesc') },
     { icon: 'Layers', label: t('dashboard.timeline.short.versionGen'), agent: 'version_generator', description: t('dashboard.timeline.versionGen') },
     { icon: 'CheckSquare', label: t('dashboard.timeline.short.choiceGate'), agent: 'choice_gate', description: t('dashboard.timeline.choiceGate') },
@@ -104,16 +105,12 @@ const workflowPhases = computed<PhaseNode[]>(() => {
       subSteps: [
         { icon: 'FileText', label: t('dashboard.timeline.short.briefAnalyze'), agent: 'brief_analyzer', description: t('dashboard.timeline.briefAnalyzeDesc') },
         { icon: 'HelpCircle', label: t('dashboard.timeline.short.briefGate'), agent: 'brief_gate', description: t('dashboard.timeline.briefGateDesc') },
-        { icon: 'Scan', label: t('dashboard.timeline.short.shootingPlan'), agent: 'shooting_planner', description: t('dashboard.timeline.shootingPlanDesc') },
-        { icon: 'BarChart3', label: t('dashboard.timeline.short.contentAnalysis'), agent: 'content_analyzer', description: t('dashboard.timeline.contentAnalysisDesc') },
-        { icon: 'Layers', label: t('dashboard.timeline.short.versionGen'), agent: 'version_generator', description: t('dashboard.timeline.versionGen') },
-        { icon: 'CheckSquare', label: t('dashboard.timeline.short.choiceGate'), agent: 'choice_gate', description: t('dashboard.timeline.choiceGate') },
       ],
     })
   }
   phases.push({
     icon: 'Pencil', label: t('dashboard.timeline.creating'), phase: 'creating',
-    description: t('dashboard.timeline.creatingDesc'), agent: isBrief ? 'brief_analyzer' : 'copywriter',
+    description: t('dashboard.timeline.creatingDesc'), agent: isBrief ? 'viral_matcher' : 'copywriter',
     subSteps: isBrief ? briefCreatingSubSteps : trendCreatingSubSteps,
   })
   phases.push({
@@ -175,8 +172,9 @@ const agentOrder = computed<string[]>(() => {
   const isBrief = workflowMode.value === 'brief'
   if (isBrief) {
     return [
-      'brief_analyzer', 'brief_gate', 'copywriter', 'draft_gate',
+      'brief_analyzer', 'brief_gate',
       'viral_matcher', 'blogger_scout', 'blogger_gate',
+      'copywriter', 'draft_gate',
       'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer',
       'review_gate', 'revise_content', 'publisher', 'engagement', 'analyst',
     ]
@@ -242,7 +240,7 @@ function getStatus(agent: string): NodeStatus {
   }
   if (isSubStepCompleted(agent)) return 'completed'
   const currentPhaseIdx = phaseOrder.value.indexOf(workflowStore.currentPhase)
-  const briefAgents = new Set(['brief_analyzer', 'brief_gate', 'shooting_planner', 'content_analyzer'])
+  const briefAgents = new Set(['brief_analyzer', 'brief_gate'])
   let nodePhase: string
   if (agent === 'engagement') nodePhase = 'publishing'
   else if (workflowMode.value === 'brief' && briefAgents.has(agent)) nodePhase = 'briefing'

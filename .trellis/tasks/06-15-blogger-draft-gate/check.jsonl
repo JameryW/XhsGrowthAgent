@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Verify draft_gate phase transitions and status derivation match conventions"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality checks for new router function and node modifications"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer check: backend draft_gate interrupt must trigger frontend isAwaitingDraft correctly"}
+{"file": "prd.md", "reason": "Acceptance criteria and flow diagrams to verify against"}
