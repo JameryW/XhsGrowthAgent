@@ -67,8 +67,16 @@ def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "trend_s
 
     trend_data = state.get("trend_data")
 
-    if trend_data and trend_data.get("hot_topics"):
-        return "content_strategist"
+    # Check for actionable trends — normalize across field aliases:
+    # hot_topics (canonical), trending_topics (LLM output), topics (fallback)
+    if trend_data:
+        has_topics = bool(
+            trend_data.get("hot_topics")
+            or trend_data.get("trending_topics")
+            or trend_data.get("topics")
+        )
+        if has_topics:
+            return "content_strategist"
 
     has_error = state.get("error")
     retry_count = state.get("retry_count", 0)
@@ -213,13 +221,18 @@ def draft_gate_router(
 
     From copywriter (trend mode, no selected_blogger) → viral_matcher
     From blogger_gate (selected_blogger present) → shooting_planner
+    From blogger_gate (blogger skipped/no candidates) → shooting_planner
     From copywriter (brief mode) → shooting_planner (skip blogger selection)
 
-    Brief mode skips the viral_matcher → blogger_scout → blogger_gate loop
-    entirely, going directly to shooting_planner.
+    Brief mode and blogger-skipped both avoid the viral_matcher →
+    blogger_scout → blogger_gate loop, going directly to shooting_planner.
     """
     selected_blogger = state.get("selected_blogger")
     if selected_blogger and isinstance(selected_blogger, dict) and selected_blogger.get("user_id"):
+        return "shooting_planner"
+
+    # Blogger was skipped or no candidates → go to shooting_planner, not viral_matcher
+    if state.get("blogger_skipped"):
         return "shooting_planner"
 
     # Brief mode: skip blogger selection loop

@@ -280,6 +280,7 @@ class CheckpointHistoryResponse(BaseModel):
 
 PHASE_PROGRESS = {
     "idle": 0,
+    "briefing": 15,
     "scouting": 10,
     "planning": 20,
     "creating": 40,
@@ -364,11 +365,19 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
     await _db_upsert(
         thread_id,
         account_id=req.account_id,
-        phase=initial_state["phase"].value if isinstance(initial_state["phase"], WorkflowPhase) else initial_state["phase"],
+        phase=(
+            initial_state["phase"].value
+            if isinstance(initial_state["phase"], WorkflowPhase)
+            else initial_state["phase"]
+        ),
         status="running",
         dry_run=req.dry_run,
         auto_publish=req.auto_publish,
-        progress_percent=get_progress(initial_state["phase"].value if isinstance(initial_state["phase"], WorkflowPhase) else initial_state["phase"]),
+        progress_percent=get_progress(
+            initial_state["phase"].value
+            if isinstance(initial_state["phase"], WorkflowPhase)
+            else initial_state["phase"]
+        ),
         workflow_mode=req.workflow_mode,
         label="",
         created_at=now,
@@ -383,14 +392,31 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
 
     if brief_waiting_for_upload:
         await graph.aupdate_state(config, initial_state, as_node="orchestrator")
+        # Update DB status to awaiting_brief (not "running" — no active task)
+        actual_phase = WorkflowPhase.BRIEFING.value
+        await _db_upsert(
+            thread_id,
+            status="awaiting_brief",
+            phase=actual_phase,
+            progress_percent=get_progress(actual_phase),
+            updated_at=datetime.now(UTC).isoformat(),
+        )
         return success(data={
             "thread_id": thread_id,
-            "status": "running",
-            "phase": WorkflowPhase.BRIEFING.value,
-            "progress_percent": get_progress(WorkflowPhase.BRIEFING.value),
+            "status": "awaiting_brief",
+            "phase": actual_phase,
+            "progress_percent": get_progress(actual_phase),
             "sse_url": f"/api/workflow/stream/{thread_id}",
             "websocket_url": "/api/realtime/ws",
         })
+
+    # Actual phase may differ from request (brief mode overrides to BRIEFING)
+    actual_start_phase = initial_state["phase"]
+    actual_phase_str = (
+        actual_start_phase.value
+        if isinstance(actual_start_phase, WorkflowPhase)
+        else actual_start_phase
+    )
 
     if req.async_mode:
         async def _run_async():
@@ -404,8 +430,8 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
         return success(data={
             "thread_id": thread_id,
             "status": "running",
-            "phase": req.phase.value,
-            "progress_percent": get_progress(req.phase.value),
+            "phase": actual_phase_str,
+            "progress_percent": get_progress(actual_phase_str),
             "sse_url": f"/api/workflow/stream/{thread_id}",
             "websocket_url": "/api/realtime/ws",
         })
@@ -442,7 +468,6 @@ async def get_workflow_status(thread_id: str, request: Request):
     # Check if workflow exists in live graph state
     if state.values and state.values.get("session_id") is not None:
         phase = state.values.get("phase", "unknown")
-        progress = get_progress(phase)
 
         has_active = (
             (thread_id in _background_tasks and not _background_tasks[thread_id].done())
@@ -450,6 +475,14 @@ async def get_workflow_status(thread_id: str, request: Request):
         )
         derived_status = derive_status(state, has_active_task=has_active)
         status_str = str(derived_status.value)
+
+        # Compute progress: completed → always 100; awaiting gates → phase-based; error → 0
+        if status_str == "completed":
+            progress = 100
+        elif status_str == "error":
+            progress = 0
+        else:
+            progress = get_progress(phase)
 
         # Persist completed workflow results to history file
         if phase in ("completed", "error", "cancelled"):

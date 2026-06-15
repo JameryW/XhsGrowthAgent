@@ -19,6 +19,9 @@ class WorkflowStatus(StrEnum):
     AWAITING_REVIEW = "awaiting_review"
     AWAITING_CHOICE = "awaiting_choice"
     AWAITING_DRAFT = "awaiting_draft"
+    AWAITING_BRIEF = "awaiting_brief"
+    AWAITING_RIPPLE_DECISION = "awaiting_ripple_decision"
+    AWAITING_BLOGGER_SELECTION = "awaiting_blogger_selection"
     PAUSED = "paused"
     CANCELLED = "cancelled"
     ERROR = "error"
@@ -40,14 +43,13 @@ Location: `backend/state/machine.py`
 **Priority chain** (checked in order, first match wins):
 1. `phase == CANCELLED` → `cancelled`
 2. `phase == PAUSED` → `paused`
-3. `next` contains `"review_gate"` (with interrupt or interrupt_before) → `awaiting_review`
-4. `next` contains `"choice_gate"` (with interrupt or interrupt_before) → `awaiting_choice`
-5. Interrupt with gate value fallback (dynamic `interrupt()` only) → `awaiting_review` or `awaiting_choice`
-6. `error` present AND (`phase == ERROR` OR `next` empty) → `error`
-7. `phase == COMPLETED` → `completed`
-8. `next` non-empty AND `has_active_task=False` → `stale`
-9. `next` non-empty AND `has_active_task=True` → `running`
-10. Fallback → `completed`
+3. `next` contains gate name (`review_gate`, `choice_gate`, `draft_gate`, `brief_gate`, `ripple_gate`, `blogger_gate`) → corresponding `awaiting_*`
+4. Interrupt with gate value fallback (dynamic `interrupt()` only) → `awaiting_review` / `awaiting_choice` / `awaiting_draft` / `awaiting_ripple_decision` / `awaiting_blogger_selection` / `awaiting_brief`
+5. `error` present AND (`phase == ERROR` OR `next` empty) → `error`
+6. `phase == COMPLETED` → `completed`
+7. `next` non-empty AND `has_active_task=False` → `stale`
+8. `next` non-empty AND `has_active_task=True` → `running`
+9. Fallback → `completed`
 
 ## Validation & Error Matrix
 
@@ -146,18 +148,68 @@ def make_snapshot(values, next=None, interrupts=None):
 
 ## Interrupt Mechanism
 
-### Two interrupt styles (use `interrupt_before`)
+### Gate Classification: Static vs Dynamic Interrupt
+
+**Two gate types exist, each using a different interrupt strategy:**
+
+| Gate Type | Nodes | Interrupt Style | Why |
+|-----------|-------|----------------|-----|
+| **Always-pause** | `review_gate`, `choice_gate`, `draft_gate` | `interrupt_before` in `graph.compile()` | These always need human input — no auto-accept logic |
+| **Conditional-pause** | `ripple_gate`, `blogger_gate` | Dynamic `interrupt(payload)` inside node body | These have auto-accept/skip paths — interrupt only when user decision is needed |
+
+**Critical Rule:** `interrupt_before` blocks the node body from running at all. If a node has conditional logic to auto-accept (like ripple_gate when results are good, or blogger_gate when no candidates exist), it MUST use dynamic `interrupt()` instead. Otherwise the auto-accept path never executes and the graph always pauses.
+
+### Two interrupt styles compared
 
 | Style | How | Re-executes on resume? | Side effects before pause? | `snapshot.interrupts` populated? |
 |-------|-----|----------------------|---------------------------|-------------------------------|
 | `interrupt_before=["node"]` | Static, in `graph.compile()` | No (node never ran) | No | **No** (empty tuple) |
 | `interrupt(value)` inside node | Dynamic, in node body | **Yes** (node re-runs from top) | **Yes**, if code runs before `interrupt()` | Yes |
 
-**Convention:** Use `interrupt_before=["review_gate", "choice_gate"]` in `graph.compile()`. Inside the node, `interrupt(None)` is a pure resume-receiver — it receives the value from `Command(resume=value)`. Do NOT put any side-effect code before `interrupt()` inside the node.
+**For always-pause gates (`interrupt_before`):** Inside the node, `interrupt(None)` is a pure resume-receiver — it receives the value from `Command(resume=value)`. Do NOT put any side-effect code before `interrupt()` inside the node.
 
-**Why `interrupt_before`:** Dynamic `interrupt()` inside nodes causes code before the call to execute twice (once on initial execution, once on resume). This leads to double event emission, double payload construction, and other side-effect bugs. `interrupt_before` prevents the node from executing at all until resumed, eliminating these issues.
+**For conditional-pause gates (dynamic `interrupt()`):** Put auto-accept/skip logic BEFORE the `interrupt()` call. Code before `interrupt()` runs on initial execution but is safe to re-run on resume because the auto-accept conditions will have been cleared by the resume value.
 
-**Critical:** With `interrupt_before`, `snapshot.interrupts` is always an empty tuple. The graph pause must be detected via `snapshot.next` containing the gate node name (e.g., `"review_gate"`). `derive_status` uses `next_nodes` as the primary detection signal, with `snapshot.interrupts` as a fallback.
+### Interrupt payload contract for dynamic gates
+
+Dynamic interrupt payloads MUST include a `"gate"` field so `derive_status` can identify the gate type from `snapshot.interrupts`:
+
+```python
+# ripple_gate — interrupt only when results are suboptimal
+if not _is_ripple_suboptimal(state):
+    return NodeResult({"ripple_decision": {"action": "accept", "source": "auto"}, ...})
+# Results suboptimal — interrupt for user decision
+interrupt_payload = {"gate": "ripple", "ripple_summary": {...}}
+decision = interrupt(interrupt_payload)
+
+# blogger_gate — interrupt only when candidates exist
+if not candidates:
+    return NodeResult({"blogger_skipped": True, ...})
+# Candidates exist — interrupt for user selection
+interrupt_payload = {"gate": "blogger", "blogger_candidates": candidates}
+decision = interrupt(interrupt_payload)
+```
+
+### Detecting gate pauses in API routes
+
+API routes that check whether a workflow is paused at a specific gate must handle BOTH interrupt styles:
+
+```python
+def _is_at_ripple_gate(state: StateSnapshot) -> bool:
+    # Style 1: interrupt_before — gate name appears in next_nodes
+    if "ripple_gate" in (state.next or []):
+        return True
+    # Style 2: dynamic interrupt() — gate type in interrupt payload
+    if state.interrupts:
+        for intr in state.interrupts:
+            if isinstance(intr.value, dict) and intr.value.get("gate") == "ripple":
+                return True
+    return False
+```
+
+**Why both checks:** With `interrupt_before`, `snapshot.interrupts` is always empty and the gate name appears in `next_nodes`. With dynamic `interrupt()`, `next_nodes` may be empty (the node is mid-execution) but `snapshot.interrupts` is populated with the payload.
+
+`derive_status` already handles this internally — it checks `next_nodes` first, then falls back to `snapshot.interrupts` gate type.
 
 ### Event emission pattern
 
@@ -196,6 +248,147 @@ def callback(task):
         if existing and existing.status == "running":
             await db_update(thread_id, status="stale")
     asyncio.ensure_future(_do_update())
+```
+
+## Progress Calculation
+
+### PHASE_PROGRESS mapping
+
+```python
+PHASE_PROGRESS = {
+    "idle": 0,
+    "briefing": 15,
+    "scouting": 10,
+    "planning": 20,
+    "creating": 40,
+    "reviewing": 60,
+    "publishing": 80,
+    "analyzing": 90,
+    "engaging": 95,
+    "completed": 100,
+    "error": 0,
+}
+```
+
+### Progress rules
+
+1. **Completed** (`derive_status` returns `COMPLETED`) → always 100%, regardless of phase
+2. **Error** → always 0%
+3. **All other states** (running, awaiting_*, paused, stale) → `PHASE_PROGRESS[phase]`
+
+**Common Mistake:** Using binary `0/100` for non-completed states. This causes progress to reset to 0% when a workflow is awaiting review (phase=reviewing, progress should be 60%).
+
+```python
+# WRONG — resets progress to 0 for awaiting states
+progress = 100 if final_status == "completed" else 0
+
+# CORRECT — use phase-based progress for non-terminal states
+if final_status == "completed":
+    progress = 100
+elif final_status == "error":
+    progress = 0
+else:
+    progress = get_progress(final_phase)
+```
+
+### Brief mode awaiting_brief status
+
+When brief mode starts without `brief_text` (waiting for PDF upload), the start endpoint must return `status="awaiting_brief"` (not `"running"`). There is no active background task, so returning `"running"` causes `derive_status` to see `next_nodes` without `has_active_task` → `stale`.
+
+## TrendData Field Contract
+
+### Canonical field: `hot_topics`
+
+The `should_plan` router checks `trend_data` for actionable trends. The LLM may output `hot_topics`, `trending_topics`, or `topics` as the key name. Both the router and the trend_scout agent must handle all aliases:
+
+```python
+# should_plan — check all aliases
+if trend_data:
+    has_topics = bool(
+        trend_data.get("hot_topics")
+        or trend_data.get("trending_topics")
+        or trend_data.get("topics")
+    )
+
+# trend_scout — normalize to canonical hot_topics after parsing
+if not trend_data.get("hot_topics"):
+    trend_data["hot_topics"] = (
+        trend_data.get("trending_topics")
+        or trend_data.get("topics")
+        or []
+    )
+```
+
+**Why normalization:** Without it, `{"trending_topics": [...]}` causes `should_plan` to return `__end__`, terminating the workflow after scouting even though trends were found.
+
+## Blogger Skip Routing
+
+### Infinite loop prevention
+
+When blogger selection is skipped (no candidates or user skips), the routing must NOT go back through `viral_matcher`. The loop would be:
+
+```
+draft_gate → viral_matcher → blogger_scout → blogger_gate (skip) →
+draft_gate → viral_matcher → ... (infinite)
+```
+
+**Fix:** Set `blogger_skipped=True` in state when skipping, and check it in `draft_gate_router`:
+
+```python
+def draft_gate_router(state):
+    if selected_blogger and selected_blogger.get("user_id"):
+        return "shooting_planner"
+    # Blogger was skipped → go directly to shooting_planner
+    if state.get("blogger_skipped"):
+        return "shooting_planner"
+    if mode == "brief":
+        return "shooting_planner"
+    return "viral_matcher"
+```
+
+## Exception Handling in API Routes
+
+### Don't swallow _run_graph_and_persist exceptions
+
+The `_run_graph_and_persist` function already handles errors: it sets `phase=error` in graph state and DB, then re-raises. API routes that catch this exception and return fake success hide the error from the client.
+
+```python
+# WRONG — hides execution failure, returns "resumed" even when DB has error status
+try:
+    result = await _runner._run_graph_and_persist(...)
+except Exception:
+    result = {}
+next_phase = result.get("phase", "unknown")  # always "unknown" on error
+return success(data={"status": "resumed", "next_phase": next_phase})
+
+# CORRECT — let exception propagate to global error handler
+result = await _runner._run_graph_and_persist(...)
+next_phase = result.get("phase", "unknown") if result else "unknown"
+return success(data={"status": "resumed", "next_phase": next_phase})
+```
+
+The global FastAPI exception handler converts `APIError` subclasses into proper error responses.
+
+## CLI Resume and Gate Interrupts
+
+The CLI `resume` command must not blindly call `graph.ainvoke(None, config)` when the workflow is paused at a gate. Passing `None` as input to an interrupted graph causes `interrupt()` to receive `None`, which may default to rejected/invalid.
+
+**Rules for CLI resume:**
+1. **Always-pause gates** (review_gate, draft_gate, choice_gate): Refuse auto-resume — these need human input via API/frontend
+2. **Conditional-pause gates** (ripple_gate, blogger_gate): Auto-resume with sensible defaults (`accept` for ripple, `skip` for blogger)
+3. **Non-gate nodes** (stale/error resume): Use `ainvoke(None, config)` as before
+
+```python
+if "review_gate" in next_nodes:
+    console.print("⚠️ 需要 API/前端提交审核决定")
+    return
+if state.interrupts:
+    gate = state.interrupts[0].value.get("gate")
+    if gate == "ripple":
+        resume_value = Command(resume={"action": "accept"})
+    elif gate == "blogger":
+        resume_value = Command(resume={"skip": True})
+await graph.ainvoke(resume_value, config)
 ```
 
 ## Engagement Routing

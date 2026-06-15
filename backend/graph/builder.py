@@ -361,8 +361,6 @@ async def compile_graph_dev() -> CompiledStateGraph:
             "review_gate",
             "choice_gate",
             "draft_gate",
-            "ripple_gate",
-            "blogger_gate",
         ],
     )
     return graph
@@ -395,8 +393,6 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
             "review_gate",
             "choice_gate",
             "draft_gate",
-            "ripple_gate",
-            "blogger_gate",
         ]
 
         pool = AsyncConnectionPool(

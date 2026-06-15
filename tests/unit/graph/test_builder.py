@@ -184,4 +184,10 @@ class TestCompileGraphProd:
         assert calls["store_index"] is not None  # prod store must receive index
         assert calls["compile_kwargs"]["checkpointer"] is checkpointer
         assert calls["compile_kwargs"]["store"] is store_context.store
-        assert "ripple_gate" in calls["compile_kwargs"]["interrupt_before"]
+        # ripple_gate and blogger_gate removed from interrupt_before — they use dynamic interrupt()
+        assert "ripple_gate" not in calls["compile_kwargs"]["interrupt_before"]
+        assert "blogger_gate" not in calls["compile_kwargs"]["interrupt_before"]
+        # Static gates still in interrupt_before
+        assert "review_gate" in calls["compile_kwargs"]["interrupt_before"]
+        assert "choice_gate" in calls["compile_kwargs"]["interrupt_before"]
+        assert "draft_gate" in calls["compile_kwargs"]["interrupt_before"]

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
-from langgraph.types import Command
+from langgraph.types import Command, StateSnapshot
 from pydantic import BaseModel, Field
 
 from backend.api.errors import ValidationError, WorkflowNotFoundError
@@ -21,6 +21,21 @@ class BloggerSelection(BaseModel):
 
 class BloggerSkip(BaseModel):
     skip: bool = Field(default=True, description="跳过博主选择")
+
+
+def _is_at_blogger_gate(state: StateSnapshot) -> bool:
+    """Check if workflow is paused at blogger_gate.
+
+    Handles both interrupt_before (next_nodes contains 'blogger_gate')
+    and dynamic interrupt() (snapshot.interrupts has gate='blogger').
+    """
+    if "blogger_gate" in (state.next or []):
+        return True
+    if state.interrupts:
+        for intr in state.interrupts:
+            if isinstance(intr.value, dict) and intr.value.get("gate") == "blogger":
+                return True
+    return False
 
 
 @router.get("/blogger-pending/{thread_id}")
@@ -42,7 +57,7 @@ async def get_pending_blogger_selection(thread_id: str, request: Request):
         "blogger_candidates": values.get("blogger_candidates", []),
         "blogger_candidate_limit": values.get("blogger_candidate_limit", 5),
         "blogger_note_limit": values.get("blogger_note_limit", 20),
-        "is_pending": "blogger_gate" in (state.next or []),
+        "is_pending": _is_at_blogger_gate(state),
     })
 
 
@@ -71,7 +86,7 @@ async def select_blogger(thread_id: str, selection: BloggerSelection, request: R
         }
 
     # If graph is interrupted at blogger_gate, resume it
-    if "blogger_gate" in state.next:
+    if _is_at_blogger_gate(state):
         result = await _runner._run_graph_and_persist(
             thread_id, graph, config,
             Command(resume=resume_value),

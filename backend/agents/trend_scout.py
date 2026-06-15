@@ -144,13 +144,29 @@ class TrendScoutAgent(BaseAgent):
         trend_data = self._parse_json_response(response.content)
         trend_data["data_source"] = data_source
 
+        # Normalize topic field name to canonical `hot_topics`
+        # LLM may output `trending_topics` or `topics` — ensure `hot_topics` exists
+        if not trend_data.get("hot_topics"):
+            trend_data["hot_topics"] = (
+                trend_data.get("trending_topics")
+                or trend_data.get("topics")
+                or []
+            )
+
         # 沉淀趋势洞察到长期记忆
         if store is not None:
             try:
                 from backend.memory.store import MemoryManager
                 mm = MemoryManager(account_id)
-                topics = trend_data.get("trending_topics", trend_data.get("topics", []))
-                summary = ", ".join(t.get("topic", str(t))[:20] for t in topics[:3]) if topics else niche
+                topics = trend_data.get(
+                    "hot_topics",
+                    trend_data.get("trending_topics", trend_data.get("topics", [])),
+                )
+                summary = (
+                    ", ".join(t.get("topic", str(t))[:20] for t in topics[:3])
+                    if topics
+                    else niche
+                )
                 await mm.store_insight(
                     store,
                     f"趋势信号: {summary}",

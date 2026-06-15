@@ -250,19 +250,65 @@ def resume(
 ):
     """恢复中断的工作流"""
     async def _resume():
+        from langgraph.types import Command
+
         from backend.graph.builder import compile_graph_dev
+        from backend.state.machine import derive_status
 
         graph = await compile_graph_dev()
         config = {"configurable": {"thread_id": thread_id}}
 
         state = await graph.aget_state(config)
         current_phase = state.values.get("phase", "unknown")
+        derived = derive_status(state, has_active_task=False)
 
         console.print(f"[cyan]恢复工作流: {thread_id}[/cyan]")
         console.print(f"[dim]当前阶段: {format_phase(current_phase)}[/dim]")
+        console.print(f"[dim]状态: {format_phase(derived.value)}[/dim]")
 
         if state.next:
             console.print(f"[dim]下一步: {', '.join(state.next)}[/dim]")
+
+            # Determine resume input based on gate type
+            next_nodes = state.next
+            resume_value = None  # Default: ainvoke(None) for non-gate nodes
+
+            if "review_gate" in next_nodes:
+                console.print("[yellow]⚠️ 工作流停在 review_gate（人工审核）[/yellow]")
+                console.print("[dim]CLI 无法提交审核决定。请通过 API 或前端界面操作：[/dim]")
+                console.print("[dim]  POST /api/review/submit/{thread_id}[/dim]")
+                return  # Don't auto-resume review gate — it needs human decision
+
+            if "draft_gate" in next_nodes:
+                console.print("[yellow]⚠️ 工作流停在 draft_gate（草稿确认）[/yellow]")
+                console.print("[dim]CLI 无法提交草稿。请通过 API 或前端界面操作：[/dim]")
+                console.print("[dim]  POST /api/workflow/submit-draft/{thread_id}[/dim]")
+                return  # Don't auto-resume draft gate — it needs user input
+
+            if "choice_gate" in next_nodes:
+                console.print("[yellow]⚠️ 工作流停在 choice_gate（版本选择）[/yellow]")
+                console.print("[dim]CLI 无法选择版本。请通过 API 或前端界面操作：[/dim]")
+                return  # Don't auto-resume choice gate
+
+            # For dynamic interrupts (ripple_gate, blogger_gate), the node already ran
+            # its logic and called interrupt() with a payload — resume with a default
+            if state.interrupts:
+                interrupt_val = state.interrupts[0].value
+                if isinstance(interrupt_val, dict):
+                    gate_type = interrupt_val.get("gate")
+                    if gate_type == "ripple":
+                        console.print("[dim]Ripple gate 中断 — 自动 accept[/dim]")
+                        resume_value = Command(resume={"action": "accept"})
+                    elif gate_type == "blogger":
+                        console.print("[dim]Blogger gate 中断 — 自动 skip[/dim]")
+                        resume_value = Command(resume={"skip": True})
+                    elif gate_type == "draft":
+                        console.print("[yellow]⚠️ Draft gate 中断 — 需要用户输入[/yellow]")
+                        console.print("[dim]请通过 API 提交草稿[/dim]")
+                        return
+                    elif gate_type == "choice":
+                        console.print("[yellow]⚠️ Choice gate 中断 — 需要用户选择[/yellow]")
+                        return
 
             try:
                 with Progress(
@@ -271,7 +317,7 @@ def resume(
                     console=console,
                 ) as progress:
                     task = progress.add_task("恢复执行...", total=None)
-                    await graph.ainvoke(None, config)
+                    await graph.ainvoke(resume_value, config)
                     progress.update(task, description="[green]恢复完成[/green]")
 
                 final_state = await graph.aget_state(config)

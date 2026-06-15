@@ -9,8 +9,8 @@ from langgraph.store.base import BaseStore
 from langgraph.types import interrupt
 
 from backend.agents.nodes._base import NodeResult, _check_cancelled
-from backend.models.router import get_model
 from backend.config.models import TaskType
+from backend.models.router import get_model
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
@@ -20,11 +20,8 @@ logger = logging.getLogger("xhs_growth.graph.nodes")
 async def blogger_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
     """Blogger selection gate — pauses for user to select a blogger from candidates.
 
-    With interrupt_before, this node only runs on resume. interrupt(None)
-    receives the resume value (the user's blogger selection).
-
+    Uses dynamic interrupt() to pause only when candidates exist.
     If no candidates exist, skip interrupt and proceed.
-    On resume, fetch the selected blogger's top notes.
 
     Selection format (from Command(resume=selection)):
       {"user_id": "...", "nickname": "..."}  — selected blogger
@@ -34,24 +31,32 @@ async def blogger_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[
 
     candidates = state.get("blogger_candidates", [])
 
-    # No candidates — skip gate
+    # No candidates — skip gate entirely
     if not candidates:
         logger.info("No blogger candidates, skipping blogger_gate")
         return NodeResult(
             {
+                "blogger_skipped": True,
+                "selected_blogger": {},
+                "blogger_notes": [],
                 "phase": WorkflowPhase.CREATING,
             },
             "blogger_gate",
         ).to_dict()
 
-    # Receive user selection from Command(resume=selection)
-    decision = interrupt(None)
+    # Candidates exist — interrupt for user selection
+    interrupt_payload = {
+        "gate": "blogger",
+        "blogger_candidates": candidates,
+    }
+    decision = interrupt(interrupt_payload)
 
     # User skipped selection
     if not decision or (isinstance(decision, dict) and decision.get("skip")):
         logger.info("User skipped blogger selection")
         return NodeResult(
             {
+                "blogger_skipped": True,
                 "selected_blogger": {},
                 "blogger_notes": [],
                 "phase": WorkflowPhase.CREATING,
