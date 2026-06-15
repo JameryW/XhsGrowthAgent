@@ -737,6 +737,20 @@ async def get_checkpoint_history(
     raise WorkflowNotFoundError(thread_id)
 
 
+def _get_as_node(state) -> str | None:
+    """Determine as_node for aupdate_state from the current state checkpoint.
+
+    LangGraph requires as_node when updating state on a workflow paused at
+    an interrupt (multiple nodes in state). Without it, raises
+    InvalidUpdateError: Ambiguous update, specify as_node.
+    """
+    if state.tasks:
+        return state.tasks[0].name
+    if state.values:
+        return state.values.get("_last_node", "orchestrator")
+    return "orchestrator"
+
+
 @router.post("/pause/{thread_id}")
 async def pause_workflow(thread_id: str, request: Request):
     """暂停工作流"""
@@ -752,7 +766,7 @@ async def pause_workflow(thread_id: str, request: Request):
         raise WorkflowNotFoundError(thread_id)
 
     current_phase = state.values.get("phase", "unknown")
-    await graph.aupdate_state(config, {"phase": "paused", "prev_phase": current_phase})
+    await graph.aupdate_state(config, {"phase": "paused", "prev_phase": current_phase}, as_node=_get_as_node(state))
 
     bg_task = _background_tasks.get(thread_id)
     if bg_task and not bg_task.done():
@@ -895,7 +909,7 @@ async def resume_workflow(thread_id: str, request: Request):
         )
     else:
         prev_phase = state.values.get("prev_phase") or WorkflowPhase.SCOUTING
-    await graph.aupdate_state(config, {"phase": prev_phase, "error": None})
+    await graph.aupdate_state(config, {"phase": prev_phase, "error": None}, as_node=_get_as_node(state))
 
     await _start_resume_task(thread_id, graph, config, prev_phase)
 
@@ -925,7 +939,7 @@ async def cancel_workflow(thread_id: str, request: Request):
         "phase": "cancelled",
         "error": "User cancelled",
         "prev_phase": current_phase,
-    })
+    }, as_node=_get_as_node(state))
 
     await _db_upsert(
         thread_id,
@@ -1161,7 +1175,8 @@ async def retry_ripple_analysis(thread_id: str, request: Request):
             updates["ripple_fallback"] = True
 
         if updates:
-            await graph.aupdate_state(config, updates)
+            ripple_state = await graph.aget_state(config)
+            await graph.aupdate_state(config, updates, as_node=_get_as_node(ripple_state))
             print(f"[ripple-retry] State updated for {thread_id}: {list(updates.keys())}", flush=True)
 
     task = asyncio.create_task(_run_retry(), name=f"ripple-retry-{thread_id}")
@@ -1261,16 +1276,7 @@ async def upload_brief_file(thread_id: str, request: Request):
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
-    # Determine as_node from current state to avoid "Ambiguous update" error
-    # when the workflow is paused at an interrupt (multiple nodes in state)
-    current_state = await graph.aget_state(config)
-    as_node = None
-    if current_state.tasks:
-        # Use the node that produced the current checkpoint
-        as_node = current_state.tasks[0].name if current_state.tasks else None
-    elif current_state.values:
-        # Fallback: use the last node that wrote to state
-        as_node = current_state.values.get("_last_node", "orchestrator")
+    as_node = _get_as_node(await graph.aget_state(config))
 
     update_kwargs: dict[str, Any] = {
         "values": {
