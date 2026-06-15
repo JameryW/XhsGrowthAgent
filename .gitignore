@@ -48,3 +48,4 @@ node_modules/
 
 # AI-generated planning/spec docs (process artifacts, not source of truth)
 docs/superpowers/
+.backups/

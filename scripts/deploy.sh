@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # deploy.sh — 容器化部署脚本 for XhsGrowthAgent
-# 用法: ./scripts/deploy.sh [rebuild|start|stop|restart|status]
+# 用法: ./scripts/deploy.sh [rebuild|deploy|start|stop|restart|status|backup|restore]
 
 set -euo pipefail
 
@@ -13,6 +13,94 @@ set -a; source "$PROJECT_DIR/.env"; set +a
 NET="xhs-net"
 BACKEND_IMG="localhost/xhs-growth:latest"
 RIPPLE_IMG="localhost/ripple-service:local"
+PG_IMG="pgvector/pgvector:pg15"
+PG_VOL="xhs-pgdata"
+PG_USER="xhs"
+PG_DB="xhs_growth"
+BACKUP_DIR="$PROJECT_DIR/.backups"
+
+# ── Postgres 管理 ──
+
+cmd_ensure_postgres() {
+    """确保 Postgres 容器运行，带 pgvector 支持"""
+    if podman ps --filter name=postgres-xhs --format '{{.Names}}' | grep -q postgres-xhs; then
+        return 0
+    fi
+
+    # 容器不存在（已停止或已删除）— 检查是否需要恢复
+    if podman ps -a --filter name=postgres-xhs --format '{{.Names}}' | grep -q postgres-xhs; then
+        echo ">>> 启动已有 Postgres 容器..."
+        podman start postgres-xhs
+        sleep 2
+        return 0
+    fi
+
+    echo ">>> 创建 Postgres 容器（pgvector: $PG_IMG）..."
+    podman run -d \
+        --name postgres-xhs \
+        --network "$NET" \
+        --restart always \
+        -p 5432:5432 \
+        -e POSTGRES_USER="$PG_USER" \
+        -e POSTGRES_PASSWORD="$PG_USER" \
+        -e POSTGRES_DB="$PG_DB" \
+        -v "$PG_VOL:/var/lib/postgresql/data" \
+        "$PG_IMG"
+    sleep 3
+}
+
+# ── 备份与恢复 ──
+
+cmd_backup() {
+    """备份 Postgres 数据到 .backups/ 目录"""
+    mkdir -p "$BACKUP_DIR"
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    BACKUP_FILE="$BACKUP_DIR/xhs_growth_${TIMESTAMP}.sql.gz"
+
+    if ! podman ps --filter name=postgres-xhs --format '{{.Names}}' | grep -q postgres-xhs; then
+        echo "错误: Postgres 容器未运行，无法备份"
+        exit 1
+    fi
+
+    echo ">>> 备份 Postgres 数据..."
+    podman exec postgres-xhs pg_dump -U "$PG_USER" "$PG_DB" | gzip > "$BACKUP_FILE"
+    SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
+    echo ">>> 备份完成: $BACKUP_FILE ($SIZE)"
+
+    # 保留最近 5 个备份
+    ls -t "$BACKUP_DIR"/xhs_growth_*.sql.gz | tail -n +6 | xargs -r rm --
+    echo ">>> 保留最近 5 个备份"
+}
+
+cmd_restore() {
+    """从最近的备份恢复 Postgres 数据"""
+    LATEST=$(ls -t "$BACKUP_DIR"/xhs_growth_*.sql.gz 2>/dev/null | head -1)
+    if [ -z "$LATEST" ]; then
+        echo "错误: 没有找到备份文件（$BACKUP_DIR/xhs_growth_*.sql.gz）"
+        exit 1
+    fi
+
+    echo ">>> 将从备份恢复: $LATEST"
+    read -p "确认恢复？这将覆盖当前数据 [y/N] " confirm
+    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+        echo "取消恢复"
+        exit 0
+    fi
+
+    # 确保 Postgres 运行
+    cmd_ensure_postgres
+    sleep 2
+
+    # 终止现有连接并恢复
+    echo ">>> 恢复数据..."
+    podman exec postgres-xhs psql -U "$PG_USER" -d postgres -c \
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$PG_DB' AND pid <> pg_backend_pid();" 2>/dev/null || true
+    podman exec postgres-xhs psql -U "$PG_USER" -d postgres -c "DROP DATABASE IF EXISTS $PG_DB;"
+    podman exec postgres-xhs psql -U "$PG_USER" -d postgres -c "CREATE DATABASE $PG_DB;"
+
+    gunzip -c "$LATEST" | podman exec -i postgres-xhs psql -U "$PG_USER" -d "$PG_DB" 2>&1 | tail -5
+    echo ">>> 恢复完成"
+}
 
 # ── 子命令 ──
 
@@ -35,12 +123,15 @@ cmd_stop() {
     podman rm   xhs-growth 2>/dev/null || true
     podman stop ripple-service 2>/dev/null || true
     podman rm   ripple-service 2>/dev/null || true
-    echo ">>> 所有服务已停止"
+    echo ">>> 后端和 Ripple 已停止（Postgres 保持运行）"
 }
 
 cmd_start() {
     echo ">>> 确保 $NET 存在..."
     podman network exists "$NET" 2>/dev/null || podman network create "$NET"
+
+    # 确保 Postgres 运行
+    cmd_ensure_postgres
 
     echo ">>> 启动 Ripple CAS..."
     podman run -d \
@@ -155,6 +246,11 @@ except:
 }
 
 cmd_deploy() {
+    # 部署前自动备份
+    if podman ps --filter name=postgres-xhs --format '{{.Names}}' | grep -q postgres-xhs; then
+        echo ">>> 部署前自动备份..."
+        cmd_backup
+    fi
     cmd_frontend
     cmd_rebuild
     cmd_restart
@@ -171,15 +267,19 @@ case "$CMD" in
     stop)    cmd_stop ;;
     restart) cmd_restart ;;
     status)  cmd_status ;;
+    backup)  cmd_backup ;;
+    restore) cmd_restore ;;
     *)
-        echo "用法: $0 [rebuild|deploy|start|stop|restart|status]"
+        echo "用法: $0 [rebuild|deploy|start|stop|restart|status|backup|restore]"
         echo ""
-        echo "  rebuild — 构建前端 + 重新构建后端镜像"
-        echo "  deploy  — 构建前端 + 重建镜像 + 重启服务（一键部署）"
-        echo "  start   — 启动所有服务（Ripple + 后端）"
-        echo "  stop    — 停止所有服务"
-        echo "  restart — 停止 + 重新启动"
-        echo "  status  — 查看服务状态和健康检查"
+        echo "  rebuild  — 构建前端 + 重新构建后端镜像"
+        echo "  deploy   — 备份数据 + 构建前端 + 重建镜像 + 重启服务（安全一键部署）"
+        echo "  start    — 启动所有服务（Postgres + Ripple + 后端）"
+        echo "  stop     — 停止后端和 Ripple（Postgres 保持运行）"
+        echo "  restart  — 停止 + 重新启动"
+        echo "  status   — 查看服务状态和健康检查"
+        echo "  backup   — 备份 Postgres 数据到 .backups/（保留最近 5 个）"
+        echo "  restore  — 从最近备份恢复 Postgres 数据"
         exit 1
         ;;
 esac
