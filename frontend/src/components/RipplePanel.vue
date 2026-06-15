@@ -408,6 +408,10 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
           <div class="text-lg font-bold text-slate-700">
             {{ (prediction.confidence * 100).toFixed(0) }}%
           </div>
+          <!-- Confidence gate indicator -->
+          <div v-if="prediction.confidence_gate?.gate_applied" class="mt-1 text-[10px] text-amber-600">
+            {{ t('dashboard.ripple.gateDowngraded') }}
+          </div>
         </div>
       </div>
     </div>
@@ -426,6 +430,17 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
         <div v-if="prediction.verdict" class="flex items-center justify-between text-sm">
           <span class="text-slate-500">{{ t('dashboard.ripple.marketSignal') }}</span>
           <span class="font-medium text-slate-700">{{ prediction.verdict }}</span>
+        </div>
+
+        <!-- Confidence gate detail -->
+        <div v-if="prediction.confidence_gate" class="p-3 rounded-lg bg-white/60 border border-amber-100">
+          <div class="text-xs text-amber-700 font-medium mb-1">{{ t('dashboard.ripple.confidenceGate') }}</div>
+          <div class="flex items-center gap-2 text-xs">
+            <span class="text-slate-500">{{ prediction.confidence_gate.original_confidence }}</span>
+            <span class="text-slate-300">&rarr;</span>
+            <span class="font-medium" :class="prediction.confidence_gate.final_confidence === 'high' ? 'text-emerald-600' : prediction.confidence_gate.final_confidence === 'medium' ? 'text-amber-600' : 'text-rose-600'">{{ prediction.confidence_gate.final_confidence }}</span>
+          </div>
+          <div v-if="prediction.confidence_gate.reason" class="mt-1 text-[11px] text-slate-500">{{ prediction.confidence_gate.reason }}</div>
         </div>
 
         <!-- Estimated Engagement -->

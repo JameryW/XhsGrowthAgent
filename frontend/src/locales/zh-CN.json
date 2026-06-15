@@ -330,6 +330,8 @@
       "estimatedReach": "预估触达",
       "estimatedEngagement": "预估互动",
       "confidence": "置信度",
+      "confidenceGate": "置信度门控",
+      "gateDowngraded": "已降级",
       "pmfScore": "PMF 评分",
       "summary": "摘要",
       "marketSignal": "市场信号",
