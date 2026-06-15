@@ -203,11 +203,20 @@ def draft_gate_router(
 ) -> Literal["viral_matcher", "shooting_planner"]:
     """Route after draft_gate — based on which path entered draft_gate.
 
-    From copywriter (trend mode, selected_blogger empty) → viral_matcher
+    From copywriter (trend mode, no selected_blogger) → viral_matcher
     From blogger_gate (selected_blogger present) → shooting_planner
+    From copywriter (brief mode) → shooting_planner (skip blogger selection)
+
+    Brief mode skips the viral_matcher → blogger_scout → blogger_gate loop
+    entirely, going directly to shooting_planner.
     """
     selected_blogger = state.get("selected_blogger")
     if selected_blogger and isinstance(selected_blogger, dict) and selected_blogger.get("user_id"):
+        return "shooting_planner"
+
+    # Brief mode: skip blogger selection loop
+    mode = state.get("workflow_mode", "trend")
+    if mode == "brief":
         return "shooting_planner"
 
     return "viral_matcher"
