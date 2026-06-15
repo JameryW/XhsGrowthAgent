@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Request
-from langgraph.types import Command
+from langgraph.types import Command, StateSnapshot
 from pydantic import BaseModel
 
 from backend.api.errors import ReviewNotPendingError
@@ -18,6 +18,21 @@ from backend.state.enums import ContentStatus
 logger = logging.getLogger("xhs_growth.api.review")
 
 router = APIRouter()
+
+
+def _is_at_ripple_gate(state: StateSnapshot) -> bool:
+    """Check if workflow is paused at ripple_gate.
+
+    Handles both interrupt_before (next_nodes contains 'ripple_gate')
+    and dynamic interrupt() (snapshot.interrupts has gate='ripple').
+    """
+    if "ripple_gate" in (state.next or []):
+        return True
+    if state.interrupts:
+        for intr in state.interrupts:
+            if isinstance(intr.value, dict) and intr.value.get("gate") == "ripple":
+                return True
+    return False
 
 
 class PublishOptions(BaseModel):
@@ -114,14 +129,11 @@ async def submit_review(thread_id: str, decision: ReviewDecision, request: Reque
         }, as_node=_runner._get_as_node(state))
 
     # 用 Command(resume=...) 恢复中断的图 — via unified runner
-    try:
-        result = await _runner._run_graph_and_persist(
-            thread_id, graph, config,
-            Command(resume=decision.model_dump()),
-            source="review",
-        )
-    except Exception:
-        result = {}
+    result = await _runner._run_graph_and_persist(
+        thread_id, graph, config,
+        Command(resume=decision.model_dump()),
+        source="review",
+    )
 
     next_phase = result.get("phase", "unknown") if result else "unknown"
 
@@ -169,9 +181,12 @@ async def get_pending_ripple_decision(thread_id: str, request: Request):
 
     state = await graph.aget_state(config)
 
-    if "ripple_gate" not in state.next:
+    if not _is_at_ripple_gate(state):
         from backend.api.errors import ValidationError
-        raise ValidationError("ripple_gate", f"Workflow is not awaiting Ripple decision (next: {state.next})")
+        raise ValidationError(
+            "ripple_gate",
+            f"Workflow is not awaiting Ripple decision (next: {state.next})",
+        )
 
     values = state.values
     prediction = values.get("ripple_prediction") or {}
@@ -197,14 +212,20 @@ async def submit_ripple_decision(thread_id: str, decision: RippleDecision, reque
 
     # Verify workflow is awaiting ripple gate decision
     state = await graph.aget_state(config)
-    if "ripple_gate" not in state.next:
+    if not _is_at_ripple_gate(state):
         from backend.api.errors import ValidationError
-        raise ValidationError("ripple_gate", f"Workflow is not awaiting Ripple decision (next: {state.next})")
+        raise ValidationError(
+            "ripple_gate",
+            f"Workflow is not awaiting Ripple decision (next: {state.next})",
+        )
 
     action = decision.action
     if action not in ("accept", "reangle", "retopic"):
         from backend.api.errors import ValidationError
-        raise ValidationError("action", f"Invalid action: {action}. Must be accept, reangle, or retopic")
+        raise ValidationError(
+            "action",
+            f"Invalid action: {action}. Must be accept, reangle, or retopic",
+        )
 
     values = state.values or {}
     reselect_count = values.get("reselect_count", 0)
@@ -226,14 +247,11 @@ async def submit_ripple_decision(thread_id: str, decision: RippleDecision, reque
         await graph.aupdate_state(config, updates, as_node=_runner._get_as_node(state))
 
     # Resume the graph with the user's decision
-    try:
-        result = await _runner._run_graph_and_persist(
-            thread_id, graph, config,
-            Command(resume={"action": action}),
-            source="ripple_gate",
-        )
-    except Exception:
-        result = {}
+    result = await _runner._run_graph_and_persist(
+        thread_id, graph, config,
+        Command(resume={"action": action}),
+        source="ripple_gate",
+    )
 
     next_phase = result.get("phase", "unknown") if result else "unknown"
 

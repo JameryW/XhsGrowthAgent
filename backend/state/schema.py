@@ -107,6 +107,9 @@ class XHSGrowthState(TypedDict, total=False):
     # 选中博主的 top 笔记
     blogger_notes: Annotated[list[BloggerNote], _append_list]
 
+    # 博主选择被跳过 (无候选或用户跳过)
+    blogger_skipped: bool
+
     # 候选博主数量限制 (默认 5)
     blogger_candidate_limit: int
 

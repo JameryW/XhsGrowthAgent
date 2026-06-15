@@ -218,7 +218,14 @@ async def _run_graph_and_persist(
         has_error = result.get("error") if result else None
         final_status = _status_to_str(derived, has_error, final_phase)
 
-        progress = 100 if final_status == "completed" else 0
+        # Compute progress: completed → 100, awaiting gates → phase-based, else phase-based
+        if final_status == "completed":
+            progress = 100
+        elif final_status == "error":
+            progress = 0
+        else:
+            from backend.api.routes.workflow import get_progress
+            progress = get_progress(final_phase)
 
         await _db_upsert(
             thread_id,
@@ -254,7 +261,10 @@ async def _run_graph_and_persist(
         logger.exception("Graph execution failed (source=%s, thread=%s)", source, thread_id)
         with contextlib.suppress(Exception):
             snapshot = await graph.aget_state(config)
-            await graph.aupdate_state(config, {"phase": "error", "error": str(exc)}, as_node=_get_as_node(snapshot))
+            await graph.aupdate_state(
+                config, {"phase": "error", "error": str(exc)},
+                as_node=_get_as_node(snapshot),
+            )
         await _db_upsert(
             thread_id,
             status="error",
