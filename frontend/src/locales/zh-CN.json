@@ -1151,6 +1151,7 @@
     "engDeviation": "互动偏差",
     "accuracyRating": "准确度评级",
     "scoreSource": "评分来源",
+    "confidenceGate": "置信度门控",
     "draftContent": "提交的草稿",
     "finalCopy": "最终文案",
     "optimizationAnalysis": "优化分析",

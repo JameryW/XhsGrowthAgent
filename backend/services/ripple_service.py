@@ -42,6 +42,7 @@ class RippleHealthStatus(BaseModel):
     latency_ms: float = 0.0
     error: str = ""
     reason: str = ""  # "disabled", "unreachable", "error", ""
+    prediction_quality: dict[str, Any] = {}  # /v1/health/prediction-quality checks
 
 
 class RippleService:
@@ -153,8 +154,21 @@ class RippleService:
             latency = (time.time() - start) * 1000
 
             if resp.status_code == 200:
+                # Also check prediction-quality subsystem (non-blocking)
+                pq_checks: dict[str, Any] = {}
+                try:
+                    pq_resp = await client.get(
+                        f"{config['base_url']}/v1/health/prediction-quality", timeout=3.0,
+                    )
+                    if pq_resp.status_code == 200:
+                        pq_data = pq_resp.json()
+                        pq_checks = pq_data.get("checks", {})
+                except Exception:
+                    pass  # Non-critical — older Ripple versions lack this endpoint
+
                 self._health_status = RippleHealthStatus(
-                    is_healthy=True, last_check="ok", latency_ms=latency, reason=""
+                    is_healthy=True, last_check="ok", latency_ms=latency, reason="",
+                    prediction_quality=pq_checks,
                 )
                 logger.info(f"Ripple health check passed: {latency:.0f}ms")
             else:
@@ -400,6 +414,13 @@ class RippleService:
                                 if tw is not None:
                                     progress_state["total_waves"] = int(tw)
                                 progress_state["phase"] = payload.get("phase", "")
+                                # R8: Quality fields in SSE events
+                                quality = payload.get("quality")
+                                if isinstance(quality, dict):
+                                    progress_state["quality"] = quality
+                                cg = payload.get("confidence_gate_result")
+                                if isinstance(cg, dict):
+                                    progress_state["confidence_gate_result"] = cg
                                 progress_state["last_update_at"] = _time.monotonic()
 
         except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout) as exc:
@@ -1326,6 +1347,14 @@ class RippleService:
         if score_source != "metrics":
             parsed_prediction["score_source"] = score_source
 
+        # Quality subsystem: confidence_gate + quality report
+        confidence_gate = output.get("confidence_gate")
+        if isinstance(confidence_gate, dict):
+            parsed_prediction["confidence_gate"] = confidence_gate
+        quality = output.get("quality")
+        if isinstance(quality, dict):
+            parsed_prediction["quality"] = quality
+
         return {
             "ripple_job_id": job_id,
             "ripple_prediction": parsed_prediction,
@@ -1403,6 +1432,14 @@ class RippleService:
             parsed_pmf["total_waves"] = output["total_waves"]
         if score_source != "metrics":
             parsed_pmf["score_source"] = score_source
+
+        # Quality subsystem: confidence_gate + quality report
+        confidence_gate = output.get("confidence_gate")
+        if isinstance(confidence_gate, dict):
+            parsed_pmf["confidence_gate"] = confidence_gate
+        quality = output.get("quality")
+        if isinstance(quality, dict):
+            parsed_pmf["quality"] = quality
 
         return {
             "ripple_job_id": job_id,
