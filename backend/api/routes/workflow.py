@@ -1216,12 +1216,29 @@ async def upload_brief_file(thread_id: str, request: Request):
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
-    await graph.aupdate_state(config, {
-        "brief_content": {
-            "raw_text": brief_text,
-            "source_type": source_type,
+    # Determine as_node from current state to avoid "Ambiguous update" error
+    # when the workflow is paused at an interrupt (multiple nodes in state)
+    current_state = await graph.aget_state(config)
+    as_node = None
+    if current_state.tasks:
+        # Use the node that produced the current checkpoint
+        as_node = current_state.tasks[0].name if current_state.tasks else None
+    elif current_state.values:
+        # Fallback: use the last node that wrote to state
+        as_node = current_state.values.get("_last_node", "orchestrator")
+
+    update_kwargs: dict[str, Any] = {
+        "values": {
+            "brief_content": {
+                "raw_text": brief_text,
+                "source_type": source_type,
+            },
         },
-    })
+    }
+    if as_node:
+        update_kwargs["as_node"] = as_node
+
+    await graph.aupdate_state(config, **update_kwargs)
 
     # If the workflow was started without brief_text (waiting for PDF upload),
     # it paused at the initial checkpoint — start execution now
