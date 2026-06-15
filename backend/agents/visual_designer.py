@@ -21,6 +21,8 @@ class VisualDesignerAgent(BaseAgent):
         account_id = state.get("account_id", "default")
         plan = state.get("content_plan", {})
         copy = state.get("copy_content", {})
+        brief = state.get("brief_content", {})
+        shooting_plan = state.get("shooting_plan", {})
 
         # ── Creative Memory: 读取风格指纹 + 封面素材 ──
         from backend.memory.creative import CreativeMemory
@@ -34,11 +36,17 @@ class VisualDesignerAgent(BaseAgent):
 
         niche = state.get("niche", "母婴")
         body_summary = copy.get("body_text", "")[:200] if copy else ""
+        brief_brand = brief.get("brand", "") if brief else ""
+        brief_requirements = brief.get("visual_requirements", "") if brief else ""
+        shooting_notes = shooting_plan.get("shooting_notes", "") if shooting_plan else ""
         user_msg = f"""选题：{plan.get("selected_topic", "")}
 角度：{plan.get("content_angle", "")}
 内容类型：{plan.get("content_type", "note")}
 垂类赛道：{niche}
-正文摘要：{body_summary}"""
+正文摘要：{body_summary}
+品牌：{brief_brand}
+视觉要求：{brief_requirements}
+拍摄要求：{shooting_notes}"""
 
         response = await self.model.ainvoke(
             [

@@ -104,6 +104,25 @@ def _emit_status_transition(
             payload["content_plan"] = values.get("content_plan", {})
         bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
 
+    elif new_status == WorkflowStatus.AWAITING_BRIEF:
+        if snapshot is not None:
+            values = snapshot.values or {}
+            payload["brief_content"] = values.get("brief_content", {})
+        bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
+
+    elif new_status == WorkflowStatus.AWAITING_RIPPLE_DECISION:
+        if snapshot is not None:
+            values = snapshot.values or {}
+            payload["ripple_prediction"] = values.get("ripple_prediction", {})
+            payload["ripple_pmf"] = values.get("ripple_pmf", {})
+        bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
+
+    elif new_status == WorkflowStatus.AWAITING_BLOGGER_SELECTION:
+        if snapshot is not None:
+            values = snapshot.values or {}
+            payload["blogger_candidates"] = values.get("blogger_candidates", [])
+        bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
+
 
 def _status_to_str(
     derived: WorkflowStatus,
@@ -118,6 +137,9 @@ def _status_to_str(
         WorkflowStatus.AWAITING_REVIEW: "awaiting_review",
         WorkflowStatus.AWAITING_CHOICE: "awaiting_choice",
         WorkflowStatus.AWAITING_DRAFT: "awaiting_draft",
+        WorkflowStatus.AWAITING_BRIEF: "awaiting_brief",
+        WorkflowStatus.AWAITING_RIPPLE_DECISION: "awaiting_ripple_decision",
+        WorkflowStatus.AWAITING_BLOGGER_SELECTION: "awaiting_blogger_selection",
         WorkflowStatus.PAUSED: "paused",
         WorkflowStatus.RUNNING: "running",
         WorkflowStatus.STALE: "stale",

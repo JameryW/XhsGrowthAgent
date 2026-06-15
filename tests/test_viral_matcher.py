@@ -41,10 +41,79 @@ def mock_store():
 
 @pytest.mark.asyncio
 async def test_viral_matcher_no_draft(mock_state_no_draft, mock_store):
-    """Should not skip optimization when no draft provided."""
+    """Should return empty when no draft or brief provided."""
     agent = ViralMatcherAgent()
     result = await agent.execute(mock_state_no_draft, mock_store)
     assert result["skip_optimization"] is False
+    assert result["viral_posts"] == []
+
+
+@pytest.mark.asyncio
+async def test_viral_matcher_brief_mode_no_draft(mock_store):
+    """Should use brief_content keywords when draft_content is missing (brief mode)."""
+    agent = ViralMatcherAgent()
+
+    state = {
+        "account_id": "test_account",
+        "workflow_mode": "brief",
+        "brief_content": {
+            "brand_name": "几素",
+            "product_name": "婴儿车风扇",
+            "selling_points": ["静音", "便携"],
+            "required_keywords": ["几素婴儿车风扇"],
+            "content_direction": "夏日出行必备",
+            "target_audience": "宝妈",
+        },
+    }
+
+    mock_model = MagicMock()
+    mock_model.ainvoke = AsyncMock(return_value=MagicMock(
+        content='{"viral_posts": [{"note_id": "b1", "title": "夏日带娃神器", "body": "静音风扇", "hashtags": ["#几素"], "likes": 8000, "collects": 3000, "comments": 100, "engagement_rate": 0.12, "visual_style": "warm", "color_palette": {"primary": "#ffd700"}}], "search_keywords_used": ["几素", "婴儿车风扇"]}'
+    ))
+
+    with patch.object(agent, '_model', mock_model):
+        result = await agent.execute(state, mock_store)
+
+    assert result["skip_optimization"] is False
+    assert len(result["viral_posts"]) == 1
+    # Verify the model was actually called (not skipped)
+    mock_model.ainvoke.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_viral_matcher_brief_mode_enriches_keywords(mock_store):
+    """Brief mode should add brand/product/keywords to auto_keywords."""
+    agent = ViralMatcherAgent()
+
+    state = {
+        "account_id": "test_account",
+        "workflow_mode": "brief",
+        "brief_content": {
+            "brand_name": "几素",
+            "product_name": "婴儿车风扇",
+            "selling_points": ["静音", "便携"],
+            "required_keywords": ["几素婴儿车风扇"],
+        },
+    }
+
+    captured_keywords = None
+
+    mock_model = MagicMock()
+    async def capture_invoke(msgs):
+        nonlocal captured_keywords
+        user_msg = msgs[1].content
+        captured_keywords = user_msg
+        return MagicMock(content='{"viral_posts": [], "search_keywords_used": []}')
+
+    mock_model.ainvoke = capture_invoke
+
+    with patch.object(agent, '_model', mock_model):
+        result = await agent.execute(state, mock_store)
+
+    assert result["viral_posts"] == []
+    # Verify brief keywords appear in the user message
+    assert "几素" in captured_keywords
+    assert "婴儿车风扇" in captured_keywords
 
 
 @pytest.mark.asyncio

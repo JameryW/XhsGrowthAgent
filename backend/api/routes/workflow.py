@@ -118,9 +118,15 @@ def _resume_phase_for_next_nodes(
         "orchestrator": WorkflowPhase.SCOUTING,
         "trend_scout": WorkflowPhase.SCOUTING,
         "content_strategist": WorkflowPhase.PLANNING,
+        "ripple_gate": WorkflowPhase.PLANNING,
+        "brief_analyzer": WorkflowPhase.BRIEFING,
+        "brief_gate": WorkflowPhase.BRIEFING,
         "copywriter": WorkflowPhase.CREATING,
         "draft_gate": WorkflowPhase.CREATING,
         "viral_matcher": WorkflowPhase.CREATING,
+        "blogger_scout": WorkflowPhase.CREATING,
+        "blogger_gate": WorkflowPhase.CREATING,
+        "shooting_planner": WorkflowPhase.CREATING,
         "content_analyzer": WorkflowPhase.CREATING,
         "version_generator": WorkflowPhase.CREATING,
         "choice_gate": WorkflowPhase.CREATING,
@@ -590,6 +596,7 @@ async def get_workflow_status(thread_id: str, request: Request):
             row.status in (
                 "running", "stale", "paused", "awaiting_review",
                 "awaiting_choice", "awaiting_draft", "awaiting_brief",
+                "awaiting_ripple_decision", "awaiting_blogger_selection",
             )
             and not has_active_task
         )
@@ -872,7 +879,7 @@ async def resume_workflow(thread_id: str, request: Request):
         return success(data={
             "thread_id": thread_id,
             "status": "running",
-            "phase": WorkflowPhase.BRIEFING,
+            "phase": WorkflowPhase.CREATING,
         })
 
     next_nodes = tuple(state.next or ())
