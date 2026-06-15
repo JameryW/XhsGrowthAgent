@@ -804,6 +804,33 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const briefSourceType = ref<string | null>(null)
   const isBriefUploading = ref(false)
 
+  async function extractBriefPdf(file: File): Promise<{ brief_text: string; source_type: string } | null> {
+    const MAX_SIZE = 20 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      toastStore.error(t('brief.fileTooLarge'), t('brief.fileTooLargeDesc'))
+      return null
+    }
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      toastStore.error(t('brief.unsupportedFormat'), t('brief.unsupportedFormatDesc'))
+      return null
+    }
+
+    isBriefUploading.value = true
+    try {
+      const result = await workflowApi.extractBriefFile(file)
+      briefUploadedText.value = result.brief_text
+      briefSourceType.value = result.source_type
+      toastStore.success(t('brief.uploadSuccess'))
+      return result
+    } catch (e: any) {
+      toastStore.error(t('brief.uploadFailed'), e.message)
+      briefUploadedText.value = null
+      return null
+    } finally {
+      isBriefUploading.value = false
+    }
+  }
+
   async function uploadBriefPdf(threadId: string, file: File): Promise<BriefUploadResult | null> {
     const MAX_SIZE = 20 * 1024 * 1024
     if (file.size > MAX_SIZE) {
@@ -956,6 +983,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     briefUploadedText,
     briefSourceType,
     isBriefUploading,
+    extractBriefPdf,
     uploadBriefPdf,
     clearBriefUpload,
 

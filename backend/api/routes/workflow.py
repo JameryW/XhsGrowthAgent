@@ -1174,6 +1174,51 @@ async def retry_ripple_analysis(thread_id: str, request: Request):
     })
 
 
+class BriefExtractResponse(BaseModel):
+    brief_text: str
+    source_type: str
+
+
+@router.post("/brief/extract")
+async def extract_brief_file(request: Request):
+    """Extract text from a brief document (PDF) without requiring a thread ID.
+
+    Used by the frontend for immediate preview after file selection.
+    The extracted text is then passed as briefText when starting the workflow.
+    """
+    form = await request.form()
+    file = form.get("file")
+    if not file:
+        raise ValidationError("file", "No file uploaded")
+
+    filename = file.filename or "unknown"
+    content_bytes = await file.read()
+
+    max_upload_size = 20 * 1024 * 1024
+    if len(content_bytes) > max_upload_size:
+        raise ValidationError("file", f"File too large (max {max_upload_size // 1024 // 1024}MB)")
+
+    brief_text = ""
+    source_type = "text"
+
+    if filename.lower().endswith(".pdf"):
+        source_type = "pdf"
+        brief_text = await _extract_pdf_text(content_bytes)
+    else:
+        try:
+            brief_text = content_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            brief_text = content_bytes.decode("gbk", errors="replace")
+
+    if not brief_text.strip():
+        raise ValidationError("file", "Could not extract text from the uploaded file")
+
+    return success(data=BriefExtractResponse(
+        brief_text=brief_text[:500] + "..." if len(brief_text) > 500 else brief_text,
+        source_type=source_type,
+    ).model_dump())
+
+
 class BriefUploadResponse(BaseModel):
     thread_id: str
     brief_text: str
