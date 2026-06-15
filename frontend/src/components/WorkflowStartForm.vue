@@ -38,6 +38,7 @@ const briefPdfText = ref<string | null>(null)
 const hasPdfUpload = computed(() => !!briefPdfText.value)
 
 const pendingPdfFile = ref<File | null>(null)
+const pendingPdfName = computed(() => pendingPdfFile.value?.name ?? null)
 
 function onBriefPdfUpload(file: File) {
   // Always queue the file — it will be uploaded with the correct thread ID
@@ -61,6 +62,7 @@ function onBriefPdfConfirm(text: string) {
 
 function onBriefPdfClear() {
   briefPdfText.value = null
+  pendingPdfFile.value = null
   workflowStore.clearBriefUpload()
 }
 
@@ -201,6 +203,7 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
         :uploaded-text="workflowStore.briefUploadedText"
         :source-type="workflowStore.briefSourceType"
         :thread-id="workflowStore.currentThreadId || ''"
+        :pending-file-name="pendingPdfName"
         @upload="onBriefPdfUpload"
         @confirm="onBriefPdfConfirm"
         @clear="onBriefPdfClear"

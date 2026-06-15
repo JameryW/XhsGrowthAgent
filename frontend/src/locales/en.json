@@ -972,7 +972,9 @@
     "skipClarification": "Skip clarification",
     "targetAudience": "Target Audience",
     "sourcePdf": "PDF",
-    "sourceText": "Text"
+    "sourceText": "Text",
+    "queued": "Queued",
+    "queuedHint": "PDF will be uploaded and text extracted when the workflow starts"
   },
   "shootingPlan": {
     "title": "Shooting Plan",

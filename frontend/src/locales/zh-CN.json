@@ -972,7 +972,9 @@
     "skipClarification": "跳过补充",
     "targetAudience": "目标受众",
     "sourcePdf": "PDF",
-    "sourceText": "文本"
+    "sourceText": "文本",
+    "queued": "待上传",
+    "queuedHint": "PDF 将在工作流启动后自动上传并提取文本"
   },
   "shootingPlan": {
     "title": "拍摄方案",

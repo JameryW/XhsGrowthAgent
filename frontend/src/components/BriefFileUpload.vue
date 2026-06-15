@@ -11,6 +11,7 @@ const props = defineProps<{
   uploadedText?: string | null
   sourceType?: string | null
   threadId?: string
+  pendingFileName?: string | null
   error?: string | null
 }>()
 
@@ -31,6 +32,7 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 const displayError = computed(() => localError.value || props.error)
 const hasUploadedText = computed(() => !!props.uploadedText)
 const isConfirmable = computed(() => editableText.value.trim().length > 0)
+const hasPendingFile = computed(() => !!props.pendingFileName && !hasUploadedText.value)
 
 // When uploaded text arrives, populate the editable preview (do NOT auto-confirm)
 watch(() => props.uploadedText, (text) => {
@@ -150,6 +152,27 @@ function clear() {
         <AppIcon name="AlertCircle" size="sm" variant="pink" />
         <span class="text-sm text-rose-700">{{ displayError }}</span>
       </div>
+    </div>
+
+    <!-- Pending file indicator (shown when file is queued but not yet extracted) -->
+    <div v-if="hasPendingFile" class="space-y-3">
+      <div class="flex items-center justify-between p-3 rounded-xl border-2 border-teal-200/50 bg-gradient-to-r from-teal-50/50 to-transparent">
+        <div class="flex items-center gap-2">
+          <AppIcon name="FileText" size="sm" variant="cyan" />
+          <span class="text-sm font-semibold text-teal-700">{{ pendingFileName }}</span>
+          <span class="text-xs text-slate-400 px-1.5 py-0.5 bg-teal-50 rounded-full">
+            {{ t('brief.queued') }}
+          </span>
+        </div>
+        <button
+          @click="clear"
+          class="flex items-center gap-1 text-xs text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
+        >
+          <AppIcon name="X" size="sm" />
+          {{ t('brief.removeFile') }}
+        </button>
+      </div>
+      <p class="text-xs text-slate-400 pl-1">{{ t('brief.queuedHint') }}</p>
     </div>
 
     <!-- Preview + edit area (shown after upload) -->
