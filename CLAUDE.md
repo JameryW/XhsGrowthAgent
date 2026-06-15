@@ -76,6 +76,7 @@ backend/
 │   ├── routes/     # Workflow, review, analytics, realtime
 │   └── responses.py # ApiResponse envelope
 ├── realtime/       # WebSocket + SSE event streaming
+├── memory/         # Long-term memory (store, index, creative, types)
 ├── cli/            # Typer CLI with Rich progress
 └── config/         # Model routing, prompts
 
@@ -112,6 +113,9 @@ from backend.state import merge_dict, append_list
 from backend.tools.content import layout_recommender, style_library
 from backend.tools.analysis import topic_scorer
 
+# Memory
+from backend.memory import MemoryManager, CreativeMemory, get_store_index, get_prod_store_index
+
 # API responses
 from backend.api.responses import success, error
 ```
@@ -123,6 +127,7 @@ from backend.api.responses import success, error
 - Service layer added for tool orchestration
 - CLI enhanced with progress bars, toast notifications, and new commands
 - API enhanced with SSE streaming, cancel endpoint, and progress tracking
+- Memory module added with semantic search index and creative memory layers
 
 ### LangGraph Workflow (graph/builder.py)
 
@@ -197,6 +202,9 @@ FastAPI routes with unified `ApiResponse` envelope:
 - `WS /ws`: WebSocket with subscribe/unsubscribe/ping/get_missed
 - `GET /events/missed`: HTTP recovery for lost events
 
+**System routes (`system.py`):**
+- `GET /health`: System health check (see Health Check section below)
+
 ### Frontend Stores (frontend/src/stores/)
 
 Pinia stores with toast notifications:
@@ -232,11 +240,59 @@ External simulation engine for content spread prediction and PMF validation:
 - `ripple_validate_pmf`: Validates product-market fit for content seeding
 - Configuration via `RIPPLE_*` env vars (base_url, api_token, enabled)
 
-### Memory Store (memory/store.py)
+### Memory Store (memory/)
 
-LangGraph BaseStore integration with namespaces per account:
-- Content history, audience preferences, performance insights, strategy notes
-- Agents recall via `_recall_memory(store, account_id, query, namespace)`
+LangGraph BaseStore integration with namespaces per account, semantic search, and creative memory layers.
+
+**Index Configuration (`memory/index.py`):**
+- `IndexConfig` with direct `Embeddings` object construction (not string-based resolution)
+- Supported providers: `openai`, `openai_compatible`
+- Env vars: `XHS_EMBED_MODEL` (default: `openai:text-embedding-3-small`), `XHS_EMBED_DIMS` (default: 1536), `XHS_EMBED_BASE_URL` (for OpenAI-compatible APIs like DeepSeek)
+- `get_store_index()`: Returns `IndexConfig | None` — falls back to `None` when no API key is available (store operates without semantic search)
+- `get_prod_store_index()`: Same as above but adds `distance_type: "cosine"` for Postgres store
+- `_build_embeddings()`: Constructs `OpenAIEmbeddings` directly from `langchain_openai`, bypassing the langchain meta-package string resolution
+- Indexed fields: title, body, insight, note, preference, content, tone, visual_style, topic, tags, hashtag_style, trigger_condition, title_formula, opening_hook, niche, category, voice_patterns, layout_preference
+
+**MemoryManager (`memory/store.py`):**
+- Namespace-based memory with semantic + keyword search
+- All recall methods accept `keywords: list[str] | None` and `filter: dict | None` params:
+  - `recall_similar_content(store, query, limit, *, keywords, filter)`
+  - `recall_audience_preferences(store, query, limit, *, keywords, filter)`
+  - `recall_insights(store, query, limit, *, keywords, filter)`
+  - `recall_strategy_notes(store, query, limit, *, keywords, filter)`
+- `_keyword_filter(items, keywords)`: Post-filters asearch results — all keywords must appear in any string value field (case-insensitive text-contains match)
+- `asearch(filter=)`: Passes `filter` dict directly for exact field matching (e.g. `{"tone": "治愈"}`)
+- Over-fetches by `limit * 2` when keywords are provided, to compensate for post-filtering
+- Write methods: `store_content_record`, `store_insight`, `store_audience_preference`, `store_strategy_note`
+
+**CreativeMemory (`memory/creative.py`):**
+- Three-layer creative memory: style DNA, conversion playbook, material vault
+- Namespaces: `accounts/{id}/style_dna`, `accounts/{id}/conversion_playbook`, `accounts/{id}/material_vault`, `benchmarks/{niche}`
+- Recall methods with same `keywords`/`filter` params:
+  - `recall_style(query, limit, *, keywords, filter)` — returns `StyleDNA` list, falls back to default styles
+  - `recall_plays(condition, niche, limit, *, keywords, filter)` — returns `ConversionPlay` list
+  - `recall_materials(category, tags, limit, *, keywords, filter)` — returns `MaterialEntry` list, sorted by weight
+- `calibrate(payload)`: Updates engagement rates, proven counts, and effectiveness using `aget(namespace, key=id)` for direct ID lookup (not asearch) — more reliable when semantic search is disabled or data volume is large
+- Deposit methods: `deposit_style` (merges similar styles), `deposit_play`, `deposit_material`, `deposit_benchmark`
+- Cold-start threshold: `MIN_SAMPLES = 5`; soft downgrade: effectiveness < 0.3 reduces weight by 0.8x
+
+**Postgres Store:**
+- Uses `pgvector/pgvector:pg15` Docker image (not `postgres:15`) — required for vector similarity support
+- `AsyncPostgresStore` creates `store_vectors` table with HNSW index for cosine similarity
+- Configured via `XHS_POSTGRES_URI` or `POSTGRES_URI` env var
+- `compile_graph_prod()` and `compile_graph_dev()` both support Postgres store with semantic index
+
+### Health Check (`/api/system/health`)
+
+System health endpoint checks all external dependencies:
+- `llm_providers`: API key availability for Anthropic, OpenAI, DeepSeek, DashScope
+- `xhs_platform`: XHS cookie and user ID (optional — preview-only without it)
+- `ripple_cas`: Ripple CAS engine connectivity
+- `search_api`: Tavily API key
+- `database`: Checkpointer mode detection (postgres/sqlite/memory)
+- `memory_store`: Backend type (postgres/memory/unavailable), semantic index status (enabled/disabled), embed model name, embed dimensions, namespace counts with total items
+
+Overall status: `ok` if LLM providers are configured; `degraded` if memory store lacks semantic index; `warning` if memory store is unavailable.
 
 ## Module Structure
 
@@ -244,23 +300,33 @@ All modules have proper `__init__.py` exports for clean imports:
 
 ```python
 # Main package
-from xhs_growth import XHSGrowthState, compile_graph_dev, WorkflowPhase
+from backend import XHSGrowthState, compile_graph_dev, WorkflowPhase
+
+# Core
+from backend.core import BaseAgent, AgentError, handle_agent_error
 
 # Agents
-from xhs_growth.agents import OrchestratorAgent, TrendScoutAgent
+from backend.agents import OrchestratorAgent, TrendScoutAgent
+from backend.agents.nodes import orchestrator_node
 
 # Services
-from xhs_growth.services import XHSClient, XHSPost
+from backend.services import XHSClient, RippleService
 
 # Models
-from xhs_growth.models import get_model, CostTracker
+from backend.models import get_model, CostTracker
 
 # State
-from xhs_growth.state import merge_dict, append_list
+from backend.state import merge_dict, append_list
 
 # Tools
-from xhs_growth.tools.content import layout_recommender, style_library
-from xhs_growth.tools.analysis import topic_scorer
+from backend.tools.content import layout_recommender, style_library
+from backend.tools.analysis import topic_scorer
+
+# Memory
+from backend.memory import MemoryManager, CreativeMemory, get_store_index, get_prod_store_index
+
+# API responses
+from backend.api.responses import success, error
 ```
 
 ## Environment Setup
@@ -270,6 +336,15 @@ Required environment variables (see `.env.example`):
 - `XHS_COOKIE`, `XHS_USER_ID` — Xiaohongshu platform access
 - `RIPPLE_BASE_URL`, `RIPPLE_API_TOKEN` — Ripple CAS engine
 - `POSTGRES_URI`, `REDIS_URI` — Production persistence
+- `XHS_EMBED_MODEL`, `XHS_EMBED_DIMS`, `XHS_EMBED_BASE_URL` — Memory store semantic search (optional; defaults to `openai:text-embedding-3-small`, 1536 dims)
+
+## Deployment
+
+Deploy using `scripts/deploy.sh` (not manual `podman run`):
+- The script reads `.env` and passes all env vars to containers
+- Postgres container must use `pgvector/pgvector:pg15` image (not `postgres:15`) for vector similarity support
+- Embedding env vars (`XHS_EMBED_MODEL`, `XHS_EMBED_DIMS`, `XHS_EMBED_BASE_URL`) are passed to the backend container for semantic search
+- Without embedding config, the store operates in degraded mode (namespace recency only, no semantic search)
 
 ## Key Patterns
 
@@ -306,6 +381,7 @@ user_template: |
 - Mock LLM responses with JSON content in `MagicMock().content`
 - Contract tests verify OpenAPI spec sync (`tests/contract/test_type_sync.py`)
 - Ripple service tests cover singleton, health check, retry, fallback (`tests/unit/services/test_ripple_service.py`)
+- Memory tests: index config (`tests/unit/memory/test_index.py`), store (`tests/unit/memory/test_store.py`), creative memory (`tests/unit/memory/test_creative_memory.py`)
 
 ## Visual Design Tools (tools/visual/)
 
