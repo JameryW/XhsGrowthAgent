@@ -215,6 +215,7 @@
       "goReviewDesc": "Go to Review",
       "goReviewPending": "Go to review page to review and decide",
       "goReviewPendingDesc": "Review content - ready for your decision",
+      "editDraft": "Edit Draft",
       "pause": "Pause Workflow",
       "pauseDesc": "Pause current workflow execution",
       "resume": "Resume Workflow",

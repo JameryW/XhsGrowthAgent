@@ -215,6 +215,7 @@
       "goReviewDesc": "进入审核页面",
       "goReviewPending": "前往审核页面查看并决定内容",
       "goReviewPendingDesc": "去审核内容 - 内容已准备好等待审核",
+      "editDraft": "编辑草稿",
       "pause": "暂停工作流",
       "pauseDesc": "暂停当前工作流执行",
       "resume": "恢复工作流",
