@@ -135,6 +135,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const progressPercent = ref(0)
+  // High-water mark — progress bar never goes backward, even when phase
+  // regresses (e.g. ripple reangle → planning, retopic → scouting).
+  const _maxProgress = ref(0)
 
   // Computed
   const currentPhase = computed<WorkflowPhase>(() =>
@@ -268,6 +271,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     // Update progress/overlay for the newly active tab
     const state = workflowStates.value.get(threadId)
     if (state) {
+      _resetMaxProgressForTab(state.progress_percent, state.phase)
       updateProgressFromPhase(state.phase, state.progress_percent)
     }
   }
@@ -294,10 +298,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
       if (newActive) {
         localStorage.setItem(LS_ACTIVE_THREAD, newActive)
         const state = workflowStates.value.get(newActive)
-        if (state) updateProgressFromPhase(state.phase, state.progress_percent)
+        if (state) {
+          _resetMaxProgressForTab(state.progress_percent, state.phase)
+          updateProgressFromPhase(state.phase, state.progress_percent)
+        }
       } else {
         localStorage.removeItem(LS_ACTIVE_THREAD)
         progressPercent.value = 0
+        _maxProgress.value = 0
       }
     }
   }
@@ -328,11 +336,21 @@ export const useWorkflowStore = defineStore('workflow', () => {
   // Phases that should NOT reset progress — preserve last valid value
   const PRESERVE_PROGRESS_PHASES: WorkflowPhase[] = ['paused', 'cancelled']
 
+  /** Reset high-water mark to match a tab's current progress.
+   *  Call before switching tabs so the new tab's progress isn't
+   *  clipped to the old tab's high-water mark. */
+  function _resetMaxProgressForTab(backendProgress?: number, phase?: WorkflowPhase) {
+    _maxProgress.value = backendProgress ?? (phase ? phaseToPercent(phase) : 0)
+  }
+
   function updateProgressFromPhase(phase: WorkflowPhase, backendProgress?: number) {
     if (PRESERVE_PROGRESS_PHASES.includes(phase) && !backendProgress) {
       return
     }
-    progressPercent.value = backendProgress ?? phaseToPercent(phase)
+    const target = backendProgress ?? phaseToPercent(phase)
+    const next = Math.max(target, _maxProgress.value)
+    _maxProgress.value = next
+    progressPercent.value = next
   }
 
   // ── WebSocket event handlers (multi-thread aware) ──
@@ -562,6 +580,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
       saveOpenTabs(openTabIds.value)
       saveTabLabels(tabLabels.value)
 
+      // New workflow starts from 0 — reset high-water mark
+      _maxProgress.value = 0
       updateProgressFromPhase(phase)
 
       // Fetch full status from backend
