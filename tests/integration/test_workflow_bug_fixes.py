@@ -24,6 +24,7 @@ from langgraph.types import Command
 
 from backend.api.app import app
 from backend.api.routes import workflow as workflow_module
+from backend.api.routes import _runner as runner_module
 from backend.graph.routers import (
     _check_terminal,
     review_outcome,
@@ -89,13 +90,13 @@ def mock_graph():
 def client(mock_graph):
     """Test client with mocked graph."""
     app.state.graph = mock_graph
-    original_bg_tasks = workflow_module._background_tasks.copy()
+    original_bg_tasks = runner_module._background_tasks.copy()
     original_last_status = workflow_module._last_status.copy()
-    workflow_module._background_tasks.clear()
+    runner_module._background_tasks.clear()
     workflow_module._last_status.clear()
     yield TestClient(app)
-    workflow_module._background_tasks.clear()
-    workflow_module._background_tasks.update(original_bg_tasks)
+    runner_module._background_tasks.clear()
+    runner_module._background_tasks.update(original_bg_tasks)
     workflow_module._last_status.clear()
     workflow_module._last_status.update(original_last_status)
     if hasattr(app.state, "graph"):
@@ -153,7 +154,7 @@ class TestPausePreservesStatus:
             await asyncio.sleep(10)
 
         task = asyncio.create_task(long_running_task())
-        workflow_module._background_tasks[thread_id] = task
+        runner_module._background_tasks[thread_id] = task
 
         # Simulate pause endpoint behavior
         # 1. Update graph state to paused with prev_phase
@@ -554,18 +555,18 @@ class TestChoiceGateRouting:
         assert result == "choice_gate"
 
     def test_terminal_state_skips_choice_gate(self):
-        """Terminal state (paused/cancelled/error) routes to visual_designer."""
+        """Terminal state (paused/cancelled/error) routes to __end__."""
         # Paused
         state = {"phase": WorkflowPhase.PAUSED, "content_versions": []}
-        assert should_present_choice(state) == "visual_designer"
+        assert should_present_choice(state) == "__end__"
 
         # Cancelled
         state = {"phase": WorkflowPhase.CANCELLED, "content_versions": []}
-        assert should_present_choice(state) == "visual_designer"
+        assert should_present_choice(state) == "__end__"
 
         # Error
         state = {"phase": WorkflowPhase.ERROR, "content_versions": []}
-        assert should_present_choice(state) == "visual_designer"
+        assert should_present_choice(state) == "__end__"
 
 
 # ── Test 5: No XHS + dry_run still completes publish chain ─────────────────────
@@ -763,15 +764,13 @@ class TestCheckTerminalRouter:
             assert result is None, f"_check_terminal should return None for {phase}"
 
     def test_check_terminal_ends_on_completed_phase(self):
-        """_check_terminal should not END on COMPLETED (handled by other routers)."""
+        """_check_terminal should END on COMPLETED — workflow is done."""
         state = {
             "phase": WorkflowPhase.COMPLETED,
         }
 
-        # COMPLETED is not in the terminal check list
-        # It's handled by other routers that check for completion
         result = _check_terminal(state)
-        assert result is None
+        assert result == "__end__"
 
 
 # ── Test 8: review_outcome always routes to publisher ──────────────────────────

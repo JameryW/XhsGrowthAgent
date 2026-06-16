@@ -32,7 +32,7 @@ async def brief_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[st
 
     # Brief needs clarification — interrupt for user input
     logger.info("Brief gate: clarification needed, interrupting for user input")
-    decision = interrupt({"type": "brief_clarification", "questions": clarification.get("questions", [])})
+    decision = interrupt({"gate": "brief_clarification", "questions": clarification.get("questions", [])})
 
     # decision format: {"action": "answer", "answers": {...}} or {"action": "skip"}
     result: dict[str, Any] = {

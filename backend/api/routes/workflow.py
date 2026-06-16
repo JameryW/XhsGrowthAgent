@@ -45,7 +45,9 @@ router = APIRouter()
 _HISTORY_DIR = Path(os.environ.get("XHS_REGISTRY_PATH", ".xhs")) / "history"
 
 # ── In-memory tracking (not persisted — rebuilt on restart from DB) ──
-_background_tasks: dict[str, asyncio.Task] = {}
+# Use _runner._background_tasks as the single task registry so that
+# _run_graph_and_persist can correctly determine has_active_task.
+# The local _last_status dict tracks status transitions for this module only.
 _last_status: dict[str, WorkflowStatus] = {}
 
 
@@ -177,7 +179,7 @@ async def _start_resume_task(
 
     task = asyncio.create_task(_resume_async())
     task.add_done_callback(_on_task_done(thread_id))
-    _background_tasks[thread_id] = task
+    _runner._background_tasks[thread_id] = task
 
 
 # ── Request/Response models ──
@@ -426,7 +428,7 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
 
         task = asyncio.create_task(_run_async())
         task.add_done_callback(_on_task_done(thread_id))
-        _background_tasks[thread_id] = task
+        _runner._background_tasks[thread_id] = task
         return success(data={
             "thread_id": thread_id,
             "status": "running",
@@ -470,7 +472,7 @@ async def get_workflow_status(thread_id: str, request: Request):
         phase = state.values.get("phase", "unknown")
 
         has_active = (
-            (thread_id in _background_tasks and not _background_tasks[thread_id].done())
+            (thread_id in _runner._background_tasks and not _runner._background_tasks[thread_id].done())
             or (thread_id in _runner._active_sync_executions)
         )
         derived_status = derive_status(state, has_active_task=has_active)
@@ -622,8 +624,8 @@ async def get_workflow_status(thread_id: str, request: Request):
         # - AND there is no active background task for it in this process
         # - AND there is no live LangGraph checkpoint (we already checked above)
         has_active_task = (
-            thread_id in _background_tasks
-            and not _background_tasks[thread_id].done()
+            thread_id in _runner._background_tasks
+            and not _runner._background_tasks[thread_id].done()
         )
         checkpoint_lost = (
             row.status in (
@@ -796,7 +798,7 @@ async def pause_workflow(thread_id: str, request: Request):
     current_phase = state.values.get("phase", "unknown")
     await graph.aupdate_state(config, {"phase": "paused", "prev_phase": current_phase}, as_node=_get_as_node(state))
 
-    bg_task = _background_tasks.get(thread_id)
+    bg_task = _runner._background_tasks.get(thread_id)
     if bg_task and not bg_task.done():
         bg_task.cancel()
 
@@ -853,7 +855,7 @@ async def resume_workflow(thread_id: str, request: Request):
         })
 
     has_active = (
-        (thread_id in _background_tasks and not _background_tasks[thread_id].done())
+        (thread_id in _runner._background_tasks and not _runner._background_tasks[thread_id].done())
         or (thread_id in _runner._active_sync_executions)
     )
     derived = derive_status(state, has_active_task=has_active)
@@ -988,7 +990,7 @@ async def cancel_workflow(thread_id: str, request: Request):
         error="User cancelled",
     )
 
-    bg_task = _background_tasks.get(thread_id)
+    bg_task = _runner._background_tasks.get(thread_id)
     if bg_task and not bg_task.done():
         bg_task.cancel()
 
@@ -1336,7 +1338,7 @@ async def upload_brief_file(thread_id: str, request: Request):
     state = await graph.aget_state(config)
     next_nodes = state.next if state.next else ()
     has_active = (
-        (thread_id in _background_tasks and not _background_tasks[thread_id].done())
+        (thread_id in _runner._background_tasks and not _runner._background_tasks[thread_id].done())
         or (thread_id in _runner._active_sync_executions)
     )
 

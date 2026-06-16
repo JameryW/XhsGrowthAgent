@@ -123,6 +123,23 @@ def _emit_status_transition(
             payload["blogger_candidates"] = values.get("blogger_candidates", [])
         bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
 
+    elif new_status == WorkflowStatus.COMPLETED:
+        # Emit WORKFLOW_COMPLETED here (single source of truth) — not in
+        # individual nodes like publisher, which would prematurely close SSE
+        # streams before analyst/engagement nodes have run.
+        if snapshot is not None:
+            values = snapshot.values or {}
+            payload["publish_result"] = values.get("publish_result", {})
+            payload["copy_content"] = values.get("copy_content", {})
+            payload["trend_data"] = values.get("trend_data", {})
+            payload["content_plan"] = values.get("content_plan", {})
+            payload["visual_plan"] = values.get("visual_plan", {})
+            payload["analytics"] = values.get("analytics", {})
+            payload["ripple_prediction"] = values.get("ripple_prediction", {})
+            payload["ripple_pmf"] = values.get("ripple_pmf", {})
+            payload["ripple_comparison"] = values.get("ripple_comparison", {})
+        bus.emit(EventType.WORKFLOW_COMPLETED, thread_id=thread_id, payload=payload)
+
 
 def _status_to_str(
     derived: WorkflowStatus,

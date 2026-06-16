@@ -39,8 +39,12 @@ async def submit_draft(thread_id: str, draft: DraftSubmission, request: Request)
         raise WorkflowNotFoundError(thread_id)
 
     # Write draft content and viral links to state
+    # Mark source as "user_submitted" so draft_gate_node knows to skip
+    # its interrupt (vs "ai_generated" which means it was auto-populated).
+    draft_data = draft.model_dump()
+    draft_data["source"] = "user_submitted"
     await graph.aupdate_state(config, {
-        "draft_content": draft.model_dump(),
+        "draft_content": draft_data,
         "user_viral_links": draft.viral_links,
     }, as_node=_runner._get_as_node(state))
 
