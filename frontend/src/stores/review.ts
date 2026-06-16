@@ -13,7 +13,7 @@ import i18n from '@/locales'
 const { t } = i18n.global
 
 export const useReviewStore = defineStore('review', () => {
-  // State
+  // ── Single-workflow state (legacy + focused review) ──
   const threadId = ref<string | null>(null)
   const pendingReview = ref<PendingReview | null>(null)
   const isLoading = ref(false)
@@ -22,20 +22,24 @@ export const useReviewStore = defineStore('review', () => {
   const comments = ref('')
   const revisions = ref<Revision[]>([])
 
+  // ── Multi-workflow queue state ──
+  const pendingReviews = ref<Map<string, PendingReview>>(new Map())
+  const loadingReviewIds = ref<Set<string>>(new Set())
+  const submittingThreadId = ref<string | null>(null)
+
   // Computed
   const hasPendingReview = computed(() =>
     pendingReview.value?.status === 'awaiting_review'
   )
 
+  const queueCount = computed(() => pendingReviews.value.size)
+
   // Helper to parse raw_content if fields are missing
   function parseCopyContent(raw: CopyContent | undefined): CopyContent | undefined {
     if (!raw) return undefined
-    // If expected fields exist, return as-is
     if (raw.selected_title || raw.body_text) return raw
-    // If raw_content exists, try to parse it
     if (raw.raw_content) {
       try {
-        // Remove markdown code block markers if present
         let jsonStr = raw.raw_content.trim()
         if (jsonStr.includes('```json')) {
           jsonStr = jsonStr.split('```json')[1].split('```')[0].trim()
@@ -43,7 +47,6 @@ export const useReviewStore = defineStore('review', () => {
           const parts = jsonStr.split('```')
           jsonStr = parts[1]?.trim() || jsonStr
         }
-        // Find JSON object boundaries
         const start = jsonStr.indexOf('{')
         const end = jsonStr.lastIndexOf('}')
         if (start !== -1 && end !== -1 && end > start) {
@@ -63,31 +66,54 @@ export const useReviewStore = defineStore('review', () => {
   const visualPlan = computed(() => pendingReview.value?.visual_plan)
   const versionHistory = computed(() => pendingReview.value?.version_history || [])
 
+  // ── Queue helpers: get parsed content for a specific thread ──
+  function getQueueCopyContent(tid: string): CopyContent | undefined {
+    return parseCopyContent(pendingReviews.value.get(tid)?.copy_content)
+  }
+  function getQueueVisualPlan(tid: string): VisualPlan | undefined {
+    return pendingReviews.value.get(tid)?.visual_plan
+  }
+  function getQueueVersionHistory(tid: string): ContentVersion[] {
+    return pendingReviews.value.get(tid)?.version_history || []
+  }
+  function isQueueItemLoading(tid: string): boolean {
+    return loadingReviewIds.value.has(tid)
+  }
+  function isQueueItemSubmitting(tid: string): boolean {
+    return submittingThreadId.value === tid
+  }
+
   // WebSocket event handlers
   const realtimeStore = useRealtimeStore()
   const workflowStore = useWorkflowStore()
   const toastStore = useToastStore()
 
-  // 注册审核事件处理器 - 收到待审核内容时显示醒目通知
+  // 注册审核事件处理器 - 收到待审核内容时更新对应 store
   realtimeStore.wsService.onEvent(EventType.REVIEW_PENDING, (msg) => {
-    if (msg.thread_id === workflowStore.currentThreadId) {
-      const p = msg.payload as {
-        content_plan?: ContentPlan
-        copy_content?: CopyContent
-        visual_plan?: VisualPlan
-        version_history?: ContentVersion[]
-      }
-      // Update pendingReview with incoming content (enriched by backend)
-      pendingReview.value = {
-        status: 'awaiting_review',
-        content_plan: p.content_plan,
-        copy_content: p.copy_content,
-        visual_plan: p.visual_plan,
-        version_history: p.version_history || [],
-      }
-      // 醒目通知: 内容已准备好，等待审核
-      toastStore.info(t('workflow.awaitingReview'), t('workflow.awaitingReviewMessage'))
+    const p = msg.payload as {
+      content_plan?: ContentPlan
+      copy_content?: CopyContent
+      visual_plan?: VisualPlan
+      version_history?: ContentVersion[]
     }
+    const review: PendingReview = {
+      status: 'awaiting_review',
+      content_plan: p.content_plan,
+      copy_content: p.copy_content,
+      visual_plan: p.visual_plan,
+      version_history: p.version_history || [],
+    }
+    // Update multi-workflow queue
+    if (msg.thread_id) {
+      pendingReviews.value.set(msg.thread_id, review)
+      // Force reactivity on Map
+      pendingReviews.value = new Map(pendingReviews.value)
+    }
+    // Legacy: update single-workflow state if it matches
+    if (msg.thread_id === workflowStore.currentThreadId) {
+      pendingReview.value = review
+    }
+    toastStore.info(t('workflow.awaitingReview'), t('workflow.awaitingReviewMessage'))
   })
 
   realtimeStore.wsService.onEvent(EventType.REVIEW_APPROVED, () => {
@@ -102,7 +128,9 @@ export const useReviewStore = defineStore('review', () => {
     toastStore.info(t('review.revise'), t('review.reviseDesc'))
   })
 
-  // Actions
+  // ── Actions ──
+
+  /** Fetch single pending review (legacy + focused mode) */
   async function fetchPendingReview(tid: string) {
     threadId.value = tid
     isLoading.value = true
@@ -110,7 +138,6 @@ export const useReviewStore = defineStore('review', () => {
     try {
       pendingReview.value = await reviewApi.getPendingReview(tid)
     } catch (e: any) {
-      // No pending review is normal — not an error worth showing
       if (e.code === 'ERROR_REVIEW_NOT_PENDING' || e.code === 'ERROR_WORKFLOW_NOT_FOUND') {
         pendingReview.value = null
       } else {
@@ -121,26 +148,70 @@ export const useReviewStore = defineStore('review', () => {
     }
   }
 
-  async function submitDecision(dec: ContentStatus, comment?: string, revs?: Revision[], pubOptions?: PublishOptions) {
-    if (!threadId.value) return
+  /** Fetch review content for a specific thread into the queue map */
+  async function fetchQueueReview(tid: string) {
+    if (pendingReviews.value.has(tid) || loadingReviewIds.value.has(tid)) return
+    loadingReviewIds.value.add(tid)
+    try {
+      const review = await reviewApi.getPendingReview(tid)
+      pendingReviews.value.set(tid, review)
+      pendingReviews.value = new Map(pendingReviews.value)
+    } catch (e: any) {
+      // Not pending or not found — skip silently
+      if (e.code !== 'ERROR_REVIEW_NOT_PENDING' && e.code !== 'ERROR_WORKFLOW_NOT_FOUND') {
+        console.warn(`Failed to fetch review for ${tid}:`, e.message)
+      }
+    } finally {
+      loadingReviewIds.value.delete(tid)
+    }
+  }
+
+  /** Submit decision for a specific thread (queue mode) */
+  async function submitQueueDecision(
+    tid: string,
+    dec: ContentStatus,
+    comment?: string,
+    revs?: Revision[],
+    pubOptions?: PublishOptions,
+  ) {
+    submittingThreadId.value = tid
     isLoading.value = true
     error.value = null
     try {
-      const result = await reviewApi.submitReview(threadId.value, {
+      const result = await reviewApi.submitReview(tid, {
         decision: dec as ReviewDecision,
         comments: comment || '',
         revisions: revs || [],
         publish_options: pubOptions,
       })
       decision.value = dec
-      pendingReview.value = null
+      // Remove from queue on success
+      pendingReviews.value.delete(tid)
+      pendingReviews.value = new Map(pendingReviews.value)
+      // Clear legacy if it matched
+      if (threadId.value === tid) {
+        pendingReview.value = null
+      }
       return result
     } catch (e: any) {
       error.value = e.message
       throw e
     } finally {
       isLoading.value = false
+      submittingThreadId.value = null
     }
+  }
+
+  /** Legacy submitDecision — delegates to current threadId */
+  async function submitDecision(dec: ContentStatus, comment?: string, revs?: Revision[], pubOptions?: PublishOptions) {
+    if (!threadId.value) return
+    return submitQueueDecision(threadId.value, dec, comment, revs, pubOptions)
+  }
+
+  /** Remove a thread from the queue (e.g. no longer awaiting_review) */
+  function removeFromQueue(tid: string) {
+    pendingReviews.value.delete(tid)
+    pendingReviews.value = new Map(pendingReviews.value)
   }
 
   function setComments(comment: string) {
@@ -156,6 +227,7 @@ export const useReviewStore = defineStore('review', () => {
   }
 
   return {
+    // Legacy single-workflow
     threadId,
     pendingReview,
     isLoading,
@@ -173,5 +245,19 @@ export const useReviewStore = defineStore('review', () => {
     setComments,
     addRevision,
     clearRevisions,
+    // Multi-workflow queue
+    pendingReviews,
+    loadingReviewIds,
+    submittingThreadId,
+    queueCount,
+    getQueueCopyContent,
+    getQueueVisualPlan,
+    getQueueVersionHistory,
+    isQueueItemLoading,
+    isQueueItemSubmitting,
+    fetchQueueReview,
+    submitQueueDecision,
+    removeFromQueue,
+    parseCopyContent,
   }
 })
