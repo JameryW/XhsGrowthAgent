@@ -1191,6 +1191,7 @@
     "badgeShooting": "Shooting",
     "badgeVisual": "Visual",
     "badgePublish": "Publish",
-    "badgeAnalytics": "Analytics"
+    "badgeAnalytics": "Analytics",
+    "details": "Details"
   }
 }
