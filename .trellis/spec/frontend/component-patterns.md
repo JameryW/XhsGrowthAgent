@@ -66,6 +66,12 @@
 
 ---
 
+## Route Component Roots
+
+Route components rendered through `PageTransition` must have a single element root. Vue cannot animate fragment roots inside `<Transition mode="out-in">`, and warnings during route changes can obscure real navigation failures. Keep modals/teleports inside the route's root wrapper.
+
+---
+
 ## Composables
 
 - `useLoading.ts` — Loading state management for async operations

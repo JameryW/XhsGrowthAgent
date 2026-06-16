@@ -301,6 +301,7 @@ const handleCancelConfirm = () => {
 </script>
 
 <template>
+  <div class="review-page">
   <ReviewSkeleton v-if="!listLoaded" />
 
   <!-- Empty State -->
@@ -670,5 +671,6 @@ const handleCancelConfirm = () => {
   <!-- Celebration Effect -->
   <div class="relative">
     <CelebrationEffect :is-active="showCelebration" type="confetti" :duration="3000" />
+  </div>
   </div>
 </template>
