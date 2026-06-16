@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useWorkflowStore } from '@/stores'
-import type { CheckpointSnapshot } from '@/types/workflow'
 
 const { t } = useI18n()
 const store = useWorkflowStore()
@@ -18,12 +17,6 @@ function selectCp(id: string) {
 
 async function loadMore() {
   await store.loadMoreCheckpoints()
-}
-
-function formatDate(iso: string | null) {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
 const agentLabelMap: Record<string, string> = {
@@ -53,79 +46,43 @@ function agentLabel(agent: string): string {
   return agentLabelMap[agent] || agent
 }
 
-function hasData(cp: CheckpointSnapshot): boolean {
-  const check = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Record<string, unknown>).length > 0
-  return check(cp.trend_data) || check(cp.content_plan) || check(cp.copy_content) || check(cp.visual_plan) || check(cp.publish_result) || check(cp.analytics) || check(cp.ripple_prediction) || check(cp.ripple_pmf) || check((cp as any).brief_content) || check((cp as any).shooting_plan)
-}
-
-function dataBadges(cp: CheckpointSnapshot): string[] {
-  const badges: string[] = []
-  const check = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Record<string, unknown>).length > 0
-  if (check(cp.trend_data)) badges.push(t('replay.badgeTrend'))
-  if (check(cp.content_plan)) badges.push(t('replay.badgeStrategy'))
-  if (check(cp.copy_content)) badges.push(t('replay.badgeCopy'))
-  if (check((cp as any).brief_content)) badges.push('Brief')
-  if (check((cp as any).shooting_plan)) badges.push(t('replay.badgeShooting'))
-  if (check(cp.visual_plan)) badges.push(t('replay.badgeVisual'))
-  if (check(cp.publish_result)) badges.push(t('replay.badgePublish'))
-  if (check(cp.analytics)) badges.push(t('replay.badgeAnalytics'))
-  if (check(cp.ripple_prediction) || check(cp.ripple_pmf)) badges.push('Ripple')
-  return badges
-}
-
-function phaseColor(phase: string): string {
-  const map: Record<string, string> = {
-    scouting: 'bg-rose-100 text-rose-700 border-rose-200',
-    planning: 'bg-teal-100 text-teal-700 border-teal-200',
-    briefing: 'bg-pink-100 text-pink-700 border-pink-200',
-    creating: 'bg-amber-100 text-amber-700 border-amber-200',
-    reviewing: 'bg-violet-100 text-violet-700 border-violet-200',
-    publishing: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    analyzing: 'bg-sky-100 text-sky-700 border-sky-200',
-    completed: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    error: 'bg-rose-100 text-rose-700 border-rose-200',
-    paused: 'bg-slate-100 text-slate-700 border-slate-200',
-    cancelled: 'bg-slate-100 text-slate-600 border-slate-200',
-  }
-  return map[phase] || 'bg-slate-100 text-slate-600 border-slate-200'
+function formatDate(iso: string | null) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
 const checkpointItems = computed(() =>
   checkpoints.value.map((cp) => ({
-    cp,
+    id: cp.checkpoint_id,
     label: agentLabel(cp.current_agent),
-    badges: dataBadges(cp),
-    hasData: hasData(cp),
-    phaseClass: phaseColor(cp.phase),
+    step: cp.step,
+    date: formatDate(cp.created_at),
     isActive: cp.checkpoint_id === activeId.value,
-    dateLabel: formatDate(cp.created_at),
   }))
 )
 </script>
 
 <template>
-  <div class="space-y-1">
+  <div class="space-y-0.5">
     <div class="text-[10px] text-slate-400 font-medium uppercase tracking-widest mb-2">{{ t('replay.checkpoints') }}</div>
-    <div
+    <button
       v-for="item in checkpointItems"
-      :key="item.cp.checkpoint_id"
-      v-memo="[item.isActive, item.label, item.badges.length, item.hasData]"
-      class="p-2 rounded-lg cursor-pointer transition-all duration-150 border"
+      :key="item.id"
+      v-memo="[item.isActive, item.label]"
+      @click="selectCp(item.id)"
+      class="w-full flex items-center gap-2 py-1.5 px-2 rounded-lg transition-colors text-left"
       :class="item.isActive
-        ? 'liquid-glass-violet border-violet-200 shadow-sm'
-        : 'border-transparent hover:bg-slate-50'"
-      @click="selectCp(item.cp.checkpoint_id)"
+        ? 'bg-slate-800 text-white'
+        : 'hover:bg-slate-50 text-slate-600'"
     >
-      <div class="flex items-center gap-1.5 mb-0.5">
-        <span class="text-[10px] font-medium px-1.5 py-0.5 rounded border" :class="item.phaseClass">{{ item.label }}</span>
-        <span class="text-[10px] text-slate-400 ml-auto">{{ t('replay.step') }} {{ item.cp.step }}</span>
-      </div>
-      <div v-if="item.cp.created_at" class="text-[10px] text-slate-400">{{ item.dateLabel }}</div>
-      <div v-if="item.badges.length" class="flex flex-wrap gap-0.5 mt-1">
-        <span v-for="badge in item.badges" :key="badge" class="text-[9px] px-1 py-0 rounded bg-slate-100 text-slate-500">{{ badge }}</span>
-      </div>
-      <div v-if="!item.hasData" class="text-[9px] text-slate-300 mt-0.5">{{ t('replay.noData') }}</div>
-    </div>
+      <!-- Step number -->
+      <span class="text-[10px] font-mono shrink-0" :class="item.isActive ? 'text-slate-300' : 'text-slate-400'">{{ item.step }}</span>
+      <!-- Agent label -->
+      <span class="text-xs font-medium truncate" :class="item.isActive ? 'text-white' : 'text-slate-700'">{{ item.label }}</span>
+      <!-- Date (only on active or hover) -->
+      <span v-if="item.date" class="text-[10px] ml-auto shrink-0" :class="item.isActive ? 'text-slate-300' : 'text-slate-400'">{{ item.date }}</span>
+    </button>
     <button
       v-if="hasMore"
       @click="loadMore"
