@@ -1088,7 +1088,8 @@
     "featured": "Featured Workflow",
     "loadMore": "Load More",
     "noResults": "No matching workflows",
-    "viewDetail": "View Detail"
+    "viewDetail": "View Detail",
+    "featuredLive": "live"
   },
   "blogger": {
     "selectTitle": "Select Reference Blogger",
@@ -1172,7 +1173,6 @@
     "outputSummary": "Output Summary",
     "keyMetrics": "Key Metrics",
     "publishResult": "Publish Result",
-    "status": "Status",
     "views": "Views",
     "likes": "Likes",
     "collects": "Collects",

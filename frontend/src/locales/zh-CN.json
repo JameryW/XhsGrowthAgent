@@ -1088,7 +1088,8 @@
     "featured": "精选工作流",
     "loadMore": "加载更多",
     "noResults": "没有匹配的工作流",
-    "viewDetail": "查看详情"
+    "viewDetail": "查看详情",
+    "featuredLive": "进行中"
   },
   "blogger": {
     "selectTitle": "选择参考博主",
@@ -1172,7 +1173,6 @@
     "outputSummary": "产出摘要",
     "keyMetrics": "关键指标",
     "publishResult": "发布结果",
-    "status": "状态",
     "views": "浏览",
     "likes": "点赞",
     "collects": "收藏",
