@@ -50,8 +50,5 @@ export default defineConfig({
         rewrite: (path) => path,
       },
     },
-    hmr: {
-      port: 3000,
-    },
   },
 })

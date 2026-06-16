@@ -105,14 +105,19 @@ function handleBriefClear() {
 onMounted(async () => {
   const realtimeStore = useRealtimeStore()
   realtimeStore.connect()
+  // Refresh all tabs first — this also cleans up stale IDs from localStorage
   if (workflowStore.openTabIds.length > 0) {
     await workflowStore.refreshAllTabs()
-    // Subscribe WebSocket for all open tabs to receive progress events
-    for (const id of workflowStore.openTabIds) {
+  }
+  // Subscribe WebSocket for valid open tabs only (after cleanup)
+  const validIds = workflowStore.openTabIds
+  if (validIds.length > 0) {
+    for (const id of validIds) {
       realtimeStore.subscribeWorkflow(id)
     }
     workflowStore.startPolling(workflowStore.currentPhase === 'planning' ? 3000 : 5000)
-  } else if (workflowStore.activeThreadId) {
+  } else if (workflowStore.activeThreadId && workflowStore.workflowStates.has(workflowStore.activeThreadId)) {
+    // Only subscribe if the active thread has valid state
     realtimeStore.subscribeWorkflow(workflowStore.activeThreadId)
     workflowStore.refreshStatus()
     workflowStore.startPolling(workflowStore.currentPhase === 'planning' ? 3000 : 5000)

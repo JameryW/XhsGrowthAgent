@@ -102,3 +102,4 @@ No polling — all updates are push-based via WebSocket/SSE.
 - **Don't** mutate store state directly — use actions
 - **Don't** forget to clean up WebSocket connections on unmount
 - **Don't** use `watch` for things that can be `computed`
+- **Don't** call `useXStore()` from router guards or other module-level code without an explicit shared Pinia instance. Export one `pinia` instance and pass it to the store (`useAuthStore(pinia)`) so navigation never depends on an active component context.

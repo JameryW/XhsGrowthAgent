@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore } from '@/stores'
+import { useAuthStore } from '@/stores/auth'
+import { pinia } from '@/stores/pinia'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -63,7 +64,7 @@ const router = createRouter({
 
 // Auth guard — wait for initialization to avoid flash with stale tokens
 router.beforeEach(async (to, _from, next) => {
-  const authStore = useAuthStore()
+  const authStore = useAuthStore(pinia)
 
   // Wait for auth initialization on first navigation
   if (!authStore.isInitialized) {
