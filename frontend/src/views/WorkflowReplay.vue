@@ -301,7 +301,6 @@ const finalSummary = computed(() => {
                 :cp="selectedCheckpoint"
                 :shooting-plan="resolvedShootingPlan"
                 :hide-draft="true"
-                :show-publish="true"
               />
 
               <!-- Visual designer -->

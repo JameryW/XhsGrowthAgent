@@ -25,8 +25,10 @@ const authStore = useAuthStore()
 const route = useRoute()
 const { isMobile, isTablet } = useBreakpoints()
 
-// Hide Navbar and chrome on login page
+// Hide Navbar and chrome on login page / showcase pages (they manage their own layout)
 const showChrome = computed(() => authStore.isAuthenticated && route.name !== 'login' && route.name !== 'showcase')
+// Showcase page manages its own full-bleed layout — remove App-level padding and mesh background
+const isShowcase = computed(() => route.name === 'showcase')
 const { initOnboarding, skipTour, completeTour, advanceStep } = useOnboarding()
 useShortcuts()
 
@@ -116,8 +118,8 @@ const handleErrorBoundaryRefresh = () => {
 
 <template>
   <div class="h-screen flex relative overflow-hidden">
-    <!-- Liquid glass background mesh -->
-    <div class="liquid-mesh-bg">
+    <!-- Liquid glass background mesh (hidden on showcase — it has its own) -->
+    <div v-if="!isShowcase" class="liquid-mesh-bg">
       <div class="absolute w-[55vw] h-[55vw] top-[30%] left-[30%] rounded-full" style="background: radial-gradient(circle, rgba(139,92,246,0.20) 0%, transparent 60%); animation: mesh-drift-3 22s ease-in-out infinite;" />
     </div>
 
@@ -163,7 +165,7 @@ const handleErrorBoundaryRefresh = () => {
     <main
       id="main-content"
       class="flex-1 overflow-y-auto relative z-10"
-      :class="isMobile ? 'p-3 pb-20' : isTablet ? 'p-4' : 'p-6'"
+      :class="isShowcase ? '' : (isMobile ? 'p-3 pb-20' : isTablet ? 'p-4' : 'p-6')"
       tabindex="-1"
     >
       <ErrorBoundary
