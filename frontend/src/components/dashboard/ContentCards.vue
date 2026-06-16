@@ -9,7 +9,7 @@ const { t } = useI18n()
 const workflowStore = useWorkflowStore()
 
 // Phase order for status lookup
-const phaseOrder = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging', 'completed'] as const
+const phaseOrder = ['scouting', 'planning', 'briefing', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging', 'completed'] as const
 
 const getNodeStatus = (phase: string) => {
   const currentPhase = workflowStore.currentPhase
@@ -434,6 +434,96 @@ function heatBg(score?: number): string {
               <span v-for="tag in ver.hashtags" :key="tag" class="text-[10px] px-1 py-0.5 rounded bg-teal-50 text-teal-600">#{{ tag }}</span>
               <span v-if="ver.style_suggestion" class="text-[10px] px-1 py-0.5 rounded bg-violet-50 text-violet-600">{{ ver.style_suggestion }}</span>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ SHOOTING PLAN ═══ -->
+    <div v-if="hasShootingPlan && showForPhase('creating')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-amber-100/50">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-rose-400 flex items-center justify-center">
+          <AppIcon name="Camera" size="md" variant="white" />
+        </div>
+        <div>
+          <div class="text-sm font-semibold text-slate-800">{{ t('shootingPlan.title') }}</div>
+          <div class="text-xs text-slate-400">{{ shootingPlan.creator_nickname || shootingPlan.content_direction || '' }}</div>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <!-- Creator & type row -->
+        <div v-if="shootingPlan.creator_nickname || shootingPlan.content_type_label || shootingPlan.planned_publish_date" class="flex flex-wrap gap-2 text-xs">
+          <span v-if="shootingPlan.creator_nickname" class="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-100">{{ shootingPlan.creator_nickname }}</span>
+          <span v-if="shootingPlan.content_type_label" class="px-2 py-0.5 rounded-md bg-rose-50 text-rose-600 border border-rose-100">{{ shootingPlan.content_type_label }}</span>
+          <span v-if="shootingPlan.planned_publish_date" class="px-2 py-0.5 rounded-md bg-slate-50 text-slate-500 border border-slate-100">{{ shootingPlan.planned_publish_date }}</span>
+        </div>
+
+        <!-- Product spec -->
+        <div v-if="shootingPlan.product_specification" class="flex items-start gap-2 text-sm">
+          <span class="text-amber-500 font-medium shrink-0 text-xs mt-0.5">{{ t('shootingPlan.product') }}</span>
+          <span class="text-slate-600">{{ shootingPlan.product_specification }}</span>
+        </div>
+
+        <!-- Direction -->
+        <div v-if="shootingPlan.content_direction" class="flex items-start gap-2 text-sm">
+          <span class="text-amber-500 font-medium shrink-0 text-xs mt-0.5">{{ t('shootingPlan.direction') }}</span>
+          <span class="text-slate-600">{{ shootingPlan.content_direction }}</span>
+        </div>
+
+        <!-- Title candidates -->
+        <div v-if="shootingPlan.title_candidates?.length" class="space-y-1">
+          <div class="text-xs text-slate-500 uppercase tracking-wide font-medium mb-1">{{ t('shootingPlan.titleCandidates') }}</div>
+          <div v-for="(title, idx) in shootingPlan.title_candidates" :key="idx" class="text-xs text-slate-700 pl-2 border-l-2 border-amber-200">
+            {{ title }}
+          </div>
+        </div>
+
+        <!-- Body copy -->
+        <div v-if="shootingPlan.body_copy" class="p-3 rounded-lg bg-slate-50 border border-slate-100">
+          <p class="text-xs text-slate-600 line-clamp-4 whitespace-pre-line">{{ shootingPlan.body_copy }}</p>
+        </div>
+
+        <!-- Hashtags -->
+        <div v-if="shootingPlan.required_hashtags?.length || shootingPlan.optional_hashtags?.length || shootingPlan.suggested_hashtags?.length" class="flex flex-wrap gap-1.5">
+          <span v-for="tag in (shootingPlan.required_hashtags || [])" :key="'r-'+tag" class="px-2 py-1 rounded-md bg-rose-50 text-rose-600 text-xs border border-rose-200 font-medium">#{{ tag }}</span>
+          <span v-for="tag in (shootingPlan.suggested_hashtags || [])" :key="'s-'+tag" class="px-2 py-1 rounded-md bg-amber-50 text-amber-600 text-xs border border-amber-100">#{{ tag }}</span>
+          <span v-for="tag in (shootingPlan.optional_hashtags || [])" :key="'o-'+tag" class="px-2 py-1 rounded-md bg-slate-50 text-slate-500 text-xs border border-slate-200">#{{ tag }}</span>
+        </div>
+
+        <!-- Outfits -->
+        <div v-if="shootingPlan.outfits && Object.keys(shootingPlan.outfits).length > 0" class="space-y-1.5">
+          <div class="text-xs text-slate-500 uppercase tracking-wide font-medium">{{ t('shootingPlan.outfits') }}</div>
+          <div v-for="(items, category) in shootingPlan.outfits" :key="category" class="flex items-start gap-2 text-xs">
+            <span class="text-amber-500 font-medium shrink-0">{{ category }}</span>
+            <div class="flex flex-wrap gap-1">
+              <span v-for="item in (items as string[])" :key="item" class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100">{{ item }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Shooting angles -->
+        <div v-if="shootingPlan.shooting_angles?.length" class="space-y-1.5">
+          <div class="text-xs text-slate-500 uppercase tracking-wide font-medium">{{ t('shootingPlan.shootingAngles') }}</div>
+          <div v-for="(angle, idx) in shootingPlan.shooting_angles" :key="idx" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+            <div class="text-xs font-semibold text-slate-700">{{ angle.angle }}</div>
+            <div class="text-[11px] text-slate-500">{{ angle.description }}</div>
+            <div v-if="angle.tips" class="text-[11px] text-amber-500 mt-0.5">{{ t('shootingPlan.tip') }}: {{ angle.tips }}</div>
+          </div>
+        </div>
+
+        <!-- Draft requirements & notes -->
+        <div v-if="shootingPlan.draft_requirements?.length" class="space-y-1">
+          <div class="text-xs text-slate-500 uppercase tracking-wide font-medium">{{ t('shootingPlan.requirements') }}</div>
+          <div v-for="(req, idx) in shootingPlan.draft_requirements" :key="idx" class="text-xs text-slate-600 flex items-start gap-1.5">
+            <span class="text-amber-400 mt-0.5">▸</span>
+            <span>{{ req }}</span>
+          </div>
+        </div>
+        <div v-if="shootingPlan.draft_notes?.length" class="space-y-1">
+          <div v-for="(note, idx) in shootingPlan.draft_notes" :key="idx" class="text-[11px] text-slate-400 flex items-start gap-1.5">
+            <span class="text-amber-300 mt-0.5">▸</span>
+            <span>{{ note }}</span>
           </div>
         </div>
       </div>
