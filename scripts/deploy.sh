@@ -165,6 +165,12 @@ _default:
   url: ${RIPPLE_LLM_URL:-}
   max_tokens: 8192
   json_mode: true
+_providers:
+  topology:
+    impl: synthetic
+    model: ba
+    n: 100
+    seed: 42
 LLMEOF"
     podman exec ripple-service cat /app/llm_config.yaml 2>/dev/null || echo "[warn] llm_config.yaml not found"
 
