@@ -153,7 +153,7 @@ function heatBg(score?: number): string {
           <AppIcon name="FileText" size="md" variant="white" />
         </div>
         <div>
-          <div class="text-sm font-semibold text-slate-800">{{ t('brief.contentTitle') }}</div>
+          <div class="text-base font-bold text-slate-900">{{ t('brief.contentTitle') }}</div>
           <div class="text-xs text-slate-400">{{ briefContent.brand_name || '' }}</div>
         </div>
         <span v-if="briefContent.confidence != null" class="ml-auto text-[10px] px-1.5 py-0.5 rounded-full"
@@ -163,13 +163,13 @@ function heatBg(score?: number): string {
       </div>
 
       <div class="space-y-2">
-        <div v-if="briefContent.product_name" class="flex items-start gap-2 text-sm">
-          <span class="text-pink-500 font-medium shrink-0">{{ t('brief.product') }}</span>
-          <span class="text-slate-700">{{ briefContent.product_name }}</span>
+        <div v-if="briefContent.product_name" class="flex items-start gap-2">
+          <span class="text-pink-500 font-medium shrink-0 text-xs mt-0.5">{{ t('brief.product') }}</span>
+          <span class="text-sm font-semibold text-slate-700">{{ briefContent.product_name }}</span>
         </div>
-        <div v-if="briefContent.content_direction" class="flex items-start gap-2 text-sm">
-          <span class="text-pink-500 font-medium shrink-0">{{ t('brief.direction') }}</span>
-          <span class="text-slate-600">{{ briefContent.content_direction }}</span>
+        <div v-if="briefContent.content_direction" class="flex items-start gap-2">
+          <span class="text-pink-500 font-medium shrink-0 text-xs mt-0.5">{{ t('brief.direction') }}</span>
+          <span class="text-sm font-semibold text-slate-600">{{ briefContent.content_direction }}</span>
         </div>
         <div v-if="briefContent.target_audience" class="flex items-start gap-2 text-sm">
           <span class="text-pink-500 font-medium shrink-0">{{ t('brief.targetAudience') }}</span>
@@ -281,19 +281,19 @@ function heatBg(score?: number): string {
         </div>
       </div>
 
-      <!-- Topic & Angle -->
+      <!-- Topic & Angle — L1/L2 hierarchy -->
       <div class="space-y-2 mb-4">
-        <div v-if="contentPlan.selected_topic" class="flex items-start gap-2 text-sm">
-          <span class="text-cyan-500 font-medium shrink-0">{{ t('dashboard.contentCards.topic') }}</span>
-          <span class="text-slate-700 font-medium">{{ contentPlan.selected_topic }}</span>
+        <div v-if="contentPlan.selected_topic" class="flex items-start gap-2">
+          <span class="text-cyan-500 font-medium shrink-0 text-xs mt-0.5">{{ t('dashboard.contentCards.topic') }}</span>
+          <span class="text-base font-bold text-slate-900 leading-snug">{{ contentPlan.selected_topic }}</span>
         </div>
-        <div v-if="contentPlan.content_angle" class="flex items-start gap-2 text-sm">
-          <span class="text-cyan-500 font-medium shrink-0">{{ t('dashboard.contentCards.angle') }}</span>
-          <span class="text-slate-600">{{ contentPlan.content_angle }}</span>
+        <div v-if="contentPlan.content_angle" class="flex items-start gap-2">
+          <span class="text-cyan-500 font-medium shrink-0 text-xs mt-0.5">{{ t('dashboard.contentCards.angle') }}</span>
+          <span class="text-sm font-semibold text-slate-600">{{ contentPlan.content_angle }}</span>
         </div>
         <div v-if="contentPlan.target_audience" class="flex items-start gap-2 text-sm">
           <span class="text-cyan-500 font-medium shrink-0">{{ t('dashboard.contentCards.audience') }}</span>
-          <span class="text-slate-600">{{ contentPlan.target_audience }}</span>
+          <span class="text-slate-500">{{ contentPlan.target_audience }}</span>
         </div>
       </div>
 
@@ -344,9 +344,9 @@ function heatBg(score?: number): string {
         </div>
       </div>
 
-      <!-- Title -->
+      <!-- Title — L1 primary -->
       <div v-if="copyContent.selected_title" class="mb-3">
-        <div class="text-sm font-semibold text-slate-800">{{ copyContent.selected_title }}</div>
+        <div class="text-base font-bold text-slate-900 leading-snug">{{ copyContent.selected_title }}</div>
       </div>
 
       <!-- Title candidates -->
@@ -497,19 +497,19 @@ function heatBg(score?: number): string {
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div v-if="analytics.views !== undefined" class="rounded-lg p-3 bg-slate-50 border border-slate-100 text-center">
-          <div class="text-xs text-slate-500">{{ t('dashboard.contentCards.views') }}</div>
+          <div class="text-[10px] text-slate-400 uppercase tracking-wide">{{ t('dashboard.contentCards.views') }}</div>
           <div class="text-lg font-bold text-slate-700">{{ formatNum(analytics.views) }}</div>
         </div>
         <div v-if="analytics.likes !== undefined" class="rounded-lg p-3 bg-pink-50 border border-pink-100 text-center">
-          <div class="text-xs text-slate-500">{{ t('dashboard.contentCards.likes') }}</div>
+          <div class="text-[10px] text-slate-400 uppercase tracking-wide">{{ t('dashboard.contentCards.likes') }}</div>
           <div class="text-lg font-bold text-pink-600">{{ formatNum(analytics.likes) }}</div>
         </div>
         <div v-if="analytics.collects !== undefined" class="rounded-lg p-3 bg-amber-50 border border-amber-100 text-center">
-          <div class="text-xs text-slate-500">{{ t('dashboard.contentCards.collects') }}</div>
+          <div class="text-[10px] text-slate-400 uppercase tracking-wide">{{ t('dashboard.contentCards.collects') }}</div>
           <div class="text-lg font-bold text-amber-600">{{ formatNum(analytics.collects) }}</div>
         </div>
         <div v-if="analytics.engagement_rate !== undefined" class="rounded-lg p-3 bg-teal-50 border border-teal-100 text-center">
-          <div class="text-xs text-slate-500">{{ t('dashboard.contentCards.engagement') }}</div>
+          <div class="text-[10px] text-slate-400 uppercase tracking-wide">{{ t('dashboard.contentCards.engagement') }}</div>
           <div class="text-lg font-bold text-teal-600">{{ (analytics.engagement_rate * 100).toFixed(1) }}%</div>
         </div>
       </div>

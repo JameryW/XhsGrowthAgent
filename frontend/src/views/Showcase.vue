@@ -707,22 +707,22 @@ const visibleCards = computed(() =>
             :class="[card.statusClass]"
             @click="goReplay(card.wf.thread_id)"
           >
-            <!-- Card header -->
+            <!-- Card header with integrated progress -->
             <div class="px-4 md:px-5 py-2.5 flex items-center justify-between border-b border-white/10 liquid-glass-inset">
-              <div class="flex items-center gap-1.5 min-w-0">
+              <div class="flex items-center gap-1.5 min-w-0 flex-1">
                 <span class="w-2 h-2 rounded-full shrink-0" :class="card.dotClass" />
                 <span class="text-xs font-semibold text-slate-800 truncate">{{ card.title }}</span>
                 <span class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0" :class="card.badgeClass">{{ card.statusText }}</span>
                 <span v-if="card.wf.workflow_mode" class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 shrink-0">{{ card.wf.workflow_mode }}</span>
+                <!-- Inline progress bar + percent -->
+                <div class="hidden sm:flex items-center gap-1.5 ml-1">
+                  <div class="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-500" :class="card.progressClass" :style="{ width: `${card.wf.progress_percent}%` }" />
+                  </div>
+                  <span class="text-[10px] text-slate-400 tabular-nums shrink-0">{{ card.wf.progress_percent }}%</span>
+                </div>
               </div>
               <span class="text-[10px] text-slate-400 shrink-0 ml-2">{{ card.updatedLabel }}</span>
-            </div>
-            <!-- Progress bar -->
-            <div class="px-4 pt-2 flex items-center gap-2">
-              <div class="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                <div class="h-full rounded-full transition-all duration-500" :class="card.progressClass" :style="{ width: `${card.wf.progress_percent}%` }" />
-              </div>
-              <span class="text-[10px] text-slate-400 tabular-nums shrink-0">{{ card.wf.progress_percent }}%</span>
             </div>
             <!-- Card body -->
             <div class="relative min-h-[60px]">
