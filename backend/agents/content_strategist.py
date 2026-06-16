@@ -76,6 +76,19 @@ class ContentStrategistAgent(BaseAgent):
         # 使用 Ripple 预测传播效果 + PMF 验证（并行调用，带超时保护）
         ripple_timeout = Settings().ripple.workflow_timeout or _DEFAULT_RIPPLE_TIMEOUT
 
+        # Build environment context from trend data to improve Ripple's
+        # input_completeness and evidence_balance (P1 optimization).
+        ripple_env: dict[str, Any] | None = None
+        if trend_data or niche:
+            ripple_env = {}
+            if niche:
+                ripple_env["niche"] = niche
+            hot_topics = trend_data.get("hot_topics") or trend_data.get("trending_topics") or []
+            if hot_topics:
+                ripple_env["competing_topics"] = hot_topics[:5]
+            if trend_data.get("market_saturation"):
+                ripple_env["market_saturation"] = trend_data["market_saturation"]
+
         result = {
             "content_plan": content_plan,
             "phase": WorkflowPhase.PLANNING,
@@ -87,6 +100,7 @@ class ContentStrategistAgent(BaseAgent):
                     content_plan,
                     max_wait=ripple_timeout,
                     thread_id=thread_id,
+                    environment=ripple_env,
                 )
             except RippleTimeoutError as e:
                 logger.warning(f"Ripple spread prediction timed out: job_id={e.job_id}")
@@ -244,11 +258,13 @@ class ContentStrategistAgent(BaseAgent):
         content_plan: dict,
         max_wait: float = _DEFAULT_RIPPLE_TIMEOUT,
         thread_id: str | None = None,
+        environment: dict[str, Any] | None = None,
     ) -> dict | None:
         """调用 Ripple 预测内容传播效果
 
         Args:
             max_wait: 最大等待时间（秒），传递给 RippleService
+            environment: 环境上下文（竞争格局、季节性、平台趋势）
 
         Returns:
             包含 ripple_job_id 和预测数据的 dict，或 None
@@ -270,6 +286,7 @@ class ContentStrategistAgent(BaseAgent):
                 simulation_horizon="48h",
                 max_wait=max_wait,
                 thread_id=thread_id,
+                environment=environment,
             )
 
             if result.get("ripple_prediction"):

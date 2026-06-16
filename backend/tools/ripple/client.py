@@ -88,7 +88,7 @@ async def ripple_predict_content_spread(
     platform: str = "xiaohongshu",
     max_waves: int = 8,
     simulation_horizon: str = "48h",
-    ensemble_runs: int = 1,
+    ensemble_runs: int = 3,
 ) -> dict[str, Any]:
     """预测小红书内容传播效果 — 使用 Ripple CAS 引擎模拟内容在平台上的传播路径、互动数据和爆发概率。
 

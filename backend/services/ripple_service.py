@@ -544,16 +544,20 @@ class RippleService:
         description: str = "",
         max_waves: int = 8,
         simulation_horizon: str = "48h",
+        ensemble_runs: int = 3,
         use_fallback: bool = True,
         max_wait: float = 1800.0,
         thread_id: str | None = None,
+        environment: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """预测内容传播效果
 
         Args:
+            ensemble_runs: 并行模拟次数（≥3 改善 evidence_balance 和 ensemble_stability）
             use_fallback: 服务不可用时是否使用默认值
             max_wait: 最大等待时间（秒），传递给 submit_and_wait
             thread_id: 关联的工作流线程 ID，用于推送进度事件
+            environment: 环境上下文（竞争格局、季节性、平台趋势），提高 input_completeness
         """
         if tags is None:
             tags = []
@@ -580,12 +584,15 @@ class RippleService:
                 "tone": tone,
                 "description": description,
             }
+            if environment:
+                event["environment"] = environment
             request_body = {
                 "skill": "social-media",
                 "platform": "xiaohongshu",
                 "event": event,
                 "max_waves": max_waves,
                 "simulation_horizon": simulation_horizon,
+                "ensemble_runs": ensemble_runs,
             }
 
             result = await self.submit_and_wait(
@@ -608,6 +615,7 @@ class RippleService:
         category: str,
         description: str,
         differentiators: list[str] | None = None,
+        ensemble_runs: int = 3,
         use_fallback: bool = True,
         max_wait: float = 1800.0,
         thread_id: str | None = None,
@@ -615,6 +623,7 @@ class RippleService:
         """验证产品市场契合度
 
         Args:
+            ensemble_runs: 并行模拟次数（≥3 改善 evidence_balance 和 ensemble_stability）
             max_wait: 最大等待时间（秒），传递给 submit_and_wait
             thread_id: 关联的工作流线程 ID，用于推送进度事件
         """
@@ -648,6 +657,7 @@ class RippleService:
                 "vertical": "fmcg",
                 "platform": "xiaohongshu",
                 "event": event,
+                "ensemble_runs": ensemble_runs,
             }
 
             result = await self.submit_and_wait(request_body, max_wait=max_wait, thread_id=thread_id)

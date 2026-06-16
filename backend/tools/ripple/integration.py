@@ -44,14 +44,18 @@ async def predict_spread(
     description: str = "",
     max_waves: int = 8,
     simulation_horizon: str = "48h",
+    ensemble_runs: int = 3,
     max_wait: float = 1800.0,
     thread_id: str | None = None,
+    environment: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """预测内容传播效果 — 供 ContentStrategist 和 Copywriter 调用
 
     Args:
+        ensemble_runs: 并行模拟次数（≥3 改善 evidence_balance 和 ensemble_stability）
         max_wait: 最大等待时间（秒），传递给 RippleService.submit_and_wait
         thread_id: 关联的工作流线程 ID，用于推送进度事件
+        environment: 环境上下文（竞争格局、季节性、平台趋势），提高 input_completeness
 
     Returns:
         - ripple_job_id: 模拟任务 ID
@@ -70,8 +74,10 @@ async def predict_spread(
             description=description,
             max_waves=max_waves,
             simulation_horizon=simulation_horizon,
+            ensemble_runs=ensemble_runs,
             max_wait=max_wait,
             thread_id=thread_id,
+            environment=environment,
         )
         return result
     except RippleTimeoutError:
