@@ -230,13 +230,56 @@ function goReplay(threadId: string) { router.push({ name: 'replay', params: { th
 
 const isEmpty = computed(() => listLoaded.value && workflows.value.length === 0)
 
-// Featured workflow: first completed or running workflow with the most progress
+// Featured workflow: weighted scoring from filtered pool
+const MAX_RECENCY_SECONDS = 7 * 24 * 3600 // 7 days
+
+function featuredScore(wf: WorkflowListItem): number {
+  const progressScore = wf.progress_percent / 100
+  const updatedMs = new Date(wf.updated_at || wf.created_at).getTime()
+  const ageSeconds = (Date.now() - updatedMs) / 1000
+  const recencyScore = Math.max(0, 1 - ageSeconds / MAX_RECENCY_SECONDS)
+  return 0.6 * progressScore + 0.4 * recencyScore
+}
+
+// Urgency ranking for needs_attention mode (higher = more urgent)
+const ATTENTION_URGENCY: Record<string, number> = {
+  error: 4,
+  stale: 3,
+  paused: 2,
+  cancelled: 1,
+}
+
+type FeaturedMode = 'normal' | 'needs_attention'
+
+const featuredMode = computed<FeaturedMode | null>(() => {
+  if (statusFilter.value === 'needs_attention') return 'needs_attention'
+  return 'normal'
+})
+
 const featuredWorkflow = computed<WorkflowListItem | null>(() => {
-  const completed = workflows.value.filter(w => w.status === 'completed' && !w.dry_run)
-  if (completed.length > 0) return completed[0]
-  const running = workflows.value.filter(w => w.status === 'running')
-  if (running.length > 0) return running[0]
-  return null
+  // Pool: use filteredWorkflows (follows statusFilter + modeFilter)
+  const pool = filteredWorkflows.value
+
+  if (featuredMode.value === 'needs_attention') {
+    // Needs attention: pick most urgent, break ties by recency
+    const attention = pool
+      .filter(w => w.status in ATTENTION_URGENCY)
+      .sort((a, b) => {
+        const urgencyDiff = (ATTENTION_URGENCY[b.status] || 0) - (ATTENTION_URGENCY[a.status] || 0)
+        if (urgencyDiff !== 0) return urgencyDiff
+        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      })
+    return attention[0] || null
+  }
+
+  // Normal mode: completed + all active statuses, exclude dry_run, score-based
+  const eligible = pool.filter(w => {
+    if (w.dry_run) return false
+    return w.status === 'completed' || isRunningStatus(w.status)
+  })
+
+  if (eligible.length === 0) return null
+  return eligible.reduce((best, wf) => featuredScore(wf) > featuredScore(best) ? wf : best, eligible[0])
 })
 
 const featuredDetail = computed<WorkflowStateResponse | undefined>(() => {
@@ -595,15 +638,19 @@ const visibleCards = computed(() =>
         <!-- ══════════════════════════════════════════════════════════════
              Layer 3: Featured workflow
              ══════════════════════════════════════════════════════════════ -->
-        <div v-if="featuredWorkflow && featuredDetail" class="mb-5 md:mb-6 rounded-xl liquid-glass-emerald liquid-glass-hover overflow-hidden cursor-pointer" @click="goReplay(featuredWorkflow.thread_id)">
+        <div v-if="featuredWorkflow && featuredDetail" class="mb-5 md:mb-6 rounded-xl overflow-hidden cursor-pointer transition-shadow hover:shadow-md"
+             :class="[featuredMode === 'needs_attention' ? 'liquid-glass-rose liquid-glass-hover' : 'liquid-glass-emerald liquid-glass-hover']"
+             @click="goReplay(featuredWorkflow.thread_id)">
           <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-white/10 liquid-glass-inset">
             <div class="flex items-center gap-2">
-              <span class="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-              <span class="text-sm font-semibold text-slate-800">{{ t('showcase.featured') }}</span>
-              <span class="text-xs px-2 py-0.5 rounded-full bg-rose-50 text-rose-600">live</span>
+              <span v-if="featuredMode === 'needs_attention'" class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+              <span v-else class="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+              <span class="text-sm font-semibold text-slate-800">{{ featuredMode === 'needs_attention' ? t('showcase.featuredAttention') : t('showcase.featured') }}</span>
+              <span v-if="featuredMode === 'needs_attention'" class="text-xs px-2 py-0.5 rounded-full bg-rose-100 text-rose-600">⚠</span>
+              <span v-else class="text-xs px-2 py-0.5 rounded-full bg-rose-50 text-rose-600">{{ t('showcase.featuredLive') }}</span>
             </div>
             <div class="flex items-center gap-3">
-              <span class="text-xs text-slate-400">{{ formatDate(featuredWorkflow.created_at) }}</span>
+              <span class="text-xs text-slate-400">{{ formatDate(featuredWorkflow.updated_at || featuredWorkflow.created_at) }}</span>
               <AppIcon name="ArrowRight" size="sm" variant="cyan" class="text-slate-400" />
             </div>
           </div>
