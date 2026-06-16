@@ -235,16 +235,20 @@ async def submit_ripple_decision(thread_id: str, decision: RippleDecision, reque
         logger.warning(f"Reselect limit reached for {thread_id}, forcing accept")
         action = "accept"
 
-    # Update state before resuming for retopic (clear stale data)
+    # Update state before resuming for reangle/retopic (clear stale data)
     # NOTE: reselect_count increment is owned by ripple_gate_node only —
     # do NOT increment here to avoid double-counting.
-    if action == "retopic":
+    if action in ("reangle", "retopic"):
         updates: dict = {
-            "trend_data": {},
-            "content_plan": {},
-            "ripple_prediction": {},
-            "ripple_pmf": {},
+            "ripple_progress": {},
         }
+        if action == "retopic":
+            updates.update({
+                "trend_data": {},
+                "content_plan": {},
+                "ripple_prediction": {},
+                "ripple_pmf": {},
+            })
         await graph.aupdate_state(config, updates, as_node=_runner._get_as_node(state))
 
     # Resume the graph with the user's decision

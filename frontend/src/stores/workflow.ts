@@ -202,16 +202,19 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const rippleComparison = computed(() => effectiveState.value?.ripple_comparison || {})
   const rippleReason = computed(() => effectiveState.value?.ripple_reason || '')
 
-  // Ripple progress for active thread — aggregated across parallel jobs
+  // Ripple progress for active thread — aggregated across active jobs only
+  // Completed jobs are excluded to prevent regression when new jobs start after reangle/retopic
   const rippleProgress = computed<RippleThreadProgress | null>(() => {
     if (!activeThreadId.value) return null
     const jobs = rippleProgressMap.value.get(activeThreadId.value)
     if (!jobs || Object.keys(jobs).length === 0) return null
     const entries = Object.values(jobs)
     const active = entries.filter(j => j.status !== 'completed' && j.status !== 'done' && j.status !== 'finished')
-    const avgProgress = entries.length > 0
-      ? entries.reduce((sum, j) => sum + (j.progress || (j.total_waves > 0 ? j.current_wave / j.total_waves : 0)), 0) / entries.length
-      : 0
+    // Only average active jobs for progress — completed jobs don't contribute
+    // When all jobs are completed, show 100% (simulation finished)
+    const avgProgress = active.length > 0
+      ? active.reduce((sum, j) => sum + (j.progress || (j.total_waves > 0 ? j.current_wave / j.total_waves : 0)), 0) / active.length
+      : entries.length > 0 ? 1 : 0
     return {
       jobs,
       overall_progress: avgProgress,
@@ -423,12 +426,35 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (!msg.thread_id) return
     const progress = msg.payload as RippleProgress
     const current = rippleProgressMap.value.get(msg.thread_id) || {}
+    // When a new job starts (low progress) after reangle/retopic,
+    // clear completed old jobs to prevent progress regression
+    if (progress.progress <= 0.05 && progress.status === 'running') {
+      const otherKeys = Object.keys(current).filter(k => k !== progress.job_id)
+      const hasCompleted = otherKeys.some(k =>
+        current[k].status === 'completed' || current[k].status === 'done' || current[k].status === 'finished'
+      )
+      if (hasCompleted) {
+        // Remove old completed jobs — new simulation starting
+        for (const k of otherKeys) {
+          if (current[k].status === 'completed' || current[k].status === 'done' || current[k].status === 'finished') {
+            delete current[k]
+          }
+        }
+      }
+    }
     current[progress.job_id] = progress
     rippleProgressMap.value.set(msg.thread_id, { ...current })
   })
 
-  watch(() => workflowState.value?.ripple_prediction, (val) => {
-    if (val && Object.keys(val).length > 0 && activeThreadId.value) {
+  watch(() => workflowState.value?.ripple_prediction, (val, oldVal) => {
+    if (!activeThreadId.value) return
+    // When ripple_prediction is cleared (retopic/reangle resets), clear stale progress
+    const wasCleared = oldVal && Object.keys(oldVal).length > 0 && (!val || Object.keys(val).length === 0)
+    if (wasCleared) {
+      rippleProgressMap.value.delete(activeThreadId.value)
+      return
+    }
+    if (val && Object.keys(val).length > 0) {
       // Only clear progress when ALL jobs are done
       const jobs = rippleProgressMap.value.get(activeThreadId.value)
       if (jobs) {
