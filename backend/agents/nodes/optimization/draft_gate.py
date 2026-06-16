@@ -29,14 +29,12 @@ async def draft_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[st
     copy_content = state.get("copy_content") or {}
     selected_blogger = state.get("selected_blogger") or {}
 
-    # When entering from blogger_gate (selected_blogger present), always
-    # re-interrupt so the user can review/edit the draft in the new context
-    # (blogger notes, shooting plan may have changed).
-    # Otherwise, if the user already submitted a draft, skip interrupt.
-    from_blogger_gate = bool(selected_blogger and selected_blogger.get("user_id"))
+    # If the user already submitted a draft (via submit_draft API), skip
+    # interrupt regardless of entry path (blogger or non-blogger).
+    # The API (optimization.py) writes draft_content with source != "ai_generated"
+    # before resuming, so we can trust that as a user-submitted draft.
     if (
-        not from_blogger_gate
-        and draft_content
+        draft_content
         and draft_content.get("text")
         and draft_content.get("source") != "ai_generated"
     ):

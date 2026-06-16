@@ -32,7 +32,7 @@ class TestBriefModeNoText:
 
         # Patch dependencies
         with patch("backend.api.routes.workflow._db_upsert", new_callable=AsyncMock), \
-             patch("backend.api.routes.workflow._background_tasks", {}):
+             patch("backend.api.routes._runner._background_tasks", {}):
             # The start endpoint should create checkpoint and return early
             # (actual endpoint test requires full FastAPI test client)
             pass

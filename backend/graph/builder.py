@@ -158,13 +158,13 @@ def build_graph() -> StateGraph:
     )
 
     # ── 发布前优化流程 ──
-    # copywriter → [draft_gate | visual_designer] (brief mode skips draft_gate)
+    # copywriter → [draft_gate | __end__] (terminal states → __end__)
     builder.add_conditional_edges(
         "copywriter",
         copywriter_router,
         {
             "draft_gate": "draft_gate",
-            "visual_designer": "visual_designer",
+            "__end__": "__end__",
         },
     )
 
@@ -185,23 +185,24 @@ def build_graph() -> StateGraph:
     # blogger_scout → blogger_gate (interrupt for user selection)
     builder.add_edge("blogger_scout", "blogger_gate")
 
-    # blogger_gate → [copywriter | draft_gate | visual_designer]
+    # blogger_gate → [copywriter | draft_gate | __end__]
     # Brief mode: copywriter (AI generates copy from brief + blogger notes)
     # Trend mode: draft_gate (user writes draft manually)
+    # Terminal: __end__
     builder.add_conditional_edges(
         "blogger_gate",
         blogger_gate_router,
         {
             "copywriter": "copywriter",
             "draft_gate": "draft_gate",
-            "visual_designer": "visual_designer",
+            "__end__": "__end__",
         },
     )
 
     # content_analyzer → version_generator (生成版本)
     builder.add_edge("content_analyzer", "version_generator")
 
-    # version_generator → [choice_gate | visual_designer]
+    # version_generator → [choice_gate | visual_designer | __end__]
     # (conditional — only enter choice_gate if multiple versions)
     builder.add_conditional_edges(
         "version_generator",
@@ -209,6 +210,7 @@ def build_graph() -> StateGraph:
         {
             "choice_gate": "choice_gate",
             "visual_designer": "visual_designer",
+            "__end__": "__end__",
         },
     )
 
@@ -225,13 +227,14 @@ def build_graph() -> StateGraph:
     # viral_matcher already routes to blogger_scout above (trend and brief modes share this path)
     # blogger_gate routes based on workflow mode via blogger_gate_router
 
-    # shooting_planner → [content_analyzer | visual_designer] (trend→analyzer, brief→visual)
+    # shooting_planner → [content_analyzer | visual_designer | __end__]
     builder.add_conditional_edges(
         "shooting_planner",
         shooting_planner_router,
         {
             "content_analyzer": "content_analyzer",
             "visual_designer": "visual_designer",
+            "__end__": "__end__",
         },
     )
 

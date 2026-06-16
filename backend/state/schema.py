@@ -7,6 +7,7 @@ from langgraph.graph.message import add_messages
 from backend.state.enums import WorkflowMode, WorkflowPhase
 from backend.state.reducers import append_list as _append_list
 from backend.state.reducers import merge_dict as _merge_dict
+from backend.state.reducers import replace as _replace
 from backend.state.substates import (
     AnalyticsSnapshot,
     BloggerNote,
@@ -98,14 +99,14 @@ class XHSGrowthState(TypedDict, total=False):
 
     # ── 博主参考系统 ──
 
-    # 候选博主列表 (供用户选择)
-    blogger_candidates: Annotated[list[BloggerProfile], _append_list]
+    # 候选博主列表 (供用户选择) — replace: each blogger_scout run replaces the full list
+    blogger_candidates: Annotated[list[BloggerProfile], _replace]
 
-    # 用户选中的博主
-    selected_blogger: Annotated[dict, _merge_dict]
+    # 用户选中的博主 — replace: returning {} clears old selection (vs merge_dict which preserves)
+    selected_blogger: Annotated[dict, _replace]
 
-    # 选中博主的 top 笔记
-    blogger_notes: Annotated[list[BloggerNote], _append_list]
+    # 选中博主的 top 笔记 — replace: each selection replaces the full list
+    blogger_notes: Annotated[list[BloggerNote], _replace]
 
     # 博主选择被跳过 (无候选或用户跳过)
     blogger_skipped: bool

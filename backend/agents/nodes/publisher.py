@@ -13,7 +13,13 @@ _publisher = PublisherAgent()
 
 
 async def publisher_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
-    """Execute publisher agent and emit workflow completed event."""
+    """Execute publisher agent — does NOT emit WORKFLOW_COMPLETED here.
+
+    The completed event is emitted by _runner._emit_status_transition when
+    derive_status returns COMPLETED, which happens only after the graph has
+    fully finished (including analyst → engagement). Emitting it here would
+    prematurely close SSE streams and skip downstream nodes.
+    """
     _check_cancelled(state)
     thread_id = state.get("session_id")
     event_bus = EventBusService.get_instance()
@@ -34,23 +40,5 @@ async def publisher_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str
             "status": result.get("publish_result", {}).get("status", "unknown"),
         },
     )
-
-    # Emit workflow completed event after publish
-    if result.get("publish_result"):
-        event_bus.emit(
-            EventType.WORKFLOW_COMPLETED,
-            thread_id=thread_id,
-            payload={
-                "publish_result": result.get("publish_result"),
-                "copy_content": state.get("copy_content"),
-                "trend_data": state.get("trend_data"),
-                "content_plan": state.get("content_plan"),
-                "visual_plan": state.get("visual_plan"),
-                "analytics": state.get("analytics"),
-                "ripple_prediction": state.get("ripple_prediction"),
-                "ripple_pmf": state.get("ripple_pmf"),
-                "ripple_comparison": state.get("ripple_comparison"),
-            },
-        )
 
     return NodeResult(result, "publisher").to_dict()

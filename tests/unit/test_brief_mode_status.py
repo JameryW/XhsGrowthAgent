@@ -63,10 +63,10 @@ class TestBloggerGateRouter:
         }
         assert blogger_gate_router(state) == "draft_gate"
 
-    def test_terminal_state_routes_to_visual_designer(self):
+    def test_terminal_state_routes_to_end(self):
         for phase in (WorkflowPhase.PAUSED, WorkflowPhase.CANCELLED, WorkflowPhase.ERROR):
             state = {"phase": phase, "workflow_mode": "brief"}
-            assert blogger_gate_router(state) == "visual_designer"
+            assert blogger_gate_router(state) == "__end__"
 
 
 # ── draft_gate_router ─────────────────────────────────────────────────────────

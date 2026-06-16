@@ -229,10 +229,10 @@ class TestShouldPresentChoice:
         state = {"content_versions": [{"version_id": "v1"}, {"version_id": "v2"}]}
         assert should_present_choice(state) == "choice_gate"
 
-    def test_terminal_state_routes_to_visual_designer(self):
-        """Terminal state → visual_designer (not __end__, which isn't in mapping)."""
+    def test_terminal_state_routes_to_end(self):
+        """Terminal state → __end__ (not visual_designer)."""
         state = {
             "phase": WorkflowPhase.CANCELLED,
             "content_versions": [{"version_id": "v1"}, {"version_id": "v2"}],
         }
-        assert should_present_choice(state) == "visual_designer"
+        assert should_present_choice(state) == "__end__"

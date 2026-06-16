@@ -11,16 +11,13 @@ from backend.state.schema import XHSGrowthState
 def _check_terminal(state: XHSGrowthState) -> str | None:
     """Return '__end__' if workflow is in terminal state, else None.
 
-    Terminal states: cancelled, paused, error phase.
+    Terminal states: cancelled, paused, error, completed.
     Note: state.get("error") alone is NOT terminal — the workflow may retry
     or have next nodes that can recover. Only phase=ERROR is terminal.
     """
     phase = state.get("phase")
-    if phase == WorkflowPhase.CANCELLED:
-        return "__end__"
-    if phase == WorkflowPhase.PAUSED:
-        return "__end__"
-    if phase == WorkflowPhase.ERROR:
+    if phase in (WorkflowPhase.CANCELLED, WorkflowPhase.PAUSED,
+                 WorkflowPhase.ERROR, WorkflowPhase.COMPLETED):
         return "__end__"
     return None
 
@@ -138,10 +135,10 @@ def engagement_router(state: XHSGrowthState) -> Literal["orchestrator", "__end__
     return "__end__"
 
 
-def should_optimize(state: XHSGrowthState) -> Literal["content_analyzer", "visual_designer"]:
+def should_optimize(state: XHSGrowthState) -> Literal["content_analyzer", "visual_designer", "__end__"]:
     """判断是否进入优化流程 — always optimize unless explicitly skipped."""
-    if state.get("error") and state.get("phase") == WorkflowPhase.ERROR:
-        return "visual_designer"
+    if terminal := _check_terminal(state):
+        return terminal
 
     if state.get("skip_optimization"):
         return "visual_designer"
@@ -154,17 +151,15 @@ def choice_outcome(state: XHSGrowthState) -> Literal["visual_designer"]:
     return "visual_designer"
 
 
-def should_present_choice(state: XHSGrowthState) -> Literal["choice_gate", "visual_designer"]:
+def should_present_choice(state: XHSGrowthState) -> Literal["choice_gate", "visual_designer", "__end__"]:
     """Route after version generation — only enter choice_gate if multiple versions exist.
 
     When there is a single version or no versions, auto-select and skip
     directly to visual_designer. This avoids an unnecessary interrupt when
     there is nothing for the user to choose.
     """
-    if _check_terminal(state):
-        # Terminal state — route to visual_designer which will eventually
-        # end via its own downstream routers
-        return "visual_designer"
+    if terminal := _check_terminal(state):
+        return terminal
 
     versions = state.get("content_versions", [])
     if len(versions) > 1:
@@ -175,37 +170,37 @@ def should_present_choice(state: XHSGrowthState) -> Literal["choice_gate", "visu
 
 def shooting_planner_router(
     state: XHSGrowthState,
-) -> Literal["content_analyzer", "visual_designer"]:
+) -> Literal["content_analyzer", "visual_designer", "__end__"]:
     """Route after shooting_planner — both modes go to content_analyzer
     for optimization (content analysis -> version generation -> choice -> visual).
-    Falls back to visual_designer if skip_optimization or terminal state.
+    Falls back to visual_designer if skip_optimization, or __end__ for terminal state.
     """
-    if _check_terminal(state):
-        return "visual_designer"
+    if terminal := _check_terminal(state):
+        return terminal
 
     return should_optimize(state)
 
 
 def should_brief_or_optimize(
     state: XHSGrowthState,
-) -> Literal["shooting_planner", "content_analyzer", "visual_designer"]:
+) -> Literal["shooting_planner", "__end__"]:
     """Route after viral_matcher — both modes go to shooting_planner."""
-    if _check_terminal(state):
-        return "visual_designer"
+    if terminal := _check_terminal(state):
+        return terminal
 
     return "shooting_planner"
 
 
 def blogger_gate_router(
     state: XHSGrowthState,
-) -> Literal["copywriter", "draft_gate", "visual_designer"]:
+) -> Literal["copywriter", "draft_gate", "__end__"]:
     """Route after blogger_gate — brief mode goes to copywriter, trend mode to draft_gate.
 
     Brief mode: blogger_gate → copywriter (AI generates copy from brief + blogger notes)
     Trend mode: blogger_gate → draft_gate (user writes draft manually)
     """
-    if _check_terminal(state):
-        return "visual_designer"
+    if terminal := _check_terminal(state):
+        return terminal
 
     mode = state.get("workflow_mode", "trend")
     if mode == "brief":
@@ -245,12 +240,12 @@ def draft_gate_router(
 
 def copywriter_router(
     state: XHSGrowthState,
-) -> Literal["draft_gate", "visual_designer"]:
+) -> Literal["draft_gate", "__end__"]:
     """Route after copywriter — both modes go to draft_gate for review.
-    Returns visual_designer only for terminal states.
+    Returns __end__ for terminal states.
     """
-    if _check_terminal(state):
-        return "visual_designer"
+    if terminal := _check_terminal(state):
+        return terminal
 
     return "draft_gate"
 
