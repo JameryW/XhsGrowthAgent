@@ -722,19 +722,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
     await Promise.allSettled(promises)
     // Auto-close tabs for workflows that no longer exist
     for (const id of failedIds) {
-      const idx = openTabIds.value.indexOf(id)
-      if (idx >= 0) {
-        openTabIds.value.splice(idx, 1)
-        workflowStates.value.delete(id)
-        delete tabLabels.value[id]
-      }
+      // ponytail: reuse closeTab logic — it also fixes activeThreadId and unsubscribes WS
+      closeTab(id)
     }
-    if (failedIds.length > 0) {
-      saveOpenTabs(openTabIds.value)
-      saveTabLabels(tabLabels.value)
-    }
-    // Persist any synced labels from API
-    saveTabLabels(tabLabels.value)
     // Update active tab progress
     if (activeThreadId.value) {
       const state = workflowStates.value.get(activeThreadId.value)
