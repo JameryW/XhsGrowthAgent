@@ -25,7 +25,7 @@ const prefilledTopic = ref<string | null>(null)
 
 // Form state
 const formConfig = ref<WorkflowConfig>({
-  accountId: 'default',
+  accountId: '',
   phase: 'scouting',
   dryRun: false,
   autoPublish: false,

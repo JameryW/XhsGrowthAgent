@@ -1,4 +1,4 @@
-"""Database layer — workflow metadata persistence via PostgreSQL."""
+"""Database layer — workflow metadata + account/credential management via PostgreSQL."""
 
 from backend.db.pool import close_pool, get_pool, init_pool, is_pool_ready
 from backend.db.workflows import (
@@ -8,6 +8,25 @@ from backend.db.workflows import (
     get_workflow,
     list_workflows,
     update_workflow,
+)
+from backend.db.accounts import (
+    AccountRow,
+    CredentialRow,
+    CREDENTIAL_KEYS,
+    create_account,
+    delete_account,
+    get_account,
+    get_active_account,
+    list_accounts,
+    set_active_account,
+    update_account,
+    list_credentials,
+    set_credentials,
+    delete_credential,
+    activate_credentials,
+    deactivate_credentials,
+    load_active_credentials,
+    ensure_tables as ensure_account_tables,
 )
 
 __all__ = [
@@ -21,4 +40,21 @@ __all__ = [
     "list_workflows",
     "update_workflow",
     "delete_workflow",
+    "AccountRow",
+    "CredentialRow",
+    "CREDENTIAL_KEYS",
+    "create_account",
+    "delete_account",
+    "get_account",
+    "get_active_account",
+    "list_accounts",
+    "set_active_account",
+    "update_account",
+    "list_credentials",
+    "set_credentials",
+    "delete_credential",
+    "activate_credentials",
+    "deactivate_credentials",
+    "load_active_credentials",
+    "ensure_account_tables",
 ]

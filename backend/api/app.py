@@ -41,6 +41,14 @@ async def lifespan(app: FastAPI):
             from backend.db.workflows import ensure_table
             await ensure_table()
 
+            # 2b) Ensure accounts + credentials tables exist
+            from backend.db.accounts import ensure_tables as ensure_account_tables
+            await ensure_account_tables()
+
+            # 2c) Load active account credentials into os.environ
+            from backend.db.accounts import load_active_credentials
+            await load_active_credentials()
+
             # 3) Compile graph with production checkpointer (uses its own pool)
             from backend.graph.builder import compile_graph_prod
             graph, result = await compile_graph_prod(db_uri)
@@ -104,6 +112,7 @@ app.add_middleware(
 app.middleware("http")(error_handler_middleware)
 
 from backend.api.routes import (  # noqa: E402
+    accounts,
     analytics,
     auth,
     blogger,
@@ -115,6 +124,7 @@ from backend.api.routes import (  # noqa: E402
 from backend.api.routes.system import router as system_router  # noqa: E402
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(accounts.router, prefix="/api/accounts", tags=["accounts"])
 app.include_router(workflow.router, prefix="/api/workflow", tags=["workflow"])
 app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
