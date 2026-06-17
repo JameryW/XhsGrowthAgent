@@ -198,8 +198,8 @@ const handleLogout = async () => {
           <button
             @click="router.push('/settings')"
             class="text-xs text-slate-400 hover:text-teal-500 transition-colors flex items-center gap-1"
-            :aria-label="t('nav.settings', 'Settings')"
-            :title="t('nav.settings', 'Settings')"
+            :aria-label="t('nav.settings')"
+            :title="t('nav.settings')"
           >
             <AppIcon name="Settings" size="xs" variant="cyan" />
           </button>
@@ -232,8 +232,8 @@ const handleLogout = async () => {
           <button
             @click="router.push('/settings')"
             class="p-2 rounded-lg text-slate-400 hover:text-teal-500 hover:bg-teal-50 transition-all"
-            :aria-label="t('nav.settings', 'Settings')"
-            :title="t('nav.settings', 'Settings')"
+            :aria-label="t('nav.settings')"
+            :title="t('nav.settings')"
           >
             <AppIcon name="Settings" size="sm" variant="cyan" />
           </button>

@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
     if db_uri:
         try:
             # 1) Initialize app-level DB pool (for workflows table)
-            from backend.db.pool import close_pool, init_pool
+            from backend.db.pool import init_pool
             await init_pool()
 
             # 2) Ensure workflows table exists

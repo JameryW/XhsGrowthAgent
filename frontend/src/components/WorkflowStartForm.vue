@@ -188,9 +188,9 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
                  transition-all duration-300 ease-out appearance-none
                  focus:outline-none focus:border-neon-pink/40 focus:bg-white focus:shadow-neon-pink-sm"
         >
-          <option value="" disabled>{{ t('home.form.accountIdPlaceholder', '选择账号') }}</option>
+          <option value="" disabled>{{ t('home.form.accountIdPlaceholder') }}</option>
           <option v-for="acc in accountsStore.accountOptions" :key="acc.id" :value="acc.id">
-            {{ acc.name }}{{ acc.isActive ? ' (活跃)' : '' }}
+            {{ acc.name }}{{ acc.isActive ? ` (${t('settings.active')})` : '' }}
           </option>
         </select>
         <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">

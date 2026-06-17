@@ -279,9 +279,17 @@ async def delete_credential(account_id: str, key_name: str) -> bool:
 async def activate_credentials(account_id: str) -> dict[str, str]:
     """Load an account's credentials and push them to os.environ (hot reload).
 
+    Clears all DB-managed keys from os.environ first so a previously-active
+    account's keys don't leak into the new one (e.g. switching from an account
+    with ANTHROPIC_API_KEY set to one without).
+
     Returns the dict of {env_var: value} that was loaded.
     """
     import os
+
+    # Clear stale keys from any previously-active account
+    for key in CREDENTIAL_KEYS:
+        os.environ.pop(key, None)
 
     creds = await list_credentials(account_id)
     loaded = {}

@@ -92,7 +92,8 @@
       "reconnect": "重新连接"
     },
     "appName": "增长引擎",
-    "systemInfo": "系统信息"
+    "systemInfo": "系统信息",
+    "settings": "设置"
   },
   "home": {
     "title": "小红书增长引擎",
@@ -111,8 +112,8 @@
     "trendMode": "趋势发现模式",
     "form": {
       "accountId": "账号 ID",
-      "accountIdPlaceholder": "输入账号标识",
-      "accountIdHelp": "用于区分不同小红书账号的工作流",
+      "accountIdPlaceholder": "选择账号",
+      "accountIdHelp": "选择运行此工作流的账号；可在「设置」中管理账号和凭证",
       "startPhase": "起始阶段",
       "options": "运行选项",
       "dryRun": "试运行模式",
@@ -1193,5 +1194,38 @@
     "badgePublish": "发布",
     "badgeAnalytics": "分析",
     "details": "详情"
+  },
+  "settings": {
+    "title": "账号与密钥管理",
+    "subtitle": "管理小红书账号和 API Key 配置",
+    "accounts": "账号列表",
+    "accountNamePlaceholder": "账号名称",
+    "addAccount": "添加",
+    "noAccounts": "暂无账号，请添加第一个账号",
+    "active": "活跃",
+    "activate": "设为活跃",
+    "credentialsFor": "凭证配置",
+    "saveCredentials": "保存",
+    "enterValue": "输入新值，留空则删除",
+    "edit": "编辑",
+    "delete": "删除",
+    "notSet": "(未设置)",
+    "willDelete": "(将删除)",
+    "groups": {
+      "llmProviders": "LLM 提供商",
+      "xhsPlatform": "小红书平台",
+      "rippleCas": "Ripple CAS",
+      "searchEmbedding": "搜索与嵌入"
+    },
+    "toasts": {
+      "accountCreated": "账号 \"{name}\" 已创建",
+      "accountDeleted": "账号 \"{name}\" 已删除",
+      "activeSwitched": "活跃账号已切换",
+      "credsSaved": "凭证已保存并生效",
+      "credDeleted": "已删除 {key}"
+    },
+    "confirm": {
+      "delete": "确定删除账号 \"{name}\"？此操作不可撤销。"
+    }
   }
 }
