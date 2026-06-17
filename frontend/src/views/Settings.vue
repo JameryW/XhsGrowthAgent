@@ -43,8 +43,12 @@ watch(editingAccountId, async (id) => {
   }
 })
 
-onMounted(() => {
-  store.fetchAccounts()
+onMounted(async () => {
+  await store.fetchAccounts()
+  // Auto-select the active account so the credentials panel opens immediately
+  if (store.activeAccountId) {
+    editingAccountId.value = store.activeAccountId
+  }
 })
 
 async function createAccount() {
