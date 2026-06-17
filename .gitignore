@@ -42,8 +42,11 @@ Thumbs.db
 .pnpm-store/
 node_modules/
 
-# Trellis workspace (personal journals, indices — per-developer)
-.trellis/workspace/
+# Trellis runtime/cache (journals, indices, and tasks ARE tracked)
+.trellis/.backup-*
+.trellis/.runtime/
+.trellis/.cache/
+.trellis/.template-hashes.json
 .claude/worktrees/
 
 # AI-generated planning/spec docs (process artifacts, not source of truth)

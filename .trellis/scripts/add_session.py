@@ -128,13 +128,19 @@ def create_new_journal_file(
     dev_dir: Path, num: int, developer: str, today: str, max_lines: int = 2000,
 ) -> Path:
     """Create a new journal file."""
-    prev_num = num - 1
     new_file = dev_dir / f"{FILE_JOURNAL_PREFIX}{num}.md"
+    parent = new_file.parent
+    parent.mkdir(parents=True, exist_ok=True)
+
+    if num > 0:
+        prev_num = num - 1
+        continuation = f"> Continuation from `{FILE_JOURNAL_PREFIX}{prev_num}.md` (archived at ~{max_lines} lines)\n"
+    else:
+        continuation = "> AI development session journal\n"
 
     content = f"""# Journal - {developer} (Part {num})
 
-> Continuation from `{FILE_JOURNAL_PREFIX}{prev_num}.md` (archived at ~{max_lines} lines)
-> Started: {today}
+{continuation}> Started: {today}
 
 ---
 
@@ -426,6 +432,13 @@ def add_session(
 
     target_file = journal_file
     target_num = current_num
+
+    # No journal file exists yet (first session): create journal-0.md before appending.
+    if target_file is None:
+        target_num = current_num if current_num > 0 else 0
+        print(f"[!] No journal file found, creating {FILE_JOURNAL_PREFIX}{target_num}.md", file=sys.stderr)
+        target_file = create_new_journal_file(dev_dir, target_num, developer, today, max_lines)
+        print(f"Created: {target_file}", file=sys.stderr)
 
     if current_lines + content_lines > max_lines:
         target_num = current_num + 1
