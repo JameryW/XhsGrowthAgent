@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 35
+- **Total Sessions**: 36
 - **Last Active**: 2026-06-17
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-
+| `journal-0.md` | ~70 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 36 | 2026-06-17 | Fix add_session.py skipping journal file on first session | `dd4b2f79` | `feat/account-bootstrap-and-encryption` |
 | 35 | 2026-06-17 | Account bootstrap from os.environ + auto-select on load | `db1d52cd` | `feat/account-bootstrap-and-encryption` |
 | 34 | 2026-06-17 | Fix shooting plan card visibility in trend mode | `cf0936c6`, `126e64ed`, `5f652bc2` | `fix/shooting-plan-card-visibility` |
 | 33 | 2026-06-16 | Showcase nav gap fix + Review multi-workflow queue | `52186b70`, `3e6cc92c` | `feat/review-multi-workflow-queue` |

@@ -35,3 +35,36 @@ Bootstrapped a default account from os.environ at load time and auto-selected it
 ### Next Steps
 
 - None - task complete
+
+
+## Session 36: Fix add_session.py skipping journal file on first session
+
+**Date**: 2026-06-17
+**Task**: Fix add_session.py skipping journal file on first session
+**Branch**: `feat/account-bootstrap-and-encryption`
+
+### Summary
+
+Fixed add_session.py: when no journal-*.md exists, target_file stayed None and the session append was skipped (landed only in index.md). Now create the journal file first; also mkdir parent and emit a non-continuation header for part 0. Verified cases A/B/C. Narrowed root .gitignore so trellis journals/tasks are tracked.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dd4b2f79` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
