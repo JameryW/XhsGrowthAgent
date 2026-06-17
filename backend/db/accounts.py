@@ -314,13 +314,38 @@ async def deactivate_credentials() -> None:
 async def load_active_credentials() -> dict[str, str]:
     """On startup: load the active account's credentials into os.environ.
 
-    Returns empty dict if no active account (env vars stay as-is).
+    If no accounts exist yet, bootstrap a 'default' account seeded from the
+    current os.environ — so first-time users coming from a .env-only setup
+    don't have to re-paste every key in the UI.
+
+    Returns empty dict if bootstrap had nothing to seed.
     """
     active = await get_active_account()
     if active is None:
-        logger.info("No active account found — env vars unchanged")
-        return {}
+        await _bootstrap_default_account()
+        active = await get_active_account()
+        if active is None:
+            return {}
     return await activate_credentials(active.id)
+
+
+async def _bootstrap_default_account() -> None:
+    """Create a 'default' active account, seeded from os.environ.
+
+    No-op if any account already exists (keeps idempotent across restarts).
+    """
+    import os
+
+    accounts = await list_accounts()
+    if accounts:
+        return
+
+    acc = await create_account(name="default", is_active=False)
+    await set_active_account(acc.id)
+    seed = {k: os.environ[k] for k in CREDENTIAL_KEYS if os.environ.get(k)}
+    if seed:
+        await set_credentials(acc.id, seed)
+    logger.info(f"Bootstrapped default account with {len(seed)} keys from os.environ")
 
 
 # ── Helpers ──
