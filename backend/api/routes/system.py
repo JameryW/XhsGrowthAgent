@@ -273,6 +273,16 @@ async def system_health():
             "message": "无法检测检查点模式",
         }
 
+    # Active account info (from DB-managed accounts, if available)
+    active_account = None
+    try:
+        from backend.db.accounts import get_active_account
+        acc = await get_active_account()
+        if acc:
+            active_account = {"id": acc.id, "name": acc.name}
+    except Exception:
+        pass
+
     checks = {
         "llm_providers": llm,
         "xhs_platform": xhs,
@@ -282,11 +292,13 @@ async def system_health():
         "memory_store": memory,
     }
 
-    return success(
-        data={
-            "status": overall,
-            "checks": checks,
-            "version": "0.1.0",
-            "timestamp": datetime.now(UTC).isoformat(),
-        }
-    )
+    result_data = {
+        "status": overall,
+        "checks": checks,
+        "version": "0.1.0",
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+    if active_account:
+        result_data["active_account"] = active_account
+
+    return success(data=result_data)

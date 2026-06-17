@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import BriefFileUpload from '@/components/BriefFileUpload.vue'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useAccountsStore } from '@/stores/accounts'
 import type { WorkflowPhase } from '@/types/workflow'
 
 const { t } = useI18n()
 const workflowStore = useWorkflowStore()
+const accountsStore = useAccountsStore()
 
 export type WorkflowMode = 'trend' | 'brief'
 
@@ -27,7 +29,7 @@ const props = defineProps<{
 }>()
 
 const workflowMode = ref<WorkflowMode>('trend')
-const accountId = ref('default')
+const accountId = ref('')
 const phase = ref<WorkflowPhase>('scouting')
 const dryRun = ref(false)
 const autoPublish = ref(false)
@@ -39,6 +41,22 @@ const hasPdfUpload = computed(() => !!briefPdfText.value)
 
 const pendingPdfFile = ref<File | null>(null)
 const pendingPdfName = computed(() => pendingPdfFile.value?.name ?? null)
+
+// Load accounts and auto-select the active one
+onMounted(async () => {
+  try {
+    await accountsStore.fetchAccounts()
+    // Auto-select active account
+    if (accountsStore.activeAccountId) {
+      accountId.value = accountsStore.activeAccountId
+    } else if (accountsStore.accountOptions.length > 0) {
+      accountId.value = accountsStore.accountOptions[0].id
+    }
+  } catch {
+    // Accounts API unavailable — fallback to 'default'
+    accountId.value = 'default'
+  }
+})
 
 async function onBriefPdfUpload(file: File) {
   // Extract text immediately for preview — no thread ID needed
@@ -164,15 +182,20 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
         {{ t('home.form.accountId') }}
       </label>
       <div class="relative">
-        <input
+        <select
           v-model="accountId"
-          type="text"
-          class="w-full pl-4 pr-4 py-3 rounded-xl border-2 border-slate-100 bg-slate-50/50 text-sm text-slate-700 font-medium
-                 transition-all duration-300 ease-out
-                 focus:outline-none focus:border-neon-pink/40 focus:bg-white focus:shadow-neon-pink-sm
-                 placeholder:text-slate-300 placeholder:font-normal"
-          :placeholder="t('home.form.accountIdPlaceholder')"
-        />
+          class="w-full pl-4 pr-10 py-3 rounded-xl border-2 border-slate-100 bg-slate-50/50 text-sm text-slate-700 font-medium
+                 transition-all duration-300 ease-out appearance-none
+                 focus:outline-none focus:border-neon-pink/40 focus:bg-white focus:shadow-neon-pink-sm"
+        >
+          <option value="" disabled>{{ t('home.form.accountIdPlaceholder', '选择账号') }}</option>
+          <option v-for="acc in accountsStore.accountOptions" :key="acc.id" :value="acc.id">
+            {{ acc.name }}{{ acc.isActive ? ' (活跃)' : '' }}
+          </option>
+        </select>
+        <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+          <AppIcon name="ChevronDown" size="sm" variant="cyan" />
+        </div>
         <div class="absolute inset-0 rounded-xl bg-gradient-to-r from-neon-pink/5 to-neon-cyan/5 opacity-0 group-focus-within:opacity-100 transition-opacity duration-300 pointer-events-none" />
       </div>
       <p class="text-xs text-slate-400 mt-1.5 pl-1">{{ t('home.form.accountIdHelp') }}</p>

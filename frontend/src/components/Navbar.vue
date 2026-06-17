@@ -188,13 +188,21 @@ const handleLogout = async () => {
           <LanguageSwitcher />
         </div>
 
-        <!-- Actions: Help + Logout -->
+        <!-- Actions: Help + Settings + Logout -->
         <div class="flex items-center gap-2">
           <HelpCenter
             @open-faq="handleOpenFaq"
             @open-shortcuts="handleOpenShortcuts"
             @send-feedback="handleSendFeedback"
           />
+          <button
+            @click="router.push('/settings')"
+            class="text-xs text-slate-400 hover:text-teal-500 transition-colors flex items-center gap-1"
+            :aria-label="t('nav.settings', 'Settings')"
+            :title="t('nav.settings', 'Settings')"
+          >
+            <AppIcon name="Settings" size="xs" variant="cyan" />
+          </button>
           <button
             v-if="authStore.isAuthenticated"
             @click="handleLogout"
@@ -220,6 +228,15 @@ const handleLogout = async () => {
             }"
             :title="realtimeStore.connectionStatus"
           />
+          <!-- Settings -->
+          <button
+            @click="router.push('/settings')"
+            class="p-2 rounded-lg text-slate-400 hover:text-teal-500 hover:bg-teal-50 transition-all"
+            :aria-label="t('nav.settings', 'Settings')"
+            :title="t('nav.settings', 'Settings')"
+          >
+            <AppIcon name="Settings" size="sm" variant="cyan" />
+          </button>
           <!-- Logout -->
           <button
             v-if="authStore.isAuthenticated"
