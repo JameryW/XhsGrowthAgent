@@ -21,10 +21,10 @@ const isSavingCreds = ref(false)
 
 // ── Credential key groups ──
 const CRED_GROUPS = [
-  { label: 'LLM Providers', keys: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'DEEPSEEK_API_KEY', 'DASHSCOPE_API_KEY', 'XIAOMIMIMO_API_KEY'] },
-  { label: 'XHS Platform', keys: ['XHS_COOKIE', 'XHS_USER_ID'] },
-  { label: 'Ripple CAS', keys: ['RIPPLE_BASE_URL', 'RIPPLE_API_TOKEN', 'RIPPLE_ENABLED', 'RIPPLE_LLM_MODEL_PLATFORM', 'RIPPLE_LLM_MODEL_NAME', 'RIPPLE_LLM_API_KEY', 'RIPPLE_LLM_URL'] },
-  { label: 'Search & Embedding', keys: ['TAVILY_API_KEY', 'XHS_EMBED_MODEL', 'XHS_EMBED_BASE_URL'] },
+  { labelKey: 'settings.groups.llmProviders', keys: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'DEEPSEEK_API_KEY', 'DASHSCOPE_API_KEY', 'XIAOMIMIMO_API_KEY'] },
+  { labelKey: 'settings.groups.xhsPlatform', keys: ['XHS_COOKIE', 'XHS_USER_ID'] },
+  { labelKey: 'settings.groups.rippleCas', keys: ['RIPPLE_BASE_URL', 'RIPPLE_API_TOKEN', 'RIPPLE_ENABLED', 'RIPPLE_LLM_MODEL_PLATFORM', 'RIPPLE_LLM_MODEL_NAME', 'RIPPLE_LLM_API_KEY', 'RIPPLE_LLM_URL'] },
+  { labelKey: 'settings.groups.searchEmbedding', keys: ['TAVILY_API_KEY', 'XHS_EMBED_MODEL', 'XHS_EMBED_BASE_URL'] },
 ]
 
 const editingAccount = computed(() =>
@@ -53,7 +53,7 @@ async function createAccount() {
   try {
     const account = await store.createAccount(newAccountName.value.trim())
     newAccountName.value = ''
-    toast.success(`账号 "${account.name}" 已创建`)
+    toast.success(t('settings.toasts.accountCreated', { name: account.name }))
     // Auto-select the new account
     editingAccountId.value = account.id
   } catch (e: any) {
@@ -66,20 +66,20 @@ async function createAccount() {
 async function activateAccount(accountId: string) {
   try {
     await store.setActiveAccount(accountId)
-    toast.success('活跃账号已切换')
+    toast.success(t('settings.toasts.activeSwitched'))
   } catch (e: any) {
     toast.error(e.message)
   }
 }
 
 async function removeAccount(accountId: string, name: string) {
-  if (!confirm(`确定删除账号 "${name}"？此操作不可撤销。`)) return
+  if (!confirm(t('settings.confirm.delete', { name }))) return
   try {
     await store.removeAccount(accountId)
     if (editingAccountId.value === accountId) {
       editingAccountId.value = null
     }
-    toast.success(`账号 "${name}" 已删除`)
+    toast.success(t('settings.toasts.accountDeleted', { name }))
   } catch (e: any) {
     toast.error(e.message)
   }
@@ -100,7 +100,7 @@ async function saveCredentials() {
   try {
     await store.saveCredentials(editingAccountId.value, toSave)
     credEdits.value = {}
-    toast.success('凭证已保存并生效')
+    toast.success(t('settings.toasts.credsSaved'))
   } catch (e: any) {
     toast.error(e.message)
   } finally {
@@ -112,7 +112,7 @@ async function deleteCred(keyName: string) {
   if (!editingAccountId.value) return
   try {
     await store.removeCredential(editingAccountId.value, keyName)
-    toast.success(`已删除 ${keyName}`)
+    toast.success(t('settings.toasts.credDeleted', { key: keyName }))
   } catch (e: any) {
     toast.error(e.message)
   }
@@ -122,11 +122,11 @@ function getCredDisplay(keyName: string): string {
   // If user is editing this key, show the edit value
   if (credEdits.value[keyName] !== undefined) {
     const val = credEdits.value[keyName]
-    return val ? '●●●●' + val.slice(-4) : '(将删除)'
+    return val ? '●●●●' + val.slice(-4) : t('settings.willDelete')
   }
   // Otherwise show from DB
   const cred = store.credentials.find(c => c.key_name === keyName)
-  return cred?.masked_value || '(未设置)'
+  return cred?.masked_value || t('settings.notSet')
 }
 
 function isCredSet(keyName: string): boolean {
@@ -155,33 +155,33 @@ function cancelEditCred(keyName: string) {
         <AppIcon name="Settings" size="md" variant="white" />
       </div>
       <div>
-        <h1 class="text-xl font-bold text-slate-800">{{ t('settings.title', '账号与密钥管理') }}</h1>
-        <p class="text-xs text-slate-400">{{ t('settings.subtitle', '管理小红书账号和 API Key 配置') }}</p>
+        <h1 class="text-xl font-bold text-slate-800">{{ t('settings.title') }}</h1>
+        <p class="text-xs text-slate-400">{{ t('settings.subtitle') }}</p>
       </div>
     </div>
 
     <!-- Account List -->
     <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-3">
       <div class="flex items-center justify-between">
-        <h2 class="text-sm font-semibold text-slate-700">{{ t('settings.accounts', '账号列表') }}</h2>
+        <h2 class="text-sm font-semibold text-slate-700">{{ t('settings.accounts') }}</h2>
         <!-- Create new account -->
         <form @submit.prevent="createAccount" class="flex items-center gap-2">
           <input
             v-model="newAccountName"
             type="text"
-            :placeholder="t('settings.accountNamePlaceholder', '账号名称')"
+            :placeholder="t('settings.accountNamePlaceholder')"
             class="px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none w-40"
           />
           <NeonButton variant="pink" size="sm" :loading="isCreating" type="submit">
             <AppIcon name="Plus" size="xs" variant="white" />
-            <span class="ml-1">{{ t('settings.addAccount', '添加') }}</span>
+            <span class="ml-1">{{ t('settings.addAccount') }}</span>
           </NeonButton>
         </form>
       </div>
 
       <!-- Empty state -->
       <div v-if="store.accounts.length === 0" class="text-center py-8 text-slate-400 text-sm">
-        {{ t('settings.noAccounts', '暂无账号，请添加第一个账号') }}
+        {{ t('settings.noAccounts') }}
       </div>
 
       <!-- Account cards -->
@@ -200,7 +200,7 @@ function cancelEditCred(keyName: string) {
         </span>
         <!-- Active badge -->
         <span v-if="account.is_active" class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-600 font-medium">
-          {{ t('settings.active', '活跃') }}
+          {{ t('settings.active') }}
         </span>
         <!-- Actions -->
         <div class="flex items-center gap-1" @click.stop>
@@ -209,7 +209,7 @@ function cancelEditCred(keyName: string) {
             @click="activateAccount(account.id)"
             class="text-xs text-teal-600 hover:text-teal-700 px-2 py-1 rounded hover:bg-teal-50 transition-colors"
           >
-            {{ t('settings.activate', '设为活跃') }}
+            {{ t('settings.activate') }}
           </button>
           <button
             @click="removeAccount(account.id, account.name)"
@@ -225,7 +225,7 @@ function cancelEditCred(keyName: string) {
     <div v-if="editingAccount" class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-4">
       <div class="flex items-center justify-between">
         <h2 class="text-sm font-semibold text-slate-700">
-          {{ t('settings.credentialsFor', '凭证配置') }} — {{ editingAccount.name }}
+          {{ t('settings.credentialsFor') }} — {{ editingAccount.name }}
         </h2>
         <NeonButton
           v-if="Object.keys(credEdits).length > 0"
@@ -235,13 +235,13 @@ function cancelEditCred(keyName: string) {
           @click="saveCredentials"
         >
           <AppIcon name="Save" size="xs" variant="white" />
-          <span class="ml-1">{{ t('settings.saveCredentials', '保存') }}</span>
+          <span class="ml-1">{{ t('settings.saveCredentials') }}</span>
         </NeonButton>
       </div>
 
       <!-- Credential groups -->
-      <div v-for="group in CRED_GROUPS" :key="group.label" class="space-y-2">
-        <h3 class="text-xs font-medium text-slate-400 uppercase tracking-wider">{{ group.label }}</h3>
+      <div v-for="group in CRED_GROUPS" :key="group.labelKey" class="space-y-2">
+        <h3 class="text-xs font-medium text-slate-400 uppercase tracking-wider">{{ t(group.labelKey) }}</h3>
         <div class="space-y-1.5">
           <div v-for="keyName in group.keys" :key="keyName"
             class="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-slate-50/80 transition-colors"
@@ -256,7 +256,7 @@ function cancelEditCred(keyName: string) {
                 v-if="credEdits[keyName] !== undefined"
                 v-model="credEdits[keyName]"
                 type="password"
-                :placeholder="t('settings.enterValue', '输入新值，留空则删除')"
+                :placeholder="t('settings.enterValue')"
                 class="w-full px-2 py-1 text-sm rounded border border-rose-200 bg-white focus:border-rose-400 outline-none"
                 @keydown.escape="cancelEditCred(keyName)"
               />
@@ -277,10 +277,10 @@ function cancelEditCred(keyName: string) {
                 </button>
               </template>
               <template v-else>
-                <button @click="startEditCred(keyName)" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors" :title="t('settings.edit', '编辑')">
+                <button @click="startEditCred(keyName)" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors" :title="t('settings.edit')">
                   <AppIcon name="Pencil" size="xs" variant="cyan" />
                 </button>
-                <button v-if="isCredSet(keyName)" @click="deleteCred(keyName)" class="p-1 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors" :title="t('settings.delete', '删除')">
+                <button v-if="isCredSet(keyName)" @click="deleteCred(keyName)" class="p-1 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors" :title="t('settings.delete')">
                   <AppIcon name="Trash2" size="xs" variant="pink" />
                 </button>
               </template>

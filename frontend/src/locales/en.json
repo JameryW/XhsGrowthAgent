@@ -92,7 +92,8 @@
       "reconnect": "Reconnect"
     },
     "appName": "Growth Engine",
-    "systemInfo": "System Info"
+    "systemInfo": "System Info",
+    "settings": "Settings"
   },
   "home": {
     "title": "XHS Growth Engine",
@@ -111,8 +112,8 @@
     "trendMode": "Trend Discovery",
     "form": {
       "accountId": "Account ID",
-      "accountIdPlaceholder": "Enter account identifier",
-      "accountIdHelp": "Used to distinguish workflows for different accounts",
+      "accountIdPlaceholder": "Select an account",
+      "accountIdHelp": "Choose the account to run this workflow under; manage accounts and credentials in Settings",
       "startPhase": "Starting Phase",
       "options": "Run Options",
       "dryRun": "Dry Run Mode",
@@ -1193,5 +1194,38 @@
     "badgePublish": "Publish",
     "badgeAnalytics": "Analytics",
     "details": "Details"
+  },
+  "settings": {
+    "title": "Account & API Key Management",
+    "subtitle": "Manage XHS accounts and API key configuration",
+    "accounts": "Account List",
+    "accountNamePlaceholder": "Account name",
+    "addAccount": "Add",
+    "noAccounts": "No accounts yet. Add your first account.",
+    "active": "Active",
+    "activate": "Set Active",
+    "credentialsFor": "Credentials",
+    "saveCredentials": "Save",
+    "enterValue": "Enter new value, leave empty to delete",
+    "edit": "Edit",
+    "delete": "Delete",
+    "notSet": "(not set)",
+    "willDelete": "(will delete)",
+    "groups": {
+      "llmProviders": "LLM Providers",
+      "xhsPlatform": "XHS Platform",
+      "rippleCas": "Ripple CAS",
+      "searchEmbedding": "Search & Embedding"
+    },
+    "toasts": {
+      "accountCreated": "Account \"{name}\" created",
+      "accountDeleted": "Account \"{name}\" deleted",
+      "activeSwitched": "Active account switched",
+      "credsSaved": "Credentials saved",
+      "credDeleted": "Deleted {key}"
+    },
+    "confirm": {
+      "delete": "Delete account \"{name}\"? This cannot be undone."
+    }
   }
 }

@@ -48,7 +48,7 @@ def _make_mock_conn(cursor):
 @pytest.mark.asyncio
 async def test_set_and_list_credentials():
     """set_credentials stores encrypted values, list_credentials returns masked."""
-    from backend.db.accounts import set_credentials, list_credentials
+    from backend.db.accounts import list_credentials, set_credentials
     from backend.db.crypto import encrypt_value
 
     # set_credentials: uses pool.connection() then conn.execute()
@@ -135,10 +135,45 @@ async def test_set_credentials_empty_value_deletes():
     assert any("DELETE" in str(c) for c in calls)
 
 
+@pytest.mark.asyncio
+async def test_activate_clears_previous_account_keys():
+    """Switching active account must wipe stale keys before loading new ones.
+
+    Regression: account A had ANTHROPIC_API_KEY, switching to B (no anthropic
+    key) must remove it from os.environ — otherwise agents read stale creds.
+    """
+    from backend.db.accounts import activate_credentials
+    from backend.db.crypto import encrypt_value
+
+    # Simulate previous account having left ANTHROPIC + XHS_COOKIE in env
+    os.environ["ANTHROPIC_API_KEY"] = "stale-from-account-A"
+    os.environ["XHS_COOKIE"] = "stale-cookie-A"
+
+    # New account B only has OPENAI_API_KEY
+    encrypted = encrypt_value("sk-openai-new")
+    list_cursor = AsyncMock()
+    list_cursor.fetchall.return_value = [
+        {"account_id": "acc-B", "key_name": "OPENAI_API_KEY", "encrypted_value": encrypted}
+    ]
+    list_conn = _make_mock_conn(list_cursor)
+    pool = _make_mock_pool(list_conn)
+
+    with patch("backend.db.accounts.get_pool", return_value=pool):
+        loaded = await activate_credentials("acc-B")
+
+    assert os.environ.get("OPENAI_API_KEY") == "sk-openai-new"
+    assert "ANTHROPIC_API_KEY" not in os.environ, "stale key from previous account leaked"
+    assert "XHS_COOKIE" not in os.environ, "stale cookie from previous account leaked"
+    assert loaded == {"OPENAI_API_KEY": "sk-openai-new"}
+
+    os.environ.pop("OPENAI_API_KEY", None)
+
+
 if __name__ == "__main__":
     import asyncio
     asyncio.run(test_set_and_list_credentials())
     asyncio.run(test_activate_credentials_sets_env())
     asyncio.run(test_deactivate_credentials_removes_env())
     asyncio.run(test_set_credentials_empty_value_deletes())
+    asyncio.run(test_activate_clears_previous_account_keys())
     print("All accounts tests passed")

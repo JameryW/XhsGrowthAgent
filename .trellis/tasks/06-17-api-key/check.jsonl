@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify DB table creation follows project conventions"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify CRUD error responses match project patterns"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify test coverage meets quality bar"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Verify Settings page follows component conventions"}
