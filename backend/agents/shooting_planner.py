@@ -33,8 +33,12 @@ class ShootingPlannerAgent(BaseAgent):
             user_msg = self._build_brief_prompt(brief, viral_refs)
         elif content_plan and content_plan.get("selected_topic"):
             user_msg = self._build_trend_prompt(content_plan, copy_content, trend_data, viral_refs)
+        elif copy_content and (copy_content.get("selected_title") or copy_content.get("body_text")):
+            # ponytail: fallback — content_plan may be empty in older workflows
+            # that ran before content_plan was persisted; copy_content is sufficient
+            user_msg = self._build_trend_prompt(content_plan, copy_content, trend_data, viral_refs)
         else:
-            logger.info("No brief or content plan available, skipping shooting plan")
+            logger.info("No brief, content plan, or copy content available, skipping shooting plan")
             return {
                 "shooting_plan": {},
                 "phase": WorkflowPhase.CREATING,

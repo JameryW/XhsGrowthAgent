@@ -8,7 +8,6 @@ import WorkflowHeader from '@/components/dashboard/WorkflowHeader.vue'
 import WorkflowTimeline from '@/components/dashboard/WorkflowTimeline.vue'
 import ContentCards from '@/components/dashboard/ContentCards.vue'
 import OptimizationPanel from '@/components/dashboard/OptimizationPanel.vue'
-import ShootingPlanPanel from '@/components/dashboard/ShootingPlanPanel.vue'
 import ActionButtons from '@/components/dashboard/ActionButtons.vue'
 import BloggerSelectionPanel from '@/components/dashboard/BloggerSelectionPanel.vue'
 import BriefFileUpload from '@/components/BriefFileUpload.vue'
@@ -39,10 +38,6 @@ const showOptimization = computed(() =>
 )
 const showBloggerSelection = computed(() =>
   workflowStore.isAwaitingBloggerSelection
-)
-const showShootingPlan = computed(() =>
-  !!workflowStore.workflowState?.shooting_plan &&
-  Object.keys(workflowStore.workflowState.shooting_plan).length > 0
 )
 const showBriefUpload = computed(() =>
   !workflowStore.isReplayMode &&
@@ -315,7 +310,6 @@ onUnmounted(() => {
       <WorkflowTimeline />
       <ContentCards />
       <BloggerSelectionPanel v-if="showBloggerSelection" />
-      <ShootingPlanPanel v-if="showShootingPlan" />
       <OptimizationPanel v-if="showOptimization" />
       <ActionButtons />
     </div>

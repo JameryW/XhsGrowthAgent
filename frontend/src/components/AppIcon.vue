@@ -22,6 +22,7 @@ import {
   Compass,
   Copy,
   Cpu,
+  Camera,
   Database,
   DollarSign,
   Dumbbell,
@@ -79,7 +80,7 @@ import {
 const iconMap: Record<string, Component> = {
   AlertCircle, AlertTriangle, ArrowLeft, Baby, BarChart3, BookOpen, Calendar,
   Check, CheckCircle, ChevronDown, ChevronRight, ChevronUp, Circle, ClipboardList,
-  Clock, Columns, Compass, Copy, Cpu, Database, DollarSign, Dumbbell,
+  Clock, Columns, Compass, Copy, Cpu, Camera, Database, DollarSign, Dumbbell,
   Edit3, FileText, FlaskConical, GitBranch, Globe, HelpCircle, History,
   ExternalLink, Home, Inbox, Keyboard, Lightbulb, List, Loader, Loader2, Lock, LogIn,
   LogOut, MessageCircle, MessageSquare, Minus, Palette, Pause, PawPrint,
