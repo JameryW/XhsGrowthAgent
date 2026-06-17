@@ -39,7 +39,25 @@ const es = computed(() => workflowStore.effectiveState as any)
 const trendData = computed(() => workflowStore.trendData)
 const contentPlan = computed(() => workflowStore.contentPlan)
 const copyContent = computed(() => workflowStore.copyContent)
-const shootingPlan = computed(() => es.value?.shooting_plan || {})
+const shootingPlan = computed(() => {
+  const sp = es.value?.shooting_plan
+  // shooting_plan has real data — use it
+  if (sp && Object.keys(sp).length > 0) return sp
+  // ponytail: fallback — synthesize from draft_content when shooting_plan is empty
+  // (older workflows where shooting_planner skipped due to empty content_plan)
+  const dc = es.value?.draft_content
+  if (dc && (dc.title || dc.text)) {
+    const sb = es.value?.selected_blogger
+    return {
+      creator_nickname: sb?.nickname || '',
+      content_direction: es.value?.content_plan?.selected_topic || '',
+      title_candidates: dc.title ? [dc.title] : [],
+      body_copy: dc.text || '',
+      required_hashtags: (dc.hashtags || []),
+    }
+  }
+  return {}
+})
 const publishResult = computed(() => es.value?.publish_result || {})
 const analytics = computed(() => es.value?.analytics || {})
 const optimizationAnalysis = computed(() => es.value?.optimization_analysis || {})
