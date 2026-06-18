@@ -81,6 +81,71 @@ function loadVisibleDetails() {
   }
 }
 
+function workflowItemFromState(state: WorkflowStateResponse): WorkflowListItem {
+  const source = state as WorkflowStateResponse & Partial<WorkflowListItem>
+  const now = new Date().toISOString()
+  return {
+    thread_id: state.thread_id,
+    account_id: source.account_id || '',
+    phase: state.phase || 'reviewing',
+    status: 'awaiting_review',
+    dry_run: source.dry_run ?? false,
+    auto_publish: source.auto_publish ?? false,
+    progress_percent: state.progress_percent ?? 0,
+    workflow_mode: state.workflow_mode || 'trend',
+    label: state.label || state.thread_id.slice(-8),
+    created_at: state.created_at || now,
+    updated_at: state.updated_at || state.created_at || now,
+    error: state.error ?? null,
+  }
+}
+
+function fallbackWorkflowItem(threadId: string): WorkflowListItem {
+  const now = new Date().toISOString()
+  return {
+    thread_id: threadId,
+    account_id: '',
+    phase: 'reviewing',
+    status: 'awaiting_review',
+    dry_run: false,
+    auto_publish: false,
+    progress_percent: 80,
+    workflow_mode: 'trend',
+    label: threadId.slice(-8),
+    created_at: now,
+    updated_at: now,
+    error: null,
+  }
+}
+
+function upsertWorkflow(item: WorkflowListItem) {
+  workflows.value = [
+    item,
+    ...workflows.value.filter(w => w.thread_id !== item.thread_id),
+  ]
+}
+
+async function ensureWorkflowInQueue(threadId: string) {
+  if (workflows.value.some(w => w.thread_id === threadId)) {
+    queueDetail(threadId)
+    return
+  }
+
+  let state = workflowDetails.value.get(threadId)
+  try {
+    if (!state) {
+      state = await getWorkflowStatus(threadId)
+      workflowDetails.value.set(threadId, state)
+    }
+  } catch {
+    // The websocket event is enough to show the queue card; details remain lazy.
+  }
+
+  upsertWorkflow(state ? workflowItemFromState(state) : fallbackWorkflowItem(threadId))
+  listLoaded.value = true
+  queueDetail(threadId)
+}
+
 // ── Fetch review queue ──
 async function fetchReviewQueue() {
   error.value = null
@@ -88,6 +153,9 @@ async function fetchReviewQueue() {
     const result = await listWorkflows({ status: 'awaiting_review', limit: 50 })
     workflows.value = result.workflows
     listLoaded.value = true
+    for (const threadId of reviewStore.pendingReviews.keys()) {
+      void ensureWorkflowInQueue(threadId)
+    }
   } catch (e: any) {
     error.value = e.message
   }
@@ -99,6 +167,15 @@ onUnmounted(() => {
 })
 
 watch([workflows, expandedThreadId], () => { loadVisibleDetails() }, { immediate: true })
+watch(
+  () => Array.from(reviewStore.pendingReviews.keys()),
+  (threadIds) => {
+    for (const threadId of threadIds) {
+      void ensureWorkflowInQueue(threadId)
+    }
+  },
+  { immediate: true }
+)
 
 // ── Per-card review state ──
 // We keep per-thread review form state to avoid cross-card conflicts

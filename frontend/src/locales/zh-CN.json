@@ -75,14 +75,20 @@
   "nav": {
     "home": "首页",
     "dashboard": "工作流仪表盘",
+    "dashboardShort": "仪表盘",
     "review": "内容审核",
+    "reviewShort": "审核",
     "analytics": "数据分析",
+    "analyticsShort": "数据",
     "startWorkflow": "启动新工作流",
+    "startShort": "启动",
     "logout": "退出登录",
+    "more": "更多",
     "phase": "阶段",
     "account": "账户",
     "version": "版本",
     "history": "工作流历史",
+    "historyShort": "历史",
     "language": "语言",
     "ws": {
       "connected": "已连接",
@@ -227,6 +233,7 @@
       "awaitingChoice": "等待选择优化版本：请选择一个版本后进入视觉设计",
       "awaitingReview": "内容已准备好：请前往审核页面确认发布",
       "awaitingBrief": "等待 Brief 补充：请补充或确认 Brief 内容后继续",
+      "awaitingRipple": "等待 Ripple 决策：请选择内容策略的继续方式",
       "awaitingBlogger": "等待博主选择：请选择参考博主后继续工作流"
     },
     "optimization": {
@@ -302,12 +309,15 @@
       "agentDetails": "Agent 执行详情",
       "substepSections": {
         "briefing": "商单解析步骤",
+        "planning": "策略规划步骤",
         "creatingBrief": "商单创作步骤",
         "creatingTrend": "内容创作步骤",
         "reviewing": "审核步骤",
         "publishing": "发布步骤"
       },
       "short": {
+        "contentStrategy": "策略",
+        "rippleGate": "传播",
         "copywriting": "文案",
         "draft": "草稿",
         "viralMatch": "爆款",

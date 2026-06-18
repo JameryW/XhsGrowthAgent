@@ -405,8 +405,20 @@ export const useWorkflowStore = defineStore('workflow', () => {
       'optimization_analysis', 'content_versions', 'visual_plan', 'publish_result',
       'analytics', 'ripple_prediction', 'ripple_pmf', 'ripple_comparison',
       'ripple_reason', 'workflow_mode', 'brief_content', 'brief_clarification', 'shooting_plan',
+      'blogger_candidates', 'selected_blogger', 'blogger_notes', 'reselect_count',
+      'blogger_candidate_limit', 'blogger_note_limit',
     ] as const
     const updates: Partial<WorkflowStateResponse> = {}
+    if (p.data && typeof p.data === 'object') {
+      const gateData = p.data as {
+        versions?: unknown
+        draft?: unknown
+        analysis?: unknown
+      }
+      if (Array.isArray(gateData.versions)) updates.content_versions = gateData.versions as any
+      if (gateData.draft && typeof gateData.draft === 'object') updates.draft_content = gateData.draft as any
+      if (gateData.analysis && typeof gateData.analysis === 'object') updates.optimization_analysis = gateData.analysis as any
+    }
     for (const key of directKeys) {
       if (Object.prototype.hasOwnProperty.call(p, key)) {
         ;(updates as Record<string, unknown>)[key] = p[key]
@@ -419,6 +431,30 @@ export const useWorkflowStore = defineStore('workflow', () => {
         const newState = workflowStates.value.get(msg.thread_id)!
         updateProgressFromPhase(newState.phase, newState.progress_percent)
       }
+    }
+  })
+
+  realtimeStore.wsService.onEvent(EventType.REVIEW_PENDING, (msg) => {
+    if (!msg.thread_id) return
+    const state = workflowStates.value.get(msg.thread_id)
+    if (!state) return
+    const p = msg.payload as Partial<WorkflowStateResponse> & {
+      version_history?: WorkflowStateResponse['content_versions']
+    }
+    updateWorkflowState(msg.thread_id, {
+      status: 'awaiting_review',
+      phase: (p.phase || 'reviewing') as WorkflowPhase,
+      current_agent: p.current_agent || 'review_gate',
+      next_steps: p.next_steps || ['review_gate'],
+      progress_percent: p.progress_percent ?? state.progress_percent,
+      content_plan: p.content_plan || state.content_plan,
+      copy_content: p.copy_content || state.copy_content,
+      visual_plan: p.visual_plan || state.visual_plan,
+      content_versions: p.version_history || state.content_versions,
+    })
+    if (msg.thread_id === activeThreadId.value) {
+      const newState = workflowStates.value.get(msg.thread_id)!
+      updateProgressFromPhase(newState.phase, newState.progress_percent)
     }
   })
 
@@ -584,11 +620,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
       // Add to workflow states map
       workflowStates.value.set(threadId, {
         thread_id: threadId,
-        phase,
-        status: 'running',
-        progress_percent: 0,
+        phase: result.phase || phase,
+        status: result.status || 'running',
+        progress_percent: result.progress_percent ?? 0,
         next_steps: [],
         agent_timeline: [],
+        workflow_mode: options?.workflowMode,
       } as WorkflowStateResponse)
 
       // Add tab
@@ -608,7 +645,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
       // New workflow starts from 0 — reset high-water mark
       _maxProgress.value = 0
-      updateProgressFromPhase(phase)
+      updateProgressFromPhase((result.phase || phase) as WorkflowPhase, result.progress_percent)
 
       // Fetch full status from backend
       try {
@@ -765,8 +802,13 @@ export const useWorkflowStore = defineStore('workflow', () => {
       const result = await workflowApi.resumeWorkflow(threadId, resumeValue)
       const state = workflowStates.value.get(threadId)
       if (state) {
-        workflowStates.value.set(threadId, { ...state, status: 'running' })
-        updateProgressFromPhase(state.phase, state.progress_percent)
+        const nextState = {
+          ...state,
+          status: result.status || 'running',
+          phase: result.phase || state.phase,
+        } as WorkflowStateResponse
+        workflowStates.value.set(threadId, nextState)
+        updateProgressFromPhase(nextState.phase, nextState.progress_percent)
       }
       realtimeStore.subscribeWorkflow(threadId)
       toastStore.success(t('workflow.resumed'), `${t('workflow.currentPhase')}: ${state?.phase}`)

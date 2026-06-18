@@ -81,7 +81,7 @@ function getCardClass(version: ContentVersion): string[] {
   const isSelected = selectedVersionId.value === version.version_id
   const isBest = version.version_id === bestVersion.value?.version_id
 
-  const classes = ['rounded-lg p-4 border-2 cursor-pointer transition-all duration-300']
+  const classes = ['relative rounded-lg p-4 border-2 cursor-pointer transition-all duration-300']
 
   if (isSelected) {
     classes.push('border-teal-400 bg-teal-50/80 scale-[1.02]', 'shadow-lg shadow-teal-500/20', 'ring-2 ring-teal-400/30')

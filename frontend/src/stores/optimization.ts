@@ -19,6 +19,7 @@ export const useOptimizationStore = defineStore('optimization', () => {
   const optimizationAnalysis = ref<OptimizationAnalysis | null>(null)
   const contentVersions = ref<ContentVersion[]>([])
   const selectedVersion = ref<string | null>(null)
+  const activeThreadId = ref<string | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
 
@@ -42,6 +43,7 @@ export const useOptimizationStore = defineStore('optimization', () => {
   realtimeStore.wsService.onEvent(EventType.WORKFLOW_DATA_UPDATED, (msg) => {
     const threadId = getThreadId()
     if (msg.thread_id === threadId) {
+      activeThreadId.value = msg.thread_id
       const p = msg.payload as { data_type?: string; data?: unknown }
       if (!p.data_type && p.data && typeof p.data === 'object') {
         const choiceData = p.data as {
@@ -91,6 +93,7 @@ export const useOptimizationStore = defineStore('optimization', () => {
     try {
       draftContent.value = draft
       userViralLinks.value = viralLinks || []
+      activeThreadId.value = threadId
 
       await apiSubmitDraft(threadId, {
         title: draft.title || '',
@@ -120,6 +123,7 @@ export const useOptimizationStore = defineStore('optimization', () => {
     error.value = null
     try {
       selectedVersion.value = choice.version_id
+      activeThreadId.value = threadId
 
       await apiSelectVersion(threadId, {
         version_id: choice.version_id,
@@ -142,6 +146,7 @@ export const useOptimizationStore = defineStore('optimization', () => {
     optimizationAnalysis.value = null
     contentVersions.value = []
     selectedVersion.value = null
+    activeThreadId.value = null
     error.value = null
   }
 
@@ -153,6 +158,7 @@ export const useOptimizationStore = defineStore('optimization', () => {
     optimizationAnalysis,
     contentVersions,
     selectedVersion,
+    activeThreadId,
     isLoading,
     error,
     // Computed

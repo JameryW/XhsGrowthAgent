@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Verify gate/status/event changes preserve workflow contracts"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Verify workflow/realtime store updates follow project state patterns"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Verify mobile/replay/API-client changes follow component and API rules"}
+{"command": "python -m pytest tests/ -q", "result": "passed", "details": "837 passed; existing async-resource warnings reported by pytest"}
+{"command": "python -m pytest tests/integration/test_workflow_bug_fixes.py -q", "result": "passed", "details": "39 passed"}
+{"command": "npm -C frontend run type-check", "result": "passed", "details": "vue-tsc --noEmit passed"}
+{"command": "npm -C frontend run build", "result": "passed", "details": "Build passed; Vite reported existing dynamic/static toast chunk warning"}
+{"command": "npm -C frontend run test:run -- tests/components/WorkflowTimeline.spec.ts", "result": "passed", "details": "2 passed"}
+{"command": "npm -C frontend run test:run", "result": "failed-existing", "details": "Full Vitest suite still fails broadly because many legacy component tests mount useI18n components without app.use; unrelated older skeleton/useLoading assertions also fail"}

@@ -87,6 +87,9 @@ export interface WorkflowResponse {
   thread_id: string
   status: WorkflowStatus
   phase: WorkflowPhase
+  progress_percent?: number
+  sse_url?: string
+  websocket_url?: string
 }
 
 // Workflow pause result

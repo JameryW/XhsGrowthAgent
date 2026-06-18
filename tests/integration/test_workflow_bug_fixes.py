@@ -1053,6 +1053,75 @@ class TestWorkflowAPIIntegration:
         assert data["data"]["status"] == "awaiting_choice"
         assert "select" in data["data"]["message"].lower()
 
+    def test_resume_endpoint_defaults_blogger_selection_to_skip(self, client, mock_graph, monkeypatch):
+        """Generic resume at blogger_gate should send a valid skip payload by default."""
+        thread_id = "xhs_test_api_resume_blogger_001"
+
+        mock_state = MagicMock()
+        mock_state.values = {
+            "phase": "creating",
+            "session_id": thread_id,
+            "account_id": "test_account",
+        }
+        mock_state.next = ["blogger_gate"]
+        mock_state.interrupts = []
+        mock_graph.aget_state.return_value = mock_state
+
+        captured: dict[str, object] = {}
+
+        async def fake_run(thread_id_arg, graph_arg, config_arg, input_data, *, source):
+            captured["thread_id"] = thread_id_arg
+            captured["input_data"] = input_data
+            captured["source"] = source
+            return {"phase": WorkflowPhase.CREATING.value, "session_id": thread_id_arg}
+
+        monkeypatch.setattr(workflow_module._runner, "_run_graph_and_persist", fake_run)
+
+        response = client.post(f"/api/workflow/resume/{thread_id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["data"]["status"] == "running"
+        assert captured["source"] == "blogger_resume"
+        assert isinstance(captured["input_data"], Command)
+        assert captured["input_data"].resume == {"skip": True}
+
+
+# ── Engagement node completion event ownership ─────────────────────────────────
+
+
+class TestEngagementNodeEvents:
+    """Tests for engagement node event ownership."""
+
+    @pytest.mark.asyncio
+    async def test_engagement_node_does_not_emit_workflow_completed(self, monkeypatch, event_bus):
+        """The runner is the single source of WORKFLOW_COMPLETED events."""
+        from backend.agents.nodes import engagement as engagement_module
+
+        async def fake_engagement(state, *, store):
+            return {
+                "phase": WorkflowPhase.COMPLETED,
+                "analytics": {"ok": True},
+            }
+
+        monkeypatch.setattr(engagement_module, "_engagement", fake_engagement)
+
+        result = await engagement_module.engagement_node(
+            {
+                "phase": WorkflowPhase.ENGAGING,
+                "session_id": "xhs_test_engagement_events_001",
+            },
+            store=MagicMock(),
+        )
+
+        assert result["phase"] == WorkflowPhase.COMPLETED
+        assert result["current_agent"] == "engagement"
+        assert [
+            e for e in event_bus._events
+            if e.event_type == EventType.WORKFLOW_COMPLETED
+        ] == []
+
 
 # ── Test 10: Draft gate behavior ────────────────────────────────────────────────
 
