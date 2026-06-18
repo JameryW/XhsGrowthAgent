@@ -10,11 +10,12 @@ const { t } = useI18n()
 const workflowStore = useWorkflowStore()
 
 // Memoized phase order for performance
-const phaseOrder = ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'completed'] as const
+const phaseOrder = ['briefing', 'scouting', 'planning', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging', 'completed'] as const
 
 // Default time estimates per phase (in seconds) - based on typical execution
 const phaseTimeEstimates: Record<string, number> = {
   idle: 0,
+  briefing: 45,
   scouting: 30,
   planning: 45,
   creating: 90,
@@ -63,6 +64,7 @@ const currentStageLabel = computed(() => {
   if (workflowStore.isAwaitingChoice) return t('dashboard.phase.awaitingChoice')
   if (workflowStore.isAwaitingReview) return t('dashboard.phase.awaitingReview')
   if (workflowStore.isAwaitingBrief) return t('dashboard.phase.awaitingBrief')
+  if (workflowStore.isAwaitingRippleDecision) return t('showcase.status.awaitingRipple')
   if (workflowStore.isAwaitingBloggerSelection) return t('dashboard.phase.awaitingBlogger')
 
   const key = `dashboard.phase.${workflowStore.currentPhase}`

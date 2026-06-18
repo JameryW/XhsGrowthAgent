@@ -139,19 +139,10 @@ export async function extractBriefFile(file: File): Promise<{ brief_text: string
   const formData = new FormData()
   formData.append('file', file)
 
-  const res = await fetch(`/api/workflow/brief/extract`, {
-    method: 'POST',
-    body: formData,
-  })
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    const msg = body?.error?.message || body?.detail || `Extraction failed: ${res.status}`
-    throw new Error(msg)
-  }
-
-  const json = await res.json()
-  return json.data as { brief_text: string; source_type: string }
+  return client.post('/workflow/brief/extract', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000,
+  }) as unknown as { brief_text: string; source_type: string }
 }
 
 // Upload brief PDF file — uses FormData, can't go through axios JSON interceptor
@@ -159,20 +150,10 @@ export async function uploadBriefFile(threadId: string, file: File): Promise<Bri
   const formData = new FormData()
   formData.append('file', file)
 
-  const res = await fetch(`/api/workflow/brief/upload/${threadId}`, {
-    method: 'POST',
-    body: formData,
-  })
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    const msg = body?.error?.message || body?.detail || `Upload failed: ${res.status}`
-    throw new Error(msg)
-  }
-
-  const json = await res.json()
-  // Backend wraps in ApiResponse: { success, data: {...} }
-  return json.data as BriefUploadResult
+  return client.post(`/workflow/brief/upload/${threadId}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000,
+  }) as unknown as BriefUploadResult
 }
 
 // Get checkpoint history for replay

@@ -914,9 +914,10 @@ async def resume_workflow(thread_id: str, request: Request):
         })
 
     if derived == WorkflowStatus.AWAITING_BLOGGER_SELECTION:
-        # Resume from blogger_gate interrupt — accept/reselect
+        # Resume from blogger_gate interrupt. The blogger gate accepts either a
+        # concrete selection ({user_id, nickname}) or an explicit skip.
         body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
-        resume_value = body.get("resume_value", {"action": "accept"})
+        resume_value = body.get("resume_value", {"skip": True})
         from langgraph.types import Command
         result = await _runner._run_graph_and_persist(
             thread_id, graph, config,

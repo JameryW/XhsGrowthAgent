@@ -33,7 +33,8 @@ const baseState = (overrides: Partial<WorkflowStateResponse>): WorkflowStateResp
 
 const mountTimeline = (state: WorkflowStateResponse) => {
   const store = useWorkflowStore()
-  store.workflowState = state
+  store.workflowStates.set(state.thread_id, state)
+  store.activeThreadId = state.thread_id
   store.progressPercent = state.progress_percent
 
   return mount(WorkflowTimeline, {
@@ -52,6 +53,9 @@ const mountTimeline = (state: WorkflowStateResponse) => {
 
 const nodeStatuses = (wrapper: ReturnType<typeof mount>) =>
   wrapper.findAll('.workflow-node').map(node => node.attributes('data-status'))
+
+const subStepStatus = (wrapper: ReturnType<typeof mount>, agent: string) =>
+  wrapper.find(`[data-agent="${agent}"]`).attributes('data-status')
 
 describe('WorkflowTimeline', () => {
   beforeEach(() => {
@@ -75,9 +79,12 @@ describe('WorkflowTimeline', () => {
     }))
 
     const statuses = nodeStatuses(wrapper)
-    expect(statuses[2]).toBe('completed')
-    expect(statuses[3]).toBe('running')
-    expect(statuses[4]).toBe('pending')
+    expect(statuses[0]).toBe('completed')
+    expect(statuses[1]).toBe('completed')
+    expect(statuses[2]).toBe('running')
+    expect(statuses[3]).toBe('pending')
+    expect(subStepStatus(wrapper, 'draft_gate')).toBe('running')
+    expect(subStepStatus(wrapper, 'visual_designer')).toBe('pending')
   })
 
   it('marks visual design as running only when the visual designer agent is active', () => {
@@ -95,8 +102,10 @@ describe('WorkflowTimeline', () => {
     }))
 
     const statuses = nodeStatuses(wrapper)
-    expect(statuses[2]).toBe('completed')
-    expect(statuses[3]).toBe('completed')
-    expect(statuses[4]).toBe('running')
+    expect(statuses[0]).toBe('completed')
+    expect(statuses[1]).toBe('completed')
+    expect(statuses[2]).toBe('running')
+    expect(statuses[3]).toBe('pending')
+    expect(subStepStatus(wrapper, 'visual_designer')).toBe('running')
   })
 })

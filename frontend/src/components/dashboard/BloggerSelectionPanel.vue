@@ -37,6 +37,8 @@ async function handleSelect(candidate: BloggerProfile) {
       user_id: candidate.user_id,
       nickname: candidate.nickname,
     })
+    await workflowStore.refreshStatus()
+    if (workflowStore.isRunning) workflowStore.startPolling()
   } catch (e: any) {
     error.value = e?.message || t('blogger.selectError')
   } finally {
@@ -50,6 +52,8 @@ async function handleSkip() {
   error.value = ''
   try {
     await selectBlogger(activeThreadId.value, { skip: true })
+    await workflowStore.refreshStatus()
+    if (workflowStore.isRunning) workflowStore.startPolling()
   } catch (e: any) {
     error.value = e?.message || t('blogger.selectError')
   } finally {

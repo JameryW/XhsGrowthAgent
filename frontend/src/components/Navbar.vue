@@ -37,6 +37,8 @@ const phaseLabel = computed(() => {
   if (workflowStore.isAwaitingDraft) return t('dashboard.phase.awaitingDraft')
   if (workflowStore.isAwaitingChoice) return t('dashboard.phase.awaitingChoice')
   if (workflowStore.isAwaitingReview) return t('dashboard.phase.awaitingReview')
+  if (workflowStore.isAwaitingBrief) return t('dashboard.phase.awaitingBrief')
+  if (workflowStore.isAwaitingRippleDecision) return t('showcase.status.awaitingRipple')
   if (workflowStore.isAwaitingBloggerSelection) return t('dashboard.phase.awaitingBlogger')
 
   const phase = currentPhase.value

@@ -74,6 +74,10 @@ const workflowPhases = computed<PhaseNode[]>(() => {
     { icon: 'CheckSquare', label: t('dashboard.timeline.short.choiceGate'), agent: 'choice_gate', description: t('dashboard.timeline.choiceGate') },
     { icon: 'Palette', label: t('dashboard.timeline.short.visual'), agent: 'visual_designer', description: t('dashboard.timeline.visualDesc') },
   ]
+  const trendPlanningSubSteps: SubStep[] = [
+    { icon: 'ClipboardList', label: t('dashboard.timeline.short.contentStrategy'), agent: 'content_strategist', description: t('dashboard.timeline.planningDesc') },
+    { icon: 'Zap', label: t('dashboard.timeline.short.rippleGate'), agent: 'ripple_gate', description: t('dashboard.ripple.decisionPrompt') },
+  ]
   const briefCreatingSubSteps: SubStep[] = [
     { icon: 'Flame', label: t('dashboard.timeline.short.viralMatch'), agent: 'viral_matcher', description: t('dashboard.timeline.viralMatchDesc') },
     { icon: 'Users', label: t('dashboard.timeline.short.bloggerScout'), agent: 'blogger_scout', description: t('dashboard.timeline.bloggerScoutDesc') },
@@ -96,7 +100,7 @@ const workflowPhases = computed<PhaseNode[]>(() => {
     phases.push({
       icon: 'ClipboardList', label: t('dashboard.timeline.planning'), phase: 'planning',
       description: t('dashboard.timeline.planningDesc'), agent: 'content_strategist',
-      subSteps: [],
+      subSteps: trendPlanningSubSteps,
     })
   } else {
     phases.push({
@@ -149,12 +153,14 @@ const currentAgent = computed(() => {
   if (status === 'awaiting_draft') return nextNode || 'draft_gate'
   if (status === 'awaiting_choice') return nextNode || 'choice_gate'
   if (status === 'awaiting_review') return nextNode || 'review_gate'
+  if (status === 'awaiting_brief') return nextNode || 'brief_gate'
+  if (status === 'awaiting_ripple_decision') return nextNode || 'ripple_gate'
   if (status === 'awaiting_blogger_selection') return nextNode || 'blogger_gate'
-  return workflowStore.workflowState?.current_agent || nextNode || ''
+  return es.value?.current_agent || nextNode || ''
 })
 
-const hasError = computed(() => workflowStore.currentPhase === 'error' || !!workflowStore.workflowState?.error)
-const errorMessage = computed(() => workflowStore.workflowState?.error || '')
+const hasError = computed(() => workflowStore.currentPhase === 'error' || !!es.value?.error)
+const errorMessage = computed(() => es.value?.error || '')
 const agentTimeline = computed(() => workflowStore.agentTimeline)
 const hasTimelineData = computed(() => agentTimeline.value.length > 0)
 
@@ -180,7 +186,7 @@ const agentOrder = computed<string[]>(() => {
     ]
   }
   return [
-    'trend_scout', 'content_strategist', 'copywriter', 'draft_gate',
+    'trend_scout', 'content_strategist', 'ripple_gate', 'copywriter', 'draft_gate',
     'viral_matcher', 'blogger_scout', 'blogger_gate',
     'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer',
     'review_gate', 'revise_content', 'publisher', 'engagement', 'analyst',
@@ -197,6 +203,14 @@ function isSubStepCompleted(agent: string): boolean {
   if (status === 'completed') return true
   if (agent === 'trend_scout') return hasData(workflowStore.trendData)
   if (agent === 'content_strategist') return hasData(workflowStore.contentPlan)
+  if (agent === 'ripple_gate') {
+    if (status === 'awaiting_ripple_decision') return false
+    return (
+      hasData(es.value?.ripple_prediction) ||
+      hasData(es.value?.ripple_pmf) ||
+      agentIndex(currentAgent.value) > agentIndex('ripple_gate')
+    )
+  }
   if (agent === 'copywriter') return hasData(workflowStore.copyContent)
   if (agent === 'draft_gate') return hasData(es.value?.draft_content)
   if (agent === 'brief_analyzer') return hasData(es.value?.brief_content)
@@ -204,12 +218,15 @@ function isSubStepCompleted(agent: string): boolean {
   if (agent === 'shooting_planner') return hasData(es.value?.shooting_plan)
   if (agent === 'content_analyzer') return hasData(es.value?.optimization_analysis)
   if (agent === 'version_generator') return (es.value?.content_versions?.length > 0)
-  if (agent === 'choice_gate') return hasData(es.value?.content_versions)
+  if (agent === 'choice_gate') {
+    if (status === 'awaiting_choice') return false
+    return hasData(es.value?.content_versions) && agentIndex(currentAgent.value) > agentIndex('choice_gate')
+  }
   if (agent === 'visual_designer') {
     return (
       status === 'awaiting_review' ||
       currentAgent.value === 'review_gate' ||
-      (currentAgent.value === 'visual_designer' && hasData(workflowStore.visualPlan))
+      (currentAgent.value === 'visual_designer' && hasData(es.value?.visual_plan))
     )
   }
   if (agent === 'review_gate') {
@@ -241,9 +258,16 @@ function getStatus(agent: string): NodeStatus {
   if (isSubStepCompleted(agent)) return 'completed'
   const currentPhaseIdx = phaseOrder.value.indexOf(workflowStore.currentPhase)
   const briefAgents = new Set(['brief_analyzer', 'brief_gate'])
+  const planningAgents = new Set(['content_strategist', 'ripple_gate'])
+  const reviewAgents = new Set(['review_gate', 'revise_content'])
+  const publishAgents = new Set(['publisher', 'engagement'])
   let nodePhase: string
-  if (agent === 'engagement') nodePhase = 'publishing'
+  if (agent === 'trend_scout') nodePhase = 'scouting'
   else if (workflowMode.value === 'brief' && briefAgents.has(agent)) nodePhase = 'briefing'
+  else if (planningAgents.has(agent)) nodePhase = 'planning'
+  else if (reviewAgents.has(agent)) nodePhase = 'reviewing'
+  else if (publishAgents.has(agent)) nodePhase = 'publishing'
+  else if (agent === 'analyst') nodePhase = 'analyzing'
   else nodePhase = 'creating'
   const nodePhaseIdx = phaseOrder.value.indexOf(nodePhase)
   if (nodePhaseIdx < currentPhaseIdx) return 'completed'
@@ -317,6 +341,7 @@ const isFocused = (index: number) => focusedIndex.value === index
 // Substep section labels
 const substepSectionLabels = computed<Record<string, string>>(() => ({
   briefing: t('dashboard.timeline.substepSections.briefing'),
+  planning: t('dashboard.timeline.substepSections.planning'),
   creating: workflowMode.value === 'brief' ? t('dashboard.timeline.substepSections.creatingBrief') : t('dashboard.timeline.substepSections.creatingTrend'),
   reviewing: t('dashboard.timeline.substepSections.reviewing'),
   publishing: t('dashboard.timeline.substepSections.publishing'),
@@ -404,6 +429,8 @@ const substepSectionLabels = computed<Record<string, string>>(() => ({
                 </div>
                 <div
                   class="flex flex-col items-center gap-0.5 md:gap-1 min-w-[40px] md:min-w-[48px]"
+                  :data-agent="step.agent"
+                  :data-status="getStatus(step.agent)"
                   :class="[
                     isReplayMode ? 'cursor-pointer' : '',
                     isReplayMode && isNodeSelected(step.agent) ? 'ring-2 ring-violet-400 ring-offset-1 ring-offset-slate-50 rounded-lg' : '',

@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Workflow status, gate interrupt, resume, event emission, and persistence contracts"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Workflow/realtime store conventions and multi-workflow state expectations"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Vue component, mobile overflow, replay-aware data, and API client rules"}
+{"file": "backend/api/routes/workflow.py", "reason": "Default generic blogger-gate resume to an explicit skip payload"}
+{"file": "backend/agents/nodes/engagement.py", "reason": "Remove duplicate WORKFLOW_COMPLETED emission from engagement node"}
+{"file": "frontend/src/stores/workflow.ts", "reason": "Sync gate/review/blogger realtime payloads into active workflow state"}
+{"file": "frontend/src/stores/optimization.ts", "reason": "Track optimization state by active thread to avoid tab leakage"}
+{"file": "frontend/src/components/MobileTabBar.vue", "reason": "Expose start/settings/logout on mobile without overcrowding primary tabs"}
+{"file": "frontend/src/components/dashboard/WorkflowTimeline.vue", "reason": "Display brief/ripple/user-gate states and planning substeps correctly"}
+{"file": "frontend/src/views/Review.vue", "reason": "Hydrate review queue from realtime pending-review events"}

@@ -75,14 +75,20 @@
   "nav": {
     "home": "Home",
     "dashboard": "Workflow Dashboard",
+    "dashboardShort": "Dash",
     "review": "Content Review",
+    "reviewShort": "Review",
     "analytics": "Analytics",
+    "analyticsShort": "Stats",
     "startWorkflow": "Start New Workflow",
+    "startShort": "Start",
     "logout": "Logout",
+    "more": "More",
     "phase": "Phase",
     "account": "Account",
     "version": "Version",
     "history": "History",
+    "historyShort": "History",
     "language": "Language",
     "ws": {
       "connected": "Connected",
@@ -227,6 +233,7 @@
       "awaitingChoice": "Waiting for version choice: select a version to continue to visual design",
       "awaitingReview": "Content is ready: go to review and confirm publishing",
       "awaitingBrief": "Waiting for brief: supplement or confirm the brief content to continue",
+      "awaitingRipple": "Waiting for Ripple decision: choose how to continue the content strategy",
       "awaitingBlogger": "Waiting for blogger selection: choose a reference blogger to continue"
     },
     "optimization": {
@@ -302,12 +309,15 @@
       "agentDetails": "Agent Execution Details",
       "substepSections": {
         "briefing": "Brief Parsing Steps",
+        "planning": "Strategy Steps",
         "creatingBrief": "Brief Creation Steps",
         "creatingTrend": "Content Creation Steps",
         "reviewing": "Review Steps",
         "publishing": "Publishing Steps"
       },
       "short": {
+        "contentStrategy": "Strategy",
+        "rippleGate": "Ripple",
         "copywriting": "Copy",
         "draft": "Draft",
         "viralMatch": "Viral",

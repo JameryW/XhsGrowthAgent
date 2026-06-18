@@ -24,13 +24,16 @@ const showDraftInput = ref(false)
 const workflowVersions = computed(() =>
   es.value?.content_versions || []
 )
+const optimizationStoreMatchesThread = computed(() =>
+  optimizationStore.activeThreadId === workflowStore.currentThreadId
+)
 const contentVersions = computed(() =>
-  optimizationStore.contentVersions.length > 0
+  optimizationStoreMatchesThread.value && optimizationStore.contentVersions.length > 0
     ? optimizationStore.contentVersions
     : workflowVersions.value
 )
 const optimizationAnalysis = computed(() =>
-  optimizationStore.optimizationAnalysis ||
+  (optimizationStoreMatchesThread.value ? optimizationStore.optimizationAnalysis : null) ||
   es.value?.optimization_analysis ||
   null
 )
@@ -50,7 +53,7 @@ const hasGeneratedDraft = computed(() => !!generatedDraft.value?.text)
 const isOptimizationPending = computed(() =>
   workflowStore.isAwaitingChoice &&
   contentVersions.value.length > 0 &&
-  !optimizationStore.selectedVersion
+  !(optimizationStoreMatchesThread.value && optimizationStore.selectedVersion)
 )
 
 const isDraftInputPending = computed(() =>

@@ -199,8 +199,10 @@ export class WebSocketService {
       this.notifyStatusChange("disconnected")
     }
 
-    // Schedule reconnect if not intentional disconnect
-    if (event.code !== 1000 && event.code !== 1001) {
+    // Schedule reconnect unless the client intentionally disconnected.
+    // The backend also uses 1001 for heartbeat timeout, which can happen
+    // after mobile browser background throttling and should recover.
+    if (event.code !== 1000) {
       this.scheduleReconnect()
     }
   }
