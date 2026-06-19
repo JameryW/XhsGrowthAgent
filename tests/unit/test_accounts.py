@@ -178,6 +178,33 @@ async def test_activate_clears_previous_account_keys():
     os.environ.pop("XHS_COOKIE", None)
 
 
+@pytest.mark.asyncio
+async def test_delete_account_uses_rowcount():
+    """Regression: psycopg3 conn.execute() returns a Cursor, not a status string.
+
+    Before the fix, `tag == "DELETE 1"` was always False, so DELETE always
+    appeared to fail (404) even after the row was actually removed.
+    """
+    from backend.db.accounts import delete_account
+
+    # Cursor with rowcount=1 → success
+    cur = MagicMock()
+    cur.rowcount = 1
+    conn = AsyncMock()
+    conn.execute = AsyncMock(return_value=cur)
+    pool = _make_mock_pool(conn)
+
+    with patch("backend.db.accounts.get_pool", return_value=pool):
+        ok = await delete_account("acc-1")
+    assert ok is True
+
+    # rowcount=0 → not found
+    cur.rowcount = 0
+    with patch("backend.db.accounts.get_pool", return_value=pool):
+        ok = await delete_account("acc-missing")
+    assert ok is False
+
+
 if __name__ == "__main__":
     import asyncio
     asyncio.run(test_set_and_list_credentials())

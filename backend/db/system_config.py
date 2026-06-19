@@ -168,8 +168,8 @@ async def set_config(items: dict[str, str]) -> None:
 async def delete_config(key_name: str) -> bool:
     pool = get_pool()
     async with pool.connection() as conn:
-        tag = await conn.execute("DELETE FROM system_config WHERE key_name = %s", (key_name,))
-    return tag == "DELETE 1"
+        cur = await conn.execute("DELETE FROM system_config WHERE key_name = %s", (key_name,))
+    return cur.rowcount == 1
 
 
 async def count_config() -> int:

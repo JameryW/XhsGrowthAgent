@@ -174,18 +174,18 @@ async def update_password(user_id: str, new_password: str) -> bool:
     pwd_hash = _hash_password(new_password)
     pool = get_pool()
     async with pool.connection() as conn:
-        tag = await conn.execute(
+        cur = await conn.execute(
             "UPDATE console_users SET password_hash = %s WHERE id = %s",
             (pwd_hash, user_id),
         )
-    return tag == "UPDATE 1"
+    return cur.rowcount == 1
 
 
 async def delete_user(user_id: str) -> bool:
     pool = get_pool()
     async with pool.connection() as conn:
-        tag = await conn.execute("DELETE FROM console_users WHERE id = %s", (user_id,))
-    return tag == "DELETE 1"
+        cur = await conn.execute("DELETE FROM console_users WHERE id = %s", (user_id,))
+    return cur.rowcount == 1
 
 
 async def count_users() -> int:
@@ -199,17 +199,17 @@ async def count_users() -> int:
 # ── Bootstrap ──
 
 async def bootstrap_default_user() -> None:
-    """Seed admin/admin123 if no users exist (idempotent).
+    """Seed admin/admin123 only when no users exist (idempotent first-install seed).
 
-    Username/password come from AuthSettings env vars so legacy installs that
-    customized them keep working through the migration.
+    This is the only entry point that ever puts a known credential in the
+    database. Once you log in for the first time, change the password (or
+    create a new user and delete this one) — there is no other path to
+    admin/admin123 anywhere in the auth stack.
     """
     if await count_users() > 0:
         return
-    from backend.config.settings import Settings
-    auth = Settings().auth
-    await create_user(auth.admin_username, auth.admin_password)
-    logger.info(f"Bootstrapped default console user: {auth.admin_username}")
+    await create_user("admin", "admin123")
+    logger.info("Bootstrapped default console user: admin (CHANGE THE PASSWORD)")
 
 
 # ── Self-check ──

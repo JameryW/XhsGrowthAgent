@@ -87,29 +87,32 @@ def revoke_token(token: str) -> bool:
     return _active_tokens.pop(token, None) is not None
 
 
-def verify_credentials(username: str, password: str) -> dict[str, Any] | None:
-    """Sync legacy fallback — only checks the hardcoded admin in settings.
+def revoke_user_tokens(user_id: str) -> int:
+    """Revoke ALL active tokens belonging to a user.
 
-    New code should use `verify_credentials_async` (DB-backed) below; this sync
-    shim is kept so any external sync caller still gets the legacy behavior.
+    Called when a user is deleted or has their password changed — without
+    this, a stolen/issued token survives until natural expiry (default 24h).
+
+    Returns the number of tokens revoked.
     """
-    settings = Settings().auth
-    if username == settings.admin_username and password == settings.admin_password:
-        return {"id": "admin", "username": username}
-    return None
+    victims = [tok for tok, data in _active_tokens.items() if data.user_id == user_id]
+    for tok in victims:
+        _active_tokens.pop(tok, None)
+    return len(victims)
 
 
 async def verify_credentials_async(username: str, password: str) -> dict[str, Any] | None:
-    """DB-backed credential verification. Falls back to legacy admin if DB is unavailable."""
-    try:
-        from backend.db.console_users import verify_login
-        user = await verify_login(username, password)
-        if user is not None:
-            return {"id": user.id, "username": user.username}
-    except Exception:
-        # DB pool / table not ready — fall through.
-        pass
-    return verify_credentials(username, password)
+    """DB-backed credential verification — the only auth path.
+
+    Returns the user on match, None otherwise. Errors propagate so the route
+    layer can return a real 5xx instead of silently letting a hardcoded
+    admin slip through.
+    """
+    from backend.db.console_users import verify_login
+    user = await verify_login(username, password)
+    if user is None:
+        return None
+    return {"id": user.id, "username": user.username}
 
 
 __all__ = [
@@ -117,6 +120,6 @@ __all__ = [
     "generate_token",
     "validate_token",
     "revoke_token",
-    "verify_credentials",
+    "revoke_user_tokens",
     "verify_credentials_async",
 ]

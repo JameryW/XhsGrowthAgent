@@ -90,23 +90,26 @@ async def change_password(
     request: UpdatePasswordRequest,
     _: dict = Depends(get_current_user),
 ):
-    """Change a user's password."""
+    """Change a user's password. All existing tokens for this user are revoked."""
     if len(request.password) < 6:
         raise ValidationError("password", "Password must be at least 6 characters")
 
+    from backend.api.auth import revoke_user_tokens
     from backend.db.console_users import update_password
     ok = await update_password(user_id, request.password)
     if not ok:
         raise ConsoleUserNotFoundError(user_id)
-    return success(data={"updated": True, "user_id": user_id})
+    revoked = revoke_user_tokens(user_id)
+    return success(data={"updated": True, "user_id": user_id, "revoked_sessions": revoked})
 
 
 @router.delete("/{user_id}")
 async def delete_user(user_id: str, current: dict = Depends(get_current_user)):
-    """Delete a console user. Cannot delete yourself."""
+    """Delete a console user. Cannot delete yourself. Revokes all their tokens."""
     if user_id == current.get("id"):
         raise ValidationError("user_id", "Cannot delete your own account")
 
+    from backend.api.auth import revoke_user_tokens
     from backend.db.console_users import count_users
     from backend.db.console_users import delete_user as db_delete
 
@@ -116,4 +119,5 @@ async def delete_user(user_id: str, current: dict = Depends(get_current_user)):
     ok = await db_delete(user_id)
     if not ok:
         raise ConsoleUserNotFoundError(user_id)
-    return success(data={"deleted": True, "user_id": user_id})
+    revoked = revoke_user_tokens(user_id)
+    return success(data={"deleted": True, "user_id": user_id, "revoked_sessions": revoked})
