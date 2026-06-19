@@ -87,6 +87,20 @@ def revoke_token(token: str) -> bool:
     return _active_tokens.pop(token, None) is not None
 
 
+def revoke_user_tokens(user_id: str) -> int:
+    """Revoke ALL active tokens belonging to a user.
+
+    Called when a user is deleted or has their password changed — without
+    this, a stolen/issued token survives until natural expiry (default 24h).
+
+    Returns the number of tokens revoked.
+    """
+    victims = [tok for tok, data in _active_tokens.items() if data.user_id == user_id]
+    for tok in victims:
+        _active_tokens.pop(tok, None)
+    return len(victims)
+
+
 async def verify_credentials_async(username: str, password: str) -> dict[str, Any] | None:
     """DB-backed credential verification — the only auth path.
 
@@ -106,5 +120,6 @@ __all__ = [
     "generate_token",
     "validate_token",
     "revoke_token",
+    "revoke_user_tokens",
     "verify_credentials_async",
 ]

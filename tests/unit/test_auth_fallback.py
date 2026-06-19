@@ -60,6 +60,30 @@ def test_legacy_verify_credentials_is_gone():
     )
 
 
+def test_revoke_user_tokens_kills_all_sessions():
+    """Deleting / repassword'ing a user must invalidate every active token they hold."""
+    from backend.api.auth import (
+        _active_tokens,
+        generate_token,
+        revoke_user_tokens,
+        validate_token,
+    )
+
+    _active_tokens.clear()
+    t1 = generate_token("u-1", "alice")
+    t2 = generate_token("u-1", "alice")  # second device
+    t3 = generate_token("u-2", "bob")
+
+    n = revoke_user_tokens("u-1")
+
+    assert n == 2
+    assert validate_token(t1.token) is None
+    assert validate_token(t2.token) is None
+    assert validate_token(t3.token) is not None, "other users must be untouched"
+
+    _active_tokens.clear()
+
+
 if __name__ == "__main__":
     import asyncio
     asyncio.run(test_db_returns_none_means_reject())
