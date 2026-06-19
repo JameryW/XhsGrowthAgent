@@ -2,6 +2,7 @@
 
 from backend.db.accounts import (
     CREDENTIAL_KEYS,
+    XHS_KEYS,
     AccountRow,
     CredentialRow,
     activate_credentials,
@@ -21,7 +22,32 @@ from backend.db.accounts import (
 from backend.db.accounts import (
     ensure_tables as ensure_account_tables,
 )
+from backend.db.console_users import (
+    ConsoleUserRow,
+    bootstrap_default_user,
+    create_user,
+    delete_user,
+    list_users,
+    update_password,
+    verify_login,
+)
+from backend.db.console_users import (
+    ensure_tables as ensure_console_users_tables,
+)
 from backend.db.pool import close_pool, get_pool, init_pool, is_pool_ready
+from backend.db.system_config import (
+    SYSTEM_KEY_GROUPS,
+    SYSTEM_KEYS,
+    SystemConfigRow,
+    activate_system_config,
+    bootstrap_from_environ,
+    list_config,
+    migrate_from_accounts,
+    set_config,
+)
+from backend.db.system_config import (
+    ensure_tables as ensure_system_config_tables,
+)
 from backend.db.workflows import (
     WorkflowRow,
     create_workflow,
@@ -45,6 +71,7 @@ __all__ = [
     "AccountRow",
     "CredentialRow",
     "CREDENTIAL_KEYS",
+    "XHS_KEYS",
     "create_account",
     "delete_account",
     "get_account",
@@ -59,4 +86,23 @@ __all__ = [
     "deactivate_credentials",
     "load_active_credentials",
     "ensure_account_tables",
+    # Console users
+    "ConsoleUserRow",
+    "bootstrap_default_user",
+    "create_user",
+    "delete_user",
+    "list_users",
+    "update_password",
+    "verify_login",
+    "ensure_console_users_tables",
+    # System config
+    "SystemConfigRow",
+    "SYSTEM_KEYS",
+    "SYSTEM_KEY_GROUPS",
+    "activate_system_config",
+    "bootstrap_from_environ",
+    "list_config",
+    "migrate_from_accounts",
+    "set_config",
+    "ensure_system_config_tables",
 ]

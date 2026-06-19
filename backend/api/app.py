@@ -45,9 +45,40 @@ async def lifespan(app: FastAPI):
             from backend.db.accounts import ensure_tables as ensure_account_tables
             await ensure_account_tables()
 
-            # 2c) Load active account credentials into os.environ
+            # 2b.1) Ensure console_users + system_config tables exist
+            from backend.db.console_users import (
+                bootstrap_default_user,
+            )
+            from backend.db.console_users import (
+                ensure_tables as ensure_console_users,
+            )
+            from backend.db.system_config import (
+                bootstrap_from_environ,
+                migrate_from_accounts,
+            )
+            from backend.db.system_config import (
+                ensure_tables as ensure_system_config,
+            )
+            await ensure_console_users()
+            await ensure_system_config()
+
+            # 2b.2) One-shot migration: pull SYSTEM_KEYS from active account → system_config.
+            # Idempotent: no-op once system_config has any rows.
+            await migrate_from_accounts()
+
+            # 2b.3) If still empty (fresh install), seed from os.environ
+            await bootstrap_from_environ()
+
+            # 2b.4) Seed default console user (admin/admin123) if none exist
+            await bootstrap_default_user()
+
+            # 2c) Load active account credentials (XHS keys) into os.environ
             from backend.db.accounts import load_active_credentials
             await load_active_credentials()
+
+            # 2c.1) Activate system_config into os.environ
+            from backend.db.system_config import activate_system_config
+            await activate_system_config()
 
             # 3) Compile graph with production checkpointer (uses its own pool)
             from backend.graph.builder import compile_graph_prod
@@ -121,10 +152,14 @@ from backend.api.routes import (  # noqa: E402
     review,
     workflow,
 )
+from backend.api.routes.console_users import router as console_users_router  # noqa: E402
 from backend.api.routes.system import router as system_router  # noqa: E402
+from backend.api.routes.system_config import router as system_config_router  # noqa: E402
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(accounts.router, prefix="/api/accounts", tags=["accounts"])
+app.include_router(console_users_router, prefix="/api/console-users", tags=["console-users"])
+app.include_router(system_config_router, prefix="/api/system-config", tags=["system-config"])
 app.include_router(workflow.router, prefix="/api/workflow", tags=["workflow"])
 app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
