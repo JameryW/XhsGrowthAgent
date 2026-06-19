@@ -174,18 +174,18 @@ async def update_password(user_id: str, new_password: str) -> bool:
     pwd_hash = _hash_password(new_password)
     pool = get_pool()
     async with pool.connection() as conn:
-        tag = await conn.execute(
+        cur = await conn.execute(
             "UPDATE console_users SET password_hash = %s WHERE id = %s",
             (pwd_hash, user_id),
         )
-    return tag == "UPDATE 1"
+    return cur.rowcount == 1
 
 
 async def delete_user(user_id: str) -> bool:
     pool = get_pool()
     async with pool.connection() as conn:
-        tag = await conn.execute("DELETE FROM console_users WHERE id = %s", (user_id,))
-    return tag == "DELETE 1"
+        cur = await conn.execute("DELETE FROM console_users WHERE id = %s", (user_id,))
+    return cur.rowcount == 1
 
 
 async def count_users() -> int:

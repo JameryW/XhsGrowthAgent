@@ -161,8 +161,8 @@ async def update_account(account_id: str, **fields) -> AccountRow | None:
 async def delete_account(account_id: str) -> bool:
     pool = get_pool()
     async with pool.connection() as conn:
-        tag = await conn.execute("DELETE FROM accounts WHERE id = %s", (account_id,))
-    return tag == "DELETE 1"
+        cur = await conn.execute("DELETE FROM accounts WHERE id = %s", (account_id,))
+    return cur.rowcount == 1
 
 
 async def get_active_account() -> AccountRow | None:
@@ -263,11 +263,11 @@ async def set_credentials(account_id: str, creds: dict[str, str]) -> None:
 async def delete_credential(account_id: str, key_name: str) -> bool:
     pool = get_pool()
     async with pool.connection() as conn:
-        tag = await conn.execute(
+        cur = await conn.execute(
             "DELETE FROM account_credentials WHERE account_id = %s AND key_name = %s",
             (account_id, key_name),
         )
-    return tag == "DELETE 1"
+    return cur.rowcount == 1
 
 
 # ── Hot reload ──
