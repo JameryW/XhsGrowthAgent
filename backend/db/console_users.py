@@ -199,17 +199,17 @@ async def count_users() -> int:
 # ── Bootstrap ──
 
 async def bootstrap_default_user() -> None:
-    """Seed admin/admin123 if no users exist (idempotent).
+    """Seed admin/admin123 only when no users exist (idempotent first-install seed).
 
-    Username/password come from AuthSettings env vars so legacy installs that
-    customized them keep working through the migration.
+    This is the only entry point that ever puts a known credential in the
+    database. Once you log in for the first time, change the password (or
+    create a new user and delete this one) — there is no other path to
+    admin/admin123 anywhere in the auth stack.
     """
     if await count_users() > 0:
         return
-    from backend.config.settings import Settings
-    auth = Settings().auth
-    await create_user(auth.admin_username, auth.admin_password)
-    logger.info(f"Bootstrapped default console user: {auth.admin_username}")
+    await create_user("admin", "admin123")
+    logger.info("Bootstrapped default console user: admin (CHANGE THE PASSWORD)")
 
 
 # ── Self-check ──

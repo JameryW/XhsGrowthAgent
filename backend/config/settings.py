@@ -108,8 +108,6 @@ class AuthSettings(BaseSettings):
 
     secret_key: str = "dev-secret-key-change-in-production"
     token_expire_hours: int = 24
-    admin_username: str = "admin"
-    admin_password: str = "admin123"  # Plain password for demo; use hash in production
 
     model_config = {"env_prefix": "AUTH_", "env_file": ".env", "extra": "ignore"}
 

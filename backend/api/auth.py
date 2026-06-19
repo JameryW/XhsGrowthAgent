@@ -87,38 +87,18 @@ def revoke_token(token: str) -> bool:
     return _active_tokens.pop(token, None) is not None
 
 
-def verify_credentials(username: str, password: str) -> dict[str, Any] | None:
-    """Sync legacy fallback — only checks the hardcoded admin in settings.
-
-    New code should use `verify_credentials_async` (DB-backed) below; this sync
-    shim is kept so any external sync caller still gets the legacy behavior.
-    """
-    settings = Settings().auth
-    if username == settings.admin_username and password == settings.admin_password:
-        return {"id": "admin", "username": username}
-    return None
-
-
 async def verify_credentials_async(username: str, password: str) -> dict[str, Any] | None:
-    """DB-backed credential verification.
+    """DB-backed credential verification — the only auth path.
 
-    Returns the user on match. Returns None on any DB-layer mismatch (unknown
-    user / wrong password) — fallback to the legacy hardcoded admin happens
-    ONLY if the DB lookup itself raised (pool not ready, table missing). This
-    is the contract that lets us delete the bootstrap admin user safely.
+    Returns the user on match, None otherwise. Errors propagate so the route
+    layer can return a real 5xx instead of silently letting a hardcoded
+    admin slip through.
     """
-    try:
-        from backend.db.console_users import verify_login
-        user = await verify_login(username, password)
-    except Exception:
-        # DB unreachable — fall back to legacy hardcoded admin so we don't
-        # lock the operator out during a broken deploy.
-        return verify_credentials(username, password)
-
-    if user is not None:
-        return {"id": user.id, "username": user.username}
-    # DB answered "no such user / wrong password" — reject. Do NOT fall back.
-    return None
+    from backend.db.console_users import verify_login
+    user = await verify_login(username, password)
+    if user is None:
+        return None
+    return {"id": user.id, "username": user.username}
 
 
 __all__ = [
@@ -126,6 +106,5 @@ __all__ = [
     "generate_token",
     "validate_token",
     "revoke_token",
-    "verify_credentials",
     "verify_credentials_async",
 ]
