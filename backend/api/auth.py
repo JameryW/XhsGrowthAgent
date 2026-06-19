@@ -100,16 +100,25 @@ def verify_credentials(username: str, password: str) -> dict[str, Any] | None:
 
 
 async def verify_credentials_async(username: str, password: str) -> dict[str, Any] | None:
-    """DB-backed credential verification. Falls back to legacy admin if DB is unavailable."""
+    """DB-backed credential verification.
+
+    Returns the user on match. Returns None on any DB-layer mismatch (unknown
+    user / wrong password) — fallback to the legacy hardcoded admin happens
+    ONLY if the DB lookup itself raised (pool not ready, table missing). This
+    is the contract that lets us delete the bootstrap admin user safely.
+    """
     try:
         from backend.db.console_users import verify_login
         user = await verify_login(username, password)
-        if user is not None:
-            return {"id": user.id, "username": user.username}
     except Exception:
-        # DB pool / table not ready — fall through.
-        pass
-    return verify_credentials(username, password)
+        # DB unreachable — fall back to legacy hardcoded admin so we don't
+        # lock the operator out during a broken deploy.
+        return verify_credentials(username, password)
+
+    if user is not None:
+        return {"id": user.id, "username": user.username}
+    # DB answered "no such user / wrong password" — reject. Do NOT fall back.
+    return None
 
 
 __all__ = [
