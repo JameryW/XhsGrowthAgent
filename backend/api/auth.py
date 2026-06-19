@@ -88,25 +88,28 @@ def revoke_token(token: str) -> bool:
 
 
 def verify_credentials(username: str, password: str) -> dict[str, Any] | None:
-    """Verify login credentials.
+    """Sync legacy fallback — only checks the hardcoded admin in settings.
 
-    Args:
-        username: Username to verify
-        password: Password to verify
-
-    Returns:
-        User dict if valid, None if invalid
+    New code should use `verify_credentials_async` (DB-backed) below; this sync
+    shim is kept so any external sync caller still gets the legacy behavior.
     """
     settings = Settings().auth
-
-    # Simple credential check (upgrade to database + bcrypt in production)
     if username == settings.admin_username and password == settings.admin_password:
-        return {
-            "id": "admin",
-            "username": username,
-        }
-
+        return {"id": "admin", "username": username}
     return None
+
+
+async def verify_credentials_async(username: str, password: str) -> dict[str, Any] | None:
+    """DB-backed credential verification. Falls back to legacy admin if DB is unavailable."""
+    try:
+        from backend.db.console_users import verify_login
+        user = await verify_login(username, password)
+        if user is not None:
+            return {"id": user.id, "username": user.username}
+    except Exception:
+        # DB pool / table not ready — fall through.
+        pass
+    return verify_credentials(username, password)
 
 
 __all__ = [
@@ -115,4 +118,5 @@ __all__ = [
     "validate_token",
     "revoke_token",
     "verify_credentials",
+    "verify_credentials_async",
 ]

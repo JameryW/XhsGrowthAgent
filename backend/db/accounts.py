@@ -42,31 +42,18 @@ class CredentialRow:
 
 
 # ── Known credential keys ──
+#
+# After the console-account-system refactor, accounts only hold XHS platform
+# credentials. LLM/Ripple/embedding/search keys live in system_config (global).
+# `CREDENTIAL_KEYS` is kept as an alias for `XHS_KEYS` so older imports still work.
 
-CREDENTIAL_KEYS = [
-    # LLM providers
-    "ANTHROPIC_API_KEY",
-    "OPENAI_API_KEY",
-    "DEEPSEEK_API_KEY",
-    "DASHSCOPE_API_KEY",
-    "XIAOMIMIMO_API_KEY",
-    # XHS platform
+XHS_KEYS = [
     "XHS_COOKIE",
     "XHS_USER_ID",
-    # Ripple CAS
-    "RIPPLE_BASE_URL",
-    "RIPPLE_API_TOKEN",
-    "RIPPLE_ENABLED",
-    "RIPPLE_LLM_MODEL_PLATFORM",
-    "RIPPLE_LLM_MODEL_NAME",
-    "RIPPLE_LLM_API_KEY",
-    "RIPPLE_LLM_URL",
-    # Search
-    "TAVILY_API_KEY",
-    # Embedding
-    "XHS_EMBED_MODEL",
-    "XHS_EMBED_BASE_URL",
 ]
+
+# Backward-compat alias — do not extend with non-XHS keys.
+CREDENTIAL_KEYS = XHS_KEYS
 
 # ── Table creation ──
 
@@ -240,10 +227,19 @@ async def list_credentials(account_id: str) -> list[CredentialRow]:
 
 
 async def set_credentials(account_id: str, creds: dict[str, str]) -> None:
-    """Batch-set credentials for an account. Upserts each key."""
+    """Batch-set credentials for an account. Upserts each key.
+
+    Non-XHS keys are silently dropped — they belong in system_config.
+    """
     pool = get_pool()
     async with pool.connection() as conn:
         for key_name, plain_value in creds.items():
+            if key_name not in XHS_KEYS:
+                logger.warning(
+                    f"Ignoring non-XHS key on account {account_id}: {key_name} "
+                    "(belongs in system_config)"
+                )
+                continue
             if not plain_value:
                 # Delete empty values
                 await conn.execute(
@@ -330,9 +326,11 @@ async def load_active_credentials() -> dict[str, str]:
 
 
 async def _bootstrap_default_account() -> None:
-    """Create a 'default' active account, seeded from os.environ.
+    """Create a 'default' active account, seeded from os.environ XHS keys.
 
     No-op if any account already exists (keeps idempotent across restarts).
+    System-wide keys (LLM/Ripple/etc.) are NOT seeded here — they belong in
+    `backend.db.system_config`.
     """
     import os
 
@@ -342,10 +340,10 @@ async def _bootstrap_default_account() -> None:
 
     acc = await create_account(name="default", is_active=False)
     await set_active_account(acc.id)
-    seed = {k: os.environ[k] for k in CREDENTIAL_KEYS if os.environ.get(k)}
+    seed = {k: os.environ[k] for k in XHS_KEYS if os.environ.get(k)}
     if seed:
         await set_credentials(acc.id, seed)
-    logger.info(f"Bootstrapped default account with {len(seed)} keys from os.environ")
+    logger.info(f"Bootstrapped default account with {len(seed)} XHS keys from os.environ")
 
 
 # ── Helpers ──

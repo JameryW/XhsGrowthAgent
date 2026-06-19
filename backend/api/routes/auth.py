@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from backend.api.auth import generate_token, verify_credentials
+from backend.api.auth import generate_token, verify_credentials_async
 from backend.api.deps import get_current_user, get_optional_user
 from backend.api.errors import LoginFailedError
 from backend.api.responses import success
@@ -44,7 +44,7 @@ async def login(request: LoginRequest):
         LoginResponse with token and user info
     """
     # Verify credentials
-    user = verify_credentials(request.username, request.password)
+    user = await verify_credentials_async(request.username, request.password)
     if not user:
         raise LoginFailedError()
 

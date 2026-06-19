@@ -1,0 +1,148 @@
+<script setup lang="ts">
+import { ref, onMounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useSystemConfigStore } from '@/stores/system_config'
+import { useToastStore } from '@/stores/toast'
+import AppIcon from '@/components/AppIcon.vue'
+import NeonButton from '@/components/NeonButton.vue'
+
+const { t } = useI18n()
+const store = useSystemConfigStore()
+const toast = useToastStore()
+
+const edits = ref<Record<string, string>>({})
+const isSaving = ref(false)
+
+const groupLabels: Record<string, string> = {
+  llm_providers: 'settings.groups.llmProviders',
+  ripple_cas: 'settings.groups.rippleCas',
+  search_embedding: 'settings.groups.searchEmbedding',
+}
+
+const hasEdits = computed(() => Object.keys(edits.value).length > 0)
+
+onMounted(async () => {
+  await store.fetchConfig()
+})
+
+function startEdit(keyName: string) {
+  edits.value[keyName] = ''
+}
+
+function cancelEdit(keyName: string) {
+  delete edits.value[keyName]
+}
+
+function getDisplay(keyName: string): string {
+  if (edits.value[keyName] !== undefined) {
+    const v = edits.value[keyName]
+    return v ? '●●●●' + v.slice(-4) : t('settings.willDelete')
+  }
+  return store.getItem(keyName)?.masked_value || t('settings.notSet')
+}
+
+function isSet(keyName: string): boolean {
+  if (edits.value[keyName] !== undefined) return !!edits.value[keyName]
+  return store.getItem(keyName)?.is_set ?? false
+}
+
+async function save() {
+  if (!hasEdits.value) return
+  isSaving.value = true
+  try {
+    await store.saveConfig(edits.value)
+    edits.value = {}
+    toast.success(t('settings.toasts.systemConfigSaved'))
+  } catch (e: any) {
+    toast.error(e.message)
+  } finally {
+    isSaving.value = false
+  }
+}
+
+async function deleteKey(keyName: string) {
+  if (!confirm(t('settings.confirm.deleteKey', { key: keyName }))) return
+  try {
+    await store.saveConfig({ [keyName]: '' })
+    toast.success(t('settings.toasts.credDeleted', { key: keyName }))
+  } catch (e: any) {
+    toast.error(e.message)
+  }
+}
+</script>
+
+<template>
+  <div class="space-y-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-800">{{ t('settings.systemConfig.title') }}</h2>
+        <p class="text-xs text-slate-400 mt-0.5">{{ t('settings.systemConfig.subtitle') }}</p>
+      </div>
+      <NeonButton
+        v-if="hasEdits"
+        variant="cyan"
+        size="sm"
+        :loading="isSaving"
+        @click="save"
+      >
+        <AppIcon name="Save" size="xs" variant="white" />
+        <span class="ml-1">{{ t('settings.saveCredentials') }}</span>
+      </NeonButton>
+    </div>
+
+    <div v-for="group in store.groups" :key="group.id"
+      class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-3"
+    >
+      <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+        {{ t(groupLabels[group.id] || group.id) }}
+      </h3>
+      <div class="space-y-1">
+        <div v-for="keyName in group.keys" :key="keyName"
+          class="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-slate-50/80 transition-colors"
+        >
+          <span class="text-xs font-mono text-slate-500 w-44 shrink-0">{{ keyName }}</span>
+
+          <div class="flex-1 min-w-0">
+            <input
+              v-if="edits[keyName] !== undefined"
+              v-model="edits[keyName]"
+              type="password"
+              :placeholder="t('settings.enterValue')"
+              class="w-full px-2 py-1 text-sm rounded border border-rose-200 bg-white focus:border-rose-400 outline-none"
+              @keydown.escape="cancelEdit(keyName)"
+            />
+            <span v-else class="text-sm" :class="isSet(keyName) ? 'text-slate-600' : 'text-slate-300'">
+              {{ getDisplay(keyName) }}
+            </span>
+          </div>
+
+          <div class="w-2 h-2 rounded-full shrink-0" :class="isSet(keyName) ? 'bg-emerald-500' : 'bg-slate-200'" />
+
+          <div class="flex items-center gap-1 shrink-0">
+            <template v-if="edits[keyName] !== undefined">
+              <button @click="cancelEdit(keyName)"
+                class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <AppIcon name="X" size="xs" variant="pink" />
+              </button>
+            </template>
+            <template v-else>
+              <button @click="startEdit(keyName)"
+                class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+                :title="t('settings.edit')"
+              >
+                <AppIcon name="Pencil" size="xs" variant="cyan" />
+              </button>
+              <button v-if="isSet(keyName)" @click="deleteKey(keyName)"
+                class="p-1 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors"
+                :title="t('settings.delete')"
+              >
+                <AppIcon name="Trash2" size="xs" variant="pink" />
+              </button>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>

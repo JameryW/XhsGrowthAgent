@@ -1232,10 +1232,48 @@
       "accountDeleted": "Account \"{name}\" deleted",
       "activeSwitched": "Active account switched",
       "credsSaved": "Credentials saved",
-      "credDeleted": "Deleted {key}"
+      "credDeleted": "Deleted {key}",
+      "systemConfigSaved": "System config saved & activated"
     },
     "confirm": {
-      "delete": "Delete account \"{name}\"? This cannot be undone."
+      "delete": "Delete account \"{name}\"? This cannot be undone.",
+      "deleteKey": "Delete {key}?"
+    },
+    "nav": {
+      "consoleUsers": "Console Users",
+      "consoleUsersDesc": "Who can log into this admin",
+      "xhsAccounts": "XHS Accounts",
+      "xhsAccountsDesc": "Xiaohongshu accounts + cookies",
+      "systemConfig": "System Config",
+      "systemConfigDesc": "LLM, Ripple, embedding global keys"
+    },
+    "consoleUsers": {
+      "title": "Console Users",
+      "subtitle": "Accounts that can sign in to this admin; passwords are PBKDF2-hashed",
+      "addUser": "Add User",
+      "usernamePlaceholder": "username",
+      "passwordPlaceholder": "password (≥6 chars)",
+      "create": "Create",
+      "allUsers": "All Users",
+      "empty": "No users",
+      "lastLogin": "Last login",
+      "never": "Never",
+      "you": "You",
+      "changePassword": "Change password",
+      "newPasswordPlaceholder": "new password (≥6 chars)",
+      "validation": "Username required, password min 6 chars",
+      "confirmDelete": "Delete user \"{name}\"? This cannot be undone.",
+      "toastCreated": "User \"{name}\" created",
+      "toastDeleted": "User \"{name}\" deleted",
+      "toastPwdChanged": "Password updated"
+    },
+    "xhsAccounts": {
+      "title": "XHS Accounts",
+      "subtitle": "Each account holds its own Cookie & user_id; switching activates them"
+    },
+    "systemConfig": {
+      "title": "System Config",
+      "subtitle": "Global keys & service URLs — shared across XHS accounts"
     }
   }
 }

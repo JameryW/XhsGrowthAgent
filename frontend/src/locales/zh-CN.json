@@ -1232,10 +1232,48 @@
       "accountDeleted": "账号 \"{name}\" 已删除",
       "activeSwitched": "活跃账号已切换",
       "credsSaved": "凭证已保存并生效",
-      "credDeleted": "已删除 {key}"
+      "credDeleted": "已删除 {key}",
+      "systemConfigSaved": "系统配置已保存并生效"
     },
     "confirm": {
-      "delete": "确定删除账号 \"{name}\"？此操作不可撤销。"
+      "delete": "确定删除账号 \"{name}\"？此操作不可撤销。",
+      "deleteKey": "确定删除 {key}？"
+    },
+    "nav": {
+      "consoleUsers": "管控台用户",
+      "consoleUsersDesc": "登录此后台的人员",
+      "xhsAccounts": "小红书账号",
+      "xhsAccountsDesc": "运营的小红书号 + Cookie",
+      "systemConfig": "系统配置",
+      "systemConfigDesc": "LLM、Ripple、向量等全局密钥"
+    },
+    "consoleUsers": {
+      "title": "管控台用户",
+      "subtitle": "可登录此后台的账号；密码使用 PBKDF2 哈希存储",
+      "addUser": "新增用户",
+      "usernamePlaceholder": "用户名",
+      "passwordPlaceholder": "密码（≥6 位）",
+      "create": "创建",
+      "allUsers": "全部用户",
+      "empty": "暂无用户",
+      "lastLogin": "上次登录",
+      "never": "从未登录",
+      "you": "当前",
+      "changePassword": "改密",
+      "newPasswordPlaceholder": "新密码（≥6 位）",
+      "validation": "用户名不能为空，密码至少 6 位",
+      "confirmDelete": "确定删除用户 \"{name}\"？此操作不可撤销。",
+      "toastCreated": "用户 \"{name}\" 已创建",
+      "toastDeleted": "用户 \"{name}\" 已删除",
+      "toastPwdChanged": "密码已更新"
+    },
+    "xhsAccounts": {
+      "title": "小红书账号",
+      "subtitle": "每个账号挂自己的 Cookie 与 user_id；切换激活账号时自动加载"
+    },
+    "systemConfig": {
+      "title": "系统配置",
+      "subtitle": "全局共享的密钥与服务地址，与小红书账号无关"
     }
   }
 }
