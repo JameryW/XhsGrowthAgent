@@ -87,3 +87,28 @@ async function fetchData() {
 **Example**: The Showcase closed-loop replaced six SMIL `<animate>` node-energy pulses with a single CSS `@keyframes` "sweep" ring per node (staggered `animation-delay`), keeping the SMIL `animateMotion` comet as the one path-following element.
 
 **When to keep SMIL**: Path-following motion (`animateMotion` along an SVG `<path>`) is still reasonable to keep as SMIL unless you want `offset-path` (CSS) — convert only when profiling shows cost.
+
+---
+
+## Pattern: Ambient background layering without visual emptiness
+
+**Problem**: Adding many background layers (glow orbs, dot grid, aurora, particles) can still read as "empty" if each layer is independently weak and they dilute each other — symptom: layer count looks rich in code, but the rendered page has large dead areas.
+
+**Causes** (any combination):
+- Each layer's `opacity` set low (≤0.5) "to be safe" → all layers cancel out.
+- A `mask-image` restricting a layer to a small region (e.g. dots only visible in top 30%) leaves the rest bare.
+- Few-particle layers (`background-repeat: no-repeat` with only 5 `radial-gradient` points) → sparse coverage.
+- Heavy `filter: blur(70px)` on a low-opacity conic/aurora → washes the color out entirely.
+
+**Solution — balance opacity budget, add structure**:
+1. **Raise opacity per layer** into the 0.6–0.75 band (don't cap everything at 0.5).
+2. **Remove or widen masks** so texture covers the whole page; if you want fade, use a `linear-gradient` edge fade, not a small central ellipse.
+3. **Dense up particle/point layers** to ~20 positions spread across the viewport, not 5.
+4. **Reduce blur on color layers** (70px → 40–48px) so hue survives the blur at low opacity.
+5. **Add structural layers** (fine grid, constellation lines, mesh blobs) — these give the eye a "skeleton" so the page reads as composed, not just lit. Pure light/blob layers read as empty even when bright.
+
+**Example**: The Showcase background went from 5 sparse particles + mask-limited dots + blur(70px) aurora (read empty) → 20 particles + whole-page grid + constellation SVG + mesh blobs + blur(44px) aurora at opacity 0.65 (reads layered). Same layer count, rebalanced budget + added structure.
+
+**Anti-pattern**: "I'll keep all layers at opacity 0.4 to be subtle." This is the direct cause of the empty look — subtlety is per-layer calibration, not a universal cap.
+
+**Related**: every new ambient layer still needs an explicit `animation: none` (or static opacity) entry in the `prefers-reduced-motion` block — the blanket `:deep(*)` duration override does not cover `opacity` animation or `transform` drift.

@@ -229,7 +229,7 @@ function formatDate(iso: string) {
   return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-function goDashboard() { router.push('/login') }
+function goDashboard() { router.push({ path: '/login', query: { redirect: '/start' } }) }
 function goReplay(threadId: string) { router.push({ name: 'replay', params: { threadId } }) }
 
 const isEmpty = computed(() => listLoaded.value && workflows.value.length === 0)
@@ -419,23 +419,164 @@ const visibleCards = computed(() =>
     statusText: statusLabel(wf.status),
   }))
 )
+
+// Deterministic pseudo-random (mulberry32) so constellation lines are stable across renders
+function mulberry32(seed: number) {
+  return function () {
+    seed |= 0
+    seed = (seed + 0x6D2B79F5) | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+// Constellation: ~20 nodes, connect each to its 2 nearest neighbors → faint line skeleton
+const constellationPath = computed(() => {
+  const rnd = mulberry32(20260621)
+  const W = 1200, H = 800, N = 20
+  const pts = Array.from({ length: N }, () => ({ x: rnd() * W, y: rnd() * H }))
+  const lines: string[] = []
+  const brand = ['244,63,94', '20,184,166', '139,92,246', '245,158,11', '14,165,233']
+  pts.forEach((p, i) => {
+    const dists = pts
+      .map((q, j) => ({ j, d: (q.x - p.x) ** 2 + (q.y - p.y) ** 2 }))
+      .filter(o => o.j !== i)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 2)
+    dists.forEach(o => {
+      if (i < o.j) {
+        const c = brand[(i + o.j) % brand.length]
+        lines.push(`M${p.x.toFixed(1)},${p.y.toFixed(1)}L${pts[o.j].x.toFixed(1)},${pts[o.j].y.toFixed(1)}`)
+        void c
+      }
+    })
+  })
+  return lines.join(' ')
+})
+
+const constellationDots = computed(() => {
+  const rnd = mulberry32(20260621)
+  const W = 1200, H = 800, N = 20
+  return Array.from({ length: N }, () => ({ cx: +(rnd() * W).toFixed(1), cy: +(rnd() * H).toFixed(1) }))
+})
+
+// Evolution trees: organic branching — smoother curves, natural canopy shape
+type TreeBranch = { d: string; depth: number }
+type EvoTree = { branches: TreeBranch[]; tips: { x: number; y: number; depth: number }[]; color: string }
+
+const EVO_COLORS = ['244,63,94', '20,184,166']
+
+function buildTree(rng: () => number, ox: number, oy: number, angle: number, len: number, depth: number, maxDepth: number, acc: TreeBranch[], tips: { x: number; y: number; depth: number }[]) {
+  if (depth > maxDepth || len < 8) return
+  const ex = ox + Math.cos(angle) * len
+  const ey = oy + Math.sin(angle) * len
+  // organic curve: gentle perpendicular offset
+  const perp = angle + Math.PI / 2
+  const curve = len * 0.25 * (rng() - 0.5)
+  const cx = (ox + ex) / 2 + Math.cos(perp) * curve
+  const cy = (oy + ey) / 2 + Math.sin(perp) * curve
+  acc.push({ d: `M${ox.toFixed(1)},${oy.toFixed(1)}Q${cx.toFixed(1)},${cy.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`, depth })
+  if (depth === maxDepth) {
+    tips.push({ x: ex, y: ey, depth })
+    return
+  }
+  // always 2 children for balanced canopy; wider spread
+  const spread = 0.7 + rng() * 0.35
+  const nextLen = len * (0.68 + rng() * 0.1)
+  for (let i = 0; i < 2; i++) {
+    const t = i === 0 ? -1 : 1
+    const childAngle = angle + t * spread * 0.5 + (rng() - 0.5) * 0.2
+    buildTree(rng, ex, ey, childAngle, nextLen, depth + 1, maxDepth, acc, tips)
+  }
+}
+
+// ponytail: 2 trees instead of 4 — fewer DOM nodes, less visual noise
+const TREE_DEFS = [
+  { x: 60, y: 680, angle: -1.1, len: 130, depth: 5, color: 0 },   // bottom-left, grows up-right
+  { x: 1140, y: 680, angle: -2.05, len: 115, depth: 5, color: 1 }, // bottom-right, grows up-left
+]
+
+const evolutionTrees = computed<EvoTree[]>(() => {
+  return TREE_DEFS.map((def, idx) => {
+    const rng = mulberry32(70000 + idx * 101)
+    const branches: TreeBranch[] = []
+    const tips: { x: number; y: number; depth: number }[] = []
+    buildTree(rng, def.x, def.y, def.angle, def.len, 0, def.depth, branches, tips)
+    return { branches, tips, color: EVO_COLORS[def.color] }
+  })
+})
+
+// ponytail: precompute path lengths once per computed change (not per render), 4-point sampling
+const evolutionTreeData = computed(() => {
+  return evolutionTrees.value.map(tree => {
+    const lens = tree.branches.map(b => {
+      const m = b.d.match(/M([\d.]+),([\d.]+)Q([\d.]+),([\d.]+) ([\d.]+),([\d.]+)/)
+      if (!m) return 40
+      const [ox, oy, cx, cy, ex, ey] = [m[1], m[2], m[3], m[4], m[5], m[6]].map(Number)
+      let len = 0, px = ox, py = oy
+      for (let i = 1; i <= 4; i++) {
+        const t = i / 4
+        const x = (1 - t) ** 2 * ox + 2 * (1 - t) * t * cx + t ** 2 * ex
+        const y = (1 - t) ** 2 * oy + 2 * (1 - t) * t * cy + t ** 2 * ey
+        len += Math.hypot(x - px, y - py)
+        px = x; py = y
+      }
+      return len
+    })
+    return { tree, lens }
+  })
+})
+
 </script>
 
 <template>
   <div class="showcase-page min-h-screen text-slate-800 relative overflow-hidden">
     <!-- Ambient background layers -->
-    <div class="showcase-bg-dots" aria-hidden="true" />
+    <div class="showcase-bg-grid" aria-hidden="true" />
+    <div class="showcase-bg-mesh" aria-hidden="true" />
     <div class="showcase-aurora" aria-hidden="true" />
-    <div class="showcase-glow-amber" aria-hidden="true" />
-    <div class="showcase-glow-emerald" aria-hidden="true" />
-    <div class="showcase-particles" aria-hidden="true" />
-    <!-- Ambient glow orbs -->
-    <div class="showcase-glow-mid" aria-hidden="true" />
+    <svg class="showcase-constellation" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 1200 800">
+      <path class="constellation-lines" :d="constellationPath" fill="none" stroke="url(#const-grad)" stroke-width="0.6" stroke-linecap="round" />
+      <circle v-for="(d, i) in constellationDots" :key="i" :cx="d.cx" :cy="d.cy" r="1.1" fill="url(#const-grad)" />
+      <defs>
+        <linearGradient id="const-grad" x1="0" y1="0" x2="1200" y2="800" gradientUnits="userSpaceOnUse">
+          <stop stop-color="rgba(244,63,94,0.22)" />
+          <stop offset="0.5" stop-color="rgba(139,92,246,0.22)" />
+          <stop offset="1" stop-color="rgba(14,165,233,0.22)" />
+        </linearGradient>
+      </defs>
+    </svg>
+    <svg class="showcase-evolution" aria-hidden="true" preserveAspectRatio="xMidYMid slice" viewBox="0 0 1200 800">
+      <g v-for="(td, ti) in evolutionTreeData" :key="'evo-'+ti">
+        <path
+          v-for="(b, bi) in td.tree.branches"
+          :key="'b-'+ti+'-'+bi"
+          :d="b.d"
+          fill="none"
+          :stroke="`rgba(${td.tree.color},${0.06 + b.depth * 0.03})`"
+          :stroke-width="1.8 - b.depth * 0.25"
+          stroke-linecap="round"
+          class="evo-branch"
+          :style="{ animationDelay: `${ti * 1.6 + b.depth * 0.5}s`, strokeDasharray: td.lens[bi].toFixed(1), strokeDashoffset: td.lens[bi].toFixed(1) }"
+        />
+        <circle
+          v-for="(tip, ii) in td.tree.tips"
+          :key="'t-'+ti+'-'+ii"
+          :cx="tip.x"
+          :cy="tip.y"
+          :r="1.8"
+          :fill="`rgba(${td.tree.color},0.3)`"
+          class="evo-tip"
+          :style="{ animationDelay: `${ti * 1.6 + 2.5 + ii * 0.2}s` }"
+        />
+      </g>
+    </svg>
     <!-- Nav -->
-    <nav class="relative z-20 liquid-glass-nav border-b border-white/15">
+    <nav class="relative z-20 liquid-glass-nav showcase-nav">
       <div class="max-w-[1200px] mx-auto px-3 md:px-6 h-14 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-amber-400 flex items-center justify-center shadow-md shadow-rose-500/20">
+          <div class="showcase-logo w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-amber-400 flex items-center justify-center shadow-md shadow-rose-500/20">
             <AppIcon name="Rocket" size="sm" variant="white" />
           </div>
           <div>
@@ -443,7 +584,7 @@ const visibleCards = computed(() =>
             <p class="text-[11px] text-slate-400 -mt-0.5">{{ t('showcase.subtitle') }}</p>
           </div>
         </div>
-        <button @click="goDashboard" class="px-4 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-xs font-medium text-white transition-colors shadow-sm shadow-rose-500/20">
+        <button @click="goDashboard" class="showcase-cta-btn px-4 py-1.5 rounded-lg text-xs font-medium text-white transition-all">
           {{ t('showcase.dashboard') }}
         </button>
       </div>
@@ -475,8 +616,6 @@ const visibleCards = computed(() =>
              Layer 1: Closed-loop pipeline — elliptical loop animation
              ══════════════════════════════════════════════════════════════ -->
         <div class="mb-4 md:mb-6 relative">
-          <div class="text-xs font-medium text-slate-400 uppercase tracking-widest mb-3">{{ t('showcase.pipelineLabel') }}</div>
-
           <!-- Desktop: elliptical loop with SVG path + circular nodes -->
           <div ref="loopContainer" class="hidden md:block relative" style="height: 460px;">
             <svg class="absolute inset-0 w-full h-full pointer-events-none" :viewBox="`0 0 ${containerW} 460`" preserveAspectRatio="xMidYMid meet" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -720,7 +859,7 @@ const visibleCards = computed(() =>
                 <span class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0" :class="card.badgeClass">{{ card.statusText }}</span>
                 <span v-if="card.wf.workflow_mode" class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 shrink-0">{{ card.wf.workflow_mode }}</span>
                 <!-- Inline progress bar + percent -->
-                <div class="hidden sm:flex items-center gap-1.5 ml-1">
+                <div class="flex items-center gap-1.5 ml-1">
                   <div class="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
                     <div class="h-full rounded-full transition-all duration-500" :class="card.progressClass" :style="{ width: `${card.wf.progress_percent}%` }" />
                   </div>
@@ -745,7 +884,7 @@ const visibleCards = computed(() =>
             </div>
             <!-- Card footer -->
             <div class="px-4 pb-2.5 pt-1 flex items-center justify-between">
-              <div class="hidden md:flex items-center gap-0.5">
+              <div class="flex items-center gap-0.5">
                 <template v-for="(_step, i) in pipelineSteps" :key="i">
                   <div class="w-3 h-1 rounded-full transition-colors" :class="i < card.pipelineProgress ? (card.wf.status === 'completed' ? 'bg-emerald-400' : 'bg-teal-400') : 'bg-slate-200'" />
                 </template>
@@ -780,6 +919,37 @@ const visibleCards = computed(() =>
 </template>
 
 <style scoped>
+/* ── Nav bar ── */
+.showcase-nav {
+  border-bottom: none;
+  box-shadow:
+    0 0 1px rgba(15, 23, 42, 0.06),
+    0 4px 16px rgba(15, 23, 42, 0.04),
+    inset 0 -1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.showcase-logo {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.showcase-logo:hover {
+  transform: scale(1.08) rotate(-4deg);
+  box-shadow: 0 4px 14px rgba(244, 63, 94, 0.3);
+}
+
+.showcase-cta-btn {
+  background: linear-gradient(135deg, #f43f5e, #e11d48);
+  box-shadow: 0 2px 8px rgba(244, 63, 94, 0.25);
+}
+.showcase-cta-btn:hover {
+  background: linear-gradient(135deg, #e11d48, #be123c);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(244, 63, 94, 0.35);
+}
+.showcase-cta-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(244, 63, 94, 0.2);
+}
+
 .showcase-page {
   background:
     linear-gradient(135deg, rgba(255, 241, 242, 0.54), transparent 34%),
@@ -824,25 +994,6 @@ const visibleCards = computed(() =>
   0% { transform: translate(0, 0); opacity: 0.5; }
   50% { transform: translate(-50px, -30px); opacity: 0.85; }
   100% { transform: translate(40px, -60px); opacity: 0.55; }
-}
-
-.showcase-glow-mid {
-  position: absolute;
-  width: 450px;
-  height: 450px;
-  top: 40%;
-  left: 45%;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 0;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.06) 0%, transparent 70%);
-  animation: glow-drift-3 10s ease-in-out infinite alternate;
-}
-
-@keyframes glow-drift-3 {
-  0% { transform: translate(0, 0); opacity: 0.4; }
-  50% { transform: translate(30px, -50px); opacity: 0.75; }
-  100% { transform: translate(-40px, 30px); opacity: 0.45; }
 }
 
 .showcase-card {
@@ -944,101 +1095,128 @@ const visibleCards = computed(() =>
 
 /* ── Background enrichment layers (z-0, behind content z-10) ── */
 
-.showcase-bg-dots {
+/* Structural: fine grid skeleton (whole-page visible) */
+.showcase-bg-grid {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background-image: radial-gradient(circle, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
-  background-size: 22px 22px;
-  opacity: 0.5;
-  -webkit-mask-image: radial-gradient(ellipse at 50% 30%, #000 30%, transparent 80%);
-  mask-image: radial-gradient(ellipse at 50% 30%, #000 30%, transparent 80%);
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: 0.9;
+  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.3));
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.3));
+}
+
+/* Structural: drifting mesh blobs (two brand-tinted radial blobs) */
+.showcase-bg-mesh {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.7;
+}
+.showcase-bg-mesh::before,
+.showcase-bg-mesh::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(48px);
+}
+.showcase-bg-mesh::before {
+  width: 46vw;
+  height: 46vw;
+  top: 22%;
+  left: -8%;
+  background: radial-gradient(circle, rgba(244, 63, 94, 0.16) 0%, transparent 60%);
+  animation: showcase-mesh-drift-a 18s ease-in-out infinite alternate;
+}
+.showcase-bg-mesh::after {
+  width: 40vw;
+  height: 40vw;
+  bottom: 18%;
+  right: -6%;
+  background: radial-gradient(circle, rgba(20, 184, 166, 0.16) 0%, transparent 60%);
+  animation: showcase-mesh-drift-b 21s ease-in-out infinite alternate;
+}
+
+@keyframes showcase-mesh-drift-a {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(60px, -40px) scale(1.08); }
+}
+@keyframes showcase-mesh-drift-b {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-50px, 50px) scale(1.06); }
+}
+
+/* Structural: constellation lines + dots (faint skeleton) */
+.showcase-constellation {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+/* Thematic: evolution trees — subtle background accent */
+.showcase-evolution {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.evo-branch {
+  animation: evo-grow 3.6s ease-out forwards;
+}
+
+/* strokeDashoffset is set inline to the full path length; animate it to 0 to "draw" the branch */
+@keyframes evo-grow {
+  to { stroke-dashoffset: 0; }
+}
+
+.evo-tip {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: evo-tip-pulse 4.5s ease-in-out infinite;
+}
+
+@keyframes evo-tip-pulse {
+  0%, 100% { opacity: 0; transform: scale(0.6); }
+  40% { opacity: 0.9; transform: scale(1); }
+  60% { opacity: 0.6; transform: scale(1.25); }
 }
 
 .showcase-aurora {
   position: absolute;
-  top: -10%;
+  top: -8%;
   left: 50%;
-  width: 900px;
-  height: 540px;
+  width: 1100px;
+  height: 640px;
   z-index: 0;
   pointer-events: none;
   background: conic-gradient(from 180deg at 50% 50%,
-    rgba(244, 63, 94, 0.10),
-    rgba(20, 184, 166, 0.10),
-    rgba(139, 92, 246, 0.10),
-    rgba(245, 158, 11, 0.08),
-    rgba(244, 63, 94, 0.10));
-  filter: blur(70px);
-  opacity: 0.5;
+    rgba(244, 63, 94, 0.16),
+    rgba(20, 184, 166, 0.16),
+    rgba(139, 92, 246, 0.16),
+    rgba(245, 158, 11, 0.13),
+    rgba(244, 63, 94, 0.16));
+  filter: blur(44px);
+  opacity: 0.65;
   animation: showcase-aurora-rotate 24s linear infinite;
 }
 
 @keyframes showcase-aurora-rotate {
   from { transform: translateX(-50%) rotate(0deg); }
   to { transform: translateX(-50%) rotate(360deg); }
-}
-
-.showcase-glow-amber,
-.showcase-glow-emerald {
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.showcase-glow-amber {
-  width: 420px;
-  height: 420px;
-  top: 8%;
-  right: 6%;
-  opacity: 0.5;
-  background: radial-gradient(circle, rgba(245, 158, 11, 0.10) 0%, transparent 70%);
-  animation: glow-drift-amber 14s ease-in-out infinite alternate;
-}
-
-.showcase-glow-emerald {
-  width: 380px;
-  height: 380px;
-  bottom: 6%;
-  left: 8%;
-  opacity: 0.5;
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.10) 0%, transparent 70%);
-  animation: glow-drift-emerald 16s ease-in-out infinite alternate;
-}
-
-@keyframes glow-drift-amber {
-  0% { transform: translate(0, 0); opacity: 0.5; }
-  50% { transform: translate(-40px, 30px); opacity: 0.75; }
-  100% { transform: translate(30px, -20px); opacity: 0.45; }
-}
-
-@keyframes glow-drift-emerald {
-  0% { transform: translate(0, 0); opacity: 0.5; }
-  50% { transform: translate(45px, -35px); opacity: 0.7; }
-  100% { transform: translate(-25px, 25px); opacity: 0.4; }
-}
-
-.showcase-particles {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  opacity: 0.6;
-  background-image:
-    radial-gradient(1.5px 1.5px at 15% 22%, rgba(244, 63, 94, 0.5), transparent),
-    radial-gradient(1.5px 1.5px at 78% 18%, rgba(20, 184, 166, 0.45), transparent),
-    radial-gradient(1.5px 1.5px at 38% 78%, rgba(139, 92, 246, 0.4), transparent),
-    radial-gradient(1.5px 1.5px at 88% 72%, rgba(245, 158, 11, 0.4), transparent),
-    radial-gradient(1.5px 1.5px at 62% 45%, rgba(14, 165, 233, 0.35), transparent);
-  background-repeat: no-repeat;
-  animation: showcase-particles-float 18s ease-in-out infinite alternate;
-}
-
-@keyframes showcase-particles-float {
-  from { transform: translateY(0); }
-  to { transform: translateY(-24px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1049,18 +1227,31 @@ const visibleCards = computed(() =>
   }
   .showcase-page::before,
   .showcase-page::after,
-  .showcase-glow-mid,
-  .showcase-glow-amber,
-  .showcase-glow-emerald,
   .showcase-aurora,
-  .showcase-particles {
+  .showcase-bg-mesh::before,
+  .showcase-bg-mesh::after {
     animation: none !important;
-    opacity: 0.5;
+  }
+  .showcase-bg-grid,
+  .showcase-bg-mesh,
+  .showcase-constellation,
+  .showcase-evolution,
+  .showcase-aurora {
+    opacity: 0.55;
   }
   .showcase-card,
   .node-sweep,
-  .showcase-featured::before {
+  .showcase-featured::before,
+  .evo-branch,
+  .evo-tip {
     animation: none !important;
+  }
+  /* Static evolution trees: cancel the grow dashoffset so branches render fully */
+  .evo-branch {
+    stroke-dashoffset: 0 !important;
+  }
+  .evo-tip {
+    opacity: 0.7 !important;
   }
 }
 </style>
