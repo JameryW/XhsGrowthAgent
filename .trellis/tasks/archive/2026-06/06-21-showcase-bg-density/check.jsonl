@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "校验 i18n 合规、单根结构、复用约定"}
+{"file": ".trellis/spec/frontend/animation-patterns.md", "reason": "校验 reduced-motion 覆盖完整、入场动画无 backwards fill 不可见坑"}
