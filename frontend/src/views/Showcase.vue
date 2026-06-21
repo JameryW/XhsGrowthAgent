@@ -461,6 +461,74 @@ const constellationDots = computed(() => {
   return Array.from({ length: N }, () => ({ cx: +(rnd() * W).toFixed(1), cy: +(rnd() * H).toFixed(1) }))
 })
 
+// Evolution trees: deterministic branching growth lines — "from one insight, many rounds grow"
+type TreeBranch = { d: string; depth: number }
+type EvoTree = { root: { x: number; y: number }; branches: TreeBranch[]; tips: { x: number; y: number; depth: number }[]; color: string }
+
+const EVO_COLORS = ['244,63,94', '20,184,166', '139,92,246', '245,158,11', '16,185,129', '14,165,233']
+
+function buildTree(rng: () => number, ox: number, oy: number, angle: number, len: number, depth: number, maxDepth: number, acc: TreeBranch[], tips: { x: number; y: number; depth: number }[]) {
+  if (depth > maxDepth) return
+  const ex = ox + Math.cos(angle) * len
+  const ey = oy + Math.sin(angle) * len
+  // slight curve via quadratic — control point offset perpendicular to the branch
+  const perp = angle + Math.PI / 2
+  const curve = len * 0.18 * (rng() - 0.5) * 2
+  const cx = (ox + ex) / 2 + Math.cos(perp) * curve
+  const cy = (oy + ey) / 2 + Math.sin(perp) * curve
+  acc.push({ d: `M${ox.toFixed(1)},${oy.toFixed(1)}Q${cx.toFixed(1)},${cy.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`, depth })
+  if (depth === maxDepth) {
+    tips.push({ x: ex, y: ey, depth })
+    return
+  }
+  const children = rng() > 0.35 ? 3 : 2
+  const spread = 0.55 + rng() * 0.25
+  const nextLen = len * (0.62 + rng() * 0.12)
+  for (let i = 0; i < children; i++) {
+    const t = (i / (children - 1)) - 0.5
+    const childAngle = angle + t * spread + (rng() - 0.5) * 0.15
+    buildTree(rng, ex, ey, childAngle, nextLen, depth + 1, maxDepth, acc, tips)
+  }
+}
+
+// Tree defs: root position (in viewBox units), base angle, base length, max depth, color index
+const TREE_DEFS = [
+  { x: 80, y: 720, angle: -1.15, len: 120, depth: 4, color: 0 },   // bottom-left, grows up-right
+  { x: 1140, y: 720, angle: -2.0, len: 100, depth: 4, color: 1 },  // bottom-right, grows up-left
+  { x: 1060, y: 80, angle: 2.55, len: 78, depth: 3, color: 2 },    // top-right, grows down-left
+  { x: 150, y: 120, angle: 0.85, len: 72, depth: 3, color: 4 },    // top-left, grows down-right
+]
+
+const evolutionTrees = computed<EvoTree[]>(() => {
+  return TREE_DEFS.map((def, idx) => {
+    const rng = mulberry32(70000 + idx * 101)
+    const branches: TreeBranch[] = []
+    const tips: { x: number; y: number; depth: number }[] = []
+    buildTree(rng, def.x, def.y, def.angle, def.len, 0, def.depth, branches, tips)
+    return { root: { x: def.x, y: def.y }, branches, tips, color: EVO_COLORS[def.color] }
+  })
+})
+
+// Total path length per tree (for stroke-dash grow animation) — approximate sum of segment lengths
+function pathLen(b: TreeBranch, root: { x: number; y: number }): number {
+  // parse "M x,y Q cx,cy ex,ey"
+  const m = b.d.match(/M([\d.]+),([\d.]+)Q([\d.]+),([\d.]+) ([\d.]+),([\d.]+)/)
+  if (!m) return 0
+  const [, ox, oy, cx, cy, ex, ey] = m.map(Number) as unknown as [unknown, number, number, number, number, number, number]
+  void root
+  // approximate quadratic length via sampling 6 points
+  let len = 0
+  let px = ox, py = oy
+  for (let i = 1; i <= 6; i++) {
+    const t = i / 6
+    const x = (1 - t) ** 2 * ox + 2 * (1 - t) * t * cx + t ** 2 * ex
+    const y = (1 - t) ** 2 * oy + 2 * (1 - t) * t * cy + t ** 2 * ey
+    len += Math.hypot(x - px, y - py)
+    px = x; py = y
+  }
+  return len
+}
+
 </script>
 
 <template>
@@ -482,6 +550,31 @@ const constellationDots = computed(() => {
       </defs>
     </svg>
     <div class="showcase-glow-amber" aria-hidden="true" />
+    <svg class="showcase-evolution" aria-hidden="true" preserveAspectRatio="xMidYMid slice" viewBox="0 0 1200 800">
+      <g v-for="(tree, ti) in evolutionTrees" :key="'evo-'+ti">
+        <path
+          v-for="(b, bi) in tree.branches"
+          :key="'b-'+ti+'-'+bi"
+          :d="b.d"
+          fill="none"
+          :stroke="`rgba(${tree.color},${0.12 + b.depth * 0.06})`"
+          :stroke-width="2.2 - b.depth * 0.35"
+          stroke-linecap="round"
+          class="evo-branch"
+          :style="{ animationDelay: `${ti * 1.6 + b.depth * 0.5}s`, strokeDasharray: pathLen(b, tree.root).toFixed(1), strokeDashoffset: pathLen(b, tree.root).toFixed(1) }"
+        />
+        <circle
+          v-for="(tip, ii) in tree.tips"
+          :key="'t-'+ti+'-'+ii"
+          :cx="tip.x"
+          :cy="tip.y"
+          :r="2.6"
+          :fill="`rgba(${tree.color},0.55)`"
+          class="evo-tip"
+          :style="{ animationDelay: `${ti * 1.6 + 2.5 + ii * 0.2}s` }"
+        />
+      </g>
+    </svg>
     <div class="showcase-glow-emerald" aria-hidden="true" />
     <div class="showcase-particles" aria-hidden="true" />
     <!-- Ambient glow orbs -->
@@ -1064,6 +1157,39 @@ const constellationDots = computed(() => {
   opacity: 0.6;
 }
 
+/* Thematic: evolution trees — branching growth lines ("from one insight, many rounds grow") */
+.showcase-evolution {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+.evo-branch {
+  animation: evo-grow 3.6s ease-out forwards;
+}
+
+/* strokeDashoffset is set inline to the full path length; animate it to 0 to "draw" the branch */
+@keyframes evo-grow {
+  to { stroke-dashoffset: 0; }
+}
+
+.evo-tip {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: evo-tip-pulse 4.5s ease-in-out infinite;
+}
+
+@keyframes evo-tip-pulse {
+  0%, 100% { opacity: 0; transform: scale(0.6); }
+  40% { opacity: 0.9; transform: scale(1); }
+  60% { opacity: 0.6; transform: scale(1.25); }
+}
+
 .showcase-bg-dots {
   position: absolute;
   inset: 0;
@@ -1194,6 +1320,7 @@ const constellationDots = computed(() => {
   .showcase-bg-grid,
   .showcase-bg-mesh,
   .showcase-constellation,
+  .showcase-evolution,
   .showcase-bg-dots,
   .showcase-aurora,
   .showcase-glow-amber,
@@ -1203,8 +1330,17 @@ const constellationDots = computed(() => {
   }
   .showcase-card,
   .node-sweep,
-  .showcase-featured::before {
+  .showcase-featured::before,
+  .evo-branch,
+  .evo-tip {
     animation: none !important;
+  }
+  /* Static evolution trees: cancel the grow dashoffset so branches render fully */
+  .evo-branch {
+    stroke-dashoffset: 0 !important;
+  }
+  .evo-tip {
+    opacity: 0.7 !important;
   }
 }
 </style>
