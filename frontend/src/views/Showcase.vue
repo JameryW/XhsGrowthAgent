@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+import AnimatedCounter from '@/components/AnimatedCounter.vue'
 import WorkflowCardBody from '@/components/WorkflowCardBody.vue'
 import { listWorkflows, getWorkflowStatus } from '@/api/workflow'
 import type { WorkflowListItem, WorkflowPhase, WorkflowStatus, WorkflowStateResponse } from '@/types/workflow'
@@ -15,6 +16,7 @@ const workflowDetails = ref<Map<string, WorkflowStateResponse>>(new Map())
 const loadingDetailIds = ref<Set<string>>(new Set())
 const listLoaded = ref(false)
 const error = ref<string | null>(null)
+const statsReady = ref(false)
 
 // Filter & sort state
 type StatusFilter = 'all' | 'running' | 'completed' | 'needs_attention'
@@ -114,6 +116,8 @@ async function fetchWorkflows() {
     const result = await listWorkflows({ limit: 50 })
     workflows.value = result.workflows
     listLoaded.value = true
+    await nextTick()
+    statsReady.value = true
   } catch (e: any) {
     error.value = e.message
   }
@@ -419,6 +423,12 @@ const visibleCards = computed(() =>
 
 <template>
   <div class="showcase-page min-h-screen text-slate-800 relative overflow-hidden">
+    <!-- Ambient background layers -->
+    <div class="showcase-bg-dots" aria-hidden="true" />
+    <div class="showcase-aurora" aria-hidden="true" />
+    <div class="showcase-glow-amber" aria-hidden="true" />
+    <div class="showcase-glow-emerald" aria-hidden="true" />
+    <div class="showcase-particles" aria-hidden="true" />
     <!-- Ambient glow orbs -->
     <div class="showcase-glow-mid" aria-hidden="true" />
     <!-- Nav -->
@@ -504,23 +514,15 @@ const visibleCards = computed(() =>
               </ellipse>
 
               <!-- Layer 2: fine dashed flow -->
-              <ellipse :cx="svgCx" :cy="svgCy" :rx="svgRx" :ry="svgRy" stroke="url(#loop-grad)" stroke-width="1.5" stroke-dasharray="16 8" stroke-linecap="round" fill="none" opacity="0.34">
-                <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="4.5s" repeatCount="indefinite" />
+              <ellipse :cx="svgCx" :cy="svgCy" :rx="svgRx" :ry="svgRy" stroke="url(#loop-grad)" stroke-width="1.5" stroke-dasharray="16 8" stroke-linecap="round" fill="none" opacity="0.22">
+                <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="6.5s" repeatCount="indefinite" />
               </ellipse>
 
-              <!-- Energy pulses at node positions -->
-              <g opacity="0.2">
-                <circle v-for="n in 6" :key="'pulse-'+n" :cx="svgCx + (Math.cos((n * 60 - 90) * Math.PI / 180) * svgRx)" :cy="svgCy + (Math.sin((n * 60 - 90) * Math.PI / 180) * svgRy)" r="0" fill="none" :stroke="['#f43f5e','#14b8a6','#f59e0b','#8b5cf6','#10b981','#0ea5e9'][n]" stroke-width="1">
-                  <animate attributeName="r" values="0;8;0" :dur="`${5 + n * 0.5}s`" repeatCount="indefinite" />
-                  <animate attributeName="opacity" values="0;0.32;0" :dur="`${5 + n * 0.5}s`" repeatCount="indefinite" />
-                </circle>
-              </g>
-
               <!-- Comet -->
-              <line x1="-56" y1="0" x2="0" y2="0" stroke="url(#comet-grad)" stroke-width="2.5" stroke-linecap="round" opacity="0.62" filter="url(#comet-glow)">
+              <line x1="-56" y1="0" x2="0" y2="0" stroke="url(#comet-grad)" stroke-width="2.5" stroke-linecap="round" opacity="0.5" filter="url(#comet-glow)">
                 <animateMotion dur="10s" repeatCount="indefinite" rotate="auto"><mpath href="#loop-motion-path" /></animateMotion>
               </line>
-              <circle r="3.5" fill="#fff" opacity="0.86" filter="url(#comet-glow)">
+              <circle r="3.5" fill="#fff" opacity="0.8" filter="url(#comet-glow)">
                 <animateMotion dur="10s" repeatCount="indefinite"><mpath href="#loop-motion-path" /></animateMotion>
               </circle>
 
@@ -547,6 +549,7 @@ const visibleCards = computed(() =>
               <div class="absolute inset-[-8px] rounded-full opacity-0 group-hover:opacity-40 transition-opacity duration-300 blur-sm" :class="step.color" />
               <!-- Node circle -->
               <div class="w-[88px] h-[88px] rounded-full flex items-center justify-center bg-white/90 border-2 shadow-md transition-all duration-300 group-hover:scale-105 group-hover:shadow-lg relative z-10" :class="[step.borderColor, step.iconColor]">
+                <span class="node-sweep" :style="{ animationDelay: `${i * 0.9}s` }" />
                 <AppIcon :name="step.icon" size="lg" :variant="step.iconVariant" />
               </div>
               <div class="text-center mt-2">
@@ -569,6 +572,7 @@ const visibleCards = computed(() =>
                 <div class="relative">
                   <div class="absolute inset-[-6px] rounded-full opacity-10 group-hover:opacity-28 transition-opacity duration-300 blur-sm" :class="step.color" />
                   <div class="w-[48px] h-[48px] rounded-full flex items-center justify-center bg-white/90 border-2 shadow-sm group-hover:shadow-md transition-all duration-300 group-hover:scale-105" :class="[step.borderColor, step.iconColor]">
+                    <span class="node-sweep node-sweep-sm" :style="{ animationDelay: `${i * 0.9}s` }" />
                     <AppIcon :name="step.icon" size="md" :variant="step.iconVariant" />
                   </div>
                 </div>
@@ -608,29 +612,29 @@ const visibleCards = computed(() =>
              ══════════════════════════════════════════════════════════════ -->
         <div class="mb-5 md:mb-6 py-2.5 px-3 rounded-xl liquid-glass-inset flex items-center justify-center gap-5 md:gap-8">
           <div class="flex items-center gap-2">
-            <div class="text-lg md:text-xl font-bold text-slate-700 tabular-nums">{{ stats.total }}</div>
+            <div class="text-lg md:text-xl font-bold text-slate-700"><AnimatedCounter :value="statsReady ? stats.total : 0" :duration="800" /></div>
             <div class="text-[10px] text-slate-400 leading-tight">{{ t('showcase.stats.total') }}</div>
           </div>
           <div class="w-px h-5 bg-slate-200/60" />
           <div class="flex items-center gap-2">
-            <div class="text-lg md:text-xl font-bold text-teal-600 tabular-nums">{{ stats.running }}</div>
+            <div class="text-lg md:text-xl font-bold text-teal-600"><AnimatedCounter :value="statsReady ? stats.running : 0" :duration="800" /></div>
             <div class="text-[10px] text-slate-400 leading-tight">{{ t('showcase.stats.running') }}</div>
           </div>
           <div class="w-px h-5 bg-slate-200/60" />
           <div class="flex items-center gap-2">
-            <div class="text-lg md:text-xl font-bold text-emerald-600 tabular-nums">{{ stats.completed }}</div>
+            <div class="text-lg md:text-xl font-bold text-emerald-600"><AnimatedCounter :value="statsReady ? stats.completed : 0" :duration="800" /></div>
             <div class="text-[10px] text-slate-400 leading-tight">{{ t('showcase.stats.completed') }}</div>
           </div>
           <template v-if="stats.needsAttention > 0">
             <div class="w-px h-5 bg-slate-200/60" />
             <div class="flex items-center gap-2">
-              <div class="text-lg md:text-xl font-bold text-rose-600 tabular-nums">{{ stats.needsAttention }}</div>
+              <div class="text-lg md:text-xl font-bold text-rose-600"><AnimatedCounter :value="statsReady ? stats.needsAttention : 0" :duration="800" /></div>
               <div class="text-[10px] text-slate-400 leading-tight">{{ t('showcase.stats.needsAttention') }}</div>
             </div>
           </template>
           <div class="w-px h-5 bg-slate-200/60" />
           <div class="flex items-center gap-2">
-            <div class="text-lg md:text-xl font-bold text-violet-600 tabular-nums">{{ stats.avgProgress }}%</div>
+            <div class="text-lg md:text-xl font-bold text-violet-600"><AnimatedCounter :value="statsReady ? stats.avgProgress : 0" :duration="800" />%</div>
             <div class="text-[10px] text-slate-400 leading-tight">{{ t('showcase.stats.avgProgress') }}</div>
           </div>
         </div>
@@ -638,7 +642,7 @@ const visibleCards = computed(() =>
         <!-- ══════════════════════════════════════════════════════════════
              Layer 3: Featured workflow
              ══════════════════════════════════════════════════════════════ -->
-        <div v-if="featuredWorkflow && featuredDetail" class="mb-5 md:mb-6 rounded-xl overflow-hidden cursor-pointer transition-shadow hover:shadow-md"
+        <div v-if="featuredWorkflow && featuredDetail" class="showcase-featured mb-5 md:mb-6 rounded-xl overflow-hidden cursor-pointer transition-shadow hover:shadow-md"
              :class="[featuredMode === 'needs_attention' ? 'liquid-glass-rose liquid-glass-hover' : 'liquid-glass-emerald liquid-glass-hover']"
              @click="goReplay(featuredWorkflow.thread_id)">
           <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-white/10 liquid-glass-inset">
@@ -700,11 +704,12 @@ const visibleCards = computed(() =>
              ══════════════════════════════════════════════════════════════ -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div
-            v-for="card in visibleCards"
+            v-for="(card, idx) in visibleCards"
             :key="card.wf.thread_id"
             v-memo="[card.wf.thread_id, card.wf.status, card.wf.progress_percent, card.detail, card.isLoading]"
             class="showcase-card rounded-xl liquid-glass-hover overflow-hidden cursor-pointer transition-shadow hover:shadow-md"
             :class="[card.statusClass]"
+            :style="{ animationDelay: `${(idx % ITEMS_PER_PAGE) * 60}ms` }"
             @click="goReplay(card.wf.thread_id)"
           >
             <!-- Card header with integrated progress -->
@@ -841,8 +846,35 @@ const visibleCards = computed(() =>
 }
 
 .showcase-card {
+  position: relative;
   content-visibility: auto;
   contain-intrinsic-size: 280px;
+  animation: showcase-card-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+.showcase-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(120deg, rgba(244, 63, 94, 0.42), rgba(20, 184, 166, 0.42), rgba(139, 92, 246, 0.42));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.showcase-card:hover::after {
+  opacity: 1;
+}
+
+@keyframes showcase-card-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .node-glow-rose:hover { box-shadow: 0 0 16px 3px rgba(244, 63, 94, 0.12); }
@@ -851,6 +883,28 @@ const visibleCards = computed(() =>
 .node-glow-violet:hover { box-shadow: 0 0 16px 3px rgba(139, 92, 246, 0.12); }
 .node-glow-emerald:hover { box-shadow: 0 0 16px 3px rgba(16, 185, 129, 0.12); }
 .node-glow-sky:hover { box-shadow: 0 0 16px 3px rgba(14, 165, 233, 0.12); }
+
+/* Traveling spotlight ring — staggered delay creates a highlight sweeping around the loop */
+.node-sweep {
+  position: absolute;
+  inset: -2px;
+  border-radius: 9999px;
+  border: 2px solid currentColor;
+  opacity: 0;
+  pointer-events: none;
+  animation: node-sweep 5.4s ease-out infinite;
+}
+
+.node-sweep-sm {
+  inset: -1px;
+  border-width: 1.5px;
+}
+
+@keyframes node-sweep {
+  0%, 100% { opacity: 0; transform: scale(1); }
+  8% { opacity: 0.55; }
+  38% { opacity: 0; transform: scale(1.45); }
+}
 
 .node-center-glass {
   background:
@@ -865,6 +919,128 @@ const visibleCards = computed(() =>
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
+/* Featured card — subtle animated gradient border to mark the focal card */
+.showcase-featured {
+  position: relative;
+}
+
+.showcase-featured::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(120deg, rgba(244, 63, 94, 0.55), rgba(16, 185, 129, 0.55), rgba(139, 92, 246, 0.55));
+  background-size: 200% 100%;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: gradient-shift 6s ease infinite;
+  opacity: 0.6;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── Background enrichment layers (z-0, behind content z-10) ── */
+
+.showcase-bg-dots {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+  background-size: 22px 22px;
+  opacity: 0.5;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 30%, #000 30%, transparent 80%);
+  mask-image: radial-gradient(ellipse at 50% 30%, #000 30%, transparent 80%);
+}
+
+.showcase-aurora {
+  position: absolute;
+  top: -10%;
+  left: 50%;
+  width: 900px;
+  height: 540px;
+  z-index: 0;
+  pointer-events: none;
+  background: conic-gradient(from 180deg at 50% 50%,
+    rgba(244, 63, 94, 0.10),
+    rgba(20, 184, 166, 0.10),
+    rgba(139, 92, 246, 0.10),
+    rgba(245, 158, 11, 0.08),
+    rgba(244, 63, 94, 0.10));
+  filter: blur(70px);
+  opacity: 0.5;
+  animation: showcase-aurora-rotate 24s linear infinite;
+}
+
+@keyframes showcase-aurora-rotate {
+  from { transform: translateX(-50%) rotate(0deg); }
+  to { transform: translateX(-50%) rotate(360deg); }
+}
+
+.showcase-glow-amber,
+.showcase-glow-emerald {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.showcase-glow-amber {
+  width: 420px;
+  height: 420px;
+  top: 8%;
+  right: 6%;
+  opacity: 0.5;
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.10) 0%, transparent 70%);
+  animation: glow-drift-amber 14s ease-in-out infinite alternate;
+}
+
+.showcase-glow-emerald {
+  width: 380px;
+  height: 380px;
+  bottom: 6%;
+  left: 8%;
+  opacity: 0.5;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.10) 0%, transparent 70%);
+  animation: glow-drift-emerald 16s ease-in-out infinite alternate;
+}
+
+@keyframes glow-drift-amber {
+  0% { transform: translate(0, 0); opacity: 0.5; }
+  50% { transform: translate(-40px, 30px); opacity: 0.75; }
+  100% { transform: translate(30px, -20px); opacity: 0.45; }
+}
+
+@keyframes glow-drift-emerald {
+  0% { transform: translate(0, 0); opacity: 0.5; }
+  50% { transform: translate(45px, -35px); opacity: 0.7; }
+  100% { transform: translate(-25px, 25px); opacity: 0.4; }
+}
+
+.showcase-particles {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.6;
+  background-image:
+    radial-gradient(1.5px 1.5px at 15% 22%, rgba(244, 63, 94, 0.5), transparent),
+    radial-gradient(1.5px 1.5px at 78% 18%, rgba(20, 184, 166, 0.45), transparent),
+    radial-gradient(1.5px 1.5px at 38% 78%, rgba(139, 92, 246, 0.4), transparent),
+    radial-gradient(1.5px 1.5px at 88% 72%, rgba(245, 158, 11, 0.4), transparent),
+    radial-gradient(1.5px 1.5px at 62% 45%, rgba(14, 165, 233, 0.35), transparent);
+  background-repeat: no-repeat;
+  animation: showcase-particles-float 18s ease-in-out infinite alternate;
+}
+
+@keyframes showcase-particles-float {
+  from { transform: translateY(0); }
+  to { transform: translateY(-24px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .showcase-page :deep(*) {
     animation-duration: 0.01ms !important;
@@ -873,9 +1049,18 @@ const visibleCards = computed(() =>
   }
   .showcase-page::before,
   .showcase-page::after,
-  .showcase-glow-mid {
+  .showcase-glow-mid,
+  .showcase-glow-amber,
+  .showcase-glow-emerald,
+  .showcase-aurora,
+  .showcase-particles {
     animation: none !important;
-    opacity: 0.6;
+    opacity: 0.5;
+  }
+  .showcase-card,
+  .node-sweep,
+  .showcase-featured::before {
+    animation: none !important;
   }
 }
 </style>

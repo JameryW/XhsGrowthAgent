@@ -68,3 +68,37 @@ Fixed add_session.py: when no journal-*.md exists, target_file stayed None and t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 37: 优化展示页视觉效果
+
+**Date**: 2026-06-21
+**Task**: 优化展示页视觉效果
+**Branch**: `main`
+
+### Summary
+
+Showcase.vue 视觉精修：背景增层（点阵/极光/amber+emerald 光球/漂浮粒子）、闭环 SMIL 脉冲改 CSS node-sweep、统计 count-up 复用 AnimatedCounter、卡片交错入场+hover 渐变描边、Featured 流光描边、扩展 reduced-motion 覆盖；新增前端 animation-patterns spec。typecheck+build 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fa06d697` | (see git log) |
+| `6b5674ff` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
