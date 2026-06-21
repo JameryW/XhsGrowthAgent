@@ -461,19 +461,19 @@ const constellationDots = computed(() => {
   return Array.from({ length: N }, () => ({ cx: +(rnd() * W).toFixed(1), cy: +(rnd() * H).toFixed(1) }))
 })
 
-// Evolution trees: deterministic branching growth lines — "from one insight, many rounds grow"
+// Evolution trees: organic branching — smoother curves, natural canopy shape
 type TreeBranch = { d: string; depth: number }
-type EvoTree = { root: { x: number; y: number }; branches: TreeBranch[]; tips: { x: number; y: number; depth: number }[]; color: string }
+type EvoTree = { branches: TreeBranch[]; tips: { x: number; y: number; depth: number }[]; color: string }
 
-const EVO_COLORS = ['244,63,94', '20,184,166', '139,92,246', '245,158,11', '16,185,129', '14,165,233']
+const EVO_COLORS = ['244,63,94', '20,184,166']
 
 function buildTree(rng: () => number, ox: number, oy: number, angle: number, len: number, depth: number, maxDepth: number, acc: TreeBranch[], tips: { x: number; y: number; depth: number }[]) {
-  if (depth > maxDepth) return
+  if (depth > maxDepth || len < 8) return
   const ex = ox + Math.cos(angle) * len
   const ey = oy + Math.sin(angle) * len
-  // slight curve via quadratic — control point offset perpendicular to the branch
+  // organic curve: gentle perpendicular offset
   const perp = angle + Math.PI / 2
-  const curve = len * 0.18 * (rng() - 0.5) * 2
+  const curve = len * 0.25 * (rng() - 0.5)
   const cx = (ox + ex) / 2 + Math.cos(perp) * curve
   const cy = (oy + ey) / 2 + Math.sin(perp) * curve
   acc.push({ d: `M${ox.toFixed(1)},${oy.toFixed(1)}Q${cx.toFixed(1)},${cy.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`, depth })
@@ -481,22 +481,20 @@ function buildTree(rng: () => number, ox: number, oy: number, angle: number, len
     tips.push({ x: ex, y: ey, depth })
     return
   }
-  const children = rng() > 0.35 ? 3 : 2
-  const spread = 0.55 + rng() * 0.25
-  const nextLen = len * (0.62 + rng() * 0.12)
-  for (let i = 0; i < children; i++) {
-    const t = (i / (children - 1)) - 0.5
-    const childAngle = angle + t * spread + (rng() - 0.5) * 0.15
+  // always 2 children for balanced canopy; wider spread
+  const spread = 0.7 + rng() * 0.35
+  const nextLen = len * (0.68 + rng() * 0.1)
+  for (let i = 0; i < 2; i++) {
+    const t = i === 0 ? -1 : 1
+    const childAngle = angle + t * spread * 0.5 + (rng() - 0.5) * 0.2
     buildTree(rng, ex, ey, childAngle, nextLen, depth + 1, maxDepth, acc, tips)
   }
 }
 
-// Tree defs: root position (in viewBox units), base angle, base length, max depth, color index
+// ponytail: 2 trees instead of 4 — fewer DOM nodes, less visual noise
 const TREE_DEFS = [
-  { x: 80, y: 720, angle: -1.15, len: 120, depth: 4, color: 0 },   // bottom-left, grows up-right
-  { x: 1140, y: 720, angle: -2.0, len: 100, depth: 4, color: 1 },  // bottom-right, grows up-left
-  { x: 1060, y: 80, angle: 2.55, len: 78, depth: 3, color: 2 },    // top-right, grows down-left
-  { x: 150, y: 120, angle: 0.85, len: 72, depth: 3, color: 4 },    // top-left, grows down-right
+  { x: 60, y: 680, angle: -1.1, len: 130, depth: 5, color: 0 },   // bottom-left, grows up-right
+  { x: 1140, y: 680, angle: -2.05, len: 115, depth: 5, color: 1 }, // bottom-right, grows up-left
 ]
 
 const evolutionTrees = computed<EvoTree[]>(() => {
@@ -505,29 +503,30 @@ const evolutionTrees = computed<EvoTree[]>(() => {
     const branches: TreeBranch[] = []
     const tips: { x: number; y: number; depth: number }[] = []
     buildTree(rng, def.x, def.y, def.angle, def.len, 0, def.depth, branches, tips)
-    return { root: { x: def.x, y: def.y }, branches, tips, color: EVO_COLORS[def.color] }
+    return { branches, tips, color: EVO_COLORS[def.color] }
   })
 })
 
-// Total path length per tree (for stroke-dash grow animation) — approximate sum of segment lengths
-function pathLen(b: TreeBranch, root: { x: number; y: number }): number {
-  // parse "M x,y Q cx,cy ex,ey"
-  const m = b.d.match(/M([\d.]+),([\d.]+)Q([\d.]+),([\d.]+) ([\d.]+),([\d.]+)/)
-  if (!m) return 0
-  const [, ox, oy, cx, cy, ex, ey] = m.map(Number) as unknown as [unknown, number, number, number, number, number, number]
-  void root
-  // approximate quadratic length via sampling 6 points
-  let len = 0
-  let px = ox, py = oy
-  for (let i = 1; i <= 6; i++) {
-    const t = i / 6
-    const x = (1 - t) ** 2 * ox + 2 * (1 - t) * t * cx + t ** 2 * ex
-    const y = (1 - t) ** 2 * oy + 2 * (1 - t) * t * cy + t ** 2 * ey
-    len += Math.hypot(x - px, y - py)
-    px = x; py = y
-  }
-  return len
-}
+// ponytail: precompute path lengths once per computed change (not per render), 4-point sampling
+const evolutionTreeData = computed(() => {
+  return evolutionTrees.value.map(tree => {
+    const lens = tree.branches.map(b => {
+      const m = b.d.match(/M([\d.]+),([\d.]+)Q([\d.]+),([\d.]+) ([\d.]+),([\d.]+)/)
+      if (!m) return 40
+      const [ox, oy, cx, cy, ex, ey] = [m[1], m[2], m[3], m[4], m[5], m[6]].map(Number)
+      let len = 0, px = ox, py = oy
+      for (let i = 1; i <= 4; i++) {
+        const t = i / 4
+        const x = (1 - t) ** 2 * ox + 2 * (1 - t) * t * cx + t ** 2 * ex
+        const y = (1 - t) ** 2 * oy + 2 * (1 - t) * t * cy + t ** 2 * ey
+        len += Math.hypot(x - px, y - py)
+        px = x; py = y
+      }
+      return len
+    })
+    return { tree, lens }
+  })
+})
 
 </script>
 
@@ -536,7 +535,6 @@ function pathLen(b: TreeBranch, root: { x: number; y: number }): number {
     <!-- Ambient background layers -->
     <div class="showcase-bg-grid" aria-hidden="true" />
     <div class="showcase-bg-mesh" aria-hidden="true" />
-    <div class="showcase-bg-dots" aria-hidden="true" />
     <div class="showcase-aurora" aria-hidden="true" />
     <svg class="showcase-constellation" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 1200 800">
       <path class="constellation-lines" :d="constellationPath" fill="none" stroke="url(#const-grad)" stroke-width="0.6" stroke-linecap="round" />
@@ -549,41 +547,36 @@ function pathLen(b: TreeBranch, root: { x: number; y: number }): number {
         </linearGradient>
       </defs>
     </svg>
-    <div class="showcase-glow-amber" aria-hidden="true" />
     <svg class="showcase-evolution" aria-hidden="true" preserveAspectRatio="xMidYMid slice" viewBox="0 0 1200 800">
-      <g v-for="(tree, ti) in evolutionTrees" :key="'evo-'+ti">
+      <g v-for="(td, ti) in evolutionTreeData" :key="'evo-'+ti">
         <path
-          v-for="(b, bi) in tree.branches"
+          v-for="(b, bi) in td.tree.branches"
           :key="'b-'+ti+'-'+bi"
           :d="b.d"
           fill="none"
-          :stroke="`rgba(${tree.color},${0.12 + b.depth * 0.06})`"
-          :stroke-width="2.2 - b.depth * 0.35"
+          :stroke="`rgba(${td.tree.color},${0.06 + b.depth * 0.03})`"
+          :stroke-width="1.8 - b.depth * 0.25"
           stroke-linecap="round"
           class="evo-branch"
-          :style="{ animationDelay: `${ti * 1.6 + b.depth * 0.5}s`, strokeDasharray: pathLen(b, tree.root).toFixed(1), strokeDashoffset: pathLen(b, tree.root).toFixed(1) }"
+          :style="{ animationDelay: `${ti * 1.6 + b.depth * 0.5}s`, strokeDasharray: td.lens[bi].toFixed(1), strokeDashoffset: td.lens[bi].toFixed(1) }"
         />
         <circle
-          v-for="(tip, ii) in tree.tips"
+          v-for="(tip, ii) in td.tree.tips"
           :key="'t-'+ti+'-'+ii"
           :cx="tip.x"
           :cy="tip.y"
-          :r="2.6"
-          :fill="`rgba(${tree.color},0.55)`"
+          :r="1.8"
+          :fill="`rgba(${td.tree.color},0.3)`"
           class="evo-tip"
           :style="{ animationDelay: `${ti * 1.6 + 2.5 + ii * 0.2}s` }"
         />
       </g>
     </svg>
-    <div class="showcase-glow-emerald" aria-hidden="true" />
-    <div class="showcase-particles" aria-hidden="true" />
-    <!-- Ambient glow orbs -->
-    <div class="showcase-glow-mid" aria-hidden="true" />
     <!-- Nav -->
-    <nav class="relative z-20 liquid-glass-nav border-b border-white/15">
+    <nav class="relative z-20 liquid-glass-nav showcase-nav">
       <div class="max-w-[1200px] mx-auto px-3 md:px-6 h-14 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-amber-400 flex items-center justify-center shadow-md shadow-rose-500/20">
+          <div class="showcase-logo w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-amber-400 flex items-center justify-center shadow-md shadow-rose-500/20">
             <AppIcon name="Rocket" size="sm" variant="white" />
           </div>
           <div>
@@ -591,7 +584,7 @@ function pathLen(b: TreeBranch, root: { x: number; y: number }): number {
             <p class="text-[11px] text-slate-400 -mt-0.5">{{ t('showcase.subtitle') }}</p>
           </div>
         </div>
-        <button @click="goDashboard" class="px-4 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-xs font-medium text-white transition-colors shadow-sm shadow-rose-500/20">
+        <button @click="goDashboard" class="showcase-cta-btn px-4 py-1.5 rounded-lg text-xs font-medium text-white transition-all">
           {{ t('showcase.dashboard') }}
         </button>
       </div>
@@ -866,7 +859,7 @@ function pathLen(b: TreeBranch, root: { x: number; y: number }): number {
                 <span class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0" :class="card.badgeClass">{{ card.statusText }}</span>
                 <span v-if="card.wf.workflow_mode" class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 shrink-0">{{ card.wf.workflow_mode }}</span>
                 <!-- Inline progress bar + percent -->
-                <div class="hidden sm:flex items-center gap-1.5 ml-1">
+                <div class="flex items-center gap-1.5 ml-1">
                   <div class="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
                     <div class="h-full rounded-full transition-all duration-500" :class="card.progressClass" :style="{ width: `${card.wf.progress_percent}%` }" />
                   </div>
@@ -891,7 +884,7 @@ function pathLen(b: TreeBranch, root: { x: number; y: number }): number {
             </div>
             <!-- Card footer -->
             <div class="px-4 pb-2.5 pt-1 flex items-center justify-between">
-              <div class="hidden md:flex items-center gap-0.5">
+              <div class="flex items-center gap-0.5">
                 <template v-for="(_step, i) in pipelineSteps" :key="i">
                   <div class="w-3 h-1 rounded-full transition-colors" :class="i < card.pipelineProgress ? (card.wf.status === 'completed' ? 'bg-emerald-400' : 'bg-teal-400') : 'bg-slate-200'" />
                 </template>
@@ -926,6 +919,37 @@ function pathLen(b: TreeBranch, root: { x: number; y: number }): number {
 </template>
 
 <style scoped>
+/* ── Nav bar ── */
+.showcase-nav {
+  border-bottom: none;
+  box-shadow:
+    0 0 1px rgba(15, 23, 42, 0.06),
+    0 4px 16px rgba(15, 23, 42, 0.04),
+    inset 0 -1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.showcase-logo {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.showcase-logo:hover {
+  transform: scale(1.08) rotate(-4deg);
+  box-shadow: 0 4px 14px rgba(244, 63, 94, 0.3);
+}
+
+.showcase-cta-btn {
+  background: linear-gradient(135deg, #f43f5e, #e11d48);
+  box-shadow: 0 2px 8px rgba(244, 63, 94, 0.25);
+}
+.showcase-cta-btn:hover {
+  background: linear-gradient(135deg, #e11d48, #be123c);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(244, 63, 94, 0.35);
+}
+.showcase-cta-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(244, 63, 94, 0.2);
+}
+
 .showcase-page {
   background:
     linear-gradient(135deg, rgba(255, 241, 242, 0.54), transparent 34%),
@@ -970,25 +994,6 @@ function pathLen(b: TreeBranch, root: { x: number; y: number }): number {
   0% { transform: translate(0, 0); opacity: 0.5; }
   50% { transform: translate(-50px, -30px); opacity: 0.85; }
   100% { transform: translate(40px, -60px); opacity: 0.55; }
-}
-
-.showcase-glow-mid {
-  position: absolute;
-  width: 450px;
-  height: 450px;
-  top: 40%;
-  left: 45%;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 0;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.06) 0%, transparent 70%);
-  animation: glow-drift-3 10s ease-in-out infinite alternate;
-}
-
-@keyframes glow-drift-3 {
-  0% { transform: translate(0, 0); opacity: 0.4; }
-  50% { transform: translate(30px, -50px); opacity: 0.75; }
-  100% { transform: translate(-40px, 30px); opacity: 0.45; }
 }
 
 .showcase-card {
@@ -1157,7 +1162,7 @@ function pathLen(b: TreeBranch, root: { x: number; y: number }): number {
   opacity: 0.6;
 }
 
-/* Thematic: evolution trees — branching growth lines ("from one insight, many rounds grow") */
+/* Thematic: evolution trees — subtle background accent */
 .showcase-evolution {
   position: absolute;
   inset: 0;
@@ -1165,7 +1170,7 @@ function pathLen(b: TreeBranch, root: { x: number; y: number }): number {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  opacity: 0.9;
+  opacity: 0.55;
 }
 
 .evo-branch {
@@ -1188,16 +1193,6 @@ function pathLen(b: TreeBranch, root: { x: number; y: number }): number {
   0%, 100% { opacity: 0; transform: scale(0.6); }
   40% { opacity: 0.9; transform: scale(1); }
   60% { opacity: 0.6; transform: scale(1.25); }
-}
-
-.showcase-bg-dots {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image: radial-gradient(circle, rgba(15, 23, 42, 0.07) 1px, transparent 1px);
-  background-size: 18px 18px;
-  opacity: 0.7;
 }
 
 .showcase-aurora {
@@ -1224,82 +1219,6 @@ function pathLen(b: TreeBranch, root: { x: number; y: number }): number {
   to { transform: translateX(-50%) rotate(360deg); }
 }
 
-.showcase-glow-amber,
-.showcase-glow-emerald {
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.showcase-glow-amber {
-  width: 520px;
-  height: 520px;
-  top: 6%;
-  right: 4%;
-  opacity: 0.7;
-  background: radial-gradient(circle, rgba(245, 158, 11, 0.18) 0%, transparent 78%);
-  animation: glow-drift-amber 14s ease-in-out infinite alternate;
-}
-
-.showcase-glow-emerald {
-  width: 480px;
-  height: 480px;
-  bottom: 4%;
-  left: 6%;
-  opacity: 0.7;
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.18) 0%, transparent 78%);
-  animation: glow-drift-emerald 16s ease-in-out infinite alternate;
-}
-
-@keyframes glow-drift-amber {
-  0% { transform: translate(0, 0); opacity: 0.7; }
-  50% { transform: translate(-40px, 30px); opacity: 0.9; }
-  100% { transform: translate(30px, -20px); opacity: 0.6; }
-}
-
-@keyframes glow-drift-emerald {
-  0% { transform: translate(0, 0); opacity: 0.7; }
-  50% { transform: translate(45px, -35px); opacity: 0.88; }
-  100% { transform: translate(-25px, 25px); opacity: 0.55; }
-}
-
-.showcase-particles {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  opacity: 0.7;
-  background-image:
-    radial-gradient(1.6px 1.6px at 6% 14%, rgba(244, 63, 94, 0.6), transparent),
-    radial-gradient(1.4px 1.4px at 22% 32%, rgba(20, 184, 166, 0.55), transparent),
-    radial-gradient(1.6px 1.6px at 38% 9%, rgba(139, 92, 246, 0.55), transparent),
-    radial-gradient(1.4px 1.4px at 52% 28%, rgba(245, 158, 11, 0.5), transparent),
-    radial-gradient(1.6px 1.6px at 68% 14%, rgba(14, 165, 233, 0.5), transparent),
-    radial-gradient(1.4px 1.4px at 84% 36%, rgba(244, 63, 94, 0.55), transparent),
-    radial-gradient(1.6px 1.6px at 94% 18%, rgba(20, 184, 166, 0.5), transparent),
-    radial-gradient(1.4px 1.4px at 12% 52%, rgba(139, 92, 246, 0.5), transparent),
-    radial-gradient(1.6px 1.6px at 28% 66%, rgba(245, 158, 11, 0.45), transparent),
-    radial-gradient(1.4px 1.4px at 44% 48%, rgba(14, 165, 233, 0.45), transparent),
-    radial-gradient(1.6px 1.6px at 58% 72%, rgba(244, 63, 94, 0.5), transparent),
-    radial-gradient(1.4px 1.4px at 74% 58%, rgba(20, 184, 166, 0.45), transparent),
-    radial-gradient(1.6px 1.6px at 88% 84%, rgba(139, 92, 246, 0.45), transparent),
-    radial-gradient(1.4px 1.4px at 8% 88%, rgba(245, 158, 11, 0.4), transparent),
-    radial-gradient(1.6px 1.6px at 32% 92%, rgba(14, 165, 233, 0.4), transparent),
-    radial-gradient(1.4px 1.4px at 48% 86%, rgba(244, 63, 94, 0.42), transparent),
-    radial-gradient(1.6px 1.6px at 64% 94%, rgba(20, 184, 166, 0.4), transparent),
-    radial-gradient(1.4px 1.4px at 78% 78%, rgba(139, 92, 246, 0.4), transparent),
-    radial-gradient(1.6px 1.6px at 92% 62%, rgba(245, 158, 11, 0.4), transparent),
-    radial-gradient(1.4px 1.4px at 18% 74%, rgba(14, 165, 233, 0.38), transparent);
-  background-repeat: no-repeat;
-  animation: showcase-particles-float 18s ease-in-out infinite alternate;
-}
-
-@keyframes showcase-particles-float {
-  from { transform: translateY(0); }
-  to { transform: translateY(-24px); }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .showcase-page :deep(*) {
     animation-duration: 0.01ms !important;
@@ -1308,11 +1227,7 @@ function pathLen(b: TreeBranch, root: { x: number; y: number }): number {
   }
   .showcase-page::before,
   .showcase-page::after,
-  .showcase-glow-mid,
-  .showcase-glow-amber,
-  .showcase-glow-emerald,
   .showcase-aurora,
-  .showcase-particles,
   .showcase-bg-mesh::before,
   .showcase-bg-mesh::after {
     animation: none !important;
@@ -1321,11 +1236,7 @@ function pathLen(b: TreeBranch, root: { x: number; y: number }): number {
   .showcase-bg-mesh,
   .showcase-constellation,
   .showcase-evolution,
-  .showcase-bg-dots,
-  .showcase-aurora,
-  .showcase-glow-amber,
-  .showcase-glow-emerald,
-  .showcase-particles {
+  .showcase-aurora {
     opacity: 0.55;
   }
   .showcase-card,
