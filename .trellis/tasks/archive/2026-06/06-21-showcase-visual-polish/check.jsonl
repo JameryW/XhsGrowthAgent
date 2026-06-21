@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "校验 i18n 合规（无硬编码可见文本）、单根结构未破坏、未用 raw fetch、复用约定"}

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Vue 3 setup 结构、i18n 规则（禁止硬编码可见文本，需双语 key）、单根路由组件、共享组件复用约定——展示页视觉改动必须遵守"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "优先复用现有动效工具类（main.css）与组件（AnimatedCounter）而非新写，避免重复造轮子"}
