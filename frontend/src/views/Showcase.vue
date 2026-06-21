@@ -419,13 +419,68 @@ const visibleCards = computed(() =>
     statusText: statusLabel(wf.status),
   }))
 )
+
+// Deterministic pseudo-random (mulberry32) so constellation lines are stable across renders
+function mulberry32(seed: number) {
+  return function () {
+    seed |= 0
+    seed = (seed + 0x6D2B79F5) | 0
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+// Constellation: ~20 nodes, connect each to its 2 nearest neighbors → faint line skeleton
+const constellationPath = computed(() => {
+  const rnd = mulberry32(20260621)
+  const W = 1200, H = 800, N = 20
+  const pts = Array.from({ length: N }, () => ({ x: rnd() * W, y: rnd() * H }))
+  const lines: string[] = []
+  const brand = ['244,63,94', '20,184,166', '139,92,246', '245,158,11', '14,165,233']
+  pts.forEach((p, i) => {
+    const dists = pts
+      .map((q, j) => ({ j, d: (q.x - p.x) ** 2 + (q.y - p.y) ** 2 }))
+      .filter(o => o.j !== i)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 2)
+    dists.forEach(o => {
+      if (i < o.j) {
+        const c = brand[(i + o.j) % brand.length]
+        lines.push(`M${p.x.toFixed(1)},${p.y.toFixed(1)}L${pts[o.j].x.toFixed(1)},${pts[o.j].y.toFixed(1)}`)
+        void c
+      }
+    })
+  })
+  return lines.join(' ')
+})
+
+const constellationDots = computed(() => {
+  const rnd = mulberry32(20260621)
+  const W = 1200, H = 800, N = 20
+  return Array.from({ length: N }, () => ({ cx: +(rnd() * W).toFixed(1), cy: +(rnd() * H).toFixed(1) }))
+})
+
 </script>
 
 <template>
   <div class="showcase-page min-h-screen text-slate-800 relative overflow-hidden">
     <!-- Ambient background layers -->
+    <div class="showcase-bg-grid" aria-hidden="true" />
+    <div class="showcase-bg-mesh" aria-hidden="true" />
     <div class="showcase-bg-dots" aria-hidden="true" />
     <div class="showcase-aurora" aria-hidden="true" />
+    <svg class="showcase-constellation" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 1200 800">
+      <path class="constellation-lines" :d="constellationPath" fill="none" stroke="url(#const-grad)" stroke-width="0.6" stroke-linecap="round" />
+      <circle v-for="(d, i) in constellationDots" :key="i" :cx="d.cx" :cy="d.cy" r="1.1" fill="url(#const-grad)" />
+      <defs>
+        <linearGradient id="const-grad" x1="0" y1="0" x2="1200" y2="800" gradientUnits="userSpaceOnUse">
+          <stop stop-color="rgba(244,63,94,0.22)" />
+          <stop offset="0.5" stop-color="rgba(139,92,246,0.22)" />
+          <stop offset="1" stop-color="rgba(14,165,233,0.22)" />
+        </linearGradient>
+      </defs>
+    </svg>
     <div class="showcase-glow-amber" aria-hidden="true" />
     <div class="showcase-glow-emerald" aria-hidden="true" />
     <div class="showcase-particles" aria-hidden="true" />
@@ -475,8 +530,6 @@ const visibleCards = computed(() =>
              Layer 1: Closed-loop pipeline — elliptical loop animation
              ══════════════════════════════════════════════════════════════ -->
         <div class="mb-4 md:mb-6 relative">
-          <div class="text-xs font-medium text-slate-400 uppercase tracking-widest mb-3">{{ t('showcase.pipelineLabel') }}</div>
-
           <!-- Desktop: elliptical loop with SVG path + circular nodes -->
           <div ref="loopContainer" class="hidden md:block relative" style="height: 460px;">
             <svg class="absolute inset-0 w-full h-full pointer-events-none" :viewBox="`0 0 ${containerW} 460`" preserveAspectRatio="xMidYMid meet" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -944,34 +997,99 @@ const visibleCards = computed(() =>
 
 /* ── Background enrichment layers (z-0, behind content z-10) ── */
 
+/* Structural: fine grid skeleton (whole-page visible) */
+.showcase-bg-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: 0.9;
+  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.3));
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.3));
+}
+
+/* Structural: drifting mesh blobs (two brand-tinted radial blobs) */
+.showcase-bg-mesh {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.7;
+}
+.showcase-bg-mesh::before,
+.showcase-bg-mesh::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(48px);
+}
+.showcase-bg-mesh::before {
+  width: 46vw;
+  height: 46vw;
+  top: 22%;
+  left: -8%;
+  background: radial-gradient(circle, rgba(244, 63, 94, 0.16) 0%, transparent 60%);
+  animation: showcase-mesh-drift-a 18s ease-in-out infinite alternate;
+}
+.showcase-bg-mesh::after {
+  width: 40vw;
+  height: 40vw;
+  bottom: 18%;
+  right: -6%;
+  background: radial-gradient(circle, rgba(20, 184, 166, 0.16) 0%, transparent 60%);
+  animation: showcase-mesh-drift-b 21s ease-in-out infinite alternate;
+}
+
+@keyframes showcase-mesh-drift-a {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(60px, -40px) scale(1.08); }
+}
+@keyframes showcase-mesh-drift-b {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-50px, 50px) scale(1.06); }
+}
+
+/* Structural: constellation lines + dots (faint skeleton) */
+.showcase-constellation {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
 .showcase-bg-dots {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background-image: radial-gradient(circle, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
-  background-size: 22px 22px;
-  opacity: 0.5;
-  -webkit-mask-image: radial-gradient(ellipse at 50% 30%, #000 30%, transparent 80%);
-  mask-image: radial-gradient(ellipse at 50% 30%, #000 30%, transparent 80%);
+  background-image: radial-gradient(circle, rgba(15, 23, 42, 0.07) 1px, transparent 1px);
+  background-size: 18px 18px;
+  opacity: 0.7;
 }
 
 .showcase-aurora {
   position: absolute;
-  top: -10%;
+  top: -8%;
   left: 50%;
-  width: 900px;
-  height: 540px;
+  width: 1100px;
+  height: 640px;
   z-index: 0;
   pointer-events: none;
   background: conic-gradient(from 180deg at 50% 50%,
-    rgba(244, 63, 94, 0.10),
-    rgba(20, 184, 166, 0.10),
-    rgba(139, 92, 246, 0.10),
-    rgba(245, 158, 11, 0.08),
-    rgba(244, 63, 94, 0.10));
-  filter: blur(70px);
-  opacity: 0.5;
+    rgba(244, 63, 94, 0.16),
+    rgba(20, 184, 166, 0.16),
+    rgba(139, 92, 246, 0.16),
+    rgba(245, 158, 11, 0.13),
+    rgba(244, 63, 94, 0.16));
+  filter: blur(44px);
+  opacity: 0.65;
   animation: showcase-aurora-rotate 24s linear infinite;
 }
 
@@ -989,35 +1107,35 @@ const visibleCards = computed(() =>
 }
 
 .showcase-glow-amber {
-  width: 420px;
-  height: 420px;
-  top: 8%;
-  right: 6%;
-  opacity: 0.5;
-  background: radial-gradient(circle, rgba(245, 158, 11, 0.10) 0%, transparent 70%);
+  width: 520px;
+  height: 520px;
+  top: 6%;
+  right: 4%;
+  opacity: 0.7;
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.18) 0%, transparent 78%);
   animation: glow-drift-amber 14s ease-in-out infinite alternate;
 }
 
 .showcase-glow-emerald {
-  width: 380px;
-  height: 380px;
-  bottom: 6%;
-  left: 8%;
-  opacity: 0.5;
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.10) 0%, transparent 70%);
+  width: 480px;
+  height: 480px;
+  bottom: 4%;
+  left: 6%;
+  opacity: 0.7;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.18) 0%, transparent 78%);
   animation: glow-drift-emerald 16s ease-in-out infinite alternate;
 }
 
 @keyframes glow-drift-amber {
-  0% { transform: translate(0, 0); opacity: 0.5; }
-  50% { transform: translate(-40px, 30px); opacity: 0.75; }
-  100% { transform: translate(30px, -20px); opacity: 0.45; }
+  0% { transform: translate(0, 0); opacity: 0.7; }
+  50% { transform: translate(-40px, 30px); opacity: 0.9; }
+  100% { transform: translate(30px, -20px); opacity: 0.6; }
 }
 
 @keyframes glow-drift-emerald {
-  0% { transform: translate(0, 0); opacity: 0.5; }
-  50% { transform: translate(45px, -35px); opacity: 0.7; }
-  100% { transform: translate(-25px, 25px); opacity: 0.4; }
+  0% { transform: translate(0, 0); opacity: 0.7; }
+  50% { transform: translate(45px, -35px); opacity: 0.88; }
+  100% { transform: translate(-25px, 25px); opacity: 0.55; }
 }
 
 .showcase-particles {
@@ -1025,13 +1143,28 @@ const visibleCards = computed(() =>
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: 0.6;
+  opacity: 0.7;
   background-image:
-    radial-gradient(1.5px 1.5px at 15% 22%, rgba(244, 63, 94, 0.5), transparent),
-    radial-gradient(1.5px 1.5px at 78% 18%, rgba(20, 184, 166, 0.45), transparent),
-    radial-gradient(1.5px 1.5px at 38% 78%, rgba(139, 92, 246, 0.4), transparent),
-    radial-gradient(1.5px 1.5px at 88% 72%, rgba(245, 158, 11, 0.4), transparent),
-    radial-gradient(1.5px 1.5px at 62% 45%, rgba(14, 165, 233, 0.35), transparent);
+    radial-gradient(1.6px 1.6px at 6% 14%, rgba(244, 63, 94, 0.6), transparent),
+    radial-gradient(1.4px 1.4px at 22% 32%, rgba(20, 184, 166, 0.55), transparent),
+    radial-gradient(1.6px 1.6px at 38% 9%, rgba(139, 92, 246, 0.55), transparent),
+    radial-gradient(1.4px 1.4px at 52% 28%, rgba(245, 158, 11, 0.5), transparent),
+    radial-gradient(1.6px 1.6px at 68% 14%, rgba(14, 165, 233, 0.5), transparent),
+    radial-gradient(1.4px 1.4px at 84% 36%, rgba(244, 63, 94, 0.55), transparent),
+    radial-gradient(1.6px 1.6px at 94% 18%, rgba(20, 184, 166, 0.5), transparent),
+    radial-gradient(1.4px 1.4px at 12% 52%, rgba(139, 92, 246, 0.5), transparent),
+    radial-gradient(1.6px 1.6px at 28% 66%, rgba(245, 158, 11, 0.45), transparent),
+    radial-gradient(1.4px 1.4px at 44% 48%, rgba(14, 165, 233, 0.45), transparent),
+    radial-gradient(1.6px 1.6px at 58% 72%, rgba(244, 63, 94, 0.5), transparent),
+    radial-gradient(1.4px 1.4px at 74% 58%, rgba(20, 184, 166, 0.45), transparent),
+    radial-gradient(1.6px 1.6px at 88% 84%, rgba(139, 92, 246, 0.45), transparent),
+    radial-gradient(1.4px 1.4px at 8% 88%, rgba(245, 158, 11, 0.4), transparent),
+    radial-gradient(1.6px 1.6px at 32% 92%, rgba(14, 165, 233, 0.4), transparent),
+    radial-gradient(1.4px 1.4px at 48% 86%, rgba(244, 63, 94, 0.42), transparent),
+    radial-gradient(1.6px 1.6px at 64% 94%, rgba(20, 184, 166, 0.4), transparent),
+    radial-gradient(1.4px 1.4px at 78% 78%, rgba(139, 92, 246, 0.4), transparent),
+    radial-gradient(1.6px 1.6px at 92% 62%, rgba(245, 158, 11, 0.4), transparent),
+    radial-gradient(1.4px 1.4px at 18% 74%, rgba(14, 165, 233, 0.38), transparent);
   background-repeat: no-repeat;
   animation: showcase-particles-float 18s ease-in-out infinite alternate;
 }
@@ -1053,9 +1186,20 @@ const visibleCards = computed(() =>
   .showcase-glow-amber,
   .showcase-glow-emerald,
   .showcase-aurora,
-  .showcase-particles {
+  .showcase-particles,
+  .showcase-bg-mesh::before,
+  .showcase-bg-mesh::after {
     animation: none !important;
-    opacity: 0.5;
+  }
+  .showcase-bg-grid,
+  .showcase-bg-mesh,
+  .showcase-constellation,
+  .showcase-bg-dots,
+  .showcase-aurora,
+  .showcase-glow-amber,
+  .showcase-glow-emerald,
+  .showcase-particles {
+    opacity: 0.55;
   }
   .showcase-card,
   .node-sweep,
