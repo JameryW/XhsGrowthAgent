@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Vue 3 setup 结构、i18n 规则、单根路由组件、共享样式复用约定"}
+{"file": ".trellis/spec/frontend/animation-patterns.md", "reason": "reduced-motion 显式覆盖规则——新增生长动效必须显式 animation:none"}
