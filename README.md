@@ -10,6 +10,8 @@
 
 XHS Growth Agent is a LangGraph-based multi-agent workflow that automates the complete content lifecycle on Xiaohongshu:
 
+🌐 **Demo**: [https://xhs.jameryw.dev](https://xhs.jameryw.dev)
+
 ```
 Trend Scouting → Content Strategy → Copywriting → Visual Design → Human Review → Publishing → Analytics → Engagement
 ```
