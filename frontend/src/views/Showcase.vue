@@ -229,7 +229,7 @@ function formatDate(iso: string) {
   return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-function goDashboard() { router.push('/login') }
+function goDashboard() { router.push({ path: '/login', query: { redirect: '/start' } }) }
 function goReplay(threadId: string) { router.push({ name: 'replay', params: { threadId } }) }
 
 const isEmpty = computed(() => listLoaded.value && workflows.value.length === 0)
