@@ -551,7 +551,9 @@
       "dryRun": "Dry Run Mode",
       "dryRunHelp": "Preview without actually publishing",
       "liveWarning": "Live mode is on. Content will be published to Xiaohongshu for real. Make sure everything is correct.",
-      "confirm": "Approve & Publish"
+      "confirm": "Approve & Publish",
+      "account": "Publish Account",
+      "activeSuffix": "active"
     },
     "stateLost": "The review state was lost after a container restart. Please restart the workflow to regenerate review content.",
     "errorStateLost": "Review State Lost"

@@ -31,6 +31,7 @@ class PublisherAgent(BaseAgent):
         # Read publish options from review decision (overrides defaults)
         publish_options = state.get("publish_options") or {}
         is_dry_run = publish_options.get("dry_run", True)
+        publish_account_id = publish_options.get("account_id")
 
         if is_dry_run or not use_browser:
             if is_dry_run:
@@ -39,20 +40,53 @@ class PublisherAgent(BaseAgent):
                 logger.warning("use_browser=False，跳过真实发布")
             # 返回模拟结果
             import datetime
+
             publish_result = {
                 "post_id": f"mock_{state.get('session_id', '0')}",
                 "post_url": "https://www.xiaohongshu.com/explore/mock",
                 "published_at": datetime.datetime.now().isoformat(),
                 "ab_variant": None,
                 "status": "mock_published",
+                "account_id": publish_account_id or state.get("account_id", ""),
             }
         else:
+            # 解析发布账号的 cookie: 选定 account_id 优先, 否则 fallback 全局活跃账号
+            cookie = settings.platform.cookie
+            user_id = settings.platform.user_id
+            if publish_account_id:
+                from backend.db.accounts import get_account_cookie
+
+                cookie, user_id = await get_account_cookie(publish_account_id)
+                if not cookie:
+                    logger.error(f"账号 {publish_account_id} 未配置 XHS_COOKIE，无法发布")
+                    publish_result = {
+                        "post_id": "",
+                        "post_url": "",
+                        "status": "failed",
+                        "error": f"账号 {publish_account_id} 未配置 cookie",
+                        "error_type": "no_cookie",
+                        # Structured recovery dict — same shape as
+                        # classify_publish_error() returns, so Dashboard.vue's
+                        # publishError.recovery.{hint,action,action_label} renders.
+                        "recovery": {
+                            "message": "该账号未配置 XHS_COOKIE，无法发布",
+                            "action": "reconfigure",
+                            "action_label": "重新配置",
+                            "hint": "请在设置页为该账号配置 XHS_COOKIE",
+                        },
+                    }
+                    return {
+                        "publish_result": publish_result,
+                        "phase": WorkflowPhase.PUBLISHING,
+                    }
+                logger.info(f"按选中账号 {publish_account_id} 发布")
+
             # 调用真实发布服务
             from backend.services.xhs_client import XHSClient, XHSPost
 
             client = XHSClient(
-                cookie=settings.platform.cookie,
-                user_id=settings.platform.user_id,
+                cookie=cookie,
+                user_id=user_id,
                 use_browser=True,
                 headless=settings.platform.headless,
             )
@@ -93,6 +127,7 @@ class PublisherAgent(BaseAgent):
             except Exception as e:
                 logger.error(f"发布失败: {e}")
                 from backend.api.errors import classify_publish_error
+
                 error_type, recovery = classify_publish_error(str(e))
                 publish_result = {
                     "post_id": "",

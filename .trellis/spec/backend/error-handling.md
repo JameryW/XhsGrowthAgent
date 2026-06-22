@@ -175,6 +175,65 @@ if values.get("error") and (phase == WorkflowPhase.ERROR or not next_nodes):
     return WorkflowStatus.ERROR
 ```
 
+## Scenario: Publish Failure Recovery Shape (Cross-Layer Contract)
+
+### 1. Scope / Trigger
+- Trigger: Any code path that sets `publish_result["recovery"]` in `PublisherAgent` or any agent returning a publish-style failure. This is a cross-layer contract — the frontend `Dashboard.vue` consumes `publishError.recovery` as a structured object, not a string.
+
+### 2. Signatures
+- `backend/api/errors.py: classify_publish_error(error_msg: str) -> tuple[PublishErrorType, dict]`
+- `PublisherAgent.execute` returns `publish_result["recovery"]` consumed by `frontend/src/views/Dashboard.vue` via `publishError.recovery.{hint,action,action_label}` and `frontend/src/stores/workflow.ts:329`.
+
+### 3. Contracts
+`recovery` MUST be a dict with these fields (matches `_PUBLISH_RECOVERY_ACTIONS` shape):
+- `message: str` — human-readable explanation
+- `action: str` — one of `"reconfigure"` | `"retry"` | `"wait"` | `"contact_support"` (frontend routes `reconfigure` → `/start`)
+- `action_label: str` — button label
+- `hint: str` — actionable guidance
+
+```python
+# WRONG — string breaks Dashboard.vue rendering (empty hint, no button)
+publish_result = {
+    "status": "failed",
+    "error_type": "no_cookie",
+    "recovery": "请在设置页为该账号配置 XHS_COOKIE",
+}
+
+# CORRECT — structured dict, same shape as classify_publish_error()
+publish_result = {
+    "status": "failed",
+    "error_type": "no_cookie",
+    "recovery": {
+        "message": "该账号未配置 XHS_COOKIE，无法发布",
+        "action": "reconfigure",
+        "action_label": "重新配置",
+        "hint": "请在设置页为该账号配置 XHS_COOKIE",
+    },
+}
+```
+
+### 4. Validation & Error Matrix
+- account has no cookie (pre-publish) → `error_type="no_cookie"`, structured `recovery` dict, `XHSClient` NOT constructed (fail fast)
+- cookie present but publish throws auth error → `classify_publish_error` maps to `error_type="auth_expired"`, structured `recovery` dict (from `_PUBLISH_RECOVERY_ACTIONS`)
+- any new failure path returning `recovery` → MUST be a dict, never a bare string
+
+### 5. Good/Base/Bad Cases
+- Good: `recovery` is a dict on every publish-failure path; frontend renders hint + reconfigure button.
+- Base: `classify_publish_error` path (the original) returns dict correctly.
+- Bad: a new inline failure path (e.g. `no_cookie`) returns a string → frontend renders empty hint paragraph, no recovery button. (This bug actually shipped and was caught in review.)
+
+### 6. Tests Required
+`tests/unit/agents/test_publisher_account.py`:
+- `test_no_cookie_when_account_unconfigured`: assert `recovery` is `dict`, `recovery["action"]=="reconfigure"`, non-empty `hint` and `action_label`.
+- `test_selected_account_expired_cookie_classified`: assert `error_type=="auth_expired"` and `recovery` is `dict` with `action=="reconfigure"`.
+
+Assertion point: any test covering a publish-failure path MUST assert `isinstance(recovery, dict)` — this is the regression guard.
+
+### 7. Wrong vs Correct
+See §3 Contracts — the Wrong/Correct pair is the string-vs-dict `recovery`.
+
+> **Gotcha**: When adding a NEW publish-failure short-circuit (before `classify_publish_error` runs), it's easy to write `"recovery": "<string>"` by instinct. The frontend silently degrades (no crash, just missing UI), so the bug is invisible without a test. Always mirror the dict shape and add an `isinstance` assertion.
+
 ## Tests Required
 
 - `test_cancel_cancels_background_task`: cancel_workflow calls task.cancel()
