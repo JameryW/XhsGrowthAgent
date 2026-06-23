@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Review.vue 审批弹窗卡片选择器 UI 改造，需遵循前端组件约定"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "publishMode 状态 + system health use_browser 状态读取"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端 spec 索引，确认是否还有相关约定"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "publish_options/dry_run 在 state schema 中的契约，确认前端改动不破坏状态流"}

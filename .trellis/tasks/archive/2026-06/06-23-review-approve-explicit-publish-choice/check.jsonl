@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "校验卡片选择器实现符合前端组件规范"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "校验状态管理（publishMode 重置/use_browser 读取）符合约定"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "校验 _check_xhs 改动符合后端质量标准"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "校验 publish_options 状态契约未被破坏"}
