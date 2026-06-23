@@ -169,3 +169,36 @@ DeepSeek 无 embedding API 导致 analyst store_insight/_recall_memory 404 卡 w
 ### Next Steps
 
 - None - task complete
+
+
+## Session 40: 审批通过强制选择发布模式 + 修复 embedding 维度不匹配
+
+**Date**: 2026-06-23
+**Task**: 审批通过强制选择发布模式 + 修复 embedding 维度不匹配
+**Branch**: `main`
+
+### Summary
+
+排查工作流未真实发布：根因是审批弹窗 publishDryRun 默认 true 走 mock。改为两张可选卡片无预选默认、未选禁用确认、每次重置；后端 _check_xs 暴露 use_browser 让前端在环境无法真实发布时提示。附带修复 embedding 1536/512 维度不匹配（DROP+重建 store_vectors，TRUNCATE 不改列维度）。PR #118 已合并并重新部署。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4ed76a1e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

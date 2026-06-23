@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 39
+- **Total Sessions**: 40
 - **Last Active**: 2026-06-23
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~171 | Active |
+| `journal-0.md` | ~204 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 40 | 2026-06-23 | 审批通过强制选择发布模式 + 修复 embedding 维度不匹配 | `4ed76a1e` | `main` |
 | 39 | 2026-06-23 | 本地 bge embedding 替代 DeepSeek 修复 analyst 404 | `f70ddaf2` | `main` |
 | 38 | 2026-06-23 | review 环节选择发布账号 + XHS cookie 诊断脚本 | `e6401346`, `41f75336` | `main` |
 | 37 | 2026-06-21 | 优化展示页视觉效果 | `fa06d697`, `6b5674ff` | `main` |
