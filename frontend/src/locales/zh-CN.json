@@ -551,7 +551,9 @@
       "dryRun": "试运行模式",
       "dryRunHelp": "预览效果，不实际发布",
       "liveWarning": "当前为实时模式，内容将真实发布到小红书平台。请确认所有内容无误。",
-      "confirm": "批准并发布"
+      "confirm": "批准并发布",
+      "account": "发布账号",
+      "activeSuffix": "活跃"
     },
     "stateLost": "该工作流审核状态因容器重启而丢失，请重新启动工作流以生成审核内容。",
     "errorStateLost": "审核状态丢失"

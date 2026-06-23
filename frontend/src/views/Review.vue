@@ -8,7 +8,7 @@ import ConfirmModal from '@/components/ConfirmModal.vue'
 import CelebrationEffect from '@/components/CelebrationEffect.vue'
 import WorkflowCardBody from '@/components/WorkflowCardBody.vue'
 import { ReviewSkeleton } from '@/components/skeletons'
-import { useReviewStore, useToastStore } from '@/stores'
+import { useReviewStore, useToastStore, useAccountsStore } from '@/stores'
 import { listWorkflows, getWorkflowStatus } from '@/api/workflow'
 import type { ContentStatus } from '@/types'
 import type { WorkflowListItem, WorkflowStateResponse } from '@/types/workflow'
@@ -17,6 +17,7 @@ const { t } = useI18n()
 const router = useRouter()
 const reviewStore = useReviewStore()
 const toastStore = useToastStore()
+const accountsStore = useAccountsStore()
 
 // ── Queue state ──
 const workflows = ref<WorkflowListItem[]>([])
@@ -218,6 +219,7 @@ const confirmModalVariant = ref<'danger' | 'warning' | 'info'>('warning')
 // Publish confirmation
 const showPublishConfirm = ref(false)
 const publishDryRun = ref(true)
+const publishAccountId = ref<string | null>(null)
 
 // Celebration effect
 const showCelebration = ref(false)
@@ -282,7 +284,7 @@ function validateDecision(tid: string, decision: ContentStatus): string | null {
 }
 
 // ── Decision flow ──
-const requestDecision = (tid: string, decision: ContentStatus) => {
+const requestDecision = async (tid: string, decision: ContentStatus) => {
   const validationError = validateDecision(tid, decision)
   if (validationError) {
     toastStore.warning(t('review.submitFailedTitle'), validationError)
@@ -299,6 +301,9 @@ const requestDecision = (tid: string, decision: ContentStatus) => {
     confirmModalVariant.value = 'danger'
     showConfirmModal.value = true
   } else if (decision === 'approved') {
+    // Load accounts for the publish-account picker; default to the active one
+    await accountsStore.fetchAccounts().catch(() => {})
+    publishAccountId.value = accountsStore.activeAccountId
     showPublishConfirm.value = true
   } else {
     executeDecision(tid, decision)
@@ -311,7 +316,7 @@ const executeDecision = async (tid: string, decision: ContentStatus) => {
 
   const feedback = buildFeedback(tid, decision)
   const publishOpts = decision === 'approved'
-    ? { dry_run: publishDryRun.value }
+    ? { dry_run: publishDryRun.value, account_id: publishAccountId.value }
     : undefined
 
   try {
@@ -701,6 +706,21 @@ const handleCancelConfirm = () => {
             <div class="flex items-center justify-between py-2">
               <span class="text-xs md:text-sm text-slate-500">{{ t('review.publishConfirm.target') }}</span>
               <span class="text-xs font-mono text-slate-400">{{ (pendingDecisionThreadId || '').slice(-8) }}</span>
+            </div>
+
+            <div class="py-2 px-3 rounded-lg liquid-glass-inset">
+              <div class="flex items-center gap-1.5 mb-1.5">
+                <AppIcon name="User" size="sm" variant="pink" />
+                <span class="text-xs md:text-sm text-slate-700">{{ t('review.publishConfirm.account') }}</span>
+              </div>
+              <select
+                v-model="publishAccountId"
+                class="w-full px-2 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 outline-none"
+              >
+                <option v-for="acc in accountsStore.accounts" :key="acc.id" :value="acc.id">
+                  {{ acc.name }}{{ acc.is_active ? ` · ${t('review.publishConfirm.activeSuffix')}` : '' }}
+                </option>
+              </select>
             </div>
 
             <div class="flex items-center justify-between py-2 px-3 rounded-lg liquid-glass-inset">

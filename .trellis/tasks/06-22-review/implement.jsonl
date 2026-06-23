@@ -1,0 +1,8 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/index.md", "reason": "backend 目录结构与导入规范，新增 DB 函数和改 publisher agent 时遵循"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "state schema 与 publish_options 传递机制，account_id 经 publish_options 流转的依据"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "DB 凭证读取规范，新增 get_account_cookie 复用解密逻辑时遵循"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "cookie 失效/未配的错误分类规范，auth_failed/no_cookie 错误处理"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "前端组件模式，Review.vue 弹窗加账号选择器时遵循"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Pinia store 模式，拉账号列表和提交审核决定的 store 交互"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用现有 list_credentials 解密 + publish_options 传递机制，避免重复造轮子"}

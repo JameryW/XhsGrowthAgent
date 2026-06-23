@@ -760,6 +760,25 @@ components:
                 type: string
                 description: Suggested improvement
                 example: "建议使用疑问句式标题"
+        publish_options:
+          $ref: '#/components/schemas/PublishOptions'
+
+    PublishOptions:
+      type: object
+      description: Publish options for an approved review decision
+      properties:
+        dry_run:
+          type: boolean
+          default: true
+          description: If true, skip real publishing and return a mock result
+        auto_publish:
+          type: boolean
+          default: false
+        account_id:
+          type: string
+          nullable: true
+          default: null
+          description: Publish as this account; null falls back to the global active account
 
     # ============ Response Models ============
     WorkflowResponse:

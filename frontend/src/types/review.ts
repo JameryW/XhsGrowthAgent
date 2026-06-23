@@ -51,6 +51,7 @@ export interface VersionHistoryResponse {
 export interface PublishOptions {
   dry_run: boolean
   auto_publish?: boolean
+  account_id?: string | null
 }
 
 // Review decision request

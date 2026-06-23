@@ -270,6 +270,17 @@ async def delete_credential(account_id: str, key_name: str) -> bool:
     return cur.rowcount == 1
 
 
+async def get_account_cookie(account_id: str) -> tuple[str, str]:
+    """Return (cookie, user_id) for an account — decrypted, for publishing.
+
+    Empty strings if a key is not set. Used by publisher to publish as a
+    specific account without disturbing the global active-account env.
+    """
+    creds = await list_credentials(account_id)
+    by_key = {c.key_name: c.value for c in creds}
+    return by_key.get("XHS_COOKIE", ""), by_key.get("XHS_USER_ID", "")
+
+
 # ── Hot reload ──
 
 async def activate_credentials(account_id: str) -> dict[str, str]:
