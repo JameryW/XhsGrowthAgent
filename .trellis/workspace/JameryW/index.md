@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 38
+- **Total Sessions**: 39
 - **Last Active**: 2026-06-23
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~138 | Active |
+| `journal-0.md` | ~171 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 39 | 2026-06-23 | 本地 bge embedding 替代 DeepSeek 修复 analyst 404 | `f70ddaf2` | `main` |
 | 38 | 2026-06-23 | review 环节选择发布账号 + XHS cookie 诊断脚本 | `e6401346`, `41f75336` | `main` |
 | 37 | 2026-06-21 | 优化展示页视觉效果 | `fa06d697`, `6b5674ff` | `main` |
 | 36 | 2026-06-17 | Fix add_session.py skipping journal file on first session | `dd4b2f79` | `feat/account-bootstrap-and-encryption` |

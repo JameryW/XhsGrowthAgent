@@ -136,3 +136,36 @@ Showcase.vue 视觉精修：背景增层（点阵/极光/amber+emerald 光球/�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 39: 本地 bge embedding 替代 DeepSeek 修复 analyst 404
+
+**Date**: 2026-06-23
+**Task**: 本地 bge embedding 替代 DeepSeek 修复 analyst 404
+**Branch**: `main`
+
+### Summary
+
+DeepSeek 无 embedding API 导致 analyst store_insight/_recall_memory 404 卡 workflow。改用本地 CPU 推理 BAAI/bge-small-zh-v1.5（512 维）：index.py 新增 local provider（HuggingFaceEmbeddings，无需 API key，构造失败优雅降级）；模型烘焙进镜像（COPY .hf-cache→/opt/hf-cache-seed）+ 运行时 bind-mount /test/xhs/.hf-cache→/opt/hf-cache（HF_HOME），entrypoint 首次从种子拷贝，零运行时网络依赖。额外根因：db/system_config activate_to_environ() 启动时用 DB system_config 表覆盖 os.environ 白名单 key（含 XHS_EMBED_MODEL），光改 .env 无效需同步改 DB，已 set_config 修复并记入 memory。PR #117 已合并部署。同时归档被 squash 吃掉的 gate/archive chore commit（PR #116/#117）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f70ddaf2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
