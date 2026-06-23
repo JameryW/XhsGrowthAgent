@@ -102,3 +102,37 @@ Showcase.vue 视觉精修：背景增层（点阵/极光/amber+emerald 光球/�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 38: review 环节选择发布账号 + XHS cookie 诊断脚本
+
+**Date**: 2026-06-23
+**Task**: review 环节选择发布账号 + XHS cookie 诊断脚本
+**Branch**: `main`
+
+### Summary
+
+审核发布确认弹窗增加账号选择器，针对单条笔记选发布账号：PublishOptions 加 account_id，新增 get_account_cookie 复用 list_credentials 解密，PublisherAgent 按选中账号取 cookie 不动全局活跃账号（并发安全），未配 cookie 早返回 no_cookie。trellis-check 修复跨层 bug（recovery 须为结构化 dict 匹配 Dashboard.vue 消费形状）并增强测试至 5 个，spec 沉淀 publish recovery 跨层契约。另附带 cookie 获取/校验诊断脚本（未提交）。PR #115 已合并，重新部署至 main，健康检查全绿。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e6401346` | (see git log) |
+| `41f75336` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
