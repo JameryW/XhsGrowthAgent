@@ -202,3 +202,36 @@ DeepSeek 无 embedding API 导致 analyst store_insight/_recall_memory 404 卡 w
 ### Next Steps
 
 - None - task complete
+
+
+## Session 41: 打通真实发布浏览器路径
+
+**Date**: 2026-06-23
+**Task**: 打通真实发布浏览器路径
+**Branch**: `main`
+
+### Summary
+
+PR #118 让审批可选真实发布但环境 use_browser=false 仍走 mock。本任务打通：Dockerfile 装 playwright.[browser] + chromium（playwright install --with-deps），deploy.sh 注入 XHS_USE_BROWSER，.env 设 true。验证镜像构建、chromium 真实 launch、health use_browser=true 全通过。PR #119 合并并重新部署生效。审批选真实发布现会启动真实 chromium 发笔记，cookie 失效返回 auth_failed 而非 mock。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `57ea0a69` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
