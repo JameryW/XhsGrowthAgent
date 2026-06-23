@@ -166,9 +166,46 @@ def make_snapshot(values, next=None, interrupts=None):
 | `interrupt_before=["node"]` | Static, in `graph.compile()` | No (node never ran) | No | **No** (empty tuple) |
 | `interrupt(value)` inside node | Dynamic, in node body | **Yes** (node re-runs from top) | **Yes**, if code runs before `interrupt()` | Yes |
 
-**For always-pause gates (`interrupt_before`):** Inside the node, `interrupt(None)` is a pure resume-receiver — it receives the value from `Command(resume=value)`. Do NOT put any side-effect code before `interrupt()` inside the node.
+**For always-pause gates (`interrupt_before`):** The node body does NOT call `interrupt()`. The graph pauses before the node runs (via `interrupt_before` in `graph.compile()`). The submit endpoint writes the decision to state via `aupdate_state`, then advances the graph with `ainvoke(None)`. The node reads the decision from state and sets the phase. Do NOT use `Command(resume=value)` — it only works for dynamic `interrupt()`, not `interrupt_before`.
 
 **For conditional-pause gates (dynamic `interrupt()`):** Put auto-accept/skip logic BEFORE the `interrupt()` call. Code before `interrupt()` runs on initial execution but is safe to re-run on resume because the auto-accept conditions will have been cleared by the resume value.
+
+### Always-pause gate resume pattern (方案 B)
+
+Always-pause gates (`review_gate`, `choice_gate`, `draft_gate`) use a unified resume pattern:
+
+1. **Submit endpoint** writes the decision to state via `aupdate_state`
+2. **Submit endpoint** advances the graph with `ainvoke(None)` (NOT `Command(resume=value)`)
+3. **Gate node** reads the decision from state and sets the phase
+
+```python
+# submit endpoint (e.g., submit_review)
+await graph.aupdate_state(config, {
+    "human_feedback": decision.model_dump(),  # decision written to state
+}, as_node=_get_as_node(state))
+result = await _run_graph_and_persist(
+    thread_id, graph, config,
+    None,  # ainvoke(None) — NOT Command(resume=...)
+    source="review",
+)
+
+# gate node (e.g., review_gate_node)
+async def review_gate_node(state, *, store):
+    _check_cancelled(state)
+    # Decision is already in state (human_feedback), written by submit endpoint.
+    # Just set the phase — the router reads human_feedback.decision.
+    return NodeResult({"phase": WorkflowPhase.REVIEWING}, "review_gate").to_dict()
+```
+
+**Decision field per gate:**
+
+| Gate | Submit writes | Node reads |
+|------|--------------|------------|
+| `review_gate` | `human_feedback` (dict with `decision` field) | Router `review_outcome` reads `human_feedback.decision` |
+| `choice_gate` | `selected_version` (version_id string) | Node reads `state.selected_version`, finds version, fills `copy_content` |
+| `draft_gate` | `draft_content` (dict with `source="user_submitted"`) | Node just sets phase — `draft_content` already in state |
+
+**Critical:** `Command(resume=value)` only works for dynamic `interrupt()` inside a node body. For `interrupt_before`, the node never ran, so there's no `interrupt()` to resume from. Use `ainvoke(None)` to advance past the pause point.
 
 ### Interrupt payload contract for dynamic gates
 
