@@ -553,7 +553,14 @@
       "liveWarning": "当前为实时模式，内容将真实发布到小红书平台。请确认所有内容无误。",
       "confirm": "批准并发布",
       "account": "发布账号",
-      "activeSuffix": "活跃"
+      "activeSuffix": "活跃",
+      "modeLabel": "发布模式",
+      "modeRequired": "必选",
+      "dryCardTitle": "试运行",
+      "dryCardDesc": "预览不实际发布",
+      "liveCardTitle": "真实发布",
+      "liveCardDesc": "上线到小红书平台",
+      "useBrowserOffWarning": "当前环境无法真实发布（XHS_USE_BROWSER 未开启）。选择真实发布仍只会模拟发布。"
     },
     "stateLost": "该工作流审核状态因容器重启而丢失，请重新启动工作流以生成审核内容。",
     "errorStateLost": "审核状态丢失"

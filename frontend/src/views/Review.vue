@@ -10,6 +10,7 @@ import WorkflowCardBody from '@/components/WorkflowCardBody.vue'
 import { ReviewSkeleton } from '@/components/skeletons'
 import { useReviewStore, useToastStore, useAccountsStore } from '@/stores'
 import { listWorkflows, getWorkflowStatus } from '@/api/workflow'
+import { getSystemHealth } from '@/api/system'
 import type { ContentStatus } from '@/types'
 import type { WorkflowListItem, WorkflowStateResponse } from '@/types/workflow'
 
@@ -218,8 +219,13 @@ const confirmModalVariant = ref<'danger' | 'warning' | 'info'>('warning')
 
 // Publish confirmation
 const showPublishConfirm = ref(false)
-const publishDryRun = ref(true)
+// ponytail: null = explicitly unset, forced choice before publish allowed.
+// Resets to null every time the modal opens so each approval is a conscious decision.
+type PublishMode = 'dry' | 'live' | null
+const publishMode = ref<PublishMode>(null)
 const publishAccountId = ref<string | null>(null)
+// Whether real publishing is possible in this environment (XHS_USE_BROWSER).
+const canRealPublish = ref(true)
 
 // Celebration effect
 const showCelebration = ref(false)
@@ -304,6 +310,12 @@ const requestDecision = async (tid: string, decision: ContentStatus) => {
     // Load accounts for the publish-account picker; default to the active one
     await accountsStore.fetchAccounts().catch(() => {})
     publishAccountId.value = accountsStore.activeAccountId
+    // Force explicit mode choice: reset to unset each time the modal opens.
+    publishMode.value = null
+    // Detect whether the backend can actually publish (XHS_USE_BROWSER).
+    getSystemHealth()
+      .then((h) => { canRealPublish.value = h.checks.xhs_platform.use_browser })
+      .catch(() => { canRealPublish.value = true })
     showPublishConfirm.value = true
   } else {
     executeDecision(tid, decision)
@@ -316,7 +328,7 @@ const executeDecision = async (tid: string, decision: ContentStatus) => {
 
   const feedback = buildFeedback(tid, decision)
   const publishOpts = decision === 'approved'
-    ? { dry_run: publishDryRun.value, account_id: publishAccountId.value }
+    ? { dry_run: publishMode.value === 'dry', account_id: publishAccountId.value }
     : undefined
 
   try {
@@ -330,7 +342,7 @@ const executeDecision = async (tid: string, decision: ContentStatus) => {
           `${t('review.publishSkipped')}: ${result?.skip_reason || t('review.publishSkippedReason')}`
         )
       } else {
-        const mode = publishDryRun.value ? t('review.dryRunMode') : t('review.liveMode')
+        const mode = publishMode.value === 'dry' ? t('review.dryRunMode') : t('review.liveMode')
         toastStore.success(
           t('review.decisionApproved'),
           `${t('review.decisionLabel')}: ${decision} · ${mode} → ${nextPhase}`
@@ -723,28 +735,49 @@ const handleCancelConfirm = () => {
               </select>
             </div>
 
-            <div class="flex items-center justify-between py-2 px-3 rounded-lg liquid-glass-inset">
-              <div class="flex items-center gap-1.5">
-                <AppIcon name="FlaskConical" size="sm" variant="cyan" />
-                <div>
-                  <span class="text-xs md:text-sm text-slate-700">{{ t('review.publishConfirm.dryRun') }}</span>
-                  <p class="text-[10px] text-slate-400">{{ t('review.publishConfirm.dryRunHelp') }}</p>
-                </div>
+            <div class="py-2 px-3 rounded-lg liquid-glass-inset">
+              <div class="flex items-center gap-1.5 mb-2">
+                <AppIcon name="Upload" size="sm" variant="pink" />
+                <span class="text-xs md:text-sm text-slate-700">{{ t('review.publishConfirm.modeLabel') }}</span>
+                <span class="text-[10px] text-rose-400">{{ t('review.publishConfirm.modeRequired') }}</span>
               </div>
-              <button
-                @click="publishDryRun = !publishDryRun"
-                :class="['relative w-11 h-6 rounded-full transition-colors duration-200', publishDryRun ? 'bg-teal-500' : 'bg-slate-300']"
-                role="switch"
-                :aria-checked="publishDryRun"
-              >
-                <span :class="['absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200', publishDryRun ? 'translate-x-5' : 'translate-x-0']" />
-              </button>
+              <div class="grid grid-cols-2 gap-2 md:gap-3">
+                <button
+                  type="button"
+                  @click="publishMode = 'dry'"
+                  :class="['p-3 rounded-lg border text-left transition-all duration-200', publishMode === 'dry' ? 'border-teal-400 bg-teal-50 ring-1 ring-teal-300' : 'border-slate-200 bg-white hover:border-slate-300']"
+                >
+                  <div class="flex items-center gap-1.5 mb-1">
+                    <AppIcon name="FlaskConical" size="sm" variant="cyan" />
+                    <span class="text-xs md:text-sm font-medium text-slate-700">{{ t('review.publishConfirm.dryCardTitle') }}</span>
+                  </div>
+                  <p class="text-[10px] text-slate-400">{{ t('review.publishConfirm.dryCardDesc') }}</p>
+                </button>
+                <button
+                  type="button"
+                  @click="publishMode = 'live'"
+                  :class="['p-3 rounded-lg border text-left transition-all duration-200', publishMode === 'live' ? 'border-rose-400 bg-rose-50 ring-1 ring-rose-300' : 'border-slate-200 bg-white hover:border-slate-300']"
+                >
+                  <div class="flex items-center gap-1.5 mb-1">
+                    <AppIcon name="Send" size="sm" variant="pink" />
+                    <span class="text-xs md:text-sm font-medium text-slate-700">{{ t('review.publishConfirm.liveCardTitle') }}</span>
+                  </div>
+                  <p class="text-[10px] text-slate-400">{{ t('review.publishConfirm.liveCardDesc') }}</p>
+                </button>
+              </div>
             </div>
 
-            <div v-if="!publishDryRun" class="p-3 rounded-lg liquid-glass-amber liquid-glass-hover">
+            <div v-if="publishMode === 'live'" class="p-3 rounded-lg liquid-glass-amber liquid-glass-hover">
               <div class="flex items-start gap-2">
                 <AppIcon name="AlertTriangle" size="sm" variant="peach" />
                 <p class="text-xs text-amber-700">{{ t('review.publishConfirm.liveWarning') }}</p>
+              </div>
+            </div>
+
+            <div v-if="publishMode === 'live' && !canRealPublish" class="p-3 rounded-lg liquid-glass-amber liquid-glass-hover">
+              <div class="flex items-start gap-2">
+                <AppIcon name="AlertTriangle" size="sm" variant="peach" />
+                <p class="text-xs text-amber-700">{{ t('review.publishConfirm.useBrowserOffWarning') }}</p>
               </div>
             </div>
           </div>
@@ -753,7 +786,7 @@ const handleCancelConfirm = () => {
             <NeonButton variant="ghost" class="flex-1" @click="showPublishConfirm = false" :disabled="reviewStore.isLoading">
               {{ t('common.cancel') }}
             </NeonButton>
-            <NeonButton variant="pink" class="flex-1" @click="confirmPublish" :loading="reviewStore.isLoading">
+            <NeonButton variant="pink" class="flex-1" @click="confirmPublish" :loading="reviewStore.isLoading" :disabled="publishMode === null">
               <span class="inline-flex items-center gap-2">
                 <AppIcon name="Send" size="sm" variant="white" />
                 {{ t('review.publishConfirm.confirm') }}

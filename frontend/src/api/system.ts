@@ -13,6 +13,7 @@ export interface HealthCheck {
       configured: boolean
       cookie_set: boolean
       user_id_set: boolean
+      use_browser: boolean
       message: string
     }
     ripple_cas: {

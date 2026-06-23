@@ -44,11 +44,15 @@ def _check_xhs() -> dict:
     cookie = os.environ.get("XHS_COOKIE")
     user_id = os.environ.get("XHS_USER_ID")
     configured = bool(cookie and user_id)
+    use_browser = os.environ.get("XHS_USE_BROWSER", "").lower() == "true"
     return {
         "status": "ok" if configured else "warning",
         "configured": configured,
         "cookie_set": bool(cookie),
         "user_id_set": bool(user_id),
+        # Exposed so the review approve modal can warn that real publishing
+        # is impossible when use_browser is off (publisher.py mocks in that case).
+        "use_browser": use_browser,
         "message": "小红书凭证已配置" if configured else "缺少 XHS_COOKIE 或 XHS_USER_ID",
     }
 
