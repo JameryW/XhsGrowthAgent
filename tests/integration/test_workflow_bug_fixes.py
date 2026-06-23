@@ -23,8 +23,8 @@ from fastapi.testclient import TestClient
 from langgraph.types import Command
 
 from backend.api.app import app
-from backend.api.routes import workflow as workflow_module
 from backend.api.routes import _runner as runner_module
+from backend.api.routes import workflow as workflow_module
 from backend.graph.routers import (
     _check_terminal,
     review_outcome,
@@ -359,12 +359,15 @@ class TestReviewSelectUpdates:
             "error": None,
         }
 
-        # Simulate review submit: update state with approved decision
+        # Simulate review submit: write human_feedback to state, then ainvoke(None)
         decision = {
             "decision": "approved",
             "comments": "Looks good!",
             "revisions": [],
         }
+
+        # Write human_feedback to state (as submit_review does via aupdate_state)
+        await mock_graph.aupdate_state(config, {"human_feedback": decision})
 
         # Mock the graph invoke to return publishing phase
         mock_graph.ainvoke.return_value = {
@@ -384,7 +387,8 @@ class TestReviewSelectUpdates:
         mock_graph.aget_state.return_value = publishing_snapshot
 
         # Simulate the _run_graph_and_persist behavior
-        result = await mock_graph.ainvoke(Command(resume=decision), config)
+        # (submit_review now uses ainvoke(None) for interrupt_before gates)
+        result = await mock_graph.ainvoke(None, config)
         snapshot = await mock_graph.aget_state(config)
         derive_status(snapshot)  # Verify derivation works
 
@@ -448,8 +452,11 @@ class TestReviewSelectUpdates:
             "error": None,
         }
 
-        # Simulate select: resume with version choice
+        # Simulate select: write selected_version to state, then ainvoke(None)
         choice = {"version_id": "v1", "version_type": "A"}
+
+        # Write selected_version to state (as select_version does via aupdate_state)
+        await mock_graph.aupdate_state(config, {"selected_version": choice["version_id"]})
 
         # Mock the graph invoke to return creating phase
         mock_graph.ainvoke.return_value = {
@@ -471,7 +478,8 @@ class TestReviewSelectUpdates:
         mock_graph.aget_state.return_value = creating_snapshot
 
         # Simulate the _run_graph_and_persist behavior
-        result = await mock_graph.ainvoke(Command(resume=choice), config)
+        # (select_version now uses ainvoke(None) for interrupt_before gates)
+        result = await mock_graph.ainvoke(None, config)
         snapshot = await mock_graph.aget_state(config)
         derive_status(snapshot)  # Verify derivation works
 
@@ -1130,48 +1138,45 @@ class TestDraftGateBehavior:
     """Tests for draft_gate node and submit_draft endpoint."""
 
     @pytest.mark.asyncio
-    async def test_draft_gate_interrupts_when_no_draft(self, mock_graph):
-        """draft_gate should interrupt when draft_content is missing."""
+    async def test_draft_gate_advances_phase_without_interrupt(self, mock_graph):
+        """draft_gate_node returns CREATING phase without calling interrupt().
+
+        With interrupt_before, the node only runs on resume after submit_draft
+        writes draft_content to state. The node does not call interrupt() —
+        it just advances the phase.
+        """
         from backend.agents.nodes.optimization.draft_gate import draft_gate_node
 
-        # State without draft_content (not tested directly — interrupt() can't
-        # be easily mocked; instead we verify the skip-interrupt path below)
-        _unused_state = {
-            "phase": WorkflowPhase.CREATING,
-            "session_id": "test_session",
-            "draft_content": None,
-        }
-
-        # The node should call interrupt() when no draft
-        # We can't easily test interrupt() directly, but we can verify the logic path
-        # by checking that the node would return early if draft exists
+        # State with user-submitted draft (written by submit_draft via aupdate_state)
         state_with_draft = {
             "phase": WorkflowPhase.CREATING,
             "session_id": "test_session",
             "draft_content": {"title": "Test Draft", "text": "Test content"},
         }
 
-        # With draft, node should return without interrupt
+        # Node should return phase=CREATING without calling interrupt
         result = await draft_gate_node(state_with_draft, store=MagicMock())
         assert result.get("phase") == WorkflowPhase.CREATING
         assert result.get("current_agent") == "draft_gate"
 
     @pytest.mark.asyncio
-    async def test_draft_gate_skips_interrupt_when_draft_exists(self, mock_graph):
-        """draft_gate should skip interrupt when draft_content already exists."""
+    async def test_draft_gate_returns_creating_with_no_draft(self, mock_graph):
+        """draft_gate_node returns CREATING even when draft_content is empty.
+
+        With interrupt_before, the node only runs on resume. If called without
+        a user-submitted draft (e.g., edge case), it still advances phase.
+        """
         from backend.agents.nodes.optimization.draft_gate import draft_gate_node
 
-        # State with draft_content
-        state = {
+        state_no_draft = {
             "phase": WorkflowPhase.CREATING,
             "session_id": "test_session",
-            "draft_content": {"title": "Existing Draft", "text": "Existing content"},
+            "draft_content": None,
         }
 
-        result = await draft_gate_node(state, store=MagicMock())
-
-        # Should return phase=CREATING without interrupt
+        result = await draft_gate_node(state_no_draft, store=MagicMock())
         assert result.get("phase") == WorkflowPhase.CREATING
+        assert result.get("current_agent") == "draft_gate"
 
     def test_derive_status_returns_awaiting_draft_at_draft_gate(self):
         """derive_status should return AWAITING_DRAFT when next_nodes contains draft_gate."""
@@ -1288,7 +1293,8 @@ class TestDraftGateBehavior:
         assert "draft_gate" in draft_snapshot.next
 
         # 3. Resume graph via _run_graph_and_persist
-        result = await mock_graph.ainvoke(Command(resume=draft_data), config)
+        # (submit_draft now uses ainvoke(None) for interrupt_before gates)
+        result = await mock_graph.ainvoke(None, config)
         _snapshot = await mock_graph.aget_state(config)
 
         # Update registry
@@ -1360,3 +1366,233 @@ class TestDraftGateBehavior:
         # Reset the mock to check if it's called after the check
         mock_graph.ainvoke.reset_mock()
         # In the actual endpoint, ainvoke would not be called since draft_gate not in next
+
+
+# ── Test 11: Gate double-interrupt fix (方案 B) ──────────────────────────────
+
+
+class TestGateInterruptFix:
+    """Tests for the gate double-interrupt fix (方案 B).
+
+    Validates that:
+    - Gate nodes (review_gate, choice_gate, draft_gate) do NOT call interrupt()
+    - Submit endpoints use ainvoke(None) instead of Command(resume=value)
+    - Decisions are passed via aupdate_state, not Command(resume=...)
+    """
+
+    @pytest.mark.asyncio
+    async def test_review_gate_node_no_interrupt(self):
+        """review_gate_node returns REVIEWING phase without calling interrupt()."""
+        from backend.agents.nodes.review_gate import review_gate_node
+
+        state = {
+            "phase": WorkflowPhase.REVIEWING,
+            "session_id": "test_session",
+            "human_feedback": {"decision": "approved"},
+        }
+
+        result = await review_gate_node(state, store=MagicMock())
+
+        assert result.get("phase") == WorkflowPhase.REVIEWING
+        assert result.get("current_agent") == "review_gate"
+        # human_feedback is NOT in result — it's already in state via aupdate_state
+        assert "human_feedback" not in result
+
+    @pytest.mark.asyncio
+    async def test_review_gate_node_no_interrupt_import(self):
+        """review_gate module does not import or call interrupt()."""
+        import inspect
+
+        from backend.agents.nodes import review_gate as review_gate_module
+
+        source = inspect.getsource(review_gate_module)
+        # interrupt() function should not be called
+        assert "interrupt(" not in source
+        # interrupt should not be imported from langgraph.types
+        for line in source.split("\n"):
+            if "import" in line and "langgraph" in line:
+                assert "interrupt" not in line
+
+    @pytest.mark.asyncio
+    async def test_choice_gate_node_no_interrupt_import(self):
+        """choice_gate module does not import or call interrupt()."""
+        import inspect
+
+        from backend.agents.nodes.optimization import choice_gate as choice_gate_module
+
+        source = inspect.getsource(choice_gate_module)
+        assert "interrupt(" not in source
+        for line in source.split("\n"):
+            if "import" in line and "langgraph" in line:
+                assert "interrupt" not in line
+
+    @pytest.mark.asyncio
+    async def test_draft_gate_node_no_interrupt_import(self):
+        """draft_gate module does not import or call interrupt()."""
+        import inspect
+
+        from backend.agents.nodes.optimization import draft_gate as draft_gate_module
+
+        source = inspect.getsource(draft_gate_module)
+        assert "interrupt(" not in source
+        for line in source.split("\n"):
+            if "import" in line and "langgraph" in line:
+                assert "interrupt" not in line
+
+    def test_submit_review_uses_ainvoke_none(self, client, mock_graph):
+        """submit_review calls ainvoke(None), not Command(resume=...)."""
+        thread_id = "xhs_test_gate_fix_review_001"
+
+        mock_state = MagicMock()
+        mock_state.values = {
+            "phase": "reviewing",
+            "session_id": thread_id,
+            "account_id": "test_account",
+        }
+        mock_state.next = ["review_gate"]
+        mock_state.tasks = []
+        mock_state.interrupts = []
+        mock_graph.aget_state.return_value = mock_state
+        mock_graph.ainvoke.return_value = {"phase": "publishing", "session_id": thread_id}
+
+        response = client.post(
+            f"/api/review/submit/{thread_id}",
+            json={"decision": "approved", "comments": "Looks good!", "revisions": []},
+        )
+
+        assert response.status_code == 200
+        # Verify ainvoke was called with None (not Command)
+        assert mock_graph.ainvoke.called
+        call_args = mock_graph.ainvoke.call_args
+        input_data = call_args[0][0] if call_args[0] else call_args[1].get("input_data")
+        assert input_data is None
+
+    def test_submit_review_writes_human_feedback(self, client, mock_graph):
+        """submit_review writes human_feedback to state via aupdate_state."""
+        thread_id = "xhs_test_gate_fix_review_hf_001"
+
+        mock_state = MagicMock()
+        mock_state.values = {
+            "phase": "reviewing",
+            "session_id": thread_id,
+            "account_id": "test_account",
+        }
+        mock_state.next = ["review_gate"]
+        mock_state.tasks = []
+        mock_state.interrupts = []
+        mock_graph.aget_state.return_value = mock_state
+        mock_graph.ainvoke.return_value = {"phase": "publishing", "session_id": thread_id}
+
+        response = client.post(
+            f"/api/review/submit/{thread_id}",
+            json={"decision": "approved", "comments": "Looks good!", "revisions": []},
+        )
+
+        assert response.status_code == 200
+        # Verify aupdate_state was called with human_feedback containing decision
+        aupdate_calls = mock_graph.aupdate_state.call_args_list
+        # Find the call that contains human_feedback
+        hf_update = None
+        for call in aupdate_calls:
+            updates = call[0][1] if len(call[0]) > 1 else {}
+            if "human_feedback" in updates:
+                hf_update = updates["human_feedback"]
+                break
+        assert hf_update is not None, "human_feedback not written to state"
+        assert hf_update.get("decision") == "approved"
+
+    def test_select_version_uses_ainvoke_none(self, client, mock_graph):
+        """select_version calls ainvoke(None), not Command(resume=...)."""
+        thread_id = "xhs_test_gate_fix_choice_001"
+
+        mock_state = MagicMock()
+        mock_state.values = {
+            "phase": "creating",
+            "session_id": thread_id,
+            "account_id": "test_account",
+            "content_versions": [
+                {"version_id": "v1", "title": "Version A"},
+                {"version_id": "v2", "title": "Version B"},
+            ],
+        }
+        mock_state.next = ["choice_gate"]
+        mock_state.tasks = []
+        mock_state.interrupts = []
+        mock_graph.aget_state.return_value = mock_state
+        mock_graph.ainvoke.return_value = {"phase": "creating", "session_id": thread_id}
+
+        response = client.post(
+            f"/api/optimization/select/{thread_id}",
+            json={"version_id": "v1", "version_type": "A"},
+        )
+
+        assert response.status_code == 200
+        # Verify ainvoke was called with None (not Command)
+        assert mock_graph.ainvoke.called
+        call_args = mock_graph.ainvoke.call_args
+        input_data = call_args[0][0] if call_args[0] else call_args[1].get("input_data")
+        assert input_data is None
+
+    def test_select_version_writes_selected_version(self, client, mock_graph):
+        """select_version writes selected_version to state via aupdate_state."""
+        thread_id = "xhs_test_gate_fix_choice_sv_001"
+
+        mock_state = MagicMock()
+        mock_state.values = {
+            "phase": "creating",
+            "session_id": thread_id,
+            "account_id": "test_account",
+            "content_versions": [
+                {"version_id": "v1", "title": "Version A"},
+                {"version_id": "v2", "title": "Version B"},
+            ],
+        }
+        mock_state.next = ["choice_gate"]
+        mock_state.tasks = []
+        mock_state.interrupts = []
+        mock_graph.aget_state.return_value = mock_state
+        mock_graph.ainvoke.return_value = {"phase": "creating", "session_id": thread_id}
+
+        response = client.post(
+            f"/api/optimization/select/{thread_id}",
+            json={"version_id": "v1", "version_type": "A"},
+        )
+
+        assert response.status_code == 200
+        # Verify aupdate_state was called with selected_version
+        aupdate_calls = mock_graph.aupdate_state.call_args_list
+        sv_update = None
+        for call in aupdate_calls:
+            updates = call[0][1] if len(call[0]) > 1 else {}
+            if "selected_version" in updates:
+                sv_update = updates["selected_version"]
+                break
+        assert sv_update == "v1"
+
+    def test_submit_draft_uses_ainvoke_none(self, client, mock_graph):
+        """submit_draft calls ainvoke(None), not Command(resume=...)."""
+        thread_id = "xhs_test_gate_fix_draft_001"
+
+        mock_state = MagicMock()
+        mock_state.values = {
+            "phase": "creating",
+            "session_id": thread_id,
+            "account_id": "test_account",
+        }
+        mock_state.next = ["draft_gate"]
+        mock_state.tasks = []
+        mock_state.interrupts = []
+        mock_graph.aget_state.return_value = mock_state
+        mock_graph.ainvoke.return_value = {"phase": "creating", "session_id": thread_id}
+
+        response = client.post(
+            f"/api/optimization/draft/{thread_id}",
+            json={"title": "My Draft", "text": "Content here", "hashtags": ["test"]},
+        )
+
+        assert response.status_code == 200
+        # Verify ainvoke was called with None (not Command)
+        assert mock_graph.ainvoke.called
+        call_args = mock_graph.ainvoke.call_args
+        input_data = call_args[0][0] if call_args[0] else call_args[1].get("input_data")
+        assert input_data is None

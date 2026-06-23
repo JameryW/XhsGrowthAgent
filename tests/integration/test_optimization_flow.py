@@ -263,8 +263,8 @@ class TestChoiceGateNode:
     """Tests for choice_gate_node."""
 
     @pytest.mark.asyncio
-    async def test_choice_gate_interrupts_and_returns_selection(self, optimization_state, mock_store):
-        """choice_gate_node interrupts and returns selected version."""
+    async def test_choice_gate_reads_selection_from_state(self, optimization_state, mock_store):
+        """choice_gate_node reads selected version from state (written by select_version API)."""
         from backend.agents.nodes import choice_gate_node
 
         # Add content_versions to state
@@ -289,19 +289,50 @@ class TestChoiceGateNode:
                 predicted_score=78.0,
             ),
         ]
+        # User selected version A (written by select_version via aupdate_state)
+        state_with_versions["selected_version"] = "ver-A"
 
-        # Mock interrupt in the module where it's used
-        with patch("backend.agents.nodes.optimization.choice_gate.interrupt") as mock_interrupt:
-            mock_interrupt.return_value = {
-                "selected_version": "A",
-                "version_id": "ver-A",
-            }
+        result = await choice_gate_node(state_with_versions, store=mock_store)
 
-            result = await choice_gate_node(state_with_versions, store=mock_store)
+        # Should update copy_content with selected version
+        assert result.get("selected_version") == "ver-A"
+        assert "copy_content" in result
 
-            # Should update copy_content with selected version
-            assert result.get("selected_version") == "ver-A"
-            assert "copy_content" in result
+    @pytest.mark.asyncio
+    async def test_choice_gate_falls_back_when_selection_missing(
+        self, optimization_state, mock_store
+    ):
+        """choice_gate_node falls back to first version when selected_version is missing."""
+        from backend.agents.nodes import choice_gate_node
+
+        state_with_versions = optimization_state.copy()
+        state_with_versions["content_versions"] = [
+            ContentVersion(
+                version_id="ver-A",
+                version_type="A",
+                title="上海美食探店：10家必吃餐厅！",
+                body="详细介绍...",
+                hashtags=["美食", "探店"],
+                changes_summary="添加数字和情绪词",
+                predicted_score=85.0,
+            ),
+            ContentVersion(
+                version_id="ver-B",
+                version_type="B",
+                title="探店日记：宝藏餐厅推荐",
+                body="这家餐厅...",
+                hashtags=["美食", "探店"],
+                changes_summary="优化标题和内容结构",
+                predicted_score=78.0,
+            ),
+        ]
+        # No selected_version in state — should fall back to first version
+
+        result = await choice_gate_node(state_with_versions, store=mock_store)
+
+        # Should fall back to first version
+        assert result.get("selected_version") == "ver-A"
+        assert "copy_content" in result
 
 
 class TestOptimizationRouters:

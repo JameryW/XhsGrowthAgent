@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Request
 from langgraph.types import Command, StateSnapshot
@@ -107,32 +108,33 @@ async def submit_review(thread_id: str, decision: ReviewDecision, request: Reque
 
     values = state.values or {}
 
+    # Build state updates: always write human_feedback (review_outcome router
+    # reads human_feedback.decision to route after this node runs)
+    updates: dict[str, Any] = {"human_feedback": decision.model_dump()}
+
     # On 'needs_revision', save current content as a version before resuming
     if decision.decision == "needs_revision":
         copy_content = values.get("copy_content") or {}
         visual_plan = values.get("visual_plan") or {}
-        label = (
-            "AI 初稿" if not values.get("content_versions") else "修改版本"
-        )
-        version_entry = _build_version_entry(
-            copy_content, visual_plan, label=label
-        )
-        # Append version to state before resuming (reducer appends to existing)
-        await graph.aupdate_state(config, {
-            "content_versions": [version_entry],
-        }, as_node=_runner._get_as_node(state))
+        label = "AI 初稿" if not values.get("content_versions") else "修改版本"
+        version_entry = _build_version_entry(copy_content, visual_plan, label=label)
+        updates["content_versions"] = [version_entry]
 
     # On 'approved', write publish options to state so publisher can read them
     if decision.decision == "approved":
         pub_opts = decision.publish_options or PublishOptions(dry_run=True)
-        await graph.aupdate_state(config, {
-            "publish_options": pub_opts.model_dump(),
-        }, as_node=_runner._get_as_node(state))
+        updates["publish_options"] = pub_opts.model_dump()
 
-    # 用 Command(resume=...) 恢复中断的图 — via unified runner
+    # Write decision + optional version/publish_options to state
+    await graph.aupdate_state(config, updates, as_node=_runner._get_as_node(state))
+
+    # Advance graph past interrupt_before via ainvoke(None).
+    # Command(resume=...) only works for dynamic interrupt(), not interrupt_before.
     result = await _runner._run_graph_and_persist(
-        thread_id, graph, config,
-        Command(resume=decision.model_dump()),
+        thread_id,
+        graph,
+        config,
+        None,
         source="review",
     )
 
@@ -158,20 +160,23 @@ async def get_version_history(thread_id: str, request: Request):
 
     if not state.values or state.values.get("session_id") is None:
         from backend.api.errors import WorkflowNotFoundError
+
         raise WorkflowNotFoundError(thread_id)
 
     versions = state.values.get("content_versions") or []
     current_copy = state.values.get("copy_content") or {}
 
-    return success(data={
-        "thread_id": thread_id,
-        "versions": versions,
-        "current": {
-            "title": current_copy.get("selected_title", ""),
-            "body": current_copy.get("body_text", ""),
-            "hashtags": current_copy.get("hashtags", []),
-        },
-    })
+    return success(
+        data={
+            "thread_id": thread_id,
+            "versions": versions,
+            "current": {
+                "title": current_copy.get("selected_title", ""),
+                "body": current_copy.get("body_text", ""),
+                "hashtags": current_copy.get("hashtags", []),
+            },
+        }
+    )
 
 
 @router.get("/ripple-pending/{thread_id}")
@@ -184,6 +189,7 @@ async def get_pending_ripple_decision(thread_id: str, request: Request):
 
     if not _is_at_ripple_gate(state):
         from backend.api.errors import ValidationError
+
         raise ValidationError(
             "ripple_gate",
             f"Workflow is not awaiting Ripple decision (next: {state.next})",
@@ -194,15 +200,17 @@ async def get_pending_ripple_decision(thread_id: str, request: Request):
     pmf = values.get("ripple_pmf") or {}
     reselect_count = values.get("reselect_count", 0)
 
-    return success(data={
-        "status": "awaiting_ripple_decision",
-        "ripple_prediction": prediction,
-        "ripple_pmf": pmf,
-        "ripple_reason": values.get("ripple_reason", ""),
-        "reselect_count": reselect_count,
-        "max_reselect": 2,
-        "options": ["accept", "reangle", "retopic"],
-    })
+    return success(
+        data={
+            "status": "awaiting_ripple_decision",
+            "ripple_prediction": prediction,
+            "ripple_pmf": pmf,
+            "ripple_reason": values.get("ripple_reason", ""),
+            "reselect_count": reselect_count,
+            "max_reselect": 2,
+            "options": ["accept", "reangle", "retopic"],
+        }
+    )
 
 
 @router.post("/ripple-decision/{thread_id}")
@@ -215,6 +223,7 @@ async def submit_ripple_decision(thread_id: str, decision: RippleDecision, reque
     state = await graph.aget_state(config)
     if not _is_at_ripple_gate(state):
         from backend.api.errors import ValidationError
+
         raise ValidationError(
             "ripple_gate",
             f"Workflow is not awaiting Ripple decision (next: {state.next})",
@@ -223,6 +232,7 @@ async def submit_ripple_decision(thread_id: str, decision: RippleDecision, reque
     action = decision.action
     if action not in ("accept", "reangle", "retopic"):
         from backend.api.errors import ValidationError
+
         raise ValidationError(
             "action",
             f"Invalid action: {action}. Must be accept, reangle, or retopic",
@@ -244,26 +254,32 @@ async def submit_ripple_decision(thread_id: str, decision: RippleDecision, reque
             "ripple_progress": {},
         }
         if action == "retopic":
-            updates.update({
-                "trend_data": {},
-                "content_plan": {},
-                "ripple_prediction": {},
-                "ripple_pmf": {},
-            })
+            updates.update(
+                {
+                    "trend_data": {},
+                    "content_plan": {},
+                    "ripple_prediction": {},
+                    "ripple_pmf": {},
+                }
+            )
         await graph.aupdate_state(config, updates, as_node=_runner._get_as_node(state))
 
     # Resume the graph with the user's decision
     result = await _runner._run_graph_and_persist(
-        thread_id, graph, config,
+        thread_id,
+        graph,
+        config,
         Command(resume={"action": action}),
         source="ripple_gate",
     )
 
     next_phase = result.get("phase", "unknown") if result else "unknown"
 
-    return success(data={
-        "thread_id": thread_id,
-        "status": "resumed",
-        "action": action,
-        "next_phase": next_phase,
-    })
+    return success(
+        data={
+            "thread_id": thread_id,
+            "status": "resumed",
+            "action": action,
+            "next_phase": next_phase,
+        }
+    )

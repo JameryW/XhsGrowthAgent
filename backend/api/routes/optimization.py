@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
-from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from backend.api.errors import ChoiceNotPendingError, ValidationError, WorkflowNotFoundError
@@ -38,21 +37,28 @@ async def submit_draft(thread_id: str, draft: DraftSubmission, request: Request)
     if not state.values or state.values.get("session_id") is None:
         raise WorkflowNotFoundError(thread_id)
 
-    # Write draft content and viral links to state
-    # Mark source as "user_submitted" so draft_gate_node knows to skip
-    # its interrupt (vs "ai_generated" which means it was auto-populated).
+    # Write draft content and viral links to state.
+    # Mark source as "user_submitted" for downstream provenance tracking
+    # (draft_gate_node no longer checks it — it just advances phase on resume).
     draft_data = draft.model_dump()
     draft_data["source"] = "user_submitted"
-    await graph.aupdate_state(config, {
-        "draft_content": draft_data,
-        "user_viral_links": draft.viral_links,
-    }, as_node=_runner._get_as_node(state))
+    await graph.aupdate_state(
+        config,
+        {
+            "draft_content": draft_data,
+            "user_viral_links": draft.viral_links,
+        },
+        as_node=_runner._get_as_node(state),
+    )
 
-    # If graph is interrupted at draft_gate, resume it via _run_graph_and_persist
+    # If graph is interrupted at draft_gate, advance via ainvoke(None).
+    # Command(resume=...) only works for dynamic interrupt(), not interrupt_before.
     if "draft_gate" in state.next:
         result = await _runner._run_graph_and_persist(
-            thread_id, graph, config,
-            Command(resume=draft.model_dump()),
+            thread_id,
+            graph,
+            config,
+            None,
             source="draft",
         )
         next_phase = result.get("phase", "unknown") if result else "unknown"
@@ -78,9 +84,22 @@ async def select_version(thread_id: str, choice: VersionChoice, request: Request
         current_phase = state.values.get("phase", "unknown")
         raise ChoiceNotPendingError(thread_id=thread_id, current_phase=current_phase)
 
+    # Write selected_version to state (choice_gate_node reads it on resume)
+    await graph.aupdate_state(
+        config,
+        {
+            "selected_version": choice.version_id,
+        },
+        as_node=_runner._get_as_node(state),
+    )
+
+    # Advance graph past interrupt_before via ainvoke(None).
+    # Command(resume=...) only works for dynamic interrupt(), not interrupt_before.
     result = await _runner._run_graph_and_persist(
-        thread_id, graph, config,
-        Command(resume=choice.model_dump()),
+        thread_id,
+        graph,
+        config,
+        None,
         source="select",
     )
     next_phase = result.get("phase", "unknown") if result else "unknown"
