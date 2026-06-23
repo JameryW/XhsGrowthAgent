@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/index.md", "reason": "backend 目录与导入规范"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "memory store 与 embedding index 配置契约"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Postgres store_vectors 表清理与向量维度"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用现有 _build_embeddings 结构加 local 分支"}

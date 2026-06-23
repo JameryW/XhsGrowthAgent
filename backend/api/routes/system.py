@@ -162,7 +162,9 @@ async def _check_memory_store() -> dict:
     embed_model = ""
     embed_dims = 0
     if index_config:
-        embed_model = index_config.get("embed", "")
+        # embed field is an Embeddings object (not serializable) — report the
+        # configured model string from env instead, for the health payload.
+        embed_model = os.environ.get("XHS_EMBED_MODEL", "")
         embed_dims = index_config.get("dims", 0)
 
     # Count items per namespace (best-effort)

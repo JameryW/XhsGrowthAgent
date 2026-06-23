@@ -130,6 +130,10 @@ cmd_start() {
     echo ">>> 确保 $NET 存在..."
     podman network exists "$NET" 2>/dev/null || podman network create "$NET"
 
+    # HF embedding model cache on the host — seeded from the image on first run,
+    # then persists across rebuilds. (Image also bakes a seed copy as fallback.)
+    mkdir -p "$PROJECT_DIR/.hf-cache"
+
     # 确保 Postgres 运行
     cmd_ensure_postgres
 
@@ -202,6 +206,8 @@ LLMEOF"
         -e XHS_EMBED_MODEL="${XHS_EMBED_MODEL:-}" \
         -e XHS_EMBED_DIMS="${XHS_EMBED_DIMS:-}" \
         -e XHS_EMBED_BASE_URL="${XHS_EMBED_BASE_URL:-}" \
+        -e HF_HOME=/opt/hf-cache \
+        -e HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}" \
         -e XHS_COOKIE="${XHS_COOKIE:-}" \
         -e XHS_USER_ID="${XHS_USER_ID:-}" \
         -e RIPPLE_BASE_URL=http://ripple-service:8080 \
@@ -221,6 +227,7 @@ LLMEOF"
         -e TAVILY_API_KEY="${TAVILY_API_KEY:-}" \
         -e REDIS_URI="${REDIS_URI:-redis://redis:6379/0}" \
         -v "$PROJECT_DIR/frontend/dist:/app/frontend/dist:ro" \
+        -v "$PROJECT_DIR/.hf-cache:/opt/hf-cache" \
         "$BACKEND_IMG"
 
     echo ">>> 等待后端就绪..."

@@ -100,8 +100,12 @@ class TestCompileGraphProd:
         """Prod graph enters the async Postgres store context before compile."""
         from backend.graph import builder as builder_module
 
-        # Set OPENAI_API_KEY so get_prod_store_index() returns a real index config
+        # Set OPENAI_API_KEY + XHS_EMBED_MODEL so get_prod_store_index() returns a
+        # real index config. Explicitly use the openai provider so the test does
+        # not depend on the local .env embedding configuration.
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.setenv("XHS_EMBED_MODEL", "openai:text-embedding-3-small")
+        monkeypatch.setenv("XHS_EMBED_DIMS", "1536")
 
         calls = {}
         fake_graph = object()
