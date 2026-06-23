@@ -210,6 +210,7 @@ LLMEOF"
         -e HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}" \
         -e XHS_COOKIE="${XHS_COOKIE:-}" \
         -e XHS_USER_ID="${XHS_USER_ID:-}" \
+        -e XHS_USE_BROWSER="${XHS_USE_BROWSER:-false}" \
         -e RIPPLE_BASE_URL=http://ripple-service:8080 \
         -e RIPPLE_API_TOKEN="${RIPPLE_API_TOKEN:-}" \
         -e RIPPLE_ENABLED=true \

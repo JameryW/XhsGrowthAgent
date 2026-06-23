@@ -15,11 +15,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python deps
+# Install Python deps (browser extra pulls playwright for real XHS publishing)
 COPY pyproject.toml uv.lock ./
 COPY backend/ backend/
 RUN pip install --no-cache-dir hatchling && \
-    pip install --no-cache-dir .
+    pip install --no-cache-dir ".[browser]"
+
+# Install chromium browser + system deps for playwright real publishing.
+# Baked into the image so containers don't download at runtime (no network dep).
+# ponytail: ~500MB layer; acceptable — real publishing requires a real browser.
+RUN playwright install --with-deps chromium
 
 # Bake the local embedding model into the image as a SEED copy at
 # /opt/hf-cache-seed. The model is COPY'd from the host .hf-cache dir (populated
