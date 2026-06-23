@@ -5,9 +5,9 @@ With an index, asearch() performs true semantic similarity search.
 
 Configuration via environment variables:
   XHS_EMBED_MODEL: embedding provider string (default: "openai:text-embedding-3-small")
-    Supported: "openai:<model>", "openai_compatible:<model>"
+    Supported: "openai:<model>", "openai_compatible:<model>", "local:<model>"
   XHS_EMBED_DIMS: embedding dimensions (default: 1536)
-  OPENAI_API_KEY: required for OpenAI embeddings
+  OPENAI_API_KEY: required for OpenAI / OpenAI-compatible embeddings
   XHS_EMBED_BASE_URL: optional base URL for OpenAI-compatible APIs (e.g. DeepSeek)
 
 For OpenAI-compatible providers (DeepSeek, etc.), set:
@@ -15,8 +15,18 @@ For OpenAI-compatible providers (DeepSeek, etc.), set:
   XHS_EMBED_BASE_URL=https://api.deepseek.com  (or other compatible endpoint)
   OPENAI_API_KEY=sk-...  (the key for that endpoint)
 
-If the embedding provider is unavailable (e.g. missing API key), get_store_index()
-returns None and the store operates without semantic search.
+For local (CPU) embedding providers, set:
+  XHS_EMBED_MODEL=local:<huggingface_model_name>
+  XHS_EMBED_DIMS=<model_dims>  (e.g. 512 for bge-small-zh-v1.5)
+
+  The local provider runs inference on-device via sentence-transformers /
+  langchain-huggingface. No API key is required. Model weights are downloaded
+  on first use (cached under HF_HOME / ~/.cache/huggingface). Set HF_ENDPOINT
+  to a mirror (e.g. https://hf-mirror.com) if HuggingFace Hub is unreachable.
+
+If the embedding provider is unavailable (e.g. missing API key, model download
+failure), get_store_index() returns None and the store operates without
+semantic search.
 """
 
 from __future__ import annotations
@@ -88,10 +98,14 @@ def _build_embeddings(provider: str, model_name: str) -> Any:
         if base_url:
             kwargs["base_url"] = base_url
         return OpenAIEmbeddings(**kwargs)
+    elif provider == "local":
+        from langchain_huggingface import HuggingFaceEmbeddings
+
+        return HuggingFaceEmbeddings(model_name=model_name)
     else:
         raise ValueError(
             f"Unsupported embed provider: {provider!r}. "
-            "Use 'openai' or 'openai_compatible'."
+            "Use 'openai', 'openai_compatible', or 'local'."
         )
 
 
@@ -121,7 +135,8 @@ def get_store_index() -> IndexConfig | None:
     if not provider:
         logger.warning(
             f"Cannot determine provider from XHS_EMBED_MODEL={embed_model!r} — "
-            "store semantic search disabled. Use format 'provider:model' (e.g. 'openai:text-embedding-3-small')."
+            "store semantic search disabled. Use format 'provider:model' "
+            "(e.g. 'openai:text-embedding-3-small' or 'local:BAAI/bge-small-zh-v1.5')."
         )
         return None
 

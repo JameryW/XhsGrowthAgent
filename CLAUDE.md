@@ -246,11 +246,12 @@ LangGraph BaseStore integration with namespaces per account, semantic search, an
 
 **Index Configuration (`memory/index.py`):**
 - `IndexConfig` with direct `Embeddings` object construction (not string-based resolution)
-- Supported providers: `openai`, `openai_compatible`
+- Supported providers: `openai`, `openai_compatible`, `local`
 - Env vars: `XHS_EMBED_MODEL` (default: `openai:text-embedding-3-small`), `XHS_EMBED_DIMS` (default: 1536), `XHS_EMBED_BASE_URL` (for OpenAI-compatible APIs like DeepSeek)
 - `get_store_index()`: Returns `IndexConfig | None` — falls back to `None` when no API key is available (store operates without semantic search)
 - `get_prod_store_index()`: Same as above but adds `distance_type: "cosine"` for Postgres store
-- `_build_embeddings()`: Constructs `OpenAIEmbeddings` directly from `langchain_openai`, bypassing the langchain meta-package string resolution
+- `_build_embeddings()`: Constructs `OpenAIEmbeddings` (openai/openai_compatible) directly from `langchain_openai`, or `HuggingFaceEmbeddings` (local) from `langchain_huggingface` — bypassing the langchain meta-package string resolution
+- `local` provider: Runs embedding inference on CPU via `sentence-transformers` / `langchain-huggingface`. No API key required. Model weights downloaded on first use (cached under `~/.cache/huggingface`). Set `HF_ENDPOINT` to a mirror (e.g. `https://hf-mirror.com`) if HuggingFace Hub is unreachable. When switching embedding dimensions, the Postgres `store_vectors` table must be cleared (old vectors are incompatible with new dimensions).
 - Indexed fields: title, body, insight, note, preference, content, tone, visual_style, topic, tags, hashtag_style, trigger_condition, title_formula, opening_hook, niche, category, voice_patterns, layout_preference
 
 **MemoryManager (`memory/store.py`):**
@@ -336,7 +337,7 @@ Required environment variables (see `.env.example`):
 - `XHS_COOKIE`, `XHS_USER_ID` — Xiaohongshu platform access
 - `RIPPLE_BASE_URL`, `RIPPLE_API_TOKEN` — Ripple CAS engine
 - `POSTGRES_URI`, `REDIS_URI` — Production persistence
-- `XHS_EMBED_MODEL`, `XHS_EMBED_DIMS`, `XHS_EMBED_BASE_URL` — Memory store semantic search (optional; defaults to `openai:text-embedding-3-small`, 1536 dims)
+- `XHS_EMBED_MODEL`, `XHS_EMBED_DIMS`, `XHS_EMBED_BASE_URL` — Memory store semantic search (optional; defaults to `openai:text-embedding-3-small`, 1536 dims). Use `local:BAAI/bge-small-zh-v1.5` with `XHS_EMBED_DIMS=512` for on-device CPU embedding (no API key needed; requires `langchain-huggingface` + `sentence-transformers`)
 
 ## Deployment
 
@@ -344,6 +345,10 @@ Deploy using `scripts/deploy.sh` (not manual `podman run`):
 - The script reads `.env` and passes all env vars to containers
 - Postgres container must use `pgvector/pgvector:pg15` image (not `postgres:15`) for vector similarity support
 - Embedding env vars (`XHS_EMBED_MODEL`, `XHS_EMBED_DIMS`, `XHS_EMBED_BASE_URL`) are passed to the backend container for semantic search
+- `HF_ENDPOINT` (default: `https://hf-mirror.com`) is passed to the backend container for HuggingFace model downloads when using the `local` embedding provider
+- The bge-small-zh-v1.5 model is **baked into the image** as a seed at `/opt/hf-cache-seed` (via `COPY .hf-cache` in the Dockerfile — the `.hf-cache/` dir on the host holds a one-time download; build containers can't reliably reach the HF mirror, so baking is offline). At runtime `HF_HOME=/opt/hf-cache` and the host dir `/test/xhs/.hf-cache` is bind-mounted there. `scripts/container-entrypoint.sh` seeds the mount from the image copy on first run (when the mount is empty), giving zero runtime network dependency + a host-visible, rebuild-persistent cache.
+- Model file locations: host `/test/xhs/.hf-cache/hub/models--BAAI--bge-small-zh-v1.5/`, container mount `/opt/hf-cache` (`HF_HOME`), image seed `/opt/hf-cache-seed`. `.hf-cache/` is gitignored.
+- When switching embedding dimensions (e.g. 1536 → 512), clear the Postgres `store_vectors` table first: `podman exec postgres-xhs psql -U xhs -d xhs_growth -c "TRUNCATE store_vectors;"`
 - Without embedding config, the store operates in degraded mode (namespace recency only, no semantic search)
 
 ## Key Patterns
