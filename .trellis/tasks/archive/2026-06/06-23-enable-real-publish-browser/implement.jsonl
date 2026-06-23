@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Dockerfile/deploy.sh 改动需遵循后端目录与部署约定"}
+{"file": ".trellis/spec/backend/index.md", "reason": "后端 spec 索引，确认部署相关约定"}

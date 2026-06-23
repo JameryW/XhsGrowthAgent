@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "校验 Dockerfile/deploy.sh 改动符合部署约定"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "校验改动符合后端质量标准"}
