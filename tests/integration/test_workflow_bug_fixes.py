@@ -1095,6 +1095,63 @@ class TestWorkflowAPIIntegration:
         assert isinstance(captured["input_data"], Command)
         assert captured["input_data"].resume == {"skip": True}
 
+    def test_retry_error_infers_phase_from_failed_task(self, client, mock_graph, monkeypatch):
+        """Regression: retry from a terminal error must infer the resume phase from
+        the checkpoint's failed task, not blindly fall back to SCOUTING.
+
+        Scenario: visual_designer errored (NotEnoughCvError). The graph is in a
+        terminal error state — state.next is empty but state.tasks still holds the
+        failed/pending task. prev_phase was never saved (only pause/cancel save it),
+        so the old code fell back to SCOUTING, resetting progress to 10% and
+        desyncing the displayed phase from the real resume point.
+        """
+        thread_id = "xhs_test_resume_error_phase_001"
+
+        failed_task = MagicMock()
+        failed_task.name = "visual_designer"
+
+        mock_state = MagicMock()
+        mock_state.values = {
+            "phase": WorkflowPhase.ERROR.value,
+            "session_id": thread_id,
+            "account_id": "test_account",
+            "error": "NotEnoughCvError",
+            "current_agent": "visual_designer",
+            # prev_phase intentionally absent — the bug scenario
+        }
+        mock_state.next = []               # terminal error → no pending successors
+        mock_state.tasks = [failed_task]   # failed/pending task still in checkpoint
+        mock_state.interrupts = []
+        mock_graph.aget_state.return_value = mock_state
+
+        # Capture the resume input (_start_resume_task is replaced so no bg task).
+        captured: dict[str, object] = {}
+
+        async def _capture_start(*args, **kwargs):
+            captured["input_data"] = kwargs.get("input_data")
+            return None
+        monkeypatch.setattr(workflow_module, "_start_resume_task", _capture_start)
+
+        response = client.post(f"/api/workflow/resume/{thread_id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["data"]["status"] == "running"
+        # Phase reflects the failed node (visual_designer → creating), NOT scouting.
+        assert data["data"]["phase"] == WorkflowPhase.CREATING.value
+
+        # Resume re-runs ONLY the failed node via Command(goto=...), not the
+        # aupdate_state(as_node=...) successor-advance that caused the loop.
+        from langgraph.types import Command
+        assert isinstance(captured["input_data"], Command)
+        assert captured["input_data"].goto == "visual_designer"
+
+        # Phase + error cleared in graph state (as_node omitted — goto drives re-entry).
+        written = mock_graph.aupdate_state.call_args_list[-1][0][1]
+        assert written["phase"] == WorkflowPhase.CREATING.value
+        assert written["error"] is None
+
 
 # ── Engagement node completion event ownership ─────────────────────────────────
 
