@@ -1232,3 +1232,41 @@ class AsyncContextManagerMock:
 
     async def __aexit__(self, *args):
         return False
+
+
+class TestRippleProgressStoreCleanup:
+    """Ripple 仿真进度收尾——防止前端永久卡 95%。"""
+
+    def setup_method(self):
+        RippleService._progress_store.clear()
+
+    def teardown_method(self):
+        RippleService._progress_store.clear()
+
+    def test_terminal_status_pops_store(self):
+        """终态（含 timed_out/failed）必须从 _progress_store 移除。"""
+        svc = RippleService()
+        # 先写入一条 running 条目
+        svc._emit_progress("job-1", 0.95, 0, 0, 100.0, "thread-A", status="running")
+        assert "thread-A:job-1" in RippleService._progress_store
+        # timed_out 收尾应 pop
+        svc._emit_progress("job-1", 1.0, 0, 0, 1800.0, "thread-A", status="timed_out")
+        assert "thread-A:job-1" not in RippleService._progress_store
+
+    def test_get_thread_progress_filters_stale_running(self):
+        """status=running 且 elapsed≥1800 的残留条目应被剔除并 pop。"""
+        RippleService._progress_store["thread-B:job-2"] = {
+            "job_id": "job-2",
+            "progress": 0.95,
+            "status": "running",
+            "elapsed_seconds": 1799.5,
+            "thread_id": "thread-B",
+            "current_wave": 0,
+            "total_waves": 0,
+            "skill": "",
+        }
+        result = RippleService.get_thread_progress("thread-B")
+        # 超时残留被过滤——不再返回，前端不会被钉在 95%
+        assert result == {}
+        assert "thread-B:job-2" not in RippleService._progress_store
+

@@ -25,6 +25,11 @@ class RippleTimeoutError(TimeoutError):
         super().__init__(f"Ripple simulation {job_id} did not complete within {max_wait}s")
 
 
+# ponytail: 残留进度过期阈值——max_wait(1800s) 的 94%。超过仍 running 视为
+# 超时未收尾的历史残留，get_thread_progress 据此清理（兜底主修法之外的旧数据）
+_STALE_PROGRESS_SECS = 1700.0
+
+
 class RecoveryStatus(BaseModel):
     """Ripple 模拟恢复状态 — 支持未来后台轮询扩展"""
 
@@ -308,8 +313,10 @@ class RippleService:
             "skill": skill,
         }
         # Store progress for status API queries
+        # ponytail: 终态一律清理 store——超时/失败不收尾会让前端永久卡在估算进度
         key = f"{thread_id}:{job_id}"
-        if status in ("completed", "done", "finished"):
+        terminal = ("completed", "done", "finished", "timed_out", "timeout", "failed", "error")
+        if status in terminal:
             RippleService._progress_store.pop(key, None)
         else:
             RippleService._progress_store[key] = {**payload, "thread_id": thread_id}
@@ -323,10 +330,22 @@ class RippleService:
         Returns dict with 'jobs', 'overall_progress', 'active_jobs', 'total_jobs'.
         """
         jobs: dict[str, Any] = {}
-        for key, data in cls._progress_store.items():
-            if data.get("thread_id") == thread_id:
-                job_id = data["job_id"]
-                jobs[job_id] = {k: v for k, v in data.items() if k != "thread_id"}
+        for key, data in list(cls._progress_store.items()):
+            if data.get("thread_id") != thread_id:
+                continue
+            # ponytail: 防御性过期清理——逼近 max_wait 仍 "running" 的条目必然是
+            # 超时未收尾的历史残留（实测残留值 ~1799.5s，略低于 max_wait 1800），
+            # 剔除并 pop，避免永久卡前端进度条。阈值取 max_wait 的 94%，正常 job
+            # 不会跑这么久还停在 running
+            is_stale = (
+                data.get("status") == "running"
+                and float(data.get("elapsed_seconds", 0)) >= _STALE_PROGRESS_SECS
+            )
+            if is_stale:
+                cls._progress_store.pop(key, None)
+                continue
+            job_id = data["job_id"]
+            jobs[job_id] = {k: v for k, v in data.items() if k != "thread_id"}
         if not jobs:
             return {}
         entries = list(jobs.values())
@@ -829,6 +848,18 @@ class RippleService:
                 await asyncio.sleep(poll_interval)
                 elapsed = _time.monotonic() - start_time
 
+            # ponytail: 超时也必须收尾进度条——否则 _progress_store 残留
+            # 0.95/"running" 永久卡死前端（max_wait 跑满但无终态事件 pop）
+            if thread_id:
+                self._emit_progress(
+                    job_id,
+                    progress=1.0,
+                    current_wave=progress_state.get("total_waves", 0),
+                    total_waves=progress_state.get("total_waves", 0),
+                    elapsed_seconds=elapsed,
+                    thread_id=thread_id,
+                    status="timed_out",
+                )
             raise RippleTimeoutError(job_id, max_wait)
         finally:
             if sse_task and not sse_task.done():
