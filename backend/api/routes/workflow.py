@@ -145,6 +145,27 @@ def _resume_phase_for_next_nodes(
     return fallback
 
 
+def _task_name(task: Any) -> str | None:
+    name = getattr(task, "name", None)
+    return name if isinstance(name, str) and name else None
+
+
+def _task_has_error(task: Any) -> bool:
+    error = getattr(task, "error", None)
+    return error not in (None, "")
+
+
+def _resume_nodes_from_tasks(tasks: Any) -> tuple[str, ...]:
+    named_tasks = tuple(
+        name for task in (tasks or ()) if (name := _task_name(task))
+    )
+    failed_tasks = tuple(
+        name for task in (tasks or ())
+        if (name := _task_name(task)) and _task_has_error(task)
+    )
+    return failed_tasks or named_tasks
+
+
 def _persisted_status(phase: str | WorkflowPhase, error: str | None = None) -> str:
     """Derive status for persisted records without live snapshot."""
     if phase == WorkflowPhase.ERROR or error:
@@ -986,17 +1007,14 @@ async def resume_workflow(thread_id: str, request: Request):
         })
 
     if can_retry_error or can_resume_stale:
-        # Infer the real resume point instead of blindly falling back to
-        # SCOUTING. On a node error state.next holds the failed node (LangGraph
-        # keeps it pending) and state.tasks has an errored task. We map that to
-        # the displayed phase; the actual graph re-entry is handled below via
-        # Command(goto=failed_node) — NOT aupdate_state(as_node=...), which would
-        # advance to the node's successors and re-run the downstream chain.
+        # Infer the displayed resume phase from the checkpoint's failed/pending
+        # node (state.next / state.tasks), not a blind SCOUTING fallback. The
+        # actual graph re-entry below uses native ainvoke(None) — NOT
+        # aupdate_state(as_node=...), which would advance to the node's
+        # successors and re-run the downstream chain.
         infer_nodes = next_nodes
         if not infer_nodes:
-            infer_nodes = tuple(
-                t.name for t in (state.tasks or ()) if getattr(t, "name", None)
-            )
+            infer_nodes = _resume_nodes_from_tasks(state.tasks)
         if not infer_nodes and state.values:
             last_node = state.values.get("_last_node")
             if last_node:
