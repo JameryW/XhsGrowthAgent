@@ -163,8 +163,14 @@ async def _start_resume_task(
     graph,
     config: dict,
     phase: str | WorkflowPhase,
+    *,
+    input_data: Any = None,
 ) -> None:
-    """Mark a workflow running and resume graph execution in the background."""
+    """Mark a workflow running and resume graph execution in the background.
+
+    input_data: passed as the graph ainvoke input. None = native resume from
+    checkpoint (the default). Pass a Command(goto=...) to retry a specific node.
+    """
     await _db_upsert(
         thread_id,
         status="running",
@@ -174,12 +180,46 @@ async def _start_resume_task(
 
     async def _resume_async():
         await _runner._run_graph_and_persist(
-            thread_id, graph, config, None, source="resume",
+            thread_id, graph, config, input_data, source="resume",
         )
 
     task = asyncio.create_task(_resume_async())
     task.add_done_callback(_on_task_done(thread_id))
     _runner._background_tasks[thread_id] = task
+
+
+def _failed_node(state) -> str | None:
+    """Best-effort name of the node to re-run on error/stale retry.
+
+    Why this exists: _get_as_node picks state.tasks[0], which on an error
+    checkpoint is often an earlier *succeeded* node (e.g. orchestrator).
+    Resuming as_node=that advances to its successors and re-runs the whole
+    downstream chain — the retry/stale loop (scouting → content_strategist →
+    30min Ripple). We instead jump Command(goto=failed_node) to re-run only it.
+
+    Signal priority (none is universally reliable across LangGraph versions /
+    entry paths, so we try each):
+      1. state.tasks entry with a non-empty .error  (the failed task itself)
+      2. state.next                                   (failed task stays pending
+                                                         per LangGraph _loop.py)
+      3. state.values["current_agent"]                (last node that ran; a
+                                                         fallback only — on a
+                                                         raised error __call__
+                                                         never sets current_agent
+                                                         for the failed node)
+    Returns None when no signal fires; caller falls back to the as_node path.
+    """
+    for t in (state.tasks or ()):
+        if getattr(t, "error", None) and getattr(t, "name", None):
+            return t.name
+    for node in (state.next or ()):
+        if node:
+            return node
+    values = state.values or {}
+    agent = values.get("current_agent")
+    if agent and agent != "unknown":
+        return agent
+    return None
 
 
 # ── Request/Response models ──
@@ -945,16 +985,50 @@ async def resume_workflow(thread_id: str, request: Request):
             ),
         })
 
-    if (can_retry_error or can_resume_stale) and next_nodes:
+    if can_retry_error or can_resume_stale:
+        # Infer the real resume point instead of blindly falling back to
+        # SCOUTING. On a node error state.next holds the failed node (LangGraph
+        # keeps it pending) and state.tasks has an errored task. We map that to
+        # the displayed phase; the actual graph re-entry is handled below via
+        # Command(goto=failed_node) — NOT aupdate_state(as_node=...), which would
+        # advance to the node's successors and re-run the downstream chain.
+        infer_nodes = next_nodes
+        if not infer_nodes:
+            infer_nodes = tuple(
+                t.name for t in (state.tasks or ()) if getattr(t, "name", None)
+            )
+        if not infer_nodes and state.values:
+            last_node = state.values.get("_last_node")
+            if last_node:
+                infer_nodes = (last_node,)
         prev_phase = _resume_phase_for_next_nodes(
-            next_nodes,
+            infer_nodes,
             state.values.get("prev_phase") or WorkflowPhase.CREATING,
         )
     else:
+        # Paused (prev_phase saved on pause) or terminal restart (fresh from SCOUTING).
         prev_phase = state.values.get("prev_phase") or WorkflowPhase.SCOUTING
-    await graph.aupdate_state(config, {"phase": prev_phase, "error": None}, as_node=_get_as_node(state))
 
-    await _start_resume_task(thread_id, graph, config, prev_phase)
+    # Resume strategy: retry the exact failed node when there is one.
+    # _get_as_node picks state.tasks[0], which on an error checkpoint is often an
+    # earlier succeeded node (e.g. orchestrator) — resuming as_node=that advances
+    # to its successors and re-runs the whole downstream chain (the
+    # retry/stale loop: scouting → content_strategist → 30min Ripple). Jumping
+    # directly to the failed node with Command(goto=...) re-runs only that node.
+    failed_node = _failed_node(state) if (can_retry_error or can_resume_stale) else None
+    if failed_node:
+        # ponytail: no aupdate_state(as_node=...) — that's the loop mechanism.
+        # Clear error via the DB upsert inside _start_resume_task; the node's
+        # own __call__ clears state["error"]=None on success (base.py).
+        await graph.aupdate_state(config, {"phase": prev_phase, "error": None})
+        from langgraph.types import Command
+        await _start_resume_task(
+            thread_id, graph, config, prev_phase,
+            input_data=Command(goto=failed_node),
+        )
+    else:
+        await graph.aupdate_state(config, {"phase": prev_phase, "error": None}, as_node=_get_as_node(state))
+        await _start_resume_task(thread_id, graph, config, prev_phase)
 
     return success(data={
         "thread_id": thread_id,

@@ -30,7 +30,6 @@ def _mock_get_model():
         mp.setattr("backend.models.router.get_model", lambda *a, **kw: mock_model)
         mp.setattr("backend.agents.base.get_model", lambda *a, **kw: mock_model)
         mp.setattr("backend.services.llm_enrichment.get_model", lambda *a, **kw: mock_model)
-        mp.setattr("backend.core.base_agent.get_model", lambda *a, **kw: mock_model)
         yield
 
 

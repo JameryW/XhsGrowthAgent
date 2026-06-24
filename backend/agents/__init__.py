@@ -16,6 +16,7 @@ Agents:
 """
 
 from backend.agents.analyst import AnalystAgent
+from backend.agents.base import BaseAgent
 from backend.agents.blogger_scout import BloggerScoutAgent
 from backend.agents.brief_analyzer import BriefAnalyzerAgent
 from backend.agents.content_analyzer import ContentAnalyzerAgent
@@ -29,7 +30,6 @@ from backend.agents.trend_scout import TrendScoutAgent
 from backend.agents.version_generator import VersionGeneratorAgent
 from backend.agents.viral_matcher import ViralMatcherAgent
 from backend.agents.visual_designer import VisualDesignerAgent
-from backend.core.base_agent import BaseAgent
 
 __all__ = [
     "BaseAgent",
