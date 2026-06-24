@@ -183,6 +183,18 @@ def _get_as_node(state) -> str | None:
     return "orchestrator"
 
 
+def _task_has_error(task: Any) -> bool:
+    error = getattr(task, "error", None)
+    return error not in (None, "")
+
+
+def _has_native_resume_point(state) -> bool:
+    """Return True when LangGraph already has a pending node to resume."""
+    if state.next:
+        return True
+    return any(_task_has_error(task) for task in (state.tasks or ()))
+
+
 def _save_history_file(thread_id: str, state_values: dict) -> None:
     """Persist completed workflow result to history file."""
     try:
@@ -286,10 +298,11 @@ async def _run_graph_and_persist(
         logger.exception("Graph execution failed (source=%s, thread=%s)", source, thread_id)
         with contextlib.suppress(Exception):
             snapshot = await graph.aget_state(config)
-            await graph.aupdate_state(
-                config, {"phase": "error", "error": str(exc)},
-                as_node=_get_as_node(snapshot),
-            )
+            if not _has_native_resume_point(snapshot):
+                await graph.aupdate_state(
+                    config, {"phase": "error", "error": str(exc)},
+                    as_node=_get_as_node(snapshot),
+                )
         await _db_upsert(
             thread_id,
             status="error",

@@ -12,6 +12,12 @@ from backend.config.models import TaskType
 class TestBaseAgent:
     """Tests for BaseAgent core functionality."""
 
+    def test_core_base_agent_import_compatibility(self):
+        """Legacy import path should still expose the canonical BaseAgent."""
+        from backend.core.base_agent import BaseAgent as CoreBaseAgent
+
+        assert CoreBaseAgent is BaseAgent
+
     def test_task_type_attribute(self):
         """Agent has task_type defined."""
         class DummyAgent(BaseAgent):

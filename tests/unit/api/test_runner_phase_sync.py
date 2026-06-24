@@ -116,6 +116,44 @@ class TestPhaseProgressConsistency:
         assert row.status == WorkflowStatus.AWAITING_BLOGGER_SELECTION.value
 
     @pytest.mark.asyncio
+    async def test_exception_preserves_native_failure_checkpoint(self):
+        """If LangGraph already has a pending failed node, do not overwrite it
+        with a fallback aupdate_state. The next resume must use the native
+        checkpoint with ainvoke(None).
+        """
+        thread_id = "xhs_test_native_failure_checkpoint_001"
+        config = {"configurable": {"thread_id": thread_id}}
+
+        failed_task = MagicMock()
+        failed_task.name = "visual_designer"
+        failed_task.error = RuntimeError("NotEnoughCvError")
+
+        snapshot = _make_snapshot(
+            {
+                "phase": WorkflowPhase.SCOUTING.value,
+                "session_id": thread_id,
+                "current_agent": "orchestrator",
+            },
+            next_nodes=["visual_designer"],
+        )
+        snapshot.tasks = [failed_task]
+
+        graph = MagicMock()
+        graph.ainvoke = AsyncMock(side_effect=RuntimeError("NotEnoughCvError"))
+        graph.aget_state = AsyncMock(return_value=snapshot)
+        graph.aupdate_state = AsyncMock()
+
+        with (
+            patch.object(runner_module, "_db_upsert", new_callable=AsyncMock),
+            pytest.raises(RuntimeError),
+        ):
+            await runner_module._run_graph_and_persist(
+                thread_id, graph, config, None, source="start",
+            )
+
+        graph.aupdate_state.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_progress_consistent_with_phase_at_draft_gate(self):
         """Same consistency check at draft_gate: snapshot phase=creating must
         drive progress=40 regardless of what ainvoke returned."""

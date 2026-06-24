@@ -47,17 +47,24 @@ C 组：`ainvoke(Command(goto="visual_designer"))` → **只重跑 visual_design
 ### 5. _last_node 永远 None（确认）
 `_get_as_node` 的 `_last_node` 回退分支永不命中；实际回退到 `tasks[0]`。
 
-## 修法 B 定论（待用户确认后实施）
+## 修法 B 定论（最终实施）
 
 **核心修法**：error/stale 重试路径不再用 `aupdate_state(as_node=_get_as_node(state))`
-推进后继。改为：
-- 识别失败节点 = `state.tasks` 中带 `.error` 的 task 名（回退 `current_agent`）。
-- resume 用 `ainvoke(Command(goto=<失败节点>))`（方案2，已验证只重跑该节点）。
-- 清 error：可在 goto 前 `aupdate_state({error:None}, as_node=<失败节点>)` 或依赖节点
-  成功后 `__call__` 自清 `error=None`（live base.py:201）。
+推进后继。改为 **原生 `ainvoke(None)`**（探针 resume-A 已验证只重跑失败节点），且
+**完全不调 `aupdate_state`**——多 task checkpoint 上即使不带 as_node 也会抛 InvalidUpdateError。
 
-**次要修法**：`_get_as_node` 取 `tasks[0]` 的逻辑本身有缺陷（应优先取带 error 的 task），
-但若 resume 路径改用 goto 则 _get_as_node 在该路径不再被调用；其 paused 路径用途需另查。
+为何选 `ainvoke(None)` 而非 `Command(goto=失败节点)`（初版方案2）：
+- 探针 resume-A（`ainvoke(None)`，不写 as_node）**已证明只重跑 visual_designer**（vd_ran +2）。
+  LangGraph 原生 error-resume：失败 task 的 writes 为空、versions_seen 不 bump，resume 重执行。
+- `Command(goto)` 需 `_failed_node` 识别失败节点，但探针显示该信号在本地 goto-seed
+  复现中不可靠（tasks[].error / next 都可能空），且有 `else` 回退到 buggy as_node 路径的隐患。
+- workflow-state spec 明确：stale/error resume 用 `ainvoke(None)`（line 664）。
+- 故最终实施：error/stale 路径**跳过 `aupdate_state`**，直接 `_start_resume_task`（内部
+  `ainvoke(None)`）。paused/terminal-restart 路径保留原 `as_node=_get_as_node` 逻辑。
+
+**关键**：bug 的根因不是 resume 输入，而是 `aupdate_state(as_node=_get_as_node(state))`
+这一步——`_get_as_node` 取 `tasks[0]=orchestrator`，`as_node=orchestrator` 推进到 trend_scout。
+去掉 aupdate_state 调用即可让原生 ainvoke(None) 重跑失败节点。
 
 ## 推翻的前提
 - PRD"next_nodes 为空" → **错**：error 终态 next 含失败节点。
