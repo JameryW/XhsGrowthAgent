@@ -1096,19 +1096,19 @@ class TestWorkflowAPIIntegration:
         assert captured["input_data"].resume == {"skip": True}
 
     def test_retry_error_infers_phase_from_failed_task(self, client, mock_graph, monkeypatch):
-        """Regression: retry from a terminal error must infer the resume phase from
-        the checkpoint's failed task, not blindly fall back to SCOUTING.
-
-        Scenario: visual_designer errored (NotEnoughCvError). The graph is in a
-        terminal error state — state.next is empty but state.tasks still holds the
-        failed/pending task. prev_phase was never saved (only pause/cancel save it),
-        so the old code fell back to SCOUTING, resetting progress to 10% and
-        desyncing the displayed phase from the real resume point.
+        """Regression: retry from a terminal error must (a) infer the resume phase
+        from the checkpoint's failed task (not fall back to SCOUTING), and (b) NOT
+        call aupdate_state at all — native ainvoke(None) re-runs the failed task.
         """
         thread_id = "xhs_test_resume_error_phase_001"
 
+        succeeded_task = MagicMock()
+        succeeded_task.name = "orchestrator"
+        succeeded_task.error = None
+
         failed_task = MagicMock()
         failed_task.name = "visual_designer"
+        failed_task.error = RuntimeError("NotEnoughCvError")
 
         mock_state = MagicMock()
         mock_state.values = {
@@ -1120,17 +1120,20 @@ class TestWorkflowAPIIntegration:
             # prev_phase intentionally absent — the bug scenario
         }
         mock_state.next = []               # terminal error → no pending successors
-        mock_state.tasks = [failed_task]   # failed/pending task still in checkpoint
+        # LangGraph may keep earlier successful tasks before the failed task.
+        # Phase inference must prefer the errored task, not tasks[0].
+        mock_state.tasks = [succeeded_task, failed_task]
         mock_state.interrupts = []
         mock_graph.aget_state.return_value = mock_state
 
-        # Capture the resume input (_start_resume_task is replaced so no bg task).
-        captured: dict[str, object] = {}
+        # _start_resume_task spawns a bg task — replace so we assert on the
+        # resume decision without invoking the graph.
+        captured: dict = {}
 
-        async def _capture_start(*args, **kwargs):
-            captured["input_data"] = kwargs.get("input_data")
+        async def _noop_start(_thread_id, _graph, _config, phase):
+            captured["phase"] = phase
             return None
-        monkeypatch.setattr(workflow_module, "_start_resume_task", _capture_start)
+        monkeypatch.setattr(workflow_module, "_start_resume_task", _noop_start)
 
         response = client.post(f"/api/workflow/resume/{thread_id}")
 
@@ -1140,17 +1143,12 @@ class TestWorkflowAPIIntegration:
         assert data["data"]["status"] == "running"
         # Phase reflects the failed node (visual_designer → creating), NOT scouting.
         assert data["data"]["phase"] == WorkflowPhase.CREATING.value
+        assert captured["phase"] == WorkflowPhase.CREATING.value
 
-        # Resume re-runs ONLY the failed node via Command(goto=...), not the
-        # aupdate_state(as_node=...) successor-advance that caused the loop.
-        from langgraph.types import Command
-        assert isinstance(captured["input_data"], Command)
-        assert captured["input_data"].goto == "visual_designer"
-
-        # Phase + error cleared in graph state (as_node omitted — goto drives re-entry).
-        written = mock_graph.aupdate_state.call_args_list[-1][0][1]
-        assert written["phase"] == WorkflowPhase.CREATING.value
-        assert written["error"] is None
+        # Error/stale retry must leave the LangGraph checkpoint untouched. Even
+        # aupdate_state without as_node can raise InvalidUpdateError when the
+        # checkpoint has multiple tasks; native ainvoke(None) is the retry.
+        mock_graph.aupdate_state.assert_not_called()
 
 
 # ── Engagement node completion event ownership ─────────────────────────────────

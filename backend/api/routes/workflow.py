@@ -1009,23 +1009,24 @@ async def resume_workflow(thread_id: str, request: Request):
         # Paused (prev_phase saved on pause) or terminal restart (fresh from SCOUTING).
         prev_phase = state.values.get("prev_phase") or WorkflowPhase.SCOUTING
 
-    # Resume strategy: retry the exact failed node when there is one.
-    # _get_as_node picks state.tasks[0], which on an error checkpoint is often an
-    # earlier succeeded node (e.g. orchestrator) — resuming as_node=that advances
-    # to its successors and re-runs the whole downstream chain (the
-    # retry/stale loop: scouting → content_strategist → 30min Ripple). Jumping
-    # directly to the failed node with Command(goto=...) re-runs only that node.
-    failed_node = _failed_node(state) if (can_retry_error or can_resume_stale) else None
-    if failed_node:
-        # ponytail: no aupdate_state(as_node=...) — that's the loop mechanism.
-        # Clear error via the DB upsert inside _start_resume_task; the node's
-        # own __call__ clears state["error"]=None on success (base.py).
-        await graph.aupdate_state(config, {"phase": prev_phase, "error": None})
-        from langgraph.types import Command
-        await _start_resume_task(
-            thread_id, graph, config, prev_phase,
-            input_data=Command(goto=failed_node),
-        )
+    # Resume strategy for error/stale: native re-run of the failed node.
+    #
+    # We must NOT call aupdate_state(as_node=_get_as_node(state)) here. On an
+    # error checkpoint state.tasks holds an earlier *succeeded* node first
+    # (e.g. orchestrator); _get_as_node picks tasks[0]=orchestrator, and
+    # as_node=orchestrator means "orchestrator just finished" → ainvoke advances
+    # to orchestrator's successors (trend_scout) → re-runs the whole downstream
+    # chain (scouting → content_strategist → 30min Ripple). The failed node is
+    # never retried. This is the retry/stale loop bug (see research/probe-results.md).
+    #
+    # Instead: LangGraph's native error-resume re-runs the failed task on
+    # ainvoke(None) (the failed task's writes are empty / versions_seen not
+    # bumped, per langgraph pregel/_loop.py). Leave the graph checkpoint
+    # untouched; _start_resume_task clears persisted display state and then
+    # resumes with None. This matches the workflow-state spec: stale/error
+    # resume uses ainvoke(None).
+    if can_retry_error or can_resume_stale:
+        await _start_resume_task(thread_id, graph, config, prev_phase)
     else:
         await graph.aupdate_state(config, {"phase": prev_phase, "error": None}, as_node=_get_as_node(state))
         await _start_resume_task(thread_id, graph, config, prev_phase)
