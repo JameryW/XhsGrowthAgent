@@ -87,8 +87,9 @@ class XHSGrowthState(TypedDict, total=False):
     # 优化分析报告
     optimization_analysis: OptimizationAnalysis
 
-    # 生成的版本列表
-    content_versions: Annotated[list[ContentVersion], _append_list]
+    # 生成的版本列表 — replace: 每轮 version_generator 生成 A/B/C 当前轮候选，
+    # 多轮增长循环下 replace 而非累加，保证 version_id 全局唯一（choice_gate 匹配正确）
+    content_versions: Annotated[list[ContentVersion], _replace]
 
     # 用户选择的版本ID
     selected_version: str
