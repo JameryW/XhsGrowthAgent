@@ -231,8 +231,16 @@ async def _run_graph_and_persist(
 
         _emit_status_transition(derived, thread_id, snapshot=snapshot)
 
-        final_phase = result.get("phase", "unknown") if result else "unknown"
-        has_error = result.get("error") if result else None
+        # Phase/error 取图真实状态（snapshot.values），与 derive_status 同源——
+        # 否则 ainvoke 返回的 result 只是最后节点输出，phase 可能滞后于中断点真实
+        # phase，导致 DB 写入的 phase/progress 与 /status 现算不一致。
+        snapshot_values = snapshot.values or {}
+        final_phase = snapshot_values.get("phase") or (
+            result.get("phase", "unknown") if result else "unknown"
+        )
+        has_error = snapshot_values.get("error") or (
+            result.get("error") if result else None
+        )
         final_status = _status_to_str(derived, has_error, final_phase)
 
         # Compute progress: completed → 100, awaiting gates → phase-based, else phase-based
