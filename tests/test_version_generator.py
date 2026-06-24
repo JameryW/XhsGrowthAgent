@@ -1,11 +1,14 @@
 """Tests for VersionGeneratorAgent."""
 
+import json
+from typing import get_args, get_type_hints
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from backend.agents.nodes.optimization.choice_gate import choice_gate_node
 from backend.agents.version_generator import VersionGeneratorAgent
-from backend.state.schema import WorkflowPhase
+from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 
 @pytest.fixture
@@ -200,3 +203,99 @@ async def test_version_generator_prompt_file():
     """Should have correct prompt_file."""
     agent = VersionGeneratorAgent()
     assert agent.prompt_file == "version_generator.yaml"
+
+
+# ── Regression: multi-round growth loop must not accumulate versions ──────────
+
+
+def _content_versions_reducer():
+    """Extract the actual reducer LangGraph will use for content_versions."""
+    hints = get_type_hints(XHSGrowthState, include_extras=True)
+    return get_args(hints["content_versions"])[1]
+
+
+@pytest.mark.asyncio
+async def test_multi_round_no_version_accumulation(mock_state_with_draft_and_analysis, mock_store):
+    """Two rounds of version_generator must leave only 3 versions (current round).
+
+    Regression for thread ed6fd1fe: the growth loop (analyst → orchestrator →
+    … → version_generator) ran version_generator twice, each producing A/B/C.
+    With the old append_list reducer the list grew to 6 (duplicate A/B/C),
+    and choice_gate's next() always matched round 1 — selection was broken.
+
+    With the replace reducer, round 2 swaps in its 3 versions, keeping
+    version_ids unique so choice_gate matches the current round correctly.
+    """
+    agent = VersionGeneratorAgent()
+    reducer = _content_versions_reducer()
+
+    def _mock_response(round_prefix: str, scores: tuple[int, int, int]):
+        """Build a mock LLM response with 3 A/B/C versions for a round."""
+        versions = []
+        for vid, score in zip(["A", "B", "C"], scores, strict=True):
+            versions.append({
+                "version_id": vid,
+                "title": f"{round_prefix}-{vid}",
+                "body": f"body-{round_prefix}",
+                "hashtags": [],
+                "image_prompts": [],
+                "style_suggestion": "s",
+                "changes_summary": "c",
+                "predicted_score": score,
+            })
+        return MagicMock(content=json.dumps({"versions": versions}))
+
+    # Round 1 — version_generator returns A/B/C
+    mock_model_r1 = MagicMock()
+    mock_model_r1.ainvoke = AsyncMock(return_value=_mock_response("R1", (60, 75, 85)))
+    with patch.object(agent, '_model', mock_model_r1):
+        result_r1 = await agent.execute(mock_state_with_draft_and_analysis, mock_store)
+
+    # Apply the real reducer as LangGraph would when merging into state
+    state_versions = reducer([], result_r1["content_versions"])
+    assert len(state_versions) == 3
+
+    # Round 2 — same A/B/C version_ids (different content)
+    mock_model_r2 = MagicMock()
+    mock_model_r2.ainvoke = AsyncMock(return_value=_mock_response("R2", (62, 77, 88)))
+    with patch.object(agent, '_model', mock_model_r2):
+        result_r2 = await agent.execute(mock_state_with_draft_and_analysis, mock_store)
+
+    # Round 2 reducer — must replace, not append (6 would be the old bug)
+    state_versions = reducer(state_versions, result_r2["content_versions"])
+    assert len(state_versions) == 3, (
+        f"Expected 3 versions after 2 rounds (replace), got {len(state_versions)} — "
+        "reducer is accumulating instead of replacing"
+    )
+    # All surviving versions are from round 2
+    titles = [v["title"] for v in state_versions]
+    assert titles == ["R2-A", "R2-B", "R2-C"]
+
+
+@pytest.mark.asyncio
+async def test_multi_round_choice_gate_selects_current_round(mock_store):
+    """After two rounds, choice_gate must select the CURRENT round's version.
+
+    With the old append_list reducer, round-2 A/B/C shared version_ids with
+    round-1, so next(... version_id == "C") returned round-1's C — the user's
+    round-2 selection silently mapped to stale content.  With replace only the
+    current round's versions exist, so the match is correct.
+    """
+    # Simulate post-replace state: only round 2's versions remain
+    state: dict = {
+        "phase": WorkflowPhase.CREATING,
+        "content_versions": [
+            {"version_id": "A", "title": "R2-A", "body": "body-A2", "hashtags": ["#x"]},
+            {"version_id": "B", "title": "R2-B", "body": "body-B2", "hashtags": ["#y"]},
+            {"version_id": "C", "title": "R2-C", "body": "body-C2", "hashtags": ["#z"]},
+        ],
+        "selected_version": "C",
+        "copy_content": {},
+    }
+
+    result = await choice_gate_node(state, store=mock_store)
+
+    # choice_gate must have picked round-2's C, not some stale round-1 entry
+    assert result["selected_version"] == "C"
+    assert result["copy_content"]["selected_title"] == "R2-C"
+    assert result["copy_content"]["body_text"] == "body-C2"
