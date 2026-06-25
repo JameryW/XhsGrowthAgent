@@ -235,3 +235,38 @@ PR #118 让审批可选真实发布但环境 use_browser=false 仍走 mock。本
 ### Next Steps
 
 - None - task complete
+
+
+## Session 42: Fix resume retry loop + startup perf optimization
+
+**Date**: 2026-06-25
+**Task**: Fix resume retry loop + startup perf optimization
+**Branch**: `main`
+
+### Summary
+
+Fix retry/resume循环卡死：error/stale resume不再调aupdate_state(多task会InvalidUpdateError)，用原生ainvoke(None)重跑失败节点；phase推断优先取errored task而非tasks[0]。启动优化：lifespan并行init+compile_graph_prod并行开pool；Dockerfile用torch CPU-only镜像7.4GB→3.4GB；deploy.sh轮询代替sleep。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8a08a5e4` | (see git log) |
+| `942f623d` | (see git log) |
+| `f03410ef` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

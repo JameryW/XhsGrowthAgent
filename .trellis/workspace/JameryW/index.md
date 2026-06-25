@@ -4,8 +4,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 41
-- **Last Active**: 2026-06-23
+- **Total Sessions**: 42
+- **Last Active**: 2026-06-25
 <!-- @@@/auto:current-status -->
 
 ## Active Documents
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~237 | Active |
+| `journal-0.md` | ~272 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 42 | 2026-06-25 | Fix resume retry loop + startup perf optimization | `8a08a5e4`, `942f623d`, `f03410ef` | `main` |
 | 41 | 2026-06-23 | 打通真实发布浏览器路径 | `57ea0a69` | `main` |
 | 40 | 2026-06-23 | 审批通过强制选择发布模式 + 修复 embedding 维度不匹配 | `4ed76a1e` | `main` |
 | 39 | 2026-06-23 | 本地 bge embedding 替代 DeepSeek 修复 analyst 404 | `f70ddaf2` | `main` |

@@ -7,7 +7,7 @@ import DataTable from '@/components/DataTable.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { AnalyticsSkeleton } from '@/components/skeletons'
-import { useAnalyticsStore } from '@/stores'
+import { useAnalyticsStore, useAccountsStore } from '@/stores'
 
 const TrendChart = defineAsyncComponent(() => import('@/components/charts/TrendChart.vue'))
 const EngagementChart = defineAsyncComponent(() => import('@/components/charts/EngagementChart.vue'))
@@ -15,8 +15,10 @@ const EngagementChart = defineAsyncComponent(() => import('@/components/charts/E
 const { t } = useI18n()
 const router = useRouter()
 const analyticsStore = useAnalyticsStore()
+const accountsStore = useAccountsStore()
 
-onMounted(() => {
+onMounted(async () => {
+  if (!accountsStore.activeAccountId) await accountsStore.fetchAccounts()
   if (!analyticsStore.posts.length && !analyticsStore.isLoading && !analyticsStore.error) {
     analyticsStore.fetchAllData()
   }

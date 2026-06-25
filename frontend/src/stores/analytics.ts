@@ -4,6 +4,7 @@ import * as analyticsApi from '@/api/analytics'
 import type { GrowthReport, PerformanceData, CostData, PostPerformance } from '@/types/analytics'
 import { useRealtimeStore } from './realtime'
 import { useToastStore } from './toast'
+import { useAccountsStore } from './accounts'
 import { EventType } from '@/realtime/events'
 import i18n from '@/locales'
 
@@ -11,13 +12,15 @@ const { t } = i18n.global
 
 export const useAnalyticsStore = defineStore('analytics', () => {
   // State
-  const accountId = ref('default')
   const period = ref<'daily' | 'weekly' | 'monthly'>('weekly')
   const growthReport = ref<GrowthReport | null>(null)
   const performanceData = ref<PerformanceData | null>(null)
   const costData = ref<CostData | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
+
+  // ponytail: derive accountId from accountsStore instead of hardcoding 'default'
+  const accountId = computed(() => useAccountsStore().activeAccountId ?? 'default')
 
   // Computed
   const posts = computed<PostPerformance[]>(() =>
@@ -129,11 +132,6 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     fetchAllData()
   }
 
-  function setAccountId(id: string) {
-    accountId.value = id
-    fetchAllData()
-  }
-
   return {
     accountId,
     period,
@@ -150,6 +148,5 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     fetchPerformance,
     fetchCosts,
     setPeriod,
-    setAccountId,
   }
 })
