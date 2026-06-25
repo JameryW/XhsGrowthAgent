@@ -86,14 +86,22 @@ async def ripple_predict_content_spread(
     tone: str = "真诚种草",
     description: str = "",
     platform: str = "xiaohongshu",
-    max_waves: int = 8,
-    simulation_horizon: str = "48h",
-    ensemble_runs: int = 3,
+    max_waves: int = 0,
+    simulation_horizon: str = "",
+    ensemble_runs: int = 0,
 ) -> dict[str, Any]:
     """预测小红书内容传播效果 — 使用 Ripple CAS 引擎模拟内容在平台上的传播路径、互动数据和爆发概率。
 
     输入内容信息，返回传播预测结果（含置信度）。
     """
+    # ponytail: read from env (set by system_config UI) with sensible defaults
+    import os
+    if max_waves <= 0:
+        max_waves = int(os.environ.get("RIPPLE_MAX_WAVES", "4"))
+    if not simulation_horizon:
+        simulation_horizon = os.environ.get("RIPPLE_SIMULATION_HORIZON", "48h")
+    if ensemble_runs <= 0:
+        ensemble_runs = int(os.environ.get("RIPPLE_ENSEMBLE_RUNS", "1"))
     if tags is None:
         tags = []
     cfg = _get_config()

@@ -561,9 +561,9 @@ class RippleService:
         tags: list[str] | None = None,
         tone: str = "真诚种草",
         description: str = "",
-        max_waves: int = 8,
-        simulation_horizon: str = "48h",
-        ensemble_runs: int = 3,
+        max_waves: int = 0,
+        simulation_horizon: str = "",
+        ensemble_runs: int = 0,
         use_fallback: bool = True,
         max_wait: float = 1800.0,
         thread_id: str | None = None,
@@ -578,6 +578,14 @@ class RippleService:
             thread_id: 关联的工作流线程 ID，用于推送进度事件
             environment: 环境上下文（竞争格局、季节性、平台趋势），提高 input_completeness
         """
+        # ponytail: env overrides from system_config UI
+        import os
+        if max_waves <= 0:
+            max_waves = int(os.environ.get("RIPPLE_MAX_WAVES", "4"))
+        if not simulation_horizon:
+            simulation_horizon = os.environ.get("RIPPLE_SIMULATION_HORIZON", "48h")
+        if ensemble_runs <= 0:
+            ensemble_runs = int(os.environ.get("RIPPLE_ENSEMBLE_RUNS", "1"))
         if tags is None:
             tags = []
         config = self._get_config()
@@ -634,7 +642,7 @@ class RippleService:
         category: str,
         description: str,
         differentiators: list[str] | None = None,
-        ensemble_runs: int = 3,
+        ensemble_runs: int = 0,
         use_fallback: bool = True,
         max_wait: float = 1800.0,
         thread_id: str | None = None,
@@ -646,6 +654,9 @@ class RippleService:
             max_wait: 最大等待时间（秒），传递给 submit_and_wait
             thread_id: 关联的工作流线程 ID，用于推送进度事件
         """
+        import os
+        if ensemble_runs <= 0:
+            ensemble_runs = int(os.environ.get("RIPPLE_ENSEMBLE_RUNS", "1"))
         if differentiators is None:
             differentiators = []
         config = self._get_config()

@@ -34,12 +34,24 @@ SYSTEM_KEYS = [
     "RIPPLE_LLM_MODEL_NAME",
     "RIPPLE_LLM_API_KEY",
     "RIPPLE_LLM_URL",
+    # Ripple simulation params (non-secret, shown as plain text in UI)
+    "RIPPLE_MAX_WAVES",
+    "RIPPLE_ENSEMBLE_RUNS",
+    "RIPPLE_SIMULATION_HORIZON",
     # Search
     "TAVILY_API_KEY",
     # Embedding
     "XHS_EMBED_MODEL",
     "XHS_EMBED_BASE_URL",
 ]
+
+# ponytail: params shown as plain-text/number inputs; secrets use password + mask
+SYSTEM_PARAM_KEYS = {
+    "RIPPLE_MAX_WAVES",
+    "RIPPLE_ENSEMBLE_RUNS",
+    "RIPPLE_SIMULATION_HORIZON",
+    "RIPPLE_ENABLED",
+}
 
 
 # ── Key groups (UI hint; backend doesn't enforce) ──
@@ -65,6 +77,9 @@ SYSTEM_KEY_GROUPS = [
             "RIPPLE_LLM_MODEL_NAME",
             "RIPPLE_LLM_API_KEY",
             "RIPPLE_LLM_URL",
+            "RIPPLE_MAX_WAVES",
+            "RIPPLE_ENSEMBLE_RUNS",
+            "RIPPLE_SIMULATION_HORIZON",
         ],
     },
     {
