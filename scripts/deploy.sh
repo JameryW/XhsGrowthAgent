@@ -168,7 +168,13 @@ cmd_start() {
         "$RIPPLE_IMG"
 
     echo ">>> 等待 Ripple 就绪..."
-    sleep 3
+    for i in $(seq 1 15); do
+        if curl -sf http://localhost:8080/healthz >/dev/null 2>&1; then
+            echo "  Ripple 已就绪 (${i}s)"
+            break
+        fi
+        sleep 1
+    done
     # Patch llm_config.yaml: add max_tokens and json_mode to prevent truncated/malformed LLM output
     podman exec ripple-service sh -c "cat > /app/llm_config.yaml <<'LLMEOF'
 _default:
@@ -232,7 +238,13 @@ LLMEOF"
         "$BACKEND_IMG"
 
     echo ">>> 等待后端就绪..."
-    sleep 3
+    for i in $(seq 1 10); do
+        if curl -sf http://localhost:8889/api/system/health >/dev/null 2>&1; then
+            echo "  后端已就绪 (${i}s)"
+            break
+        fi
+        sleep 1
+    done
 
     echo ">>> 所有服务已启动"
     cmd_status

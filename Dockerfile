@@ -15,10 +15,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Install torch CPU-only first (~200MB vs ~4GB CUDA), then the rest.
+# sentence-transformers depends on torch; without this pre-install pip pulls
+# the default CUDA build which bloats the image by ~4GB on a CPU-only host.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 # Install Python deps (browser extra pulls playwright for real XHS publishing)
 COPY pyproject.toml uv.lock ./
 COPY backend/ backend/
 RUN pip install --no-cache-dir hatchling && \
+    pip install --no-cache-dir --no-deps sentence-transformers && \
     pip install --no-cache-dir ".[browser]"
 
 # Install chromium browser + system deps for playwright real publishing.

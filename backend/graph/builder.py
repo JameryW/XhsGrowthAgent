@@ -383,6 +383,8 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
     builder = build_graph()
 
     try:
+        import asyncio
+
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         from langgraph.store.postgres.aio import AsyncPostgresStore
         from psycopg_pool import AsyncConnectionPool
@@ -398,22 +400,33 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
             "draft_gate",
         ]
 
-        pool = AsyncConnectionPool(
-            db_uri, min_size=2, max_size=10, open=False, kwargs={"autocommit": True}
-        )
-        await pool.open()
-        checkpointer = AsyncPostgresSaver(conn=pool)
-        await checkpointer.setup()
+        # ponytail: open checkpointer pool + store pool in parallel
+        async def _init_checkpointer():
+            nonlocal pool
+            _pool = AsyncConnectionPool(
+                db_uri, min_size=2, max_size=10, open=False, kwargs={"autocommit": True}
+            )
+            await _pool.open()
+            _cp = AsyncPostgresSaver(conn=_pool)
+            await _cp.setup()
+            return _pool, _cp
 
-        prod_index = get_prod_store_index()
-        store_context = AsyncPostgresStore.from_conn_string(
-            db_uri,
-            pool_config={"min_size": 2, "max_size": 10},
-            index=prod_index,
+        async def _init_store():
+            nonlocal store_context, store_context_entered
+            prod_index = get_prod_store_index()
+            _ctx = AsyncPostgresStore.from_conn_string(
+                db_uri,
+                pool_config={"min_size": 2, "max_size": 10},
+                index=prod_index,
+            )
+            _store = await _ctx.__aenter__()
+            store_context_entered = True
+            await _store.setup()
+            return _ctx, _store
+
+        (pool, checkpointer), (store_context, store) = await asyncio.gather(
+            _init_checkpointer(), _init_store()
         )
-        store = await store_context.__aenter__()
-        store_context_entered = True
-        await store.setup()
         graph = builder.compile(
             checkpointer=checkpointer,
             store=store,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import os
@@ -37,15 +38,10 @@ async def lifespan(app: FastAPI):
             from backend.db.pool import init_pool
             await init_pool()
 
-            # 2) Ensure workflows table exists
+            # 2) Ensure all tables exist + compile graph — run in parallel
+            #    (ensure_table calls are idempotent and use their own connections)
             from backend.db.workflows import ensure_table
-            await ensure_table()
-
-            # 2b) Ensure accounts + credentials tables exist
             from backend.db.accounts import ensure_tables as ensure_account_tables
-            await ensure_account_tables()
-
-            # 2b.1) Ensure console_users + system_config tables exist
             from backend.db.console_users import (
                 bootstrap_default_user,
             )
@@ -59,34 +55,35 @@ async def lifespan(app: FastAPI):
             from backend.db.system_config import (
                 ensure_tables as ensure_system_config,
             )
-            await ensure_console_users()
-            await ensure_system_config()
-
-            # 2b.2) One-shot migration: pull SYSTEM_KEYS from active account → system_config.
-            # Idempotent: no-op once system_config has any rows.
-            await migrate_from_accounts()
-
-            # 2b.3) If still empty (fresh install), seed from os.environ
-            await bootstrap_from_environ()
-
-            # 2b.4) Seed default console user (admin/admin123) if none exist
-            await bootstrap_default_user()
-
-            # 2c) Load active account credentials (XHS keys) into os.environ
-            from backend.db.accounts import load_active_credentials
-            await load_active_credentials()
-
-            # 2c.1) Activate system_config into os.environ
-            from backend.db.system_config import activate_system_config
-            await activate_system_config()
-
-            # 3) Compile graph with production checkpointer (uses its own pool)
             from backend.graph.builder import compile_graph_prod
-            graph, result = await compile_graph_prod(db_uri)
+
+            # ponytail: parallel ensure_tables + graph compile; bootstrap steps
+            # depend on system_config table existing so they run after ensure.
+            ensure_coros = [
+                ensure_table(),
+                ensure_account_tables(),
+                ensure_console_users(),
+                ensure_system_config(),
+            ]
+            graph_task = compile_graph_prod(db_uri)
+            results = await asyncio.gather(*ensure_coros, graph_task)
+
+            graph, result = results[-1]  # graph_task is last in gather
             if result is not None:
                 checkpointer, checkpoint_pool, store_context = result
                 app.state.checkpointer = checkpointer
             app.state.graph = graph
+
+            # Bootstrap steps (depend on tables existing above)
+            await migrate_from_accounts()
+            await bootstrap_from_environ()
+            await bootstrap_default_user()
+
+            # Load credentials into os.environ
+            from backend.db.accounts import load_active_credentials
+            from backend.db.system_config import activate_system_config
+            await load_active_credentials()
+            await activate_system_config()
         except Exception as e:
             logging.getLogger("xhs_growth").warning(
                 f"Postgres setup failed, using SQLite: {e}"
