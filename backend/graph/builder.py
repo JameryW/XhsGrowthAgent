@@ -39,6 +39,8 @@ from backend.agents.nodes.optimization import (
 from backend.graph.error_handling import get_retry_policy
 from backend.graph.routers import (
     blogger_gate_router,
+    choice_outcome,
+    content_analyzer_router,
     copywriter_router,
     draft_gate_router,
     engagement_router,
@@ -199,8 +201,18 @@ def build_graph() -> StateGraph:
         },
     )
 
-    # content_analyzer → version_generator (生成版本)
-    builder.add_edge("content_analyzer", "version_generator")
+    # content_analyzer → [choice_gate | version_generator | __end__]
+    # If copywriter generated style variants → choice_gate (style selection)
+    # Otherwise → version_generator (A/B/C generation)
+    builder.add_conditional_edges(
+        "content_analyzer",
+        content_analyzer_router,
+        {
+            "choice_gate": "choice_gate",
+            "version_generator": "version_generator",
+            "__end__": "__end__",
+        },
+    )
 
     # version_generator → [choice_gate | visual_designer | __end__]
     # (conditional — only enter choice_gate if multiple versions)
@@ -214,8 +226,17 @@ def build_graph() -> StateGraph:
         },
     )
 
-    # choice_gate → visual_designer (选择后进入视觉设计)
-    builder.add_edge("choice_gate", "visual_designer")
+    # choice_gate → [version_generator | visual_designer]
+    # Style selection (first gate) → version_generator for A/B/C
+    # Version selection (second gate) → visual_designer
+    builder.add_conditional_edges(
+        "choice_gate",
+        choice_outcome,
+        {
+            "version_generator": "version_generator",
+            "visual_designer": "visual_designer",
+        },
+    )
 
     # ── 商单 Brief 模式流程 ──
     # brief_analyzer → brief_gate (pause for clarification if needed)

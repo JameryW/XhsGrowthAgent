@@ -1,14 +1,17 @@
 """版本生成 Agent.
 
-基于对比分析结果，生成 A/B/C 三版优化内容：
-- A 版：保守优化，小幅改动，保持原有风格
-- B 版：平衡优化，适度融合爆款特征
-- C 版：激进优化，大幅重组，最大化爆款潜力
+Two modes of operation:
+1. Standard (no style_selected): uses draft_content + optimization_analysis
+   to generate conservative/balanced/aggressive A/B/C variants.
+2. Style-selected (style_selected=True): uses draft_content (from the
+   user's style choice) as the base, generating A/B/C variants that
+   preserve the selected style while varying optimization intensity.
 """
 
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -30,10 +33,15 @@ class VersionGeneratorAgent(BaseAgent):
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         """执行版本生成."""
+        style_selected = state.get("style_selected", False)
         draft = state.get("draft_content")
         analysis = state.get("optimization_analysis")
 
-        # Build synthetic draft from shooting_plan when draft_content is empty (brief mode)
+        # Style-selected mode: draft_content comes from selected style variant
+        if style_selected and draft and draft.get("text"):
+            return await self._generate_from_selected_style(state, draft, analysis)
+
+        # Standard mode: build synthetic draft from shooting_plan when draft_content is empty
         if not draft or not draft.get("text"):
             draft = self._build_draft_from_shooting_plan(state)
             if draft:
@@ -54,6 +62,125 @@ class VersionGeneratorAgent(BaseAgent):
                 "phase": WorkflowPhase.CREATING,
             }
 
+        return await self._generate_from_analysis(state, draft, analysis)
+
+    async def _generate_from_selected_style(
+        self,
+        state: XHSGrowthState,
+        draft: dict[str, Any],
+        analysis: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Generate A/B/C variants based on the user-selected style.
+
+        The draft_content already contains the style the user chose.
+        Generate conservative/balanced/aggressive versions that keep
+        the style but vary optimization intensity.
+        """
+        system_prompt = self._build_system_prompt(state)
+
+        # Build analysis context (may be partial for brief mode)
+        analysis_ctx = ""
+        if analysis:
+            gaps = analysis.get("gaps", [])
+            suggestions = analysis.get("suggestions", [])
+            viral_patterns = analysis.get("viral_patterns", [])
+            gaps_str = "\n".join([
+                f"- [{g.get('severity', '中')}] "
+                f"{g.get('dimension', '')}: {g.get('description', '')}"
+                for g in gaps[:5]
+            ]) or "无差距分析"
+            suggestions_str = "\n".join([
+                f"- [P{s.get('priority', 3)}] {s.get('dimension', '')}: "
+                f"{s.get('action', '')} ({s.get('reasoning', '')})"
+                for s in suggestions[:5]
+            ]) or "无优化建议"
+            patterns_str = "\n".join([f"- {p}" for p in viral_patterns[:5]]) or "无爆款模式"
+            analysis_ctx = f"""
+差距分析：
+{gaps_str}
+
+优化建议：
+{suggestions_str}
+
+爆款模式：
+{patterns_str}"""
+
+        user_msg = f"""用户已选择一种笔记风格，请基于该风格生成3个优化版本。
+
+选中的风格草稿标题：{draft.get('title', '未提供')}
+选中的风格草稿正文：{draft.get('text', '')[:800]}
+选中的风格标签：{', '.join(draft.get('hashtags', [])) or '无'}
+选中的风格视觉建议：{draft.get('style_suggestion', '未提供')}
+{analysis_ctx}
+
+请保持选中风格的整体调性，生成3个版本：
+- A版：保守优化 — 微调标题钩子、少量增删、保持原文节奏
+- B版：平衡优化 — 适度强化爆款特征、优化结构、增强CTA
+- C版：激进优化 — 大幅重组开头、最大化互动触发点、强化争议性
+
+请输出JSON：
+{{
+  "versions": [
+    {{
+      "version_id": "a",
+      "version_type": "conservative",
+      "title": "标题（含emoji，≤20字）",
+      "body": "正文内容",
+      "hashtags": ["#标签1", "#标签2"],
+      "tone": "语气描述",
+      "style_suggestion": "视觉风格建议",
+      "visual_style": "视觉风格关键词",
+      "color_palette": {{ "primary": "#hex", "secondary": "#hex", "accent": "#hex" }}
+    }},
+    ...
+  ]
+}}"""
+
+        response = await self.model.ainvoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_msg),
+        ])
+
+        parsed = self._parse_json_response(response.content)
+        versions = parsed.get("versions", [])
+
+        # Ensure version_ids
+        for v in versions:
+            if not v.get("version_id"):
+                v["version_id"] = str(uuid.uuid4())[:8]
+
+        logger.info(f"Generated {len(versions)} versions from selected style (A/B/C)")
+
+        updates: dict[str, Any] = {
+            "content_versions": versions,
+            "phase": WorkflowPhase.CREATING,
+        }
+        # Auto-apply single version
+        if len(versions) == 1:
+            v = versions[0]
+            updates["copy_content"] = {
+                **(state.get("copy_content") or {}),
+                "selected_title": v.get("title", ""),
+                "title_candidates": [v.get("title", "")],
+                "body_text": v.get("body", ""),
+                "hashtags": v.get("hashtags", []),
+                "tone": v.get("tone", ""),
+            }
+            updates["visual_plan"] = {
+                "cover_prompt": v.get("style_suggestion", ""),
+                "style": v.get("visual_style", ""),
+                "color_palette": v.get("color_palette", {}),
+            }
+
+        return updates
+
+    async def _generate_from_analysis(
+        self,
+        state: XHSGrowthState,
+        draft: dict[str, Any],
+        analysis: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Standard A/B/C generation from optimization analysis (original logic)."""
         # 构建差距和建议字符串
         gaps = analysis.get("gaps", [])
         gaps_str = "\n".join([
@@ -100,11 +227,14 @@ class VersionGeneratorAgent(BaseAgent):
         result = self._parse_json_response(response.content)
         versions = result.get("versions", [])
 
+        # Ensure version_ids
+        for v in versions:
+            if not v.get("version_id"):
+                v["version_id"] = str(uuid.uuid4())[:8]
+
         logger.info(f"Generated {len(versions)} content versions (A/B/C)")
 
-        # When only 1 version is generated, auto-apply it to copy_content and
-        # visual_plan so the result isn't lost when should_present_choice skips
-        # choice_gate and routes directly to visual_designer.
+        # When only 1 version is generated, auto-apply it
         updates: dict[str, Any] = {
             "content_versions": versions,
             "phase": WorkflowPhase.CREATING,

@@ -94,6 +94,10 @@ class XHSGrowthState(TypedDict, total=False):
     # 用户选择的版本ID
     selected_version: str
 
+    # True after first choice_gate (style selection) — signals version_generator
+    # to use draft_content from selected style as base for A/B/C variants
+    style_selected: bool
+
     # Optional optimization control
     skip_optimization: bool
     optimization_error: str | None

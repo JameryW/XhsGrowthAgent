@@ -304,3 +304,36 @@ Fix retry/resume循环卡死：error/stale resume不再调aupdate_state(多task�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 44: Fix brief mode workflow label fallback + deploy
+
+**Date**: 2026-06-25
+**Task**: Fix brief mode workflow label fallback + deploy
+**Branch**: `main`
+
+### Summary
+
+商单模式工作流标签为空：label 生成只检查 brand_name 和 selected_topic，当 brand_name 为空或 LLM 解析失败时无兜底。增加 fallback 链：brand_name → product_name → content_direction → selected_topic → raw_text。已提 PR #130 并重新部署。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2fa6e7fb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -1,7 +1,13 @@
-"""Copywriter agent — generates titles, body text, hashtags."""
+"""Copywriter agent — generates titles, body text, hashtags.
+
+When blogger_notes are available, generates multiple style variants
+(e.g. professional review, lifestyle seeding, tutorial) so the user
+can choose a preferred style before optimization.
+"""
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -108,6 +114,14 @@ class CopywriterAgent(BaseAgent):
 
         copy_content = self._parse_json_response(response.content)
 
+        # ── Multi-style generation when blogger_notes exist ──
+        blogger_notes = state.get("blogger_notes") or []
+        content_versions: list[dict[str, Any]] = []
+        if blogger_notes:
+            content_versions = await self._generate_style_variants(
+                state, copy_content, blogger_notes, system_prompt, niche,
+            )
+
         # ── Creative Memory: 沉淀 ──
         from backend.memory.types import MaterialEntry
 
@@ -144,10 +158,99 @@ class CopywriterAgent(BaseAgent):
         if deposited_material_ids:
             copy_content["used_material_ids"] = deposited_material_ids
 
-        return {
+        result: dict[str, Any] = {
             "copy_content": copy_content,
             "phase": WorkflowPhase.CREATING,
         }
+        if content_versions:
+            result["content_versions"] = content_versions
+        return result
+
+    async def _generate_style_variants(
+        self,
+        state: XHSGrowthState,
+        base_copy: dict[str, Any],
+        blogger_notes: list[dict[str, Any]],
+        system_prompt: str,
+        niche: str,
+    ) -> list[dict[str, Any]]:
+        """Generate multiple style variants based on blogger reference notes.
+
+        Returns a list of content versions, each with a distinct style
+        derived from the blogger notes' characteristics.
+        """
+        brief = state.get("brief_content") or {}
+        plan = state.get("content_plan") or {}
+        is_brief_mode = state.get("workflow_mode") == "brief" and bool(brief)
+
+        # Build blogger notes context
+        notes_context = ""
+        for i, note in enumerate(blogger_notes[:3], 1):
+            notes_context += (
+                f"\n参考笔记{i}：{note.get('title', '')}\n"
+                f"{note.get('body', '')[:300]}\n"
+            )
+
+        # Build context string
+        if is_brief_mode:
+            context_info = f"""品牌：{brief.get("brand_name", "")}
+产品：{brief.get("product_name", "")}
+卖点：{", ".join(brief.get("selling_points", [])[:5])}
+内容方向：{brief.get("content_direction", "")}
+目标受众：{brief.get("target_audience", "")}
+风格要求：{brief.get("style_requirements", "")}"""
+        else:
+            context_info = f"""选题：{plan.get("selected_topic", "")}
+角度：{plan.get("content_angle", "")}
+目标受众：{plan.get("target_audience", "")}
+垂类赛道：{niche}"""
+
+        variant_prompt = f"""基于以上参考博主笔记，请生成3个不同风格的笔记版本。
+
+{context_info}
+
+参考博主笔记：
+{notes_context}
+
+每个版本必须风格明显不同，建议参考以下风格维度（可根据博主笔记特征调整）：
+- 风格A：专业测评风 — 数据驱动、理性分析、对比测评
+- 风格B：生活种草风 — 沉浸体验、情感共鸣、场景代入
+- 风格C：教程干货风 — 步骤清晰、实用技巧、避坑指南
+
+请输出JSON：
+{{
+  "variants": [
+    {{
+      "version_id": "style_a",
+      "style_name": "风格名称",
+      "title": "标题（含emoji，≤20字）",
+      "body": "正文（400-600字）",
+      "hashtags": ["#标签1", "#标签2"],
+      "tone": "语气描述",
+      "style_suggestion": "视觉风格建议",
+      "visual_style": "视觉风格关键词",
+      "color_palette": {{"primary": "#hex", "secondary": "#hex", "accent": "#hex"}}
+    }},
+    ...
+  ]
+}}"""
+
+        response = await self.model.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=variant_prompt),
+            ]
+        )
+
+        parsed = self._parse_json_response(response.content)
+        variants = parsed.get("variants", [])
+
+        # Ensure each variant has a version_id
+        for v in variants:
+            if not v.get("version_id"):
+                v["version_id"] = str(uuid.uuid4())[:8]
+
+        return variants
 
     @staticmethod
     def _build_ripple_context(plan: dict) -> str:
