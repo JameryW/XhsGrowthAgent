@@ -1652,3 +1652,55 @@ async def upload_images(thread_id: str, request: Request):
         image_paths=list(existing),
         count=len(existing),
     ).model_dump())
+
+
+@router.post("/trigger-analytics/{thread_id}")
+async def trigger_analytics(thread_id: str, request: Request):
+    """手动触发 analyst 节点（发布后手动运行 Ripple 分析）"""
+    from langgraph.types import Command
+
+    from backend.state.schema import WorkflowPhase
+
+    if not thread_id or thread_id.strip() == "":
+        raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    state = await graph.aget_state(config)
+    if not state.values or state.values.get("session_id") is None:
+        raise WorkflowNotFoundError(thread_id)
+
+    # Only allow when workflow has publish result but no analytics
+    has_publish = bool(state.values.get("publish_result"))
+    has_analytics = bool(state.values.get("analytics"))
+    if not has_publish:
+        return success(data={
+            "thread_id": thread_id,
+            "status": "error",
+            "message": "工作流尚未发布，无法触发分析。",
+        })
+    if has_analytics:
+        return success(data={
+            "thread_id": thread_id,
+            "status": "completed",
+            "message": "分析已完成，无需重复触发。",
+        })
+
+    # Update state to analyzing phase, then jump to analyst node
+    await graph.aupdate_state(
+        config,
+        {"phase": WorkflowPhase.ANALYZING, "error": None},
+        as_node="publisher",
+    )
+    await _start_resume_task(
+        thread_id, graph, config,
+        WorkflowPhase.ANALYZING,
+        input_data=Command(goto=["analyst"]),
+    )
+
+    return success(data={
+        "thread_id": thread_id,
+        "status": "running",
+        "phase": "analyzing",
+    })

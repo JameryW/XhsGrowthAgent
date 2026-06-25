@@ -188,6 +188,14 @@ export async function uploadImages(threadId: string, files: File[]): Promise<{ i
   }) as unknown as { image_paths: string[]; count: number }
 }
 
+// Manually trigger analytics (analyst node) after publishing
+export async function triggerAnalytics(threadId: string): Promise<{ thread_id: string; status: string; phase?: string; message?: string }> {
+  const { retryWithBackoff } = useRetry()
+  return retryWithBackoff(async () => {
+    return await client.post(`/workflow/trigger-analytics/${threadId}`) as { thread_id: string; status: string; phase?: string; message?: string }
+  })
+}
+
 // Get pending blogger selection — candidate list and config
 export async function getPendingBloggerSelection(threadId: string): Promise<{
   thread_id: string
