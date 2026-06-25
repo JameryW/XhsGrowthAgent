@@ -22,3 +22,12 @@ export async function getPerformance(
 export async function getCosts(period: string = 'weekly'): Promise<CostData> {
   return client.get('/analytics/costs', { params: { period } })
 }
+
+// Single-request dashboard bundle (avoids 3× cold-start cost)
+export async function getDashboard(
+  accountId: string,
+  period: string = 'weekly',
+  limit: number = 20
+): Promise<{ report: GrowthReport; performance: PerformanceData; costs: CostData }> {
+  return client.get(`/analytics/dashboard/${accountId}`, { params: { period, limit } })
+}

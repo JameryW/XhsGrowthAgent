@@ -79,13 +79,11 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     isLoading.value = true
     error.value = null
     try {
-      const [report, perf, costs] = await Promise.all([
-        analyticsApi.getGrowthReport(accountId.value, period.value),
-        analyticsApi.getPerformance(accountId.value, period.value, 20),
-        analyticsApi.getCosts(period.value),
-      ])
+      const { report, performance, costs } = await analyticsApi.getDashboard(
+        accountId.value, period.value, 20
+      )
       growthReport.value = report
-      performanceData.value = perf
+      performanceData.value = performance
       costData.value = costs
     } catch (e: any) {
       error.value = e.message

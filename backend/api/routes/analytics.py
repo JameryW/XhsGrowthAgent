@@ -264,3 +264,113 @@ async def get_costs(period: str = "weekly", request: Request = None):
             "updated_at": datetime.now().isoformat(),
         }
     )
+
+
+@router.get("/dashboard/{account_id}")
+async def get_dashboard(account_id: str, period: str = "weekly", limit: int = 20, request: Request = None):
+    """Single-request analytics bundle — report + performance + costs.
+
+    Avoids 3× the cold-start cost of _get_completed_workflows by computing
+    all three payloads from one fetch.
+    """
+    graph = request.app.state.graph
+    workflows = await _get_completed_workflows(graph, account_id)
+
+    # ── Extract posts once ──
+    posts = []
+    topics: dict[str, int] = {}
+    for wf in workflows:
+        state = wf.get("_state", {})
+        post = _extract_post_data(state)
+        if post:
+            posts.append(post)
+        plan = state.get("content_plan") or {}
+        topic = plan.get("selected_topic")
+        if topic:
+            topics[topic] = topics.get(topic, 0) + 1
+
+    filtered_posts = _filter_by_period(posts, period)
+
+    # ── Growth report ──
+    total_engagement = sum(p["likes"] + p["comments"] + p["collects"] for p in filtered_posts)
+    avg_rate = (sum(p["engagement_rate"] for p in filtered_posts) / len(filtered_posts)) if filtered_posts else 0.0
+    best = max(filtered_posts, key=lambda p: p["likes"] + p["comments"], default=None)
+    trend_topics = sorted(topics, key=topics.get, reverse=True)[:5]
+
+    insights = []
+    if avg_rate > 4.0:
+        insights.append({"type": "trend", "message": "互动率表现优秀，继续保持当前内容策略"})
+    elif filtered_posts:
+        insights.append({"type": "opportunity", "message": "互动率有提升空间，建议优化标题和封面"})
+    if trend_topics:
+        insights.append({"type": "trend", "message": f"热门话题：{'、'.join(trend_topics[:3])}"})
+    if not filtered_posts:
+        insights.append({"type": "info", "message": "暂无已完成的工作流数据，请先完成一次内容发布"})
+
+    report = {
+        "account_id": account_id,
+        "period": period,
+        "metrics": {
+            "total_posts": len(filtered_posts),
+            "total_engagement": total_engagement,
+            "avg_engagement_rate": round(avg_rate, 1),
+            "best_post_title": best["title"] if best else "",
+            "trend_topics": trend_topics,
+        },
+        "insights": insights,
+        "generated_at": datetime.now().isoformat(),
+    }
+
+    # ── Performance ──
+    sorted_posts = sorted(filtered_posts, key=lambda p: p.get("published_at", ""), reverse=True)[:limit]
+    performance = {
+        "account_id": account_id,
+        "period": period,
+        "posts": sorted_posts,
+        "total": len(sorted_posts),
+        "fetched_at": datetime.now().isoformat(),
+    }
+
+    # ── Costs ──
+    now = datetime.now(UTC)
+    cutoff_hours = _period_cutoff_hours(period)
+    cutoff_time = now.timestamp() - cutoff_hours * 3600
+    by_model: dict[str, float] = {}
+    total_cost = 0.0
+    period_cost = 0.0
+    today_cost = 0.0
+    today = now.date()
+
+    for wf in workflows:
+        state = wf.get("_state", {})
+        perf_log = state.get("performance_log") or []
+        for entry in perf_log:
+            cost = entry.get("cost_usd", 0.0)
+            model = entry.get("model", "unknown")
+            total_cost += cost
+            by_model[model] = by_model.get(model, 0.0) + cost
+            try:
+                ts = entry.get("timestamp", "")
+                if ts:
+                    entry_dt = datetime.fromisoformat(ts)
+                    if entry_dt.tzinfo is None:
+                        entry_dt = entry_dt.replace(tzinfo=UTC)
+                    if entry_dt.date() == today:
+                        today_cost += cost
+                    if entry_dt.timestamp() >= cutoff_time:
+                        period_cost += cost
+            except (ValueError, AttributeError):
+                pass
+
+    costs = {
+        "total_cost_usd": round(total_cost, 2),
+        "period_cost_usd": round(period_cost, 2),
+        "today_cost_usd": round(today_cost, 2),
+        "period": period,
+        "by_model": {k: round(v, 2) for k, v in by_model.items()},
+        "circuit_open": False,
+        "budget_remaining_usd": round(max(0, 10.0 - total_cost), 2),
+        "updated_at": datetime.now().isoformat(),
+    }
+
+    return success(data={"report": report, "performance": performance, "costs": costs})
