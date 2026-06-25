@@ -6,6 +6,7 @@ export interface SystemConfigItem {
   key_name: string
   masked_value: string
   is_set: boolean
+  is_param?: boolean
   updated_at: string
 }
 

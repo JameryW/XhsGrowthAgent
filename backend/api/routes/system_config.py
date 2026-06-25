@@ -25,6 +25,7 @@ async def get_config(_: dict = Depends(get_current_user)):
     from backend.db.system_config import (
         SYSTEM_KEY_GROUPS,
         SYSTEM_KEYS,
+        SYSTEM_PARAM_KEYS,
         list_config,
     )
 
@@ -35,8 +36,9 @@ async def get_config(_: dict = Depends(get_current_user)):
     items = [
         {
             "key_name": key,
-            "masked_value": by_key[key].masked if key in by_key else "",
+            "masked_value": by_key[key].value if (key in SYSTEM_PARAM_KEYS and key in by_key) else (by_key[key].masked if key in by_key else ""),
             "is_set": key in by_key,
+            "is_param": key in SYSTEM_PARAM_KEYS,
             "updated_at": by_key[key].updated_at if key in by_key else "",
         }
         for key in SYSTEM_KEYS

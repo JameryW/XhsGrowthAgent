@@ -25,8 +25,13 @@ onMounted(async () => {
   await store.fetchConfig()
 })
 
+function isParam(keyName: string): boolean {
+  return store.getItem(keyName)?.is_param ?? false
+}
+
 function startEdit(keyName: string) {
-  edits.value[keyName] = ''
+  // ponytail: pre-fill param keys with current value so user can tweak, not re-type
+  edits.value[keyName] = isParam(keyName) ? (store.getItem(keyName)?.masked_value || '') : ''
 }
 
 function cancelEdit(keyName: string) {
@@ -36,6 +41,7 @@ function cancelEdit(keyName: string) {
 function getDisplay(keyName: string): string {
   if (edits.value[keyName] !== undefined) {
     const v = edits.value[keyName]
+    if (isParam(keyName)) return v || t('settings.notSet')
     return v ? '●●●●' + v.slice(-4) : t('settings.willDelete')
   }
   return store.getItem(keyName)?.masked_value || t('settings.notSet')
@@ -99,19 +105,22 @@ async function deleteKey(keyName: string) {
       <div class="space-y-1">
         <div v-for="keyName in group.keys" :key="keyName"
           class="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-slate-50/80 transition-colors"
+          :class="isParam(keyName) ? 'bg-slate-50/40' : ''"
         >
-          <span class="text-xs font-mono text-slate-500 w-44 shrink-0">{{ keyName }}</span>
+          <span class="text-xs font-mono w-44 shrink-0" :class="isParam(keyName) ? 'text-teal-600' : 'text-slate-500'">{{ keyName }}</span>
 
           <div class="flex-1 min-w-0">
+            <!-- ponytail: param keys use text input (visible value), secrets use password -->
             <input
               v-if="edits[keyName] !== undefined"
               v-model="edits[keyName]"
-              type="password"
-              :placeholder="t('settings.enterValue')"
-              class="w-full px-2 py-1 text-sm rounded border border-rose-200 bg-white focus:border-rose-400 outline-none"
+              :type="isParam(keyName) ? 'text' : 'password'"
+              :placeholder="isParam(keyName) ? keyName : t('settings.enterValue')"
+              class="w-full px-2 py-1 text-sm rounded border bg-white focus:border-rose-400 outline-none"
+              :class="isParam(keyName) ? 'border-teal-200' : 'border-rose-200'"
               @keydown.escape="cancelEdit(keyName)"
             />
-            <span v-else class="text-sm" :class="isSet(keyName) ? 'text-slate-600' : 'text-slate-300'">
+            <span v-else class="text-sm" :class="isSet(keyName) ? (isParam(keyName) ? 'text-teal-700 font-mono' : 'text-slate-600') : 'text-slate-300'">
               {{ getDisplay(keyName) }}
             </span>
           </div>
