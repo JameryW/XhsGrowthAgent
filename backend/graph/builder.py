@@ -262,8 +262,11 @@ def build_graph() -> StateGraph:
     # ── 修改后回到文案 ──
     builder.add_edge("revise_content", "copywriter")
 
-    # ── 发布后分析 ──
-    builder.add_edge("publisher", "analyst")
+    # ── 发布后直接结束（analyst 改为手动触发）──
+    builder.add_edge("publisher", END)
+
+    # analyst is kept as a node but no longer auto-triggered after publish.
+    # It can be reached by resuming the workflow with phase=analyzing.
 
     # ── 分析后决定是否继续 ──
     builder.add_conditional_edges(

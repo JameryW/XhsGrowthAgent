@@ -2,8 +2,10 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+import NeonButton from '@/components/NeonButton.vue'
 import RipplePanel from '@/components/RipplePanel.vue'
 import { useWorkflowStore } from '@/stores'
+import { triggerAnalytics } from '@/api/workflow'
 
 const { t } = useI18n()
 const workflowStore = useWorkflowStore()
@@ -130,6 +132,17 @@ function heatBg(score?: number): string {
   if (score >= 80) return 'bg-rose-50'
   if (score >= 60) return 'bg-amber-50'
   return 'bg-slate-50'
+}
+
+// Trigger analyst node manually after publish
+async function handleTriggerAnalytics() {
+  const threadId = workflowStore.currentThreadId
+  if (!threadId) return
+  try {
+    await triggerAnalytics(threadId)
+  } catch (e: any) {
+    console.error('Failed to trigger analytics:', e)
+  }
 }
 </script>
 
@@ -580,6 +593,23 @@ function heatBg(score?: number): string {
             {{ t('dashboard.publishResult.viewPost') }}
           </a>
         </div>
+      </div>
+    </div>
+
+    <!-- ═══ Manual analyst trigger (after publish, before analytics) ═══ -->
+    <div v-if="hasPublishResult && !hasAnalytics && (workflowStore.currentPhase === 'completed' || workflowStore.currentPhase === 'analyzing')" class="mt-4 rounded-xl p-4 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200/60">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-orange-400 flex items-center justify-center">
+          <AppIcon name="BarChart3" size="sm" variant="white" />
+        </div>
+        <div class="flex-1">
+          <div class="text-sm font-semibold text-slate-800">{{ t('dashboard.contentCards.runAnalytics') || '分析传播效果' }}</div>
+          <div class="text-[10px] text-slate-400">{{ t('dashboard.contentCards.runAnalyticsDesc') || '使用 Ripple 分析预测与实际数据对比' }}</div>
+        </div>
+        <NeonButton variant="peach" size="sm" :loading="workflowStore.currentPhase === 'analyzing'" @click="handleTriggerAnalytics">
+          <AppIcon name="Play" size="xs" variant="white" />
+          <span class="ml-1">{{ t('common.run') || '运行' }}</span>
+        </NeonButton>
       </div>
     </div>
 

@@ -532,8 +532,8 @@ const handleCancelConfirm = () => {
           </div>
         </div>
 
-        <!-- Collapsed: workflow body summary -->
-        <div v-if="expandedThreadId !== wf.thread_id" class="relative min-h-[40px]">
+        <!-- Collapsed: workflow body summary (clickable to expand) -->
+        <div v-if="expandedThreadId !== wf.thread_id" class="relative min-h-[40px] cursor-pointer" @click="toggleExpand(wf.thread_id)">
           <WorkflowCardBody
             v-if="workflowDetails.has(wf.thread_id)"
             :detail="workflowDetails.get(wf.thread_id)"
