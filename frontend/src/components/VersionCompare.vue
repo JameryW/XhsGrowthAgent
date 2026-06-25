@@ -31,10 +31,15 @@ const selectedVersion = computed(() =>
 )
 
 const sortedVersions = computed(() =>
-  [...props.versions].sort((a, b) => b.predicted_score - a.predicted_score)
+  [...props.versions].sort((a, b) => (b.predicted_score ?? 0) - (a.predicted_score ?? 0))
 )
 
-const bestVersion = computed(() => sortedVersions.value[0])
+const bestVersion = computed(() => {
+  if (!props.versions.length) return undefined
+  const scored = props.versions.filter(v => v.predicted_score != null)
+  if (!scored.length) return undefined
+  return scored.reduce((best, v) => (v.predicted_score ?? 0) > (best.predicted_score ?? 0) ? v : best)
+})
 
 const gapSeverityClass = (severity: string): string => {
   switch (severity) {
@@ -73,6 +78,9 @@ function getVersionTypeColor(type: string): string {
     case 'A': return 'border-teal-200 bg-teal-50 text-teal-600'
     case 'B': return 'border-cyan-200 bg-cyan-50 text-cyan-600'
     case 'C': return 'border-rose-200 bg-rose-50 text-rose-600'
+    case 'style_a': return 'border-violet-200 bg-violet-50 text-violet-600'
+    case 'style_b': return 'border-amber-200 bg-amber-50 text-amber-600'
+    case 'style_c': return 'border-emerald-200 bg-emerald-50 text-emerald-600'
     default: return 'border-slate-200 bg-slate-50 text-slate-600'
   }
 }

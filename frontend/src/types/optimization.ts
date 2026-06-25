@@ -50,20 +50,24 @@ export interface OptimizationAnalysis {
 // 内容版本
 export interface ContentVersion {
   version_id: string
-  version_type?: 'A' | 'B' | 'C'
+  version_type?: string  // 'A'|'B'|'C' for optimization, 'style_a'|'style_b'|'style_c' for style
   title: string
   body: string
   hashtags: string[]
   image_prompts?: string[]
   style_suggestion?: string
-  changes_summary: string
-  predicted_score: number
+  visual_style?: string
+  style_name?: string  // Display name for style variants
+  color_palette?: Record<string, string>
+  tone?: string
+  changes_summary?: string
+  predicted_score?: number
   created_at?: string
 }
 
 // 版本选择结果
 export interface VersionChoice {
-  selected_version: 'A' | 'B' | 'C'
+  selected_version: string  // 'A'|'B'|'C' or style variant type
   version_id: string
 }
 
