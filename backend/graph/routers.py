@@ -146,8 +146,34 @@ def should_optimize(state: XHSGrowthState) -> Literal["content_analyzer", "visua
     return "content_analyzer"
 
 
-def choice_outcome(state: XHSGrowthState) -> Literal["visual_designer"]:
-    """版本选择后路由 — 统一进入视觉设计."""
+def content_analyzer_router(
+    state: XHSGrowthState,
+) -> Literal["choice_gate", "version_generator", "__end__"]:
+    """Route after content_analyzer — if copywriter already generated style
+    variants (content_versions with length > 1), go directly to choice_gate
+    for style selection; otherwise go to version_generator for A/B/C generation.
+    """
+    if terminal := _check_terminal(state):
+        return terminal
+
+    versions = state.get("content_versions", [])
+    if len(versions) > 1:
+        return "choice_gate"
+
+    return "version_generator"
+
+
+def choice_outcome(state: XHSGrowthState) -> Literal["visual_designer", "version_generator"]:
+    """Style selection → version_generator (A/B/C), version selection → visual_designer.
+
+    After the FIRST choice_gate (style selection), route to version_generator
+    so it can generate A/B/C variants based on the selected style.
+    After the SECOND choice_gate (version selection), route to visual_designer.
+    """
+    # If a style was just selected (style_selected=True), generate A/B/C variants
+    if state.get("style_selected"):
+        return "version_generator"
+
     return "visual_designer"
 
 

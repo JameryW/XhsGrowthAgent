@@ -1,4 +1,11 @@
-"""Choice gate node implementation - user selects A/B/C version."""
+"""Choice gate node implementation - user selects style or A/B/C version.
+
+Two layers of selection:
+1. Style selection (from copywriter multi-style variants): writes draft_content
+   + style_selected=True so version_generator can generate A/B/C based on it.
+2. Version selection (from version_generator A/B/C): writes final copy_content
+   + visual_plan, clears style_selected.
+"""
 
 import logging
 from typing import Any
@@ -13,33 +20,45 @@ logger = logging.getLogger("xhs_growth.graph.nodes")
 
 
 async def choice_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
-    """Version selection gate — user chooses A/B/C version.
+    """Version/style selection gate.
 
     With interrupt_before, this node only runs on resume. The user's selection
     (selected_version) is written to state by select_version via aupdate_state
     before ainvoke(None) advances the graph.
 
-    When there is only 1 version, auto-select it (no user input needed).
-    Always writes selected_title into copy_content.
+    Two layers:
+    - Style selection (style_selected not yet True): writes draft_content for
+      version_generator, sets style_selected=True, clears content_versions.
+    - Version selection (style_selected=True): writes final copy_content +
+      visual_plan, clears style_selected.
     """
     _check_cancelled(state)
     versions = state.get("content_versions", [])
     draft = state.get("draft_content", {})
+    style_selected = state.get("style_selected", False)
 
     # Auto-select when only 1 version
     if len(versions) <= 1:
         selected = versions[0] if versions else None
         title = (selected or draft).get("title", "")
-        return NodeResult(
-            {
-                "copy_content": {
-                    **(state.get("copy_content") or {}),
-                    "selected_title": title,
-                },
-                "phase": WorkflowPhase.CREATING,
+        result: dict[str, Any] = {
+            "copy_content": {
+                **(state.get("copy_content") or {}),
+                "selected_title": title,
             },
-            "choice_gate",
-        ).to_dict()
+            "phase": WorkflowPhase.CREATING,
+        }
+        # If this was style selection, also write draft_content
+        if not style_selected and selected:
+            result["draft_content"] = {
+                "title": selected.get("title", ""),
+                "text": selected.get("body", ""),
+                "hashtags": selected.get("hashtags", []),
+                "style_suggestion": selected.get("style_suggestion", ""),
+            }
+            result["style_selected"] = True
+            result["content_versions"] = []
+        return NodeResult(result, "choice_gate").to_dict()
 
     # Multiple versions - read user selection from state
     # (written by select_version API via aupdate_state)
@@ -56,22 +75,46 @@ async def choice_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
         logger.warning("Selected version not found or missing, falling back to first version")
         found_version = versions[0]
 
-    # Always write selected_title into copy_content
-    result = {
-        "selected_version": found_version.get("version_id"),
-        "copy_content": {
-            "selected_title": found_version.get("title", ""),
-            "title_candidates": [found_version.get("title", "")],
-            "body_text": found_version.get("body", ""),
-            "hashtags": found_version.get("hashtags", []),
-            "tone": found_version.get("tone", ""),
-        },
-        "visual_plan": {
-            "cover_prompt": found_version.get("style_suggestion", ""),
-            "style": found_version.get("visual_style", ""),
-            "color_palette": found_version.get("color_palette", {}),
-        },
-        "phase": WorkflowPhase.CREATING,
-    }
+    # Style selection (first layer): write draft_content for version_generator
+    if not style_selected:
+        result = {
+            "selected_version": found_version.get("version_id"),
+            "copy_content": {
+                **(state.get("copy_content") or {}),
+                "selected_title": found_version.get("title", ""),
+                "title_candidates": [found_version.get("title", "")],
+                "body_text": found_version.get("body", ""),
+                "hashtags": found_version.get("hashtags", []),
+                "tone": found_version.get("tone", ""),
+            },
+            "draft_content": {
+                "title": found_version.get("title", ""),
+                "text": found_version.get("body", ""),
+                "hashtags": found_version.get("hashtags", []),
+                "style_suggestion": found_version.get("style_suggestion", ""),
+            },
+            "style_selected": True,
+            "content_versions": [],  # Clear so version_generator can write new ones
+            "phase": WorkflowPhase.CREATING,
+        }
+    else:
+        # Version selection (second layer): write final copy_content + visual_plan
+        result = {
+            "selected_version": found_version.get("version_id"),
+            "copy_content": {
+                "selected_title": found_version.get("title", ""),
+                "title_candidates": [found_version.get("title", "")],
+                "body_text": found_version.get("body", ""),
+                "hashtags": found_version.get("hashtags", []),
+                "tone": found_version.get("tone", ""),
+            },
+            "visual_plan": {
+                "cover_prompt": found_version.get("style_suggestion", ""),
+                "style": found_version.get("visual_style", ""),
+                "color_palette": found_version.get("color_palette", {}),
+            },
+            "style_selected": False,  # Reset for potential future use
+            "phase": WorkflowPhase.CREATING,
+        }
 
     return NodeResult(result, "choice_gate").to_dict()

@@ -40,4 +40,12 @@ async def copywriter_node(state: XHSGrowthState, *, store: BaseStore) -> dict[st
             payload={"data_type": "copy_content", "data": result.get("copy_content")},
         )
 
+    # Emit data updated event for content_versions (multi-style variants)
+    if result.get("content_versions"):
+        event_bus.emit(
+            EventType.WORKFLOW_DATA_UPDATED,
+            thread_id=thread_id,
+            payload={"data_type": "content_versions", "data": result.get("content_versions")},
+        )
+
     return NodeResult(result, "copywriter").to_dict()
