@@ -171,6 +171,7 @@ export interface VisualPlan {
   color_palette: string[]
   font_suggestion: string
   brand_elements: string[]
+  image_paths?: string[]
 }
 
 // Ripple CAS prediction result

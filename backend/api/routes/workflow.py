@@ -1577,3 +1577,78 @@ def _format_shooting_plan(plan: dict) -> str:
         lines.append(f"- {angle.get('description', '')}")
 
     return "\n".join(lines)
+
+
+# ── Image Upload ─────────────────────────────────────────────────────────
+
+
+class ImageUploadResponse(BaseModel):
+    image_paths: list[str]
+    count: int
+
+
+@router.post("/images/upload/{thread_id}")
+async def upload_images(thread_id: str, request: Request):
+    """Upload images for a workflow (before publishing). Stored on disk, paths saved to visual_plan.image_paths."""
+    if not thread_id or thread_id.strip() == "":
+        raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    form = await request.form()
+    files = form.getlist("files")
+    if not files:
+        raise ValidationError("files", "No files uploaded")
+
+    # Validate file count and types
+    if len(files) > 9:
+        raise ValidationError("files", "Maximum 9 images allowed")
+
+    allowed_types = {"image/jpeg", "image/png", "image/webp"}
+    max_size = 10 * 1024 * 1024  # 10MB per file
+
+    image_dir = Path(f"/tmp/xhs_images/{thread_id}")
+    image_dir.mkdir(parents=True, exist_ok=True)
+
+    saved_paths: list[str] = []
+    for f in files:
+        if not f.filename:
+            continue
+        content = await f.read()
+        if len(content) > max_size:
+            raise ValidationError("files", f"File {f.filename} exceeds 10MB limit")
+        if f.content_type not in allowed_types:
+            raise ValidationError("files", f"File {f.filename} has unsupported type {f.content_type}")
+
+        # Sanitize filename
+        safe_name = f"{uuid.uuid4().hex[:8]}_{f.filename}"
+        dest = image_dir / safe_name
+        dest.write_bytes(content)
+        saved_paths.append(str(dest))
+
+    if not saved_paths:
+        raise ValidationError("files", "No valid images were saved")
+
+    # Update workflow state with image paths
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    state = await graph.aget_state(config)
+    if not state.values or state.values.get("session_id") is None:
+        raise WorkflowNotFoundError(thread_id)
+
+    visual_plan = dict(state.values.get("visual_plan", {}))
+    # Merge with existing paths (avoid duplicates)
+    existing = set(visual_plan.get("image_paths", []))
+    existing.update(saved_paths)
+    visual_plan["image_paths"] = list(existing)
+
+    as_node = _get_as_node(state)
+    update_kwargs: dict[str, Any] = {"values": {"visual_plan": visual_plan}}
+    if as_node:
+        update_kwargs["as_node"] = as_node
+
+    await graph.aupdate_state(config, **update_kwargs)
+
+    return success(data=ImageUploadResponse(
+        image_paths=list(existing),
+        count=len(existing),
+    ).model_dump())

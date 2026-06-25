@@ -9,7 +9,7 @@ import CelebrationEffect from '@/components/CelebrationEffect.vue'
 import WorkflowCardBody from '@/components/WorkflowCardBody.vue'
 import { ReviewSkeleton } from '@/components/skeletons'
 import { useReviewStore, useToastStore, useAccountsStore } from '@/stores'
-import { listWorkflows, getWorkflowStatus } from '@/api/workflow'
+import { listWorkflows, getWorkflowStatus, uploadImages } from '@/api/workflow'
 import { getSystemHealth } from '@/api/system'
 import type { ContentStatus } from '@/types'
 import type { WorkflowListItem, WorkflowStateResponse } from '@/types/workflow'
@@ -229,6 +229,64 @@ const canRealPublish = ref(true)
 
 // Celebration effect
 const showCelebration = ref(false)
+
+// ── Image upload state ──
+const imageUploadMap = ref<Map<string, string[]>>(new Map())  // thread_id -> preview URLs
+const imageUploading = ref<Map<string, boolean>>(new Map())
+
+async function handleImageUpload(threadId: string, event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  const files = Array.from(input.files).slice(0, 9)
+  if (!files.length) return
+
+  imageUploading.value.set(threadId, true)
+  imageUploading.value = new Map(imageUploading.value)
+
+  try {
+    // Show local previews immediately
+    const previews = files.map(f => URL.createObjectURL(f))
+    const existing = imageUploadMap.value.get(threadId) || []
+    imageUploadMap.value.set(threadId, [...existing, ...previews])
+    imageUploadMap.value = new Map(imageUploadMap.value)
+
+    const result = await uploadImages(threadId, files)
+    toastStore.success(t('common.success'), `${result.count} ${t('review.imagesUploaded') || 'images uploaded'}`)
+
+    // Refresh workflow detail to get updated visual_plan
+    try {
+      const state = await getWorkflowStatus(threadId)
+      workflowDetails.value.set(threadId, state)
+    } catch { /* non-critical */ }
+  } catch (e: any) {
+    toastStore.error(e.message || t('common.error'))
+    // Remove failed previews
+    imageUploadMap.value.delete(threadId)
+    imageUploadMap.value = new Map(imageUploadMap.value)
+  } finally {
+    imageUploading.value.delete(threadId)
+    imageUploading.value = new Map(imageUploading.value)
+    input.value = ''  // reset for re-upload
+  }
+}
+
+function removeImage(threadId: string, index: number) {
+  const paths = imageUploadMap.value.get(threadId)
+  if (paths) {
+    URL.revokeObjectURL(paths[index])
+    paths.splice(index, 1)
+    imageUploadMap.value = new Map(imageUploadMap.value)
+  }
+}
+
+function getUploadedImages(threadId: string): string[] {
+  return imageUploadMap.value.get(threadId) || []
+}
+
+function getServerImageCount(threadId: string): number {
+  const detail = workflowDetails.value.get(threadId)
+  return (detail as any)?.visual_plan?.image_paths?.length || 0
+}
 
 // ── Helpers ──
 const isEmpty = computed(() => listLoaded.value && workflows.value.length === 0)
@@ -548,6 +606,40 @@ const handleCancelConfirm = () => {
                       {{ t('common.loadingState') }}
                     </div>
                   </div>
+                </div>
+
+                <!-- Image upload (before publish) -->
+                <div class="rounded-lg p-3 md:p-4 liquid-glass-inset">
+                  <div class="flex items-center gap-2 mb-2 md:mb-3">
+                    <div class="w-6 h-6 md:w-7 md:h-7 rounded-md bg-gradient-to-br from-amber-400 to-orange-400 flex items-center justify-center">
+                      <AppIcon name="Image" size="sm" variant="white" />
+                    </div>
+                    <span class="text-xs font-semibold text-slate-800">{{ t('review.imageUpload') || '上传图片' }}</span>
+                    <span v-if="getServerImageCount(wf.thread_id) > 0" class="text-[10px] text-emerald-500 font-medium ml-auto">
+                      {{ getServerImageCount(wf.thread_id) }} {{ t('review.imagesSaved') || '已保存' }}
+                    </span>
+                  </div>
+                  <!-- Preview grid -->
+                  <div v-if="getUploadedImages(wf.thread_id).length > 0" class="grid grid-cols-3 gap-2 mb-2">
+                    <div v-for="(url, idx) in getUploadedImages(wf.thread_id)" :key="idx"
+                      class="relative aspect-square rounded-md overflow-hidden border border-slate-200 bg-slate-50"
+                    >
+                      <img :src="url" class="w-full h-full object-cover" alt="" />
+                      <button @click="removeImage(wf.thread_id, idx)"
+                        class="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-500 text-white flex items-center justify-center text-[8px] leading-none shadow hover:bg-rose-600 transition-colors"
+                      >×</button>
+                    </div>
+                  </div>
+                  <!-- Upload trigger -->
+                  <label v-if="getUploadedImages(wf.thread_id).length < 9"
+                    class="flex items-center justify-center gap-1.5 py-2 rounded-md border border-dashed border-slate-300 hover:border-amber-400 hover:bg-amber-50/30 transition-colors cursor-pointer text-xs text-slate-400 hover:text-amber-600"
+                    :class="imageUploading.get(wf.thread_id) ? 'opacity-50 pointer-events-none' : ''"
+                  >
+                    <AppIcon name="Upload" size="sm" variant="cyan" />
+                    <span>{{ imageUploading.get(wf.thread_id) ? t('common.loadingState') : (t('review.addImages') || '添加图片') }}</span>
+                    <input type="file" accept="image/jpeg,image/png,image/webp" multiple class="hidden" :disabled="imageUploading.get(wf.thread_id)"
+                      @change="handleImageUpload(wf.thread_id, $event)" />
+                  </label>
                 </div>
               </div>
 

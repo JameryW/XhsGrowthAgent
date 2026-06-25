@@ -78,6 +78,7 @@ class VisualPlan(TypedDict, total=False):
     color_palette: list[str]
     font_suggestion: str
     brand_elements: list[str]
+    image_paths: list[str]  # ponytail: user-uploaded image file paths for publishing
 
 
 class PublishResult(TypedDict, total=False):

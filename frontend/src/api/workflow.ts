@@ -176,6 +176,18 @@ export async function selectBlogger(threadId: string, selection: {
   })
 }
 
+// Upload images for a workflow (before publishing)
+export async function uploadImages(threadId: string, files: File[]): Promise<{ image_paths: string[]; count: number }> {
+  const formData = new FormData()
+  for (const f of files) {
+    formData.append('files', f)
+  }
+  return client.post(`/workflow/images/upload/${threadId}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000,
+  }) as unknown as { image_paths: string[]; count: number }
+}
+
 // Get pending blogger selection — candidate list and config
 export async function getPendingBloggerSelection(threadId: string): Promise<{
   thread_id: string
