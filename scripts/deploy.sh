@@ -289,9 +289,52 @@ cmd_deploy() {
         echo ">>> 部署前自动备份..."
         cmd_backup
     fi
+
+    # Always rebuild frontend (mounted as volume, no image rebuild needed)
     cmd_frontend
-    cmd_rebuild
-    cmd_restart
+
+    # ponytail: skip image rebuild when only frontend changed — saves ~60s
+    # Set SKIP_REBUILD=1 to force skip; auto-detects via .py mtime vs image creation
+    if [ "${SKIP_REBUILD:-}" = "1" ]; then
+        echo ">>> 跳过镜像构建（SKIP_REBUILD=1）"
+    elif ! podman image exists "$BACKEND_IMG" 2>/dev/null; then
+        echo ">>> 镜像不存在，首次构建..."
+        podman build -t "$BACKEND_IMG" "$PROJECT_DIR"
+    else
+        IMAGE_TS=$(podman inspect "$BACKEND_IMG" --format '{{.Created}}' 2>/dev/null)
+        CHANGED=""
+        if [ -n "$IMAGE_TS" ]; then
+            CHANGED=$(find "$PROJECT_DIR/backend" -name "*.py" -newermt "$(echo "$IMAGE_TS" | cut -d. -f1)" -type f 2>/dev/null | head -1)
+        fi
+        if [ -n "$CHANGED" ]; then
+            echo ">>> 检测到后端代码变更（$(basename "$CHANGED")），重建镜像..."
+            podman build -t "$BACKEND_IMG" "$PROJECT_DIR"
+        else
+            echo ">>> 后端代码未变更，跳过镜像构建"
+        fi
+    fi
+
+    # Fast path: restart existing containers instead of stop+rm+create
+    if podman ps -a --filter name=xhs-growth --format '{{.Names}}' | grep -q xhs-growth; then
+        echo ">>> 重启后端容器（加载新前端 dist）..."
+        podman restart xhs-growth
+        podman restart ripple-service 2>/dev/null || true
+    else
+        cmd_start
+        return
+    fi
+
+    echo ">>> 等待后端就绪..."
+    for i in $(seq 1 15); do
+        if curl -sf http://localhost:8889/api/system/health >/dev/null 2>&1; then
+            echo "  后端已就绪 (${i}s)"
+            break
+        fi
+        sleep 1
+    done
+
+    echo ">>> 部署完成"
+    cmd_status
 }
 
 # ── 入口 ──
