@@ -270,3 +270,37 @@ Fix retry/resume循环卡死：error/stale resume不再调aupdate_state(多task�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 43: feat: manual analytics trigger + fix dry_run default
+
+**Date**: 2026-06-25
+**Task**: feat: manual analytics trigger + fix dry_run default
+**Branch**: `main`
+
+### Summary
+
+1) publisher→END, 新增 trigger-analytics 端点手动触发 Ripple 分析; 2) 排查发布失败根因为 dry_run 默认 True, 改为 False
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4eec035d` | (see git log) |
+| `021058c6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
