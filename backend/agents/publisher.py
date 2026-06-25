@@ -30,7 +30,7 @@ class PublisherAgent(BaseAgent):
 
         # Read publish options from review decision (overrides defaults)
         publish_options = state.get("publish_options") or {}
-        is_dry_run = publish_options.get("dry_run", True)
+        is_dry_run = publish_options.get("dry_run", False)
         publish_account_id = publish_options.get("account_id")
 
         if is_dry_run or not use_browser:

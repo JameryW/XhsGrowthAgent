@@ -37,7 +37,7 @@ def _is_at_ripple_gate(state: StateSnapshot) -> bool:
 
 
 class PublishOptions(BaseModel):
-    dry_run: bool = True
+    dry_run: bool = False
     auto_publish: bool = False
     account_id: str | None = None  # publish as this account; None = global active account
 
