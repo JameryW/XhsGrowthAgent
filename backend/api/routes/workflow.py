@@ -567,8 +567,14 @@ async def get_workflow_status(thread_id: str, request: Request):
             cp = values.get("content_plan") or {}
             if bc.get("brand_name"):
                 update_fields["label"] = bc["brand_name"]
+            elif bc.get("product_name"):
+                update_fields["label"] = bc["product_name"]
+            elif bc.get("content_direction"):
+                update_fields["label"] = bc["content_direction"][:20]
             elif cp.get("selected_topic"):
                 update_fields["label"] = cp["selected_topic"]
+            elif bc.get("raw_text"):
+                update_fields["label"] = bc["raw_text"][:20] + "…"
         if "workflow_mode" not in update_fields:
             wm = values.get("workflow_mode")
             if wm:
