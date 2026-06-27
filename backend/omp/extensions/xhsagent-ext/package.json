@@ -1,0 +1,16 @@
+{
+  "name": "xhsagent-ext",
+  "version": "0.1.0",
+  "description": "XhsGrowthAgent domain tools and commands for oh-my-pi",
+  "omp": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@oh-my-pi/pi-coding-agent": ">=16.0.0",
+    "@types/node": "^26.0.1",
+    "typescript": "^5.9.3"
+  }
+}

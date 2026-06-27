@@ -186,11 +186,35 @@ backend/
 │   ├── cost_tracker.py                  # CostTracker, TokenUsage
 │   └── visual_types.py                  # ColorPalette, LayoutOption, StyleOption, SceneAnalysisResult
 │
-└── memory/                              # LangGraph BaseStore management
-    ├── __init__.py                      # Exports: MemoryManager, SceneDatabase
-    ├── store.py                         # MemoryManager (namespace management per account)
-    ├── content_history.py               # Content history helpers
-    └── scene_database.py                # SceneDatabase (7-day expiry, per-scene caching)
+├── memory/                              # LangGraph BaseStore management
+│   ├── __init__.py                      # Exports: MemoryManager, SceneDatabase
+│   ├── store.py                         # MemoryManager (namespace management per account)
+│   ├── content_history.py               # Content history helpers
+│   └── scene_database.py                # SceneDatabase (7-day expiry, per-scene caching)
+│
+└── omp/                                 # oh-my-pi (omp) terminal agent extensions
+    └── extensions/
+        └── xhsagent-ext/                # XhsGrowthAgent domain tools for omp TUI
+            ├── package.json             # omp extension manifest (omp.extensions entry)
+            ├── tsconfig.json
+            ├── .gitignore               # Exclude package-lock.json, node_modules
+            └── src/
+                ├── index.ts             # Extension entry: registers tools, commands, events
+                ├── config.ts            # XHS_AGENT_API_BASE env var
+                ├── types.ts             # API response types + textResult helper
+                ├── api_client.ts        # HTTP + SSE client (unwraps ApiResponse envelope)
+                ├── events.ts            # session_start health check + before_agent_start context
+                ├── tools/               # omp tools (one file per API endpoint)
+                │   ├── workflow_start.ts    # xhs_workflow_start (SSE progress)
+                │   ├── workflow_status.ts   # xhs_workflow_status (full snapshot)
+                │   ├── workflow_pause.ts
+                │   ├── workflow_resume.ts
+                │   ├── workflow_cancel.ts
+                │   ├── review_approve.ts    # xhs_review_approve (decision: "approved")
+                │   └── review_reject.ts     # xhs_review_reject (decision: "needs_revision")
+                └── commands/            # omp slash commands
+                    ├── xhs.ts              # /xhs — start creation workflow
+                    └── xhs_review.ts       # /xhs-review — review pending content
 ```
 
 ---

@@ -99,7 +99,8 @@
     },
     "appName": "Growth Engine",
     "systemInfo": "System Info",
-    "settings": "Settings"
+    "settings": "Settings",
+    "tui": "TUI"
   },
   "home": {
     "title": "XHS Growth Engine",
@@ -1283,5 +1284,25 @@
       "title": "System Config",
       "subtitle": "Global keys & service URLs — shared across XHS accounts"
     }
+  },
+  "tui": {
+    "welcome": "XhsGrowthAgent TUI v0.1",
+    "welcomeHint": "Type a topic to start, or /help for commands.",
+    "processing": "Processing...",
+    "inputPlaceholder": "Type a command or topic...",
+    "noActiveWorkflow": "No active workflow. Start one with /start or /start <topic>",
+    "startingWorkflow": "Starting workflow{topic}...",
+    "workflowStarted": "Workflow started!\n  Thread: {threadId}\n  Phase: {phase}\n  Status: {status}",
+    "fetchingStatus": "Fetching status for {threadId}...",
+    "workflowPaused": "Workflow {threadId} paused.",
+    "workflowResumed": "Workflow {threadId} resumed.",
+    "workflowCancelled": "Workflow {threadId} cancelled.",
+    "contentApproved": "Content approved for {threadId}.",
+    "contentRejected": "Content rejected. Revision requested: {feedback}",
+    "rejectUsage": "Usage: /reject <revision feedback>",
+    "reviewPending": "Content awaiting review. Type /approve or /reject <feedback>",
+    "unknownCommand": "Unknown command: {command}. Type /help for available commands.",
+    "resumingWorkflow": "Resuming active workflow: {threadId}",
+    "helpText": "Available commands:\n  /start [topic]  - Start a workflow (optional topic)\n  /status [id]    - Check workflow status\n  /pause [id]     - Pause workflow\n  /resume [id]    - Resume workflow\n  /cancel [id]    - Cancel workflow\n  /approve [id]   - Approve content\n  /reject <msg>   - Reject with feedback\n  /help           - Show this help\n  /clear          - Clear terminal\n\nOr type a topic directly to start a workflow."
   }
 }

@@ -91,6 +91,7 @@ import {
   ZapOff,
   Eye,
   MousePointerClick,
+  Terminal,
 } from '@lucide/vue'
 
 const iconMap: Record<string, Component> = {
@@ -103,7 +104,7 @@ const iconMap: Record<string, Component> = {
   Pencil, Plane, Play, Plus, RefreshCw, RotateCcw, Rocket, Save, Scan, Search, SearchX, Send,
   Settings, Shirt, Smartphone, Sparkles, Star, Trash2, TrendingUp, Upload, UserCheck,
   Users, UtensilsCrossed, Wand2, Wifi, WifiOff, Workflow, X, XCircle, Zap, ZapOff, Eye,
-  MousePointerClick,
+  MousePointerClick, Terminal,
 }
 
 interface Props {
