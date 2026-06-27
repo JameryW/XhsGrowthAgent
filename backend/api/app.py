@@ -36,11 +36,11 @@ async def lifespan(app: FastAPI):
         try:
             # 1) Initialize app-level DB pool (for workflows table)
             from backend.db.pool import init_pool
+
             await init_pool()
 
             # 2) Ensure all tables exist + compile graph — run in parallel
             #    (ensure_table calls are idempotent and use their own connections)
-            from backend.db.workflows import ensure_table
             from backend.db.accounts import ensure_tables as ensure_account_tables
             from backend.db.console_users import (
                 bootstrap_default_user,
@@ -55,6 +55,7 @@ async def lifespan(app: FastAPI):
             from backend.db.system_config import (
                 ensure_tables as ensure_system_config,
             )
+            from backend.db.workflows import ensure_table
             from backend.graph.builder import compile_graph_prod
 
             # ponytail: parallel ensure_tables + graph compile; bootstrap steps
@@ -82,12 +83,11 @@ async def lifespan(app: FastAPI):
             # Load credentials into os.environ
             from backend.db.accounts import load_active_credentials
             from backend.db.system_config import activate_system_config
+
             await load_active_credentials()
             await activate_system_config()
         except Exception as e:
-            logging.getLogger("xhs_growth").warning(
-                f"Postgres setup failed, using SQLite: {e}"
-            )
+            logging.getLogger("xhs_growth").warning(f"Postgres setup failed, using SQLite: {e}")
             graph = await compile_graph_dev()
             app.state.graph = graph
             app.state.checkpointer = graph.checkpointer
@@ -103,8 +103,24 @@ async def lifespan(app: FastAPI):
     interval = settings.ripple.health_check_interval
     ripple.start_background_health_check(interval_seconds=interval)
 
+    # Start omp RPC bridge manager (best-effort — not fatal if omp unavailable)
+    try:
+        from backend.services.omp_bridge import get_bridge_manager
+
+        bridge_manager = get_bridge_manager()
+        await bridge_manager.start()
+        app.state.omp_bridge_manager = bridge_manager
+    except Exception as e:
+        logging.getLogger("xhs_growth").warning(f"omp bridge manager not started: {e}")
+        app.state.omp_bridge_manager = None
+
     yield
     # ── Cleanup ──
+    # Stop omp bridge manager
+    if getattr(app.state, "omp_bridge_manager", None):
+        with contextlib.suppress(Exception):
+            await app.state.omp_bridge_manager.stop()
+
     # Stop Ripple background health check + close connections
     ripple.stop_background_health_check()
     with contextlib.suppress(Exception):
@@ -120,6 +136,7 @@ async def lifespan(app: FastAPI):
     # Close app-level DB pool
     with contextlib.suppress(Exception):
         from backend.db.pool import close_pool
+
         await close_pool()
 
 
@@ -149,6 +166,7 @@ from backend.api.routes import (  # noqa: E402
     review,
     workflow,
 )
+from backend.api.routes.agent import router as agent_router  # noqa: E402
 from backend.api.routes.console_users import router as console_users_router  # noqa: E402
 from backend.api.routes.system import router as system_router  # noqa: E402
 from backend.api.routes.system_config import router as system_config_router  # noqa: E402
@@ -162,6 +180,7 @@ app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(system_router, prefix="/api/system", tags=["system"])
 app.include_router(realtime.router, tags=["realtime"])  # WebSocket 不需要 /api 前缀
+app.include_router(agent_router, tags=["agent"])  # WebSocket at /api/agent/ws
 app.include_router(optimization.router, prefix="/api/optimization", tags=["optimization"])
 app.include_router(blogger.router, prefix="/api/optimization", tags=["blogger"])
 
@@ -169,6 +188,7 @@ app.include_router(blogger.router, prefix="/api/optimization", tags=["blogger"])
 @app.get("/health")
 async def health():
     from backend.db.pool import is_pool_ready
+
     db_status = "connected" if is_pool_ready() else "unavailable"
     return success({"status": "ok", "version": "0.1.0", "db": db_status})
 

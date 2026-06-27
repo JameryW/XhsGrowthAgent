@@ -4,6 +4,155 @@
 
 ---
 
+## Scenario: omp RPC Bridge (Web TUI ↔ Backend ↔ omp)
+
+### 1. Scope / Trigger
+
+- Web TUI connects to backend via WebSocket for AI agent interaction
+- Backend manages `omp --mode rpc` subprocess(es) via `OmpBridgeManager`
+- High-level protocol: frontend never sees raw omp NDJSON
+- Multi-session: each user/session gets its own omp subprocess
+
+### 2. Signatures
+
+**WebSocket**: `WS /api/agent/ws?session_id=<optional>`
+
+**Frontend → Backend** (`ClientMessageType`):
+| Type | Fields | Description |
+|------|--------|-------------|
+| `send_message` | `content: string` | Natural language prompt → omp `prompt` command |
+| `get_status` | — | Query agent state → omp `get_state` command |
+| `new_session` | — | Create new omp session, switch to it |
+| `abort` | — | Cancel current agent turn → omp `abort` command |
+| `host_tool_result` | `id, result, is_error?` | Frontend-executed host tool result → omp `host_tool_result` |
+| `extension_ui_response` | `id, value?/confirmed?/cancelled?` | User's response to extension UI request → omp `extension_ui_response` |
+
+**Backend → Frontend** (`ServerEventType`):
+| Type | Key Fields | Description |
+|------|------------|-------------|
+| `ready` | — | omp process ready |
+| `agent_message` | `text, message_id, done` | Streaming AI text (delta; `done=true` on final) |
+| `tool_call` | `tool_call_id, tool_name, args, intent?` | omp built-in tool started |
+| `tool_result` | `tool_call_id, tool_name, result, is_error` | omp built-in tool finished |
+| `host_tool_call` | `id, toolCallId, toolName, arguments` | Unknown host tool needs frontend execution |
+| `extension_ui_request` | `id, method, title, options?/message?/placeholder?/prefill?` | Extension wants UI interaction |
+| `status` | `status, model?, session_id?` | Agent status change (`idle`/`running`/`streaming`/`connected`) |
+| `error` | `message, level?` | Error event |
+| `session_end` | — | Agent turn completed |
+
+### 3. Contracts
+
+**Host Tool Auto-Execution**:
+- Known XHS tools (`xhs_workflow_start`, `xhs_workflow_status`, `xhs_workflow_pause`, `xhs_workflow_resume`, `xhs_workflow_cancel`, `xhs_review_approve`, `xhs_review_reject`) are **auto-executed by the backend** via internal API calls (httpx to `localhost:8000/api/...`)
+- Unknown host tools are forwarded to frontend as `host_tool_call` event
+- Frontend must respond with `host_tool_result` message for unknown tools
+
+**Extension UI Methods**:
+| Method | Fields | Frontend Action |
+|--------|--------|-----------------|
+| `select` | `title, options[]` | Show picker, respond with `{value: selected}` |
+| `confirm` | `title, message` | Show confirm dialog, respond with `{confirmed: true/false}` |
+| `input` | `title, placeholder?` | Show input field, respond with `{value: input}` |
+| `editor` | `title, prefill?` | Show editor, respond with `{value: edited_text}` |
+| `cancel` | `targetId` | Cancel a previous request |
+| `notify` | `message, notifyType?` | Show notification (no response needed) |
+
+**Multi-Session**:
+- `OmpBridgeManager` singleton manages `OmpSession` instances keyed by `session_id`
+- Sessions start on-demand (first WebSocket connection)
+- Idle timeout (default 5 min): starts on WebSocket disconnect, cancelled on reconnect
+- `OMP_CWD` env var: working directory for omp subprocess (default: `os.getcwd()`)
+- `OMP_IDLE_TIMEOUT` env var: idle timeout in seconds (default: 300)
+
+**Session Lifecycle**:
+1. Frontend connects `WS /api/agent/ws` → backend creates new `OmpSession` → spawns `omp --mode rpc`
+2. omp sends `{"type":"ready"}` → backend registers XHS host tools → frontend receives `ready` + `status: connected`
+3. Frontend sends `send_message` → omp processes → streaming `agent_message`/`tool_call`/`tool_result` events
+4. Frontend disconnects → backend starts idle timer
+5. Idle timeout expires → backend stops omp subprocess (SIGTERM → 5s → SIGKILL)
+6. Frontend reconnects with `?session_id=xxx` → if session still alive, resume; else create new
+
+### 4. Validation & Error Matrix
+
+| Condition | Error Event | Behavior |
+|-----------|-------------|----------|
+| omp not in PATH / bun unavailable | `error` on startup | Bridge not started (non-fatal) |
+| omp doesn't send ready within 30s | `error` | Session creation fails |
+| Empty `send_message` content | `error` | "empty message" |
+| Unknown `type` in frontend message | `error` | "unknown message type: X" |
+| omp response `success: false` | `error` | Error message forwarded to frontend |
+| omp subprocess crashes | `error` | stdout reader exits, pending requests cancelled |
+| Host tool auto-execution API fails | `host_tool_result` with `is_error: true` | Error result sent back to omp |
+| `host_tool_result` with non-dict result | Wrapped as `{content: [{type: "text", text: str(result)}]}` | Type safety for omp protocol |
+| WebSocket reconnect after max retries | Falls back to command mode | Frontend shows command mode UI |
+
+### 5. Good/Base/Bad Cases
+
+**Good**: Connect → send "帮我写一篇母婴笔记" → streaming agent_message → tool_call (xhs_workflow_start auto-executed) → tool_result → session_end
+
+**Base**: Connect → get_status → receives `{status: "idle", model: "claude-sonnet-4-20250514", session_id: "..."}`
+
+**Bad**: Connect → send_message with empty content → receives `{type: "error", message: "empty message"}`
+
+**Bad**: Connect → host_tool_result with string result → auto-wrapped to `{content: [{type: "text", text: "the string"}]}`
+
+### 6. Tests Required
+
+- [ ] OmpSession: start/stop lifecycle, ready signal detection
+- [ ] OmpSession: send_message → omp prompt command written to stdin
+- [ ] OmpSession: get_status → omp get_state response parsed
+- [ ] OmpSession: host_tool_call for known XHS tool → auto-executed via internal API
+- [ ] OmpSession: host_tool_call for unknown tool → forwarded to frontend
+- [ ] OmpSession: extension_ui_request → translated with method/title/options
+- [ ] OmpSession: message_update delta calculation (streaming text)
+- [ ] OmpBridgeManager: get_or_create_session creates on first call
+- [ ] OmpBridgeManager: idle timer starts on disconnect, cancelled on reconnect
+- [ ] OmpBridgeManager: stop_all shuts down all sessions
+- [ ] agent.py: WebSocket session_id query param routes to correct session
+- [ ] agent.py: NEW_SESSION creates new session, moves callbacks, starts idle timer on old
+
+### 7. Wrong vs Correct
+
+#### Wrong: Forwarding all host_tool_call to frontend
+```python
+# Every tool call requires frontend round-trip — slow and breaks agent flow
+await self._emit({"type": "host_tool_call", ...})
+```
+
+#### Correct: Auto-execute known tools, forward only unknown ones
+```python
+if tool_name in _XHS_TOOL_NAMES:
+    await self._auto_execute_host_tool(event)
+else:
+    await self._emit({"type": "host_tool_call", ...})
+```
+
+#### Wrong: Single omp process for all users
+```python
+bridge = get_bridge()  # singleton — all users share one omp session
+```
+
+#### Correct: Per-session omp processes with idle cleanup
+```python
+manager = get_bridge_manager()
+session = await manager.get_or_create_session(session_id)  # each user gets own omp
+```
+
+#### Wrong: Infinite WebSocket reconnect loop
+```typescript
+ws.onclose = () => { setTimeout(connectAgentWs, 3000) }  // loops forever
+```
+
+#### Correct: Bounded reconnect with fallback
+```typescript
+if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+  reconnectAttempts++
+  setTimeout(connectAgentWs, 3000)
+} else { mode.value = 'command' }  // fallback
+```
+
+---
+
 ## Scenario: External Client Integration (omp extension + Web TUI)
 
 ### 1. Scope / Trigger

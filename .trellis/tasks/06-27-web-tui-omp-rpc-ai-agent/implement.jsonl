@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend-api.md", "reason": "API route patterns, WebSocket conventions"}
+{"file": ".trellis/spec/backend-services.md", "reason": "Service layer patterns, singleton pattern"}
+{"file": ".trellis/spec/frontend-views.md", "reason": "Vue component patterns, AgentTUI structure"}
+{"file": ".trellis/tasks/06-27-web-tui-omp-rpc-ai-agent/research/omp-rpc-protocol.md", "reason": "omp RPC NDJSON protocol reference"}
