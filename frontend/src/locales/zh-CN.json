@@ -99,7 +99,8 @@
     },
     "appName": "增长引擎",
     "systemInfo": "系统信息",
-    "settings": "设置"
+    "settings": "设置",
+    "tui": "TUI"
   },
   "home": {
     "title": "小红书增长引擎",
@@ -1283,5 +1284,25 @@
       "title": "系统配置",
       "subtitle": "全局共享的密钥与服务地址，与小红书账号无关"
     }
+  },
+  "tui": {
+    "welcome": "XhsGrowthAgent TUI v0.1",
+    "welcomeHint": "输入话题开始创作，或输入 /help 查看命令。",
+    "processing": "处理中...",
+    "inputPlaceholder": "输入命令或话题...",
+    "noActiveWorkflow": "没有活跃的工作流。使用 /start 或 /start <话题> 启动",
+    "startingWorkflow": "正在启动工作流{topic}...",
+    "workflowStarted": "工作流已启动！\n  线程: {threadId}\n  阶段: {phase}\n  状态: {status}",
+    "fetchingStatus": "正在获取 {threadId} 的状态...",
+    "workflowPaused": "工作流 {threadId} 已暂停。",
+    "workflowResumed": "工作流 {threadId} 已恢复。",
+    "workflowCancelled": "工作流 {threadId} 已取消。",
+    "contentApproved": "内容已通过审核 ({threadId})。",
+    "contentRejected": "内容已驳回，请求修改：{feedback}",
+    "rejectUsage": "用法：/reject <修改意见>",
+    "reviewPending": "内容待审核。输入 /approve 通过 或 /reject <修改意见> 驳回",
+    "unknownCommand": "未知命令：{command}。输入 /help 查看可用命令。",
+    "resumingWorkflow": "恢复活跃工作流：{threadId}",
+    "helpText": "可用命令：\n  /start [话题]  - 启动工作流（可选话题）\n  /status [id]   - 查看工作流状态\n  /pause [id]    - 暂停工作流\n  /resume [id]   - 恢复工作流\n  /cancel [id]   - 取消工作流\n  /approve [id]  - 通过审核\n  /reject <意见> - 驳回并附修改意见\n  /help          - 显示帮助\n  /clear         - 清除终端\n\n或直接输入话题启动工作流。"
   }
 }

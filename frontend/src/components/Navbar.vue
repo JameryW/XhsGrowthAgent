@@ -23,6 +23,7 @@ const navItems = computed(() => [
   { path: '/review', icon: 'CheckCircle', label: t('nav.review'), color: 'cyan' },
   { path: '/analytics', icon: 'BarChart3', label: t('nav.analytics'), color: 'purple' },
   { path: '/history', icon: 'History', label: t('nav.history'), color: 'peach' },
+  { path: '/tui', icon: 'Terminal', label: t('nav.tui'), color: 'emerald' },
 ])
 
 const currentPath = computed(() => route.path)

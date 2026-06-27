@@ -15,12 +15,11 @@ const tabs = computed(() => [
   { path: '/start', icon: 'Rocket', label: t('nav.startShort') },
   { path: '/dashboard', icon: 'Home', label: t('nav.dashboardShort') },
   { path: '/review', icon: 'CheckCircle', label: t('nav.reviewShort') },
-  { path: '/analytics', icon: 'BarChart3', label: t('nav.analyticsShort') },
-  { path: '/history', icon: 'History', label: t('nav.historyShort') },
+  { path: '/tui', icon: 'Terminal', label: t('nav.tui') },
 ])
 
 const currentPath = computed(() => route.path)
-const moreActive = computed(() => currentPath.value === '/settings')
+const moreActive = computed(() => currentPath.value === '/settings' || currentPath.value === '/analytics' || currentPath.value === '/history')
 const isActiveTab = (path: string) => currentPath.value === path
 
 const navigate = (path: string) => {
@@ -98,6 +97,22 @@ const handleLogout = async () => {
         class="absolute right-2 bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] w-44 overflow-hidden rounded-xl border border-white/20 bg-white/95 shadow-xl backdrop-blur-md"
         role="menu"
       >
+        <button
+          class="flex w-full items-center gap-2 px-3 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+          role="menuitem"
+          @click="navigate('/analytics')"
+        >
+          <AppIcon name="BarChart3" size="sm" variant="cyan" aria-hidden="true" />
+          <span>{{ t('nav.analytics') }}</span>
+        </button>
+        <button
+          class="flex w-full items-center gap-2 px-3 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+          role="menuitem"
+          @click="navigate('/history')"
+        >
+          <AppIcon name="History" size="sm" variant="cyan" aria-hidden="true" />
+          <span>{{ t('nav.history') }}</span>
+        </button>
         <button
           class="flex w-full items-center gap-2 px-3 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
           role="menuitem"
