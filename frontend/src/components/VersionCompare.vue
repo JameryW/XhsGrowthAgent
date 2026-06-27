@@ -196,7 +196,7 @@ function getCardClass(version: ContentVersion): string[] {
           :class="getCardClass(version)"
           tabindex="0"
           role="button"
-          :aria-label="`${version.version_type} - ${version.predicted_score.toFixed(1)}`"
+          :aria-label="`${version.version_type} - ${(version.predicted_score ?? 0).toFixed(1)}`"
           :aria-pressed="selectedVersionId === version.version_id"
           @click="selectVersion(version.version_id)"
           @keydown.enter="selectVersion(version.version_id)"
@@ -226,13 +226,13 @@ function getCardClass(version: ContentVersion): string[] {
               {{ version.version_type || 'A' }}
             </span>
             <span :class="['text-xs', version.version_id === bestVersion?.version_id ? 'text-amber-500 font-medium' : 'text-slate-400']">
-              {{ version.predicted_score.toFixed(1) }} {{ t('versionCompare.scoreUnit') }}
+              {{ (version.predicted_score ?? 0).toFixed(1) }} {{ t('versionCompare.scoreUnit') }}
             </span>
           </div>
 
           <!-- Predicted Score -->
           <MiniProgress
-            :value="version.predicted_score"
+            :value="version.predicted_score ?? 0"
             :max="100"
             :label="t('analytics.avgEngagementRate')"
             :color="version.version_type === 'C' ? 'pink' : version.version_type === 'B' ? 'cyan' : 'teal'"
