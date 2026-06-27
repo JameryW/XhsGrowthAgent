@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch, type WatchStopHandle } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import NeonButton from '@/components/NeonButton.vue'
@@ -21,6 +21,7 @@ const toastStore = useToastStore()
 const accountsStore = useAccountsStore()
 
 // ── Queue state ──
+const destroyed = ref(false)
 const workflows = ref<WorkflowListItem[]>([])
 const workflowDetails = ref<Map<string, WorkflowStateResponse>>(new Map())
 const loadingDetailIds = ref<Set<string>>(new Set())
@@ -42,10 +43,10 @@ function queueDetail(threadId: string) {
 }
 
 function scheduleDetailPump() {
-  if (detailPumpTimer !== null) return
+  if (detailPumpTimer !== null || destroyed.value) return
   detailPumpTimer = window.setTimeout(() => {
     detailPumpTimer = null
-    pumpDetailQueue()
+    if (!destroyed.value) pumpDetailQueue()
   }, 24)
 }
 
@@ -55,12 +56,12 @@ function pumpDetailQueue() {
     pendingDetailIds.delete(tid)
     activeDetailLoads += 1
     getWorkflowStatus(tid)
-      .then((state) => { workflowDetails.value.set(tid, state) })
+      .then((state) => { if (!destroyed.value) workflowDetails.value.set(tid, state) })
       .catch(() => {})
       .finally(() => {
         loadingDetailIds.value.delete(tid)
         activeDetailLoads -= 1
-        if (pendingDetailIds.size > 0) scheduleDetailPump()
+        if (!destroyed.value && pendingDetailIds.size > 0) scheduleDetailPump()
       })
   }
 }
@@ -137,12 +138,14 @@ async function ensureWorkflowInQueue(threadId: string) {
   try {
     if (!state) {
       state = await getWorkflowStatus(threadId)
+      if (destroyed.value) return
       workflowDetails.value.set(threadId, state)
     }
   } catch {
     // The websocket event is enough to show the queue card; details remain lazy.
   }
 
+  if (destroyed.value) return
   upsertWorkflow(state ? workflowItemFromState(state) : fallbackWorkflowItem(threadId))
   listLoaded.value = true
   queueDetail(threadId)
@@ -153,30 +156,39 @@ async function fetchReviewQueue() {
   error.value = null
   try {
     const result = await listWorkflows({ status: 'awaiting_review', limit: 50 })
+    if (destroyed.value) return
     workflows.value = result.workflows
     listLoaded.value = true
     for (const threadId of reviewStore.pendingReviews.keys()) {
       void ensureWorkflowInQueue(threadId)
     }
   } catch (e: any) {
-    error.value = e.message
+    if (!destroyed.value) error.value = e.message
   }
 }
 
 onMounted(fetchReviewQueue)
 onUnmounted(() => {
+  destroyed.value = true
   if (detailPumpTimer !== null) window.clearTimeout(detailPumpTimer)
+  for (const stop of watchStops) stop()
 })
 
-watch([workflows, expandedThreadId], () => { loadVisibleDetails() }, { immediate: true })
-watch(
-  () => Array.from(reviewStore.pendingReviews.keys()),
-  (threadIds) => {
-    for (const threadId of threadIds) {
-      void ensureWorkflowInQueue(threadId)
-    }
-  },
-  { immediate: true }
+const watchStops: WatchStopHandle[] = []
+watchStops.push(
+  watch([workflows, expandedThreadId], () => { if (!destroyed.value) loadVisibleDetails() }, { immediate: true })
+)
+watchStops.push(
+  watch(
+    () => Array.from(reviewStore.pendingReviews.keys()),
+    (threadIds) => {
+      if (destroyed.value) return
+      for (const threadId of threadIds) {
+        void ensureWorkflowInQueue(threadId)
+      }
+    },
+    { immediate: true }
+  )
 )
 
 // ── Per-card review state ──
@@ -251,6 +263,7 @@ async function handleImageUpload(threadId: string, event: Event) {
     imageUploadMap.value = new Map(imageUploadMap.value)
 
     const result = await uploadImages(threadId, files)
+    if (destroyed.value) return
     toastStore.success(t('common.success'), `${result.count} ${t('review.imagesUploaded') || 'images uploaded'}`)
 
     // Refresh workflow detail to get updated visual_plan
