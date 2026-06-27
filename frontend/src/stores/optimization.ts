@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type {
   DraftContent,
   ViralPost,
@@ -8,6 +8,7 @@ import type {
   VersionChoice,
 } from '@/types/optimization'
 import { useRealtimeStore } from './realtime'
+import { useWorkflowStore } from './workflow'
 import { EventType } from '@/realtime/events'
 import { submitDraft as apiSubmitDraft, selectVersion as apiSelectVersion } from '@/api/workflow'
 
@@ -31,9 +32,29 @@ export const useOptimizationStore = defineStore('optimization', () => {
     contentVersions.value.find(v => v.version_id === selectedVersion.value)
   )
 
+  // Reset optimization state when active workflow tab changes
+  // ponytail: global reset on tab switch — per-thread maps if many concurrent workflows matter
+  const workflowStore = useWorkflowStore()
+  watch(
+    () => workflowStore.currentThreadId,
+    (newThreadId, oldThreadId) => {
+      if (newThreadId !== oldThreadId) {
+        clearOptimization()
+        // Re-hydrate from the new tab's workflow state
+        if (newThreadId) {
+          const state = workflowStore.workflowStates.get(newThreadId)
+          if (state) {
+            if ((state as any).draft_content) draftContent.value = (state as any).draft_content
+            if ((state as any).optimization_analysis) optimizationAnalysis.value = (state as any).optimization_analysis
+            if ((state as any).content_versions) contentVersions.value = (state as any).content_versions
+          }
+        }
+      }
+    },
+  )
+
   // Get parent workflow store's thread ID
   const getThreadId = (): string | null => {
-    const workflowStore = useWorkflowStore()
     return workflowStore.currentThreadId
   }
 
@@ -81,7 +102,6 @@ export const useOptimizationStore = defineStore('optimization', () => {
 
   // Actions
   async function submitDraft(draft: DraftContent, viralLinks: string[]) {
-    const workflowStore = useWorkflowStore()
     const threadId = workflowStore.currentThreadId
     if (!threadId) {
       error.value = 'No active workflow thread'
@@ -112,7 +132,6 @@ export const useOptimizationStore = defineStore('optimization', () => {
   }
 
   async function selectVersion(choice: VersionChoice) {
-    const workflowStore = useWorkflowStore()
     const threadId = workflowStore.currentThreadId
     if (!threadId) {
       error.value = 'No active workflow thread'
@@ -172,6 +191,3 @@ export const useOptimizationStore = defineStore('optimization', () => {
     clearOptimization,
   }
 })
-
-// Import workflow store for thread ID access
-import { useWorkflowStore } from './workflow'
