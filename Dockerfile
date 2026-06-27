@@ -10,10 +10,14 @@
 FROM python:3.11-slim
 WORKDIR /app
 
-# Install system deps
+# Install system deps + bun runtime + omp CLI (needed by OmpSession for agent mode TUI).
+# ponytail: single apt layer; curl/unzip only for bun install, then purged.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+    build-essential libpq-dev curl unzip \
+    && curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash -s "bun-v1.3.14" \
+    && /usr/local/bin/bun install -g @oh-my-pi/pi-coding-agent \
+    && ln -s /root/.bun/bin/omp /usr/local/bin/omp \
+    && apt-get purge -y curl unzip && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 # Install torch CPU-only first (~200MB vs ~4GB CUDA), then the rest.
 # sentence-transformers depends on torch; without this pre-install pip pulls
