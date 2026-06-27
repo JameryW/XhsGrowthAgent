@@ -1,0 +1,7 @@
+{"file": "prd.md", "reason": "Full requirements: 7 tools, 2 commands, SSE, API fallback, multi-tenant safety, Web TUI page"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Workflow phases, status enums, state machine — needed for tool parameter types and status rendering"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Extension placement convention: backend/omp/extensions/xhsagent-ext/"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "API error codes and fallback patterns for graceful degradation"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Vue component conventions for Web TUI page"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Pinia store patterns — TUI page will use workflowStore + SSE"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "API contract between omp extension / Web TUI / backend — same endpoints, same types"}

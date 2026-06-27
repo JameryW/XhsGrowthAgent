@@ -78,11 +78,14 @@ backend/
 ├── realtime/       # WebSocket + SSE event streaming
 ├── memory/         # Long-term memory (store, index, creative, types)
 ├── cli/            # Typer CLI with Rich progress
-└── config/         # Model routing, prompts
+├── config/         # Model routing, prompts
+└── omp/            # oh-my-pi terminal agent extensions
+    └── extensions/
+        └── xhsagent-ext/  # XhsGrowthAgent tools for omp TUI
 
 frontend/
 ├── src/
-│   ├── views/      # Dashboard (32 lines, split into 5 components)
+│   ├── views/      # Dashboard (32 lines, split into 5 components) + AgentTUI
 │   ├── components/ # Reusable Vue components
 │   ├── stores/     # Pinia stores with toast notifications
 │   └── realtime/   # WebSocket client with event recovery

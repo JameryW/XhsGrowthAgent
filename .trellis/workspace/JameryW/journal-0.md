@@ -372,3 +372,37 @@ fix label fallback PR130, feat multi-style choice_gate PR131, two deploys
 ### Next Steps
 
 - None - task complete
+
+
+## Session 46: Add oh-my-pi extension + Web TUI page
+
+**Date**: 2026-06-27
+**Task**: Add oh-my-pi extension + Web TUI page
+**Branch**: `feat/omp-extension-tui`
+
+### Summary
+
+Implemented omp extension (xhsagent-ext) with 7 tools, 2 commands, SSE progress, API envelope unwrapping. Added Web TUI page (/tui) with terminal-style interaction, named SSE event listeners, review integration. Updated spec with cross-layer integration contracts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `506c71fa` | (see git log) |
+| `a8a78dc2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -215,6 +215,7 @@ Vue 3 前端界面，赛博朋克风格，包含三大模块：
 | Dashboard | `/dashboard` | 工作流进度追踪、阶段输出展示 |
 | Review | `/review` | 人机审核、内容预览、通过/修改/拒绝 |
 | Analytics | `/analytics` | 数据统计、帖子表现、成本分析 |
+| TUI | `/tui` | 终端风格交互界面，命令输入 + 实时进度 + 审核操作 |
 
 ### Tech Stack
 
@@ -303,6 +304,42 @@ See [CLAUDE.md](./CLAUDE.md) for detailed development guidelines.
 2. Use `@tool` decorator from `langchain_core.tools`
 3. Register in `ToolRegistry.register()`
 4. Add to agent's tool list in `_agent_tools`
+
+---
+
+## oh-my-pi (omp) Extension
+
+Terminal-based AI coding agent integration via [oh-my-pi](https://github.com/can1357/oh-my-pi). Enables XHS content creation workflows from the terminal.
+
+### Setup
+
+```bash
+cd backend/omp/extensions/xhsagent-ext
+npm install
+
+# Configure API endpoint (defaults to http://localhost:8000)
+export XHS_AGENT_API_BASE=http://localhost:8000
+
+# Make sure the API server is running
+xhs-growth serve --port 8000
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `xhs_workflow_start` | Start a workflow with SSE real-time progress |
+| `xhs_workflow_status` | Query workflow status with full snapshot |
+| `xhs_workflow_pause` | Pause a running workflow |
+| `xhs_workflow_resume` | Resume a paused workflow |
+| `xhs_workflow_cancel` | Cancel a workflow |
+| `xhs_review_approve` | Approve content in review gate |
+| `xhs_review_reject` | Reject content with revision feedback |
+
+### Commands
+
+- `/xhs [topic]` — Start a XHS content creation workflow
+- `/xhs-review` — Review pending content
 
 ---
 

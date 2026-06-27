@@ -1,0 +1,4 @@
+{"file": "prd.md", "reason": "Acceptance criteria to verify: 7 tools registered, SSE streaming, API fallback, Web TUI page functional"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Verify tool parameter types match backend WorkflowPhase/WorkflowStatus enums"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify API fallback behavior matches error handling spec"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Verify Web TUI components follow established patterns"}
