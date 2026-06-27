@@ -406,3 +406,38 @@ Implemented omp extension (xhsagent-ext) with 7 tools, 2 commands, SSE progress,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 47: Bug fixes + xterm.js Web TUI
+
+**Date**: 2026-06-27
+**Task**: Bug fixes + xterm.js Web TUI
+**Branch**: `main`
+
+### Summary
+
+Fix review blank page (destroyed flag guard), fix optimization state leak across tabs (watch currentThreadId), rewrite Web TUI with xterm.js for native terminal experience (ANSI colors, markdown→ANSI, command history, tab completion, fullscreen)
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6ba53679` | (see git log) |
+| `92461101` | (see git log) |
+| `7348ab09` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

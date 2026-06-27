@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 46
+- **Total Sessions**: 47
 - **Last Active**: 2026-06-27
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~408 | Active |
+| `journal-0.md` | ~443 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 47 | 2026-06-27 | Bug fixes + xterm.js Web TUI | `6ba53679`, `92461101`, `7348ab09` | `main` |
 | 46 | 2026-06-27 | Add oh-my-pi extension + Web TUI page | `506c71fa`, `a8a78dc2` | `feat/omp-extension-tui` |
 | 45 | 2026-06-25 | Multi-style variants + label fallback + deploy | `2fa6e7fb`, `5814e2b9`, `0a5d0ca2` | `main` |
 | 44 | 2026-06-25 | Fix brief mode workflow label fallback + deploy | `2fa6e7fb` | `main` |
