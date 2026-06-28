@@ -474,3 +474,37 @@ Added bun + @oh-my-pi/pi-coding-agent to Docker image, OMP_CWD env var to deploy
 ### Next Steps
 
 - None - task complete
+
+
+## Session 49: Fix web TUI Chinese input and interaction experience
+
+**Date**: 2026-06-28
+**Task**: Fix web TUI Chinese input and interaction experience
+**Branch**: `feat/tui-chinese-input-and-ux`
+
+### Summary
+
+Overhaul AgentTUI.vue: xterm v5→v6 upgrade, CJK input fix (IME composition + wcwidth), search bar (Ctrl+Shift+F), keyboard shortcuts (Ctrl+L/U/W/A/E/K), copy/paste (Ctrl+Shift+C/V), right-click context menu, WebGL renderer, smooth scrolling, mobile input bar + visualViewport adaptation. PR #137.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `79bc0a8b` | (see git log) |
+| `f83caf99` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
