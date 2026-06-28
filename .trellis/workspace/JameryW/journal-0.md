@@ -441,3 +441,36 @@ Fix review blank page (destroyed flag guard), fix optimization state leak across
 ### Next Steps
 
 - None - task complete
+
+
+## Session 48: Install omp runtime in backend container
+
+**Date**: 2026-06-28
+**Task**: Install omp runtime in backend container
+**Branch**: `main`
+
+### Summary
+
+Added bun + @oh-my-pi/pi-coding-agent to Docker image, OMP_CWD env var to deploy.sh. Built and verified omp/16.2.2 in container. Deployed to production.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `99449d18` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

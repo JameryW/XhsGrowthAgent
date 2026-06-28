@@ -5,13 +5,20 @@
  * Two modes:
  * 1. Agent mode (default): WebSocket to omp bridge for AI agent conversation
  * 2. Command mode (fallback): direct API calls for workflow operations
+ *
+ * v6 upgrade: import from '@xterm/xterm', no canvas addon (removed in v6).
+ * CJK: IME composition tracking, wcwidth-aware cursor, CJK font stack.
+ * UX: search, shortcuts, copy/paste, right-click menu, WebGL renderer.
+ * Mobile: native input bar, visualViewport, responsive layout.
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Terminal } from 'xterm'
+import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
-import 'xterm/css/xterm.css'
+import { SearchAddon } from '@xterm/addon-search'
+import { WebglAddon } from '@xterm/addon-webgl'
+import '@xterm/xterm/css/xterm.css'
 import { useWorkflowStore } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -28,10 +35,16 @@ const { t } = useI18n()
 const workflowStore = useWorkflowStore()
 const authStore = useAuthStore()
 
+// ── Mobile detection ──────────────────────────────────────────────────
+const isMobile = computed(() =>
+  'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth < 768,
+)
+
 // ── xterm.js setup ──────────────────────────────────────────────────────
 const termRef = ref<HTMLDivElement | null>(null)
 let term: Terminal | null = null
 let fitAddon: FitAddon | null = null
+let searchAddon: SearchAddon | null = null
 
 // ── State ───────────────────────────────────────────────────────────────
 const activeThreadId = ref<string | null>(null)
@@ -44,6 +57,24 @@ const historyIndex = ref(-1)
 type TuiMode = 'agent' | 'command'
 const mode = ref<TuiMode>('command')
 
+// ── IME composition tracking ──────────────────────────────────────────
+let isComposing = false
+
+// ── Search state ──────────────────────────────────────────────────────
+const searchVisible = ref(false)
+const searchQuery = ref('')
+const searchCaseSensitive = ref(false)
+const searchRegex = ref(false)
+const searchResultInfo = ref('')
+
+// ── Context menu state ────────────────────────────────────────────────
+const contextMenuVisible = ref(false)
+const contextMenuPos = ref({ x: 0, y: 0 })
+const contextMenuHasSelection = ref(false)
+
+// ── Mobile input state ────────────────────────────────────────────────
+const mobileInput = ref('')
+
 // ── Agent mode: WebSocket ───────────────────────────────────────────────
 const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/agent/ws`
 let ws: WebSocket | null = null
@@ -53,7 +84,33 @@ const MAX_RECONNECT_ATTEMPTS = 3
 const wsConnected = ref(false)
 const wsStatus = ref<'idle' | 'running' | 'streaming'>('idle')
 
-// ponytail: streaming text accumulator removed — agent mode uses write() directly
+// ── CJK width calculation ─────────────────────────────────────────────
+// ponytail: inline wcwidth — avoids relying on experimental term.unicode API
+function getStringWidth(str: string): number {
+  let width = 0
+  for (const char of str) {
+    const code = char.codePointAt(0)!
+    // CJK ideographs, fullwidth forms, Hangul, etc. = width 2
+    if (code >= 0x1100 && (
+      code <= 0x115F ||
+      code === 0x2329 || code === 0x232A ||
+      (code >= 0x2E80 && code <= 0xA4CF && code !== 0x303F) ||
+      (code >= 0xAC00 && code <= 0xD7A3) ||
+      (code >= 0xF900 && code <= 0xFAFF) ||
+      (code >= 0xFE10 && code <= 0xFE19) ||
+      (code >= 0xFE30 && code <= 0xFE6F) ||
+      (code >= 0xFF01 && code <= 0xFF60) ||
+      (code >= 0xFFE0 && code <= 0xFFE6) ||
+      (code >= 0x20000 && code <= 0x2FFFD) ||
+      (code >= 0x30000 && code <= 0x3FFFD)
+    )) {
+      width += 2
+    } else {
+      width += 1
+    }
+  }
+  return width
+}
 
 // ── Terminal helpers ────────────────────────────────────────────────────
 
@@ -78,23 +135,17 @@ function writePrompt() {
   write(prompt)
 }
 
-/** Clear current input line and rewrite */
+/** Clear current input line and rewrite — uses display width for cursor positioning */
 function refreshInputLine() {
-  // Move to start of input, clear to end, write prompt + current input
   if (!term) return
-  // Clear from cursor to end of line
-  const inputLen = currentInput.value.length
-  if (inputLen > 0 || cursorPos.value < inputLen) {
-    term.write('\r\x1b[2K') // CR + clear line
-  } else {
-    term.write('\r\x1b[2K')
-  }
+  term.write('\r\x1b[2K')
   writePrompt()
   if (currentInput.value) {
     term.write(currentInput.value)
-    // Position cursor
-    const offset = currentInput.value.length - cursorPos.value
-    if (offset > 0) term.write(`\x1b[${offset}D`)
+    // Position cursor: move left by the width of text after cursor
+    const afterCursor = currentInput.value.slice(cursorPos.value)
+    const afterWidth = getStringWidth(afterCursor)
+    if (afterWidth > 0) term.write(`\x1b[${afterWidth}D`)
   }
 }
 
@@ -104,7 +155,6 @@ const MAX_HISTORY = 100
 
 function pushHistory(cmd: string) {
   if (!cmd.trim()) return
-  // Deduplicate consecutive
   if (commandHistory.value[commandHistory.value.length - 1] !== cmd) {
     commandHistory.value.push(cmd)
     if (commandHistory.value.length > MAX_HISTORY) commandHistory.value.shift()
@@ -160,12 +210,14 @@ function tabComplete() {
   }
 }
 
-// ── Input handling ──────────────────────────────────────────────────────
+// ── Input handling (CJK-aware) ──────────────────────────────────────────
 
 function handleTermData(data: string) {
   if (!term) return
 
-  // Process each character / escape sequence
+  // During IME composition, ignore intermediate data
+  if (isComposing) return
+
   const code = data.charCodeAt(0)
 
   if (data === '\r') {
@@ -182,8 +234,9 @@ function handleTermData(data: string) {
       writePrompt()
     }
   } else if (data === '\x7f' || data === '\b') {
-    // Backspace
+    // Backspace — delete one codepoint before cursor
     if (cursorPos.value > 0) {
+      // For CJK: one backspace deletes one codepoint (which may be width 2)
       const before = currentInput.value.slice(0, cursorPos.value - 1)
       const after = currentInput.value.slice(cursorPos.value)
       currentInput.value = before + after
@@ -191,7 +244,6 @@ function handleTermData(data: string) {
       refreshInputLine()
     }
   } else if (data === '\t') {
-    // Tab
     tabComplete()
   } else if (data === '\x03') {
     // Ctrl+C
@@ -203,37 +255,264 @@ function handleTermData(data: string) {
     cursorPos.value = 0
     writePrompt()
   } else if (data === '\x1b[A') {
-    // Up arrow
     historyUp()
   } else if (data === '\x1b[B') {
-    // Down arrow
     historyDown()
   } else if (data === '\x1b[C') {
-    // Right arrow
+    // Right arrow — move by one codepoint
     if (cursorPos.value < currentInput.value.length) {
       cursorPos.value++
-      term.write('\x1b[C')
+      refreshInputLine()
     }
   } else if (data === '\x1b[D') {
     // Left arrow
     if (cursorPos.value > 0) {
       cursorPos.value--
-      term.write('\x1b[D')
+      refreshInputLine()
     }
-  } else if (code >= 32 && code < 127) {
-    // Printable character
+  } else if (data === '\x1b[3~') {
+    // Delete (forward)
+    if (cursorPos.value < currentInput.value.length) {
+      const before = currentInput.value.slice(0, cursorPos.value)
+      const after = currentInput.value.slice(cursorPos.value + 1)
+      currentInput.value = before + after
+      refreshInputLine()
+    }
+  } else if (data === '\x1b[H') {
+    // Home
+    cursorPos.value = 0
+    refreshInputLine()
+  } else if (data === '\x1b[F') {
+    // End
+    cursorPos.value = currentInput.value.length
+    refreshInputLine()
+  } else if (code >= 32) {
+    // Printable character — including CJK, emoji, etc.
+    // data may be multi-character (IME composition result)
     const before = currentInput.value.slice(0, cursorPos.value)
     const after = currentInput.value.slice(cursorPos.value)
     currentInput.value = before + data + after
-    cursorPos.value++
+    cursorPos.value += [...data].length // advance by grapheme count
     if (after) {
-      // Insert in middle: rewrite from cursor
       term.write(data + after)
-      term.write(`\x1b[${after.length}D`)
+      const afterWidth = getStringWidth(after)
+      if (afterWidth > 0) term.write(`\x1b[${afterWidth}D`)
     } else {
       term.write(data)
     }
   }
+}
+
+// ── Keyboard shortcuts (via attachCustomKeyEventHandler) ──────────────
+
+function setupKeyEventHandler() {
+  if (!term) return
+  term.attachCustomKeyEventHandler((ev: KeyboardEvent) => {
+    if (ev.type !== 'keydown') return true
+
+    // Ctrl+Shift+F: toggle search
+    if (ev.ctrlKey && ev.shiftKey && ev.key === 'F') {
+      toggleSearch()
+      return false
+    }
+    // Ctrl+L: clear screen
+    if (ev.ctrlKey && !ev.shiftKey && ev.key === 'l') {
+      term?.clear()
+      writePrompt()
+      return false
+    }
+    // Ctrl+U: clear input line
+    if (ev.ctrlKey && ev.key === 'u') {
+      currentInput.value = ''
+      cursorPos.value = 0
+      refreshInputLine()
+      return false
+    }
+    // Ctrl+W: delete word backward
+    if (ev.ctrlKey && ev.key === 'w') {
+      if (cursorPos.value > 0) {
+        const before = currentInput.value.slice(0, cursorPos.value)
+        const after = currentInput.value.slice(cursorPos.value)
+        const trimmed = before.replace(/\S+\s*$/, '')
+        currentInput.value = trimmed + after
+        cursorPos.value = trimmed.length
+        refreshInputLine()
+      }
+      return false
+    }
+    // Ctrl+A: cursor to start
+    if (ev.ctrlKey && ev.key === 'a' && !ev.shiftKey) {
+      cursorPos.value = 0
+      refreshInputLine()
+      return false
+    }
+    // Ctrl+E: cursor to end
+    if (ev.ctrlKey && ev.key === 'e') {
+      cursorPos.value = currentInput.value.length
+      refreshInputLine()
+      return false
+    }
+    // Ctrl+K: kill to end of line
+    if (ev.ctrlKey && ev.key === 'k') {
+      currentInput.value = currentInput.value.slice(0, cursorPos.value)
+      refreshInputLine()
+      return false
+    }
+    // Ctrl+Shift+C: copy selection
+    if (ev.ctrlKey && ev.shiftKey && ev.key === 'C') {
+      copySelection()
+      return false
+    }
+    // Ctrl+Shift+V: paste
+    if (ev.ctrlKey && ev.shiftKey && ev.key === 'V') {
+      pasteFromClipboard()
+      return false
+    }
+    // Escape: close search / context menu
+    if (ev.key === 'Escape') {
+      if (searchVisible.value) { closeSearch(); return false }
+      if (contextMenuVisible.value) { closeContextMenu(); return false }
+    }
+    return true
+  })
+}
+
+// ── Search ─────────────────────────────────────────────────────────────
+
+function toggleSearch() {
+  searchVisible.value = !searchVisible.value
+  if (!searchVisible.value) {
+    searchAddon?.clearDecorations()
+    searchResultInfo.value = ''
+  }
+}
+
+function closeSearch() {
+  searchVisible.value = false
+  searchAddon?.clearDecorations()
+  searchResultInfo.value = ''
+  term?.focus()
+}
+
+function doSearch(direction: 'next' | 'prev') {
+  if (!searchAddon || !searchQuery.value) return
+  const opts = {
+    caseSensitive: searchCaseSensitive.value,
+    regex: searchRegex.value,
+    decorations: {
+      matchBackground: '#444444',
+      matchBorder: '#888888',
+      matchOverviewRuler: '#888888',
+      activeMatchBackground: '#ff5f5f',
+      activeMatchBorder: '#ff8787',
+      activeMatchColorOverviewRuler: '#ff5f5f',
+    },
+  }
+  const found = direction === 'next'
+    ? searchAddon.findNext(searchQuery.value, opts)
+    : searchAddon.findPrevious(searchQuery.value, opts)
+  // ponytail: searchAddon doesn't expose result count directly in v6; show found/not-found
+  searchResultInfo.value = found ? '' : ' (not found)'
+}
+
+function onSearchInput() {
+  if (!searchAddon || !searchQuery.value) {
+    searchAddon?.clearDecorations()
+    searchResultInfo.value = ''
+    return
+  }
+  doSearch('next')
+}
+
+// ── Clipboard ──────────────────────────────────────────────────────────
+
+async function copySelection() {
+  const sel = term?.getSelection()
+  if (!sel) return
+  try {
+    await navigator.clipboard.writeText(sel)
+  } catch { /* clipboard API may fail in non-HTTPS */ }
+}
+
+async function pasteFromClipboard() {
+  try {
+    const text = await navigator.clipboard.readText()
+    if (text) injectInput(text)
+  } catch { /* clipboard API may fail */ }
+}
+
+/** Inject text into the terminal input buffer (for paste, mobile input, etc.) */
+function injectInput(text: string) {
+  if (!term) return
+  // Strip carriage returns; keep newlines as Enter
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    if (i > 0) {
+      // Simulate Enter
+      const cmd = currentInput.value
+      writeLine('')
+      currentInput.value = ''
+      cursorPos.value = 0
+      if (cmd.trim()) {
+        pushHistory(cmd.trim())
+        processCommand(cmd)
+      } else {
+        writePrompt()
+      }
+    }
+    if (lines[i]) {
+      // Inject as if typed
+      handleTermData(lines[i])
+    }
+  }
+}
+
+// ── Context menu ───────────────────────────────────────────────────────
+
+function handleContextMenu(ev: MouseEvent) {
+  ev.preventDefault()
+  contextMenuPos.value = { x: ev.clientX, y: ev.clientY }
+  contextMenuHasSelection.value = !!term?.getSelection()
+  contextMenuVisible.value = true
+}
+
+function closeContextMenu() {
+  contextMenuVisible.value = false
+}
+
+function menuCopy() {
+  copySelection()
+  closeContextMenu()
+}
+
+function menuPaste() {
+  pasteFromClipboard()
+  closeContextMenu()
+}
+
+function menuSelectAll() {
+  term?.selectAll()
+  closeContextMenu()
+}
+
+function menuSearch() {
+  closeContextMenu()
+  searchVisible.value = true
+}
+
+function menuClear() {
+  term?.clear()
+  writePrompt()
+  closeContextMenu()
+}
+
+// ── Mobile input ───────────────────────────────────────────────────────
+
+function submitMobileInput() {
+  const text = mobileInput.value
+  if (!text.trim()) return
+  injectInput(text)
+  mobileInput.value = ''
 }
 
 // ── WebSocket ───────────────────────────────────────────────────────────
@@ -300,13 +579,11 @@ function handleAgentEvent(event: Record<string, unknown>) {
     const text = event.text as string
     const done = event.done as boolean
     if (!done && text) {
-      // Render markdown as ANSI
       const ansi = markdownToAnsi(text)
       write(ansi)
     }
     if (done) {
       writeLine('')
-      // ponytail: streaming done — reset accumulator if needed later
       isProcessing.value = false
       writePrompt()
     }
@@ -360,7 +637,6 @@ async function processCommand(text: string) {
   const trimmed = text.trim()
   if (!trimmed) return
 
-  // Echo command in dim color
   writeLineColored(`$ ${trimmed}`, ANSI.DIM)
 
   if (mode.value === 'agent') {
@@ -537,7 +813,10 @@ ${ANSI.BRIGHT_CYAN}Common:${ANSI.RESET}
   ${ANSI.DIM}/clear${ANSI.RESET}          Clear terminal
   ${ANSI.DIM}↑/↓${ANSI.RESET}            Command history
   ${ANSI.DIM}Tab${ANSI.RESET}             Auto-complete
-  ${ANSI.DIM}Ctrl+C${ANSI.RESET}         Abort/interrupt`
+  ${ANSI.DIM}Ctrl+C${ANSI.RESET}         Abort/interrupt
+  ${ANSI.DIM}Ctrl+U/W/K/A/E${ANSI.RESET} Line editing
+  ${ANSI.DIM}Ctrl+Shift+F${ANSI.RESET}   Search
+  ${ANSI.DIM}Ctrl+Shift+C/V${ANSI.RESET} Copy/Paste`
   writeLine(`[${mode.value} mode]${commandHelp}${agentHelp}${common}`)
 }
 
@@ -550,12 +829,18 @@ const modeIndicatorColor = computed(() =>
 
 // ── Lifecycle ───────────────────────────────────────────────────────────
 
+let resizeObserver: ResizeObserver | null = null
+let viewportHandler: (() => void) | null = null
+
 onMounted(() => {
   term = new Terminal({
     cursorBlink: true,
     cursorStyle: 'block',
     fontSize: 14,
-    fontFamily: "'Menlo', 'Consolas', 'Courier New', monospace",
+    fontFamily: "'Menlo', 'Consolas', 'Courier New', 'Noto Sans Mono CJK SC', 'PingFang SC', 'Microsoft YaHei', 'WenQuanYi Micro Hei Mono', monospace",
+    lineHeight: 1.15,
+    smoothScrollDuration: 100,
+    minimumContrastRatio: 4.5,
     theme: {
       background: '#000000',
       foreground: '#e0e0e0',
@@ -579,26 +864,70 @@ onMounted(() => {
       brightCyan: '#87ffff',
       brightWhite: '#ffffff',
     },
-    allowProposedApi: true,
     scrollback: 5000,
     convertEol: true,
   })
 
   fitAddon = new FitAddon()
+  searchAddon = new SearchAddon()
   term.loadAddon(fitAddon)
   term.loadAddon(new WebLinksAddon())
+  term.loadAddon(searchAddon)
+
+  // WebGL renderer (desktop only — mobile often fails)
+  if (!isMobile.value) {
+    try {
+      const webglAddon = new WebglAddon()
+      webglAddon.onContextLoss(() => {
+        webglAddon.dispose()
+      })
+      term.loadAddon(webglAddon)
+    } catch {
+      // DOM renderer fallback (default)
+    }
+  }
 
   if (termRef.value) {
     term.open(termRef.value)
     fitAddon.fit()
   }
 
+  // IME composition tracking on the hidden textarea
+  const textarea = (term as any).textarea as HTMLTextAreaElement | undefined
+  if (textarea) {
+    textarea.addEventListener('compositionstart', () => { isComposing = true })
+    textarea.addEventListener('compositionend', () => { isComposing = false })
+  }
+
   term.onData(handleTermData)
+  setupKeyEventHandler()
 
   // Resize observer
-  const ro = new ResizeObserver(() => fitAddon?.fit())
-  if (termRef.value) ro.observe(termRef.value)
-  // ponytail: store RO for cleanup — skip for now, page unmount kills it
+  resizeObserver = new ResizeObserver(() => fitAddon?.fit())
+  if (termRef.value) resizeObserver.observe(termRef.value)
+
+  // Mobile: visualViewport soft keyboard adaptation
+  if (isMobile.value && window.visualViewport) {
+    viewportHandler = () => {
+      const vv = window.visualViewport!
+      // Adjust terminal container height when soft keyboard opens
+      const container = termRef.value
+      if (container) {
+        container.style.height = `${vv.height}px`
+        fitAddon?.fit()
+      }
+    }
+    window.visualViewport.addEventListener('resize', viewportHandler)
+    window.visualViewport.addEventListener('scroll', viewportHandler)
+  }
+
+  // Context menu on the terminal container
+  if (termRef.value) {
+    termRef.value.addEventListener('contextmenu', handleContextMenu)
+  }
+
+  // Click outside context menu to close it
+  document.addEventListener('click', handleDocumentClick)
 
   // Welcome message
   writeLineColored(t('tui.welcome'), ANSI.BRIGHT_GREEN)
@@ -617,26 +946,110 @@ onMounted(() => {
   writePrompt()
 })
 
+function handleDocumentClick(ev: MouseEvent) {
+  // Close context menu on click outside
+  if (contextMenuVisible.value) {
+    const target = ev.target as HTMLElement
+    if (!target.closest('.tui-context-menu')) {
+      closeContextMenu()
+    }
+  }
+}
+
 onUnmounted(() => {
   disconnectAgentWs()
+  document.removeEventListener('click', handleDocumentClick)
+  if (termRef.value) {
+    termRef.value.removeEventListener('contextmenu', handleContextMenu)
+  }
+  if (viewportHandler && window.visualViewport) {
+    window.visualViewport.removeEventListener('resize', viewportHandler)
+    window.visualViewport.removeEventListener('scroll', viewportHandler)
+  }
+  resizeObserver?.disconnect()
   term?.dispose()
   term = null
   fitAddon = null
+  searchAddon = null
 })
 </script>
 
 <template>
-  <div class="h-[calc(100vh-4rem)] flex flex-col bg-black">
-    <!-- Minimal status bar -->
+  <div class="tui-container h-[calc(100dvh-4rem)] flex flex-col bg-black" @click="closeContextMenu">
+    <!-- Status bar -->
     <div class="flex items-center gap-2 px-3 py-1 bg-black border-b border-zinc-800 shrink-0">
       <div class="w-2 h-2 rounded-full" :class="wsConnected ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600'" />
       <span class="text-[10px] font-mono text-zinc-500">xhs-agent</span>
       <span class="text-[10px] font-mono px-1.5 py-0.5 rounded" :class="[modeIndicatorColor, 'text-black font-semibold']">{{ modeLabel }}</span>
       <span v-if="activeThreadId" class="text-[10px] font-mono text-zinc-600 ml-1">{{ activeThreadId }}</span>
       <span v-if="isProcessing" class="text-[10px] font-mono text-amber-400 ml-auto animate-pulse">● running</span>
+      <!-- Search toggle button -->
+      <button
+        class="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 ml-auto px-1"
+        :class="{ 'text-zinc-300': searchVisible }"
+        title="Ctrl+Shift+F"
+        @click.stop="toggleSearch"
+      >⌕</button>
+    </div>
+
+    <!-- Search bar -->
+    <div v-if="searchVisible" class="flex items-center gap-1 px-2 py-1 bg-zinc-900 border-b border-zinc-700 shrink-0" @click.stop>
+      <input
+        ref="searchInputRef"
+        v-model="searchQuery"
+        class="flex-1 bg-zinc-800 text-zinc-200 text-xs px-2 py-1 rounded font-mono outline-none focus:ring-1 focus:ring-zinc-500"
+        placeholder="Search..."
+        @input="onSearchInput"
+        @keydown.enter="doSearch('next')"
+        @keydown.shift.enter="doSearch('prev')"
+        @keydown.escape="closeSearch"
+      />
+      <button class="text-[10px] font-mono px-1 py-0.5 rounded text-zinc-400 hover:text-zinc-200" :class="{ 'text-cyan-400': searchCaseSensitive }" title="Case sensitive" @click="searchCaseSensitive = !searchCaseSensitive; onSearchInput()">Aa</button>
+      <button class="text-[10px] font-mono px-1 py-0.5 rounded text-zinc-400 hover:text-zinc-200" :class="{ 'text-cyan-400': searchRegex }" title="Regex" @click="searchRegex = !searchRegex; onSearchInput()">.*</button>
+      <span class="text-[10px] font-mono text-zinc-500">{{ searchResultInfo }}</span>
+      <button class="text-[10px] font-mono text-zinc-400 hover:text-zinc-200" title="Previous" @click="doSearch('prev')">↑</button>
+      <button class="text-[10px] font-mono text-zinc-400 hover:text-zinc-200" title="Next" @click="doSearch('next')">↓</button>
+      <button class="text-[10px] font-mono text-zinc-400 hover:text-zinc-200" title="Close" @click="closeSearch">✕</button>
     </div>
 
     <!-- xterm.js container -->
     <div ref="termRef" class="flex-1 min-h-0" />
+
+    <!-- Mobile input bar -->
+    <div v-if="isMobile" class="flex items-center gap-2 px-2 py-2 bg-zinc-900 border-t border-zinc-700 shrink-0 safe-area-bottom">
+      <input
+        v-model="mobileInput"
+        class="flex-1 bg-zinc-800 text-zinc-200 text-sm px-3 py-2 rounded-lg font-mono outline-none"
+        :placeholder="mode === 'agent' && wsConnected ? '输入消息...' : '输入命令...'"
+        enterkeyhint="send"
+        @keydown.enter="submitMobileInput"
+      />
+      <button
+        class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded-lg font-mono shrink-0"
+        @click="submitMobileInput"
+      >↵</button>
+    </div>
+
+    <!-- Context menu -->
+    <div
+      v-if="contextMenuVisible"
+      class="tui-context-menu fixed bg-zinc-800 border border-zinc-600 rounded shadow-xl py-1 z-50 min-w-[140px]"
+      :style="{ left: `${contextMenuPos.x}px`, top: `${contextMenuPos.y}px` }"
+      @click.stop
+    >
+      <button v-if="contextMenuHasSelection" class="w-full text-left px-3 py-1.5 text-xs font-mono text-zinc-300 hover:bg-zinc-700" @click="menuCopy">Copy</button>
+      <button class="w-full text-left px-3 py-1.5 text-xs font-mono text-zinc-300 hover:bg-zinc-700" @click="menuPaste">Paste</button>
+      <button class="w-full text-left px-3 py-1.5 text-xs font-mono text-zinc-300 hover:bg-zinc-700" @click="menuSelectAll">Select All</button>
+      <div class="border-t border-zinc-600 my-1" />
+      <button class="w-full text-left px-3 py-1.5 text-xs font-mono text-zinc-300 hover:bg-zinc-700" @click="menuSearch">Search</button>
+      <button class="w-full text-left px-3 py-1.5 text-xs font-mono text-zinc-300 hover:bg-zinc-700" @click="menuClear">Clear</button>
+    </div>
   </div>
 </template>
+
+<style scoped>
+/* Safe area for mobile notch/home indicator */
+.safe-area-bottom {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+</style>
