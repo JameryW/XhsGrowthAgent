@@ -16,8 +16,12 @@ def _check_terminal(state: XHSGrowthState) -> str | None:
     or have next nodes that can recover. Only phase=ERROR is terminal.
     """
     phase = state.get("phase")
-    if phase in (WorkflowPhase.CANCELLED, WorkflowPhase.PAUSED,
-                 WorkflowPhase.ERROR, WorkflowPhase.COMPLETED):
+    if phase in (
+        WorkflowPhase.CANCELLED,
+        WorkflowPhase.PAUSED,
+        WorkflowPhase.ERROR,
+        WorkflowPhase.COMPLETED,
+    ):
         return "__end__"
     return None
 
@@ -135,7 +139,9 @@ def engagement_router(state: XHSGrowthState) -> Literal["orchestrator", "__end__
     return "__end__"
 
 
-def should_optimize(state: XHSGrowthState) -> Literal["content_analyzer", "visual_designer", "__end__"]:
+def should_optimize(
+    state: XHSGrowthState,
+) -> Literal["content_analyzer", "visual_designer", "__end__"]:
     """判断是否进入优化流程 — always optimize unless explicitly skipped."""
     if terminal := _check_terminal(state):
         return terminal
@@ -177,7 +183,9 @@ def choice_outcome(state: XHSGrowthState) -> Literal["visual_designer", "version
     return "visual_designer"
 
 
-def should_present_choice(state: XHSGrowthState) -> Literal["choice_gate", "visual_designer", "__end__"]:
+def should_present_choice(
+    state: XHSGrowthState,
+) -> Literal["choice_gate", "visual_designer", "__end__"]:
     """Route after version generation — only enter choice_gate if multiple versions exist.
 
     When there is a single version or no versions, auto-select and skip

@@ -31,7 +31,7 @@ class XHSSignature:
     SHIELD_VERSION = "1"
 
     @classmethod
-    def generate_sign(cls, params: dict[str, Any], timestamp: int = None) -> str:
+    def generate_sign(cls, params: dict[str, Any], timestamp: int | None = None) -> str:
         """生成 API 签名 (shield 参数)
 
         Args:
@@ -69,7 +69,7 @@ class XHSSignature:
         return shield
 
     @classmethod
-    def generate_x_s(cls, params: dict[str, Any], timestamp: int = None) -> str:
+    def generate_x_s(cls, params: dict[str, Any], timestamp: int | None = None) -> str:
         """生成 x-s 请求头 (小红书新版签名)
 
         算法: MD5(参数 + 时间戳 + 固定盐值)
@@ -87,7 +87,7 @@ class XHSSignature:
         return sign_md5
 
     @classmethod
-    def generate_x_t(cls, timestamp: int = None) -> str:
+    def generate_x_t(cls, timestamp: int | None = None) -> str:
         """生成 x-t 时间戳请求头"""
         if timestamp is None:
             timestamp = int(time.time() * 1000)

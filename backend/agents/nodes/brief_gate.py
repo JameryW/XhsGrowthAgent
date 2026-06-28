@@ -26,13 +26,18 @@ async def brief_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[st
     # Already resolved or no clarification needed — proceed without interrupt
     if not clarification or clarification.get("resolved", True):
         logger.debug("Brief clarification resolved or not needed, proceeding")
-        return NodeResult({
-            "phase": WorkflowPhase.BRIEFING,
-        }, "brief_gate").to_dict()
+        return NodeResult(
+            {
+                "phase": WorkflowPhase.BRIEFING,
+            },
+            "brief_gate",
+        ).to_dict()
 
     # Brief needs clarification — interrupt for user input
     logger.info("Brief gate: clarification needed, interrupting for user input")
-    decision = interrupt({"gate": "brief_clarification", "questions": clarification.get("questions", [])})
+    decision = interrupt(
+        {"gate": "brief_clarification", "questions": clarification.get("questions", [])}
+    )
 
     # decision format: {"action": "answer", "answers": {...}} or {"action": "skip"}
     result: dict[str, Any] = {

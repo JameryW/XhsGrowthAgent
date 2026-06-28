@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 from collections import deque
 from collections.abc import Callable
@@ -71,10 +72,8 @@ class EventBusService:
 
         # 分发给线程队列（用于SSE）
         for q in queues:
-            try:
+            with contextlib.suppress(asyncio.QueueFull):
                 q.put_nowait(event)
-            except asyncio.QueueFull:
-                pass
 
         return event
 
@@ -106,10 +105,8 @@ class EventBusService:
         """取消线程订阅."""
         with self._lock:
             if thread_id in self._thread_queues:
-                try:
+                with contextlib.suppress(ValueError):
                     self._thread_queues[thread_id].remove(queue)
-                except ValueError:
-                    pass
                 if not self._thread_queues[thread_id]:
                     del self._thread_queues[thread_id]
 

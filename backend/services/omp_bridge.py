@@ -272,7 +272,7 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     f"  Status: {data.get('status', '')}",
                     f"  Progress: {data.get('progress_percent', 0)}%",
                     f"  Current Agent: {data.get('current_agent', '')}",
-                    f"  Next Steps: {', '.join(data.get('next_steps', [])) or 'none'}",
+                    f"  Next Steps: {', '.join(data.get('next_steps') or []) or 'none'}",
                 ]
                 if data.get("error"):
                     lines.append(f"  Error: {data['error']}")

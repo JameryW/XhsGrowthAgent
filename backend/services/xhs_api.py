@@ -63,7 +63,7 @@ class XHSApiEndpoints:
     DM_LIST = "/api/sns/web/v1/im/session/list"
 
     @classmethod
-    def full_url(cls, endpoint: str, base: str = None) -> str:
+    def full_url(cls, endpoint: str, base: str | None = None) -> str:
         """构建完整 URL"""
         return f"{base or cls.BASE_URL}{endpoint}"
 
@@ -93,7 +93,7 @@ class XHSApiHeaders:
     }
 
     @classmethod
-    def build(cls, cookie: str = "", extra: dict = None) -> dict:
+    def build(cls, cookie: str = "", extra: dict[str, str] | None = None) -> dict[str, str]:
         """构建请求头"""
         headers = cls.DEFAULT_HEADERS.copy()
         if cookie:

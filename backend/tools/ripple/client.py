@@ -37,7 +37,7 @@ def _llm_config() -> dict[str, Any] | None:
 
     # Auto-resolve from model provider if not explicitly set
     if not api_key or not url:
-        from backend.config.models import MODEL_REGISTRY, _PROVIDER_ENV_VARS
+        from backend.config.models import _PROVIDER_ENV_VARS, MODEL_REGISTRY
         from backend.models.router import ModelProvider
 
         cfg = MODEL_REGISTRY.get(model)
@@ -63,8 +63,19 @@ def _llm_config() -> dict[str, Any] | None:
     if not api_key or not url:
         return None
 
-    role_config = {"model_name": model, "url": url, "api_key": api_key, "max_tokens": 16384, "json_mode": True}
-    return {"omniscient": role_config, "dynamics": role_config, "star": role_config, "sea": role_config}
+    role_config = {
+        "model_name": model,
+        "url": url,
+        "api_key": api_key,
+        "max_tokens": 16384,
+        "json_mode": True,
+    }
+    return {
+        "omniscient": role_config,
+        "dynamics": role_config,
+        "star": role_config,
+        "sea": role_config,
+    }
 
 
 def _headers() -> dict[str, str]:
@@ -96,6 +107,7 @@ async def ripple_predict_content_spread(
     """
     # ponytail: read from env (set by system_config UI) with sensible defaults
     import os
+
     if max_waves <= 0:
         max_waves = int(os.environ.get("RIPPLE_MAX_WAVES", "4"))
     if not simulation_horizon:

@@ -6,7 +6,7 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 
 from backend.api.responses import success
 from backend.db.pool import is_pool_ready
@@ -181,7 +181,10 @@ async def get_growth_report(account_id: str, period: str = "weekly", request: Re
 
 @router.get("/performance/{account_id}")
 async def get_performance(
-    account_id: str, period: str = "weekly", limit: int = 20, request: Request = None
+    account_id: str,
+    period: str = "weekly",
+    limit: int = Query(20, ge=1, le=100),
+    request: Request = None,
 ):
     """获取最近帖子表现数据 — from real completed workflows."""
     graph = request.app.state.graph
@@ -267,7 +270,12 @@ async def get_costs(period: str = "weekly", request: Request = None):
 
 
 @router.get("/dashboard/{account_id}")
-async def get_dashboard(account_id: str, period: str = "weekly", limit: int = 20, request: Request = None):
+async def get_dashboard(
+    account_id: str,
+    period: str = "weekly",
+    limit: int = Query(20, ge=1, le=100),
+    request: Request = None,
+):
     """Single-request analytics bundle — report + performance + costs.
 
     Avoids 3× the cold-start cost of _get_completed_workflows by computing
@@ -293,7 +301,11 @@ async def get_dashboard(account_id: str, period: str = "weekly", limit: int = 20
 
     # ── Growth report ──
     total_engagement = sum(p["likes"] + p["comments"] + p["collects"] for p in filtered_posts)
-    avg_rate = (sum(p["engagement_rate"] for p in filtered_posts) / len(filtered_posts)) if filtered_posts else 0.0
+    avg_rate = (
+        (sum(p["engagement_rate"] for p in filtered_posts) / len(filtered_posts))
+        if filtered_posts
+        else 0.0
+    )
     best = max(filtered_posts, key=lambda p: p["likes"] + p["comments"], default=None)
     trend_topics = sorted(topics, key=topics.get, reverse=True)[:5]
 
@@ -322,7 +334,9 @@ async def get_dashboard(account_id: str, period: str = "weekly", limit: int = 20
     }
 
     # ── Performance ──
-    sorted_posts = sorted(filtered_posts, key=lambda p: p.get("published_at", ""), reverse=True)[:limit]
+    sorted_posts = sorted(filtered_posts, key=lambda p: p.get("published_at", ""), reverse=True)[
+        :limit
+    ]
     performance = {
         "account_id": account_id,
         "period": period,

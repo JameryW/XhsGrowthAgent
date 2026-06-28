@@ -84,16 +84,26 @@ class VersionGeneratorAgent(BaseAgent):
             gaps = analysis.get("gaps", [])
             suggestions = analysis.get("suggestions", [])
             viral_patterns = analysis.get("viral_patterns", [])
-            gaps_str = "\n".join([
-                f"- [{g.get('severity', '中')}] "
-                f"{g.get('dimension', '')}: {g.get('description', '')}"
-                for g in gaps[:5]
-            ]) or "无差距分析"
-            suggestions_str = "\n".join([
-                f"- [P{s.get('priority', 3)}] {s.get('dimension', '')}: "
-                f"{s.get('action', '')} ({s.get('reasoning', '')})"
-                for s in suggestions[:5]
-            ]) or "无优化建议"
+            gaps_str = (
+                "\n".join(
+                    [
+                        f"- [{g.get('severity', '中')}] "
+                        f"{g.get('dimension', '')}: {g.get('description', '')}"
+                        for g in gaps[:5]
+                    ]
+                )
+                or "无差距分析"
+            )
+            suggestions_str = (
+                "\n".join(
+                    [
+                        f"- [P{s.get('priority', 3)}] {s.get('dimension', '')}: "
+                        f"{s.get('action', '')} ({s.get('reasoning', '')})"
+                        for s in suggestions[:5]
+                    ]
+                )
+                or "无优化建议"
+            )
             patterns_str = "\n".join([f"- {p}" for p in viral_patterns[:5]]) or "无爆款模式"
             analysis_ctx = f"""
 差距分析：
@@ -107,10 +117,10 @@ class VersionGeneratorAgent(BaseAgent):
 
         user_msg = f"""用户已选择一种笔记风格，请基于该风格生成3个优化版本。
 
-选中的风格草稿标题：{draft.get('title', '未提供')}
-选中的风格草稿正文：{draft.get('text', '')[:800]}
-选中的风格标签：{', '.join(draft.get('hashtags', [])) or '无'}
-选中的风格视觉建议：{draft.get('style_suggestion', '未提供')}
+选中的风格草稿标题：{draft.get("title", "未提供")}
+选中的风格草稿正文：{(draft.get("text") or "")[:800]}
+选中的风格标签：{", ".join(draft.get("hashtags") or []) or "无"}
+选中的风格视觉建议：{draft.get("style_suggestion", "未提供")}
 {analysis_ctx}
 
 请保持选中风格的整体调性，生成3个版本：
@@ -136,10 +146,12 @@ class VersionGeneratorAgent(BaseAgent):
   ]
 }}"""
 
-        response = await self.model.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_msg),
-        ])
+        response = await self.model.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_msg),
+            ]
+        )
 
         parsed = self._parse_json_response(response.content)
         versions = parsed.get("versions", [])
@@ -183,17 +195,28 @@ class VersionGeneratorAgent(BaseAgent):
         """Standard A/B/C generation from optimization analysis (original logic)."""
         # 构建差距和建议字符串
         gaps = analysis.get("gaps", [])
-        gaps_str = "\n".join([
-            f"- [{g.get('severity', '中')}] {g.get('dimension', '')}: {g.get('description', '')}"
-            for g in gaps[:5]
-        ]) or "无差距分析"
+        gaps_str = (
+            "\n".join(
+                [
+                    f"- [{g.get('severity', '中')}]"
+                    f" {g.get('dimension', '')}: {g.get('description', '')}"
+                    for g in gaps[:5]
+                ]
+            )
+            or "无差距分析"
+        )
 
         suggestions = analysis.get("suggestions", [])
-        suggestions_str = "\n".join([
-            f"- [P{s.get('priority', 3)}] {s.get('dimension', '')}: "
-            f"{s.get('action', '')} ({s.get('reasoning', '')})"
-            for s in suggestions[:5]
-        ]) or "无优化建议"
+        suggestions_str = (
+            "\n".join(
+                [
+                    f"- [P{s.get('priority', 3)}] {s.get('dimension', '')}: "
+                    f"{s.get('action', '')} ({s.get('reasoning', '')})"
+                    for s in suggestions[:5]
+                ]
+            )
+            or "无优化建议"
+        )
 
         viral_patterns = analysis.get("viral_patterns", [])
         patterns_str = "\n".join([f"- {p}" for p in viral_patterns[:5]]) or "无爆款模式"
@@ -202,10 +225,10 @@ class VersionGeneratorAgent(BaseAgent):
         system_prompt = self._build_system_prompt(state)
 
         # 构建用户消息
-        user_msg = f"""原始草稿标题：{draft.get('title', '未提供')}
-原始草稿正文：{draft.get('text', '')[:800]}
-原始标签：{', '.join(draft.get('hashtags', [])) or '无'}
-原始风格建议：{draft.get('style_suggestion', '未提供')}
+        user_msg = f"""原始草稿标题：{draft.get("title", "未提供")}
+原始草稿正文：{(draft.get("text") or "")[:800]}
+原始标签：{", ".join(draft.get("hashtags") or []) or "无"}
+原始风格建议：{draft.get("style_suggestion", "未提供")}
 
 差距分析：
 {gaps_str}
@@ -218,10 +241,12 @@ class VersionGeneratorAgent(BaseAgent):
 """
 
         # 调用 LLM
-        response = await self.model.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_msg),
-        ])
+        response = await self.model.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_msg),
+            ]
+        )
 
         # 解析响应
         result = self._parse_json_response(response.content)
@@ -266,5 +291,6 @@ class VersionGeneratorAgent(BaseAgent):
         return {
             "title": titles[0] if titles else "",
             "text": sp.get("body_copy", ""),
-            "hashtags": (sp.get("required_hashtags", []) or []) + (sp.get("optional_hashtags", []) or []),
+            "hashtags": (sp.get("required_hashtags", []) or [])
+            + (sp.get("optional_hashtags", []) or []),
         }

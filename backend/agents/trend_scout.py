@@ -163,7 +163,7 @@ class TrendScoutAgent(BaseAgent):
                     trend_data.get("trending_topics", trend_data.get("topics", [])),
                 )
                 summary = (
-                    ", ".join(t.get("topic", str(t))[:20] for t in topics[:3])
+                    ", ".join((t.get("topic") or str(t))[:20] for t in topics[:3])
                     if topics
                     else niche
                 )

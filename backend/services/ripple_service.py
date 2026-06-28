@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from typing import Any
 
@@ -163,7 +164,8 @@ class RippleService:
                 pq_checks: dict[str, Any] = {}
                 try:
                     pq_resp = await client.get(
-                        f"{config['base_url']}/v1/health/prediction-quality", timeout=3.0,
+                        f"{config['base_url']}/v1/health/prediction-quality",
+                        timeout=3.0,
                     )
                     if pq_resp.status_code == 200:
                         pq_data = pq_resp.json()
@@ -172,7 +174,10 @@ class RippleService:
                     pass  # Non-critical — older Ripple versions lack this endpoint
 
                 self._health_status = RippleHealthStatus(
-                    is_healthy=True, last_check="ok", latency_ms=latency, reason="",
+                    is_healthy=True,
+                    last_check="ok",
+                    latency_ms=latency,
+                    reason="",
                     prediction_quality=pq_checks,
                 )
                 logger.info(f"Ripple health check passed: {latency:.0f}ms")
@@ -386,67 +391,67 @@ class RippleService:
                 ) as client,
                 client.stream("GET", url) as resp,
             ):
-                    if resp.status_code != 200:
-                        logger.warning(
-                            f"Ripple SSE stream returned HTTP {resp.status_code}, falling back"
-                        )
+                if resp.status_code != 200:
+                    logger.warning(
+                        f"Ripple SSE stream returned HTTP {resp.status_code}, falling back"
+                    )
+                    return
+
+                event_type = ""
+                async for line in resp.aiter_lines():
+                    if done_event.is_set():
                         return
 
-                    event_type = ""
-                    async for line in resp.aiter_lines():
-                        if done_event.is_set():
+                    line = line.strip()
+                    if line.startswith("event:"):
+                        event_type = line[len("event:") :].strip()
+                    elif line.startswith("data:"):
+                        import json as _json
+
+                        data_str = line[len("data:") :].strip()
+                        try:
+                            payload = _json.loads(data_str)
+                        except _json.JSONDecodeError:
+                            continue
+
+                        # Lifecycle events signal completion
+                        if event_type in (
+                            "job.completed",
+                            "job.failed",
+                            "job.cancelled",
+                            "job.timed_out",
+                        ):
+                            done_event.set()
                             return
 
-                        line = line.strip()
-                        if line.startswith("event:"):
-                            event_type = line[len("event:"):].strip()
-                        elif line.startswith("data:"):
-                            import json as _json
+                        # Progress events carry simulation progress
+                        if event_type.startswith("progress."):
+                            import time as _time
 
-                            data_str = line[len("data:"):].strip()
-                            try:
-                                payload = _json.loads(data_str)
-                            except _json.JSONDecodeError:
-                                continue
+                            # Ripple event_bus wraps SimulationEvent fields in a
+                            # "payload" sub-dict: {"type":"progress.wave_start",
+                            # "payload":{"wave":3,"total_waves":8,...}}
+                            inner = payload.get("payload", payload)
 
-                            # Lifecycle events signal completion
-                            if event_type in (
-                                "job.completed",
-                                "job.failed",
-                                "job.cancelled",
-                                "job.timed_out",
-                            ):
-                                done_event.set()
-                                return
-
-                            # Progress events carry simulation progress
-                            if event_type.startswith("progress."):
-                                import time as _time
-
-                                # Ripple event_bus wraps SimulationEvent fields in a
-                                # "payload" sub-dict: {"type":"progress.wave_start",
-                                # "payload":{"wave":3,"total_waves":8,...}}
-                                inner = payload.get("payload", payload)
-
-                                p = inner.get("progress")
-                                if p is not None:
-                                    progress_state["progress"] = float(p)
-                                w = inner.get("wave")
-                                if w is not None:
-                                    progress_state["current_wave"] = int(w)
-                                tw = inner.get("total_waves")
-                                if tw is not None:
-                                    progress_state["total_waves"] = int(tw)
-                                progress_state["phase"] = inner.get("phase", "")
-                                # R8: Quality fields in SSE events
-                                detail = inner.get("detail") or {}
-                                quality = detail.get("quality")
-                                if isinstance(quality, dict):
-                                    progress_state["quality"] = quality
-                                cg = detail.get("confidence_gate_result")
-                                if isinstance(cg, dict):
-                                    progress_state["confidence_gate_result"] = cg
-                                progress_state["last_update_at"] = _time.monotonic()
+                            p = inner.get("progress")
+                            if p is not None:
+                                progress_state["progress"] = float(p)
+                            w = inner.get("wave")
+                            if w is not None:
+                                progress_state["current_wave"] = int(w)
+                            tw = inner.get("total_waves")
+                            if tw is not None:
+                                progress_state["total_waves"] = int(tw)
+                            progress_state["phase"] = inner.get("phase", "")
+                            # R8: Quality fields in SSE events
+                            detail = inner.get("detail") or {}
+                            quality = detail.get("quality")
+                            if isinstance(quality, dict):
+                                progress_state["quality"] = quality
+                            cg = detail.get("confidence_gate_result")
+                            if isinstance(cg, dict):
+                                progress_state["confidence_gate_result"] = cg
+                            progress_state["last_update_at"] = _time.monotonic()
 
         except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout) as exc:
             logger.warning(f"Ripple SSE stream error, falling back: {exc}")
@@ -580,6 +585,7 @@ class RippleService:
         """
         # ponytail: env overrides from system_config UI
         import os
+
         if max_waves <= 0:
             max_waves = int(os.environ.get("RIPPLE_MAX_WAVES", "4"))
         if not simulation_horizon:
@@ -590,7 +596,7 @@ class RippleService:
             tags = []
         config = self._get_config()
 
-        if not config["enabled"] or not self.is_healthy():
+        if not config["enabled"] or not self.is_healthy():  # noqa: SIM102
             # Probe before falling back — service may have recovered since last check
             if not config["enabled"] or not await self._probe_before_fallback():
                 if use_fallback:
@@ -623,7 +629,9 @@ class RippleService:
             }
 
             result = await self.submit_and_wait(
-                request_body, max_wait=max_wait, thread_id=thread_id,
+                request_body,
+                max_wait=max_wait,
+                thread_id=thread_id,
             )
             return self._parse_spread_result(result)
 
@@ -655,13 +663,14 @@ class RippleService:
             thread_id: 关联的工作流线程 ID，用于推送进度事件
         """
         import os
+
         if ensemble_runs <= 0:
             ensemble_runs = int(os.environ.get("RIPPLE_ENSEMBLE_RUNS", "1"))
         if differentiators is None:
             differentiators = []
         config = self._get_config()
 
-        if not config["enabled"] or not self.is_healthy():
+        if not config["enabled"] or not self.is_healthy():  # noqa: SIM102
             # Probe before falling back — service may have recovered since last check
             if not config["enabled"] or not await self._probe_before_fallback():
                 if use_fallback:
@@ -690,7 +699,9 @@ class RippleService:
                 "ensemble_runs": ensemble_runs,
             }
 
-            result = await self.submit_and_wait(request_body, max_wait=max_wait, thread_id=thread_id)
+            result = await self.submit_and_wait(
+                request_body, max_wait=max_wait, thread_id=thread_id
+            )
             return self._parse_pmf_result(result)
 
         except RippleTimeoutError:
@@ -855,7 +866,9 @@ class RippleService:
                         error_msg = status.get("error", "Unknown simulation error")
                         raise RuntimeError(f"Ripple simulation {job_id} failed: {error_msg}")
 
-                logger.debug(f"Ripple simulation {job_id} status: {state}, waiting {poll_interval}s...")
+                logger.debug(
+                    f"Ripple simulation {job_id} status: {state}, waiting {poll_interval}s..."
+                )
                 await asyncio.sleep(poll_interval)
                 elapsed = _time.monotonic() - start_time
 
@@ -875,10 +888,8 @@ class RippleService:
         finally:
             if sse_task and not sse_task.done():
                 sse_task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await sse_task
-                except asyncio.CancelledError:
-                    pass
 
     async def submit_and_wait(
         self,
@@ -1210,7 +1221,9 @@ class RippleService:
             return 0.0
         if any(token in text for token in ("explosion", "viral", "outbreak", "burst", "爆发")):
             return 0.75
-        if any(token in text for token in ("growth", "growing", "rising", "expansion", "增长", "上升")):
+        if any(
+            token in text for token in ("growth", "growing", "rising", "expansion", "增长", "上升")
+        ):
             return 0.55
         if any(token in text for token in ("stable", "plateau", "ordered", "稳定", "平台")):
             return 0.42
@@ -1227,7 +1240,9 @@ class RippleService:
             return 0.0
         if any(token in text for token in ("explosion", "viral", "outbreak", "burst", "爆发")):
             return 0.78
-        if any(token in text for token in ("growth", "growing", "rising", "expansion", "增长", "上升")):
+        if any(
+            token in text for token in ("growth", "growing", "rising", "expansion", "增长", "上升")
+        ):
             return 0.68
         if any(token in text for token in ("stable", "plateau", "ordered", "稳定", "平台")):
             return 0.6
@@ -1375,7 +1390,9 @@ class RippleService:
             "unknown",
         )
         confidence = self._confidence_to_float(
-            metrics.get("confidence", relative.get("confidence") if isinstance(relative, dict) else None)
+            metrics.get(
+                "confidence", relative.get("confidence") if isinstance(relative, dict) else None
+            )
         )
 
         parsed_prediction: dict[str, Any] = {
@@ -1457,12 +1474,12 @@ class RippleService:
 
         improvement_strategies = self._text_items(output.get("improvement_strategies"))
         if not improvement_strategies:
-            improvement_strategies = self._text_items(
-                observation.get("topology_recommendations")
-            )
+            improvement_strategies = self._text_items(observation.get("topology_recommendations"))
 
         confidence = self._confidence_to_float(
-            output.get("confidence", relative.get("confidence") if isinstance(relative, dict) else None)
+            output.get(
+                "confidence", relative.get("confidence") if isinstance(relative, dict) else None
+            )
         )
         market_segment = output.get("market_segment", {})
         agent_insights = output.get("agent_insights")

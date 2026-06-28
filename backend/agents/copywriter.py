@@ -48,7 +48,10 @@ class CopywriterAgent(BaseAgent):
         audience_prefs = await self._recall_memory(
             store,
             account_id,
-            query=f"audience preference for {plan.get('content_type', 'note') or brief.get('style_requirements', 'note')}",
+            query=(
+                f"audience preference for"
+                f" {plan.get('content_type', 'note') or brief.get('style_requirements', 'note')}"
+            ),
             namespace="audience_preferences",
             limit=3,
         )
@@ -85,11 +88,13 @@ class CopywriterAgent(BaseAgent):
             blogger_notes = state.get("blogger_notes") or []
             notes_context = ""
             for i, note in enumerate(blogger_notes[:3], 1):
-                notes_context += f"\n参考笔记{i}：{note.get('title', '')}\n{note.get('body', '')[:500]}\n"
+                notes_context += (
+                    f"\n参考笔记{i}：{note.get('title', '')}\n{(note.get('body') or '')[:500]}\n"
+                )
 
             user_msg = f"""品牌：{brief.get("brand_name", "")}
 产品：{brief.get("product_name", "")}
-卖点：{", ".join(brief.get("selling_points", [])[:5])}
+卖点：{", ".join((brief.get("selling_points") or [])[:5])}
 内容方向：{brief.get("content_direction", "")}
 目标受众：{brief.get("target_audience", "")}
 风格要求：{brief.get("style_requirements", "")}
@@ -119,7 +124,11 @@ class CopywriterAgent(BaseAgent):
         content_versions: list[dict[str, Any]] = []
         if blogger_notes:
             content_versions = await self._generate_style_variants(
-                state, copy_content, blogger_notes, system_prompt, niche,
+                state,
+                copy_content,
+                blogger_notes,
+                system_prompt,
+                niche,
             )
 
         # ── Creative Memory: 沉淀 ──
@@ -187,15 +196,14 @@ class CopywriterAgent(BaseAgent):
         notes_context = ""
         for i, note in enumerate(blogger_notes[:3], 1):
             notes_context += (
-                f"\n参考笔记{i}：{note.get('title', '')}\n"
-                f"{note.get('body', '')[:300]}\n"
+                f"\n参考笔记{i}：{note.get('title', '')}\n{(note.get('body') or '')[:300]}\n"
             )
 
         # Build context string
         if is_brief_mode:
             context_info = f"""品牌：{brief.get("brand_name", "")}
 产品：{brief.get("product_name", "")}
-卖点：{", ".join(brief.get("selling_points", [])[:5])}
+卖点：{", ".join((brief.get("selling_points") or [])[:5])}
 内容方向：{brief.get("content_direction", "")}
 目标受众：{brief.get("target_audience", "")}
 风格要求：{brief.get("style_requirements", "")}"""
