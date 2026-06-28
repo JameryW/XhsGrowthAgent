@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/06-28-fix-web-tui-chinese-input-and-interaction-experience/research/xterm-cjk-input.md", "reason": "CJK/IME input handling: CompositionHelper flow, width calculation, composition events pattern"}
+{"file": ".trellis/tasks/06-28-fix-web-tui-chinese-input-and-interaction-experience/research/xterm-ux-addons.md", "reason": "Addon APIs (search, webgl), Terminal config options, keyboard shortcuts best practices"}
+{"file": ".trellis/tasks/06-28-fix-web-tui-chinese-input-and-interaction-experience/research/xterm-v6-upgrade.md", "reason": "v5→v6 breaking changes, import paths, addon compatibility"}
+{"file": ".trellis/tasks/06-28-fix-web-tui-chinese-input-and-interaction-experience/research/xterm-mobile-touch.md", "reason": "Mobile touch support, soft keyboard, input bar architecture, visualViewport API"}

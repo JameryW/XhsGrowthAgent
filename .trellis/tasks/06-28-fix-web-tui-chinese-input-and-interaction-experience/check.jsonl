@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/06-28-fix-web-tui-chinese-input-and-interaction-experience/prd.md", "reason": "Full requirements, acceptance criteria, technical approach"}
+{"file": ".trellis/tasks/06-28-fix-web-tui-chinese-input-and-interaction-experience/research/xterm-cjk-input.md", "reason": "Verify CJK width calculation, IME composition pattern against implementation"}
+{"file": ".trellis/tasks/06-28-fix-web-tui-chinese-input-and-interaction-experience/research/xterm-ux-addons.md", "reason": "Verify addon API usage (search, webgl), config options"}
+{"file": ".trellis/tasks/06-28-fix-web-tui-chinese-input-and-interaction-experience/research/xterm-v6-upgrade.md", "reason": "Verify import paths, breaking changes handled correctly"}
+{"file": ".trellis/tasks/06-28-fix-web-tui-chinese-input-and-interaction-experience/research/xterm-mobile-touch.md", "reason": "Verify mobile input bar, visualViewport, touch handling"}
