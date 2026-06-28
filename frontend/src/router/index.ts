@@ -63,7 +63,7 @@ const router = createRouter({
       path: '/tui',
       name: 'tui',
       component: () => import('@/views/AgentTUI.vue'),
-      meta: { transition: 'fade-slide', requiresAuth: true },
+      meta: { transition: 'fade-slide', public: true },
     },
     {
       path: '/:pathMatch(.*)*',

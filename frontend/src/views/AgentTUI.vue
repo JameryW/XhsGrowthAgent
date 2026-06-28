@@ -112,6 +112,9 @@ function getStringWidth(str: string): number {
   return width
 }
 
+// ── Terminal column tracking (for adaptive markdown width) ────────────
+let termCols = 80
+
 // ── Terminal helpers ────────────────────────────────────────────────────
 
 function writeLine(text: string) {
@@ -128,10 +131,10 @@ function writeLineColored(text: string, color: string) {
 
 function writePrompt() {
   const prompt = isProcessing.value
-    ? `${ANSI.DIM}...${ANSI.RESET} `
+    ? `${ANSI.DIM}⏳${ANSI.RESET} `
     : mode.value === 'agent' && wsConnected.value
-      ? `${ANSI.BRIGHT_GREEN}🤖>${ANSI.RESET} `
-      : `${ANSI.BRIGHT_CYAN}>${ANSI.RESET} `
+      ? `${ANSI.BRIGHT_GREEN}❯${ANSI.RESET} `
+      : `${ANSI.BRIGHT_CYAN}❯${ANSI.RESET} `
   write(prompt)
 }
 
@@ -400,12 +403,12 @@ function doSearch(direction: 'next' | 'prev') {
     caseSensitive: searchCaseSensitive.value,
     regex: searchRegex.value,
     decorations: {
-      matchBackground: '#444444',
-      matchBorder: '#888888',
-      matchOverviewRuler: '#888888',
-      activeMatchBackground: '#ff5f5f',
-      activeMatchBorder: '#ff8787',
-      activeMatchColorOverviewRuler: '#ff5f5f',
+      matchBackground: '#33467c',
+      matchBorder: '#7aa2f7',
+      matchOverviewRuler: '#7aa2f7',
+      activeMatchBackground: '#bb9af7',
+      activeMatchBorder: '#c0caf5',
+      activeMatchColorOverviewRuler: '#bb9af7',
     },
   }
   const found = direction === 'next'
@@ -526,7 +529,7 @@ function connectAgentWs() {
     wsConnected.value = true
     reconnectAttempts = 0
     mode.value = 'agent'
-    writeLineColored('🤖 Agent mode connected', ANSI.BRIGHT_GREEN)
+    writeLineColored('⚡ Agent mode connected', ANSI.BRIGHT_GREEN)
     writePrompt()
   }
 
@@ -543,10 +546,10 @@ function connectAgentWs() {
       mode.value = 'command'
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts++
-        writeLineColored(`⚠️ Agent disconnected, reconnecting (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`, ANSI.YELLOW)
+        writeLineColored(`⚠ Agent disconnected, reconnecting (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`, ANSI.YELLOW)
         reconnectTimer = setTimeout(connectAgentWs, 3000)
       } else {
-        writeLineColored('⚠️ Agent disconnected after max retries, switched to command mode', ANSI.RED)
+        writeLineColored('✗ Agent disconnected after max retries, switched to command mode', ANSI.RED)
         writePrompt()
       }
     }
@@ -572,14 +575,14 @@ function handleAgentEvent(event: Record<string, unknown>) {
   const type = event.type as string
 
   if (type === 'ready') {
-    writeLineColored('✅ Agent ready', ANSI.BRIGHT_GREEN)
+    writeLineColored('✓ Agent ready', ANSI.BRIGHT_GREEN)
     wsStatus.value = 'idle'
     writePrompt()
   } else if (type === 'agent_message') {
     const text = event.text as string
     const done = event.done as boolean
     if (!done && text) {
-      const ansi = markdownToAnsi(text)
+      const ansi = markdownToAnsi(text, termCols)
       write(ansi)
     }
     if (done) {
@@ -591,15 +594,15 @@ function handleAgentEvent(event: Record<string, unknown>) {
     const toolName = event.tool_name as string
     const args = event.args as Record<string, unknown>
     const argsStr = formatArgs(args)
-    writeLine(`${ANSI.BRIGHT_CYAN}🔧 ${toolName}${ANSI.DIM}(${argsStr})${ANSI.RESET}`)
+    writeLine(`${ANSI.BRIGHT_YELLOW}▸${ANSI.RESET} ${ANSI.BRIGHT_CYAN}${toolName}${ANSI.DIM}(${argsStr})${ANSI.RESET}`)
   } else if (type === 'tool_result') {
     const toolName = event.tool_name as string
     const isError = event.is_error as boolean
     const resultStr = formatResult(event.result)
     if (isError) {
-      writeLine(`${ANSI.RED}❌ ${toolName}: ${resultStr}${ANSI.RESET}`)
+      writeLine(`${ANSI.RED}✗${ANSI.RESET} ${ANSI.DIM}${toolName}:${ANSI.RESET} ${resultStr}`)
     } else {
-      writeLine(`${ANSI.BRIGHT_GREEN}✅ ${toolName}: ${resultStr}${ANSI.RESET}`)
+      writeLine(`${ANSI.BRIGHT_GREEN}✓${ANSI.RESET} ${ANSI.DIM}${toolName}:${ANSI.RESET} ${resultStr}`)
     }
   } else if (type === 'status') {
     const status = event.status as string
@@ -610,7 +613,7 @@ function handleAgentEvent(event: Record<string, unknown>) {
     isProcessing.value = false
     writePrompt()
   } else if (type === 'error') {
-    writeLineColored(`⚠️ ${event.message || 'Unknown error'}`, ANSI.RED)
+    writeLineColored(`⚠ ${event.message || 'Unknown error'}`, ANSI.RED)
     isProcessing.value = false
     writePrompt()
   }
@@ -637,7 +640,7 @@ async function processCommand(text: string) {
   const trimmed = text.trim()
   if (!trimmed) return
 
-  writeLineColored(`$ ${trimmed}`, ANSI.DIM)
+  writeLineColored(`❯ ${trimmed}`, ANSI.DIM)
 
   if (mode.value === 'agent') {
     await processAgentCommand(trimmed)
@@ -790,42 +793,58 @@ async function handleReject(threadId: string, feedback: string) {
 }
 
 function showHelp() {
-  const agentHelp = mode.value === 'agent' ? `
-${ANSI.BRIGHT_CYAN}Agent mode:${ANSI.RESET}
-  ${ANSI.DIM}<message>${ANSI.RESET}     Send message to AI agent
-  ${ANSI.DIM}/status${ANSI.RESET}       Get agent status
-  ${ANSI.DIM}/new${ANSI.RESET}          Start new session
-  ${ANSI.DIM}/abort${ANSI.RESET}        Abort current turn
-  ${ANSI.DIM}/mode${ANSI.RESET}         Switch to command mode` : ''
-  const commandHelp = `
-${ANSI.BRIGHT_CYAN}Command mode:${ANSI.RESET}
-  ${ANSI.DIM}/start [topic]${ANSI.RESET}  Start workflow
-  ${ANSI.DIM}/status [id]${ANSI.RESET}    Check workflow status
-  ${ANSI.DIM}/pause [id]${ANSI.RESET}     Pause workflow
-  ${ANSI.DIM}/resume [id]${ANSI.RESET}    Resume workflow
-  ${ANSI.DIM}/cancel [id]${ANSI.RESET}    Cancel workflow
-  ${ANSI.DIM}/approve [id]${ANSI.RESET}   Approve content
-  ${ANSI.DIM}/reject <msg>${ANSI.RESET}   Reject with feedback
-  ${ANSI.DIM}/mode${ANSI.RESET}           Switch to agent mode`
-  const common = `
-${ANSI.BRIGHT_CYAN}Common:${ANSI.RESET}
-  ${ANSI.DIM}/help${ANSI.RESET}           Show this help
-  ${ANSI.DIM}/clear${ANSI.RESET}          Clear terminal
-  ${ANSI.DIM}↑/↓${ANSI.RESET}            Command history
-  ${ANSI.DIM}Tab${ANSI.RESET}             Auto-complete
-  ${ANSI.DIM}Ctrl+C${ANSI.RESET}         Abort/interrupt
-  ${ANSI.DIM}Ctrl+U/W/K/A/E${ANSI.RESET} Line editing
-  ${ANSI.DIM}Ctrl+Shift+F${ANSI.RESET}   Search
-  ${ANSI.DIM}Ctrl+Shift+C/V${ANSI.RESET} Copy/Paste`
-  writeLine(`[${mode.value} mode]${commandHelp}${agentHelp}${common}`)
+  const C = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, W = ANSI.BRIGHT_WHITE, R = ANSI.RESET
+  const Y = ANSI.BRIGHT_YELLOW, B = ANSI.BRIGHT_BLUE
+
+  const hw = Math.max(30, Math.min(termCols - 4, 52))
+  writeLine('')
+  writeLine(`${C}╭${'─'.repeat(hw)}╮${R}`)
+  writeLine(`${C}│${R}  ${W}XHS Growth Agent — Help${R}${' '.repeat(Math.max(0, hw - 26))}${C}│${R}`)
+  writeLine(`${C}╰${'─'.repeat(hw)}╯${R}`)
+
+  const sep = `${D}${'─'.repeat(Math.min(38, hw - 2))}${R}`
+
+  if (mode.value === 'agent') {
+    writeLine('')
+    writeLine(`  ${Y}Agent Mode${R}`)
+    writeLine(`  ${sep}`)
+    writeLine(`  ${G}<message>${R}      Send message to AI agent`)
+    writeLine(`  ${G}/status${R}        Get agent status`)
+    writeLine(`  ${G}/new${R}           Start new session`)
+    writeLine(`  ${G}/abort${R}         Abort current turn`)
+    writeLine(`  ${G}/mode${R}          Switch to command mode`)
+  } else {
+    writeLine('')
+    writeLine(`  ${Y}Command Mode${R}`)
+    writeLine(`  ${sep}`)
+    writeLine(`  ${G}/start${R} ${D}[topic]${R}  Start workflow`)
+    writeLine(`  ${G}/status${R} ${D}[id]${R}    Check workflow status`)
+    writeLine(`  ${G}/pause${R} ${D}[id]${R}     Pause workflow`)
+    writeLine(`  ${G}/resume${R} ${D}[id]${R}    Resume workflow`)
+    writeLine(`  ${G}/cancel${R} ${D}[id]${R}    Cancel workflow`)
+    writeLine(`  ${G}/approve${R} ${D}[id]${R}   Approve content`)
+    writeLine(`  ${G}/reject${R} ${D}<msg>${R}   Reject with feedback`)
+    writeLine(`  ${G}/mode${R}          Switch to agent mode`)
+  }
+
+  writeLine('')
+  writeLine(`  ${Y}Shortcuts${R}`)
+  writeLine(`  ${sep}`)
+  writeLine(`  ${G}/help${R}            Show this help`)
+  writeLine(`  ${G}/clear${R}           Clear terminal`)
+  writeLine(`  ${B}↑/↓${R}              Command history`)
+  writeLine(`  ${B}Tab${R}              Auto-complete`)
+  writeLine(`  ${B}Ctrl+C${R}           Abort / interrupt`)
+  writeLine(`  ${B}Ctrl+U/W/K/A/E${R}   Line editing`)
+  writeLine(`  ${B}Ctrl+Shift+F${R}     Search`)
+  writeLine(`  ${B}Ctrl+Shift+C/V${R}   Copy / Paste`)
+  writeLine('')
 }
 
 // ── Status bar computed ────────────────────────────────────────────────
 
 const modeLabel = computed(() => mode.value === 'agent' ? 'AGENT' : 'CMD')
-const modeIndicatorColor = computed(() =>
-  mode.value === 'agent' && wsConnected.value ? 'bg-emerald-400' : 'bg-amber-400',
-)
+// ponytail: modeIndicatorColor removed — mode badge uses :class binding directly
 
 // ── Lifecycle ───────────────────────────────────────────────────────────
 
@@ -835,37 +854,46 @@ let viewportHandler: (() => void) | null = null
 onMounted(() => {
   term = new Terminal({
     cursorBlink: true,
-    cursorStyle: 'block',
+    cursorStyle: 'block', // native terminal default
     fontSize: 14,
-    fontFamily: "'Menlo', 'Consolas', 'Courier New', 'Noto Sans Mono CJK SC', 'PingFang SC', 'Microsoft YaHei', 'WenQuanYi Micro Hei Mono', monospace",
-    lineHeight: 1.15,
-    smoothScrollDuration: 100,
+    fontFamily: "'JetBrains Mono', 'Fira Code', 'Menlo', 'Consolas', 'Noto Sans Mono CJK SC', 'PingFang SC', 'Microsoft YaHei', 'WenQuanYi Micro Hei Mono', monospace",
+    fontWeight: 'normal',
+    fontWeightBold: 'bold',
+    lineHeight: 1.2,
+    letterSpacing: 0,
+    smoothScrollDuration: 80,
     minimumContrastRatio: 4.5,
+    drawBoldTextInBrightColors: true,
     theme: {
-      background: '#000000',
-      foreground: '#e0e0e0',
-      cursor: '#e0e0e0',
-      cursorAccent: '#000000',
-      selectionBackground: '#444444',
-      black: '#000000',
-      red: '#ff5f5f',
-      green: '#5fff5f',
-      yellow: '#ffff5f',
-      blue: '#5f5fff',
-      magenta: '#ff5fff',
-      cyan: '#5fffff',
-      white: '#e0e0e0',
-      brightBlack: '#666666',
-      brightRed: '#ff8787',
-      brightGreen: '#87ff87',
-      brightYellow: '#ffff87',
-      brightBlue: '#8787ff',
-      brightMagenta: '#ff87ff',
-      brightCyan: '#87ffff',
-      brightWhite: '#ffffff',
+      // Tokyo Night palette — high contrast, easy on eyes
+      background: '#1a1b26',
+      foreground: '#a9b1d6',
+      cursor: '#c0caf5',
+      cursorAccent: '#1a1b26',
+      selectionBackground: '#33467c',
+      selectionForeground: '#c0caf5',
+      // Standard colors (Tokyo Night variant)
+      black: '#15161e',
+      red: '#f7768e',
+      green: '#9ece6a',
+      yellow: '#e0af68',
+      blue: '#7aa2f7',
+      magenta: '#bb9af7',
+      cyan: '#7dcfff',
+      white: '#a9b1d6',
+      // Bright colors
+      brightBlack: '#414868',
+      brightRed: '#f7768e',
+      brightGreen: '#9ece6a',
+      brightYellow: '#e0af68',
+      brightBlue: '#7aa2f7',
+      brightMagenta: '#bb9af7',
+      brightCyan: '#7dcfff',
+      brightWhite: '#c0caf5',
     },
-    scrollback: 5000,
+    scrollback: 10000,
     convertEol: true,
+    allowProposedApi: true,
   })
 
   fitAddon = new FitAddon()
@@ -890,6 +918,7 @@ onMounted(() => {
   if (termRef.value) {
     term.open(termRef.value)
     fitAddon.fit()
+    term.focus() // native TUI: terminal grabs focus immediately
   }
 
   // IME composition tracking on the hidden textarea
@@ -901,6 +930,13 @@ onMounted(() => {
 
   term.onData(handleTermData)
   setupKeyEventHandler()
+
+  // Track terminal columns for adaptive markdown width
+  termCols = term.cols
+  term.onResize(({ cols }) => { termCols = cols })
+
+  // Click terminal area → focus (native TUI: always captures input)
+  termRef.value?.addEventListener('click', () => term?.focus())
 
   // Resize observer
   resizeObserver = new ResizeObserver(() => fitAddon?.fit())
@@ -929,9 +965,16 @@ onMounted(() => {
   // Click outside context menu to close it
   document.addEventListener('click', handleDocumentClick)
 
-  // Welcome message
-  writeLineColored(t('tui.welcome'), ANSI.BRIGHT_GREEN)
-  writeLineColored(t('tui.welcomeHint'), ANSI.DIM)
+  // Welcome banner — native TUI feel with box drawing, adaptive width
+  const W = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, R = ANSI.RESET
+  const bannerWidth = Math.max(30, Math.min(termCols - 4, 50))
+  writeLine('')
+  writeLine(`${W}╭${'─'.repeat(bannerWidth)}╮${R}`)
+  writeLine(`${W}│${R}  ${G}XHS Growth Agent${R}  ${D}v1.0${R}${' '.repeat(Math.max(0, bannerWidth - 22))}${W}│${R}`)
+  writeLine(`${W}│${R}  ${D}小红书内容增长智能体${R}${' '.repeat(Math.max(0, bannerWidth - 12))}${W}│${R}`)
+  writeLine(`${W}╰${'─'.repeat(bannerWidth)}╯${R}`)
+  writeLine('')
+  writeLineColored(`  Type ${ANSI.BRIGHT_WHITE}/help${ANSI.RESET} for commands, or just start chatting.`, ANSI.DIM)
   writeLine('')
 
   // Try connecting to agent WebSocket
@@ -975,81 +1018,357 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="tui-container h-[calc(100dvh-4rem)] flex flex-col bg-black" @click="closeContextMenu">
-    <!-- Status bar -->
-    <div class="flex items-center gap-2 px-3 py-1 bg-black border-b border-zinc-800 shrink-0">
-      <div class="w-2 h-2 rounded-full" :class="wsConnected ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600'" />
-      <span class="text-[10px] font-mono text-zinc-500">xhs-agent</span>
-      <span class="text-[10px] font-mono px-1.5 py-0.5 rounded" :class="[modeIndicatorColor, 'text-black font-semibold']">{{ modeLabel }}</span>
-      <span v-if="activeThreadId" class="text-[10px] font-mono text-zinc-600 ml-1">{{ activeThreadId }}</span>
-      <span v-if="isProcessing" class="text-[10px] font-mono text-amber-400 ml-auto animate-pulse">● running</span>
-      <!-- Search toggle button -->
+  <div class="tui-container h-[calc(100dvh-4rem)] flex flex-col" @click="closeContextMenu">
+    <!-- Status bar — native TUI style -->
+    <div class="tui-statusbar flex items-center gap-2 px-3 py-1 shrink-0">
+      <div class="tui-status-dot" :class="wsConnected ? 'connected' : 'disconnected'" />
+      <span class="tui-status-label">xhs-agent</span>
+      <span class="tui-mode-badge" :class="mode === 'agent' && wsConnected ? 'mode-agent' : 'mode-cmd'">{{ modeLabel }}</span>
+      <span v-if="activeThreadId" class="tui-thread-id">{{ activeThreadId.slice(0, 8) }}</span>
+      <div class="flex-1" />
+      <span v-if="isProcessing" class="tui-running-indicator">● processing</span>
       <button
-        class="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 ml-auto px-1"
-        :class="{ 'text-zinc-300': searchVisible }"
+        class="tui-status-btn"
+        :class="{ active: searchVisible }"
         title="Ctrl+Shift+F"
         @click.stop="toggleSearch"
       >⌕</button>
     </div>
 
-    <!-- Search bar -->
-    <div v-if="searchVisible" class="flex items-center gap-1 px-2 py-1 bg-zinc-900 border-b border-zinc-700 shrink-0" @click.stop>
+    <!-- Search bar — native terminal search -->
+    <div v-if="searchVisible" class="tui-searchbar flex items-center gap-1 px-2 py-1 shrink-0" @click.stop>
       <input
         ref="searchInputRef"
         v-model="searchQuery"
-        class="flex-1 bg-zinc-800 text-zinc-200 text-xs px-2 py-1 rounded font-mono outline-none focus:ring-1 focus:ring-zinc-500"
+        class="tui-search-input flex-1"
         placeholder="Search..."
         @input="onSearchInput"
         @keydown.enter="doSearch('next')"
         @keydown.shift.enter="doSearch('prev')"
         @keydown.escape="closeSearch"
       />
-      <button class="text-[10px] font-mono px-1 py-0.5 rounded text-zinc-400 hover:text-zinc-200" :class="{ 'text-cyan-400': searchCaseSensitive }" title="Case sensitive" @click="searchCaseSensitive = !searchCaseSensitive; onSearchInput()">Aa</button>
-      <button class="text-[10px] font-mono px-1 py-0.5 rounded text-zinc-400 hover:text-zinc-200" :class="{ 'text-cyan-400': searchRegex }" title="Regex" @click="searchRegex = !searchRegex; onSearchInput()">.*</button>
-      <span class="text-[10px] font-mono text-zinc-500">{{ searchResultInfo }}</span>
-      <button class="text-[10px] font-mono text-zinc-400 hover:text-zinc-200" title="Previous" @click="doSearch('prev')">↑</button>
-      <button class="text-[10px] font-mono text-zinc-400 hover:text-zinc-200" title="Next" @click="doSearch('next')">↓</button>
-      <button class="text-[10px] font-mono text-zinc-400 hover:text-zinc-200" title="Close" @click="closeSearch">✕</button>
+      <button class="tui-search-toggle" :class="{ active: searchCaseSensitive }" title="Case sensitive" @click="searchCaseSensitive = !searchCaseSensitive; onSearchInput()">Aa</button>
+      <button class="tui-search-toggle" :class="{ active: searchRegex }" title="Regex" @click="searchRegex = !searchRegex; onSearchInput()">.*</button>
+      <span class="tui-search-info">{{ searchResultInfo }}</span>
+      <button class="tui-search-nav" title="Previous" @click="doSearch('prev')">↑</button>
+      <button class="tui-search-nav" title="Next" @click="doSearch('next')">↓</button>
+      <button class="tui-search-nav" title="Close" @click="closeSearch">✕</button>
     </div>
 
     <!-- xterm.js container -->
-    <div ref="termRef" class="flex-1 min-h-0" />
+    <div ref="termRef" class="tui-term-area flex-1 min-h-0" tabindex="0" @focus="term?.focus()" />
 
     <!-- Mobile input bar -->
-    <div v-if="isMobile" class="flex items-center gap-2 px-2 py-2 bg-zinc-900 border-t border-zinc-700 shrink-0 safe-area-bottom">
+    <div v-if="isMobile" class="tui-mobile-bar flex items-center gap-2 px-3 py-2 shrink-0">
       <input
         v-model="mobileInput"
-        class="flex-1 bg-zinc-800 text-zinc-200 text-sm px-3 py-2 rounded-lg font-mono outline-none"
+        class="tui-mobile-input flex-1"
         :placeholder="mode === 'agent' && wsConnected ? '输入消息...' : '输入命令...'"
         enterkeyhint="send"
         @keydown.enter="submitMobileInput"
       />
-      <button
-        class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded-lg font-mono shrink-0"
-        @click="submitMobileInput"
-      >↵</button>
+      <button class="tui-mobile-send" @click="submitMobileInput">↵</button>
     </div>
 
     <!-- Context menu -->
     <div
       v-if="contextMenuVisible"
-      class="tui-context-menu fixed bg-zinc-800 border border-zinc-600 rounded shadow-xl py-1 z-50 min-w-[140px]"
+      class="tui-context-menu fixed py-1 z-50 min-w-[160px]"
       :style="{ left: `${contextMenuPos.x}px`, top: `${contextMenuPos.y}px` }"
       @click.stop
     >
-      <button v-if="contextMenuHasSelection" class="w-full text-left px-3 py-1.5 text-xs font-mono text-zinc-300 hover:bg-zinc-700" @click="menuCopy">Copy</button>
-      <button class="w-full text-left px-3 py-1.5 text-xs font-mono text-zinc-300 hover:bg-zinc-700" @click="menuPaste">Paste</button>
-      <button class="w-full text-left px-3 py-1.5 text-xs font-mono text-zinc-300 hover:bg-zinc-700" @click="menuSelectAll">Select All</button>
-      <div class="border-t border-zinc-600 my-1" />
-      <button class="w-full text-left px-3 py-1.5 text-xs font-mono text-zinc-300 hover:bg-zinc-700" @click="menuSearch">Search</button>
-      <button class="w-full text-left px-3 py-1.5 text-xs font-mono text-zinc-300 hover:bg-zinc-700" @click="menuClear">Clear</button>
+      <button v-if="contextMenuHasSelection" class="tui-menu-item" @click="menuCopy">Copy</button>
+      <button class="tui-menu-item" @click="menuPaste">Paste</button>
+      <button class="tui-menu-item" @click="menuSelectAll">Select All</button>
+      <div class="tui-menu-sep" />
+      <button class="tui-menu-item" @click="menuSearch">Search</button>
+      <button class="tui-menu-item" @click="menuClear">Clear</button>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* Safe area for mobile notch/home indicator */
-.safe-area-bottom {
+/* ── Base container — full native terminal frame ────────────────────── */
+.tui-container {
+  background: #1a1b26;
+  border: 1px solid #292e42;
+  border-radius: 0;
+}
+
+/* ── Status bar — native terminal tab-bar feel ──────────────────────── */
+.tui-statusbar {
+  background: #16161e;
+  border-bottom: 1px solid #292e42;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Menlo', monospace;
+  font-size: 11px;
+  line-height: 1;
+  user-select: none;
+  -webkit-app-region: drag; /* ponytail: allows OS window drag on status bar */
+}
+
+.tui-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  transition: background 0.3s ease;
+  flex-shrink: 0;
+}
+.tui-status-dot.connected {
+  background: #9ece6a;
+  box-shadow: 0 0 4px 1px #9ece6a40;
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+.tui-status-dot.disconnected {
+  background: #414868;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.tui-status-label {
+  color: #7982a9;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+
+.tui-mode-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 2px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+.tui-mode-badge.mode-agent {
+  background: #9ece6a18;
+  color: #9ece6a;
+  border: 1px solid #9ece6a30;
+}
+.tui-mode-badge.mode-cmd {
+  background: #e0af6818;
+  color: #e0af68;
+  border: 1px solid #e0af6830;
+}
+
+.tui-thread-id {
+  color: #414868;
+  font-size: 10px;
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tui-running-indicator {
+  color: #e0af68;
+  font-size: 10px;
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+.tui-status-btn {
+  color: #565f89;
+  font-size: 12px;
+  padding: 0 4px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  transition: color 0.15s;
+  -webkit-app-region: no-drag;
+}
+.tui-status-btn:hover { color: #a9b1d6; }
+.tui-status-btn.active { color: #7aa2f7; }
+
+/* ── Search bar — flat, terminal-native ─────────────────────────────── */
+.tui-searchbar {
+  background: #16161e;
+  border-bottom: 1px solid #292e42;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Menlo', monospace;
+}
+
+.tui-search-input {
+  background: #1a1b26;
+  color: #a9b1d6;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 0;
+  border: 1px solid #292e42;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.tui-search-input:focus {
+  border-color: #7aa2f7;
+  box-shadow: 0 0 0 1px #7aa2f720;
+}
+.tui-search-input::placeholder {
+  color: #414868;
+}
+
+.tui-search-toggle {
+  font-size: 10px;
+  font-family: inherit;
+  padding: 1px 4px;
+  border-radius: 0;
+  color: #565f89;
+  background: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tui-search-toggle:hover { color: #a9b1d6; }
+.tui-search-toggle.active {
+  color: #7aa2f7;
+  border-color: #7aa2f740;
+  background: #7aa2f710;
+}
+
+.tui-search-info {
+  color: #414868;
+  font-size: 10px;
+  min-width: 60px;
+  text-align: center;
+}
+
+.tui-search-nav {
+  font-size: 11px;
+  font-family: inherit;
+  color: #565f89;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 0;
+  transition: all 0.15s;
+}
+.tui-search-nav:hover {
+  color: #a9b1d6;
+  background: #292e42;
+}
+
+/* ── Mobile input bar — utilitarian, less rounded ───────────────────── */
+.tui-mobile-bar {
+  background: #16161e;
+  border-top: 1px solid #292e42;
   padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+.tui-mobile-input {
+  background: #1a1b26;
+  color: #a9b1d6;
+  font-size: 14px;
+  padding: 6px 10px;
+  border-radius: 2px;
+  border: 1px solid #292e42;
+  font-family: 'JetBrains Mono', 'Menlo', monospace;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.tui-mobile-input:focus {
+  border-color: #7aa2f7;
+}
+.tui-mobile-input::placeholder {
+  color: #414868;
+}
+
+.tui-mobile-send {
+  background: #292e42;
+  color: #a9b1d6;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 2px;
+  border: 1px solid #3b4261;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.tui-mobile-send:hover {
+  background: #3b4261;
+}
+.tui-mobile-send:active {
+  background: #565f89;
+}
+
+/* ── Context menu — sharp, flat, native ─────────────────────────────── */
+.tui-context-menu {
+  background: #1a1b26;
+  border: 1px solid #3b4261;
+  border-radius: 0;
+  box-shadow: 4px 4px 0 #00000080;
+  font-family: 'JetBrains Mono', 'Menlo', monospace;
+  padding: 2px 0;
+}
+
+.tui-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: #a9b1d6;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.08s;
+}
+.tui-menu-item:hover {
+  background: #292e42;
+  color: #c0caf5;
+}
+
+.tui-menu-sep {
+  height: 1px;
+  background: #292e42;
+  margin: 2px 8px;
+}
+
+/* ── xterm.js overrides — native terminal feel ──────────────────────── */
+.tui-term-area {
+  outline: none;
+  cursor: text; /* native terminal cursor */
+}
+
+:deep(.xterm) {
+  padding: 0 8px;
+  height: 100%;
+}
+
+:deep(.xterm-viewport) {
+  scrollbar-width: thin;
+  scrollbar-color: #292e42 transparent;
+}
+
+:deep(.xterm-viewport::-webkit-scrollbar) {
+  width: 5px;
+}
+
+:deep(.xterm-viewport::-webkit-scrollbar-track) {
+  background: transparent;
+}
+
+:deep(.xterm-viewport::-webkit-scrollbar-thumb) {
+  background: #292e42 !important;
+  border-radius: 0 !important;
+}
+
+:deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
+  background: #414868 !important;
+}
+
+/* Active cursor — block style on focus, hollow on blur */
+:deep(.xterm.focus .xterm-cursor-layer) {
+  /* cursor styling handled by theme */
+}
+
+/* Dim cursor when unfocused — native terminal behavior */
+:deep(.xterm:not(.focus) .xterm-cursor-layer) {
+  opacity: 0.4;
+}
+
+/* Selection — keep xterm theme colors */
+:deep(.xterm-selection) {
+  /* Handled by xterm theme selectionBackground/selectionForeground */
 }
 </style>
