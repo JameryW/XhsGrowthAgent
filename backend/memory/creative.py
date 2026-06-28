@@ -132,7 +132,7 @@ class CreativeMemory:
             return []
         try:
             q = " ".join([v for v in [category] + (tags or []) if v]) or "material"
-            fetch_limit = limit * 2 if keywords else limit * 2
+            fetch_limit = limit * 2 if keywords else limit
             items = await self._store.asearch(  # type: ignore[union-attr]
                 self.vault_ns, query=q, limit=fetch_limit, filter=filter,
             )

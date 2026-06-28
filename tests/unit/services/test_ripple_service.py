@@ -999,7 +999,7 @@ class TestStreamProgress:
             'data: {"phase":"RIPPLE","wave":1,"progress":0.1,"total_waves":8}',
             "",
         ]
-        mock_resp.aiter_lines = AsyncMock(return_value=AsyncIterator(lines))
+        mock_resp.aiter_lines = MagicMock(return_value=AsyncIterator(lines))
 
         with (
             patch.object(svc, "_get_config", return_value={"base_url": "http://localhost:8080"}),

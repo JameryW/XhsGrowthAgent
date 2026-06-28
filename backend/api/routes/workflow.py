@@ -79,6 +79,7 @@ _get_as_node = _runner._get_as_node
 
 def _on_task_done(thread_id: str):
     """Background task done callback — update DB with task_done_at / stale status."""
+
     def callback(task: asyncio.Task) -> None:
         task_error = None
         try:
@@ -108,6 +109,7 @@ def _on_task_done(thread_id: str):
             asyncio.ensure_future(_do_update())
         except Exception:
             logger.exception("Failed to update DB in task_done callback for %s", thread_id)
+
     return callback
 
 
@@ -156,12 +158,9 @@ def _task_has_error(task: Any) -> bool:
 
 
 def _resume_nodes_from_tasks(tasks: Any) -> tuple[str, ...]:
-    named_tasks = tuple(
-        name for task in (tasks or ()) if (name := _task_name(task))
-    )
+    named_tasks = tuple(name for task in (tasks or ()) if (name := _task_name(task)))
     failed_tasks = tuple(
-        name for task in (tasks or ())
-        if (name := _task_name(task)) and _task_has_error(task)
+        name for task in (tasks or ()) if (name := _task_name(task)) and _task_has_error(task)
     )
     return failed_tasks or named_tasks
 
@@ -201,7 +200,11 @@ async def _start_resume_task(
 
     async def _resume_async():
         await _runner._run_graph_and_persist(
-            thread_id, graph, config, input_data, source="resume",
+            thread_id,
+            graph,
+            config,
+            input_data,
+            source="resume",
         )
 
     task = asyncio.create_task(_resume_async())
@@ -230,10 +233,10 @@ def _failed_node(state) -> str | None:
                                                          for the failed node)
     Returns None when no signal fires; caller falls back to the as_node path.
     """
-    for t in (state.tasks or ()):
+    for t in state.tasks or ():
         if getattr(t, "error", None) and getattr(t, "name", None):
             return t.name
-    for node in (state.next or ()):
+    for node in state.next or ():
         if node:
             return node
     values = state.values or {}
@@ -244,6 +247,7 @@ def _failed_node(state) -> str | None:
 
 
 # ── Request/Response models ──
+
 
 class WorkflowStartRequest(BaseModel):
     account_id: str = Field(default="default", description="账号 ID")
@@ -303,12 +307,14 @@ class WorkflowStatusResponse(BaseModel):
     reselect_count: int = Field(default=0, description="重新选题次数")
     label: str = Field(default="", description="工作流名称")
     checkpoint_lost: bool = Field(
-        default=False, description="Checkpoint lost after container restart",
+        default=False,
+        description="Checkpoint lost after container restart",
     )
 
 
 class CheckpointSnapshot(BaseModel):
     """A single checkpoint snapshot from workflow execution history."""
+
     checkpoint_id: str = Field(description="Checkpoint ID for cursor-based pagination")
     step: int = Field(default=0, description="LangGraph step number")
     source: str = Field(default="", description="Node that produced this checkpoint")
@@ -336,6 +342,7 @@ class CheckpointSnapshot(BaseModel):
 
 class CheckpointHistoryResponse(BaseModel):
     """Paginated response of checkpoint snapshots."""
+
     thread_id: str
     checkpoints: list[CheckpointSnapshot]
     has_more: bool = Field(default=False, description="Whether older checkpoints exist")
@@ -368,12 +375,14 @@ def _get_ripple_progress(thread_id: str) -> dict:
     """Get current Ripple simulation progress for a thread from RippleService."""
     try:
         from backend.services.ripple_service import RippleService
+
         return RippleService.get_thread_progress(thread_id)
     except Exception:
         return {}
 
 
 # ── Endpoints ──
+
 
 @router.post("/start")
 async def start_workflow(req: WorkflowStartRequest, request: Request):
@@ -449,9 +458,7 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
 
     # Brief mode without text: save initial state to checkpoint but don't start
     # execution yet — the PDF upload will trigger the actual start via aupdate_state.
-    brief_waiting_for_upload = (
-        req.workflow_mode == "brief" and not req.brief_text
-    )
+    brief_waiting_for_upload = req.workflow_mode == "brief" and not req.brief_text
 
     if brief_waiting_for_upload:
         await graph.aupdate_state(config, initial_state, as_node="orchestrator")
@@ -464,14 +471,16 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
             progress_percent=get_progress(actual_phase),
             updated_at=datetime.now(UTC).isoformat(),
         )
-        return success(data={
-            "thread_id": thread_id,
-            "status": "awaiting_brief",
-            "phase": actual_phase,
-            "progress_percent": get_progress(actual_phase),
-            "sse_url": f"/api/workflow/stream/{thread_id}",
-            "websocket_url": "/api/realtime/ws",
-        })
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "awaiting_brief",
+                "phase": actual_phase,
+                "progress_percent": get_progress(actual_phase),
+                "sse_url": f"/api/workflow/stream/{thread_id}",
+                "websocket_url": "/api/realtime/ws",
+            }
+        )
 
     # Actual phase may differ from request (brief mode overrides to BRIEFING)
     actual_start_phase = initial_state["phase"]
@@ -482,26 +491,37 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
     )
 
     if req.async_mode:
+
         async def _run_async():
             await _runner._run_graph_and_persist(
-                thread_id, graph, config, initial_state, source="start",
+                thread_id,
+                graph,
+                config,
+                initial_state,
+                source="start",
             )
 
         task = asyncio.create_task(_run_async())
         task.add_done_callback(_on_task_done(thread_id))
         _runner._background_tasks[thread_id] = task
-        return success(data={
-            "thread_id": thread_id,
-            "status": "running",
-            "phase": actual_phase_str,
-            "progress_percent": get_progress(actual_phase_str),
-            "sse_url": f"/api/workflow/stream/{thread_id}",
-            "websocket_url": "/api/realtime/ws",
-        })
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "running",
+                "phase": actual_phase_str,
+                "progress_percent": get_progress(actual_phase_str),
+                "sse_url": f"/api/workflow/stream/{thread_id}",
+                "websocket_url": "/api/realtime/ws",
+            }
+        )
     else:
         with contextlib.suppress(asyncio.CancelledError):
             await _runner._run_graph_and_persist(
-                thread_id, graph, config, initial_state, source="start",
+                thread_id,
+                graph,
+                config,
+                initial_state,
+                source="start",
             )
 
         # Read final status from DB (fallback to completed when DB unavailable)
@@ -509,12 +529,14 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
         final_status = row.status if row else "completed"
         final_phase = row.phase if row else "unknown"
 
-        return success(data={
-            "thread_id": thread_id,
-            "status": final_status,
-            "phase": final_phase,
-            "progress_percent": 100 if final_status == "completed" else 0,
-        })
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": final_status,
+                "phase": final_phase,
+                "progress_percent": 100 if final_status == "completed" else 0,
+            }
+        )
 
 
 @router.get("/status/{thread_id}")
@@ -533,9 +555,9 @@ async def get_workflow_status(thread_id: str, request: Request):
         phase = state.values.get("phase", "unknown")
 
         has_active = (
-            (thread_id in _runner._background_tasks and not _runner._background_tasks[thread_id].done())
-            or (thread_id in _runner._active_sync_executions)
-        )
+            thread_id in _runner._background_tasks
+            and not _runner._background_tasks[thread_id].done()
+        ) or (thread_id in _runner._active_sync_executions)
         derived_status = derive_status(state, has_active_task=has_active)
         status_str = str(derived_status.value)
 
@@ -601,40 +623,42 @@ async def get_workflow_status(thread_id: str, request: Request):
             for entry in perf_log
         ]
 
-        return success(data=WorkflowStatusResponse(
-            thread_id=thread_id,
-            phase=phase,
-            status=status_str,
-            current_agent=state.values.get("current_agent", "unknown"),
-            next_steps=list(state.next) if state.next else [],
-            error=state.values.get("error"),
-            progress_percent=progress,
-            created_at=state.values.get("created_at"),
-            updated_at=state.values.get("updated_at"),
-            agent_timeline=agent_timeline,
-            trend_data=state.values.get("trend_data") or {},
-            content_plan=state.values.get("content_plan") or {},
-            copy_content=state.values.get("copy_content") or {},
-            draft_content=state.values.get("draft_content") or {},
-            optimization_analysis=state.values.get("optimization_analysis") or {},
-            content_versions=state.values.get("content_versions") or [],
-            visual_plan=state.values.get("visual_plan") or {},
-            publish_result=state.values.get("publish_result") or {},
-            analytics=state.values.get("analytics") or {},
-            ripple_prediction=_extract_ripple(state.values, "ripple_prediction"),
-            ripple_pmf=_extract_ripple(state.values, "ripple_pmf"),
-            ripple_comparison=state.values.get("ripple_comparison") or {},
-            ripple_progress=_get_ripple_progress(thread_id),
-            workflow_mode=state.values.get("workflow_mode") or "trend",
-            brief_content=state.values.get("brief_content") or {},
-            brief_clarification=state.values.get("brief_clarification") or {},
-            shooting_plan=state.values.get("shooting_plan") or {},
-            blogger_candidates=state.values.get("blogger_candidates") or [],
-            selected_blogger=state.values.get("selected_blogger") or {},
-            blogger_notes=state.values.get("blogger_notes") or [],
-            reselect_count=state.values.get("reselect_count", 0),
-            label=label,
-        ).model_dump())
+        return success(
+            data=WorkflowStatusResponse(
+                thread_id=thread_id,
+                phase=phase,
+                status=status_str,
+                current_agent=state.values.get("current_agent", "unknown"),
+                next_steps=list(state.next) if state.next else [],
+                error=state.values.get("error"),
+                progress_percent=progress,
+                created_at=state.values.get("created_at"),
+                updated_at=state.values.get("updated_at"),
+                agent_timeline=agent_timeline,
+                trend_data=state.values.get("trend_data") or {},
+                content_plan=state.values.get("content_plan") or {},
+                copy_content=state.values.get("copy_content") or {},
+                draft_content=state.values.get("draft_content") or {},
+                optimization_analysis=state.values.get("optimization_analysis") or {},
+                content_versions=state.values.get("content_versions") or [],
+                visual_plan=state.values.get("visual_plan") or {},
+                publish_result=state.values.get("publish_result") or {},
+                analytics=state.values.get("analytics") or {},
+                ripple_prediction=_extract_ripple(state.values, "ripple_prediction"),
+                ripple_pmf=_extract_ripple(state.values, "ripple_pmf"),
+                ripple_comparison=state.values.get("ripple_comparison") or {},
+                ripple_progress=_get_ripple_progress(thread_id),
+                workflow_mode=state.values.get("workflow_mode") or "trend",
+                brief_content=state.values.get("brief_content") or {},
+                brief_clarification=state.values.get("brief_clarification") or {},
+                shooting_plan=state.values.get("shooting_plan") or {},
+                blogger_candidates=state.values.get("blogger_candidates") or [],
+                selected_blogger=state.values.get("selected_blogger") or {},
+                blogger_notes=state.values.get("blogger_notes") or [],
+                reselect_count=state.values.get("reselect_count", 0),
+                label=label,
+            ).model_dump()
+        )
 
     # Fallback 1: check history file (pre-DB completed workflows)
     saved = _load_history_file(thread_id)
@@ -652,32 +676,34 @@ async def get_workflow_status(thread_id: str, request: Request):
             )
             for entry in perf_log
         ]
-        return success(data=WorkflowStatusResponse(
-            thread_id=thread_id,
-            phase=phase,
-            status=_persisted_status(phase, saved.get("error")),
-            current_agent=saved.get("current_agent", "unknown"),
-            next_steps=[],
-            error=saved.get("error"),
-            progress_percent=get_progress(phase),
-            created_at=saved.get("created_at"),
-            updated_at=saved.get("updated_at"),
-            agent_timeline=agent_timeline,
-            trend_data=saved.get("trend_data") or {},
-            content_plan=saved.get("content_plan") or {},
-            copy_content=saved.get("copy_content") or {},
-            draft_content=saved.get("draft_content") or {},
-            optimization_analysis=saved.get("optimization_analysis") or {},
-            content_versions=saved.get("content_versions") or [],
-            visual_plan=saved.get("visual_plan") or {},
-            publish_result=saved.get("publish_result") or {},
-            analytics=saved.get("analytics") or {},
-            ripple_prediction=_extract_ripple(saved, "ripple_prediction"),
-            ripple_pmf=_extract_ripple(saved, "ripple_pmf"),
-            ripple_comparison=saved.get("ripple_comparison") or {},
-            ripple_progress={},  # History file has no live Ripple progress
-            label="",
-        ).model_dump())
+        return success(
+            data=WorkflowStatusResponse(
+                thread_id=thread_id,
+                phase=phase,
+                status=_persisted_status(phase, saved.get("error")),
+                current_agent=saved.get("current_agent", "unknown"),
+                next_steps=[],
+                error=saved.get("error"),
+                progress_percent=get_progress(phase),
+                created_at=saved.get("created_at"),
+                updated_at=saved.get("updated_at"),
+                agent_timeline=agent_timeline,
+                trend_data=saved.get("trend_data") or {},
+                content_plan=saved.get("content_plan") or {},
+                copy_content=saved.get("copy_content") or {},
+                draft_content=saved.get("draft_content") or {},
+                optimization_analysis=saved.get("optimization_analysis") or {},
+                content_versions=saved.get("content_versions") or [],
+                visual_plan=saved.get("visual_plan") or {},
+                publish_result=saved.get("publish_result") or {},
+                analytics=saved.get("analytics") or {},
+                ripple_prediction=_extract_ripple(saved, "ripple_prediction"),
+                ripple_pmf=_extract_ripple(saved, "ripple_pmf"),
+                ripple_comparison=saved.get("ripple_comparison") or {},
+                ripple_progress={},  # History file has no live Ripple progress
+                label="",
+            ).model_dump()
+        )
 
     # Fallback 2: check DB for metadata-only entries (e.g. workflows created but
     # not yet checkpointed by LangGraph)
@@ -695,10 +721,17 @@ async def get_workflow_status(thread_id: str, request: Request):
             and not _runner._background_tasks[thread_id].done()
         )
         checkpoint_lost = (
-            row.status in (
-                "running", "stale", "paused", "awaiting_review",
-                "awaiting_choice", "awaiting_draft", "awaiting_brief",
-                "awaiting_ripple_decision", "awaiting_blogger_selection",
+            row.status
+            in (
+                "running",
+                "stale",
+                "paused",
+                "awaiting_review",
+                "awaiting_choice",
+                "awaiting_draft",
+                "awaiting_brief",
+                "awaiting_ripple_decision",
+                "awaiting_blogger_selection",
             )
             and not has_active_task
         )
@@ -779,7 +812,9 @@ async def get_checkpoint_history(
     try:
         count = 0
         async for snapshot in graph.aget_state_history(
-            config, limit=limit + 1, before=before_config,
+            config,
+            limit=limit + 1,
+            before=before_config,
         ):
             found_workflow = True
             if count >= limit:
@@ -792,11 +827,13 @@ async def get_checkpoint_history(
         pass
 
     if found_workflow:
-        return success(data=CheckpointHistoryResponse(
-            thread_id=thread_id,
-            checkpoints=checkpoints,
-            has_more=has_more,
-        ).model_dump())
+        return success(
+            data=CheckpointHistoryResponse(
+                thread_id=thread_id,
+                checkpoints=checkpoints,
+                has_more=has_more,
+            ).model_dump()
+        )
 
     # Fallback: check history file for completed workflows (no live checkpoints)
     saved = _load_history_file(thread_id)
@@ -826,11 +863,13 @@ async def get_checkpoint_history(
             brief_content=saved.get("brief_content") or {},
             shooting_plan=saved.get("shooting_plan") or {},
         )
-        return success(data=CheckpointHistoryResponse(
-            thread_id=thread_id,
-            checkpoints=[checkpoint],
-            has_more=False,
-        ).model_dump())
+        return success(
+            data=CheckpointHistoryResponse(
+                thread_id=thread_id,
+                checkpoints=[checkpoint],
+                has_more=False,
+            ).model_dump()
+        )
 
     # Fallback: check DB
     if is_pool_ready():
@@ -838,14 +877,15 @@ async def get_checkpoint_history(
     else:
         row = None
     if row:
-        return success(data=CheckpointHistoryResponse(
-            thread_id=thread_id,
-            checkpoints=[],
-            has_more=False,
-        ).model_dump())
+        return success(
+            data=CheckpointHistoryResponse(
+                thread_id=thread_id,
+                checkpoints=[],
+                has_more=False,
+            ).model_dump()
+        )
 
     raise WorkflowNotFoundError(thread_id)
-
 
 
 @router.post("/pause/{thread_id}")
@@ -863,7 +903,9 @@ async def pause_workflow(thread_id: str, request: Request):
         raise WorkflowNotFoundError(thread_id)
 
     current_phase = state.values.get("phase", "unknown")
-    await graph.aupdate_state(config, {"phase": "paused", "prev_phase": current_phase}, as_node=_get_as_node(state))
+    await graph.aupdate_state(
+        config, {"phase": "paused", "prev_phase": current_phase}, as_node=_get_as_node(state)
+    )
 
     bg_task = _runner._background_tasks.get(thread_id)
     if bg_task and not bg_task.done():
@@ -871,11 +913,13 @@ async def pause_workflow(thread_id: str, request: Request):
 
     await _db_upsert(thread_id, status="paused", phase="paused")
 
-    return success(data={
-        "thread_id": thread_id,
-        "status": "paused",
-        "message": "工作流已暂停，当前 Agent 完成后将停止",
-    })
+    return success(
+        data={
+            "thread_id": thread_id,
+            "status": "paused",
+            "message": "工作流已暂停，当前 Agent 完成后将停止",
+        }
+    )
 
 
 @router.post("/resume/{thread_id}")
@@ -896,11 +940,13 @@ async def resume_workflow(thread_id: str, request: Request):
 
         resume_node = saved.get("current_agent")
         if not resume_node or resume_node == "unknown":
-            return success(data={
-                "thread_id": thread_id,
-                "status": "error",
-                "message": "工作流错误历史缺少可恢复节点，无法恢复。",
-            })
+            return success(
+                data={
+                    "thread_id": thread_id,
+                    "status": "error",
+                    "message": "工作流错误历史缺少可恢复节点，无法恢复。",
+                }
+            )
 
         prev_phase = _resume_phase_for_next_nodes(
             (resume_node,),
@@ -915,102 +961,149 @@ async def resume_workflow(thread_id: str, request: Request):
         await graph.aupdate_state(config, restored_state, as_node=resume_node)
         await _start_resume_task(thread_id, graph, config, prev_phase)
 
-        return success(data={
-            "thread_id": thread_id,
-            "status": "running",
-            "phase": prev_phase,
-        })
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "running",
+                "phase": prev_phase,
+            }
+        )
 
     has_active = (
-        (thread_id in _runner._background_tasks and not _runner._background_tasks[thread_id].done())
-        or (thread_id in _runner._active_sync_executions)
-    )
+        thread_id in _runner._background_tasks and not _runner._background_tasks[thread_id].done()
+    ) or (thread_id in _runner._active_sync_executions)
     derived = derive_status(state, has_active_task=has_active)
 
     if derived == WorkflowStatus.AWAITING_REVIEW:
-        return success(data={
-            "thread_id": thread_id,
-            "status": "awaiting_review",
-            "message": "工作流正在等待审核，请使用 /api/review/submit 端点提交审核决定",
-        })
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "awaiting_review",
+                "message": "工作流正在等待审核，请使用 /api/review/submit 端点提交审核决定",
+            }
+        )
 
     if derived == WorkflowStatus.AWAITING_CHOICE:
-        return success(data={
-            "thread_id": thread_id,
-            "status": "awaiting_choice",
-            "message": "工作流正在等待版本选择，请使用 /api/optimization/select 端点选择版本",
-        })
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "awaiting_choice",
+                "message": "工作流正在等待版本选择，请使用 /api/optimization/select 端点选择版本",
+            }
+        )
 
     if derived == WorkflowStatus.AWAITING_DRAFT:
-        return success(data={
-            "thread_id": thread_id,
-            "status": "awaiting_draft",
-            "message": "工作流正在等待草稿提交，请使用 /api/optimization/draft 端点提交草稿",
-        })
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "awaiting_draft",
+                "message": "工作流正在等待草稿提交，请使用 /api/optimization/draft 端点提交草稿",
+            }
+        )
 
     if derived == WorkflowStatus.AWAITING_BRIEF:
         # Resume from brief_gate interrupt — pass resume value for skip/answer
-        body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+        body = (
+            await request.json()
+            if request.headers.get("content-type", "").startswith("application/json")
+            else {}
+        )
         resume_value = body.get("resume_value", {"action": "skip"})
         from langgraph.types import Command
+
         result = await _runner._run_graph_and_persist(
-            thread_id, graph, config,
+            thread_id,
+            graph,
+            config,
             Command(resume=resume_value),
             source="brief_resume",
         )
-        return success(data={
-            "thread_id": thread_id,
-            "status": "running",
-            "phase": result.get("phase", WorkflowPhase.BRIEFING) if result else WorkflowPhase.BRIEFING,
-        })
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "running",
+                "phase": result.get("phase", WorkflowPhase.BRIEFING)
+                if result
+                else WorkflowPhase.BRIEFING,
+            }
+        )
 
     if derived == WorkflowStatus.AWAITING_RIPPLE_DECISION:
         # Resume from ripple_gate interrupt — accept/reangle/retopic
-        body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+        body = (
+            await request.json()
+            if request.headers.get("content-type", "").startswith("application/json")
+            else {}
+        )
         resume_value = body.get("resume_value", {"action": "accept"})
         from langgraph.types import Command
+
         result = await _runner._run_graph_and_persist(
-            thread_id, graph, config,
+            thread_id,
+            graph,
+            config,
             Command(resume=resume_value),
             source="ripple_resume",
         )
-        return success(data={
-            "thread_id": thread_id,
-            "status": "running",
-            "phase": result.get("phase", WorkflowPhase.CREATING) if result else WorkflowPhase.CREATING,
-        })
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "running",
+                "phase": result.get("phase", WorkflowPhase.CREATING)
+                if result
+                else WorkflowPhase.CREATING,
+            }
+        )
 
     if derived == WorkflowStatus.AWAITING_BLOGGER_SELECTION:
         # Resume from blogger_gate interrupt. The blogger gate accepts either a
         # concrete selection ({user_id, nickname}) or an explicit skip.
-        body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+        body = (
+            await request.json()
+            if request.headers.get("content-type", "").startswith("application/json")
+            else {}
+        )
         resume_value = body.get("resume_value", {"skip": True})
         from langgraph.types import Command
+
         result = await _runner._run_graph_and_persist(
-            thread_id, graph, config,
+            thread_id,
+            graph,
+            config,
             Command(resume=resume_value),
             source="blogger_resume",
         )
-        return success(data={
-            "thread_id": thread_id,
-            "status": "running",
-            "phase": result.get("phase", WorkflowPhase.CREATING) if result else WorkflowPhase.CREATING,
-        })
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "running",
+                "phase": result.get("phase", WorkflowPhase.CREATING)
+                if result
+                else WorkflowPhase.CREATING,
+            }
+        )
 
     next_nodes = tuple(state.next or ())
     can_retry_error = derived == WorkflowStatus.ERROR
     can_resume_stale = derived == WorkflowStatus.STALE
     can_restart_terminal = derived in (WorkflowStatus.COMPLETED, WorkflowStatus.CANCELLED)
 
-    if derived != WorkflowStatus.PAUSED and not can_retry_error and not can_resume_stale and not can_restart_terminal:
-        return success(data={
-            "thread_id": thread_id,
-            "status": str(derived.value),
-            "message": (
-                f"工作流当前状态为 {derived.value}，无法恢复。"
-                "只有暂停、过期、错误、已完成或已取消状态可以恢复/重试。"
-            ),
-        })
+    if (
+        derived != WorkflowStatus.PAUSED
+        and not can_retry_error
+        and not can_resume_stale
+        and not can_restart_terminal
+    ):
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": str(derived.value),
+                "message": (
+                    f"工作流当前状态为 {derived.value}，无法恢复。"
+                    "只有暂停、过期、错误、已完成或已取消状态可以恢复/重试。"
+                ),
+            }
+        )
 
     if can_retry_error or can_resume_stale:
         # Infer the displayed resume phase from the checkpoint's failed/pending
@@ -1052,14 +1145,18 @@ async def resume_workflow(thread_id: str, request: Request):
     if can_retry_error or can_resume_stale:
         await _start_resume_task(thread_id, graph, config, prev_phase)
     else:
-        await graph.aupdate_state(config, {"phase": prev_phase, "error": None}, as_node=_get_as_node(state))
+        await graph.aupdate_state(
+            config, {"phase": prev_phase, "error": None}, as_node=_get_as_node(state)
+        )
         await _start_resume_task(thread_id, graph, config, prev_phase)
 
-    return success(data={
-        "thread_id": thread_id,
-        "status": "running",
-        "phase": prev_phase,
-    })
+    return success(
+        data={
+            "thread_id": thread_id,
+            "status": "running",
+            "phase": prev_phase,
+        }
+    )
 
 
 @router.post("/cancel/{thread_id}")
@@ -1077,11 +1174,15 @@ async def cancel_workflow(thread_id: str, request: Request):
         raise WorkflowNotFoundError(thread_id)
 
     current_phase = state.values.get("phase", "unknown")
-    await graph.aupdate_state(config, {
-        "phase": "cancelled",
-        "error": "User cancelled",
-        "prev_phase": current_phase,
-    }, as_node=_get_as_node(state))
+    await graph.aupdate_state(
+        config,
+        {
+            "phase": "cancelled",
+            "error": "User cancelled",
+            "prev_phase": current_phase,
+        },
+        as_node=_get_as_node(state),
+    )
 
     await _db_upsert(
         thread_id,
@@ -1094,11 +1195,13 @@ async def cancel_workflow(thread_id: str, request: Request):
     if bg_task and not bg_task.done():
         bg_task.cancel()
 
-    return success(data={
-        "thread_id": thread_id,
-        "status": "cancelled",
-        "message": "工作流已取消",
-    })
+    return success(
+        data={
+            "thread_id": thread_id,
+            "status": "cancelled",
+            "message": "工作流已取消",
+        }
+    )
 
 
 @router.get("/stream/{thread_id}")
@@ -1149,20 +1252,24 @@ async def list_workflows_endpoint(
             limit=limit,
             offset=offset,
         )
-        return success(data={
-            "workflows": [r.to_dict() for r in rows],
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-        })
+        return success(
+            data={
+                "workflows": [r.to_dict() for r in rows],
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+            }
+        )
 
     # Fallback when DB is unavailable: return empty list
-    return success(data={
-        "workflows": [],
-        "total": 0,
-        "limit": limit,
-        "offset": offset,
-    })
+    return success(
+        data={
+            "workflows": [],
+            "total": 0,
+            "limit": limit,
+            "offset": offset,
+        }
+    )
 
 
 @router.delete("/{thread_id}")
@@ -1198,10 +1305,12 @@ async def delete_workflow(thread_id: str, request: Request):
         with contextlib.suppress(Exception):
             await checkpointer.adelete_thread(thread_id)
 
-    return success(data={
-        "thread_id": thread_id,
-        "message": "Workflow deleted from history",
-    })
+    return success(
+        data={
+            "thread_id": thread_id,
+            "message": "Workflow deleted from history",
+        }
+    )
 
 
 @router.post("/ripple-retry/{thread_id}")
@@ -1229,19 +1338,23 @@ async def retry_ripple_analysis(thread_id: str, request: Request):
         and ripple_prediction.get("estimated_reach") in (0, None)
     )
     if not ripple_reason and not values.get("ripple_fallback") and not is_fallback_prediction:
-        return success(data={
-            "thread_id": thread_id,
-            "status": "skipped",
-            "message": "Ripple 分析之前已成功，无需重试",
-        })
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "skipped",
+                "message": "Ripple 分析之前已成功，无需重试",
+            }
+        )
 
     topic = content_plan.get("selected_topic", "") if isinstance(content_plan, dict) else ""
     if not topic:
-        return success(data={
-            "thread_id": thread_id,
-            "status": "skipped",
-            "message": "无法重试：缺少 content_plan 或 selected_topic",
-        })
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "skipped",
+                "message": "无法重试：缺少 content_plan 或 selected_topic",
+            }
+        )
 
     from backend.services.ripple_service import RippleService, RippleTimeoutError
 
@@ -1319,16 +1432,20 @@ async def retry_ripple_analysis(thread_id: str, request: Request):
         if updates:
             ripple_state = await graph.aget_state(config)
             await graph.aupdate_state(config, updates, as_node=_get_as_node(ripple_state))
-            print(f"[ripple-retry] State updated for {thread_id}: {list(updates.keys())}", flush=True)
+            print(
+                f"[ripple-retry] State updated for {thread_id}: {list(updates.keys())}", flush=True
+            )
 
     task = asyncio.create_task(_run_retry(), name=f"ripple-retry-{thread_id}")
     print(f"[ripple-retry] Task created for {thread_id}: {task.get_name()}", flush=True)
 
-    return success(data={
-        "thread_id": thread_id,
-        "status": "retrying",
-        "message": "Ripple 分析正在重新运行",
-    })
+    return success(
+        data={
+            "thread_id": thread_id,
+            "status": "retrying",
+            "message": "Ripple 分析正在重新运行",
+        }
+    )
 
 
 class BriefExtractResponse(BaseModel):
@@ -1370,10 +1487,12 @@ async def extract_brief_file(request: Request):
     if not brief_text.strip():
         raise ValidationError("file", "Could not extract text from the uploaded file")
 
-    return success(data=BriefExtractResponse(
-        brief_text=brief_text[:500] + "..." if len(brief_text) > 500 else brief_text,
-        source_type=source_type,
-    ).model_dump())
+    return success(
+        data=BriefExtractResponse(
+            brief_text=brief_text[:500] + "..." if len(brief_text) > 500 else brief_text,
+            source_type=source_type,
+        ).model_dump()
+    )
 
 
 class BriefUploadResponse(BaseModel):
@@ -1438,19 +1557,20 @@ async def upload_brief_file(thread_id: str, request: Request):
     state = await graph.aget_state(config)
     next_nodes = state.next if state.next else ()
     has_active = (
-        (thread_id in _runner._background_tasks and not _runner._background_tasks[thread_id].done())
-        or (thread_id in _runner._active_sync_executions)
-    )
+        thread_id in _runner._background_tasks and not _runner._background_tasks[thread_id].done()
+    ) or (thread_id in _runner._active_sync_executions)
 
     if not has_active and next_nodes:
         # Workflow is paused and waiting — resume execution
         await _start_resume_task(thread_id, graph, config, WorkflowPhase.BRIEFING)
 
-    return success(data=BriefUploadResponse(
-        thread_id=thread_id,
-        brief_text=brief_text[:500] + "..." if len(brief_text) > 500 else brief_text,
-        source_type=source_type,
-    ).model_dump())
+    return success(
+        data=BriefUploadResponse(
+            thread_id=thread_id,
+            brief_text=brief_text[:500] + "..." if len(brief_text) > 500 else brief_text,
+            source_type=source_type,
+        ).model_dump()
+    )
 
 
 async def _extract_pdf_text(content_bytes: bytes) -> str:
@@ -1493,12 +1613,22 @@ async def _extract_pdf_with_llm(content_bytes: bytes) -> str:
 
         from langchain_core.messages import HumanMessage
 
-        response = await model.ainvoke([
-            HumanMessage(content=[
-                {"type": "text", "text": "请提取这份PDF文档中的所有文字内容，保持原始格式。"},
-                {"type": "image_url", "image_url": {"url": f"data:application/pdf;base64,{b64}"}},
-            ])
-        ])
+        response = await model.ainvoke(
+            [
+                HumanMessage(
+                    content=[
+                        {
+                            "type": "text",
+                            "text": "请提取这份PDF文档中的所有文字内容，保持原始格式。",
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:application/pdf;base64,{b64}"},
+                        },
+                    ]
+                )
+            ]
+        )
         return response.content or ""
     except Exception as e:
         logger.error(f"Multimodal LLM PDF extraction failed: {e}")
@@ -1563,9 +1693,9 @@ def _format_shooting_plan(plan: dict) -> str:
     lines.append(f"文案：\n{plan.get('body_copy', '')}")
     lines.append("")
     lines.append("话题：")
-    lines.append(f"必带话题：{' '.join(plan.get('required_hashtags', []))}")
-    lines.append(f"选带话题：{' '.join(plan.get('optional_hashtags', []))}")
-    lines.append(f"其他热门话题：{' '.join(plan.get('suggested_hashtags', []))}")
+    lines.append(f"必带话题：{' '.join(plan.get('required_hashtags') or [])}")
+    lines.append(f"选带话题：{' '.join(plan.get('optional_hashtags') or [])}")
+    lines.append(f"其他热门话题：{' '.join(plan.get('suggested_hashtags') or [])}")
     lines.append("")
 
     lines.append("---")
@@ -1595,7 +1725,10 @@ class ImageUploadResponse(BaseModel):
 
 @router.post("/images/upload/{thread_id}")
 async def upload_images(thread_id: str, request: Request):
-    """Upload images for a workflow (before publishing). Stored on disk, paths saved to visual_plan.image_paths."""
+    """Upload images for a workflow (before publishing).
+
+    Stored on disk, paths saved to visual_plan.image_paths.
+    """
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
 
@@ -1622,7 +1755,9 @@ async def upload_images(thread_id: str, request: Request):
         if len(content) > max_size:
             raise ValidationError("files", f"File {f.filename} exceeds 10MB limit")
         if f.content_type not in allowed_types:
-            raise ValidationError("files", f"File {f.filename} has unsupported type {f.content_type}")
+            raise ValidationError(
+                "files", f"File {f.filename} has unsupported type {f.content_type}"
+            )
 
         # Sanitize filename
         safe_name = f"{uuid.uuid4().hex[:8]}_{f.filename}"
@@ -1654,10 +1789,12 @@ async def upload_images(thread_id: str, request: Request):
 
     await graph.aupdate_state(config, **update_kwargs)
 
-    return success(data=ImageUploadResponse(
-        image_paths=list(existing),
-        count=len(existing),
-    ).model_dump())
+    return success(
+        data=ImageUploadResponse(
+            image_paths=list(existing),
+            count=len(existing),
+        ).model_dump()
+    )
 
 
 @router.post("/trigger-analytics/{thread_id}")
@@ -1681,17 +1818,21 @@ async def trigger_analytics(thread_id: str, request: Request):
     has_publish = bool(state.values.get("publish_result"))
     has_analytics = bool(state.values.get("analytics"))
     if not has_publish:
-        return success(data={
-            "thread_id": thread_id,
-            "status": "error",
-            "message": "工作流尚未发布，无法触发分析。",
-        })
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "error",
+                "message": "工作流尚未发布，无法触发分析。",
+            }
+        )
     if has_analytics:
-        return success(data={
-            "thread_id": thread_id,
-            "status": "completed",
-            "message": "分析已完成，无需重复触发。",
-        })
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "completed",
+                "message": "分析已完成，无需重复触发。",
+            }
+        )
 
     # Update state to analyzing phase, then jump to analyst node
     await graph.aupdate_state(
@@ -1700,13 +1841,17 @@ async def trigger_analytics(thread_id: str, request: Request):
         as_node="publisher",
     )
     await _start_resume_task(
-        thread_id, graph, config,
+        thread_id,
+        graph,
+        config,
         WorkflowPhase.ANALYZING,
         input_data=Command(goto=["analyst"]),
     )
 
-    return success(data={
-        "thread_id": thread_id,
-        "status": "running",
-        "phase": "analyzing",
-    })
+    return success(
+        data={
+            "thread_id": thread_id,
+            "status": "running",
+            "phase": "analyzing",
+        }
+    )

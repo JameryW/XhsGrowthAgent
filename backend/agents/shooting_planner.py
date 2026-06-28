@@ -1,4 +1,5 @@
-"""Shooting Planner agent — generates shooting plan from brief (brief mode) or content strategy (trend mode)."""
+"""Shooting Planner agent — generates shooting plan from brief
+(brief mode) or content strategy (trend mode)."""
 
 from __future__ import annotations
 
@@ -45,10 +46,12 @@ class ShootingPlannerAgent(BaseAgent):
             }
 
         system_prompt = self._build_system_prompt(state)
-        response = await self.model.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_msg),
-        ])
+        response = await self.model.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_msg),
+            ]
+        )
 
         parsed = self._parse_json_response(response.content)
 
@@ -64,16 +67,16 @@ class ShootingPlannerAgent(BaseAgent):
         viral_context = self._format_viral_refs(viral_refs)
         return f"""请根据以下商单 brief 生成拍摄计划：
 
-品牌：{brief.get('brand_name', 'N/A')}
-产品：{brief.get('product_name', 'N/A')}
-规格：{brief.get('product_specs', [])}
-必提卖点：{brief.get('selling_points', [])}
-必含关键词：{brief.get('required_keywords', [])}
-内容方向：{brief.get('content_direction', 'N/A')}
-目标受众：{brief.get('target_audience', 'N/A')}
-风格要求：{brief.get('style_requirements', 'N/A')}
-拍摄要求：{brief.get('shooting_requirements', 'N/A')}
-注意事项：{brief.get('notes', [])}
+品牌：{brief.get("brand_name", "N/A")}
+产品：{brief.get("product_name", "N/A")}
+规格：{brief.get("product_specs", [])}
+必提卖点：{brief.get("selling_points", [])}
+必含关键词：{brief.get("required_keywords", [])}
+内容方向：{brief.get("content_direction", "N/A")}
+目标受众：{brief.get("target_audience", "N/A")}
+风格要求：{brief.get("style_requirements", "N/A")}
+拍摄要求：{brief.get("shooting_requirements", "N/A")}
+注意事项：{brief.get("notes", [])}
 {viral_context}
 
 请输出 JSON 格式的拍摄计划，包含以下字段：
@@ -95,7 +98,11 @@ class ShootingPlannerAgent(BaseAgent):
 - shooting_angles: 拍摄角度建议 [{{description: 描述}}]"""
 
     def _build_trend_prompt(
-        self, content_plan: dict, copy_content: dict, trend_data: dict, viral_refs: list,
+        self,
+        content_plan: dict,
+        copy_content: dict,
+        trend_data: dict,
+        viral_refs: list,
     ) -> str:
         """Build prompt for trend mode — from content plan + copy content."""
         viral_context = self._format_viral_refs(viral_refs)
@@ -117,9 +124,9 @@ class ShootingPlannerAgent(BaseAgent):
 赛道：{niche}
 核心要点：{key_points}
 策略话题标签：{hashtags}
-{f'已选标题：{selected_title}' if selected_title else ''}
-{f'文案正文：{body_text[:500]}' if body_text else ''}
-{f'文案话题：{copy_hashtags}' if copy_hashtags else ''}
+{f"已选标题：{selected_title}" if selected_title else ""}
+{f"文案正文：{body_text[:500]}" if body_text else ""}
+{f"文案话题：{copy_hashtags}" if copy_hashtags else ""}
 {viral_context}
 
 请输出 JSON 格式的拍摄计划，包含以下字段：
@@ -146,10 +153,10 @@ class ShootingPlannerAgent(BaseAgent):
             return ""
         lines = ["\n\n参考爆款笔记："]
         for i, post in enumerate(viral_refs[:5], 1):
-            title = post.get('title', 'N/A')
-            eng = post.get('engagement', 'N/A')
-            style = post.get('style', 'N/A')
-            scene = post.get('scene', 'N/A')
+            title = post.get("title", "N/A")
+            eng = post.get("engagement", "N/A")
+            style = post.get("style", "N/A")
+            scene = post.get("scene", "N/A")
             lines.append(f"\n{i}. {title} — 互动量: {eng}\n   风格: {style} | 场景: {scene}")
         return "".join(lines)
 

@@ -51,14 +51,14 @@ class ViralMatcherAgent(BaseAgent):
                 auto_keywords.append(brief.get("brand_name"))
             if brief.get("product_name"):
                 auto_keywords.append(brief.get("product_name"))
-            auto_keywords.extend(brief.get("required_keywords", [])[:3])
-            auto_keywords.extend(brief.get("selling_points", [])[:2])
+            auto_keywords.extend((brief.get("required_keywords") or [])[:3])
+            auto_keywords.extend((brief.get("selling_points") or [])[:2])
 
         system_prompt = self._build_system_prompt(state)
 
         if has_draft:
             user_msg = f"""用户草稿标题：{draft.get('title', '未提供')}
-用户草稿内容：{draft.get('text', '')[:500]}
+用户草稿内容：{(draft.get('text') or '')[:500]}
 用户指定爆款链接：{', '.join(user_links) if user_links else '无'}
 自动搜索关键词：{', '.join(auto_keywords[:5]) if auto_keywords else '无'}"""
         else:
@@ -69,7 +69,7 @@ class ViralMatcherAgent(BaseAgent):
             if brief.get("content_direction"):
                 brief_ctx += f"\n内容方向：{brief.get('content_direction')}"
             if brief.get("selling_points"):
-                brief_ctx += f"\n核心卖点：{', '.join(brief.get('selling_points', [])[:3])}"
+                brief_ctx += f"\n核心卖点：{', '.join((brief.get('selling_points') or [])[:3])}"
             if brief.get("target_audience"):
                 brief_ctx += f"\n目标受众：{brief.get('target_audience')}"
             user_msg = f"""商单模式 — 根据品牌Brief搜索相关爆款笔记参考

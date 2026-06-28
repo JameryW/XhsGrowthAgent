@@ -104,9 +104,7 @@ class BloggerScoutAgent(BaseAgent):
 
         except Exception as e:
             logger.warning(f"Blogger scout failed, using fallback candidates: {e}")
-            return self._hardcoded_fallback_candidates(
-                state.get("niche", "母婴"), keywords, limit
-            )
+            return self._hardcoded_fallback_candidates(state.get("niche", "母婴"), keywords, limit)
 
     def _extract_keywords(self, state: XHSGrowthState) -> list[str]:
         """Extract search keywords from state based on workflow mode."""
@@ -176,7 +174,7 @@ class BloggerScoutAgent(BaseAgent):
 
             candidates = parsed.get("candidates", [])
             if not candidates and parsed.get("raw_content"):
-                logger.warning(f"LLM did not return JSON, retrying with explicit instruction")
+                logger.warning("LLM did not return JSON, retrying with explicit instruction")
                 return await self._retry_mock_with_explicit_json(
                     state, keywords, limit, niche, brief_summary, trend_summary
                 )
@@ -223,9 +221,7 @@ class BloggerScoutAgent(BaseAgent):
             f"只输出JSON，不要输出其他任何内容。"
         )
         try:
-            response = await self.model.ainvoke(
-                [HumanMessage(content=prompt)]
-            )
+            response = await self.model.ainvoke([HumanMessage(content=prompt)])
             content = response.content
             if isinstance(content, list):
                 content = str(content)

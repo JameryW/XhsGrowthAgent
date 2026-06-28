@@ -131,7 +131,9 @@ def _check_search() -> dict:
     return {
         "status": "ok" if configured else "warning",
         "configured": configured,
-        "message": "搜索 API 已配置" if configured else "缺少 TAVILY_API_KEY（趋势发现将使用 LLM 生成数据）",
+        "message": "搜索 API 已配置"
+        if configured
+        else "缺少 TAVILY_API_KEY（趋势发现将使用 LLM 生成数据）",
     }
 
 
@@ -142,6 +144,7 @@ async def _check_memory_store() -> dict:
     store = None
     try:
         from backend.api.app import app as fastapi_app
+
         graph = getattr(fastapi_app.state, "graph", None)
         if graph is not None:
             store = getattr(graph, "store", None)
@@ -179,8 +182,8 @@ async def _check_memory_store() -> dict:
             # List all namespaces and count items
             # InMemoryStore and AsyncPostgresStore both support alist with namespace prefix
             known_prefixes = [
-                ("accounts",),      # All account-scoped data
-                ("benchmarks",),    # Niche benchmarks
+                ("accounts",),  # All account-scoped data
+                ("benchmarks",),  # Niche benchmarks
             ]
             for prefix in known_prefixes:
                 try:
@@ -283,6 +286,7 @@ async def system_health():
     active_account = None
     try:
         from backend.db.accounts import get_active_account
+
         acc = await get_active_account()
         if acc:
             active_account = {"id": acc.id, "name": acc.name}

@@ -22,7 +22,13 @@ class VisualDesignerAgent(BaseAgent):
         plan = state.get("content_plan", {})
         copy = state.get("copy_content", {})
         brief = state.get("brief_content", {})
-        shooting_plan = state.get("shooting_plan", {})
+        shooting_plan = state.get("shooting_plan") or {}
+        # ponytail: shooting_plan may be empty in trend mode; include only when available
+        shooting_ctx = ""
+        if shooting_plan:
+            scenes = ", ".join(s.get("name", "") for s in (shooting_plan.get("scenes") or []))
+            props = ", ".join(shooting_plan.get("props") or [])
+            shooting_ctx = f"\n拍摄计划场景：{scenes}\n拍摄道具：{props}"
 
         # ── Creative Memory: 读取风格指纹 + 封面素材 ──
         from backend.memory.creative import CreativeMemory
@@ -46,7 +52,7 @@ class VisualDesignerAgent(BaseAgent):
 正文摘要：{body_summary}
 品牌：{brief_brand}
 视觉要求：{brief_requirements}
-拍摄要求：{shooting_notes}"""
+拍摄要求：{shooting_notes}{shooting_ctx}"""
 
         response = await self.model.ainvoke(
             [

@@ -53,18 +53,20 @@ class ContentAnalyzerAgent(BaseAgent):
         else:
             context_section = self._build_content_context(state)
 
-        user_msg = f"""用户草稿标题：{draft.get('title', '未提供')}
-用户草稿内容：{draft.get('text', '')[:500]}
-用户草稿标签：{', '.join(draft.get('hashtags', []))}
+        user_msg = f"""用户草稿标题：{draft.get("title", "未提供")}
+用户草稿内容：{(draft.get("text") or "")[:500]}
+用户草稿标签：{", ".join(draft.get("hashtags") or [])}
 
 {context_section}
 
 请分析用户草稿与参考内容之间的差距，并提供优化建议。"""
 
-        response = await self.model.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_msg),
-        ])
+        response = await self.model.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_msg),
+            ]
+        )
 
         result = self._parse_json_response(response.content)
         optimization_analysis = result.get("optimization_analysis", {})
@@ -77,8 +79,8 @@ class ContentAnalyzerAgent(BaseAgent):
                 "viral_patterns": [],
             }
 
-        gaps_count = len(optimization_analysis.get("gaps", []))
-        suggestions_count = len(optimization_analysis.get("suggestions", []))
+        gaps_count = len(optimization_analysis.get("gaps") or [])
+        suggestions_count = len(optimization_analysis.get("suggestions") or [])
         logger.info(
             f"Generated optimization analysis with "
             f"{gaps_count} gaps and {suggestions_count} suggestions"
@@ -98,7 +100,7 @@ class ContentAnalyzerAgent(BaseAgent):
         return {
             "title": titles[0] if titles else "",
             "text": sp.get("body_copy", ""),
-            "hashtags": (sp.get("required_hashtags", []) or []) + (sp.get("optional_hashtags", []) or []),
+            "hashtags": (sp.get("required_hashtags") or []) + (sp.get("optional_hashtags") or []),
         }
 
     def _build_content_context(self, state: XHSGrowthState) -> str:
@@ -126,18 +128,20 @@ class ContentAnalyzerAgent(BaseAgent):
         """构建爆款摘要 JSON 字符串."""
         summary_posts = []
         for post in viral_posts[:5]:  # 最多取5篇
-            summary_posts.append({
-                "title": post.get("title", ""),
-                "hashtags": post.get("hashtags", []),
-                "likes": post.get("likes", 0),
-                "collects": post.get("collects", 0),
-                "comments": post.get("comments", 0),
-                "engagement_rate": post.get("engagement_rate", 0),
-                "visual_style": post.get("visual_style", ""),
-                "color_palette": post.get("color_palette", {}),
-                # 简化正文，只取前200字
-                "body_preview": post.get("body", "")[:200],
-            })
+            summary_posts.append(
+                {
+                    "title": post.get("title", ""),
+                    "hashtags": post.get("hashtags", []),
+                    "likes": post.get("likes", 0),
+                    "collects": post.get("collects", 0),
+                    "comments": post.get("comments", 0),
+                    "engagement_rate": post.get("engagement_rate", 0),
+                    "visual_style": post.get("visual_style", ""),
+                    "color_palette": post.get("color_palette", {}),
+                    # 简化正文，只取前200字
+                    "body_preview": (post.get("body") or "")[:200],
+                }
+            )
         return json.dumps(summary_posts, ensure_ascii=False, indent=2)
 
 
