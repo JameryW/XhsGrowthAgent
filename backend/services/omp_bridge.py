@@ -112,7 +112,7 @@ class AgentStatus:
 # ── XHS host tool definitions ───────────────────────────────────────────────
 
 # ponytail: tool schemas derived from xhsagent-ext/src/tools/*.ts
-# These are the 7 tools the omp agent can call via host_tool_call mechanism.
+# These are the 25 tools the omp agent can call via host_tool_call mechanism.
 
 XHS_HOST_TOOLS: list[dict[str, Any]] = [
     {
