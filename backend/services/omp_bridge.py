@@ -225,6 +225,147 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
             "required": ["thread_id", "feedback"],
         },
     },
+    {
+        "name": "xhs_review_pending",
+        "label": "XHS Review Pending",
+        "description": "Get content details awaiting review at the review gate",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID"},
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_review_versions",
+        "label": "XHS Review Versions",
+        "description": "Get all content versions for comparison before review decision",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID"},
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_blogger_pending",
+        "label": "XHS Blogger Pending",
+        "description": "Get pending blogger candidates for a workflow at blogger selection gate",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID"},
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_blogger_select",
+        "label": "XHS Blogger Select",
+        "description": "Select a blogger candidate or skip blogger selection",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID"},
+                "user_id": {"type": "string", "description": "Selected blogger user_id"},
+                "nickname": {"type": "string", "description": "Selected blogger nickname"},
+                "skip": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Skip blogger selection",
+                },
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_optimization_draft",
+        "label": "XHS Optimization Draft",
+        "description": "Generate an optimization draft for content at the optimization stage",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID"},
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_optimization_select",
+        "label": "XHS Optimization Select",
+        "description": "Select a specific optimization version to proceed with",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID"},
+                "version_id": {
+                    "type": "string",
+                    "description": "Version ID to select (from content_versions)",
+                },
+                "version_type": {
+                    "type": "string",
+                    "description": "Version type: A/B/C (optional)",
+                },
+            },
+            "required": ["thread_id", "version_id"],
+        },
+    },
+    {
+        "name": "xhs_workflow_list",
+        "label": "XHS Workflow List",
+        "description": "List all workflows with their status and phase",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "xhs_workflow_delete",
+        "label": "XHS Workflow Delete",
+        "description": "Delete a workflow and its data",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID to delete"},
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_analytics_dashboard",
+        "label": "XHS Analytics Dashboard",
+        "description": "Get analytics dashboard data for an account",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "description": "Account ID"},
+            },
+            "required": ["account_id"],
+        },
+    },
+    {
+        "name": "xhs_analytics_costs",
+        "label": "XHS Analytics Costs",
+        "description": "Get LLM cost tracking data across all workflows",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "period": {
+                    "type": "string",
+                    "default": "weekly",
+                    "description": "Time period: daily, weekly, monthly",
+                },
+            },
+        },
+    },
+    {
+        "name": "xhs_system_health",
+        "label": "XHS System Health",
+        "description": (
+            "Check XhsGrowthAgent system health — "
+            "LLM providers, XHS platform, Ripple, database, memory store"
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
 ]
 
 # Names of XHS tools that the backend auto-executes
@@ -338,6 +479,202 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     ),
                     data,
                 )
+
+            elif tool_name == "xhs_review_pending":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.get(f"{url}/review/pending/{thread_id}")
+                data = _unwrap_envelope(resp)
+                if data.get("status") != "awaiting_review":
+                    return _make_text_result(
+                        f"Workflow {thread_id} is not at review gate.",
+                        data,
+                    )
+                lines = [f"Content Pending Review — {thread_id}:"]
+                copy = data.get("copy_content") or {}
+                title = copy.get("selected_title") or copy.get("title") or ""
+                body_text = copy.get("body_text") or copy.get("body") or ""
+                if title:
+                    lines.append(f"  Title: {title}")
+                if body_text:
+                    lines.append(f"  Body: {str(body_text)[:500]}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_review_versions":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.get(f"{url}/review/versions/{thread_id}")
+                data = _unwrap_envelope(resp)
+                versions = data.get("versions", [])
+                if not versions:
+                    return _make_text_result("No content versions available.", data)
+                current = data.get("current", {})
+                current_title = current.get("title", "(no title)")
+                lines = [f"Content Versions — {thread_id}:", f"  Current: {current_title}"]
+                for i, v in enumerate(versions, 1):
+                    vid = v.get("version_id", "?")
+                    summary = v.get("changes_summary", "draft")
+                    lines.append(f"  {i}. [{vid}] {summary}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_blogger_pending":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.get(f"{url}/optimization/blogger-pending/{thread_id}")
+                data = _unwrap_envelope(resp)
+                if not data.get("is_pending"):
+                    return _make_text_result(
+                        f"Workflow {thread_id} is not at blogger selection gate.", data
+                    )
+                candidates = data.get("blogger_candidates", [])
+                if not candidates:
+                    return _make_text_result("No blogger candidates available.", data)
+                lines = [f"Blogger Candidates for {thread_id}:"]
+                for i, c in enumerate(candidates, 1):
+                    lines.append(f'  {i}. {c.get("nickname", "?")} (ID: {c.get("user_id", "?")})')
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_blogger_select":
+                thread_id = arguments.get("thread_id", "")
+                sel_body: dict[str, Any] = {"skip": arguments.get("skip", False)}
+                if not arguments.get("skip"):
+                    if not arguments.get("user_id"):
+                        return _make_text_result(
+                            "user_id is required when not skipping.", None, is_error=True
+                        )
+                    sel_body["user_id"] = arguments["user_id"]
+                    if arguments.get("nickname"):
+                        sel_body["nickname"] = arguments["nickname"]
+                resp = await client.post(
+                    f"{url}/optimization/blogger-select/{thread_id}", json=sel_body
+                )
+                data = _unwrap_envelope(resp)
+                if arguments.get("skip"):
+                    action = "skipped"
+                else:
+                    action = f'selected "{arguments.get("nickname", "")}"'
+                next_phase = data.get("next_phase", "")
+                return _make_text_result(
+                    f"Blogger {action} for {thread_id}. Next: {next_phase}",
+                    data,
+                )
+
+            elif tool_name == "xhs_optimization_draft":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.post(f"{url}/optimization/draft/{thread_id}")
+                data = _unwrap_envelope(resp)
+                status = data.get("status", "")
+                lines = [f"Optimization Draft — {thread_id}:", f"  Status: {status}"]
+                draft = data.get("draft_content") or {}
+                title = draft.get("title") or ""
+                body_text = draft.get("body") or ""
+                if title:
+                    lines.append(f"  Title: {title}")
+                if body_text:
+                    lines.append(f"  Body: {str(body_text)[:500]}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_optimization_select":
+                thread_id = arguments.get("thread_id", "")
+                version_id = arguments.get("version_id", "")
+                version_type = arguments.get("version_type")
+                opt_body: dict[str, Any] = {"version_id": version_id}
+                if version_type:
+                    opt_body["version_type"] = version_type
+                resp = await client.post(
+                    f"{url}/optimization/select/{thread_id}", json=opt_body
+                )
+                data = _unwrap_envelope(resp)
+                next_phase = data.get("next_phase", "")
+                return _make_text_result(
+                    f"Selected version {version_id} for {thread_id}. Next: {next_phase}",
+                    data,
+                )
+
+            elif tool_name == "xhs_workflow_list":
+                resp = await client.get(f"{url}/workflow/list")
+                data = _unwrap_envelope(resp)
+                workflows = data.get("workflows", [])
+                if not workflows:
+                    return _make_text_result("No workflows found.", data)
+                lines = [f"Workflows ({len(workflows)}):"]
+                for w in workflows:
+                    tid = w.get("thread_id", "")
+                    lines.append(f"  {tid[:8]}… | {w.get('phase', '')} | {w.get('status', '')}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_workflow_delete":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.delete(f"{url}/workflow/{thread_id}")
+                _unwrap_envelope(resp)
+                return _make_text_result(f"Workflow {thread_id} deleted.")
+
+            elif tool_name == "xhs_analytics_dashboard":
+                account_id = arguments.get("account_id", "")
+                resp = await client.get(f"{url}/analytics/dashboard/{account_id}")
+                data = _unwrap_envelope(resp)
+                lines = [f"Analytics Dashboard — {account_id}:"]
+                report = data.get("report", {})
+                metrics = report.get("metrics", {})
+                if metrics:
+                    lines.append(
+                        f"  Posts: {metrics.get('total_posts', 0)}, "
+                        f"Engagement: {metrics.get('total_engagement', 0)}, "
+                        f"Avg Rate: {metrics.get('avg_engagement_rate', 0)}%"
+                    )
+                    best = metrics.get("best_post_title", "")
+                    if best:
+                        lines.append(f"  Best Post: {best}")
+                costs = data.get("costs", {})
+                if costs:
+                    lines.append(
+                        f"  Costs: ${costs.get('period_cost_usd', 0):.2f} this period, "
+                        f"${costs.get('today_cost_usd', 0):.2f} today"
+                    )
+                perf = data.get("performance", {})
+                if perf.get("posts"):
+                    lines.append(f"  Recent Posts: {len(perf['posts'])}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_analytics_costs":
+                period = arguments.get("period", "weekly")
+                resp = await client.get(f"{url}/analytics/costs", params={"period": period})
+                data = _unwrap_envelope(resp)
+                total = data.get("total_cost_usd", 0)
+                period_cost = data.get("period_cost_usd", 0)
+                today_cost = data.get("today_cost_usd", 0)
+                lines = [
+                    f"LLM Cost Report (period: {period}):",
+                    f"  Total: ${total:.4f}",
+                    f"  This Period: ${period_cost:.4f}",
+                    f"  Today: ${today_cost:.4f}",
+                ]
+                by_model = data.get("by_model", {})
+                if by_model:
+                    lines.append("  By Model:")
+                    for model, cost in by_model.items():
+                        lines.append(f"    {model}: ${cost:.4f}")
+                budget = data.get("budget_remaining_usd")
+                if budget is not None:
+                    lines.append(f"  Budget Remaining: ${budget:.2f}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_system_health":
+                resp = await client.get(f"{url}/system/health")
+                data = _unwrap_envelope(resp)
+                checks = data.get("checks", {})
+                lines = [
+                    f"System Health: {data.get('status', 'unknown').upper()}",
+                    f"  LLM Providers: {checks.get('llm_providers', {}).get('status', '?')}",
+                    f"  XHS Platform: {checks.get('xhs_platform', {}).get('status', '?')}",
+                    f"  Ripple CAS: {checks.get('ripple_cas', {}).get('status', '?')}",
+                ]
+                db_check = checks.get("database", {})
+                lines.append(
+                    f"  Database: {db_check.get('status', '?')} "
+                    f"({db_check.get('mode', '?')})"
+                )
+                lines.append(
+                    f"  Memory Store: {checks.get('memory_store', {}).get('status', '?')}"
+                )
+                return _make_text_result("\n".join(lines), data)
 
             else:
                 return _make_text_result(f"Unknown tool: {tool_name}", None, is_error=True)

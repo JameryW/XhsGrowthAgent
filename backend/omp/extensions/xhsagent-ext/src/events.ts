@@ -19,9 +19,13 @@ export default function register(pi: ExtensionAPI) {
     return {
       systemPrompt: [
         "You have access to XhsGrowthAgent tools for Xiaohongshu (小红书) content creation.",
-        "Use /xhs to start a creation workflow, /xhs-review to review pending content.",
-        "Tools: xhs_workflow_start, xhs_workflow_status, xhs_workflow_pause, xhs_workflow_resume, xhs_workflow_cancel, xhs_review_approve, xhs_review_reject.",
-      ],
+        "Commands: /xhs (start workflow), /xhs-review (review content), /xhs-analytics (view analytics).",
+        "Workflow: xhs_workflow_start, xhs_workflow_status, xhs_workflow_list, xhs_workflow_pause, xhs_workflow_resume, xhs_workflow_cancel, xhs_workflow_delete.",
+        "Review: xhs_review_pending, xhs_review_versions, xhs_review_approve, xhs_review_reject.",
+        "Blogger: xhs_blogger_pending, xhs_blogger_select.",
+        "Optimization: xhs_optimization_draft, xhs_optimization_select.",
+        "Analytics: xhs_analytics_dashboard, xhs_analytics_costs, xhs_system_health.",
+        ],
     };
   });
 }

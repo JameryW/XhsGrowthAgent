@@ -10,7 +10,9 @@ export default function register(pi: ExtensionAPI) {
         `Create a Xiaohongshu (小红书) content post.`,
         topic ? `Topic: ${topic}` : "Pick a trending topic using the workflow.",
         "Use xhs_workflow_start to launch the workflow, then track progress with xhs_workflow_status.",
-        "When the workflow reaches review, use xhs_review_approve or xhs_review_reject to make a decision.",
+        "At blogger selection: xhs_blogger_pending then xhs_blogger_select.",
+        "At review: xhs_review_pending then xhs_review_approve or xhs_review_reject.",
+        "At optimization: xhs_optimization_draft then xhs_optimization_select.",
       ].join("\n"));
     },
   });
