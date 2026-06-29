@@ -541,3 +541,36 @@ Added 10 omp tools + 1 command, updated omp_bridge.py host tool schemas and auto
 ### Next Steps
 
 - None - task complete
+
+
+## Session 51: Add 7 more omp tools: history, Ripple, analytics report/performance
+
+**Date**: 2026-06-29
+**Task**: Add 7 more omp tools: history, Ripple, analytics report/performance
+**Branch**: `main`
+
+### Summary
+
+Added 7 omp tools (workflow_history, workflow_trigger_analytics, ripple_pending/decision/retry, analytics_report/performance). Total 25 tools. Updated omp_bridge.py with host tool schemas and auto-exec handlers.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `74e39da8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
