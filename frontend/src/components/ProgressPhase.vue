@@ -33,6 +33,8 @@ const phaseDisplay = computed(() => {
   if (props.currentStatus === 'awaiting_choice') return t('dashboard.phase.awaitingChoice')
   if (props.currentStatus === 'awaiting_review') return t('dashboard.phase.awaitingReview')
   if (props.currentStatus === 'awaiting_blogger_selection') return t('dashboard.phase.awaitingBlogger')
+  if (props.currentStatus === 'awaiting_ripple_decision') return t('dashboard.phase.awaitingRipple')
+  if (props.currentStatus === 'awaiting_brief') return t('dashboard.phase.awaitingBrief')
 
   const key = `dashboard.phase.${props.currentPhase}`
   const translated = t(key)

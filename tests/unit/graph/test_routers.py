@@ -1,12 +1,20 @@
 """Unit tests for graph routers."""
 
 from backend.graph.routers import (
+    blogger_gate_router,
+    choice_outcome,
+    content_analyzer_router,
+    copywriter_router,
+    draft_gate_router,
     engagement_router,
     orchestrator_router,
     review_outcome,
+    ripple_gate_router,
+    shooting_planner_router,
     should_continue,
     should_plan,
     should_present_choice,
+    visual_designer_router,
 )
 from backend.state.enums import ContentStatus, WorkflowPhase
 
@@ -87,6 +95,48 @@ class TestShouldPlan:
     def test_routes_to_end_without_trend_data(self):
         """No trend_data → END."""
         state = {}
+        result = should_plan(state)
+        assert result == "__end__"
+
+    def test_routes_to_trend_scout_on_retry(self):
+        """Error with retry_count < 2 → trend_scout (retry)."""
+        state = {"error": "API failed", "retry_count": 0}
+        result = should_plan(state)
+        assert result == "trend_scout"
+
+    def test_routes_to_end_on_max_retry(self):
+        """Error with retry_count >= 2 → END (give up)."""
+        state = {"error": "API failed", "retry_count": 2}
+        result = should_plan(state)
+        assert result == "__end__"
+
+    def test_routes_to_strategist_overrides_error(self):
+        """Hot topics present even with error → content_strategist."""
+        state = {"trend_data": {"hot_topics": ["美食"]}, "error": "partial fail"}
+        result = should_plan(state)
+        assert result == "content_strategist"
+
+    def test_error_phase_with_low_retry_retries(self):
+        """phase=ERROR with retry_count < 2 → trend_scout (retry, not terminal)."""
+        state = {"phase": WorkflowPhase.ERROR, "error": "API failed", "retry_count": 0}
+        result = should_plan(state)
+        assert result == "trend_scout"
+
+    def test_error_phase_with_max_retry_gives_up(self):
+        """phase=ERROR with retry_count >= 2 → __end__ (give up)."""
+        state = {"phase": WorkflowPhase.ERROR, "error": "API failed", "retry_count": 2}
+        result = should_plan(state)
+        assert result == "__end__"
+
+    def test_cancelled_overrides_error_retry(self):
+        """phase=CANCELLED with error → __end__ (cancelled is truly terminal)."""
+        state = {"phase": WorkflowPhase.CANCELLED, "error": "API failed", "retry_count": 0}
+        result = should_plan(state)
+        assert result == "__end__"
+
+    def test_paused_overrides_error_retry(self):
+        """phase=PAUSED with error → __end__ (paused is terminal)."""
+        state = {"phase": WorkflowPhase.PAUSED, "error": "API failed", "retry_count": 0}
         result = should_plan(state)
         assert result == "__end__"
 
@@ -236,3 +286,175 @@ class TestShouldPresentChoice:
             "content_versions": [{"version_id": "v1"}, {"version_id": "v2"}],
         }
         assert should_present_choice(state) == "__end__"
+
+
+class TestRippleGateRouter:
+    """Tests for ripple_gate_router conditional edge."""
+
+    def test_accept_routes_to_copywriter(self):
+        """Accept decision → copywriter."""
+        state = {"ripple_decision": {"action": "accept"}}
+        assert ripple_gate_router(state) == "copywriter"
+
+    def test_reangle_trend_routes_to_strategist(self):
+        """Reangle in trend mode → content_strategist."""
+        state = {"ripple_decision": {"action": "reangle"}, "workflow_mode": "trend"}
+        assert ripple_gate_router(state) == "content_strategist"
+
+    def test_reangle_brief_routes_to_brief_analyzer(self):
+        """Reangle in brief mode → brief_analyzer."""
+        state = {"ripple_decision": {"action": "reangle"}, "workflow_mode": "brief"}
+        assert ripple_gate_router(state) == "brief_analyzer"
+
+    def test_retopic_routes_to_trend_scout(self):
+        """Retopic → trend_scout (both modes)."""
+        state = {"ripple_decision": {"action": "retopic"}}
+        assert ripple_gate_router(state) == "trend_scout"
+
+    def test_default_accept(self):
+        """No decision → default accept → copywriter."""
+        state = {}
+        assert ripple_gate_router(state) == "copywriter"
+
+    def test_cancelled_routes_to_end(self):
+        """CANCELLED → __end__."""
+        state = {"phase": WorkflowPhase.CANCELLED}
+        assert ripple_gate_router(state) == "__end__"
+
+
+class TestBloggerGateRouter:
+    """Tests for blogger_gate_router conditional edge."""
+
+    def test_brief_mode_routes_to_copywriter(self):
+        """Brief mode → copywriter."""
+        state = {"workflow_mode": "brief"}
+        assert blogger_gate_router(state) == "copywriter"
+
+    def test_trend_mode_routes_to_draft_gate(self):
+        """Trend mode → draft_gate."""
+        state = {"workflow_mode": "trend"}
+        assert blogger_gate_router(state) == "draft_gate"
+
+    def test_default_is_trend(self):
+        """No workflow_mode → draft_gate (trend default)."""
+        state = {}
+        assert blogger_gate_router(state) == "draft_gate"
+
+    def test_cancelled_routes_to_end(self):
+        """CANCELLED → __end__."""
+        state = {"phase": WorkflowPhase.CANCELLED}
+        assert blogger_gate_router(state) == "__end__"
+
+
+class TestDraftGateRouter:
+    """Tests for draft_gate_router conditional edge."""
+
+    def test_selected_blogger_routes_to_shooting_planner(self):
+        """Selected blogger → shooting_planner."""
+        state = {"selected_blogger": {"user_id": "u1"}}
+        assert draft_gate_router(state) == "shooting_planner"
+
+    def test_blogger_skipped_routes_to_shooting_planner(self):
+        """Blogger skipped → shooting_planner."""
+        state = {"blogger_skipped": True}
+        assert draft_gate_router(state) == "shooting_planner"
+
+    def test_brief_mode_routes_to_shooting_planner(self):
+        """Brief mode → shooting_planner (skip blogger loop)."""
+        state = {"workflow_mode": "brief"}
+        assert draft_gate_router(state) == "shooting_planner"
+
+    def test_trend_no_blogger_routes_to_viral_matcher(self):
+        """Trend mode without blogger → viral_matcher."""
+        state = {"workflow_mode": "trend"}
+        assert draft_gate_router(state) == "viral_matcher"
+
+    def test_default_routes_to_viral_matcher(self):
+        """Default → viral_matcher."""
+        state = {}
+        assert draft_gate_router(state) == "viral_matcher"
+
+
+class TestCopywriterRouter:
+    """Tests for copywriter_router."""
+
+    def test_routes_to_draft_gate(self):
+        """Normal → draft_gate."""
+        state = {"phase": WorkflowPhase.CREATING}
+        assert copywriter_router(state) == "draft_gate"
+
+    def test_cancelled_routes_to_end(self):
+        """CANCELLED → __end__."""
+        state = {"phase": WorkflowPhase.CANCELLED}
+        assert copywriter_router(state) == "__end__"
+
+
+class TestVisualDesignerRouter:
+    """Tests for visual_designer_router."""
+
+    def test_routes_to_review_gate(self):
+        """Normal → review_gate."""
+        state = {"phase": WorkflowPhase.CREATING}
+        assert visual_designer_router(state) == "review_gate"
+
+    def test_cancelled_routes_to_end(self):
+        """CANCELLED → __end__."""
+        state = {"phase": WorkflowPhase.CANCELLED}
+        assert visual_designer_router(state) == "__end__"
+
+
+class TestContentAnalyzerRouter:
+    """Tests for content_analyzer_router."""
+
+    def test_multiple_versions_routes_to_choice_gate(self):
+        """Multiple versions → choice_gate (style selection)."""
+        state = {"content_versions": [{"id": "v1"}, {"id": "v2"}]}
+        assert content_analyzer_router(state) == "choice_gate"
+
+    def test_single_version_routes_to_version_generator(self):
+        """Single version → version_generator."""
+        state = {"content_versions": [{"id": "v1"}]}
+        assert content_analyzer_router(state) == "version_generator"
+
+    def test_no_versions_routes_to_version_generator(self):
+        """No versions → version_generator."""
+        state = {"content_versions": []}
+        assert content_analyzer_router(state) == "version_generator"
+
+    def test_cancelled_routes_to_end(self):
+        """CANCELLED → __end__."""
+        state = {"phase": WorkflowPhase.CANCELLED}
+        assert content_analyzer_router(state) == "__end__"
+
+
+class TestChoiceOutcome:
+    """Tests for choice_outcome router."""
+
+    def test_style_selected_routes_to_version_generator(self):
+        """Style just selected → version_generator (A/B/C generation)."""
+        state = {"style_selected": True}
+        assert choice_outcome(state) == "version_generator"
+
+    def test_no_style_selected_routes_to_visual_designer(self):
+        """No style_selected → visual_designer (version was selected)."""
+        state = {}
+        assert choice_outcome(state) == "visual_designer"
+
+
+class TestShootingPlannerRouter:
+    """Tests for shooting_planner_router."""
+
+    def test_default_routes_to_content_analyzer(self):
+        """Default → content_analyzer (optimization)."""
+        state = {}
+        assert shooting_planner_router(state) == "content_analyzer"
+
+    def test_skip_optimization_routes_to_visual_designer(self):
+        """skip_optimization → visual_designer."""
+        state = {"skip_optimization": True}
+        assert shooting_planner_router(state) == "visual_designer"
+
+    def test_cancelled_routes_to_end(self):
+        """CANCELLED → __end__."""
+        state = {"phase": WorkflowPhase.CANCELLED}
+        assert shooting_planner_router(state) == "__end__"

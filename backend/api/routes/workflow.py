@@ -51,13 +51,8 @@ _HISTORY_DIR = Path(os.environ.get("XHS_REGISTRY_PATH", ".xhs")) / "history"
 _last_status: dict[str, WorkflowStatus] = {}
 
 
-def _save_history_file(thread_id: str, data: dict) -> None:
-    try:
-        _HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-        path = _HISTORY_DIR / f"{thread_id}.json"
-        path.write_text(json.dumps(data, default=str, ensure_ascii=False))
-    except Exception:
-        logger.exception("Failed to save history for %s", thread_id)
+# Re-exported from _runner
+_save_history_file = _runner._save_history_file
 
 
 def _load_history_file(thread_id: str) -> dict | None:
@@ -75,12 +70,18 @@ def _load_history_file(thread_id: str) -> dict | None:
 # Re-export shared helpers from _runner for use in this module
 _db_upsert = _runner._db_upsert
 _get_as_node = _runner._get_as_node
+_task_has_error = _runner._task_has_error
 
 
 def _on_task_done(thread_id: str):
     """Background task done callback — update DB with task_done_at / stale status."""
 
     def callback(task: asyncio.Task) -> None:
+        # Skip DB update if this task was replaced by a newer one
+        # (e.g. _start_resume_task cancelled this task and started a new one)
+        if _runner._background_tasks.get(thread_id) is not task:
+            return
+
         task_error = None
         try:
             task.result()
@@ -101,10 +102,16 @@ def _on_task_done(thread_id: str):
                 if not is_pool_ready():
                     return
                 existing = await db_get(thread_id)
-                if existing and existing.status == "running":
+                if not existing:
+                    return
+                if task_error:
+                    # Task failed — mark as error (not stale)
+                    updates["status"] = "error"
+                    updates["error"] = task_error
+                elif existing.status == "running":
+                    # Task completed normally but DB still running → stale
                     updates["status"] = "stale"
-                if existing:
-                    await db_update(thread_id, **updates)
+                await db_update(thread_id, **updates)
 
             asyncio.ensure_future(_do_update())
         except Exception:
@@ -152,11 +159,6 @@ def _task_name(task: Any) -> str | None:
     return name if isinstance(name, str) and name else None
 
 
-def _task_has_error(task: Any) -> bool:
-    error = getattr(task, "error", None)
-    return error not in (None, "")
-
-
 def _resume_nodes_from_tasks(tasks: Any) -> tuple[str, ...]:
     named_tasks = tuple(name for task in (tasks or ()) if (name := _task_name(task)))
     failed_tasks = tuple(
@@ -191,6 +193,11 @@ async def _start_resume_task(
     input_data: passed as the graph ainvoke input. None = native resume from
     checkpoint (the default). Pass a Command(goto=...) to retry a specific node.
     """
+    # Cancel any still-running task for this thread to prevent conflicting state updates
+    existing_task = _runner._background_tasks.get(thread_id)
+    if existing_task and not existing_task.done():
+        existing_task.cancel()
+
     await _db_upsert(
         thread_id,
         status="running",
@@ -304,7 +311,10 @@ class WorkflowStatusResponse(BaseModel):
     blogger_candidates: list[dict] = Field(default_factory=list, description="候选博主列表")
     selected_blogger: dict = Field(default_factory=dict, description="选中的博主")
     blogger_notes: list[dict] = Field(default_factory=list, description="博主笔记")
+    blogger_candidate_limit: int = Field(default=5, description="候选博主上限")
+    blogger_note_limit: int = Field(default=3, description="每个博主笔记上限")
     reselect_count: int = Field(default=0, description="重新选题次数")
+    ripple_reason: str = Field(default="", description="Ripple 未运行原因")
     label: str = Field(default="", description="工作流名称")
     checkpoint_lost: bool = Field(
         default=False,
@@ -360,6 +370,8 @@ PHASE_PROGRESS = {
     "engaging": 95,
     "completed": 100,
     "error": 0,
+    "paused": 0,
+    "cancelled": 0,
 }
 
 
@@ -515,7 +527,8 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
             }
         )
     else:
-        with contextlib.suppress(asyncio.CancelledError):
+        from backend.core.error_handling import WorkflowCancelledError
+        with contextlib.suppress(asyncio.CancelledError, WorkflowCancelledError):
             await _runner._run_graph_and_persist(
                 thread_id,
                 graph,
@@ -655,7 +668,10 @@ async def get_workflow_status(thread_id: str, request: Request):
                 blogger_candidates=state.values.get("blogger_candidates") or [],
                 selected_blogger=state.values.get("selected_blogger") or {},
                 blogger_notes=state.values.get("blogger_notes") or [],
+                blogger_candidate_limit=state.values.get("blogger_candidate_limit", 5),
+                blogger_note_limit=state.values.get("blogger_note_limit", 3),
                 reselect_count=state.values.get("reselect_count", 0),
+                ripple_reason=state.values.get("ripple_reason") or "",
                 label=label,
             ).model_dump()
         )
@@ -701,6 +717,13 @@ async def get_workflow_status(thread_id: str, request: Request):
                 ripple_pmf=_extract_ripple(saved, "ripple_pmf"),
                 ripple_comparison=saved.get("ripple_comparison") or {},
                 ripple_progress={},  # History file has no live Ripple progress
+                ripple_reason=saved.get("ripple_reason") or "",
+                reselect_count=saved.get("reselect_count", 0),
+                blogger_candidates=saved.get("blogger_candidates") or [],
+                selected_blogger=saved.get("selected_blogger") or {},
+                blogger_notes=saved.get("blogger_notes") or [],
+                blogger_candidate_limit=saved.get("blogger_candidate_limit", 5),
+                blogger_note_limit=saved.get("blogger_note_limit", 3),
                 label="",
             ).model_dump()
         )
@@ -912,6 +935,8 @@ async def pause_workflow(thread_id: str, request: Request):
         bg_task.cancel()
 
     await _db_upsert(thread_id, status="paused", phase="paused")
+
+    _runner._emit_status_transition(WorkflowStatus.PAUSED, thread_id)
 
     return success(
         data={
@@ -1195,6 +1220,8 @@ async def cancel_workflow(thread_id: str, request: Request):
     if bg_task and not bg_task.done():
         bg_task.cancel()
 
+    _runner._emit_status_transition(WorkflowStatus.CANCELLED, thread_id)
+
     return success(
         data={
             "thread_id": thread_id,
@@ -1220,7 +1247,10 @@ async def stream_workflow_progress(thread_id: str, request: Request):
                 event_data = json.dumps(event.payload, ensure_ascii=False)
                 yield f"event: {event.event_type.value}\ndata: {event_data}\n\n"
 
-                if event.event_type in (EventType.WORKFLOW_COMPLETED, EventType.WORKFLOW_ERROR):
+                if event.event_type in (
+                    EventType.WORKFLOW_COMPLETED,
+                    EventType.WORKFLOW_ERROR,
+                ):
                     break
         finally:
             bus.unsubscribe_thread(thread_id, queue)
@@ -1285,6 +1315,14 @@ async def delete_workflow(thread_id: str, request: Request):
         raise WorkflowNotFoundError(thread_id)
 
     if row and row.status == "running":
+        raise ValidationError(
+            "thread_id",
+            "Cannot delete a running workflow. Cancel it first.",
+        )
+
+    # Also block if a background task is active (DB may not reflect running status yet)
+    bg_task = _runner._background_tasks.get(thread_id)
+    if bg_task and not bg_task.done():
         raise ValidationError(
             "thread_id",
             "Cannot delete a running workflow. Cancel it first.",

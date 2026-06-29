@@ -703,9 +703,16 @@ components:
       enum:
         - running
         - stale
+        - awaiting_review
+        - awaiting_choice
+        - awaiting_draft
+        - awaiting_brief
+        - awaiting_ripple_decision
+        - awaiting_blogger_selection
         - paused
         - completed
         - error
+        - cancelled
       description: Execution status of a workflow
 
     ReviewDecision:

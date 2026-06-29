@@ -62,14 +62,13 @@ def orchestrator_router(state: XHSGrowthState) -> str:
 
 
 def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "trend_scout", "__end__"]:
-    """侦察后判断是否有可操作的趋势 — retry trend_scout on failure before giving up."""
-    if terminal := _check_terminal(state):
-        return terminal
+    """侦察后判断是否有可操作的趋势 — retry trend_scout on failure before giving up.
 
+    Error with retry_count < 2 overrides _check_terminal for phase=ERROR,
+    allowing the workflow to retry before giving up.
+    """
+    # Check for actionable trends FIRST — if we have data, use it even with errors
     trend_data = state.get("trend_data")
-
-    # Check for actionable trends — normalize across field aliases:
-    # hot_topics (canonical), trending_topics (LLM output), topics (fallback)
     if trend_data:
         has_topics = bool(
             trend_data.get("hot_topics")
@@ -79,11 +78,16 @@ def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "trend_s
         if has_topics:
             return "content_strategist"
 
+    # Error retry takes priority over terminal check — phase=ERROR with
+    # retry_count < 2 should retry, not terminate immediately
     has_error = state.get("error")
     retry_count = state.get("retry_count", 0)
-
-    if has_error and retry_count < 2:
+    phase = state.get("phase")
+    if has_error and retry_count < 2 and phase not in (WorkflowPhase.CANCELLED, WorkflowPhase.PAUSED):
         return "trend_scout"
+
+    if terminal := _check_terminal(state):
+        return terminal
 
     return "__end__"
 

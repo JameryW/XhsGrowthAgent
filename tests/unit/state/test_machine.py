@@ -127,6 +127,86 @@ class TestDeriveStatus:
         )
         assert derive_status(snapshot) == WorkflowStatus.AWAITING_CHOICE
 
+    def test_interrupt_before_draft_gate_returns_awaiting_draft(self):
+        """interrupt_before draft_gate → AWAITING_DRAFT."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.CREATING},
+            next=["draft_gate"],
+            interrupts=[],
+        )
+        assert derive_status(snapshot) == WorkflowStatus.AWAITING_DRAFT
+
+    def test_interrupt_before_brief_gate_returns_awaiting_brief(self):
+        """interrupt_before brief_gate → AWAITING_BRIEF."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.BRIEFING},
+            next=["brief_gate"],
+            interrupts=[],
+        )
+        assert derive_status(snapshot) == WorkflowStatus.AWAITING_BRIEF
+
+    def test_interrupt_before_ripple_gate_returns_awaiting_ripple_decision(self):
+        """interrupt_before ripple_gate → AWAITING_RIPPLE_DECISION."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.PLANNING},
+            next=["ripple_gate"],
+            interrupts=[],
+        )
+        assert derive_status(snapshot) == WorkflowStatus.AWAITING_RIPPLE_DECISION
+
+    def test_interrupt_before_blogger_gate_returns_awaiting_blogger_selection(self):
+        """interrupt_before blogger_gate → AWAITING_BLOGGER_SELECTION."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.CREATING},
+            next=["blogger_gate"],
+            interrupts=[],
+        )
+        assert derive_status(snapshot) == WorkflowStatus.AWAITING_BLOGGER_SELECTION
+
+    def test_dynamic_interrupt_draft_gate(self):
+        """Dynamic interrupt with gate=draft → AWAITING_DRAFT."""
+        interrupt_mock = MagicMock()
+        interrupt_mock.value = {"gate": "draft"}
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.CREATING},
+            next=[],
+            interrupts=[interrupt_mock],
+        )
+        assert derive_status(snapshot) == WorkflowStatus.AWAITING_DRAFT
+
+    def test_dynamic_interrupt_ripple_gate(self):
+        """Dynamic interrupt with gate=ripple → AWAITING_RIPPLE_DECISION."""
+        interrupt_mock = MagicMock()
+        interrupt_mock.value = {"gate": "ripple"}
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.PLANNING},
+            next=[],
+            interrupts=[interrupt_mock],
+        )
+        assert derive_status(snapshot) == WorkflowStatus.AWAITING_RIPPLE_DECISION
+
+    def test_dynamic_interrupt_blogger_gate(self):
+        """Dynamic interrupt with gate=blogger → AWAITING_BLOGGER_SELECTION."""
+        interrupt_mock = MagicMock()
+        interrupt_mock.value = {"gate": "blogger"}
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.CREATING},
+            next=[],
+            interrupts=[interrupt_mock],
+        )
+        assert derive_status(snapshot) == WorkflowStatus.AWAITING_BLOGGER_SELECTION
+
+    def test_dynamic_interrupt_brief_clarification(self):
+        """Dynamic interrupt with gate=brief_clarification → AWAITING_BRIEF."""
+        interrupt_mock = MagicMock()
+        interrupt_mock.value = {"gate": "brief_clarification"}
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.BRIEFING},
+            next=[],
+            interrupts=[interrupt_mock],
+        )
+        assert derive_status(snapshot) == WorkflowStatus.AWAITING_BRIEF
+
 
 class TestDeriveStatusStale:
     """Test STALE status detection with has_active_task parameter."""
@@ -193,6 +273,44 @@ class TestDeriveStatusStale:
             next=["trend_scout"],
         )
         assert derive_status(snapshot, has_active_task=False) == WorkflowStatus.CANCELLED
+
+    def test_stale_does_not_override_draft_gate(self):
+        """Draft gate takes priority over stale detection."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.CREATING},
+            next=["draft_gate"],
+            interrupts=[],
+        )
+        assert derive_status(snapshot, has_active_task=False) == WorkflowStatus.AWAITING_DRAFT
+
+    def test_stale_does_not_override_brief_gate(self):
+        """Brief gate takes priority over stale detection."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.BRIEFING},
+            next=["brief_gate"],
+            interrupts=[],
+        )
+        assert derive_status(snapshot, has_active_task=False) == WorkflowStatus.AWAITING_BRIEF
+
+    def test_stale_does_not_override_ripple_gate(self):
+        """Ripple gate takes priority over stale detection."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.PLANNING},
+            next=["ripple_gate"],
+            interrupts=[],
+        )
+        result = derive_status(snapshot, has_active_task=False)
+        assert result == WorkflowStatus.AWAITING_RIPPLE_DECISION
+
+    def test_stale_does_not_override_blogger_gate(self):
+        """Blogger gate takes priority over stale detection."""
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.CREATING},
+            next=["blogger_gate"],
+            interrupts=[],
+        )
+        result = derive_status(snapshot, has_active_task=False)
+        assert result == WorkflowStatus.AWAITING_BLOGGER_SELECTION
 
     def test_stale_with_non_terminal_error_returns_stale(self):
         """Non-terminal error (next nodes present) with no active task → STALE."""

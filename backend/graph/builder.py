@@ -138,6 +138,7 @@ def build_graph() -> StateGraph:
         should_plan,
         {
             "content_strategist": "content_strategist",
+            "trend_scout": "trend_scout",
             "__end__": END,
         },
     )

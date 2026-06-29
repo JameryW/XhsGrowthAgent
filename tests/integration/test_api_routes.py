@@ -16,6 +16,7 @@ from backend.state.enums import WorkflowPhase
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def mock_graph():
     """Mock compiled graph for testing."""
@@ -56,6 +57,7 @@ def mock_state_values():
 
 # ── Health Check ────────────────────────────────────────────────────────────
 
+
 class TestHealthCheck:
     """Tests for health check endpoint."""
 
@@ -83,6 +85,7 @@ class TestHealthCheck:
 
 # ── Workflow Routes ─────────────────────────────────────────────────────────
 
+
 class TestWorkflowRoutes:
     """Tests for workflow API routes."""
 
@@ -91,8 +94,7 @@ class TestWorkflowRoutes:
         mock_graph.ainvoke.return_value = {"phase": "scouting"}
 
         response = client.post(
-            "/api/workflow/start",
-            json={"account_id": "test_account", "phase": "scouting"}
+            "/api/workflow/start", json={"account_id": "test_account", "phase": "scouting"}
         )
 
         assert response.status_code == 200
@@ -110,10 +112,7 @@ class TestWorkflowRoutes:
         """Start workflow with default phase."""
         mock_graph.ainvoke.return_value = {"phase": "scouting"}
 
-        response = client.post(
-            "/api/workflow/start",
-            json={"account_id": "test_account"}
-        )
+        response = client.post("/api/workflow/start", json={"account_id": "test_account"})
 
         assert response.status_code == 200
         data = response.json()
@@ -122,10 +121,7 @@ class TestWorkflowRoutes:
 
     def test_start_workflow_invalid_account(self, client):
         """Start workflow with empty account_id returns error."""
-        response = client.post(
-            "/api/workflow/start",
-            json={"account_id": "", "phase": "scouting"}
-        )
+        response = client.post("/api/workflow/start", json={"account_id": "", "phase": "scouting"})
 
         assert response.status_code == 400
         data = response.json()
@@ -254,8 +250,117 @@ class TestWorkflowRoutes:
         assert data["success"] is False
         assert data["error"]["code"] == "ERROR_WORKFLOW_NOT_FOUND"
 
+    def test_cancel_workflow_success(self, client, mock_graph, mock_state_values):
+        """Cancel running workflow returns success."""
+        mock_state = MagicMock()
+        mock_state.values = mock_state_values
+        mock_graph.aget_state.return_value = mock_state
+
+        response = client.post("/api/workflow/cancel/xhs_test_abc123")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["data"]["status"] == "cancelled"
+
+    def test_cancel_workflow_not_found(self, client, mock_graph):
+        """Cancel non-existent workflow returns error."""
+        mock_state = MagicMock()
+        mock_state.values = {}
+        mock_graph.aget_state.return_value = mock_state
+
+        response = client.post("/api/workflow/cancel/nonexistent_thread")
+        assert response.status_code == 404
+        data = response.json()
+        assert data["success"] is False
+
+    def test_list_workflows_returns_success(self, client):
+        """List workflows returns unified success response."""
+        response = client.get("/api/workflow/list")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "workflows" in data["data"]
+        assert "total" in data["data"]
+
+    def test_list_workflows_with_filters(self, client):
+        """List workflows with query parameters."""
+        response = client.get("/api/workflow/list?limit=5&offset=0")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+    def test_delete_workflow_not_found(self, client, mock_graph):
+        """Delete non-existent workflow returns error."""
+        mock_state = MagicMock()
+        mock_state.values = {}
+        mock_graph.aget_state.return_value = mock_state
+        response = client.delete("/api/workflow/nonexistent_thread")
+        assert response.status_code == 404
+
+    def test_delete_running_workflow_blocked(self, client, mock_graph):
+        """Delete a running workflow returns validation error."""
+        import backend.api.routes._runner as _runner
+        from backend.db import pool as db_pool
+
+        mock_state = MagicMock()
+        mock_state.values = {"session_id": "xhs_test_abc123"}
+        mock_graph.aget_state.return_value = mock_state
+
+        # Simulate a running background task
+        mock_task = MagicMock()
+        mock_task.done.return_value = False
+        _runner._background_tasks["xhs_test_abc123"] = mock_task
+
+        # DB pool may not be ready in test — mock db_get if needed
+        original_get = db_pool.get if hasattr(db_pool, 'get') else None
+
+        try:
+            # Ensure the workflow exists in DB (or skip DB check)
+            if not db_pool.is_pool_ready():
+                # Make history file so delete_workflow passes the existence check
+                import json
+                from pathlib import Path
+                history_dir = Path(".xhs") / "history"
+                history_dir.mkdir(parents=True, exist_ok=True)
+                history_file = history_dir / "xhs_test_abc123.json"
+                history_file.write_text(json.dumps({"phase": "scouting"}))
+
+            response = client.delete("/api/workflow/xhs_test_abc123")
+            # Should get 400 (blocked) not 404 (not found)
+            assert response.status_code == 400
+        finally:
+            _runner._background_tasks.pop("xhs_test_abc123", None)
+            # Clean up history file
+            history_file = Path(".xhs") / "history" / "xhs_test_abc123.json"
+            if history_file.exists():
+                history_file.unlink()
+
+    def test_brief_extract_no_file_returns_error(self, client):
+        """Brief extract without file returns validation error."""
+        response = client.post("/api/workflow/brief/extract")
+        assert response.status_code == 400
+
+    def test_trigger_analytics_workflow_not_found(self, client, mock_graph):
+        """Trigger analytics for non-existent workflow returns error."""
+        mock_state = MagicMock()
+        mock_state.values = {}
+        mock_graph.aget_state.return_value = mock_state
+
+        response = client.post("/api/workflow/trigger-analytics/nonexistent_thread")
+        assert response.status_code == 404
+
+    def test_history_workflow_not_found(self, client, mock_graph):
+        """History for non-existent workflow returns error."""
+        mock_state = MagicMock()
+        mock_state.values = {}
+        mock_graph.aget_state.return_value = mock_state
+
+        response = client.get("/api/workflow/history/nonexistent_thread")
+        assert response.status_code == 404
+
 
 # ── Review Routes ────────────────────────────────────────────────────────────
+
 
 class TestReviewRoutes:
     """Tests for review API routes."""
@@ -313,7 +418,7 @@ class TestReviewRoutes:
 
         response = client.post(
             "/api/review/submit/xhs_test_abc123",
-            json={"decision": "approved", "comments": "Looks good!", "revisions": []}
+            json={"decision": "approved", "comments": "Looks good!", "revisions": []},
         )
 
         assert response.status_code == 200
@@ -340,8 +445,8 @@ class TestReviewRoutes:
             json={
                 "decision": "needs_revision",
                 "comments": "Please revise the title",
-                "revisions": ["Make title more engaging"]
-            }
+                "revisions": ["Make title more engaging"],
+            },
         )
 
         assert response.status_code == 200
@@ -358,7 +463,7 @@ class TestReviewRoutes:
 
         response = client.post(
             "/api/review/submit/xhs_test_abc123",
-            json={"decision": "approved", "comments": "", "revisions": []}
+            json={"decision": "approved", "comments": "", "revisions": []},
         )
 
         assert response.status_code == 400
@@ -368,6 +473,7 @@ class TestReviewRoutes:
 
 
 # ── Analytics Routes ──────────────────────────────────────────────────────────
+
 
 class TestAnalyticsRoutes:
     """Tests for analytics API routes."""
@@ -434,6 +540,7 @@ class TestAnalyticsRoutes:
 
 
 # ── Unified Response Format Verification ──────────────────────────────────────
+
 
 class TestUnifiedResponseFormat:
     """Verify all endpoints use unified response format."""

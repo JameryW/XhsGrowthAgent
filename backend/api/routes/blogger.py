@@ -56,7 +56,7 @@ async def get_pending_blogger_selection(thread_id: str, request: Request):
         "thread_id": thread_id,
         "blogger_candidates": values.get("blogger_candidates", []),
         "blogger_candidate_limit": values.get("blogger_candidate_limit", 5),
-        "blogger_note_limit": values.get("blogger_note_limit", 20),
+        "blogger_note_limit": values.get("blogger_note_limit", 3),
         "is_pending": _is_at_blogger_gate(state),
     })
 
