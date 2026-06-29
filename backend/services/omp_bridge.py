@@ -366,6 +366,141 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         ),
         "parameters": {"type": "object", "properties": {}},
     },
+    {
+        "name": "xhs_workflow_history",
+        "label": "XHS Workflow History",
+        "description": "Get checkpoint history for a workflow (execution timeline)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {
+                    "type": "string",
+                    "description": "Workflow thread ID",
+                },
+                "limit": {
+                    "type": "number",
+                    "default": 20,
+                    "description": "Max checkpoints to return (1-100)",
+                },
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_workflow_trigger_analytics",
+        "label": "XHS Trigger Analytics",
+        "description": (
+            "Manually trigger analytics for a workflow after publishing"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {
+                    "type": "string",
+                    "description": "Workflow thread ID (must have publish result)",
+                },
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_ripple_pending",
+        "label": "XHS Ripple Pending",
+        "description": (
+            "Get Ripple CAS decision status and available options"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {
+                    "type": "string",
+                    "description": "Workflow thread ID",
+                },
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_ripple_decision",
+        "label": "XHS Ripple Decision",
+        "description": (
+            "Submit Ripple CAS decision: accept, reangle, or retopic"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {
+                    "type": "string",
+                    "description": "Workflow thread ID",
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["accept", "reangle", "retopic"],
+                    "description": (
+                        "Decision: accept, reangle (change angle),"
+                        " or retopic (change topic)"
+                    ),
+                },
+            },
+            "required": ["thread_id", "action"],
+        },
+    },
+    {
+        "name": "xhs_ripple_retry",
+        "label": "XHS Ripple Retry",
+        "description": (
+            "Retry Ripple CAS analysis when it previously timed out or failed"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {
+                    "type": "string",
+                    "description": "Workflow thread ID",
+                },
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_analytics_report",
+        "label": "XHS Analytics Report",
+        "description": "Get growth report for an account",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "description": "Account ID"},
+                "period": {
+                    "type": "string",
+                    "default": "weekly",
+                    "description": "Time period: daily, weekly, monthly",
+                },
+            },
+            "required": ["account_id"],
+        },
+    },
+    {
+        "name": "xhs_analytics_performance",
+        "label": "XHS Analytics Performance",
+        "description": "Get recent post performance data",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "description": "Account ID"},
+                "period": {
+                    "type": "string",
+                    "default": "weekly",
+                    "description": "Time period: daily, weekly, monthly",
+                },
+                "limit": {
+                    "type": "number",
+                    "default": 10,
+                    "description": "Max posts (1-100)",
+                },
+            },
+            "required": ["account_id"],
+        },
+    },
 ]
 
 # Names of XHS tools that the backend auto-executes
@@ -674,6 +809,167 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 lines.append(
                     f"  Memory Store: {checks.get('memory_store', {}).get('status', '?')}"
                 )
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_workflow_history":
+                thread_id = arguments.get("thread_id", "")
+                limit = arguments.get("limit", 20)
+                resp = await client.get(
+                    f"{url}/workflow/history/{thread_id}",
+                    params={"limit": limit},
+                )
+                data = _unwrap_envelope(resp)
+                checkpoints = data.get("checkpoints", [])
+                if not checkpoints:
+                    return _make_text_result(
+                        f"No history for {thread_id}.", data
+                    )
+                has_more = ", more available" if data.get("has_more") else ""
+                lines = [
+                    f"Workflow History — {thread_id}"
+                    f" ({len(checkpoints)} checkpoints{has_more}):",
+                ]
+                for c in checkpoints:
+                    step = c.get("step", "?")
+                    phase = c.get("phase", "?")
+                    agent = c.get("current_agent", "—")
+                    ts = c.get("created_at") or "N/A"
+                    lines.append(f"  Step {step} | {phase} | {agent} | {ts}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_workflow_trigger_analytics":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.post(
+                    f"{url}/workflow/trigger-analytics/{thread_id}"
+                )
+                data = _unwrap_envelope(resp)
+                status = data.get("status", "")
+                if status == "completed":
+                    return _make_text_result(
+                        f"Analytics already completed for {thread_id}.", data
+                    )
+                if status == "error":
+                    return _make_text_result(
+                        f"Cannot trigger analytics: {data.get('message', 'unknown error')}",
+                        data,
+                    )
+                return _make_text_result(
+                    f"Analytics triggered for {thread_id}."
+                    f" Phase: {data.get('phase', 'analyzing')}",
+                    data,
+                )
+
+            elif tool_name == "xhs_ripple_pending":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.get(
+                    f"{url}/review/ripple-pending/{thread_id}"
+                )
+                data = _unwrap_envelope(resp)
+                pred = data.get("ripple_prediction", {})
+                lines = [
+                    f"Ripple Decision — {thread_id}:",
+                    f"  Status: {data.get('status', '')}",
+                    f"  Reselect: {data.get('reselect_count', 0)}/{data.get('max_reselect', 0)}",
+                    f"  Options: {', '.join(data.get('options', []))}",
+                ]
+                if pred.get("viral_probability"):
+                    lines.append(f"  Viral Prob: {pred['viral_probability']}")
+                if pred.get("estimated_reach"):
+                    lines.append(f"  Est Reach: {pred['estimated_reach']}")
+                if pred.get("confidence"):
+                    lines.append(f"  Confidence: {pred['confidence']}")
+                pmf = data.get("ripple_pmf", {})
+                if pmf.get("pmf_score"):
+                    lines.append(f"  PMF Score: {pmf['pmf_score']}")
+                if data.get("ripple_reason"):
+                    lines.append(f"  Reason: {data['ripple_reason']}")
+                lines.append("")
+                lines.append("Use xhs_ripple_decision to submit your choice.")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_ripple_decision":
+                thread_id = arguments.get("thread_id", "")
+                action = arguments.get("action", "accept")
+                resp = await client.post(
+                    f"{url}/review/ripple-decision/{thread_id}",
+                    json={"action": action},
+                )
+                data = _unwrap_envelope(resp)
+                labels = {
+                    "accept": "Accepted",
+                    "reangle": "Angle change requested",
+                    "retopic": "Topic change requested",
+                }
+                return _make_text_result(
+                    f"{labels.get(action, action)} for {thread_id}."
+                    f" Next: {data.get('next_phase', '')}",
+                    data,
+                )
+
+            elif tool_name == "xhs_ripple_retry":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.post(
+                    f"{url}/workflow/ripple-retry/{thread_id}"
+                )
+                data = _unwrap_envelope(resp)
+                if data.get("status") == "skipped":
+                    return _make_text_result(
+                        f"Ripple retry skipped: {data.get('message', '')}",
+                        data,
+                    )
+                return _make_text_result(
+                    f"Ripple retry started for {thread_id}."
+                    f" Status: {data.get('status', '')}",
+                    data,
+                )
+
+            elif tool_name == "xhs_analytics_report":
+                account_id = arguments.get("account_id", "")
+                period = arguments.get("period", "weekly")
+                resp = await client.get(
+                    f"{url}/analytics/report/{account_id}",
+                    params={"period": period},
+                )
+                data = _unwrap_envelope(resp)
+                m = data.get("metrics", {})
+                lines = [
+                    f"Growth Report — {account_id} ({period}):",
+                    f"  Posts: {m.get('total_posts', 0)}",
+                    f"  Engagement: {m.get('total_engagement', 0)}",
+                    f"  Avg Rate: {m.get('avg_engagement_rate', 0)}%",
+                ]
+                if m.get("best_post_title"):
+                    lines.append(f"  Best: {m['best_post_title']}")
+                if m.get("trend_topics"):
+                    lines.append(f"  Trends: {', '.join(m['trend_topics'])}")
+                for ins in data.get("insights", []):
+                    lines.append(f"  - {ins.get('message', '')}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_analytics_performance":
+                account_id = arguments.get("account_id", "")
+                period = arguments.get("period", "weekly")
+                limit = arguments.get("limit", 10)
+                resp = await client.get(
+                    f"{url}/analytics/performance/{account_id}",
+                    params={"period": period, "limit": limit},
+                )
+                data = _unwrap_envelope(resp)
+                posts = data.get("posts", [])
+                if not posts:
+                    return _make_text_result("No performance data.", data)
+                lines = [
+                    f"Performance — {account_id}"
+                    f" ({data.get('total', 0)} posts):",
+                ]
+                for p in posts:
+                    lines.append(
+                        f"  {p.get('title', '?')} —"
+                        f" ❤{p.get('likes', 0)}"
+                        f" 💬{p.get('comments', 0)}"
+                        f" ⭐{p.get('collects', 0)}"
+                        f" ({p.get('engagement_rate', 0)}%)"
+                    )
                 return _make_text_result("\n".join(lines), data)
 
             else:
