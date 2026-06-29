@@ -19,7 +19,7 @@ export default function register(pi: ExtensionAPI) {
   const tool: ToolDefinition<typeof schema> = {
     name: "xhs_blogger_pending",
     label: "XHS Blogger Pending",
-    description: "Get pending blogger candidates for a workflow at blogger selection gate",
+    description: "Get blogger candidates (only when workflow is at blogger selection gate). Use xhs_workflow_status first to check.",
     parameters: schema,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       try {

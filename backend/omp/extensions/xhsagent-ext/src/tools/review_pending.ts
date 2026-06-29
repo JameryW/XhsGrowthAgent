@@ -19,7 +19,7 @@ export default function register(pi: ExtensionAPI) {
   const tool: ToolDefinition<typeof schema> = {
     name: "xhs_review_pending",
     label: "XHS Review Pending",
-    description: "Get content details awaiting review at the review gate, including copy, visual plan, and draft",
+    description: "Get content awaiting review (only when workflow is at review gate). Use xhs_workflow_status first to check if review is pending.",
     parameters: schema,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       try {

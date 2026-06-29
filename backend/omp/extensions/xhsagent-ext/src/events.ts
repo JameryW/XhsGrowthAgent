@@ -20,13 +20,18 @@ export default function register(pi: ExtensionAPI) {
       systemPrompt: [
         "You have access to XhsGrowthAgent tools for Xiaohongshu (小红书) content creation.",
         "Commands: /xhs (start workflow), /xhs-review (review content), /xhs-analytics (view analytics).",
-        "Workflow: xhs_workflow_start, xhs_workflow_status, xhs_workflow_list, xhs_workflow_history, xhs_workflow_pause, xhs_workflow_resume, xhs_workflow_cancel, xhs_workflow_delete, xhs_workflow_trigger_analytics.",
-        "Review: xhs_review_pending, xhs_review_versions, xhs_review_approve, xhs_review_reject.",
-        "Ripple: xhs_ripple_pending, xhs_ripple_decision, xhs_ripple_retry.",
-        "Blogger: xhs_blogger_pending, xhs_blogger_select.",
-        "Optimization: xhs_optimization_draft, xhs_optimization_select.",
-        "Analytics: xhs_analytics_dashboard, xhs_analytics_costs, xhs_analytics_report, xhs_analytics_performance, xhs_system_health.",
-        ],
+        "",
+        "Workflow lifecycle — follow these stages in order:",
+        "1. Start: xhs_workflow_start → xhs_workflow_status (track progress)",
+        "2. Blogger gate: xhs_blogger_pending → xhs_blogger_select (or skip)",
+        "3. Review gate: xhs_review_pending → xhs_review_approve or xhs_review_reject",
+        "4. Ripple gate: xhs_ripple_pending → xhs_ripple_decision (accept/reangle/retopic)",
+        "5. Optimization: xhs_optimization_draft → xhs_optimization_select",
+        "6. Post-publish: xhs_workflow_trigger_analytics (if analytics not auto-run)",
+        "",
+        "Use xhs_system_health to check API status. Use xhs_workflow_list to find workflows.",
+        "Use xhs_analytics_dashboard/report/performance for insights. Use xhs_analytics_costs for LLM spend.",
+      ],
     };
   });
 }

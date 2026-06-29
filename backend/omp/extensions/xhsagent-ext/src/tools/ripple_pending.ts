@@ -21,7 +21,7 @@ export default function register(pi: ExtensionAPI) {
   const tool: ToolDefinition<typeof schema> = {
     name: "xhs_ripple_pending",
     label: "XHS Ripple Pending",
-    description: "Get Ripple CAS decision status — prediction results and available decision options (accept/reangle/retopic)",
+    description: "Get Ripple CAS prediction results and decision options (only when workflow is at ripple gate). Use xhs_workflow_status first to check.",
     parameters: schema,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       try {
