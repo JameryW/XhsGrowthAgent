@@ -13,9 +13,14 @@ import asyncio
 import logging
 import os
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from playwright.async_api import Browser, Page, async_playwright
+# ponytail: playwright is an optional [browser] extra. Import it lazily so the
+# module is importable (and unit-testable with a mock Page) without it installed.
+# `from __future__ import annotations` keeps the Browser/Page annotations as
+# strings, so they never force a runtime import.
+if TYPE_CHECKING:
+    from playwright.async_api import Browser, Page
 
 logger = logging.getLogger("xhs_growth.publisher")
 
@@ -43,6 +48,8 @@ class XHSPublisher:
     async def _ensure_browser(self) -> Browser:
         """确保浏览器已启动"""
         if self._browser is None:
+            from playwright.async_api import async_playwright  # lazy: optional [browser] extra
+
             playwright = await async_playwright().start()
             self._browser = await playwright.chromium.launch(
                 headless=self.headless,
@@ -205,9 +212,12 @@ class XHSPublisher:
         if upload_input:
             await upload_input.set_input_files(valid_paths)
             # 等待上传完成
+            # ponytail: Playwright Python's wait_for_function takes `arg` (singular),
+            # not `args` — `args=` was silently ignored, leaving arguments[0] undefined
+            # so `.length >= undefined` was always false → 60s timeout on every publish.
             await page.wait_for_function(
                 "document.querySelectorAll('.image-item').length >= arguments[0]",
-                args=len(valid_paths),
+                arg=len(valid_paths),
                 timeout=60000,  # 图片上传可能较慢
             )
         else:
