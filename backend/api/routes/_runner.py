@@ -67,6 +67,10 @@ def _emit_status_transition(
         return
     _last_status[thread_id] = new_status
 
+    # Clean up terminal entries to avoid unbounded growth
+    if new_status in (WorkflowStatus.COMPLETED, WorkflowStatus.CANCELLED, WorkflowStatus.ERROR):
+        _last_status.pop(thread_id, None)
+
     bus = EventBusService.get_instance()
 
     payload: dict[str, Any] = {"status": new_status.value}
@@ -115,12 +119,16 @@ def _emit_status_transition(
             values = snapshot.values or {}
             payload["ripple_prediction"] = values.get("ripple_prediction", {})
             payload["ripple_pmf"] = values.get("ripple_pmf", {})
+            payload["ripple_reason"] = values.get("ripple_reason", "")
+            payload["reselect_count"] = values.get("reselect_count", 0)
         bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
 
     elif new_status == WorkflowStatus.AWAITING_BLOGGER_SELECTION:
         if snapshot is not None:
             values = snapshot.values or {}
             payload["blogger_candidates"] = values.get("blogger_candidates", [])
+            payload["blogger_candidate_limit"] = values.get("blogger_candidate_limit", 5)
+            payload["blogger_note_limit"] = values.get("blogger_note_limit", 3)
         bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
 
     elif new_status == WorkflowStatus.COMPLETED:
@@ -139,6 +147,22 @@ def _emit_status_transition(
             payload["ripple_pmf"] = values.get("ripple_pmf", {})
             payload["ripple_comparison"] = values.get("ripple_comparison", {})
         bus.emit(EventType.WORKFLOW_COMPLETED, thread_id=thread_id, payload=payload)
+
+    elif new_status == WorkflowStatus.PAUSED:
+        bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
+
+    elif new_status == WorkflowStatus.CANCELLED:
+        bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
+
+    elif new_status == WorkflowStatus.ERROR:
+        if snapshot is not None:
+            values = snapshot.values or {}
+            payload["error"] = values.get("error", "")
+        bus.emit(EventType.WORKFLOW_ERROR, thread_id=thread_id, payload=payload)
+
+    else:
+        # RUNNING, STALE — emit as data update so frontend stays in sync
+        bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
 
 
 def _status_to_str(
@@ -164,9 +188,9 @@ def _status_to_str(
     status = mapping.get(derived)
     if status:
         return status
-    if has_error or final_phase in ("scouting", "error"):
+    if has_error:
         return "error"
-    return "completed"
+    return "running"
 
 
 def _get_as_node(state) -> str | None:
@@ -273,21 +297,30 @@ async def _run_graph_and_persist(
             updated_at=datetime.now(UTC).isoformat(),
         )
 
-        if final_status in ("completed", "error"):
+        if final_status in ("completed", "error", "cancelled"):
             _save_history_file(thread_id, result or {})
 
         return result or {}
 
     except asyncio.CancelledError:
+        # Only update DB if this task is still the registered one —
+        # a newer task may have replaced it (e.g. _start_resume_task cancel+restart)
+        if _background_tasks.get(thread_id) is not asyncio.current_task():
+            raise
         try:
             snapshot = await graph.aget_state(config)
             current_phase = (snapshot.values or {}).get("phase", "unknown")
             if current_phase == "paused":
                 await _db_upsert(thread_id, status="paused", phase="paused", error=None)
+                _emit_status_transition(WorkflowStatus.PAUSED, thread_id, snapshot=snapshot)
+            elif current_phase == "cancelled":
+                # cancel_workflow already set phase+error in graph and DB — skip
+                pass
             else:
                 await _db_upsert(
                     thread_id, status="cancelled", phase="cancelled", error="Task cancelled"
                 )
+                _emit_status_transition(WorkflowStatus.CANCELLED, thread_id, snapshot=snapshot)
         except Exception:
             await _db_upsert(
                 thread_id, status="cancelled", phase="cancelled", error="Task cancelled"
@@ -296,23 +329,58 @@ async def _run_graph_and_persist(
 
     except Exception as exc:
         logger.exception("Graph execution failed (source=%s, thread=%s)", source, thread_id)
-        with contextlib.suppress(Exception):
-            snapshot = await graph.aget_state(config)
-            if not _has_native_resume_point(snapshot):
-                await graph.aupdate_state(
-                    config, {"phase": "error", "error": str(exc)},
-                    as_node=_get_as_node(snapshot),
+        # Only update DB if this task is still the registered one —
+        # a newer task may have replaced it (e.g. _start_resume_task cancel+restart)
+        if _background_tasks.get(thread_id) is asyncio.current_task():
+            from backend.core.error_handling import WorkflowCancelledError
+            if isinstance(exc, WorkflowCancelledError):
+                # Node detected cancelled/paused phase — preserve the actual phase
+                # from the graph state rather than parsing the exception message
+                snap = None
+                with contextlib.suppress(Exception):
+                    snap = await graph.aget_state(config)
+                actual_phase = (snap.values or {}).get("phase", "cancelled") if snap else "cancelled"
+                is_paused = actual_phase == "paused"
+                target_phase = "paused" if is_paused else "cancelled"
+                target_status = "paused" if is_paused else "cancelled"
+                with contextlib.suppress(Exception):
+                    await graph.aupdate_state(
+                        config, {"phase": target_phase, "error": None if is_paused else str(exc)},
+                        as_node=_get_as_node(snap) if snap else None,
+                    )
+                await _db_upsert(
+                    thread_id,
+                    status=target_status,
+                    phase=target_phase,
+                    error=None if is_paused else str(exc),
+                    updated_at=datetime.now(UTC).isoformat(),
                 )
-        await _db_upsert(
-            thread_id,
-            status="error",
-            phase="error",
-            error=str(exc),
-            updated_at=datetime.now(UTC).isoformat(),
-        )
+                _emit_status_transition(
+                    WorkflowStatus.PAUSED if is_paused else WorkflowStatus.CANCELLED,
+                    thread_id,
+                    snapshot=snap,
+                )
+            else:
+                with contextlib.suppress(Exception):
+                    snapshot = await graph.aget_state(config)
+                    if not _has_native_resume_point(snapshot):
+                        await graph.aupdate_state(
+                            config, {"phase": "error", "error": str(exc)},
+                            as_node=_get_as_node(snapshot),
+                        )
+                await _db_upsert(
+                    thread_id,
+                    status="error",
+                    phase="error",
+                    error=str(exc),
+                    updated_at=datetime.now(UTC).isoformat(),
+                )
         raise
 
     finally:
         if is_sync:
             _active_sync_executions.discard(thread_id)
-        _background_tasks.pop(thread_id, None)
+        # Only pop if this task is still the registered one —
+        # a newer task may have replaced it (e.g. _start_resume_task cancel+restart)
+        if _background_tasks.get(thread_id) is asyncio.current_task():
+            _background_tasks.pop(thread_id, None)

@@ -142,6 +142,12 @@ class TestStatusToStr:
         assert _status_to_str(WorkflowStatus.STALE) == "stale"
         assert _status_to_str(WorkflowStatus.CANCELLED) == "cancelled"
 
+    def test_fallback_no_error_returns_running(self):
+        """All mapped statuses return their value; fallback returns 'running'."""
+        # RUNNING is in the mapping, so it returns "running" directly
+        assert _status_to_str(WorkflowStatus.RUNNING) == "running"
+        assert _status_to_str(WorkflowStatus.STALE) == "stale"
+
 
 # ── derive_status for new gates ───────────────────────────────────────────────
 
@@ -280,6 +286,69 @@ class TestEmitStatusTransitionNewStates:
 
         events = [e for e in bus._events if e.thread_id == "t4"]
         assert len(events) == 1  # second call should be no-op
+
+
+class TestEmitStatusTerminalStates:
+    """_emit_status_transition should emit events for PAUSED, CANCELLED, ERROR."""
+
+    def test_paused_emits_data_updated(self):
+        bus = EventBusService.get_instance()
+        bus._events.clear()
+        bus._seq = 0
+
+        snapshot = make_snapshot({"phase": WorkflowPhase.PAUSED.value})
+        _emit_status_transition(WorkflowStatus.PAUSED, "tp", snapshot=snapshot)
+
+        events = [e for e in bus._events if e.thread_id == "tp"]
+        assert len(events) == 1
+        assert events[0].payload["status"] == "paused"
+        assert events[0].event_type.value == "workflow.data_updated"
+
+    def test_cancelled_emits_data_updated(self):
+        bus = EventBusService.get_instance()
+        bus._events.clear()
+        bus._seq = 0
+
+        snapshot = make_snapshot({"phase": WorkflowPhase.CANCELLED.value})
+        _emit_status_transition(WorkflowStatus.CANCELLED, "tc", snapshot=snapshot)
+
+        events = [e for e in bus._events if e.thread_id == "tc"]
+        assert len(events) == 1
+        assert events[0].payload["status"] == "cancelled"
+        assert events[0].event_type.value == "workflow.data_updated"
+
+    def test_error_emits_workflow_error(self):
+        bus = EventBusService.get_instance()
+        bus._events.clear()
+        bus._seq = 0
+
+        snapshot = make_snapshot({"phase": WorkflowPhase.ERROR.value, "error": "boom"})
+        _emit_status_transition(WorkflowStatus.ERROR, "te", snapshot=snapshot)
+
+        events = [e for e in bus._events if e.thread_id == "te"]
+        assert len(events) == 1
+        assert events[0].payload["status"] == "error"
+        assert events[0].payload["error"] == "boom"
+        assert events[0].event_type.value == "workflow.error"
+
+    def test_running_emits_data_updated(self):
+        bus = EventBusService.get_instance()
+        bus._events.clear()
+        bus._seq = 0
+
+        snapshot = make_snapshot({"phase": WorkflowPhase.SCOUTING.value})
+        _emit_status_transition(WorkflowStatus.RUNNING, "tr", snapshot=snapshot)
+
+        events = [e for e in bus._events if e.thread_id == "tr"]
+        assert len(events) == 1
+        assert events[0].payload["status"] == "running"
+
+    def test_terminal_status_cleans_last_status(self):
+        """Completed/cancelled/error should be popped from _last_status."""
+        from backend.api.routes._runner import _last_status
+
+        _emit_status_transition(WorkflowStatus.COMPLETED, "tclean")
+        assert "tclean" not in _last_status
 
 
 # ── Resume blogger phase should return CREATING ───────────────────────────────

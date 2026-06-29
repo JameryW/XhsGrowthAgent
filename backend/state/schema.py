@@ -119,7 +119,7 @@ class XHSGrowthState(TypedDict, total=False):
     # 候选博主数量限制 (默认 5)
     blogger_candidate_limit: int
 
-    # 博主笔记获取深度 (默认 20)
+    # 博主笔记获取深度 (默认 3)
     blogger_note_limit: int
 
     # History

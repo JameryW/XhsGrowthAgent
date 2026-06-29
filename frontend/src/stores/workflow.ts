@@ -338,6 +338,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   // Phases that should NOT reset progress — preserve last valid value
   const PRESERVE_PROGRESS_PHASES: WorkflowPhase[] = ['paused', 'cancelled']
+  // Phases that must reset the high-water mark (error = 0%, completed = 100%)
+  const RESET_PROGRESS_PHASES: WorkflowPhase[] = ['error', 'completed']
 
   /** Reset high-water mark to match a tab's current progress.
    *  Call before switching tabs so the new tab's progress isn't
@@ -351,6 +353,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
       return
     }
     const target = backendProgress ?? phaseToPercent(phase)
+    // Error/completed reset the high-water mark — they're terminal states
+    if (RESET_PROGRESS_PHASES.includes(phase)) {
+      _maxProgress.value = target
+      progressPercent.value = target
+      return
+    }
     const next = Math.max(target, _maxProgress.value)
     _maxProgress.value = next
     progressPercent.value = next
@@ -377,12 +385,23 @@ export const useWorkflowStore = defineStore('workflow', () => {
     if (msg.thread_id === activeThreadId.value) {
       updateProgressFromPhase(newPhase as WorkflowPhase)
     }
+    // Show contextual toast for gate interrupts (status from DATA_UPDATED event
+    // arrives separately, so we detect gates by phase+agent combination)
+    const agent = p.current_agent || ''
     if (newPhase === 'reviewing') {
       toastStore.info(t('workflow.awaitingReview'), t('workflow.awaitingReviewMessage'))
-    } else if (newPhase === 'creating' && p.current_agent === 'blogger_gate') {
+    } else if (agent === 'blogger_gate' || agent === 'blogger_scout') {
       toastStore.info(t('workflow.awaitingBloggerSelection'), t('workflow.awaitingBloggerSelectionMessage'))
+    } else if (agent === 'ripple_gate') {
+      toastStore.info(t('workflow.awaitingRippleDecision'), t('workflow.awaitingRippleDecisionMessage'))
+    } else if (agent === 'draft_gate') {
+      toastStore.info(t('workflow.awaitingDraft'), t('workflow.awaitingDraftMessage'))
+    } else if (agent === 'brief_gate') {
+      toastStore.info(t('workflow.awaitingBrief'), t('workflow.awaitingBriefMessage'))
+    } else if (agent === 'choice_gate') {
+      toastStore.info(t('workflow.awaitingChoice'), t('workflow.awaitingChoiceMessage'))
     } else {
-      toastStore.info(`${t('workflow.phaseChange')}: ${p.old_phase} → ${newPhase}`, `${t('workflow.currentAgent')}: ${p.current_agent}`)
+      toastStore.info(`${t('workflow.phaseChange')}: ${p.old_phase} → ${newPhase}`, `${t('workflow.currentAgent')}: ${agent}`)
     }
   })
 

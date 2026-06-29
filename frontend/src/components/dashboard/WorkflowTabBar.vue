@@ -32,6 +32,7 @@ function statusIcon(status: WorkflowStatus): string {
     case 'awaiting_choice':
     case 'awaiting_draft':
     case 'awaiting_brief':
+    case 'awaiting_ripple_decision':
     case 'awaiting_blogger_selection': return 'Clock'
     case 'paused': return 'Pause'
     case 'cancelled': return 'XCircle'
@@ -49,6 +50,7 @@ function statusColor(status: WorkflowStatus): string {
     case 'awaiting_choice':
     case 'awaiting_draft':
     case 'awaiting_brief':
+    case 'awaiting_ripple_decision':
     case 'awaiting_blogger_selection': return 'text-orange-400'
     case 'paused': return 'text-slate-400'
     case 'cancelled': return 'text-slate-500'
