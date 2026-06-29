@@ -1,4 +1,4 @@
-/** Event handlers — API health check on session start + agent context injection. */
+/** Event handlers — API health check, agent context injection, and structured logging. */
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { checkApiHealth } from "./api_client.js";
 
@@ -12,6 +12,7 @@ export default function register(pi: ExtensionAPI) {
         "warning",
       );
     }
+    pi.logger.debug("XhsGrowthAgent extension loaded", { apiHealthy: healthy });
   });
 
   // ── before_agent_start: inject XHS context ──
@@ -33,5 +34,16 @@ export default function register(pi: ExtensionAPI) {
         "Use xhs_analytics_dashboard/report/performance for insights. Use xhs_analytics_costs for LLM spend.",
       ],
     };
+  });
+
+  // ── tool_end: log tool results for debugging ──
+  pi.on("tool_end" as any, async (event: any) => {
+    const name = event?.toolName || event?.name || "unknown";
+    const isError = event?.isError || false;
+    if (isError) {
+      pi.logger.warn(`XHS tool error: ${name}`, { toolName: name, error: event?.error });
+    } else {
+      pi.logger.debug(`XHS tool completed: ${name}`, { toolName: name });
+    }
   });
 }
