@@ -574,3 +574,37 @@ Added 7 omp tools (workflow_history, workflow_trigger_analytics, ripple_pending/
 ### Next Steps
 
 - None - task complete
+
+
+## Session 52: omp bridge unit tests, retry logic, MCP server config
+
+**Date**: 2026-06-29
+**Task**: omp bridge unit tests, retry logic, MCP server config
+**Branch**: `main`
+
+### Summary
+
+Added 27 unit tests for omp host tools (974 total). Added retry with exponential backoff for transient HTTP errors (429,502,503,504). Added MCP server config to omp extension manifest (disabled by default).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f6a8f40e` | (see git log) |
+| `70913dbe` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
