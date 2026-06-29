@@ -96,3 +96,26 @@ class TestPublishNote:
         assert result["status"] == "published"
         assert result["post_id"] == "abc"
         publisher._add_hashtags.assert_awaited_once()
+
+
+class TestPublishRetrySafety:
+    """publish_note failure must reset the dirty page so a retry starts clean."""
+
+    async def test_failure_resets_page_for_retry(self, publisher: XHSPublisher):
+        """On exception, _page is closed and nulled — retry gets a fresh page.
+
+        XHSClient.publish_post retries up to 3x. Without this reset, _ensure_page
+        returns the same stuck page every attempt, so retries fail the same way.
+        """
+        page = AsyncMock()
+        publisher._ensure_page = AsyncMock(return_value=page)  # type: ignore[method-assign]
+        publisher._check_login = AsyncMock(side_effect=RuntimeError("page exploded"))  # type: ignore[method-assign]
+        publisher._page = page  # simulate an already-attached page
+
+        result = await publisher.publish_note(
+            title="t", body="b", image_paths=["/x.jpg"]
+        )
+
+        assert result["status"] == "error"
+        page.close.assert_awaited_once()
+        assert publisher._page is None, "dirty page must be reset for retry"

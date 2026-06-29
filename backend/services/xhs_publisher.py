@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import time
@@ -192,6 +193,14 @@ class XHSPublisher:
 
         except Exception as e:
             logger.error(f"发布失败: {e}", exc_info=True)
+            # ponytail: drop the dirty page (keep the browser) so a retry starts
+            # from a clean page instead of a half-filled/erroring one. The
+            # caller (XHSClient.publish_post) retries up to 3x; without this
+            # reset, _ensure_page returns the same stuck page every attempt.
+            if self._page is not None:
+                with contextlib.suppress(Exception):
+                    await self._page.close()
+                self._page = None
             return {"post_id": "", "status": "error", "error": str(e)}
 
     async def _upload_images(self, page: Page, image_paths: list[str]) -> None:
