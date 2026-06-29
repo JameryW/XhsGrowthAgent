@@ -28,12 +28,20 @@ from backend.agents.nodes import (
     viral_matcher_node,
     visual_designer_node,
 )
-from backend.graph.builder import build_graph, compile_graph_dev, compile_graph_prod
+from backend.graph.builder import (
+    build_graph,
+    close_dev_graph,
+    compile_graph_dev,
+    compile_graph_prod,
+    dev_graph,
+)
 
 __all__ = [
     "build_graph",
+    "close_dev_graph",
     "compile_graph_dev",
     "compile_graph_prod",
+    "dev_graph",
     # Node functions (re-exported from agents.nodes for backward compatibility)
     "orchestrator_node",
     "trend_scout_node",

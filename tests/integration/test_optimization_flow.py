@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.graph import build_graph, compile_graph_dev
+from backend.graph import build_graph, dev_graph
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 from backend.state.substates import (
@@ -151,13 +151,12 @@ class TestOptimizationGraphIntegration:
 
         All three gates require human confirmation before proceeding.
         """
-        graph = await compile_graph_dev()
-
-        # interrupt_before contains review_gate, choice_gate, and draft_gate
-        assert "review_gate" in graph.interrupt_before_nodes
-        assert "choice_gate" in graph.interrupt_before_nodes
-        assert "draft_gate" in graph.interrupt_before_nodes
-        assert graph.interrupt_after_nodes == []
+        async with dev_graph() as graph:
+            # interrupt_before contains review_gate, choice_gate, and draft_gate
+            assert "review_gate" in graph.interrupt_before_nodes
+            assert "choice_gate" in graph.interrupt_before_nodes
+            assert "draft_gate" in graph.interrupt_before_nodes
+            assert graph.interrupt_after_nodes == []
 
 
 class TestViralMatcherNode:

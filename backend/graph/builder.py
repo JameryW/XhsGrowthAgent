@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
@@ -363,6 +365,7 @@ async def compile_graph_dev() -> CompiledStateGraph:
             # Reset store to InMemoryStore since Postgres store failed
             store = InMemoryStore(index=store_index)
 
+    sqlite_conn: Any = None
     try:
         import aiosqlite
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -374,6 +377,7 @@ async def compile_graph_dev() -> CompiledStateGraph:
         conn = await aiosqlite.connect(str(db_path))
         checkpointer = AsyncSqliteSaver(conn=conn)
         await checkpointer.setup()
+        sqlite_conn = conn
     except ImportError:
         import logging
 
@@ -391,7 +395,38 @@ async def compile_graph_dev() -> CompiledStateGraph:
             "draft_gate",
         ],
     )
+    # ponytail: expose sqlite conn so callers can close it (avoid aiosqlite
+    # 'Event loop is closed' / 'was deleted before being closed' on shutdown).
+    # prod path returns resources explicitly; dev stashes on the graph itself.
+    graph._sqlite_conn = sqlite_conn  # type: ignore[attr-defined]
     return graph
+
+
+async def close_dev_graph(graph: CompiledStateGraph) -> None:
+    """Close the SQLite checkpointer connection owned by a dev-compiled graph.
+
+    Call from a finally block in CLI/short-lived callers. No-op for MemorySaver
+    fallback or prod graphs (which manage their own pool).
+    """
+    conn = getattr(graph, "_sqlite_conn", None)
+    if conn is not None:
+        with suppress(Exception):
+            await conn.close()
+        graph._sqlite_conn = None  # type: ignore[attr-defined]
+
+
+@asynccontextmanager
+async def dev_graph() -> AsyncIterator[CompiledStateGraph]:
+    """Compile a dev graph and ensure its SQLite checkpointer is closed on exit.
+
+    Use `async with dev_graph() as graph:` in CLI/short-lived callers so the
+    aiosqlite connection never leaks across asyncio.run boundaries.
+    """
+    graph = await compile_graph_dev()
+    try:
+        yield graph
+    finally:
+        await close_dev_graph(graph)
 
 
 async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
