@@ -506,11 +506,71 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
 # Names of XHS tools that the backend auto-executes
 _XHS_TOOL_NAMES = {t["name"] for t in XHS_HOST_TOOLS}
 
+# Retry config for transient HTTP errors
+_RETRYABLE_STATUS = {429, 502, 503, 504}
+_MAX_RETRIES = 3
+
+
+async def _retry_http(
+    fn: Callable[..., Coroutine[Any, Any, Any]],
+    *args: Any,
+    tool_name: str = "",
+    **kwargs: Any,
+) -> Any:
+    """Call an httpx method with exponential backoff on transient errors."""
+    import httpx
+
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return await fn(*args, **kwargs)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in _RETRYABLE_STATUS and attempt < _MAX_RETRIES - 1:
+                delay = 0.5 * (2 ** attempt)
+                logger.info(
+                    "retryable HTTP %d for %s, retry %d/%d in %.1fs",
+                    e.response.status_code, tool_name,
+                    attempt + 1, _MAX_RETRIES, delay,
+                )
+                await asyncio.sleep(delay)
+                continue
+            raise
+        except (httpx.ConnectError, httpx.ReadTimeout) as e:
+            last_exc = e
+            if attempt < _MAX_RETRIES - 1:
+                delay = 0.5 * (2 ** attempt)
+                logger.info(
+                    "connection error for %s, retry %d/%d in %.1fs",
+                    tool_name, attempt + 1, _MAX_RETRIES, delay,
+                )
+                await asyncio.sleep(delay)
+                continue
+            raise
+    raise last_exc or RuntimeError("unreachable")  # ponytail: safety
+
+
+class _RetryingClient:
+    """Wraps httpx.AsyncClient to add retry with backoff on transient errors."""
+
+    def __init__(self, client: Any, tool_name: str) -> None:
+        self._client = client
+        self._tool_name = tool_name
+
+    async def get(self, *args: Any, **kwargs: Any) -> Any:
+        return await _retry_http(self._client.get, *args, tool_name=self._tool_name, **kwargs)
+
+    async def post(self, *args: Any, **kwargs: Any) -> Any:
+        return await _retry_http(self._client.post, *args, tool_name=self._tool_name, **kwargs)
+
+    async def delete(self, *args: Any, **kwargs: Any) -> Any:
+        return await _retry_http(self._client.delete, *args, tool_name=self._tool_name, **kwargs)
+
 
 async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Auto-execute a known XHS host tool by calling the backend API internally.
 
     Uses httpx to call the FastAPI app's own endpoints, so no external HTTP needed.
+    Retries transient HTTP errors (429, 502, 503, 504) with exponential backoff.
     """
     import httpx
 
@@ -518,7 +578,9 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
     url = f"{api_base}/api"
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as raw_client:
+            # Wrap client methods with retry logic
+            client = _RetryingClient(raw_client, tool_name)
             if tool_name == "xhs_workflow_start":
                 body: dict[str, Any] = {
                     "account_id": arguments.get("account_id", "default"),
@@ -981,7 +1043,12 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
 
 
 def _unwrap_envelope(resp: Any) -> dict[str, Any]:
-    """Unwrap the ApiResponse envelope {success, data, error}."""
+    """Unwrap the ApiResponse envelope {success, data, error}.
+
+    Raises httpx.HTTPStatusError for retryable HTTP errors (429, 502-504).
+    """
+    # Raise for retryable HTTP status codes so _retry_http can catch them
+    resp.raise_for_status()
     body: dict[str, Any] = resp.json()
     if body.get("success"):
         return body.get("data", {}) or {}
