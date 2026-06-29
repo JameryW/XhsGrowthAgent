@@ -5,7 +5,18 @@
   "omp": {
     "extensions": [
       "./src/index.ts"
-    ]
+    ],
+    "mcpServers": {
+      "xhs-growth-api": {
+        "enabled": false,
+        "url": "http://localhost:8000/api/mcp",
+        "transport": "sse",
+        "timeout": 30000,
+        "headers": {
+          "Content-Type": "application/json"
+        }
+      }
+    }
   },
   "dependencies": {},
   "devDependencies": {

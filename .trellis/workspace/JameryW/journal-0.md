@@ -508,3 +508,103 @@ Overhaul AgentTUI.vue: xterm v5→v6 upgrade, CJK input fix (IME composition + w
 ### Next Steps
 
 - None - task complete
+
+
+## Session 50: Add 10 omp tools
+
+**Date**: 2026-06-29
+**Task**: Add 10 omp tools
+**Branch**: `main`
+
+### Summary
+
+Added 10 omp tools + 1 command, updated omp_bridge.py host tool schemas and auto-exec handlers.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c9ade1de` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 51: Add 7 more omp tools: history, Ripple, analytics report/performance
+
+**Date**: 2026-06-29
+**Task**: Add 7 more omp tools: history, Ripple, analytics report/performance
+**Branch**: `main`
+
+### Summary
+
+Added 7 omp tools (workflow_history, workflow_trigger_analytics, ripple_pending/decision/retry, analytics_report/performance). Total 25 tools. Updated omp_bridge.py with host tool schemas and auto-exec handlers.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `74e39da8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 52: omp bridge unit tests, retry logic, MCP server config
+
+**Date**: 2026-06-29
+**Task**: omp bridge unit tests, retry logic, MCP server config
+**Branch**: `main`
+
+### Summary
+
+Added 27 unit tests for omp host tools (974 total). Added retry with exponential backoff for transient HTTP errors (429,502,503,504). Added MCP server config to omp extension manifest (disabled by default).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f6a8f40e` | (see git log) |
+| `70913dbe` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

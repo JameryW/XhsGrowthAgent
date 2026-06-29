@@ -39,6 +39,7 @@ export default function register(pi: ExtensionAPI) {
         if (params.topic) body.topic = params.topic;
 
         const result = (await post("/workflow/start", body)) as WorkflowStartResponse;
+        pi.logger.debug("xhs_workflow_start succeeded", { thread_id: result.thread_id, mode: params.workflow_mode });
 
         // If async mode, subscribe to SSE for real-time progress
         if (params.async_mode && result.thread_id) {
@@ -68,6 +69,7 @@ export default function register(pi: ExtensionAPI) {
           { thread_id: result.thread_id, phase: result.phase, status: result.status },
         );
       } catch (err) {
+        pi.logger.warn("xhs_workflow_start failed", { error: (err as Error).message });
         return textResult(`Failed to start workflow: ${(err as Error).message}`, undefined, true);
       }
     },

@@ -42,7 +42,7 @@ export function getApiAvailability(): boolean | null {
 // ── HTTP helpers ────────────────────────────────────────────────────────
 
 async function request(
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "DELETE",
   path: string,
   params?: Record<string, unknown>,
 ): Promise<unknown> {
@@ -81,6 +81,11 @@ export async function get(path: string, params?: Record<string, unknown>): Promi
 /** POST request to XhsGrowthAgent API. Returns unwrapped data. */
 export async function post(path: string, body?: Record<string, unknown>): Promise<unknown> {
   return request("POST", path, body);
+}
+
+/** DELETE request to XhsGrowthAgent API. Returns unwrapped data. */
+export async function del(path: string): Promise<unknown> {
+  return request("DELETE", path);
 }
 
 // ── SSE helper ──────────────────────────────────────────────────────────

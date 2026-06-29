@@ -13,7 +13,7 @@ export default function register(pi: ExtensionAPI) {
   const tool: ToolDefinition<typeof schema> = {
     name: "xhs_review_approve",
     label: "XHS Review Approve",
-    description: "Approve content in the review gate",
+    description: "Approve content at the review gate. Use xhs_review_pending first to see the content.",
     parameters: schema,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       try {

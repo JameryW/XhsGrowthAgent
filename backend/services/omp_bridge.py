@@ -112,7 +112,7 @@ class AgentStatus:
 # ── XHS host tool definitions ───────────────────────────────────────────────
 
 # ponytail: tool schemas derived from xhsagent-ext/src/tools/*.ts
-# These are the 7 tools the omp agent can call via host_tool_call mechanism.
+# These are the 25 tools the omp agent can call via host_tool_call mechanism.
 
 XHS_HOST_TOOLS: list[dict[str, Any]] = [
     {
@@ -225,16 +225,352 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
             "required": ["thread_id", "feedback"],
         },
     },
+    {
+        "name": "xhs_review_pending",
+        "label": "XHS Review Pending",
+        "description": "Get content details awaiting review at the review gate",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID"},
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_review_versions",
+        "label": "XHS Review Versions",
+        "description": "Get all content versions for comparison before review decision",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID"},
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_blogger_pending",
+        "label": "XHS Blogger Pending",
+        "description": "Get pending blogger candidates for a workflow at blogger selection gate",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID"},
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_blogger_select",
+        "label": "XHS Blogger Select",
+        "description": "Select a blogger candidate or skip blogger selection",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID"},
+                "user_id": {"type": "string", "description": "Selected blogger user_id"},
+                "nickname": {"type": "string", "description": "Selected blogger nickname"},
+                "skip": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Skip blogger selection",
+                },
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_optimization_draft",
+        "label": "XHS Optimization Draft",
+        "description": "Generate an optimization draft for content at the optimization stage",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID"},
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_optimization_select",
+        "label": "XHS Optimization Select",
+        "description": "Select a specific optimization version to proceed with",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID"},
+                "version_id": {
+                    "type": "string",
+                    "description": "Version ID to select (from content_versions)",
+                },
+                "version_type": {
+                    "type": "string",
+                    "description": "Version type: A/B/C (optional)",
+                },
+            },
+            "required": ["thread_id", "version_id"],
+        },
+    },
+    {
+        "name": "xhs_workflow_list",
+        "label": "XHS Workflow List",
+        "description": "List all workflows with their status and phase",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "xhs_workflow_delete",
+        "label": "XHS Workflow Delete",
+        "description": "Delete a workflow and its data",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID to delete"},
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_analytics_dashboard",
+        "label": "XHS Analytics Dashboard",
+        "description": "Get analytics dashboard data for an account",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "description": "Account ID"},
+            },
+            "required": ["account_id"],
+        },
+    },
+    {
+        "name": "xhs_analytics_costs",
+        "label": "XHS Analytics Costs",
+        "description": "Get LLM cost tracking data across all workflows",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "period": {
+                    "type": "string",
+                    "default": "weekly",
+                    "description": "Time period: daily, weekly, monthly",
+                },
+            },
+        },
+    },
+    {
+        "name": "xhs_system_health",
+        "label": "XHS System Health",
+        "description": (
+            "Check XhsGrowthAgent system health — "
+            "LLM providers, XHS platform, Ripple, database, memory store"
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "xhs_workflow_history",
+        "label": "XHS Workflow History",
+        "description": "Get checkpoint history for a workflow (execution timeline)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {
+                    "type": "string",
+                    "description": "Workflow thread ID",
+                },
+                "limit": {
+                    "type": "number",
+                    "default": 20,
+                    "description": "Max checkpoints to return (1-100)",
+                },
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_workflow_trigger_analytics",
+        "label": "XHS Trigger Analytics",
+        "description": (
+            "Manually trigger analytics for a workflow after publishing"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {
+                    "type": "string",
+                    "description": "Workflow thread ID (must have publish result)",
+                },
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_ripple_pending",
+        "label": "XHS Ripple Pending",
+        "description": (
+            "Get Ripple CAS decision status and available options"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {
+                    "type": "string",
+                    "description": "Workflow thread ID",
+                },
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_ripple_decision",
+        "label": "XHS Ripple Decision",
+        "description": (
+            "Submit Ripple CAS decision: accept, reangle, or retopic"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {
+                    "type": "string",
+                    "description": "Workflow thread ID",
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["accept", "reangle", "retopic"],
+                    "description": (
+                        "Decision: accept, reangle (change angle),"
+                        " or retopic (change topic)"
+                    ),
+                },
+            },
+            "required": ["thread_id", "action"],
+        },
+    },
+    {
+        "name": "xhs_ripple_retry",
+        "label": "XHS Ripple Retry",
+        "description": (
+            "Retry Ripple CAS analysis when it previously timed out or failed"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {
+                    "type": "string",
+                    "description": "Workflow thread ID",
+                },
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_analytics_report",
+        "label": "XHS Analytics Report",
+        "description": "Get growth report for an account",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "description": "Account ID"},
+                "period": {
+                    "type": "string",
+                    "default": "weekly",
+                    "description": "Time period: daily, weekly, monthly",
+                },
+            },
+            "required": ["account_id"],
+        },
+    },
+    {
+        "name": "xhs_analytics_performance",
+        "label": "XHS Analytics Performance",
+        "description": "Get recent post performance data",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "description": "Account ID"},
+                "period": {
+                    "type": "string",
+                    "default": "weekly",
+                    "description": "Time period: daily, weekly, monthly",
+                },
+                "limit": {
+                    "type": "number",
+                    "default": 10,
+                    "description": "Max posts (1-100)",
+                },
+            },
+            "required": ["account_id"],
+        },
+    },
 ]
 
 # Names of XHS tools that the backend auto-executes
 _XHS_TOOL_NAMES = {t["name"] for t in XHS_HOST_TOOLS}
+
+# Retry config for transient HTTP errors
+_RETRYABLE_STATUS = {429, 502, 503, 504}
+_MAX_RETRIES = 3
+
+
+async def _retry_http(
+    fn: Callable[..., Coroutine[Any, Any, Any]],
+    *args: Any,
+    tool_name: str = "",
+    **kwargs: Any,
+) -> Any:
+    """Call an httpx method with exponential backoff on transient errors."""
+    import httpx
+
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return await fn(*args, **kwargs)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in _RETRYABLE_STATUS and attempt < _MAX_RETRIES - 1:
+                delay = 0.5 * (2 ** attempt)
+                logger.info(
+                    "retryable HTTP %d for %s, retry %d/%d in %.1fs",
+                    e.response.status_code, tool_name,
+                    attempt + 1, _MAX_RETRIES, delay,
+                )
+                await asyncio.sleep(delay)
+                continue
+            raise
+        except (httpx.ConnectError, httpx.ReadTimeout) as e:
+            last_exc = e
+            if attempt < _MAX_RETRIES - 1:
+                delay = 0.5 * (2 ** attempt)
+                logger.info(
+                    "connection error for %s, retry %d/%d in %.1fs",
+                    tool_name, attempt + 1, _MAX_RETRIES, delay,
+                )
+                await asyncio.sleep(delay)
+                continue
+            raise
+    raise last_exc or RuntimeError("unreachable")  # ponytail: safety
+
+
+class _RetryingClient:
+    """Wraps httpx.AsyncClient to add retry with backoff on transient errors."""
+
+    def __init__(self, client: Any, tool_name: str) -> None:
+        self._client = client
+        self._tool_name = tool_name
+
+    async def get(self, *args: Any, **kwargs: Any) -> Any:
+        return await _retry_http(self._client.get, *args, tool_name=self._tool_name, **kwargs)
+
+    async def post(self, *args: Any, **kwargs: Any) -> Any:
+        return await _retry_http(self._client.post, *args, tool_name=self._tool_name, **kwargs)
+
+    async def delete(self, *args: Any, **kwargs: Any) -> Any:
+        return await _retry_http(self._client.delete, *args, tool_name=self._tool_name, **kwargs)
 
 
 async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Auto-execute a known XHS host tool by calling the backend API internally.
 
     Uses httpx to call the FastAPI app's own endpoints, so no external HTTP needed.
+    Retries transient HTTP errors (429, 502, 503, 504) with exponential backoff.
     """
     import httpx
 
@@ -242,7 +578,9 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
     url = f"{api_base}/api"
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as raw_client:
+            # Wrap client methods with retry logic
+            client = _RetryingClient(raw_client, tool_name)
             if tool_name == "xhs_workflow_start":
                 body: dict[str, Any] = {
                     "account_id": arguments.get("account_id", "default"),
@@ -339,6 +677,363 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     data,
                 )
 
+            elif tool_name == "xhs_review_pending":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.get(f"{url}/review/pending/{thread_id}")
+                data = _unwrap_envelope(resp)
+                if data.get("status") != "awaiting_review":
+                    return _make_text_result(
+                        f"Workflow {thread_id} is not at review gate.",
+                        data,
+                    )
+                lines = [f"Content Pending Review — {thread_id}:"]
+                copy = data.get("copy_content") or {}
+                title = copy.get("selected_title") or copy.get("title") or ""
+                body_text = copy.get("body_text") or copy.get("body") or ""
+                if title:
+                    lines.append(f"  Title: {title}")
+                if body_text:
+                    lines.append(f"  Body: {str(body_text)[:500]}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_review_versions":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.get(f"{url}/review/versions/{thread_id}")
+                data = _unwrap_envelope(resp)
+                versions = data.get("versions", [])
+                if not versions:
+                    return _make_text_result("No content versions available.", data)
+                current = data.get("current", {})
+                current_title = current.get("title", "(no title)")
+                lines = [f"Content Versions — {thread_id}:", f"  Current: {current_title}"]
+                for i, v in enumerate(versions, 1):
+                    vid = v.get("version_id", "?")
+                    summary = v.get("changes_summary", "draft")
+                    lines.append(f"  {i}. [{vid}] {summary}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_blogger_pending":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.get(f"{url}/optimization/blogger-pending/{thread_id}")
+                data = _unwrap_envelope(resp)
+                if not data.get("is_pending"):
+                    return _make_text_result(
+                        f"Workflow {thread_id} is not at blogger selection gate.", data
+                    )
+                candidates = data.get("blogger_candidates", [])
+                if not candidates:
+                    return _make_text_result("No blogger candidates available.", data)
+                lines = [f"Blogger Candidates for {thread_id}:"]
+                for i, c in enumerate(candidates, 1):
+                    lines.append(f'  {i}. {c.get("nickname", "?")} (ID: {c.get("user_id", "?")})')
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_blogger_select":
+                thread_id = arguments.get("thread_id", "")
+                sel_body: dict[str, Any] = {"skip": arguments.get("skip", False)}
+                if not arguments.get("skip"):
+                    if not arguments.get("user_id"):
+                        return _make_text_result(
+                            "user_id is required when not skipping.", None, is_error=True
+                        )
+                    sel_body["user_id"] = arguments["user_id"]
+                    if arguments.get("nickname"):
+                        sel_body["nickname"] = arguments["nickname"]
+                resp = await client.post(
+                    f"{url}/optimization/blogger-select/{thread_id}", json=sel_body
+                )
+                data = _unwrap_envelope(resp)
+                if arguments.get("skip"):
+                    action = "skipped"
+                else:
+                    action = f'selected "{arguments.get("nickname", "")}"'
+                next_phase = data.get("next_phase", "")
+                return _make_text_result(
+                    f"Blogger {action} for {thread_id}. Next: {next_phase}",
+                    data,
+                )
+
+            elif tool_name == "xhs_optimization_draft":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.post(f"{url}/optimization/draft/{thread_id}")
+                data = _unwrap_envelope(resp)
+                status = data.get("status", "")
+                lines = [f"Optimization Draft — {thread_id}:", f"  Status: {status}"]
+                draft = data.get("draft_content") or {}
+                title = draft.get("title") or ""
+                body_text = draft.get("body") or ""
+                if title:
+                    lines.append(f"  Title: {title}")
+                if body_text:
+                    lines.append(f"  Body: {str(body_text)[:500]}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_optimization_select":
+                thread_id = arguments.get("thread_id", "")
+                version_id = arguments.get("version_id", "")
+                version_type = arguments.get("version_type")
+                opt_body: dict[str, Any] = {"version_id": version_id}
+                if version_type:
+                    opt_body["version_type"] = version_type
+                resp = await client.post(
+                    f"{url}/optimization/select/{thread_id}", json=opt_body
+                )
+                data = _unwrap_envelope(resp)
+                next_phase = data.get("next_phase", "")
+                return _make_text_result(
+                    f"Selected version {version_id} for {thread_id}. Next: {next_phase}",
+                    data,
+                )
+
+            elif tool_name == "xhs_workflow_list":
+                resp = await client.get(f"{url}/workflow/list")
+                data = _unwrap_envelope(resp)
+                workflows = data.get("workflows", [])
+                if not workflows:
+                    return _make_text_result("No workflows found.", data)
+                lines = [f"Workflows ({len(workflows)}):"]
+                for w in workflows:
+                    tid = w.get("thread_id", "")
+                    lines.append(f"  {tid[:8]}… | {w.get('phase', '')} | {w.get('status', '')}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_workflow_delete":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.delete(f"{url}/workflow/{thread_id}")
+                _unwrap_envelope(resp)
+                return _make_text_result(f"Workflow {thread_id} deleted.")
+
+            elif tool_name == "xhs_analytics_dashboard":
+                account_id = arguments.get("account_id", "")
+                resp = await client.get(f"{url}/analytics/dashboard/{account_id}")
+                data = _unwrap_envelope(resp)
+                lines = [f"Analytics Dashboard — {account_id}:"]
+                report = data.get("report", {})
+                metrics = report.get("metrics", {})
+                if metrics:
+                    lines.append(
+                        f"  Posts: {metrics.get('total_posts', 0)}, "
+                        f"Engagement: {metrics.get('total_engagement', 0)}, "
+                        f"Avg Rate: {metrics.get('avg_engagement_rate', 0)}%"
+                    )
+                    best = metrics.get("best_post_title", "")
+                    if best:
+                        lines.append(f"  Best Post: {best}")
+                costs = data.get("costs", {})
+                if costs:
+                    lines.append(
+                        f"  Costs: ${costs.get('period_cost_usd', 0):.2f} this period, "
+                        f"${costs.get('today_cost_usd', 0):.2f} today"
+                    )
+                perf = data.get("performance", {})
+                if perf.get("posts"):
+                    lines.append(f"  Recent Posts: {len(perf['posts'])}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_analytics_costs":
+                period = arguments.get("period", "weekly")
+                resp = await client.get(f"{url}/analytics/costs", params={"period": period})
+                data = _unwrap_envelope(resp)
+                total = data.get("total_cost_usd", 0)
+                period_cost = data.get("period_cost_usd", 0)
+                today_cost = data.get("today_cost_usd", 0)
+                lines = [
+                    f"LLM Cost Report (period: {period}):",
+                    f"  Total: ${total:.4f}",
+                    f"  This Period: ${period_cost:.4f}",
+                    f"  Today: ${today_cost:.4f}",
+                ]
+                by_model = data.get("by_model", {})
+                if by_model:
+                    lines.append("  By Model:")
+                    for model, cost in by_model.items():
+                        lines.append(f"    {model}: ${cost:.4f}")
+                budget = data.get("budget_remaining_usd")
+                if budget is not None:
+                    lines.append(f"  Budget Remaining: ${budget:.2f}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_system_health":
+                resp = await client.get(f"{url}/system/health")
+                data = _unwrap_envelope(resp)
+                checks = data.get("checks", {})
+                lines = [
+                    f"System Health: {data.get('status', 'unknown').upper()}",
+                    f"  LLM Providers: {checks.get('llm_providers', {}).get('status', '?')}",
+                    f"  XHS Platform: {checks.get('xhs_platform', {}).get('status', '?')}",
+                    f"  Ripple CAS: {checks.get('ripple_cas', {}).get('status', '?')}",
+                ]
+                db_check = checks.get("database", {})
+                lines.append(
+                    f"  Database: {db_check.get('status', '?')} "
+                    f"({db_check.get('mode', '?')})"
+                )
+                lines.append(
+                    f"  Memory Store: {checks.get('memory_store', {}).get('status', '?')}"
+                )
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_workflow_history":
+                thread_id = arguments.get("thread_id", "")
+                limit = arguments.get("limit", 20)
+                resp = await client.get(
+                    f"{url}/workflow/history/{thread_id}",
+                    params={"limit": limit},
+                )
+                data = _unwrap_envelope(resp)
+                checkpoints = data.get("checkpoints", [])
+                if not checkpoints:
+                    return _make_text_result(
+                        f"No history for {thread_id}.", data
+                    )
+                has_more = ", more available" if data.get("has_more") else ""
+                lines = [
+                    f"Workflow History — {thread_id}"
+                    f" ({len(checkpoints)} checkpoints{has_more}):",
+                ]
+                for c in checkpoints:
+                    step = c.get("step", "?")
+                    phase = c.get("phase", "?")
+                    agent = c.get("current_agent", "—")
+                    ts = c.get("created_at") or "N/A"
+                    lines.append(f"  Step {step} | {phase} | {agent} | {ts}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_workflow_trigger_analytics":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.post(
+                    f"{url}/workflow/trigger-analytics/{thread_id}"
+                )
+                data = _unwrap_envelope(resp)
+                status = data.get("status", "")
+                if status == "completed":
+                    return _make_text_result(
+                        f"Analytics already completed for {thread_id}.", data
+                    )
+                if status == "error":
+                    return _make_text_result(
+                        f"Cannot trigger analytics: {data.get('message', 'unknown error')}",
+                        data,
+                    )
+                return _make_text_result(
+                    f"Analytics triggered for {thread_id}."
+                    f" Phase: {data.get('phase', 'analyzing')}",
+                    data,
+                )
+
+            elif tool_name == "xhs_ripple_pending":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.get(
+                    f"{url}/review/ripple-pending/{thread_id}"
+                )
+                data = _unwrap_envelope(resp)
+                pred = data.get("ripple_prediction", {})
+                lines = [
+                    f"Ripple Decision — {thread_id}:",
+                    f"  Status: {data.get('status', '')}",
+                    f"  Reselect: {data.get('reselect_count', 0)}/{data.get('max_reselect', 0)}",
+                    f"  Options: {', '.join(data.get('options', []))}",
+                ]
+                if pred.get("viral_probability"):
+                    lines.append(f"  Viral Prob: {pred['viral_probability']}")
+                if pred.get("estimated_reach"):
+                    lines.append(f"  Est Reach: {pred['estimated_reach']}")
+                if pred.get("confidence"):
+                    lines.append(f"  Confidence: {pred['confidence']}")
+                pmf = data.get("ripple_pmf", {})
+                if pmf.get("pmf_score"):
+                    lines.append(f"  PMF Score: {pmf['pmf_score']}")
+                if data.get("ripple_reason"):
+                    lines.append(f"  Reason: {data['ripple_reason']}")
+                lines.append("")
+                lines.append("Use xhs_ripple_decision to submit your choice.")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_ripple_decision":
+                thread_id = arguments.get("thread_id", "")
+                action = arguments.get("action", "accept")
+                resp = await client.post(
+                    f"{url}/review/ripple-decision/{thread_id}",
+                    json={"action": action},
+                )
+                data = _unwrap_envelope(resp)
+                labels = {
+                    "accept": "Accepted",
+                    "reangle": "Angle change requested",
+                    "retopic": "Topic change requested",
+                }
+                return _make_text_result(
+                    f"{labels.get(action, action)} for {thread_id}."
+                    f" Next: {data.get('next_phase', '')}",
+                    data,
+                )
+
+            elif tool_name == "xhs_ripple_retry":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.post(
+                    f"{url}/workflow/ripple-retry/{thread_id}"
+                )
+                data = _unwrap_envelope(resp)
+                if data.get("status") == "skipped":
+                    return _make_text_result(
+                        f"Ripple retry skipped: {data.get('message', '')}",
+                        data,
+                    )
+                return _make_text_result(
+                    f"Ripple retry started for {thread_id}."
+                    f" Status: {data.get('status', '')}",
+                    data,
+                )
+
+            elif tool_name == "xhs_analytics_report":
+                account_id = arguments.get("account_id", "")
+                period = arguments.get("period", "weekly")
+                resp = await client.get(
+                    f"{url}/analytics/report/{account_id}",
+                    params={"period": period},
+                )
+                data = _unwrap_envelope(resp)
+                m = data.get("metrics", {})
+                lines = [
+                    f"Growth Report — {account_id} ({period}):",
+                    f"  Posts: {m.get('total_posts', 0)}",
+                    f"  Engagement: {m.get('total_engagement', 0)}",
+                    f"  Avg Rate: {m.get('avg_engagement_rate', 0)}%",
+                ]
+                if m.get("best_post_title"):
+                    lines.append(f"  Best: {m['best_post_title']}")
+                if m.get("trend_topics"):
+                    lines.append(f"  Trends: {', '.join(m['trend_topics'])}")
+                for ins in data.get("insights", []):
+                    lines.append(f"  - {ins.get('message', '')}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_analytics_performance":
+                account_id = arguments.get("account_id", "")
+                period = arguments.get("period", "weekly")
+                limit = arguments.get("limit", 10)
+                resp = await client.get(
+                    f"{url}/analytics/performance/{account_id}",
+                    params={"period": period, "limit": limit},
+                )
+                data = _unwrap_envelope(resp)
+                posts = data.get("posts", [])
+                if not posts:
+                    return _make_text_result("No performance data.", data)
+                lines = [
+                    f"Performance — {account_id}"
+                    f" ({data.get('total', 0)} posts):",
+                ]
+                for p in posts:
+                    lines.append(
+                        f"  {p.get('title', '?')} —"
+                        f" ❤{p.get('likes', 0)}"
+                        f" 💬{p.get('comments', 0)}"
+                        f" ⭐{p.get('collects', 0)}"
+                        f" ({p.get('engagement_rate', 0)}%)"
+                    )
+                return _make_text_result("\n".join(lines), data)
+
             else:
                 return _make_text_result(f"Unknown tool: {tool_name}", None, is_error=True)
 
@@ -348,7 +1043,12 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
 
 
 def _unwrap_envelope(resp: Any) -> dict[str, Any]:
-    """Unwrap the ApiResponse envelope {success, data, error}."""
+    """Unwrap the ApiResponse envelope {success, data, error}.
+
+    Raises httpx.HTTPStatusError for retryable HTTP errors (429, 502-504).
+    """
+    # Raise for retryable HTTP status codes so _retry_http can catch them
+    resp.raise_for_status()
     body: dict[str, Any] = resp.json()
     if body.get("success"):
         return body.get("data", {}) or {}
