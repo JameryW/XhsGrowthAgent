@@ -170,6 +170,8 @@ class PublishErrorType(StrEnum):
 _PUBLISH_ERROR_PATTERNS: list[tuple[str, PublishErrorType]] = [
     ("cookie", PublishErrorType.AUTH_EXPIRED),
     ("login", PublishErrorType.AUTH_EXPIRED),
+    ("登录", PublishErrorType.AUTH_EXPIRED),
+    ("凭证", PublishErrorType.AUTH_EXPIRED),
     ("token", PublishErrorType.AUTH_EXPIRED),
     ("auth", PublishErrorType.AUTH_EXPIRED),
     ("401", PublishErrorType.AUTH_EXPIRED),
