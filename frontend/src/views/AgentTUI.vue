@@ -586,7 +586,9 @@ function handleAgentEvent(event: Record<string, unknown>) {
       write(ansi)
     }
     if (done) {
+      // ponytail: dim rule closes the AI reply block, separates it from the next prompt
       writeLine('')
+      writeLineColored(`${'─'.repeat(Math.max(8, Math.min(termCols - 2, 40)))}`, ANSI.DIM)
       isProcessing.value = false
       writePrompt()
     }
@@ -594,16 +596,14 @@ function handleAgentEvent(event: Record<string, unknown>) {
     const toolName = event.tool_name as string
     const args = event.args as Record<string, unknown>
     const argsStr = formatArgs(args)
-    writeLine(`${ANSI.BRIGHT_YELLOW}▸${ANSI.RESET} ${ANSI.BRIGHT_CYAN}${toolName}${ANSI.DIM}(${argsStr})${ANSI.RESET}`)
+    writeLine(`${ANSI.BRIGHT_YELLOW}▸${ANSI.RESET} ${ANSI.BRIGHT_CYAN}${toolName}${ANSI.RESET}${ANSI.DIM}(${argsStr})${ANSI.RESET}`)
   } else if (type === 'tool_result') {
     const toolName = event.tool_name as string
     const isError = event.is_error as boolean
     const resultStr = formatResult(event.result)
-    if (isError) {
-      writeLine(`${ANSI.RED}✗${ANSI.RESET} ${ANSI.DIM}${toolName}:${ANSI.RESET} ${resultStr}`)
-    } else {
-      writeLine(`${ANSI.BRIGHT_GREEN}✓${ANSI.RESET} ${ANSI.DIM}${toolName}:${ANSI.RESET} ${resultStr}`)
-    }
+    const mark = isError ? `${ANSI.RED}✗${ANSI.RESET}` : `${ANSI.BRIGHT_GREEN}✓${ANSI.RESET}`
+    // ponytail: ↳ indent signals result is subordinate to the preceding ▸ call
+    writeLine(`  ${ANSI.DIM}↳${ANSI.RESET} ${mark} ${ANSI.DIM}${toolName}${ANSI.RESET} ${resultStr}`)
   } else if (type === 'status') {
     const status = event.status as string
     wsStatus.value = status as 'idle' | 'running' | 'streaming'
@@ -613,7 +613,8 @@ function handleAgentEvent(event: Record<string, unknown>) {
     isProcessing.value = false
     writePrompt()
   } else if (type === 'error') {
-    writeLineColored(`⚠ ${event.message || 'Unknown error'}`, ANSI.RED)
+    // ponytail: 2-space indent aligns with ▸/↳ tool block; red mark + default-color msg for hierarchy
+    writeLine(`  ${ANSI.RED}⚠${ANSI.RESET} ${event.message || 'Unknown error'}`)
     isProcessing.value = false
     writePrompt()
   }
@@ -629,9 +630,11 @@ function formatArgs(args: Record<string, unknown>): string {
 }
 
 function formatResult(result: unknown): string {
-  if (result === null || result === undefined) return '(no result)'
+  if (result === null || result === undefined) return `${ANSI.DIM}(no result)${ANSI.RESET}`
   const str = typeof result === 'string' ? result : JSON.stringify(result)
-  return str.length > 200 ? str.slice(0, 200) + '...' : str
+  // ponytail: collapse internal newlines, single-line view; cap at 160 chars for scannability
+  const flat = str.replace(/\s*\n\s*/g, ' ').trim()
+  return flat.length > 160 ? flat.slice(0, 160) + `${ANSI.DIM} …${ANSI.RESET}` : flat
 }
 
 // ── Command processing ──────────────────────────────────────────────────
@@ -754,10 +757,19 @@ async function handleStatus(threadId: string) {
   writeLineColored(t('tui.fetchingStatus', { threadId }), ANSI.YELLOW)
 
   const state = await getWorkflowStatus(threadId)
-  writeLineColored(
-    `Phase: ${state.phase}\nStatus: ${state.status}\nProgress: ${state.progress_percent ?? 0}%\nAgent: ${state.current_agent || 'none'}\nNext: ${state.next_steps?.join(', ') || 'none'}`,
-    ANSI.BRIGHT_GREEN,
-  )
+  const D = ANSI.DIM, G = ANSI.BRIGHT_GREEN, C = ANSI.BRIGHT_CYAN, W = ANSI.BRIGHT_WHITE, R = ANSI.RESET
+  // ponytail: structured status — dim label + bright value, progress as block bar (visual at a glance)
+  const pct = Math.max(0, Math.min(100, state.progress_percent ?? 0))
+  const barW = 20
+  const filled = Math.round((pct / 100) * barW)
+  const bar = `${G}${'█'.repeat(filled)}${D}${'░'.repeat(barW - filled)}${R}`
+  writeLine('')
+  writeLine(`  ${D}phase${R}    ${C}${state.phase}${R}`)
+  writeLine(`  ${D}status${R}   ${W}${state.status}${R}`)
+  writeLine(`  ${D}progress${R} ${bar} ${G}${pct}%${R}`)
+  writeLine(`  ${D}agent${R}    ${state.current_agent || `${D}none${R}`}`)
+  writeLine(`  ${D}next${R}     ${state.next_steps?.length ? state.next_steps.join(', ') : `${D}none${R}`}`)
+  writeLine('')
 }
 
 async function handlePause(threadId: string) {
@@ -966,12 +978,14 @@ onMounted(() => {
   document.addEventListener('click', handleDocumentClick)
 
   // Welcome banner — native TUI feel with box drawing, adaptive width
-  const W = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, R = ANSI.RESET
+  const W = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, R = ANSI.RESET, Y = ANSI.BRIGHT_YELLOW
   const bannerWidth = Math.max(30, Math.min(termCols - 4, 50))
   writeLine('')
   writeLine(`${W}╭${'─'.repeat(bannerWidth)}╮${R}`)
   writeLine(`${W}│${R}  ${G}XHS Growth Agent${R}  ${D}v1.0${R}${' '.repeat(Math.max(0, bannerWidth - 22))}${W}│${R}`)
   writeLine(`${W}│${R}  ${D}小红书内容增长智能体${R}${' '.repeat(Math.max(0, bannerWidth - 12))}${W}│${R}`)
+  writeLine(`${W}├${'─'.repeat(bannerWidth)}┤${R}`)
+  writeLine(`${W}│${R}  ${Y}trend → strategy → copy → visual → publish${R}${' '.repeat(Math.max(0, bannerWidth - 38))}${W}│${R}`)
   writeLine(`${W}╰${'─'.repeat(bannerWidth)}╯${R}`)
   writeLine('')
   writeLineColored(`  Type ${ANSI.BRIGHT_WHITE}/help${ANSI.RESET} for commands, or just start chatting.`, ANSI.DIM)
@@ -1099,6 +1113,8 @@ onUnmounted(() => {
 .tui-statusbar {
   background: #16161e;
   border-bottom: 1px solid #292e42;
+  /* ponytail: 1px brand accent strip under the bar — single subtle visual anchor */
+  box-shadow: inset 2px 0 0 0 #7aa2f7;
   font-family: 'JetBrains Mono', 'Fira Code', 'Menlo', monospace;
   font-size: 11px;
   line-height: 1;
@@ -1141,6 +1157,7 @@ onUnmounted(() => {
   letter-spacing: 0.8px;
   text-transform: uppercase;
   line-height: 1.4;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 .tui-mode-badge.mode-agent {
   background: #9ece6a18;
@@ -1163,7 +1180,23 @@ onUnmounted(() => {
 .tui-running-indicator {
   color: #e0af68;
   font-size: 10px;
-  animation: pulse-glow 1.5s ease-in-out infinite;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+/* ponytail: stepping dots spinner — native-terminal "busy" feel, no JS frame loop */
+.tui-running-indicator::after {
+  content: '';
+  width: 14px;
+  text-align: left;
+  animation: tui-dots 1.2s steps(4, end) infinite;
+}
+@keyframes tui-dots {
+  0%   { content: '   '; }
+  25%  { content: '.  '; }
+  50%  { content: '.. '; }
+  75%  { content: '...'; }
+  100% { content: '   '; }
 }
 
 .tui-status-btn {
@@ -1184,6 +1217,18 @@ onUnmounted(() => {
   background: #16161e;
   border-bottom: 1px solid #292e42;
   font-family: 'JetBrains Mono', 'Fira Code', 'Menlo', monospace;
+  /* ponytail: slide-in on v-if mount — single transition, no JS */
+  animation: tui-bar-in 0.15s ease-out;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+@keyframes tui-bar-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* ponytail: focus-within lights the whole bar, not just the input border */
+.tui-searchbar:focus-within {
+  background: #1a1b26;
+  border-bottom-color: #7aa2f7;
 }
 
 .tui-search-input {
@@ -1272,22 +1317,23 @@ onUnmounted(() => {
 }
 
 .tui-mobile-send {
-  background: #292e42;
-  color: #a9b1d6;
+  background: #7aa2f7;
+  color: #1a1b26;
   font-size: 13px;
   font-weight: 700;
   padding: 6px 12px;
   border-radius: 2px;
-  border: 1px solid #3b4261;
+  border: 1px solid #89b4fa;
   cursor: pointer;
   font-family: inherit;
-  transition: background 0.15s;
+  transition: background 0.15s, transform 0.08s;
 }
 .tui-mobile-send:hover {
-  background: #3b4261;
+  background: #89b4fa;
 }
 .tui-mobile-send:active {
   background: #565f89;
+  transform: translateY(1px); /* ponytail: tactile press feedback */
 }
 
 /* ── Context menu — sharp, flat, native ─────────────────────────────── */
