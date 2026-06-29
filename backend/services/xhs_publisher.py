@@ -13,8 +13,14 @@ import asyncio
 import contextlib
 import logging
 import os
+import re
 import time
 from typing import TYPE_CHECKING, Any
+
+# ponytail: match XHS note IDs across the URL shapes the publish flow can land on
+# — /note/{id}, /explore/{id}, /discovery/item/{id}. ID is typically 24-hex but
+# may contain other word chars; capture the trailing path segment after a known prefix.
+_NOTE_ID_RE = re.compile(r"/(?:note|explore|discovery/item)/(\w+)")
 
 # ponytail: playwright is an optional [browser] extra. Import it lazily so the
 # module is importable (and unit-testable with a mock Page) without it installed.
@@ -326,13 +332,9 @@ class XHSPublisher:
             await asyncio.sleep(2)
 
             current_url = page.url
-            # 从 URL 提取笔记 ID
-            post_id = ""
-            if "/note/" in current_url:
-                import re
-                match = re.search(r"/note/(\w+)", current_url)
-                if match:
-                    post_id = match.group(1)
+            # 从 URL 提取笔记 ID — 覆盖 /note/, /explore/, /discovery/item/ 几种落地页
+            match = _NOTE_ID_RE.search(current_url)
+            post_id = match.group(1) if match else ""
 
             return {
                 "post_id": post_id,

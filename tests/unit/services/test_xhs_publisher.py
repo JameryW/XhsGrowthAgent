@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.services.xhs_publisher import XHSPublisher
+from backend.services.xhs_publisher import _NOTE_ID_RE, XHSPublisher
 
 
 @pytest.fixture
@@ -119,3 +119,32 @@ class TestPublishRetrySafety:
         assert result["status"] == "error"
         page.close.assert_awaited_once()
         assert publisher._page is None, "dirty page must be reset for retry"
+
+
+class TestNoteIdExtraction:
+    """_wait_for_success extracts post_id from the post-publish landing URL.
+
+    Previously only matched /note/{id}, so a success landing on /explore/{id}
+    or /discovery/item/{id} left post_id empty — which then skipped recording
+    the publish to ContentHistory (PublisherAgent gates history on post_id).
+    """
+
+    @pytest.mark.parametrize(
+        "url,expected",
+        [
+            ("https://www.xiaohongshu.com/note/65a3b2c1d4e5f6a7b8c9d0e1",
+             "65a3b2c1d4e5f6a7b8c9d0e1"),
+            ("https://www.xiaohongshu.com/explore/65a3b2c1d4e5f6a7b8c9d0e1",
+             "65a3b2c1d4e5f6a7b8c9d0e1"),
+            ("https://www.xiaohongshu.com/discovery/item/65a3b2c1d4e5f6a7b8c9d0e1",
+             "65a3b2c1d4e5f6a7b8c9d0e1"),
+            ("https://www.xiaohongshu.com/explore/65a3b2c1d4e5f6a7b8c9d0e1?x=1",
+             "65a3b2c1d4e5f6a7b8c9d0e1"),
+            ("https://creator.xiaohongshu.com/publish/success", ""),  # no note id
+        ],
+    )
+    def test_extract_note_id(self, url: str, expected: str):
+        match = _NOTE_ID_RE.search(url)
+        post_id = match.group(1) if match else ""
+        assert post_id == expected
+
