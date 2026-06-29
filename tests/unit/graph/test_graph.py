@@ -33,10 +33,10 @@ def test_graph_has_all_nodes():
 @pytest.mark.asyncio
 async def test_graph_compiles_dev():
     """开发模式图可以正常编译"""
-    from backend.graph.builder import compile_graph_dev
+    from backend.graph.builder import dev_graph
 
-    graph = await compile_graph_dev()
-    assert graph is not None
+    async with dev_graph() as graph:
+        assert graph is not None
 
 
 @pytest.mark.asyncio
@@ -45,9 +45,9 @@ async def test_graph_uses_interrupt_before():
 
     所有三个 gate 都需要人工确认才能继续。
     """
-    from backend.graph.builder import compile_graph_dev
+    from backend.graph.builder import dev_graph
 
-    graph = await compile_graph_dev()
-    assert "review_gate" in graph.interrupt_before_nodes
-    assert "choice_gate" in graph.interrupt_before_nodes
-    assert "draft_gate" in graph.interrupt_before_nodes
+    async with dev_graph() as graph:
+        assert "review_gate" in graph.interrupt_before_nodes
+        assert "choice_gate" in graph.interrupt_before_nodes
+        assert "draft_gate" in graph.interrupt_before_nodes

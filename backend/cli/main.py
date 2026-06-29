@@ -70,92 +70,92 @@ def run(
     console.print(Panel("🚀 小红书增长引擎", style="bold green"))
 
     async def _run():
-        from backend.graph.builder import compile_graph_dev
+        from backend.graph.builder import dev_graph
         from backend.state.schema import WorkflowPhase
 
-        graph = await compile_graph_dev()
-        thread_id = f"xhs_{account_id}_{uuid.uuid4().hex[:8]}"
+        async with dev_graph() as graph:
+            thread_id = f"xhs_{account_id}_{uuid.uuid4().hex[:8]}"
 
-        initial_state = {
-            "phase": WorkflowPhase(phase),
-            "current_agent": "orchestrator",
-            "error": None,
-            "retry_count": 0,
-            "messages": [],
-            "trend_data": {},
-            "content_plan": {},
-            "copy_content": {},
-            "visual_plan": {},
-            "publish_result": {},
-            "analytics": {},
-            "engagement_actions": [],
-            "human_feedback": {},
-            "content_history": [],
-            "performance_log": [],
-            "account_id": account_id,
-            "session_id": thread_id,
-            "created_at": datetime.now(UTC).isoformat(),
-            "updated_at": datetime.now(UTC).isoformat(),
-        }
+            initial_state = {
+                "phase": WorkflowPhase(phase),
+                "current_agent": "orchestrator",
+                "error": None,
+                "retry_count": 0,
+                "messages": [],
+                "trend_data": {},
+                "content_plan": {},
+                "copy_content": {},
+                "visual_plan": {},
+                "publish_result": {},
+                "analytics": {},
+                "engagement_actions": [],
+                "human_feedback": {},
+                "content_history": [],
+                "performance_log": [],
+                "account_id": account_id,
+                "session_id": thread_id,
+                "created_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
 
-        config = {"configurable": {"thread_id": thread_id}}
+            config = {"configurable": {"thread_id": thread_id}}
 
-        console.print(f"[dim]Thread: {thread_id}[/dim]")
-        console.print(f"[dim]起始阶段: {format_phase(phase)}[/dim]")
+            console.print(f"[dim]Thread: {thread_id}[/dim]")
+            console.print(f"[dim]起始阶段: {format_phase(phase)}[/dim]")
 
-        if dry_run:
-            console.print("[yellow]⚠️ DRY RUN — 不调用真实 API[/yellow]")
-            return
+            if dry_run:
+                console.print("[yellow]⚠️ DRY RUN — 不调用真实 API[/yellow]")
+                return
 
-        try:
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                console=console,
-            ) as progress:
-                task = progress.add_task("执行工作流...", total=None)
+            try:
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    console=console,
+                ) as progress:
+                    task = progress.add_task("执行工作流...", total=None)
 
-                async for event in graph.astream_events(initial_state, config, version="v1"):
-                    if event["event"] == "on_chain_start":
-                        agent = event.get("name", "unknown")
-                        progress.update(task, description=f"[cyan]执行: {agent}[/cyan]")
-                        if verbose:
-                            console.print(f"[dim]→ {agent}[/dim]")
-                    elif event["event"] == "on_chain_end":
-                        agent = event.get("name", "unknown")
-                        progress.update(task, description=f"[green]完成: {agent}[/green]")
-                        if verbose:
-                            console.print(f"[dim]✓ {agent}[/dim]")
+                    async for event in graph.astream_events(initial_state, config, version="v1"):
+                        if event["event"] == "on_chain_start":
+                            agent = event.get("name", "unknown")
+                            progress.update(task, description=f"[cyan]执行: {agent}[/cyan]")
+                            if verbose:
+                                console.print(f"[dim]→ {agent}[/dim]")
+                        elif event["event"] == "on_chain_end":
+                            agent = event.get("name", "unknown")
+                            progress.update(task, description=f"[green]完成: {agent}[/green]")
+                            if verbose:
+                                console.print(f"[dim]✓ {agent}[/dim]")
 
-                progress.update(
-                    task,
-                    description="[bold green]工作流完成[/bold green]",
-                    completed=True,
-                )
+                    progress.update(
+                        task,
+                        description="[bold green]工作流完成[/bold green]",
+                        completed=True,
+                    )
 
-            result = await graph.aget_state(config)
-            final_phase = result.values.get("phase", "unknown")
-            console.print(Panel(
-                f"最终阶段: {format_phase(final_phase)}\n"
-                f"当前 Agent: {result.values.get('current_agent', 'unknown')}\n"
-                f"Thread ID: {thread_id}",
-                title="✅ 工作流结果",
-                style="green",
-            ))
+                result = await graph.aget_state(config)
+                final_phase = result.values.get("phase", "unknown")
+                console.print(Panel(
+                    f"最终阶段: {format_phase(final_phase)}\n"
+                    f"当前 Agent: {result.values.get('current_agent', 'unknown')}\n"
+                    f"Thread ID: {thread_id}",
+                    title="✅ 工作流结果",
+                    style="green",
+                ))
 
-        except KeyboardInterrupt:
-            console.print("\n[yellow]⚠️ 工作流被中断[/yellow]")
-            console.print(f"[dim]使用 'xhs-growth resume {thread_id}' 恢复[/dim]")
-        except Exception as e:
-            console.print(Panel(
-                f"错误类型: {type(e).__name__}\n"
-                f"详情: {e}\n\n"
-                f"[dim]建议: 检查 API 配置或使用 --dry-run 测试[/dim]",
-                title="❌ 执行失败",
-                style="red",
-            ))
-            raise typer.Exit(1) from e
+            except KeyboardInterrupt:
+                console.print("\n[yellow]⚠️ 工作流被中断[/yellow]")
+                console.print(f"[dim]使用 'xhs-growth resume {thread_id}' 恢复[/dim]")
+            except Exception as e:
+                console.print(Panel(
+                    f"错误类型: {type(e).__name__}\n"
+                    f"详情: {e}\n\n"
+                    f"[dim]建议: 检查 API 配置或使用 --dry-run 测试[/dim]",
+                    title="❌ 执行失败",
+                    style="red",
+                ))
+                raise typer.Exit(1) from e
 
     asyncio.run(_run())
 
@@ -180,42 +180,42 @@ def serve(
 def status(thread_id: str = typer.Argument(..., help="工作流线程 ID")):
     """查看工作流状态"""
     async def _status():
-        from backend.graph.builder import compile_graph_dev
+        from backend.graph.builder import dev_graph
         from backend.state.machine import derive_status
 
-        graph = await compile_graph_dev()
-        config = {"configurable": {"thread_id": thread_id}}
-        snapshot = await graph.aget_state(config)
+        async with dev_graph() as graph:
+            config = {"configurable": {"thread_id": thread_id}}
+            snapshot = await graph.aget_state(config)
 
-        # Use derive_status for accurate status (handles stale, gates, etc.)
-        derived = derive_status(snapshot, has_active_task=False)
-        phase = snapshot.values.get("phase", "unknown")
-        agent = snapshot.values.get("current_agent", "unknown")
+            # Use derive_status for accurate status (handles stale, gates, etc.)
+            derived = derive_status(snapshot, has_active_task=False)
+            phase = snapshot.values.get("phase", "unknown")
+            agent = snapshot.values.get("current_agent", "unknown")
 
-        table = Table(title=f"工作流状态: {thread_id}")
-        table.add_column("属性", style="cyan")
-        table.add_column("值", style="white")
+            table = Table(title=f"工作流状态: {thread_id}")
+            table.add_column("属性", style="cyan")
+            table.add_column("值", style="white")
 
-        table.add_row("状态", format_phase(derived.value))
-        table.add_row("阶段", format_phase(phase))
-        table.add_row("当前 Agent", agent)
-        table.add_row("下一步", ", ".join(snapshot.next) if snapshot.next else "完成")
-        table.add_row("错误", snapshot.values.get("error", "无") or "无")
+            table.add_row("状态", format_phase(derived.value))
+            table.add_row("阶段", format_phase(phase))
+            table.add_row("当前 Agent", agent)
+            table.add_row("下一步", ", ".join(snapshot.next) if snapshot.next else "完成")
+            table.add_row("错误", snapshot.values.get("error", "无") or "无")
 
-        console.print(table)
+            console.print(table)
 
-        if derived.value == "stale":
-            console.print(
-                "\n[yellow]⚠️ 工作流处于 STALE 状态（后台任务已终止但仍有待执行节点）[/yellow]"
-            )
-            console.print("[dim]使用 xhs-growth resume <thread_id> 恢复执行[/dim]")
+            if derived.value == "stale":
+                console.print(
+                    "\n[yellow]⚠️ 工作流处于 STALE 状态（后台任务已终止但仍有待执行节点）[/yellow]"
+                )
+                console.print("[dim]使用 xhs-growth resume <thread_id> 恢复执行[/dim]")
 
-        # Show performance log if available
-        perf_log = snapshot.values.get("performance_log", [])
-        if perf_log and len(perf_log) > 0:
-            console.print("\n[dim]性能日志:[/dim]")
-            for entry in perf_log[-3:]:
-                console.print(f"  [dim]• {entry}[/dim]")
+            # Show performance log if available
+            perf_log = snapshot.values.get("performance_log", [])
+            if perf_log and len(perf_log) > 0:
+                console.print("\n[dim]性能日志:[/dim]")
+                for entry in perf_log[-3:]:
+                    console.print(f"  [dim]• {entry}[/dim]")
 
     asyncio.run(_status())
 

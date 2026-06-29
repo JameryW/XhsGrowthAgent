@@ -182,10 +182,16 @@ class TestAnalystAgent:
         """_ripple_report 超时时返回 None"""
         state = {"content_plan": {"ripple_prediction": {"ripple_job_id": "job-timeout"}}}
 
+        # asyncio.wait_for evaluates get_report(job_id) before invoking, so the
+        # mock coroutine must be closed to avoid a 'never awaited' leak.
+        def _fake_wait_for(coro, timeout, *args, **kwargs):
+            coro.close()
+            raise TimeoutError()
+
         with (
             patch("backend.tools.ripple.integration.get_report", new_callable=AsyncMock),
             patch.object(agent, "_ripple_cancel", new_callable=AsyncMock),
-            patch("asyncio.wait_for", side_effect=TimeoutError()),
+            patch("asyncio.wait_for", side_effect=_fake_wait_for),
         ):
             result = await agent._ripple_report(state)
 
