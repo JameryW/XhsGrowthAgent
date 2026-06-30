@@ -61,6 +61,15 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
 "backend/api/routes/*.py" = ["B008"]
+# Hook scripts suppress warnings before importing, so module imports sit below
+# the warnings.filterwarnings call by design — E402 is expected there.
+# Hook scripts also emit long injected-prompt strings (LLM instructions) that
+# are inherently long — E501 is expected there.
+# Hook scripts wrap best-effort stdout reconfigure / json reads in try/except/pass
+# for startup resilience — SIM105 (contextlib.suppress) is less readable there.
+".claude/hooks/*.py" = ["E402", "E501", "SIM105"]
+".cursor/hooks/*.py" = ["E402", "E501", "SIM105"]
+".trellis/scripts/common/__init__.py" = ["E402"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -69,3 +78,9 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+# playwright is an optional [browser] extra (lazy-imported at runtime);
+# don't fail type-checking when it isn't installed.
+[[tool.mypy.overrides]]
+module = "playwright.*"
+ignore_missing_imports = true

@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-format:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Ruff check
+        run: ruff check .
+      - name: Ruff format
+        run: ruff format --check .
+
+  mypy:
+    name: Mypy (changed files)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for diff against base
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Determine changed backend files
+        id: changed
+        env:
+          # base.sha is a GitHub-computed commit SHA, not user-controlled text.
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # Compare against the PR base (or main on push runs).
+          if [ "$EVENT" = "pull_request" ]; then
+            BASE="$PR_BASE"
+          else
+            BASE="origin/main"
+          fi
+          mapfile -t FILES < <(git diff --name-only --diff-filter=d "$BASE...HEAD" -- 'backend/**/*.py')
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No changed backend/*.py files — skipping mypy."
+          else
+            printf '%s\n' "${FILES[@]}" | paste -sd' ' - > /tmp/changed_files.txt
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Changed files:"; printf '  %s\n' "${FILES[@]}"
+          fi
+      - name: Mypy
+        if: steps.changed.outputs.skip != 'true'
+        # ponytail: mypy strict only on changed files — 558 pre-existing errors
+        # make a full run red; this gates new code without blocking on history.
+        # Upgrade path: clear the 558 baseline, then drop this diff filter and
+        # run `mypy backend` unconditionally.
+        run: mypy $(cat /tmp/changed_files.txt)
+
+  test:
+    name: Test (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Pytest
+        run: pytest -q
