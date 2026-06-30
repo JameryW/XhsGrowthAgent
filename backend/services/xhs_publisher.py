@@ -94,12 +94,14 @@ class XHSPublisher:
             item = item.strip()
             if "=" in item:
                 name, value = item.split("=", 1)
-                cookies.append({
-                    "name": name.strip(),
-                    "value": value.strip(),
-                    "domain": ".xiaohongshu.com",
-                    "path": "/",
-                })
+                cookies.append(
+                    {
+                        "name": name.strip(),
+                        "value": value.strip(),
+                        "domain": ".xiaohongshu.com",
+                        "path": "/",
+                    }
+                )
         await context.add_cookies(cookies)
 
     async def _check_login(self) -> bool:
