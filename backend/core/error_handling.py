@@ -1,5 +1,7 @@
 """Unified error handling for XHS Growth Agent."""
 
+from typing import Any
+
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
@@ -31,7 +33,7 @@ class WorkflowCancelledError(Exception):
     pass
 
 
-def handle_agent_error(error: Exception, state: XHSGrowthState) -> dict:
+def handle_agent_error(error: Exception, state: XHSGrowthState) -> dict[str, Any]:
     """统一错误处理，返回状态更新"""
     return {
         "phase": WorkflowPhase.ERROR,

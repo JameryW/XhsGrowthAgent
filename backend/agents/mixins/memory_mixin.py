@@ -1,5 +1,7 @@
 """Memory mixin for context recall."""
 
+from typing import Any
+
 from langgraph.store.base import BaseStore
 
 from backend.memory.store import MemoryManager
@@ -15,7 +17,7 @@ class MemoryMixin:
         query: str,
         namespace: str = "performance_insights",
         limit: int = 5,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """从记忆存储召回相关上下文"""
         mm = MemoryManager(account_id)
         ns_map = {

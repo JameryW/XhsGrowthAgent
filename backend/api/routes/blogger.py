@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Request
 from langgraph.types import Command, StateSnapshot
 from pydantic import BaseModel, Field
 
 from backend.api.errors import ValidationError, WorkflowNotFoundError
-from backend.api.responses import success
+from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
 
 router = APIRouter()
@@ -39,8 +41,12 @@ def _is_at_blogger_gate(state: StateSnapshot) -> bool:
 
 
 @router.get("/blogger-pending/{thread_id}")
-async def get_pending_blogger_selection(thread_id: str, request: Request):
+async def get_pending_blogger_selection(
+    thread_id: str,
+    request: Request = None,  # type: ignore[assignment]
+) -> ApiResponse[Any]:
     """获取候选博主列表 — 返回 blogger_candidates 和配置."""
+    assert request is not None
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
 
@@ -64,8 +70,13 @@ async def get_pending_blogger_selection(thread_id: str, request: Request):
 
 
 @router.post("/blogger-select/{thread_id}")
-async def select_blogger(thread_id: str, selection: BloggerSelection, request: Request):
+async def select_blogger(
+    thread_id: str,
+    selection: BloggerSelection,
+    request: Request = None,  # type: ignore[assignment]
+) -> ApiResponse[Any]:
     """选择博主 — 从 blogger_gate 中断恢复."""
+    assert request is not None
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
 
@@ -77,6 +88,7 @@ async def select_blogger(thread_id: str, selection: BloggerSelection, request: R
         raise WorkflowNotFoundError(thread_id)
 
     # Build resume value based on selection or skip
+    resume_value: dict[str, Any]
     if selection.skip:
         resume_value = {"skip": True}
     else:

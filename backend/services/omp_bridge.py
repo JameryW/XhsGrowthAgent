@@ -571,7 +571,7 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
     """
     import httpx
 
-    api_base = os.environ.get("XHS_AGENT_API_BASE", "http://localhost:8000")
+    api_base = os.environ.get("XHS_AGENT_API_BASE", "http://localhost:8889")
     url = f"{api_base}/api"
 
     try:

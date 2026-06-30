@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger("xhs_growth.db.crypto")
 
@@ -36,7 +36,7 @@ def encrypt_value(plain: str) -> bytes:
     if _fernet is None:
         _fernet = _init_fernet()
     if _fernet is not None:
-        return _fernet.encrypt(plain.encode())
+        return cast("bytes", _fernet.encrypt(plain.encode()))
     return plain.encode()
 
 
@@ -47,7 +47,7 @@ def decrypt_value(data: bytes) -> str:
         _fernet = _init_fernet()
     if _fernet is not None:
         try:
-            return _fernet.decrypt(data).decode()
+            return cast("str", _fernet.decrypt(data).decode())
         except Exception:
             # Might be plaintext from before ENCRYPTION_KEY was set
             return data.decode()

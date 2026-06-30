@@ -123,7 +123,9 @@ def _extract_post_data(wf_state: dict[str, Any]) -> dict[str, Any] | None:
 
 @router.get("/report/{account_id}")
 async def get_growth_report(
-    account_id: str, period: str = "weekly", request: Request = None  # type: ignore[assignment]
+    account_id: str,
+    period: str = "weekly",
+    request: Request = None,  # type: ignore[assignment]
 ) -> ApiResponse[Any]:
     """获取增长报告 — from real completed workflows."""
     assert request is not None

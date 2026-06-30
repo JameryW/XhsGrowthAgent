@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import tool
+
+if TYPE_CHECKING:
+    from backend.services.xhs_publisher import XHSPublisher
 
 logger = logging.getLogger("xhs_growth.tools.publisher")
 
 
-def _get_publisher():
+def _get_publisher() -> XHSPublisher:
     """获取 XHSPublisher 实例"""
     from backend.config.settings import Settings
     from backend.services.xhs_publisher import XHSPublisher

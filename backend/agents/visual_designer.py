@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
@@ -22,12 +22,12 @@ class VisualDesignerAgent(BaseAgent):
         plan = state.get("content_plan", {})
         copy = state.get("copy_content", {})
         brief = state.get("brief_content", {})
-        shooting_plan = state.get("shooting_plan") or {}
+        shooting_plan: dict[str, Any] = dict(cast(Any, state.get("shooting_plan")) or {})
         # ponytail: shooting_plan may be empty in trend mode; include only when available
         shooting_ctx = ""
         if shooting_plan:
-            scenes = ", ".join(s.get("name", "") for s in (shooting_plan.get("scenes") or []))
-            props = ", ".join(shooting_plan.get("props") or [])
+            scenes = ", ".join(str(s.get("name", "")) for s in (shooting_plan.get("scenes") or []))
+            props = ", ".join(str(p) for p in (shooting_plan.get("props") or []))
             shooting_ctx = f"\n拍摄计划场景：{scenes}\n拍摄道具：{props}"
 
         # ── Creative Memory: 读取风格指纹 + 封面素材 ──
@@ -61,7 +61,7 @@ class VisualDesignerAgent(BaseAgent):
             ]
         )
 
-        visual_plan = self._parse_json_response(response.content)
+        visual_plan = self._parse_json_response(cast(str, response.content))
 
         # ── Creative Memory: 沉淀风格选择 ──
         from backend.memory.types import StyleDNA

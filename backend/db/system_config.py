@@ -194,7 +194,10 @@ async def count_config() -> int:
     pool = get_pool()
     async with pool.connection() as conn, conn.cursor() as cur:
         await cur.execute("SELECT COUNT(*) FROM system_config")
-        (n,) = await cur.fetchone()
+        row = await cur.fetchone()
+    if row is None:
+        return 0
+    (n,) = row
     return int(n)
 
 

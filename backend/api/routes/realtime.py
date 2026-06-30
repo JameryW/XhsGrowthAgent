@@ -2,9 +2,11 @@
 
 """WebSocket and SSE routes for realtime workflow updates."""
 
+from typing import Any
+
 from fastapi import APIRouter, Query, WebSocket
 
-from backend.api.responses import success
+from backend.api.responses import ApiResponse, success
 from backend.realtime.event_bus import EventBusService
 from backend.realtime.websocket import WebSocketManager
 
@@ -34,7 +36,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
 
 @router.get("/events/missed")
-async def get_missed_events(since: int = Query(0, ge=0, description="最后收到的事件序号")):
+async def get_missed_events(
+    since: int = Query(0, ge=0, description="最后收到的事件序号"),
+) -> ApiResponse[Any]:
     """HTTP 接口 - 获取丢失的事件
 
     当 WebSocket 连接中断后，可通过此接口补传丢失的事件。

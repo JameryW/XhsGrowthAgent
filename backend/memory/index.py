@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 from langgraph.store.base import IndexConfig
 
@@ -158,16 +158,18 @@ def get_store_index() -> IndexConfig | None:
     return index_config
 
 
-def get_prod_store_index() -> dict | None:
+def get_prod_store_index() -> IndexConfig | None:
     """Build a PostgresIndexConfig for AsyncPostgresStore.
 
     Same as get_store_index() but with additional Postgres-specific settings.
-    Returns a plain dict (TypedDict subclass) compatible with PostgresIndexConfig.
+    Returns an IndexConfig (TypedDict subclass) compatible with PostgresIndexConfig.
     """
     base = get_store_index()
     if base is None:
         return None
 
-    # Postgres store supports cosine distance for better semantic similarity
-    base["distance_type"] = "cosine"
+    # Postgres store supports cosine distance for better semantic similarity.
+    # distance_type is a PostgresIndexConfig-only key not present on the base
+    # IndexConfig TypedDict, so assign via a dict view.
+    cast("dict[str, Any]", base)["distance_type"] = "cosine"
     return base

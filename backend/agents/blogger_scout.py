@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -302,7 +303,7 @@ class BloggerScoutAgent(BaseAgent):
             "phase": WorkflowPhase.CREATING,
         }
 
-    def _summarize_brief_content(self, brief_content: dict[str, Any]) -> str:
+    def _summarize_brief_content(self, brief_content: Mapping[str, Any]) -> str:
         """Create a brief summary of brief_content for LLM context."""
         if not brief_content:
             return "无商单信息"

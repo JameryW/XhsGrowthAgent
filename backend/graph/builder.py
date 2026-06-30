@@ -416,7 +416,7 @@ async def close_dev_graph(graph: CompiledStateGraph[Any]) -> None:
 
 
 @asynccontextmanager
-async def dev_graph() -> AsyncIterator[CompiledStateGraph]:
+async def dev_graph() -> AsyncIterator[CompiledStateGraph[Any]]:
     """Compile a dev graph and ensure its SQLite checkpointer is closed on exit.
 
     Use `async with dev_graph() as graph:` in CLI/short-lived callers so the
@@ -429,7 +429,7 @@ async def dev_graph() -> AsyncIterator[CompiledStateGraph]:
         await close_dev_graph(graph)
 
 
-async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
+async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph[Any], Any]:
     """生产模式编译 — 使用 Postgres 检查点 + Postgres 存储 + 语义搜索 + 连接池
 
     Creates a separate AsyncConnectionPool for the checkpointer.
@@ -461,23 +461,23 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph, Any]:
         ]
 
         # ponytail: open checkpointer pool + store pool in parallel
-        async def _init_checkpointer():
+        async def _init_checkpointer() -> tuple[Any, Any]:
             nonlocal pool
             _pool = AsyncConnectionPool(
                 db_uri, min_size=2, max_size=10, open=False, kwargs={"autocommit": True}
             )
             await _pool.open()
-            _cp = AsyncPostgresSaver(conn=_pool)
+            _cp = AsyncPostgresSaver(conn=cast("Any", _pool))
             await _cp.setup()
             return _pool, _cp
 
-        async def _init_store():
+        async def _init_store() -> tuple[Any, Any]:
             nonlocal store_context, store_context_entered
             prod_index = get_prod_store_index()
             _ctx = AsyncPostgresStore.from_conn_string(
                 db_uri,
                 pool_config={"min_size": 2, "max_size": 10},
-                index=prod_index,
+                index=cast("Any", prod_index),
             )
             _store = await _ctx.__aenter__()
             store_context_entered = True

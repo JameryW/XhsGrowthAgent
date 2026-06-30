@@ -218,10 +218,10 @@ async def delete_workflow(thread_id: str) -> bool:
     pool = get_pool()
     async with pool.connection() as conn:
         tag = await conn.execute("DELETE FROM workflows WHERE thread_id = %s", (thread_id,))
-    return tag == "DELETE 1"
+    return tag == "DELETE 1"  # type: ignore[comparison-overlap]
 
 
-def _row_from_dict(d: dict) -> WorkflowRow:
+def _row_from_dict(d: dict[str, Any]) -> WorkflowRow:
     return WorkflowRow(
         thread_id=d["thread_id"],
         account_id=d.get("account_id", ""),

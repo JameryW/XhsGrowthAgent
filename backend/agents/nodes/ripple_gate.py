@@ -104,7 +104,7 @@ async def ripple_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
     else:
         phase = WorkflowPhase.CREATING
 
-    result = {
+    result: dict[str, Any] = {
         "ripple_decision": {"action": action, "source": "user"},
         "phase": phase,
     }

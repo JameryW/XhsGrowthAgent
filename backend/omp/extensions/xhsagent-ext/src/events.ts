@@ -8,7 +8,7 @@ export default function register(pi: ExtensionAPI) {
     const healthy = await checkApiHealth();
     if (!healthy && ctx.hasUI) {
       ctx.ui.notify(
-        "⚠️ XhsGrowthAgent API is not reachable. Run `xhs-growth serve --port 8000` to start it.",
+        "⚠️ XhsGrowthAgent API is not reachable. Run `xhs-growth serve --port 8889` to start it.",
         "warning",
       );
     }

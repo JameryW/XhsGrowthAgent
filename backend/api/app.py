@@ -6,8 +6,10 @@ import asyncio
 import contextlib
 import logging
 import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, cast
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -15,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import FileResponse, Response
 
 from backend.api.middleware import error_handler_middleware
-from backend.api.responses import success
+from backend.api.responses import ApiResponse, success
 from backend.config.settings import Settings
 from backend.graph.builder import compile_graph_dev
 from backend.services.ripple_service import RippleService
@@ -25,7 +27,7 @@ load_dotenv(override=True)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # ── DB + checkpointer initialization ──
     db_uri = os.environ.get("POSTGRES_URI")
     checkpointer = None
@@ -69,7 +71,8 @@ async def lifespan(app: FastAPI):
             graph_task = compile_graph_prod(db_uri)
             results = await asyncio.gather(*ensure_coros, graph_task)
 
-            graph, result = results[-1]  # graph_task is last in gather
+            gresult = cast("tuple[Any, Any]", results[-1])  # graph_task is last in gather
+            graph, result = gresult
             if result is not None:
                 checkpointer, checkpoint_pool, store_context = result
                 app.state.checkpointer = checkpointer
@@ -186,7 +189,7 @@ app.include_router(blogger.router, prefix="/api/optimization", tags=["blogger"])
 
 
 @app.get("/health")
-async def health():
+async def health() -> ApiResponse[Any]:
     from backend.db.pool import is_pool_ready
 
     db_status = "connected" if is_pool_ready() else "unavailable"
@@ -201,7 +204,7 @@ if frontend_dist.exists():
 
     # SPA catch-all: 非 API/非 WebSocket 路由返回 index.html（不缓存）
     @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
+    async def serve_spa(full_path: str) -> Response:
         """Serve SPA frontend — return index.html for all non-API routes."""
         # WebSocket 和事件恢复路径不处理
         if full_path.startswith("ws") or full_path.startswith("events/"):

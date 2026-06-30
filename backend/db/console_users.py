@@ -198,7 +198,10 @@ async def count_users() -> int:
     pool = get_pool()
     async with pool.connection() as conn, conn.cursor() as cur:
         await cur.execute("SELECT COUNT(*) FROM console_users")
-        (n,) = await cur.fetchone()
+        row = await cur.fetchone()
+    if row is None:
+        return 0
+    (n,) = row
     return int(n)
 
 
