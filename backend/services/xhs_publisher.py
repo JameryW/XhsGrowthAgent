@@ -10,12 +10,24 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
+import re
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from playwright.async_api import Browser, Page, async_playwright
+# ponytail: match XHS note IDs across the URL shapes the publish flow can land on
+# — /note/{id}, /explore/{id}, /discovery/item/{id}. ID is typically 24-hex but
+# may contain other word chars; capture the trailing path segment after a known prefix.
+_NOTE_ID_RE = re.compile(r"/(?:note|explore|discovery/item)/(\w+)")
+
+# ponytail: playwright is an optional [browser] extra. Import it lazily so the
+# module is importable (and unit-testable with a mock Page) without it installed.
+# `from __future__ import annotations` keeps the Browser/Page annotations as
+# strings, so they never force a runtime import.
+if TYPE_CHECKING:
+    from playwright.async_api import Browser, Page
 
 logger = logging.getLogger("xhs_growth.publisher")
 
@@ -43,6 +55,8 @@ class XHSPublisher:
     async def _ensure_browser(self) -> Browser:
         """确保浏览器已启动"""
         if self._browser is None:
+            from playwright.async_api import async_playwright  # lazy: optional [browser] extra
+
             playwright = await async_playwright().start()
             self._browser = await playwright.chromium.launch(
                 headless=self.headless,
@@ -185,6 +199,14 @@ class XHSPublisher:
 
         except Exception as e:
             logger.error(f"发布失败: {e}", exc_info=True)
+            # ponytail: drop the dirty page (keep the browser) so a retry starts
+            # from a clean page instead of a half-filled/erroring one. The
+            # caller (XHSClient.publish_post) retries up to 3x; without this
+            # reset, _ensure_page returns the same stuck page every attempt.
+            if self._page is not None:
+                with contextlib.suppress(Exception):
+                    await self._page.close()
+                self._page = None
             return {"post_id": "", "status": "error", "error": str(e)}
 
     async def _upload_images(self, page: Page, image_paths: list[str]) -> None:
@@ -205,9 +227,12 @@ class XHSPublisher:
         if upload_input:
             await upload_input.set_input_files(valid_paths)
             # 等待上传完成
+            # ponytail: Playwright Python's wait_for_function takes `arg` (singular),
+            # not `args` — `args=` was silently ignored, leaving arguments[0] undefined
+            # so `.length >= undefined` was always false → 60s timeout on every publish.
             await page.wait_for_function(
                 "document.querySelectorAll('.image-item').length >= arguments[0]",
-                args=len(valid_paths),
+                arg=len(valid_paths),
                 timeout=60000,  # 图片上传可能较慢
             )
         else:
@@ -307,13 +332,9 @@ class XHSPublisher:
             await asyncio.sleep(2)
 
             current_url = page.url
-            # 从 URL 提取笔记 ID
-            post_id = ""
-            if "/note/" in current_url:
-                import re
-                match = re.search(r"/note/(\w+)", current_url)
-                if match:
-                    post_id = match.group(1)
+            # 从 URL 提取笔记 ID — 覆盖 /note/, /explore/, /discovery/item/ 几种落地页
+            match = _NOTE_ID_RE.search(current_url)
+            post_id = match.group(1) if match else ""
 
             return {
                 "post_id": post_id,
