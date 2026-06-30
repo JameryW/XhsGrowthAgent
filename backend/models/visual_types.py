@@ -59,7 +59,7 @@ class LayoutOption:
     popularity_score: float
     pros: list[str] = field(default_factory=list)
     cons: list[str] = field(default_factory=list)
-    reference_posts: list[dict] = field(default_factory=list)
+    reference_posts: list[dict[str, Any]] = field(default_factory=list)
     suitable_for: list[str] = field(default_factory=list)
     image_sequence_strategy: str = ""
     text_position: str = ""
@@ -111,7 +111,7 @@ class StyleOption:
     suitable_for: list[str] = field(default_factory=list)
     usage_rate: float = 0.0
     avg_engagement: float = 0.0
-    reference_posts: list[dict] = field(default_factory=list)
+    reference_posts: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the style to a dictionary for serialization.

@@ -7,13 +7,14 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Any
 
 logger = logging.getLogger("xhs_growth.db.crypto")
 
-_fernet = None
+_fernet: Any = None
 
 
-def _init_fernet():
+def _init_fernet() -> Any:
     global _fernet
     key = os.environ.get("ENCRYPTION_KEY", "")
     if not key:

@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any, cast
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from langchain_core.tools import tool
 
 from backend.config.models import TaskType
@@ -17,14 +18,15 @@ from backend.services.llm_enrichment import get_llm_service
 logger = logging.getLogger("xhs_growth.tools.hashtag")
 
 
-def _load_prompt() -> dict:
+def _load_prompt() -> dict[str, Any]:
     """Load prompt template from YAML file."""
     prompt_path = Path("xhs_growth/config/prompts/tools/hashtag_researcher.yaml")
     with open(prompt_path) as f:
-        return yaml.safe_load(f)
+        data: Any = yaml.safe_load(f)
+    return cast(dict[str, Any], data)
 
 
-def _algorithmic_fallback(data: dict) -> list[dict]:
+def _algorithmic_fallback(data: dict[str, Any]) -> list[dict[str, Any]]:
     """Algorithmic fallback when LLM fails."""
     keyword = data.get("keyword", "")
     limit = data.get("limit", 10)
@@ -68,7 +70,7 @@ async def hashtag_researcher(
     target_audience: str = "",
     limit: int = 10,
     include_long_tail: bool = True,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """研究小红书标签 — 分析标签竞争度和流量潜力.
 
     Args:
@@ -112,9 +114,9 @@ async def hashtag_researcher(
         # Extract hashtags from result
         if isinstance(result, dict) and "hashtags" in result:
             hashtags = result["hashtags"]
-            return hashtags[:limit]
+            return cast(list[dict[str, Any]], hashtags[:limit])
         elif isinstance(result, list):
-            return result[:limit]
+            return cast(list[dict[str, Any]], result[:limit])
 
         # If result structure is unexpected, use fallback
         logger.warning(f"Unexpected result structure: {type(result)}")

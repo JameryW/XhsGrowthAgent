@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.messages import HumanMessage
 from langgraph.store.base import BaseStore
@@ -12,7 +12,9 @@ from langgraph.store.base import BaseStore
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.config.settings import Settings
-from backend.state.schema import EngagementAction, WorkflowPhase, XHSGrowthState
+from backend.state.enums import WorkflowPhase
+from backend.state.schema import XHSGrowthState
+from backend.state.substates import EngagementAction
 
 logger = logging.getLogger("xhs_growth.agents.engagement")
 
@@ -29,7 +31,7 @@ class EngagementAgent(BaseAgent):
         settings = Settings()
         use_browser = settings.platform.use_browser
 
-        engagement_actions = []
+        engagement_actions: list[EngagementAction] = []
 
         if not publish_result.get("post_id"):
             logger.info("无已发布帖子，跳过互动处理")
@@ -59,6 +61,7 @@ class EngagementAgent(BaseAgent):
 
         try:
             post_id = publish_result.get("post_id")
+            assert post_id is not None  # guarded by the early-return above
 
             # 1. 获取评论
             comments = await client.get_comments(post_id=post_id, limit=20)
@@ -74,7 +77,7 @@ class EngagementAgent(BaseAgent):
                     # 使用 LLM 生成回复
                     reply_prompt = f"请回复这条评论：{comment.content}"
                     response = await self.model.ainvoke([HumanMessage(content=reply_prompt)])
-                    reply_content = response.content[:100]  # 限制回复长度
+                    reply_content = cast(str, response.content)[:100]  # 限制回复长度
 
                     # 发送回复
                     success = await client.reply_to_comment(
@@ -98,7 +101,7 @@ class EngagementAgent(BaseAgent):
                 # 使用 LLM 生成回复
                 reply_prompt = f"请回复这条私信：{dm.content}"
                 response = await self.model.ainvoke([HumanMessage(content=reply_prompt)])
-                reply_content = response.content[:200]
+                reply_content = cast(str, response.content)[:200]
 
                 success = await client.send_dm(
                     user_id=dm.sender_id,
@@ -130,8 +133,10 @@ class EngagementAgent(BaseAgent):
 
                 account_id = state.get("account_id", "default")
                 mm = MemoryManager(account_id)
-                reply_count = sum(1 for a in engagement_actions if a.action_type == "reply_comment")
-                dm_count = sum(1 for a in engagement_actions if a.action_type == "reply_dm")
+                reply_count = sum(
+                    1 for a in engagement_actions if a["action_type"] == "reply_comment"
+                )
+                dm_count = sum(1 for a in engagement_actions if a["action_type"] == "reply_dm")
                 await mm.store_audience_preference(
                     store,
                     f"互动偏好: {reply_count} 评论回复, {dm_count} 私信回复",

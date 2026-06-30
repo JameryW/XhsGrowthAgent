@@ -6,7 +6,7 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -58,7 +58,7 @@ from backend.graph.routers import (
 from backend.state.schema import XHSGrowthState
 
 
-def build_graph() -> StateGraph:
+def build_graph() -> StateGraph[XHSGrowthState]:
     """构建小红书增长引擎的 LangGraph 状态图"""
     builder = StateGraph(XHSGrowthState)
 
@@ -319,7 +319,7 @@ def build_graph() -> StateGraph:
 _SQLITE_DB = os.environ.get("XHS_SQLITE_PATH", ".xhs/checkpoints.sqlite")
 
 
-async def compile_graph_dev() -> CompiledStateGraph:
+async def compile_graph_dev() -> CompiledStateGraph[Any]:
     """开发模式编译 — 使用 SQLite 持久化检查点 + 存储（带语义搜索）
 
     SQLite file location defaults to .xhs/checkpoints.sqlite (configurable
@@ -334,18 +334,18 @@ async def compile_graph_dev() -> CompiledStateGraph:
     from backend.memory.index import get_prod_store_index, get_store_index
 
     store_index = get_store_index()
-    store = InMemoryStore(index=store_index)
+    store: Any = InMemoryStore(index=store_index)
 
     # If Postgres URI is available, use persistent store with semantic search
     pg_uri = os.environ.get("XHS_POSTGRES_URI", "")
-    store_context = None
+    store_context: Any = None
     store_context_entered = False
 
     if pg_uri:
         try:
             from langgraph.store.postgres.aio import AsyncPostgresStore
 
-            prod_index = get_prod_store_index()
+            prod_index = cast("Any", get_prod_store_index())
             store_context = AsyncPostgresStore.from_conn_string(
                 pg_uri,
                 pool_config={"min_size": 1, "max_size": 5},
@@ -375,7 +375,7 @@ async def compile_graph_dev() -> CompiledStateGraph:
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
         conn = await aiosqlite.connect(str(db_path))
-        checkpointer = AsyncSqliteSaver(conn=conn)
+        checkpointer: Any = AsyncSqliteSaver(conn=conn)
         await checkpointer.setup()
         sqlite_conn = conn
     except ImportError:
@@ -402,7 +402,7 @@ async def compile_graph_dev() -> CompiledStateGraph:
     return graph
 
 
-async def close_dev_graph(graph: CompiledStateGraph) -> None:
+async def close_dev_graph(graph: CompiledStateGraph[Any]) -> None:
     """Close the SQLite checkpointer connection owned by a dev-compiled graph.
 
     Call from a finally block in CLI/short-lived callers. No-op for MemorySaver

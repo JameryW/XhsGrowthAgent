@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from langgraph.store.base import BaseStore
 
 from backend.agents.brief_analyzer import BriefAnalyzerAgent
@@ -11,7 +13,7 @@ from backend.state.schema import XHSGrowthState
 _agent = BriefAnalyzerAgent()
 
 
-async def brief_analyzer_node(state: XHSGrowthState, store: BaseStore) -> dict:
+async def brief_analyzer_node(state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
     """Parse brief text/document into structured BriefContent.
 
     Sets brief_clarification if brief is too vague (confidence < 0.6),

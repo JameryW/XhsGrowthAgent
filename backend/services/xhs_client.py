@@ -10,13 +10,17 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from backend.services.xhs_api import XHSApiEndpoints, XHSApiHeaders, XHSApiParams
 from backend.services.xhs_signature import XHSCookieParser, XHSSignature
+
+if TYPE_CHECKING:
+    from backend.services.xhs_engagement import XHSEngagement
+    from backend.services.xhs_publisher import XHSPublisher
 
 logger = logging.getLogger("xhs_growth.xhs_client")
 
@@ -147,7 +151,7 @@ class _HTTPClient:
     async def _request(
         self,
         endpoint: str,
-        params: dict = None,
+        params: dict[str, Any] | None = None,
         method: str = "GET",
     ) -> dict[str, Any]:
         """发送 API 请求"""
@@ -177,7 +181,7 @@ class _HTTPClient:
                 error_msg = data.get("msg", "Unknown error")
                 raise XHSApiError(f"API error: {error_msg}")
 
-            return data.get("data", {})
+            return cast(dict[str, Any], data.get("data", {}))
 
         except httpx.TimeoutException as e:
             raise TimeoutError("API 请求超时") from e
@@ -190,35 +194,37 @@ class _HTTPClient:
         retry=retry_if_exception_type((XHSRateLimitError, ConnectionError, TimeoutError)),
         reraise=True,
     )
-    async def get_homefeed(self, category: str = "", cursor: str = "") -> list[dict]:
+    async def get_homefeed(self, category: str = "", cursor: str = "") -> list[dict[str, Any]]:
         """获取首页推荐 / 热门"""
         params = XHSApiParams.homefeed_params(cursor=cursor, category=category)
         data = await self._request(XHSApiEndpoints.HOMEFEED, params)
-        return data.get("notes", [])
+        return cast(list[dict[str, Any]], data.get("notes", []))
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=2, min=5, max=60),
         retry=retry_if_exception_type((XHSRateLimitError, ConnectionError, TimeoutError)),
     )
-    async def search_notes(self, keyword: str, page: int = 1, sort: str = "general") -> list[dict]:
+    async def search_notes(
+        self, keyword: str, page: int = 1, sort: str = "general"
+    ) -> list[dict[str, Any]]:
         """搜索笔记"""
         params = XHSApiParams.search_params(keyword=keyword, page=page, sort_type=sort)
         data = await self._request(XHSApiEndpoints.SEARCH_NOTE, params)
-        return data.get("notes", [])
+        return cast(list[dict[str, Any]], data.get("notes", []))
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=2, min=5, max=60),
         retry=retry_if_exception_type((XHSRateLimitError, ConnectionError, TimeoutError)),
     )
-    async def get_comments(self, note_id: str, cursor: str = "") -> list[dict]:
+    async def get_comments(self, note_id: str, cursor: str = "") -> list[dict[str, Any]]:
         """获取评论列表"""
         params = XHSApiParams.comments_params(note_id=note_id, cursor=cursor)
         data = await self._request(XHSApiEndpoints.COMMENTS_LIST, params)
-        return data.get("comments", [])
+        return cast(list[dict[str, Any]], data.get("comments", []))
 
-    async def get_note_detail(self, note_id: str) -> dict:
+    async def get_note_detail(self, note_id: str) -> dict[str, Any]:
         """获取笔记详情"""
         params = {"note_id": note_id}
         return await self._request(XHSApiEndpoints.NOTE_DETAIL, params)
@@ -228,18 +234,18 @@ class _HTTPClient:
         wait=wait_exponential(multiplier=2, min=5, max=60),
         retry=retry_if_exception_type((XHSRateLimitError, ConnectionError, TimeoutError)),
     )
-    async def search_users(self, keyword: str, page: int = 1) -> list[dict]:
+    async def search_users(self, keyword: str, page: int = 1) -> list[dict[str, Any]]:
         """搜索用户"""
         params = XHSApiParams.search_users_params(keyword=keyword, page=page)
         data = await self._request(XHSApiEndpoints.SEARCH_USER, params)
-        return data.get("users", [])
+        return cast(list[dict[str, Any]], data.get("users", []))
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=2, min=5, max=60),
         retry=retry_if_exception_type((XHSRateLimitError, ConnectionError, TimeoutError)),
     )
-    async def get_user_info(self, user_id: str) -> dict:
+    async def get_user_info(self, user_id: str) -> dict[str, Any]:
         """获取用户信息"""
         params = XHSApiParams.user_info_params(user_id=user_id)
         return await self._request(XHSApiEndpoints.USER_INFO, params)
@@ -249,7 +255,7 @@ class _HTTPClient:
         wait=wait_exponential(multiplier=2, min=5, max=60),
         retry=retry_if_exception_type((XHSRateLimitError, ConnectionError, TimeoutError)),
     )
-    async def get_user_notes(self, user_id: str, cursor: str = "") -> dict:
+    async def get_user_notes(self, user_id: str, cursor: str = "") -> dict[str, Any]:
         """获取用户笔记列表"""
         params = XHSApiParams.user_notes_params(user_id=user_id, cursor=cursor)
         return await self._request(XHSApiEndpoints.USER_NOTES, params)
@@ -277,8 +283,8 @@ class XHSClient:
         self._http = _HTTPClient(cookie=cookie) if cookie else None
 
         # Playwright 客户端 (懒加载)
-        self._publisher = None
-        self._engagement = None
+        self._publisher: XHSPublisher | None = None
+        self._engagement: XHSEngagement | None = None
 
         # Cookie 验证
         self._cookie_valid = XHSCookieParser.is_valid(cookie) if cookie else False
@@ -476,7 +482,7 @@ class XHSClient:
         logger.info(f"Fetching notes for user: {user_id}, limit: {limit}")
 
         try:
-            all_notes: list[dict] = []
+            all_notes: list[dict[str, Any]] = []
             cursor = ""
             while len(all_notes) < limit:
                 data = await self._http.get_user_notes(user_id=user_id, cursor=cursor)
@@ -495,7 +501,7 @@ class XHSClient:
 
     # ── Playwright 方法 (复杂操作) ───────────────────────────────────────────
 
-    async def _ensure_publisher(self):
+    async def _ensure_publisher(self) -> XHSPublisher | None:
         """确保发布器已初始化"""
         if self._publisher is None and self.use_browser:
             from backend.services.xhs_publisher import XHSPublisher
@@ -506,7 +512,7 @@ class XHSClient:
             )
         return self._publisher
 
-    async def _ensure_engagement(self):
+    async def _ensure_engagement(self) -> XHSEngagement | None:
         """确保互动器已初始化"""
         if self._engagement is None and self.use_browser:
             from backend.services.xhs_engagement import XHSEngagement
@@ -564,7 +570,7 @@ class XHSClient:
             reply_content=reply,
         )
 
-        return result.get("success", False)
+        return cast(bool, result.get("success", False))
 
     async def get_direct_messages(self, limit: int = 20) -> list[XHSDirectMessage]:
         """获取私信 (Playwright)"""
@@ -609,4 +615,4 @@ class XHSClient:
             message=message,
         )
 
-        return result.get("success", False)
+        return cast(bool, result.get("success", False))

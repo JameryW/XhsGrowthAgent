@@ -1,10 +1,12 @@
 """XHS analytics tools."""
 
+from typing import Any
+
 from langchain_core.tools import tool
 
 
 @tool
-async def analytics_reader(post_id: str) -> dict:
+async def analytics_reader(post_id: str) -> dict[str, Any]:
     """读取小红书帖子数据分析"""
     return {
         "post_id": post_id,
@@ -18,7 +20,7 @@ async def analytics_reader(post_id: str) -> dict:
 
 
 @tool
-async def pattern_detector(time_range: str = "7d") -> list[dict]:
+async def pattern_detector(time_range: str = "7d") -> list[dict[str, Any]]:
     """检测内容表现模式 — 识别哪些类型/时段/标签表现最好"""
     return [{"pattern": "示例模式", "confidence": 0.0, "time_range": time_range}]
 

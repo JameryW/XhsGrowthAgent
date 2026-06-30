@@ -29,7 +29,7 @@ class ApiResponse(BaseModel, Generic[T]):
     request_id: str | None = None
 
 
-def success(data: Any, request_id: str | None = None) -> ApiResponse:
+def success(data: Any, request_id: str | None = None) -> ApiResponse[Any]:
     """Create success response."""
     return ApiResponse(success=True, data=data, request_id=request_id)
 
@@ -39,7 +39,7 @@ def error(
     message: str,
     details: dict[str, Any] | None = None,
     request_id: str | None = None,
-) -> ApiResponse:
+) -> ApiResponse[Any]:
     """Create error response."""
     return ApiResponse(
         success=False,

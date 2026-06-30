@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.messages import HumanMessage
 from langgraph.store.base import BaseStore
@@ -112,7 +112,7 @@ async def _fetch_blogger_notes(
     try:
         from backend.services.xhs_client import XHSClient
 
-        cookie = state.get("xhs_cookie", "")
+        cookie = cast(str, state.get("xhs_cookie", ""))
         client = XHSClient(cookie=cookie) if cookie else None
         if not client or not client._http:
             logger.warning("No XHS client available for fetching blogger notes")
@@ -216,7 +216,7 @@ async def _generate_mock_notes(
             json_str = content.strip()
 
         parsed = json.loads(json_str)
-        notes = parsed.get("notes", [])
+        notes = cast(list[dict[str, Any]], parsed.get("notes", []))
 
         # Ensure required fields
         for i, n in enumerate(notes):

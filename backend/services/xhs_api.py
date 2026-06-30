@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class XHSApiEndpoints:
     """小红书 Web API endpoints (逆向工程)"""
@@ -107,7 +109,7 @@ class XHSApiParams:
     """小红书 API 常用参数"""
 
     @staticmethod
-    def homefeed_params(cursor: str = "", category: str = "") -> dict:
+    def homefeed_params(cursor: str = "", category: str = "") -> dict[str, Any]:
         """首页推荐参数"""
         return {
             "cursor": cursor,
@@ -120,7 +122,7 @@ class XHSApiParams:
         }
 
     @staticmethod
-    def search_params(keyword: str, page: int = 1, sort_type: str = "general") -> dict:
+    def search_params(keyword: str, page: int = 1, sort_type: str = "general") -> dict[str, Any]:
         """搜索参数"""
         return {
             "keyword": keyword,
@@ -131,7 +133,7 @@ class XHSApiParams:
         }
 
     @staticmethod
-    def comments_params(note_id: str, cursor: str = "") -> dict:
+    def comments_params(note_id: str, cursor: str = "") -> dict[str, Any]:
         """评论参数"""
         return {
             "note_id": note_id,
@@ -141,7 +143,7 @@ class XHSApiParams:
         }
 
     @staticmethod
-    def search_users_params(keyword: str, page: int = 1) -> dict:
+    def search_users_params(keyword: str, page: int = 1) -> dict[str, Any]:
         """搜索用户参数"""
         return {
             "keyword": keyword,
@@ -150,14 +152,14 @@ class XHSApiParams:
         }
 
     @staticmethod
-    def user_info_params(user_id: str) -> dict:
+    def user_info_params(user_id: str) -> dict[str, Any]:
         """用户信息参数"""
         return {
             "user_id": user_id,
         }
 
     @staticmethod
-    def user_notes_params(user_id: str, cursor: str = "", num: int = 30) -> dict:
+    def user_notes_params(user_id: str, cursor: str = "", num: int = 30) -> dict[str, Any]:
         """用户笔记列表参数"""
         return {
             "user_id": user_id,

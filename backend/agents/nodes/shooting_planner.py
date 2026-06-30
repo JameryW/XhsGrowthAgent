@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from langgraph.store.base import BaseStore
 
 from backend.agents.nodes._base import _check_cancelled
@@ -11,7 +13,7 @@ from backend.state.schema import XHSGrowthState
 _agent = ShootingPlannerAgent()
 
 
-async def shooting_planner_node(state: XHSGrowthState, store: BaseStore) -> dict:
+async def shooting_planner_node(state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
     """Generate shooting plan from parsed brief + viral references."""
     _check_cancelled(state)
     result = await _agent.execute(state, store)

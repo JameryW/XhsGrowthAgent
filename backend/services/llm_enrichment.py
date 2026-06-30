@@ -10,7 +10,7 @@ import json
 import logging
 import re
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -39,7 +39,7 @@ class LLMEnrichmentService:
         )
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._models: dict[str, Any] = {}
 
     def _get_model(self, task_type: TaskType) -> Any:
@@ -49,14 +49,14 @@ class LLMEnrichmentService:
             self._models[key] = get_model(key)
         return self._models[key]
 
-    def _parse_json_response(self, content: str) -> dict | list:
+    def _parse_json_response(self, content: str) -> dict[str, Any] | list[Any]:
         """Extract JSON from LLM response content.
 
         Handles both raw JSON and markdown-wrapped JSON blocks.
         """
         # Try direct JSON parse first
         try:
-            return json.loads(content)
+            return cast(dict[str, Any] | list[Any], json.loads(content))
         except json.JSONDecodeError:
             pass
 
@@ -66,7 +66,7 @@ class LLMEnrichmentService:
         if matches:
             for match in matches:
                 try:
-                    return json.loads(match.strip())
+                    return cast(dict[str, Any] | list[Any], json.loads(match.strip()))
                 except json.JSONDecodeError:
                     continue
 
@@ -76,7 +76,7 @@ class LLMEnrichmentService:
         if matches:
             for match in matches:
                 try:
-                    return json.loads(match)
+                    return cast(dict[str, Any] | list[Any], json.loads(match))
                 except json.JSONDecodeError:
                     continue
 
@@ -85,10 +85,10 @@ class LLMEnrichmentService:
     async def enrich_with_llm(
         self,
         task_type: TaskType,
-        prompt_template: dict,
-        input_data: dict,
-        fallback_fn: Callable[[dict], dict | list] | None = None,
-    ) -> dict | list:
+        prompt_template: dict[str, Any],
+        input_data: dict[str, Any],
+        fallback_fn: Callable[[dict[str, Any]], dict[str, Any] | list[Any]] | None = None,
+    ) -> dict[str, Any] | list[Any]:
         """Enrich data with LLM, with automatic fallback.
 
         Args:
@@ -138,10 +138,10 @@ class LLMEnrichmentService:
     async def generate_with_llm(
         self,
         task_type: TaskType,
-        prompt_template: dict,
-        input_data: dict,
-        fallback_fn: Callable[[dict], list] | None = None,
-    ) -> list:
+        prompt_template: dict[str, Any],
+        input_data: dict[str, Any],
+        fallback_fn: Callable[[dict[str, Any]], list[Any]] | None = None,
+    ) -> list[Any]:
         """Generate list output with LLM (for title_generator, etc).
 
         Same as enrich_with_llm but expects list output.
@@ -157,7 +157,7 @@ class LLMEnrichmentService:
         if isinstance(result, list):
             return result
         if isinstance(result, dict) and "items" in result:
-            return result["items"]
+            return cast(list[Any], result["items"])
         if isinstance(result, dict):
             # Single item, wrap in list
             return [result]

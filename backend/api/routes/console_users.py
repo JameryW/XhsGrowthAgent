@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from backend.api.deps import get_current_user
 from backend.api.errors import APIError, ErrorCode, ValidationError
-from backend.api.responses import success
+from backend.api.responses import ApiResponse, success
 
 logger = logging.getLogger("xhs_growth.api.console_users")
 
@@ -46,7 +47,7 @@ class ConsoleUserDuplicateError(APIError):
 
 
 @router.get("")
-async def list_users(_: dict = Depends(get_current_user)):
+async def list_users(_: dict[str, Any] = Depends(get_current_user)) -> ApiResponse[Any]:
     """List all console users (no password info)."""
     from backend.db.console_users import list_users as db_list
 
@@ -65,7 +66,9 @@ async def list_users(_: dict = Depends(get_current_user)):
 
 
 @router.post("")
-async def create_user(request: CreateUserRequest, _: dict = Depends(get_current_user)):
+async def create_user(
+    request: CreateUserRequest, _: dict[str, Any] = Depends(get_current_user)
+) -> ApiResponse[Any]:
     """Create a new console user."""
     if not request.username.strip():
         raise ValidationError("username", "Username cannot be empty")
@@ -93,8 +96,8 @@ async def create_user(request: CreateUserRequest, _: dict = Depends(get_current_
 async def change_password(
     user_id: str,
     request: UpdatePasswordRequest,
-    _: dict = Depends(get_current_user),
-):
+    _: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """Change a user's password. All existing tokens for this user are revoked."""
     if len(request.password) < 6:
         raise ValidationError("password", "Password must be at least 6 characters")
@@ -110,7 +113,9 @@ async def change_password(
 
 
 @router.delete("/{user_id}")
-async def delete_user(user_id: str, current: dict = Depends(get_current_user)):
+async def delete_user(
+    user_id: str, current: dict[str, Any] = Depends(get_current_user)
+) -> ApiResponse[Any]:
     """Delete a console user. Cannot delete yourself. Revokes all their tokens."""
     if user_id == current.get("id"):
         raise ValidationError("user_id", "Cannot delete your own account")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from langgraph.store.base import BaseStore
 
@@ -97,7 +97,7 @@ class PublisherAgent(BaseAgent):
                 image_paths = visual.get("image_paths", [])
                 if not image_paths:
                     # 尝试从 generated_images 提取
-                    image_paths = visual.get("generated_images", [])
+                    image_paths = cast(list[str], visual.get("generated_images", []))
 
                 # 构造发布数据
                 post = XHSPost(
@@ -105,8 +105,8 @@ class PublisherAgent(BaseAgent):
                     body=copy.get("body_text", ""),
                     hashtags=copy.get("hashtags", []),
                     image_paths=image_paths,
-                    category=plan.get("category", ""),
-                    location=plan.get("location", ""),
+                    category=cast(str, plan.get("category", "")),
+                    location=cast(str, plan.get("location", "")),
                     is_private=False,
                     scheduled_time=plan.get("suggested_timing", ""),
                 )
@@ -152,7 +152,7 @@ class PublisherAgent(BaseAgent):
                 visual_plan = state.get("visual_plan", {})
                 await history.record(
                     store,
-                    post_id=publish_result["post_id"],
+                    post_id=cast(str, publish_result["post_id"]),
                     data={
                         "title": copy.get("selected_title", ""),
                         "topic": plan.get("selected_topic", ""),

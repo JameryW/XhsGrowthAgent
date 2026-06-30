@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import Header
 
 from backend.api.auth import validate_token
@@ -10,7 +12,7 @@ from backend.api.errors import TokenInvalidError, TokenMissingError
 
 async def get_current_user(
     authorization: str | None = Header(None, alias="Authorization"),
-) -> dict:
+) -> dict[str, Any]:
     """Dependency that extracts and validates user from token.
 
     Args:
@@ -44,7 +46,7 @@ async def get_current_user(
 
 async def get_optional_user(
     authorization: str | None = Header(None, alias="Authorization"),
-) -> dict | None:
+) -> dict[str, Any] | None:
     """Optional dependency - returns user if authenticated, None otherwise.
 
     Useful for routes that work both authenticated and anonymous.

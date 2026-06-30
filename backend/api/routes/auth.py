@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from backend.api.auth import generate_token, verify_credentials_async
 from backend.api.deps import get_current_user, get_optional_user
 from backend.api.errors import LoginFailedError
-from backend.api.responses import success
+from backend.api.responses import ApiResponse, success
 
 router = APIRouter()
 
@@ -25,19 +27,19 @@ class LoginResponse(BaseModel):
 
     token: str
     expires_at: str
-    user: dict
+    user: dict[str, Any]
 
 
 class ValidateResponse(BaseModel):
     """Token validation response."""
 
     valid: bool
-    user: dict | None
+    user: dict[str, Any] | None
     expires_at: str | None
 
 
 @router.post("/login")
-async def login(request: LoginRequest):
+async def login(request: LoginRequest) -> ApiResponse[Any]:
     """Authenticate user and return token.
 
     Args:
@@ -64,7 +66,7 @@ async def login(request: LoginRequest):
 
 
 @router.post("/logout")
-async def logout(user: dict = Depends(get_current_user)):
+async def logout(user: dict[str, Any] = Depends(get_current_user)) -> ApiResponse[Any]:
     """Logout and invalidate token.
 
     Args:
@@ -82,7 +84,7 @@ async def logout(user: dict = Depends(get_current_user)):
 
 
 @router.get("/validate")
-async def validate(user: dict = Depends(get_optional_user)):
+async def validate(user: dict[str, Any] = Depends(get_optional_user)) -> ApiResponse[Any]:
     """Validate current token.
 
     Returns:
@@ -107,7 +109,7 @@ async def validate(user: dict = Depends(get_optional_user)):
 
 
 @router.get("/me")
-async def get_me(user: dict = Depends(get_current_user)):
+async def get_me(user: dict[str, Any] = Depends(get_current_user)) -> ApiResponse[Any]:
     """Get current authenticated user.
 
     Args:

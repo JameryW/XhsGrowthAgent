@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import Any
 
 from backend.memory.scene_database import SceneDatabase
 from backend.models.visual_types import (
@@ -295,7 +296,7 @@ class VisualAnalysisService:
             List of LayoutOption objects with descriptions and pros/cons
         """
         # Layout descriptions and attributes
-        layout_info = {
+        layout_info: dict[str, dict[str, Any]] = {
             "全图+文末": {
                 "description": "单张全图配合底部文字说明",
                 "pros": ["视觉冲击力强", "适合封面展示", "简洁大气"],
@@ -402,7 +403,7 @@ class VisualAnalysisService:
             List of StyleOption objects with descriptions and pros/cons
         """
         # Style descriptions and attributes
-        style_info = {
+        style_info: dict[str, dict[str, Any]] = {
             "温暖治愈": {
                 "description": "柔和色调，营造温馨氛围",
                 "pros": ["亲和力强", "适合生活类内容", "受众广泛"],

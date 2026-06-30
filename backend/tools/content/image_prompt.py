@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any, cast
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from langchain_core.tools import tool
 
 from backend.config.models import TaskType
@@ -17,14 +18,14 @@ from backend.services.llm_enrichment import get_llm_service
 logger = logging.getLogger("xhs_growth.tools.image_prompt")
 
 
-def _load_prompt() -> dict:
+def _load_prompt() -> dict[str, Any]:
     """Load prompt template from YAML file."""
     prompt_path = Path("xhs_growth/config/prompts/tools/image_prompt.yaml")
     with open(prompt_path) as f:
-        return yaml.safe_load(f)
+        return cast(dict[str, Any], yaml.safe_load(f))
 
 
-def _algorithmic_fallback(data: dict) -> list[dict]:
+def _algorithmic_fallback(data: dict[str, Any]) -> list[dict[str, Any]]:
     """Algorithmic fallback when LLM fails."""
     topic = data.get("topic", "")
     style = data.get("style", "modern")
@@ -91,9 +92,9 @@ async def image_prompt_generator(
     count: int = 3,
     scene: str = "general",
     layout_type: str = "",
-    color_palette: list[str] = None,
-    brand_elements: list[str] = None,
-) -> list[dict]:
+    color_palette: list[str] | None = None,
+    brand_elements: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """生成小红书封面图和配图的 AI 绘画提示词 — 场景化视觉生成.
 
     Args:
@@ -144,10 +145,10 @@ async def image_prompt_generator(
 
         # Extract prompts from result
         if isinstance(result, dict) and "prompts" in result:
-            prompts = result["prompts"]
+            prompts = cast(list[dict[str, Any]], result["prompts"])
             return prompts[:count]
         elif isinstance(result, list):
-            return result[:count]
+            return cast(list[dict[str, Any]], result)[:count]
 
         # If result structure is unexpected, use fallback
         logger.warning(f"Unexpected result structure: {type(result)}")

@@ -1,6 +1,6 @@
 """Main state schema for XHS Growth Agent."""
 
-from typing import Annotated, TypedDict
+from typing import Annotated, Any, TypedDict
 
 from langgraph.graph.message import add_messages
 
@@ -45,7 +45,7 @@ class XHSGrowthState(TypedDict, total=False):
     workflow_mode: WorkflowMode  # "trend" or "brief" — determines pipeline path
 
     # Message history (LangGraph built-in reducer)
-    messages: Annotated[list, add_messages]
+    messages: Annotated[list[Any], add_messages]
 
     # Stage data
     trend_data: TrendData
@@ -64,7 +64,7 @@ class XHSGrowthState(TypedDict, total=False):
     ripple_pmf: RipplePMFResult
     ripple_job_ids: Annotated[list[str], _append_list]
     ripple_comparison: RippleComparison
-    ripple_decision: dict  # {"action": "accept"|"reangle"|"retopic"} from ripple_gate
+    ripple_decision: dict[str, Any]  # {"action": "accept"|"reangle"|"retopic"} from ripple_gate
     reselect_count: int  # Tracks reselect cycles (max 2)
 
     # ── 商单 Brief 模式 ──
@@ -108,7 +108,7 @@ class XHSGrowthState(TypedDict, total=False):
     blogger_candidates: Annotated[list[BloggerProfile], _replace]
 
     # 用户选中的博主 — replace: returning {} clears old selection (vs merge_dict which preserves)
-    selected_blogger: Annotated[dict, _replace]
+    selected_blogger: Annotated[dict[str, Any], _replace]
 
     # 选中博主的 top 笔记 — replace: each selection replaces the full list
     blogger_notes: Annotated[list[BloggerNote], _replace]
@@ -123,8 +123,8 @@ class XHSGrowthState(TypedDict, total=False):
     blogger_note_limit: int
 
     # History
-    content_history: Annotated[list[dict], _append_list]
-    performance_log: Annotated[list[dict], _append_list]
+    content_history: Annotated[list[dict[str, Any]], _append_list]
+    performance_log: Annotated[list[dict[str, Any]], _append_list]
 
     # Metadata
     account_id: str
@@ -134,7 +134,7 @@ class XHSGrowthState(TypedDict, total=False):
     updated_at: str
 
     # Publish options (set by review decision)
-    publish_options: dict
+    publish_options: dict[str, Any]
     dry_run: bool
     auto_publish: bool
 
@@ -143,4 +143,4 @@ class XHSGrowthState(TypedDict, total=False):
     topic: str  # Optional user-provided topic override
 
 
-__all__ = ["XHSGrowthState"]
+__all__ = ["XHSGrowthState", "WorkflowPhase"]

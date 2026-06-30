@@ -103,7 +103,7 @@ class XHSSignature:
         return signed_params
 
     @classmethod
-    def add_sign_to_headers(cls, params: dict[str, Any], headers: dict) -> dict:
+    def add_sign_to_headers(cls, params: dict[str, Any], headers: dict[str, Any]) -> dict[str, Any]:
         """为请求头添加签名相关字段"""
         timestamp = int(time.time() * 1000)
         signed_headers = headers.copy()
@@ -116,7 +116,7 @@ class XHSAntiSpider:
     """小红书反爬虫对策"""
 
     @staticmethod
-    def get_fingerprint() -> dict:
+    def get_fingerprint() -> dict[str, Any]:
         """生成浏览器指纹参数"""
         return {
             "platform": "mac",

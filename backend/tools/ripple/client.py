@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from langchain_core.tools import tool
@@ -37,8 +37,8 @@ def _llm_config() -> dict[str, Any] | None:
 
     # Auto-resolve from model provider if not explicitly set
     if not api_key or not url:
-        from backend.config.models import _PROVIDER_ENV_VARS, MODEL_REGISTRY
-        from backend.models.router import ModelProvider
+        from backend.config.models import MODEL_REGISTRY, ModelProvider
+        from backend.models.router import _PROVIDER_ENV_VARS
 
         cfg = MODEL_REGISTRY.get(model)
         if cfg:
@@ -142,7 +142,7 @@ async def ripple_predict_content_spread(
             json=request_body,
         )
         resp.raise_for_status()
-        return resp.json()
+        return cast(dict[str, Any], resp.json())
 
 
 @tool
@@ -189,7 +189,7 @@ async def ripple_validate_pmf(
             json=request_body,
         )
         resp.raise_for_status()
-        return resp.json()
+        return cast(dict[str, Any], resp.json())
 
 
 # ── 查询模拟 ──
@@ -205,7 +205,7 @@ async def ripple_get_simulation_status(job_id: str) -> dict[str, Any]:
             headers=_headers(),
         )
         resp.raise_for_status()
-        return resp.json()
+        return cast(dict[str, Any], resp.json())
 
 
 @tool
@@ -218,7 +218,7 @@ async def ripple_get_simulation_result(job_id: str) -> dict[str, Any]:
             headers=_headers(),
         )
         resp.raise_for_status()
-        return resp.json()
+        return cast(dict[str, Any], resp.json())
 
 
 @tool
@@ -255,7 +255,7 @@ async def ripple_generate_report(
             json=payload,
         )
         resp.raise_for_status()
-        return resp.json()
+        return cast(dict[str, Any], resp.json())
 
 
 # ── 取消模拟 ──

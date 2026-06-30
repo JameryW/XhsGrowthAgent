@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any, cast
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from langchain_core.tools import tool
 
 from backend.config.models import TaskType
@@ -17,14 +18,15 @@ from backend.services.llm_enrichment import get_llm_service
 logger = logging.getLogger("xhs_growth.tools.title")
 
 
-def _load_prompt() -> dict:
+def _load_prompt() -> dict[str, Any]:
     """Load prompt template from YAML file."""
     prompt_path = Path("xhs_growth/config/prompts/tools/title_generator.yaml")
     with open(prompt_path) as f:
-        return yaml.safe_load(f)
+        data: Any = yaml.safe_load(f)
+    return cast(dict[str, Any], data)
 
 
-def _algorithmic_fallback(data: dict) -> list[dict]:
+def _algorithmic_fallback(data: dict[str, Any]) -> list[dict[str, Any]]:
     """Algorithmic fallback when LLM fails."""
     topic = data.get("topic", "")
     style = data.get("style", "attractive")
@@ -80,8 +82,8 @@ async def title_generator(
     count: int = 5,
     content_type: str = "图文笔记",
     target_audience: str = "",
-    key_points: list[str] = None,
-) -> list[dict]:
+    key_points: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """生成小红书标题候选 — 多风格创意生成.
 
     Args:
@@ -129,9 +131,9 @@ async def title_generator(
         # Extract titles from result
         if isinstance(result, dict) and "titles" in result:
             titles = result["titles"]
-            return titles[:count]
+            return cast(list[dict[str, Any]], titles[:count])
         elif isinstance(result, list):
-            return result[:count]
+            return cast(list[dict[str, Any]], result[:count])
 
         # If result structure is unexpected, use fallback
         logger.warning(f"Unexpected result structure: {type(result)}")

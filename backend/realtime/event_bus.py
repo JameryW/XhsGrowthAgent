@@ -26,7 +26,7 @@ class EventBusService:
     def __init__(self) -> None:
         self._events: deque[Event] = deque(maxlen=self.MAX_EVENTS)
         self._subscribers: list[Callable[[Event], None]] = []
-        self._thread_queues: dict[str, list[asyncio.Queue]] = {}
+        self._thread_queues: dict[str, list[asyncio.Queue[Any]]] = {}
         self._seq = 0
         self._lock = threading.Lock()
 
@@ -88,20 +88,20 @@ class EventBusService:
             if handler in self._subscribers:
                 self._subscribers.remove(handler)
 
-    def subscribe_thread(self, thread_id: str) -> asyncio.Queue:
+    def subscribe_thread(self, thread_id: str) -> asyncio.Queue[Any]:
         """订阅特定线程的事件（用于SSE）.
 
         Returns:
             asyncio.Queue that will receive events for this thread
         """
-        q = asyncio.Queue(maxsize=100)
+        q: asyncio.Queue[Any] = asyncio.Queue(maxsize=100)
         with self._lock:
             if thread_id not in self._thread_queues:
                 self._thread_queues[thread_id] = []
             self._thread_queues[thread_id].append(q)
         return q
 
-    def unsubscribe_thread(self, thread_id: str, queue: asyncio.Queue) -> None:
+    def unsubscribe_thread(self, thread_id: str, queue: asyncio.Queue[Any]) -> None:
         """取消线程订阅."""
         with self._lock:
             if thread_id in self._thread_queues:

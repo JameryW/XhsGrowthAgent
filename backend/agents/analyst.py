@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
@@ -56,7 +56,7 @@ class AnalystAgent(BaseAgent):
             ]
         )
 
-        analytics = self._parse_json_response(response.content)
+        analytics = self._parse_json_response(cast(str, response.content))
 
         # 将 Ripple 预测与实际数据对比，写入 state
         result_updates: dict[str, Any] = {
@@ -68,7 +68,8 @@ class AnalystAgent(BaseAgent):
         ripple_comparison: dict[str, Any] | None = None
         if ripple_prediction:
             ripple_comparison = self._compare_prediction_vs_actual(
-                ripple_prediction, publish_result
+                cast(dict[str, Any] | None, ripple_prediction),
+                cast(dict[str, Any], publish_result),
             )
             if ripple_comparison:
                 analytics["ripple_comparison"] = ripple_comparison
@@ -208,7 +209,7 @@ class AnalystAgent(BaseAgent):
             logger.warning(f"Ripple cancel failed for {job_id}: {e}")
 
     def _compare_prediction_vs_actual(
-        self, prediction: dict | None, actual: dict
+        self, prediction: dict[str, Any] | None, actual: dict[str, Any]
     ) -> dict[str, Any]:
         """对比 Ripple 预测与实际表现，生成可行动的校准洞察"""
         if not prediction:

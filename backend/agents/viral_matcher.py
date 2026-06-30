@@ -10,7 +10,8 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
-from backend.state.schema import WorkflowPhase, XHSGrowthState
+from backend.state.enums import WorkflowPhase
+from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.viral_matcher")
 
@@ -41,28 +42,31 @@ class ViralMatcherAgent(BaseAgent):
         # Build auto-search keywords from trend data, content plan, and brief
         trend_data = state.get("trend_data", {})
         content_plan = state.get("content_plan", {})
-        auto_keywords = list(trend_data.get("trending_keywords", []))
-        if content_plan.get("selected_topic"):
-            auto_keywords.append(content_plan.get("selected_topic"))
+        auto_keywords: list[str] = list(trend_data.get("trending_keywords", []))
+        if selected_topic := content_plan.get("selected_topic"):
+            auto_keywords.append(selected_topic)
 
         # Brief mode: derive keywords and context from brief_content
         if has_brief:
-            if brief.get("brand_name"):
-                auto_keywords.append(brief.get("brand_name"))
-            if brief.get("product_name"):
-                auto_keywords.append(brief.get("product_name"))
+            assert brief is not None
+            if brand := brief.get("brand_name"):
+                auto_keywords.append(brand)
+            if product := brief.get("product_name"):
+                auto_keywords.append(product)
             auto_keywords.extend((brief.get("required_keywords") or [])[:3])
             auto_keywords.extend((brief.get("selling_points") or [])[:2])
 
         system_prompt = self._build_system_prompt(state)
 
         if has_draft:
+            assert draft is not None
             user_msg = f"""用户草稿标题：{draft.get("title", "未提供")}
 用户草稿内容：{(draft.get("text") or "")[:500]}
 用户指定爆款链接：{", ".join(user_links) if user_links else "无"}
 自动搜索关键词：{", ".join(auto_keywords[:5]) if auto_keywords else "无"}"""
         else:
             # Brief mode: describe what we're looking for from brief context
+            assert brief is not None
             brief_ctx = f"品牌：{brief.get('brand_name', '未提供')}"
             if brief.get("product_name"):
                 brief_ctx += f"\n产品：{brief.get('product_name')}"
@@ -96,7 +100,10 @@ class ViralMatcherAgent(BaseAgent):
                 "phase": WorkflowPhase.CREATING,
             }
 
-        result = self._parse_json_response(response.content)
+        content = response.content
+        if isinstance(content, list):
+            content = str(content)
+        result = self._parse_json_response(content)
         viral_posts = result.get("viral_posts", [])
 
         logger.info(f"Found {len(viral_posts)} viral posts for comparison")
