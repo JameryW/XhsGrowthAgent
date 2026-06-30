@@ -39,17 +39,19 @@ RUN uv export --frozen --extra browser --no-dev --no-emit-project --no-emit-pack
     grep -vE '^(nvidia-|cuda-|triton==)' /tmp/reqs.txt > /tmp/reqs_clean.txt && \
     pip install --no-cache-dir -r /tmp/reqs_clean.txt && rm /tmp/reqs.txt /tmp/reqs_clean.txt
 
-# Backend source copied AFTER deps — .py edits only invalidate the layer below.
+# Install chromium browser + system deps for playwright real publishing.
+# Baked into the image so containers don't download at runtime (no network dep).
+# ponytail: ~1GB layer; placed BEFORE COPY backend so .py edits don't trigger
+# a re-download of chromium on rebuild (playwright pkg is already in the deps
+# layer above). Real publishing requires a real browser.
+RUN playwright install --with-deps chromium
+
+# Backend source copied AFTER playwright — .py edits only invalidate from here.
 COPY backend/ backend/
 # Install the local package itself (deps already present; --no-deps avoids
 # re-resolving). hatchling is the build backend declared in pyproject.
 RUN pip install --no-cache-dir hatchling && \
     pip install --no-cache-dir --no-deps ".[browser]"
-
-# Install chromium browser + system deps for playwright real publishing.
-# Baked into the image so containers don't download at runtime (no network dep).
-# ponytail: ~500MB layer; acceptable — real publishing requires a real browser.
-RUN playwright install --with-deps chromium
 
 # Bake the local embedding model into the image as a SEED copy at
 # /opt/hf-cache-seed. The model is COPY'd from the host .hf-cache dir (populated
