@@ -76,7 +76,7 @@ class TestCopywriterAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+            await agent.execute(mock_state, store=mock_store)
 
         # Memory was recalled
         assert mock_store.asearch.called
@@ -96,7 +96,7 @@ class TestCopywriterAgent:
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
 
-            result = await agent.execute(mock_state, store=mock_store)
+            await agent.execute(mock_state, store=mock_store)
 
         # Multiple recall calls
         assert mock_store.asearch.call_count >= 2

@@ -27,6 +27,7 @@ class AgentError(Exception):
 
 class WorkflowCancelledError(Exception):
     """Workflow was cancelled — nodes should stop execution."""
+
     pass
 
 

@@ -114,7 +114,11 @@ class TestEventContract:
         event = Event(
             event_type=EventType.WORKFLOW_PHASE_CHANGED,
             thread_id="thread_456",
-            payload={"old_phase": "planning", "new_phase": "creating", "current_agent": "content_strategist"},
+            payload={
+                "old_phase": "planning",
+                "new_phase": "creating",
+                "current_agent": "content_strategist",
+            },
             timestamp="2026-05-30T12:00:00Z",
             seq=42,
         )

@@ -34,9 +34,7 @@ def _make_snapshot(values: dict, next_nodes: list[str] | None = None) -> MagicMo
     snapshot.tasks = []
     snapshot.interrupts = []
     snapshot.metadata = {}
-    snapshot.config = {
-        "configurable": {"thread_id": values.get("session_id", "test")}
-    }
+    snapshot.config = {"configurable": {"thread_id": values.get("session_id", "test")}}
     snapshot.created_at = "2026-01-01T00:00:00Z"
     return snapshot
 
@@ -101,7 +99,11 @@ class TestPhaseProgressConsistency:
             patch(_DB_CREATE, new_callable=AsyncMock, side_effect=_capture_create),
         ):
             await runner_module._run_graph_and_persist(
-                thread_id, graph, config, None, source="start",
+                thread_id,
+                graph,
+                config,
+                None,
+                source="start",
             )
 
         assert "row" in captured, "DB create_workflow was not invoked"
@@ -148,7 +150,11 @@ class TestPhaseProgressConsistency:
             pytest.raises(RuntimeError),
         ):
             await runner_module._run_graph_and_persist(
-                thread_id, graph, config, None, source="start",
+                thread_id,
+                graph,
+                config,
+                None,
+                source="start",
             )
 
         graph.aupdate_state.assert_not_called()
@@ -179,7 +185,11 @@ class TestPhaseProgressConsistency:
             patch(_DB_CREATE, new_callable=AsyncMock, side_effect=_capture_create),
         ):
             await runner_module._run_graph_and_persist(
-                thread_id, graph, config, None, source="start",
+                thread_id,
+                graph,
+                config,
+                None,
+                source="start",
             )
 
         row = captured["row"]
@@ -216,7 +226,11 @@ class TestPhaseProgressConsistency:
             patch(_DB_CREATE, new_callable=AsyncMock, side_effect=_capture_create),
         ):
             await runner_module._run_graph_and_persist(
-                thread_id, graph, config, None, source="start",
+                thread_id,
+                graph,
+                config,
+                None,
+                source="start",
             )
 
         row = captured["row"]

@@ -1,9 +1,10 @@
 """Tests for BaseAgent error handling."""
 
 import pytest
+
 from backend.agents.base import BaseAgent
-from backend.core.error_handling import AgentError
 from backend.config.models import TaskType
+from backend.core.error_handling import AgentError
 
 
 class FailingAgent(BaseAgent):
@@ -29,6 +30,7 @@ async def test_base_agent_propagates_exception():
 @pytest.mark.asyncio
 async def test_base_agent_clears_stale_error_on_success():
     """Successful execution should clear stale error field."""
+
     class SuccessAgent(BaseAgent):
         task_type = TaskType.ROUTING
         agent_name = "success_agent"

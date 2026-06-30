@@ -53,19 +53,23 @@ async def ripple_gate_node(state: XHSGrowthState, *, store: BaseStore) -> dict[s
     # Auto-accept if results are good or reselect limit reached
     if not _is_ripple_suboptimal(state):
         logger.info("Ripple results are acceptable, auto-accepting")
-        return NodeResult({
-            "ripple_decision": {"action": "accept", "source": "auto"},
-            "phase": WorkflowPhase.CREATING,
-        }, "ripple_gate").to_dict()
+        return NodeResult(
+            {
+                "ripple_decision": {"action": "accept", "source": "auto"},
+                "phase": WorkflowPhase.CREATING,
+            },
+            "ripple_gate",
+        ).to_dict()
 
     if reselect_count >= _MAX_RESELECT_COUNT:
-        logger.info(
-            f"Reselect limit reached ({reselect_count}), auto-accepting"
-        )
-        return NodeResult({
-            "ripple_decision": {"action": "accept", "source": "auto_max_reselect"},
-            "phase": WorkflowPhase.CREATING,
-        }, "ripple_gate").to_dict()
+        logger.info(f"Reselect limit reached ({reselect_count}), auto-accepting")
+        return NodeResult(
+            {
+                "ripple_decision": {"action": "accept", "source": "auto_max_reselect"},
+                "phase": WorkflowPhase.CREATING,
+            },
+            "ripple_gate",
+        ).to_dict()
 
     # Results are suboptimal and user hasn't exhausted reselects — interrupt
     prediction = state.get("ripple_prediction") or {}

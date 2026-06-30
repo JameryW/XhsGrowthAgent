@@ -215,7 +215,9 @@ class TestFrontendReviewTypes:
 
     def test_review_submit_response_type_defined(self, review_types_content):
         """Verify ReviewSubmitResponse interface is defined."""
-        assert "ReviewSubmitResponse" in review_types_content, "Missing ReviewSubmitResponse interface"
+        assert "ReviewSubmitResponse" in review_types_content, (
+            "Missing ReviewSubmitResponse interface"
+        )
 
 
 class TestFrontendAnalyticsTypes:
@@ -259,7 +261,7 @@ class TestGeneratedModelsConsistency:
 
         # Find TypedDict class names
         class_pattern = r"class\s+(\w+)\(TypedDict"
-        defined_classes = re.findall(class_pattern, content)
+        re.findall(class_pattern, content)
 
         # These should have corresponding schemas in OpenAPI
         expected_schemas = ["TrendData", "ContentPlan", "CopyContent", "VisualPlan"]

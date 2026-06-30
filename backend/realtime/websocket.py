@@ -76,9 +76,7 @@ class WebSocketManager:
         def sync_handler(event: Event) -> None:
             # Use call_soon_threadsafe to safely schedule async task
             # from potentially non-async context (EventBusService.emit is sync)
-            loop.call_soon_threadsafe(
-                lambda: asyncio.create_task(event_handler(event))
-            )
+            loop.call_soon_threadsafe(lambda: asyncio.create_task(event_handler(event)))
 
         event_bus.subscribe(sync_handler)
 
@@ -122,8 +120,11 @@ class WebSocketManager:
         elif action == "get_missed":
             since = msg.get("since", 0)
             from backend.realtime.event_bus import EventBusService
+
             events = EventBusService.get_instance().get_events_since(since)
-            await session.websocket.send_json({
-                "action": "missed_events",
-                "events": [e.to_dict() for e in events],
-            })
+            await session.websocket.send_json(
+                {
+                    "action": "missed_events",
+                    "events": [e.to_dict() for e in events],
+                }
+            )

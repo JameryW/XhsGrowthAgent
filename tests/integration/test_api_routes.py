@@ -312,7 +312,7 @@ class TestWorkflowRoutes:
         _runner._background_tasks["xhs_test_abc123"] = mock_task
 
         # DB pool may not be ready in test — mock db_get if needed
-        original_get = db_pool.get if hasattr(db_pool, 'get') else None
+        db_pool.get if hasattr(db_pool, "get") else None
 
         try:
             # Ensure the workflow exists in DB (or skip DB check)
@@ -320,6 +320,7 @@ class TestWorkflowRoutes:
                 # Make history file so delete_workflow passes the existence check
                 import json
                 from pathlib import Path
+
                 history_dir = Path(".xhs") / "history"
                 history_dir.mkdir(parents=True, exist_ok=True)
                 history_file = history_dir / "xhs_test_abc123.json"

@@ -70,8 +70,18 @@ class TestLayoutOption:
             pros=["Clear organization", "Good for multiple products"],
             cons=["May look crowded", "Fixed structure"],
             reference_posts=[
-                {"note_id": "note_1", "title": "Great post", "likes": 1000, "url": "https://xhs.com/note_1"},
-                {"note_id": "note_2", "title": "Another post", "likes": 500, "url": "https://xhs.com/note_2"},
+                {
+                    "note_id": "note_1",
+                    "title": "Great post",
+                    "likes": 1000,
+                    "url": "https://xhs.com/note_1",
+                },
+                {
+                    "note_id": "note_2",
+                    "title": "Another post",
+                    "likes": 500,
+                    "url": "https://xhs.com/note_2",
+                },
             ],
             suitable_for=["product_review", "comparison"],
             image_sequence_strategy="impact_first",
@@ -86,8 +96,18 @@ class TestLayoutOption:
         assert layout.pros == ["Clear organization", "Good for multiple products"]
         assert layout.cons == ["May look crowded", "Fixed structure"]
         assert layout.reference_posts == [
-            {"note_id": "note_1", "title": "Great post", "likes": 1000, "url": "https://xhs.com/note_1"},
-            {"note_id": "note_2", "title": "Another post", "likes": 500, "url": "https://xhs.com/note_2"},
+            {
+                "note_id": "note_1",
+                "title": "Great post",
+                "likes": 1000,
+                "url": "https://xhs.com/note_1",
+            },
+            {
+                "note_id": "note_2",
+                "title": "Another post",
+                "likes": 500,
+                "url": "https://xhs.com/note_2",
+            },
         ]
         assert layout.suitable_for == ["product_review", "comparison"]
         assert layout.image_sequence_strategy == "impact_first"
@@ -122,7 +142,9 @@ class TestLayoutOption:
             popularity_score=0.75,
             pros=["Interactive"],
             cons=["Requires engagement"],
-            reference_posts=[{"note_id": "p1", "title": "Test", "likes": 100, "url": "https://xhs.com/p1"}],
+            reference_posts=[
+                {"note_id": "p1", "title": "Test", "likes": 100, "url": "https://xhs.com/p1"}
+            ],
             suitable_for=["storytelling"],
             image_sequence_strategy="chronological",
             text_position="below",
@@ -137,7 +159,9 @@ class TestLayoutOption:
         assert result_dict["popularity_score"] == 0.75
         assert result_dict["pros"] == ["Interactive"]
         assert result_dict["cons"] == ["Requires engagement"]
-        assert result_dict["reference_posts"] == [{"note_id": "p1", "title": "Test", "likes": 100, "url": "https://xhs.com/p1"}]
+        assert result_dict["reference_posts"] == [
+            {"note_id": "p1", "title": "Test", "likes": 100, "url": "https://xhs.com/p1"}
+        ]
         assert result_dict["suitable_for"] == ["storytelling"]
         assert result_dict["image_sequence_strategy"] == "chronological"
         assert result_dict["text_position"] == "below"
@@ -383,7 +407,7 @@ class TestSceneAnalysisResult:
         assert result_dict["analyzed_at"] is None
 
     def test_scene_analysis_result_no_generic_dicts(self):
-        """Test that SceneAnalysisResult does NOT have generic distributions or trending_items dicts."""
+        """SceneAnalysisResult must NOT have generic distributions or trending_items dicts."""
         from backend.models.visual_types import SceneAnalysisResult
 
         result = SceneAnalysisResult(

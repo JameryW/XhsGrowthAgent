@@ -13,6 +13,7 @@ logger = logging.getLogger("xhs_growth.db.workflows")
 
 # ── Data model ──
 
+
 @dataclass
 class WorkflowRow:
     thread_id: str
@@ -87,6 +88,7 @@ async def ensure_table() -> None:
 
 # ── CRUD ──
 
+
 async def create_workflow(row: WorkflowRow) -> WorkflowRow:
     now = datetime.now(UTC).isoformat()
     if not row.created_at:
@@ -116,10 +118,20 @@ async def create_workflow(row: WorkflowRow) -> WorkflowRow:
                 updated_at      = EXCLUDED.updated_at
             """,
             (
-                row.thread_id, row.account_id, row.status, row.phase,
-                row.progress_percent, row.label, row.workflow_mode, row.dry_run, row.auto_publish,
-                row.error, row.task_error, row.task_done_at,
-                row.created_at, row.updated_at,
+                row.thread_id,
+                row.account_id,
+                row.status,
+                row.phase,
+                row.progress_percent,
+                row.label,
+                row.workflow_mode,
+                row.dry_run,
+                row.auto_publish,
+                row.error,
+                row.task_error,
+                row.task_done_at,
+                row.created_at,
+                row.updated_at,
             ),
         )
     return row
@@ -129,10 +141,9 @@ async def get_workflow(thread_id: str) -> WorkflowRow | None:
     pool = get_pool()
     async with pool.connection() as conn:
         from psycopg.rows import dict_row
+
         async with conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute(
-                "SELECT * FROM workflows WHERE thread_id = %s", (thread_id,)
-            )
+            await cur.execute("SELECT * FROM workflows WHERE thread_id = %s", (thread_id,))
             row = await cur.fetchone()
     if row is None:
         return None
@@ -151,10 +162,10 @@ async def update_workflow(thread_id: str, **fields: Any) -> WorkflowRow | None:
     pool = get_pool()
     async with pool.connection() as conn:
         from psycopg.rows import dict_row
+
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(
-                f"UPDATE workflows SET {set_clause} WHERE thread_id = %s "
-                f"RETURNING *",
+                f"UPDATE workflows SET {set_clause} WHERE thread_id = %s RETURNING *",
                 values,
             )
             row = await cur.fetchone()
@@ -185,6 +196,7 @@ async def list_workflows(
     pool = get_pool()
     async with pool.connection() as conn:
         from psycopg.rows import dict_row
+
         async with conn.cursor(row_factory=dict_row) as cur:
             # Count
             await cur.execute(f"SELECT COUNT(*) AS cnt FROM workflows {where}", params)
@@ -205,9 +217,7 @@ async def list_workflows(
 async def delete_workflow(thread_id: str) -> bool:
     pool = get_pool()
     async with pool.connection() as conn:
-        tag = await conn.execute(
-            "DELETE FROM workflows WHERE thread_id = %s", (thread_id,)
-        )
+        tag = await conn.execute("DELETE FROM workflows WHERE thread_id = %s", (thread_id,))
     return tag == "DELETE 1"
 
 

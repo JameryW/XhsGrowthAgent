@@ -61,6 +61,7 @@ class XHSSignature:
 
         # 4. Base64 编码
         import base64
+
         sign_b64 = base64.b64encode(sign_bytes).decode()
 
         # 5. 构造 shield 字段
@@ -130,6 +131,7 @@ class XHSAntiSpider:
         """生成设备 ID (模拟浏览器指纹)"""
         import random
         import string
+
         chars = string.ascii_lowercase + string.digits
         return "".join(random.choices(chars, k=32))
 
@@ -138,6 +140,7 @@ class XHSAntiSpider:
         """生成 web_id (用于追踪)"""
         import random
         import string
+
         chars = string.ascii_lowercase + string.digits
         prefix = "".join(random.choices(chars, k=8))
         suffix = "".join(random.choices(chars, k=24))

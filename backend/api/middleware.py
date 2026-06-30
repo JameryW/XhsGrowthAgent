@@ -1,4 +1,5 @@
 """Exception handling middleware."""
+
 import logging
 import uuid
 
@@ -9,6 +10,7 @@ from backend.api.errors import APIError, ErrorCode
 from backend.api.responses import error
 
 logger = logging.getLogger("xhs_growth.api")
+
 
 async def error_handler_middleware(request: Request, call_next) -> Response:
     """Unified exception handling middleware."""

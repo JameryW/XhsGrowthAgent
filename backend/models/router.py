@@ -80,7 +80,9 @@ def _create_model(config: ModelConfig, timeout: int | None = None) -> BaseChatMo
                 max_tokens=config.max_tokens,
                 timeout=effective_timeout,
                 api_key=api_key,
-                base_url=os.environ.get("XIAOMIMIMO_BASE_URL", "https://token-plan-sgp.xiaomimimo.com/v1"),
+                base_url=os.environ.get(
+                    "XIAOMIMIMO_BASE_URL", "https://token-plan-sgp.xiaomimimo.com/v1"
+                ),
             )
         case ModelProvider.XUNFEI:
             return ChatOpenAI(
@@ -89,7 +91,9 @@ def _create_model(config: ModelConfig, timeout: int | None = None) -> BaseChatMo
                 max_tokens=config.max_tokens,
                 timeout=effective_timeout,
                 api_key=api_key,
-                base_url=os.environ.get("XUNFEI_BASE_URL", "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2"),
+                base_url=os.environ.get(
+                    "XUNFEI_BASE_URL", "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2"
+                ),
             )
 
 

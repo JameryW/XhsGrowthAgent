@@ -155,12 +155,14 @@ async def image_prompt_generator(
 
     except Exception as e:
         logger.error(f"image_prompt_generator error: {e}")
-        return _algorithmic_fallback({
-            "topic": topic,
-            "style": style,
-            "scene": scene,
-            "count": count,
-        })[:count]
+        return _algorithmic_fallback(
+            {
+                "topic": topic,
+                "style": style,
+                "scene": scene,
+                "count": count,
+            }
+        )[:count]
 
 
 __all__ = ["image_prompt_generator"]

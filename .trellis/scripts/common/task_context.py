@@ -25,10 +25,10 @@ from .log import Colors, colored
 from .paths import get_repo_root
 from .task_utils import resolve_task_dir
 
-
 # =============================================================================
 # Command: add-context
 # =============================================================================
+
 
 def cmd_add_context(args: argparse.Namespace) -> int:
     """Add entry to JSONL context file."""
@@ -83,6 +83,7 @@ def cmd_add_context(args: argparse.Namespace) -> int:
 # =============================================================================
 # Command: validate
 # =============================================================================
+
 
 def cmd_validate(args: argparse.Namespace) -> int:
     """Validate JSONL context files."""
@@ -150,11 +151,15 @@ def _validate_jsonl(jsonl_file: Path, repo_root: Path) -> int:
         full_path = repo_root / file_path
         if entry_type == "directory":
             if not full_path.is_dir():
-                print(f"  {colored(f'{file_name}:{line_num}: Directory not found: {file_path}', Colors.RED)}")
+                print(
+                    f"  {colored(f'{file_name}:{line_num}: Directory not found: {file_path}', Colors.RED)}"  # noqa: E501
+                )
                 errors += 1
         else:
             if not full_path.is_file():
-                print(f"  {colored(f'{file_name}:{line_num}: File not found: {file_path}', Colors.RED)}")
+                print(
+                    f"  {colored(f'{file_name}:{line_num}: File not found: {file_path}', Colors.RED)}"  # noqa: E501
+                )
                 errors += 1
 
     if errors == 0:
@@ -168,6 +173,7 @@ def _validate_jsonl(jsonl_file: Path, repo_root: Path) -> int:
 # =============================================================================
 # Command: list-context
 # =============================================================================
+
 
 def cmd_list_context(args: argparse.Namespace) -> int:
     """List JSONL context entries."""

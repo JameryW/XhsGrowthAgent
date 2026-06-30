@@ -159,7 +159,13 @@ async def test_handle_client_message_get_missed():
 
     # Add some events to event bus
     event1 = Event(EventType.WORKFLOW_STARTED, "thread_123", {"step": 1}, "2026-05-26T10:00:00Z", 1)
-    event2 = Event(EventType.WORKFLOW_AGENT_STARTED, "thread_123", {"agent": "copywriter"}, "2026-05-26T10:01:00Z", 2)
+    event2 = Event(
+        EventType.WORKFLOW_AGENT_STARTED,
+        "thread_123",
+        {"agent": "copywriter"},
+        "2026-05-26T10:01:00Z",
+        2,
+    )
     event_bus._events = [event1, event2]
 
     manager = WebSocketManager.get_instance()

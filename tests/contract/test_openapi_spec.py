@@ -25,7 +25,9 @@ class TestOpenAPISpecExists:
 
     def test_spec_file_is_yaml(self):
         """Verify spec file has .yaml extension."""
-        assert OPENAPI_SPEC_PATH.suffix in (".yaml", ".yml"), f"Expected .yaml extension, got {OPENAPI_SPEC_PATH.suffix}"
+        assert OPENAPI_SPEC_PATH.suffix in (".yaml", ".yml"), (
+            f"Expected .yaml extension, got {OPENAPI_SPEC_PATH.suffix}"
+        )
 
 
 class TestOpenAPISpecValidYAML:
@@ -44,7 +46,9 @@ class TestOpenAPISpecValidYAML:
     def test_spec_has_openapi_version(self, spec_content):
         """Verify spec declares openapi version."""
         assert "openapi" in spec_content, "Missing 'openapi' field"
-        assert spec_content["openapi"].startswith("3."), f"Expected OpenAPI 3.x, got {spec_content['openapi']}"
+        assert spec_content["openapi"].startswith("3."), (
+            f"Expected OpenAPI 3.x, got {spec_content['openapi']}"
+        )
 
     def test_spec_has_info_section(self, spec_content):
         """Verify spec has required info section."""
@@ -70,20 +74,30 @@ class TestOpenAPIRequiredEndpoints:
 
     def test_workflow_status_endpoint_exists(self, paths):
         """Verify /workflow/status/{thread_id} endpoint exists."""
-        assert "/workflow/status/{thread_id}" in paths, "Missing /workflow/status/{thread_id} endpoint"
-        assert "get" in paths["/workflow/status/{thread_id}"], "Missing GET method for /workflow/status/{thread_id}"
+        assert "/workflow/status/{thread_id}" in paths, (
+            "Missing /workflow/status/{thread_id} endpoint"
+        )
+        assert "get" in paths["/workflow/status/{thread_id}"], (
+            "Missing GET method for /workflow/status/{thread_id}"
+        )
 
     def test_workflow_pause_endpoint_exists(self, paths):
         """Verify /workflow/pause/{thread_id} endpoint exists."""
-        assert "/workflow/pause/{thread_id}" in paths, "Missing /workflow/pause/{thread_id} endpoint"
+        assert "/workflow/pause/{thread_id}" in paths, (
+            "Missing /workflow/pause/{thread_id} endpoint"
+        )
 
     def test_workflow_resume_endpoint_exists(self, paths):
         """Verify /workflow/resume/{thread_id} endpoint exists."""
-        assert "/workflow/resume/{thread_id}" in paths, "Missing /workflow/resume/{thread_id} endpoint"
+        assert "/workflow/resume/{thread_id}" in paths, (
+            "Missing /workflow/resume/{thread_id} endpoint"
+        )
 
     def test_review_pending_endpoint_exists(self, paths):
         """Verify /review/pending/{thread_id} endpoint exists."""
-        assert "/review/pending/{thread_id}" in paths, "Missing /review/pending/{thread_id} endpoint"
+        assert "/review/pending/{thread_id}" in paths, (
+            "Missing /review/pending/{thread_id} endpoint"
+        )
 
     def test_review_submit_endpoint_exists(self, paths):
         """Verify /review/submit/{thread_id} endpoint exists."""
@@ -91,11 +105,15 @@ class TestOpenAPIRequiredEndpoints:
 
     def test_analytics_report_endpoint_exists(self, paths):
         """Verify /analytics/report/{account_id} endpoint exists."""
-        assert "/analytics/report/{account_id}" in paths, "Missing /analytics/report/{account_id} endpoint"
+        assert "/analytics/report/{account_id}" in paths, (
+            "Missing /analytics/report/{account_id} endpoint"
+        )
 
     def test_analytics_performance_endpoint_exists(self, paths):
         """Verify /analytics/performance/{account_id} endpoint exists."""
-        assert "/analytics/performance/{account_id}" in paths, "Missing /analytics/performance/{account_id} endpoint"
+        assert "/analytics/performance/{account_id}" in paths, (
+            "Missing /analytics/performance/{account_id} endpoint"
+        )
 
     def test_analytics_costs_endpoint_exists(self, paths):
         """Verify /analytics/costs endpoint exists."""
@@ -172,7 +190,9 @@ class TestOpenAPITypedResponseWrappers:
 
     def test_review_submit_wrapper_exists(self, schemas):
         """Verify ApiResponse_ReviewSubmitResponse wrapper exists."""
-        assert "ApiResponse_ReviewSubmitResponse" in schemas, "Missing ApiResponse_ReviewSubmitResponse"
+        assert "ApiResponse_ReviewSubmitResponse" in schemas, (
+            "Missing ApiResponse_ReviewSubmitResponse"
+        )
 
     def test_growth_report_wrapper_exists(self, schemas):
         """Verify ApiResponse_GrowthReport wrapper exists."""
@@ -206,9 +226,16 @@ class TestOpenAPIEnums:
         workflow_phase = schemas.get("WorkflowPhase", {})
         enum_values = workflow_phase.get("enum", [])
         expected_values = [
-            "idle", "scouting", "planning", "creating",
-            "reviewing", "publishing", "analyzing", "engaging",
-            "completed", "error"
+            "idle",
+            "scouting",
+            "planning",
+            "creating",
+            "reviewing",
+            "publishing",
+            "analyzing",
+            "engaging",
+            "completed",
+            "error",
         ]
         for value in expected_values:
             assert value in enum_values, f"WorkflowPhase missing '{value}'"
@@ -221,7 +248,15 @@ class TestOpenAPIEnums:
         """Verify ContentStatus has all required values."""
         content_status = schemas.get("ContentStatus", {})
         enum_values = content_status.get("enum", [])
-        expected_values = ["approved", "needs_revision", "rejected", "draft", "pending_review", "published", "failed"]
+        expected_values = [
+            "approved",
+            "needs_revision",
+            "rejected",
+            "draft",
+            "pending_review",
+            "published",
+            "failed",
+        ]
         for value in expected_values:
             assert value in enum_values, f"ContentStatus missing '{value}'"
 

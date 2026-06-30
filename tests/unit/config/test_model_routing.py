@@ -34,7 +34,7 @@ def test_get_model_config_unknown():
     """未知模型抛出 KeyError"""
     try:
         get_model_config("nonexistent-model")
-        assert False, "Should have raised KeyError"
+        raise AssertionError("Should have raised KeyError")
     except KeyError:
         pass
 

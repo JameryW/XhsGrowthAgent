@@ -14,12 +14,12 @@ from __future__ import annotations
 
 import sys
 
+from common.developer import init_developer
 from common.paths import (
     DIR_WORKFLOW,
     FILE_DEVELOPER,
     get_developer,
 )
-from common.developer import init_developer
 
 
 def main() -> None:

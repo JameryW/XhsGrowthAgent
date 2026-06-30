@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from backend.agents.engagement import EngagementAgent
-from backend.state.schema import EngagementAction, WorkflowPhase
+from backend.state.schema import WorkflowPhase
 
 
 class TestEngagementMemoryWrites:
@@ -58,7 +58,7 @@ class TestEngagementMemoryWrites:
             mock_settings.platform.use_browser = False
             mock_settings_cls.return_value = mock_settings
 
-            result = await agent.execute(mock_state, store=mock_store)
+            await agent.execute(mock_state, store=mock_store)
 
             mock_store.aput.assert_not_called()
 

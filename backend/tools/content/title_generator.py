@@ -59,7 +59,7 @@ def _algorithmic_fallback(data: dict) -> list[dict]:
 
     # Extend with generic templates if needed
     while len(style_templates) < count:
-        style_templates.append(f"{topic}分享｜第{len(style_templates)+1}弹")
+        style_templates.append(f"{topic}分享｜第{len(style_templates) + 1}弹")
 
     return [
         {

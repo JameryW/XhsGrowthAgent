@@ -11,9 +11,7 @@ from backend.state.schema import XHSGrowthState
 _agent = ShootingPlannerAgent()
 
 
-async def shooting_planner_node(
-    state: XHSGrowthState, store: BaseStore
-) -> dict:
+async def shooting_planner_node(state: XHSGrowthState, store: BaseStore) -> dict:
     """Generate shooting plan from parsed brief + viral references."""
     _check_cancelled(state)
     result = await _agent.execute(state, store)

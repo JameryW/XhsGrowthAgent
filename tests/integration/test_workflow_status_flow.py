@@ -28,7 +28,11 @@ class TestFullWorkflowLifecycle:
     """End-to-end status derivation through a typical workflow lifecycle."""
 
     def test_single_mode_happy_path(self):
-        """Single mode: scouting → planning → creating → reviewing → publishing → analyzing → engaging → completed."""
+        """Single mode happy path through all phases.
+
+        scouting → planning → creating → reviewing → publishing →
+        analyzing → engaging → completed.
+        """
         # 1. Start — orchestrator dispatches to trend_scout
         snap = make_snapshot({"phase": WorkflowPhase.SCOUTING}, next=["trend_scout"])
         assert derive_status(snap) == WorkflowStatus.RUNNING

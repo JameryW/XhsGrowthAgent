@@ -528,6 +528,7 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
         )
     else:
         from backend.core.error_handling import WorkflowCancelledError
+
         with contextlib.suppress(asyncio.CancelledError, WorkflowCancelledError):
             await _runner._run_graph_and_persist(
                 thread_id,

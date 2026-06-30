@@ -129,10 +129,12 @@ async def ensure_tables() -> None:
 
 # ── CRUD ──
 
+
 async def list_config() -> list[SystemConfigRow]:
     pool = get_pool()
     async with pool.connection() as conn:
         from psycopg.rows import dict_row
+
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(
                 "SELECT key_name, encrypted_value, updated_at FROM system_config "
@@ -152,6 +154,7 @@ async def list_config() -> list[SystemConfigRow]:
 async def set_config(items: dict[str, str]) -> None:
     """Batch-set system config. Empty values delete the key. Unknown keys ignored."""
     from datetime import UTC, datetime
+
     now = datetime.now(UTC).isoformat()
 
     pool = get_pool()
@@ -197,6 +200,7 @@ async def count_config() -> int:
 
 # ── Activation ──
 
+
 async def activate_system_config() -> dict[str, str]:
     """Push all system_config rows into os.environ. Clears stale keys first."""
     for key in SYSTEM_KEYS:
@@ -214,6 +218,7 @@ async def activate_system_config() -> dict[str, str]:
 
 
 # ── Migration ──
+
 
 async def migrate_from_accounts() -> int:
     """One-shot, idempotent migration: pull SYSTEM_KEYS from active account into system_config.
@@ -241,9 +246,7 @@ async def migrate_from_accounts() -> int:
 
     await set_config(to_migrate)
     await _strip_system_keys_from_accounts()
-    logger.info(
-        f"Migrated {len(to_migrate)} keys from account {active.id} → system_config"
-    )
+    logger.info(f"Migrated {len(to_migrate)} keys from account {active.id} → system_config")
     return len(to_migrate)
 
 

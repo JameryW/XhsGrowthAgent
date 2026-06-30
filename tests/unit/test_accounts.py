@@ -18,8 +18,10 @@ import pytest
 def setup_crypto():
     """Ensure ENCRYPTION_KEY is set for tests."""
     from backend.db.crypto import generate_key
+
     os.environ["ENCRYPTION_KEY"] = generate_key()
     import backend.db.crypto as crypto_mod
+
     crypto_mod._fernet = None
     yield
     os.environ.pop("ENCRYPTION_KEY", None)
@@ -207,6 +209,7 @@ async def test_delete_account_uses_rowcount():
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(test_set_and_list_credentials())
     asyncio.run(test_set_credentials_drops_non_xhs_keys())
     asyncio.run(test_activate_credentials_sets_env())

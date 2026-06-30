@@ -12,8 +12,10 @@ import pytest
 @pytest.fixture(autouse=True)
 def setup_crypto():
     from backend.db.crypto import generate_key
+
     os.environ["ENCRYPTION_KEY"] = generate_key()
     import backend.db.crypto as crypto_mod
+
     crypto_mod._fernet = None
     yield
     os.environ.pop("ENCRYPTION_KEY", None)
@@ -139,6 +141,7 @@ async def test_migrate_from_accounts_skips_when_already_populated():
 
 if __name__ == "__main__":
     import asyncio
+
     test_system_keys_disjoint_from_xhs_keys()
     test_system_key_groups_cover_all_keys()
     asyncio.run(test_set_config_filters_unknown_keys())

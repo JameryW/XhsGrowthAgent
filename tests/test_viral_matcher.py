@@ -67,11 +67,13 @@ async def test_viral_matcher_brief_mode_no_draft(mock_store):
     }
 
     mock_model = MagicMock()
-    mock_model.ainvoke = AsyncMock(return_value=MagicMock(
-        content='{"viral_posts": [{"note_id": "b1", "title": "夏日带娃神器", "body": "静音风扇", "hashtags": ["#几素"], "likes": 8000, "collects": 3000, "comments": 100, "engagement_rate": 0.12, "visual_style": "warm", "color_palette": {"primary": "#ffd700"}}], "search_keywords_used": ["几素", "婴儿车风扇"]}'
-    ))
+    mock_model.ainvoke = AsyncMock(
+        return_value=MagicMock(
+            content='{"viral_posts": [{"note_id": "b1", "title": "夏日带娃神器", "body": "静音风扇", "hashtags": ["#几素"], "likes": 8000, "collects": 3000, "comments": 100, "engagement_rate": 0.12, "visual_style": "warm", "color_palette": {"primary": "#ffd700"}}], "search_keywords_used": ["几素", "婴儿车风扇"]}'  # noqa: E501
+        )
+    )
 
-    with patch.object(agent, '_model', mock_model):
+    with patch.object(agent, "_model", mock_model):
         result = await agent.execute(state, mock_store)
 
     assert result["skip_optimization"] is False
@@ -99,6 +101,7 @@ async def test_viral_matcher_brief_mode_enriches_keywords(mock_store):
     captured_keywords = None
 
     mock_model = MagicMock()
+
     async def capture_invoke(msgs):
         nonlocal captured_keywords
         user_msg = msgs[1].content
@@ -107,7 +110,7 @@ async def test_viral_matcher_brief_mode_enriches_keywords(mock_store):
 
     mock_model.ainvoke = capture_invoke
 
-    with patch.object(agent, '_model', mock_model):
+    with patch.object(agent, "_model", mock_model):
         result = await agent.execute(state, mock_store)
 
     assert result["viral_posts"] == []
@@ -123,11 +126,13 @@ async def test_viral_matcher_with_links(mock_state, mock_store):
 
     # Mock the model response
     mock_model = MagicMock()
-    mock_model.ainvoke = AsyncMock(return_value=MagicMock(
-        content='{"viral_posts": [{"note_id": "abc123", "title": "爆款标题", "body": "爆款正文", "hashtags": ["#爆款"], "likes": 10000, "collects": 5000, "comments": 200, "engagement_rate": 0.15, "visual_style": "minimal", "color_palette": {"primary": "#ffffff"}}], "search_keywords_used": ["测试"]}'
-    ))
+    mock_model.ainvoke = AsyncMock(
+        return_value=MagicMock(
+            content='{"viral_posts": [{"note_id": "abc123", "title": "爆款标题", "body": "爆款正文", "hashtags": ["#爆款"], "likes": 10000, "collects": 5000, "comments": 200, "engagement_rate": 0.15, "visual_style": "minimal", "color_palette": {"primary": "#ffffff"}}], "search_keywords_used": ["测试"]}'  # noqa: E501
+        )
+    )
 
-    with patch.object(agent, '_model', mock_model):
+    with patch.object(agent, "_model", mock_model):
         result = await agent.execute(mock_state, mock_store)
 
     assert "viral_posts" in result
@@ -142,7 +147,7 @@ async def test_viral_matcher_timeout_skips_optimization(mock_state, mock_store):
     mock_model = MagicMock()
     mock_model.ainvoke = AsyncMock(side_effect=TimeoutError("Request timed out."))
 
-    with patch.object(agent, '_model', mock_model):
+    with patch.object(agent, "_model", mock_model):
         result = await agent.execute(mock_state, mock_store)
 
     assert result["viral_posts"] == []
@@ -170,11 +175,13 @@ async def test_viral_matcher_auto_keywords(mock_store):
     }
 
     mock_model = MagicMock()
-    mock_model.ainvoke = AsyncMock(return_value=MagicMock(
-        content='{"viral_posts": [], "search_keywords_used": ["美食", "探店", "春季穿搭"]}'
-    ))
+    mock_model.ainvoke = AsyncMock(
+        return_value=MagicMock(
+            content='{"viral_posts": [], "search_keywords_used": ["美食", "探店", "春季穿搭"]}'
+        )
+    )
 
-    with patch.object(agent, '_model', mock_model):
+    with patch.object(agent, "_model", mock_model):
         result = await agent.execute(state_with_trend, mock_store)
 
     assert "viral_posts" in result
@@ -186,11 +193,9 @@ async def test_viral_matcher_phase_update(mock_state, mock_store):
     agent = ViralMatcherAgent()
 
     mock_model = MagicMock()
-    mock_model.ainvoke = AsyncMock(return_value=MagicMock(
-        content='{"viral_posts": []}'
-    ))
+    mock_model.ainvoke = AsyncMock(return_value=MagicMock(content='{"viral_posts": []}'))
 
-    with patch.object(agent, '_model', mock_model):
+    with patch.object(agent, "_model", mock_model):
         result = await agent.execute(mock_state, mock_store)
 
     assert result.get("phase") is not None

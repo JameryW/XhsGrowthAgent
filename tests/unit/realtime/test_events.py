@@ -79,6 +79,6 @@ def test_event_immutable():
     # Attempting to modify should raise FrozenInstanceError
     try:
         event.seq = 1
-        assert False, "Should have raised FrozenInstanceError"
+        raise AssertionError("Should have raised FrozenInstanceError")
     except Exception:
         pass  # Expected behavior

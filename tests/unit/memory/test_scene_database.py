@@ -68,7 +68,10 @@ class TestSaveAndGetSceneAnalysis:
     """Tests for save_scene_analysis and get_scene_analysis methods."""
 
     def test_save_and_get_scene_analysis(
-        self, scene_db: SceneDatabase, sample_analysis_result: SceneAnalysisResult, temp_data_dir: Path
+        self,
+        scene_db: SceneDatabase,
+        sample_analysis_result: SceneAnalysisResult,
+        temp_data_dir: Path,
     ) -> None:
         """Test that a saved analysis can be retrieved."""
         # Patch the data directory
@@ -87,9 +90,7 @@ class TestSaveAndGetSceneAnalysis:
             assert len(result.color_palettes) == 1
             assert result.color_palettes[0].primary_colors == ["#FF6B6B", "#FFE66D"]
 
-    def test_get_scene_analysis_expired(
-        self, scene_db: SceneDatabase, temp_data_dir: Path
-    ) -> None:
+    def test_get_scene_analysis_expired(self, scene_db: SceneDatabase, temp_data_dir: Path) -> None:
         """Test that expired analysis (older than 24 hours) returns None."""
         # Create an expired analysis (25 hours old)
         expired_time = datetime.now() - timedelta(hours=25)
@@ -149,9 +150,7 @@ class TestSaveAndGetSceneAnalysis:
 class TestGetDefaultLayouts:
     """Tests for get_default_layouts method."""
 
-    def test_get_default_layouts(
-        self, scene_db: SceneDatabase
-    ) -> None:
+    def test_get_default_layouts(self, scene_db: SceneDatabase) -> None:
         """Test retrieving default layouts for a scene."""
         layouts = scene_db.get_default_layouts("food")
 
@@ -162,9 +161,7 @@ class TestGetDefaultLayouts:
         assert any(lo.layout_type == "上下结构" for lo in layouts)
         assert any(lo.layout_type == "网格布局" for lo in layouts)
 
-    def test_get_default_layouts_scene_not_found(
-        self, scene_db: SceneDatabase
-    ) -> None:
+    def test_get_default_layouts_scene_not_found(self, scene_db: SceneDatabase) -> None:
         """Test that requesting layouts for non-existent scene returns empty list."""
         layouts = scene_db.get_default_layouts("nonexistent_scene")
 
@@ -174,9 +171,7 @@ class TestGetDefaultLayouts:
 class TestGetDefaultStyles:
     """Tests for get_default_styles method."""
 
-    def test_get_default_styles(
-        self, scene_db: SceneDatabase
-    ) -> None:
+    def test_get_default_styles(self, scene_db: SceneDatabase) -> None:
         """Test retrieving default styles for a scene."""
         styles = scene_db.get_default_styles("food")
 
@@ -187,9 +182,7 @@ class TestGetDefaultStyles:
         assert any(s.style_name == "温暖治愈" for s in styles)
         assert any(s.style_name == "现代简约" for s in styles)
 
-    def test_get_default_styles_scene_not_found(
-        self, scene_db: SceneDatabase
-    ) -> None:
+    def test_get_default_styles_scene_not_found(self, scene_db: SceneDatabase) -> None:
         """Test that requesting styles for non-existent scene returns empty list."""
         styles = scene_db.get_default_styles("nonexistent_scene")
 

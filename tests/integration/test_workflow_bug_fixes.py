@@ -1061,7 +1061,9 @@ class TestWorkflowAPIIntegration:
         assert data["data"]["status"] == "awaiting_choice"
         assert "select" in data["data"]["message"].lower()
 
-    def test_resume_endpoint_defaults_blogger_selection_to_skip(self, client, mock_graph, monkeypatch):
+    def test_resume_endpoint_defaults_blogger_selection_to_skip(
+        self, client, mock_graph, monkeypatch
+    ):
         """Generic resume at blogger_gate should send a valid skip payload by default."""
         thread_id = "xhs_test_api_resume_blogger_001"
 
@@ -1119,7 +1121,7 @@ class TestWorkflowAPIIntegration:
             "current_agent": "visual_designer",
             # prev_phase intentionally absent — the bug scenario
         }
-        mock_state.next = []               # terminal error → no pending successors
+        mock_state.next = []  # terminal error → no pending successors
         # LangGraph may keep earlier successful tasks before the failed task.
         # Phase inference must prefer the errored task, not tasks[0].
         mock_state.tasks = [succeeded_task, failed_task]
@@ -1133,6 +1135,7 @@ class TestWorkflowAPIIntegration:
         async def _noop_start(_thread_id, _graph, _config, phase):
             captured["phase"] = phase
             return None
+
         monkeypatch.setattr(workflow_module, "_start_resume_task", _noop_start)
 
         response = client.post(f"/api/workflow/resume/{thread_id}")
@@ -1180,10 +1183,7 @@ class TestEngagementNodeEvents:
 
         assert result["phase"] == WorkflowPhase.COMPLETED
         assert result["current_agent"] == "engagement"
-        assert [
-            e for e in event_bus._events
-            if e.event_type == EventType.WORKFLOW_COMPLETED
-        ] == []
+        assert [e for e in event_bus._events if e.event_type == EventType.WORKFLOW_COMPLETED] == []
 
 
 # ── Test 10: Draft gate behavior ────────────────────────────────────────────────
@@ -1339,10 +1339,13 @@ class TestDraftGateBehavior:
         draft_data = {"title": "User Draft", "text": "User content", "hashtags": []}
 
         # 1. Update state with draft
-        await mock_graph.aupdate_state(config, {
-            "draft_content": draft_data,
-            "user_viral_links": [],
-        })
+        await mock_graph.aupdate_state(
+            config,
+            {
+                "draft_content": draft_data,
+                "user_viral_links": [],
+            },
+        )
 
         # 2. Check if draft_gate in next (it is)
         assert "draft_gate" in draft_snapshot.next
@@ -1403,10 +1406,13 @@ class TestDraftGateBehavior:
         draft_data = {"title": "User Draft", "text": "User content", "hashtags": []}
 
         # 1. Update state with draft
-        await mock_graph.aupdate_state(config, {
-            "draft_content": draft_data,
-            "user_viral_links": [],
-        })
+        await mock_graph.aupdate_state(
+            config,
+            {
+                "draft_content": draft_data,
+                "user_viral_links": [],
+            },
+        )
 
         # 2. Check if draft_gate in next (it's NOT)
         assert "draft_gate" not in review_snapshot.next

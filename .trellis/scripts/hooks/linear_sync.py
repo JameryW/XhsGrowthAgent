@@ -9,7 +9,7 @@ Usage (called automatically by task.py hooks):
     python3 .trellis/scripts/hooks/linear_sync.py archive
 
 Manual usage:
-    TASK_JSON_PATH=.trellis/tasks/<name>/task.json python3 .trellis/scripts/hooks/linear_sync.py sync
+    TASK_JSON_PATH=<task.json> python3 .trellis/scripts/hooks/linear_sync.py sync
 
 Environment:
     TASK_JSON_PATH  - Absolute path to task.json (set by task.py)
@@ -48,11 +48,8 @@ STATUS_DONE = "Done"
 def _load_config() -> dict:
     """Load local hook config from .trellis/hooks.local.json."""
     task_json_path = os.environ.get("TASK_JSON_PATH", "")
-    if task_json_path:
-        # Walk up from task.json to find .trellis/
-        trellis_dir = Path(task_json_path).parent.parent.parent
-    else:
-        trellis_dir = Path(".trellis")
+    # Walk up from task.json to find .trellis/
+    trellis_dir = Path(task_json_path).parent.parent.parent if task_json_path else Path(".trellis")
 
     config_path = trellis_dir / "hooks.local.json"
     try:

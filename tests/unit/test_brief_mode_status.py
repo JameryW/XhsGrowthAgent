@@ -73,7 +73,8 @@ class TestBloggerGateRouter:
 
 
 class TestDraftGateRouter:
-    """draft_gate_router: selected_blogger→shooting_planner, brief→shooting_planner, else→viral_matcher."""
+    """draft_gate_router routing: selected_blogger→shooting_planner,
+    brief→shooting_planner, else→viral_matcher."""
 
     def test_brief_mode_routes_to_shooting_planner(self):
         state = {
@@ -129,7 +130,10 @@ class TestStatusToStr:
         assert _status_to_str(WorkflowStatus.AWAITING_RIPPLE_DECISION) == "awaiting_ripple_decision"
 
     def test_awaiting_blogger_selection(self):
-        assert _status_to_str(WorkflowStatus.AWAITING_BLOGGER_SELECTION) == "awaiting_blogger_selection"
+        assert (
+            _status_to_str(WorkflowStatus.AWAITING_BLOGGER_SELECTION)
+            == "awaiting_blogger_selection"
+        )
 
     def test_existing_states_unchanged(self):
         assert _status_to_str(WorkflowStatus.AWAITING_REVIEW) == "awaiting_review"
@@ -216,6 +220,7 @@ class TestEmitStatusTransitionNewStates:
     @pytest.fixture(autouse=True)
     def _clear_last_status(self):
         from backend.api.routes import _runner
+
         _runner._last_status.clear()
         yield
         _runner._last_status.clear()
@@ -382,10 +387,21 @@ class TestSingleVersionAutoApply:
     def test_single_version_includes_copy_content_and_visual_plan(self):
         from backend.agents.version_generator import VersionGeneratorAgent
 
-        agent = VersionGeneratorAgent()
+        VersionGeneratorAgent()
         # Call the auto-apply logic directly
         state = {"copy_content": {"existing_key": "preserved"}}
-        versions = [{"version_id": "v1", "title": "Optimized Title", "body": "Body text", "hashtags": ["#test"], "tone": "warm", "style_suggestion": "Minimalist", "visual_style": "clean", "color_palette": {"primary": "#fff"}}]
+        versions = [
+            {
+                "version_id": "v1",
+                "title": "Optimized Title",
+                "body": "Body text",
+                "hashtags": ["#test"],
+                "tone": "warm",
+                "style_suggestion": "Minimalist",
+                "visual_style": "clean",
+                "color_palette": {"primary": "#fff"},
+            }
+        ]
 
         # Simulate what the agent's execute() does for single version
         v = versions[0]

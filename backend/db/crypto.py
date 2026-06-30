@@ -21,6 +21,7 @@ def _init_fernet():
         return None
     try:
         from cryptography.fernet import Fernet
+
         _fernet = Fernet(key.encode() if isinstance(key, str) else key)
         return _fernet
     except Exception as e:
@@ -55,6 +56,7 @@ def decrypt_value(data: bytes) -> str:
 def generate_key() -> str:
     """Generate a new Fernet key (for setup scripts)."""
     from cryptography.fernet import Fernet
+
     return Fernet.generate_key().decode()
 
 

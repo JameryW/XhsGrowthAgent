@@ -13,6 +13,7 @@ logger = logging.getLogger("xhs_growth.db.accounts")
 
 # ── Data models ──
 
+
 @dataclass
 class AccountRow:
     id: str
@@ -93,8 +94,10 @@ async def ensure_tables() -> None:
 
 # ── Account CRUD ──
 
+
 async def create_account(name: str, is_active: bool = False) -> AccountRow:
     from datetime import UTC, datetime
+
     now = datetime.now(UTC).isoformat()
     id_ = str(uuid.uuid4())
 
@@ -115,6 +118,7 @@ async def get_account(account_id: str) -> AccountRow | None:
     pool = get_pool()
     async with pool.connection() as conn:
         from psycopg.rows import dict_row
+
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute("SELECT * FROM accounts WHERE id = %s", (account_id,))
             row = await cur.fetchone()
@@ -127,6 +131,7 @@ async def list_accounts() -> list[AccountRow]:
     pool = get_pool()
     async with pool.connection() as conn:
         from psycopg.rows import dict_row
+
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute("SELECT * FROM accounts ORDER BY is_active DESC, created_at ASC")
             rows = await cur.fetchall()
@@ -135,6 +140,7 @@ async def list_accounts() -> list[AccountRow]:
 
 async def update_account(account_id: str, **fields) -> AccountRow | None:
     from datetime import UTC, datetime
+
     fields["updated_at"] = datetime.now(UTC).isoformat()
 
     if not fields:
@@ -147,6 +153,7 @@ async def update_account(account_id: str, **fields) -> AccountRow | None:
     pool = get_pool()
     async with pool.connection() as conn:
         from psycopg.rows import dict_row
+
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(
                 f"UPDATE accounts SET {set_clause} WHERE id = %s RETURNING *",
@@ -170,6 +177,7 @@ async def get_active_account() -> AccountRow | None:
     pool = get_pool()
     async with pool.connection() as conn:
         from psycopg.rows import dict_row
+
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute("SELECT * FROM accounts WHERE is_active = TRUE LIMIT 1")
             row = await cur.fetchone()
@@ -181,6 +189,7 @@ async def get_active_account() -> AccountRow | None:
 async def set_active_account(account_id: str) -> AccountRow | None:
     """Deactivate all accounts, then activate the given one. Returns the activated account."""
     from datetime import UTC, datetime
+
     now = datetime.now(UTC).isoformat()
 
     pool = get_pool()
@@ -189,6 +198,7 @@ async def set_active_account(account_id: str) -> AccountRow | None:
         await conn.execute("UPDATE accounts SET is_active = FALSE, updated_at = %s", (now,))
         # Activate target
         from psycopg.rows import dict_row
+
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(
                 "UPDATE accounts SET is_active = TRUE, updated_at = %s WHERE id = %s RETURNING *",
@@ -202,11 +212,13 @@ async def set_active_account(account_id: str) -> AccountRow | None:
 
 # ── Credential CRUD ──
 
+
 async def list_credentials(account_id: str) -> list[CredentialRow]:
     """List all credentials for an account (masked values for display)."""
     pool = get_pool()
     async with pool.connection() as conn:
         from psycopg.rows import dict_row
+
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(
                 """
@@ -283,6 +295,7 @@ async def get_account_cookie(account_id: str) -> tuple[str, str]:
 
 # ── Hot reload ──
 
+
 async def activate_credentials(account_id: str) -> dict[str, str]:
     """Load an account's credentials and push them to os.environ (hot reload).
 
@@ -358,6 +371,7 @@ async def _bootstrap_default_account() -> None:
 
 
 # ── Helpers ──
+
 
 def _account_from_dict(d: dict) -> AccountRow:
     return AccountRow(

@@ -12,6 +12,7 @@ def test_encrypt_decrypt_roundtrip():
     os.environ["ENCRYPTION_KEY"] = generate_key()
     # Reset module-level fernet so it picks up the new key
     import backend.db.crypto as crypto_mod
+
     crypto_mod._fernet = None
 
     plain = "sk-ant-api03-1234567890abcdef"
@@ -28,6 +29,7 @@ def test_plaintext_fallback():
     """Without ENCRYPTION_KEY, values stored as plaintext UTF-8."""
     os.environ.pop("ENCRYPTION_KEY", None)
     import backend.db.crypto as crypto_mod
+
     crypto_mod._fernet = None
 
     plain = "my-secret-key"
@@ -41,6 +43,7 @@ def test_generate_key():
     assert len(key) > 0
     # Key should be valid Fernet key (base64-encoded 32 bytes)
     from cryptography.fernet import Fernet
+
     Fernet(key.encode())  # Should not raise
 
 

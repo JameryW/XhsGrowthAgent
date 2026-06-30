@@ -6,6 +6,7 @@ hook writes a short-lived runtime ticket before Cursor runs a shell command
 that calls `task.py start/current/finish`. The task script then consumes the
 ticket only when it has no native session environment.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -16,7 +17,6 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
-
 
 DIR_WORKFLOW = ".trellis"
 DIR_RUNTIME = ".runtime"
@@ -119,7 +119,7 @@ def _write_ticket(
 
     command = _string_value(hook_input.get("command")) or ""
     digest = hashlib.sha256(
-        f"{context_key}\0{command}\0{now}".encode("utf-8"),
+        f"{context_key}\0{command}\0{now}".encode(),
     ).hexdigest()[:16]
     ticket_path = ticket_dir / f"{int(now * 1000)}-{digest}.json"
 

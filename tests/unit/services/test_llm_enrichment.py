@@ -85,6 +85,7 @@ class TestLLMEnrichmentService:
     @pytest.mark.asyncio
     async def test_enrich_with_llm_uses_fallback_on_error(self, service):
         """LLM failure triggers fallback function."""
+
         def fallback_fn(data):
             return {"fallback": data.get("topic")}
 

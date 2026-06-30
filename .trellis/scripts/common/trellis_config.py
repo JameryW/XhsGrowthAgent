@@ -10,8 +10,6 @@ an empty dict on missing/malformed files so callers stay simple.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
-
 
 CONFIG_REL_PATH = ".trellis/config.yaml"
 
@@ -52,9 +50,7 @@ def _next_content_line(lines: list[str], start: int) -> tuple[int, str]:
     return i, ""
 
 
-def _parse_yaml_block(
-    lines: list[str], start: int, min_indent: int, target: dict
-) -> int:
+def _parse_yaml_block(lines: list[str], start: int, min_indent: int, target: dict) -> int:
     i = start
     current_list: list | None = None
 
@@ -116,7 +112,7 @@ def parse_simple_yaml(content: str) -> dict:
     return result
 
 
-def read_trellis_config(repo_root: Optional[Path] = None) -> dict:
+def read_trellis_config(repo_root: Path | None = None) -> dict:
     """Read .trellis/config.yaml. Returns {} on missing or malformed file."""
     root = repo_root or Path.cwd()
     config_file = root / CONFIG_REL_PATH

@@ -49,16 +49,19 @@ class ConsoleUserDuplicateError(APIError):
 async def list_users(_: dict = Depends(get_current_user)):
     """List all console users (no password info)."""
     from backend.db.console_users import list_users as db_list
+
     users = await db_list()
-    return success(data=[
-        {
-            "id": u.id,
-            "username": u.username,
-            "created_at": u.created_at,
-            "last_login_at": u.last_login_at,
-        }
-        for u in users
-    ])
+    return success(
+        data=[
+            {
+                "id": u.id,
+                "username": u.username,
+                "created_at": u.created_at,
+                "last_login_at": u.last_login_at,
+            }
+            for u in users
+        ]
+    )
 
 
 @router.post("")
@@ -77,11 +80,13 @@ async def create_user(request: CreateUserRequest, _: dict = Depends(get_current_
         raise ConsoleUserDuplicateError(request.username.strip())
 
     user = await db_create(request.username.strip(), request.password)
-    return success(data={
-        "id": user.id,
-        "username": user.username,
-        "created_at": user.created_at,
-    })
+    return success(
+        data={
+            "id": user.id,
+            "username": user.username,
+            "created_at": user.created_at,
+        }
+    )
 
 
 @router.put("/{user_id}/password")
@@ -96,6 +101,7 @@ async def change_password(
 
     from backend.api.auth import revoke_user_tokens
     from backend.db.console_users import update_password
+
     ok = await update_password(user_id, request.password)
     if not ok:
         raise ConsoleUserNotFoundError(user_id)

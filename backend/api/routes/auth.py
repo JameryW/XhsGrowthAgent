@@ -15,12 +15,14 @@ router = APIRouter()
 
 class LoginRequest(BaseModel):
     """Login request body."""
+
     username: str
     password: str
 
 
 class LoginResponse(BaseModel):
     """Login response data."""
+
     token: str
     expires_at: str
     user: dict
@@ -28,6 +30,7 @@ class LoginResponse(BaseModel):
 
 class ValidateResponse(BaseModel):
     """Token validation response."""
+
     valid: bool
     user: dict | None
     expires_at: str | None
@@ -51,11 +54,13 @@ async def login(request: LoginRequest):
     # Generate token
     token_data = generate_token(user["id"], user["username"])
 
-    return success(data={
-        "token": token_data.token,
-        "expires_at": token_data.expires_at.isoformat(),
-        "user": {"id": user["id"], "username": user["username"]},
-    })
+    return success(
+        data={
+            "token": token_data.token,
+            "expires_at": token_data.expires_at.isoformat(),
+            "user": {"id": user["id"], "username": user["username"]},
+        }
+    )
 
 
 @router.post("/logout")
@@ -84,17 +89,21 @@ async def validate(user: dict = Depends(get_optional_user)):
         ValidateResponse with validity status
     """
     if user:
-        return success(data={
-            "valid": True,
-            "user": user,
-            "expires_at": None,  # Could return actual expiry from token_data
-        })
+        return success(
+            data={
+                "valid": True,
+                "user": user,
+                "expires_at": None,  # Could return actual expiry from token_data
+            }
+        )
 
-    return success(data={
-        "valid": False,
-        "user": None,
-        "expires_at": None,
-    })
+    return success(
+        data={
+            "valid": False,
+            "user": None,
+            "expires_at": None,
+        }
+    )
 
 
 @router.get("/me")

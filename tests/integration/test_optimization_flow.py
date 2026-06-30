@@ -20,15 +20,22 @@ from backend.state.substates import (
 def mock_llm_response():
     """Mock LLM response with JSON content."""
     response = MagicMock()
-    response.content = json.dumps({
-        "gaps": [
-            {"dimension": "标题吸引力", "description": "缺少数字和情绪词", "severity": "high"},
-        ],
-        "suggestions": [
-            {"dimension": "标题", "action": "添加数字", "reasoning": "提高点击率", "priority": 9},
-        ],
-        "viral_patterns": ["数字标题"],
-    })
+    response.content = json.dumps(
+        {
+            "gaps": [
+                {"dimension": "标题吸引力", "description": "缺少数字和情绪词", "severity": "high"},
+            ],
+            "suggestions": [
+                {
+                    "dimension": "标题",
+                    "action": "添加数字",
+                    "reasoning": "提高点击率",
+                    "priority": 9,
+                },
+            ],
+            "viral_patterns": ["数字标题"],
+        }
+    )
     return response
 
 
@@ -174,11 +181,13 @@ class TestViralMatcherNode:
         original_emit = event_bus.emit
 
         def capture_emit(event_type, thread_id, payload):
-            emitted_events.append({
-                "type": event_type,
-                "thread_id": thread_id,
-                "payload": payload,
-            })
+            emitted_events.append(
+                {
+                    "type": event_type,
+                    "thread_id": thread_id,
+                    "payload": payload,
+                }
+            )
 
         event_bus.emit = capture_emit
 
@@ -201,7 +210,9 @@ class TestContentAnalyzerNode:
     """Tests for content_analyzer_node."""
 
     @pytest.mark.asyncio
-    async def test_content_analyzer_returns_analysis(self, optimization_state, mock_store, mock_model):
+    async def test_content_analyzer_returns_analysis(
+        self, optimization_state, mock_store, mock_model
+    ):
         """content_analyzer_node returns optimization_analysis."""
         from backend.agents.nodes import content_analyzer_node
 
@@ -217,7 +228,9 @@ class TestVersionGeneratorNode:
     """Tests for version_generator_node."""
 
     @pytest.mark.asyncio
-    async def test_version_generator_returns_versions(self, optimization_state, mock_store, mock_model):
+    async def test_version_generator_returns_versions(
+        self, optimization_state, mock_store, mock_model
+    ):
         """version_generator_node returns content_versions."""
         from backend.agents.nodes import version_generator_node
 
@@ -225,29 +238,40 @@ class TestVersionGeneratorNode:
         state_with_analysis = optimization_state.copy()
         state_with_analysis["optimization_analysis"] = OptimizationAnalysis(
             gaps=[
-                {"dimension": "标题吸引力", "description": "标题缺少数字和情绪词", "severity": "high"},
+                {
+                    "dimension": "标题吸引力",
+                    "description": "标题缺少数字和情绪词",
+                    "severity": "high",
+                },
             ],
             suggestions=[
-                {"dimension": "标题", "action": "添加数字和情绪词", "reasoning": "提高点击率", "priority": 9},
+                {
+                    "dimension": "标题",
+                    "action": "添加数字和情绪词",
+                    "reasoning": "提高点击率",
+                    "priority": 9,
+                },
             ],
             viral_patterns=["数字标题", "情绪词开头"],
         )
 
         # Mock LLM response for version generator
         version_response = MagicMock()
-        version_response.content = json.dumps({
-            "versions": [
-                {
-                    "version_id": "ver-A",
-                    "version_type": "A",
-                    "title": "上海美食探店：10家必吃餐厅！",
-                    "body": "详细介绍上海美食...",
-                    "hashtags": ["美食", "探店"],
-                    "changes_summary": "添加数字标题",
-                    "predicted_score": 85.0,
-                },
-            ],
-        })
+        version_response.content = json.dumps(
+            {
+                "versions": [
+                    {
+                        "version_id": "ver-A",
+                        "version_type": "A",
+                        "title": "上海美食探店：10家必吃餐厅！",
+                        "body": "详细介绍上海美食...",
+                        "hashtags": ["美食", "探店"],
+                        "changes_summary": "添加数字标题",
+                        "predicted_score": 85.0,
+                    },
+                ],
+            }
+        )
 
         mock_model.ainvoke = AsyncMock(return_value=version_response)
 
@@ -347,7 +371,10 @@ class TestOptimizationRouters:
         assert result == "content_analyzer"
 
     def test_should_optimize_without_viral_posts(self):
-        """should_optimize routes to content_analyzer even without viral_posts — optimization always runs."""
+        """should_optimize routes to content_analyzer even without viral_posts.
+
+        Optimization always runs.
+        """
         from backend.graph.routers import should_optimize
 
         state = XHSGrowthState(
@@ -391,7 +418,10 @@ class TestFullOptimizationWorkflow:
 
     @pytest.mark.asyncio
     async def test_workflow_pipeline_order(self, optimization_state, mock_store):
-        """Optimization pipeline executes in correct order: viral_matcher → analyzer → generator → choice_gate."""
+        """Optimization pipeline executes in correct order.
+
+        viral_matcher → analyzer → generator → choice_gate.
+        """
         from backend.agents.nodes import (
             content_analyzer_node,
             version_generator_node,

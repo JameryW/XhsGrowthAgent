@@ -22,6 +22,7 @@ logger = logging.getLogger("xhs_growth.llm_enrichment")
 
 class LLMEnrichmentError(Exception):
     """Error during LLM enrichment."""
+
     pass
 
 
@@ -111,10 +112,12 @@ class LLMEnrichmentService:
 
             # Invoke LLM
             logger.debug(f"Invoking LLM for {task_type.value} enrichment")
-            response = await model.ainvoke([
-                SystemMessage(content=system_content),
-                HumanMessage(content=user_content),
-            ])
+            response = await model.ainvoke(
+                [
+                    SystemMessage(content=system_content),
+                    HumanMessage(content=user_content),
+                ]
+            )
 
             # Parse response
             result = self._parse_json_response(response.content)

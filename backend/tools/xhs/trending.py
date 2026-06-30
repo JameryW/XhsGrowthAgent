@@ -43,14 +43,16 @@ async def xhs_trending(category: str = "") -> list[dict[str, Any]]:
         # 转换为字典格式
         results = []
         for topic in topics:
-            results.append({
-                "topic_id": topic.topic_id,
-                "topic": topic.title,
-                "heat_score": topic.heat_score,
-                "growth_rate": topic.growth_rate,
-                "related_keywords": topic.related_keywords[:5],
-                "category": topic.category,
-            })
+            results.append(
+                {
+                    "topic_id": topic.topic_id,
+                    "topic": topic.title,
+                    "heat_score": topic.heat_score,
+                    "growth_rate": topic.growth_rate,
+                    "related_keywords": topic.related_keywords[:5],
+                    "category": topic.category,
+                }
+            )
 
         return results
 
@@ -138,23 +140,25 @@ async def competitor_analyzer(account_id: str, niche: str = "") -> list[dict[str
         # 找出表现最好的帖子
         top_posts = sorted(posts, key=lambda x: x.likes, reverse=True)[:5]
 
-        return [{
-            "account": account_id,
-            "niche": niche,
-            "post_count": len(posts),
-            "avg_likes": round(avg_likes, 2),
-            "avg_comments": round(avg_comments, 2),
-            "avg_collects": round(total_collects / len(posts) if posts else 0, 2),
-            "top_posts": [
-                {
-                    "note_id": p.note_id,
-                    "title": p.title,
-                    "likes": p.likes,
-                    "url": p.note_url,
-                }
-                for p in top_posts
-            ],
-        }]
+        return [
+            {
+                "account": account_id,
+                "niche": niche,
+                "post_count": len(posts),
+                "avg_likes": round(avg_likes, 2),
+                "avg_comments": round(avg_comments, 2),
+                "avg_collects": round(total_collects / len(posts) if posts else 0, 2),
+                "top_posts": [
+                    {
+                        "note_id": p.note_id,
+                        "title": p.title,
+                        "likes": p.likes,
+                        "url": p.note_url,
+                    }
+                    for p in top_posts
+                ],
+            }
+        ]
 
     except Exception as e:
         logger.error(f"竞品分析失败: {e}")

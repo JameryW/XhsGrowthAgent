@@ -220,7 +220,7 @@ async def _generate_mock_notes(
 
         # Ensure required fields
         for i, n in enumerate(notes):
-            n.setdefault("note_id", f"mock_note_{i+1}")
+            n.setdefault("note_id", f"mock_note_{i + 1}")
             n.setdefault("title", "")
             n.setdefault("body", "")
             n.setdefault("hashtags", [])

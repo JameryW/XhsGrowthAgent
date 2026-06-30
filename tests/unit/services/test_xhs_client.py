@@ -118,7 +118,9 @@ class TestXHSClient:
             {"note_id": "n1", "display_title": "美食探店", "like_count": 100, "tag_list": ["美食"]},
             {"note_id": "n2", "display_title": "咖啡推荐", "like_count": 50, "tag_list": ["咖啡"]},
         ]
-        with patch.object(client._http, "get_homefeed", new_callable=AsyncMock, return_value=mock_notes):
+        with patch.object(
+            client._http, "get_homefeed", new_callable=AsyncMock, return_value=mock_notes
+        ):
             result = await client.get_trending()
 
         assert len(result) == 2
@@ -129,7 +131,12 @@ class TestXHSClient:
     @pytest.mark.asyncio
     async def test_get_trending_rate_limit(self, client):
         """get_trending returns empty list on rate limit (caught by internal handler)."""
-        with patch.object(client._http, "get_homefeed", new_callable=AsyncMock, side_effect=XHSRateLimitError("rate limited")):
+        with patch.object(
+            client._http,
+            "get_homefeed",
+            new_callable=AsyncMock,
+            side_effect=XHSRateLimitError("rate limited"),
+        ):
             result = await client.get_trending()
 
         assert result == []
@@ -138,11 +145,19 @@ class TestXHSClient:
     async def test_search_posts_success(self, client):
         """search_posts returns search results."""
         mock_notes = [
-            {"id": "n1", "display_title": "Test Post", "user": {"nickname": "User", "user_id": "u1"},
-             "like_count": 10, "comment_count": 2, "collect_count": 5,
-             "cover": {"url": "http://img.jpg"}},
+            {
+                "id": "n1",
+                "display_title": "Test Post",
+                "user": {"nickname": "User", "user_id": "u1"},
+                "like_count": 10,
+                "comment_count": 2,
+                "collect_count": 5,
+                "cover": {"url": "http://img.jpg"},
+            },
         ]
-        with patch.object(client._http, "search_notes", new_callable=AsyncMock, return_value=mock_notes):
+        with patch.object(
+            client._http, "search_notes", new_callable=AsyncMock, return_value=mock_notes
+        ):
             result = await client.search_posts("美食")
 
         assert len(result) == 1
@@ -161,7 +176,9 @@ class TestXHSClient:
             "share_count": 3,
             "engagement_rate": 0.071,
         }
-        with patch.object(client._http, "get_note_detail", new_callable=AsyncMock, return_value=mock_detail):
+        with patch.object(
+            client._http, "get_note_detail", new_callable=AsyncMock, return_value=mock_detail
+        ):
             result = await client.get_post_analytics("post_123")
 
         assert result.post_id == "post_123"
@@ -172,10 +189,18 @@ class TestXHSClient:
     async def test_get_comments_success(self, client):
         """get_comments returns comments list."""
         mock_comments = [
-            {"id": "c1", "content": "Nice!", "user": {"nickname": "User", "user_id": "u1"},
-             "like_count": 5, "create_time": "2026-01-01", "target_comment": {}},
+            {
+                "id": "c1",
+                "content": "Nice!",
+                "user": {"nickname": "User", "user_id": "u1"},
+                "like_count": 5,
+                "create_time": "2026-01-01",
+                "target_comment": {},
+            },
         ]
-        with patch.object(client._http, "get_comments", new_callable=AsyncMock, return_value=mock_comments):
+        with patch.object(
+            client._http, "get_comments", new_callable=AsyncMock, return_value=mock_comments
+        ):
             result = await client.get_comments("post_123")
 
         assert len(result) == 1
@@ -185,7 +210,12 @@ class TestXHSClient:
     @pytest.mark.asyncio
     async def test_auth_error_on_invalid_cookie(self, client):
         """Auth error when cookie invalid."""
-        with patch.object(client._http, "get_note_detail", new_callable=AsyncMock, side_effect=XHSAuthError("认证失败")):
+        with patch.object(
+            client._http,
+            "get_note_detail",
+            new_callable=AsyncMock,
+            side_effect=XHSAuthError("认证失败"),
+        ):
             result = await client.get_post_analytics("post_123")
 
         # Falls back to empty analytics on error

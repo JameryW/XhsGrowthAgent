@@ -69,12 +69,14 @@ class XHSEngagement:
         for item in self.cookie.split(";"):
             if "=" in item.strip():
                 name, value = item.strip().split("=", 1)
-                cookies.append({
-                    "name": name.strip(),
-                    "value": value.strip(),
-                    "domain": ".xiaohongshu.com",
-                    "path": "/",
-                })
+                cookies.append(
+                    {
+                        "name": name.strip(),
+                        "value": value.strip(),
+                        "domain": ".xiaohongshu.com",
+                        "path": "/",
+                    }
+                )
         await context.add_cookies(cookies)
 
     async def reply_to_comment(
@@ -174,9 +176,7 @@ class XHSEngagement:
                 await asyncio.sleep(0.5)
 
             # 3. 输入用户 ID 搜索
-            search_input = await page.query_selector(
-                "input[placeholder*=搜索], .dm-search-input"
-            )
+            search_input = await page.query_selector("input[placeholder*=搜索], .dm-search-input")
             if search_input:
                 await search_input.fill(target_user_id)
                 await asyncio.sleep(1)
@@ -190,9 +190,7 @@ class XHSEngagement:
                     await asyncio.sleep(1)
 
             # 5. 输入私信内容
-            dm_input = await page.query_selector(
-                "textarea[placeholder*=输入], .dm-input"
-            )
+            dm_input = await page.query_selector("textarea[placeholder*=输入], .dm-input")
             if dm_input:
                 await dm_input.fill(message)
                 await asyncio.sleep(0.3)
@@ -227,11 +225,13 @@ class XHSEngagement:
                 sender = await item.query_selector(".sender-name")
                 content = await item.query_selector(".message-preview")
                 if sender and content:
-                    messages.append({
-                        "sender_name": await sender.inner_text(),
-                        "preview": await content.inner_text(),
-                        "is_unread": True,
-                    })
+                    messages.append(
+                        {
+                            "sender_name": await sender.inner_text(),
+                            "preview": await content.inner_text(),
+                            "is_unread": True,
+                        }
+                    )
 
             return messages
 

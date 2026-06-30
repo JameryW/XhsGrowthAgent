@@ -83,7 +83,8 @@ def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "trend_s
     has_error = state.get("error")
     retry_count = state.get("retry_count", 0)
     phase = state.get("phase")
-    if has_error and retry_count < 2 and phase not in (WorkflowPhase.CANCELLED, WorkflowPhase.PAUSED):
+    retryable = has_error and retry_count < 2
+    if retryable and phase not in (WorkflowPhase.CANCELLED, WorkflowPhase.PAUSED):
         return "trend_scout"
 
     if terminal := _check_terminal(state):

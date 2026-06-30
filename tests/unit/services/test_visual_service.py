@@ -633,8 +633,8 @@ def test_get_recommendations_with_empty_analysis(
         StyleOption(style_name="default", trending_score=0.5)
     ]
 
-    layouts = service.get_layout_recommendations("travel_outdoor")
-    styles = service.get_style_recommendations("travel_outdoor")
+    service.get_layout_recommendations("travel_outdoor")
+    service.get_style_recommendations("travel_outdoor")
 
     # Should fall back to defaults
     mock_database.get_default_layouts.assert_called()

@@ -60,10 +60,12 @@ class TrendScoutAgent(BaseAgent):
 
         # 3. Analyze competitors in this niche
         try:
-            competitor_data = await competitor_analyzer.ainvoke({
-                "account_id": niche,
-                "niche": niche,
-            })
+            competitor_data = await competitor_analyzer.ainvoke(
+                {
+                    "account_id": niche,
+                    "niche": niche,
+                }
+            )
             data["competitor_analysis"] = competitor_data
         except Exception as e:
             logger.warning(f"competitor_analyzer failed: {e}")
@@ -136,10 +138,12 @@ class TrendScoutAgent(BaseAgent):
 
 请基于以上数据进行分析，输出 JSON 格式的趋势报告。"""
 
-        response = await self.model.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_msg),
-        ])
+        response = await self.model.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_msg),
+            ]
+        )
 
         trend_data = self._parse_json_response(response.content)
         trend_data["data_source"] = data_source
@@ -148,15 +152,14 @@ class TrendScoutAgent(BaseAgent):
         # LLM may output `trending_topics` or `topics` — ensure `hot_topics` exists
         if not trend_data.get("hot_topics"):
             trend_data["hot_topics"] = (
-                trend_data.get("trending_topics")
-                or trend_data.get("topics")
-                or []
+                trend_data.get("trending_topics") or trend_data.get("topics") or []
             )
 
         # 沉淀趋势洞察到长期记忆
         if store is not None:
             try:
                 from backend.memory.store import MemoryManager
+
                 mm = MemoryManager(account_id)
                 topics = trend_data.get(
                     "hot_topics",

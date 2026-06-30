@@ -13,7 +13,6 @@ class TestBriefModeNoText:
     @pytest.mark.asyncio
     async def test_start_brief_mode_no_text_saves_checkpoint(self):
         """Starting brief mode without text saves state but doesn't start execution."""
-        from backend.api.routes.workflow import router
 
         # Mock graph and request
         mock_graph = AsyncMock()
@@ -24,15 +23,17 @@ class TestBriefModeNoText:
 
         from backend.api.routes.workflow import WorkflowStartRequest
 
-        req = WorkflowStartRequest(
+        WorkflowStartRequest(
             account_id="test",
             workflow_mode="brief",
             brief_text=None,
         )
 
         # Patch dependencies
-        with patch("backend.api.routes.workflow._db_upsert", new_callable=AsyncMock), \
-             patch("backend.api.routes._runner._background_tasks", {}):
+        with (
+            patch("backend.api.routes.workflow._db_upsert", new_callable=AsyncMock),
+            patch("backend.api.routes._runner._background_tasks", {}),
+        ):
             # The start endpoint should create checkpoint and return early
             # (actual endpoint test requires full FastAPI test client)
             pass

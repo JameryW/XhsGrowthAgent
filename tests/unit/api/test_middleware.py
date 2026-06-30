@@ -1,4 +1,5 @@
 """Tests for exception handling middleware."""
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -10,6 +11,7 @@ from backend.api.middleware import error_handler_middleware
 
 class MockRequest:
     """Mock FastAPI request."""
+
     def __init__(self):
         self.url = MagicMock()
         self.method = "GET"
@@ -32,6 +34,7 @@ async def test_api_error_handling():
     # Check response body
     body = response.body.decode()
     import json
+
     data = json.loads(body)
 
     assert data["success"] is False
@@ -56,6 +59,7 @@ async def test_generic_exception_handling():
     # Check response body
     body = response.body.decode()
     import json
+
     data = json.loads(body)
 
     assert data["success"] is False
@@ -81,6 +85,7 @@ async def test_request_id_generation():
     response = await error_handler_middleware(request, raise_error)
     body = response.body.decode()
     import json
+
     data = json.loads(body)
 
     # Request ID should be 8 characters
@@ -101,6 +106,7 @@ async def test_json_response_format():
 
     body = response.body.decode()
     import json
+
     data = json.loads(body)
 
     # Verify ApiResponse structure

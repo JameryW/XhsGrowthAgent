@@ -21,7 +21,9 @@ def _make_snapshot(
 ):
     """Build a mock StateSnapshot."""
     snapshot = MagicMock()
-    snapshot.values = values if values is not None else {"phase": "scouting", "current_agent": "trend_scout"}
+    snapshot.values = (
+        values if values is not None else {"phase": "scouting", "current_agent": "trend_scout"}
+    )
     snapshot.next = next_nodes
     snapshot.created_at = created_at
     snapshot.metadata = {"step": step, "source": source}
@@ -90,7 +92,9 @@ class TestCheckpointHistoryResponse:
         assert resp.has_more is False
 
     def test_with_checkpoints(self):
-        cp = CheckpointSnapshot(checkpoint_id="cp_1", step=1, source="trend_scout", phase="scouting")
+        cp = CheckpointSnapshot(
+            checkpoint_id="cp_1", step=1, source="trend_scout", phase="scouting"
+        )
         resp = CheckpointHistoryResponse(thread_id="xhs_test", checkpoints=[cp], has_more=True)
         assert len(resp.checkpoints) == 1
         assert resp.has_more is True
@@ -106,7 +110,6 @@ class TestCheckpointHistoryEndpoint:
 
     def test_history_file_fallback(self):
         """When no live checkpoints, history file provides a single-entry list."""
-        from backend.api.routes.workflow import _snapshot_to_checkpoint
 
         saved = {
             "phase": "completed",

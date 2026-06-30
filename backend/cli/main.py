@@ -136,25 +136,29 @@ def run(
 
                 result = await graph.aget_state(config)
                 final_phase = result.values.get("phase", "unknown")
-                console.print(Panel(
-                    f"最终阶段: {format_phase(final_phase)}\n"
-                    f"当前 Agent: {result.values.get('current_agent', 'unknown')}\n"
-                    f"Thread ID: {thread_id}",
-                    title="✅ 工作流结果",
-                    style="green",
-                ))
+                console.print(
+                    Panel(
+                        f"最终阶段: {format_phase(final_phase)}\n"
+                        f"当前 Agent: {result.values.get('current_agent', 'unknown')}\n"
+                        f"Thread ID: {thread_id}",
+                        title="✅ 工作流结果",
+                        style="green",
+                    )
+                )
 
             except KeyboardInterrupt:
                 console.print("\n[yellow]⚠️ 工作流被中断[/yellow]")
                 console.print(f"[dim]使用 'xhs-growth resume {thread_id}' 恢复[/dim]")
             except Exception as e:
-                console.print(Panel(
-                    f"错误类型: {type(e).__name__}\n"
-                    f"详情: {e}\n\n"
-                    f"[dim]建议: 检查 API 配置或使用 --dry-run 测试[/dim]",
-                    title="❌ 执行失败",
-                    style="red",
-                ))
+                console.print(
+                    Panel(
+                        f"错误类型: {type(e).__name__}\n"
+                        f"详情: {e}\n\n"
+                        f"[dim]建议: 检查 API 配置或使用 --dry-run 测试[/dim]",
+                        title="❌ 执行失败",
+                        style="red",
+                    )
+                )
                 raise typer.Exit(1) from e
 
     asyncio.run(_run())
@@ -179,6 +183,7 @@ def serve(
 @app.command()
 def status(thread_id: str = typer.Argument(..., help="工作流线程 ID")):
     """查看工作流状态"""
+
     async def _status():
         from backend.graph.builder import dev_graph
         from backend.state.machine import derive_status
@@ -249,6 +254,7 @@ def resume(
     phase: str | None = typer.Option(None, help="指定恢复阶段"),
 ):
     """恢复中断的工作流"""
+
     async def _resume():
         from langgraph.types import Command
 
@@ -322,11 +328,13 @@ def resume(
 
                 final_state = await graph.aget_state(config)
                 final_phase = final_state.values.get("phase", "unknown")
-                console.print(Panel(
-                    f"最终阶段: {format_phase(final_phase)}",
-                    title="✅ 恢复结果",
-                    style="green",
-                ))
+                console.print(
+                    Panel(
+                        f"最终阶段: {format_phase(final_phase)}",
+                        title="✅ 恢复结果",
+                        style="green",
+                    )
+                )
             except Exception as e:
                 console.print(Panel(f"恢复失败: {e}", title="❌ 错误", style="red"))
         else:
@@ -341,6 +349,7 @@ def logs(
     follow: bool = typer.Option(False, "--follow", "-f", help="实时跟踪日志"),
 ):
     """查看工作流日志"""
+
     async def _logs():
         from backend.graph.builder import compile_graph_dev
 
@@ -381,12 +390,13 @@ def version():
     except Exception:
         v = "0.1.0 (dev)"
 
-    console.print(Panel(
-        f"版本: {v}\n"
-        f"Python: 3.11+",
-        title="📦 XhsGrowthEngine",
-        style="bold green",
-    ))
+    console.print(
+        Panel(
+            f"版本: {v}\nPython: 3.11+",
+            title="📦 XhsGrowthEngine",
+            style="bold green",
+        )
+    )
 
 
 @app.command()

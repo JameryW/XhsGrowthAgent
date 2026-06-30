@@ -23,7 +23,6 @@ from .active_task import resolve_context_key
 from .config import get_git_packages
 from .git import run_git
 from .packages_context import get_packages_section
-from .tasks import iter_active_tasks, load_task, get_all_statuses, children_progress
 from .paths import (
     DIR_SCRIPTS,
     DIR_SPEC,
@@ -38,7 +37,7 @@ from .paths import (
     get_repo_root,
     get_tasks_dir,
 )
-
+from .tasks import children_progress, get_all_statuses, iter_active_tasks, load_task
 
 # =============================================================================
 # Helpers
@@ -46,9 +45,7 @@ from .paths import (
 
 _PACKAGE_NAME = "@mindfoldhq/trellis"
 _UPDATE_CHECK_TIMEOUT_SECONDS = 1.0
-_VERSION_RE = re.compile(
-    r"^\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?\s*$"
-)
+_VERSION_RE = re.compile(r"^\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?\s*$")
 _VERSION_TOKEN_RE = re.compile(r"\b\d+(?:\.\d+){1,2}(?:-[0-9A-Za-z.-]+)?\b")
 _POLYREPO_IGNORED_DIRS = {
     "node_modules",
@@ -95,7 +92,7 @@ def _collect_git_repo_info(name: str, rel_path: str, repo_dir: Path) -> dict | N
     branch = branch_out.strip() or "unknown"
 
     _, status_out, _ = run_git(["status", "--porcelain"], cwd=repo_dir)
-    changes = len([l for l in status_out.splitlines() if l.strip()])
+    changes = len([line for line in status_out.splitlines() if line.strip()])
 
     _, log_out, _ = run_git(["log", "--oneline", "-5"], cwd=repo_dir)
 
@@ -161,9 +158,7 @@ def _discover_child_git_repos(repo_root: Path) -> list[tuple[str, str]]:
             if not child.is_dir() or not is_candidate_dir(child):
                 continue
 
-            child_rel = (
-                rel_dir / child.name if rel_dir != Path(".") else Path(child.name)
-            )
+            child_rel = rel_dir / child.name if rel_dir != Path(".") else Path(child.name)
             if (child / ".git").exists():
                 found.append(child_rel.as_posix())
                 continue
@@ -221,8 +216,7 @@ def _append_root_git_context(lines: list[str], root_git_info: dict) -> None:
             lines.append("Working directory: Clean")
         else:
             lines.append(
-                f"Working directory: {root_git_info['uncommittedChanges']} "
-                "uncommitted change(s)"
+                f"Working directory: {root_git_info['uncommittedChanges']} uncommitted change(s)"
             )
             lines.append("")
             lines.append("Changes:")
@@ -232,9 +226,7 @@ def _append_root_git_context(lines: list[str], root_git_info: dict) -> None:
 
     lines.append("## RECENT COMMITS")
     if not root_git_info["isRepo"]:
-        lines.append(
-            "Root has no Git commit history because it is not a Git repository."
-        )
+        lines.append("Root has no Git commit history because it is not a Git repository.")
     elif root_git_info["recentCommits"]:
         for commit in root_git_info["recentCommits"]:
             lines.append(f"{commit['hash']} {commit['message']}")
@@ -251,9 +243,7 @@ def _append_package_git_context(lines: list[str], package_git_info: list[dict]) 
         if pkg["isClean"]:
             lines.append("Working directory: Clean")
         else:
-            lines.append(
-                f"Working directory: {pkg['uncommittedChanges']} uncommitted change(s)"
-            )
+            lines.append(f"Working directory: {pkg['uncommittedChanges']} uncommitted change(s)")
         lines.append("")
         lines.append(f"## RECENT COMMITS ({pkg['name']}: {pkg['path']})")
         if pkg["recentCommits"]:
@@ -266,9 +256,7 @@ def _append_package_git_context(lines: list[str], package_git_info: list[dict]) 
 
 def _read_project_version(repo_root: Path) -> str | None:
     try:
-        version = (repo_root / DIR_WORKFLOW / ".version").read_text(
-            encoding="utf-8"
-        ).strip()
+        version = (repo_root / DIR_WORKFLOW / ".version").read_text(encoding="utf-8").strip()
     except OSError:
         return None
     return version or None
@@ -333,7 +321,7 @@ def _compare_prerelease(
     if right is None:
         return -1
 
-    for left_part, right_part in zip(left, right):
+    for left_part, right_part in zip(left, right, strict=False):
         if left_part == right_part:
             continue
         left_numeric = left_part.isdigit()
@@ -372,12 +360,7 @@ def _update_marker_path(repo_root: Path) -> Path:
     safe_key = re.sub(r"[^A-Za-z0-9._-]+", "_", context_key).strip("._-")
     if not safe_key:
         safe_key = "session"
-    return (
-        repo_root
-        / DIR_WORKFLOW
-        / ".runtime"
-        / f"update-check-{safe_key[:160]}.marker"
-    )
+    return repo_root / DIR_WORKFLOW / ".runtime" / f"update-check-{safe_key[:160]}.marker"
 
 
 def _mark_update_check_attempted(repo_root: Path) -> bool:
@@ -420,6 +403,7 @@ def _get_update_hint(repo_root: Path) -> str | None:
 # JSON Output
 # =============================================================================
 
+
 def get_context_json(repo_root: Path | None = None) -> dict:
     """Get context as a dictionary.
 
@@ -440,9 +424,7 @@ def get_context_json(repo_root: Path | None = None) -> dict:
     journal_relative = ""
     if journal_file and developer:
         journal_lines = count_lines(journal_file)
-        journal_relative = (
-            f"{DIR_WORKFLOW}/{DIR_WORKSPACE}/{developer}/{journal_file.name}"
-        )
+        journal_relative = f"{DIR_WORKFLOW}/{DIR_WORKSPACE}/{developer}/{journal_file.name}"
 
     root_git_info = _collect_root_git_info(repo_root)
 
@@ -504,6 +486,7 @@ def output_json(repo_root: Path | None = None) -> None:
 # Text Output
 # =============================================================================
 
+
 def get_context_text(repo_root: Path | None = None) -> str:
     """Get context as formatted text.
 
@@ -528,7 +511,8 @@ def get_context_text(repo_root: Path | None = None) -> str:
     lines.append("## DEVELOPER")
     if not developer:
         lines.append(
-            f"ERROR: Not initialized. Run: python3 ./{DIR_WORKFLOW}/{DIR_SCRIPTS}/init_developer.py <name>"
+            f"ERROR: Not initialized. Run: python3 ./{DIR_WORKFLOW}/"
+            f"{DIR_SCRIPTS}/init_developer.py <name>"
         )
         return "\n".join(lines)
 
@@ -554,9 +538,7 @@ def get_context_text(repo_root: Path | None = None) -> str:
         current_task_dir = repo_root / current_task
         source_type, context_key, _ = get_current_task_source(repo_root)
         lines.append(f"Path: {current_task}")
-        lines.append(
-            f"Source: {source_type}" + (f":{context_key}" if context_key else "")
-        )
+        lines.append(f"Source: {source_type}" + (f":{context_key}" if context_key else ""))
 
         ct = load_task(current_task_dir)
         if ct:
@@ -654,6 +636,7 @@ def get_context_text(repo_root: Path | None = None) -> str:
 # Record Mode
 # =============================================================================
 
+
 def get_context_record_json(repo_root: Path | None = None) -> dict:
     """Get record-mode context as a dictionary.
 
@@ -674,20 +657,19 @@ def get_context_record_json(repo_root: Path | None = None) -> dict:
     my_tasks = []
     for t in all_tasks_list:
         if t.assignee == developer:
-            done = sum(
-                1 for c in t.children
-                if all_statuses.get(c) in ("completed", "done")
+            done = sum(1 for c in t.children if all_statuses.get(c) in ("completed", "done"))
+            my_tasks.append(
+                {
+                    "dir": t.dir_name,
+                    "title": t.title,
+                    "status": t.status,
+                    "priority": t.priority,
+                    "children": list(t.children),
+                    "childrenDone": done,
+                    "parent": t.parent,
+                    "meta": t.meta,
+                }
             )
-            my_tasks.append({
-                "dir": t.dir_name,
-                "title": t.title,
-                "status": t.status,
-                "priority": t.priority,
-                "children": list(t.children),
-                "childrenDone": done,
-                "parent": t.parent,
-                "meta": t.meta,
-            })
 
     # Current task
     current_task_info = None
@@ -747,7 +729,8 @@ def get_context_text_record(repo_root: Path | None = None) -> str:
     developer = get_developer(repo_root)
     if not developer:
         lines.append(
-            f"ERROR: Not initialized. Run: python3 ./{DIR_WORKFLOW}/{DIR_SCRIPTS}/init_developer.py <name>"
+            f"ERROR: Not initialized. Run: python3 ./{DIR_WORKFLOW}/"
+            f"{DIR_SCRIPTS}/init_developer.py <name>"
         )
         return "\n".join(lines)
 
@@ -790,9 +773,7 @@ def get_context_text_record(repo_root: Path | None = None) -> str:
     if current_task:
         source_type, context_key, _ = get_current_task_source(repo_root)
         lines.append(f"Path: {current_task}")
-        lines.append(
-            f"Source: {source_type}" + (f":{context_key}" if context_key else "")
-        )
+        lines.append(f"Source: {source_type}" + (f":{context_key}" if context_key else ""))
         ct = load_task(repo_root / current_task)
         if ct:
             lines.append(f"Name: {ct.name}")

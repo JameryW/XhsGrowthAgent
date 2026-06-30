@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Git and Session Context utilities.
 
@@ -15,17 +14,15 @@ from __future__ import annotations
 import json
 
 from .git import run_git
+from .packages_context import (
+    get_context_packages_json,
+    get_context_packages_text,
+)
 from .session_context import (
-    get_context_json,
-    get_context_text,
     get_context_record_json,
     get_context_text_record,
     output_json,
     output_text,
-)
-from .packages_context import (
-    get_context_packages_text,
-    get_context_packages_json,
 )
 from .trellis_config import read_trellis_config
 from .workflow_phase import (
@@ -43,6 +40,7 @@ _run_git_command = run_git
 # Main Entry
 # =============================================================================
 
+
 def main() -> None:
     """CLI entry point."""
     import argparse
@@ -59,7 +57,8 @@ def main() -> None:
         "-m",
         choices=["default", "record", "packages", "phase"],
         default="default",
-        help="Output mode: default (full context), record (for record-session), packages (package info only), phase (workflow step extraction)",
+        help="Output mode: default (full ctx), record (record-session), "
+        "packages (pkg info only), phase (workflow step extraction)",
     )
     parser.add_argument(
         "--step",
@@ -67,7 +66,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--platform",
-        help="Platform name for --mode phase, e.g. cursor, claude-code. Filters platform-tagged blocks.",
+        help="Platform for --mode phase, e.g. cursor, claude-code. Filters platform-tagged blocks.",
     )
 
     args = parser.parse_args()
@@ -90,9 +89,7 @@ def main() -> None:
             else:
                 parser.exit(2, "Phase Index section not found in workflow.md\n")
         if args.platform:
-            effective = resolve_effective_platform(
-                args.platform, read_trellis_config()
-            )
+            effective = resolve_effective_platform(args.platform, read_trellis_config())
             content = filter_platform(content, effective)
         print(content, end="")
     else:

@@ -1,6 +1,5 @@
 """Tests for execution mode."""
 
-import pytest
 from backend.state.enums import ExecutionMode
 
 

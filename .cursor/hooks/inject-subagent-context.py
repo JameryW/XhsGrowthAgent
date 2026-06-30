@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Multi-Platform Sub-Agent Context Injection Hook
 
@@ -19,10 +18,12 @@ Context Source: Trellis active task resolver points to task directory
 - info.md         - Technical design
 - codex-review-output.txt - Code Review results
 """
+
 from __future__ import annotations
 
 # IMPORTANT: Suppress all warnings FIRST
 import warnings
+
 warnings.filterwarnings("ignore")
 
 import json
@@ -35,6 +36,7 @@ from typing import Any
 # This fixes UnicodeEncodeError when outputting non-ASCII characters
 if sys.platform.startswith("win"):
     import io as _io
+
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
     elif hasattr(sys.stdout, "detach"):
@@ -135,7 +137,7 @@ def read_file_content(base_path: str, file_path: str) -> str | None:
     full_path = os.path.join(base_path, file_path)
     if os.path.exists(full_path) and os.path.isfile(full_path):
         try:
-            with open(full_path, "r", encoding="utf-8") as f:
+            with open(full_path, encoding="utf-8") as f:
                 return f.read()
         except Exception:
             return None
@@ -175,7 +177,7 @@ def read_directory_contents(
             file_full_path = os.path.join(full_path, filename)
             relative_path = os.path.join(dir_path, filename)
             try:
-                with open(file_full_path, "r", encoding="utf-8") as f:
+                with open(file_full_path, encoding="utf-8") as f:
                     content = f.read()
                     results.append((relative_path, content))
             except Exception:
@@ -215,7 +217,7 @@ def read_jsonl_entries(base_path: str, jsonl_path: str) -> list[tuple[str, str]]
     results = []
     saw_real_entry = False
     try:
-        with open(full_path, "r", encoding="utf-8") as f:
+        with open(full_path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -253,8 +255,6 @@ def read_jsonl_entries(base_path: str, jsonl_path: str) -> list[tuple[str, str]]
         )
 
     return results
-
-
 
 
 def get_agent_context(repo_root: str, task_dir: str, agent_type: str) -> str:
@@ -295,9 +295,7 @@ def get_implement_context(repo_root: str, task_dir: str) -> str:
     # 3. Technical design
     info_content = read_file_content(repo_root, f"{task_dir}/info.md")
     if info_content:
-        context_parts.append(
-            f"=== {task_dir}/info.md (Technical Design) ===\n{info_content}"
-        )
+        context_parts.append(f"=== {task_dir}/info.md (Technical Design) ===\n{info_content}")
 
     return "\n\n".join(context_parts)
 
@@ -324,7 +322,6 @@ def get_finish_context(repo_root: str, task_dir: str) -> str:
     (Finish is a final check, same context source.)
     """
     return get_check_context(repo_root, task_dir)
-
 
 
 def build_implement_prompt(original_prompt: str, context: str) -> str:
@@ -436,7 +433,6 @@ Finish checklist and requirements:
 - Do NOT update specs for trivial changes (typos, formatting, obvious fixes)
 - If critical CODE issues found, report them clearly (fix specs, not code)
 - Verify all acceptance criteria in prd.md are met"""
-
 
 
 def get_research_context(repo_root: str, task_dir: str | None) -> str:

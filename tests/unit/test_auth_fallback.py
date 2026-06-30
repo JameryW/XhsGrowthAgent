@@ -30,10 +30,13 @@ async def test_db_failure_propagates():
     """DB errors must propagate — there is no hardcoded admin escape hatch."""
     from backend.api.auth import verify_credentials_async
 
-    with patch(
-        "backend.db.console_users.verify_login",
-        new=AsyncMock(side_effect=RuntimeError("pool not ready")),
-    ), pytest.raises(RuntimeError, match="pool not ready"):
+    with (
+        patch(
+            "backend.db.console_users.verify_login",
+            new=AsyncMock(side_effect=RuntimeError("pool not ready")),
+        ),
+        pytest.raises(RuntimeError, match="pool not ready"),
+    ):
         await verify_credentials_async("admin", "admin123")
 
 
@@ -86,6 +89,7 @@ def test_revoke_user_tokens_kills_all_sessions():
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(test_db_returns_none_means_reject())
     asyncio.run(test_db_user_match_returns_user())
     test_legacy_verify_credentials_is_gone()

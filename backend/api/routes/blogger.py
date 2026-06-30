@@ -52,13 +52,15 @@ async def get_pending_blogger_selection(thread_id: str, request: Request):
         raise WorkflowNotFoundError(thread_id)
 
     values = state.values
-    return success(data={
-        "thread_id": thread_id,
-        "blogger_candidates": values.get("blogger_candidates", []),
-        "blogger_candidate_limit": values.get("blogger_candidate_limit", 5),
-        "blogger_note_limit": values.get("blogger_note_limit", 3),
-        "is_pending": _is_at_blogger_gate(state),
-    })
+    return success(
+        data={
+            "thread_id": thread_id,
+            "blogger_candidates": values.get("blogger_candidates", []),
+            "blogger_candidate_limit": values.get("blogger_candidate_limit", 5),
+            "blogger_note_limit": values.get("blogger_note_limit", 3),
+            "is_pending": _is_at_blogger_gate(state),
+        }
+    )
 
 
 @router.post("/blogger-select/{thread_id}")
@@ -88,23 +90,33 @@ async def select_blogger(thread_id: str, selection: BloggerSelection, request: R
     # If graph is interrupted at blogger_gate, resume it
     if _is_at_blogger_gate(state):
         result = await _runner._run_graph_and_persist(
-            thread_id, graph, config,
+            thread_id,
+            graph,
+            config,
             Command(resume=resume_value),
             source="blogger_select",
         )
         next_phase = result.get("phase", "unknown") if result else "unknown"
-        return success(data={
-            "thread_id": thread_id,
-            "status": "resumed",
-            "next_phase": next_phase,
-        })
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "resumed",
+                "next_phase": next_phase,
+            }
+        )
 
     # Not at blogger_gate — just update state
-    await graph.aupdate_state(config, {
-        "selected_blogger": resume_value if not selection.skip else {},
-    }, as_node=_runner._get_as_node(state))
+    await graph.aupdate_state(
+        config,
+        {
+            "selected_blogger": resume_value if not selection.skip else {},
+        },
+        as_node=_runner._get_as_node(state),
+    )
 
-    return success(data={
-        "thread_id": thread_id,
-        "status": "updated",
-    })
+    return success(
+        data={
+            "thread_id": thread_id,
+            "status": "updated",
+        }
+    )

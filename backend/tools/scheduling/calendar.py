@@ -154,11 +154,13 @@ async def timing_optimizer(
 
     except Exception as e:
         logger.error(f"timing_optimizer error: {e}")
-        return _algorithmic_fallback({
-            "niche": niche,
-            "target_audience": target_audience,
-            "content_type": content_type,
-        })
+        return _algorithmic_fallback(
+            {
+                "niche": niche,
+                "target_audience": target_audience,
+                "content_type": content_type,
+            }
+        )
 
 
 __all__ = ["timing_optimizer"]

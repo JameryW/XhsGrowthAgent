@@ -1,4 +1,5 @@
 """Auto-generated Pydantic models from OpenAPI spec."""
+
 from backend.api.generated.models import (
     ApiResponse,
     ContentStatus,

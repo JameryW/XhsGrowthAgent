@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Task Management Script.
 
 Usage:
-    python3 task.py create "<title>" [--slug <name>] [--assignee <dev>] [--priority P0|P1|P2|P3] [--parent <dir>] [--package <pkg>]
+    python3 task.py create "<title>" [options]
+        options: --slug <name> --assignee <dev> --priority P0|P1|P2|P3
+                 --parent <dir> --package <pkg>
     python3 task.py add-context <dir> <file> <path> [reason] # Add jsonl entry
     python3 task.py validate <dir>              # Validate jsonl files
     python3 task.py list-context <dir>          # List jsonl entries
@@ -26,16 +27,6 @@ from __future__ import annotations
 import argparse
 import sys
 
-from common.log import Colors, colored
-from common.paths import (
-    DIR_WORKFLOW,
-    DIR_TASKS,
-    FILE_TASK_JSON,
-    get_repo_root,
-    get_developer,
-    get_tasks_dir,
-    get_current_task,
-)
 from common.active_task import (
     clear_active_task,
     resolve_active_task,
@@ -43,29 +34,39 @@ from common.active_task import (
     set_active_task,
 )
 from common.io import read_json, write_json
-from common.task_utils import resolve_task_dir, run_task_hooks
-from common.tasks import iter_active_tasks, children_progress
-
-# Import command handlers from split modules (also re-exports for plan.py compatibility)
-from common.task_store import (
-    cmd_create,
-    cmd_archive,
-    cmd_set_branch,
-    cmd_set_base_branch,
-    cmd_set_scope,
-    cmd_add_subtask,
-    cmd_remove_subtask,
+from common.log import Colors, colored
+from common.paths import (
+    DIR_TASKS,
+    DIR_WORKFLOW,
+    FILE_TASK_JSON,
+    get_current_task,
+    get_developer,
+    get_repo_root,
+    get_tasks_dir,
 )
 from common.task_context import (
     cmd_add_context,
-    cmd_validate,
     cmd_list_context,
+    cmd_validate,
 )
 
+# Import command handlers from split modules (also re-exports for plan.py compatibility)
+from common.task_store import (
+    cmd_add_subtask,
+    cmd_archive,
+    cmd_create,
+    cmd_remove_subtask,
+    cmd_set_base_branch,
+    cmd_set_branch,
+    cmd_set_scope,
+)
+from common.task_utils import resolve_task_dir, run_task_hooks
+from common.tasks import children_progress, iter_active_tasks
 
 # =============================================================================
 # Command: start / finish
 # =============================================================================
+
 
 def cmd_start(args: argparse.Namespace) -> int:
     """Set active task."""
@@ -81,7 +82,9 @@ def cmd_start(args: argparse.Namespace) -> int:
 
     if not full_path.is_dir():
         print(colored(f"Error: Task not found: {task_input}", Colors.RED))
-        print("Hint: Use task name (e.g., 'my-task') or full path (e.g., '.trellis/tasks/01-31-my-task')")
+        print(
+            "Tip: Use task name (e.g. 'my-task') or full path (e.g. '.trellis/tasks/01-31-my-task')"
+        )
         return 1
 
     # Convert to relative path for storage
@@ -97,16 +100,20 @@ def cmd_start(args: argparse.Namespace) -> int:
         # Hook didn't inject TRELLIS_CONTEXT_ID (common on Windows + Claude Code,
         # --continue resume path, fork distribution, hooks disabled, etc.). Skip
         # per-session pointer write; AI continues based on conversation context.
-        print(colored(
-            "ℹ Session identity not available; active-task pointer not persisted "
-            "this session (degraded mode). AI continues based on conversation context.",
-            Colors.YELLOW,
-        ))
-        print(colored(
-            "Hint: run inside an AI IDE/session that exposes session identity, "
-            "or set TRELLIS_CONTEXT_ID before running task.py start.",
-            Colors.YELLOW,
-        ))
+        print(
+            colored(
+                "ℹ Session identity not available; active-task pointer not persisted "
+                "this session (degraded mode). AI continues based on conversation context.",
+                Colors.YELLOW,
+            )
+        )
+        print(
+            colored(
+                "Hint: run inside an AI IDE/session that exposes session identity, "
+                "or set TRELLIS_CONTEXT_ID before running task.py start.",
+                Colors.YELLOW,
+            )
+        )
 
         # Still flip task.json status: planning → in_progress so downstream phases proceed.
         if task_json_path.is_file():
@@ -131,7 +138,9 @@ def cmd_start(args: argparse.Namespace) -> int:
                     print(colored("✓ Status: planning → in_progress", Colors.GREEN))
 
         print()
-        print(colored("The hook will now inject context from this task's jsonl files.", Colors.BLUE))
+        print(
+            colored("The hook will now inject context from this task's jsonl files.", Colors.BLUE)
+        )
 
         run_task_hooks("after_start", task_json_path, repo_root)
         return 0
@@ -184,6 +193,7 @@ def cmd_current(args: argparse.Namespace) -> int:
 # Command: list
 # =============================================================================
 
+
 def cmd_list(args: argparse.Namespace) -> int:
     """List active tasks."""
     repo_root = get_repo_root()
@@ -195,7 +205,10 @@ def cmd_list(args: argparse.Namespace) -> int:
 
     if filter_mine:
         if not developer:
-            print(colored("Error: No developer set. Run init_developer.py first", Colors.RED), file=sys.stderr)
+            print(
+                colored("Error: No developer set. Run init_developer.py first", Colors.RED),
+                file=sys.stderr,
+            )
             return 1
         print(colored(f"My tasks (assignee: {developer}):", Colors.BLUE))
     else:
@@ -237,7 +250,10 @@ def cmd_list(args: argparse.Namespace) -> int:
         if filter_mine:
             print(f"{prefix}{dir_name}/ ({t.status}){pkg_tag}{progress}{marker}")
         else:
-            print(f"{prefix}{dir_name}/ ({t.status}){pkg_tag}{progress} [{colored(t.assignee or '-', Colors.CYAN)}]{marker}")
+            print(
+                f"{prefix}{dir_name}/ ({t.status}){pkg_tag}{progress} "
+                f"[{colored(t.assignee or '-', Colors.CYAN)}]{marker}"
+            )
         count += 1
 
         # Print children indented
@@ -264,6 +280,7 @@ def cmd_list(args: argparse.Namespace) -> int:
 # =============================================================================
 # Command: list-archive
 # =============================================================================
+
 
 def cmd_list_archive(args: argparse.Namespace) -> int:
     """List archived tasks."""
@@ -298,6 +315,7 @@ def cmd_list_archive(args: argparse.Namespace) -> int:
 # =============================================================================
 # Help
 # =============================================================================
+
 
 def show_usage() -> None:
     """Show usage help."""
@@ -350,6 +368,7 @@ Examples:
 # =============================================================================
 # Main Entry
 # =============================================================================
+
 
 def main() -> int:
     """CLI entry point."""
@@ -420,8 +439,7 @@ def main() -> int:
 
     # current
     p_current = subparsers.add_parser("current", help="Show active task")
-    p_current.add_argument("--source", action="store_true",
-                           help="Show active task source")
+    p_current.add_argument("--source", action="store_true", help="Show active task source")
 
     # finish
     subparsers.add_parser("finish", help="Clear active task")
@@ -444,7 +462,9 @@ def main() -> int:
     # archive
     p_archive = subparsers.add_parser("archive", help="Archive task")
     p_archive.add_argument("name", help="Task directory or name")
-    p_archive.add_argument("--no-commit", action="store_true", help="Skip auto git commit after archive")
+    p_archive.add_argument(
+        "--no-commit", action="store_true", help="Skip auto git commit after archive"
+    )
 
     # list
     p_list = subparsers.add_parser("list", help="List tasks")

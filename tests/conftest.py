@@ -3,19 +3,16 @@
 from __future__ import annotations
 
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 # Mock playwright before any imports
 playwright_mock = MagicMock()
 sys.modules["playwright"] = playwright_mock
 sys.modules["playwright.async_api"] = MagicMock()
 
-from unittest.mock import AsyncMock, MagicMock
+import pytest  # noqa: E402  (after playwright sys.modules mock above)
 
-import pytest
-
-from backend.state.schema import WorkflowPhase
-
+from backend.state.schema import WorkflowPhase  # noqa: E402
 
 # ── Global LLM/Ripple mock ──────────────────────────────────────────────────
 # Prevent any test from accidentally calling real LLM or Ripple APIs.
@@ -49,6 +46,7 @@ def _mock_ripple_service():
         # backend.tools.ripple.client is a module, not a package — mock the class directly
         try:
             from backend.tools.ripple.client import RippleService as ClientRippleService
+
             mp.setattr(ClientRippleService, "get_instance", lambda: mock_service)
         except ImportError:
             pass
