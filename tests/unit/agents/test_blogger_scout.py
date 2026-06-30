@@ -106,12 +106,26 @@ class TestBloggerScoutAgent:
         """Execute returns blogger candidates with engagement sorting."""
         mock_search_results = [
             XHSSearchResult(
-                note_id="n1", title="美食探店", user_name="博主A", user_id="u1",
-                likes=100, comments=20, collects=30, cover_url="", note_url="",
+                note_id="n1",
+                title="美食探店",
+                user_name="博主A",
+                user_id="u1",
+                likes=100,
+                comments=20,
+                collects=30,
+                cover_url="",
+                note_url="",
             ),
             XHSSearchResult(
-                note_id="n2", title="咖啡推荐", user_name="博主B", user_id="u2",
-                likes=50, comments=10, collects=15, cover_url="", note_url="",
+                note_id="n2",
+                title="咖啡推荐",
+                user_name="博主B",
+                user_id="u2",
+                likes=50,
+                comments=10,
+                collects=15,
+                cover_url="",
+                note_url="",
             ),
         ]
 
@@ -121,19 +135,19 @@ class TestBloggerScoutAgent:
             "notes_count": 100,
         }
 
-        with patch("backend.services.xhs_client.XHSClient") as MockClient:
+        with patch("backend.services.xhs_client.XHSClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client._http = MagicMock()
             mock_client.search_posts = AsyncMock(return_value=mock_search_results)
             mock_client.get_user_info = AsyncMock(return_value=mock_user_info)
             mock_client.close = AsyncMock()
-            MockClient.return_value = mock_client
+            mock_client_cls.return_value = mock_client
 
             result = await agent.execute(trend_state, store=mock_store)
 
         assert "blogger_candidates" in result
         assert len(result["blogger_candidates"]) == 2
-        # Sorted by engagement: 博主A (150 per keyword × keywords) > 博主B (75 per keyword × keywords)
+        # Sorted by engagement: 博主A (150/keyword×keywords) > 博主B (75/keyword×keywords)
         assert result["blogger_candidates"][0]["user_id"] == "u1"
         assert result["blogger_candidates"][0]["total_engagement"] > 0
 
@@ -142,20 +156,26 @@ class TestBloggerScoutAgent:
         """Execute respects blogger_candidate_limit."""
         mock_search_results = [
             XHSSearchResult(
-                note_id=f"n{i}", title=f"Note {i}", user_name=f"User {i}",
-                user_id=f"u{i}", likes=10 * i, comments=0, collects=0,
-                cover_url="", note_url="",
+                note_id=f"n{i}",
+                title=f"Note {i}",
+                user_name=f"User {i}",
+                user_id=f"u{i}",
+                likes=10 * i,
+                comments=0,
+                collects=0,
+                cover_url="",
+                note_url="",
             )
             for i in range(10)
         ]
 
-        with patch("backend.services.xhs_client.XHSClient") as MockClient:
+        with patch("backend.services.xhs_client.XHSClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client._http = MagicMock()
             mock_client.search_posts = AsyncMock(return_value=mock_search_results)
             mock_client.get_user_info = AsyncMock(return_value={})
             mock_client.close = AsyncMock()
-            MockClient.return_value = mock_client
+            mock_client_cls.return_value = mock_client
 
             result = await agent.execute(brief_state, store=mock_store)
 
@@ -184,7 +204,7 @@ class TestBloggerScoutAgent:
         trend_state["xhs_cookie"] = ""
 
         mock_response = MagicMock()
-        mock_response.content = '{"candidates": [{"user_id": "mock_001", "nickname": "测试博主", "follower_count": 5000, "note_count": 50, "total_engagement": 3000, "top_note_title": "测试笔记标题"}]}'
+        mock_response.content = '{"candidates": [{"user_id": "mock_001", "nickname": "测试博主", "follower_count": 5000, "note_count": 50, "total_engagement": 3000, "top_note_title": "测试笔记标题"}]}'  # noqa: E501
 
         agent._model = AsyncMock()
         agent._model.ainvoke = AsyncMock(return_value=mock_response)
@@ -201,7 +221,7 @@ class TestBloggerScoutAgent:
         trend_state["xhs_cookie"] = ""
 
         mock_response = MagicMock()
-        mock_response.content = '{"candidates": [{"user_id": "001", "nickname": "博主A", "follower_count": 1000, "note_count": 20, "total_engagement": 500, "top_note_title": "标题"}]}'
+        mock_response.content = '{"candidates": [{"user_id": "001", "nickname": "博主A", "follower_count": 1000, "note_count": 20, "total_engagement": 500, "top_note_title": "标题"}]}'  # noqa: E501
 
         agent._model = AsyncMock()
         agent._model.ainvoke = AsyncMock(return_value=mock_response)
@@ -215,7 +235,7 @@ class TestBloggerScoutAgent:
         trend_state["xhs_cookie"] = ""
 
         mock_response = MagicMock()
-        mock_response.content = '{"candidates": [{"user_id": "mock_001", "nickname": "博主A", "follower_count": 1000, "note_count": 20, "total_engagement": 500, "top_note_title": "标题"}]}'
+        mock_response.content = '{"candidates": [{"user_id": "mock_001", "nickname": "博主A", "follower_count": 1000, "note_count": 20, "total_engagement": 500, "top_note_title": "标题"}]}'  # noqa: E501
 
         agent._model = AsyncMock()
         agent._model.ainvoke = AsyncMock(return_value=mock_response)
@@ -241,20 +261,27 @@ class TestBloggerScoutAgent:
         """Real XHS client takes priority over LLM fallback."""
         mock_search_results = [
             XHSSearchResult(
-                note_id="n1", title="真实笔记", user_name="真实博主", user_id="real_u1",
-                likes=200, comments=30, collects=50, cover_url="", note_url="",
+                note_id="n1",
+                title="真实笔记",
+                user_name="真实博主",
+                user_id="real_u1",
+                likes=200,
+                comments=30,
+                collects=50,
+                cover_url="",
+                note_url="",
             ),
         ]
 
         mock_model = AsyncMock()
 
-        with patch("backend.services.xhs_client.XHSClient") as MockClient:
+        with patch("backend.services.xhs_client.XHSClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client._http = MagicMock()
             mock_client.search_posts = AsyncMock(return_value=mock_search_results)
             mock_client.get_user_info = AsyncMock(return_value={})
             mock_client.close = AsyncMock()
-            MockClient.return_value = mock_client
+            mock_client_cls.return_value = mock_client
 
             agent._model = mock_model
             result = await agent.execute(trend_state, store=mock_store)
@@ -265,12 +292,12 @@ class TestBloggerScoutAgent:
     @pytest.mark.asyncio
     async def test_execute_api_error_returns_empty(self, agent, trend_state, mock_store):
         """Returns hardcoded fallback candidates on API error."""
-        with patch("backend.services.xhs_client.XHSClient") as MockClient:
+        with patch("backend.services.xhs_client.XHSClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client._http = MagicMock()
             mock_client.search_posts = AsyncMock(side_effect=Exception("API error"))
             mock_client.close = AsyncMock()
-            MockClient.return_value = mock_client
+            mock_client_cls.return_value = mock_client
 
             result = await agent.execute(trend_state, store=mock_store)
 
@@ -283,22 +310,36 @@ class TestBloggerScoutAgent:
         # Two notes from same blogger — second has higher engagement
         mock_search_results = [
             XHSSearchResult(
-                note_id="n1", title="低互动笔记", user_name="博主A", user_id="u1",
-                likes=10, comments=0, collects=0, cover_url="", note_url="",
+                note_id="n1",
+                title="低互动笔记",
+                user_name="博主A",
+                user_id="u1",
+                likes=10,
+                comments=0,
+                collects=0,
+                cover_url="",
+                note_url="",
             ),
             XHSSearchResult(
-                note_id="n2", title="高互动笔记", user_name="博主A", user_id="u1",
-                likes=500, comments=50, collects=100, cover_url="", note_url="",
+                note_id="n2",
+                title="高互动笔记",
+                user_name="博主A",
+                user_id="u1",
+                likes=500,
+                comments=50,
+                collects=100,
+                cover_url="",
+                note_url="",
             ),
         ]
 
-        with patch("backend.services.xhs_client.XHSClient") as MockClient:
+        with patch("backend.services.xhs_client.XHSClient") as mock_client_cls:
             mock_client = MagicMock()
             mock_client._http = MagicMock()
             mock_client.search_posts = AsyncMock(return_value=mock_search_results)
             mock_client.get_user_info = AsyncMock(return_value={})
             mock_client.close = AsyncMock()
-            MockClient.return_value = mock_client
+            mock_client_cls.return_value = mock_client
 
             result = await agent.execute(trend_state, store=mock_store)
 

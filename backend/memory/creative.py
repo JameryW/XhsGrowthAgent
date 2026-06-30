@@ -64,8 +64,12 @@ class CreativeMemory:
     # ── 读取：创作前召回 ──
 
     async def recall_style(
-        self, query: str = "", limit: int = 3,
-        *, keywords: list[str] | None = None, filter: dict[str, Any] | None = None,
+        self,
+        query: str = "",
+        limit: int = 3,
+        *,
+        keywords: list[str] | None = None,
+        filter: dict[str, Any] | None = None,
     ) -> list[StyleDNA]:
         """召回匹配的风格指纹
 
@@ -79,7 +83,10 @@ class CreativeMemory:
         try:
             fetch_limit = limit * 2 if keywords else limit
             items = await self._store.asearch(  # type: ignore[union-attr]
-                self.style_dna_ns, query=query or "style", limit=fetch_limit, filter=filter,
+                self.style_dna_ns,
+                query=query or "style",
+                limit=fetch_limit,
+                filter=filter,
             )
             if keywords:
                 items = _keyword_filter(items, keywords)
@@ -90,8 +97,13 @@ class CreativeMemory:
             return self._default_styles()
 
     async def recall_plays(
-        self, condition: str = "", niche: str = "", limit: int = 3,
-        *, keywords: list[str] | None = None, filter: dict[str, Any] | None = None,
+        self,
+        condition: str = "",
+        niche: str = "",
+        limit: int = 3,
+        *,
+        keywords: list[str] | None = None,
+        filter: dict[str, Any] | None = None,
     ) -> list[ConversionPlay]:
         """召回匹配场景的转化策略
 
@@ -107,7 +119,10 @@ class CreativeMemory:
             q = f"{condition} {niche}".strip() or "conversion"
             fetch_limit = limit * 2 if keywords else limit
             items = await self._store.asearch(  # type: ignore[union-attr]
-                self.playbook_ns, query=q, limit=fetch_limit, filter=filter,
+                self.playbook_ns,
+                query=q,
+                limit=fetch_limit,
+                filter=filter,
             )
             if keywords:
                 items = _keyword_filter(items, keywords)
@@ -117,8 +132,13 @@ class CreativeMemory:
             return []
 
     async def recall_materials(
-        self, category: str = "", tags: list[str] | None = None, limit: int = 5,
-        *, keywords: list[str] | None = None, filter: dict[str, Any] | None = None,
+        self,
+        category: str = "",
+        tags: list[str] | None = None,
+        limit: int = 5,
+        *,
+        keywords: list[str] | None = None,
+        filter: dict[str, Any] | None = None,
     ) -> list[MaterialEntry]:
         """召回优质素材（按 weight * relevance 排序）
 
@@ -134,7 +154,10 @@ class CreativeMemory:
             q = " ".join([v for v in [category] + (tags or []) if v]) or "material"
             fetch_limit = limit * 2 if keywords else limit
             items = await self._store.asearch(  # type: ignore[union-attr]
-                self.vault_ns, query=q, limit=fetch_limit, filter=filter,
+                self.vault_ns,
+                query=q,
+                limit=fetch_limit,
+                filter=filter,
             )
             if keywords:
                 items = _keyword_filter(items, keywords)

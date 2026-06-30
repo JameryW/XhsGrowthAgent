@@ -17,6 +17,7 @@ router = APIRouter()
 
 # ── Request/Response models ──
 
+
 class CreateAccountRequest(BaseModel):
     name: str
     is_active: bool = False
@@ -33,6 +34,7 @@ class SetCredentialsRequest(BaseModel):
 
 # ── Account CRUD ──
 
+
 @router.post("")
 async def create_account(request: CreateAccountRequest):
     """Create a new account."""
@@ -48,45 +50,54 @@ async def create_account(request: CreateAccountRequest):
     if request.is_active:
         await set_active_account(account.id)
         from backend.db.accounts import activate_credentials
+
         await activate_credentials(account.id)
 
-    return success(data={
-        "id": account.id,
-        "name": account.name,
-        "is_active": account.is_active,
-        "created_at": account.created_at,
-    })
+    return success(
+        data={
+            "id": account.id,
+            "name": account.name,
+            "is_active": account.is_active,
+            "created_at": account.created_at,
+        }
+    )
 
 
 @router.get("")
 async def list_accounts():
     """List all accounts."""
     from backend.db.accounts import list_accounts as db_list
+
     accounts = await db_list()
-    return success(data=[
-        {
-            "id": a.id,
-            "name": a.name,
-            "is_active": a.is_active,
-            "created_at": a.created_at,
-            "updated_at": a.updated_at,
-        }
-        for a in accounts
-    ])
+    return success(
+        data=[
+            {
+                "id": a.id,
+                "name": a.name,
+                "is_active": a.is_active,
+                "created_at": a.created_at,
+                "updated_at": a.updated_at,
+            }
+            for a in accounts
+        ]
+    )
 
 
 @router.get("/active")
 async def get_active_account():
     """Get the currently active account."""
     from backend.db.accounts import get_active_account as db_get_active
+
     account = await db_get_active()
     if account is None:
         return success(data=None)
-    return success(data={
-        "id": account.id,
-        "name": account.name,
-        "is_active": account.is_active,
-    })
+    return success(
+        data={
+            "id": account.id,
+            "name": account.name,
+            "is_active": account.is_active,
+        }
+    )
 
 
 @router.put("/{account_id}")
@@ -113,11 +124,13 @@ async def update_account(account_id: str, request: UpdateAccountRequest):
         if account is None:
             raise AccountNotFoundError(account_id)
 
-    return success(data={
-        "id": account.id,
-        "name": account.name,
-        "is_active": account.is_active,
-    })
+    return success(
+        data={
+            "id": account.id,
+            "name": account.name,
+            "is_active": account.is_active,
+        }
+    )
 
 
 @router.delete("/{account_id}")
@@ -140,20 +153,23 @@ async def delete_account(account_id: str):
 
 # ── Credentials ──
 
+
 @router.get("/{account_id}/credentials")
 async def get_credentials(account_id: str):
     """Get all credentials for an account (values masked)."""
     from backend.db.accounts import list_credentials as db_list
 
     creds = await db_list(account_id)
-    return success(data=[
-        {
-            "key_name": c.key_name,
-            "masked_value": c.masked,
-            "is_set": bool(c.masked),
-        }
-        for c in creds
-    ])
+    return success(
+        data=[
+            {
+                "key_name": c.key_name,
+                "masked_value": c.masked,
+                "is_set": bool(c.masked),
+            }
+            for c in creds
+        ]
+    )
 
 
 @router.put("/{account_id}/credentials")
@@ -193,6 +209,7 @@ async def delete_credential(account_id: str, key_name: str):
 
 
 # ── Error classes ──
+
 
 class AccountNotFoundError(APIError):
     def __init__(self, account_id: str):

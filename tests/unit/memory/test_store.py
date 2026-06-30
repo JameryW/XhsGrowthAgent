@@ -120,9 +120,7 @@ class TestMemoryManager:
     @pytest.mark.asyncio
     async def test_store_audience_preference(self, manager, mock_store):
         """store_audience_preference calls store.aput."""
-        await manager.store_audience_preference(
-            mock_store, "偏好美食内容", {"category": "food"}
-        )
+        await manager.store_audience_preference(mock_store, "偏好美食内容", {"category": "food"})
 
         mock_store.aput.assert_called_once()
         call_args = mock_store.aput.call_args
@@ -192,9 +190,7 @@ class TestMemoryManager:
         i2 = MagicMock(value={"insight": "穿搭推荐多", "category": "时尚"})
         mock_store.asearch = AsyncMock(return_value=[i1, i2])
 
-        result = await manager.recall_insights(
-            mock_store, "效果", limit=3, keywords=["护肤"]
-        )
+        result = await manager.recall_insights(mock_store, "效果", limit=3, keywords=["护肤"])
         # Only the "护肤" item should survive keyword filter
         assert len(result) == 1
         assert result[0]["insight"] == "护肤效果好"
@@ -209,9 +205,7 @@ class TestMemoryManager:
         mock_item.value = {"insight": "test"}
         mock_store.asearch = AsyncMock(return_value=[mock_item])
 
-        result = await manager.recall_insights(
-            mock_store, "效果", limit=5, filter={"category": "美妆"}
-        )
+        await manager.recall_insights(mock_store, "效果", limit=5, filter={"category": "美妆"})
         mock_store.asearch.assert_called_once_with(
             manager.insights_ns, query="效果", limit=5, filter={"category": "美妆"}
         )

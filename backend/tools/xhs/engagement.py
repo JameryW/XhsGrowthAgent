@@ -147,6 +147,7 @@ async def escalation_flagger(
     logger.info(f"Escalating content: {reason}")
 
     import time
+
     escalated_id = f"esc_{int(time.time())}"
 
     result = {
@@ -160,10 +161,12 @@ async def escalation_flagger(
     }
 
     from backend.config.settings import Settings
+
     settings = Settings()
     if settings.notification.webhook_url:
         try:
             import httpx
+
             async with httpx.AsyncClient() as client:
                 await client.post(
                     settings.notification.webhook_url,

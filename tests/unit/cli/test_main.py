@@ -47,21 +47,21 @@ class TestCliServe:
 
     def test_serve_displays_panel(self):
         """serve shows startup panel."""
-        with patch("uvicorn.run") as mock_uvicorn:
+        with patch("uvicorn.run"):
             result = runner.invoke(app, ["serve", "--port", "8000"])
 
         assert "API 服务" in result.stdout
 
     def test_serve_default_port(self):
         """serve uses default port 8000."""
-        with patch("uvicorn.run") as mock_uvicorn:
+        with patch("uvicorn.run"):
             result = runner.invoke(app, ["serve"])
 
         assert "8000" in result.stdout
 
     def test_serve_custom_host(self):
         """serve accepts custom host."""
-        with patch("uvicorn.run") as mock_uvicorn:
+        with patch("uvicorn.run"):
             result = runner.invoke(app, ["serve", "--host", "127.0.0.1"])
 
         assert "127.0.0.1" in result.stdout

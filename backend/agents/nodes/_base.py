@@ -42,6 +42,7 @@ def _check_cancelled(state: XHSGrowthState) -> None:
 def emit_error_event(state: XHSGrowthState, error: Exception) -> None:
     """Emit WORKFLOW_ERROR event."""
     from backend.realtime import EventBusService, EventType
+
     EventBusService.get_instance().emit(
         EventType.WORKFLOW_ERROR,
         thread_id=state.get("session_id"),

@@ -112,9 +112,7 @@ class TestPublishRetrySafety:
         publisher._check_login = AsyncMock(side_effect=RuntimeError("page exploded"))  # type: ignore[method-assign]
         publisher._page = page  # simulate an already-attached page
 
-        result = await publisher.publish_note(
-            title="t", body="b", image_paths=["/x.jpg"]
-        )
+        result = await publisher.publish_note(title="t", body="b", image_paths=["/x.jpg"])
 
         assert result["status"] == "error"
         page.close.assert_awaited_once()
@@ -132,14 +130,22 @@ class TestNoteIdExtraction:
     @pytest.mark.parametrize(
         "url,expected",
         [
-            ("https://www.xiaohongshu.com/note/65a3b2c1d4e5f6a7b8c9d0e1",
-             "65a3b2c1d4e5f6a7b8c9d0e1"),
-            ("https://www.xiaohongshu.com/explore/65a3b2c1d4e5f6a7b8c9d0e1",
-             "65a3b2c1d4e5f6a7b8c9d0e1"),
-            ("https://www.xiaohongshu.com/discovery/item/65a3b2c1d4e5f6a7b8c9d0e1",
-             "65a3b2c1d4e5f6a7b8c9d0e1"),
-            ("https://www.xiaohongshu.com/explore/65a3b2c1d4e5f6a7b8c9d0e1?x=1",
-             "65a3b2c1d4e5f6a7b8c9d0e1"),
+            (
+                "https://www.xiaohongshu.com/note/65a3b2c1d4e5f6a7b8c9d0e1",
+                "65a3b2c1d4e5f6a7b8c9d0e1",
+            ),
+            (
+                "https://www.xiaohongshu.com/explore/65a3b2c1d4e5f6a7b8c9d0e1",
+                "65a3b2c1d4e5f6a7b8c9d0e1",
+            ),
+            (
+                "https://www.xiaohongshu.com/discovery/item/65a3b2c1d4e5f6a7b8c9d0e1",
+                "65a3b2c1d4e5f6a7b8c9d0e1",
+            ),
+            (
+                "https://www.xiaohongshu.com/explore/65a3b2c1d4e5f6a7b8c9d0e1?x=1",
+                "65a3b2c1d4e5f6a7b8c9d0e1",
+            ),
             ("https://creator.xiaohongshu.com/publish/success", ""),  # no note id
         ],
     )
@@ -147,4 +153,3 @@ class TestNoteIdExtraction:
         match = _NOTE_ID_RE.search(url)
         post_id = match.group(1) if match else ""
         assert post_id == expected
-

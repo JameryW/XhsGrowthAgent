@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Add a new session to journal file and update index.md.
 
@@ -27,35 +26,35 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from common.paths import (
-    FILE_JOURNAL_PREFIX,
-    get_repo_root,
-    get_current_task,
-    get_developer,
-    get_workspace_dir,
+from common.config import (
+    get_max_journal_lines,
+    get_packages,
+    get_session_auto_commit,
+    get_session_commit_message,
+    is_monorepo,
+    resolve_package,
+    validate_package,
 )
 from common.developer import ensure_developer
 from common.git import run_git
+from common.paths import (
+    FILE_JOURNAL_PREFIX,
+    get_current_task,
+    get_developer,
+    get_repo_root,
+    get_workspace_dir,
+)
 from common.safe_commit import (
     print_gitignore_warning,
     safe_git_add,
     safe_trellis_paths_to_add,
 )
 from common.tasks import load_task
-from common.config import (
-    get_packages,
-    get_session_auto_commit,
-    get_session_commit_message,
-    get_max_journal_lines,
-    is_monorepo,
-    resolve_package,
-    validate_package,
-)
-
 
 # =============================================================================
 # Helper Functions
 # =============================================================================
+
 
 def get_latest_journal_info(dev_dir: Path) -> tuple[Path | None, int, int]:
     """Get latest journal file info.
@@ -112,7 +111,7 @@ def count_journal_files(dev_dir: Path, active_num: int) -> str:
     files = sorted(
         [f for f in dev_dir.glob(f"{FILE_JOURNAL_PREFIX}*.md") if f.is_file()],
         key=lambda f: _extract_journal_num(f.stem),
-        reverse=True
+        reverse=True,
     )
 
     for f in files:
@@ -125,7 +124,11 @@ def count_journal_files(dev_dir: Path, active_num: int) -> str:
 
 
 def create_new_journal_file(
-    dev_dir: Path, num: int, developer: str, today: str, max_lines: int = 2000,
+    dev_dir: Path,
+    num: int,
+    developer: str,
+    today: str,
+    max_lines: int = 2000,
 ) -> Path:
     """Create a new journal file."""
     new_file = dev_dir / f"{FILE_JOURNAL_PREFIX}{num}.md"
@@ -134,7 +137,10 @@ def create_new_journal_file(
 
     if num > 0:
         prev_num = num - 1
-        continuation = f"> Continuation from `{FILE_JOURNAL_PREFIX}{prev_num}.md` (archived at ~{max_lines} lines)\n"
+        continuation = (
+            f"> Continuation from `{FILE_JOURNAL_PREFIX}{prev_num}.md` "
+            f"(archived at ~{max_lines} lines)\n"
+        )
     else:
         continuation = "> AI development session journal\n"
 
@@ -294,12 +300,14 @@ def update_index(
         if in_session_history:
             # Migrate old 4/6-column headers to 5-column Branch-only history.
             if re.match(
-                r"^\|\s*#\s*\|\s*Date\s*\|\s*Title\s*\|\s*Commits\s*\|\s*Branch\s*\|\s*Base Branch\s*\|\s*$",
+                r"^\|\s*#\s*\|\s*Date\s*\|\s*Title\s*\|\s*Commits\s*\|\s*Branch\s*\|\s*Base Branch\s*\|\s*$",  # noqa: E501
                 line,
             ):
                 new_lines.append("| # | Date | Title | Commits | Branch |")
                 continue
-            if re.match(r"^\|\s*#\s*\|\s*Date\s*\|\s*Title\s*\|\s*Commits\s*\|\s*Branch\s*\|\s*$", line):
+            if re.match(
+                r"^\|\s*#\s*\|\s*Date\s*\|\s*Title\s*\|\s*Commits\s*\|\s*Branch\s*\|\s*$", line
+            ):
                 new_lines.append("| # | Date | Title | Commits | Branch |")
                 continue
             if re.match(r"^\|\s*#\s*\|\s*Date\s*\|\s*Title\s*\|\s*Commits\s*\|\s*$", line):
@@ -307,7 +315,9 @@ def update_index(
                 continue
             if re.match(r"^\|[-| ]+\|\s*$", line) and not header_written:
                 new_lines.append("|---|------|-------|---------|--------|")
-                new_lines.append(f"| {new_session} | {today} | {title} | {commit_display} | `{branch or '-'}` |")
+                new_lines.append(
+                    f"| {new_session} | {today} | {title} | {commit_display} | `{branch or '-'}` |"
+                )
                 header_written = True
                 continue
             new_lines.append(line)
@@ -323,6 +333,7 @@ def update_index(
 # =============================================================================
 # Main Function
 # =============================================================================
+
 
 def _auto_commit_workspace(repo_root: Path) -> None:
     """Stage Trellis-owned workspace + task paths and commit.
@@ -361,9 +372,7 @@ def _auto_commit_workspace(repo_root: Path) -> None:
         return
 
     # Check if there are staged changes for the paths we just staged.
-    rc, _, _ = run_git(
-        ["diff", "--cached", "--quiet", "--", *paths], cwd=repo_root
-    )
+    rc, _, _ = run_git(["diff", "--cached", "--quiet", "--", *paths], cwd=repo_root)
     if rc == 0:
         print("[OK] No workspace changes to commit.", file=sys.stderr)
         return
@@ -411,7 +420,13 @@ def add_session(
     new_session = current_session + 1
 
     session_content = generate_session_content(
-        new_session, title, commit, summary, extra_content, today, package,
+        new_session,
+        title,
+        commit,
+        summary,
+        extra_content,
+        today,
+        package,
         branch,
     )
     content_lines = len(session_content.splitlines())
@@ -436,13 +451,19 @@ def add_session(
     # No journal file exists yet (first session): create journal-0.md before appending.
     if target_file is None:
         target_num = current_num if current_num > 0 else 0
-        print(f"[!] No journal file found, creating {FILE_JOURNAL_PREFIX}{target_num}.md", file=sys.stderr)
+        print(
+            f"[!] No journal file found, creating {FILE_JOURNAL_PREFIX}{target_num}.md",
+            file=sys.stderr,
+        )
         target_file = create_new_journal_file(dev_dir, target_num, developer, today, max_lines)
         print(f"Created: {target_file}", file=sys.stderr)
 
     if current_lines + content_lines > max_lines:
         target_num = current_num + 1
-        print(f"[!] Exceeds {max_lines} lines, creating {FILE_JOURNAL_PREFIX}{target_num}.md", file=sys.stderr)
+        print(
+            f"[!] Exceeds {max_lines} lines, creating {FILE_JOURNAL_PREFIX}{target_num}.md",
+            file=sys.stderr,
+        )
         target_file = create_new_journal_file(dev_dir, target_num, developer, today, max_lines)
         print(f"Created: {target_file}", file=sys.stderr)
 
@@ -489,6 +510,7 @@ def add_session(
 # Main Entry
 # =============================================================================
 
+
 def main() -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -500,10 +522,12 @@ def main() -> int:
     parser.add_argument("--content-file", help="Path to file with detailed content")
     parser.add_argument("--package", help="Package name tag (e.g., cli, docs-site)")
     parser.add_argument("--branch", help="Branch name (auto-detected if omitted)")
-    parser.add_argument("--no-commit", action="store_true",
-                        help="Skip auto-commit of workspace changes")
-    parser.add_argument("--stdin", action="store_true",
-                        help="Read extra content from stdin (explicit opt-in)")
+    parser.add_argument(
+        "--no-commit", action="store_true", help="Skip auto-commit of workspace changes"
+    )
+    parser.add_argument(
+        "--stdin", action="store_true", help="Read extra content from stdin (explicit opt-in)"
+    )
 
     args = parser.parse_args()
 
@@ -549,7 +573,10 @@ def main() -> int:
                 branch = detected
 
     return add_session(
-        args.title, args.commit, args.summary, extra_content,
+        args.title,
+        args.commit,
+        args.summary,
+        extra_content,
         auto_commit=not args.no_commit,
         package=package,
         branch=branch,

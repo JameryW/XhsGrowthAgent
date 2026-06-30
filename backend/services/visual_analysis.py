@@ -127,13 +127,9 @@ class VisualAnalysisService:
 
         # Calculate distributions (normalize to percentages)
         total_posts = len(posts)
-        style_distribution = {
-            style: count / total_posts
-            for style, count in style_counts.items()
-        }
+        style_distribution = {style: count / total_posts for style, count in style_counts.items()}
         layout_distribution = {
-            layout: count / total_posts
-            for layout, count in layout_counts.items()
+            layout: count / total_posts for layout, count in layout_counts.items()
         }
 
         # Identify trending items (top 3 by count)
@@ -360,13 +356,16 @@ class VisualAnalysisService:
 
         layouts: list[LayoutOption] = []
         for layout_type, percentage in distribution.items():
-            info = layout_info.get(layout_type, {
-                "description": f"{layout_type}布局",
-                "pros": [],
-                "cons": [],
-                "suitable_for": [],
-                "text_position": "",
-            })
+            info = layout_info.get(
+                layout_type,
+                {
+                    "description": f"{layout_type}布局",
+                    "pros": [],
+                    "cons": [],
+                    "suitable_for": [],
+                    "text_position": "",
+                },
+            )
 
             layout = LayoutOption(
                 layout_type=layout_type,
@@ -444,12 +443,15 @@ class VisualAnalysisService:
 
         styles: list[StyleOption] = []
         for style_name, percentage in distribution.items():
-            info = style_info.get(style_name, {
-                "description": f"{style_name}风格",
-                "pros": [],
-                "cons": [],
-                "suitable_for": [],
-            })
+            info = style_info.get(
+                style_name,
+                {
+                    "description": f"{style_name}风格",
+                    "pros": [],
+                    "cons": [],
+                    "suitable_for": [],
+                },
+            )
 
             # Calculate trending score based on distribution and trending list
             trending_score = percentage

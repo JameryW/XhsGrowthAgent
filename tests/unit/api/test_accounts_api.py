@@ -13,8 +13,10 @@ from fastapi.testclient import TestClient
 def setup_crypto():
     """Ensure ENCRYPTION_KEY is set for tests."""
     from backend.db.crypto import generate_key
+
     os.environ["ENCRYPTION_KEY"] = generate_key()
     import backend.db.crypto as crypto_mod
+
     crypto_mod._fernet = None
     yield
     os.environ.pop("ENCRYPTION_KEY", None)
@@ -25,6 +27,7 @@ def setup_crypto():
 def client():
     """Create a test client with the accounts router mounted."""
     from fastapi import FastAPI
+
     from backend.api.routes.accounts import router
 
     app = FastAPI()
@@ -47,7 +50,9 @@ def test_create_account(client):
     """POST /api/accounts creates a new account."""
     from backend.db.accounts import AccountRow
 
-    mock_account = AccountRow(id="acc-1", name="Test Account", is_active=False, created_at="2026-01-01T00:00:00")
+    mock_account = AccountRow(
+        id="acc-1", name="Test Account", is_active=False, created_at="2026-01-01T00:00:00"
+    )
 
     with patch("backend.db.accounts.create_account", new_callable=AsyncMock) as mock_create:
         mock_create.return_value = mock_account
@@ -62,8 +67,10 @@ def test_create_account(client):
 def test_create_account_empty_name(client):
     """POST /api/accounts with empty name returns validation error."""
     # ValidationError is an APIError(400) but without the error middleware,
-    # FastAPI returns 500. Check that the endpoint raises correctly.
-    with pytest.raises(Exception):
+    # FastAPI returns 500. Check that the endpoint raises the specific error.
+    from backend.api.errors import ValidationError
+
+    with pytest.raises(ValidationError):
         client.post("/api/accounts", json={"name": "  ", "is_active": False})
 
 
@@ -73,7 +80,9 @@ def test_get_credentials(client):
     from backend.db.crypto import encrypt_value
 
     encrypted = encrypt_value("sk-ant-1234567890abcdef")
-    mock_cred = CredentialRow(account_id="acc-1", key_name="ANTHROPIC_API_KEY", _encrypted_bytes=encrypted)
+    mock_cred = CredentialRow(
+        account_id="acc-1", key_name="ANTHROPIC_API_KEY", _encrypted_bytes=encrypted
+    )
 
     with patch("backend.db.accounts.list_credentials", new_callable=AsyncMock) as mock_list:
         mock_list.return_value = [mock_cred]
@@ -90,10 +99,15 @@ def test_get_credentials(client):
 
 def test_set_credentials(client):
     """PUT /api/accounts/{id}/credentials saves credentials."""
-    with patch("backend.db.accounts.set_credentials", new_callable=AsyncMock) as mock_set, \
-         patch("backend.db.accounts.get_active_account", new_callable=AsyncMock) as mock_active:
+    with (
+        patch("backend.db.accounts.set_credentials", new_callable=AsyncMock) as mock_set,
+        patch("backend.db.accounts.get_active_account", new_callable=AsyncMock) as mock_active,
+    ):
         mock_active.return_value = None  # Not the active account
-        resp = client.put("/api/accounts/acc-1/credentials", json={"credentials": {"ANTHROPIC_API_KEY": "sk-new-key"}})
+        resp = client.put(
+            "/api/accounts/acc-1/credentials",
+            json={"credentials": {"ANTHROPIC_API_KEY": "sk-new-key"}},
+        )
 
     assert resp.status_code == 200
     assert mock_set.called
@@ -101,9 +115,11 @@ def test_set_credentials(client):
 
 def test_delete_account(client):
     """DELETE /api/accounts/{id} removes an account."""
-    with patch("backend.db.accounts.delete_account", new_callable=AsyncMock) as mock_del, \
-         patch("backend.db.accounts.get_active_account", new_callable=AsyncMock) as mock_active, \
-         patch("backend.db.accounts.deactivate_credentials", new_callable=AsyncMock):
+    with (
+        patch("backend.db.accounts.delete_account", new_callable=AsyncMock) as mock_del,
+        patch("backend.db.accounts.get_active_account", new_callable=AsyncMock) as mock_active,
+        patch("backend.db.accounts.deactivate_credentials", new_callable=AsyncMock),
+    ):
         mock_del.return_value = True
         mock_active.return_value = None  # Not the active account
         resp = client.delete("/api/accounts/acc-1")

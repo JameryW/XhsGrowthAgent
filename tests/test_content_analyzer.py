@@ -7,6 +7,16 @@ import pytest
 
 from backend.agents.content_analyzer import ContentAnalyzerAgent
 
+# ponytail: shared mock LLM JSON — empty optimization result, repeated across tests
+_EMPTY_OPT_JSON = '{"optimization_analysis": {"gaps": [], "suggestions": [], "viral_patterns": []}}'
+_GAPPED_OPT_JSON = (
+    '{"optimization_analysis": {"gaps": [{"dimension": "标题", '
+    '"description": "草稿标题缺乏钩子元素", "severity": "high"}], '
+    '"suggestions": [{"dimension": "标题", "action": "添加数字钩子", '
+    '"reasoning": "爆款笔记标题包含数字", "priority": 1}], '
+    '"viral_patterns": ["标题包含数字钩子"]}}'
+)
+
 
 @pytest.fixture
 def mock_state_with_draft_and_viral():
@@ -88,11 +98,9 @@ async def test_content_analyzer_no_viral(mock_state_no_viral, mock_store):
     agent = ContentAnalyzerAgent()
 
     mock_model = MagicMock()
-    mock_model.ainvoke = AsyncMock(return_value=MagicMock(
-        content='{"optimization_analysis": {"gaps": [], "suggestions": [], "viral_patterns": []}}'
-    ))
+    mock_model.ainvoke = AsyncMock(return_value=MagicMock(content=_EMPTY_OPT_JSON))
 
-    with patch.object(agent, '_model', mock_model):
+    with patch.object(agent, "_model", mock_model):
         result = await agent.execute(mock_state_no_viral, mock_store)
     assert "optimization_analysis" in result
 
@@ -103,11 +111,9 @@ async def test_content_analyzer_with_draft_and_viral(mock_state_with_draft_and_v
     agent = ContentAnalyzerAgent()
 
     mock_model = MagicMock()
-    mock_model.ainvoke = AsyncMock(return_value=MagicMock(
-        content='{"optimization_analysis": {"gaps": [{"dimension": "标题", "description": "草稿标题缺乏钩子元素", "severity": "high"}], "suggestions": [{"dimension": "标题", "action": "添加数字钩子", "reasoning": "爆款笔记标题包含数字", "priority": 1}], "viral_patterns": ["标题包含数字钩子"]}}'
-    ))
+    mock_model.ainvoke = AsyncMock(return_value=MagicMock(content=_GAPPED_OPT_JSON))
 
-    with patch.object(agent, '_model', mock_model):
+    with patch.object(agent, "_model", mock_model):
         result = await agent.execute(mock_state_with_draft_and_viral, mock_store)
 
     assert "optimization_analysis" in result
@@ -122,12 +128,10 @@ async def test_content_analyzer_builds_viral_summary(mock_state_with_draft_and_v
     agent = ContentAnalyzerAgent()
 
     mock_model = MagicMock()
-    mock_model.ainvoke = AsyncMock(return_value=MagicMock(
-        content='{"optimization_analysis": {"gaps": [], "suggestions": [], "viral_patterns": []}}'
-    ))
+    mock_model.ainvoke = AsyncMock(return_value=MagicMock(content=_EMPTY_OPT_JSON))
 
-    with patch.object(agent, '_model', mock_model):
-        result = await agent.execute(mock_state_with_draft_and_viral, mock_store)
+    with patch.object(agent, "_model", mock_model):
+        await agent.execute(mock_state_with_draft_and_viral, mock_store)
 
     # Verify viral summary was built correctly
     viral_summary = agent._build_viral_summary(mock_state_with_draft_and_viral["viral_posts"])
@@ -142,11 +146,9 @@ async def test_content_analyzer_phase_update(mock_state_with_draft_and_viral, mo
     agent = ContentAnalyzerAgent()
 
     mock_model = MagicMock()
-    mock_model.ainvoke = AsyncMock(return_value=MagicMock(
-        content='{"optimization_analysis": {"gaps": [], "suggestions": [], "viral_patterns": []}}'
-    ))
+    mock_model.ainvoke = AsyncMock(return_value=MagicMock(content=_EMPTY_OPT_JSON))
 
-    with patch.object(agent, '_model', mock_model):
+    with patch.object(agent, "_model", mock_model):
         result = await agent.execute(mock_state_with_draft_and_viral, mock_store)
 
     assert result.get("phase") is not None
@@ -167,11 +169,9 @@ async def test_content_analyzer_empty_viral_posts(mock_store):
     }
 
     mock_model = MagicMock()
-    mock_model.ainvoke = AsyncMock(return_value=MagicMock(
-        content='{"optimization_analysis": {"gaps": [], "suggestions": [], "viral_patterns": []}}'
-    ))
+    mock_model.ainvoke = AsyncMock(return_value=MagicMock(content=_EMPTY_OPT_JSON))
 
-    with patch.object(agent, '_model', mock_model):
+    with patch.object(agent, "_model", mock_model):
         result = await agent.execute(state_with_empty_viral, mock_store)
     assert "optimization_analysis" in result
 
@@ -182,11 +182,9 @@ async def test_content_analyzer_handles_invalid_json(mock_state_with_draft_and_v
     agent = ContentAnalyzerAgent()
 
     mock_model = MagicMock()
-    mock_model.ainvoke = AsyncMock(return_value=MagicMock(
-        content='Invalid response without JSON'
-    ))
+    mock_model.ainvoke = AsyncMock(return_value=MagicMock(content="Invalid response without JSON"))
 
-    with patch.object(agent, '_model', mock_model):
+    with patch.object(agent, "_model", mock_model):
         result = await agent.execute(mock_state_with_draft_and_viral, mock_store)
 
     assert "optimization_analysis" in result
@@ -199,18 +197,20 @@ def mock_state_with_many_viral():
     """Mock state with many viral posts (more than 5)."""
     viral_posts = []
     for i in range(10):
-        viral_posts.append({
-            "note_id": f"note_{i}",
-            "title": f"爆款标题 {i}",
-            "body": f"爆款正文 {i}",
-            "hashtags": ["#爆款"],
-            "likes": 10000 + i * 100,
-            "collects": 5000,
-            "comments": 200,
-            "engagement_rate": 0.15,
-            "visual_style": "minimal",
-            "color_palette": {"primary": "#ffffff"},
-        })
+        viral_posts.append(
+            {
+                "note_id": f"note_{i}",
+                "title": f"爆款标题 {i}",
+                "body": f"爆款正文 {i}",
+                "hashtags": ["#爆款"],
+                "likes": 10000 + i * 100,
+                "collects": 5000,
+                "comments": 200,
+                "engagement_rate": 0.15,
+                "visual_style": "minimal",
+                "color_palette": {"primary": "#ffffff"},
+            }
+        )
     return {
         "account_id": "test_account",
         "draft_content": {
@@ -227,12 +227,10 @@ async def test_content_analyzer_limits_viral_posts(mock_state_with_many_viral, m
     agent = ContentAnalyzerAgent()
 
     mock_model = MagicMock()
-    mock_model.ainvoke = AsyncMock(return_value=MagicMock(
-        content='{"optimization_analysis": {"gaps": [], "suggestions": [], "viral_patterns": []}}'
-    ))
+    mock_model.ainvoke = AsyncMock(return_value=MagicMock(content=_EMPTY_OPT_JSON))
 
-    with patch.object(agent, '_model', mock_model):
-        result = await agent.execute(mock_state_with_many_viral, mock_store)
+    with patch.object(agent, "_model", mock_model):
+        await agent.execute(mock_state_with_many_viral, mock_store)
 
     viral_summary = agent._build_viral_summary(mock_state_with_many_viral["viral_posts"])
     summary_data = json.loads(viral_summary)

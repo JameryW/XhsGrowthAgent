@@ -62,9 +62,7 @@ class MemoryManager:
     ) -> None:
         await store.aput(self.content_history_ns, key=post_id, value=record)
 
-    async def store_insight(
-        self, store: BaseStore, insight: str, metadata: dict[str, Any]
-    ) -> None:
+    async def store_insight(self, store: BaseStore, insight: str, metadata: dict[str, Any]) -> None:
         await store.aput(
             self.insights_ns,
             key=str(uuid.uuid4()),
@@ -80,9 +78,7 @@ class MemoryManager:
             value={"preference": preference, **data},
         )
 
-    async def store_strategy_note(
-        self, store: BaseStore, note: str, data: dict[str, Any]
-    ) -> None:
+    async def store_strategy_note(self, store: BaseStore, note: str, data: dict[str, Any]) -> None:
         await store.aput(
             self.strategy_ns,
             key=str(uuid.uuid4()),
@@ -92,14 +88,22 @@ class MemoryManager:
     # ── Read (semantic search + keyword filter) ──
 
     async def recall_similar_content(
-        self, store: BaseStore, query: str, limit: int = 5,
-        *, keywords: list[str] | None = None, filter: dict[str, Any] | None = None,
+        self,
+        store: BaseStore,
+        query: str,
+        limit: int = 5,
+        *,
+        keywords: list[str] | None = None,
+        filter: dict[str, Any] | None = None,
     ) -> list[dict]:
         try:
             # Over-fetch to compensate for keyword filtering
             fetch_limit = limit * 2 if keywords else limit
             items = await store.asearch(
-                self.content_history_ns, query=query, limit=fetch_limit, filter=filter,
+                self.content_history_ns,
+                query=query,
+                limit=fetch_limit,
+                filter=filter,
             )
             if keywords:
                 items = _keyword_filter(items, keywords)
@@ -109,13 +113,21 @@ class MemoryManager:
             return []
 
     async def recall_audience_preferences(
-        self, store: BaseStore, query: str, limit: int = 3,
-        *, keywords: list[str] | None = None, filter: dict[str, Any] | None = None,
+        self,
+        store: BaseStore,
+        query: str,
+        limit: int = 3,
+        *,
+        keywords: list[str] | None = None,
+        filter: dict[str, Any] | None = None,
     ) -> list[dict]:
         try:
             fetch_limit = limit * 2 if keywords else limit
             items = await store.asearch(
-                self.audience_ns, query=query, limit=fetch_limit, filter=filter,
+                self.audience_ns,
+                query=query,
+                limit=fetch_limit,
+                filter=filter,
             )
             if keywords:
                 items = _keyword_filter(items, keywords)
@@ -125,13 +137,21 @@ class MemoryManager:
             return []
 
     async def recall_insights(
-        self, store: BaseStore, query: str, limit: int = 5,
-        *, keywords: list[str] | None = None, filter: dict[str, Any] | None = None,
+        self,
+        store: BaseStore,
+        query: str,
+        limit: int = 5,
+        *,
+        keywords: list[str] | None = None,
+        filter: dict[str, Any] | None = None,
     ) -> list[dict]:
         try:
             fetch_limit = limit * 2 if keywords else limit
             items = await store.asearch(
-                self.insights_ns, query=query, limit=fetch_limit, filter=filter,
+                self.insights_ns,
+                query=query,
+                limit=fetch_limit,
+                filter=filter,
             )
             if keywords:
                 items = _keyword_filter(items, keywords)
@@ -141,13 +161,21 @@ class MemoryManager:
             return []
 
     async def recall_strategy_notes(
-        self, store: BaseStore, query: str, limit: int = 3,
-        *, keywords: list[str] | None = None, filter: dict[str, Any] | None = None,
+        self,
+        store: BaseStore,
+        query: str,
+        limit: int = 3,
+        *,
+        keywords: list[str] | None = None,
+        filter: dict[str, Any] | None = None,
     ) -> list[dict]:
         try:
             fetch_limit = limit * 2 if keywords else limit
             items = await store.asearch(
-                self.strategy_ns, query=query, limit=fetch_limit, filter=filter,
+                self.strategy_ns,
+                query=query,
+                limit=fetch_limit,
+                filter=filter,
             )
             if keywords:
                 items = _keyword_filter(items, keywords)

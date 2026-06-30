@@ -4,6 +4,7 @@ Tests the full workflow: tool -> service -> database
 with mocked XHSClient for API calls.
 """
 
+import contextlib
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -142,9 +143,7 @@ def cached_result() -> SceneAnalysisResult:
         sample_size=50,
         style_distribution={"温暖治愈": 0.5, "现代简约": 0.3, "高冷高级": 0.2},
         layout_distribution={"网格布局": 0.4, "上下结构": 0.3, "全图+文末": 0.3},
-        color_palettes=[
-            ColorPalette(primary_colors=["#FFE4E1"], secondary_colors=["#F5DEB3"])
-        ],
+        color_palettes=[ColorPalette(primary_colors=["#FFE4E1"], secondary_colors=["#F5DEB3"])],
         visual_elements={"icons": 30},
         trending_styles=["温暖治愈"],
         trending_layouts=["网格布局"],
@@ -178,7 +177,7 @@ async def test_service_analyze_and_save_to_database(
     assert len(result.layout_distribution) > 0
 
     # Database saved the result
-    saved = temp_database.get_scene_analysis("travel_outdoor")
+    temp_database.get_scene_analysis("travel_outdoor")
     # May return None if sample_size < min_sample_size (30)
     # That's expected behavior - verify the result was saved
     # Check the saved file directly
@@ -305,9 +304,7 @@ async def test_style_tool_calls_service(
         "backend.tools.content.style.VisualAnalysisService",
         return_value=service,
     ):
-        result = await style_library.ainvoke(
-            {"scene": "travel_outdoor", "limit": 3}
-        )
+        result = await style_library.ainvoke({"scene": "travel_outdoor", "limit": 3})
 
     # Should return style recommendations
     assert isinstance(result, list)
@@ -356,9 +353,7 @@ async def test_tool_chain_analyze_then_recommend(
         "backend.tools.content.style.VisualAnalysisService",
         return_value=service,
     ):
-        styles = await style_library.ainvoke(
-            {"scene": "travel_outdoor", "limit": 3}
-        )
+        styles = await style_library.ainvoke({"scene": "travel_outdoor", "limit": 3})
 
     # Both should work
     assert isinstance(layouts, list)
@@ -433,12 +428,10 @@ async def test_workflow_handles_xhs_api_error_gracefully(
         extractor=extractor,
     )
 
-    # Should handle error and return empty result
-    try:
-        result = await service.analyze_scene("error_scene")
-    except ConnectionError:
-        # Propagates error - acceptable behavior
-        pass
+    # Should handle error and return empty result.
+    # Propagating ConnectionError is acceptable behavior here.
+    with contextlib.suppress(ConnectionError):
+        await service.analyze_scene("error_scene")
 
 
 # ── Integration Tests: Defaults ───────────────────────────────────────────────

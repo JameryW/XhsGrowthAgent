@@ -1,7 +1,9 @@
 """Tests for SSE EventBus-driven streaming."""
 
 import asyncio
+
 import pytest
+
 from backend.realtime.event_bus import EventBusService
 from backend.realtime.events import EventType
 

@@ -53,8 +53,7 @@ async def layout_recommender(
         - avg_engagement: 平均互动率
     """
     logger.info(
-        f"Layout recommendation for scene={scene}, "
-        f"type={content_type}, images={image_count}"
+        f"Layout recommendation for scene={scene}, type={content_type}, images={image_count}"
     )
 
     # Create service instance

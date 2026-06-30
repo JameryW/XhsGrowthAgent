@@ -26,6 +26,7 @@ Silent exit 0 cases (no output):
   - No .trellis/ directory found (not a Trellis project)
   - task.json malformed or missing status
 """
+
 from __future__ import annotations
 
 import json
@@ -41,6 +42,7 @@ from pathlib import Path
 # but applied per-stream so we don't depend on host CLI's command wiring.
 if sys.platform.startswith("win"):
     import io as _io
+
     for _stream_name in ("stdin", "stdout", "stderr"):
         _stream = getattr(sys, _stream_name, None)
         if _stream is None:
@@ -52,11 +54,13 @@ if sys.platform.startswith("win"):
                 pass
         elif hasattr(_stream, "detach"):
             try:
-                setattr(sys, _stream_name, _io.TextIOWrapper(_stream.detach(), encoding="utf-8", errors="replace"))
+                setattr(
+                    sys,
+                    _stream_name,
+                    _io.TextIOWrapper(_stream.detach(), encoding="utf-8", errors="replace"),
+                )
             except Exception:
                 pass
-from typing import Optional
-
 
 CODEX_SUB_AGENT_NOTICE = """<sub-agent-notice>
 SUB-AGENT NOTICE - READ FIRST IF SPAWNED VIA spawn_agent
@@ -103,7 +107,8 @@ message), DO NOT read `$trellis-start`. Execute the parent message directly as i
 # CWD-robust Trellis root discovery (fixes hook-path-robustness for this hook)
 # ---------------------------------------------------------------------------
 
-def find_trellis_root(start: Path) -> Optional[Path]:
+
+def find_trellis_root(start: Path) -> Path | None:
     """Walk up from start to find directory containing .trellis/.
 
     Handles CWD drift: subdirectory launches, monorepo packages, etc.
@@ -120,6 +125,7 @@ def find_trellis_root(start: Path) -> Optional[Path]:
 # ---------------------------------------------------------------------------
 # Active task discovery
 # ---------------------------------------------------------------------------
+
 
 def _detect_platform(input_data: dict) -> str | None:
     if isinstance(input_data.get("cursor_version"), str):
@@ -166,7 +172,7 @@ def _resolve_active_task(root: Path, input_data: dict):
     return resolve_active_task(root, input_data, platform=_detect_platform(input_data))
 
 
-def get_active_task(root: Path, input_data: dict) -> Optional[tuple[str, str, str]]:
+def get_active_task(root: Path, input_data: dict) -> tuple[str, str, str] | None:
     """Return (task_id, status, source) from the current active task."""
     active = _resolve_active_task(root, input_data)
     if not active.task_path:
@@ -203,6 +209,7 @@ _TAG_RE = re.compile(
     r"\[workflow-state:([A-Za-z0-9_-]+)\]\s*\n(.*?)\n\s*\[/workflow-state:\1\]",
     re.DOTALL,
 )
+
 
 def load_breadcrumbs(root: Path) -> dict[str, str]:
     """Parse workflow.md for [workflow-state:STATUS] blocks.
@@ -270,9 +277,7 @@ def _codex_mode_banner(config: dict) -> str:
     return f"<codex-mode>{mode}</codex-mode>"
 
 
-def resolve_breadcrumb_key(
-    status: str, platform: str | None, config: dict
-) -> str:
+def resolve_breadcrumb_key(status: str, platform: str | None, config: dict) -> str:
     """Pick the breadcrumb tag key based on Codex dispatch_mode.
 
     Codex defaults to ``inline`` because sub-agents run with ``fork_turns="none"``
@@ -296,7 +301,7 @@ def resolve_breadcrumb_key(
 
 
 def build_breadcrumb(
-    task_id: Optional[str],
+    task_id: str | None,
     status: str,
     templates: dict[str, str],
     source: str | None = None,
@@ -325,6 +330,7 @@ def build_breadcrumb(
 # Entry
 # ---------------------------------------------------------------------------
 
+
 def main() -> int:
     if os.environ.get("TRELLIS_HOOKS") == "0" or os.environ.get("TRELLIS_DISABLE_HOOKS") == "1":
         return 0
@@ -349,15 +355,11 @@ def main() -> int:
         # No active task — still emit a breadcrumb nudging AI toward
         # trellis-brainstorm + task.py create when user describes real work.
         no_task_key = resolve_breadcrumb_key("no_task", platform, config)
-        breadcrumb = build_breadcrumb(
-            None, "no_task", templates, breadcrumb_key=no_task_key
-        )
+        breadcrumb = build_breadcrumb(None, "no_task", templates, breadcrumb_key=no_task_key)
     else:
         task_id, status, source = task
         status_key = resolve_breadcrumb_key(status, platform, config)
-        breadcrumb = build_breadcrumb(
-            task_id, status, templates, source, breadcrumb_key=status_key
-        )
+        breadcrumb = build_breadcrumb(task_id, status, templates, source, breadcrumb_key=status_key)
     if platform == "codex":
         parts: list[str] = [CODEX_SUB_AGENT_NOTICE]
         if task is None:
@@ -369,9 +371,7 @@ def main() -> int:
     # Gemini CLI 0.40.x rejects "UserPromptSubmit" — its per-turn event is
     # named "BeforeAgent". Other platforms (Claude/Cursor/Qoder/CodeBuddy/
     # Droid/Codex/Copilot) accept the original Claude-style name.
-    hook_event_name = (
-        "BeforeAgent" if platform == "gemini" else "UserPromptSubmit"
-    )
+    hook_event_name = "BeforeAgent" if platform == "gemini" else "UserPromptSubmit"
 
     output = {
         "hookSpecificOutput": {

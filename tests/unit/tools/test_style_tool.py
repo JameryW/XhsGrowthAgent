@@ -100,9 +100,7 @@ async def test_style_library_returns_list() -> None:
         "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
-        result = await style_library.ainvoke(
-            {"scene": "travel_outdoor", "limit": 10}
-        )
+        result = await style_library.ainvoke({"scene": "travel_outdoor", "limit": 10})
 
     assert isinstance(result, list)
     assert len(result) > 0
@@ -118,9 +116,7 @@ async def test_style_library_calls_service() -> None:
         "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
-        await style_library.ainvoke(
-            {"scene": "food_restaurant", "category": "美食"}
-        )
+        await style_library.ainvoke({"scene": "food_restaurant", "category": "美食"})
 
     mock_service.get_style_recommendations.assert_called_once()
 
@@ -174,9 +170,7 @@ async def test_style_library_with_limit() -> None:
         "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
-        result = await style_library.ainvoke(
-            {"scene": "test", "limit": 3}
-        )
+        result = await style_library.ainvoke({"scene": "test", "limit": 3})
 
     assert len(result) == 3
 
@@ -197,9 +191,7 @@ async def test_style_library_include_trending_sort() -> None:
         "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
-        result = await style_library.ainvoke(
-            {"scene": "test", "include_trending": True}
-        )
+        result = await style_library.ainvoke({"scene": "test", "include_trending": True})
 
     # Should be sorted by trending_score descending
     assert result[0]["style_name"] == "高热度"
@@ -222,9 +214,7 @@ async def test_style_library_exclude_trending_sort() -> None:
         "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
-        result = await style_library.ainvoke(
-            {"scene": "test", "include_trending": False}
-        )
+        result = await style_library.ainvoke({"scene": "test", "include_trending": False})
 
     # Should be sorted by usage_rate descending
     assert result[0]["style_name"] == "高使用"
@@ -275,9 +265,7 @@ async def test_style_library_with_category() -> None:
         "backend.tools.content.style.VisualAnalysisService",
         return_value=mock_service,
     ):
-        await style_library.ainvoke(
-            {"scene": "food_restaurant", "category": "美食"}
-        )
+        await style_library.ainvoke({"scene": "food_restaurant", "category": "美食"})
 
     # Service should be called
     mock_service.get_style_recommendations.assert_called_once()
@@ -365,10 +353,7 @@ async def test_style_library_zero_limit() -> None:
 @pytest.mark.asyncio
 async def test_style_library_large_limit() -> None:
     """Test style_library handles large limit."""
-    styles = [
-        StyleOption(style_name=f"风格{i}", trending_score=0.9 - i * 0.1)
-        for i in range(20)
-    ]
+    styles = [StyleOption(style_name=f"风格{i}", trending_score=0.9 - i * 0.1) for i in range(20)]
 
     mock_service = MagicMock()
     mock_service.get_style_recommendations.return_value = styles

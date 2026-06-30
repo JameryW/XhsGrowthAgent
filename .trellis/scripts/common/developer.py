@@ -15,20 +15,20 @@ from datetime import datetime
 from pathlib import Path
 
 from .paths import (
+    DIR_TASKS,
     DIR_WORKFLOW,
     DIR_WORKSPACE,
-    DIR_TASKS,
     FILE_DEVELOPER,
     FILE_JOURNAL_PREFIX,
-    get_repo_root,
-    get_developer,
     check_developer,
+    get_developer,
+    get_repo_root,
 )
-
 
 # =============================================================================
 # Developer Initialization
 # =============================================================================
+
 
 def init_developer(name: str, repo_root: Path | None = None) -> bool:
     """Initialize developer.
@@ -58,18 +58,15 @@ def init_developer(name: str, repo_root: Path | None = None) -> bool:
     # Create .developer file
     initialized_at = datetime.now().isoformat()
     try:
-        dev_file.write_text(
-            f"name={name}\ninitialized_at={initialized_at}\n",
-            encoding="utf-8"
-        )
-    except (OSError, IOError) as e:
+        dev_file.write_text(f"name={name}\ninitialized_at={initialized_at}\n", encoding="utf-8")
+    except OSError as e:
         print(f"Error: Failed to create .developer file: {e}", file=sys.stderr)
         return False
 
     # Create workspace directory structure
     try:
         workspace_dir.mkdir(parents=True, exist_ok=True)
-    except (OSError, IOError) as e:
+    except OSError as e:
         print(f"Error: Failed to create workspace directory: {e}", file=sys.stderr)
         return False
 
@@ -87,7 +84,7 @@ def init_developer(name: str, repo_root: Path | None = None) -> bool:
 """
         try:
             journal_file.write_text(journal_content, encoding="utf-8")
-        except (OSError, IOError) as e:
+        except OSError as e:
             print(f"Error: Failed to create journal file: {e}", file=sys.stderr)
             return False
 
@@ -137,7 +134,7 @@ def init_developer(name: str, repo_root: Path | None = None) -> bool:
 """
         try:
             index_file.write_text(index_content, encoding="utf-8")
-        except (OSError, IOError) as e:
+        except OSError as e:
             print(f"Error: Failed to create index.md: {e}", file=sys.stderr)
             return False
 
@@ -159,7 +156,9 @@ def ensure_developer(repo_root: Path | None = None) -> None:
 
     if not check_developer(repo_root):
         print("Error: Developer not initialized.", file=sys.stderr)
-        print(f"Run: python3 ./{DIR_WORKFLOW}/scripts/init_developer.py <your-name>", file=sys.stderr)
+        print(
+            f"Run: python3 ./{DIR_WORKFLOW}/scripts/init_developer.py <your-name>", file=sys.stderr
+        )
         sys.exit(1)
 
 

@@ -13,6 +13,7 @@ from backend.config.settings import Settings
 
 class TokenData(BaseModel):
     """Token payload data."""
+
     token: str
     user_id: str
     username: str
@@ -109,6 +110,7 @@ async def verify_credentials_async(username: str, password: str) -> dict[str, An
     admin slip through.
     """
     from backend.db.console_users import verify_login
+
     user = await verify_login(username, password)
     if user is None:
         return None

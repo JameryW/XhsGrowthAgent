@@ -12,7 +12,6 @@ from pathlib import Path
 
 from .paths import DIR_WORKFLOW, get_repo_root
 
-
 # =============================================================================
 # YAML Simple Parser (no dependencies)
 # =============================================================================
@@ -86,9 +85,7 @@ def parse_simple_yaml(content: str) -> dict:
     return result
 
 
-def _parse_yaml_block(
-    lines: list[str], start: int, min_indent: int, target: dict
-) -> int:
+def _parse_yaml_block(lines: list[str], start: int, min_indent: int, target: dict) -> int:
     """Parse a YAML block into target dict, returning next line index."""
     i = start
     current_list: list | None = None
@@ -192,7 +189,7 @@ def _load_config(repo_root: Path | None = None) -> dict:
     try:
         content = config_file.read_text(encoding="utf-8")
         return parse_simple_yaml(content)
-    except (OSError, IOError):
+    except OSError:
         return {}
 
 

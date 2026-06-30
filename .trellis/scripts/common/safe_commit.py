@@ -45,7 +45,6 @@ from .paths import (
     get_developer,
 )
 
-
 # Paths under .trellis/ that must NEVER be auto-staged. Listed here so the
 # warning to the user can show concrete subpaths to ignore individually
 # instead of ignoring the whole `.trellis/` tree.
@@ -84,14 +83,10 @@ def safe_trellis_paths_to_add(repo_root: Path) -> list[str]:
         if ws.is_dir():
             for f in sorted(ws.glob(f"{FILE_JOURNAL_PREFIX}*.md")):
                 if f.is_file():
-                    paths.append(
-                        f"{DIR_WORKFLOW}/{DIR_WORKSPACE}/{developer}/{f.name}"
-                    )
+                    paths.append(f"{DIR_WORKFLOW}/{DIR_WORKSPACE}/{developer}/{f.name}")
             index_md = ws / "index.md"
             if index_md.is_file():
-                paths.append(
-                    f"{DIR_WORKFLOW}/{DIR_WORKSPACE}/{developer}/index.md"
-                )
+                paths.append(f"{DIR_WORKFLOW}/{DIR_WORKSPACE}/{developer}/index.md")
 
     # Active tasks: each direct child of tasks/ that is a directory and not
     # the archive root. The archive subtree is added as a single path below.
@@ -149,9 +144,7 @@ def safe_archive_paths_to_add(
         # handles the source-side deletes via `git rm --cached`
         # explicitly.
         if archive_dir.is_dir():
-            paths.append(
-                f"{DIR_WORKFLOW}/{DIR_TASKS}/{DIR_ARCHIVE}"
-            )
+            paths.append(f"{DIR_WORKFLOW}/{DIR_TASKS}/{DIR_ARCHIVE}")
         for child_name in modified_children or []:
             paths.append(f"{DIR_WORKFLOW}/{DIR_TASKS}/{child_name}")
         return paths
@@ -177,9 +170,7 @@ def _stderr_indicates_ignored(stderr: str) -> bool:
     return "ignored by" in lowered
 
 
-def safe_git_add(
-    paths: list[str], repo_root: Path
-) -> tuple[bool, bool, str]:
+def safe_git_add(paths: list[str], repo_root: Path) -> tuple[bool, bool, str]:
     """Run `git add` on specific paths; never retry with -f.
 
     Returns ``(success, used_force, stderr)``. The ``used_force`` field is

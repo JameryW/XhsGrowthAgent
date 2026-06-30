@@ -40,6 +40,7 @@ def test_event_bus_subscribe():
     bus = EventBusService.get_instance()
 
     received_events = []
+
     def handler(event: Event):
         received_events.append(event)
 
@@ -55,6 +56,7 @@ def test_event_bus_unsubscribe():
     bus = EventBusService.get_instance()
 
     received_events = []
+
     def handler(event: Event):
         received_events.append(event)
 

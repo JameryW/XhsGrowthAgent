@@ -127,6 +127,7 @@ async def test_verify_login_returns_none_on_unknown_user():
 
 if __name__ == "__main__":
     import asyncio
+
     test_password_hash_roundtrip()
     test_password_hash_unique_salt()
     test_password_verify_malformed_hash_fails_closed()

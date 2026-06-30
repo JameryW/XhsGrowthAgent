@@ -20,6 +20,7 @@ class TestBaseAgent:
 
     def test_task_type_attribute(self):
         """Agent has task_type defined."""
+
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "dummy"
@@ -33,6 +34,7 @@ class TestBaseAgent:
 
     def test_agent_name_attribute(self):
         """Agent has name defined."""
+
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "test_agent"
@@ -47,9 +49,13 @@ class TestBaseAgent:
     def test_load_prompt_existing_file(self, tmp_path):
         """Load prompt from existing YAML file."""
         # Create the expected directory structure under backend/config/prompts
-        prompts_dir = Path(__file__).resolve().parent.parent.parent.parent / "backend" / "config" / "prompts"
+        prompts_dir = (
+            Path(__file__).resolve().parent.parent.parent.parent / "backend" / "config" / "prompts"
+        )
         prompt_file = prompts_dir / "_test_prompt.yaml"
-        prompt_file.write_text('system: "You are a test agent."\nuser_template: "Process this: {topic}"\n')
+        prompt_file.write_text(
+            'system: "You are a test agent."\nuser_template: "Process this: {topic}"\n'
+        )
 
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
@@ -69,6 +75,7 @@ class TestBaseAgent:
 
     def test_load_prompt_missing_file(self):
         """Return empty dict when prompt file missing."""
+
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "dummy"
@@ -83,6 +90,7 @@ class TestBaseAgent:
 
     def test_load_prompt_empty_file_attr(self):
         """Return empty dict when prompt_file is empty."""
+
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "dummy"
@@ -97,6 +105,7 @@ class TestBaseAgent:
 
     def test_parse_json_response_with_code_block(self):
         """Parse JSON from code block."""
+
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "dummy"
@@ -114,6 +123,7 @@ class TestBaseAgent:
 
     def test_parse_json_response_without_code_block(self):
         """Parse raw JSON string."""
+
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "dummy"
@@ -129,6 +139,7 @@ class TestBaseAgent:
 
     def test_parse_json_response_invalid_json(self):
         """Return raw_content on invalid JSON."""
+
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "dummy"
@@ -144,6 +155,7 @@ class TestBaseAgent:
 
     def test_parse_json_response_nested_code_block(self):
         """Parse JSON from nested code block markers."""
+
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "dummy"
@@ -164,6 +176,7 @@ Some text after"""
     @pytest.mark.asyncio
     async def test_recall_memory(self):
         """Recall items from memory store."""
+
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "dummy"
@@ -192,6 +205,7 @@ Some text after"""
     @pytest.mark.asyncio
     async def test_call_wraps_execute(self):
         """__call__ wraps execute and adds current_agent."""
+
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "test_agent"
@@ -234,6 +248,7 @@ Some text after"""
 
     def test_model_property_returns_model(self):
         """model property returns configured LLM."""
+
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "dummy"
@@ -254,6 +269,7 @@ Some text after"""
 
     def test_prompt_template_property(self):
         """prompt_template property loads template once."""
+
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
             agent_name = "dummy"

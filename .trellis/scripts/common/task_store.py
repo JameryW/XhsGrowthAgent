@@ -54,10 +54,10 @@ from .task_utils import (
     run_task_hooks,
 )
 
-
 # =============================================================================
 # Helper Functions
 # =============================================================================
+
 
 def _slugify(title: str) -> str:
     """Convert title to slug (only works with ASCII)."""
@@ -125,13 +125,13 @@ _SUBAGENT_CONFIG_DIRS: tuple[str, ...] = (
     ".opencode",
     ".qoder",
     ".codebuddy",
-    ".factory",   # Factory Droid
+    ".factory",  # Factory Droid
     ".github/copilot",
-    ".pi",        # Pi Agent
+    ".pi",  # Pi Agent
 )
 
 _SEED_EXAMPLE = (
-    "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. "
+    'Fill with {"file": "<path>", "reason": "<why>"}. '
     "Put spec/research files only — no code paths. "
     "Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. "
     "Delete this line once real entries are added."
@@ -145,10 +145,7 @@ def _has_subagent_platform(repo_root: Path) -> bool:
     only to decide whether ``task.py create`` should seed empty
     ``implement.jsonl`` / ``check.jsonl`` files.
     """
-    for config_dir in _SUBAGENT_CONFIG_DIRS:
-        if (repo_root / config_dir).is_dir():
-            return True
-    return False
+    return any((repo_root / config_dir).is_dir() for config_dir in _SUBAGENT_CONFIG_DIRS)
 
 
 def _write_seed_jsonl(path: Path) -> None:
@@ -166,6 +163,7 @@ def _write_seed_jsonl(path: Path) -> None:
 # Command: create
 # =============================================================================
 
+
 def cmd_create(args: argparse.Namespace) -> int:
     """Create a new task."""
     repo_root = get_repo_root()
@@ -179,13 +177,19 @@ def cmd_create(args: argparse.Namespace) -> int:
     if not is_monorepo(repo_root):
         # Single-repo: ignore --package, no package prefix
         if package:
-            print(colored(f"Warning: --package ignored in single-repo project", Colors.YELLOW), file=sys.stderr)
+            print(
+                colored("Warning: --package ignored in single-repo project", Colors.YELLOW),
+                file=sys.stderr,
+            )
         package = None
     elif package:
         if not validate_package(package, repo_root):
             packages = get_packages(repo_root)
             available = ", ".join(sorted(packages.keys())) if packages else "(none)"
-            print(colored(f"Error: unknown package '{package}'. Available: {available}", Colors.RED), file=sys.stderr)
+            print(
+                colored(f"Error: unknown package '{package}'. Available: {available}", Colors.RED),
+                file=sys.stderr,
+            )
             return 1
     else:
         # Inferred: default_package → None (no task.json yet for create)
@@ -196,7 +200,13 @@ def cmd_create(args: argparse.Namespace) -> int:
     if not assignee:
         assignee = get_developer(repo_root)
         if not assignee:
-            print(colored("Error: No developer set. Run init_developer.py first or use --assignee", Colors.RED), file=sys.stderr)
+            print(
+                colored(
+                    "Error: No developer set. Run init_developer.py first or use --assignee",
+                    Colors.RED,
+                ),
+                file=sys.stderr,
+            )
             return 1
 
     ensure_tasks_dir(repo_root)
@@ -225,7 +235,10 @@ def cmd_create(args: argparse.Namespace) -> int:
         return 1
 
     if task_dir.exists():
-        print(colored(f"Warning: Task directory already exists: {dir_name}", Colors.YELLOW), file=sys.stderr)
+        print(
+            colored(f"Warning: Task directory already exists: {dir_name}", Colors.YELLOW),
+            file=sys.stderr,
+        )
     else:
         task_dir.mkdir(parents=True)
 
@@ -281,7 +294,10 @@ def cmd_create(args: argparse.Namespace) -> int:
         parent_dir = resolve_task_dir(args.parent, repo_root)
         parent_json_path = parent_dir / FILE_TASK_JSON
         if not parent_json_path.is_file():
-            print(colored(f"Warning: Parent task.json not found: {args.parent}", Colors.YELLOW), file=sys.stderr)
+            print(
+                colored(f"Warning: Parent task.json not found: {args.parent}", Colors.YELLOW),
+                file=sys.stderr,
+            )
         else:
             parent_data = read_json(parent_json_path)
             if parent_data:
@@ -296,7 +312,9 @@ def cmd_create(args: argparse.Namespace) -> int:
                 task_data["parent"] = parent_dir.name
                 write_json(task_json_path, task_data)
 
-                print(colored(f"Linked as child of: {parent_dir.name}", Colors.GREEN), file=sys.stderr)
+                print(
+                    colored(f"Linked as child of: {parent_dir.name}", Colors.GREEN), file=sys.stderr
+                )
 
     # Auto-activate the new task so the per-turn breadcrumb fires planning
     # state. Best-effort: gracefully degrade if no session identity (CLI run
@@ -305,6 +323,7 @@ def cmd_create(args: argparse.Namespace) -> int:
     # other AI sessions.
     try:
         from .active_task import resolve_context_key, set_active_task
+
         if resolve_context_key():
             try:
                 rel_dir = task_dir.relative_to(repo_root).as_posix()
@@ -340,6 +359,7 @@ def cmd_create(args: argparse.Namespace) -> int:
 # Command: archive
 # =============================================================================
 
+
 def cmd_archive(args: argparse.Namespace) -> int:
     """Archive completed task."""
     repo_root = get_repo_root()
@@ -359,6 +379,7 @@ def cmd_archive(args: argparse.Namespace) -> int:
         print("Active tasks:", file=sys.stderr)
         # Import lazily to avoid circular dependency
         from .tasks import iter_active_tasks
+
         for t in iter_active_tasks(tasks_dir):
             print(f"  - {t.dir_name}/", file=sys.stderr)
         return 1
@@ -399,6 +420,7 @@ def cmd_archive(args: argparse.Namespace) -> int:
 
     # Clear any session that still points at this task before the path moves.
     from .active_task import clear_task_from_sessions
+
     clear_task_from_sessions(str(task_dir), repo_root)
 
     # Archive
@@ -406,7 +428,9 @@ def cmd_archive(args: argparse.Namespace) -> int:
     if "archived_to" in result:
         archive_dest = Path(result["archived_to"])
         year_month = archive_dest.parent.name
-        print(colored(f"Archived: {dir_name} -> archive/{year_month}/", Colors.GREEN), file=sys.stderr)
+        print(
+            colored(f"Archived: {dir_name} -> archive/{year_month}/", Colors.GREEN), file=sys.stderr
+        )
 
         # Auto-commit unless --no-commit
         if not getattr(args, "no_commit", False):
@@ -504,6 +528,7 @@ def _auto_commit_archive(
 # Command: add-subtask
 # =============================================================================
 
+
 def cmd_add_subtask(args: argparse.Namespace) -> int:
     """Link a child task to a parent task."""
     repo_root = get_repo_root()
@@ -515,11 +540,17 @@ def cmd_add_subtask(args: argparse.Namespace) -> int:
     child_json_path = child_dir / FILE_TASK_JSON
 
     if not parent_json_path.is_file():
-        print(colored(f"Error: Parent task.json not found: {args.parent_dir}", Colors.RED), file=sys.stderr)
+        print(
+            colored(f"Error: Parent task.json not found: {args.parent_dir}", Colors.RED),
+            file=sys.stderr,
+        )
         return 1
 
     if not child_json_path.is_file():
-        print(colored(f"Error: Child task.json not found: {args.child_dir}", Colors.RED), file=sys.stderr)
+        print(
+            colored(f"Error: Child task.json not found: {args.child_dir}", Colors.RED),
+            file=sys.stderr,
+        )
         return 1
 
     parent_data = read_json(parent_json_path)
@@ -532,7 +563,10 @@ def cmd_add_subtask(args: argparse.Namespace) -> int:
     # Check if child already has a parent
     existing_parent = child_data.get("parent")
     if existing_parent:
-        print(colored(f"Error: Child task already has a parent: {existing_parent}", Colors.RED), file=sys.stderr)
+        print(
+            colored(f"Error: Child task already has a parent: {existing_parent}", Colors.RED),
+            file=sys.stderr,
+        )
         return 1
 
     # Add child to parent's children list
@@ -557,6 +591,7 @@ def cmd_add_subtask(args: argparse.Namespace) -> int:
 # Command: remove-subtask
 # =============================================================================
 
+
 def cmd_remove_subtask(args: argparse.Namespace) -> int:
     """Unlink a child task from a parent task."""
     repo_root = get_repo_root()
@@ -568,11 +603,17 @@ def cmd_remove_subtask(args: argparse.Namespace) -> int:
     child_json_path = child_dir / FILE_TASK_JSON
 
     if not parent_json_path.is_file():
-        print(colored(f"Error: Parent task.json not found: {args.parent_dir}", Colors.RED), file=sys.stderr)
+        print(
+            colored(f"Error: Parent task.json not found: {args.parent_dir}", Colors.RED),
+            file=sys.stderr,
+        )
         return 1
 
     if not child_json_path.is_file():
-        print(colored(f"Error: Child task.json not found: {args.child_dir}", Colors.RED), file=sys.stderr)
+        print(
+            colored(f"Error: Child task.json not found: {args.child_dir}", Colors.RED),
+            file=sys.stderr,
+        )
         return 1
 
     parent_data = read_json(parent_json_path)
@@ -596,13 +637,16 @@ def cmd_remove_subtask(args: argparse.Namespace) -> int:
     write_json(parent_json_path, parent_data)
     write_json(child_json_path, child_data)
 
-    print(colored(f"Unlinked: {child_dir.name} from {parent_dir.name}", Colors.GREEN), file=sys.stderr)
+    print(
+        colored(f"Unlinked: {child_dir.name} from {parent_dir.name}", Colors.GREEN), file=sys.stderr
+    )
     return 0
 
 
 # =============================================================================
 # Command: set-branch
 # =============================================================================
+
 
 def cmd_set_branch(args: argparse.Namespace) -> int:
     """Set git branch for task."""
@@ -634,6 +678,7 @@ def cmd_set_branch(args: argparse.Namespace) -> int:
 # =============================================================================
 # Command: set-base-branch
 # =============================================================================
+
 
 def cmd_set_base_branch(args: argparse.Namespace) -> int:
     """Set the base branch (PR target) for task."""
@@ -669,6 +714,7 @@ def cmd_set_base_branch(args: argparse.Namespace) -> int:
 # =============================================================================
 # Command: set-scope
 # =============================================================================
+
 
 def cmd_set_scope(args: argparse.Namespace) -> int:
     """Set scope for PR title."""

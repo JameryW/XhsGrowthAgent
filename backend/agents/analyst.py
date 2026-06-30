@@ -115,9 +115,12 @@ class AnalystAgent(BaseAgent):
                     record["shares"] = publish_result.get("shares", 0)
                     record_views = record["views"] or 0
                     if record_views > 0:
-                        total_engagement = (record.get("likes", 0) or 0) + (
-                            record.get("collects", 0) or 0
-                        ) + (record.get("comments", 0) or 0) + (record.get("shares", 0) or 0)
+                        total_engagement = (
+                            (record.get("likes", 0) or 0)
+                            + (record.get("collects", 0) or 0)
+                            + (record.get("comments", 0) or 0)
+                            + (record.get("shares", 0) or 0)
+                        )
                         record["engagement_rate"] = round(total_engagement / record_views, 4)
                     await store.aput(mm.content_history_ns, key=post_id, value=record)
             except Exception as e:

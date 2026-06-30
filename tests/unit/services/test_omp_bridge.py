@@ -1,18 +1,17 @@
 """Unit tests for omp_bridge host tool auto-execution."""
+
 from __future__ import annotations
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from backend.services.omp_bridge import (
-    XHS_HOST_TOOLS,
     _XHS_TOOL_NAMES,
+    XHS_HOST_TOOLS,
     _execute_xhs_host_tool,
     _make_text_result,
 )
-
 
 # ── Schema validation ────────────────────────────────────────────────────
 
@@ -36,7 +35,7 @@ class TestHostToolSchemas:
     def test_tool_names_match_set(self):
         names = [t["name"] for t in XHS_HOST_TOOLS]
         assert len(names) == len(set(names)), "Duplicate tool names"
-        assert _XHS_TOOL_NAMES == set(names)
+        assert set(names) == _XHS_TOOL_NAMES
 
     def test_all_tools_in_execute_handler(self):
         """Every tool in XHS_HOST_TOOLS should be handled by _execute_xhs_host_tool."""
@@ -128,9 +127,7 @@ class TestWorkflowTools:
         }
         client = _mock_client_get(data)
         with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
-            result = await _execute_xhs_host_tool(
-                "xhs_workflow_status", {"thread_id": "t1"}
-            )
+            result = await _execute_xhs_host_tool("xhs_workflow_status", {"thread_id": "t1"})
         assert "creating" in result["content"][0]["text"]
         assert "50%" in result["content"][0]["text"]
 
@@ -157,9 +154,7 @@ class TestWorkflowTools:
         client.get = AsyncMock(return_value=_mock_response({}))
         client.post = AsyncMock(return_value=_mock_response({}))
         with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
-            result = await _execute_xhs_host_tool(
-                "xhs_workflow_delete", {"thread_id": "t1"}
-            )
+            result = await _execute_xhs_host_tool("xhs_workflow_delete", {"thread_id": "t1"})
         assert "deleted" in result["content"][0]["text"]
 
 
@@ -172,27 +167,21 @@ class TestReviewTools:
         }
         client = _mock_client_get(data)
         with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
-            result = await _execute_xhs_host_tool(
-                "xhs_review_pending", {"thread_id": "t1"}
-            )
+            result = await _execute_xhs_host_tool("xhs_review_pending", {"thread_id": "t1"})
         assert "Test Title" in result["content"][0]["text"]
 
     async def test_review_pending_not_at_gate(self):
         data = {"status": "creating"}
         client = _mock_client_get(data)
         with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
-            result = await _execute_xhs_host_tool(
-                "xhs_review_pending", {"thread_id": "t1"}
-            )
+            result = await _execute_xhs_host_tool("xhs_review_pending", {"thread_id": "t1"})
         assert "not at review gate" in result["content"][0]["text"]
 
     async def test_review_approve(self):
         data = {"next_phase": "publishing"}
         client = _mock_client_post(data)
         with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
-            result = await _execute_xhs_host_tool(
-                "xhs_review_approve", {"thread_id": "t1"}
-            )
+            result = await _execute_xhs_host_tool("xhs_review_approve", {"thread_id": "t1"})
         assert "approved" in result["content"][0]["text"]
         assert "publishing" in result["content"][0]["text"]
 
@@ -200,9 +189,7 @@ class TestReviewTools:
         data = {"versions": [], "current": {"title": "", "body": ""}}
         client = _mock_client_get(data)
         with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
-            result = await _execute_xhs_host_tool(
-                "xhs_review_versions", {"thread_id": "t1"}
-            )
+            result = await _execute_xhs_host_tool("xhs_review_versions", {"thread_id": "t1"})
         assert "No content versions" in result["content"][0]["text"]
 
 
@@ -218,9 +205,7 @@ class TestBloggerTools:
         }
         client = _mock_client_get(data)
         with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
-            result = await _execute_xhs_host_tool(
-                "xhs_blogger_pending", {"thread_id": "t1"}
-            )
+            result = await _execute_xhs_host_tool("xhs_blogger_pending", {"thread_id": "t1"})
         assert "Alice" in result["content"][0]["text"]
         assert "Bob" in result["content"][0]["text"]
 
@@ -228,9 +213,7 @@ class TestBloggerTools:
         data = {"is_pending": False, "blogger_candidates": []}
         client = _mock_client_get(data)
         with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
-            result = await _execute_xhs_host_tool(
-                "xhs_blogger_pending", {"thread_id": "t1"}
-            )
+            result = await _execute_xhs_host_tool("xhs_blogger_pending", {"thread_id": "t1"})
         assert "not at blogger" in result["content"][0]["text"]
 
     async def test_blogger_select_missing_user_id(self):
@@ -267,9 +250,7 @@ class TestRippleTools:
         }
         client = _mock_client_get(data)
         with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
-            result = await _execute_xhs_host_tool(
-                "xhs_ripple_pending", {"thread_id": "t1"}
-            )
+            result = await _execute_xhs_host_tool("xhs_ripple_pending", {"thread_id": "t1"})
         text = result["content"][0]["text"]
         assert "0.7" in text
         assert "5000" in text
@@ -288,9 +269,7 @@ class TestRippleTools:
         data = {"status": "skipped", "message": "already succeeded"}
         client = _mock_client_post(data)
         with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
-            result = await _execute_xhs_host_tool(
-                "xhs_ripple_retry", {"thread_id": "t1"}
-            )
+            result = await _execute_xhs_host_tool("xhs_ripple_retry", {"thread_id": "t1"})
         assert "skipped" in result["content"][0]["text"]
 
 
@@ -312,9 +291,7 @@ class TestAnalyticsTools:
         }
         client = _mock_client_get(data)
         with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
-            result = await _execute_xhs_host_tool(
-                "xhs_analytics_dashboard", {"account_id": "acc1"}
-            )
+            result = await _execute_xhs_host_tool("xhs_analytics_dashboard", {"account_id": "acc1"})
         text = result["content"][0]["text"]
         assert "10" in text
         assert "Best Post" in text
@@ -352,8 +329,6 @@ class TestErrorHandling:
         client.__aenter__ = AsyncMock(return_value=client)
         client.__aexit__ = AsyncMock(return_value=False)
         with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
-            result = await _execute_xhs_host_tool(
-                "xhs_workflow_status", {"thread_id": "t1"}
-            )
+            result = await _execute_xhs_host_tool("xhs_workflow_status", {"thread_id": "t1"})
         assert result["isError"] is True
         assert "Failed" in result["content"][0]["text"]

@@ -389,9 +389,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
     {
         "name": "xhs_workflow_trigger_analytics",
         "label": "XHS Trigger Analytics",
-        "description": (
-            "Manually trigger analytics for a workflow after publishing"
-        ),
+        "description": ("Manually trigger analytics for a workflow after publishing"),
         "parameters": {
             "type": "object",
             "properties": {
@@ -406,9 +404,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
     {
         "name": "xhs_ripple_pending",
         "label": "XHS Ripple Pending",
-        "description": (
-            "Get Ripple CAS decision status and available options"
-        ),
+        "description": ("Get Ripple CAS decision status and available options"),
         "parameters": {
             "type": "object",
             "properties": {
@@ -423,9 +419,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
     {
         "name": "xhs_ripple_decision",
         "label": "XHS Ripple Decision",
-        "description": (
-            "Submit Ripple CAS decision: accept, reangle, or retopic"
-        ),
+        "description": ("Submit Ripple CAS decision: accept, reangle, or retopic"),
         "parameters": {
             "type": "object",
             "properties": {
@@ -437,8 +431,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
                     "type": "string",
                     "enum": ["accept", "reangle", "retopic"],
                     "description": (
-                        "Decision: accept, reangle (change angle),"
-                        " or retopic (change topic)"
+                        "Decision: accept, reangle (change angle), or retopic (change topic)"
                     ),
                 },
             },
@@ -448,9 +441,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
     {
         "name": "xhs_ripple_retry",
         "label": "XHS Ripple Retry",
-        "description": (
-            "Retry Ripple CAS analysis when it previously timed out or failed"
-        ),
+        "description": ("Retry Ripple CAS analysis when it previously timed out or failed"),
         "parameters": {
             "type": "object",
             "properties": {
@@ -526,11 +517,14 @@ async def _retry_http(
             return await fn(*args, **kwargs)
         except httpx.HTTPStatusError as e:
             if e.response.status_code in _RETRYABLE_STATUS and attempt < _MAX_RETRIES - 1:
-                delay = 0.5 * (2 ** attempt)
+                delay = 0.5 * (2**attempt)
                 logger.info(
                     "retryable HTTP %d for %s, retry %d/%d in %.1fs",
-                    e.response.status_code, tool_name,
-                    attempt + 1, _MAX_RETRIES, delay,
+                    e.response.status_code,
+                    tool_name,
+                    attempt + 1,
+                    _MAX_RETRIES,
+                    delay,
                 )
                 await asyncio.sleep(delay)
                 continue
@@ -538,10 +532,13 @@ async def _retry_http(
         except (httpx.ConnectError, httpx.ReadTimeout) as e:
             last_exc = e
             if attempt < _MAX_RETRIES - 1:
-                delay = 0.5 * (2 ** attempt)
+                delay = 0.5 * (2**attempt)
                 logger.info(
                     "connection error for %s, retry %d/%d in %.1fs",
-                    tool_name, attempt + 1, _MAX_RETRIES, delay,
+                    tool_name,
+                    attempt + 1,
+                    _MAX_RETRIES,
+                    delay,
                 )
                 await asyncio.sleep(delay)
                 continue
@@ -725,7 +722,7 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     return _make_text_result("No blogger candidates available.", data)
                 lines = [f"Blogger Candidates for {thread_id}:"]
                 for i, c in enumerate(candidates, 1):
-                    lines.append(f'  {i}. {c.get("nickname", "?")} (ID: {c.get("user_id", "?")})')
+                    lines.append(f"  {i}. {c.get('nickname', '?')} (ID: {c.get('user_id', '?')})")
                 return _make_text_result("\n".join(lines), data)
 
             elif tool_name == "xhs_blogger_select":
@@ -775,9 +772,7 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 opt_body: dict[str, Any] = {"version_id": version_id}
                 if version_type:
                     opt_body["version_type"] = version_type
-                resp = await client.post(
-                    f"{url}/optimization/select/{thread_id}", json=opt_body
-                )
+                resp = await client.post(f"{url}/optimization/select/{thread_id}", json=opt_body)
                 data = _unwrap_envelope(resp)
                 next_phase = data.get("next_phase", "")
                 return _make_text_result(
@@ -865,12 +860,9 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 ]
                 db_check = checks.get("database", {})
                 lines.append(
-                    f"  Database: {db_check.get('status', '?')} "
-                    f"({db_check.get('mode', '?')})"
+                    f"  Database: {db_check.get('status', '?')} ({db_check.get('mode', '?')})"
                 )
-                lines.append(
-                    f"  Memory Store: {checks.get('memory_store', {}).get('status', '?')}"
-                )
+                lines.append(f"  Memory Store: {checks.get('memory_store', {}).get('status', '?')}")
                 return _make_text_result("\n".join(lines), data)
 
             elif tool_name == "xhs_workflow_history":
@@ -883,13 +875,10 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 data = _unwrap_envelope(resp)
                 checkpoints = data.get("checkpoints", [])
                 if not checkpoints:
-                    return _make_text_result(
-                        f"No history for {thread_id}.", data
-                    )
+                    return _make_text_result(f"No history for {thread_id}.", data)
                 has_more = ", more available" if data.get("has_more") else ""
                 lines = [
-                    f"Workflow History — {thread_id}"
-                    f" ({len(checkpoints)} checkpoints{has_more}):",
+                    f"Workflow History — {thread_id} ({len(checkpoints)} checkpoints{has_more}):",
                 ]
                 for c in checkpoints:
                     step = c.get("step", "?")
@@ -901,31 +890,24 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
 
             elif tool_name == "xhs_workflow_trigger_analytics":
                 thread_id = arguments.get("thread_id", "")
-                resp = await client.post(
-                    f"{url}/workflow/trigger-analytics/{thread_id}"
-                )
+                resp = await client.post(f"{url}/workflow/trigger-analytics/{thread_id}")
                 data = _unwrap_envelope(resp)
                 status = data.get("status", "")
                 if status == "completed":
-                    return _make_text_result(
-                        f"Analytics already completed for {thread_id}.", data
-                    )
+                    return _make_text_result(f"Analytics already completed for {thread_id}.", data)
                 if status == "error":
                     return _make_text_result(
                         f"Cannot trigger analytics: {data.get('message', 'unknown error')}",
                         data,
                     )
                 return _make_text_result(
-                    f"Analytics triggered for {thread_id}."
-                    f" Phase: {data.get('phase', 'analyzing')}",
+                    f"Analytics triggered for {thread_id}. Phase: {data.get('phase', 'analyzing')}",
                     data,
                 )
 
             elif tool_name == "xhs_ripple_pending":
                 thread_id = arguments.get("thread_id", "")
-                resp = await client.get(
-                    f"{url}/review/ripple-pending/{thread_id}"
-                )
+                resp = await client.get(f"{url}/review/ripple-pending/{thread_id}")
                 data = _unwrap_envelope(resp)
                 pred = data.get("ripple_prediction", {})
                 lines = [
@@ -970,9 +952,7 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
 
             elif tool_name == "xhs_ripple_retry":
                 thread_id = arguments.get("thread_id", "")
-                resp = await client.post(
-                    f"{url}/workflow/ripple-retry/{thread_id}"
-                )
+                resp = await client.post(f"{url}/workflow/ripple-retry/{thread_id}")
                 data = _unwrap_envelope(resp)
                 if data.get("status") == "skipped":
                     return _make_text_result(
@@ -980,8 +960,7 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                         data,
                     )
                 return _make_text_result(
-                    f"Ripple retry started for {thread_id}."
-                    f" Status: {data.get('status', '')}",
+                    f"Ripple retry started for {thread_id}. Status: {data.get('status', '')}",
                     data,
                 )
 
@@ -1021,8 +1000,7 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 if not posts:
                     return _make_text_result("No performance data.", data)
                 lines = [
-                    f"Performance — {account_id}"
-                    f" ({data.get('total', 0)} posts):",
+                    f"Performance — {account_id} ({data.get('total', 0)} posts):",
                 ]
                 for p in posts:
                     lines.append(

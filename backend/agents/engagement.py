@@ -84,12 +84,14 @@ class EngagementAgent(BaseAgent):
                     )
 
                     if success:
-                        engagement_actions.append(EngagementAction(
-                            action_type="reply_comment",
-                            target_id=comment.comment_id,
-                            content=reply_content,
-                            timestamp=datetime.now(UTC).isoformat(),
-                        ))
+                        engagement_actions.append(
+                            EngagementAction(
+                                action_type="reply_comment",
+                                target_id=comment.comment_id,
+                                content=reply_content,
+                                timestamp=datetime.now(UTC).isoformat(),
+                            )
+                        )
 
             # 4. 处理私信
             for dm in dms[:5]:  # 只处理前5条
@@ -104,12 +106,14 @@ class EngagementAgent(BaseAgent):
                 )
 
                 if success:
-                    engagement_actions.append(EngagementAction(
-                        action_type="reply_dm",
-                        target_id=dm.message_id,
-                        content=reply_content,
-                        timestamp=datetime.now(UTC).isoformat(),
-                    ))
+                    engagement_actions.append(
+                        EngagementAction(
+                            action_type="reply_dm",
+                            target_id=dm.message_id,
+                            content=reply_content,
+                            timestamp=datetime.now(UTC).isoformat(),
+                        )
+                    )
 
             logger.info(f"完成 {len(engagement_actions)} 个互动操作")
 
@@ -123,6 +127,7 @@ class EngagementAgent(BaseAgent):
         if store is not None and engagement_actions:
             try:
                 from backend.memory.store import MemoryManager
+
                 account_id = state.get("account_id", "default")
                 mm = MemoryManager(account_id)
                 reply_count = sum(1 for a in engagement_actions if a.action_type == "reply_comment")

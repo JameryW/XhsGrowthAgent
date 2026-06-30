@@ -102,14 +102,14 @@ async def ab_test_manager(
     logger.info(f"Setting up A/B test for post: {base_post_id}")
 
     import time
+
     test_id = f"ab_{int(time.time())}"
 
     return {
         "test_id": test_id,
         "base_post_id": base_post_id,
         "variants": [
-            {"variant_id": f"v{i}", "title": title}
-            for i, title in enumerate(variant_titles[:3])
+            {"variant_id": f"v{i}", "title": title} for i, title in enumerate(variant_titles[:3])
         ],
         "duration_hours": duration_hours,
         "start_time": time.strftime("%Y-%m-%d %H:%M:%S"),

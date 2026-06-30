@@ -15,7 +15,7 @@ async def revise_content_node(state: XHSGrowthState, *, store: BaseStore) -> dic
     # Clear previous copy content to trigger rewrite
     result = {
         "copy_content": {},  # Clear, triggers rewrite
-        "visual_plan": {},   # Clear, triggers redesign
+        "visual_plan": {},  # Clear, triggers redesign
         "phase": WorkflowPhase.CREATING,
     }
 

@@ -106,22 +106,22 @@ class BaseAgent(ABC):
             result = []
             stack = []
             for ch in json_str:
-                if ch in ('{', '['):
+                if ch in ("{", "["):
                     stack.append(ch)
                     result.append(ch)
-                elif ch == '}' and stack and stack[-1] == '[':
+                elif ch == "}" and stack and stack[-1] == "[":
                     stack.pop()
-                    result.append(']')
-                elif ch == ']' and stack and stack[-1] == '{':
+                    result.append("]")
+                elif ch == "]" and stack and stack[-1] == "{":
                     stack.pop()
-                    result.append('}')
-                elif ch in ('}', ']'):
+                    result.append("}")
+                elif ch in ("}", "]"):
                     if stack:
                         stack.pop()
                     result.append(ch)
                 else:
                     result.append(ch)
-            json_str = ''.join(result)
+            json_str = "".join(result)
             return json_str
 
         def extract_json_from_markdown(text: str) -> str:
@@ -156,7 +156,7 @@ class BaseAgent(ABC):
             start = json_content.find("{")
             end = json_content.rfind("}")
             if start != -1 and end != -1 and end > start:
-                json_str = json_content[start:end+1]
+                json_str = json_content[start : end + 1]
                 try:
                     return json.loads(json_str)
                 except json.JSONDecodeError:
@@ -167,7 +167,7 @@ class BaseAgent(ABC):
                         pass
 
             # 5. 尝试正则匹配 JSON 对象
-            json_pattern = r'\{(?:[^{}]|(?:\{(?:[^{}]|(?:\{[^{}]*\}))*\}))*\}'
+            json_pattern = r"\{(?:[^{}]|(?:\{(?:[^{}]|(?:\{[^{}]*\}))*\}))*\}"
             matches = re.findall(json_pattern, content)
             for match in matches:
                 try:

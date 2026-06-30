@@ -14,7 +14,7 @@ class MemoryMixin:
         account_id: str,
         query: str,
         namespace: str = "performance_insights",
-        limit: int = 5
+        limit: int = 5,
     ) -> list[dict]:
         """从记忆存储召回相关上下文"""
         mm = MemoryManager(account_id)

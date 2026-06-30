@@ -15,16 +15,16 @@ from __future__ import annotations
 from pathlib import Path
 
 from .paths import (
-    get_repo_root,
     get_developer,
+    get_repo_root,
     get_tasks_dir,
 )
 from .tasks import iter_active_tasks
 
-
 # =============================================================================
 # Internal helper
 # =============================================================================
+
 
 def _task_to_dict(t) -> dict:
     """Convert TaskInfo to the dict format callers expect."""
@@ -44,9 +44,9 @@ def _task_to_dict(t) -> dict:
 # Public Functions
 # =============================================================================
 
+
 def list_tasks_by_status(
-    filter_status: str | None = None,
-    repo_root: Path | None = None
+    filter_status: str | None = None, repo_root: Path | None = None
 ) -> list[dict]:
     """List tasks by status.
 
@@ -84,9 +84,7 @@ def list_pending_tasks(repo_root: Path | None = None) -> list[dict]:
 
 
 def list_tasks_by_assignee(
-    assignee: str,
-    filter_status: str | None = None,
-    repo_root: Path | None = None
+    assignee: str, filter_status: str | None = None, repo_root: Path | None = None
 ) -> list[dict]:
     """List tasks assigned to a specific developer.
 
@@ -114,10 +112,7 @@ def list_tasks_by_assignee(
     return results
 
 
-def list_my_tasks(
-    filter_status: str | None = None,
-    repo_root: Path | None = None
-) -> list[dict]:
+def list_my_tasks(filter_status: str | None = None, repo_root: Path | None = None) -> list[dict]:
     """List tasks assigned to current developer.
 
     Args:
@@ -172,7 +167,10 @@ def format_task_stats(stats: dict[str, int]) -> str:
     Returns:
         Formatted string like "P0:0 P1:1 P2:2 P3:0 Total:3".
     """
-    return f"P0:{stats['P0']} P1:{stats['P1']} P2:{stats['P2']} P3:{stats['P3']} Total:{stats['Total']}"
+    return (
+        f"P0:{stats['P0']} P1:{stats['P1']} P2:{stats['P2']} "
+        f"P3:{stats['P3']} Total:{stats['Total']}"
+    )
 
 
 # =============================================================================
@@ -185,4 +183,6 @@ if __name__ == "__main__":
     print()
     print("Pending tasks:")
     for task in list_pending_tasks():
-        print(f"  {task['priority']}|{task['id']}|{task['title']}|{task['status']}|{task['assignee']}")
+        print(
+            f"  {task['priority']}|{task['id']}|{task['title']}|{task['status']}|{task['assignee']}"
+        )

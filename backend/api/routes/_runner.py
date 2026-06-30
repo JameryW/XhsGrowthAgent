@@ -32,6 +32,7 @@ async def _db_upsert(thread_id: str, **fields: Any) -> None:
     """Create or update a workflow row in DB. No-ops if DB is unavailable."""
     try:
         from backend.db.pool import is_pool_ready
+
         if not is_pool_ready():
             return
         from backend.db.workflows import (
@@ -46,6 +47,7 @@ async def _db_upsert(thread_id: str, **fields: Any) -> None:
         from backend.db.workflows import (
             update_workflow as db_update,
         )
+
         existing = await db_get(thread_id)
         if existing:
             await db_update(thread_id, **fields)
@@ -148,10 +150,7 @@ def _emit_status_transition(
             payload["ripple_comparison"] = values.get("ripple_comparison", {})
         bus.emit(EventType.WORKFLOW_COMPLETED, thread_id=thread_id, payload=payload)
 
-    elif new_status == WorkflowStatus.PAUSED:
-        bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
-
-    elif new_status == WorkflowStatus.CANCELLED:
+    elif new_status in (WorkflowStatus.PAUSED, WorkflowStatus.CANCELLED):
         bus.emit(EventType.WORKFLOW_DATA_UPDATED, thread_id=thread_id, payload=payload)
 
     elif new_status == WorkflowStatus.ERROR:
@@ -260,9 +259,8 @@ async def _run_graph_and_persist(
 
         snapshot = await graph.aget_state(config)
         has_active = (
-            (thread_id in _background_tasks and not _background_tasks[thread_id].done())
-            or (thread_id in _active_sync_executions)
-        )
+            thread_id in _background_tasks and not _background_tasks[thread_id].done()
+        ) or (thread_id in _active_sync_executions)
         derived = derive_status(snapshot, has_active_task=has_active)
 
         _emit_status_transition(derived, thread_id, snapshot=snapshot)
@@ -274,9 +272,7 @@ async def _run_graph_and_persist(
         final_phase = snapshot_values.get("phase") or (
             result.get("phase", "unknown") if result else "unknown"
         )
-        has_error = snapshot_values.get("error") or (
-            result.get("error") if result else None
-        )
+        has_error = snapshot_values.get("error") or (result.get("error") if result else None)
         final_status = _status_to_str(derived, has_error, final_phase)
 
         # Compute progress: completed → 100, awaiting gates → phase-based, else phase-based
@@ -286,6 +282,7 @@ async def _run_graph_and_persist(
             progress = 0
         else:
             from backend.api.routes.workflow import get_progress
+
             progress = get_progress(final_phase)
 
         await _db_upsert(
@@ -333,19 +330,24 @@ async def _run_graph_and_persist(
         # a newer task may have replaced it (e.g. _start_resume_task cancel+restart)
         if _background_tasks.get(thread_id) is asyncio.current_task():
             from backend.core.error_handling import WorkflowCancelledError
+
             if isinstance(exc, WorkflowCancelledError):
                 # Node detected cancelled/paused phase — preserve the actual phase
                 # from the graph state rather than parsing the exception message
                 snap = None
                 with contextlib.suppress(Exception):
                     snap = await graph.aget_state(config)
-                actual_phase = (snap.values or {}).get("phase", "cancelled") if snap else "cancelled"
+                if snap:
+                    actual_phase = (snap.values or {}).get("phase", "cancelled")
+                else:
+                    actual_phase = "cancelled"
                 is_paused = actual_phase == "paused"
                 target_phase = "paused" if is_paused else "cancelled"
                 target_status = "paused" if is_paused else "cancelled"
                 with contextlib.suppress(Exception):
                     await graph.aupdate_state(
-                        config, {"phase": target_phase, "error": None if is_paused else str(exc)},
+                        config,
+                        {"phase": target_phase, "error": None if is_paused else str(exc)},
                         as_node=_get_as_node(snap) if snap else None,
                     )
                 await _db_upsert(
@@ -365,7 +367,8 @@ async def _run_graph_and_persist(
                     snapshot = await graph.aget_state(config)
                     if not _has_native_resume_point(snapshot):
                         await graph.aupdate_state(
-                            config, {"phase": "error", "error": str(exc)},
+                            config,
+                            {"phase": "error", "error": str(exc)},
                             as_node=_get_as_node(snapshot),
                         )
                 await _db_upsert(

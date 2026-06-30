@@ -2,7 +2,6 @@
 
 """WebSocket and SSE routes for realtime workflow updates."""
 
-
 from fastapi import APIRouter, Query, WebSocket
 
 from backend.api.responses import success
@@ -47,7 +46,9 @@ async def get_missed_events(since: int = Query(0, ge=0, description="最后收�
         {"events": [...]} 事件列表，按序号排序
     """
     events = EventBusService.get_instance().get_events_since(since)
-    return success(data={
-        "events": [e.to_dict() for e in events],
-        "count": len(events),
-    })
+    return success(
+        data={
+            "events": [e.to_dict() for e in events],
+            "count": len(events),
+        }
+    )

@@ -659,8 +659,21 @@ class TestAutoRecovery:
         """RippleService instance marked as unreachable."""
         svc = RippleService()
         svc._health_status = RippleHealthStatus(
-            is_healthy=False, last_check="connect_error", error="Connection refused", reason="unreachable"
+            is_healthy=False,
+            last_check="connect_error",
+            error="Connection refused",
+            reason="unreachable",
         )
+        # ponytail: _probe_before_fallback short-circuits to False when
+        # Settings.ripple.enabled is False (the default in a clean CI env).
+        # Pin enabled=True so these recovery tests don't depend on RIPPLE_ENABLED.
+        svc._get_config = lambda: {
+            "base_url": "http://ripple-service:8080",
+            "api_token": "t",
+            "timeout": 5,
+            "workflow_timeout": 60,
+            "enabled": True,
+        }
         return svc
 
     @pytest.mark.asyncio
@@ -693,7 +706,10 @@ class TestAutoRecovery:
         """A successful _request_with_retry call should mark service healthy."""
         svc = RippleService()
         svc._health_status = RippleHealthStatus(
-            is_healthy=False, last_check="connect_error", error="Connection refused", reason="unreachable"
+            is_healthy=False,
+            last_check="connect_error",
+            error="Connection refused",
+            reason="unreachable",
         )
 
         with patch.object(svc, "_get_client") as mock_client:
@@ -706,7 +722,9 @@ class TestAutoRecovery:
             mock_client.return_value = mock_http_client
 
             with patch.object(svc, "_rebuild_client", new_callable=AsyncMock):
-                result = await svc._request_with_retry("POST", "http://ripple-service:8080/api/test")
+                result = await svc._request_with_retry(
+                    "POST", "http://ripple-service:8080/api/test"
+                )
 
         assert svc.is_healthy()
         assert result == {"status": "ok"}
@@ -718,8 +736,10 @@ class TestAutoRecovery:
         assert not svc.is_healthy()
 
         with patch.object(svc, "health_check", new_callable=AsyncMock) as mock_hc:
+
             async def make_healthy():
                 svc._health_status = RippleHealthStatus(is_healthy=True, last_check="ok", reason="")
+
             mock_hc.side_effect = make_healthy
 
             with patch.object(svc, "_rebuild_client", new_callable=AsyncMock):
@@ -781,13 +801,15 @@ class TestAutoRecovery:
             if call_count >= 2:
                 svc._health_status = RippleHealthStatus(is_healthy=True, last_check="ok", reason="")
 
-        with patch.object(svc, "health_check", side_effect=mock_health_check):
-            with patch.object(svc, "_rebuild_client", new_callable=AsyncMock) as mock_rebuild:
-                task = asyncio.create_task(svc._health_check_loop(interval_seconds=0.05))
-                await asyncio.sleep(0.2)
-                task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
+        with (
+            patch.object(svc, "health_check", side_effect=mock_health_check),
+            patch.object(svc, "_rebuild_client", new_callable=AsyncMock) as mock_rebuild,
+        ):
+            task = asyncio.create_task(svc._health_check_loop(interval_seconds=0.05))
+            await asyncio.sleep(0.2)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
         assert call_count >= 2
         mock_rebuild.assert_awaited()
@@ -797,20 +819,35 @@ class TestAutoRecovery:
         """start/stop should create and cancel the background task."""
         svc = RippleService()
 
-        with patch.object(svc, "_get_config", return_value={"enabled": True, "base_url": "http://localhost:8081", "api_token": "", "timeout": 5}):
-            with patch.object(svc, "_health_check_loop", new_callable=AsyncMock):
-                svc.start_background_health_check(interval_seconds=1.0)
-                assert svc._bg_task is not None
+        with (
+            patch.object(
+                svc,
+                "_get_config",
+                return_value={
+                    "enabled": True,
+                    "base_url": "http://localhost:8081",
+                    "api_token": "",
+                    "timeout": 5,
+                },
+            ),
+            patch.object(svc, "_health_check_loop", new_callable=AsyncMock),
+        ):
+            svc.start_background_health_check(interval_seconds=1.0)
+            assert svc._bg_task is not None
 
-                svc.stop_background_health_check()
-                assert svc._bg_task is None
+            svc.stop_background_health_check()
+            assert svc._bg_task is None
 
     @pytest.mark.asyncio
     async def test_start_background_skipped_when_disabled(self):
         """start_background_health_check should not start when Ripple is disabled."""
         svc = RippleService()
 
-        with patch.object(svc, "_get_config", return_value={"enabled": False, "base_url": "", "api_token": "", "timeout": 5}):
+        with patch.object(
+            svc,
+            "_get_config",
+            return_value={"enabled": False, "base_url": "", "api_token": "", "timeout": 5},
+        ):
             svc.start_background_health_check()
             assert svc._bg_task is None
 
@@ -878,10 +915,10 @@ class TestStreamProgress:
         # Real Ripple SSE format: outer envelope has job_id, seq, type, ts, payload
         sse_lines = [
             "event: progress.wave_start",
-            'data: {"job_id":"job_abc","seq":3,"type":"progress.wave_start","ts":"2026-06-15T04:00:00Z","payload":{"phase":"RIPPLE","wave":4,"progress":0.55,"total_waves":8,"detail":{}}}',
+            'data: {"job_id":"job_abc","seq":3,"type":"progress.wave_start","ts":"2026-06-15T04:00:00Z","payload":{"phase":"RIPPLE","wave":4,"progress":0.55,"total_waves":8,"detail":{}}}',  # noqa: E501
             "",
             "event: progress.wave_end",
-            'data: {"job_id":"job_abc","seq":4,"type":"progress.wave_end","ts":"2026-06-15T04:00:05Z","payload":{"phase":"RIPPLE","wave":5,"progress":0.7,"total_waves":8,"detail":{"quality":{"input_completeness":0.8}}}}',
+            'data: {"job_id":"job_abc","seq":4,"type":"progress.wave_end","ts":"2026-06-15T04:00:05Z","payload":{"phase":"RIPPLE","wave":5,"progress":0.7,"total_waves":8,"detail":{"quality":{"input_completeness":0.8}}}}',  # noqa: E501
             "",
         ]
 
@@ -1027,8 +1064,19 @@ class TestWaitForCompletionWithSSE:
         svc = RippleService()
         emitted: list[dict] = []
 
-        def mock_emit(job_id, progress, current_wave, total_waves, elapsed_seconds, thread_id, status="running", skill=""):
-            emitted.append({"progress": progress, "current_wave": current_wave, "total_waves": total_waves})
+        def mock_emit(
+            job_id,
+            progress,
+            current_wave,
+            total_waves,
+            elapsed_seconds,
+            thread_id,
+            status="running",
+            skill="",
+        ):
+            emitted.append(
+                {"progress": progress, "current_wave": current_wave, "total_waves": total_waves}
+            )
 
         with (
             patch.object(svc, "get_simulation_status", new_callable=AsyncMock) as mock_status,
@@ -1036,7 +1084,7 @@ class TestWaitForCompletionWithSSE:
             patch.object(svc, "_emit_progress", side_effect=mock_emit),
             patch.object(svc, "_get_config", return_value={"base_url": "http://localhost:8080"}),
         ):
-            # Simulate: first poll running, second running (with SSE data now available), third completed
+            # Simulate: 1st poll running, 2nd running (SSE data now available), 3rd completed
             mock_status.side_effect = [
                 {"status": "running"},
                 {"status": "running"},
@@ -1052,7 +1100,9 @@ class TestWaitForCompletionWithSSE:
 
             mock_sse.side_effect = sse_update
 
-            result = await svc.wait_for_completion("job_123", thread_id="thread_abc", poll_interval=0.01)
+            result = await svc.wait_for_completion(
+                "job_123", thread_id="thread_abc", poll_interval=0.01
+            )
 
         assert result["status"] == "completed"
         # At least one emit should use SSE data (progress=0.5, wave=4/8)
@@ -1065,7 +1115,16 @@ class TestWaitForCompletionWithSSE:
         svc = RippleService()
         emitted: list[dict] = []
 
-        def mock_emit(job_id, progress, current_wave, total_waves, elapsed_seconds, thread_id, status="running", skill=""):
+        def mock_emit(
+            job_id,
+            progress,
+            current_wave,
+            total_waves,
+            elapsed_seconds,
+            thread_id,
+            status="running",
+            skill="",
+        ):
             emitted.append({"progress": progress})
 
         with (
@@ -1088,7 +1147,9 @@ class TestWaitForCompletionWithSSE:
 
             mock_sse.side_effect = sse_noop
 
-            result = await svc.wait_for_completion("job_123", thread_id="thread_abc", poll_interval=0.05)
+            result = await svc.wait_for_completion(
+                "job_123", thread_id="thread_abc", poll_interval=0.05
+            )
 
         assert result["status"] == "completed"
         # The last emit should be 1.0 (completion)
@@ -1116,7 +1177,9 @@ class TestWaitForCompletionWithSSE:
 
             mock_sse.side_effect = sse_hang
 
-            result = await svc.wait_for_completion("job_123", thread_id="thread_abc", poll_interval=0.01)
+            result = await svc.wait_for_completion(
+                "job_123", thread_id="thread_abc", poll_interval=0.01
+            )
 
         assert result["status"] == "completed"
 
@@ -1128,8 +1191,19 @@ class TestWaitForCompletionWithSSE:
         svc = RippleService()
         emitted: list[dict] = []
 
-        def mock_emit(job_id, progress, current_wave, total_waves, elapsed_seconds, thread_id, status="running", skill=""):
-            emitted.append({"progress": progress, "current_wave": current_wave, "elapsed": elapsed_seconds})
+        def mock_emit(
+            job_id,
+            progress,
+            current_wave,
+            total_waves,
+            elapsed_seconds,
+            thread_id,
+            status="running",
+            skill="",
+        ):
+            emitted.append(
+                {"progress": progress, "current_wave": current_wave, "elapsed": elapsed_seconds}
+            )
 
         with (
             patch.object(svc, "get_simulation_status", new_callable=AsyncMock) as mock_status,
@@ -1155,7 +1229,9 @@ class TestWaitForCompletionWithSSE:
             mock_sse.side_effect = sse_stale_zero
 
             # Use a small max_wait so time-based estimate is visible
-            result = await svc.wait_for_completion("job_123", thread_id="thread_abc", poll_interval=0.05, max_wait=1.0)
+            result = await svc.wait_for_completion(
+                "job_123", thread_id="thread_abc", poll_interval=0.05, max_wait=1.0
+            )
 
         assert result["status"] == "completed"
         # Non-final emits should use time-based estimate (progress based on elapsed/max_wait)
@@ -1163,7 +1239,9 @@ class TestWaitForCompletionWithSSE:
         assert len(non_final) > 0
         # With max_wait=1.0 and poll_interval=0.05, at least the 2nd/3rd poll
         # should have elapsed > 0.05s, so progress > 0.05
-        assert any(e["progress"] >= 0.03 for e in non_final), f"Time-based fallback not working: {non_final}"
+        assert any(e["progress"] >= 0.03 for e in non_final), (
+            f"Time-based fallback not working: {non_final}"
+        )
 
     @pytest.mark.asyncio
     async def test_fresh_sse_nonzero_progress_used_directly(self):
@@ -1171,7 +1249,16 @@ class TestWaitForCompletionWithSSE:
         svc = RippleService()
         emitted: list[dict] = []
 
-        def mock_emit(job_id, progress, current_wave, total_waves, elapsed_seconds, thread_id, status="running", skill=""):
+        def mock_emit(
+            job_id,
+            progress,
+            current_wave,
+            total_waves,
+            elapsed_seconds,
+            thread_id,
+            status="running",
+            skill="",
+        ):
             emitted.append({"progress": progress, "current_wave": current_wave})
 
         with (
@@ -1195,7 +1282,9 @@ class TestWaitForCompletionWithSSE:
 
             mock_sse.side_effect = sse_fresh
 
-            result = await svc.wait_for_completion("job_123", thread_id="thread_abc", poll_interval=0.01)
+            result = await svc.wait_for_completion(
+                "job_123", thread_id="thread_abc", poll_interval=0.01
+            )
 
         assert result["status"] == "completed"
         # At least one emit should use SSE data (progress=0.6, wave=5)
@@ -1269,4 +1358,3 @@ class TestRippleProgressStoreCleanup:
         # 超时残留被过滤——不再返回，前端不会被钉在 95%
         assert result == {}
         assert "thread-B:job-2" not in RippleService._progress_store
-

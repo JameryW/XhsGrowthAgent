@@ -54,8 +54,7 @@ class CostTracker:
         if self.today_total() > self.daily_budget:
             self._circuit_open = True
             logger.warning(
-                f"Daily budget exceeded: "
-                f"${self.today_total():.2f} > ${self.daily_budget:.2f}"
+                f"Daily budget exceeded: ${self.today_total():.2f} > ${self.daily_budget:.2f}"
             )
 
     @property

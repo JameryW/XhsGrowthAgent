@@ -11,21 +11,19 @@ from pydantic import AwareDatetime, BaseModel, Field, RootModel
 
 
 class ErrorDetail(BaseModel):
-    code: Annotated[
-        str, Field(description='Error code identifier', examples=['VALIDATION_ERROR'])
-    ]
+    code: Annotated[str, Field(description="Error code identifier", examples=["VALIDATION_ERROR"])]
     message: Annotated[
         str,
         Field(
-            description='Human-readable error message',
-            examples=['Invalid request parameters'],
+            description="Human-readable error message",
+            examples=["Invalid request parameters"],
         ),
     ]
     details: Annotated[
         dict[str, Any] | None,
         Field(
-            description='Additional error context',
-            examples=[{'field': 'account_id', 'reason': 'required field missing'}],
+            description="Additional error context",
+            examples=[{"field": "account_id", "reason": "required field missing"}],
         ),
     ] = None
 
@@ -35,7 +33,7 @@ class Status(Enum):
     Workflow status after pause operation
     """
 
-    paused = 'paused'
+    paused = "paused"
 
 
 class Data4(BaseModel):
@@ -45,13 +43,9 @@ class Data4(BaseModel):
 
     thread_id: Annotated[
         str,
-        Field(
-            description='Unique workflow thread identifier', examples=['thread_abc123']
-        ),
+        Field(description="Unique workflow thread identifier", examples=["thread_abc123"]),
     ]
-    status: Annotated[
-        Status, Field(description='Workflow status after pause operation')
-    ]
+    status: Annotated[Status, Field(description="Workflow status after pause operation")]
 
 
 class Data5(BaseModel):
@@ -61,13 +55,9 @@ class Data5(BaseModel):
 
     thread_id: Annotated[
         str,
-        Field(
-            description='Unique workflow thread identifier', examples=['thread_abc123']
-        ),
+        Field(description="Unique workflow thread identifier", examples=["thread_abc123"]),
     ]
-    status: Annotated[
-        Status, Field(description='Workflow status after pause operation')
-    ]
+    status: Annotated[Status, Field(description="Workflow status after pause operation")]
 
 
 class Status2(Enum):
@@ -75,8 +65,8 @@ class Status2(Enum):
     Review status indicator
     """
 
-    awaiting_review = 'awaiting_review'
-    no_pending_review = 'no_pending_review'
+    awaiting_review = "awaiting_review"
+    no_pending_review = "no_pending_review"
 
 
 class Status4(Enum):
@@ -84,7 +74,7 @@ class Status4(Enum):
     Workflow status after review submission
     """
 
-    resumed = 'resumed'
+    resumed = "resumed"
 
 
 class Period(Enum):
@@ -92,9 +82,9 @@ class Period(Enum):
     Report period
     """
 
-    daily = 'daily'
-    weekly = 'weekly'
-    monthly = 'monthly'
+    daily = "daily"
+    weekly = "weekly"
+    monthly = "monthly"
 
 
 class Data12(BaseModel):
@@ -104,7 +94,7 @@ class Data12(BaseModel):
 
     total_cost_usd: Annotated[
         float,
-        Field(description='Total accumulated API costs', examples=[45.67], ge=0.0),
+        Field(description="Total accumulated API costs", examples=[45.67], ge=0.0),
     ]
     today_cost_usd: Annotated[
         float, Field(description="Today's API costs", examples=[5.23], ge=0.0)
@@ -112,20 +102,20 @@ class Data12(BaseModel):
     by_model: Annotated[
         dict[str, float],
         Field(
-            description='Cost breakdown by model',
+            description="Cost breakdown by model",
             examples=[
                 {
-                    'claude-sonnet-4-20250514': 15.0,
-                    'deepseek-chat': 8.5,
-                    'gpt-4o': 12.17,
-                    'qwen-plus': 10.0,
+                    "claude-sonnet-4-20250514": 15.0,
+                    "deepseek-chat": 8.5,
+                    "gpt-4o": 12.17,
+                    "qwen-plus": 10.0,
                 }
             ],
         ),
     ]
     circuit_open: Annotated[
         bool,
-        Field(description='Whether cost circuit breaker is open', examples=[False]),
+        Field(description="Whether cost circuit breaker is open", examples=[False]),
     ]
 
 
@@ -134,19 +124,19 @@ class WorkflowPhase(Enum):
     Current phase of the workflow lifecycle
     """
 
-    idle = 'idle'
-    scouting = 'scouting'
-    briefing = 'briefing'
-    planning = 'planning'
-    creating = 'creating'
-    reviewing = 'reviewing'
-    publishing = 'publishing'
-    analyzing = 'analyzing'
-    engaging = 'engaging'
-    completed = 'completed'
-    error = 'error'
-    paused = 'paused'
-    cancelled = 'cancelled'
+    idle = "idle"
+    scouting = "scouting"
+    briefing = "briefing"
+    planning = "planning"
+    creating = "creating"
+    reviewing = "reviewing"
+    publishing = "publishing"
+    analyzing = "analyzing"
+    engaging = "engaging"
+    completed = "completed"
+    error = "error"
+    paused = "paused"
+    cancelled = "cancelled"
 
 
 class ContentStatus(Enum):
@@ -154,13 +144,13 @@ class ContentStatus(Enum):
     Status of content in the review pipeline
     """
 
-    approved = 'approved'
-    needs_revision = 'needs_revision'
-    rejected = 'rejected'
-    draft = 'draft'
-    pending_review = 'pending_review'
-    published = 'published'
-    failed = 'failed'
+    approved = "approved"
+    needs_revision = "needs_revision"
+    rejected = "rejected"
+    draft = "draft"
+    pending_review = "pending_review"
+    published = "published"
+    failed = "failed"
 
 
 class ContentType(Enum):
@@ -168,9 +158,9 @@ class ContentType(Enum):
     Type of content to be created
     """
 
-    note = 'note'
-    video = 'video'
-    carousel = 'carousel'
+    note = "note"
+    video = "video"
+    carousel = "carousel"
 
 
 class Urgency(Enum):
@@ -178,10 +168,10 @@ class Urgency(Enum):
     Urgency level for content scheduling
     """
 
-    low = 'low'
-    medium = 'medium'
-    high = 'high'
-    trending = 'trending'
+    low = "low"
+    medium = "medium"
+    high = "high"
+    trending = "trending"
 
 
 class WorkflowStatus(Enum):
@@ -189,18 +179,18 @@ class WorkflowStatus(Enum):
     Execution status of a workflow
     """
 
-    running = 'running'
-    stale = 'stale'
-    awaiting_review = 'awaiting_review'
-    awaiting_choice = 'awaiting_choice'
-    awaiting_draft = 'awaiting_draft'
-    awaiting_brief = 'awaiting_brief'
-    awaiting_ripple_decision = 'awaiting_ripple_decision'
-    awaiting_blogger_selection = 'awaiting_blogger_selection'
-    paused = 'paused'
-    completed = 'completed'
-    error = 'error'
-    cancelled = 'cancelled'
+    running = "running"
+    stale = "stale"
+    awaiting_review = "awaiting_review"
+    awaiting_choice = "awaiting_choice"
+    awaiting_draft = "awaiting_draft"
+    awaiting_brief = "awaiting_brief"
+    awaiting_ripple_decision = "awaiting_ripple_decision"
+    awaiting_blogger_selection = "awaiting_blogger_selection"
+    paused = "paused"
+    completed = "completed"
+    error = "error"
+    cancelled = "cancelled"
 
 
 class ReviewDecision(Enum):
@@ -208,32 +198,30 @@ class ReviewDecision(Enum):
     Human review decision for content
     """
 
-    approved = 'approved'
-    needs_revision = 'needs_revision'
-    rejected = 'rejected'
+    approved = "approved"
+    needs_revision = "needs_revision"
+    rejected = "rejected"
 
 
 class WorkflowStartRequest(BaseModel):
     account_id: Annotated[
         str,
         Field(
-            description='Account identifier to run workflow for',
-            examples=['account_001'],
+            description="Account identifier to run workflow for",
+            examples=["account_001"],
         ),
     ]
     phase: Annotated[
         WorkflowPhase | None,
-        Field(description='Optional starting phase (defaults to scouting)'),
+        Field(description="Optional starting phase (defaults to scouting)"),
     ] = None
 
 
 class Revision(BaseModel):
-    field: Annotated[
-        str, Field(description='Field requiring revision', examples=['title'])
-    ]
+    field: Annotated[str, Field(description="Field requiring revision", examples=["title"])]
     suggestion: Annotated[
         str,
-        Field(description='Suggested improvement', examples=['建议使用疑问句式标题']),
+        Field(description="Suggested improvement", examples=["建议使用疑问句式标题"]),
     ]
 
 
@@ -244,23 +232,19 @@ class PublishOptions(BaseModel):
 
     dry_run: Annotated[
         bool | None,
-        Field(description='If true, skip real publishing and return a mock result'),
+        Field(description="If true, skip real publishing and return a mock result"),
     ] = True
     auto_publish: bool | None = False
     account_id: Annotated[
         str | None,
-        Field(
-            description='Publish as this account; null falls back to the global active account'
-        ),
+        Field(description="Publish as this account; null falls back to the global active account"),
     ] = None
 
 
 class WorkflowResponse(BaseModel):
     thread_id: Annotated[
         str,
-        Field(
-            description='Unique workflow thread identifier', examples=['thread_abc123']
-        ),
+        Field(description="Unique workflow thread identifier", examples=["thread_abc123"]),
     ]
     status: WorkflowStatus
     phase: WorkflowPhase
@@ -271,19 +255,15 @@ class Status6(Enum):
     Workflow status after pause operation
     """
 
-    paused = 'paused'
+    paused = "paused"
 
 
 class WorkflowPauseResult(BaseModel):
     thread_id: Annotated[
         str,
-        Field(
-            description='Unique workflow thread identifier', examples=['thread_abc123']
-        ),
+        Field(description="Unique workflow thread identifier", examples=["thread_abc123"]),
     ]
-    status: Annotated[
-        Status6, Field(description='Workflow status after pause operation')
-    ]
+    status: Annotated[Status6, Field(description="Workflow status after pause operation")]
 
 
 class Status7(Enum):
@@ -291,8 +271,8 @@ class Status7(Enum):
     Review status indicator
     """
 
-    awaiting_review = 'awaiting_review'
-    no_pending_review = 'no_pending_review'
+    awaiting_review = "awaiting_review"
+    no_pending_review = "no_pending_review"
 
 
 class Status8(Enum):
@@ -300,42 +280,32 @@ class Status8(Enum):
     Workflow status after review submission
     """
 
-    resumed = 'resumed'
+    resumed = "resumed"
 
 
 class ReviewSubmitResponse(BaseModel):
     thread_id: Annotated[
         str,
-        Field(
-            description='Unique workflow thread identifier', examples=['thread_abc123']
-        ),
+        Field(description="Unique workflow thread identifier", examples=["thread_abc123"]),
     ]
-    status: Annotated[
-        Status8, Field(description='Workflow status after review submission')
-    ]
+    status: Annotated[Status8, Field(description="Workflow status after review submission")]
     decision: ReviewDecision
-    next_phase: Annotated[
-        WorkflowPhase, Field(description='Next workflow phase based on decision')
-    ]
+    next_phase: Annotated[WorkflowPhase, Field(description="Next workflow phase based on decision")]
 
 
 class GrowthMetrics(BaseModel):
-    total_views: Annotated[
-        int, Field(description='Total content views', examples=[150000], ge=0)
-    ]
-    total_likes: Annotated[
-        int, Field(description='Total likes received', examples=[8500], ge=0)
-    ]
+    total_views: Annotated[int, Field(description="Total content views", examples=[150000], ge=0)]
+    total_likes: Annotated[int, Field(description="Total likes received", examples=[8500], ge=0)]
     total_comments: Annotated[
-        int, Field(description='Total comments received', examples=[1200], ge=0)
+        int, Field(description="Total comments received", examples=[1200], ge=0)
     ]
     engagement_rate: Annotated[
-        float, Field(description='Engagement rate percentage', examples=[6.53], ge=0.0)
+        float, Field(description="Engagement rate percentage", examples=[6.53], ge=0.0)
     ]
     growth_rate: Annotated[
         float,
         Field(
-            description='Growth rate compared to previous period',
+            description="Growth rate compared to previous period",
             examples=[0.15],
             ge=0.0,
         ),
@@ -343,25 +313,21 @@ class GrowthMetrics(BaseModel):
 
 
 class PerformanceRecord(BaseModel):
-    post_id: Annotated[
-        str, Field(description='Unique post identifier', examples=['post_001'])
-    ]
-    title: Annotated[
-        str, Field(description='Post title', examples=['通勤穿搭 | 春季必备5件单品'])
-    ]
-    views: Annotated[int, Field(description='View count', examples=[50000], ge=0)]
-    likes: Annotated[int, Field(description='Like count', examples=[2800], ge=0)]
-    comments: Annotated[int, Field(description='Comment count', examples=[450], ge=0)]
+    post_id: Annotated[str, Field(description="Unique post identifier", examples=["post_001"])]
+    title: Annotated[str, Field(description="Post title", examples=["通勤穿搭 | 春季必备5件单品"])]
+    views: Annotated[int, Field(description="View count", examples=[50000], ge=0)]
+    likes: Annotated[int, Field(description="Like count", examples=[2800], ge=0)]
+    comments: Annotated[int, Field(description="Comment count", examples=[450], ge=0)]
     published_at: Annotated[
         AwareDatetime,
-        Field(description='Publication timestamp', examples=['2026-05-20T08:00:00Z']),
+        Field(description="Publication timestamp", examples=["2026-05-20T08:00:00Z"]),
     ]
 
 
 class CostReport(BaseModel):
     total_cost_usd: Annotated[
         float,
-        Field(description='Total accumulated API costs', examples=[45.67], ge=0.0),
+        Field(description="Total accumulated API costs", examples=[45.67], ge=0.0),
     ]
     today_cost_usd: Annotated[
         float, Field(description="Today's API costs", examples=[5.23], ge=0.0)
@@ -369,43 +335,41 @@ class CostReport(BaseModel):
     by_model: Annotated[
         dict[str, float],
         Field(
-            description='Cost breakdown by model',
+            description="Cost breakdown by model",
             examples=[
                 {
-                    'claude-sonnet-4-20250514': 15.0,
-                    'deepseek-chat': 8.5,
-                    'gpt-4o': 12.17,
-                    'qwen-plus': 10.0,
+                    "claude-sonnet-4-20250514": 15.0,
+                    "deepseek-chat": 8.5,
+                    "gpt-4o": 12.17,
+                    "qwen-plus": 10.0,
                 }
             ],
         ),
     ]
     circuit_open: Annotated[
         bool,
-        Field(description='Whether cost circuit breaker is open', examples=[False]),
+        Field(description="Whether cost circuit breaker is open", examples=[False]),
     ]
 
 
 class HotTopicItem(BaseModel):
-    topic: Annotated[str, Field(description='Topic name', examples=['春季穿搭'])]
+    topic: Annotated[str, Field(description="Topic name", examples=["春季穿搭"])]
     heat_score: Annotated[
         int,
-        Field(description='Topic heat/popularity score', examples=[85], ge=0, le=100),
+        Field(description="Topic heat/popularity score", examples=[85], ge=0, le=100),
     ]
-    growth_rate: Annotated[
-        float, Field(description='Growth rate percentage', examples=[0.23])
-    ]
+    growth_rate: Annotated[float, Field(description="Growth rate percentage", examples=[0.23])]
     related_keywords: Annotated[
         list[str],
-        Field(description='Related keywords', examples=[['穿搭', '春季', '时尚']]),
+        Field(description="Related keywords", examples=[["穿搭", "春季", "时尚"]]),
     ]
 
 
 class CompetitorPost(BaseModel):
-    title: Annotated[str, Field(description='Post title', examples=['春季穿搭灵感'])]
-    likes: Annotated[int, Field(description='Like count', examples=[5000], ge=0)]
-    comments: Annotated[int, Field(description='Comment count', examples=[300], ge=0)]
-    author: Annotated[str, Field(description='Author name/ID', examples=['时尚达人'])]
+    title: Annotated[str, Field(description="Post title", examples=["春季穿搭灵感"])]
+    likes: Annotated[int, Field(description="Like count", examples=[5000], ge=0)]
+    comments: Annotated[int, Field(description="Comment count", examples=[300], ge=0)]
+    author: Annotated[str, Field(description="Author name/ID", examples=["时尚达人"])]
 
 
 class EntryBarrier(Enum):
@@ -413,49 +377,45 @@ class EntryBarrier(Enum):
     Entry barrier level
     """
 
-    low = 'low'
-    medium = 'medium'
-    high = 'high'
+    low = "low"
+    medium = "medium"
+    high = "high"
 
 
 class NicheOpportunity(BaseModel):
-    topic: Annotated[str, Field(description='Niche topic name', examples=['通勤穿搭'])]
+    topic: Annotated[str, Field(description="Niche topic name", examples=["通勤穿搭"])]
     potential_score: Annotated[
         int,
-        Field(description='Potential/opportunity score', examples=[75], ge=0, le=100),
+        Field(description="Potential/opportunity score", examples=[75], ge=0, le=100),
     ]
     audience_match: Annotated[
         str,
-        Field(
-            description='Target audience match description', examples=['都市白领女性']
-        ),
+        Field(description="Target audience match description", examples=["都市白领女性"]),
     ]
     entry_barrier: Annotated[
-        EntryBarrier, Field(description='Entry barrier level', examples=['low'])
+        EntryBarrier, Field(description="Entry barrier level", examples=["low"])
     ]
 
 
 class ContentPlan(BaseModel):
     selected_topic: Annotated[
-        str, Field(description='Selected content topic', examples=['春季穿搭'])
+        str, Field(description="Selected content topic", examples=["春季穿搭"])
     ]
     content_angle: Annotated[
-        str, Field(description='Unique angle/perspective', examples=['通勤穿搭'])
+        str, Field(description="Unique angle/perspective", examples=["通勤穿搭"])
     ]
     content_type: ContentType
     target_audience: Annotated[
-        str, Field(description='Target audience description', examples=['都市白领'])
+        str, Field(description="Target audience description", examples=["都市白领"])
     ]
     key_points: Annotated[
         list[str],
-        Field(description='Key content points', examples=[['简约', '舒适', '百搭']]),
+        Field(description="Key content points", examples=[["简约", "舒适", "百搭"]]),
     ]
-    suggested_timing: Annotated[
-        AwareDatetime, Field(description='Suggested publishing time')
-    ]
+    suggested_timing: Annotated[AwareDatetime, Field(description="Suggested publishing time")]
     hashtags: Annotated[
         list[str],
-        Field(description='Recommended hashtags', examples=[['#穿搭', '#通勤']]),
+        Field(description="Recommended hashtags", examples=[["#穿搭", "#通勤"]]),
     ]
     urgency: Urgency
 
@@ -465,22 +425,22 @@ class Tone(Enum):
     Content tone/style
     """
 
-    professional = 'professional'
-    friendly = 'friendly'
-    casual = 'casual'
-    enthusiastic = 'enthusiastic'
+    professional = "professional"
+    friendly = "friendly"
+    casual = "casual"
+    enthusiastic = "enthusiastic"
 
 
 class CopyContent(BaseModel):
     title_candidates: Annotated[
         list[str],
         Field(
-            description='Generated title candidates (3-5 options)',
+            description="Generated title candidates (3-5 options)",
             examples=[
                 [
-                    '通勤穿搭 | 春季必备5件单品',
-                    '5件单品搞定春季通勤穿搭',
-                    '春季通勤穿搭攻略',
+                    "通勤穿搭 | 春季必备5件单品",
+                    "5件单品搞定春季通勤穿搭",
+                    "春季通勤穿搭攻略",
                 ]
             ],
             max_length=5,
@@ -490,72 +450,62 @@ class CopyContent(BaseModel):
     selected_title: Annotated[
         str,
         Field(
-            description='Selected title for publication',
-            examples=['通勤穿搭 | 春季必备5件单品'],
+            description="Selected title for publication",
+            examples=["通勤穿搭 | 春季必备5件单品"],
         ),
     ]
     body_text: Annotated[
         str,
-        Field(description='Main content body text', examples=['春季通勤穿搭推荐...']),
+        Field(description="Main content body text", examples=["春季通勤穿搭推荐..."]),
     ]
     hashtags: Annotated[
         list[str],
-        Field(
-            description='Final hashtags to use', examples=[['#穿搭', '#通勤', '#春季']]
-        ),
+        Field(description="Final hashtags to use", examples=[["#穿搭", "#通勤", "#春季"]]),
     ]
     cta: Annotated[
         str,
-        Field(description='Call-to-action text', examples=['关注我获取更多穿搭灵感']),
+        Field(description="Call-to-action text", examples=["关注我获取更多穿搭灵感"]),
     ]
     emoji_usage: Annotated[
         list[str],
-        Field(description='Emoji usage in content', examples=[['✨', '💕', '🌸']]),
+        Field(description="Emoji usage in content", examples=[["✨", "💕", "🌸"]]),
     ]
-    tone: Annotated[
-        Tone, Field(description='Content tone/style', examples=['friendly'])
-    ]
+    tone: Annotated[Tone, Field(description="Content tone/style", examples=["friendly"])]
 
 
 class ColorPaletteItem(RootModel[str]):
-    root: Annotated[str, Field(pattern='^#[A-Fa-f0-9]{6}$')]
+    root: Annotated[str, Field(pattern="^#[A-Fa-f0-9]{6}$")]
 
 
 class VisualPlan(BaseModel):
     cover_prompt: Annotated[
         str,
-        Field(
-            description='Cover image generation prompt', examples=['简约风格穿搭展示']
-        ),
+        Field(description="Cover image generation prompt", examples=["简约风格穿搭展示"]),
     ]
     image_count: Annotated[
-        int, Field(description='Number of images in carousel', examples=[5], ge=1, le=9)
+        int, Field(description="Number of images in carousel", examples=[5], ge=1, le=9)
     ]
     image_prompts: Annotated[
         list[str],
         Field(
-            description='Prompts for each image',
-            examples=[['白色衬衫搭配', '西装外套组合']],
+            description="Prompts for each image",
+            examples=[["白色衬衫搭配", "西装外套组合"]],
         ),
     ]
-    layout_style: Annotated[
-        str, Field(description='Recommended layout style', examples=['grid'])
-    ]
+    layout_style: Annotated[str, Field(description="Recommended layout style", examples=["grid"])]
     color_palette: Annotated[
         list[ColorPaletteItem],
         Field(
-            description='Color palette (hex format)',
-            examples=[['#FFFFFF', '#F5F5F5', '#333333']],
+            description="Color palette (hex format)",
+            examples=[["#FFFFFF", "#F5F5F5", "#333333"]],
         ),
     ]
     font_suggestion: Annotated[
-        str, Field(description='Font recommendation', examples=['sans-serif'])
+        str, Field(description="Font recommendation", examples=["sans-serif"])
     ]
     brand_elements: Annotated[
         list[str],
-        Field(
-            description='Brand elements to include', examples=[['logo', 'watermark']]
-        ),
+        Field(description="Brand elements to include", examples=[["logo", "watermark"]]),
     ]
 
 
@@ -572,26 +522,24 @@ class Code(Enum):
     Error code identifier
     """
 
-    bad_request = 'BAD_REQUEST'
-    validation_error = 'VALIDATION_ERROR'
+    bad_request = "BAD_REQUEST"
+    validation_error = "VALIDATION_ERROR"
 
 
 class Error(BaseModel):
-    code: Annotated[
-        Code, Field(description='Error code identifier', examples=['VALIDATION_ERROR'])
-    ]
+    code: Annotated[Code, Field(description="Error code identifier", examples=["VALIDATION_ERROR"])]
     message: Annotated[
         str,
         Field(
-            description='Human-readable error message',
-            examples=['Invalid request parameters'],
+            description="Human-readable error message",
+            examples=["Invalid request parameters"],
         ),
     ]
     details: Annotated[
         dict[str, Any] | None,
         Field(
-            description='Additional error context',
-            examples=[{'field': 'account_id', 'reason': 'required field missing'}],
+            description="Additional error context",
+            examples=[{"field": "account_id", "reason": "required field missing"}],
         ),
     ] = None
 
@@ -601,25 +549,25 @@ class Code1(Enum):
     Error code identifier
     """
 
-    not_found = 'NOT_FOUND'
+    not_found = "NOT_FOUND"
 
 
 class Error1(BaseModel):
     code: Annotated[
-        Code1, Field(description='Error code identifier', examples=['VALIDATION_ERROR'])
+        Code1, Field(description="Error code identifier", examples=["VALIDATION_ERROR"])
     ]
     message: Annotated[
         str,
         Field(
-            description='Human-readable error message',
-            examples=['Invalid request parameters'],
+            description="Human-readable error message",
+            examples=["Invalid request parameters"],
         ),
     ]
     details: Annotated[
         dict[str, Any] | None,
         Field(
-            description='Additional error context',
-            examples=[{'field': 'account_id', 'reason': 'required field missing'}],
+            description="Additional error context",
+            examples=[{"field": "account_id", "reason": "required field missing"}],
         ),
     ] = None
 
@@ -629,44 +577,38 @@ class Code2(Enum):
     Error code identifier
     """
 
-    internal_error = 'INTERNAL_ERROR'
+    internal_error = "INTERNAL_ERROR"
 
 
 class Error2(BaseModel):
     code: Annotated[
-        Code2, Field(description='Error code identifier', examples=['VALIDATION_ERROR'])
+        Code2, Field(description="Error code identifier", examples=["VALIDATION_ERROR"])
     ]
     message: Annotated[
         str,
         Field(
-            description='Human-readable error message',
-            examples=['Invalid request parameters'],
+            description="Human-readable error message",
+            examples=["Invalid request parameters"],
         ),
     ]
     details: Annotated[
         dict[str, Any] | None,
         Field(
-            description='Additional error context',
-            examples=[{'field': 'account_id', 'reason': 'required field missing'}],
+            description="Additional error context",
+            examples=[{"field": "account_id", "reason": "required field missing"}],
         ),
     ] = None
 
 
 class ApiResponse(BaseModel):
-    success: Annotated[
-        bool, Field(description='Indicates if the request was successful')
-    ]
+    success: Annotated[bool, Field(description="Indicates if the request was successful")]
     data: Annotated[
         dict[str, Any] | list[Any] | None,
-        Field(description='Response payload (type varies by endpoint)'),
+        Field(description="Response payload (type varies by endpoint)"),
     ] = None
     error: ErrorDetail | None = None
-    timestamp: Annotated[
-        AwareDatetime, Field(description='Response timestamp in ISO 8601 format')
-    ]
-    request_id: Annotated[
-        str, Field(description='Unique request identifier for tracing')
-    ]
+    timestamp: Annotated[AwareDatetime, Field(description="Response timestamp in ISO 8601 format")]
+    request_id: Annotated[str, Field(description="Unique request identifier for tracing")]
 
 
 class Data(BaseModel):
@@ -676,9 +618,7 @@ class Data(BaseModel):
 
     thread_id: Annotated[
         str,
-        Field(
-            description='Unique workflow thread identifier', examples=['thread_abc123']
-        ),
+        Field(description="Unique workflow thread identifier", examples=["thread_abc123"]),
     ]
     status: WorkflowStatus
     phase: WorkflowPhase
@@ -687,14 +627,14 @@ class Data(BaseModel):
 class ApiResponseWorkflowResponse(ApiResponse):
     data: Annotated[
         Data | list[Any] | Data | None,
-        Field(description='Response payload (type varies by endpoint)'),
+        Field(description="Response payload (type varies by endpoint)"),
     ] = None
 
 
 class ApiResponseWorkflowPauseResult(ApiResponse):
     data: Annotated[
         Data4 | list[Any] | Data5 | None,
-        Field(description='Response payload (type varies by endpoint)'),
+        Field(description="Response payload (type varies by endpoint)"),
     ] = None
 
 
@@ -703,7 +643,7 @@ class Data6(BaseModel):
     Response payload (type varies by endpoint)
     """
 
-    status: Annotated[Status2, Field(description='Review status indicator')]
+    status: Annotated[Status2, Field(description="Review status indicator")]
     content_plan: ContentPlan | None = None
     copy_content: CopyContent | None = None
     visual_plan: VisualPlan | None = None
@@ -714,7 +654,7 @@ class Data7(BaseModel):
     Response payload (type varies by endpoint)
     """
 
-    status: Annotated[Status2, Field(description='Review status indicator')]
+    status: Annotated[Status2, Field(description="Review status indicator")]
     content_plan: ContentPlan | None = None
     copy_content: CopyContent | None = None
     visual_plan: VisualPlan | None = None
@@ -723,7 +663,7 @@ class Data7(BaseModel):
 class ApiResponsePendingReview(ApiResponse):
     data: Annotated[
         Data6 | list[Any] | Data7 | None,
-        Field(description='Response payload (type varies by endpoint)'),
+        Field(description="Response payload (type varies by endpoint)"),
     ] = None
 
 
@@ -734,17 +674,11 @@ class Data8(BaseModel):
 
     thread_id: Annotated[
         str,
-        Field(
-            description='Unique workflow thread identifier', examples=['thread_abc123']
-        ),
+        Field(description="Unique workflow thread identifier", examples=["thread_abc123"]),
     ]
-    status: Annotated[
-        Status4, Field(description='Workflow status after review submission')
-    ]
+    status: Annotated[Status4, Field(description="Workflow status after review submission")]
     decision: ReviewDecision
-    next_phase: Annotated[
-        WorkflowPhase, Field(description='Next workflow phase based on decision')
-    ]
+    next_phase: Annotated[WorkflowPhase, Field(description="Next workflow phase based on decision")]
 
 
 class Data9(BaseModel):
@@ -754,23 +688,17 @@ class Data9(BaseModel):
 
     thread_id: Annotated[
         str,
-        Field(
-            description='Unique workflow thread identifier', examples=['thread_abc123']
-        ),
+        Field(description="Unique workflow thread identifier", examples=["thread_abc123"]),
     ]
-    status: Annotated[
-        Status4, Field(description='Workflow status after review submission')
-    ]
+    status: Annotated[Status4, Field(description="Workflow status after review submission")]
     decision: ReviewDecision
-    next_phase: Annotated[
-        WorkflowPhase, Field(description='Next workflow phase based on decision')
-    ]
+    next_phase: Annotated[WorkflowPhase, Field(description="Next workflow phase based on decision")]
 
 
 class ApiResponseReviewSubmitResponse(ApiResponse):
     data: Annotated[
         Data8 | list[Any] | Data9 | None,
-        Field(description='Response payload (type varies by endpoint)'),
+        Field(description="Response payload (type varies by endpoint)"),
     ] = None
 
 
@@ -779,16 +707,14 @@ class Data10(BaseModel):
     Response payload (type varies by endpoint)
     """
 
-    account_id: Annotated[
-        str, Field(description='Account identifier', examples=['account_001'])
-    ]
-    period: Annotated[Period, Field(description='Report period')]
+    account_id: Annotated[str, Field(description="Account identifier", examples=["account_001"])]
+    period: Annotated[Period, Field(description="Report period")]
     metrics: GrowthMetrics
     insights: Annotated[
         list[str] | None,
         Field(
-            description='AI-generated growth insights',
-            examples=[['穿搭类内容表现最佳', '周末发布效果更好']],
+            description="AI-generated growth insights",
+            examples=[["穿搭类内容表现最佳", "周末发布效果更好"]],
         ),
     ] = None
 
@@ -798,16 +724,14 @@ class Data11(BaseModel):
     Response payload (type varies by endpoint)
     """
 
-    account_id: Annotated[
-        str, Field(description='Account identifier', examples=['account_001'])
-    ]
-    period: Annotated[Period, Field(description='Report period')]
+    account_id: Annotated[str, Field(description="Account identifier", examples=["account_001"])]
+    period: Annotated[Period, Field(description="Report period")]
     metrics: GrowthMetrics
     insights: Annotated[
         list[str] | None,
         Field(
-            description='AI-generated growth insights',
-            examples=[['穿搭类内容表现最佳', '周末发布效果更好']],
+            description="AI-generated growth insights",
+            examples=[["穿搭类内容表现最佳", "周末发布效果更好"]],
         ),
     ] = None
 
@@ -815,21 +739,21 @@ class Data11(BaseModel):
 class ApiResponseGrowthReport(ApiResponse):
     data: Annotated[
         Data10 | list[Any] | Data11 | None,
-        Field(description='Response payload (type varies by endpoint)'),
+        Field(description="Response payload (type varies by endpoint)"),
     ] = None
 
 
 class ApiResponsePerformanceList(ApiResponse):
     data: Annotated[
         list[PerformanceRecord] | None,
-        Field(description='Response payload (type varies by endpoint)'),
+        Field(description="Response payload (type varies by endpoint)"),
     ] = None
 
 
 class ApiResponseCostReport(ApiResponse):
     data: Annotated[
         Data12 | list[Any] | Data12 | None,
-        Field(description='Response payload (type varies by endpoint)'),
+        Field(description="Response payload (type varies by endpoint)"),
     ] = None
 
 
@@ -838,76 +762,74 @@ class ReviewDecisionRequest(BaseModel):
     comments: Annotated[
         str | None,
         Field(
-            description='Reviewer comments explaining the decision',
-            examples=['内容质量优秀，可直接发布'],
+            description="Reviewer comments explaining the decision",
+            examples=["内容质量优秀，可直接发布"],
         ),
-    ] = ''
+    ] = ""
     revisions: Annotated[
         list[Revision] | None,
-        Field(description='Specific revision suggestions', validate_default=True),
+        Field(description="Specific revision suggestions", validate_default=True),
     ] = []
     publish_options: PublishOptions | None = None
 
 
 class PendingReview(BaseModel):
-    status: Annotated[Status7, Field(description='Review status indicator')]
+    status: Annotated[Status7, Field(description="Review status indicator")]
     content_plan: ContentPlan | None = None
     copy_content: CopyContent | None = None
     visual_plan: VisualPlan | None = None
 
 
 class GrowthReport(BaseModel):
-    account_id: Annotated[
-        str, Field(description='Account identifier', examples=['account_001'])
-    ]
-    period: Annotated[Period, Field(description='Report period')]
+    account_id: Annotated[str, Field(description="Account identifier", examples=["account_001"])]
+    period: Annotated[Period, Field(description="Report period")]
     metrics: GrowthMetrics
     insights: Annotated[
         list[str] | None,
         Field(
-            description='AI-generated growth insights',
-            examples=[['穿搭类内容表现最佳', '周末发布效果更好']],
+            description="AI-generated growth insights",
+            examples=[["穿搭类内容表现最佳", "周末发布效果更好"]],
         ),
     ] = None
 
 
 class TrendData(BaseModel):
     hot_topics: Annotated[
-        list[HotTopicItem] | None, Field(description='List of trending topics')
+        list[HotTopicItem] | None, Field(description="List of trending topics")
     ] = None
     trending_keywords: Annotated[
         list[str] | None,
-        Field(description='Top trending keywords', examples=[['穿搭', '春季', '通勤']]),
+        Field(description="Top trending keywords", examples=[["穿搭", "春季", "通勤"]]),
     ] = None
     competitor_posts: Annotated[
-        list[CompetitorPost] | None, Field(description='Notable competitor content')
+        list[CompetitorPost] | None, Field(description="Notable competitor content")
     ] = None
     niche_opportunities: Annotated[
         list[NicheOpportunity] | None,
-        Field(description='Identified niche opportunities'),
+        Field(description="Identified niche opportunities"),
     ] = None
-    timestamp: Annotated[
-        AwareDatetime | None, Field(description='Data collection timestamp')
-    ] = None
+    timestamp: Annotated[AwareDatetime | None, Field(description="Data collection timestamp")] = (
+        None
+    )
 
 
 class BadRequest(ApiResponse):
     success: Annotated[
-        Success | None, Field(description='Indicates if the request was successful')
+        Success | None, Field(description="Indicates if the request was successful")
     ] = None
     error: Error | None = None
 
 
 class NotFound(ApiResponse):
     success: Annotated[
-        Success | None, Field(description='Indicates if the request was successful')
+        Success | None, Field(description="Indicates if the request was successful")
     ] = None
     error: Error1 | None = None
 
 
 class InternalError(ApiResponse):
     success: Annotated[
-        Success | None, Field(description='Indicates if the request was successful')
+        Success | None, Field(description="Indicates if the request was successful")
     ] = None
     error: Error2 | None = None
 
@@ -919,55 +841,43 @@ class Data2(BaseModel):
 
     thread_id: Annotated[
         str,
-        Field(
-            description='Unique workflow thread identifier', examples=['thread_abc123']
-        ),
+        Field(description="Unique workflow thread identifier", examples=["thread_abc123"]),
     ]
     phase: WorkflowPhase
     current_agent: Annotated[
         str | None,
-        Field(description='Currently executing agent name', examples=['copywriter']),
+        Field(description="Currently executing agent name", examples=["copywriter"]),
     ] = None
     trend_data: TrendData | None = None
     content_plan: ContentPlan | None = None
     copy_content: CopyContent | None = None
     visual_plan: VisualPlan | None = None
-    error: Annotated[
-        str | None, Field(description='Error message if workflow failed')
-    ] = None
-    created_at: Annotated[
-        AwareDatetime, Field(description='Workflow creation timestamp')
-    ]
-    updated_at: Annotated[AwareDatetime, Field(description='Last update timestamp')]
+    error: Annotated[str | None, Field(description="Error message if workflow failed")] = None
+    created_at: Annotated[AwareDatetime, Field(description="Workflow creation timestamp")]
+    updated_at: Annotated[AwareDatetime, Field(description="Last update timestamp")]
 
 
 class ApiResponseWorkflowState(ApiResponse):
     data: Annotated[
         Data2 | list[Any] | Data2 | None,
-        Field(description='Response payload (type varies by endpoint)'),
+        Field(description="Response payload (type varies by endpoint)"),
     ] = None
 
 
 class WorkflowState(BaseModel):
     thread_id: Annotated[
         str,
-        Field(
-            description='Unique workflow thread identifier', examples=['thread_abc123']
-        ),
+        Field(description="Unique workflow thread identifier", examples=["thread_abc123"]),
     ]
     phase: WorkflowPhase
     current_agent: Annotated[
         str | None,
-        Field(description='Currently executing agent name', examples=['copywriter']),
+        Field(description="Currently executing agent name", examples=["copywriter"]),
     ] = None
     trend_data: TrendData | None = None
     content_plan: ContentPlan | None = None
     copy_content: CopyContent | None = None
     visual_plan: VisualPlan | None = None
-    error: Annotated[
-        str | None, Field(description='Error message if workflow failed')
-    ] = None
-    created_at: Annotated[
-        AwareDatetime, Field(description='Workflow creation timestamp')
-    ]
-    updated_at: Annotated[AwareDatetime, Field(description='Last update timestamp')]
+    error: Annotated[str | None, Field(description="Error message if workflow failed")] = None
+    created_at: Annotated[AwareDatetime, Field(description="Workflow creation timestamp")]
+    updated_at: Annotated[AwareDatetime, Field(description="Last update timestamp")]

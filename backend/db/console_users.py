@@ -51,6 +51,7 @@ async def ensure_tables() -> None:
 
 # ── Password hashing ──
 
+
 def _hash_password(password: str, salt: bytes | None = None) -> str:
     """Return 'pbkdf2_sha256$rounds$salt_hex$hash_hex'."""
     if salt is None:
@@ -76,8 +77,10 @@ def _verify_password(password: str, stored: str) -> bool:
 
 # ── CRUD ──
 
+
 async def create_user(username: str, password: str) -> ConsoleUserRow:
     from datetime import UTC, datetime
+
     now = datetime.now(UTC).isoformat()
     user_id = str(uuid.uuid4())
     pwd_hash = _hash_password(password)
@@ -98,6 +101,7 @@ async def list_users() -> list[ConsoleUserRow]:
     pool = get_pool()
     async with pool.connection() as conn:
         from psycopg.rows import dict_row
+
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(
                 "SELECT id, username, created_at, last_login_at "
@@ -119,6 +123,7 @@ async def get_user_by_username(username: str) -> ConsoleUserRow | None:
     pool = get_pool()
     async with pool.connection() as conn:
         from psycopg.rows import dict_row
+
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(
                 "SELECT id, username, created_at, last_login_at "
@@ -143,6 +148,7 @@ async def verify_login(username: str, password: str) -> ConsoleUserRow | None:
     pool = get_pool()
     async with pool.connection() as conn:
         from psycopg.rows import dict_row
+
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(
                 "SELECT id, username, password_hash, created_at, last_login_at "
@@ -198,6 +204,7 @@ async def count_users() -> int:
 
 # ── Bootstrap ──
 
+
 async def bootstrap_default_user() -> None:
     """Seed admin/admin123 only when no users exist (idempotent first-install seed).
 
@@ -213,6 +220,7 @@ async def bootstrap_default_user() -> None:
 
 
 # ── Self-check ──
+
 
 def _selfcheck() -> None:
     h = _hash_password("hunter2")

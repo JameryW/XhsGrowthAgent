@@ -33,5 +33,5 @@ def write_json(path: Path, data: dict) -> bool:
             encoding="utf-8",
         )
         return True
-    except (OSError, IOError):
+    except OSError:
         return False

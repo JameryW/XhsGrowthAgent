@@ -12,6 +12,7 @@ def test_error_code_enum():
     assert ErrorCode.WORKFLOW_NOT_FOUND.value == "ERROR_WORKFLOW_NOT_FOUND"
     assert ErrorCode.VALIDATION_ERROR.value == "ERROR_VALIDATION"
 
+
 def test_workflow_not_found_error():
     exc = WorkflowNotFoundError("test123")
     assert exc.code == ErrorCode.WORKFLOW_NOT_FOUND
@@ -19,11 +20,13 @@ def test_workflow_not_found_error():
     assert "test123" in exc.message
     assert exc.details["thread_id"] == "test123"
 
+
 def test_validation_error():
     exc = ValidationError("account_id", "is required")
     assert exc.code == ErrorCode.VALIDATION_ERROR
     assert exc.status_code == 400
     assert exc.details["field"] == "account_id"
+
 
 def test_api_error_to_response():
     exc = WorkflowNotFoundError("test123")
@@ -31,6 +34,7 @@ def test_api_error_to_response():
     assert response.success is False
     assert response.request_id == "req001"
     assert response.error.code == ErrorCode.WORKFLOW_NOT_FOUND.value
+
 
 def test_review_not_pending_error():
     """Test ReviewNotPendingError has correct attributes."""
@@ -48,8 +52,12 @@ def test_review_not_pending_error():
 def test_classify_auth_expired():
     """Cookie/login/token/auth/401/403 → AUTH_EXPIRED with reconfigure action."""
     msgs = [
-        "cookie expired", "需要重新登录", "invalid token",
-        "auth failed", "401 Unauthorized", "403 Forbidden",
+        "cookie expired",
+        "需要重新登录",
+        "invalid token",
+        "auth failed",
+        "401 Unauthorized",
+        "403 Forbidden",
     ]
     for msg in msgs:
         et, recovery = classify_publish_error(msg)
@@ -81,8 +89,11 @@ def test_classify_image_missing():
 def test_classify_network_error():
     """network/timeout/connection/ECONNREFUSED/fetch → NETWORK_ERROR."""
     msgs = [
-        "network unreachable", "Timeout 30000ms exceeded",
-        "connection reset", "ECONNREFUSED", "fetch failed",
+        "network unreachable",
+        "Timeout 30000ms exceeded",
+        "connection reset",
+        "ECONNREFUSED",
+        "fetch failed",
     ]
     for msg in msgs:
         et, _ = classify_publish_error(msg)

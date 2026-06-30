@@ -57,10 +57,10 @@ class ViralMatcherAgent(BaseAgent):
         system_prompt = self._build_system_prompt(state)
 
         if has_draft:
-            user_msg = f"""用户草稿标题：{draft.get('title', '未提供')}
-用户草稿内容：{(draft.get('text') or '')[:500]}
-用户指定爆款链接：{', '.join(user_links) if user_links else '无'}
-自动搜索关键词：{', '.join(auto_keywords[:5]) if auto_keywords else '无'}"""
+            user_msg = f"""用户草稿标题：{draft.get("title", "未提供")}
+用户草稿内容：{(draft.get("text") or "")[:500]}
+用户指定爆款链接：{", ".join(user_links) if user_links else "无"}
+自动搜索关键词：{", ".join(auto_keywords[:5]) if auto_keywords else "无"}"""
         else:
             # Brief mode: describe what we're looking for from brief context
             brief_ctx = f"品牌：{brief.get('brand_name', '未提供')}"
@@ -74,14 +74,16 @@ class ViralMatcherAgent(BaseAgent):
                 brief_ctx += f"\n目标受众：{brief.get('target_audience')}"
             user_msg = f"""商单模式 — 根据品牌Brief搜索相关爆款笔记参考
 {brief_ctx}
-用户指定爆款链接：{', '.join(user_links) if user_links else '无'}
-自动搜索关键词：{', '.join(auto_keywords[:5]) if auto_keywords else '无'}"""
+用户指定爆款链接：{", ".join(user_links) if user_links else "无"}
+自动搜索关键词：{", ".join(auto_keywords[:5]) if auto_keywords else "无"}"""
 
         try:
-            response = await self.model.ainvoke([
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_msg),
-            ])
+            response = await self.model.ainvoke(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_msg),
+                ]
+            )
         except Exception as e:
             logger.warning(
                 "Viral matching failed; skipping optional optimization: %s",

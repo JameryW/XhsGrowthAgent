@@ -10,11 +10,12 @@ def test_success_response():
     assert response.error is None
     assert isinstance(response.timestamp, datetime)
 
+
 def test_error_response():
     response = error(
         code="ERROR_WORKFLOW_NOT_FOUND",
         message="Workflow not found",
-        details={"thread_id": "test123"}
+        details={"thread_id": "test123"},
     )
     assert response.success is False
     assert response.data is None
@@ -22,16 +23,14 @@ def test_error_response():
     assert response.error.message == "Workflow not found"
     assert response.error.details == {"thread_id": "test123"}
 
+
 def test_api_response_serialization():
-    response = ApiResponse(
-        success=True,
-        data={"phase": "scouting"},
-        timestamp=datetime.now()
-    )
+    response = ApiResponse(success=True, data={"phase": "scouting"}, timestamp=datetime.now())
     json_data = response.model_dump(mode="json")
     assert "success" in json_data
     assert "data" in json_data
     assert "timestamp" in json_data
+
 
 def test_error_detail_str():
     detail = ErrorDetail(code="ERROR_TEST", message="Test error")

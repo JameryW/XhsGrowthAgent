@@ -21,7 +21,9 @@ from backend.memory.types import (
 # ── Helpers ──
 
 
-def _make_store(search_results: list[dict] | None = None, get_result: dict | None = None) -> AsyncMock:
+def _make_store(
+    search_results: list[dict] | None = None, get_result: dict | None = None
+) -> AsyncMock:
     """Create a mock BaseStore with configurable asearch/aget results."""
     store = AsyncMock()
     if search_results is not None:
@@ -36,7 +38,9 @@ def _make_store(search_results: list[dict] | None = None, get_result: dict | Non
     if get_result is not None:
         item = MagicMock()
         item.value = get_result
-        item.key = get_result.get("style_id", get_result.get("play_id", get_result.get("material_id", "key")))
+        item.key = get_result.get(
+            "style_id", get_result.get("play_id", get_result.get("material_id", "key"))
+        )
         store.aget = AsyncMock(return_value=item)
     else:
         store.aget = AsyncMock(return_value=None)

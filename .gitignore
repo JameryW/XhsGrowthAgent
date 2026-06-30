@@ -60,3 +60,7 @@ frontend/package-lock.json
 
 # Local embedding model cache (bind-mounted into container; baked into image via Dockerfile COPY)
 .hf-cache/
+
+# Build temp dir (TMPDIR for podman builds) and stray empty files
+.tmp-build/
+oom

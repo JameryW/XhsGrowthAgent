@@ -214,7 +214,7 @@ async def test_layout_recommender_default_parameters() -> None:
         return_value=mock_service,
     ):
         # Call with minimal args (default params)
-        result = await layout_recommender.ainvoke({})
+        await layout_recommender.ainvoke({})
 
     # Should still work
     mock_service.get_layout_recommendations.assert_called_once_with(
@@ -290,7 +290,7 @@ async def test_layout_recommender_zero_image_count() -> None:
         "backend.tools.content.layout.VisualAnalysisService",
         return_value=mock_service,
     ):
-        result = await layout_recommender.ainvoke(
+        await layout_recommender.ainvoke(
             {"scene": "test", "content_type": "图文笔记", "image_count": 0}
         )
 

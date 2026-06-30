@@ -1,6 +1,5 @@
 """Unit tests for XHS Signature."""
 
-
 from backend.services.xhs_signature import XHSCookieParser, XHSSignature
 
 

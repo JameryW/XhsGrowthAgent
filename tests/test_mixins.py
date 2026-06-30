@@ -1,4 +1,5 @@
 """Tests for agent mixins."""
+
 import pytest
 
 from backend.agents.mixins.retry_mixin import RetryMixin
@@ -8,6 +9,7 @@ from backend.agents.mixins.validation_mixin import ValidationMixin
 class TestRetryMixin:
     def test_execute_with_retry_success(self):
         """Verify RetryMixin executes action on success."""
+
         class MockAgent(RetryMixin):
             pass
 
@@ -17,10 +19,12 @@ class TestRetryMixin:
 
     def test_execute_with_retry_retries_on_timeout(self):
         """Verify RetryMixin retries on TimeoutError."""
+
         class MockAgent(RetryMixin):
             pass
 
         call_count = 0
+
         def failing_action():
             nonlocal call_count
             call_count += 1
@@ -35,6 +39,7 @@ class TestRetryMixin:
 
     def test_execute_with_retry_raises_after_max_retries(self):
         """Verify RetryMixin raises after max retries."""
+
         class MockAgent(RetryMixin):
             pass
 

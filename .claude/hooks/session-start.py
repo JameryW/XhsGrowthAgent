@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Session Start Hook - Inject structured context
 """
+
 from __future__ import annotations
 
 # IMPORTANT: Suppress all warnings FIRST
 import warnings
+
 warnings.filterwarnings("ignore")
 
 import json
@@ -47,21 +48,21 @@ def _normalize_windows_shell_path(path_str: str) -> str:
     m = re.match(r"^/([A-Za-z])/(.*)", p)
     if m:
         drive, rest = m.group(1).upper(), m.group(2)
-        rest = rest.replace('/', '\\')
+        rest = rest.replace("/", "\\")
         return f"{drive}:\\{rest}"
 
     # Cygwin style: /cygdrive/c/Users/...
     m = re.match(r"^/cygdrive/([A-Za-z])/(.*)", p)
     if m:
         drive, rest = m.group(1).upper(), m.group(2)
-        rest = rest.replace('/', '\\')
+        rest = rest.replace("/", "\\")
         return f"{drive}:\\{rest}"
 
     # WSL mounted drive (sometimes leaked into env): /mnt/c/Users/...
     m = re.match(r"^/mnt/([A-Za-z])/(.*)", p)
     if m:
         drive, rest = m.group(1).upper(), m.group(2)
-        rest = rest.replace('/', '\\')
+        rest = rest.replace("/", "\\")
         return f"{drive}:\\{rest}"
 
     return path_str
@@ -80,6 +81,7 @@ Then continue directly with the user's request. This notice is one-shot: do not 
 # but applied per-stream so we don't depend on host CLI's command wiring.
 if sys.platform.startswith("win"):
     import io as _io
+
     for _stream_name in ("stdin", "stdout", "stderr"):
         _stream = getattr(sys, _stream_name, None)
         if _stream is None:
@@ -91,10 +93,13 @@ if sys.platform.startswith("win"):
                 pass
         elif hasattr(_stream, "detach"):
             try:
-                setattr(sys, _stream_name, _io.TextIOWrapper(_stream.detach(), encoding="utf-8", errors="replace"))
+                setattr(
+                    sys,
+                    _stream_name,
+                    _io.TextIOWrapper(_stream.detach(), encoding="utf-8", errors="replace"),
+                )
             except Exception:
                 pass
-
 
 
 def _has_curated_jsonl_entry(jsonl_path: Path) -> bool:
@@ -308,8 +313,8 @@ def _get_task_status(trellis_dir: Path, input_data: dict) -> str:
             "they persist findings to `{TASK_DIR}/research/*.md` and keep main context clean. "
             "Do NOT do 10+ inline WebFetch/WebSearch in the main conversation.\n"
             "User override (per-turn escape hatch): if the user's first message explicitly opts "
-            "out of the workflow (\"跳过 trellis\" / \"别走流程\" / \"小修一下\" / \"直接改\" / "
-            "\"skip trellis\" / \"no task\" / \"just do it\"), honor it for this turn — "
+            'out of the workflow ("跳过 trellis" / "别走流程" / "小修一下" / "直接改" / '
+            '"skip trellis" / "no task" / "just do it"), honor it for this turn — '
             "acknowledge briefly and proceed without creating a task. Per-turn only."
         )
 
@@ -388,8 +393,8 @@ def _get_task_status(trellis_dir: Path, input_data: dict) -> str:
         "instruction does NOT apply to you — you are already the dispatched sub-agent. "
         "Implement / check directly without spawning another sub-agent of the same kind.\n"
         "User override (per-turn escape hatch): if the user's CURRENT message explicitly tells the "
-        "main session to handle it directly (\"你直接改\" / \"别派 sub-agent\" / \"main session 写就行\" / "
-        "\"do it inline\" / \"不用 sub-agent\"), honor it for this turn and edit code directly. "
+        'main session to handle it directly ("你直接改" / "别派 sub-agent" / "main session 写就行" / '
+        '"do it inline" / "不用 sub-agent"), honor it for this turn and edit code directly. '
         "Per-turn only; do NOT invent an override the user did not say."
     )
 
@@ -405,7 +410,12 @@ def _load_trellis_config(trellis_dir: Path, input_data: dict) -> tuple:
         sys.path.insert(0, str(scripts_dir))
 
     try:
-        from common.config import get_default_package, get_packages, get_spec_scope, is_monorepo  # type: ignore[import-not-found]
+        from common.config import (  # type: ignore[import-not-found]
+            get_default_package,
+            get_packages,
+            get_spec_scope,
+            is_monorepo,
+        )
         from common.paths import get_current_task  # type: ignore[import-not-found]
 
         repo_root = trellis_dir.parent
@@ -462,10 +472,7 @@ def _check_legacy_spec(trellis_dir: Path, is_mono: bool, packages: dict) -> str 
         return None
 
     # Check which packages are missing spec/<pkg>/ directory
-    missing = [
-        name for name in sorted(packages.keys())
-        if not (spec_dir / name).is_dir()
-    ]
+    missing = [name for name in sorted(packages.keys()) if not (spec_dir / name).is_dir()]
 
     if not missing:
         return None  # All packages have spec dirs
@@ -625,9 +632,7 @@ def _build_workflow_overview(workflow_path: Path) -> str:
     # Customizing Trellis, a single range grab captures all four. The
     # breadcrumb tag blocks now embedded inside Phase Index are stripped so
     # they don't duplicate the per-turn UserPromptSubmit injection.
-    phases = _extract_range(
-        content, "Phase Index", "Customizing Trellis (for forks)"
-    )
+    phases = _extract_range(content, "Phase Index", "Customizing Trellis (for forks)")
     if phases:
         out_lines.append(_strip_breadcrumb_tag_blocks(phases).rstrip())
 
@@ -715,7 +720,7 @@ Read and follow all instructions below carefully.
         "Honor a per-turn user override only if the user's current message "
         "explicitly opts out (see <task-status> below for override phrases).\n"
         "- Sub-agent self-exemption: if you are reading this as a `trellis-implement` "
-        "or `trellis-check` sub-agent, the \"dispatch trellis-implement / trellis-check\" "
+        'or `trellis-check` sub-agent, the "dispatch trellis-implement / trellis-check" '
         "rule above does NOT apply to you — you are already the dispatched sub-agent. "
         "Do NOT spawn another sub-agent of the same kind; implement / check directly.\n\n"
     )
@@ -752,9 +757,7 @@ Read and follow all instructions below carefully.
                         continue
                     nested_index = nested / "index.md"
                     if nested_index.is_file():
-                        paths.append(
-                            f".trellis/spec/{sub.name}/{nested.name}/index.md"
-                        )
+                        paths.append(f".trellis/spec/{sub.name}/{nested.name}/index.md")
 
     if paths:
         output.write("## Available spec indexes (read on demand)\n")
@@ -762,10 +765,7 @@ Read and follow all instructions below carefully.
             output.write(f"- {p}\n")
         output.write("\n")
 
-    output.write(
-        "Discover more via: "
-        "`python3 ./.trellis/scripts/get_context.py --mode packages`\n"
-    )
+    output.write("Discover more via: `python3 ./.trellis/scripts/get_context.py --mode packages`\n")
     output.write("</guidelines>\n\n")
 
     # Check task status and inject structured tag
