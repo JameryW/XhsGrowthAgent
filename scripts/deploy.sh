@@ -320,11 +320,13 @@ cmd_deploy() {
 
     # ponytail: skip image rebuild when only frontend changed — saves ~60s
     # Set SKIP_REBUILD=1 to force skip; auto-detects via .py mtime vs image creation
+    REBUILT=0
     if [ "${SKIP_REBUILD:-}" = "1" ]; then
         echo ">>> 跳过镜像构建（SKIP_REBUILD=1）"
     elif ! podman image exists "$BACKEND_IMG" 2>/dev/null; then
         echo ">>> 镜像不存在，首次构建..."
         podman build -t "$BACKEND_IMG" "$PROJECT_DIR"
+        REBUILT=1
     else
         IMAGE_TS=$(podman inspect "$BACKEND_IMG" --format '{{.Created}}' 2>/dev/null)
         CHANGED=""
@@ -334,16 +336,30 @@ cmd_deploy() {
         if [ -n "$CHANGED" ]; then
             echo ">>> 检测到后端代码变更（$(basename "$CHANGED")），重建镜像..."
             podman build -t "$BACKEND_IMG" "$PROJECT_DIR"
+            REBUILT=1
         else
             echo ">>> 后端代码未变更，跳过镜像构建"
         fi
     fi
 
-    # Fast path: restart existing containers instead of stop+rm+create
+    # When the image was rebuilt, `podman restart` is WRONG — it reuses the old
+    # container's filesystem layers, so new backend code never takes effect.
+    # Must stop+rm+run to pick up the new image. Only restart when the image is
+    # unchanged (frontend-dist-only deploys, where dist is a bind mount).
     if podman ps -a --filter name=xhs-growth --format '{{.Names}}' | grep -q xhs-growth; then
-        echo ">>> 重启后端容器（加载新前端 dist）..."
-        podman restart xhs-growth
-        podman restart ripple-service 2>/dev/null || true
+        if [ "$REBUILT" = "1" ]; then
+            echo ">>> 镜像已重建，重新创建容器以加载新代码..."
+            podman stop xhs-growth 2>/dev/null || true
+            podman rm   xhs-growth 2>/dev/null || true
+            podman stop ripple-service 2>/dev/null || true
+            podman rm   ripple-service 2>/dev/null || true
+            cmd_start
+            return
+        else
+            echo ">>> 镜像未变更，重启容器（加载新前端 dist）..."
+            podman restart xhs-growth
+            podman restart ripple-service 2>/dev/null || true
+        fi
     else
         cmd_start
         return
