@@ -29,7 +29,7 @@ jobs:
         run: ruff format --check .
 
   mypy:
-    name: Mypy (changed files)
+    name: Mypy (new errors only)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,36 +42,49 @@ jobs:
           cache-dependency-path: pyproject.toml
       - name: Install
         run: pip install -e ".[dev]"
-      - name: Determine changed backend files
-        id: changed
+      - name: Mypy (new errors only)
+        # ponytail: mypy strict carries a large pre-existing error baseline.
+        # `mypy backend` reports ALL of them, so any PR touching debt-laden
+        # files turns CI red on errors it didn't introduce. Instead: run the
+        # FULL `mypy backend` at both base and HEAD (full run keeps package
+        # context stable — passing a file list makes --follow-imports=silent
+        # swallow errors unpredictably), normalize each error to
+        # file|code|message (drop line:col — ruff format shifts them), and
+        # fail only on combos present at HEAD but absent at base.
+        # Ceiling: dedup by message drops the "same code+msg, higher count"
+        # signal. Upgrade path: clear the baseline, then `mypy backend`
+        # unconditionally and delete this diff.
         env:
           # base.sha is a GitHub-computed commit SHA, not user-controlled text.
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           EVENT: ${{ github.event_name }}
         run: |
-          set -euo pipefail
-          # Compare against the PR base (or main on push runs).
-          if [ "$EVENT" = "pull_request" ]; then
-            BASE="$PR_BASE"
-          else
-            BASE="origin/main"
+          set -uo pipefail
+          if [ "$EVENT" = "pull_request" ]; then BASE="$PR_BASE"; else BASE="origin/main"; fi
+
+          norm() { grep -E 'error:' | sed -E 's/^([^:]+):[0-9]+(:[0-9]+)?: error: (.+)  \[([a-z-]+)\]$/\1|\4|\3/' | sort -u; }
+
+          # HEAD errors (full backend run)
+          mypy backend > /tmp/mypy_head.txt 2>&1 || true
+          norm < /tmp/mypy_head.txt > /tmp/head.txt
+
+          # Base errors via a throwaway worktree (same install → same env).
+          # `;` not `&&`: a pip warning must not skip the mypy run.
+          git worktree add -q /tmp/base-wt "$BASE"
+          (cd /tmp/base-wt && pip install -e ".[dev]" >/dev/null 2>&1; mypy backend 2>&1) | norm > /tmp/base.txt || true
+          git worktree remove /tmp/base-wt --force
+
+          echo "mypy baseline errors: $(wc -l < /tmp/base.txt)"
+          echo "mypy head errors:      $(wc -l < /tmp/head.txt)"
+
+          # New = in HEAD but not in base
+          comm -13 /tmp/base.txt /tmp/head.txt > /tmp/new.txt || true
+          if [ -s /tmp/new.txt ]; then
+            echo "::error::New mypy errors introduced by this PR:"
+            cat /tmp/new.txt
+            exit 1
           fi
-          mapfile -t FILES < <(git diff --name-only --diff-filter=d "$BASE...HEAD" -- 'backend/**/*.py')
-          if [ "${#FILES[@]}" -eq 0 ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "No changed backend/*.py files — skipping mypy."
-          else
-            printf '%s\n' "${FILES[@]}" | paste -sd' ' - > /tmp/changed_files.txt
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "Changed files:"; printf '  %s\n' "${FILES[@]}"
-          fi
-      - name: Mypy
-        if: steps.changed.outputs.skip != 'true'
-        # ponytail: mypy strict only on changed files — 558 pre-existing errors
-        # make a full run red; this gates new code without blocking on history.
-        # Upgrade path: clear the 558 baseline, then drop this diff filter and
-        # run `mypy backend` unconditionally.
-        run: mypy $(cat /tmp/changed_files.txt)
+          echo "No new mypy errors."
 
   test:
     name: Test (py${{ matrix.python }})

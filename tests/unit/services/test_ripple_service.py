@@ -664,6 +664,16 @@ class TestAutoRecovery:
             error="Connection refused",
             reason="unreachable",
         )
+        # ponytail: _probe_before_fallback short-circuits to False when
+        # Settings.ripple.enabled is False (the default in a clean CI env).
+        # Pin enabled=True so these recovery tests don't depend on RIPPLE_ENABLED.
+        svc._get_config = lambda: {
+            "base_url": "http://ripple-service:8080",
+            "api_token": "t",
+            "timeout": 5,
+            "workflow_timeout": 60,
+            "enabled": True,
+        }
         return svc
 
     @pytest.mark.asyncio
