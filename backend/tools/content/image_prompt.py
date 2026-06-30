@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Any, cast
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 from langchain_core.tools import tool
 
 from backend.config.models import TaskType

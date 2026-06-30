@@ -40,6 +40,9 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "datamodel-code-generator>=0.25.0",
+    "aiosqlite>=0.20",
+    "langgraph-checkpoint-sqlite>=2.0",
+    "types-pyyaml>=6.0",
 ]
 
 [project.scripts]

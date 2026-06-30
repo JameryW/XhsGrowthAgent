@@ -1623,7 +1623,7 @@ async def _extract_pdf_text(content_bytes: bytes) -> str:
     try:
         import io
 
-        import pdfplumber  # type: ignore[import-not-found]
+        import pdfplumber
 
         text_parts = []
         with pdfplumber.open(io.BytesIO(content_bytes)) as pdf:

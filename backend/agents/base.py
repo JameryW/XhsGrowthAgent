@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, cast
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 from langchain_core.language_models import BaseChatModel
 from langgraph.store.base import BaseStore
 
