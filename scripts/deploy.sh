@@ -291,8 +291,21 @@ cmd_deploy() {
         cmd_backup
     fi
 
-    # Always rebuild frontend (mounted as volume, no image rebuild needed)
-    cmd_frontend
+    # Frontend: skip rebuild when no source is newer than dist/ (saves ~20s).
+    # Set FORCE_FRONTEND=1 to always rebuild.
+    if [ "${FORCE_FRONTEND:-}" = "1" ]; then
+        cmd_frontend
+    elif [ -d "$PROJECT_DIR/frontend/dist" ]; then
+        NEWEST_DIST=$(find "$PROJECT_DIR/frontend/dist" -type f -printf '%T@\n' 2>/dev/null | sort -rn | head -1)
+        NEWEST_SRC=$(find "$PROJECT_DIR/frontend/src" "$PROJECT_DIR/frontend/index.html" "$PROJECT_DIR/frontend/package.json" "$PROJECT_DIR/frontend/vite.config.ts" -type f -newermt "@0" -printf '%T@\n' 2>/dev/null | sort -rn | head -1)
+        if [ -n "$NEWEST_SRC" ] && [ -n "$NEWEST_DIST" ] && [ "$(printf '%s\n' "$NEWEST_SRC" "$NEWEST_DIST" | sort -rn | head -1)" = "$NEWEST_DIST" ]; then
+            echo ">>> 前端源码未变更，跳过构建"
+        else
+            cmd_frontend
+        fi
+    else
+        cmd_frontend
+    fi
 
     # ponytail: skip image rebuild when only frontend changed — saves ~60s
     # Set SKIP_REBUILD=1 to force skip; auto-detects via .py mtime vs image creation

@@ -7,6 +7,9 @@ __pycache__
 *.pyc
 
 frontend/node_modules
+# omp extension's node_modules is 1.9GB+ and must not enter the image
+# (it's installed at runtime via bun, and ships a CUDA .so that bloats layers).
+**/node_modules
 
 .env
 .trellis/workspace
