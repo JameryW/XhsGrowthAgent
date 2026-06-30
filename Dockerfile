@@ -23,12 +23,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # sentence-transformers depends on torch; without this pre-install pip pulls
 # the default CUDA build which bloats the image by ~4GB on a CPU-only host.
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-# Install Python deps (browser extra pulls playwright for real XHS publishing)
+
+# uv binary — used to export a pinned requirements file from uv.lock.
+RUN pip install --no-cache-dir uv
+
+# Install THIRD-PARTY deps from uv.lock BEFORE copying backend source.
+# ponytail: this layer depends only on pyproject.toml/uv.lock, so .py edits
+# hit the cache and skip the multi-minute dep install on every rebuild.
+# --no-emit-project skips the local pkg (no source yet); --no-dev excludes
+# mypy/pytest/ruff; --no-emit-package torch keeps the CPU pre-install above.
 COPY pyproject.toml uv.lock ./
+RUN uv export --frozen --extra browser --no-dev --no-emit-project --no-emit-package torch --no-hashes -o /tmp/reqs.txt && \
+    # Drop torch's CUDA deps (nvidia-*, cuda-*, triton) — torch itself is the
+    # CPU pre-install above; these would otherwise pull ~4GB of CUDA blobs.
+    grep -vE '^(nvidia-|cuda-|triton==)' /tmp/reqs.txt > /tmp/reqs_clean.txt && \
+    pip install --no-cache-dir -r /tmp/reqs_clean.txt && rm /tmp/reqs.txt /tmp/reqs_clean.txt
+
+# Backend source copied AFTER deps — .py edits only invalidate the layer below.
 COPY backend/ backend/
+# Install the local package itself (deps already present; --no-deps avoids
+# re-resolving). hatchling is the build backend declared in pyproject.
 RUN pip install --no-cache-dir hatchling && \
-    pip install --no-cache-dir --no-deps sentence-transformers && \
-    pip install --no-cache-dir ".[browser]"
+    pip install --no-cache-dir --no-deps ".[browser]"
 
 # Install chromium browser + system deps for playwright real publishing.
 # Baked into the image so containers don't download at runtime (no network dep).
