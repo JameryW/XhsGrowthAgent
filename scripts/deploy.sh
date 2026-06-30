@@ -104,6 +104,24 @@ cmd_restore() {
 
 # ── 子命令 ──
 
+# Wait for the backend health endpoint, up to ~60s. The backend loads the
+# embedding model on startup (~13s observed), so the old 10s/15s polls raced
+# it and printed "后端未响应" even on a successful deploy. Returns non-zero
+# on timeout so `set -e` surfaces a real failure instead of silently proceeding.
+wait_for_backend() {
+    local timeout="${1:-60}"
+    echo ">>> 等待后端就绪（最多 ${timeout}s）..."
+    for i in $(seq 1 "$timeout"); do
+        if curl -sf http://localhost:8889/api/system/health >/dev/null 2>&1; then
+            echo "  后端已就绪 (${i}s)"
+            return 0
+        fi
+        sleep 1
+    done
+    echo "  后端在 ${timeout}s 内未就绪 — 检查日志: podman logs xhs-growth" >&2
+    return 1
+}
+
 cmd_frontend() {
     echo ">>> 构建前端..."
     (cd "$PROJECT_DIR/frontend" && npm run build)
@@ -238,14 +256,7 @@ LLMEOF"
         -v "$PROJECT_DIR/.hf-cache:/opt/hf-cache" \
         "$BACKEND_IMG"
 
-    echo ">>> 等待后端就绪..."
-    for i in $(seq 1 10); do
-        if curl -sf http://localhost:8889/api/system/health >/dev/null 2>&1; then
-            echo "  后端已就绪 (${i}s)"
-            break
-        fi
-        sleep 1
-    done
+    wait_for_backend
 
     echo ">>> 所有服务已启动"
     cmd_status
@@ -338,14 +349,7 @@ cmd_deploy() {
         return
     fi
 
-    echo ">>> 等待后端就绪..."
-    for i in $(seq 1 15); do
-        if curl -sf http://localhost:8889/api/system/health >/dev/null 2>&1; then
-            echo "  后端已就绪 (${i}s)"
-            break
-        fi
-        sleep 1
-    done
+    wait_for_backend
 
     echo ">>> 部署完成"
     cmd_status
