@@ -13,6 +13,7 @@ from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.state.enums import WorkflowPhase
 from backend.state.schema import XHSGrowthState
+from backend.state.substates import BriefContent, ContentPlan, CopyContent, TrendData
 
 logger = logging.getLogger("xhs_growth.agents.shooting_planner")
 
@@ -53,7 +54,10 @@ class ShootingPlannerAgent(BaseAgent):
             ]
         )
 
-        parsed = self._parse_json_response(response.content)
+        content = response.content
+        if isinstance(content, list):
+            content = str(content)
+        parsed = self._parse_json_response(content)
 
         result: dict[str, Any] = {
             "shooting_plan": parsed,
@@ -62,7 +66,7 @@ class ShootingPlannerAgent(BaseAgent):
 
         return result
 
-    def _build_brief_prompt(self, brief: dict, viral_refs: list) -> str:
+    def _build_brief_prompt(self, brief: BriefContent, viral_refs: list[Any]) -> str:
         """Build prompt for brief mode — from parsed brief content."""
         viral_context = self._format_viral_refs(viral_refs)
         return f"""请根据以下商单 brief 生成拍摄计划：
@@ -99,10 +103,10 @@ class ShootingPlannerAgent(BaseAgent):
 
     def _build_trend_prompt(
         self,
-        content_plan: dict,
-        copy_content: dict,
-        trend_data: dict,
-        viral_refs: list,
+        content_plan: ContentPlan,
+        copy_content: CopyContent,
+        trend_data: TrendData,
+        viral_refs: list[Any],
     ) -> str:
         """Build prompt for trend mode — from content plan + copy content."""
         viral_context = self._format_viral_refs(viral_refs)
@@ -147,7 +151,7 @@ class ShootingPlannerAgent(BaseAgent):
 - outfits: 拍摄服装建议 {{角色: [服装选项]}}
 - shooting_angles: 拍摄角度建议 [{{angle: 角度名, description: 描述, tips: 提示}}]"""
 
-    def _format_viral_refs(self, viral_refs: list) -> str:
+    def _format_viral_refs(self, viral_refs: list[Any]) -> str:
         """Format viral reference posts for prompt context."""
         if not viral_refs:
             return ""

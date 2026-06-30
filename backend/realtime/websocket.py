@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -100,7 +101,7 @@ class WebSocketManager:
             event_bus.unsubscribe(sync_handler)
             self.sessions.pop(session_id, None)
 
-    async def _handle_client_message(self, session: WsSession, msg: dict) -> None:
+    async def _handle_client_message(self, session: WsSession, msg: dict[str, Any]) -> None:
         """处理客户端消息."""
         action = msg.get("action")
 

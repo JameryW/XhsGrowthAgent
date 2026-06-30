@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
@@ -24,7 +24,7 @@ class ContentAnalyzerAgent(BaseAgent):
     prompt_file = "content_analyzer.yaml"
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
-        draft = state.get("draft_content")
+        draft: dict[str, Any] | None = cast(dict[str, Any] | None, state.get("draft_content"))
         viral_posts = state.get("viral_posts", [])
 
         # Build synthetic draft from shooting_plan when draft_content is empty (brief mode)
@@ -48,7 +48,7 @@ class ContentAnalyzerAgent(BaseAgent):
 
         # 构建爆款摘要或内容参考
         if viral_posts:
-            viral_summary = self._build_viral_summary(viral_posts)
+            viral_summary = self._build_viral_summary(cast(list[dict[str, Any]], viral_posts))
             context_section = f"爆款参考摘要（JSON格式）：\n{viral_summary}"
         else:
             context_section = self._build_content_context(state)
@@ -68,7 +68,7 @@ class ContentAnalyzerAgent(BaseAgent):
             ]
         )
 
-        result = self._parse_json_response(response.content)
+        result = self._parse_json_response(cast(str, response.content))
         optimization_analysis = result.get("optimization_analysis", {})
 
         # 确保返回正确的结构
@@ -124,7 +124,7 @@ class ContentAnalyzerAgent(BaseAgent):
             parts.append(f"角度: {plan['content_angle']}")
         return "内容参考上下文：\n" + "\n".join(parts) if parts else "无额外参考上下文"
 
-    def _build_viral_summary(self, viral_posts: list[dict]) -> str:
+    def _build_viral_summary(self, viral_posts: list[dict[str, Any]]) -> str:
         """构建爆款摘要 JSON 字符串."""
         summary_posts = []
         for post in viral_posts[:5]:  # 最多取5篇

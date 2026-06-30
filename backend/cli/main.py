@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 import typer
+from langchain_core.runnables.config import RunnableConfig
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
@@ -60,7 +62,7 @@ def run(
     dry_run: bool = typer.Option(False, help="模拟运行（不调用真实 API）"),
     dev: bool = typer.Option(True, help="开发模式（内存检查点）"),
     verbose: bool = typer.Option(False, help="显示详细日志"),
-):
+) -> None:
     """启动增长引擎工作流"""
     from dotenv import load_dotenv
 
@@ -69,14 +71,14 @@ def run(
 
     console.print(Panel("🚀 小红书增长引擎", style="bold green"))
 
-    async def _run():
+    async def _run() -> None:
         from backend.graph.builder import dev_graph
         from backend.state.schema import WorkflowPhase
 
         async with dev_graph() as graph:
             thread_id = f"xhs_{account_id}_{uuid.uuid4().hex[:8]}"
 
-            initial_state = {
+            initial_state: dict[str, Any] = {
                 "phase": WorkflowPhase(phase),
                 "current_agent": "orchestrator",
                 "error": None,
@@ -98,7 +100,7 @@ def run(
                 "updated_at": datetime.now(UTC).isoformat(),
             }
 
-            config = {"configurable": {"thread_id": thread_id}}
+            config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
             console.print(f"[dim]Thread: {thread_id}[/dim]")
             console.print(f"[dim]起始阶段: {format_phase(phase)}[/dim]")
@@ -168,7 +170,7 @@ def run(
 def serve(
     host: str = typer.Option("0.0.0.0", help="监听地址"),
     port: int = typer.Option(8000, help="监听端口"),
-):
+) -> None:
     """启动 API 服务"""
     import uvicorn
     from dotenv import load_dotenv
@@ -181,15 +183,15 @@ def serve(
 
 
 @app.command()
-def status(thread_id: str = typer.Argument(..., help="工作流线程 ID")):
+def status(thread_id: str = typer.Argument(..., help="工作流线程 ID")) -> None:
     """查看工作流状态"""
 
-    async def _status():
+    async def _status() -> None:
         from backend.graph.builder import dev_graph
         from backend.state.machine import derive_status
 
         async with dev_graph() as graph:
-            config = {"configurable": {"thread_id": thread_id}}
+            config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
             snapshot = await graph.aget_state(config)
 
             # Use derive_status for accurate status (handles stale, gates, etc.)
@@ -229,7 +231,7 @@ def status(thread_id: str = typer.Argument(..., help="工作流线程 ID")):
 def list_workflows(
     account_id: str | None = typer.Option(None, help="筛选账号 ID"),
     limit: int = typer.Option(10, help="显示数量"),
-):
+) -> None:
     """列出活跃工作流"""
     console.print(Panel("📋 工作流列表", style="bold blue"))
 
@@ -239,7 +241,7 @@ def list_workflows(
     table.add_column("Agent", style="white")
     table.add_column("创建时间", style="dim")
 
-    async def _list():
+    async def _list() -> None:
         # In dev mode with memory checkpointer, we can't list threads
         # This is a placeholder for production mode with Postgres
         console.print("[dim]开发模式下无法列出工作流（使用内存检查点）[/dim]")
@@ -252,17 +254,17 @@ def list_workflows(
 def resume(
     thread_id: str = typer.Argument(..., help="工作流线程 ID"),
     phase: str | None = typer.Option(None, help="指定恢复阶段"),
-):
+) -> None:
     """恢复中断的工作流"""
 
-    async def _resume():
+    async def _resume() -> None:
         from langgraph.types import Command
 
         from backend.graph.builder import compile_graph_dev
         from backend.state.machine import derive_status
 
         graph = await compile_graph_dev()
-        config = {"configurable": {"thread_id": thread_id}}
+        config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
         state = await graph.aget_state(config)
         current_phase = state.values.get("phase", "unknown")
@@ -277,7 +279,7 @@ def resume(
 
             # Determine resume input based on gate type
             next_nodes = state.next
-            resume_value = None  # Default: ainvoke(None) for non-gate nodes
+            resume_value: Command[Any] | None = None  # Default: ainvoke(None) for non-gate nodes
 
             if "review_gate" in next_nodes:
                 console.print("[yellow]⚠️ 工作流停在 review_gate（人工审核）[/yellow]")
@@ -347,14 +349,14 @@ def resume(
 def logs(
     thread_id: str = typer.Argument(..., help="工作流线程 ID"),
     follow: bool = typer.Option(False, "--follow", "-f", help="实时跟踪日志"),
-):
+) -> None:
     """查看工作流日志"""
 
-    async def _logs():
+    async def _logs() -> None:
         from backend.graph.builder import compile_graph_dev
 
         graph = await compile_graph_dev()
-        config = {"configurable": {"thread_id": thread_id}}
+        config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
         state = await graph.aget_state(config)
 
@@ -381,7 +383,7 @@ def logs(
 
 
 @app.command()
-def version():
+def version() -> None:
     """显示版本信息"""
     from importlib.metadata import version as get_version
 
@@ -400,7 +402,7 @@ def version():
 
 
 @app.command()
-def config():
+def config() -> None:
     """检查配置状态"""
     import os
 

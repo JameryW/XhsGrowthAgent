@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger("xhs_growth.cost_tracker")
 
@@ -65,7 +66,7 @@ class CostTracker:
         today = datetime.now(UTC).strftime("%Y-%m-%d")
         return sum(u.cost_usd for u in self._usage if u.timestamp.startswith(today))
 
-    def summary(self) -> dict:
+    def summary(self) -> dict[str, Any]:
         return {
             "total_cost_usd": sum(u.cost_usd for u in self._usage),
             "today_cost_usd": self.today_total(),

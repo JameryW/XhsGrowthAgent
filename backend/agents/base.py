@@ -6,7 +6,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 from langchain_core.language_models import BaseChatModel
@@ -27,7 +27,7 @@ class BaseAgent(ABC):
     agent_name: str = "base"
     prompt_file: str = ""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._model: BaseChatModel | None = None
         self._prompt_template: dict[str, str] | None = None
 
@@ -70,7 +70,7 @@ class BaseAgent(ABC):
         query: str,
         namespace: str,
         limit: int = 5,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         if store is None:
             return []
         try:
@@ -141,14 +141,14 @@ class BaseAgent(ABC):
 
             # 2. 尝试直接解析
             try:
-                return json.loads(json_content)
+                return cast(dict[str, Any], json.loads(json_content))
             except json.JSONDecodeError:
                 pass
 
             # 3. 尝试修复常见语法错误后解析
             repaired = repair_json(json_content)
             try:
-                return json.loads(repaired)
+                return cast(dict[str, Any], json.loads(repaired))
             except json.JSONDecodeError:
                 pass
 
@@ -158,11 +158,11 @@ class BaseAgent(ABC):
             if start != -1 and end != -1 and end > start:
                 json_str = json_content[start : end + 1]
                 try:
-                    return json.loads(json_str)
+                    return cast(dict[str, Any], json.loads(json_str))
                 except json.JSONDecodeError:
                     repaired = repair_json(json_str)
                     try:
-                        return json.loads(repaired)
+                        return cast(dict[str, Any], json.loads(repaired))
                     except json.JSONDecodeError:
                         pass
 
@@ -171,11 +171,11 @@ class BaseAgent(ABC):
             matches = re.findall(json_pattern, content)
             for match in matches:
                 try:
-                    return json.loads(match)
+                    return cast(dict[str, Any], json.loads(match))
                 except json.JSONDecodeError:
                     repaired = repair_json(match)
                     try:
-                        return json.loads(repaired)
+                        return cast(dict[str, Any], json.loads(repaired))
                     except json.JSONDecodeError:
                         continue
 

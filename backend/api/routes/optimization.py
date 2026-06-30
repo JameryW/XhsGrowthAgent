@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from backend.api.errors import ChoiceNotPendingError, ValidationError, WorkflowNotFoundError
-from backend.api.responses import success
+from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
 
 router = APIRouter()
@@ -25,8 +27,13 @@ class VersionChoice(BaseModel):
 
 
 @router.post("/draft/{thread_id}")
-async def submit_draft(thread_id: str, draft: DraftSubmission, request: Request):
+async def submit_draft(
+    thread_id: str,
+    draft: DraftSubmission,
+    request: Request = None,  # type: ignore[assignment]
+) -> ApiResponse[Any]:
     """Submit user draft — update state and resume graph if interrupted at draft_gate."""
+    assert request is not None
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
 
@@ -68,8 +75,13 @@ async def submit_draft(thread_id: str, draft: DraftSubmission, request: Request)
 
 
 @router.post("/select/{thread_id}")
-async def select_version(thread_id: str, choice: VersionChoice, request: Request):
+async def select_version(
+    thread_id: str,
+    choice: VersionChoice,
+    request: Request = None,  # type: ignore[assignment]
+) -> ApiResponse[Any]:
     """选择版本 — 从 choice_gate 中断恢复."""
+    assert request is not None
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
 

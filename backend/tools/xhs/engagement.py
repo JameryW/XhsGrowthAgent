@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import tool
+
+if TYPE_CHECKING:
+    from backend.services.xhs_client import XHSClient
+    from backend.services.xhs_engagement import XHSEngagement
 
 logger = logging.getLogger("xhs_growth.tools.engagement")
 
 
-def _get_engagement():
+def _get_engagement() -> XHSEngagement:
     """获取 XHSEngagement 实例"""
     from backend.config.settings import Settings
     from backend.services.xhs_engagement import XHSEngagement
@@ -22,7 +26,7 @@ def _get_engagement():
     )
 
 
-def _get_client():
+def _get_client() -> XHSClient:
     """获取 XHSClient 实例"""
     from backend.config.settings import Settings
     from backend.services.xhs_client import XHSClient

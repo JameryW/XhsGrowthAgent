@@ -12,7 +12,7 @@ from langgraph.types import Command, StateSnapshot
 from pydantic import BaseModel
 
 from backend.api.errors import ReviewNotPendingError
-from backend.api.responses import success
+from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
 from backend.state.enums import ContentStatus
 
@@ -53,7 +53,9 @@ class RippleDecision(BaseModel):
     action: str  # "accept" | "reangle" | "retopic"
 
 
-def _build_version_entry(copy_content: dict, visual_plan: dict, label: str = "draft") -> dict:
+def _build_version_entry(
+    copy_content: dict[str, Any], visual_plan: dict[str, Any], label: str = "draft"
+) -> dict[str, Any]:
     """Build a version entry from current content state."""
     return {
         "version_id": uuid.uuid4().hex[:8],
@@ -69,7 +71,7 @@ def _build_version_entry(copy_content: dict, visual_plan: dict, label: str = "dr
 
 
 @router.get("/pending/{thread_id}")
-async def get_pending_review(thread_id: str, request: Request):
+async def get_pending_review(thread_id: str, request: Request) -> ApiResponse[Any]:
     """获取待审核内容 — includes version history if available."""
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -95,7 +97,9 @@ async def get_pending_review(thread_id: str, request: Request):
 
 
 @router.post("/submit/{thread_id}")
-async def submit_review(thread_id: str, decision: ReviewDecision, request: Request):
+async def submit_review(
+    thread_id: str, decision: ReviewDecision, request: Request
+) -> ApiResponse[Any]:
     """提交审核决定 — saves version before resuming on 'needs_revision'."""
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -151,7 +155,7 @@ async def submit_review(thread_id: str, decision: ReviewDecision, request: Reque
 
 
 @router.get("/versions/{thread_id}")
-async def get_version_history(thread_id: str, request: Request):
+async def get_version_history(thread_id: str, request: Request) -> ApiResponse[Any]:
     """获取内容版本历史 — all revisions for a workflow."""
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -180,7 +184,7 @@ async def get_version_history(thread_id: str, request: Request):
 
 
 @router.get("/ripple-pending/{thread_id}")
-async def get_pending_ripple_decision(thread_id: str, request: Request):
+async def get_pending_ripple_decision(thread_id: str, request: Request) -> ApiResponse[Any]:
     """获取 Ripple 决策等待状态 — Ripple 结果 + 决策选项"""
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -214,7 +218,9 @@ async def get_pending_ripple_decision(thread_id: str, request: Request):
 
 
 @router.post("/ripple-decision/{thread_id}")
-async def submit_ripple_decision(thread_id: str, decision: RippleDecision, request: Request):
+async def submit_ripple_decision(
+    thread_id: str, decision: RippleDecision, request: Request
+) -> ApiResponse[Any]:
     """提交 Ripple 决策 — 用户选择接受/换角度/换话题"""
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -250,7 +256,7 @@ async def submit_ripple_decision(thread_id: str, decision: RippleDecision, reque
     # NOTE: reselect_count increment is owned by ripple_gate_node only —
     # do NOT increment here to avoid double-counting.
     if action in ("reangle", "retopic"):
-        updates: dict = {
+        updates: dict[str, Any] = {
             "ripple_progress": {},
         }
         if action == "retopic":

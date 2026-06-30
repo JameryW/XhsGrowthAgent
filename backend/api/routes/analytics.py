@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Query, Request
 
-from backend.api.responses import success
+from backend.api.responses import ApiResponse, success
 from backend.db.pool import is_pool_ready
 from backend.db.workflows import list_workflows as db_list
 
@@ -32,14 +32,16 @@ def _set_cached(key: str, value: Any) -> None:
     _cache[key] = (time.time(), value)
 
 
-async def _get_completed_workflows(graph, account_id: str | None = None) -> list[dict[str, Any]]:
+async def _get_completed_workflows(
+    graph: Any, account_id: str | None = None
+) -> list[dict[str, Any]]:
     """Read full state for completed workflows, with caching."""
     cache_key = f"completed_{account_id or 'all'}"
     cached = _get_cached(cache_key)
     if cached is not None:
-        return cached
+        return cast(list[dict[str, Any]], cached)
 
-    results = []
+    results: list[dict[str, Any]] = []
     if is_pool_ready():
         # Include completed and analyzing workflows (both have publish_result)
         for status_filter in ("completed", "analyzing"):
@@ -69,7 +71,7 @@ def _period_cutoff_hours(period: str) -> int:
         return 30 * 24
 
 
-def _filter_by_period(posts: list[dict], period: str) -> list[dict]:
+def _filter_by_period(posts: list[dict[str, Any]], period: str) -> list[dict[str, Any]]:
     """Filter posts by time period."""
     now = datetime.now(UTC)
     cutoff_hours = _period_cutoff_hours(period)
@@ -86,7 +88,7 @@ def _filter_by_period(posts: list[dict], period: str) -> list[dict]:
     return filtered
 
 
-def _extract_post_data(wf_state: dict) -> dict | None:
+def _extract_post_data(wf_state: dict[str, Any]) -> dict[str, Any] | None:
     """Extract post performance data from a completed workflow state."""
     publish = wf_state.get("publish_result") or {}
     analytics = wf_state.get("analytics") or {}
@@ -120,8 +122,13 @@ def _extract_post_data(wf_state: dict) -> dict | None:
 
 
 @router.get("/report/{account_id}")
-async def get_growth_report(account_id: str, period: str = "weekly", request: Request = None):
+async def get_growth_report(
+    account_id: str,
+    period: str = "weekly",
+    request: Request = None,  # type: ignore[assignment]
+) -> ApiResponse[Any]:
     """获取增长报告 — from real completed workflows."""
+    assert request is not None
     graph = request.app.state.graph
     workflows = await _get_completed_workflows(graph, account_id)
 
@@ -147,7 +154,7 @@ async def get_growth_report(account_id: str, period: str = "weekly", request: Re
         else 0.0
     )
     best = max(filtered_posts, key=lambda p: p["likes"] + p["comments"], default=None)
-    trend_topics = sorted(topics, key=topics.get, reverse=True)[:5]
+    trend_topics = sorted(topics, key=lambda k: topics[k], reverse=True)[:5]
 
     # Generate insights from real data
     insights = []
@@ -184,9 +191,10 @@ async def get_performance(
     account_id: str,
     period: str = "weekly",
     limit: int = Query(20, ge=1, le=100),
-    request: Request = None,
-):
+    request: Request = None,  # type: ignore[assignment]
+) -> ApiResponse[Any]:
     """获取最近帖子表现数据 — from real completed workflows."""
+    assert request is not None
     graph = request.app.state.graph
     workflows = await _get_completed_workflows(graph, account_id)
 
@@ -216,8 +224,9 @@ async def get_performance(
 
 
 @router.get("/costs")
-async def get_costs(period: str = "weekly", request: Request = None):
+async def get_costs(period: str = "weekly", request: Request = None) -> ApiResponse[Any]:  # type: ignore[assignment]
     """获取 LLM 调用成本 — aggregated from workflow performance logs."""
+    assert request is not None
     graph = request.app.state.graph
     workflows = await _get_completed_workflows(graph)
 
@@ -274,13 +283,14 @@ async def get_dashboard(
     account_id: str,
     period: str = "weekly",
     limit: int = Query(20, ge=1, le=100),
-    request: Request = None,
-):
+    request: Request = None,  # type: ignore[assignment]
+) -> ApiResponse[Any]:
     """Single-request analytics bundle — report + performance + costs.
 
     Avoids 3× the cold-start cost of _get_completed_workflows by computing
     all three payloads from one fetch.
     """
+    assert request is not None
     graph = request.app.state.graph
     workflows = await _get_completed_workflows(graph, account_id)
 
@@ -307,7 +317,7 @@ async def get_dashboard(
         else 0.0
     )
     best = max(filtered_posts, key=lambda p: p["likes"] + p["comments"], default=None)
-    trend_topics = sorted(topics, key=topics.get, reverse=True)[:5]
+    trend_topics = sorted(topics, key=lambda k: topics[k], reverse=True)[:5]
 
     insights = []
     if avg_rate > 4.0:

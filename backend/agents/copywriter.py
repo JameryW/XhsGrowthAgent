@@ -8,7 +8,7 @@ can choose a preferred style before optimization.
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
@@ -77,7 +77,7 @@ class CopywriterAgent(BaseAgent):
         system_prompt = self._build_system_prompt(state, extra_context=memory_context)
 
         # 构建 Ripple 传播预测上下文
-        ripple_context = self._build_ripple_context(plan)
+        ripple_context = self._build_ripple_context(dict(plan))
         system_prompt = system_prompt.replace("{ripple_context}", ripple_context)
 
         niche = state.get("niche", "母婴")
@@ -117,7 +117,7 @@ class CopywriterAgent(BaseAgent):
             ]
         )
 
-        copy_content = self._parse_json_response(response.content)
+        copy_content = self._parse_json_response(cast(str, response.content))
 
         # ── Multi-style generation when blogger_notes exist ──
         blogger_notes = state.get("blogger_notes") or []
@@ -126,7 +126,7 @@ class CopywriterAgent(BaseAgent):
             content_versions = await self._generate_style_variants(
                 state,
                 copy_content,
-                blogger_notes,
+                cast(list[dict[str, Any]], blogger_notes),
                 system_prompt,
                 niche,
             )
@@ -250,7 +250,7 @@ class CopywriterAgent(BaseAgent):
             ]
         )
 
-        parsed = self._parse_json_response(response.content)
+        parsed = self._parse_json_response(cast(str, response.content))
         variants = parsed.get("variants", [])
 
         # Ensure each variant has a version_id
@@ -258,10 +258,10 @@ class CopywriterAgent(BaseAgent):
             if not v.get("version_id"):
                 v["version_id"] = str(uuid.uuid4())[:8]
 
-        return variants
+        return cast(list[dict[str, Any]], variants)
 
     @staticmethod
-    def _build_ripple_context(plan: dict) -> str:
+    def _build_ripple_context(plan: dict[str, Any]) -> str:
         """从 content_plan 中提取 Ripple 数据构建 prompt 上下文"""
         prediction = plan.get("ripple_prediction")
         pmf = plan.get("ripple_pmf")

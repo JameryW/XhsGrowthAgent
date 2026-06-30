@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any, cast
 
 import yaml
 from langchain_core.tools import tool
@@ -17,14 +18,15 @@ from backend.services.llm_enrichment import get_llm_service
 logger = logging.getLogger("xhs_growth.tools.timing")
 
 
-def _load_prompt() -> dict:
+def _load_prompt() -> dict[str, Any]:
     """Load prompt template from YAML file."""
     prompt_path = Path("xhs_growth/config/prompts/tools/timing_optimizer.yaml")
     with open(prompt_path) as f:
-        return yaml.safe_load(f)
+        data: Any = yaml.safe_load(f)
+    return cast(dict[str, Any], data)
 
 
-def _algorithmic_fallback(data: dict) -> dict:
+def _algorithmic_fallback(data: dict[str, Any]) -> dict[str, Any]:
     """Algorithmic fallback when LLM fails."""
     niche = data.get("niche", "")
     target_audience = data.get("target_audience", "")
@@ -97,8 +99,8 @@ async def timing_optimizer(
     niche: str = "",
     target_audience: str = "",
     content_type: str = "图文笔记",
-    historical_data: dict = None,
-) -> dict:
+    historical_data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """优化发布时间 — 基于垂直领域和受众行为分析最佳发布时段.
 
     Args:

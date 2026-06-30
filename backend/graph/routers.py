@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from backend.state.enums import ContentStatus, WorkflowPhase
 from backend.state.schema import XHSGrowthState
 
 
-def _check_terminal(state: XHSGrowthState) -> str | None:
+def _check_terminal(state: XHSGrowthState) -> Literal["__end__"] | None:
     """Return '__end__' if workflow is in terminal state, else None.
 
     Terminal states: cancelled, paused, error, completed.
@@ -104,7 +104,8 @@ def review_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_conten
         return terminal
 
     feedback = state.get("human_feedback", {})
-    decision = feedback.get("decision", ContentStatus.REJECTED)
+    # decision may arrive as a ContentStatus enum or a raw string (from JSON)
+    decision: Any = feedback.get("decision", ContentStatus.REJECTED)
 
     if decision == ContentStatus.APPROVED or decision == "approved":
         return "publisher"

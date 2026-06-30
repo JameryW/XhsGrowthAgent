@@ -1,10 +1,12 @@
 """Analysis tools."""
 
+from typing import Any
+
 from langchain_core.tools import tool
 
 
 @tool
-async def detect_content_patterns(time_range: str = "30d") -> list[dict]:
+async def detect_content_patterns(time_range: str = "30d") -> list[dict[str, Any]]:
     """检测内容表现模式 — 识别高表现内容的共性特征"""
     return [{"pattern_type": "topic", "description": "示例模式", "impact": "positive"}]
 

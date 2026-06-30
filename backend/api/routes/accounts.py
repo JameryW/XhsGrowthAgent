@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
 from backend.api.errors import APIError, ErrorCode, ValidationError
-from backend.api.responses import success
+from backend.api.responses import ApiResponse, success
 
 logger = logging.getLogger("xhs_growth.api.accounts")
 
@@ -36,7 +37,7 @@ class SetCredentialsRequest(BaseModel):
 
 
 @router.post("")
-async def create_account(request: CreateAccountRequest):
+async def create_account(request: CreateAccountRequest) -> ApiResponse[Any]:
     """Create a new account."""
     if not request.name.strip():
         raise ValidationError("name", "Account name cannot be empty")
@@ -64,7 +65,7 @@ async def create_account(request: CreateAccountRequest):
 
 
 @router.get("")
-async def list_accounts():
+async def list_accounts() -> ApiResponse[Any]:
     """List all accounts."""
     from backend.db.accounts import list_accounts as db_list
 
@@ -84,7 +85,7 @@ async def list_accounts():
 
 
 @router.get("/active")
-async def get_active_account():
+async def get_active_account() -> ApiResponse[Any]:
     """Get the currently active account."""
     from backend.db.accounts import get_active_account as db_get_active
 
@@ -101,7 +102,7 @@ async def get_active_account():
 
 
 @router.put("/{account_id}")
-async def update_account(account_id: str, request: UpdateAccountRequest):
+async def update_account(account_id: str, request: UpdateAccountRequest) -> ApiResponse[Any]:
     """Update an account's name or active status."""
     from backend.db.accounts import activate_credentials, set_active_account
     from backend.db.accounts import update_account as db_update
@@ -113,7 +114,7 @@ async def update_account(account_id: str, request: UpdateAccountRequest):
             raise AccountNotFoundError(account_id)
         await activate_credentials(account_id)
     else:
-        fields = {}
+        fields: dict[str, Any] = {}
         if request.name is not None:
             if not request.name.strip():
                 raise ValidationError("name", "Account name cannot be empty")
@@ -134,7 +135,7 @@ async def update_account(account_id: str, request: UpdateAccountRequest):
 
 
 @router.delete("/{account_id}")
-async def delete_account(account_id: str):
+async def delete_account(account_id: str) -> ApiResponse[Any]:
     """Delete an account and all its credentials."""
     from backend.db.accounts import deactivate_credentials, get_active_account
     from backend.db.accounts import delete_account as db_delete
@@ -155,7 +156,7 @@ async def delete_account(account_id: str):
 
 
 @router.get("/{account_id}/credentials")
-async def get_credentials(account_id: str):
+async def get_credentials(account_id: str) -> ApiResponse[Any]:
     """Get all credentials for an account (values masked)."""
     from backend.db.accounts import list_credentials as db_list
 
@@ -173,7 +174,7 @@ async def get_credentials(account_id: str):
 
 
 @router.put("/{account_id}/credentials")
-async def set_credentials(account_id: str, request: SetCredentialsRequest):
+async def set_credentials(account_id: str, request: SetCredentialsRequest) -> ApiResponse[Any]:
     """Batch-set credentials for an account. Empty values delete the key."""
     from backend.db.accounts import activate_credentials, get_active_account
     from backend.db.accounts import set_credentials as db_set
@@ -189,7 +190,7 @@ async def set_credentials(account_id: str, request: SetCredentialsRequest):
 
 
 @router.delete("/{account_id}/credentials/{key_name}")
-async def delete_credential(account_id: str, key_name: str):
+async def delete_credential(account_id: str, key_name: str) -> ApiResponse[Any]:
     """Delete a single credential."""
     import os
 

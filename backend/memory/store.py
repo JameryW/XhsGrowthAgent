@@ -11,7 +11,7 @@ from langgraph.store.base import BaseStore
 logger = logging.getLogger("xhs_growth.memory.store")
 
 
-def _keyword_filter(items: list, keywords: list[str]) -> list:
+def _keyword_filter(items: list[Any], keywords: list[str]) -> list[Any]:
     """Post-filter asearch results by keywords — all keywords must appear in any value field."""
     if not keywords:
         return items
@@ -95,7 +95,7 @@ class MemoryManager:
         *,
         keywords: list[str] | None = None,
         filter: dict[str, Any] | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         try:
             # Over-fetch to compensate for keyword filtering
             fetch_limit = limit * 2 if keywords else limit
@@ -120,7 +120,7 @@ class MemoryManager:
         *,
         keywords: list[str] | None = None,
         filter: dict[str, Any] | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         try:
             fetch_limit = limit * 2 if keywords else limit
             items = await store.asearch(
@@ -144,7 +144,7 @@ class MemoryManager:
         *,
         keywords: list[str] | None = None,
         filter: dict[str, Any] | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         try:
             fetch_limit = limit * 2 if keywords else limit
             items = await store.asearch(
@@ -168,7 +168,7 @@ class MemoryManager:
         *,
         keywords: list[str] | None = None,
         filter: dict[str, Any] | None = None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         try:
             fetch_limit = limit * 2 if keywords else limit
             items = await store.asearch(

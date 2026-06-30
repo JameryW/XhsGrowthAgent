@@ -75,7 +75,10 @@ class BriefAnalyzerAgent(BaseAgent):
             ]
         )
 
-        parsed = self._parse_json_response(response.content)
+        content = response.content
+        if isinstance(content, list):
+            content = str(content)
+        parsed = self._parse_json_response(content)
 
         # Merge with existing brief_content (preserves raw_text, source_type)
         brief_result = {
@@ -122,7 +125,7 @@ class BriefAnalyzerAgent(BaseAgent):
         return result
 
     async def _generate_clarification(
-        self, brief_result: dict, raw_text: str, state: XHSGrowthState
+        self, brief_result: dict[str, Any], raw_text: str, state: XHSGrowthState
     ) -> dict[str, Any]:
         """Generate clarification questions for vague briefs."""
         system_prompt = self._build_system_prompt(state)
@@ -147,7 +150,10 @@ class BriefAnalyzerAgent(BaseAgent):
             ]
         )
 
-        parsed = self._parse_json_response(response.content)
+        content = response.content
+        if isinstance(content, list):
+            content = str(content)
+        parsed = self._parse_json_response(content)
         questions = parsed if isinstance(parsed, list) else parsed.get("questions", [])
 
         return {

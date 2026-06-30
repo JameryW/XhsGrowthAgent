@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from pydantic import BaseModel
@@ -66,7 +66,7 @@ class RippleService:
     _instance: RippleService | None = None
     _client: httpx.AsyncClient | None = None
     _health_status: RippleHealthStatus = RippleHealthStatus()
-    _bg_task: asyncio.Task | None = None
+    _bg_task: asyncio.Task[None] | None = None
     # Track active simulation progress per (thread_id, job_id)
     _progress_store: dict[str, dict[str, Any]] = {}
 
@@ -464,7 +464,7 @@ class RippleService:
         self,
         method: str,
         url: str,
-        json_data: dict | None = None,
+        json_data: dict[str, Any] | None = None,
         max_retries: int = 3,
         retry_delay: float = 1.0,
     ) -> dict[str, Any]:
@@ -486,7 +486,7 @@ class RippleService:
                 resp.raise_for_status()
                 # Request succeeded — service is reachable
                 self._mark_healthy()
-                return resp.json()
+                return cast(dict[str, Any], resp.json())
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code < 500:
@@ -610,7 +610,7 @@ class RippleService:
                 return {"error": "Ripple service unavailable"}
 
         try:
-            event = {
+            event: dict[str, Any] = {
                 "topic": topic,
                 "content_type": content_type,
                 "tags": tags,

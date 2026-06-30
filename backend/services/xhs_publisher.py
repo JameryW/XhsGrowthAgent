@@ -87,7 +87,7 @@ class XHSPublisher:
             """)
         return self._page
 
-    async def _set_cookies(self, context) -> None:
+    async def _set_cookies(self, context: Any) -> None:
         """设置登录 Cookie"""
         cookies = []
         for item in self.cookie.split(";"):
@@ -360,8 +360,13 @@ class XHSPublisher:
             self._browser = None
             self._page = None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> XHSPublisher:
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
         await self.close()

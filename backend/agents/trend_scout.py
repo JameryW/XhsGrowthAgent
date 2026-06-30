@@ -11,7 +11,8 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
-from backend.state.schema import WorkflowPhase, XHSGrowthState
+from backend.state.enums import WorkflowPhase
+from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.trend_scout")
 
@@ -145,7 +146,10 @@ class TrendScoutAgent(BaseAgent):
             ]
         )
 
-        trend_data = self._parse_json_response(response.content)
+        content = response.content
+        if isinstance(content, list):
+            content = str(content)
+        trend_data = self._parse_json_response(content)
         trend_data["data_source"] = data_source
 
         # Normalize topic field name to canonical `hot_topics`

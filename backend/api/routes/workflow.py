@@ -8,16 +8,18 @@ import json
 import logging
 import os
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.datastructures import UploadFile
 
 from backend.api.errors import ValidationError, WorkflowNotFoundError
-from backend.api.responses import success
+from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
 from backend.db.pool import is_pool_ready
 from backend.db.workflows import (
@@ -55,11 +57,11 @@ _last_status: dict[str, WorkflowStatus] = {}
 _save_history_file = _runner._save_history_file
 
 
-def _load_history_file(thread_id: str) -> dict | None:
+def _load_history_file(thread_id: str) -> dict[str, Any] | None:
     path = _HISTORY_DIR / f"{thread_id}.json"
     if path.exists():
         try:
-            return json.loads(path.read_text())
+            return cast(dict[str, Any], json.loads(path.read_text()))
         except Exception:
             logger.exception("Failed to load history for %s", thread_id)
     return None
@@ -73,10 +75,10 @@ _get_as_node = _runner._get_as_node
 _task_has_error = _runner._task_has_error
 
 
-def _on_task_done(thread_id: str):
+def _on_task_done(thread_id: str) -> Callable[[asyncio.Task[None]], None]:
     """Background task done callback — update DB with task_done_at / stale status."""
 
-    def callback(task: asyncio.Task) -> None:
+    def callback(task: asyncio.Task[None]) -> None:
         # Skip DB update if this task was replaced by a newer one
         # (e.g. _start_resume_task cancelled this task and started a new one)
         if _runner._background_tasks.get(thread_id) is not task:
@@ -182,8 +184,8 @@ def _persisted_status(phase: str | WorkflowPhase, error: str | None = None) -> s
 
 async def _start_resume_task(
     thread_id: str,
-    graph,
-    config: dict,
+    graph: Any,
+    config: dict[str, Any],
     phase: str | WorkflowPhase,
     *,
     input_data: Any = None,
@@ -205,7 +207,7 @@ async def _start_resume_task(
         error=None,
     )
 
-    async def _resume_async():
+    async def _resume_async() -> None:
         await _runner._run_graph_and_persist(
             thread_id,
             graph,
@@ -219,7 +221,7 @@ async def _start_resume_task(
     _runner._background_tasks[thread_id] = task
 
 
-def _failed_node(state) -> str | None:
+def _failed_node(state: Any) -> str | None:
     """Best-effort name of the node to re-run on error/stale retry.
 
     Why this exists: _get_as_node picks state.tasks[0], which on an error
@@ -242,14 +244,14 @@ def _failed_node(state) -> str | None:
     """
     for t in state.tasks or ():
         if getattr(t, "error", None) and getattr(t, "name", None):
-            return t.name
+            return cast(str, t.name)
     for node in state.next or ():
         if node:
-            return node
+            return cast(str, node)
     values = state.values or {}
     agent = values.get("current_agent")
     if agent and agent != "unknown":
-        return agent
+        return cast(str, agent)
     return None
 
 
@@ -291,26 +293,30 @@ class WorkflowStatusResponse(BaseModel):
     agent_timeline: list[AgentTimelineEntry] = Field(
         default_factory=list, description="Agent 执行时间线"
     )
-    trend_data: dict = Field(default_factory=dict, description="趋势发现数据")
-    content_plan: dict = Field(default_factory=dict, description="内容策略")
-    copy_content: dict = Field(default_factory=dict, description="文案内容")
-    draft_content: dict = Field(default_factory=dict, description="用户草稿内容")
-    optimization_analysis: dict = Field(default_factory=dict, description="优化分析")
-    content_versions: list[dict] = Field(default_factory=list, description="优化版本")
-    visual_plan: dict = Field(default_factory=dict, description="视觉方案")
-    publish_result: dict = Field(default_factory=dict, description="发布结果")
-    analytics: dict = Field(default_factory=dict, description="分析数据")
-    ripple_prediction: dict = Field(default_factory=dict, description="Ripple 传播预测")
-    ripple_pmf: dict = Field(default_factory=dict, description="Ripple PMF 验证")
-    ripple_comparison: dict = Field(default_factory=dict, description="Ripple 预测 vs 实际对比")
-    ripple_progress: dict = Field(default_factory=dict, description="Ripple 模拟进度")
+    trend_data: dict[str, Any] = Field(default_factory=dict, description="趋势发现数据")
+    content_plan: dict[str, Any] = Field(default_factory=dict, description="内容策略")
+    copy_content: dict[str, Any] = Field(default_factory=dict, description="文案内容")
+    draft_content: dict[str, Any] = Field(default_factory=dict, description="用户草稿内容")
+    optimization_analysis: dict[str, Any] = Field(default_factory=dict, description="优化分析")
+    content_versions: list[dict[str, Any]] = Field(default_factory=list, description="优化版本")
+    visual_plan: dict[str, Any] = Field(default_factory=dict, description="视觉方案")
+    publish_result: dict[str, Any] = Field(default_factory=dict, description="发布结果")
+    analytics: dict[str, Any] = Field(default_factory=dict, description="分析数据")
+    ripple_prediction: dict[str, Any] = Field(default_factory=dict, description="Ripple 传播预测")
+    ripple_pmf: dict[str, Any] = Field(default_factory=dict, description="Ripple PMF 验证")
+    ripple_comparison: dict[str, Any] = Field(
+        default_factory=dict, description="Ripple 预测 vs 实际对比"
+    )
+    ripple_progress: dict[str, Any] = Field(default_factory=dict, description="Ripple 模拟进度")
     workflow_mode: str = Field(default="trend", description="工作模式: trend/brief")
-    brief_content: dict = Field(default_factory=dict, description="解析后的 Brief 内容")
-    brief_clarification: dict = Field(default_factory=dict, description="Brief 补充问题")
-    shooting_plan: dict = Field(default_factory=dict, description="拍摄计划")
-    blogger_candidates: list[dict] = Field(default_factory=list, description="候选博主列表")
-    selected_blogger: dict = Field(default_factory=dict, description="选中的博主")
-    blogger_notes: list[dict] = Field(default_factory=list, description="博主笔记")
+    brief_content: dict[str, Any] = Field(default_factory=dict, description="解析后的 Brief 内容")
+    brief_clarification: dict[str, Any] = Field(default_factory=dict, description="Brief 补充问题")
+    shooting_plan: dict[str, Any] = Field(default_factory=dict, description="拍摄计划")
+    blogger_candidates: list[dict[str, Any]] = Field(
+        default_factory=list, description="候选博主列表"
+    )
+    selected_blogger: dict[str, Any] = Field(default_factory=dict, description="选中的博主")
+    blogger_notes: list[dict[str, Any]] = Field(default_factory=list, description="博主笔记")
     blogger_candidate_limit: int = Field(default=5, description="候选博主上限")
     blogger_note_limit: int = Field(default=3, description="每个博主笔记上限")
     reselect_count: int = Field(default=0, description="重新选题次数")
@@ -333,21 +339,21 @@ class CheckpointSnapshot(BaseModel):
     created_at: str | None = Field(default=None, description="Checkpoint creation timestamp")
     next_nodes: list[str] = Field(default_factory=list, description="Nodes scheduled to run next")
     # Stage data (non-empty only when populated by that point)
-    trend_data: dict = Field(default_factory=dict)
-    content_plan: dict = Field(default_factory=dict)
-    copy_content: dict = Field(default_factory=dict)
-    draft_content: dict = Field(default_factory=dict)
-    optimization_analysis: dict = Field(default_factory=dict)
-    content_versions: list[dict] = Field(default_factory=list)
-    visual_plan: dict = Field(default_factory=dict)
-    publish_result: dict = Field(default_factory=dict)
-    analytics: dict = Field(default_factory=dict)
-    ripple_prediction: dict = Field(default_factory=dict)
-    ripple_pmf: dict = Field(default_factory=dict)
-    ripple_comparison: dict = Field(default_factory=dict)
+    trend_data: dict[str, Any] = Field(default_factory=dict)
+    content_plan: dict[str, Any] = Field(default_factory=dict)
+    copy_content: dict[str, Any] = Field(default_factory=dict)
+    draft_content: dict[str, Any] = Field(default_factory=dict)
+    optimization_analysis: dict[str, Any] = Field(default_factory=dict)
+    content_versions: list[dict[str, Any]] = Field(default_factory=list)
+    visual_plan: dict[str, Any] = Field(default_factory=dict)
+    publish_result: dict[str, Any] = Field(default_factory=dict)
+    analytics: dict[str, Any] = Field(default_factory=dict)
+    ripple_prediction: dict[str, Any] = Field(default_factory=dict)
+    ripple_pmf: dict[str, Any] = Field(default_factory=dict)
+    ripple_comparison: dict[str, Any] = Field(default_factory=dict)
     workflow_mode: str = Field(default="trend")
-    brief_content: dict = Field(default_factory=dict)
-    shooting_plan: dict = Field(default_factory=dict)
+    brief_content: dict[str, Any] = Field(default_factory=dict)
+    shooting_plan: dict[str, Any] = Field(default_factory=dict)
 
 
 class CheckpointHistoryResponse(BaseModel):
@@ -379,11 +385,11 @@ def get_progress(phase: str) -> int:
     return PHASE_PROGRESS.get(phase, 0)
 
 
-def _extract_ripple(values: dict, key: str) -> dict:
+def _extract_ripple(values: dict[str, Any], key: str) -> dict[str, Any]:
     return values.get(key) or values.get("content_plan", {}).get(key) or {}
 
 
-def _get_ripple_progress(thread_id: str) -> dict:
+def _get_ripple_progress(thread_id: str) -> dict[str, Any]:
     """Get current Ripple simulation progress for a thread from RippleService."""
     try:
         from backend.services.ripple_service import RippleService
@@ -397,7 +403,7 @@ def _get_ripple_progress(thread_id: str) -> dict:
 
 
 @router.post("/start")
-async def start_workflow(req: WorkflowStartRequest, request: Request):
+async def start_workflow(req: WorkflowStartRequest, request: Request) -> ApiResponse[Any]:
     """启动新的增长引擎工作流"""
     if not req.account_id or req.account_id.strip() == "":
         raise ValidationError("account_id", "account_id cannot be empty")
@@ -405,7 +411,7 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
     graph = request.app.state.graph
     thread_id = f"xhs_{req.account_id}_{uuid.uuid4().hex[:8]}"
 
-    initial_state = {
+    initial_state: dict[str, Any] = {
         "phase": req.phase,
         "current_agent": "orchestrator",
         "error": None,
@@ -445,23 +451,23 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
     config = {"configurable": {"thread_id": thread_id}}
     now = datetime.now(UTC).isoformat()
 
+    # Resolve the starting phase to a plain string for DB/progress lookups.
+    start_phase_raw = initial_state["phase"]
+    start_phase_str = (
+        start_phase_raw.value
+        if isinstance(start_phase_raw, WorkflowPhase)
+        else str(start_phase_raw)
+    )
+
     # Register workflow in DB (no-op when DB unavailable)
     await _db_upsert(
         thread_id,
         account_id=req.account_id,
-        phase=(
-            initial_state["phase"].value
-            if isinstance(initial_state["phase"], WorkflowPhase)
-            else initial_state["phase"]
-        ),
+        phase=start_phase_str,
         status="running",
         dry_run=req.dry_run,
         auto_publish=req.auto_publish,
-        progress_percent=get_progress(
-            initial_state["phase"].value
-            if isinstance(initial_state["phase"], WorkflowPhase)
-            else initial_state["phase"]
-        ),
+        progress_percent=get_progress(start_phase_str),
         workflow_mode=req.workflow_mode,
         label="",
         created_at=now,
@@ -496,15 +502,15 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
 
     # Actual phase may differ from request (brief mode overrides to BRIEFING)
     actual_start_phase = initial_state["phase"]
-    actual_phase_str = (
+    actual_phase_str: str = (
         actual_start_phase.value
         if isinstance(actual_start_phase, WorkflowPhase)
-        else actual_start_phase
+        else str(actual_start_phase)
     )
 
     if req.async_mode:
 
-        async def _run_async():
+        async def _run_async() -> None:
             await _runner._run_graph_and_persist(
                 thread_id,
                 graph,
@@ -554,7 +560,7 @@ async def start_workflow(req: WorkflowStartRequest, request: Request):
 
 
 @router.get("/status/{thread_id}")
-async def get_workflow_status(thread_id: str, request: Request):
+async def get_workflow_status(thread_id: str, request: Request) -> ApiResponse[Any]:
     """获取工作流状态"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
@@ -777,7 +783,7 @@ async def get_workflow_status(thread_id: str, request: Request):
     raise WorkflowNotFoundError(thread_id)
 
 
-def _snapshot_to_checkpoint(snapshot) -> CheckpointSnapshot:
+def _snapshot_to_checkpoint(snapshot: Any) -> CheckpointSnapshot:
     """Convert a LangGraph StateSnapshot to a CheckpointSnapshot."""
     values = snapshot.values or {}
     meta = snapshot.metadata or {}
@@ -816,7 +822,7 @@ async def get_checkpoint_history(
     request: Request,
     limit: int = Query(20, ge=1, le=100, description="Max checkpoints to return"),
     before: str | None = Query(None, description="Checkpoint ID cursor for pagination"),
-):
+) -> ApiResponse[Any]:
     """获取工作流的检查点历史记录（用于回放）"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
@@ -913,7 +919,7 @@ async def get_checkpoint_history(
 
 
 @router.post("/pause/{thread_id}")
-async def pause_workflow(thread_id: str, request: Request):
+async def pause_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
     """暂停工作流"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
@@ -949,7 +955,7 @@ async def pause_workflow(thread_id: str, request: Request):
 
 
 @router.post("/resume/{thread_id}")
-async def resume_workflow(thread_id: str, request: Request):
+async def resume_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
     """恢复暂停或可重试错误的工作流"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
@@ -1186,7 +1192,7 @@ async def resume_workflow(thread_id: str, request: Request):
 
 
 @router.post("/cancel/{thread_id}")
-async def cancel_workflow(thread_id: str, request: Request):
+async def cancel_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
     """取消工作流"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
@@ -1233,12 +1239,12 @@ async def cancel_workflow(thread_id: str, request: Request):
 
 
 @router.get("/stream/{thread_id}")
-async def stream_workflow_progress(thread_id: str, request: Request):
+async def stream_workflow_progress(thread_id: str, request: Request) -> StreamingResponse:
     """SSE 流式进度推送 — EventBus驱动"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
 
-    async def event_generator():
+    async def event_generator() -> Any:
         bus = EventBusService.get_instance()
         queue = bus.subscribe_thread(thread_id)
 
@@ -1274,7 +1280,7 @@ async def list_workflows_endpoint(
     status: str | None = Query(None, description="筛选状态: running/completed/error/cancelled"),
     limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
     offset: int = Query(0, ge=0, description="分页偏移"),
-):
+) -> ApiResponse[Any]:
     """列出工作流 — 从 DB 查询，按创建时间倒序"""
     if is_pool_ready():
         rows, total = await db_list(
@@ -1304,7 +1310,7 @@ async def list_workflows_endpoint(
 
 
 @router.delete("/{thread_id}")
-async def delete_workflow(thread_id: str, request: Request):
+async def delete_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
     """删除工作流记录 — 只能删除已完成/已取消/出错的工作流"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
@@ -1353,7 +1359,7 @@ async def delete_workflow(thread_id: str, request: Request):
 
 
 @router.post("/ripple-retry/{thread_id}")
-async def retry_ripple_analysis(thread_id: str, request: Request):
+async def retry_ripple_analysis(thread_id: str, request: Request) -> ApiResponse[Any]:
     """重新运行 Ripple 传播预测和 PMF 验证（当之前超时或不可用时）"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
@@ -1400,7 +1406,7 @@ async def retry_ripple_analysis(thread_id: str, request: Request):
     ripple = RippleService.get_instance()
     ripple_timeout = 1800.0
 
-    async def _run_retry():
+    async def _run_retry() -> None:
         print(f"[ripple-retry] Started for {thread_id}, topic={topic}", flush=True)
         try:
             # Bypass health-check/fallback — retry means we want a real simulation
@@ -1493,7 +1499,7 @@ class BriefExtractResponse(BaseModel):
 
 
 @router.post("/brief/extract")
-async def extract_brief_file(request: Request):
+async def extract_brief_file(request: Request) -> ApiResponse[Any]:
     """Extract text from a brief document (PDF) without requiring a thread ID.
 
     Used by the frontend for immediate preview after file selection.
@@ -1501,7 +1507,7 @@ async def extract_brief_file(request: Request):
     """
     form = await request.form()
     file = form.get("file")
-    if not file:
+    if not isinstance(file, UploadFile):
         raise ValidationError("file", "No file uploaded")
 
     filename = file.filename or "unknown"
@@ -1541,14 +1547,14 @@ class BriefUploadResponse(BaseModel):
 
 
 @router.post("/brief/upload/{thread_id}")
-async def upload_brief_file(thread_id: str, request: Request):
+async def upload_brief_file(thread_id: str, request: Request) -> ApiResponse[Any]:
     """Upload a brief document (PDF) and extract text content."""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
 
     form = await request.form()
     file = form.get("file")
-    if not file:
+    if not isinstance(file, UploadFile):
         raise ValidationError("file", "No file uploaded")
 
     filename = file.filename or "unknown"
@@ -1668,14 +1674,14 @@ async def _extract_pdf_with_llm(content_bytes: bytes) -> str:
                 )
             ]
         )
-        return response.content or ""
+        return cast(str, response.content or "")
     except Exception as e:
         logger.error(f"Multimodal LLM PDF extraction failed: {e}")
         return ""
 
 
 @router.get("/brief/export/{thread_id}")
-async def export_shooting_plan(thread_id: str, request: Request):
+async def export_shooting_plan(thread_id: str, request: Request) -> ApiResponse[Any]:
     """Export shooting plan as formatted text (for copy/download)."""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
@@ -1696,7 +1702,7 @@ async def export_shooting_plan(thread_id: str, request: Request):
     return success(data={"text": text, "format": "markdown"})
 
 
-def _format_shooting_plan(plan: dict) -> str:
+def _format_shooting_plan(plan: dict[str, Any]) -> str:
     """Format shooting plan dict into readable markdown text."""
     lines = []
 
@@ -1763,7 +1769,7 @@ class ImageUploadResponse(BaseModel):
 
 
 @router.post("/images/upload/{thread_id}")
-async def upload_images(thread_id: str, request: Request):
+async def upload_images(thread_id: str, request: Request) -> ApiResponse[Any]:
     """Upload images for a workflow (before publishing).
 
     Stored on disk, paths saved to visual_plan.image_paths.
@@ -1788,6 +1794,8 @@ async def upload_images(thread_id: str, request: Request):
 
     saved_paths: list[str] = []
     for f in files:
+        if not isinstance(f, UploadFile):
+            continue
         if not f.filename:
             continue
         content = await f.read()
@@ -1837,11 +1845,9 @@ async def upload_images(thread_id: str, request: Request):
 
 
 @router.post("/trigger-analytics/{thread_id}")
-async def trigger_analytics(thread_id: str, request: Request):
+async def trigger_analytics(thread_id: str, request: Request) -> ApiResponse[Any]:
     """手动触发 analyst 节点（发布后手动运行 Ripple 分析）"""
     from langgraph.types import Command
-
-    from backend.state.schema import WorkflowPhase
 
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")

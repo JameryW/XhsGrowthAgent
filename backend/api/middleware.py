@@ -5,6 +5,7 @@ import uuid
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import RequestResponseEndpoint
 
 from backend.api.errors import APIError, ErrorCode
 from backend.api.responses import error
@@ -12,7 +13,9 @@ from backend.api.responses import error
 logger = logging.getLogger("xhs_growth.api")
 
 
-async def error_handler_middleware(request: Request, call_next) -> Response:
+async def error_handler_middleware(
+    request: Request, call_next: RequestResponseEndpoint
+) -> Response:
     """Unified exception handling middleware."""
     request_id = str(uuid.uuid4())[:8]
     try:

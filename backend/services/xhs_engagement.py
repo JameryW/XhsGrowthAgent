@@ -11,9 +11,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from types import TracebackType
 from typing import Any
 
-from playwright.async_api import Browser, Page, async_playwright
+from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
 logger = logging.getLogger("xhs_growth.engagement")
 
@@ -63,9 +64,9 @@ class XHSEngagement:
             self._page = await context.new_page()
         return self._page
 
-    async def _set_cookies(self, context) -> None:
+    async def _set_cookies(self, context: BrowserContext) -> None:
         """设置 Cookie"""
-        cookies = []
+        cookies: list[dict[str, str]] = []
         for item in self.cookie.split(";"):
             if "=" in item.strip():
                 name, value = item.strip().split("=", 1)
@@ -246,8 +247,13 @@ class XHSEngagement:
             self._browser = None
             self._page = None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> XHSEngagement:
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         await self.close()

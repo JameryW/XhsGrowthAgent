@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 from fastapi import APIRouter
 
-from backend.api.responses import success
+from backend.api.responses import ApiResponse, success
 
 router = APIRouter()
 
 
-def _check_env_var(name: str) -> dict:
+def _check_env_var(name: str) -> dict[str, Any]:
     """Check if an environment variable is set."""
     value = os.environ.get(name)
     if value:
@@ -22,7 +23,7 @@ def _check_env_var(name: str) -> dict:
     return {"status": "missing", "configured": False, "preview": None}
 
 
-def _check_llm_providers() -> dict:
+def _check_llm_providers() -> dict[str, Any]:
     """Check LLM provider API key availability."""
     providers = {
         "anthropic": _check_env_var("ANTHROPIC_API_KEY"),
@@ -39,7 +40,7 @@ def _check_llm_providers() -> dict:
     }
 
 
-def _check_xhs() -> dict:
+def _check_xhs() -> dict[str, Any]:
     """Check XHS platform credentials."""
     cookie = os.environ.get("XHS_COOKIE")
     user_id = os.environ.get("XHS_USER_ID")
@@ -57,7 +58,7 @@ def _check_xhs() -> dict:
     }
 
 
-async def _check_ripple() -> dict:
+async def _check_ripple() -> dict[str, Any]:
     """Check Ripple CAS engine availability and LLM config."""
     base_url = os.environ.get("RIPPLE_BASE_URL")
     api_token = os.environ.get("RIPPLE_API_TOKEN")
@@ -124,7 +125,7 @@ async def _check_ripple() -> dict:
     }
 
 
-def _check_search() -> dict:
+def _check_search() -> dict[str, Any]:
     """Check search API availability (Tavily)."""
     tavily = os.environ.get("TAVILY_API_KEY")
     configured = bool(tavily)
@@ -137,7 +138,7 @@ def _check_search() -> dict:
     }
 
 
-async def _check_memory_store() -> dict:
+async def _check_memory_store() -> dict[str, Any]:
     """Check memory store status: backend type, semantic index, namespace counts."""
     from backend.memory.index import get_store_index
 
@@ -208,7 +209,7 @@ async def _check_memory_store() -> dict:
         status = "ok"
         message = f"Memory store 可用（{backend}），语义索引已启用"
 
-    result: dict = {
+    result: dict[str, Any] = {
         "status": status,
         "backend": backend,
         "semantic_index": semantic_enabled,
@@ -225,7 +226,7 @@ async def _check_memory_store() -> dict:
 
 
 @router.get("/health")
-async def system_health():
+async def system_health() -> ApiResponse[Any]:
     """系统健康检查
 
     检查所有外部依赖的可用性：

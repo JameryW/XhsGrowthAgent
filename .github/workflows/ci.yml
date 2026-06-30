@@ -29,12 +29,10 @@ jobs:
         run: ruff format --check .
 
   mypy:
-    name: Mypy (new errors only)
+    name: Mypy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # full history for diff against base
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -42,49 +40,10 @@ jobs:
           cache-dependency-path: pyproject.toml
       - name: Install
         run: pip install -e ".[dev]"
-      - name: Mypy (new errors only)
-        # ponytail: mypy strict carries a large pre-existing error baseline.
-        # `mypy backend` reports ALL of them, so any PR touching debt-laden
-        # files turns CI red on errors it didn't introduce. Instead: run the
-        # FULL `mypy backend` at both base and HEAD (full run keeps package
-        # context stable — passing a file list makes --follow-imports=silent
-        # swallow errors unpredictably), normalize each error to
-        # file|code|message (drop line:col — ruff format shifts them), and
-        # fail only on combos present at HEAD but absent at base.
-        # Ceiling: dedup by message drops the "same code+msg, higher count"
-        # signal. Upgrade path: clear the baseline, then `mypy backend`
-        # unconditionally and delete this diff.
-        env:
-          # base.sha is a GitHub-computed commit SHA, not user-controlled text.
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          set -uo pipefail
-          if [ "$EVENT" = "pull_request" ]; then BASE="$PR_BASE"; else BASE="origin/main"; fi
-
-          norm() { grep -E 'error:' | sed -E 's/^([^:]+):[0-9]+(:[0-9]+)?: error: (.+)  \[([a-z-]+)\]$/\1|\4|\3/' | sort -u; }
-
-          # HEAD errors (full backend run)
-          mypy backend > /tmp/mypy_head.txt 2>&1 || true
-          norm < /tmp/mypy_head.txt > /tmp/head.txt
-
-          # Base errors via a throwaway worktree (same install → same env).
-          # `;` not `&&`: a pip warning must not skip the mypy run.
-          git worktree add -q /tmp/base-wt "$BASE"
-          (cd /tmp/base-wt && pip install -e ".[dev]" >/dev/null 2>&1; mypy backend 2>&1) | norm > /tmp/base.txt || true
-          git worktree remove /tmp/base-wt --force
-
-          echo "mypy baseline errors: $(wc -l < /tmp/base.txt)"
-          echo "mypy head errors:      $(wc -l < /tmp/head.txt)"
-
-          # New = in HEAD but not in base
-          comm -13 /tmp/base.txt /tmp/head.txt > /tmp/new.txt || true
-          if [ -s /tmp/new.txt ]; then
-            echo "::error::New mypy errors introduced by this PR:"
-            cat /tmp/new.txt
-            exit 1
-          fi
-          echo "No new mypy errors."
+      - name: Mypy
+        # The 556-error strict baseline was cleared (see chore/mypy-cleanup).
+        # Run `mypy backend` unconditionally — any new error fails CI.
+        run: mypy backend
 
   test:
     name: Test (py${{ matrix.python }})

@@ -24,8 +24,8 @@ export default function register(pi: ExtensionAPI) {
       if (!healthy) {
         return textResult(
           "XhsGrowthAgent API is not available.\n" +
-          "Make sure the API server is running: `xhs-growth serve --port 8000`\n" +
-          `Current API base: ${process.env.XHS_AGENT_API_BASE || "http://localhost:8000"}`,
+          "Make sure the API server is running: `xhs-growth serve --port 8889`\n" +
+          `Current API base: ${process.env.XHS_AGENT_API_BASE || "http://localhost:8889"}`,
           undefined, true,
         );
       }

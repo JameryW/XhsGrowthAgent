@@ -86,8 +86,6 @@ class RippleSettings(BaseSettings):
     # LLM config passed to Ripple simulation requests
     llm_model_platform: str = ""
     llm_model_name: str = ""
-    llm_api_key: str = ""
-    llm_url: str = ""
 
     model_config = {"env_prefix": "RIPPLE_", "env_file": ".env", "extra": "ignore"}
 

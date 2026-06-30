@@ -628,14 +628,14 @@ class ApiResponseWorkflowResponse(ApiResponse):
     data: Annotated[
         Data | list[Any] | Data | None,
         Field(description="Response payload (type varies by endpoint)"),
-    ] = None
+    ] = None  # type: ignore[assignment]
 
 
 class ApiResponseWorkflowPauseResult(ApiResponse):
     data: Annotated[
         Data4 | list[Any] | Data5 | None,
         Field(description="Response payload (type varies by endpoint)"),
-    ] = None
+    ] = None  # type: ignore[assignment]
 
 
 class Data6(BaseModel):
@@ -664,7 +664,7 @@ class ApiResponsePendingReview(ApiResponse):
     data: Annotated[
         Data6 | list[Any] | Data7 | None,
         Field(description="Response payload (type varies by endpoint)"),
-    ] = None
+    ] = None  # type: ignore[assignment]
 
 
 class Data8(BaseModel):
@@ -699,7 +699,7 @@ class ApiResponseReviewSubmitResponse(ApiResponse):
     data: Annotated[
         Data8 | list[Any] | Data9 | None,
         Field(description="Response payload (type varies by endpoint)"),
-    ] = None
+    ] = None  # type: ignore[assignment]
 
 
 class Data10(BaseModel):
@@ -740,7 +740,7 @@ class ApiResponseGrowthReport(ApiResponse):
     data: Annotated[
         Data10 | list[Any] | Data11 | None,
         Field(description="Response payload (type varies by endpoint)"),
-    ] = None
+    ] = None  # type: ignore[assignment]
 
 
 class ApiResponsePerformanceList(ApiResponse):
@@ -754,7 +754,7 @@ class ApiResponseCostReport(ApiResponse):
     data: Annotated[
         Data12 | list[Any] | Data12 | None,
         Field(description="Response payload (type varies by endpoint)"),
-    ] = None
+    ] = None  # type: ignore[assignment]
 
 
 class ReviewDecisionRequest(BaseModel):
@@ -816,22 +816,22 @@ class TrendData(BaseModel):
 class BadRequest(ApiResponse):
     success: Annotated[
         Success | None, Field(description="Indicates if the request was successful")
-    ] = None
-    error: Error | None = None
+    ] = None  # type: ignore[assignment]
+    error: Error | None = None  # type: ignore[assignment]
 
 
 class NotFound(ApiResponse):
     success: Annotated[
         Success | None, Field(description="Indicates if the request was successful")
-    ] = None
-    error: Error1 | None = None
+    ] = None  # type: ignore[assignment]
+    error: Error1 | None = None  # type: ignore[assignment]
 
 
 class InternalError(ApiResponse):
     success: Annotated[
         Success | None, Field(description="Indicates if the request was successful")
-    ] = None
-    error: Error2 | None = None
+    ] = None  # type: ignore[assignment]
+    error: Error2 | None = None  # type: ignore[assignment]
 
 
 class Data2(BaseModel):
@@ -861,7 +861,7 @@ class ApiResponseWorkflowState(ApiResponse):
     data: Annotated[
         Data2 | list[Any] | Data2 | None,
         Field(description="Response payload (type varies by endpoint)"),
-    ] = None
+    ] = None  # type: ignore[assignment]
 
 
 class WorkflowState(BaseModel):

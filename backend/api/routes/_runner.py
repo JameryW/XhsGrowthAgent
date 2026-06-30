@@ -22,7 +22,7 @@ logger = logging.getLogger("xhs_growth.api.runner")
 _active_sync_executions: set[str] = set()
 
 # Background task registry (for cancellation + has_active checks)
-_background_tasks: dict[str, asyncio.Task] = {}
+_background_tasks: dict[str, asyncio.Task[Any]] = {}
 
 # Track last known status per thread to detect transitions
 _last_status: dict[str, WorkflowStatus] = {}
@@ -192,7 +192,7 @@ def _status_to_str(
     return "running"
 
 
-def _get_as_node(state) -> str | None:
+def _get_as_node(state: StateSnapshot) -> str | None:
     """Determine as_node for aupdate_state from the current state checkpoint.
 
     LangGraph requires as_node when updating state on a workflow paused at
@@ -202,7 +202,8 @@ def _get_as_node(state) -> str | None:
     if state.tasks:
         return state.tasks[0].name
     if state.values:
-        return state.values.get("_last_node", "orchestrator")
+        node = state.values.get("_last_node", "orchestrator")
+        return node if isinstance(node, str) else "orchestrator"
     return "orchestrator"
 
 
@@ -211,14 +212,14 @@ def _task_has_error(task: Any) -> bool:
     return error not in (None, "")
 
 
-def _has_native_resume_point(state) -> bool:
+def _has_native_resume_point(state: StateSnapshot) -> bool:
     """Return True when LangGraph already has a pending node to resume."""
     if state.next:
         return True
     return any(_task_has_error(task) for task in (state.tasks or ()))
 
 
-def _save_history_file(thread_id: str, state_values: dict) -> None:
+def _save_history_file(thread_id: str, state_values: dict[str, Any]) -> None:
     """Persist completed workflow result to history file."""
     try:
         import json
@@ -236,11 +237,11 @@ def _save_history_file(thread_id: str, state_values: dict) -> None:
 async def _run_graph_and_persist(
     thread_id: str,
     graph: Any,
-    config: dict,
+    config: dict[str, Any],
     input_data: Any,
     *,
     source: str = "start",
-) -> dict:
+) -> dict[str, Any]:
     """Unified graph execution + status persistence + event emission.
 
     All graph invocations should go through this function to ensure:

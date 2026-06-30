@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
@@ -34,8 +34,8 @@ class VersionGeneratorAgent(BaseAgent):
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         """执行版本生成."""
         style_selected = state.get("style_selected", False)
-        draft = state.get("draft_content")
-        analysis = state.get("optimization_analysis")
+        draft = cast("dict[str, Any] | None", state.get("draft_content"))
+        analysis = cast("dict[str, Any] | None", state.get("optimization_analysis"))
 
         # Style-selected mode: draft_content comes from selected style variant
         if style_selected and draft and draft.get("text"):
@@ -153,7 +153,10 @@ class VersionGeneratorAgent(BaseAgent):
             ]
         )
 
-        parsed = self._parse_json_response(response.content)
+        content = response.content
+        if isinstance(content, list):
+            content = str(content)
+        parsed = self._parse_json_response(content)
         versions = parsed.get("versions", [])
 
         # Ensure version_ids
@@ -249,7 +252,10 @@ class VersionGeneratorAgent(BaseAgent):
         )
 
         # 解析响应
-        result = self._parse_json_response(response.content)
+        content = response.content
+        if isinstance(content, list):
+            content = str(content)
+        result = self._parse_json_response(content)
         versions = result.get("versions", [])
 
         # Ensure version_ids

@@ -9,7 +9,7 @@
     "mcpServers": {
       "xhs-growth-api": {
         "enabled": false,
-        "url": "http://localhost:8000/api/mcp",
+        "url": "http://localhost:8889/api/mcp",
         "transport": "sse",
         "timeout": 30000,
         "headers": {

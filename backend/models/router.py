@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
+from pydantic import SecretStr
 
 from backend.config.models import ModelConfig, ModelProvider, TaskType, resolve_model_id
 
@@ -40,57 +41,57 @@ def _create_model(config: ModelConfig, timeout: int | None = None) -> BaseChatMo
 
     match config.provider:
         case ModelProvider.ANTHROPIC:
-            return ChatAnthropic(
+            return ChatAnthropic(  # type: ignore[call-arg]
                 model=config.model_name,
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
                 timeout=effective_timeout,
-                api_key=api_key,
+                api_key=SecretStr(api_key),
             )
         case ModelProvider.OPENAI:
-            return ChatOpenAI(
+            return ChatOpenAI(  # type: ignore[call-arg]
                 model=config.model_name,
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
                 timeout=effective_timeout,
-                api_key=api_key,
+                api_key=SecretStr(api_key),
             )
         case ModelProvider.DEEPSEEK:
-            return ChatOpenAI(
+            return ChatOpenAI(  # type: ignore[call-arg]
                 model=config.model_name,
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
                 timeout=effective_timeout,
-                api_key=api_key,
+                api_key=SecretStr(api_key),
                 base_url="https://api.deepseek.com",
             )
         case ModelProvider.DASHSCOPE:
-            return ChatOpenAI(
+            return ChatOpenAI(  # type: ignore[call-arg]
                 model=config.model_name,
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
                 timeout=effective_timeout,
-                api_key=api_key,
+                api_key=SecretStr(api_key),
                 base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
             )
         case ModelProvider.XIAOMIMIMO:
-            return ChatOpenAI(
+            return ChatOpenAI(  # type: ignore[call-arg]
                 model=config.model_name,
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
                 timeout=effective_timeout,
-                api_key=api_key,
+                api_key=SecretStr(api_key),
                 base_url=os.environ.get(
                     "XIAOMIMIMO_BASE_URL", "https://token-plan-sgp.xiaomimimo.com/v1"
                 ),
             )
         case ModelProvider.XUNFEI:
-            return ChatOpenAI(
+            return ChatOpenAI(  # type: ignore[call-arg]
                 model=config.model_name,
                 temperature=config.temperature,
                 max_tokens=config.max_tokens,
                 timeout=effective_timeout,
-                api_key=api_key,
+                api_key=SecretStr(api_key),
                 base_url=os.environ.get(
                     "XUNFEI_BASE_URL", "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2"
                 ),

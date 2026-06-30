@@ -45,7 +45,7 @@ class Event:
     timestamp: str
     seq: int
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to WebSocket message format."""
         return {
             "event_type": self.event_type.value,

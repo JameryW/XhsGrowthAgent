@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from backend.api.deps import get_current_user
-from backend.api.responses import success
+from backend.api.responses import ApiResponse, success
 
 logger = logging.getLogger("xhs_growth.api.system_config")
 
@@ -20,7 +21,7 @@ class SetConfigRequest(BaseModel):
 
 
 @router.get("")
-async def get_config(_: dict = Depends(get_current_user)):
+async def get_config(_: dict[str, Any] = Depends(get_current_user)) -> ApiResponse[Any]:
     """Return the full system config (values masked) plus key group hints."""
     from backend.db.system_config import (
         SYSTEM_KEY_GROUPS,
@@ -50,7 +51,9 @@ async def get_config(_: dict = Depends(get_current_user)):
 
 
 @router.put("")
-async def set_config(request: SetConfigRequest, _: dict = Depends(get_current_user)):
+async def set_config(
+    request: SetConfigRequest, _: dict[str, Any] = Depends(get_current_user)
+) -> ApiResponse[Any]:
     """Batch-upsert system config. Empty values delete keys. Activates immediately."""
     from backend.db.system_config import (
         activate_system_config,

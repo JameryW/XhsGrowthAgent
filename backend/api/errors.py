@@ -49,7 +49,7 @@ class APIError(Exception):
         self.status_code = status_code
         super().__init__(message)
 
-    def to_response(self, request_id: str | None = None) -> ApiResponse:
+    def to_response(self, request_id: str | None = None) -> ApiResponse[Any]:
         """Convert to API response."""
         return error(
             code=self.code.value,
@@ -123,7 +123,7 @@ class AuthenticationError(APIError):
 class TokenMissingError(AuthenticationError):
     """Token missing in request."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             code=ErrorCode.AUTH_TOKEN_MISSING,
             message="Authorization token required",
@@ -195,7 +195,7 @@ _PUBLISH_ERROR_PATTERNS: list[tuple[str, PublishErrorType]] = [
     ("fetch", PublishErrorType.NETWORK_ERROR),
 ]
 
-_PUBLISH_RECOVERY_ACTIONS: dict[PublishErrorType, dict] = {
+_PUBLISH_RECOVERY_ACTIONS: dict[PublishErrorType, dict[str, Any]] = {
     PublishErrorType.AUTH_EXPIRED: {
         "message": "登录凭证已失效，请重新配置 XHS_COOKIE",
         "action": "reconfigure",
@@ -235,7 +235,7 @@ _PUBLISH_RECOVERY_ACTIONS: dict[PublishErrorType, dict] = {
 }
 
 
-def classify_publish_error(error_msg: str) -> tuple[PublishErrorType, dict]:
+def classify_publish_error(error_msg: str) -> tuple[PublishErrorType, dict[str, Any]]:
     """Classify a publish error message into a structured type with recovery action."""
     lower = error_msg.lower()
     for pattern, error_type in _PUBLISH_ERROR_PATTERNS:

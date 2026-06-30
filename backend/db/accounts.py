@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from backend.db.crypto import decrypt_value, encrypt_value, mask_value
 from backend.db.pool import get_pool
@@ -138,7 +139,7 @@ async def list_accounts() -> list[AccountRow]:
     return [_account_from_dict(r) for r in rows]
 
 
-async def update_account(account_id: str, **fields) -> AccountRow | None:
+async def update_account(account_id: str, **fields: Any) -> AccountRow | None:
     from datetime import UTC, datetime
 
     fields["updated_at"] = datetime.now(UTC).isoformat()
@@ -373,7 +374,7 @@ async def _bootstrap_default_account() -> None:
 # ── Helpers ──
 
 
-def _account_from_dict(d: dict) -> AccountRow:
+def _account_from_dict(d: dict[str, Any]) -> AccountRow:
     return AccountRow(
         id=d["id"],
         name=d["name"],

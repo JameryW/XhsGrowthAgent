@@ -52,7 +52,7 @@ def derive_status(snapshot: StateSnapshot, *, has_active_task: bool = True) -> W
     """
     values = snapshot.values or {}
     phase = values.get("phase")
-    next_nodes = snapshot.next or []
+    next_nodes: tuple[str, ...] = snapshot.next or ()
 
     # Check for interrupts — two sources:
     # 1. snapshot.interrupts: non-empty when dynamic interrupt() was called inside a node
