@@ -312,7 +312,7 @@ def test_next_severity_no_signal_holds():
 
 
 def test_next_severity_lenient_panel_tightens():
-    """High bias_check mean (panel lenient) → step stricter."""
+    """High mean bias_severity (panel lenient, bias seldom flagged) → step stricter."""
     from backend.db.evaluator_config import next_severity
 
     assert next_severity("standard", 80.0) == "strict"
@@ -322,7 +322,7 @@ def test_next_severity_lenient_panel_tightens():
 
 
 def test_next_severity_harsh_panel_relaxes():
-    """Low bias_check mean (panel harsh) → step lenient."""
+    """Low mean bias_severity (panel harsh) → step lenient."""
     from backend.db.evaluator_config import next_severity
 
     assert next_severity("standard", 40.0) == "lenient"
@@ -378,7 +378,7 @@ async def test_create_epoch_validates_severity():
 
 @pytest.mark.asyncio
 async def test_avg_bias_score_extracts_bias_dim():
-    """avg_bias_score reads bias_check score from dimensions JSONB."""
+    """avg_bias_score reads bias_severity; falls back to 100 - score for old samples."""
     import json as _json
 
     from backend.db.evaluator_config import avg_bias_score
@@ -388,11 +388,19 @@ async def test_avg_bias_score_extracts_bias_dim():
             "dimensions": _json.dumps(
                 [
                     {"dimension": "copywriting", "score": 80},
+                    # old sample: no bias_severity → fall back 100 - 70 = 30
                     {"dimension": "bias_check", "score": 70},
                 ]
             )
         },
+        # old sample: score 50 → fall back 50
         {"dimensions": _json.dumps([{"dimension": "bias_check", "score": 50}])},
+        # new sample: explicit bias_severity wins over score
+        {
+            "dimensions": _json.dumps(
+                [{"dimension": "bias_check", "score": 90, "bias_severity": 20}]
+            )
+        },
         {"dimensions": _json.dumps([{"dimension": "visual", "score": 90}])},  # no bias_check
     ]
     cursor = MagicMock()
@@ -401,7 +409,8 @@ async def test_avg_bias_score_extracts_bias_dim():
     conn = _make_mock_conn(cursor=cursor)
     with patch("backend.db.evaluator_config.get_pool", return_value=_make_mock_pool(conn)):
         avg = await avg_bias_score(limit=100)
-    assert avg == 60.0  # (70 + 50) / 2
+    # (30 + 50 + 20) / 3
+    assert avg == 100.0 / 3
 
 
 @pytest.mark.asyncio

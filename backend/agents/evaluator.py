@@ -197,8 +197,8 @@ class EvaluatorAgent(BaseAgent):
         # 补齐缺失维度（LLM 漏返时给中性默认）
         dimensions: list[dict[str, Any]] = []
         for name in self._weights.required_dimensions:
-            d = dims_by_name.get(name)
-            if d is None:
+            raw_d = dims_by_name.get(name)
+            if raw_d is None:
                 d = {
                     "dimension": name,
                     "score": 70.0,
@@ -207,14 +207,22 @@ class EvaluatorAgent(BaseAgent):
                     "is_blocking": False,
                 }
             else:
-                # 规范字段
+                # 规范字段（从原始 raw_d 提取，丢弃未知字段）
                 d = {
                     "dimension": name,
-                    "score": _clamp(_to_float(d.get("score"), 70.0)),
-                    "rationale": str(d.get("rationale", "")),
-                    "issues": list(d.get("issues") or []),
-                    "is_blocking": bool(d.get("is_blocking", False)),
+                    "score": _clamp(_to_float(raw_d.get("score"), 70.0)),
+                    "rationale": str(raw_d.get("rationale", "")),
+                    "issues": list(raw_d.get("issues") or []),
+                    "is_blocking": bool(raw_d.get("is_blocking", False)),
                 }
+            # bias_check 维度保留偏倚严重度（驱动 overall 下调 + epoch 演化）。
+            # score=校准建议分（越高越无需调整），bias_severity=偏倚严重度（越高越糟）。
+            # 语义相反，故 LLM 漏返 bias_severity 时回退 100 - score。
+            if name == "bias_check":
+                sev = _to_float(raw_d.get("bias_severity") if raw_d else None, -1.0)
+                if sev < 0:
+                    sev = 100.0 - _clamp(_to_float(d.get("score"), 70.0))
+                d["bias_severity"] = _clamp(sev)
             dimensions.append(d)
 
         overall = self._compute_overall(dimensions)
@@ -226,7 +234,7 @@ class EvaluatorAgent(BaseAgent):
         bias_warning = ""
         if bias_dim and bias_dim["issues"]:
             bias_warning = "；".join(bias_dim["issues"])
-        elif bias_dim and bias_dim["score"] < self._weights.bias_penalty_threshold:
+        elif bias_dim and bias_dim.get("bias_severity", 0) >= self._weights.bias_penalty_threshold:
             bias_warning = "检测到面板对 AI 生成内容可能过度宽容，已对综合分下调校准"
 
         return {
@@ -239,7 +247,11 @@ class EvaluatorAgent(BaseAgent):
         }
 
     def _compute_overall(self, dimensions: list[dict[str, Any]]) -> float:
-        """加权平均 + 偏倚下调."""
+        """加权平均 + 偏倚下调.
+
+        bias_severity 高（检测到明显偏倚）→ 对 overall 下调。
+        不再用 bias_check.score（其语义为"校准建议分"，方向与 severity 相反）。
+        """
         by_name = {d["dimension"]: d for d in dimensions}
         total = 0.0
         for name, weight in self._weights.dimension_weights.items():
@@ -248,7 +260,7 @@ class EvaluatorAgent(BaseAgent):
             total += score * weight
 
         bias = by_name.get("bias_check")
-        if bias and bias["score"] < self._weights.bias_penalty_threshold:
+        if bias and bias.get("bias_severity", 0) >= self._weights.bias_penalty_threshold:
             total -= self._weights.bias_penalty
         return max(0.0, min(100.0, total))
 

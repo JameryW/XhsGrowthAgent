@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验收：测试覆盖 bias_severity 驱动路径 + 旧样本反推回退、降级行为不破"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "验收：旧样本回退读法符合 DB 契约，未引入 ad hoc SQL，pool 未就绪降级正确"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "验收：DimensionScore 新字段遵循 TypedDict 可选字段约定，reducer 行为不变"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "验收：bias_severity 在 backend state / frontend types / omp TS 三层定义一致，无漂移"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "验收：反推回退 + evaluator 降级放行与既有非阻塞错误处理一致"}

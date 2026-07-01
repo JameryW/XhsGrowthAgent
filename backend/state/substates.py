@@ -310,6 +310,11 @@ class DimensionScore(TypedDict, total=False):
     rationale: str  # 该维度评分理由
     issues: list[str]  # 发现的具体问题
     is_blocking: bool  # True = 硬性失败（如合规），无论总分都判不合格
+    # bias_check 维度专属：检测到的偏倚严重度（0-100，越高越糟）。
+    # 与 score（"校准建议分"，越高越无需调整）语义相反，独立产出。
+    # 驱动 overall 下调 + epoch 演化（severity 高 → 面板偏宽松 → 下一 epoch tighten）。
+    # 旧样本无此字段时回退 100 - score。
+    bias_severity: float
 
 
 class EvaluationResult(TypedDict, total=False):
@@ -317,7 +322,9 @@ class EvaluationResult(TypedDict, total=False):
 
     6 维 judge 面板：文案/视觉/合规/传播潜力/受众匹配 + 对抗偏倚检测。
     对抗偏倚检测维度（dimension="bias_check"）校准面板是否对 AI 生成内容
-    过度宽容（论文 1.91x 纠偏），其 score 反映"严苛性校准后"的调整建议。
+    过度宽容（论文 1.91x 纠偏）。bias_check 维度有两个互补字段：
+    - score：严苛性校准建议分（越高越无需调整）。
+    - bias_severity：检测到的偏倚严重度（越高越糟），驱动 overall 下调与 epoch 演化。
     """
 
     overall_score: float  # 0-100 加权综合
