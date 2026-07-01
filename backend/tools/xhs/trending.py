@@ -13,33 +13,71 @@ if TYPE_CHECKING:
 logger = logging.getLogger("xhs_growth.tools.trending")
 
 
-def _get_client() -> XHSClient:
-    """获取 XHSClient 实例"""
+def _normalize_header_value(value: str) -> str:
+    """Collapse accidental copied whitespace so HTTP header values stay valid."""
+    return " ".join(value.split()) if value else ""
+
+
+async def _resolve_db_credentials(account_id: str = "") -> tuple[str, str]:
+    """Resolve XHS credentials from DB, preferring the requested account."""
+    try:
+        from backend.db.pool import is_pool_ready
+
+        if not is_pool_ready():
+            return "", ""
+
+        from backend.db.accounts import get_account_cookie, get_active_account
+
+        if account_id:
+            cookie, user_id = await get_account_cookie(account_id)
+            if cookie:
+                return cookie, user_id
+
+        active = await get_active_account()
+        if active is None:
+            return "", ""
+
+        cookie, user_id = await get_account_cookie(active.id)
+        if cookie:
+            return cookie, user_id
+    except Exception:
+        logger.warning("Failed to load XHS credentials from DB; falling back to settings")
+    return "", ""
+
+
+async def _get_client(account_id: str = "") -> XHSClient:
+    """获取 XHSClient 实例，优先使用数据库中的账号凭证。"""
     from backend.config.settings import Settings
     from backend.services.xhs_client import XHSClient
 
     settings = Settings()
+    cookie, user_id = await _resolve_db_credentials(account_id)
+    if not cookie:
+        cookie = settings.platform.cookie
+        user_id = settings.platform.user_id
+
     return XHSClient(
-        cookie=settings.platform.cookie,
-        user_id=settings.platform.user_id,
+        cookie=_normalize_header_value(cookie),
+        user_id=_normalize_header_value(user_id),
         use_browser=settings.platform.use_browser,
         headless=settings.platform.headless,
     )
 
 
 @tool
-async def xhs_trending(category: str = "") -> list[dict[str, Any]]:
+async def xhs_trending(category: str = "", account_id: str = "") -> list[dict[str, Any]]:
     """获取小红书热门话题和趋势数据.
 
     Args:
         category: 分类筛选（可选）
+        account_id: 工作流账号 ID（可选），用于从数据库读取小红书凭证
 
     Returns:
         热门话题列表，每个包含 topic_id, title, heat_score, growth_rate
     """
     logger.info(f"Fetching XHS trending for category: {category}")
 
-    client = _get_client()
+    client = await _get_client(account_id=account_id)
     try:
         topics = await client.get_trending(category=category)
 
@@ -68,11 +106,12 @@ async def xhs_trending(category: str = "") -> list[dict[str, Any]]:
 
 
 @tool
-async def keyword_monitor(keywords: list[str]) -> list[dict[str, Any]]:
+async def keyword_monitor(keywords: list[str], account_id: str = "") -> list[dict[str, Any]]:
     """监控指定关键词在小红书上的热度变化.
 
     Args:
         keywords: 关键词列表
+        account_id: 工作流账号 ID（可选），用于从数据库读取小红书凭证
 
     Returns:
         每个关键词的热度数据，包含 post_count, total_likes, avg_likes
@@ -82,7 +121,7 @@ async def keyword_monitor(keywords: list[str]) -> list[dict[str, Any]]:
     if not keywords:
         return []
 
-    client = _get_client()
+    client = await _get_client(account_id=account_id)
     try:
         results = await client.monitor_keywords(keywords)
 
@@ -107,12 +146,15 @@ async def keyword_monitor(keywords: list[str]) -> list[dict[str, Any]]:
 
 
 @tool
-async def competitor_analyzer(account_id: str, niche: str = "") -> list[dict[str, Any]]:
+async def competitor_analyzer(
+    account_id: str, niche: str = "", credential_account_id: str = ""
+) -> list[dict[str, Any]]:
     """分析竞品账号的内容策略和表现.
 
     Args:
         account_id: 竞品账号 ID 或搜索关键词
         niche: 所属垂直领域
+        credential_account_id: 工作流账号 ID（可选），用于从数据库读取小红书凭证
 
     Returns:
         竞品分析结果，包含热门帖子、平均互动数据
@@ -124,7 +166,7 @@ async def competitor_analyzer(account_id: str, niche: str = "") -> list[dict[str
     if niche:
         search_keyword = f"{niche} {account_id}"
 
-    client = _get_client()
+    client = await _get_client(account_id=credential_account_id)
     try:
         # 搜索该账号/领域的内容
         posts = await client.search_posts(keyword=search_keyword, limit=30)

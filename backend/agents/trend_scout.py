@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -17,29 +16,23 @@ from backend.state.schema import XHSGrowthState
 logger = logging.getLogger("xhs_growth.agents.trend_scout")
 
 
-def _xhs_configured() -> bool:
-    return bool(os.environ.get("XHS_COOKIE") and os.environ.get("XHS_USER_ID"))
-
-
 class TrendScoutAgent(BaseAgent):
     task_type = TaskType.SCOUTING
     agent_name = "trend_scout"
     prompt_file = "trend_scout.yaml"
 
-    async def _fetch_real_data(self, niche: str) -> dict[str, Any]:
+    async def _fetch_real_data(self, niche: str, account_id: str = "") -> dict[str, Any]:
         """Fetch real data from XHS API via tools. Returns empty dict if unavailable."""
-        if not _xhs_configured():
-            logger.info("XHS credentials not configured, skipping real data fetch")
-            return {}
-
         from backend.tools.xhs.trending import competitor_analyzer, keyword_monitor, xhs_trending
 
         data: dict[str, Any] = {}
+        trending: list[dict[str, Any]] = []
 
         # 1. Fetch trending topics for the niche
         try:
-            trending = await xhs_trending.ainvoke({"category": niche})
-            data["hot_topics"] = trending
+            trending = await xhs_trending.ainvoke({"category": niche, "account_id": account_id})
+            if trending:
+                data["hot_topics"] = trending
         except Exception as e:
             logger.warning(f"xhs_trending failed: {e}")
 
@@ -54,8 +47,11 @@ class TrendScoutAgent(BaseAgent):
                     if topic and topic not in keywords:
                         keywords.append(topic)
 
-            monitor_data = await keyword_monitor.ainvoke({"keywords": keywords})
-            data["keyword_monitor"] = monitor_data
+            monitor_data = await keyword_monitor.ainvoke(
+                {"keywords": keywords, "account_id": account_id}
+            )
+            if monitor_data:
+                data["keyword_monitor"] = monitor_data
         except Exception as e:
             logger.warning(f"keyword_monitor failed: {e}")
 
@@ -65,9 +61,11 @@ class TrendScoutAgent(BaseAgent):
                 {
                     "account_id": niche,
                     "niche": niche,
+                    "credential_account_id": account_id,
                 }
             )
-            data["competitor_analysis"] = competitor_data
+            if competitor_data:
+                data["competitor_analysis"] = competitor_data
         except Exception as e:
             logger.warning(f"competitor_analyzer failed: {e}")
 
@@ -88,7 +86,7 @@ class TrendScoutAgent(BaseAgent):
                 memory_context += f"- {i.get('insight', '')}\n"
 
         # Fetch real data from XHS API
-        real_data = await self._fetch_real_data(niche)
+        real_data = await self._fetch_real_data(niche, account_id=account_id)
 
         # Build data context for the LLM
         data_context = ""

@@ -206,3 +206,30 @@ return _pool is not None and _pool._opened
 # GOOD
 return _pool is not None and not _pool._closed
 ```
+
+---
+
+## Scenario: Account-Scoped XHS Credentials
+
+### Contract
+
+XHS platform credentials are account-scoped DB data, not global system config.
+Runtime code that performs XHS platform operations for a workflow should prefer
+the workflow `account_id` and call:
+
+```python
+from backend.db.accounts import get_account_cookie
+
+cookie, user_id = await get_account_cookie(account_id)
+```
+
+If the requested account has no cookie, tools may fall back to the active DB
+account or environment-backed `Settings().platform` for backward compatibility.
+This fallback must be graceful when `backend.db.pool.is_pool_ready()` is false.
+
+### Do Not
+
+- Do not gate XHS tool execution only on `os.environ["XHS_COOKIE"]`.
+- Do not read account credentials directly with ad hoc SQL from agents/tools.
+- Do not store LLM/Ripple/system keys in `account_credentials`; account rows
+  only own `XHS_COOKIE` and `XHS_USER_ID`.
