@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "验收：content_snapshot 列 migration nullable 兼容、insert_sample 持久化、无 ad hoc SQL"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验收：finetune 数据格式单测覆盖（input/output/bias_severity/incomplete）、降级行为不破"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "验收：旧样本无 snapshot 不崩、_collect_sample 非阻塞与既有一致"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "验收：content_snapshot 从 state 读取字段正确、不引入 reducer 变更"}

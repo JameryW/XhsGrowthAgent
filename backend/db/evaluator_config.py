@@ -86,17 +86,25 @@ CREATE TABLE IF NOT EXISTS evaluator_config (
 
 _CREATE_SAMPLES_SQL = """
 CREATE TABLE IF NOT EXISTS evaluator_samples (
-    id            SERIAL PRIMARY KEY,
-    account_id    TEXT,
-    thread_id     TEXT NOT NULL,
-    dimensions    JSONB NOT NULL,
-    overall_score DOUBLE PRECISION NOT NULL,
-    decision      TEXT NOT NULL,
-    label_source  TEXT NOT NULL,
-    engagement    JSONB,
-    created_at    TEXT NOT NULL DEFAULT ''
+    id               SERIAL PRIMARY KEY,
+    account_id       TEXT,
+    thread_id        TEXT NOT NULL,
+    dimensions       JSONB NOT NULL,
+    overall_score    DOUBLE PRECISION NOT NULL,
+    decision         TEXT NOT NULL,
+    label_source     TEXT NOT NULL,
+    engagement       JSONB,
+    content_snapshot JSONB,
+    created_at       TEXT NOT NULL DEFAULT ''
 );
 """
+
+# Idempotent column add for tables created before content_snapshot existed.
+# CREATE TABLE IF NOT EXISTS won't add columns to an existing table, so ALTER
+# handles upgrades. Safe on new tables (column already present → no-op).
+_ADD_SNAPSHOT_COL_SQL = (
+    "ALTER TABLE evaluator_samples ADD COLUMN IF NOT EXISTS content_snapshot JSONB"
+)
 
 _CREATE_SAMPLES_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_evaluator_samples_account
@@ -120,6 +128,7 @@ async def ensure_tables() -> None:
     async with pool.connection() as conn:
         await conn.execute(_CREATE_CONFIG_SQL)
         await conn.execute(_CREATE_SAMPLES_SQL)
+        await conn.execute(_ADD_SNAPSHOT_COL_SQL)  # upgrade pre-existing tables
         await conn.execute(_CREATE_SAMPLES_INDEX_SQL)
         await conn.execute(_CREATE_EPOCHS_SQL)
         await _ensure_default_epoch(conn)
@@ -248,6 +257,10 @@ class EvaluatorSample:
     decision: str
     label_source: str  # "evaluator" | "engagement" | "human_review"
     engagement: dict[str, Any] | None = None  # post-publish real metrics (weak label)
+    # Compact snapshot of the evaluated content (title/body/hashtags/cta/tone/
+    # visual prompts) — makes finetune training data self-contained so the SFT
+    # record's input can show what was judged. None for legacy samples.
+    content_snapshot: dict[str, Any] | None = None
     created_at: str = ""
 
 
@@ -262,8 +275,8 @@ async def insert_sample(sample: EvaluatorSample) -> int:
             """
                 INSERT INTO evaluator_samples
                     (account_id, thread_id, dimensions, overall_score, decision,
-                     label_source, engagement, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                     label_source, engagement, content_snapshot, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
             (
@@ -274,6 +287,7 @@ async def insert_sample(sample: EvaluatorSample) -> int:
                 sample.decision,
                 sample.label_source,
                 json.dumps(sample.engagement) if sample.engagement else None,
+                json.dumps(sample.content_snapshot) if sample.content_snapshot else None,
                 now,
             ),
         )

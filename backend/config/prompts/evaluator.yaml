@@ -23,7 +23,7 @@ system: |
   - compliance 维度若发现违禁/敏感内容，is_blocking=true（硬性失败，无论总分都判不合格）
   - 其余维度 is_blocking=false
   - overall_score = 加权平均（{weights_block}）
-    若 bias_check 检测到偏倚，按其建议对 overall_score 下调
+    若 bias_check 的 bias_severity 超过阈值，对 overall_score 下调
   - decision:
       overall_score >= {pass_threshold} 且无 is_blocking 维度 → "approved"
       {reject_threshold} <= overall_score < {pass_threshold} 或有可改进项 → "needs_revision"

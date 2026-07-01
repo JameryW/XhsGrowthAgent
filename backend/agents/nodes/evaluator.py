@@ -86,7 +86,37 @@ async def _collect_sample(
                 overall_score=float(evaluation.get("overall_score") or 0.0),
                 decision=str(evaluation.get("decision") or ""),
                 label_source="evaluator",
+                content_snapshot=_build_content_snapshot(state),
             )
         )
     except Exception as e:
         logger.debug("evaluator sample collection failed (non-blocking): %s", e)
+
+
+# Body text cap — keeps sample rows bounded (~1-3KB) for finetune data volume.
+_BODY_TRUNCATE = 2000
+# Cap image prompts stored — full galleries aren't needed to judge visual plan.
+_MAX_IMAGE_PROMPTS = 6
+
+
+def _build_content_snapshot(state: XHSGrowthState) -> dict[str, Any]:
+    """Compact snapshot of the evaluated content for finetune training input.
+
+    ponytail: truncation + caps — finetune needs enough to learn content→score,
+    not a full archive. Falls back to empty strings when fields are absent.
+    """
+    copy_content = state.get("copy_content") or {}
+    visual_plan = state.get("visual_plan") or {}
+    body = str(copy_content.get("body_text") or "")
+    image_prompts = list(visual_plan.get("image_prompts") or [])[:_MAX_IMAGE_PROMPTS]
+    return {
+        "title": str(copy_content.get("selected_title") or ""),
+        "body": body[:_BODY_TRUNCATE],
+        "hashtags": list(copy_content.get("hashtags") or []),
+        "cta": str(copy_content.get("cta") or ""),
+        "tone": str(copy_content.get("tone") or ""),
+        "cover_prompt": str(visual_plan.get("cover_prompt") or ""),
+        "image_prompts": image_prompts,
+        "image_count": int(visual_plan.get("image_count") or 0),
+        "layout_style": str(visual_plan.get("layout_style") or ""),
+    }

@@ -39,7 +39,7 @@ _DIMENSION_WEIGHTS: dict[str, float] = {
 
 DEFAULT_PASS_THRESHOLD = 70.0
 DEFAULT_REJECT_THRESHOLD = 50.0
-# bias_check 低于此分视为检测到明显偏倚，对 overall 下调
+# bias_severity 高于此值视为检测到明显偏倚，对 overall 下调
 _BIAS_PENALTY_THRESHOLD = 60.0
 _BIAS_PENALTY = 5.0  # 偏倚下调分
 
