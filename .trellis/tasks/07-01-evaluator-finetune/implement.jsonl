@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "evaluator_samples 加 content_snapshot 列 + migration + ensure_tables，需遵循 DB 契约（nullable 向后兼容、参数化、account-scoped）"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "样本采集 + finetune 数据格式改动需符合后端质量基线：测试覆盖、非阻塞 DB 失败、降级"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "旧样本无 snapshot 的 incomplete 标记 + _collect_sample 非阻塞需与既有错误处理一致"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "content_snapshot 来自 copy_content/visual_plan state，需遵循 state 读取约定"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "finetune dry-run 输出 + 采集日志需遵循日志规范"}

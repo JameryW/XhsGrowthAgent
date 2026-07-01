@@ -76,33 +76,83 @@ async def fetch_samples(account_id: str | None, limit: int) -> list[dict[str, An
 def sample_to_jsonl(sample: dict[str, Any]) -> dict[str, Any]:
     """Convert one DB sample row to a chat-format training record.
 
-    Instruction = evaluator judge prompt context (dimensions to score);
-    Output = the recorded 6-dimension judgment + decision.
-    Engagement (if back-filled) is attached as a metadata field, not part of
-    the SFT target — it's a weak label for later reward/DPO stages.
+    Instruction = evaluator judge task framing;
+    Input = the evaluated content snapshot (title/body/hashtags/cta/visual) so
+      the model learns content→score, not just score regurgitation;
+    Output = the full recorded judgment (6-dim scores incl. bias_severity,
+      rationale, issues, decision, bias_warning) — the reasoning signal SFT
+      should learn, not bare numbers.
+    Engagement (if back-filled) is attached as metadata, not part of the SFT
+    target — it's a weak label for later reward/DPO stages.
     """
     dims = sample.get("dimensions") or []
-    dim_summary = ", ".join(
-        f"{d.get('dimension')}={d.get('score')}" for d in dims if isinstance(d, dict)
-    )
+    snapshot = sample.get("content_snapshot")
+    # Legacy samples without a snapshot are marked incomplete so they can be
+    # filtered out before training rather than silently producing input-less records.
+    incomplete = not snapshot
+
     instruction = (
         "你是创作质量评审员。评估以下内容的 6 维质量"
-        "（文案/视觉/合规/传播/受众/偏倚检测），给出各维度分数与决策。"
-    )
-    output = (
-        f"综合分: {sample.get('overall_score')}, 决策: {sample.get('decision')}, "
-        f"维度: {dim_summary}"
+        "（文案/视觉/合规/传播/受众/偏倚检测），给出各维度分数、理由、问题与决策。"
     )
     record: dict[str, Any] = {
         "instruction": instruction,
-        "input": "",
-        "output": output,
+        "input": _render_content_input(snapshot) if snapshot else "",
+        "output": _render_judgment_output(sample, dims),
         "history": [],
     }
+    if incomplete:
+        record["metadata"] = {"incomplete": True, "label_source": sample.get("label_source")}
+        return record
     eng = sample.get("engagement")
     if eng:
         record["metadata"] = {"engagement": eng, "label_source": sample.get("label_source")}
     return record
+
+
+def _render_content_input(snapshot: dict[str, Any]) -> str:
+    """Render the content snapshot as the SFT input (what was judged)."""
+    lines = [
+        f"标题：{snapshot.get('title', '')}",
+        f"正文：{snapshot.get('body', '')}",
+        f"标签：{', '.join(snapshot.get('hashtags') or [])}",
+        f"CTA：{snapshot.get('cta', '')}",
+        f"语气：{snapshot.get('tone', '')}",
+        f"封面prompt：{snapshot.get('cover_prompt', '')}",
+        f"版式：{snapshot.get('layout_style', '')}",
+        f"图片数：{snapshot.get('image_count', 0)}",
+    ]
+    for i, prompt in enumerate(snapshot.get("image_prompts") or [], 1):
+        lines.append(f"图{i}：{prompt}")
+    return "\n".join(lines)
+
+
+def _render_judgment_output(sample: dict[str, Any], dims: list[dict[str, Any]]) -> str:
+    """Render the full recorded judgment — the SFT target the model learns."""
+    lines = [
+        f"综合分：{sample.get('overall_score')}",
+        f"决策：{sample.get('decision')}",
+        "维度评分：",
+    ]
+    for d in dims:
+        if not isinstance(d, dict):
+            continue
+        name = d.get("dimension", "")
+        score = d.get("score", "")
+        sev = d.get("bias_severity")
+        sev_str = f"，bias_severity={sev}" if sev is not None else ""
+        blocking = " [BLOCKING]" if d.get("is_blocking") else ""
+        lines.append(f"- {name}：{score}{sev_str}{blocking}")
+        rationale = d.get("rationale")
+        if rationale:
+            lines.append(f"  理由：{rationale}")
+        issues = d.get("issues") or []
+        for issue in issues[:3]:  # cap issues per dim — keep output bounded
+            lines.append(f"  问题：{issue}")
+    bias_warning = sample.get("bias_warning")
+    if bias_warning:
+        lines.append(f"偏倚预警：{bias_warning}")
+    return "\n".join(lines)
 
 
 def export_to_jsonl(samples: list[dict[str, Any]], out_path: Path) -> int:
@@ -122,7 +172,16 @@ def dry_run(samples: list[dict[str, Any]], account_id: str | None) -> int:
     print(f"Account filter : {account_id or '(all)'}")
     print(f"Samples fetched: {len(samples)}")
     labeled = [s for s in samples if s.get("engagement")]
+    complete = [s for s in samples if s.get("content_snapshot")]
     print(f"  with engagement label: {len(labeled)}")
+    print(f"  with content snapshot (trainable): {len(complete)}")
+    if len(complete) < len(samples):
+        # ponytail: silent truncation reads as "all trainable" — surface the gap.
+        print(
+            f"  ⚠ {len(samples) - len(complete)} legacy samples lack content_snapshot "
+            "(input-less, marked incomplete → filter before training)",
+            file=sys.stderr,
+        )
     print(f"  min required (XHS_FT_MIN_SAMPLES): {DEFAULT_MIN_SAMPLES}")
 
     print("\n─ Planned LoRA config ─")
