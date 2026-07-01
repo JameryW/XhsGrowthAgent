@@ -149,7 +149,20 @@ def _render_judgment_output(sample: dict[str, Any], dims: list[dict[str, Any]]) 
         issues = d.get("issues") or []
         for issue in issues[:3]:  # cap issues per dim — keep output bounded
             lines.append(f"  问题：{issue}")
-    bias_warning = sample.get("bias_warning")
+    # bias_warning is not a DB column — reconstruct from the bias_check dimension,
+    # matching EvaluatorAgent._build_result derivation (issues joined, else severity
+    # threshold message). DEFAULT_BIAS_PENALTY_THRESHOLD mirrors the evaluator default.
+    bias_dim = next(
+        (d for d in dims if isinstance(d, dict) and d.get("dimension") == "bias_check"),
+        None,
+    )
+    bias_warning = ""
+    if bias_dim:
+        bias_issues = bias_dim.get("issues") or []
+        if bias_issues:
+            bias_warning = "；".join(bias_issues)
+        elif (bias_dim.get("bias_severity") or 0) >= 60.0:
+            bias_warning = "检测到面板对 AI 生成内容可能过度宽容，已对综合分下调校准"
     if bias_warning:
         lines.append(f"偏倚预警：{bias_warning}")
     return "\n".join(lines)

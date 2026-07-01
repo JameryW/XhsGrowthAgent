@@ -12,11 +12,12 @@ from scripts.finetune_evaluator import sample_to_jsonl  # noqa: E402
 
 
 def _sample(*, snapshot=None, engagement=None, dims=None) -> dict:
+    # Mirrors a real DB-exported row: bias_warning is NOT a column (it's derived
+    # from bias_check issues/severity at eval time), so it's absent here.
     return {
         "overall_score": 78.5,
         "decision": "needs_revision",
         "label_source": "evaluator",
-        "bias_warning": "检测到偏倚",
         "dimensions": dims
         if dims is not None
         else [
@@ -32,7 +33,7 @@ def _sample(*, snapshot=None, engagement=None, dims=None) -> dict:
                 "score": 60,
                 "bias_severity": 75,
                 "rationale": "偏宽松",
-                "issues": [],
+                "issues": ["检测到偏倚"],
                 "is_blocking": False,
             },
         ],
@@ -94,3 +95,35 @@ def test_sample_to_jsonl_engagement_attached_as_metadata() -> None:
     record = sample_to_jsonl(_sample(snapshot=_snapshot(), engagement={"views": 1000, "likes": 50}))
     assert record["metadata"]["engagement"] == {"views": 1000, "likes": 50}
     assert "1000" not in record["output"]  # engagement not in target
+
+
+def test_sample_to_jsonl_bias_warning_reconstructed_from_severity() -> None:
+    """bias_warning is not a DB column — reconstructed from bias_check severity
+    when issues are empty (mirrors EvaluatorAgent derivation)."""
+    dims = [
+        {
+            "dimension": "bias_check",
+            "score": 60,
+            "bias_severity": 75,
+            "issues": [],
+            "is_blocking": False,
+        }
+    ]
+    record = sample_to_jsonl(_sample(snapshot=_snapshot(), dims=dims))
+    out = record["output"]
+    assert "偏倚预警：检测到面板对 AI 生成内容可能过度宽容" in out
+
+
+def test_sample_to_jsonl_no_bias_warning_when_clean() -> None:
+    """No bias_warning line when bias_check has no issues and low severity."""
+    dims = [
+        {
+            "dimension": "bias_check",
+            "score": 90,
+            "bias_severity": 20,
+            "issues": [],
+            "is_blocking": False,
+        }
+    ]
+    record = sample_to_jsonl(_sample(snapshot=_snapshot(), dims=dims))
+    assert "偏倚预警" not in record["output"]
