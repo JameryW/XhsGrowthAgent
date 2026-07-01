@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "EvaluationView 用 ref/computed 管理趋势状态，新增维度均值渲染需遵循前端 store/响应式约定"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "TrendChart 复用 + 维度均值展示组件需遵循前端组件模式（props、空状态、响应式）"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "dim_averages 后端已返回，前端补渲染需保证字段与 EvaluationTrendResponse 类型一致"}

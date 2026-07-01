@@ -229,3 +229,33 @@ class TestAnalystAgent:
             mock_cls.get_instance.return_value = mock_service
             # 不应抛出异常
             await agent._ripple_cancel("job-err")
+
+
+@pytest.mark.asyncio
+async def test_safe_evolve_swallows_errors():
+    """_safe_evolve (fire-and-forget wrapper) never raises — errors just log."""
+    from backend.agents.analyst import _safe_evolve
+
+    with patch(
+        "backend.db.evaluator_config.maybe_evolve",
+        AsyncMock(side_effect=RuntimeError("boom")),
+    ):
+        # must not raise
+        await _safe_evolve("acct1")
+
+
+@pytest.mark.asyncio
+async def test_safe_evolve_passes_account_id():
+    """_safe_evolve forwards a string account_id; non-str degrades to None."""
+    from backend.agents.analyst import _safe_evolve
+
+    with patch(
+        "backend.db.evaluator_config.maybe_evolve", AsyncMock(return_value={"action": "skip"})
+    ) as me:
+        await _safe_evolve("acct1")
+        me.assert_awaited_once_with("acct1")
+    with patch(
+        "backend.db.evaluator_config.maybe_evolve", AsyncMock(return_value={"action": "skip"})
+    ) as me:
+        await _safe_evolve(None)
+        me.assert_awaited_once_with(None)

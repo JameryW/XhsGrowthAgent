@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "maybe_evolve + fire-and-forget 触发改动需符合后端质量基线：测试覆盖、非阻塞降级、异步约定"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "演化失败必须降级不阻断主链路（backfill/publish），需与既有非阻塞错误处理一致"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "maybe_evolve 调 train_weights/avg_bias_score/create_epoch，需遵循 DB 契约（pool 就绪、参数化、account-scoped）"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "演化决策日志（触发/决策/结果）需遵循日志规范"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "在 analyst node backfill 后触发，需遵循 node 执行/state 更新约定"}

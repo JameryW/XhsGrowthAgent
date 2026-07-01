@@ -771,3 +771,113 @@ def _to_float_severity(sev: Any, score: Any) -> float:
         return 100.0 - float(score)
     except (TypeError, ValueError):
         return 100.0  # 无法解析 → 视为最大偏倚
+
+
+# ── Online co-evolution trigger (event-driven, RQGM epoch boundary) ──
+
+# New labeled samples required since the last epoch before auto-evolving again.
+# Mirrors MIN_TRAIN_SAMPLES magnitude — enough signal for a stable refit.
+MIN_EVOLVE_SAMPLES = 10
+
+# In-process re-entry guard: one evolution per account at a time. The trigger
+# is fire-and-forget from analyst_node, so concurrent publishes for the same
+# account could otherwise kick off overlapping refits. ponytail: module-level
+# set, per-account locks if throughput ever demands real concurrency.
+_EVOLVING: set[str | None] = set()
+
+
+async def count_labeled_since(since_iso: str, account_id: str | None) -> int:
+    """Count engagement-labeled samples created after `since_iso`.
+
+    `since_iso` is the active epoch's created_at — i.e. samples that arrived
+    after the last evolution. None-account counts global samples.
+    """
+    pool = get_pool()
+    async with pool.connection() as conn, conn.cursor() as cur:
+        if account_id:
+            await cur.execute(
+                "SELECT COUNT(*) FROM evaluator_samples "
+                "WHERE account_id = %s AND engagement IS NOT NULL AND created_at > %s",
+                (account_id, since_iso),
+            )
+        else:
+            await cur.execute(
+                "SELECT COUNT(*) FROM evaluator_samples "
+                "WHERE engagement IS NOT NULL AND created_at > %s",
+                (since_iso,),
+            )
+        row = await cur.fetchone()
+    return int(row[0]) if row else 0
+
+
+async def maybe_evolve(account_id: str | None) -> dict[str, Any]:
+    """Event-driven co-evolution: refit weights + advance epoch if enough new
+    labeled samples have accrued since the last epoch boundary.
+
+    Called fire-and-forget after backfill_engagement (post-publish feedback).
+    Idempotent + non-blocking: returns early if the re-entry guard is held, the
+    DB is down, or too few new samples. All failures degrade to a no-op log.
+
+    Returns a small report dict for observability (caller may log it).
+    """
+    report: dict[str, Any] = {"account_id": account_id, "action": "skip"}
+    try:
+        if account_id in _EVOLVING:
+            report["reason"] = "already-evolving"
+            logger.debug("maybe_evolve skipped (already evolving): %s", account_id)
+            return report
+
+        epoch = await get_active_epoch()
+        since = epoch.created_at or ""
+        n_new = await count_labeled_since(since, account_id)
+        report["new_labeled_samples"] = n_new
+        if n_new < MIN_EVOLVE_SAMPLES:
+            report["reason"] = f"below threshold ({n_new}<{MIN_EVOLVE_SAMPLES})"
+            logger.info("maybe_evolve skip: only %d new labeled samples", n_new)
+            return report
+
+        _EVOLVING.add(account_id)
+        try:
+            # 1) Refit weights from the (now richer) labeled sample pool.
+            tr = await train_weights(account_id, apply=True)
+            report["weight_training"] = {
+                "applied": tr.applied,
+                "n_samples": tr.n_samples,
+                "r_squared": round(tr.r_squared, 4),
+            }
+
+            # 2) Advance prompt epoch if bias signal moved out of band.
+            avg = await avg_bias_score()
+            target = next_severity(epoch.bias_severity, avg)
+            report["bias_avg"] = round(avg, 2) if avg is not None else None
+            report["epoch"] = {"from": epoch.bias_severity, "to": target}
+            if target != epoch.bias_severity:
+                note = (
+                    f"auto-evolve: avg bias_severity={avg:.1f} from {n_new} new samples; "
+                    f"weights refit r²={tr.r_squared:.3f}"
+                )
+                new_epoch = await create_epoch(target, note=note)
+                report["epoch"]["created"] = new_epoch.epoch_id
+                logger.info(
+                    "maybe_evolve advanced epoch %s→%s (#%d) for %s",
+                    epoch.bias_severity,
+                    target,
+                    new_epoch.epoch_id,
+                    account_id,
+                )
+            else:
+                logger.info(
+                    "maybe_evolve refit weights only (epoch held at %s) for %s",
+                    epoch.bias_severity,
+                    account_id,
+                )
+            report["action"] = "evolved"
+        finally:
+            _EVOLVING.discard(account_id)
+    except Exception as e:
+        # ponytail: evolution must never block the publish path — swallow + log.
+        report["action"] = "error"
+        report["reason"] = str(e)
+        logger.warning("maybe_evolve failed (non-blocking): %s", e)
+        _EVOLVING.discard(account_id)
+    return report
