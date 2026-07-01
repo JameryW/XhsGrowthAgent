@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验收前 ruff/mypy/pytest 绿的标准"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "校验 evaluator_gate 路由/interrupt/state 字段符合工作流规范"}
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "校验 omp 评估工具注册与命令范式"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "校验评估失败降级安全网不阻断发布"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "校验 state→API→omp→前端类型跨层一致"}
+{"file": ".trellis/tasks/07-01-agent-arxiv-2606-26294/prd.md", "reason": "对照 PRD 验收标准与 DoD 逐项检查"}

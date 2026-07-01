@@ -24,9 +24,11 @@ from backend.state.substates import (
     ContentPlan,
     ContentVersion,
     CopyContent,
+    DimensionScore,
     # 发布前优化子状态
     DraftContent,
     EngagementAction,
+    EvaluationResult,
     GapItem,
     HotTopicItem,
     HumanFeedback,
@@ -78,6 +80,9 @@ __all__ = [
     # 博主参考
     "BloggerProfile",
     "BloggerNote",
+    # 创作质量评估器 (RQGM agent-as-a-judge)
+    "DimensionScore",
+    "EvaluationResult",
     # Reducers
     "merge_dict",
     "append_list",

@@ -13,6 +13,7 @@ Agents:
 - ContentAnalyzerAgent: 对比分析 (发布前优化)
 - VersionGeneratorAgent: 版本生成 (发布前优化)
 - BloggerScoutAgent: 博主发现 (热门博主参考)
+- EvaluatorAgent: 创作质量评估 (RQGM agent-as-a-judge 面板, 发布前 AI 质量关卡)
 """
 
 from backend.agents.analyst import AnalystAgent
@@ -23,6 +24,7 @@ from backend.agents.content_analyzer import ContentAnalyzerAgent
 from backend.agents.content_strategist import ContentStrategistAgent
 from backend.agents.copywriter import CopywriterAgent
 from backend.agents.engagement import EngagementAgent
+from backend.agents.evaluator import EvaluatorAgent
 from backend.agents.orchestrator import OrchestratorAgent
 from backend.agents.publisher import PublisherAgent
 from backend.agents.shooting_planner import ShootingPlannerAgent
@@ -47,4 +49,5 @@ __all__ = [
     "BriefAnalyzerAgent",
     "ShootingPlannerAgent",
     "BloggerScoutAgent",
+    "EvaluatorAgent",
 ]

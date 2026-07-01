@@ -80,6 +80,15 @@ class CopywriterAgent(BaseAgent):
         ripple_context = self._build_ripple_context(dict(plan))
         system_prompt = system_prompt.replace("{ripple_context}", ripple_context)
 
+        # 注入评估器修订建议（RQGM 协同演化：评估器反馈驱动 writer 改进）
+        feedback = state.get("human_feedback") or {}
+        revisions = feedback.get("revisions") or []
+        if revisions:
+            hints = "\n".join(f"- {h}" for h in revisions)
+            system_prompt += (
+                f"\n\n【质量评估修订要求 — 请据此重写】\n{hints}"
+            )
+
         niche = state.get("niche", "母婴")
 
         if is_brief_mode:

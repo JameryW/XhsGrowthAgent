@@ -19,6 +19,7 @@ from backend.state.substates import (
     CopyContent,
     DraftContent,
     EngagementAction,
+    EvaluationResult,
     HumanFeedback,
     OptimizationAnalysis,
     PublishResult,
@@ -58,6 +59,9 @@ class XHSGrowthState(TypedDict, total=False):
 
     # Human review
     human_feedback: HumanFeedback
+
+    # 创作质量评估 (RQGM agent-as-a-judge 面板) — 发布前 AI 质量关卡
+    evaluation_result: EvaluationResult
 
     # Ripple CAS engine
     ripple_prediction: RipplePrediction

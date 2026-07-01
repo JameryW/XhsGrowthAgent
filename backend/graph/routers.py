@@ -93,12 +93,12 @@ def should_plan(state: XHSGrowthState) -> Literal["content_strategist", "trend_s
     return "__end__"
 
 
-def review_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_content", "__end__"]:
+def review_outcome(state: XHSGrowthState) -> Literal["evaluator_gate", "revise_content", "__end__"]:
     """人工审核路由 — 根据审核结果决定下一步.
 
-    Always routes to publisher when approved — the PublisherAgent itself
-    handles dry_run mode, so dry_run=True workflows still go through the
-    full publish -> analyst chain.
+    approved → evaluator_gate (RQGM agent-as-a-judge 质量关卡，再决定发布/修订).
+    The PublisherAgent itself handles dry_run mode, so dry_run=True workflows
+    still go through evaluator_gate → publisher.
     """
     if terminal := _check_terminal(state):
         return terminal
@@ -108,10 +108,34 @@ def review_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_conten
     decision: Any = feedback.get("decision", ContentStatus.REJECTED)
 
     if decision == ContentStatus.APPROVED or decision == "approved":
-        return "publisher"
+        return "evaluator_gate"
     if decision == ContentStatus.NEEDS_REVISION or decision == "needs_revision":
         return "revise_content"
     return "__end__"
+
+
+def evaluator_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_content"]:
+    """创作质量评估路由 — RQGM agent-as-a-judge 面板判定.
+
+    review_gate approved 后进入 evaluator_gate。读取 evaluation_result.decision：
+    - approved → publisher
+    - needs_revision / rejected → revise_content（revision_hints 随 evaluation_result 携带）
+
+    不读 _check_terminal：评估器节点已自带降级放行，且此处只在人审通过后触发，
+    不会有 cancelled/paused 分支（那些在 review_outcome 已拦截）。
+    """
+    evaluation = state.get("evaluation_result") or {}
+    decision: Any = evaluation.get("decision", ContentStatus.APPROVED)
+
+    if decision in (
+        ContentStatus.NEEDS_REVISION,
+        ContentStatus.REJECTED,
+        "needs_revision",
+        "rejected",
+    ):
+        return "revise_content"
+    # approved 或未知 → 放行发布
+    return "publisher"
 
 
 def should_continue(state: XHSGrowthState) -> Literal["orchestrator", "engagement", "__end__"]:

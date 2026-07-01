@@ -9,6 +9,7 @@ from backend.agents.nodes.brief_gate import brief_gate_node
 from backend.agents.nodes.content_strategist import content_strategist_node
 from backend.agents.nodes.copywriter import copywriter_node
 from backend.agents.nodes.engagement import engagement_node
+from backend.agents.nodes.evaluator import evaluator_node
 
 # Optimization nodes
 from backend.agents.nodes.optimization import (
@@ -42,6 +43,7 @@ __all__ = [
     "engagement_node",
     "review_gate_node",
     "revise_content_node",
+    "evaluator_node",
     # Ripple gate
     "ripple_gate_node",
     # Brief mode nodes

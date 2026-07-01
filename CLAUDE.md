@@ -143,14 +143,17 @@ START → orchestrator → [trend_scout | content_strategist | analyst | engagem
               ↓
         content_strategist → copywriter → visual_designer → review_gate
               ↓                                           ↓
-        review_gate → [publisher | revise_content → copywriter]
+        review_gate → [evaluator_gate | revise_content → copywriter]
+              ↓
+        evaluator_gate → [publisher | revise_content → copywriter]
               ↓
         publisher → analyst → [orchestrator | END]
               ↓
         engagement → orchestrator
 ```
 
-- `compile_graph_dev()`: Memory checkpointer, interrupts at `review_gate` for human-in-the-loop
+- `evaluator_gate`: RQGM agent-as-a-judge panel (arxiv 2606.26294) — runs after human review approves, before publish. 6-dimension quality scoring (copywriting/visual/compliance/reach/audience + adversarial bias check); auto-routes approved→publisher, needs_revision/rejected→revise_content. Non-blocking: on evaluator failure, degrades to pass-through. `revision_hints` carried into `human_feedback.revisions` for the copywriter.
+- `compile_graph_dev()`: Memory checkpointer, interrupts at `review_gate`, `choice_gate`, `draft_gate` for human-in-the-loop
 - `compile_graph_prod()`: Postgres checkpointer for persistence
 
 ### State Schema (state/schema.py)
@@ -159,6 +162,7 @@ START → orchestrator → [trend_scout | content_strategist | analyst | engagem
 - `phase: WorkflowPhase` — idle/scouting/planning/creating/reviewing/publishing/analyzing/engaging/completed/error
 - `trend_data, content_plan, copy_content, visual_plan, publish_result, analytics` — per-stage outputs
 - `ripple_prediction, ripple_pmf` — Ripple CAS engine results
+- `evaluation_result: EvaluationResult` — RQGM agent-as-a-judge panel output (overall_score, dimensions, decision, revision_hints, bias_warning)
 - `messages: Annotated[list, add_messages]` — LangGraph message reducer
 - Lists use `_append_list` reducer, dicts use `_merge_dict` reducer
 
@@ -205,6 +209,10 @@ FastAPI routes with unified `ApiResponse` envelope:
 - `WS /ws`: WebSocket with subscribe/unsubscribe/ping/get_missed
 - `GET /events/missed`: HTTP recovery for lost events
 
+**Evaluation routes (`evaluation.py`):**
+- `GET /result/{thread_id}`: Read the RQGM agent-as-a-judge evaluation result for a thread
+- `POST /run/{thread_id}`: Manually evaluate current content (does not advance workflow; used by omp)
+
 **System routes (`system.py`):**
 - `GET /health`: System health check (see Health Check section below)
 
@@ -222,6 +230,7 @@ Routes tasks to different LLM providers by `TaskType`:
 - STRATEGY/WRITING → `claude-sonnet-4-20250514`
 - VISUAL/ANALYSIS → `gpt-4o`
 - PUBLISHING → `qwen-plus`
+- EVALUATION → `astron-code-latest` (RQGM agent-as-a-judge panel)
 
 Provider support: Anthropic, OpenAI, DeepSeek, DashScope (Qwen).
 

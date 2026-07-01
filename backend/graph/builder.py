@@ -22,6 +22,7 @@ from backend.agents.nodes import (
     content_strategist_node,
     copywriter_node,
     engagement_node,
+    evaluator_node,
     orchestrator_node,
     publisher_node,
     review_gate_node,
@@ -46,6 +47,7 @@ from backend.graph.routers import (
     copywriter_router,
     draft_gate_router,
     engagement_router,
+    evaluator_outcome,
     orchestrator_router,
     review_outcome,
     ripple_gate_router,
@@ -89,6 +91,8 @@ def build_graph() -> StateGraph[XHSGrowthState]:
         retry_policy=get_retry_policy("visual_designer"),
     )
     builder.add_node("review_gate", review_gate_node, retry_policy=get_retry_policy("review_gate"))
+    # Evaluator gate — RQGM agent-as-a-judge panel (AI quality gate after human review)
+    builder.add_node("evaluator_gate", evaluator_node, retry_policy=get_retry_policy("evaluator"))
     builder.add_node("publisher", publisher_node, retry_policy=get_retry_policy("publisher"))
     builder.add_node("analyst", analyst_node, retry_policy=get_retry_policy("analyst"))
     builder.add_node("engagement", engagement_node, retry_policy=get_retry_policy("engagement"))
@@ -273,13 +277,24 @@ def build_graph() -> StateGraph[XHSGrowthState]:
     )
 
     # ── 人工审核路由 ──
+    # approved → evaluator_gate (AI 质量评估关卡) → publisher | revise_content
     builder.add_conditional_edges(
         "review_gate",
         review_outcome,
         {
-            "publisher": "publisher",
+            "evaluator_gate": "evaluator_gate",
             "revise_content": "revise_content",
             "__end__": END,
+        },
+    )
+
+    # ── 创作质量评估路由 (RQGM agent-as-a-judge) ──
+    builder.add_conditional_edges(
+        "evaluator_gate",
+        evaluator_outcome,
+        {
+            "publisher": "publisher",
+            "revise_content": "revise_content",
         },
     )
 

@@ -492,6 +492,36 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
             "required": ["account_id"],
         },
     },
+    {
+        "name": "xhs_evaluation_result",
+        "label": "XHS Evaluation Result",
+        "description": (
+            "Get the creation-quality evaluation (RQGM agent-as-a-judge panel) for a "
+            "workflow. Returns 6-dimension scores + overall + decision + revision hints."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID"},
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
+        "name": "xhs_evaluation_run",
+        "label": "XHS Evaluation Run",
+        "description": (
+            "Manually evaluate a workflow's current content with the RQGM agent-as-a-judge "
+            "panel. Does NOT advance the workflow."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {"type": "string", "description": "Workflow thread ID"},
+            },
+            "required": ["thread_id"],
+        },
+    },
 ]
 
 # Names of XHS tools that the backend auto-executes
@@ -1010,6 +1040,49 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                         f" ⭐{p.get('collects', 0)}"
                         f" ({p.get('engagement_rate', 0)}%)"
                     )
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_evaluation_result":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.get(f"{url}/evaluation/result/{thread_id}")
+                data = _unwrap_envelope(resp)
+                if not data.get("has_evaluation"):
+                    return _make_text_result(
+                        f"No evaluation result yet for {thread_id}.",
+                        data,
+                    )
+                ev = data.get("evaluation_result") or {}
+                lines = [
+                    f"Evaluation — {thread_id}:",
+                    f"  Overall: {ev.get('overall_score', 'N/A')}"
+                    f"  Decision: {ev.get('decision', '?')}",
+                ]
+                if ev.get("bias_warning"):
+                    lines.append(f"  ⚠ Bias: {ev['bias_warning']}")
+                for d in ev.get("dimensions") or []:
+                    block = " [BLOCKING]" if d.get("is_blocking") else ""
+                    lines.append(f"  - {d.get('dimension')}: {d.get('score')}{block}")
+                for h in ev.get("revision_hints") or []:
+                    lines.append(f"  hint: {h}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_evaluation_run":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.post(f"{url}/evaluation/run/{thread_id}")
+                data = _unwrap_envelope(resp)
+                ev = data.get("evaluation_result") or {}
+                lines = [
+                    f"Evaluation complete — {thread_id}:",
+                    f"  Overall: {ev.get('overall_score', 'N/A')}"
+                    f"  Decision: {ev.get('decision', '?')}",
+                ]
+                if ev.get("bias_warning"):
+                    lines.append(f"  ⚠ Bias: {ev['bias_warning']}")
+                for d in ev.get("dimensions") or []:
+                    block = " [BLOCKING]" if d.get("is_blocking") else ""
+                    lines.append(f"  - {d.get('dimension')}: {d.get('score')}{block}")
+                for h in ev.get("revision_hints") or []:
+                    lines.append(f"  hint: {h}")
                 return _make_text_result("\n".join(lines), data)
 
             else:

@@ -164,6 +164,7 @@ from backend.api.routes import (  # noqa: E402
     analytics,
     auth,
     blogger,
+    evaluation,
     optimization,
     realtime,
     review,
@@ -180,6 +181,7 @@ app.include_router(console_users_router, prefix="/api/console-users", tags=["con
 app.include_router(system_config_router, prefix="/api/system-config", tags=["system-config"])
 app.include_router(workflow.router, prefix="/api/workflow", tags=["workflow"])
 app.include_router(review.router, prefix="/api/review", tags=["review"])
+app.include_router(evaluation.router, prefix="/api/evaluation", tags=["evaluation"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(system_router, prefix="/api/system", tags=["system"])
 app.include_router(realtime.router, tags=["realtime"])  # WebSocket 不需要 /api 前缀
