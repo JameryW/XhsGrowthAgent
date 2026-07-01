@@ -268,7 +268,7 @@ class TestEvaluatorAgent:
         for name in _REQUIRED_DIMENSIONS:
             score = 100.0 if name != "bias_check" else 100.0
             dims.append({"dimension": name, "score": score, "is_blocking": False})
-        overall = EvaluatorAgent._compute_overall(dims)
+        overall = agent._compute_overall(dims)
         # all 100, no bias penalty → 100
         assert overall == 100.0
 
@@ -283,6 +283,6 @@ class TestEvaluatorAgent:
         for d in dims:
             if d["dimension"] == "bias_check":
                 d["score"] = 40.0
-        overall = EvaluatorAgent._compute_overall(dims)
+        overall = agent._compute_overall(dims)
         # 100 weighted minus penalty
         assert overall < 100.0

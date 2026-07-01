@@ -127,6 +127,26 @@ class AnalystAgent(BaseAgent):
             except Exception as e:
                 logger.warning(f"更新内容历史互动数据失败: {e}")
 
+        # ── Back-fill real engagement onto the evaluator's training sample ──
+        # ponytail: weak label for grader finetuning — attaches publish_result
+        # engagement to the evaluator judgment sample. Non-blocking.
+        thread_id = state.get("session_id")
+        if thread_id:
+            try:
+                from backend.db.evaluator_config import backfill_engagement
+                from backend.db.pool import is_pool_ready
+
+                if is_pool_ready():
+                    engagement = {
+                        k: publish_result.get(k, 0)
+                        for k in ("views", "likes", "collects", "comments", "shares")
+                        if k in publish_result
+                    }
+                    if engagement:
+                        await backfill_engagement(thread_id, engagement)
+            except Exception as e:
+                logger.debug(f"样本 engagement 回灌失败 (non-blocking): {e}")
+
         # ── Creative Memory: 输出 calibration_payload（异步回写）──
         from backend.memory.calibrator import build_calibration_payload, schedule_calibration
 

@@ -35,6 +35,21 @@ from backend.db.console_users import (
 from backend.db.console_users import (
     ensure_tables as ensure_console_users_tables,
 )
+from backend.db.evaluator_config import (
+    DEFAULT_DIMENSION_WEIGHTS,
+    DEFAULT_WEIGHTS,
+    EvaluatorSample,
+    EvaluatorWeights,
+    backfill_engagement,
+    export_samples,
+    insert_sample,
+    list_weights,
+    load_weights,
+    set_weight,
+)
+from backend.db.evaluator_config import (
+    ensure_tables as ensure_evaluator_config_tables,
+)
 from backend.db.pool import close_pool, get_pool, init_pool, is_pool_ready
 from backend.db.system_config import (
     SYSTEM_KEY_GROUPS,
@@ -107,4 +122,16 @@ __all__ = [
     "migrate_from_accounts",
     "set_config",
     "ensure_system_config_tables",
+    # Evaluator config (learnable grader weights + training samples)
+    "DEFAULT_DIMENSION_WEIGHTS",
+    "DEFAULT_WEIGHTS",
+    "EvaluatorSample",
+    "EvaluatorWeights",
+    "backfill_engagement",
+    "ensure_evaluator_config_tables",
+    "export_samples",
+    "insert_sample",
+    "list_weights",
+    "load_weights",
+    "set_weight",
 ]
