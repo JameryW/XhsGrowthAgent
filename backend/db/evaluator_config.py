@@ -15,7 +15,6 @@ Tables:
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 from dataclasses import dataclass, field
@@ -579,8 +578,8 @@ async def train_weights(account_id: str | None = None, *, apply: bool = False) -
 # standard = epoch-1 默认；strict/very_strict = 面板偏宽松时加严；lenient = 面板过严时放宽。
 BIAS_SEVERITY_LEVELS = ("lenient", "standard", "strict", "very_strict")
 
-# Decision bands for mean bias_check score (0-100).
-# High mean → panel lenient (seldom flags) → tighten. Low mean → panel harsh → relax.
+# Decision bands for mean bias_severity (0-100, 越高越糟).
+# High mean → panel lenient (偏倚少被检出) → tighten. Low mean → panel harsh → relax.
 LENIENT_BAND = 75.0
 HARSH_BAND = 45.0
 
@@ -712,10 +711,14 @@ async def create_epoch(bias_severity: str, note: str = "") -> PromptEpoch:
 
 
 async def avg_bias_score(limit: int = 100) -> float | None:
-    """Mean bias_check score across recent samples — the signal for epoch evolution.
+    """Mean bias_severity across recent samples — the signal for epoch evolution.
 
-    High mean → panel is lenient (bias_check seldom flags) → next epoch should
-    tighten. Low mean → panel is harsh → next epoch should relax.
+    bias_severity = 检测到的偏倚严重度（越高越糟）。High mean → panel is lenient
+    (seldom flags bias) → next epoch should tighten. Low mean → panel is harsh
+    → next epoch should relax.
+
+    旧样本无 bias_severity 字段时回退 100 - bias_check.score（score=校准建议分，
+    越高越无需调整，故反推 severity）。新样本由 LLM 独立产出 bias_severity。
     """
     from psycopg.rows import dict_row
 
@@ -736,9 +739,21 @@ async def avg_bias_score(limit: int = 100) -> float | None:
                 dims = []
         for d in dims:
             if isinstance(d, dict) and d.get("dimension") == "bias_check":
-                raw = d.get("score")
-                with contextlib.suppress(TypeError, ValueError):
-                    scores.append(float(raw))  # type: ignore[arg-type]
+                sev = _to_float_severity(d.get("bias_severity"), d.get("score"))
+                scores.append(sev)
     if not scores:
         return None
     return sum(scores) / len(scores)
+
+
+def _to_float_severity(sev: Any, score: Any) -> float:
+    """Resolve bias_severity: explicit field wins, else fall back to 100 - score."""
+    try:
+        if sev is not None:
+            return float(sev)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return 100.0 - float(score)
+    except (TypeError, ValueError):
+        return 100.0  # 无法解析 → 视为最大偏倚

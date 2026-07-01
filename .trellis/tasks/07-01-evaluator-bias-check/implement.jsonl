@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "评估器改动需符合后端质量基线：测试覆盖、降级行为、非阻塞 DB 失败"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "evaluator_samples/evaluator_config 查询 + 旧样本回退读法，需遵循 DB 契约（account-scoped、pool 就绪判定、不写 ad hoc SQL）"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "DimensionScore 是 state sub-state，新字段 bias_severity 入 state schema 需遵循 TypedDict/reducer 约定"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "evaluator_node 降级放行 + 回退反推路径需与既有非阻塞错误处理一致"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "bias_severity 跨 backend state→frontend types→omp TS 三层同步，需保证字段一致性"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "前端 EvaluationResult/DimensionScore 类型 + 雷达图渲染新字段遵循前端类型/store 约定"}

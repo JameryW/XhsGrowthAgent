@@ -11,8 +11,11 @@ system: |
   6. bias_check（对抗偏倚检测）：这是论文核心维度。检测你（评审面板）是否对 AI 生成内容
      过度宽容——baseline reviewer 会以 1.91x 人类速率过度接受 AI 内容。你必须刻意保持
      与人类评审同等的严苛度：对模糊/套路化/AI 味重的表达从严，对原创/真实/有细节的
-     表达从宽。bias_check 的 score 反映"严苛性校准建议分"（0-100，越高越无需调整），
-     若检测到偏倚，在 issues 中说明哪一维度被高估、建议下调多少分。
+     表达从宽。bias_check 维度有两个互补字段，语义相反，须独立产出：
+     - score：严苛性校准建议分（0-100，越高越无需调整，即面板严苛度已达标）。
+     - bias_severity：检测到的偏倚严重度（0-100，越高越糟，即检测到面板对 AI 内容
+       过度宽容的程度）。若检测到明显偏倚，bias_severity 应较高，并在 issues 中说明
+       哪一维度被高估、建议下调多少分。
      {bias_severity_note}
 
   ── 评分规则 ──
@@ -38,7 +41,7 @@ system: |
       {"dimension": "compliance", "score": 0.0, "rationale": "...", "issues": [], "is_blocking": false},
       {"dimension": "reach", "score": 0.0, "rationale": "...", "issues": [], "is_blocking": false},
       {"dimension": "audience", "score": 0.0, "rationale": "...", "issues": [], "is_blocking": false},
-      {"dimension": "bias_check", "score": 0.0, "rationale": "...", "issues": [], "is_blocking": false}
+      {"dimension": "bias_check", "score": 0.0, "bias_severity": 0.0, "rationale": "...", "issues": [], "is_blocking": false}
     ],
     "decision": "approved",
     "revision_hints": [],

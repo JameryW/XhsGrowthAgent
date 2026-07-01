@@ -6,6 +6,11 @@ export interface DimensionScore {
   dimension: string
   /** 0-100 */
   score: number
+  /**
+   * bias_check 维度专属：检测到的偏倚严重度（0-100，越高越糟）。
+   * 与 score（"校准建议分"）语义相反，独立产出。旧样本可能缺省。
+   */
+  bias_severity?: number
   /** 该维度评分理由 */
   rationale: string
   /** 发现的具体问题 */

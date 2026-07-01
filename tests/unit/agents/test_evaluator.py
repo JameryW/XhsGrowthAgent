@@ -279,13 +279,60 @@ class TestEvaluatorAgent:
             {"dimension": name, "score": 100.0, "is_blocking": False}
             for name in _REQUIRED_DIMENSIONS
         ]
-        # set bias_check low
+        # high bias_severity (检测到明显偏倚) triggers overall penalty
         for d in dims:
             if d["dimension"] == "bias_check":
-                d["score"] = 40.0
+                d["bias_severity"] = 80.0  # >= penalty threshold (60)
         overall = agent._compute_overall(dims)
         # 100 weighted minus penalty
         assert overall < 100.0
+
+    def test_compute_overall_no_penalty_when_bias_severity_low(self, agent):
+        from backend.agents.evaluator import _REQUIRED_DIMENSIONS
+
+        dims = [
+            {"dimension": name, "score": 100.0, "is_blocking": False}
+            for name in _REQUIRED_DIMENSIONS
+        ]
+        for d in dims:
+            if d["dimension"] == "bias_check":
+                d["bias_severity"] = 30.0  # below threshold → no penalty
+                d["score"] = 40.0  # score 不再驱动 penalty，低 score 不应触发
+        overall = agent._compute_overall(dims)
+        assert overall == 100.0
+
+    def test_build_result_bias_severity_explicit_wins(self, agent):
+        """LLM-provided bias_severity is preserved and drives the penalty."""
+        from backend.agents.evaluator import _REQUIRED_DIMENSIONS
+
+        raw_dims = [
+            {"dimension": name, "score": 100.0, "is_blocking": False}
+            for name in _REQUIRED_DIMENSIONS
+        ]
+        for d in raw_dims:
+            if d["dimension"] == "bias_check":
+                d["score"] = 90.0  # high score alone would NOT trigger penalty
+                d["bias_severity"] = 80.0  # high severity SHOULD trigger
+        result = agent._build_evaluation_result({"dimensions": raw_dims})
+        bias = next(d for d in result["dimensions"] if d["dimension"] == "bias_check")
+        assert bias["bias_severity"] == 80.0
+        assert result["overall_score"] < 100.0  # penalty applied via severity
+
+    def test_build_result_bias_severity_falls_back_to_score(self, agent):
+        """Old LLM output without bias_severity falls back to 100 - score."""
+        from backend.agents.evaluator import _REQUIRED_DIMENSIONS
+
+        raw_dims = [
+            {"dimension": name, "score": 100.0, "is_blocking": False}
+            for name in _REQUIRED_DIMENSIONS
+        ]
+        for d in raw_dims:
+            if d["dimension"] == "bias_check":
+                d["score"] = 30.0  # low score → high severity (100-30=70) → penalty
+        result = agent._build_evaluation_result({"dimensions": raw_dims})
+        bias = next(d for d in result["dimensions"] if d["dimension"] == "bias_check")
+        assert bias["bias_severity"] == 70.0  # 100 - 30
+        assert result["overall_score"] < 100.0
 
     def test_build_system_prompt_injects_weights_and_epoch(self, agent):
         """_build_system_prompt replaces {weights_block}/{thresholds}/{bias_severity_note}

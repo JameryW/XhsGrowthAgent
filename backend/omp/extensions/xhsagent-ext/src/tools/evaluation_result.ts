@@ -6,6 +6,8 @@ import { textResult } from "../types.js";
 interface DimensionScore {
   dimension: string;
   score: number;
+  /** bias_check 维度专属：偏倚严重度（0-100，越高越糟），旧样本可能缺省 */
+  bias_severity?: number;
   rationale: string;
   issues: string[];
   is_blocking: boolean;
