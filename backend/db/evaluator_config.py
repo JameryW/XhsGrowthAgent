@@ -810,6 +810,32 @@ async def count_labeled_since(since_iso: str, account_id: str | None) -> int:
     return int(row[0]) if row else 0
 
 
+def _emit_evolution_event(report: dict[str, Any]) -> None:
+    """Emit EVALUATOR_EPOCH_EVOLVED so frontend/omp can observe self-evolution.
+
+    ponytail: emit failure is swallowed — observability must never block or
+    corrupt the evolution that just succeeded. thread_id=None (account-scoped
+    event, not tied to one workflow).
+    """
+    try:
+        from backend.realtime import EventBusService, EventType
+
+        EventBusService.get_instance().emit(
+            EventType.EVALUATOR_EPOCH_EVOLVED,
+            thread_id=None,
+            payload={
+                "account_id": report.get("account_id"),
+                "action": report.get("action"),
+                "epoch": report.get("epoch"),
+                "weight_training": report.get("weight_training"),
+                "bias_avg": report.get("bias_avg"),
+                "new_labeled_samples": report.get("new_labeled_samples"),
+            },
+        )
+    except Exception as e:
+        logger.debug("evaluator evolution event emit failed (non-blocking): %s", e)
+
+
 async def maybe_evolve(account_id: str | None) -> dict[str, Any]:
     """Event-driven co-evolution: refit weights + advance epoch if enough new
     labeled samples have accrued since the last epoch boundary.
@@ -872,6 +898,7 @@ async def maybe_evolve(account_id: str | None) -> dict[str, Any]:
                     account_id,
                 )
             report["action"] = "evolved"
+            _emit_evolution_event(report)
         finally:
             _EVOLVING.discard(account_id)
     except Exception as e:

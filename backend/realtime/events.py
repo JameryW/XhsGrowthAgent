@@ -34,6 +34,10 @@ class EventType(StrEnum):
     ANALYTICS_COST_ALERT = "analytics.cost_alert"
     ANALYTICS_PERFORMANCE_NEW = "analytics.performance_new"
 
+    # Evaluator (RQGM) self-evolution — emitted when maybe_evolve refits
+    # weights / advances the prompt epoch (low-frequency, high-signal).
+    EVALUATOR_EPOCH_EVOLVED = "evaluator.epoch_evolved"
+
 
 @dataclass(frozen=True)
 class Event:

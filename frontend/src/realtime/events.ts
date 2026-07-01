@@ -28,6 +28,9 @@ export enum EventType {
   ANALYTICS_REPORT_UPDATED = "analytics.report_updated",
   ANALYTICS_COST_ALERT = "analytics.cost_alert",
   ANALYTICS_PERFORMANCE_NEW = "analytics.performance_new",
+
+  // Evaluator (RQGM) self-evolution — refit weights / advance prompt epoch
+  EVALUATOR_EPOCH_EVOLVED = "evaluator.epoch_evolved",
 }
 
 /** WebSocket连接状态 */
