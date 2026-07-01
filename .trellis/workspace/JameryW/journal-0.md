@@ -680,3 +680,37 @@ Three evaluator/XHS PRs merged: #158 health xhs_platform probe resolves from DB 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 55: Evaluator event-driven online co-evolution trigger
+
+**Date**: 2026-07-01
+**Task**: Evaluator event-driven online co-evolution trigger
+**Branch**: `main`
+
+### Summary
+
+Closed the RQGM co-evolution loop: evolution now fires on the feedback event (backfill_engagement) instead of requiring manual --apply. maybe_evolve refits weights + advances prompt epoch when >=10 new labeled samples accrue since the epoch boundary; re-entry-guarded per account, fails closed. analyst_node fire-and-forgets _safe_evolve via asyncio.create_task, never blocking publish. trellis-check caught a coverage gap (mid-evolution failure: train_weights ok then create_epoch fails — guard must still release) and added a regression test; also dropped a redundant inline import.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c650ca3c` | (see git log) |
+| `d9d8d093` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
