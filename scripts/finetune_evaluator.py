@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Finetune scaffold for the RQGM evaluator judge model (LoRA/PEFT).
+"""Finetune the RQGM evaluator judge model via LoRA/PEFT SFT.
 
 Collects training samples from `evaluator_samples` (evaluator judgments +
 back-filled engagement weak labels + human-review strong labels), exports
-them to jsonl, and prepares a LoRA finetune config.
+them to jsonl, and runs LoRA finetuning via trl SFTTrainer.
 
 Modes:
   --export-only    Just export samples to jsonl (no training deps needed)
   --dry-run        Validate config + data shape, print planned LoRA config,
                    do NOT actually train (default; works without torch/peft)
-  --train          Actually run LoRA finetuning (requires torch + peft + GPU)
+  --train          Actually run LoRA finetuning (requires torch + peft; GPU
+                   recommended, --cpu forces fp32 small-batch for debugging)
 
 Environment:
   POSTGRES_URI      — DB connection (samples live in evaluator_samples)
@@ -20,10 +21,10 @@ Environment:
 Usage:
   python scripts/finetune_evaluator.py --dry-run
   python scripts/finetune_evaluator.py --export-only --account-id acct1
-  python scripts/finetune_evaluator.py --train   # needs GPU + deps
+  python scripts/finetune_evaluator.py --train            # GPU + deps
+  python scripts/finetune_evaluator.py --train --cpu      # CPU debug
 
-Out of scope (per epoch plan): actual training runs, eval benchmarks,
-online continuous training. This script is the scaffold + data pipeline.
+Out of scope: eval benchmarks vs base model, online continuous training.
 """
 
 from __future__ import annotations
@@ -153,34 +154,123 @@ def dry_run(samples: list[dict[str, Any]], account_id: str | None) -> int:
     return 0
 
 
-async def run_train(samples: list[dict[str, Any]], out_dir: Path) -> int:
-    """Actual LoRA finetune. Requires torch + peft + GPU."""
+async def run_train(samples: list[dict[str, Any]], out_dir: Path, *, cpu: bool = False) -> int:
+    """Actual LoRA finetune via trl SFTTrainer. Requires torch + peft + GPU (or --cpu).
+
+    ponytail: full SFT flow — load base model, wrap with LoRA, train, save adapter
+    + metrics. Code path is complete & executable; on a host without torch it
+    exits 2 with an install hint, and --cpu forces fp32 small-batch for debugging.
+    """
     try:
-        import torch  # type: ignore[import-not-found]  # noqa: F401
-        from peft import LoraConfig  # type: ignore[import-not-found]  # noqa: F401
-        from transformers import (  # type: ignore[import-not-found]  # noqa: F401
+        import torch  # type: ignore[import-not-found]
+        from datasets import load_dataset  # type: ignore[import-not-found]
+        from peft import LoraConfig, get_peft_model  # type: ignore[import-not-found]
+        from transformers import (  # type: ignore[import-not-found]
             AutoModelForCausalLM,
             AutoTokenizer,
         )
-        from trl import SFTConfig, SFTTrainer  # type: ignore[import-not-found]  # noqa: F401
+        from trl import SFTConfig, SFTTrainer  # type: ignore[import-not-found]
     except ImportError as e:
         print(
             f"✗ Training deps missing: {e}. Install torch/transformers/peft/trl "
-            "and run on a GPU host.",
+            "and run on a GPU host (or pass --cpu for a small CPU debug run).",
             file=sys.stderr,
         )
         return 2
 
-    # Write jsonl then hand to SFTTrainer. Full training loop is the standard
-    # trl SFT flow — kept minimal; tune hyperparams above as needed.
+    out_dir.mkdir(parents=True, exist_ok=True)
     data_path = out_dir / "train.jsonl"
     n = export_to_jsonl(samples, data_path)
     print(f"Exported {n} samples to {data_path}")
-    print(f"Loading base model {DEFAULT_BASE_MODEL} ...")
-    # NOTE: actual trainer instantiation + train() goes here. Intentionally left
-    # as scaffold — real runs need a GPU host and dataset tuning per epoch.
-    print("✗ --train is scaffold-only in this epoch. Use --dry-run to validate.")
-    return 3
+    if n == 0:
+        print("✗ No samples to train on. Collect evaluations first.", file=sys.stderr)
+        return 1
+
+    device_map = "cpu" if cpu else "auto"
+    dtype = torch.float32 if cpu else torch.bfloat16
+    print(f"Loading base model {DEFAULT_BASE_MODEL} on {device_map} ({dtype})...")
+
+    tokenizer = AutoTokenizer.from_pretrained(DEFAULT_BASE_MODEL, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    model = AutoModelForCausalLM.from_pretrained(
+        DEFAULT_BASE_MODEL,
+        torch_dtype=dtype,
+        device_map=device_map,
+        trust_remote_code=True,
+    )
+
+    lora_config = LoraConfig(
+        r=LORA_CONFIG["r"],
+        lora_alpha=LORA_CONFIG["lora_alpha"],
+        lora_dropout=LORA_CONFIG["lora_dropout"],
+        bias=LORA_CONFIG["bias"],
+        task_type=LORA_CONFIG["task_type"],
+        target_modules=LORA_CONFIG["target_modules"],
+    )
+    model = get_peft_model(model, lora_config)
+
+    # Build a chat-formatted dataset from the jsonl (instruction/input/output).
+    dataset = load_dataset("json", data_files=str(data_path), split="train")
+
+    def _format(example: dict[str, Any]) -> str:
+        return (
+            f"### 指令:\n{example.get('instruction', '')}\n\n"
+            f"### 输入:\n{example.get('input', '')}\n\n"
+            f"### 输出:\n{example.get('output', '')}"
+        )
+
+    cfg_kwargs = dict(TRAIN_HYPERPARAMS)
+    if cpu:
+        # ponytail: CPU debug profile — fp32, tiny batch, no bf16
+        cfg_kwargs.update(
+            per_device_train_batch_size=1,
+            gradient_accumulation_steps=8,
+            bf16=False,
+            fp16=False,
+        )
+    sft_config = SFTConfig(
+        output_dir=str(out_dir),
+        max_seq_length=512,
+        dataset_text_field="text",
+        report_to="none",
+        save_strategy="epoch",
+        logging_steps=10,
+        **{k: v for k, v in cfg_kwargs.items() if k in SFTConfig.__dataclass_fields__},
+    )
+
+    # Map to a 'text' field the SFTTrainer expects when dataset_text_field='text'.
+    dataset = dataset.map(lambda ex: {"text": _format(ex)})
+
+    trainer = SFTTrainer(
+        model=model,
+        args=sft_config,
+        train_dataset=dataset,
+        processing_class=tokenizer,
+    )
+
+    print(f"Training on {n} samples ({'CPU' if cpu else 'GPU'})...")
+    train_result = trainer.train()
+
+    adapter_path = out_dir / "adapter"
+    trainer.save_model(str(adapter_path))
+    tokenizer.save_pretrained(str(adapter_path))
+
+    import json as _json
+
+    metrics = {
+        "samples": n,
+        "global_step": train_result.global_step,
+        "train_loss": float(train_result.training_loss),
+        "base_model": DEFAULT_BASE_MODEL,
+        "lora_config": LORA_CONFIG,
+        "cpu": cpu,
+    }
+    (out_dir / "metrics.json").write_text(_json.dumps(metrics, ensure_ascii=False, indent=2))
+    print(f"✓ Adapter saved to {adapter_path}")
+    print(f"✓ metrics: loss={metrics['train_loss']:.4f} steps={metrics['global_step']}")
+    return 0
 
 
 def main() -> int:
@@ -188,6 +278,7 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="validate config+data, no training")
     ap.add_argument("--export-only", action="store_true", help="just export samples to jsonl")
     ap.add_argument("--train", action="store_true", help="actually run LoRA finetune (needs GPU)")
+    ap.add_argument("--cpu", action="store_true", help="force CPU fp32 small-batch (debug)")
     ap.add_argument("--account-id", default=None, help="filter samples by account")
     ap.add_argument("--limit", type=int, default=10000, help="max samples to fetch")
     ap.add_argument("--out", default=DEFAULT_OUT_DIR, help="output directory")
@@ -202,7 +293,7 @@ def main() -> int:
         return 0
 
     if args.train:
-        return asyncio.run(run_train(samples, out_dir))
+        return asyncio.run(run_train(samples, out_dir, cpu=args.cpu))
 
     # default: dry-run
     return dry_run(samples, args.account_id)

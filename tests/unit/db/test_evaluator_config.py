@@ -189,3 +189,263 @@ def test_apply_override_unknown_key_ignored():
     _apply_override(w, "weight.bogus", 1.0)
     _apply_override(w, "unknown.thing", 1.0)
     assert w.dimension_weights["copywriting"] == 0.25  # unchanged
+
+
+# ── Online weight training (fit_weights) ──
+
+
+def _sample(dim_scores: dict[str, float], views: int, likes: int) -> dict:
+    """Build a sample row shape: dimensions + engagement weak label."""
+    return {
+        "dimensions": [{"dimension": name, "score": sc} for name, sc in dim_scores.items()]
+        + [{"dimension": "bias_check", "score": 80}],
+        "engagement": {"views": views, "likes": likes, "collects": 0, "comments": 0, "shares": 0},
+        "overall_score": sum(dim_scores.values()) / len(dim_scores),
+        "decision": "approved",
+    }
+
+
+def test_fit_weights_too_few_samples_keeps_defaults():
+    """Below MIN_TRAIN_SAMPLES → defaults returned, no fit."""
+    from backend.db.evaluator_config import DEFAULT_DIMENSION_WEIGHTS, fit_weights
+
+    samples = [
+        _sample(
+            {"copywriting": 90, "visual": 80, "compliance": 90, "reach": 70, "audience": 85},
+            1000,
+            50,
+        )
+    ]
+    rep = fit_weights(samples)
+    assert rep.n_samples == 1
+    assert rep.fitted_weights == DEFAULT_DIMENSION_WEIGHTS
+    assert "keeping defaults" in rep.note
+
+
+def test_fit_weights_no_engagement_label_keeps_defaults():
+    """Samples without engagement label are skipped → effective n too low."""
+    from backend.db.evaluator_config import DEFAULT_DIMENSION_WEIGHTS, fit_weights
+
+    samples = [{"dimensions": [], "engagement": None} for _ in range(20)]
+    rep = fit_weights(samples)
+    assert rep.fitted_weights == DEFAULT_DIMENSION_WEIGHTS
+    assert rep.n_samples == 0
+
+
+def test_fit_weights_recovers_predictive_dimension():
+    """When one dimension strongly predicts engagement, its fitted weight should
+    be the largest (or at least non-default and skewed toward it)."""
+    # copywriting score alone determines engagement; others random-ish.
+    import random
+
+    from backend.db.evaluator_config import fit_weights
+
+    rng = random.Random(42)
+    samples = []
+    for _ in range(40):
+        cw = rng.uniform(40, 100)
+        # engagement rate tracks copywriting score
+        rate = cw / 100.0 * 0.2
+        views = 1000
+        likes = int(rate * views)
+        samples.append(
+            _sample(
+                {
+                    "copywriting": cw,
+                    "visual": rng.uniform(40, 100),
+                    "compliance": rng.uniform(40, 100),
+                    "reach": rng.uniform(40, 100),
+                    "audience": rng.uniform(40, 100),
+                },
+                views,
+                likes,
+            )
+        )
+    rep = fit_weights(samples)
+    assert rep.n_samples == 40
+    assert rep.r_squared > 0.3  # copywriting explains most variance
+    # copywriting should be the dominant fitted weight
+    assert rep.fitted_weights["copywriting"] == max(rep.fitted_weights.values())
+    # weights sum ~1
+    total = sum(rep.fitted_weights.values())
+    assert abs(total - 1.0) < 0.01
+
+
+def test_fit_weights_degenerate_uniform_returns_defaults():
+    """All-identical features → std=0 → lstsq still works via safe-divide; weights
+    may be uniform. Verify no crash and weights sum to 1 (or defaults)."""
+    from backend.db.evaluator_config import fit_weights
+
+    samples = [
+        _sample(
+            {"copywriting": 80, "visual": 80, "compliance": 80, "reach": 80, "audience": 80},
+            1000,
+            100,
+        )
+        for _ in range(15)
+    ]
+    rep = fit_weights(samples)
+    # Either defaults (if total=0 fallback) or uniform-ish; both acceptable.
+    total = sum(rep.fitted_weights.values())
+    assert abs(total - 1.0) < 0.01 or rep.fitted_weights["copywriting"] == 0.25
+
+
+def test_engagement_rate_helper():
+    from backend.db.evaluator_config import _engagement_rate
+
+    assert _engagement_rate(None) is None
+    assert _engagement_rate({"views": 0, "likes": 10}) is None
+    assert (
+        _engagement_rate({"views": 1000, "likes": 50, "collects": 10, "comments": 5, "shares": 2})
+        == 0.067
+    )
+
+
+# ── Prompt epoch co-evolution ──
+
+
+def test_next_severity_no_signal_holds():
+    """No samples → no evolution."""
+    from backend.db.evaluator_config import next_severity
+
+    assert next_severity("standard", None) == "standard"
+
+
+def test_next_severity_lenient_panel_tightens():
+    """High bias_check mean (panel lenient) → step stricter."""
+    from backend.db.evaluator_config import next_severity
+
+    assert next_severity("standard", 80.0) == "strict"
+    assert next_severity("strict", 80.0) == "very_strict"
+    # already max → hold
+    assert next_severity("very_strict", 95.0) == "very_strict"
+
+
+def test_next_severity_harsh_panel_relaxes():
+    """Low bias_check mean (panel harsh) → step lenient."""
+    from backend.db.evaluator_config import next_severity
+
+    assert next_severity("standard", 40.0) == "lenient"
+    assert next_severity("strict", 40.0) == "standard"
+    # already min → hold
+    assert next_severity("lenient", 10.0) == "lenient"
+
+
+def test_next_severity_standard_band_holds():
+    """Mid-band signal → no change."""
+    from backend.db.evaluator_config import next_severity
+
+    assert next_severity("standard", 60.0) == "standard"
+    assert next_severity("strict", 60.0) == "strict"
+
+
+@pytest.mark.asyncio
+async def test_get_active_epoch_falls_back_on_no_db():
+    """No pool / DB error → synthetic default epoch (standard)."""
+    from backend.db.evaluator_config import PromptEpoch, get_active_epoch
+
+    pool = MagicMock()
+    pool.connection = MagicMock(side_effect=RuntimeError("db down"))
+    with patch("backend.db.evaluator_config.get_pool", return_value=pool):
+        ep = await get_active_epoch()
+    assert isinstance(ep, PromptEpoch)
+    assert ep.bias_severity == "standard"
+    assert ep.epoch_id == 0
+
+
+@pytest.mark.asyncio
+async def test_create_epoch_validates_severity():
+    """Unknown severity raises; valid severity inserts + activates."""
+    from backend.db.evaluator_config import create_epoch
+
+    with pytest.raises(ValueError):
+        await create_epoch("bogus", note="x")
+
+    cur = MagicMock()
+    cur.execute = AsyncMock()
+    cur.fetchone = AsyncMock(return_value={"epoch_id": 7})
+    conn = _make_mock_conn(cursor=cur)  # conn.execute is AsyncMock by default
+
+    with patch("backend.db.evaluator_config.get_pool", return_value=_make_mock_pool(conn)):
+        ep = await create_epoch("strict", note="test")
+    assert ep.epoch_id == 7
+    assert ep.bias_severity == "strict"
+    assert ep.active is True
+    # conn.execute deactivates existing; cur.execute inserts returning epoch_id
+    assert "UPDATE" in conn.execute.await_args.args[0]
+    assert "INSERT" in cur.execute.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_avg_bias_score_extracts_bias_dim():
+    """avg_bias_score reads bias_check score from dimensions JSONB."""
+    import json as _json
+
+    from backend.db.evaluator_config import avg_bias_score
+
+    rows = [
+        {
+            "dimensions": _json.dumps(
+                [
+                    {"dimension": "copywriting", "score": 80},
+                    {"dimension": "bias_check", "score": 70},
+                ]
+            )
+        },
+        {"dimensions": _json.dumps([{"dimension": "bias_check", "score": 50}])},
+        {"dimensions": _json.dumps([{"dimension": "visual", "score": 90}])},  # no bias_check
+    ]
+    cursor = MagicMock()
+    cursor.execute = AsyncMock()
+    cursor.fetchall = AsyncMock(return_value=rows)
+    conn = _make_mock_conn(cursor=cursor)
+    with patch("backend.db.evaluator_config.get_pool", return_value=_make_mock_pool(conn)):
+        avg = await avg_bias_score(limit=100)
+    assert avg == 60.0  # (70 + 50) / 2
+
+
+@pytest.mark.asyncio
+async def test_avg_bias_score_no_samples_returns_none():
+    from backend.db.evaluator_config import avg_bias_score
+
+    cursor = MagicMock()
+    cursor.execute = AsyncMock()
+    cursor.fetchall = AsyncMock(return_value=[])
+    conn = _make_mock_conn(cursor=cursor)
+    with patch("backend.db.evaluator_config.get_pool", return_value=_make_mock_pool(conn)):
+        avg = await avg_bias_score(limit=100)
+    assert avg is None
+
+
+# ── Trend ──
+
+
+@pytest.mark.asyncio
+async def test_fetch_trend_returns_asc_rows():
+    """fetch_trend returns minimal fields in ascending time order."""
+    from backend.db.evaluator_config import fetch_trend
+
+    rows = [
+        {
+            "created_at": "2026-07-01T01:00:00",
+            "overall_score": 80.0,
+            "decision": "approved",
+            "dimensions": [],
+        },
+        {
+            "created_at": "2026-07-01T02:00:00",
+            "overall_score": 55.0,
+            "decision": "needs_revision",
+            "dimensions": [],
+        },
+    ]
+    cursor = MagicMock()
+    cursor.execute = AsyncMock()
+    cursor.fetchall = AsyncMock(return_value=rows)
+    conn = _make_mock_conn(cursor=cursor)
+    with patch("backend.db.evaluator_config.get_pool", return_value=_make_mock_pool(conn)):
+        out = await fetch_trend("acct1", limit=50)
+    assert out == rows
+    # ASC ordering requested
+    sql = cursor.execute.await_args.args[0]
+    assert "ORDER BY created_at ASC" in sql

@@ -13,17 +13,18 @@ system: |
      与人类评审同等的严苛度：对模糊/套路化/AI 味重的表达从严，对原创/真实/有细节的
      表达从宽。bias_check 的 score 反映"严苛性校准建议分"（0-100，越高越无需调整），
      若检测到偏倚，在 issues 中说明哪一维度被高估、建议下调多少分。
+     {bias_severity_note}
 
   ── 评分规则 ──
   - 每维度 0-100 分，给 rationale（评分理由）和 issues（具体问题列表，空列表表示无问题）
   - compliance 维度若发现违禁/敏感内容，is_blocking=true（硬性失败，无论总分都判不合格）
   - 其余维度 is_blocking=false
-  - overall_score = 加权平均（copywriting 0.25, visual 0.20, compliance 0.20, reach 0.15, audience 0.20）
+  - overall_score = 加权平均（{weights_block}）
     若 bias_check 检测到偏倚，按其建议对 overall_score 下调
   - decision:
-      overall_score >= 70 且无 is_blocking 维度 → "approved"
-      50 <= overall_score < 70 或有可改进项 → "needs_revision"
-      overall_score < 50 或 compliance is_blocking → "rejected"
+      overall_score >= {pass_threshold} 且无 is_blocking 维度 → "approved"
+      {reject_threshold} <= overall_score < {pass_threshold} 或有可改进项 → "needs_revision"
+      overall_score < {reject_threshold} 或 compliance is_blocking → "rejected"
   - revision_hints：当 decision != "approved" 时，给出具体可执行的修订指令（针对 copywriter），
     每条一句话，按优先级排序
   - bias_warning：对抗偏倚检测结论，无偏倚则为空串 ""

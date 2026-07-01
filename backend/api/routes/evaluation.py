@@ -146,3 +146,58 @@ async def get_evaluator_samples(request: Request) -> ApiResponse[Any]:
     limit = int(request.query_params.get("limit", "100"))
     samples = await export_samples(account_id, limit=limit)
     return success(data={"db_ready": True, "samples": samples, "count": len(samples)})
+
+
+@router.get("/trend")
+async def get_evaluator_trend(request: Request) -> ApiResponse[Any]:
+    """评估历史趋势 — overall_score 时序 + 各维度均值聚合."""
+    from backend.db.evaluator_config import WEIGHTED_DIMENSIONS, fetch_trend
+    from backend.db.pool import is_pool_ready
+
+    if not is_pool_ready():
+        return success(data={"db_ready": False, "points": [], "dim_averages": {}})
+    account_id = request.query_params.get("account_id")
+    limit = int(request.query_params.get("limit", "100"))
+    rows = await fetch_trend(account_id, limit=limit)
+
+    # Build timeline points + accumulate per-dimension scores for averages.
+    points: list[dict[str, Any]] = []
+    dim_totals: dict[str, float] = {d: 0.0 for d in WEIGHTED_DIMENSIONS}
+    dim_counts: dict[str, int] = {d: 0 for d in WEIGHTED_DIMENSIONS}
+    for r in rows:
+        dims = r.get("dimensions") or []
+        if isinstance(dims, str):
+            import json as _json
+
+            try:
+                dims = _json.loads(dims)
+            except (ValueError, TypeError):
+                dims = []
+        dim_scores: dict[str, float] = {}
+        for d in dims:
+            if not isinstance(d, dict):
+                continue
+            name = d.get("dimension")
+            if not name:
+                continue
+            try:
+                sc = float(d.get("score"))  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                continue
+            dim_scores[str(name)] = sc
+            if name in dim_totals:
+                dim_totals[name] += sc
+                dim_counts[name] += 1
+        points.append(
+            {
+                "created_at": r.get("created_at") or "",
+                "overall_score": float(r.get("overall_score") or 0.0),
+                "decision": r.get("decision") or "",
+                "dim_scores": dim_scores,
+            }
+        )
+    dim_averages = {
+        d: round(dim_totals[d] / dim_counts[d], 1) if dim_counts[d] else 0.0
+        for d in WEIGHTED_DIMENSIONS
+    }
+    return success(data={"db_ready": True, "points": points, "dim_averages": dim_averages})

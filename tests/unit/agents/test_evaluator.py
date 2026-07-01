@@ -286,3 +286,41 @@ class TestEvaluatorAgent:
         overall = agent._compute_overall(dims)
         # 100 weighted minus penalty
         assert overall < 100.0
+
+    def test_build_system_prompt_injects_weights_and_epoch(self, agent):
+        """_build_system_prompt replaces {weights_block}/{thresholds}/{bias_severity_note}
+        from DB weights + active epoch — prompt no longer hardcodes them."""
+        from backend.db.evaluator_config import EvaluatorWeights
+
+        # Custom weights + strict epoch
+        agent._weights = EvaluatorWeights()
+        agent._weights.dimension_weights["copywriting"] = 0.40
+        agent._weights.pass_threshold = 75.0
+        agent._weights.reject_threshold = 55.0
+        agent._bias_severity = "strict"
+
+        state = {"niche": "美食"}
+        prompt = agent._build_system_prompt(state, extra_context="audience-pref")
+
+        # weights block injected with the custom weight
+        assert "copywriting 0.40" in prompt
+        # thresholds injected (not hardcoded 70/50)
+        assert ">= 75" in prompt  # pass threshold line
+        assert "55 <= overall_score" in prompt  # reject threshold in needs_revision line
+        assert "< 55" in prompt  # reject threshold in rejected line
+        # bias severity note injected
+        assert "本 epoch 加严" in prompt
+        # niche still injected (system template has {account_niche})
+        assert "美食" in prompt
+        # placeholders fully consumed
+        assert "{weights_block}" not in prompt
+        assert "{pass_threshold}" not in prompt
+        assert "{bias_severity_note}" not in prompt
+
+    def test_build_system_prompt_default_weights_when_unset(self, agent):
+        """Fresh agent (defaults) → prompt shows default weights, no placeholders."""
+        state = {"niche": "母婴"}
+        prompt = agent._build_system_prompt(state)
+        assert "copywriting 0.25" in prompt  # default
+        assert "{weights_block}" not in prompt
+        assert "{bias_severity_note}" not in prompt  # standard note (may be empty-ish)
