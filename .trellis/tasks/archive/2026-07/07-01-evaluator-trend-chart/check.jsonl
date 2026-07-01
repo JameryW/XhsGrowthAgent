@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "验收：维度均值渲染组件遵循 props/空状态/响应式约定"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "验收：trend state 响应式正确，无 race"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "验收：dim_averages 字段前后端类型一致"}
