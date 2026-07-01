@@ -200,6 +200,4 @@ async def get_evaluator_trend(request: Request) -> ApiResponse[Any]:
         d: round(dim_totals[d] / dim_counts[d], 1) if dim_counts[d] else 0.0
         for d in WEIGHTED_DIMENSIONS
     }
-    return success(
-        data={"db_ready": True, "points": points, "dim_averages": dim_averages}
-    )
+    return success(data={"db_ready": True, "points": points, "dim_averages": dim_averages})

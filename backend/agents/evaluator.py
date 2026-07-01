@@ -92,12 +92,8 @@ class EvaluatorAgent(BaseAgent):
             f"{k} {v:.2f}" for k, v in self._weights.dimension_weights.items()
         )
         template = template.replace("{weights_block}", weights_block)
-        template = template.replace(
-            "{pass_threshold}", f"{self._weights.pass_threshold:.0f}"
-        )
-        template = template.replace(
-            "{reject_threshold}", f"{self._weights.reject_threshold:.0f}"
-        )
+        template = template.replace("{pass_threshold}", f"{self._weights.pass_threshold:.0f}")
+        template = template.replace("{reject_threshold}", f"{self._weights.reject_threshold:.0f}")
         template = template.replace(
             "{bias_severity_note}", BIAS_SEVERITY_NOTES.get(self._bias_severity, "")
         )

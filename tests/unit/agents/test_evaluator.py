@@ -324,4 +324,3 @@ class TestEvaluatorAgent:
         assert "copywriting 0.25" in prompt  # default
         assert "{weights_block}" not in prompt
         assert "{bias_severity_note}" not in prompt  # standard note (may be empty-ish)
-
