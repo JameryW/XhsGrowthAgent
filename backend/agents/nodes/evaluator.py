@@ -58,5 +58,35 @@ async def evaluator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str
             thread_id=thread_id,
             payload={"data_type": "evaluation_result", "data": evaluation},
         )
+        # ponytail: collect training sample for future grader finetuning — best-effort,
+        # non-blocking (DB may be absent in dev/test). Real engagement label back-filled
+        # later by analyst_node after publish.
+        await _collect_sample(state, thread_id, evaluation)
 
     return NodeResult(result, "evaluator").to_dict()
+
+
+async def _collect_sample(
+    state: XHSGrowthState, thread_id: str | None, evaluation: dict[str, Any]
+) -> None:
+    """Persist one evaluator-judgment sample (label_source='evaluator')."""
+    if not thread_id:
+        return
+    try:
+        from backend.db.evaluator_config import EvaluatorSample, insert_sample
+        from backend.db.pool import is_pool_ready
+
+        if not is_pool_ready():
+            return
+        await insert_sample(
+            EvaluatorSample(
+                account_id=state.get("account_id"),
+                thread_id=thread_id,
+                dimensions=evaluation.get("dimensions") or [],
+                overall_score=float(evaluation.get("overall_score") or 0.0),
+                decision=str(evaluation.get("decision") or ""),
+                label_source="evaluator",
+            )
+        )
+    except Exception as e:
+        logger.debug("evaluator sample collection failed (non-blocking): %s", e)

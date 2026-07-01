@@ -98,3 +98,51 @@ async def run_evaluation(thread_id: str, request: Request) -> ApiResponse[Any]:
             "evaluation_result": evaluation,
         }
     )
+
+
+@router.get("/weights")
+async def get_evaluator_weights(request: Request) -> ApiResponse[Any]:
+    """查看当前生效的 grader 权重（默认 + DB 覆盖解析后）.
+
+    可选 query: account_id（按账号隔离权重）。
+    """
+    from backend.db.evaluator_config import list_weights
+    from backend.db.pool import is_pool_ready
+
+    account_id = request.query_params.get("account_id")
+    if not is_pool_ready():
+        # ponytail: no DB → return defaults only
+        from backend.db.evaluator_config import DEFAULT_WEIGHTS
+
+        return success(
+            data={
+                "db_ready": False,
+                "account_id": account_id,
+                "weights": [
+                    {"weight_key": k, "value": v, "is_default": True}
+                    for k, v in DEFAULT_WEIGHTS.items()
+                ],
+            }
+        )
+    weights = await list_weights(account_id)
+    return success(
+        data={
+            "db_ready": True,
+            "account_id": account_id,
+            "weights": weights,
+        }
+    )
+
+
+@router.get("/samples")
+async def get_evaluator_samples(request: Request) -> ApiResponse[Any]:
+    """导出训练样本（jsonl 训练格式预览）."""
+    from backend.db.evaluator_config import export_samples
+    from backend.db.pool import is_pool_ready
+
+    if not is_pool_ready():
+        return success(data={"db_ready": False, "samples": []})
+    account_id = request.query_params.get("account_id")
+    limit = int(request.query_params.get("limit", "100"))
+    samples = await export_samples(account_id, limit=limit)
+    return success(data={"db_ready": True, "samples": samples, "count": len(samples)})

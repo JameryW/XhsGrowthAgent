@@ -17,6 +17,7 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
+from backend.db.evaluator_config import EvaluatorWeights, load_weights
 from backend.state.enums import ContentStatus
 from backend.state.schema import XHSGrowthState
 
@@ -47,6 +48,21 @@ class EvaluatorAgent(BaseAgent):
     agent_name = "evaluator"
     prompt_file = "evaluator.yaml"
 
+    def __init__(self) -> None:
+        super().__init__()
+        # ponytail: defaults = module constants; overridden per-account from DB at
+        # execute time. Falls back to defaults when DB unavailable (tests / no PG).
+        self._weights: EvaluatorWeights = EvaluatorWeights()
+
+    async def _resolve_weights(self, account_id: str) -> EvaluatorWeights:
+        """Load per-account weights from DB; fall back to defaults on any failure."""
+        try:
+            self._weights = await load_weights(account_id)
+        except Exception as e:
+            logger.debug("weight load failed, using defaults: %s", e)
+            self._weights = EvaluatorWeights()
+        return self._weights
+
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         copy_content = state.get("copy_content") or {}
         visual_plan = state.get("visual_plan") or {}
@@ -59,8 +75,8 @@ class EvaluatorAgent(BaseAgent):
                 "phase": state.get("phase"),
             }
 
-        # 受众偏好记忆召回（喂给 prompt 的 memory_context）
         account_id = state.get("account_id", "default")
+        await self._resolve_weights(account_id)
         memory_context = await self._recall_memory(
             store,
             account_id,
@@ -144,7 +160,7 @@ class EvaluatorAgent(BaseAgent):
 
         # 补齐缺失维度（LLM 漏返时给中性默认）
         dimensions: list[dict[str, Any]] = []
-        for name in _REQUIRED_DIMENSIONS:
+        for name in self._weights.required_dimensions:
             d = dims_by_name.get(name)
             if d is None:
                 d = {
@@ -174,7 +190,7 @@ class EvaluatorAgent(BaseAgent):
         bias_warning = ""
         if bias_dim and bias_dim["issues"]:
             bias_warning = "；".join(bias_dim["issues"])
-        elif bias_dim and bias_dim["score"] < _BIAS_PENALTY_THRESHOLD:
+        elif bias_dim and bias_dim["score"] < self._weights.bias_penalty_threshold:
             bias_warning = "检测到面板对 AI 生成内容可能过度宽容，已对综合分下调校准"
 
         return {
@@ -186,19 +202,18 @@ class EvaluatorAgent(BaseAgent):
             "summary": str(raw.get("summary", "")),
         }
 
-    @staticmethod
-    def _compute_overall(dimensions: list[dict[str, Any]]) -> float:
+    def _compute_overall(self, dimensions: list[dict[str, Any]]) -> float:
         """加权平均 + 偏倚下调."""
         by_name = {d["dimension"]: d for d in dimensions}
         total = 0.0
-        for name, weight in _DIMENSION_WEIGHTS.items():
+        for name, weight in self._weights.dimension_weights.items():
             d = by_name.get(name)
             score = d["score"] if d else 70.0
             total += score * weight
 
         bias = by_name.get("bias_check")
-        if bias and bias["score"] < _BIAS_PENALTY_THRESHOLD:
-            total -= _BIAS_PENALTY
+        if bias and bias["score"] < self._weights.bias_penalty_threshold:
+            total -= self._weights.bias_penalty
         return max(0.0, min(100.0, total))
 
     def _compute_decision(
@@ -211,9 +226,9 @@ class EvaluatorAgent(BaseAgent):
         has_blocking = any(d["is_blocking"] for d in dimensions)
         compliance = next((d for d in dimensions if d["dimension"] == "compliance"), None)
 
-        if has_blocking or (compliance and compliance["score"] < DEFAULT_REJECT_THRESHOLD):
+        if has_blocking or (compliance and compliance["score"] < self._weights.reject_threshold):
             decision = ContentStatus.REJECTED
-        elif overall >= DEFAULT_PASS_THRESHOLD:
+        elif overall >= self._weights.pass_threshold:
             decision = ContentStatus.APPROVED
         else:
             decision = ContentStatus.NEEDS_REVISION

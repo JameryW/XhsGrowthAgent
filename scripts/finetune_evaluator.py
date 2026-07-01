@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""Finetune scaffold for the RQGM evaluator judge model (LoRA/PEFT).
+
+Collects training samples from `evaluator_samples` (evaluator judgments +
+back-filled engagement weak labels + human-review strong labels), exports
+them to jsonl, and prepares a LoRA finetune config.
+
+Modes:
+  --export-only    Just export samples to jsonl (no training deps needed)
+  --dry-run        Validate config + data shape, print planned LoRA config,
+                   do NOT actually train (default; works without torch/peft)
+  --train          Actually run LoRA finetuning (requires torch + peft + GPU)
+
+Environment:
+  POSTGRES_URI      — DB connection (samples live in evaluator_samples)
+  XHS_FT_BASE_MODEL — base model to finetune (default: Qwen/Qwen2.5-7B-Instruct)
+  XHS_FT_OUT_DIR    — output dir for adapter (default: ./finetune_out)
+  XHS_FT_MIN_SAMPLES— min samples to allow training (default: 50)
+
+Usage:
+  python scripts/finetune_evaluator.py --dry-run
+  python scripts/finetune_evaluator.py --export-only --account-id acct1
+  python scripts/finetune_evaluator.py --train   # needs GPU + deps
+
+Out of scope (per epoch plan): actual training runs, eval benchmarks,
+online continuous training. This script is the scaffold + data pipeline.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+# Evaluator task routing (mirror backend/config/models.py TaskType.EVALUATION)
+DEFAULT_BASE_MODEL = os.environ.get("XHS_FT_BASE_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+DEFAULT_OUT_DIR = os.environ.get("XHS_FT_OUT_DIR", "./finetune_out")
+DEFAULT_MIN_SAMPLES = int(os.environ.get("XHS_FT_MIN_SAMPLES", "50"))
+
+# LoRA hyperparams — conservative defaults for judge-style SFT
+LORA_CONFIG = {
+    "r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05,
+    "bias": "none",
+    "task_type": "CAUSAL_LM",
+    "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
+}
+TRAIN_HYPERPARAMS = {
+    "per_device_train_batch_size": 4,
+    "gradient_accumulation_steps": 4,
+    "num_train_epochs": 3,
+    "learning_rate": 2e-4,
+    "lr_scheduler_type": "cosine",
+    "warmup_ratio": 0.03,
+    "bf16": True,
+}
+
+
+async def fetch_samples(account_id: str | None, limit: int) -> list[dict[str, Any]]:
+    """Fetch samples from DB; returns [] if DB unavailable."""
+    from backend.db.evaluator_config import export_samples
+    from backend.db.pool import is_pool_ready
+
+    if not is_pool_ready():
+        print("⚠ DB pool not ready — no samples fetched.", file=sys.stderr)
+        return []
+    return await export_samples(account_id, limit=limit)
+
+
+def sample_to_jsonl(sample: dict[str, Any]) -> dict[str, Any]:
+    """Convert one DB sample row to a chat-format training record.
+
+    Instruction = evaluator judge prompt context (dimensions to score);
+    Output = the recorded 6-dimension judgment + decision.
+    Engagement (if back-filled) is attached as a metadata field, not part of
+    the SFT target — it's a weak label for later reward/DPO stages.
+    """
+    dims = sample.get("dimensions") or []
+    dim_summary = ", ".join(
+        f"{d.get('dimension')}={d.get('score')}" for d in dims if isinstance(d, dict)
+    )
+    instruction = (
+        "你是创作质量评审员。评估以下内容的 6 维质量"
+        "（文案/视觉/合规/传播/受众/偏倚检测），给出各维度分数与决策。"
+    )
+    output = (
+        f"综合分: {sample.get('overall_score')}, 决策: {sample.get('decision')}, "
+        f"维度: {dim_summary}"
+    )
+    record: dict[str, Any] = {
+        "instruction": instruction,
+        "input": "",
+        "output": output,
+        "history": [],
+    }
+    eng = sample.get("engagement")
+    if eng:
+        record["metadata"] = {"engagement": eng, "label_source": sample.get("label_source")}
+    return record
+
+
+def export_to_jsonl(samples: list[dict[str, Any]], out_path: Path) -> int:
+    """Write samples as jsonl. Returns count written."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        for s in samples:
+            f.write(json.dumps(sample_to_jsonl(s), ensure_ascii=False) + "\n")
+    return len(samples)
+
+
+def dry_run(samples: list[dict[str, Any]], account_id: str | None) -> int:
+    """Validate data + print planned config. Exit 0 if viable, 1 if not."""
+    print("═" * 60)
+    print("RQGM Evaluator Finetune — DRY RUN")
+    print("═" * 60)
+    print(f"Account filter : {account_id or '(all)'}")
+    print(f"Samples fetched: {len(samples)}")
+    labeled = [s for s in samples if s.get("engagement")]
+    print(f"  with engagement label: {len(labeled)}")
+    print(f"  min required (XHS_FT_MIN_SAMPLES): {DEFAULT_MIN_SAMPLES}")
+
+    print("\n─ Planned LoRA config ─")
+    print(json.dumps(LORA_CONFIG, indent=2))
+    print("\n─ Training hyperparams ─")
+    print(json.dumps(TRAIN_HYPERPARAMS, indent=2))
+    print(f"\nBase model : {DEFAULT_BASE_MODEL}")
+    print(f"Output dir : {DEFAULT_OUT_DIR}")
+
+    # ponytail: check training deps without importing them at module load
+    missing = []
+    for dep in ("torch", "transformers", "peft", "trl"):
+        try:
+            __import__(dep)
+        except ImportError:
+            missing.append(dep)
+    print(f"\nTraining deps present: {not missing}")
+    if missing:
+        print(f"  missing: {', '.join(missing)} (install before --train)")
+
+    if len(samples) < DEFAULT_MIN_SAMPLES:
+        print(
+            f"\n⚠ Only {len(samples)} samples (< {DEFAULT_MIN_SAMPLES}). "
+            "Collect more before training.",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"\n✓ {len(samples)} samples viable for training (run with --train when ready).")
+    return 0
+
+
+async def run_train(samples: list[dict[str, Any]], out_dir: Path) -> int:
+    """Actual LoRA finetune. Requires torch + peft + GPU."""
+    try:
+        import torch  # type: ignore[import-not-found]  # noqa: F401
+        from peft import LoraConfig  # type: ignore[import-not-found]  # noqa: F401
+        from transformers import (  # type: ignore[import-not-found]  # noqa: F401
+            AutoModelForCausalLM,
+            AutoTokenizer,
+        )
+        from trl import SFTConfig, SFTTrainer  # type: ignore[import-not-found]  # noqa: F401
+    except ImportError as e:
+        print(
+            f"✗ Training deps missing: {e}. Install torch/transformers/peft/trl "
+            "and run on a GPU host.",
+            file=sys.stderr,
+        )
+        return 2
+
+    # Write jsonl then hand to SFTTrainer. Full training loop is the standard
+    # trl SFT flow — kept minimal; tune hyperparams above as needed.
+    data_path = out_dir / "train.jsonl"
+    n = export_to_jsonl(samples, data_path)
+    print(f"Exported {n} samples to {data_path}")
+    print(f"Loading base model {DEFAULT_BASE_MODEL} ...")
+    # NOTE: actual trainer instantiation + train() goes here. Intentionally left
+    # as scaffold — real runs need a GPU host and dataset tuning per epoch.
+    print("✗ --train is scaffold-only in this epoch. Use --dry-run to validate.")
+    return 3
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="RQGM evaluator finetune scaffold")
+    ap.add_argument("--dry-run", action="store_true", help="validate config+data, no training")
+    ap.add_argument("--export-only", action="store_true", help="just export samples to jsonl")
+    ap.add_argument("--train", action="store_true", help="actually run LoRA finetune (needs GPU)")
+    ap.add_argument("--account-id", default=None, help="filter samples by account")
+    ap.add_argument("--limit", type=int, default=10000, help="max samples to fetch")
+    ap.add_argument("--out", default=DEFAULT_OUT_DIR, help="output directory")
+    args = ap.parse_args()
+
+    out_dir = Path(args.out)
+    samples = asyncio.run(fetch_samples(args.account_id, args.limit))
+
+    if args.export_only:
+        n = export_to_jsonl(samples, out_dir / "samples.jsonl")
+        print(f"Exported {n} samples → {out_dir / 'samples.jsonl'}")
+        return 0
+
+    if args.train:
+        return asyncio.run(run_train(samples, out_dir))
+
+    # default: dry-run
+    return dry_run(samples, args.account_id)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

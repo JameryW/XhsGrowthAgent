@@ -50,6 +50,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             from backend.db.console_users import (
                 ensure_tables as ensure_console_users,
             )
+            from backend.db.evaluator_config import (
+                ensure_tables as ensure_evaluator_config,
+            )
             from backend.db.system_config import (
                 bootstrap_from_environ,
                 migrate_from_accounts,
@@ -67,6 +70,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 ensure_account_tables(),
                 ensure_console_users(),
                 ensure_system_config(),
+                ensure_evaluator_config(),
             ]
             graph_task = compile_graph_prod(db_uri)
             results = await asyncio.gather(*ensure_coros, graph_task)
