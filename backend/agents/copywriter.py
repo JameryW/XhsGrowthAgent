@@ -85,9 +85,7 @@ class CopywriterAgent(BaseAgent):
         revisions = feedback.get("revisions") or []
         if revisions:
             hints = "\n".join(f"- {h}" for h in revisions)
-            system_prompt += (
-                f"\n\n【质量评估修订要求 — 请据此重写】\n{hints}"
-            )
+            system_prompt += f"\n\n【质量评估修订要求 — 请据此重写】\n{hints}"
 
         niche = state.get("niche", "母婴")
 

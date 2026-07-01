@@ -30,14 +30,12 @@ from backend.state.enums import ContentStatus, WorkflowPhase
 
 def _panel_json(decision: str, hints: list[str] | None = None) -> str:
     dims = ",".join(
-        '{"dimension": "%s", "score": 80, "rationale": "r", "issues": [], "is_blocking": false}'
-        % n
+        '{"dimension": "%s", "score": 80, "rationale": "r", "issues": [], "is_blocking": false}' % n
         for n in ("copywriting", "visual", "compliance", "reach", "audience", "bias_check")
     )
     return (
         '{"overall_score": 80, "dimensions": [%s], "decision": "%s", '
-        '"revision_hints": %s, "bias_warning": "", "summary": "ok"}'
-        % (dims, decision, hints or [])
+        '"revision_hints": %s, "bias_warning": "", "summary": "ok"}' % (dims, decision, hints or [])
     )
 
 
@@ -105,13 +103,22 @@ class TestEvaluatorOutcomeRouting:
     """evaluator_outcome routes by evaluation_result.decision."""
 
     def test_approved_to_publisher(self):
-        assert evaluator_outcome({"evaluation_result": {"decision": ContentStatus.APPROVED}}) == "publisher"
+        assert (
+            evaluator_outcome({"evaluation_result": {"decision": ContentStatus.APPROVED}})
+            == "publisher"
+        )
 
     def test_needs_revision_to_revise(self):
-        assert evaluator_outcome({"evaluation_result": {"decision": ContentStatus.NEEDS_REVISION}}) == "revise_content"
+        assert (
+            evaluator_outcome({"evaluation_result": {"decision": ContentStatus.NEEDS_REVISION}})
+            == "revise_content"
+        )
 
     def test_rejected_to_revise(self):
-        assert evaluator_outcome({"evaluation_result": {"decision": ContentStatus.REJECTED}}) == "revise_content"
+        assert (
+            evaluator_outcome({"evaluation_result": {"decision": ContentStatus.REJECTED}})
+            == "revise_content"
+        )
 
     def test_missing_evaluation_defaults_to_publisher(self):
         assert evaluator_outcome({}) == "publisher"

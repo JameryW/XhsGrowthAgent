@@ -74,9 +74,7 @@ async def run_evaluation(thread_id: str, request: Request) -> ApiResponse[Any]:
         raise WorkflowNotFoundError(thread_id)
 
     if not values.get("copy_content") and not values.get("visual_plan"):
-        raise ValidationError(
-            "content", "No copy_content/visual_plan to evaluate for this thread"
-        )
+        raise ValidationError("content", "No copy_content/visual_plan to evaluate for this thread")
 
     # Run evaluator against current state snapshot.
     # store may be None on compiled graphs without a store attached; EvaluatorAgent
