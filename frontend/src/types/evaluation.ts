@@ -34,3 +34,19 @@ export interface EvaluationResultResponse {
   has_evaluation: boolean
   evaluation_result: EvaluationResult
 }
+
+/** 一个趋势数据点（按时序）. */
+export interface TrendPoint {
+  created_at: string
+  overall_score: number
+  decision: string
+  dim_scores: Record<string, number>
+}
+
+/** GET /evaluation/trend 响应. */
+export interface EvaluationTrendResponse {
+  db_ready: boolean
+  points: TrendPoint[]
+  dim_averages: Record<string, number>
+}
+
