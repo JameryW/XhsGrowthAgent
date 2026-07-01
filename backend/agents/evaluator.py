@@ -17,7 +17,12 @@ from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
-from backend.db.evaluator_config import EvaluatorWeights, load_weights
+from backend.db.evaluator_config import (
+    BIAS_SEVERITY_NOTES,
+    EvaluatorWeights,
+    get_active_epoch,
+    load_weights,
+)
 from backend.state.enums import ContentStatus
 from backend.state.schema import XHSGrowthState
 
@@ -53,15 +58,50 @@ class EvaluatorAgent(BaseAgent):
         # ponytail: defaults = module constants; overridden per-account from DB at
         # execute time. Falls back to defaults when DB unavailable (tests / no PG).
         self._weights: EvaluatorWeights = EvaluatorWeights()
+        self._bias_severity: str = "standard"
 
     async def _resolve_weights(self, account_id: str) -> EvaluatorWeights:
-        """Load per-account weights from DB; fall back to defaults on any failure."""
+        """Load per-account weights + active prompt epoch from DB; fall back on failure."""
         try:
             self._weights = await load_weights(account_id)
         except Exception as e:
             logger.debug("weight load failed, using defaults: %s", e)
             self._weights = EvaluatorWeights()
+        try:
+            epoch = await get_active_epoch()
+            self._bias_severity = epoch.bias_severity
+        except Exception as e:
+            logger.debug("epoch load failed, using standard: %s", e)
+            self._bias_severity = "standard"
         return self._weights
+
+    def _build_system_prompt(self, state: XHSGrowthState, extra_context: str = "") -> str:
+        """Override to inject DB weights + epoch bias_severity into the prompt.
+
+        ponytail: prompt previously hardcoded weights/thresholds; now synced from
+        DB so LLM self-reported overall aligns with code-recomputed overall. Uses
+        .replace (not .format) because the prompt body contains literal {} in the
+        JSON output example.
+        """
+        template = self.prompt_template.get("system", "")
+        niche = state.get("niche", "母婴")
+        template = template.replace("{account_niche}", niche)
+        template = template.replace("{memory_context}", extra_context)
+        # weights block: "copywriting 0.25, visual 0.20, ..."
+        weights_block = ", ".join(
+            f"{k} {v:.2f}" for k, v in self._weights.dimension_weights.items()
+        )
+        template = template.replace("{weights_block}", weights_block)
+        template = template.replace(
+            "{pass_threshold}", f"{self._weights.pass_threshold:.0f}"
+        )
+        template = template.replace(
+            "{reject_threshold}", f"{self._weights.reject_threshold:.0f}"
+        )
+        template = template.replace(
+            "{bias_severity_note}", BIAS_SEVERITY_NOTES.get(self._bias_severity, "")
+        )
+        return template
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         copy_content = state.get("copy_content") or {}
