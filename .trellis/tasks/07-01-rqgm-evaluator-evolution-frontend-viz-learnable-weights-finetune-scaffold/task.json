@@ -1,0 +1,30 @@
+{
+  "id": "rqgm-evaluator-evolution-frontend-viz-learnable-weights-finetune-scaffold",
+  "name": "rqgm-evaluator-evolution-frontend-viz-learnable-weights-finetune-scaffold",
+  "title": "RQGM evaluator evolution: frontend viz + learnable weights + finetune scaffold",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "JameryW",
+  "assignee": "JameryW",
+  "createdAt": "2026-07-01",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "feat/evaluator-agent-rqgm",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-01-evaluator-frontend-viz",
+    "07-01-evaluator-learnable-weights",
+    "07-01-evaluator-finetune-scaffold"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

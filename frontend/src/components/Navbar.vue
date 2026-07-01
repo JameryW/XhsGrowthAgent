@@ -22,6 +22,7 @@ const navItems = computed(() => [
   { path: '/dashboard', icon: 'Home', label: t('nav.dashboard'), color: 'pink' },
   { path: '/review', icon: 'CheckCircle', label: t('nav.review'), color: 'cyan' },
   { path: '/analytics', icon: 'BarChart3', label: t('nav.analytics'), color: 'purple' },
+  { path: '/evaluation', icon: 'ClipboardCheck', label: t('nav.evaluation'), color: 'rose' },
   { path: '/history', icon: 'History', label: t('nav.history'), color: 'peach' },
   { path: '/tui', icon: 'Terminal', label: t('nav.tui'), color: 'emerald' },
 ])

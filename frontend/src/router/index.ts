@@ -48,6 +48,12 @@ const router = createRouter({
       meta: { transition: 'fade-slide', requiresAuth: true },
     },
     {
+      path: '/evaluation',
+      name: 'evaluation',
+      component: () => import('@/views/EvaluationView.vue'),
+      meta: { transition: 'fade-slide', requiresAuth: true },
+    },
+    {
       path: '/history',
       name: 'history',
       component: () => import('@/views/History.vue'),
