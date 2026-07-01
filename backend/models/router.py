@@ -12,6 +12,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 from backend.config.models import ModelConfig, ModelProvider, TaskType, resolve_model_id
+from backend.models.retry import with_retry
 
 # 加载 .env 文件（确保环境变量可用）
 _project_root = Path(__file__).resolve().parent.parent.parent
@@ -118,7 +119,7 @@ class ModelRouter:
 
         if cache_key not in self._cache:
             config = get_model_config(model_id)
-            self._cache[cache_key] = _create_model(config, timeout=task_timeout)
+            self._cache[cache_key] = with_retry(_create_model(config, timeout=task_timeout))
         return self._cache[cache_key]
 
     def get_model_for_task(self, task: str) -> BaseChatModel:

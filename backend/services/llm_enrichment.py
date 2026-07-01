@@ -15,6 +15,7 @@ from typing import Any, cast
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.config.models import TaskType
+from backend.models.context_cap import cap_context
 from backend.models.router import get_model
 
 logger = logging.getLogger("xhs_growth.llm_enrichment")
@@ -112,12 +113,13 @@ class LLMEnrichmentService:
 
             # Invoke LLM
             logger.debug(f"Invoking LLM for {task_type.value} enrichment")
-            response = await model.ainvoke(
+            messages = cap_context(
                 [
                     SystemMessage(content=system_content),
                     HumanMessage(content=user_content),
                 ]
             )
+            response = await model.ainvoke(messages)
 
             # Parse response
             result = self._parse_json_response(response.content)
