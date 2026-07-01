@@ -1,7 +1,7 @@
 /**
  * xhsagent-ext — XhsGrowthAgent domain tools and commands for oh-my-pi.
  *
- * Registers 25 domain tools, 3 commands, and 2 event hooks that connect
+ * Registers 27 domain tools, 4 commands, and 2 event hooks that connect
  * omp to the XhsGrowthAgent Python API service.
  */
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
@@ -19,6 +19,8 @@ import registerReviewApprove from "./tools/review_approve.js";
 import registerReviewReject from "./tools/review_reject.js";
 import registerReviewPending from "./tools/review_pending.js";
 import registerReviewVersions from "./tools/review_versions.js";
+import registerEvaluationResult from "./tools/evaluation_result.js";
+import registerEvaluationRun from "./tools/evaluation_run.js";
 import registerRipplePending from "./tools/ripple_pending.js";
 import registerRippleDecision from "./tools/ripple_decision.js";
 import registerRippleRetry from "./tools/ripple_retry.js";
@@ -35,6 +37,7 @@ import registerSystemHealth from "./tools/system_health.js";
 import registerXhsCommand from "./commands/xhs.js";
 import registerXhsReviewCommand from "./commands/xhs_review.js";
 import registerXhsAnalyticsCommand from "./commands/xhs_analytics.js";
+import registerXhsEvaluateCommand from "./commands/xhs_evaluate.js";
 
 import registerEvents from "./events.js";
 
@@ -55,6 +58,10 @@ export default function xhsagentExt(pi: ExtensionAPI) {
   registerReviewReject(pi);
   registerReviewPending(pi);
   registerReviewVersions(pi);
+
+  // Evaluation tools (RQGM agent-as-a-judge)
+  registerEvaluationResult(pi);
+  registerEvaluationRun(pi);
 
   // Ripple tools
   registerRipplePending(pi);
@@ -82,6 +89,7 @@ export default function xhsagentExt(pi: ExtensionAPI) {
   registerXhsCommand(pi);
   registerXhsReviewCommand(pi);
   registerXhsAnalyticsCommand(pi);
+  registerXhsEvaluateCommand(pi);
 
   // Event hooks (API health check + agent context)
   registerEvents(pi);

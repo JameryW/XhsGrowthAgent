@@ -20,7 +20,7 @@ class TestHostToolSchemas:
     """Verify XHS_HOST_TOOLS list integrity."""
 
     def test_tool_count(self):
-        assert len(XHS_HOST_TOOLS) == 25
+        assert len(XHS_HOST_TOOLS) == 27
 
     def test_all_tools_have_required_fields(self):
         for tool in XHS_HOST_TOOLS:
@@ -38,10 +38,15 @@ class TestHostToolSchemas:
         assert set(names) == _XHS_TOOL_NAMES
 
     def test_all_tools_in_execute_handler(self):
-        """Every tool in XHS_HOST_TOOLS should be handled by _execute_xhs_host_tool."""
-        # The handler has an explicit elif chain; unknown tools return error.
-        # We just verify the set is consistent.
-        assert len(_XHS_TOOL_NAMES) == 25
+        """Every tool in XHS_HOST_TOOLS should be handled by _execute_xhs_host_tool.
+
+        The handler has an explicit elif chain; unknown tools return error.
+        We verify the set is consistent and that newly added tools are present.
+        """
+        assert len(_XHS_TOOL_NAMES) == len(XHS_HOST_TOOLS)
+        # Evaluation tools (RQGM agent-as-a-judge) must be in the auto-exec whitelist
+        assert "xhs_evaluation_result" in _XHS_TOOL_NAMES
+        assert "xhs_evaluation_run" in _XHS_TOOL_NAMES
 
 
 # ── Helper functions ─────────────────────────────────────────────────────
@@ -313,6 +318,60 @@ class TestAnalyticsTools:
         text = result["content"][0]["text"]
         assert "OK" in text
         assert "sqlite" in text
+
+
+@pytest.mark.asyncio
+class TestEvaluationTools:
+    """RQGM agent-as-a-judge evaluation host tools."""
+
+    async def test_evaluation_result_with_data(self):
+        data = {
+            "has_evaluation": True,
+            "evaluation_result": {
+                "overall_score": 82.0,
+                "decision": "approved",
+                "bias_warning": "",
+                "dimensions": [
+                    {"dimension": "copywriting", "score": 85, "is_blocking": False},
+                ],
+                "revision_hints": [],
+            },
+        }
+        client = _mock_client_get(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool("xhs_evaluation_result", {"thread_id": "t1"})
+        text = result["content"][0]["text"]
+        assert "82.0" in text
+        assert "approved" in text
+        assert "copywriting" in text
+
+    async def test_evaluation_result_none(self):
+        data = {"has_evaluation": False, "evaluation_result": {}}
+        client = _mock_client_get(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool("xhs_evaluation_result", {"thread_id": "t1"})
+        assert "No evaluation result" in result["content"][0]["text"]
+
+    async def test_evaluation_run(self):
+        data = {
+            "evaluation_result": {
+                "overall_score": 45.0,
+                "decision": "needs_revision",
+                "bias_warning": "对 AI 套路化表达过度宽容",
+                "dimensions": [
+                    {"dimension": "compliance", "score": 30, "is_blocking": True},
+                ],
+                "revision_hints": ["[compliance] 修正绝对化用语"],
+            },
+        }
+        client = _mock_client_post(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool("xhs_evaluation_run", {"thread_id": "t1"})
+        text = result["content"][0]["text"]
+        assert "45.0" in text
+        assert "needs_revision" in text
+        assert "过度宽容" in text
+        assert "BLOCKING" in text
 
 
 @pytest.mark.asyncio

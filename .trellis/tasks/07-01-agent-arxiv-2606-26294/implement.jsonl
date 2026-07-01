@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "新增 evaluator_gate 节点 + evaluator_outcome 路由 + interrupt_before + evaluation_result state 字段，必须遵循现有工作流/状态规范"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "EvaluatorAgent/evaluator_node/prompt 放置位置与 import 路径规范"}
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "omp 扩展新增评估工具的注册/命令/api_client 范式"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "评估失败降级安全网（不阻断发布）+ AgentError 范式"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "ruff/mypy/pytest 与测试覆盖要求"}
+{"file": ".trellis/spec/backend/ripple-integration.md", "reason": "传播潜力维度融合 Ripple 预测的复用方式"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "后端 state→API→omp→前端类型跨层一致性"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用 BaseAgent/ContentStatus/review_gate 范式，避免重复抽象"}
+{"file": ".trellis/tasks/07-01-agent-arxiv-2606-26294/prd.md", "reason": "本任务 PRD：设计决策 D1-D4、数据结构、节点流、实现计划"}

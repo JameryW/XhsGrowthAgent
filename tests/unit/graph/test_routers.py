@@ -7,6 +7,7 @@ from backend.graph.routers import (
     copywriter_router,
     draft_gate_router,
     engagement_router,
+    evaluator_outcome,
     orchestrator_router,
     review_outcome,
     ripple_gate_router,
@@ -142,25 +143,28 @@ class TestShouldPlan:
 
 
 class TestReviewOutcome:
-    """Tests for review_outcome conditional edge."""
+    """Tests for review_outcome conditional edge.
 
-    def test_routes_to_publisher_for_approved_enum(self):
-        """APPROVED enum → publisher (always, even without XHS config)."""
+    approved → evaluator_gate (RQGM agent-as-a-judge panel runs before publish).
+    """
+
+    def test_routes_to_evaluator_gate_for_approved_enum(self):
+        """APPROVED enum → evaluator_gate (AI quality gate before publisher)."""
         state = {"human_feedback": {"decision": ContentStatus.APPROVED}}
         result = review_outcome(state)
-        assert result == "publisher"
+        assert result == "evaluator_gate"
 
-    def test_routes_to_publisher_for_approved_string(self):
-        """approved string → publisher (always, even without XHS config)."""
+    def test_routes_to_evaluator_gate_for_approved_string(self):
+        """approved string → evaluator_gate."""
         state = {"human_feedback": {"decision": "approved"}}
         result = review_outcome(state)
-        assert result == "publisher"
+        assert result == "evaluator_gate"
 
-    def test_routes_to_publisher_for_approved_without_xhs(self):
-        """APPROVED → publisher even without XHS config (dry_run handled by PublisherAgent)."""
+    def test_routes_to_evaluator_gate_for_approved_without_xhs(self):
+        """APPROVED → evaluator_gate even without XHS config (dry_run handled by PublisherAgent)."""
         state = {"human_feedback": {"decision": ContentStatus.APPROVED}}
         result = review_outcome(state)
-        assert result == "publisher"
+        assert result == "evaluator_gate"
 
     def test_routes_to_revise_for_needs_revision(self):
         """NEEDS_REVISION → revise_content."""
@@ -179,6 +183,33 @@ class TestReviewOutcome:
         state = {}
         result = review_outcome(state)
         assert result == "__end__"
+
+
+class TestEvaluatorOutcome:
+    """Tests for evaluator_outcome conditional edge (RQGM agent-as-a-judge)."""
+
+    def test_approved_routes_to_publisher(self):
+        """Evaluation approved → publisher."""
+        state = {"evaluation_result": {"decision": ContentStatus.APPROVED}}
+        assert evaluator_outcome(state) == "publisher"
+
+    def test_approved_string_routes_to_publisher(self):
+        state = {"evaluation_result": {"decision": "approved"}}
+        assert evaluator_outcome(state) == "publisher"
+
+    def test_needs_revision_routes_to_revise(self):
+        state = {"evaluation_result": {"decision": ContentStatus.NEEDS_REVISION}}
+        assert evaluator_outcome(state) == "revise_content"
+
+    def test_rejected_routes_to_revise(self):
+        """REJECTED also routes to revise (not __end__) — let writer try to fix."""
+        state = {"evaluation_result": {"decision": ContentStatus.REJECTED}}
+        assert evaluator_outcome(state) == "revise_content"
+
+    def test_no_evaluation_defaults_to_publisher(self):
+        """No evaluation_result → degrade to publisher (don't block on missing eval)."""
+        state = {}
+        assert evaluator_outcome(state) == "publisher"
 
 
 class TestShouldContinue:

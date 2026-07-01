@@ -781,14 +781,18 @@ class TestCheckTerminalRouter:
         assert result == "__end__"
 
 
-# ── Test 8: review_outcome always routes to publisher ──────────────────────────
+# ── Test 8: review_outcome routes approved → evaluator_gate ────────────────────
 
 
 class TestReviewOutcomeRouter:
-    """Tests for review_outcome router function."""
+    """Tests for review_outcome router function.
 
-    def test_review_outcome_routes_to_publisher_without_xhs_config(self):
-        """review_outcome should route to publisher even without XHS credentials."""
+    approved → evaluator_gate (RQGM agent-as-a-judge runs before publish),
+    not directly to publisher.
+    """
+
+    def test_review_outcome_routes_to_evaluator_gate_without_xhs_config(self):
+        """review_outcome should route to evaluator_gate even without XHS credentials."""
         # State with approved review, no XHS config
         state = {
             "phase": WorkflowPhase.REVIEWING,
@@ -798,11 +802,11 @@ class TestReviewOutcomeRouter:
 
         result = review_outcome(state)
 
-        # Should route to publisher, not __end__
-        assert result == "publisher"
+        # Should route to evaluator_gate (AI quality gate), not __end__
+        assert result == "evaluator_gate"
 
-    def test_review_outcome_routes_to_publisher_with_dry_run(self):
-        """review_outcome should route to publisher with dry_run=True."""
+    def test_review_outcome_routes_to_evaluator_gate_with_dry_run(self):
+        """review_outcome should route to evaluator_gate with dry_run=True."""
         state = {
             "phase": WorkflowPhase.REVIEWING,
             "human_feedback": {"decision": ContentStatus.APPROVED},
@@ -811,7 +815,7 @@ class TestReviewOutcomeRouter:
 
         result = review_outcome(state)
 
-        assert result == "publisher"
+        assert result == "evaluator_gate"
 
     def test_review_outcome_routes_to_revise_on_needs_revision(self):
         """review_outcome should route to revise_content on needs_revision."""

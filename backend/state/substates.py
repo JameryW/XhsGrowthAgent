@@ -302,6 +302,32 @@ class BloggerNote(TypedDict, total=False):
 # ── 商单 Brief 模式子状态 ──
 
 
+class DimensionScore(TypedDict, total=False):
+    """单维度 judge 评分（agent-as-a-judge 面板的一维）."""
+
+    dimension: str  # copywriting | visual | compliance | reach | audience | bias_check
+    score: float  # 0-100
+    rationale: str  # 该维度评分理由
+    issues: list[str]  # 发现的具体问题
+    is_blocking: bool  # True = 硬性失败（如合规），无论总分都判不合格
+
+
+class EvaluationResult(TypedDict, total=False):
+    """创作质量评估结果 — RQGM agent-as-a-judge 面板输出.
+
+    6 维 judge 面板：文案/视觉/合规/传播潜力/受众匹配 + 对抗偏倚检测。
+    对抗偏倚检测维度（dimension="bias_check"）校准面板是否对 AI 生成内容
+    过度宽容（论文 1.91x 纠偏），其 score 反映"严苛性校准后"的调整建议。
+    """
+
+    overall_score: float  # 0-100 加权综合
+    dimensions: list[DimensionScore]
+    decision: ContentStatus  # approved / needs_revision / rejected
+    revision_hints: list[str]  # 给 copywriter 的修订指令（不合格时）
+    bias_warning: str  # 对抗偏倚检测结论（无偏倚则空串）
+    summary: str
+
+
 class BriefContent(TypedDict, total=False):
     """Parsed brief data — structured extraction from raw brief text/document."""
 
@@ -380,4 +406,7 @@ __all__ = [
     # 博主参考
     "BloggerProfile",
     "BloggerNote",
+    # 创作质量评估器 (RQGM agent-as-a-judge)
+    "DimensionScore",
+    "EvaluationResult",
 ]

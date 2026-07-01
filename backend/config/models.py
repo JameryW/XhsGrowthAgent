@@ -20,6 +20,7 @@ class TaskType(StrEnum):
     VERSION_GEN = "version_gen"
     BRIEF_ANALYSIS = "brief_analysis"
     SHOOTING_PLAN = "shooting_plan"
+    EVALUATION = "evaluation"  # 创作质量评估 (RQGM agent-as-a-judge 面板)
 
 
 class ModelProvider(StrEnum):
@@ -49,6 +50,7 @@ TASK_TIMEOUT_OVERRIDES: dict[str, int] = {
     "content_analysis": 120,
     "brief_analysis": 120,
     "shooting_plan": 120,
+    "evaluation": 120,  # 6 维 judge 面板单次调用，多维评分需较长超时
 }
 
 
@@ -111,6 +113,7 @@ def resolve_model_id(task_type: TaskType, routing_overrides: dict[str, str] | No
         TaskType.VERSION_GEN: "astron-code-latest",
         TaskType.BRIEF_ANALYSIS: "astron-code-latest",
         TaskType.SHOOTING_PLAN: "astron-code-latest",
+        TaskType.EVALUATION: "astron-code-latest",
     }
     if routing_overrides:
         for k, v in routing_overrides.items():
