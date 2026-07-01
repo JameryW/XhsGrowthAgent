@@ -4,8 +4,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 52
-- **Last Active**: 2026-06-29
+- **Total Sessions**: 53
+- **Last Active**: 2026-07-01
 <!-- @@@/auto:current-status -->
 
 ## Active Documents
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~610 | Active |
+| `journal-0.md` | ~644 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 53 | 2026-07-01 | RQGM evaluator out-of-scope epoch: frontend viz + learnable weights + finetune scaffold | `7587eff8`, `4116c0d2` | `main` |
 | 52 | 2026-06-29 | omp bridge unit tests, retry logic, MCP server config | `f6a8f40e`, `70913dbe` | `main` |
 | 51 | 2026-06-29 | Add 7 more omp tools: history, Ripple, analytics report/performance | `74e39da8` | `main` |
 | 50 | 2026-06-29 | Add 10 omp tools | `c9ade1de` | `main` |

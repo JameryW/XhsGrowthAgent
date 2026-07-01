@@ -608,3 +608,37 @@ Added 27 unit tests for omp host tools (974 total). Added retry with exponential
 ### Next Steps
 
 - None - task complete
+
+
+## Session 53: RQGM evaluator out-of-scope epoch: frontend viz + learnable weights + finetune scaffold
+
+**Date**: 2026-07-01
+**Task**: RQGM evaluator out-of-scope epoch: frontend viz + learnable weights + finetune scaffold
+**Branch**: `main`
+
+### Summary
+
+完成 RQGM 评估器三类 Out-of-scope 演进，拆两个独立 PR 合并并重新部署。PR#153 前端可视化页：/evaluation 路由 + 6 维 echarts 雷达图 + overall/decision/bias/hints 展示，复用现有 GET /evaluation/result API，纯前端零后端改动。PR#154 可学习权重 + 微调脚手架：新建 backend/db/evaluator_config.py（evaluator_config 权重表 account_id nullable=全局默认 + evaluator_samples 训练样本表），evaluator.py 从 DB 读权重 per-account 覆盖默认、DB 不可用回落模块常量=零行为变化；权重不放 system_config（那是 secret/env 导向）；新增 GET /evaluation/weights + /samples 端点；evaluator_node 评估后采样本、analyst_node 发布后回灌真实 engagement 作弱标签；scripts/finetune_evaluator.py LoRA 配置 + jsonl 导出 + --dry-run（无 torch 也能校验）。部署：deploy.sh deploy + TMPDIR=/test/xhs/.tmp-build，镜像重建 stop+rm+run，后端 10s 就绪健康检查全绿，新表已建、新端点返回默认权重。仍 Out of scope（下个 epoch）：真正在线权重训练、实际微调训练运行、grader prompt 级 Red Queen 协同演化。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7587eff8` | (see git log) |
+| `4116c0d2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
