@@ -100,7 +100,8 @@
     "appName": "Growth Engine",
     "systemInfo": "System Info",
     "settings": "Settings",
-    "tui": "TUI"
+    "tui": "TUI",
+    "evaluation": "Evaluation"
   },
   "home": {
     "title": "XHS Growth Engine",
@@ -1315,5 +1316,45 @@
     "unknownCommand": "Unknown command: {command}. Type /help for available commands.",
     "resumingWorkflow": "Resuming active workflow: {threadId}",
     "helpText": "Available commands:\n  /start [topic]  - Start a workflow (optional topic)\n  /status [id]    - Check workflow status\n  /pause [id]     - Pause workflow\n  /resume [id]    - Resume workflow\n  /cancel [id]    - Cancel workflow\n  /approve [id]   - Approve content\n  /reject <msg>   - Reject with feedback\n  /help           - Show this help\n  /clear          - Clear terminal\n\nOr type a topic directly to start a workflow."
+  },
+  "evaluation": {
+    "title": "Creation Quality Evaluation",
+    "subtitle": "RQGM agent-as-a-judge panel · 6-dimension scoring & revision hints",
+    "inputPlaceholder": "Enter workflow thread_id to view evaluation",
+    "search": "Search",
+    "searching": "Searching…",
+    "initialHint": "Enter a workflow ID to view its creation-quality evaluation",
+    "overall": "Overall",
+    "radarTitle": "6-Dimension Radar",
+    "radarSeries": "Quality Score",
+    "dimensionsTitle": "Dimension Details",
+    "hintsTitle": "Revision Hints",
+    "blocking": "BLOCKING",
+    "error": {
+      "emptyId": "Please enter a workflow thread_id",
+      "fetch": "Failed to fetch evaluation result"
+    },
+    "empty": {
+      "title": "No evaluation yet",
+      "desc": "This workflow has no evaluation result. The workflow evaluates automatically after human review approves, before publish; or trigger manually via omp's xhs_evaluation_run tool."
+    },
+    "decision": {
+      "approved": "Approved",
+      "needs_revision": "Needs Revision",
+      "rejected": "Rejected",
+      "unknown": "Unknown"
+    },
+    "dim": {
+      "copywriting": "Copywriting",
+      "visual": "Visual",
+      "compliance": "Compliance",
+      "reach": "Reach",
+      "audience": "Audience",
+      "bias_check": "Bias Check",
+      "unknown": "{dim}"
+    },
+    "bias": {
+      "title": "Adversarial Bias Check"
+    }
   }
 }

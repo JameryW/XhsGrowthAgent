@@ -100,7 +100,8 @@
     "appName": "增长引擎",
     "systemInfo": "系统信息",
     "settings": "设置",
-    "tui": "TUI"
+    "tui": "TUI",
+    "evaluation": "质量评估"
   },
   "home": {
     "title": "小红书增长引擎",
@@ -1315,5 +1316,45 @@
     "unknownCommand": "未知命令：{command}。输入 /help 查看可用命令。",
     "resumingWorkflow": "恢复活跃工作流：{threadId}",
     "helpText": "可用命令：\n  /start [话题]  - 启动工作流（可选话题）\n  /status [id]   - 查看工作流状态\n  /pause [id]    - 暂停工作流\n  /resume [id]   - 恢复工作流\n  /cancel [id]   - 取消工作流\n  /approve [id]  - 通过审核\n  /reject <意见> - 驳回并附修改意见\n  /help          - 显示帮助\n  /clear         - 清除终端\n\n或直接输入话题启动工作流。"
+  },
+  "evaluation": {
+    "title": "创作质量评估",
+    "subtitle": "RQGM agent-as-a-judge 面板 · 6 维质量评分与修订建议",
+    "inputPlaceholder": "输入工作流 thread_id 查看评估结果",
+    "search": "查询",
+    "searching": "查询中…",
+    "initialHint": "输入工作流 ID 查看其创作质量评估结果",
+    "overall": "综合分",
+    "radarTitle": "6 维评分雷达",
+    "radarSeries": "质量评分",
+    "dimensionsTitle": "维度详情",
+    "hintsTitle": "修订建议",
+    "blocking": "硬性失败",
+    "error": {
+      "emptyId": "请输入工作流 thread_id",
+      "fetch": "获取评估结果失败"
+    },
+    "empty": {
+      "title": "暂无评估结果",
+      "desc": "该工作流尚未生成评估结果。工作流会在人工审核通过后、发布前自动评估；或通过 omp 的 xhs_evaluation_run 工具手动触发。"
+    },
+    "decision": {
+      "approved": "通过",
+      "needs_revision": "需修订",
+      "rejected": "驳回",
+      "unknown": "未知"
+    },
+    "dim": {
+      "copywriting": "文案",
+      "visual": "视觉",
+      "compliance": "合规",
+      "reach": "传播潜力",
+      "audience": "受众匹配",
+      "bias_check": "偏倚检测",
+      "unknown": "{dim}"
+    },
+    "bias": {
+      "title": "对抗偏倚检测"
+    }
   }
 }
