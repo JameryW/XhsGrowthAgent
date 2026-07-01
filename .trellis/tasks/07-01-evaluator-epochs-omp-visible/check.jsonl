@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验收：端点单测 + omp 工具、空状态、错误降级"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "验收：DB 不可用/HTTP 失败降级返回空状态不崩"}
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "验收：4 omp 工具遵循注册模式"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "验收：omp TS 类型与后端响应字段一致"}

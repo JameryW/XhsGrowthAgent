@@ -134,6 +134,36 @@ async def get_evaluator_weights(request: Request) -> ApiResponse[Any]:
     )
 
 
+@router.get("/epochs")
+async def get_evaluator_epochs(request: Request) -> ApiResponse[Any]:
+    """查看 prompt epoch 演化历史 + 当前 active epoch.
+
+    返回 list_epochs（newest first）每项含 epoch_id/bias_severity/note/active/created_at。
+    DB 不可用时返回空列表 + db_ready=False。
+    """
+    from backend.db.evaluator_config import list_epochs
+    from backend.db.pool import is_pool_ready
+
+    if not is_pool_ready():
+        return success(data={"db_ready": False, "epochs": []})
+    epochs = await list_epochs()
+    return success(
+        data={
+            "db_ready": True,
+            "epochs": [
+                {
+                    "epoch_id": e.epoch_id,
+                    "bias_severity": e.bias_severity,
+                    "note": e.note,
+                    "active": e.active,
+                    "created_at": e.created_at,
+                }
+                for e in epochs
+            ],
+        }
+    )
+
+
 @router.get("/samples")
 async def get_evaluator_samples(request: Request) -> ApiResponse[Any]:
     """导出训练样本（jsonl 训练格式预览）."""
