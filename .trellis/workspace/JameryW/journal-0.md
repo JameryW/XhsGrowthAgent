@@ -714,3 +714,36 @@ Closed the RQGM co-evolution loop: evolution now fires on the feedback event (ba
 ### Next Steps
 
 - None - task complete
+
+
+## Session 56: Evaluator evolution realtime observability
+
+**Date**: 2026-07-01
+**Task**: Evaluator evolution realtime observability
+**Branch**: `main`
+
+### Summary
+
+Closed the observability gap: maybe_evolve now emits EVALUATOR_EPOCH_EVOLVED (new dedicated EventType, frontend synced) on the evolved path only — payload carries epoch from/to + new epoch_id + weight_training summary + bias_avg + account_id. skip (below-threshold/reentry) and error paths stay silent to avoid noise; _emit_evolution_event swallows emit failures so observability never corrupts a successful evolution. trellis-check: zero defects, all 6 AC met; flagged a §3.5 style nuance (local import is load-bearing for the patch-the-original-module test strategy, not circular-avoidance) — accepted as known style debt, not fixed to avoid scope creep.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `593fd9eb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
