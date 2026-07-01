@@ -27,6 +27,8 @@ export default defineConfig({
     sourcemap: false,
     emptyOutDir: true,
     chunkSizeWarningLimit: 500,
+    // ponytail: 关闭 build 报告的 gzip 体积计算——vite 在此阶段为每个 chunk 算 gzip，内存峰值在低内存机器上会 OOM (EXIT 137)。产物不受影响。
+    reportCompressedSize: false,
     rollupOptions: {
       output: {
         manualChunks: {

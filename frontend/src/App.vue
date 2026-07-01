@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed, watch } from "vue"
+import { onMounted, onUnmounted, ref, computed, watch, defineAsyncComponent } from "vue"
 import { useRoute } from "vue-router"
 import { useI18n } from "vue-i18n"
-import ConnectionStatus from "@/components/ConnectionStatus.vue"
 import Toast from "@/components/Toast.vue"
-import OfflineIndicator from "@/components/OfflineIndicator.vue"
-import OfflineRecovery from "@/components/OfflineRecovery.vue"
-import KeyboardShortcutsHelp from "@/components/KeyboardShortcutsHelp.vue"
-import Navbar from "@/components/Navbar.vue"
-import MobileTabBar from "@/components/MobileTabBar.vue"
 import ErrorBoundary from "@/components/ErrorBoundary.vue"
 import PageTransition from "@/components/PageTransition.vue"
-import OnboardingTour from "@/components/OnboardingTour.vue"
+// ponytail: 以下组件仅在 showChrome（已登录、非 showcase 页）块内渲染，首屏（Showcase/Login）不渲染。
+// 用 defineAsyncComponent 懒加载，把整条依赖链从 entry chunk 剥离成独立 chunk，首屏不下载。
+const ConnectionStatus = defineAsyncComponent(() => import("@/components/ConnectionStatus.vue"))
+const OfflineIndicator = defineAsyncComponent(() => import("@/components/OfflineIndicator.vue"))
+const OfflineRecovery = defineAsyncComponent(() => import("@/components/OfflineRecovery.vue"))
+const KeyboardShortcutsHelp = defineAsyncComponent(() => import("@/components/KeyboardShortcutsHelp.vue"))
+const Navbar = defineAsyncComponent(() => import("@/components/Navbar.vue"))
+const MobileTabBar = defineAsyncComponent(() => import("@/components/MobileTabBar.vue"))
+const OnboardingTour = defineAsyncComponent(() => import("@/components/OnboardingTour.vue"))
 import { useRealtimeStore, useOnboardingStore, useShortcutsStore, useAuthStore } from "@/stores"
 import { useOnboarding } from "@/composables/useOnboarding"
 import { useShortcuts } from "@/composables/useShortcuts"
