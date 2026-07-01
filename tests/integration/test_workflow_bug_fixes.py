@@ -116,9 +116,7 @@ def event_bus():
 # ── Test 0: Image upload must not consume review gate ──────────────────────────
 
 
-def test_upload_images_updates_previous_node_without_advancing_review_gate(
-    client, mock_graph
-):
+def test_upload_images_updates_previous_node_without_advancing_review_gate(client, mock_graph):
     """Uploading material images while paused at review_gate must keep the gate pending."""
 
     thread_id = "xhs_test_upload_review_gate"

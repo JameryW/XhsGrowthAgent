@@ -8,9 +8,12 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TypeAlias
 
-from PIL import Image, ImageDraw, ImageFont  # type: ignore[import-untyped]
+from PIL import Image, ImageDraw, ImageFont
 
 RgbColor: TypeAlias = tuple[int, int, int]
+# ponytail: PIL stubs place FreeTypeFont and ImageFont as siblings (no subtype
+# relation at runtime either); a font factory returns the union of both.
+Font: TypeAlias = ImageFont.FreeTypeFont | ImageFont.ImageFont
 
 _IMAGE_SIZE = (1080, 1440)
 _PANEL_BOX = (72, 108, 1008, 1332)
@@ -109,9 +112,7 @@ def _make_background(colors: list[RgbColor]) -> Image.Image:
     draw = ImageDraw.Draw(image)
     for y in range(height):
         ratio = y / max(height - 1, 1)
-        color = tuple(
-            int(first[index] * (1 - ratio) + second[index] * ratio) for index in range(3)
-        )
+        color = tuple(int(first[index] * (1 - ratio) + second[index] * ratio) for index in range(3))
         draw.line((0, y, width, y), fill=color)
 
     if len(colors) > 2:
@@ -122,7 +123,7 @@ def _make_background(colors: list[RgbColor]) -> Image.Image:
     return image
 
 
-def _font(size: int) -> ImageFont.ImageFont:
+def _font(size: int) -> Font:
     for candidate in _FONT_CANDIDATES:
         path = Path(candidate)
         if path.exists():
@@ -189,7 +190,7 @@ def _draw_cover_text(
 def _wrap_text(
     draw: ImageDraw.ImageDraw,
     text: str,
-    font: ImageFont.ImageFont,
+    font: Font,
     *,
     max_width: int,
     max_lines: int,

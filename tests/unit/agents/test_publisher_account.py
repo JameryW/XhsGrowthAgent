@@ -101,9 +101,7 @@ async def test_falls_back_to_global_when_no_account(_browser_settings, mock_stor
 
 
 @pytest.mark.asyncio
-async def test_generates_text_cover_when_no_images(
-    _browser_settings, mock_store, monkeypatch
-):
+async def test_generates_text_cover_when_no_images(_browser_settings, mock_store, monkeypatch):
     """No material image paths → generate a text cover and publish with it."""
     state = _state(
         content_plan={"key_points": ["p1", "p2", "p3"]},

@@ -274,8 +274,8 @@ def blogger_gate_router(
 
     blogger_notes = state.get("blogger_notes") or []
     selected_blogger = state.get("selected_blogger") or {}
-    has_selected_blogger = (
-        isinstance(selected_blogger, dict) and bool(selected_blogger.get("user_id"))
+    has_selected_blogger = isinstance(selected_blogger, dict) and bool(
+        selected_blogger.get("user_id")
     )
     if has_selected_blogger and blogger_notes:
         return "copywriter"
