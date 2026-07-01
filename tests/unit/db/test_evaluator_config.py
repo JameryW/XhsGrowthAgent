@@ -458,3 +458,140 @@ async def test_fetch_trend_returns_asc_rows():
     # ASC ordering requested
     sql = cursor.execute.await_args.args[0]
     assert "ORDER BY created_at ASC" in sql
+
+
+# ── Online co-evolution: maybe_evolve ──
+
+
+@pytest.mark.asyncio
+async def test_count_labeled_since_counts_engagement_rows():
+    """count_labeled_since issues parameterized COUNT with since_iso cutoff."""
+    from backend.db.evaluator_config import count_labeled_since
+
+    cursor = MagicMock()
+    cursor.execute = AsyncMock()
+    cursor.fetchone = AsyncMock(return_value=(7,))
+    conn = _make_mock_conn(cursor=cursor)
+    with patch("backend.db.evaluator_config.get_pool", return_value=_make_mock_pool(conn)):
+        n = await count_labeled_since("2026-07-01T00:00:00", "acct1")
+    assert n == 7
+    sql = cursor.execute.await_args.args[0]
+    assert "COUNT(*)" in sql
+    assert "engagement IS NOT NULL" in sql
+    assert "created_at > %s" in sql
+    assert "account_id = %s" in sql
+
+
+@pytest.mark.asyncio
+async def test_maybe_evolve_skips_below_threshold():
+    """Fewer than MIN_EVOLVE_SAMPLES new samples → no refit, no epoch change."""
+    from backend.db.evaluator_config import MIN_EVOLVE_SAMPLES, maybe_evolve
+
+    with (
+        patch(
+            "backend.db.evaluator_config.get_active_epoch",
+            AsyncMock(return_value=MagicMock(created_at="t0", bias_severity="standard")),
+        ),
+        patch(
+            "backend.db.evaluator_config.count_labeled_since",
+            AsyncMock(return_value=MIN_EVOLVE_SAMPLES - 1),
+        ),
+        patch("backend.db.evaluator_config.train_weights", AsyncMock()) as tw,
+        patch("backend.db.evaluator_config.create_epoch", AsyncMock()) as ce,
+    ):
+        report = await maybe_evolve("acct1")
+    assert report["action"] == "skip"
+    assert "below threshold" in report["reason"]
+    tw.assert_not_awaited()
+    ce.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_maybe_evolve_refits_and_advances_epoch_when_signal_moves():
+    """Enough new samples + bias out of band → refit weights + new epoch."""
+    from backend.db.evaluator_config import MIN_EVOLVE_SAMPLES, maybe_evolve
+
+    epoch = MagicMock(created_at="t0", bias_severity="standard")
+    train_report = MagicMock(applied=True, n_samples=15, r_squared=0.42)
+    new_epoch = MagicMock(epoch_id=99, bias_severity="strict")
+    with (
+        patch("backend.db.evaluator_config.get_active_epoch", AsyncMock(return_value=epoch)),
+        patch(
+            "backend.db.evaluator_config.count_labeled_since",
+            AsyncMock(return_value=MIN_EVOLVE_SAMPLES + 5),
+        ),
+        patch(
+            "backend.db.evaluator_config.train_weights", AsyncMock(return_value=train_report)
+        ) as tw,
+        patch("backend.db.evaluator_config.avg_bias_score", AsyncMock(return_value=80.0)),
+        patch("backend.db.evaluator_config.create_epoch", AsyncMock(return_value=new_epoch)) as ce,
+    ):
+        report = await maybe_evolve("acct1")
+    assert report["action"] == "evolved"
+    tw.assert_awaited_once_with("acct1", apply=True)
+    ce.assert_awaited_once()  # severity advanced standard→strict (80>=LENIENT_BAND)
+    assert report["epoch"] == {"from": "standard", "to": "strict", "created": 99}
+
+
+@pytest.mark.asyncio
+async def test_maybe_evolve_holds_epoch_when_signal_in_band():
+    """Enough samples but bias in standard band → refit weights only, no new epoch."""
+    from backend.db.evaluator_config import MIN_EVOLVE_SAMPLES, maybe_evolve
+
+    epoch = MagicMock(created_at="t0", bias_severity="standard")
+    train_report = MagicMock(applied=True, n_samples=15, r_squared=0.5)
+    with (
+        patch("backend.db.evaluator_config.get_active_epoch", AsyncMock(return_value=epoch)),
+        patch(
+            "backend.db.evaluator_config.count_labeled_since",
+            AsyncMock(return_value=MIN_EVOLVE_SAMPLES + 5),
+        ),
+        patch("backend.db.evaluator_config.train_weights", AsyncMock(return_value=train_report)),
+        patch("backend.db.evaluator_config.avg_bias_score", AsyncMock(return_value=60.0)),
+        patch("backend.db.evaluator_config.create_epoch", AsyncMock()) as ce,
+    ):
+        report = await maybe_evolve("acct1")
+    assert report["action"] == "evolved"
+    ce.assert_not_awaited()  # 60 is in standard band → no epoch advance
+
+
+@pytest.mark.asyncio
+async def test_maybe_evolve_reentry_guard_skips_concurrent():
+    """A second maybe_evolve for the same account while one is running is skipped."""
+    from backend.db.evaluator_config import _EVOLVING, maybe_evolve
+
+    _EVOLVING.add("acct1")
+    try:
+        with (
+            patch("backend.db.evaluator_config.get_active_epoch", AsyncMock()) as ga,
+            patch("backend.db.evaluator_config.train_weights", AsyncMock()) as tw,
+        ):
+            report = await maybe_evolve("acct1")
+        assert report["action"] == "skip"
+        assert report["reason"] == "already-evolving"
+        ga.assert_not_awaited()
+        tw.assert_not_awaited()
+    finally:
+        _EVOLVING.discard("acct1")
+
+
+@pytest.mark.asyncio
+async def test_maybe_evolve_degrades_on_failure():
+    """Any inner exception → action=error, guard released, no raise."""
+    from backend.db.evaluator_config import maybe_evolve
+
+    with (
+        patch(
+            "backend.db.evaluator_config.get_active_epoch",
+            AsyncMock(side_effect=RuntimeError("db down")),
+        ),
+        patch("backend.db.evaluator_config.train_weights", AsyncMock()) as tw,
+    ):
+        report = await maybe_evolve("acct1")
+    assert report["action"] == "error"
+    assert "db down" in report["reason"]
+    tw.assert_not_awaited()
+    # guard must be released so a later run can proceed
+    from backend.db.evaluator_config import _EVOLVING
+
+    assert "acct1" not in _EVOLVING

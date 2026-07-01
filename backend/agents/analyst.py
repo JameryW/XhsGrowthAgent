@@ -20,6 +20,21 @@ logger = logging.getLogger("xhs_growth.agents.analyst")
 _RIPPLE_REPORT_TIMEOUT = 120
 
 
+async def _safe_evolve(account_id: object) -> None:
+    """Fire-and-forget wrapper: run maybe_evolve, swallow all errors.
+
+    Scheduled via asyncio.create_task after backfill_engagement, so its
+    exceptions would otherwise escape to the event loop. maybe_evolve is
+    already non-blocking internally; this just guarantees no stray traceback.
+    """
+    try:
+        from backend.db.evaluator_config import maybe_evolve
+
+        await maybe_evolve(account_id if isinstance(account_id, str) else None)
+    except Exception as e:
+        logger.debug("evaluator auto-evolve failed (non-blocking): %s", e)
+
+
 class AnalystAgent(BaseAgent):
     task_type = TaskType.ANALYSIS
     agent_name = "analyst"
@@ -144,6 +159,15 @@ class AnalystAgent(BaseAgent):
                     }
                     if engagement:
                         await backfill_engagement(thread_id, engagement)
+                        # ── Online co-evolution (RQGM epoch boundary) ──
+                        # New feedback arrived → fire-and-forget a check whether
+                        # enough samples accrued to refit weights / advance the
+                        # prompt epoch. Never blocks the publish path.
+                        # ponytail: create_task; _safe_evolve swallows all errors
+                        # and maybe_evolve is re-entry-guarded per account.
+                        import asyncio
+
+                        asyncio.create_task(_safe_evolve(state.get("account_id")))  # noqa: RUF006
             except Exception as e:
                 logger.debug(f"样本 engagement 回灌失败 (non-blocking): {e}")
 

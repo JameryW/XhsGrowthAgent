@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验收：maybe_evolve 测试覆盖（达阈值/未达/失败降级/不阻塞）、异步约定"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "验收：演化失败降级不阻断 backfill/publish 主链路、fire-and-forget 异常被吞"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "验收：调 train_weights/avg_bias_score 遵循 DB 契约，无 ad hoc SQL"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "验收：演化决策日志符合规范"}
