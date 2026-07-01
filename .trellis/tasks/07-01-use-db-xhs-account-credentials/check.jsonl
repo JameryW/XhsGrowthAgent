@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify DB fallback behavior and async CRUD usage"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Run focused tests and lint/type-safe review"}

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "DB credential lookup must use existing async CRUD and graceful fallback"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend typing, linting, and test conventions"}
