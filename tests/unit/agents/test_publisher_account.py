@@ -101,6 +101,30 @@ async def test_falls_back_to_global_when_no_account(_browser_settings, mock_stor
 
 
 @pytest.mark.asyncio
+async def test_generates_text_cover_when_no_images(_browser_settings, mock_store, monkeypatch):
+    """No material image paths → generate a text cover and publish with it."""
+    state = _state(
+        content_plan={"key_points": ["p1", "p2", "p3"]},
+        visual_plan={"color_palette": ["#FFE4E1", "#FFDAB9", "#FFFACD"]},
+    )
+    client = _mock_client("p_cover")
+    _patch_client(monkeypatch, client)
+    _mock_history(monkeypatch)
+    cover = MagicMock(return_value="/tmp/generated-cover.png")
+    monkeypatch.setattr("backend.agents.publisher.generate_text_cover_image", cover)
+
+    await PublisherAgent().execute(state, store=mock_store)
+
+    cover.assert_called_once()
+    kwargs = cover.call_args.kwargs
+    assert kwargs["title"] == "t"
+    assert kwargs["key_points"] == ["p1", "p2", "p3"]
+    assert kwargs["color_palette"] == ["#FFE4E1", "#FFDAB9", "#FFFACD"]
+    post = client.publish_post.await_args.args[0]
+    assert post.image_paths == ["/tmp/generated-cover.png"]
+
+
+@pytest.mark.asyncio
 async def test_no_cookie_when_account_unconfigured(_browser_settings, mock_store, monkeypatch):
     """Selected account has no cookie → fail fast with no_cookie, no XHSClient built."""
     state = _state(publish_options={"dry_run": False, "account_id": "acc_empty"})

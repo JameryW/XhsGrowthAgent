@@ -258,16 +258,26 @@ def should_brief_or_optimize(
 def blogger_gate_router(
     state: XHSGrowthState,
 ) -> Literal["copywriter", "draft_gate", "__end__"]:
-    """Route after blogger_gate — brief mode goes to copywriter, trend mode to draft_gate.
+    """Route after blogger_gate.
 
     Brief mode: blogger_gate → copywriter (AI generates copy from brief + blogger notes)
-    Trend mode: blogger_gate → draft_gate (user writes draft manually)
+    Trend mode with selected blogger notes: blogger_gate → copywriter so it can
+    generate multi-style candidates from the selected blogger's notes.
+    Trend mode without a selected blogger: blogger_gate → draft_gate.
     """
     if terminal := _check_terminal(state):
         return terminal
 
     mode = state.get("workflow_mode", "trend")
     if mode == "brief":
+        return "copywriter"
+
+    blogger_notes = state.get("blogger_notes") or []
+    selected_blogger = state.get("selected_blogger") or {}
+    has_selected_blogger = isinstance(selected_blogger, dict) and bool(
+        selected_blogger.get("user_id")
+    )
+    if has_selected_blogger and blogger_notes:
         return "copywriter"
 
     return "draft_gate"
@@ -304,12 +314,19 @@ def draft_gate_router(
 
 def copywriter_router(
     state: XHSGrowthState,
-) -> Literal["draft_gate", "__end__"]:
-    """Route after copywriter — both modes go to draft_gate for review.
+) -> Literal["choice_gate", "draft_gate", "__end__"]:
+    """Route after copywriter.
+
+    If copywriter generated multi-style variants from blogger notes, pause at
+    choice_gate for style selection. Otherwise go to draft_gate for review.
     Returns __end__ for terminal states.
     """
     if terminal := _check_terminal(state):
         return terminal
+
+    versions = state.get("content_versions", [])
+    if len(versions) > 1:
+        return "choice_gate"
 
     return "draft_gate"
 

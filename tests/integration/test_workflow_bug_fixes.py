@@ -113,6 +113,38 @@ def event_bus():
     return bus
 
 
+# ── Test 0: Image upload must not consume review gate ──────────────────────────
+
+
+def test_upload_images_updates_previous_node_without_advancing_review_gate(client, mock_graph):
+    """Uploading material images while paused at review_gate must keep the gate pending."""
+
+    thread_id = "xhs_test_upload_review_gate"
+    pending_task = MagicMock()
+    pending_task.name = "review_gate"
+    mock_graph.aget_state.return_value = make_snapshot(
+        {
+            "session_id": thread_id,
+            "current_agent": "visual_designer",
+            "_last_node": "visual_designer",
+            "visual_plan": {},
+        },
+        next=["review_gate"],
+        tasks=[pending_task],
+    )
+
+    response = client.post(
+        f"/api/workflow/images/upload/{thread_id}",
+        files=[("files", ("cover.png", b"not-a-real-image", "image/png"))],
+    )
+
+    assert response.status_code == 200, response.text
+    update_kwargs = mock_graph.aupdate_state.await_args.kwargs
+    assert update_kwargs["as_node"] == "visual_designer"
+    assert update_kwargs["as_node"] != "review_gate"
+    assert update_kwargs["values"]["visual_plan"]["image_paths"]
+
+
 # ── Test 1: Pause stays paused (not cancelled) ─────────────────────────────────
 
 

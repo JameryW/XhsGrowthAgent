@@ -167,11 +167,13 @@ def build_graph() -> StateGraph[XHSGrowthState]:
     )
 
     # ── 发布前优化流程 ──
-    # copywriter → [draft_gate | __end__] (terminal states → __end__)
+    # copywriter → [choice_gate | draft_gate | __end__]
+    # Multi-style blogger variants pause at choice_gate for style selection.
     builder.add_conditional_edges(
         "copywriter",
         copywriter_router,
         {
+            "choice_gate": "choice_gate",
             "draft_gate": "draft_gate",
             "__end__": "__end__",
         },
@@ -195,8 +197,8 @@ def build_graph() -> StateGraph[XHSGrowthState]:
     builder.add_edge("blogger_scout", "blogger_gate")
 
     # blogger_gate → [copywriter | draft_gate | __end__]
-    # Brief mode: copywriter (AI generates copy from brief + blogger notes)
-    # Trend mode: draft_gate (user writes draft manually)
+    # Brief mode and trend mode with selected blogger notes: copywriter.
+    # Trend mode without selected blogger notes: draft_gate.
     # Terminal: __end__
     builder.add_conditional_edges(
         "blogger_gate",

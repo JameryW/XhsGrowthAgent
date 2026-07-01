@@ -78,6 +78,7 @@ class TestPublishNote:
         page = AsyncMock()
         publisher._ensure_page = AsyncMock(return_value=page)  # type: ignore[method-assign]
         publisher._check_login = AsyncMock(return_value=True)  # type: ignore[method-assign]
+        publisher._wait_for_publish_ready = AsyncMock(return_value=True)  # type: ignore[method-assign]
         publisher._upload_images = AsyncMock()  # type: ignore[method-assign]
         publisher._fill_content = AsyncMock()  # type: ignore[method-assign]
         publisher._add_hashtags = AsyncMock()  # type: ignore[method-assign]
@@ -96,6 +97,26 @@ class TestPublishNote:
         assert result["status"] == "published"
         assert result["post_id"] == "abc"
         publisher._add_hashtags.assert_awaited_once()
+        page.goto.assert_not_called()
+
+
+class TestPublishPageNavigation:
+    """Publish page navigation should not block on never-idle creator traffic."""
+
+    async def test_check_login_uses_domcontentloaded(self, publisher: XHSPublisher):
+        page = AsyncMock()
+        page.url = publisher.CREATOR_URL
+        publisher._ensure_page = AsyncMock(return_value=page)  # type: ignore[method-assign]
+        publisher._wait_for_publish_ready = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+        result = await publisher._check_login()
+
+        assert result is True
+        page.goto.assert_awaited_once_with(
+            publisher.CREATOR_URL,
+            wait_until="domcontentloaded",
+            timeout=45000,
+        )
 
 
 class TestPublishRetrySafety:
