@@ -26,9 +26,7 @@ async def test_resolve_prefers_db_active_account(monkeypatch: pytest.MonkeyPatch
     active = MagicMock()
     active.id = "acc-1"
     monkeypatch.setattr("backend.db.pool.is_pool_ready", lambda: True)
-    monkeypatch.setattr(
-        "backend.db.accounts.get_active_account", AsyncMock(return_value=active)
-    )
+    monkeypatch.setattr("backend.db.accounts.get_active_account", AsyncMock(return_value=active))
     monkeypatch.setattr(
         "backend.db.accounts.get_account_cookie",
         AsyncMock(return_value=("DB_COOKIE", "DB_UID")),
@@ -48,12 +46,8 @@ async def test_resolve_falls_back_to_env_when_no_active_account(
     """No active DB account → env-backed credentials."""
     _env("ENV_COOKIE", "ENV_UID")
     monkeypatch.setattr("backend.db.pool.is_pool_ready", lambda: True)
-    monkeypatch.setattr(
-        "backend.db.accounts.get_active_account", AsyncMock(return_value=None)
-    )
-    monkeypatch.setattr(
-        "backend.db.accounts.get_account_cookie", AsyncMock(return_value=("", ""))
-    )
+    monkeypatch.setattr("backend.db.accounts.get_active_account", AsyncMock(return_value=None))
+    monkeypatch.setattr("backend.db.accounts.get_account_cookie", AsyncMock(return_value=("", "")))
 
     from backend.api.routes.system import _resolve_xhs_credentials
 
@@ -86,9 +80,7 @@ async def test_check_xhs_ok_when_db_account_has_cookie(
     active = MagicMock()
     active.id = "acc-1"
     monkeypatch.setattr("backend.db.pool.is_pool_ready", lambda: True)
-    monkeypatch.setattr(
-        "backend.db.accounts.get_active_account", AsyncMock(return_value=active)
-    )
+    monkeypatch.setattr("backend.db.accounts.get_active_account", AsyncMock(return_value=active))
     monkeypatch.setattr(
         "backend.db.accounts.get_account_cookie",
         AsyncMock(return_value=("DB_COOKIE", "DB_UID")),
@@ -110,9 +102,7 @@ async def test_check_xhs_warning_when_no_credentials_anywhere(
     """No DB account and no env credentials → warning."""
     _env()
     monkeypatch.setattr("backend.db.pool.is_pool_ready", lambda: True)
-    monkeypatch.setattr(
-        "backend.db.accounts.get_active_account", AsyncMock(return_value=None)
-    )
+    monkeypatch.setattr("backend.db.accounts.get_active_account", AsyncMock(return_value=None))
 
     from backend.api.routes.system import _check_xhs
 

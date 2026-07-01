@@ -54,9 +54,7 @@ async def _check_xhs() -> dict[str, Any]:
     configured = bool(cookie and user_id)
     use_browser = os.environ.get("XHS_USE_BROWSER", "").lower() == "true"
     message = (
-        "小红书凭证已配置"
-        if configured
-        else "缺少账号凭证（DB 账号或 XHS_COOKIE/XHS_USER_ID）"
+        "小红书凭证已配置" if configured else "缺少账号凭证（DB 账号或 XHS_COOKIE/XHS_USER_ID）"
     )
     return {
         "status": "ok" if configured else "warning",
