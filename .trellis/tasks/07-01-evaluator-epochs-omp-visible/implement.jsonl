@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "新端点 + omp 工具需符合质量基线：测试覆盖、空状态、错误处理"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "端点 DB 不可用/omp 工具 HTTP 失败需降级返回空状态"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "/epochs 端点调 list_epochs，需遵循 DB 契约（pool 就绪判定、参数化）"}
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "4 个 omp 工具需遵循 omp 工具注册模式（register/pi.zod/textResult）"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "omp TS 类型需与后端 PromptEpoch/weights/samples/trend 响应字段一致"}

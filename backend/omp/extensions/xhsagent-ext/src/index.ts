@@ -21,6 +21,10 @@ import registerReviewPending from "./tools/review_pending.js";
 import registerReviewVersions from "./tools/review_versions.js";
 import registerEvaluationResult from "./tools/evaluation_result.js";
 import registerEvaluationRun from "./tools/evaluation_run.js";
+import registerEvaluationEpochs from "./tools/evaluation_epochs.js";
+import registerEvaluationWeights from "./tools/evaluation_weights.js";
+import registerEvaluationSamples from "./tools/evaluation_samples.js";
+import registerEvaluationTrend from "./tools/evaluation_trend.js";
 import registerRipplePending from "./tools/ripple_pending.js";
 import registerRippleDecision from "./tools/ripple_decision.js";
 import registerRippleRetry from "./tools/ripple_retry.js";
@@ -62,6 +66,10 @@ export default function xhsagentExt(pi: ExtensionAPI) {
   // Evaluation tools (RQGM agent-as-a-judge)
   registerEvaluationResult(pi);
   registerEvaluationRun(pi);
+  registerEvaluationEpochs(pi);
+  registerEvaluationWeights(pi);
+  registerEvaluationSamples(pi);
+  registerEvaluationTrend(pi);
 
   // Ripple tools
   registerRipplePending(pi);

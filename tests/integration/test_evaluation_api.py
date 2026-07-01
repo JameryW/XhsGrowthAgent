@@ -103,3 +103,54 @@ class TestRunEvaluationRoute:
         mock_graph.aget_state.return_value = empty
         r = client.post("/api/evaluation/run/t1")
         assert r.status_code == 404
+
+
+class TestEvaluationEpochsRoute:
+    """GET /evaluation/epochs — prompt epoch evolution history."""
+
+    def test_epochs_db_not_ready_returns_empty(self, client):
+        # The route does `from backend.db.pool import is_pool_ready` inside the
+        # function, so patch the source module.
+        with patch("backend.db.pool.is_pool_ready", return_value=False):
+            r = client.get("/api/evaluation/epochs")
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert data["db_ready"] is False
+        assert data["epochs"] == []
+
+    def test_epochs_returns_history_with_active_marked(self, client):
+        from backend.db.evaluator_config import PromptEpoch
+
+        epochs = [
+            PromptEpoch(
+                2, "strict", "auto-evolve from lenient panel", True, "2026-07-01T10:00:00Z"
+            ),
+            PromptEpoch(1, "standard", "epoch-1 default", False, "2026-07-01T09:00:00Z"),
+        ]
+        with (
+            patch("backend.db.pool.is_pool_ready", return_value=True),
+            patch(
+                "backend.db.evaluator_config.list_epochs",
+                AsyncMock(return_value=epochs),
+            ),
+        ):
+            r = client.get("/api/evaluation/epochs")
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert data["db_ready"] is True
+        assert len(data["epochs"]) == 2
+        assert data["epochs"][0]["epoch_id"] == 2
+        assert data["epochs"][0]["active"] is True
+        assert data["epochs"][0]["bias_severity"] == "strict"
+        assert data["epochs"][1]["active"] is False
+
+    def test_epochs_empty_when_no_history(self, client):
+        with (
+            patch("backend.db.pool.is_pool_ready", return_value=True),
+            patch("backend.db.evaluator_config.list_epochs", AsyncMock(return_value=[])),
+        ):
+            r = client.get("/api/evaluation/epochs")
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert data["db_ready"] is True
+        assert data["epochs"] == []
