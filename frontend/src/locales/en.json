@@ -1355,6 +1355,12 @@
     },
     "bias": {
       "title": "Adversarial Bias Check"
+    },
+    "trend": {
+      "title": "Evaluation Trend",
+      "loading": "Loading trend…",
+      "empty": "No historical evaluation data yet",
+      "dimAverages": "Dimension averages:"
     }
   }
 }

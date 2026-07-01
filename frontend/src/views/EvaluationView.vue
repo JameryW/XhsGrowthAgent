@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import EvaluationRadar from '@/components/charts/EvaluationRadar.vue'
-import { getEvaluationResult } from '@/api/evaluation'
-import type { EvaluationResultResponse } from '@/types/evaluation'
+import TrendChart from '@/components/charts/TrendChart.vue'
+import { getEvaluationResult, getEvaluationTrend } from '@/api/evaluation'
+import type { EvaluationResultResponse, EvaluationTrendResponse } from '@/types/evaluation'
 
 const { t } = useI18n()
 
@@ -13,6 +14,32 @@ const inputId = ref('')
 const loading = ref(false)
 const error = ref<string | null>(null)
 const result = ref<EvaluationResultResponse | null>(null)
+
+// ── Trend state ──
+const trend = ref<EvaluationTrendResponse | null>(null)
+const trendLoading = ref(false)
+
+const trendData = computed(() =>
+  (trend.value?.points || []).map((p) => ({
+    date: (p.created_at || '').slice(5, 16).replace('T', ' '),
+    value: p.overall_score,
+  })),
+)
+
+const hasTrend = computed(() => !!trend.value && trend.value.points.length > 0)
+
+async function loadTrend() {
+  trendLoading.value = true
+  try {
+    trend.value = await getEvaluationTrend(undefined, 100)
+  } catch {
+    trend.value = { db_ready: false, points: [], dim_averages: {} }
+  } finally {
+    trendLoading.value = false
+  }
+}
+
+onMounted(loadTrend)
 
 async function search() {
   const id = inputId.value.trim()
@@ -98,6 +125,27 @@ function dimLabel(dim: string): string {
       <AppIcon name="AlertCircle" />
       <span>{{ error }}</span>
     </div>
+
+    <!-- 评估历史趋势 -->
+    <section class="trend-card">
+      <h3 class="card-title">{{ t('evaluation.trend.title') }}</h3>
+      <div v-if="trendLoading" class="trend-loading">{{ t('evaluation.trend.loading') }}</div>
+      <template v-else-if="hasTrend">
+        <TrendChart :data="trendData" :height="260" />
+        <div v-if="trend?.dim_averages && Object.keys(trend.dim_averages).length" class="dim-averages">
+          <span class="dim-avg-label">{{ t('evaluation.trend.dimAverages') }}</span>
+          <span
+            v-for="(v, k) in trend.dim_averages"
+            :key="k"
+            class="dim-avg-chip"
+            :class="v >= 70 ? 'score-pass' : v >= 50 ? 'score-warn' : 'score-fail'"
+          >
+            {{ k }}: {{ v.toFixed(1) }}
+          </span>
+        </div>
+      </template>
+      <div v-else class="trend-empty">{{ t('evaluation.trend.empty') }}</div>
+    </section>
 
     <!-- 空状态：无评估结果 -->
     <div v-if="hasResult === false && result" class="empty-state">
@@ -250,4 +298,13 @@ function dimLabel(dim: string): string {
 
 .radar-card { grid-column: 1 / -1; }
 @media (min-width: 768px) { .radar-card { grid-column: auto; } }
+
+.trend-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 1rem; }
+.trend-loading, .trend-empty { font-size: 0.8125rem; color: #94a3b8; padding: 1.5rem 0; text-align: center; }
+.dim-averages { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
+.dim-avg-label { font-size: 0.75rem; color: #64748b; }
+.dim-avg-chip { font-size: 0.7rem; padding: 0.2rem 0.55rem; border-radius: 999px; font-weight: 600; background: #f1f5f9; color: #334155; }
+.dim-avg-chip.score-pass { background: #dcfce7; color: #15803d; }
+.dim-avg-chip.score-warn { background: #fef3c7; color: #b45309; }
+.dim-avg-chip.score-fail { background: #fee2e2; color: #b91c1c; }
 </style>
