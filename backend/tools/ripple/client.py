@@ -109,9 +109,9 @@ async def ripple_predict_content_spread(
     import os
 
     if max_waves <= 0:
-        max_waves = int(os.environ.get("RIPPLE_MAX_WAVES", "4"))
+        max_waves = int(os.environ.get("RIPPLE_MAX_WAVES", "3"))
     if not simulation_horizon:
-        simulation_horizon = os.environ.get("RIPPLE_SIMULATION_HORIZON", "48h")
+        simulation_horizon = os.environ.get("RIPPLE_SIMULATION_HORIZON", "12h")
     if ensemble_runs <= 0:
         ensemble_runs = int(os.environ.get("RIPPLE_ENSEMBLE_RUNS", "1"))
     if tags is None:
@@ -155,7 +155,9 @@ async def ripple_validate_pmf(
     channel: str = "content-seeding",
     vertical: str = "fmcg",
     platform: str = "xiaohongshu",
-    simulation_horizon: str = "72h",
+    max_waves: int = 0,
+    simulation_horizon: str = "",
+    ensemble_runs: int = 0,
 ) -> dict[str, Any]:
     """验证产品在小红书渠道的市场契合度(PMF) — 使用 Ripple CAS 引擎模拟目标消费者群体的真实反应。
 
@@ -163,6 +165,14 @@ async def ripple_validate_pmf(
     """
     if differentiators is None:
         differentiators = []
+    import os
+
+    if max_waves <= 0:
+        max_waves = int(os.environ.get("RIPPLE_MAX_WAVES", "3"))
+    if not simulation_horizon:
+        simulation_horizon = os.environ.get("RIPPLE_SIMULATION_HORIZON", "12h")
+    if ensemble_runs <= 0:
+        ensemble_runs = int(os.environ.get("RIPPLE_ENSEMBLE_RUNS", "1"))
     cfg = _get_config()
     event = {
         "name": product_name,
@@ -177,7 +187,9 @@ async def ripple_validate_pmf(
         "vertical": vertical,
         "platform": platform,
         "event": event,
+        "max_waves": max_waves,
         "simulation_horizon": simulation_horizon,
+        "ensemble_runs": ensemble_runs,
     }
     llm = _llm_config()
     if llm:

@@ -29,6 +29,8 @@ class RippleTimeoutError(TimeoutError):
 # ponytail: 残留进度过期阈值——max_wait(1800s) 的 94%。超过仍 running 视为
 # 超时未收尾的历史残留，get_thread_progress 据此清理（兜底主修法之外的旧数据）
 _STALE_PROGRESS_SECS = 1700.0
+_DEFAULT_MAX_WAVES = 3
+_DEFAULT_SIMULATION_HORIZON = "12h"
 
 
 class RecoveryStatus(BaseModel):
@@ -438,10 +440,18 @@ class RippleService:
                                 progress_state["progress"] = float(p)
                             w = inner.get("wave")
                             if w is not None:
-                                progress_state["current_wave"] = int(w)
+                                current_wave = int(w)
+                                wave_limit = int(progress_state.get("total_waves_limit") or 0)
+                                if wave_limit > 0:
+                                    current_wave = min(current_wave, wave_limit)
+                                progress_state["current_wave"] = current_wave
                             tw = inner.get("total_waves")
                             if tw is not None:
-                                progress_state["total_waves"] = int(tw)
+                                total_waves = int(tw)
+                                wave_limit = int(progress_state.get("total_waves_limit") or 0)
+                                if wave_limit > 0:
+                                    total_waves = min(total_waves, wave_limit)
+                                progress_state["total_waves"] = total_waves
                             progress_state["phase"] = inner.get("phase", "")
                             # R8: Quality fields in SSE events
                             detail = inner.get("detail") or {}
@@ -587,9 +597,12 @@ class RippleService:
         import os
 
         if max_waves <= 0:
-            max_waves = int(os.environ.get("RIPPLE_MAX_WAVES", "4"))
+            max_waves = int(os.environ.get("RIPPLE_MAX_WAVES", str(_DEFAULT_MAX_WAVES)))
         if not simulation_horizon:
-            simulation_horizon = os.environ.get("RIPPLE_SIMULATION_HORIZON", "48h")
+            simulation_horizon = os.environ.get(
+                "RIPPLE_SIMULATION_HORIZON",
+                _DEFAULT_SIMULATION_HORIZON,
+            )
         if ensemble_runs <= 0:
             ensemble_runs = int(os.environ.get("RIPPLE_ENSEMBLE_RUNS", "1"))
         if tags is None:
@@ -650,6 +663,8 @@ class RippleService:
         category: str,
         description: str,
         differentiators: list[str] | None = None,
+        max_waves: int = 0,
+        simulation_horizon: str = "",
         ensemble_runs: int = 0,
         use_fallback: bool = True,
         max_wait: float = 1800.0,
@@ -666,6 +681,13 @@ class RippleService:
 
         if ensemble_runs <= 0:
             ensemble_runs = int(os.environ.get("RIPPLE_ENSEMBLE_RUNS", "1"))
+        if max_waves <= 0:
+            max_waves = int(os.environ.get("RIPPLE_MAX_WAVES", str(_DEFAULT_MAX_WAVES)))
+        if not simulation_horizon:
+            simulation_horizon = os.environ.get(
+                "RIPPLE_SIMULATION_HORIZON",
+                _DEFAULT_SIMULATION_HORIZON,
+            )
         if differentiators is None:
             differentiators = []
         config = self._get_config()
@@ -696,6 +718,8 @@ class RippleService:
                 "vertical": "fmcg",
                 "platform": "xiaohongshu",
                 "event": event,
+                "max_waves": max_waves,
+                "simulation_horizon": simulation_horizon,
                 "ensemble_runs": ensemble_runs,
             }
 
@@ -741,6 +765,7 @@ class RippleService:
         poll_interval: float = 3.0,
         max_wait: float = 1800.0,
         thread_id: str | None = None,
+        total_waves_limit: int | None = None,
     ) -> dict[str, Any]:
         """Wait for simulation completion with SSE-driven progress.
 
@@ -773,6 +798,7 @@ class RippleService:
             "progress": 0.0,
             "current_wave": 0,
             "total_waves": 0,
+            "total_waves_limit": total_waves_limit or 0,
             "phase": "",
             "last_update_at": None,
         }
@@ -912,7 +938,15 @@ class RippleService:
         if not job_id:
             return submit_result
 
-        await self.wait_for_completion(job_id, poll_interval, max_wait, thread_id=thread_id)
+        max_waves = request_body.get("max_waves")
+        total_waves_limit = max_waves if isinstance(max_waves, int) and max_waves > 0 else None
+        await self.wait_for_completion(
+            job_id,
+            poll_interval,
+            max_wait,
+            thread_id=thread_id,
+            total_waves_limit=total_waves_limit,
+        )
         result = await self.get_result(job_id)
         # 确保 job_id 在结果中
         result.setdefault("job_id", job_id)

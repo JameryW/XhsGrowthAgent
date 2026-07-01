@@ -156,7 +156,8 @@ def test_ripple_settings_default(monkeypatch):
     s = RippleSettings(_env_file=None)
     assert s.base_url == "http://127.0.0.1:8080"
     assert s.enabled is False
-    assert s.default_max_waves == 8
+    assert s.default_max_waves == 3
+    assert s.default_simulation_horizon == "12h"
     assert s.request_timeout == 300
     assert s.workflow_timeout == 1800
 

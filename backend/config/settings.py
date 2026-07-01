@@ -71,8 +71,8 @@ class RippleSettings(BaseSettings):
 
     base_url: str = "http://127.0.0.1:8080"
     api_token: str = ""
-    default_max_waves: int = 8
-    default_simulation_horizon: str = "48h"
+    default_max_waves: int = 3
+    default_simulation_horizon: str = "12h"
     default_ensemble_runs: int = 1
     request_timeout: int = 300
     workflow_timeout: int = 1800
