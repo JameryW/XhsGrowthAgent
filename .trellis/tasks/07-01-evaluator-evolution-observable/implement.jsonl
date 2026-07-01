@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "新增 EventType + maybe_evolve emit 改动需符合后端质量基线：测试覆盖、非阻塞、异步约定"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "emit 失败必须降级不阻断演化/发布主链路，需与既有非阻塞错误处理一致"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "EventType 前后端同步（backend StrEnum + frontend events.ts），需保证字段一致无漂移"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "演化 emit 决策日志需遵循日志规范"}

@@ -595,3 +595,86 @@ async def test_maybe_evolve_degrades_on_failure():
     from backend.db.evaluator_config import _EVOLVING
 
     assert "acct1" not in _EVOLVING
+
+
+# ── Online co-evolution: event emission ──
+
+
+@pytest.mark.asyncio
+async def test_maybe_evolve_emits_event_on_evolve():
+    """A successful evolve emits EVALUATOR_EPOCH_EVOLVED with epoch/weight info."""
+    from backend.db.evaluator_config import MIN_EVOLVE_SAMPLES, maybe_evolve
+
+    epoch = MagicMock(created_at="t0", bias_severity="standard")
+    train_report = MagicMock(applied=True, n_samples=15, r_squared=0.42)
+    new_epoch = MagicMock(epoch_id=99, bias_severity="strict")
+    with (
+        patch("backend.db.evaluator_config.get_active_epoch", AsyncMock(return_value=epoch)),
+        patch(
+            "backend.db.evaluator_config.count_labeled_since",
+            AsyncMock(return_value=MIN_EVOLVE_SAMPLES + 5),
+        ),
+        patch("backend.db.evaluator_config.train_weights", AsyncMock(return_value=train_report)),
+        patch("backend.db.evaluator_config.avg_bias_score", AsyncMock(return_value=80.0)),
+        patch("backend.db.evaluator_config.create_epoch", AsyncMock(return_value=new_epoch)),
+        patch("backend.realtime.EventBusService") as bus_cls,
+    ):
+        await maybe_evolve("acct1")
+    bus_cls.get_instance.return_value.emit.assert_called_once()
+    args, kwargs = bus_cls.get_instance.return_value.emit.call_args
+    assert args[0].value == "evaluator.epoch_evolved"
+    payload = args[2] if len(args) > 2 else kwargs["payload"]
+    assert payload["action"] == "evolved"
+    assert payload["epoch"] == {"from": "standard", "to": "strict", "created": 99}
+    assert payload["weight_training"]["r_squared"] == 0.42
+    assert payload["account_id"] == "acct1"
+
+
+@pytest.mark.asyncio
+async def test_maybe_evolve_no_emit_on_skip_below_threshold():
+    """Below-threshold skip does NOT emit (avoid noise)."""
+    from backend.db.evaluator_config import MIN_EVOLVE_SAMPLES, maybe_evolve
+
+    with (
+        patch(
+            "backend.db.evaluator_config.get_active_epoch",
+            AsyncMock(return_value=MagicMock(created_at="t0", bias_severity="standard")),
+        ),
+        patch(
+            "backend.db.evaluator_config.count_labeled_since",
+            AsyncMock(return_value=MIN_EVOLVE_SAMPLES - 1),
+        ),
+        patch("backend.realtime.EventBusService") as bus_cls,
+    ):
+        await maybe_evolve("acct1")
+    bus_cls.get_instance.return_value.emit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_maybe_evolve_no_emit_on_reentry_skip():
+    """Already-evolving skip does NOT emit."""
+    from backend.db.evaluator_config import _EVOLVING, maybe_evolve
+
+    _EVOLVING.add("acct1")
+    try:
+        with patch("backend.realtime.EventBusService") as bus_cls:
+            await maybe_evolve("acct1")
+        bus_cls.get_instance.return_value.emit.assert_not_called()
+    finally:
+        _EVOLVING.discard("acct1")
+
+
+@pytest.mark.asyncio
+async def test_maybe_evolve_no_emit_on_error():
+    """Failure path does NOT emit (only logs)."""
+    from backend.db.evaluator_config import maybe_evolve
+
+    with (
+        patch(
+            "backend.db.evaluator_config.get_active_epoch",
+            AsyncMock(side_effect=RuntimeError("db down")),
+        ),
+        patch("backend.realtime.EventBusService") as bus_cls,
+    ):
+        await maybe_evolve("acct1")
+    bus_cls.get_instance.return_value.emit.assert_not_called()
