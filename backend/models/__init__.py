@@ -2,11 +2,15 @@
 
 Components:
 - router: 多模型路由器
+- retry: ainvoke/invoke exponential-backoff wrapper
+- context_cap: prompt token estimation + history trimming
 - cost_tracker: Token 使用统计
 - visual_types: 视觉分析数据结构
 """
 
+from backend.models.context_cap import cap_context, estimate_tokens
 from backend.models.cost_tracker import CostTracker, TokenUsage
+from backend.models.retry import with_retry
 from backend.models.router import ModelRouter, get_model, get_router
 from backend.models.visual_types import (
     ColorPalette,
@@ -19,6 +23,9 @@ __all__ = [
     "get_model",
     "get_router",
     "ModelRouter",
+    "with_retry",
+    "estimate_tokens",
+    "cap_context",
     "CostTracker",
     "TokenUsage",
     "ColorPalette",
