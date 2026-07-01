@@ -642,3 +642,41 @@ Added 27 unit tests for omp host tools (974 total). Added retry with exponential
 ### Next Steps
 
 - None - task complete
+
+
+## Session 54: Evaluator finetune self-contained data + bias_check fix + health DB probe
+
+**Date**: 2026-07-01
+**Task**: Evaluator finetune self-contained data + bias_check fix + health DB probe
+**Branch**: `main`
+
+### Summary
+
+Three evaluator/XHS PRs merged: #158 health xhs_platform probe resolves from DB account table (env fallback); #159 split bias_check into score + bias_severity fixing an inverted epoch-evolution positive-feedback bug; #160 made finetune SFT data self-contained (content_snapshot column + full judgment output incl bias_severity). trellis-check on #160 caught a real defect: _render_judgment_output read bias_warning as a DB column when it's a derived field — reconstructed from bias_check dim. Lesson reinforced: derived state fields are not DB columns; squash merge keeps eating trellis archive chore commits (re-archive on finish-work).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `747e7b0a` | (see git log) |
+| `e8894b00` | (see git log) |
+| `a19451b4` | (see git log) |
+| `c0658688` | (see git log) |
+| `b711787e` | (see git log) |
+| `1d8d1b15` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
