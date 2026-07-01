@@ -75,6 +75,21 @@ _get_as_node = _runner._get_as_node
 _task_has_error = _runner._task_has_error
 
 
+def _get_state_update_node_without_advancing(state: Any) -> str | None:
+    """Pick an as_node that updates state without consuming the pending gate."""
+
+    values = state.values if isinstance(state.values, dict) else {}
+    next_nodes = set(getattr(state, "next", []) or [])
+    for key in ("current_agent", "_last_node"):
+        node = values.get(key)
+        if isinstance(node, str) and node and node not in next_nodes:
+            return node
+    fallback = _get_as_node(state)
+    if fallback in next_nodes:
+        return "orchestrator"
+    return fallback
+
+
 def _on_task_done(thread_id: str) -> Callable[[asyncio.Task[None]], None]:
     """Background task done callback — update DB with task_done_at / stale status."""
 
@@ -1829,7 +1844,7 @@ async def upload_images(thread_id: str, request: Request) -> ApiResponse[Any]:
     existing.update(saved_paths)
     visual_plan["image_paths"] = list(existing)
 
-    as_node = _get_as_node(state)
+    as_node = _get_state_update_node_without_advancing(state)
     update_kwargs: dict[str, Any] = {"values": {"visual_plan": visual_plan}}
     if as_node:
         update_kwargs["as_node"] = as_node

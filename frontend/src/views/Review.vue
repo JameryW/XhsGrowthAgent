@@ -264,7 +264,7 @@ async function handleImageUpload(threadId: string, event: Event) {
 
     const result = await uploadImages(threadId, files)
     if (destroyed.value) return
-    toastStore.success(t('common.success'), `${result.count} ${t('review.imagesUploaded') || 'images uploaded'}`)
+    toastStore.success(t('common.success'), `${result.count} ${t('review.imagesUploaded')}`)
 
     // Refresh workflow detail to get updated visual_plan
     try {
@@ -627,9 +627,9 @@ const handleCancelConfirm = () => {
                     <div class="w-6 h-6 md:w-7 md:h-7 rounded-md bg-gradient-to-br from-amber-400 to-orange-400 flex items-center justify-center">
                       <AppIcon name="Image" size="sm" variant="white" />
                     </div>
-                    <span class="text-xs font-semibold text-slate-800">{{ t('review.imageUpload') || '上传图片' }}</span>
+                    <span class="text-xs font-semibold text-slate-800">{{ t('review.imageUpload') }}</span>
                     <span v-if="getServerImageCount(wf.thread_id) > 0" class="text-[10px] text-emerald-500 font-medium ml-auto">
-                      {{ getServerImageCount(wf.thread_id) }} {{ t('review.imagesSaved') || '已保存' }}
+                      {{ getServerImageCount(wf.thread_id) }} {{ t('review.imagesSaved') }}
                     </span>
                   </div>
                   <!-- Preview grid -->
@@ -649,7 +649,7 @@ const handleCancelConfirm = () => {
                     :class="imageUploading.get(wf.thread_id) ? 'opacity-50 pointer-events-none' : ''"
                   >
                     <AppIcon name="Upload" size="sm" variant="cyan" />
-                    <span>{{ imageUploading.get(wf.thread_id) ? t('common.loadingState') : (t('review.addImages') || '添加图片') }}</span>
+                    <span>{{ imageUploading.get(wf.thread_id) ? t('common.loadingState') : t('review.addImages') }}</span>
                     <input type="file" accept="image/jpeg,image/png,image/webp" multiple class="hidden" :disabled="imageUploading.get(wf.thread_id)"
                       @change="handleImageUpload(wf.thread_id, $event)" />
                   </label>

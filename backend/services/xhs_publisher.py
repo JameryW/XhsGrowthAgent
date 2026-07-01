@@ -21,6 +21,15 @@ from typing import TYPE_CHECKING, Any
 # — /note/{id}, /explore/{id}, /discovery/item/{id}. ID is typically 24-hex but
 # may contain other word chars; capture the trailing path segment after a known prefix.
 _NOTE_ID_RE = re.compile(r"/(?:note|explore|discovery/item)/(\w+)")
+_PUBLISH_READY_SELECTORS = (
+    ".publish-container",
+    "input[type=file][accept*=image]",
+    "input[type=file]",
+    "input[placeholder*=标题]",
+    "textarea[placeholder*=正文]",
+    "text=发布笔记",
+    "text=发布图文",
+)
 
 # ponytail: playwright is an optional [browser] extra. Import it lazily so the
 # module is importable (and unit-testable with a mock Page) without it installed.
@@ -104,10 +113,49 @@ class XHSPublisher:
                 )
         await context.add_cookies(cookies)
 
+    async def _goto_creator_page(self, page: Page) -> None:
+        """Navigate to creator page without waiting for never-idle background traffic."""
+
+        await page.goto(self.CREATOR_URL, wait_until="domcontentloaded", timeout=45000)
+
+    async def _wait_for_publish_ready(self, page: Page, timeout: int = 10000) -> bool:
+        """Wait until any known publish control is available."""
+
+        async def _wait(selector: str) -> str:
+            await page.wait_for_selector(selector, timeout=timeout)
+            return selector
+
+        pending = {asyncio.create_task(_wait(selector)) for selector in _PUBLISH_READY_SELECTORS}
+        try:
+            while pending:
+                done, pending = await asyncio.wait(
+                    pending,
+                    timeout=timeout / 1000,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if not done:
+                    return False
+
+                for task in done:
+                    try:
+                        selector = task.result()
+                    except Exception as e:
+                        logger.debug(f"发布页选择器未命中: {e}")
+                        continue
+                    logger.debug(f"发布页已就绪: {selector}")
+                    return True
+            return False
+        finally:
+            for task in pending:
+                task.cancel()
+            for task in pending:
+                with contextlib.suppress(Exception, asyncio.CancelledError):
+                    await task
+
     async def _check_login(self) -> bool:
         """检查登录状态"""
         page = await self._ensure_page()
-        await page.goto(self.CREATOR_URL, wait_until="networkidle")
+        await self._goto_creator_page(page)
 
         # 检查是否跳转到登录页
         current_url = page.url
@@ -115,12 +163,7 @@ class XHSPublisher:
             logger.warning("Cookie 已失效，需要重新登录")
             return False
 
-        # 检查是否有发布按钮
-        try:
-            await page.wait_for_selector("text=发布笔记", timeout=5000)
-            return True
-        except Exception:
-            return False
+        return await self._wait_for_publish_ready(page, timeout=15000)
 
     async def publish_note(
         self,
@@ -157,9 +200,9 @@ class XHSPublisher:
             if not await self._check_login():
                 return {"post_id": "", "status": "auth_failed", "error": "需要重新登录"}
 
-            # 2. 进入发布页面
-            await page.goto(self.CREATOR_URL, wait_until="networkidle")
-            await page.wait_for_selector(".publish-container", timeout=10000)
+            # 2. 确认发布页面可操作。_check_login 已导航到创作页，避免二次加载。
+            if not await self._wait_for_publish_ready(page, timeout=10000):
+                raise TimeoutError("发布页加载超时，未找到发布控件")
             logger.info("进入发布页面")
 
             # 3. 上传图片

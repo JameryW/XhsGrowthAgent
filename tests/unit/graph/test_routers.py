@@ -361,10 +361,19 @@ class TestBloggerGateRouter:
         state = {"workflow_mode": "brief"}
         assert blogger_gate_router(state) == "copywriter"
 
-    def test_trend_mode_routes_to_draft_gate(self):
-        """Trend mode → draft_gate."""
+    def test_trend_mode_without_blogger_notes_routes_to_draft_gate(self):
+        """Trend mode without selected blogger notes → draft_gate."""
         state = {"workflow_mode": "trend"}
         assert blogger_gate_router(state) == "draft_gate"
+
+    def test_trend_mode_with_selected_blogger_notes_routes_to_copywriter(self):
+        """Trend mode selected blogger notes → copywriter for style candidates."""
+        state = {
+            "workflow_mode": "trend",
+            "selected_blogger": {"user_id": "u1"},
+            "blogger_notes": [{"title": "note"}],
+        }
+        assert blogger_gate_router(state) == "copywriter"
 
     def test_default_is_trend(self):
         """No workflow_mode → draft_gate (trend default)."""
@@ -413,6 +422,14 @@ class TestCopywriterRouter:
         """Normal → draft_gate."""
         state = {"phase": WorkflowPhase.CREATING}
         assert copywriter_router(state) == "draft_gate"
+
+    def test_routes_to_choice_gate_with_multi_style_versions(self):
+        """Multi-style variants → choice_gate for style selection."""
+        state = {
+            "phase": WorkflowPhase.CREATING,
+            "content_versions": [{"version_id": "style_a"}, {"version_id": "style_b"}],
+        }
+        assert copywriter_router(state) == "choice_gate"
 
     def test_cancelled_routes_to_end(self):
         """CANCELLED → __end__."""

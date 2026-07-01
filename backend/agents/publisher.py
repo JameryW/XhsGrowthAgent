@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, cast
 
 from langgraph.store.base import BaseStore
@@ -10,9 +11,16 @@ from langgraph.store.base import BaseStore
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.config.settings import Settings
+from backend.services.text_cover import generate_text_cover_image
 from backend.state.schema import WorkflowPhase, XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.publisher")
+
+
+def _as_str_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
 
 
 class PublisherAgent(BaseAgent):
@@ -93,11 +101,24 @@ class PublisherAgent(BaseAgent):
 
             try:
                 # 从 visual_plan 提取图片路径
-                visual = state.get("visual_plan", {})
-                image_paths = visual.get("image_paths", [])
+                visual = state.get("visual_plan", {}) or {}
+                image_paths = _as_str_list(visual.get("image_paths"))
                 if not image_paths:
                     # 尝试从 generated_images 提取
-                    image_paths = cast(list[str], visual.get("generated_images", []))
+                    image_paths = _as_str_list(visual.get("generated_images"))
+                if not image_paths:
+                    title = copy.get("selected_title") or plan.get("selected_topic") or "小红书笔记"
+                    output_dir = Path("/tmp/xhs_generated_covers") / str(
+                        state.get("session_id") or "default"
+                    )
+                    cover_path = generate_text_cover_image(
+                        title=str(title),
+                        key_points=_as_str_list(plan.get("key_points")),
+                        color_palette=_as_str_list(visual.get("color_palette")),
+                        output_dir=output_dir,
+                    )
+                    image_paths = [cover_path]
+                    logger.info("无素材图，已生成文字封面: %s", cover_path)
 
                 # 构造发布数据
                 post = XHSPost(
