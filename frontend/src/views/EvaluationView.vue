@@ -221,11 +221,9 @@ function dimLabel(dim: string): string {
 </template>
 
 <style scoped>
-.evaluation-view {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 1.5rem;
-}
+/* ponytail: 宽度/内边距交由 <main> 的 p-6，与 Analytics/Dashboard 同构——
+   不自定义 max-width，避免评估页两侧留白与其它页不一致 */
+.evaluation-view { }
 .page-header { margin-bottom: 1.5rem; }
 .page-title { font-size: 1.5rem; font-weight: 700; color: #1e293b; margin: 0; }
 .page-subtitle { font-size: 0.875rem; color: #64748b; margin: 0.25rem 0 0; }

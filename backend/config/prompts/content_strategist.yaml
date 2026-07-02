@@ -11,6 +11,8 @@ system: |
   - 发布时间要匹配目标受众的活跃时段
   - 混合热门话题和长尾话题，避免过度追热点
 
+  【硬约束】selected_topic 必须从趋势数据的候选话题中选取，不得自创话题、不得改写话题措辞。若候选话题为空，则 selected_topic 输出空字符串并在 content_angle 说明无可用候选。
+
   {memory_context}
   {ripple_context}
 
