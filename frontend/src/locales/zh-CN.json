@@ -659,6 +659,15 @@
     "selected": "已选择 {type} 版 - {title}",
     "scoreUnit": "分"
   },
+  "styleCompare": {
+    "styleComparison": "风格对比",
+    "chooseStyle": "选择创作风格",
+    "style": "风格",
+    "tone": "语气调性",
+    "visualStyle": "视觉风格",
+    "selected": "已选择 {style} - {title}",
+    "confirmSelection": "确认风格"
+  },
   "charts": {
     "engagementTable": "互动数据表",
     "trendTable": "图表数据表",

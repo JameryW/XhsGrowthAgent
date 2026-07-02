@@ -659,6 +659,15 @@
     "selected": "Selected {type} - {title}",
     "scoreUnit": "pts"
   },
+  "styleCompare": {
+    "styleComparison": "Style Comparison",
+    "chooseStyle": "Choose Your Style",
+    "style": "Style",
+    "tone": "Tone",
+    "visualStyle": "Visual Style",
+    "selected": "Selected {style} - {title}",
+    "confirmSelection": "Confirm Style"
+  },
   "charts": {
     "engagementTable": "Engagement Data Table",
     "trendTable": "Chart Data Table",
