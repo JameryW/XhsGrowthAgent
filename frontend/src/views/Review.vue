@@ -7,12 +7,16 @@ import AppIcon from '@/components/AppIcon.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import CelebrationEffect from '@/components/CelebrationEffect.vue'
 import WorkflowCardBody from '@/components/WorkflowCardBody.vue'
+import EvaluationRadar from '@/components/charts/EvaluationRadar.vue'
 import { ReviewSkeleton } from '@/components/skeletons'
 import { useReviewStore, useToastStore, useAccountsStore } from '@/stores'
 import { listWorkflows, getWorkflowStatus, uploadImages } from '@/api/workflow'
+import { updateCopy } from '@/api/review'
+import { getEvaluationResult } from '@/api/evaluation'
 import { getSystemHealth } from '@/api/system'
 import type { ContentStatus } from '@/types'
 import type { WorkflowListItem, WorkflowStateResponse } from '@/types/workflow'
+import type { EvaluationResult } from '@/types/evaluation'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -71,6 +75,14 @@ function loadReviewIfExpanded(tid: string) {
   if (!reviewStore.pendingReviews.has(tid) && !reviewStore.isQueueItemLoading(tid)) {
     reviewStore.fetchQueueReview(tid)
   }
+  // Initialize edit fields from loaded copy content (deferred to next tick
+  // to allow fetchQueueReview to populate the store first)
+  if (!cardEditInitialized.value.has(tid)) {
+    // Try immediately; if copy not loaded yet, the watch below will catch it
+    initEditFields(tid)
+  }
+  // Load evaluation result for this thread
+  loadEvaluation(tid)
 }
 
 function loadVisibleDetails() {
@@ -185,6 +197,10 @@ watchStops.push(
       if (destroyed.value) return
       for (const threadId of threadIds) {
         void ensureWorkflowInQueue(threadId)
+        // Initialize edit fields when review content arrives
+        if (expandedThreadId.value === threadId) {
+          initEditFields(threadId)
+        }
       }
     },
     { immediate: true }
@@ -219,6 +235,171 @@ function setMBI(tid: string, v: string) { cardBodyIssue.value.set(tid, v); cardB
 function setMTGI(tid: string, v: string) { cardTagsIssue.value.set(tid, v); cardTagsIssue.value = new Map(cardTagsIssue.value) }
 function setMVI(tid: string, v: string) { cardVisualIssue.value.set(tid, v); cardVisualIssue.value = new Map(cardVisualIssue.value) }
 function setMSS(tid: string, v: boolean) { cardShowStructured.value.set(tid, v); cardShowStructured.value = new Map(cardShowStructured.value) }
+
+// ── Per-card copy editing state ──
+// Editable fields initialized from reviewStore copy_content when expanded.
+const cardEditTitle = ref(new Map<string, string>())
+const cardEditBody = ref(new Map<string, string>())
+const cardEditTags = ref(new Map<string, string>())
+const cardEditInitialized = ref(new Set<string>())
+const cardSavingCopy = ref(new Set<string>())
+const cardRegenerating = ref(new Set<string>())
+
+// ── Per-card evaluation result state ──
+const cardEvaluation = ref(new Map<string, EvaluationResult | null>())
+const cardEvaluationLoading = ref(new Set<string>())
+
+function getET(tid: string): string { return cardEditTitle.value.get(tid) ?? '' }
+function getEB(tid: string): string { return cardEditBody.value.get(tid) ?? '' }
+function getETG(tid: string): string { return cardEditTags.value.get(tid) ?? '' }
+
+function setET(tid: string, v: string) { cardEditTitle.value.set(tid, v); cardEditTitle.value = new Map(cardEditTitle.value) }
+function setEB(tid: string, v: string) { cardEditBody.value.set(tid, v); cardEditBody.value = new Map(cardEditBody.value) }
+function setETG(tid: string, v: string) { cardEditTags.value.set(tid, v); cardEditTags.value = new Map(cardEditTags.value) }
+
+function initEditFields(tid: string) {
+  if (cardEditInitialized.value.has(tid)) return
+  const copy = reviewStore.getQueueCopyContent(tid)
+  if (!copy) return
+  cardEditTitle.value.set(tid, copy.selected_title || '')
+  cardEditBody.value.set(tid, copy.body_text || '')
+  cardEditTags.value.set(tid, (copy.hashtags || []).join(', '))
+  cardEditTitle.value = new Map(cardEditTitle.value)
+  cardEditBody.value = new Map(cardEditBody.value)
+  cardEditTags.value = new Map(cardEditTags.value)
+  cardEditInitialized.value.add(tid)
+}
+
+// Parse comma-separated tags string into string[]
+function parseTags(tagsStr: string): string[] {
+  return tagsStr
+    .split(',')
+    .map(t => t.trim())
+    .filter(t => t.length > 0)
+}
+
+// ── Evaluation helpers ──
+async function loadEvaluation(tid: string) {
+  if (cardEvaluation.value.has(tid) || cardEvaluationLoading.value.has(tid)) return
+  cardEvaluationLoading.value.add(tid)
+  try {
+    const resp = await getEvaluationResult(tid)
+    cardEvaluation.value.set(tid, resp.has_evaluation ? resp.evaluation_result : null)
+    cardEvaluation.value = new Map(cardEvaluation.value)
+  } catch {
+    // Silently skip — evaluation may not exist yet
+    cardEvaluation.value.set(tid, null)
+    cardEvaluation.value = new Map(cardEvaluation.value)
+  } finally {
+    cardEvaluationLoading.value.delete(tid)
+  }
+}
+
+function getEvaluation(tid: string): EvaluationResult | null {
+  return cardEvaluation.value.get(tid) ?? null
+}
+
+// Decision badge color tier
+const DECISION_KEYS: Record<string, string> = {
+  approved: 'review.evaluation.decision.approved',
+  needs_revision: 'review.evaluation.decision.needs_revision',
+  rejected: 'review.evaluation.decision.rejected',
+}
+
+function decisionClass(d: string): string {
+  if (d === 'approved') return 'decision-approved'
+  if (d === 'needs_revision') return 'decision-revision'
+  return 'decision-rejected'
+}
+
+function scoreClass(s: number): string {
+  if (s >= 70) return 'score-pass'
+  if (s >= 50) return 'score-warn'
+  return 'score-fail'
+}
+
+// Dimension i18n label keys (mirror EvaluationView)
+const DIMENSION_LABEL_KEYS: Record<string, string> = {
+  copywriting: 'evaluation.dim.copywriting',
+  visual: 'evaluation.dim.visual',
+  compliance: 'evaluation.dim.compliance',
+  reach: 'evaluation.dim.reach',
+  audience: 'evaluation.dim.audience',
+  bias_check: 'evaluation.dim.bias_check',
+}
+
+function dimLabel(dim: string): string {
+  return t(DIMENSION_LABEL_KEYS[dim] ?? 'evaluation.dim.unknown', { dim })
+}
+
+// ── Save copy & re-evaluate ──
+async function handleSaveCopy(tid: string) {
+  cardSavingCopy.value.add(tid)
+  try {
+    const parsedTags = parseTags(getETG(tid))
+    const resp = await updateCopy(tid, {
+      title: getET(tid) || undefined,
+      body_text: getEB(tid) || undefined,
+      // Mirror title/body semantics: empty = "don't touch" (undefined),
+      // so the backend skips the field instead of clearing existing hashtags.
+      hashtags: parsedTags.length > 0 ? parsedTags : undefined,
+    })
+    // Update evaluation display from response
+    const ev = (resp.evaluation_result && Object.keys(resp.evaluation_result).length > 0)
+      ? resp.evaluation_result as EvaluationResult
+      : null
+    cardEvaluation.value.set(tid, ev)
+    cardEvaluation.value = new Map(cardEvaluation.value)
+
+    // Refresh workflow detail to reflect updated copy_content in state
+    try {
+      const state = await getWorkflowStatus(tid)
+      if (!destroyed.value) workflowDetails.value.set(tid, state)
+    } catch { /* non-critical */ }
+
+    if (resp.warning) {
+      toastStore.warning(t('review.editCopy.saveSuccess'), resp.warning)
+    } else {
+      toastStore.success(t('review.editCopy.saveSuccess'), '')
+    }
+  } catch (e: any) {
+    toastStore.error(t('review.editCopy.saveFailed'), e.message)
+  } finally {
+    cardSavingCopy.value.delete(tid)
+  }
+}
+
+// ── Regenerate from current copy ──
+// Submits a needs_revision decision with the current edited copy as the
+// revision hint, causing the copywriter to regenerate using it as reference.
+async function handleRegenerate(tid: string) {
+  cardRegenerating.value.add(tid)
+  try {
+    const hintParts: string[] = []
+    if (getET(tid)) hintParts.push(`${t('review.titlePrefix')}: ${getET(tid)}`)
+    if (getEB(tid)) hintParts.push(`${t('review.bodyPrefix')}: ${getEB(tid).slice(0, 200)}`)
+    const tags = parseTags(getETG(tid))
+    if (tags.length) hintParts.push(`${t('review.tagsPrefix')}: ${tags.join(', ')}`)
+    const feedback = hintParts.length
+      ? `${t('review.editCopy.regenerateHint')} ${hintParts.join('; ')}`
+      : t('review.editCopy.regenerateHint')
+
+    await reviewStore.submitQueueDecision(tid, 'needs_revision', feedback)
+    toastStore.info(t('review.editCopy.regenerateSuccess'), '')
+
+    // Remove from queue and collapse (workflow resumes to copywriter)
+    workflows.value = workflows.value.filter(w => w.thread_id !== tid)
+    if (expandedThreadId.value === tid) expandedThreadId.value = null
+    // Clear edit state
+    cardEditInitialized.value.delete(tid)
+    cardEvaluation.value.delete(tid)
+    cardEvaluation.value = new Map(cardEvaluation.value)
+  } catch (e: any) {
+    toastStore.error(t('review.editCopy.regenerateFailed'), e.message)
+  } finally {
+    cardRegenerating.value.delete(tid)
+  }
+}
 
 // ── Confirmation modal (global — one at a time) ──
 const showConfirmModal = ref(false)
@@ -571,29 +752,75 @@ const handleCancelConfirm = () => {
             <div class="p-4 md:p-5 space-y-3 md:space-y-4">
               <!-- Content preview: copy + visual side by side -->
               <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
-                <!-- Copy content preview -->
+                <!-- Copy content editor (editable while awaiting_review) -->
                 <div class="rounded-lg p-3 md:p-4 liquid-glass-inset">
                   <div class="flex items-center gap-2 mb-2 md:mb-3">
                     <div class="w-6 h-6 md:w-7 md:h-7 rounded-md bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center">
                       <AppIcon name="Pencil" size="sm" variant="white" />
                     </div>
                     <span class="text-xs font-semibold text-slate-800">{{ t('review.copyContent') }}</span>
+                    <span class="text-[10px] text-violet-400 ml-auto">{{ t('review.editCopy.title') }}</span>
                   </div>
-                  <div class="rounded-md p-2.5 md:p-3 bg-white/60 border-l-2 border-rose-400">
-                    <div v-if="reviewStore.getQueueCopyContent(wf.thread_id)?.selected_title" class="text-rose-500 font-bold text-sm mb-1">
-                      {{ reviewStore.getQueueCopyContent(wf.thread_id)!.selected_title }}
+                  <div class="space-y-2">
+                    <!-- Title input -->
+                    <div>
+                      <label class="text-[10px] text-slate-500 font-medium block mb-0.5">{{ t('review.editCopy.titleLabel') }}</label>
+                      <input
+                        :value="getET(wf.thread_id)"
+                        @input="setET(wf.thread_id, ($event.target as HTMLInputElement).value)"
+                        :placeholder="t('review.editCopy.titlePlaceholder')"
+                        class="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-rose-500 font-bold text-sm focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all"
+                      />
                     </div>
-                    <div v-if="reviewStore.getQueueCopyContent(wf.thread_id)?.body_text" class="text-slate-600 text-xs leading-relaxed whitespace-pre-wrap line-clamp-6">
-                      {{ reviewStore.getQueueCopyContent(wf.thread_id)!.body_text }}
+                    <!-- Body textarea -->
+                    <div>
+                      <label class="text-[10px] text-slate-500 font-medium block mb-0.5">{{ t('review.editCopy.bodyLabel') }}</label>
+                      <textarea
+                        :value="getEB(wf.thread_id)"
+                        @input="setEB(wf.thread_id, ($event.target as HTMLTextAreaElement).value)"
+                        :placeholder="t('review.editCopy.bodyPlaceholder')"
+                        rows="6"
+                        class="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 text-xs leading-relaxed resize-y focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all"
+                      />
                     </div>
-                    <div v-if="reviewStore.getQueueCopyContent(wf.thread_id)?.hashtags?.length" class="flex gap-1 flex-wrap mt-2">
-                      <span v-for="tag in reviewStore.getQueueCopyContent(wf.thread_id)!.hashtags!.slice(0, 5)" :key="tag" class="px-1 py-0.5 rounded bg-rose-50 text-rose-500 text-[10px] font-medium">
-                        {{ tag }}
+                    <!-- Tags input -->
+                    <div>
+                      <label class="text-[10px] text-slate-500 font-medium block mb-0.5">{{ t('review.editCopy.tagsLabel') }}</label>
+                      <input
+                        :value="getETG(wf.thread_id)"
+                        @input="setETG(wf.thread_id, ($event.target as HTMLInputElement).value)"
+                        :placeholder="t('review.editCopy.tagsPlaceholder')"
+                        class="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-600 text-xs focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all"
+                      />
+                      <p class="text-[9px] text-slate-400 mt-0.5">{{ t('review.editCopy.tagsHint') }}</p>
+                    </div>
+                  </div>
+                  <!-- Edit action buttons -->
+                  <div class="flex gap-2 mt-2.5">
+                    <NeonButton
+                      variant="cyan"
+                      size="sm"
+                      :loading="cardSavingCopy.has(wf.thread_id)"
+                      :disabled="cardRegenerating.has(wf.thread_id) || reviewStore.isQueueItemSubmitting(wf.thread_id)"
+                      @click="handleSaveCopy(wf.thread_id)"
+                    >
+                      <span class="inline-flex items-center gap-1.5">
+                        <AppIcon name="Save" size="sm" variant="white" />
+                        <span class="font-semibold text-xs">{{ t('review.editCopy.saveAndReevaluate') }}</span>
                       </span>
-                    </div>
-                    <div v-if="!reviewStore.getQueueCopyContent(wf.thread_id)?.selected_title && !reviewStore.getQueueCopyContent(wf.thread_id)?.body_text" class="text-xs text-slate-400 italic">
-                      {{ t('common.loadingState') }}
-                    </div>
+                    </NeonButton>
+                    <NeonButton
+                      variant="purple"
+                      size="sm"
+                      :loading="cardRegenerating.has(wf.thread_id)"
+                      :disabled="cardSavingCopy.has(wf.thread_id) || reviewStore.isQueueItemSubmitting(wf.thread_id)"
+                      @click="handleRegenerate(wf.thread_id)"
+                    >
+                      <span class="inline-flex items-center gap-1.5">
+                        <AppIcon name="RefreshCw" size="sm" variant="white" />
+                        <span class="font-semibold text-xs">{{ t('review.editCopy.regenerate') }}</span>
+                      </span>
+                    </NeonButton>
                   </div>
                 </div>
 
@@ -654,6 +881,95 @@ const handleCancelConfirm = () => {
                       @change="handleImageUpload(wf.thread_id, $event)" />
                   </label>
                 </div>
+              </div>
+
+              <!-- Evaluation result (embedded from EvaluationView components) -->
+              <div class="rounded-lg p-3 md:p-4 liquid-glass-inset">
+                <div class="flex items-center gap-2 mb-2 md:mb-3">
+                  <div class="w-6 h-6 md:w-7 md:h-7 rounded-md bg-gradient-to-br from-rose-400 to-pink-500 flex items-center justify-center">
+                    <AppIcon name="BarChart3" size="sm" variant="white" />
+                  </div>
+                  <span class="text-xs font-semibold text-slate-800">{{ t('review.evaluation.sectionTitle') }}</span>
+                  <span class="text-[10px] text-slate-400 ml-auto">{{ t('review.evaluation.sectionHint') }}</span>
+                </div>
+
+                <!-- Loading state -->
+                <div v-if="cardEvaluationLoading.has(wf.thread_id) && !getEvaluation(wf.thread_id)" class="py-4 text-center">
+                  <AppIcon name="Loader2" size="sm" variant="cyan" class="spin inline-block" />
+                  <span class="text-xs text-slate-400 ml-1.5">{{ t('review.evaluation.loading') }}</span>
+                </div>
+
+                <!-- Empty state -->
+                <div v-else-if="!getEvaluation(wf.thread_id)" class="py-4 text-center">
+                  <AppIcon name="HelpCircle" size="lg" variant="cyan" class="inline-block mb-1" />
+                  <p class="text-xs text-slate-400">{{ t('review.evaluation.empty') }}</p>
+                </div>
+
+                <!-- Evaluation result display -->
+                <template v-else>
+                  <div class="space-y-3">
+                    <!-- Overview + radar -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <!-- Overall score + decision -->
+                      <div class="rounded-md p-3 bg-white/60 border-l-2 border-rose-400 flex flex-col gap-2">
+                        <div class="flex items-baseline gap-1.5">
+                          <span class="text-[10px] text-slate-500">{{ t('review.evaluation.overall') }}</span>
+                          <span class="text-2xl font-extrabold leading-none" :class="scoreClass(getEvaluation(wf.thread_id)!.overall_score)">
+                            {{ getEvaluation(wf.thread_id)!.overall_score?.toFixed(1) }}
+                          </span>
+                        </div>
+                        <div
+                          class="inline-flex self-start px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                          :class="decisionClass(getEvaluation(wf.thread_id)!.decision)"
+                        >
+                          {{ t(DECISION_KEYS[getEvaluation(wf.thread_id)!.decision] ?? 'review.evaluation.decision.unknown') }}
+                        </div>
+                        <p v-if="getEvaluation(wf.thread_id)!.summary" class="text-[10px] text-slate-500 leading-relaxed">
+                          {{ getEvaluation(wf.thread_id)!.summary }}
+                        </p>
+                      </div>
+                      <!-- Radar chart -->
+                      <div class="rounded-md p-2 bg-white/40">
+                        <EvaluationRadar :dimensions="getEvaluation(wf.thread_id)!.dimensions || []" :height="220" />
+                      </div>
+                    </div>
+
+                    <!-- Bias warning -->
+                    <div v-if="getEvaluation(wf.thread_id)!.bias_warning" class="rounded-md p-2.5 bg-amber-50/60 border border-amber-200">
+                      <div class="flex items-center gap-1.5 mb-1">
+                        <AppIcon name="AlertTriangle" size="xs" variant="peach" />
+                        <span class="text-[10px] font-semibold text-amber-700">{{ t('review.evaluation.biasTitle') }}</span>
+                      </div>
+                      <p class="text-[10px] text-amber-700 leading-relaxed">{{ getEvaluation(wf.thread_id)!.bias_warning }}</p>
+                    </div>
+
+                    <!-- Dimension details -->
+                    <div class="rounded-md p-2.5 bg-white/40">
+                      <div class="text-[10px] font-semibold text-slate-700 mb-1.5">{{ t('review.evaluation.dimensionsTitle') }}</div>
+                      <div v-for="d in getEvaluation(wf.thread_id)!.dimensions || []" :key="d.dimension" class="py-1.5 border-b border-slate-100 last:border-0">
+                        <div class="flex items-center justify-between gap-2">
+                          <span class="text-[11px] font-semibold text-slate-600 inline-flex items-center gap-1">
+                            {{ dimLabel(d.dimension) }}
+                            <span v-if="d.is_blocking" class="text-[8px] px-1 py-0.5 rounded bg-rose-100 text-rose-600 font-bold">{{ t('review.evaluation.blocking') }}</span>
+                          </span>
+                          <span class="text-xs font-bold" :class="scoreClass(d.score)">{{ d.score?.toFixed(1) }}</span>
+                        </div>
+                        <p v-if="d.rationale" class="text-[10px] text-slate-500 mt-0.5 leading-relaxed">{{ d.rationale }}</p>
+                        <ul v-if="d.issues?.length" class="mt-0.5 pl-3 space-y-0.5">
+                          <li v-for="(issue, i) in d.issues" :key="i" class="text-[10px] text-slate-500">{{ issue }}</li>
+                        </ul>
+                      </div>
+                    </div>
+
+                    <!-- Revision hints -->
+                    <div v-if="getEvaluation(wf.thread_id)!.revision_hints?.length" class="rounded-md p-2.5 bg-violet-50/50 border border-violet-200">
+                      <div class="text-[10px] font-semibold text-violet-700 mb-1">{{ t('review.evaluation.hintsTitle') }}</div>
+                      <ul class="pl-3 space-y-0.5">
+                        <li v-for="(h, i) in getEvaluation(wf.thread_id)!.revision_hints" :key="i" class="text-[10px] text-slate-600 leading-relaxed">{{ h }}</li>
+                      </ul>
+                    </div>
+                  </div>
+                </template>
               </div>
 
               <!-- Version history (compact) -->
@@ -909,3 +1225,19 @@ const handleCancelConfirm = () => {
   </div>
   </div>
 </template>
+
+<style scoped>
+/* Score color tiers (mirror EvaluationView) */
+.score-pass { color: #16a34a; }
+.score-warn { color: #d97706; }
+.score-fail { color: #dc2626; }
+
+/* Decision badge backgrounds */
+.decision-approved { background: #dcfce7; color: #15803d; }
+.decision-revision { background: #fef3c7; color: #b45309; }
+.decision-rejected { background: #fee2e2; color: #b91c1c; }
+
+/* Spinner for loading icons */
+.spin { animation: review-spin 1s linear infinite; }
+@keyframes review-spin { to { transform: rotate(360deg); } }
+</style>

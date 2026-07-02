@@ -23,6 +23,7 @@ export interface Revision {
 // Import related types
 import type { ContentPlan, CopyContent, VisualPlan } from './workflow'
 import type { ContentVersion } from './optimization'
+import type { EvaluationResult } from './evaluation'
 
 // Re-export for convenience
 export type { ContentVersion }
@@ -70,4 +71,21 @@ export interface ReviewSubmitResponse {
   next_phase: string
   publish_skipped?: boolean
   skip_reason?: string
+}
+
+// Partial copy_content update — only provided fields are overwritten
+export interface CopyUpdateRequest {
+  title?: string
+  body_text?: string
+  hashtags?: string[]
+}
+
+// Response from POST /review/update-copy/{thread_id}
+// evaluation_result is empty when evaluator degraded (check warning)
+export interface CopyUpdateResponse {
+  thread_id: string
+  status: 'updated' | 'skipped'
+  evaluation_result: EvaluationResult | Record<string, never>
+  warning?: string
+  message?: string
 }
