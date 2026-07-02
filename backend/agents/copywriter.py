@@ -7,6 +7,7 @@ can choose a preferred style before optimization.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any, cast
 
@@ -16,6 +17,8 @@ from langgraph.store.base import BaseStore
 from backend.agents.base import BaseAgent
 from backend.config.models import TaskType
 from backend.state.schema import WorkflowPhase, XHSGrowthState
+
+logger = logging.getLogger("xhs_growth.agents.copywriter")
 
 
 class CopywriterAgent(BaseAgent):
@@ -250,15 +253,29 @@ class CopywriterAgent(BaseAgent):
   ]
 }}"""
 
-        response = await self.model.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=variant_prompt),
-            ]
-        )
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=variant_prompt),
+        ]
 
-        parsed = self._parse_json_response(cast(str, response.content))
+        response = await self.model.ainvoke(messages)
+
+        raw_response = cast(str, response.content)
+        parsed = self._parse_json_response(raw_response)
         variants = parsed.get("variants", [])
+
+        # Retry once if the LLM returned no parseable variants (transient format
+        # errors are common). Log the raw snippet to aid diagnosis.
+        if not variants:
+            logger.warning(
+                f"copywriter style variants empty on first attempt: {raw_response[:200]}"
+            )
+            retry_response = await self.model.ainvoke(messages)
+            raw_response = cast(str, retry_response.content)
+            parsed = self._parse_json_response(raw_response)
+            variants = parsed.get("variants", [])
+            if not variants:
+                logger.error(f"copywriter style variants empty after retry: {raw_response[:200]}")
 
         # Ensure each variant has a version_id
         for v in variants:

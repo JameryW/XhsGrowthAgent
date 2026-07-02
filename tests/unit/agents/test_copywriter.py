@@ -1,5 +1,6 @@
 """Unit tests for CopywriterAgent."""
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
@@ -162,3 +163,84 @@ class TestCopywriterAgent:
         """Verify agent class attributes."""
         assert agent.agent_name == "copywriter"
         assert agent.prompt_file == "copywriter.yaml"
+
+    @pytest.mark.asyncio
+    async def test_style_variants_retries_on_empty_then_succeeds(self, agent):
+        """First LLM call returns empty variants, retry returns valid variants."""
+        empty_response = MagicMock()
+        empty_response.content = '{"variants": []}'
+
+        valid_response = MagicMock()
+        valid_response.content = """{
+          "variants": [
+            {
+              "version_id": "style_a",
+              "style_name": "专业测评",
+              "title": "测试标题",
+              "body": "正文内容",
+              "hashtags": ["#标签"],
+              "tone": "理性",
+              "style_suggestion": "简洁",
+              "visual_style": "极简"
+            }
+          ]
+        }"""
+
+        state = {
+            "account_id": "test",
+            "content_plan": {"selected_topic": "美食"},
+            "blogger_notes": [{"title": "参考", "body": "正文"}],
+        }
+
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
+            mock_model.ainvoke = AsyncMock(side_effect=[empty_response, valid_response])
+            mock_model_prop.return_value = mock_model
+
+            result = await agent._generate_style_variants(
+                state,
+                {},
+                state["blogger_notes"],
+                "system prompt",
+                "美食",
+            )
+
+        assert len(result) == 1
+        assert result[0]["style_name"] == "专业测评"
+        # ainvoke called twice: first attempt + one retry
+        assert mock_model.ainvoke.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_style_variants_empty_after_retry_logs_error(self, agent, caplog):
+        """Both LLM calls return empty variants → returns [] and logs error."""
+        empty_response = MagicMock()
+        empty_response.content = "not json at all"
+
+        state = {
+            "account_id": "test",
+            "content_plan": {"selected_topic": "美食"},
+            "blogger_notes": [{"title": "参考", "body": "正文"}],
+        }
+
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+            mock_model = MagicMock()
+            mock_model.ainvoke = AsyncMock(return_value=empty_response)
+            mock_model_prop.return_value = mock_model
+
+            with caplog.at_level(
+                logging.WARNING,
+                logger="xhs_growth.agents.copywriter",
+            ):
+                result = await agent._generate_style_variants(
+                    state,
+                    {},
+                    state["blogger_notes"],
+                    "system prompt",
+                    "美食",
+                )
+
+        assert result == []
+        assert mock_model.ainvoke.call_count == 2
+        # warning on first attempt + error after retry
+        assert any("empty on first attempt" in r.message for r in caplog.records)
+        assert any("empty after retry" in r.message for r in caplog.records)
