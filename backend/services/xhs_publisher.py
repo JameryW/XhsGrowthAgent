@@ -437,24 +437,34 @@ class XHSPublisher:
 
     async def _click_publish(self, page: Page) -> None:
         """点击发布按钮"""
-        # 现网发布提交按钮是底部 fixed 的 <xhs-publish-btn> 自定义元素
-        # （不是左上角导航的 div.publish-video——那是发布入口，点了不提交内容）。
-        # xhs-publish-btn 内容在 closed shadow DOM，Playwright click 点外层标签
-        # 可能不触发内部事件——改用 JS .click() 直接调方法，更可靠。
-        clicked = await page.evaluate(
-            """()=>{
-            const btn=document.querySelector('xhs-publish-btn')
-                || document.querySelector('.publish-video')
-                || document.querySelector('.btn-wrapper');
-            if(!btn) return 'not_found';
-            btn.click();
-            return 'clicked:'+btn.tagName;
-        }"""
-        )
-        logger.info(f"_click_publish: {clicked}")
-        if clicked == "not_found":
-            # 备用方案：Playwright locator 语法兜底
-            await page.locator("text=发布笔记").first.click()
+        # 现网发布提交按钮在 <xhs-publish-btn> 的 closed shadow DOM 内
+        # （属性暴露：submit-text=发布, submit-disabled=false, save-text=暂存离开）。
+        # 点外层标签只触发 tab 切换/展开，不触发内部 submit——submit 按钮在
+        # shadow 右侧（save 在左）。用 Playwright click(position=右侧) 命中
+        # shadow 内 submit 按钮的渲染位置。
+        btn = page.locator("xhs-publish-btn")
+        if await btn.count() > 0:
+            # 取实际 rect 算右侧坐标（submit 按钮区，约元素右 15%）
+            box = await btn.bounding_box()
+            if box:
+                # 先试点 shadow 右侧 submit 区
+                await page.mouse.click(box["x"] + box["width"] * 0.85, box["y"] + box["height"] / 2)
+                logger.info("_click_publish: clicked xhs-publish-btn right (submit region)")
+                return
+            # rect 拿不到则 fallback 元素中心 click
+            await btn.first.click()
+            logger.info("_click_publish: clicked xhs-publish-btn center (fallback)")
+            return
+
+        # 备用：旧选择器
+        for sel in (".publish-video", ".btn-wrapper", "button.publish-btn"):
+            old = page.locator(sel)
+            if await old.count() > 0:
+                await old.first.click()
+                logger.info(f"_click_publish: fallback clicked {sel}")
+                return
+        # 最后兜底
+        await page.locator("text=发布笔记").first.click()
 
     async def _wait_for_success(self, page: Page) -> dict[str, Any]:
         """等待发布成功并获取结果。
