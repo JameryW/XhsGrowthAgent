@@ -1,5 +1,5 @@
 import client from './client'
-import type { PendingReview, ReviewDecisionRequest, ReviewSubmitResponse, VersionHistoryResponse } from '@/types/review'
+import type { PendingReview, ReviewDecisionRequest, ReviewSubmitResponse, VersionHistoryResponse, CopyUpdateRequest, CopyUpdateResponse } from '@/types/review'
 import { useRetry } from '@/composables/useRetry'
 
 // 获取待审核内容（不重试，无待审核是正常场景）
@@ -26,4 +26,19 @@ export async function submitReview(
 // 获取内容版本历史
 export async function getVersionHistory(threadId: string): Promise<VersionHistoryResponse> {
   return client.get(`/review/versions/${threadId}`) as unknown as VersionHistoryResponse
+}
+
+// 手动覆盖文案 — 保存后自动重跑 evaluator，返回新 evaluation_result
+export async function updateCopy(
+  threadId: string,
+  body: CopyUpdateRequest
+): Promise<CopyUpdateResponse> {
+  const { retryWithBackoff } = useRetry()
+  return retryWithBackoff(async () => {
+    try {
+      return await client.post(`/review/update-copy/${threadId}`, body) as CopyUpdateResponse
+    } catch (error) {
+      throw error
+    }
+  })
 }

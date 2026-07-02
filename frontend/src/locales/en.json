@@ -570,7 +570,46 @@
       "useBrowserOffWarning": "Real publishing is disabled in this environment (XHS_USE_BROWSER is off). Selecting Live will still only mock-publish."
     },
     "stateLost": "The review state was lost after a container restart. Please restart the workflow to regenerate review content.",
-    "errorStateLost": "Review State Lost"
+    "errorStateLost": "Review State Lost",
+    "editCopy": {
+      "title": "Edit Copy",
+      "titleLabel": "Title",
+      "bodyLabel": "Body",
+      "tagsLabel": "Hashtags",
+      "tagsHint": "Separate multiple tags with commas",
+      "saveAndReevaluate": "Save & Re-evaluate",
+      "regenerate": "Regenerate from this",
+      "regenerateHint": "Let AI recreate using current copy as reference",
+      "saving": "Saving…",
+      "regenerating": "Regenerating…",
+      "saveSuccess": "Copy saved, evaluation updated",
+      "saveFailed": "Save failed",
+      "regenerateSuccess": "Regeneration request submitted",
+      "regenerateFailed": "Regeneration failed",
+      "editDisabled": "Copy can only be edited while awaiting review",
+      "titlePlaceholder": "Enter title…",
+      "bodyPlaceholder": "Enter body content…",
+      "tagsPlaceholder": "tag1, tag2"
+    },
+    "evaluation": {
+      "sectionTitle": "Evaluation Result",
+      "sectionHint": "Reference the evaluation while editing; saving auto re-evaluates",
+      "empty": "No evaluation yet. Saving copy will trigger evaluation.",
+      "loading": "Loading evaluation…",
+      "loadFailed": "Failed to load evaluation",
+      "overall": "Overall",
+      "radarTitle": "6-Dimension Radar",
+      "dimensionsTitle": "Dimension Details",
+      "hintsTitle": "Revision Hints",
+      "biasTitle": "Adversarial Bias Check",
+      "blocking": "BLOCKING",
+      "decision": {
+        "approved": "Approved",
+        "needs_revision": "Needs Revision",
+        "rejected": "Rejected",
+        "unknown": "Unknown"
+      }
+    }
   },
   "analytics": {
     "title": "Analytics Center",

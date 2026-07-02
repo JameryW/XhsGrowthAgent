@@ -570,7 +570,46 @@
       "useBrowserOffWarning": "当前环境无法真实发布（XHS_USE_BROWSER 未开启）。选择真实发布仍只会模拟发布。"
     },
     "stateLost": "该工作流审核状态因容器重启而丢失，请重新启动工作流以生成审核内容。",
-    "errorStateLost": "审核状态丢失"
+    "errorStateLost": "审核状态丢失",
+    "editCopy": {
+      "title": "编辑文案",
+      "titleLabel": "标题",
+      "bodyLabel": "正文",
+      "tagsLabel": "标签",
+      "tagsHint": "多个标签用逗号分隔",
+      "saveAndReevaluate": "保存并重新评估",
+      "regenerate": "基于此重生成",
+      "regenerateHint": "以当前文案为参考，让 AI 重新创作",
+      "saving": "保存中…",
+      "regenerating": "重生成中…",
+      "saveSuccess": "文案已保存，评估结果已更新",
+      "saveFailed": "保存失败",
+      "regenerateSuccess": "已提交重生成请求",
+      "regenerateFailed": "重生成失败",
+      "editDisabled": "仅待审核状态可编辑文案",
+      "titlePlaceholder": "输入标题…",
+      "bodyPlaceholder": "输入正文内容…",
+      "tagsPlaceholder": "标签1, 标签2"
+    },
+    "evaluation": {
+      "sectionTitle": "评估结果",
+      "sectionHint": "参考评估结果修改文案，保存后自动重新评估",
+      "empty": "暂无评估结果，保存文案后将自动评估",
+      "loading": "加载评估结果中…",
+      "loadFailed": "评估结果加载失败",
+      "overall": "综合分",
+      "radarTitle": "6 维评分雷达",
+      "dimensionsTitle": "维度详情",
+      "hintsTitle": "修订建议",
+      "biasTitle": "对抗偏倚检测",
+      "blocking": "硬性失败",
+      "decision": {
+        "approved": "通过",
+        "needs_revision": "需修订",
+        "rejected": "驳回",
+        "unknown": "未知"
+      }
+    }
   },
   "analytics": {
     "title": "数据分析中心",
