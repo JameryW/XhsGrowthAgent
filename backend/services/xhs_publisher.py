@@ -277,6 +277,12 @@ class XHSPublisher:
             "input.upload-input[type=file][accept*=jpg], input[type=file][accept*=png]"
         )
         if not already_img:
+            # ponytail: creator-tab 是 SPA 异步渲染，_wait_for_publish_ready 命中
+            # 视频 tab 的 file input 就返回了，但 div.creator-tab 此时可能还没
+            # 渲染——不等的话下面切 tab 的 querySelectorAll 返回空，clicked=-1，
+            # 走 else 备用分支最终超时。先等 tab 渲染出来再切。
+            with contextlib.suppress(Exception):
+                await page.wait_for_selector("div.creator-tab", state="attached", timeout=10000)
             await page.evaluate("""
                 () => {
                     const tabs = [...document.querySelectorAll('div.creator-tab')];
