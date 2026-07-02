@@ -60,6 +60,16 @@ class ContentStrategistAgent(BaseAgent):
         system_prompt = system_prompt.replace("{ripple_context}", "")
 
         trend_data: dict[str, Any] = cast(dict[str, Any], state.get("trend_data", {}))
+
+        # ponytail: 对候选话题打分（topic_scorer 已注册但此前从未调用——死代码）
+        # 评分结果拼入 extra_context，让 LLM 基于热度/增长/竞争度选话题。
+        # topic_scorer 内部已处理无凭证降级（返回 heat_score=50），此处只透传。
+        topic_scores_ctx = await self._score_trend_topics(trend_data, niche)
+        if topic_scores_ctx:
+            memory_context += f"\n{topic_scores_ctx}"
+            system_prompt = self._build_system_prompt(state, extra_context=memory_context)
+            system_prompt = system_prompt.replace("{ripple_context}", "")
+
         user_msg = f"""趋势数据：{trend_data}
 账号定位：{account_id}
 垂类赛道：{niche}
@@ -76,6 +86,28 @@ class ContentStrategistAgent(BaseAgent):
         if isinstance(llm_content, list):
             llm_content = str(llm_content)
         content_plan = self._parse_json_response(llm_content)
+
+        # ponytail: 主题漂移防护——selected_topic 必须落在候选集内
+        # 偏离则带 hint 重生成一次。候选为空时跳过（prompt 已指示输出空）。
+        candidates = self._extract_candidate_topics(trend_data)
+        if candidates and content_plan.get("selected_topic") not in candidates:
+            chosen = content_plan.get("selected_topic", "")
+            logger.info(f"selected_topic '{chosen}' 不在候选集，触发重生成")
+            retry_prompt = self._build_system_prompt(
+                state,
+                extra_context=memory_context
+                + f"\n【纠偏】上一次输出的 selected_topic='{chosen}' 不在候选话题内。"
+                f"候选话题为：{candidates}。必须从中选取一个，不得自创或改写措辞。",
+            )
+            retry_prompt = retry_prompt.replace("{ripple_context}", "")
+            retry_response = await self.model.ainvoke(
+                [SystemMessage(content=retry_prompt), HumanMessage(content=user_msg)]
+            )
+            retry_content = retry_response.content
+            if isinstance(retry_content, list):
+                retry_content = str(retry_content)
+            content_plan = self._parse_json_response(retry_content)
+            content_plan["topic_revised"] = True
 
         # 使用 Ripple 预测传播效果 + PMF 验证（并行调用，带超时保护）
         ripple_timeout = Settings().ripple.workflow_timeout or _DEFAULT_RIPPLE_TIMEOUT
@@ -262,6 +294,55 @@ class ContentStrategistAgent(BaseAgent):
                 content_plan["play_id"] = play_id
 
         return result
+
+    @staticmethod
+    def _extract_candidate_topics(trend_data: dict[str, Any], limit: int = 10) -> list[str]:
+        """从 trend_data 提取候选话题标题列表（兼容 dict/str 元素）。"""
+        raw = (
+            trend_data.get("hot_topics")
+            or trend_data.get("trending_topics")
+            or trend_data.get("topics")
+            or []
+        )
+        topics: list[str] = []
+        for t in raw[:limit]:
+            topic = t.get("topic") if isinstance(t, dict) else t
+            if topic and topic not in topics:
+                topics.append(str(topic))
+        return topics
+
+    async def _score_trend_topics(
+        self, trend_data: dict[str, Any], niche: str, limit: int = 5
+    ) -> str:
+        """对候选话题调用 topic_scorer 打分，返回可注入 prompt 的上下文字符串。
+
+        hot_topics 元素可能是 dict（含 topic 字段）或纯字符串，统一兼容。
+        任一话题评分失败则跳过，不阻断主流程。
+        """
+        from backend.tools.analysis.topic_scorer import topic_scorer
+
+        topics = self._extract_candidate_topics(trend_data, limit=limit)
+        if not topics:
+            return ""
+
+        lines: list[str] = []
+        for topic in topics:
+            try:
+                result = await topic_scorer.ainvoke({"topic": topic, "niche": niche})
+                if not isinstance(result, dict):
+                    continue
+                lines.append(
+                    f"- {topic}: 热度 {result.get('heat_score', 'N/A')}，"
+                    f"趋势 {result.get('growth_trend', 'N/A')}，"
+                    f"竞争 {result.get('competition_level', 'N/A')}，"
+                    f"推荐 {result.get('recommendation', 'N/A')}"
+                )
+            except Exception as e:
+                logger.warning(f"topic_scorer 失败 ({topic}): {e}")
+
+        if not lines:
+            return ""
+        return "## 话题热度评分（topic_scorer）\n" + "\n".join(lines)
 
     async def _ripple_predict(
         self,

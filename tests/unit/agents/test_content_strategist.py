@@ -53,6 +53,9 @@ class TestContentStrategistAgent:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
         agent._model = mock_model
 
+        scorer = AsyncMock()
+        scorer.ainvoke = AsyncMock(return_value={"heat_score": 50})
+
         with (
             patch(
                 "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
@@ -60,6 +63,7 @@ class TestContentStrategistAgent:
             patch(
                 "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
             ) as mock_pmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
         ):
             mock_pred.return_value = {"ripple_prediction": None}
             mock_pmf.return_value = {"ripple_pmf": None}
@@ -84,6 +88,9 @@ class TestContentStrategistAgent:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
         agent._model = mock_model
 
+        scorer = AsyncMock()
+        scorer.ainvoke = AsyncMock(return_value={"heat_score": 50})
+
         with (
             patch(
                 "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
@@ -91,6 +98,7 @@ class TestContentStrategistAgent:
             patch(
                 "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
             ) as mock_pmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
         ):
             mock_pred.return_value = {"ripple_prediction": None}
             mock_pmf.return_value = {"ripple_pmf": None}
@@ -109,6 +117,9 @@ class TestContentStrategistAgent:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
         agent._model = mock_model
 
+        scorer = AsyncMock()
+        scorer.ainvoke = AsyncMock(return_value={"heat_score": 50})
+
         with (
             patch(
                 "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
@@ -116,6 +127,7 @@ class TestContentStrategistAgent:
             patch(
                 "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
             ) as mock_pmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
         ):
             mock_predict.return_value = {
                 "ripple_job_id": "test-job",
@@ -138,6 +150,9 @@ class TestContentStrategistAgent:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
         agent._model = mock_model
 
+        scorer = AsyncMock()
+        scorer.ainvoke = AsyncMock(return_value={"heat_score": 50})
+
         with (
             patch(
                 "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
@@ -145,6 +160,7 @@ class TestContentStrategistAgent:
             patch(
                 "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
             ) as mock_pmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
         ):
             mock_predict.side_effect = Exception("Ripple unavailable")
             mock_pmf.side_effect = Exception("Ripple unavailable")
@@ -168,6 +184,9 @@ class TestContentStrategistAgent:
         mock_model.ainvoke = AsyncMock(return_value=mock_response)
         agent._model = mock_model
 
+        scorer = AsyncMock()
+        scorer.ainvoke = AsyncMock(return_value={"heat_score": 50})
+
         with (
             patch(
                 "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
@@ -175,6 +194,7 @@ class TestContentStrategistAgent:
             patch(
                 "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
             ) as mock_pmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
         ):
             mock_pred.return_value = {"ripple_prediction": None}
             mock_pmf.return_value = {"ripple_pmf": None}
@@ -201,6 +221,9 @@ class TestContentStrategistAgent:
         async def _raise_timeout(*args, **kwargs):
             raise RippleTimeoutError("job-timeout-123", 900.0)
 
+        scorer = AsyncMock()
+        scorer.ainvoke = AsyncMock(return_value={"heat_score": 50})
+
         with (
             patch(
                 "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
@@ -209,6 +232,7 @@ class TestContentStrategistAgent:
                 "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
             ) as mock_pmf,
             patch.object(agent, "_ripple_cancel", new_callable=AsyncMock) as mock_cancel,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
         ):
             # predict_spread raises RippleTimeoutError which propagates through _ripple_predict
             # We need to make _ripple_predict raise RippleTimeoutError
