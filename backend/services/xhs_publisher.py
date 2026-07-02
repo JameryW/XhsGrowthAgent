@@ -86,14 +86,24 @@ class XHSPublisher:
                 viewport={"width": 1280, "height": 800},
                 locale="zh-CN",
             )
+            # 反自动化检测：XHS 的 shield/sec 检测 webdriver/CDP/permissions 等指纹，
+            # 仅隐藏 navigator.webdriver 不够。用 playwright-stealth 注入全套反检测
+            # init script（plugins/webgl/vendor/permissions/ua 等）。可选依赖，未装则
+            # fallback 到手动 webdriver 隐藏。
+            try:
+                from playwright_stealth import Stealth  # type: ignore[import-not-found]
+
+                await Stealth().apply_stealth_async(context)
+                logger.info("playwright-stealth 已应用")
+            except Exception as e:
+                logger.warning(f"playwright-stealth 不可用，fallback 手动隐藏: {e}")
+                await context.add_init_script(
+                    "Object.defineProperty(navigator, 'webdriver', { get: () => false });"
+                )
             # 设置 Cookie
             if self.cookie:
                 await self._set_cookies(context)
             self._page = await context.new_page()
-            # 首次访问设置 localStorage
-            await self._page.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', { get: () => false });
-            """)
         return self._page
 
     async def _set_cookies(self, context: Any) -> None:
