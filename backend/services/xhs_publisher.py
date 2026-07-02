@@ -93,7 +93,13 @@ class XHSPublisher:
             try:
                 from playwright_stealth import Stealth  # type: ignore[import-not-found]
 
-                await Stealth().apply_stealth_async(context)
+                # 不覆盖 platform/languages（stealth 默认 Win32/en-US 与真实 Linux UA +
+                # zh-CN locale 冲突，指纹不一致反而是自动化特征）。只启用检测隐藏类。
+                await Stealth(
+                    navigator_platform=False,
+                    navigator_languages=False,
+                    navigator_languages_override=("zh-CN", "zh"),
+                ).apply_stealth_async(context)
                 logger.info("playwright-stealth 已应用")
             except Exception as e:
                 logger.warning(f"playwright-stealth 不可用，fallback 手动隐藏: {e}")
