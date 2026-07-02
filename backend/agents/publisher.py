@@ -114,6 +114,7 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
         user_id=user_id,
         use_browser=True,
         headless=settings.platform.headless,
+        cdp_endpoint=settings.platform.cdp_endpoint,
     )
 
     try:

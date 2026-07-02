@@ -273,11 +273,13 @@ class XHSClient:
         user_id: str = "",
         use_browser: bool = False,
         headless: bool = True,
+        cdp_endpoint: str = "",
     ):
         self.cookie = cookie
         self.user_id = user_id
         self.use_browser = use_browser
         self.headless = headless
+        self.cdp_endpoint = cdp_endpoint
 
         # HTTP API 客户端
         self._http = _HTTPClient(cookie=cookie) if cookie else None
@@ -509,6 +511,7 @@ class XHSClient:
             self._publisher = XHSPublisher(
                 cookie=self.cookie,
                 headless=self.headless,
+                cdp_endpoint=self.cdp_endpoint,
             )
         return self._publisher
 

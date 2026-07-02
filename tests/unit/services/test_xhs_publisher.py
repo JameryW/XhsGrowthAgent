@@ -180,3 +180,38 @@ class TestNoteIdExtraction:
         match = _NOTE_ID_RE.search(url)
         post_id = match.group(1) if match else ""
         assert post_id == expected
+
+
+class TestCDPMode:
+    """CDP 连接真实 Chrome 模式——绕过 XHS 反爬的关键路径。"""
+
+    def test_cdp_endpoint_stored(self):
+        """cdp_endpoint 传入后存为实例属性，决定 _ensure_browser 走 CDP 还是 launch。"""
+        pub_cdp = XHSPublisher(cookie="", cdp_endpoint="http://127.0.0.1:9222")
+        pub_launch = XHSPublisher(cookie="", cdp_endpoint="")
+        assert pub_cdp.cdp_endpoint == "http://127.0.0.1:9222"
+        assert pub_launch.cdp_endpoint == ""
+
+    @pytest.mark.asyncio
+    async def test_cdp_mode_uses_existing_context_no_stealth_no_cookie(self, monkeypatch):
+        """CDP 模式 _ensure_page 用 browser.contexts[0]，不 new_context/不注 cookie。"""
+        existing_context = MagicMock()
+        existing_context.new_page = AsyncMock(return_value=MagicMock(name="page"))
+        existing_context.add_cookies = AsyncMock()  # 不该被调
+        existing_context.add_init_script = MagicMock()  # 不该被调
+        browser = MagicMock()
+        browser.contexts = [existing_context]
+        browser.new_context = AsyncMock()  # 不该被调
+
+        publisher = XHSPublisher(cookie="a=1", cdp_endpoint="http://127.0.0.1:9222")
+        publisher._browser = browser  # 跳过 _ensure_browser
+
+        page = await publisher._ensure_page()
+
+        # CDP 模式：用已有 context（真实 Chrome profile 自带登录态）
+        browser.new_context.assert_not_called()
+        existing_context.new_page.assert_awaited_once()
+        # 不注 cookie（profile 自带）、不注 stealth（真实 Chrome 里注反检测反而标红）
+        existing_context.add_cookies.assert_not_called()
+        existing_context.add_init_script.assert_not_called()
+        assert page is not None

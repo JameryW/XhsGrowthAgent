@@ -53,35 +53,54 @@ class XHSPublisher:
         headless: bool = True,
         cookie_storage_path: str = "",
         slow_mo: int = 100,  # 每步操作延迟 (ms)
+        cdp_endpoint: str = "",
     ):
         self.cookie = cookie
         self.headless = headless
         self.cookie_storage_path = cookie_storage_path or os.path.expanduser("~/.xhs_cookies.json")
         self.slow_mo = slow_mo
+        # CDP 模式：连接常驻真实 Chrome（用户扫码登录的持久 profile），而非 launch
+        # 新浏览器。真实 Chrome 无 playwright/stealth 自动化特征，XHS shield/sec
+        # 不拦截——发布提交能正常触发 note/create。设了走 connect_over_cdp，空则
+        # fallback 到 launch（被反爬拦截，仅作兼容/测试）。
+        self.cdp_endpoint = cdp_endpoint
         self._browser: Browser | None = None
         self._page: Page | None = None
 
     async def _ensure_browser(self) -> Browser:
-        """确保浏览器已启动"""
+        """确保浏览器已启动/连接"""
         if self._browser is None:
             from playwright.async_api import async_playwright  # lazy: optional [browser] extra
 
             playwright = await async_playwright().start()
-            self._browser = await playwright.chromium.launch(
-                headless=self.headless,
-                slow_mo=self.slow_mo,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                ],
-            )
+            if self.cdp_endpoint:
+                # CDP 模式：连接常驻真实 Chrome（profile 自带登录态，不注 stealth/cookie）
+                self._browser = await playwright.chromium.connect_over_cdp(self.cdp_endpoint)
+                logger.info(f"已通过 CDP 连接真实 Chrome: {self.cdp_endpoint}")
+            else:
+                self._browser = await playwright.chromium.launch(
+                    headless=self.headless,
+                    slow_mo=self.slow_mo,
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                    ],
+                )
         return self._browser
 
     async def _ensure_page(self) -> Page:
         """确保页面已创建并登录"""
         browser = await self._ensure_browser()
         if self._page is None:
+            if self.cdp_endpoint:
+                # CDP 模式：用真实 Chrome 已有的 context（profile 自带登录态），
+                # 不 new_context / 不注 stealth / 不注 cookie——在已合法的浏览器里
+                # 注入伪装脚本或裸 cookie 反而是自动化特征，会被 XHS shield 标红。
+                contexts = browser.contexts
+                context = contexts[0] if contexts else await browser.new_context()
+                self._page = await context.new_page()
+                return self._page
             context = await browser.new_context(
                 viewport={"width": 1280, "height": 800},
                 locale="zh-CN",
