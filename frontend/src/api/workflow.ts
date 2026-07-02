@@ -87,6 +87,11 @@ export async function retryRippleAnalysis(threadId: string): Promise<{ thread_id
   return client.post(`/workflow/ripple-retry/${threadId}`) as unknown as { thread_id: string; status: string; message: string }
 }
 
+// 重试发布：用工作流现有内容重跑发布步骤（不重走创作链路）
+export async function retryPublish(threadId: string): Promise<{ thread_id: string; status: string; message: string }> {
+  return client.post(`/workflow/publish-retry/${threadId}`) as unknown as { thread_id: string; status: string; message: string }
+}
+
 // 提交 Ripple 决策（接受/换角度/换话题）
 export async function submitRippleDecision(threadId: string, action: 'accept' | 'reangle' | 'retopic'): Promise<{ thread_id: string; status: string; action: string; next_phase: string }> {
   const { retryWithBackoff } = useRetry()

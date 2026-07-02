@@ -267,26 +267,62 @@ class XHSPublisher:
         if not valid_paths:
             raise ValueError("没有有效的图片文件")
 
-        # 找到上传按钮
-        upload_input = await page.query_selector("input[type=file][accept*=image]")
+        # ponytail: 创作者发布页默认停在"上传视频"tab，其 file input 的
+        # accept=".mp4,.mov,..." 不含 image，首选选择器必 miss。必须先切到
+        # "上传图文"tab 才会出现图片 file input。页面上有多个同名隐藏 tab 副本，
+        # Playwright 的 locator 会命中 outside-viewport 的隐藏副本而 click 超时，
+        # 用 JS 选 offsetParent 非 null 的真实可见 tab 直接 dispatch click。
+        # 已在图文 tab 时跳过（重复点会 toggle 回视频 tab）。
+        already_img = await page.query_selector(
+            "input.upload-input[type=file][accept*=jpg], input[type=file][accept*=png]"
+        )
+        if not already_img:
+            await page.evaluate("""
+                () => {
+                    const tabs = [...document.querySelectorAll('div.creator-tab')];
+                    const t = tabs.find(t => t.innerText.includes('上传图文')
+                        && t.offsetParent !== null);
+                    if (t) t.click();
+                }
+            """)
+            # 等图片上传 input 出现。它是 hidden 元素（XHS 用隐藏 input + 可点容器），
+            # wait_for_selector 默认等 visible 会超时，用 state="attached" 只等 DOM 挂载。
+            try:
+                await page.wait_for_selector(
+                    "input[type=file][accept*=jpg], input[type=file][accept*=png]",
+                    state="attached",
+                    timeout=10000,
+                )
+            except Exception:
+                await asyncio.sleep(1)
+
+        # 找到上传 input。现网 class="upload-input"，accept=".jpg,.jpeg,.png,.webp"
+        # （不含 "image" 字符串），故用 accept*=jpg / [multiple] 精确定位，避免裸
+        # .upload-input 误命中视频 tab 的同名 input。
+        upload_input = await page.query_selector(
+            "input[type=file][accept*=jpg], input[type=file][accept*=png],"
+            " input[type=file][multiple]"
+        )
         if upload_input:
             await upload_input.set_input_files(valid_paths)
-            # 等待上传完成
-            # ponytail: Playwright Python's wait_for_function takes `arg` (singular),
-            # not `args` — `args=` was silently ignored, leaving arguments[0] undefined
-            # so `.length >= undefined` was always false → 60s timeout on every publish.
+            # 等待上传完成。上传成功后页面进入编辑态，图片以 .item-picture
+            # 容器呈现（.img-list 下），上传区容器随之消失。.image-item 是旧选择器，
+            # 现网已不适用——保留兜底以防旧版页面回退。
+            # ponytail: Playwright wait_for_function 把 `arg` 作为函数首个参数注入，
+            # 不是 arguments 对象——箭头函数里 arguments 不绑定，旧代码 arguments[0]
+            # 恒抛 ReferenceError 导致 wait 永不满足→60s 超时。必须声明形参接收。
             await page.wait_for_function(
-                "document.querySelectorAll('.image-item').length >= arguments[0]",
+                "(n) => document.querySelectorAll('.item-picture, .image-item').length >= n",
                 arg=len(valid_paths),
                 timeout=60000,  # 图片上传可能较慢
             )
         else:
-            # 备用方案：点击上传区域
-            await page.click(".upload-area, .image-upload-btn")
+            # 备用方案：点击上传区域触发 file picker（现网容器 .upload-c / .drag-over）
+            await page.click(".upload-c, .drag-over, .upload-area, .image-upload-btn")
             await asyncio.sleep(1)
             file_input = await page.query_selector("input[type=file]")
             await file_input.set_input_files(valid_paths)
-            await page.wait_for_selector(".image-item", timeout=60000)
+            await page.wait_for_selector(".item-picture, .image-item", timeout=60000)
 
     async def _fill_content(self, page: Page, title: str, body: str) -> None:
         """填写标题和正文"""

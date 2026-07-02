@@ -840,6 +840,38 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
+  // 重试发布：用现有内容重跑发布步骤（不重走创作链路）。仅发布失败时用。
+  async function retryPublish() {
+    if (!activeThreadId.value) return
+    const threadId = activeThreadId.value
+    isLoading.value = true
+    error.value = null
+    try {
+      const result = await workflowApi.retryPublish(threadId)
+      const state = workflowStates.value.get(threadId)
+      if (state) {
+        const nextState = {
+          ...state,
+          status: result.status || 'running',
+          phase: state.phase,
+        } as WorkflowStateResponse
+        workflowStates.value.set(threadId, nextState)
+      }
+      realtimeStore.subscribeWorkflow(threadId)
+      if (result.status === 'skipped') {
+        toastStore.warning(t('workflow.retryPublishSkipped', '重试已跳过'), result.message)
+      } else {
+        toastStore.success(t('workflow.retryPublishStarted', '正在重新发布'), result.message)
+      }
+      return result
+    } catch (e: any) {
+      error.value = e.message
+      toastStore.error(t('workflow.retryPublishFailed', '重试发布失败'), e.message)
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   async function cancelWorkflow() {
     if (!activeThreadId.value) return
     const threadId = activeThreadId.value
@@ -1072,6 +1104,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     refreshStatus,
     pauseWorkflow,
     resumeWorkflow,
+    retryPublish,
     cancelWorkflow,
     startPolling,
     stopPolling,
