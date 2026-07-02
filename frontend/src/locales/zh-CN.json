@@ -1372,6 +1372,17 @@
   "evaluation": {
     "title": "创作质量评估",
     "subtitle": "RQGM agent-as-a-judge 面板 · 6 维质量评分与修订建议",
+    "list": {
+      "subtitle": "查看有评估结果的工作流，点击进入详情",
+      "searchPlaceholder": "搜索标题 / thread_id / 账号",
+      "loading": "加载列表中…",
+      "loadError": "加载列表失败",
+      "empty": "暂无有评估结果的工作流",
+      "loadMore": "加载更多",
+      "noMore": "已全部加载",
+      "back": "返回列表",
+      "detailTitle": "评估详情"
+    },
     "inputPlaceholder": "输入工作流 thread_id 查看评估结果",
     "search": "查询",
     "searching": "查询中…",

@@ -48,6 +48,32 @@ export interface TrendPoint {
   dim_scores: Record<string, number>
 }
 
+/** GET /evaluation/list 单条 — 有评估结果的工作流摘要. */
+export interface EvaluationListItem {
+  thread_id: string
+  account_id: string
+  status: string
+  phase: string
+  label: string
+  workflow_mode: string
+  updated_at: string
+  created_at?: string
+  /** state.copy_content.selected_title — 列表标题展示用 */
+  selected_title: string
+  /** 0-100 综合分预览 */
+  overall_score: number
+  /** approved / needs_revision / rejected */
+  decision: string
+}
+
+/** GET /evaluation/list 响应. */
+export interface EvaluationListResponse {
+  workflows: EvaluationListItem[]
+  total: number
+  limit: number
+  offset: number
+}
+
 /** GET /evaluation/trend 响应. */
 export interface EvaluationTrendResponse {
   db_ready: boolean

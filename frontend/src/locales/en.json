@@ -1372,6 +1372,17 @@
   "evaluation": {
     "title": "Creation Quality Evaluation",
     "subtitle": "RQGM agent-as-a-judge panel · 6-dimension scoring & revision hints",
+    "list": {
+      "subtitle": "Workflows with evaluation results — click to view detail",
+      "searchPlaceholder": "Search title / thread_id / account",
+      "loading": "Loading list…",
+      "loadError": "Failed to load list",
+      "empty": "No workflows with evaluation results",
+      "loadMore": "Load more",
+      "noMore": "All loaded",
+      "back": "Back to list",
+      "detailTitle": "Evaluation Detail"
+    },
     "inputPlaceholder": "Enter workflow thread_id to view evaluation",
     "search": "Search",
     "searching": "Searching…",
