@@ -18,6 +18,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile
 
+from backend.agents.publisher import run_publish
 from backend.api.errors import ValidationError, WorkflowNotFoundError
 from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
@@ -1916,5 +1917,124 @@ async def trigger_analytics(thread_id: str, request: Request) -> ApiResponse[Any
             "thread_id": thread_id,
             "status": "running",
             "phase": "analyzing",
+        }
+    )
+
+
+@router.post("/publish-retry/{thread_id}")
+async def retry_publish(thread_id: str, request: Request) -> ApiResponse[Any]:
+    """重试发布：用工作流现有内容重跑发布步骤，不重走创作链路。
+
+    用于发布失败（status=failed/error）或试运行（mock_published）后手动重发。
+    已发布的（status=published/success）拒绝，避免重复发笔记。
+    """
+    if not thread_id or thread_id.strip() == "":
+        raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    state = await graph.aget_state(config)
+    if not state.values or state.values.get("session_id") is None:
+        raise WorkflowNotFoundError(thread_id)
+
+    values = state.values
+
+    # 并发守卫：工作流正在跑（含正在重试）时不允许再触发
+    has_active = (
+        thread_id in _runner._background_tasks and not _runner._background_tasks[thread_id].done()
+    ) or (thread_id in _runner._active_sync_executions)
+    if has_active:
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "skipped",
+                "message": "工作流正在运行，无法重试。",
+            }
+        )
+
+    copy = values.get("copy_content") or {}
+    if not (copy.get("selected_title") or copy.get("body_text")):
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "skipped",
+                "message": "无法重试：缺少已生成的标题/正文内容。",
+            }
+        )
+
+    pr = values.get("publish_result") or {}
+    if not pr:
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "skipped",
+                "message": "无法重试：工作流尚未到达发布步骤。",
+            }
+        )
+
+    pr_status = pr.get("status")
+    # 已发布的工作流不允许重试——防止在小红书重复发笔记
+    if pr_status in ("published", "success"):
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "skipped",
+                "message": "该笔记已发布，不允许重复发布。",
+            }
+        )
+
+    def _emit_retry_event(tid: str, publish_result: dict[str, Any]) -> None:
+        bus = EventBusService.get_instance()
+        status = publish_result.get("status", "unknown")
+        bus.emit(
+            EventType.WORKFLOW_AGENT_STARTED,
+            thread_id=tid,
+            payload={"agent": "publisher", "retry": True},
+        )
+        bus.emit(
+            EventType.WORKFLOW_AGENT_COMPLETED,
+            thread_id=tid,
+            payload={"agent": "publisher", "status": status, "retry": True},
+        )
+        bus.emit(
+            EventType.WORKFLOW_DATA_UPDATED,
+            thread_id=tid,
+            payload={"publish_result": publish_result, "retry": True},
+        )
+
+    async def _run_publish_retry() -> None:
+        try:
+            snap = await graph.aget_state(config)
+            result = await run_publish(snap.values, graph.store)
+            publish_result = result["publish_result"]
+            snap = await graph.aget_state(config)
+            await graph.aupdate_state(
+                config,
+                {"publish_result": publish_result, "phase": WorkflowPhase.PUBLISHING},
+                as_node=_get_as_node(snap),
+            )
+            await _db_upsert(
+                thread_id,
+                status="completed" if publish_result.get("post_id") else "error",
+                phase=WorkflowPhase.PUBLISHING.value,
+                error=publish_result.get("error"),
+            )
+            _emit_retry_event(thread_id, publish_result)
+        except Exception:
+            logger.exception("publish-retry failed for %s", thread_id)
+        finally:
+            if _runner._background_tasks.get(thread_id) is asyncio.current_task():
+                _runner._background_tasks.pop(thread_id, None)
+
+    task = asyncio.create_task(_run_publish_retry(), name=f"publish-retry-{thread_id}")
+    task.add_done_callback(_on_task_done(thread_id))
+    _runner._background_tasks[thread_id] = task
+
+    return success(
+        data={
+            "thread_id": thread_id,
+            "status": "retrying",
+            "message": "正在重新发布",
         }
     )

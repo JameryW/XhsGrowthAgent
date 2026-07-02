@@ -51,6 +51,12 @@ class TestUploadImages:
         assert "args" not in kwargs, "args= is silently ignored — the bug"
         assert kwargs["arg"] == 1
         assert kwargs["timeout"] == 60000
+        # Regression: Playwright injects `arg` as the function's first parameter,
+        # NOT as `arguments` — arrow functions don't bind `arguments`, so the old
+        # `arguments[0]` body threw ReferenceError on every poll → 60s timeout.
+        js = page.wait_for_function.await_args.args[0]
+        assert "arguments[0]" not in js, "use a named param, not arguments[0]"
+        assert "(n)" in js and "n" in js, "JS must declare a param to receive arg"
 
     async def test_raises_when_no_valid_images(self, publisher: XHSPublisher):
         """No valid image files → ValueError, not a silent no-op."""

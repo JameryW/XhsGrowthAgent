@@ -187,7 +187,7 @@ onUnmounted(() => {
               <div class="flex flex-wrap items-center gap-2">
                 <button
                   v-if="workflowStore.publishError.recovery.action === 'retry'"
-                  @click="workflowStore.resumeWorkflow()"
+                  @click="workflowStore.retryPublish()"
                   class="btn-sm bg-rose-100 text-rose-600 hover:bg-rose-200 text-xs"
                 >
                   {{ workflowStore.publishError.recovery.action_label }}
