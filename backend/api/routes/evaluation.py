@@ -11,11 +11,13 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 
 from backend.agents.evaluator import EvaluatorAgent
 from backend.api.errors import ValidationError, WorkflowNotFoundError
 from backend.api.responses import ApiResponse, success
+from backend.db.pool import is_pool_ready
+from backend.db.workflows import list_workflows as db_list
 from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.api.evaluation")
@@ -29,6 +31,107 @@ def _get_state_values(state: Any) -> dict[str, Any]:
     if not state or not state.values or state.values.get("session_id") is None:
         return {}
     return cast("dict[str, Any]", state.values)
+
+
+def _extract_eval_summary(values: dict[str, Any]) -> tuple[float | None, str | None]:
+    """Pull (overall_score, decision) from a checkpoint's evaluation_result.
+
+    Returns (None, None) when there is no evaluation_result, so callers can
+    skip the thread. decision is coerced to its string value (ContentStatus is
+    a StrEnum, so str(...) yields "approved" / "needs_revision" / "rejected").
+    """
+    evaluation = values.get("evaluation_result")
+    if not evaluation or not isinstance(evaluation, dict):
+        return None, None
+    score = evaluation.get("overall_score")
+    decision = evaluation.get("decision")
+    try:
+        score_val: float | None = float(score) if score is not None else None
+    except (TypeError, ValueError):
+        score_val = None
+    decision_val = str(decision) if decision is not None else None
+    return score_val, decision_val
+
+
+@router.get("/list")
+async def list_evaluated_workflows(
+    request: Request,
+    account_id: str | None = Query(None, description="筛选账号 ID"),
+    limit: int = Query(20, ge=1, le=100, description="返回数量限制（过滤后）"),
+    offset: int = Query(0, ge=0, description="分页偏移（过滤后）"),
+) -> ApiResponse[Any]:
+    """列出有评估结果的工作流 — 含标题 + 评估摘要.
+
+    专用端点，不污染通用 /api/workflow/list（后者从 DB workflows 表查，无标题/无评估）。
+    流程：DB 取基础列表 → 逐条读 checkpoint → 过滤掉无 evaluation_result 的 →
+    装载 selected_title / overall_score / decision → 切片分页。
+
+    分页注意：has_evaluation 过滤在 checkpoint 读取后进行，DB 端的 limit/offset
+    无法精确对应过滤后页码。为此从 DB 多取 (limit+offset) 条作为缓冲，
+    再对过滤后结果做 limit/offset 切片。绝大多数账号工作流总量小，缓冲足够。
+    """
+    if not is_pool_ready():
+        return success(data={"workflows": [], "total": 0, "limit": limit, "offset": offset})
+
+    graph = request.app.state.graph
+
+    # Over-fetch from DB to compensate for post-filter shrinkage.
+    # limit+offset is the worst case (every DB row has an evaluation).
+    db_limit = limit + offset
+    rows, _db_total = await db_list(
+        account_id=account_id,
+        limit=db_limit,
+        offset=0,
+    )
+
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        config = {"configurable": {"thread_id": row.thread_id}}
+        try:
+            state = await graph.aget_state(config)
+        except Exception:
+            logger.exception("aget_state failed for %s during evaluation list", row.thread_id)
+            continue
+        values = _get_state_values(state)
+        if not values:
+            continue
+
+        overall_score, decision = _extract_eval_summary(values)
+        if overall_score is None and decision is None:
+            # No evaluation_result → skip this workflow.
+            continue
+
+        copy_content = values.get("copy_content") or {}
+        if not isinstance(copy_content, dict):
+            copy_content = {}
+        selected_title = copy_content.get("selected_title") or ""
+
+        enriched.append(
+            {
+                "thread_id": row.thread_id,
+                "account_id": row.account_id,
+                "status": row.status,
+                "phase": row.phase,
+                "label": row.label,
+                "workflow_mode": row.workflow_mode,
+                "updated_at": row.updated_at,
+                "created_at": row.created_at,
+                "selected_title": selected_title,
+                "overall_score": overall_score,
+                "decision": decision,
+            }
+        )
+
+    total = len(enriched)
+    page = enriched[offset : offset + limit]
+    return success(
+        data={
+            "workflows": page,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+    )
 
 
 @router.get("/result/{thread_id}")
