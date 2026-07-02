@@ -5,6 +5,7 @@ import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import DraftInput from '@/components/DraftInput.vue'
 import VersionCompare from '@/components/VersionCompare.vue'
+import StyleCompare from '@/components/StyleCompare.vue'
 import { useWorkflowStore, useOptimizationStore } from '@/stores'
 import type { DraftContent, VersionChoice } from '@/types/optimization'
 
@@ -31,6 +32,12 @@ const contentVersions = computed(() =>
   optimizationStoreMatchesThread.value && optimizationStore.contentVersions.length > 0
     ? optimizationStore.contentVersions
     : workflowVersions.value
+)
+// First choice_gate layer (style variants) carries style_name on every item;
+// second layer (A/B/C) carries predicted_score instead. No backend status split
+// exists, so discriminate by the style_name field presence.
+const isStyleChoice = computed(() =>
+  contentVersions.value.length > 0 && !!contentVersions.value[0]?.style_name
 )
 const optimizationAnalysis = computed(() =>
   (optimizationStoreMatchesThread.value ? optimizationStore.optimizationAnalysis : null) ||
@@ -133,9 +140,16 @@ const handleVersionSelect = (choice: VersionChoice) => {
 
     <!-- Version Compare Component (when versions are available) -->
     <VersionCompare
-      v-if="isOptimizationPending"
+      v-if="isOptimizationPending && !isStyleChoice"
       :versions="contentVersions"
       :analysis="optimizationAnalysis"
+      :is-loading="optimizationStore.isLoading"
+      @select="handleVersionSelect"
+    />
+    <!-- Style Compare Component (first choice_gate layer: pick a style variant) -->
+    <StyleCompare
+      v-else-if="isOptimizationPending && isStyleChoice"
+      :versions="contentVersions"
       :is-loading="optimizationStore.isLoading"
       @select="handleVersionSelect"
     />
