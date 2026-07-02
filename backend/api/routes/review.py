@@ -5,20 +5,25 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Request
 from langgraph.types import Command, StateSnapshot
 from pydantic import BaseModel
 
+from backend.agents.evaluator import EvaluatorAgent
 from backend.api.errors import ReviewNotPendingError
 from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
 from backend.state.enums import ContentStatus
+from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.api.review")
 
 router = APIRouter()
+
+# Reuse a single EvaluatorAgent instance (same pattern as evaluation routes).
+_evaluator = EvaluatorAgent()
 
 
 def _is_at_ripple_gate(state: StateSnapshot) -> bool:
@@ -289,3 +294,93 @@ async def submit_ripple_decision(
             "next_phase": next_phase,
         }
     )
+
+
+class CopyUpdateRequest(BaseModel):
+    """Partial copy_content update — only provided fields are overwritten."""
+
+    title: str | None = None  # maps to copy_content.selected_title
+    body_text: str | None = None
+    hashtags: list[str] | None = None
+
+
+@router.post("/update-copy/{thread_id}")
+async def update_copy_content(
+    thread_id: str, body: CopyUpdateRequest, request: Request
+) -> ApiResponse[Any]:
+    """手动覆盖文案 — 部分更新 copy_content，保存后自动重跑 evaluator.
+
+    仅 awaiting_review (review_gate 在 next) 工作流允许编辑。部分覆盖：
+    只更新提供的字段，保留 selected_title 之外的字段 (tone/cta 等)。
+    保存 copy_content 后用更新后的 state 调 EvaluatorAgent，将
+    evaluation_result 写回。evaluator 失败时降级：copy_content 仍保存，
+    evaluation_result 为空，返回带 warning。
+    """
+    if not thread_id or not thread_id.strip():
+        from backend.api.errors import ValidationError
+
+        raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    state = await graph.aget_state(config)
+
+    # 校验 awaiting_review：review_gate 必须在 next
+    if "review_gate" not in (state.next or []):
+        current_phase = (state.values or {}).get("phase", "unknown")
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "skipped",
+                "message": f"仅待审核工作流可编辑文案 (当前: {current_phase})",
+                "evaluation_result": {},
+            }
+        )
+
+    values = state.values or {}
+    if values.get("session_id") is None:
+        from backend.api.errors import WorkflowNotFoundError
+
+        raise WorkflowNotFoundError(thread_id)
+
+    existing_copy: dict[str, Any] = dict(values.get("copy_content") or {})
+
+    # 部分覆盖：只更新提供的字段
+    if body.title is not None:
+        existing_copy["selected_title"] = body.title
+    if body.body_text is not None:
+        existing_copy["body_text"] = body.body_text
+    if body.hashtags is not None:
+        existing_copy["hashtags"] = body.hashtags
+
+    # 1) 持久化 copy_content（merge：保留未提供字段）
+    await graph.aupdate_state(config, {"copy_content": existing_copy})
+
+    # 2) 重跑 evaluator（用更新后的 state 快照）
+    evaluation: dict[str, Any] = {}
+    warning: str | None = None
+    try:
+        eval_state = cast("XHSGrowthState", {**values, "copy_content": existing_copy})
+        store = getattr(graph, "store", None)
+        result = await _evaluator(eval_state, store=store)  # type: ignore[arg-type]
+        evaluation = result.get("evaluation_result") or {}
+
+        # 持久化 evaluation_result（不推进工作流）
+        await graph.aupdate_state(config, {"evaluation_result": evaluation})
+    except Exception as exc:  # noqa: BLE001 — 降级：evaluator 失败不阻断文案保存
+        warning = f"evaluator 降级放行：{exc}"
+        logger.warning(
+            "update_copy: evaluator failed for thread %s, degrading: %s",
+            thread_id,
+            exc,
+        )
+
+    response: dict[str, Any] = {
+        "thread_id": thread_id,
+        "status": "updated",
+        "evaluation_result": evaluation,
+    }
+    if warning:
+        response["warning"] = warning
+    return success(data=response)
