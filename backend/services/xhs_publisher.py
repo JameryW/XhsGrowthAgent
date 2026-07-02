@@ -326,8 +326,10 @@ class XHSPublisher:
 
     async def _fill_content(self, page: Page, title: str, body: str) -> None:
         """填写标题和正文"""
-        # 标题输入框
-        title_input = await page.query_selector("input[placeholder*=标题], .title-input")
+        # 标题输入框（现网 placeholder="填写标题会有更多赞哦"，class=d-text）
+        title_input = await page.query_selector(
+            "input[placeholder*=标题], .title-input, input.d-text[type=text]"
+        )
         if title_input:
             await title_input.fill(title)
         else:
@@ -336,11 +338,24 @@ class XHSPublisher:
 
         await asyncio.sleep(0.5)
 
-        # 正文输入框
-        body_input = await page.query_selector("textarea[placeholder*=正文], .content-input")
-        if body_input:
-            await body_input.fill(body)
+        # 正文：现网是 tiptap/ProseMirror 的 contenteditable div（非 textarea），
+        # textarea[placeholder*=正文] 在新版页面不存在。fill() 只对 input/textarea
+        # 生效，contenteditable 须 click 聚焦后 type。
+        body_editor = await page.query_selector(
+            ".tiptap.ProseMirror, [contenteditable=true],"
+            " textarea[placeholder*=正文], .content-input"
+        )
+        if body_editor:
+            tag = await body_editor.evaluate("el => el.tagName")
+            if tag == "TEXTAREA":
+                await body_editor.fill(body)
+            else:
+                # contenteditable: 聚焦后逐字 type（ProseMirror 监听键盘事件入 schema）
+                await body_editor.click()
+                await asyncio.sleep(0.2)
+                await page.keyboard.type(body, delay=30)
         else:
+            # 备用方案
             await page.type("textarea", body, delay=30)
 
     async def _add_hashtags(self, page: Page, hashtags: list[str]) -> None:
