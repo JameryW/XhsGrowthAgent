@@ -51,3 +51,32 @@ export async function setCredentials(accountId: string, credentials: Record<stri
 export async function deleteCredential(accountId: string, keyName: string): Promise<void> {
   await client.delete(`/accounts/${accountId}/credentials/${keyName}`)
 }
+
+// ── Scan-login (QR code) ──
+
+export type QrLoginStatus = 'waiting' | 'scanned' | 'confirmed' | 'expired'
+
+export interface QrLoginStart {
+  qr_id: string
+  url: string
+  account_id: string
+}
+
+export interface QrLoginStatusResponse {
+  status: QrLoginStatus
+  qr_id: string
+  url?: string
+  account_id: string
+}
+
+export async function startQrLogin(accountId: string): Promise<QrLoginStart> {
+  return client.post(`/accounts/${accountId}/login/qr`) as unknown as QrLoginStart
+}
+
+export async function getQrLoginStatus(accountId: string): Promise<QrLoginStatusResponse> {
+  return client.get(`/accounts/${accountId}/login/qr/status`) as unknown as QrLoginStatusResponse
+}
+
+export async function stopQrLogin(accountId: string): Promise<{ stopped: boolean; account_id: string }> {
+  return client.post(`/accounts/${accountId}/login/qr/stop`) as unknown as { stopped: boolean; account_id: string }
+}

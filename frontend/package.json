@@ -22,6 +22,7 @@
     "axios": "^1.6.8",
     "echarts": "^5.5.0",
     "pinia": "^2.1.7",
+    "qrcode": "^1.5.3",
     "vue": "^3.4.21",
     "vue-echarts": "^6.6.8",
     "vue-i18n": "^9.14.5",
@@ -30,6 +31,7 @@
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.7",
     "@types/node": "^20.11.24",
+    "@types/qrcode": "^1.5.5",
     "@vitejs/plugin-vue": "^5.0.4",
     "@vue/test-utils": "^2.4.10",
     "autoprefixer": "^10.4.17",
