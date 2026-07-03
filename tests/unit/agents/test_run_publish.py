@@ -79,6 +79,15 @@ def _mock_history(monkeypatch):
     return hist
 
 
+def _mock_account_active(monkeypatch, is_active=True):
+    """Patch get_account so the is_active pre-publish check doesn't hit the DB pool."""
+    from backend.db.accounts import AccountRow
+
+    account = AccountRow(id="acc", name="acc", is_active=is_active)
+    monkeypatch.setattr("backend.db.accounts.get_account", AsyncMock(return_value=account))
+    return account
+
+
 @pytest.mark.asyncio
 async def test_uses_selected_account_cookie(_browser_settings, mock_store, monkeypatch):
     """account_id in publish_options → get_account_cookie called, its cookie used."""
@@ -86,6 +95,7 @@ async def test_uses_selected_account_cookie(_browser_settings, mock_store, monke
     client = _mock_client("p1")
     m_cookie = AsyncMock(return_value=("ACC_COOKIE", "ACC_UID"))
     monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
+    _mock_account_active(monkeypatch)
     m_client = _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
 
@@ -143,6 +153,7 @@ async def test_classifies_auth_error(_browser_settings, mock_store, monkeypatch)
     state = _state(publish_options={"dry_run": False, "account_id": "acc_x"})
     m_cookie = AsyncMock(return_value=("STALE_COOKIE", "ACC_UID"))
     monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
+    _mock_account_active(monkeypatch)
 
     client = MagicMock()
     client.publish_post = AsyncMock(side_effect=RuntimeError("cookie expired, login required"))
@@ -165,6 +176,7 @@ async def test_preserves_publish_service_error(_browser_settings, mock_store, mo
     state = _state(publish_options={"dry_run": False, "account_id": "acc_x"})
     m_cookie = AsyncMock(return_value=("COOKIE", "ACC_UID"))
     monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
+    _mock_account_active(monkeypatch)
 
     client = MagicMock()
     client.publish_post = AsyncMock(
@@ -194,6 +206,7 @@ async def test_never_honors_dry_run(_browser_settings, mock_store, monkeypatch):
     client = _mock_client("p_real")
     m_cookie = AsyncMock(return_value=("ACC_COOKIE", "ACC_UID"))
     monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
+    _mock_account_active(monkeypatch)
     _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
 
@@ -212,6 +225,7 @@ async def test_records_history_on_success_only(_browser_settings, mock_store, mo
     client = _mock_client("p_ok")
     m_cookie = AsyncMock(return_value=("ACC_COOKIE", "ACC_UID"))
     monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
+    _mock_account_active(monkeypatch)
     _patch_client(monkeypatch, client)
     hist = _mock_history(monkeypatch)
 

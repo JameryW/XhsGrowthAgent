@@ -156,6 +156,30 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
                 "publish_result": publish_result,
                 "phase": WorkflowPhase.PUBLISHING,
             }
+        # 停用账号早 fail：is_active=false 直接拒绝，避免浪费一次真实 Chrome 发布
+        # 等 XHS 平台返回 auth_expired（mirror no_cookie short-circuit 范式）。
+        from backend.db.accounts import get_account
+
+        account = await get_account(publish_account_id)
+        if account is None or not account.is_active:
+            logger.warning(f"账号 {publish_account_id} 未激活或不存在，跳过发布")
+            publish_result = {
+                "post_id": "",
+                "post_url": "",
+                "status": "failed",
+                "error": f"账号 {publish_account_id} 已停用，无法发布",
+                "error_type": "account_inactive",
+                "recovery": {
+                    "message": "该账号已停用，发布前需在设置页重新激活",
+                    "action": "reconfigure",
+                    "action_label": "重新激活",
+                    "hint": "请在设置页将该账号重新激活后再发布",
+                },
+            }
+            return {
+                "publish_result": publish_result,
+                "phase": WorkflowPhase.PUBLISHING,
+            }
         logger.info(f"按选中账号 {publish_account_id} 发布")
 
     # 调用真实发布服务

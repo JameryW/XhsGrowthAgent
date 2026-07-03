@@ -63,6 +63,15 @@ def _mock_history(monkeypatch):
     monkeypatch.setattr("backend.memory.content_history.ContentHistory", hist)
 
 
+def _mock_account_active(monkeypatch, is_active=True):
+    """Patch get_account to return an AccountRow with the given is_active."""
+    from backend.db.accounts import AccountRow
+
+    account = AccountRow(id="acc", name="acc", is_active=is_active)
+    monkeypatch.setattr("backend.db.accounts.get_account", AsyncMock(return_value=account))
+    return account
+
+
 @pytest.mark.asyncio
 async def test_uses_selected_account_cookie(_browser_settings, mock_store, monkeypatch):
     """account_id in publish_options → get_account_cookie called, its cookie used."""
@@ -70,6 +79,7 @@ async def test_uses_selected_account_cookie(_browser_settings, mock_store, monke
     client = _mock_client("p1")
     m_cookie = AsyncMock(return_value=("ACC_COOKIE", "ACC_UID"))
     monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
+    _mock_account_active(monkeypatch, is_active=True)
     m_client = _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
 
@@ -151,6 +161,31 @@ async def test_no_cookie_when_account_unconfigured(_browser_settings, mock_store
 
 
 @pytest.mark.asyncio
+async def test_inactive_account_fails_fast(_browser_settings, mock_store, monkeypatch):
+    """Selected account is_active=False → fail fast, no XHSClient built."""
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_off"})
+    m_cookie = AsyncMock(return_value=("COOKIE", "UID"))  # cookie present, but account inactive
+    monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
+    _mock_account_active(monkeypatch, is_active=False)
+    m_client = MagicMock()
+    monkeypatch.setattr("backend.services.xhs_client.XHSClient", m_client)
+
+    result = await PublisherAgent().execute(state, store=mock_store)
+
+    m_client.assert_not_called()  # must not attempt to publish with a deactivated account
+    pr = result["publish_result"]
+    assert pr["status"] == "failed"
+    assert pr["error_type"] == "account_inactive"
+    assert "acc_off" in pr["error"]
+    # recovery must be a structured dict — same regression guard as no_cookie path.
+    rec = pr["recovery"]
+    assert isinstance(rec, dict)
+    assert rec["action"] == "reconfigure"
+    assert rec["hint"]
+    assert rec["action_label"]
+
+
+@pytest.mark.asyncio
 async def test_dry_run_records_account_id(mock_store, monkeypatch):
     """dry_run → mock result carries the selected account_id."""
     state = _state(publish_options={"dry_run": True, "account_id": "acc_dry"})
@@ -170,6 +205,7 @@ async def test_selected_account_expired_cookie_classified(
     state = _state(publish_options={"dry_run": False, "account_id": "acc_x"})
     m_cookie = AsyncMock(return_value=("STALE_COOKIE", "ACC_UID"))
     monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
+    _mock_account_active(monkeypatch, is_active=True)
 
     client = MagicMock()
     client.publish_post = AsyncMock(side_effect=RuntimeError("cookie expired, login required"))
