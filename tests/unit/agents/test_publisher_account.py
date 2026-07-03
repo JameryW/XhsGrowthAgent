@@ -72,6 +72,13 @@ def _mock_account_active(monkeypatch, is_active=True):
     return account
 
 
+def _mock_cdp_endpoint(monkeypatch, endpoint=""):
+    """Patch get_account_cdp_endpoint so per-account CDP resolution doesn't hit the DB."""
+    monkeypatch.setattr(
+        "backend.db.accounts.get_account_cdp_endpoint", AsyncMock(return_value=endpoint)
+    )
+
+
 @pytest.mark.asyncio
 async def test_uses_selected_account_cookie(_browser_settings, mock_store, monkeypatch):
     """account_id in publish_options → get_account_cookie called, its cookie used."""
@@ -80,6 +87,7 @@ async def test_uses_selected_account_cookie(_browser_settings, mock_store, monke
     m_cookie = AsyncMock(return_value=("ACC_COOKIE", "ACC_UID"))
     monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
     _mock_account_active(monkeypatch, is_active=True)
+    _mock_cdp_endpoint(monkeypatch)
     m_client = _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
 
@@ -206,6 +214,7 @@ async def test_selected_account_expired_cookie_classified(
     m_cookie = AsyncMock(return_value=("STALE_COOKIE", "ACC_UID"))
     monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
     _mock_account_active(monkeypatch, is_active=True)
+    _mock_cdp_endpoint(monkeypatch)
 
     client = MagicMock()
     client.publish_post = AsyncMock(side_effect=RuntimeError("cookie expired, login required"))

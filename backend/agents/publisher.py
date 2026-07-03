@@ -185,12 +185,24 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
     # 调用真实发布服务
     from backend.services.xhs_client import XHSClient, XHSPost
 
+    # CDP multi-profile: per-account endpoint takes priority over the global
+    # _resolve_cdp_endpoint. Accounts without a port binding (cdp_port=0 or
+    # account missing) fall back to the global endpoint — backward compat with
+    # the single-account .chrome-profile/ flow.
+    cdp_endpoint = _resolve_cdp_endpoint(settings)
+    if publish_account_id:
+        from backend.db.accounts import get_account_cdp_endpoint
+
+        per_account_endpoint = await get_account_cdp_endpoint(publish_account_id)
+        if per_account_endpoint:
+            cdp_endpoint = per_account_endpoint
+
     client = XHSClient(
         cookie=cookie,
         user_id=user_id,
         use_browser=True,
         headless=settings.platform.headless,
-        cdp_endpoint=_resolve_cdp_endpoint(settings),
+        cdp_endpoint=cdp_endpoint,
     )
 
     try:
