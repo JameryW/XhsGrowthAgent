@@ -144,6 +144,14 @@ class XhsLoginSession:
             self._context = await self._playwright.chromium.launch_persistent_context(
                 user_data_dir=self.profile_path,
                 headless=True,
+                # UA + locale 必须在 launch 时设——default UA 暴露自动化特征，
+                # 即便后续 stealth 注入也来不及（shield 在首请求就指纹检测）。
+                # 实测：persistent_context 不传 UA→"安全限制"被拦；传 UA+stealth→通过。
+                user_agent=(
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                ),
+                locale="zh-CN",
                 args=[
                     "--no-first-run",
                     "--no-default-browser-check",
