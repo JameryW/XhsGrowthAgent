@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "no_cookie fail fast + structured recovery 模式，确保 CDP 跳检查后错误路径仍合规"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "diff 范围最小化、不引入多余抽象"}
+{"file": ".trellis/tasks/07-03-cdp-profile-chrome-user-data-dir/research/cdp-per-profile.md", "reason": "CDP 多 profile + per-account endpoint 解析逻辑背景"}
+{"file": ".trellis/tasks/07-03-scan-login-frontend-page/research/xhs-creator-login-qr.md", "reason": "扫码登录写 profile + CDP 复用 profile 架构，cookie 跨子域结论"}
