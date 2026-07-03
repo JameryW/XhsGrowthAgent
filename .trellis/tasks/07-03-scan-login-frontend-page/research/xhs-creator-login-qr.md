@@ -189,3 +189,32 @@ creator.xiaohongshu.com/login 的二维码**不是 page 内 canvas/img 渲染的
 - www 扫码登录态 cookie（`a1`/`webId`/`web_session`/`web_session_sec`）域是 `.xiaohongshu.com`，creator.xiaohongshu.com 是子域→**理论上同根域 cookie 可共享**，creator 发布应能复用。需实测确认。
 - `qrcode/status` 轮询节奏与 `codeStatus` 语义待实测（研究为 0=待扫/1=已扫/2=已确认）。
 - profile 持久化：www 登录态写入 `account.chrome_profile_path`，launcher 常驻 CDP Chrome 复用——需确认 www cookie 与 creator cookie 都进同一 user-data-dir。
+
+---
+
+## 部署后实测（2026-07-03）：persistent_context 被 shield 拦
+
+部署 PR1+PR2 后真机实测 `POST /accounts/{id}/login/qr`：
+- endpoint 跑通（账号校验、profile 创建、Chrome 启动都 OK）
+- 但 30s 未收到 qrcode/create → 503
+
+复现对比（容器内）：
+- `launch` + `new_context`（spike 原方式）：**成功**，qrcode/create 200，8s 内拿到 qr url
+- `launch_persistent_context`（service 方式）：**被拦**，页面标题"安全限制"，goto 超时
+- `launch_persistent_context` + 设 UA + locale：goto 30s 超时
+
+### 根因
+`launch_persistent_context` 触发 xhs shield 反自动化拦截。可能因素：
+- 空 user_data_dir 首启指纹异常
+- persistent context 模式 CDP 暴露特征
+- 容器未装 playwright-stealth（pyproject 未声明），service fallback 手动 webdriver 隐藏不够
+
+### 待验证解法
+1. **装 playwright-stealth**（加 [browser] extra + 重新部署）——stealth 完整反检测或可绕过 persistent_context 拦截。未验证。
+2. **改 service 用 launch+new_context**：登录成功后 `context.cookies()` 导出 cookie，写入 persistent profile（另一 persistent_context `add_cookies`）或存账号 credentials（XHS_COOKIE）。cookie 迁移性待验证。
+3. **persistent_context 预热**：先访问非 xhs 页暖 fingerprint。未验证。
+
+### 现状
+- launch+new_context 拿 qr 可行（spike 多次验证）
+- persistent_context 持久化登录态被拦——service 当前架构阻塞
+- cookie 跨 context 迁移未验证

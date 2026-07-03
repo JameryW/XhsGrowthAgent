@@ -410,7 +410,7 @@ class XhsLoginSession:
         fallback 到手动 webdriver 隐藏。
         """
         try:
-            from playwright_stealth import Stealth  # type: ignore[import-not-found]
+            from playwright_stealth import Stealth
 
             # 不覆盖 platform/languages（stealth 默认 Win32/en-US 与真实 Linux UA +
             # zh-CN locale 冲突，指纹不一致反而是自动化特征）。只启用检测隐藏类。

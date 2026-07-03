@@ -32,7 +32,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-browser = ["playwright>=1.49"]
+browser = ["playwright>=1.49", "playwright-stealth>=1.0"]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
@@ -86,4 +86,11 @@ strict = true
 # don't fail type-checking when it isn't installed.
 [[tool.mypy.overrides]]
 module = "playwright.*"
+ignore_missing_imports = true
+
+# playwright-stealth is an optional [browser] extra (lazy-imported; publisher +
+# scan-login apply it at runtime with try/except fallback). Don't fail
+# type-checking when it isn't installed.
+[[tool.mypy.overrides]]
+module = "playwright_stealth.*"
 ignore_missing_imports = true
