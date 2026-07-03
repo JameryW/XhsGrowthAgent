@@ -106,6 +106,52 @@ class TestPublishNote:
         page.goto.assert_not_called()
 
 
+class TestClickPublish:
+    """_click_publish — real submit button selection."""
+
+    async def test_prefers_direct_publish_button(self, publisher: XHSPublisher):
+        page = MagicMock()
+        direct_first = MagicMock()
+        direct_first.click = AsyncMock()
+        direct_locator = MagicMock()
+        direct_locator.count = AsyncMock(return_value=1)
+        direct_locator.first = direct_first
+
+        empty_locator = MagicMock()
+        empty_locator.count = AsyncMock(return_value=0)
+
+        def locator(selector: str):
+            if selector == ".publish-page-publish-btn button.bg-red":
+                return direct_locator
+            return empty_locator
+
+        page.locator = MagicMock(side_effect=locator)
+
+        await publisher._click_publish(page)
+
+        direct_first.click.assert_awaited_once_with(timeout=15000)
+        page.locator.assert_any_call(".publish-page-publish-btn button.bg-red")
+        selectors = [call.args[0] for call in page.locator.call_args_list]
+        assert "xhs-publish-btn" not in selectors
+
+
+class TestWaitForSuccess:
+    """_wait_for_success — platform result detection after clicking publish."""
+
+    async def test_unbound_phone_toast_returns_failed(self, publisher: XHSPublisher):
+        page = AsyncMock()
+        page.url = publisher.CREATOR_URL
+        publisher._collect_visible_alerts = AsyncMock(return_value=["未绑定手机号"])  # type: ignore[method-assign]
+
+        result = await publisher._wait_for_success(page)
+
+        assert result["status"] == "failed"
+        assert result["post_id"] == ""
+        assert result["post_url"] == ""
+        assert result["error"] == "未绑定手机号"
+        page.wait_for_selector.assert_not_awaited()
+
+
 class TestPublishPageNavigation:
     """Publish page navigation should not block on never-idle creator traffic."""
 
@@ -180,3 +226,38 @@ class TestNoteIdExtraction:
         match = _NOTE_ID_RE.search(url)
         post_id = match.group(1) if match else ""
         assert post_id == expected
+
+
+class TestCDPMode:
+    """CDP 连接真实 Chrome 模式——绕过 XHS 反爬的关键路径。"""
+
+    def test_cdp_endpoint_stored(self):
+        """cdp_endpoint 传入后存为实例属性，决定 _ensure_browser 走 CDP 还是 launch。"""
+        pub_cdp = XHSPublisher(cookie="", cdp_endpoint="http://127.0.0.1:9222")
+        pub_launch = XHSPublisher(cookie="", cdp_endpoint="")
+        assert pub_cdp.cdp_endpoint == "http://127.0.0.1:9222"
+        assert pub_launch.cdp_endpoint == ""
+
+    @pytest.mark.asyncio
+    async def test_cdp_mode_uses_existing_context_no_stealth_no_cookie(self, monkeypatch):
+        """CDP 模式 _ensure_page 用 browser.contexts[0]，不 new_context/不注 cookie。"""
+        existing_context = MagicMock()
+        existing_context.new_page = AsyncMock(return_value=MagicMock(name="page"))
+        existing_context.add_cookies = AsyncMock()  # 不该被调
+        existing_context.add_init_script = MagicMock()  # 不该被调
+        browser = MagicMock()
+        browser.contexts = [existing_context]
+        browser.new_context = AsyncMock()  # 不该被调
+
+        publisher = XHSPublisher(cookie="a=1", cdp_endpoint="http://127.0.0.1:9222")
+        publisher._browser = browser  # 跳过 _ensure_browser
+
+        page = await publisher._ensure_page()
+
+        # CDP 模式：用已有 context（真实 Chrome profile 自带登录态）
+        browser.new_context.assert_not_called()
+        existing_context.new_page.assert_awaited_once()
+        # 不注 cookie（profile 自带）、不注 stealth（真实 Chrome 里注反检测反而标红）
+        existing_context.add_cookies.assert_not_called()
+        existing_context.add_init_script.assert_not_called()
+        assert page is not None
