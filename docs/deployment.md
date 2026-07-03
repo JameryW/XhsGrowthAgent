@@ -189,6 +189,103 @@ docker-compose build
 docker-compose up -d
 ```
 
+## CDP 多 profile 部署（多账号发布）
+
+CDP 模式下，发布连接到常驻真实 Chrome（profile 自带扫码登录态），绕过 XHS 反爬。
+单账号用 `.chrome-profile/` + 全局 `XHS_CDP_ENDPOINT`；多账号需每账号独立
+`--user-data-dir` + 独立 `--remote-debugging-port` 的常驻 Chrome。
+
+### 1. 配置环境变量
+
+在 `.env` 中设置（env-only，不入 system_config）：
+
+```bash
+# per-account profile 基础目录（创建账号时自动分配 <dir>/<account_id>）
+XHS_CHROME_PROFILES_DIR=/test/xhs/.chrome-profiles
+# 起始 port（创建账号时从 base+1 递增找首个未占用 port）
+XHS_CDP_BASE_PORT=9222
+# 可选：显式指定 Chrome binary 路径（默认自动探测 google-chrome > google-chrome-stable > chromium）
+# XHS_CHROME_BIN=/usr/bin/google-chrome
+```
+
+### 2. 安装 Chrome
+
+host 需安装真实 Chrome（非 chromium，反爬指纹基线不同）：
+
+```bash
+# RHEL/Alibaba Linux
+sudo dnf install -y google-chrome-stable
+# 验证
+which google-chrome  # /usr/bin/google-chrome
+```
+
+### 3. 创建账号并扫码登录
+
+账号创建时自动分配 `chrome_profile_path` + `cdp_port`（写回 accounts 表）。
+首次需扫码登录（headed Chrome 开 XHS creator 登录页）：
+
+```bash
+# 用 CLI 命令（推荐，与 xhs-growth 风格一致）
+xhs-growth login <account_id>
+# 或直接调脚本
+# python3 -m backend.cli.main login <account_id>
+```
+
+打开 headed Chrome 至 `https://creator.xiaohongshu.com/login`，用小红书 App 扫码。
+登录态写入该账号的 `user_data_dir`，持久——之后常驻 CDP Chrome 复用，无需再扫码。
+
+### 4. 启动常驻 Chrome（launcher）
+
+launcher 在 **host** 上跑（Chrome 在 host，backend 容器经
+`host.containers.internal:<port>` 连接）。读 accounts 表，为每个 active 且
+有 `cdp_port` 的账号保活一个 Chrome：
+
+```bash
+# 启动/保活（HTTP 探活 + stale SingletonLock 清理 + 启动）
+scripts/chrome-profiles.sh start
+# 查看状态（每账号 port + alive/dead）
+scripts/chrome-profiles.sh status
+# 停止所有（按 pidfile SIGTERM，超时 SIGKILL）
+scripts/chrome-profiles.sh stop
+# headed 启动（默认；扫码登录态需 headed）
+scripts/chrome-profiles.sh start
+# headless 启动（已登录后省内存）
+scripts/chrome-profiles.sh start --headless
+```
+
+launcher 逻辑（`backend/services/chrome_launcher.py`，可单测）：
+- HTTP-probe `GET /json/version` on `127.0.0.1:<port>` 探活——活则 skip
+- 死则检 `<user_data_dir>/SingletonLock`：PID 死则清 SingletonLock/Cookie/Socket，
+  PID 活则 skip（不抢同 dir）
+- 启 `google-chrome --user-data-dir=<path> --remote-debugging-port=<port>
+  --remote-debugging-address=0.0.0.0 --no-first-run --no-default-browser-check &`
+  并写 pidfile
+
+### 5. 容器网络
+
+`--remote-debugging-address=0.0.0.0` 让 host 上的 Chrome 端口对容器可见。
+backend 容器经 `host.containers.internal:<port>` 连接（`get_account_cdp_endpoint`
+自动解析 host——容器内返 `host.containers.internal`，本地 dev 返 `127.0.0.1`）。
+deploy.sh 的 `xhs-net` 网络已支持此解析。
+
+### 6. 部署流程
+
+```bash
+# 1. 部署 backend + postgres 容器
+scripts/deploy.sh deploy
+
+# 2. host 上启动常驻 Chrome（非容器，Chrome 在 host）
+scripts/chrome-profiles.sh start
+
+# 3. 新账号：先扫码登录，再 launcher start 保活
+xhs-growth login <new_account_id>
+scripts/chrome-profiles.sh start
+```
+
+向后兼容：账号无 `cdp_port`（0/null）→ 发布时 fallback 全局
+`_resolve_cdp_endpoint`（`XHS_CDP_ENDPOINT` 或 `host.containers.internal:9223`），
+不破坏现有单账号 `.chrome-profile/` 模式。
+
 ## API 服务器启动
 
 ### 使用 Uvicorn

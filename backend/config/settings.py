@@ -42,6 +42,13 @@ class XHSPlatformSettings(BaseSettings):
     # CDP 连接真实 Chrome 的端点（如 http://127.0.0.1:9222）。设了则 connect_over_cdp
     # 连常驻真实 Chrome（用户扫码登录的持久 profile），绕过 XHS shield/sec 反爬。
     cdp_endpoint: str = ""
+    # CDP 多 profile：每账号独立 Chrome user-data-dir + 独立 CDP port。
+    # chrome_profiles_dir = 存放 per-account profile 的基础目录（如 /test/xhs/.chrome-profiles），
+    # 创建账号时自动分配 <dir>/<account_id>。留空则不分配 profile_path（fallback 全局 CDP）。
+    # cdp_base_port = 起始 port，创建账号时从 base+1 起递增找首个未占用 port。
+    # env-only（mirror cdp_endpoint，不入 system_config SYSTEM_KEYS）。
+    chrome_profiles_dir: str = ""
+    cdp_base_port: int = 9222
 
     model_config = {"env_prefix": "XHS_", "env_file": ".env", "extra": "ignore"}
 

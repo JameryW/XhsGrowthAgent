@@ -448,5 +448,141 @@ def config() -> None:
         console.print(f"  [dim]{status} {var} ({purpose})[/dim]")
 
 
+@app.command()
+def login(
+    account_id: str = typer.Argument(
+        ..., help="账号 ID（需已绑定 chrome_profile_path + cdp_port）"
+    ),
+    timeout: int = typer.Option(
+        300, help="扫码等待超时（秒），超时后自动关闭浏览器（登录态已写入 profile）"
+    ),
+) -> None:
+    """打开该账号 profile 的 headed Chrome 走小红书 creator 扫码登录。
+
+    用 Playwright ``launch_persistent_context(user_data_dir=<account.chrome_profile_path>,
+    headless=False)`` 打开 ``https://creator.xiaohongshu.com/login``，等用户扫码。
+    登录态写入该账号的 user_data_dir，持久——之后 launcher 启的常驻 CDP Chrome
+    复用同一 profile，发布时无需再扫码。
+
+    账号需已绑定 chrome_profile_path（创建账号时自动分配，或经账号管理 API 设置）。
+    无绑定 → 报错提示先配置。
+    """
+    from dotenv import load_dotenv
+
+    load_dotenv(override=True)
+
+    async def _login() -> None:
+        from backend.db.accounts import get_account
+        from backend.db.pool import init_pool, is_pool_ready
+
+        # The login command is run on the host (Chrome lives there); the DB may
+        # be in a container. init_pool is a no-op if already initialized.
+        if not is_pool_ready():
+            try:
+                await init_pool()
+            except Exception as e:
+                console.print(Panel(f"无法连接数据库: {e}", title="❌ 错误", style="red"))
+                raise typer.Exit(1) from e
+
+        account = await get_account(account_id)
+        if account is None:
+            console.print(
+                Panel(
+                    f"账号 {account_id} 不存在。先用 `xhs-growth config` 或 API 创建账号。",
+                    title="❌ 错误",
+                    style="red",
+                )
+            )
+            raise typer.Exit(1)
+
+        if not account.chrome_profile_path:
+            console.print(
+                Panel(
+                    f"账号 {account_id} 未绑定 chrome_profile_path。\n"
+                    "创建账号时会自动分配（需设 XHS_CHROME_PROFILES_DIR）；或经账号管理 API 设置。",
+                    title="❌ 错误",
+                    style="red",
+                )
+            )
+            raise typer.Exit(1)
+
+        from pathlib import Path
+
+        profile_path = account.chrome_profile_path
+        Path(profile_path).mkdir(parents=True, exist_ok=True)
+
+        console.print(
+            Panel(
+                f"账号: {account.name} ({account.id})\n"
+                f"Profile: {profile_path}\n"
+                f"CDP port: {account.cdp_port or '(未绑定，仅登录用)'}\n"
+                f"扫码超时: {timeout}s",
+                title="🌐 小红书扫码登录",
+                style="bold cyan",
+            )
+        )
+
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError as e:
+            console.print(
+                Panel(
+                    "playwright 未安装。运行: pip install -e '.[browser]'",
+                    title="❌ 错误",
+                    style="red",
+                )
+            )
+            raise typer.Exit(1) from e
+
+        login_url = "https://creator.xiaohongshu.com/login"
+        console.print(f"[cyan]打开登录页: {login_url}[/cyan]")
+        console.print("[dim]扫码完成后登录态会写入 profile，可关闭浏览器。Ctrl-C 提前退出。[/dim]")
+
+        async with async_playwright() as pw:
+            # launch_persistent_context owns the Chrome lifecycle here — this is
+            # a one-shot login browser, NOT the always-on CDP Chrome the launcher
+            # manages. Closing the context kills it. Login state persists in
+            # profile_path for the launcher's CDP Chrome to reuse.
+            context = await pw.chromium.launch_persistent_context(
+                user_data_dir=profile_path,
+                headless=False,
+                args=[
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--disable-blink-features=AutomationControlled",
+                ],
+            )
+            page = context.pages[0] if context.pages else await context.new_page()
+            try:
+                await page.goto(login_url, wait_until="domcontentloaded")
+                # Block until timeout or the user closes the window / Ctrl-C.
+                # We don't auto-detect login success — the operator closes the
+                # browser when done; the profile is already written by then.
+                try:
+                    await page.wait_for_event("close", timeout=timeout * 1000)
+                except Exception:
+                    # Timeout — close the browser ourselves. Login state written
+                    # so far is persisted in profile_path regardless.
+                    console.print(
+                        f"[yellow]扫码超时 ({timeout}s)，关闭浏览器。"
+                        "已写入的登录态保留在 profile。[/yellow]"
+                    )
+            except KeyboardInterrupt:
+                console.print("\n[yellow]用户中断，关闭浏览器。登录态已写入 profile。[/yellow]")
+            finally:
+                await context.close()
+
+        console.print(
+            Panel(
+                f"登录流程结束。Profile: {profile_path}\n"
+                "下一步: scripts/chrome-profiles.sh start 启动常驻 CDP Chrome 复用此登录态。",
+                title="✅ 完成",
+                style="green",
+            )
+        )
+
+    asyncio.run(_login())
+
+
 if __name__ == "__main__":
     app()

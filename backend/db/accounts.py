@@ -22,6 +22,12 @@ class AccountRow:
     is_active: bool = False
     created_at: str = ""
     updated_at: str = ""
+    # Per-account Chrome profile binding (CDP multi-profile mode).
+    # chrome_profile_path = user-data-dir for this account's dedicated Chrome;
+    # cdp_port = the --remote-debugging-port that Chrome listens on.
+    # Empty/0 means "no per-account binding → fallback to global CDP endpoint".
+    chrome_profile_path: str = ""
+    cdp_port: int = 0
 
 
 @dataclass
@@ -82,14 +88,28 @@ _CREATE_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_accounts_active ON accounts (is_active);
 """
 
+# Idempotent column adds for CDP multi-profile support.
+# CREATE TABLE IF NOT EXISTS won't add columns to a pre-existing table, so ALTER
+# handles upgrades. Safe on new tables (column already present → no-op).
+# Same pattern as evaluator_config._ADD_SNAPSHOT_COL_SQL.
+_ADD_CHROME_PROFILE_COL_SQL = (
+    "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS chrome_profile_path TEXT NOT NULL DEFAULT ''"
+)
+_ADD_CDP_PORT_COL_SQL = (
+    "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS cdp_port INTEGER NOT NULL DEFAULT 0"
+)
+
 
 async def ensure_tables() -> None:
-    """Create accounts + credentials tables if they don't exist."""
+    """Create accounts + credentials tables if they don't exist, and ensure
+    the CDP multi-profile columns exist on pre-existing accounts tables."""
     pool = get_pool()
     async with pool.connection() as conn:
         await conn.execute(_CREATE_ACCOUNTS_SQL)
         await conn.execute(_CREATE_CREDENTIALS_SQL)
         await conn.execute(_CREATE_INDEX_SQL)
+        await conn.execute(_ADD_CHROME_PROFILE_COL_SQL)
+        await conn.execute(_ADD_CDP_PORT_COL_SQL)
     logger.info("accounts + credentials tables ensured")
 
 
@@ -102,17 +122,64 @@ async def create_account(name: str, is_active: bool = False) -> AccountRow:
     now = datetime.now(UTC).isoformat()
     id_ = str(uuid.uuid4())
 
+    # Auto-allocate per-account Chrome profile binding (CDP multi-profile mode).
+    # chrome_profile_path defaults to <chrome_profiles_dir>/<account_id> (empty
+    # if the base dir isn't configured). cdp_port picks the first unoccupied
+    # port starting at cdp_base_port+1, skipping ports already used by existing
+    # accounts.
+    from backend.config.settings import Settings
+
+    settings = Settings()
+    profiles_dir = getattr(settings.platform, "chrome_profiles_dir", "") or ""
+    chrome_profile_path = f"{profiles_dir}/{id_}" if profiles_dir else ""
+    cdp_port = await _allocate_cdp_port(settings)
+
     pool = get_pool()
     async with pool.connection() as conn:
         await conn.execute(
             """
             INSERT INTO accounts
-                (id, name, is_active, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s)
+                (id, name, is_active, created_at, updated_at,
+                 chrome_profile_path, cdp_port)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
-            (id_, name, is_active, now, now),
+            (id_, name, is_active, now, now, chrome_profile_path, cdp_port),
         )
-    return AccountRow(id=id_, name=name, is_active=is_active, created_at=now, updated_at=now)
+    return AccountRow(
+        id=id_,
+        name=name,
+        is_active=is_active,
+        created_at=now,
+        updated_at=now,
+        chrome_profile_path=chrome_profile_path,
+        cdp_port=cdp_port,
+    )
+
+
+async def _allocate_cdp_port(settings: Any) -> int:
+    """Pick the first unoccupied CDP port starting at cdp_base_port+1.
+
+    Skips ports already assigned to existing accounts. Returns 0 if the pool
+    isn't ready (graceful degradation — account created without port binding,
+    falls back to global CDP at publish time).
+    """
+    from backend.db.pool import is_pool_ready
+
+    base_port = getattr(settings.platform, "cdp_base_port", 9222) or 9222
+    if not is_pool_ready():
+        return 0
+    try:
+        accounts = await list_accounts()
+    except Exception as e:
+        logger.warning("CDP port allocation: list_accounts failed, returning 0: %s", e)
+        return 0
+    used_ports = {a.cdp_port for a in accounts if a.cdp_port > 0}
+    port = base_port + 1
+    while port < base_port + 1000:  # sanity ceiling
+        if port not in used_ports:
+            return port
+        port += 1
+    return 0
 
 
 async def get_account(account_id: str) -> AccountRow | None:
@@ -294,6 +361,49 @@ async def get_account_cookie(account_id: str) -> tuple[str, str]:
     return by_key.get("XHS_COOKIE", ""), by_key.get("XHS_USER_ID", "")
 
 
+def _resolve_cdp_host() -> str:
+    """Resolve the host that the per-account Chrome's CDP port is reachable on.
+
+    Mirrors the host-probe in ``backend.agents.publisher._resolve_cdp_endpoint``:
+    inside a container, ``host.containers.internal`` resolves and points at the
+    host where the always-on Chromes run; in local dev it doesn't resolve, so we
+    fall back to ``127.0.0.1``. Kept here (not imported from publisher) to avoid
+    a circular import — publisher imports accounts at runtime.
+    """
+    import socket
+
+    host = "host.containers.internal"
+    try:
+        socket.gethostbyname(host)
+        return host
+    except OSError:
+        return "127.0.0.1"
+
+
+async def get_account_cdp_endpoint(account_id: str) -> str:
+    """Return the per-account CDP endpoint for connecting to that account's
+    dedicated Chrome instance.
+
+    Returns ``http://<host>:{port}`` where <host> is ``host.containers.internal``
+    inside a container or ``127.0.0.1`` in local dev (same probe convention as
+    ``_resolve_cdp_endpoint``'s container fallback). Returns "" when the account
+    doesn't exist, has no port binding (cdp_port=0), or the DB is unavailable —
+    callers fall back to the global ``_resolve_cdp_endpoint``.
+    """
+    from backend.db.pool import is_pool_ready
+
+    if not is_pool_ready():
+        return ""
+    try:
+        account = await get_account(account_id)
+    except Exception as e:
+        logger.warning("get_account_cdp_endpoint: get_account failed: %s", e)
+        return ""
+    if account is None or account.cdp_port <= 0:
+        return ""
+    return f"http://{_resolve_cdp_host()}:{account.cdp_port}"
+
+
 # ── Hot reload ──
 
 
@@ -381,4 +491,6 @@ def _account_from_dict(d: dict[str, Any]) -> AccountRow:
         is_active=d.get("is_active", False),
         created_at=d.get("created_at", ""),
         updated_at=d.get("updated_at", ""),
+        chrome_profile_path=d.get("chrome_profile_path", "") or "",
+        cdp_port=int(d.get("cdp_port") or 0),
     )

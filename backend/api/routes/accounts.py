@@ -27,6 +27,8 @@ class CreateAccountRequest(BaseModel):
 class UpdateAccountRequest(BaseModel):
     name: str | None = None
     is_active: bool | None = None
+    chrome_profile_path: str | None = None
+    cdp_port: int | None = None
 
 
 class SetCredentialsRequest(BaseModel):
@@ -60,6 +62,8 @@ async def create_account(request: CreateAccountRequest) -> ApiResponse[Any]:
             "name": account.name,
             "is_active": account.is_active,
             "created_at": account.created_at,
+            "chrome_profile_path": account.chrome_profile_path,
+            "cdp_port": account.cdp_port,
         }
     )
 
@@ -78,6 +82,8 @@ async def list_accounts() -> ApiResponse[Any]:
                 "is_active": a.is_active,
                 "created_at": a.created_at,
                 "updated_at": a.updated_at,
+                "chrome_profile_path": a.chrome_profile_path,
+                "cdp_port": a.cdp_port,
             }
             for a in accounts
         ]
@@ -103,7 +109,7 @@ async def get_active_account() -> ApiResponse[Any]:
 
 @router.put("/{account_id}")
 async def update_account(account_id: str, request: UpdateAccountRequest) -> ApiResponse[Any]:
-    """Update an account's name or active status."""
+    """Update an account's name, active status, or Chrome profile binding."""
     from backend.db.accounts import activate_credentials, set_active_account
     from backend.db.accounts import update_account as db_update
 
@@ -121,6 +127,12 @@ async def update_account(account_id: str, request: UpdateAccountRequest) -> ApiR
             fields["name"] = request.name.strip()
         if request.is_active is False:
             fields["is_active"] = False
+        if request.chrome_profile_path is not None:
+            fields["chrome_profile_path"] = request.chrome_profile_path.strip()
+        if request.cdp_port is not None:
+            if request.cdp_port < 0:
+                raise ValidationError("cdp_port", "cdp_port must be non-negative")
+            fields["cdp_port"] = request.cdp_port
         account = await db_update(account_id, **fields)
         if account is None:
             raise AccountNotFoundError(account_id)
@@ -130,6 +142,8 @@ async def update_account(account_id: str, request: UpdateAccountRequest) -> ApiR
             "id": account.id,
             "name": account.name,
             "is_active": account.is_active,
+            "chrome_profile_path": account.chrome_profile_path,
+            "cdp_port": account.cdp_port,
         }
     )
 
