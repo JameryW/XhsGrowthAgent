@@ -5,6 +5,7 @@ import { useAccountsStore } from '@/stores/accounts'
 import { useToastStore } from '@/stores/toast'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import QrLoginModal from './QrLoginModal.vue'
 
 const { t } = useI18n()
 const store = useAccountsStore()
@@ -19,6 +20,15 @@ const isCreating = ref(false)
 const editingAccountId = ref<string | null>(null)
 const credEdits = ref<Record<string, string>>({})
 const isSavingCreds = ref(false)
+
+// ── Scan-login (QR) modal state ──
+const qrLoginOpen = ref(false)
+const qrLoginAccountId = ref<string>('')
+const qrLoginAccountName = ref<string>('')
+
+const qrLoginAccount = computed(() =>
+  store.accounts.find(a => a.id === qrLoginAccountId.value)
+)
 
 const editingAccount = computed(() =>
   store.accounts.find(a => a.id === editingAccountId.value)
@@ -120,6 +130,21 @@ function isCredSet(keyName: string): boolean {
 
 function startEditCred(keyName: string) { credEdits.value[keyName] = '' }
 function cancelEditCred(keyName: string) { delete credEdits.value[keyName] }
+
+function openQrLogin(accountId: string, accountName: string) {
+  qrLoginAccountId.value = accountId
+  qrLoginAccountName.value = accountName
+  qrLoginOpen.value = true
+}
+
+function closeQrLogin() {
+  qrLoginOpen.value = false
+}
+
+function onQrConfirmed() {
+  toast.success(t('settings.toasts.qrLoginSuccess', { name: qrLoginAccountName.value }))
+  qrLoginOpen.value = false
+}
 </script>
 
 <template>
@@ -168,6 +193,13 @@ function cancelEditCred(keyName: string) { delete credEdits.value[keyName] }
           {{ t('settings.active') }}
         </span>
         <div class="flex items-center gap-1" @click.stop>
+          <button @click="openQrLogin(account.id, account.name)"
+            class="text-xs text-rose-500 hover:text-rose-600 px-2 py-1 rounded hover:bg-rose-50 transition-colors flex items-center gap-1"
+            :title="t('settings.xhsAccounts.qrLogin')"
+          >
+            <AppIcon name="LogIn" size="xs" variant="pink" />
+            <span>{{ t('settings.xhsAccounts.qrLogin') }}</span>
+          </button>
           <button v-if="!account.is_active" @click="activateAccount(account.id)"
             class="text-xs text-teal-600 hover:text-teal-700 px-2 py-1 rounded hover:bg-teal-50 transition-colors"
           >
@@ -247,5 +279,15 @@ function cancelEditCred(keyName: string) { delete credEdits.value[keyName] }
         </div>
       </div>
     </div>
+
+    <!-- Scan-login (QR) modal -->
+    <QrLoginModal
+      v-if="qrLoginOpen && qrLoginAccount"
+      :account-id="qrLoginAccountId"
+      :account-name="qrLoginAccountName"
+      :is-open="qrLoginOpen"
+      @close="closeQrLogin"
+      @confirmed="onQrConfirmed"
+    />
   </div>
 </template>

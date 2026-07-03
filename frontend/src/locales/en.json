@@ -1306,7 +1306,8 @@
       "activeSwitched": "Active account switched",
       "credsSaved": "Credentials saved",
       "credDeleted": "Deleted {key}",
-      "systemConfigSaved": "System config saved & activated"
+      "systemConfigSaved": "System config saved & activated",
+      "qrLoginSuccess": "Account \"{name}\" scan-login successful; session written to profile"
     },
     "confirm": {
       "delete": "Delete account \"{name}\"? This cannot be undone.",
@@ -1342,7 +1343,20 @@
     },
     "xhsAccounts": {
       "title": "XHS Accounts",
-      "subtitle": "Each account holds its own Cookie & user_id; switching activates them"
+      "subtitle": "Each account holds its own Cookie & user_id; switching activates them",
+      "qrLogin": "Scan Login",
+      "qrLoginTitle": "Scan to Log In — Xiaohongshu",
+      "qrWaiting": "Scan with the Xiaohongshu app",
+      "qrScanned": "Scanned — please confirm on your phone",
+      "qrConfirmed": "Login successful",
+      "qrExpired": "QR code expired",
+      "qrScanTip": "Open the XHS app → Me → top-left menu → Scan",
+      "qrStarting": "Generating QR code…",
+      "qrRefresh": "Refresh QR",
+      "qrRenderError": "QR rendering failed, please refresh",
+      "qrStartError": "Failed to start scan-login",
+      "qrPollError": "Failed to query login status",
+      "qrTimeout": "Scan timed out, please refresh the QR"
     },
     "systemConfig": {
       "title": "System Config",

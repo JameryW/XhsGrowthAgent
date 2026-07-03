@@ -1306,7 +1306,8 @@
       "activeSwitched": "活跃账号已切换",
       "credsSaved": "凭证已保存并生效",
       "credDeleted": "已删除 {key}",
-      "systemConfigSaved": "系统配置已保存并生效"
+      "systemConfigSaved": "系统配置已保存并生效",
+      "qrLoginSuccess": "账号 \"{name}\" 扫码登录成功，登录态已写入 profile"
     },
     "confirm": {
       "delete": "确定删除账号 \"{name}\"？此操作不可撤销。",
@@ -1342,7 +1343,20 @@
     },
     "xhsAccounts": {
       "title": "小红书账号",
-      "subtitle": "每个账号挂自己的 Cookie 与 user_id；切换激活账号时自动加载"
+      "subtitle": "每个账号挂自己的 Cookie 与 user_id；切换激活账号时自动加载",
+      "qrLogin": "扫码登录",
+      "qrLoginTitle": "扫码登录小红书",
+      "qrWaiting": "请用小红书 App 扫码",
+      "qrScanned": "已扫码，请在手机上确认",
+      "qrConfirmed": "登录成功",
+      "qrExpired": "二维码已过期",
+      "qrScanTip": "打开小红书 App → 我的 → 左上角菜单 → 扫一扫",
+      "qrStarting": "正在生成二维码…",
+      "qrRefresh": "刷新二维码",
+      "qrRenderError": "二维码渲染失败，请刷新重试",
+      "qrStartError": "启动扫码登录失败",
+      "qrPollError": "查询登录状态失败",
+      "qrTimeout": "扫码超时，请刷新二维码重试"
     },
     "systemConfig": {
       "title": "系统配置",
