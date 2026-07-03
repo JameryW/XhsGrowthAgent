@@ -15,11 +15,25 @@
 
 ## Acceptance Criteria
 
-* [ ] 前端发起扫码 → 显示二维码
-* [ ] 手机扫码确认 → 前端收到"登录成功"
-* [ ] 登录态写入该账号 `chrome_profile_path`
-* [ ] publisher 复用该 profile 能正常进入发布页（不跳登录）
-* [ ] 超时/失败有清晰错误提示
+* [x] 前端发起扫码 → 显示二维码（PR2 QrLoginModal，vue-tsc+build 过）
+* [x] 手机扫码确认 → 前端收到"登录成功"（PR2 status 轮询 confirmed 分支，单测覆盖）
+* [x] 登录态写入该账号 `chrome_profile_path`（PR1 launch_persistent_context 自动持久化，单测覆盖）
+* [ ] publisher 复用该 profile 能正常进入发布页（不跳登录）—— **待实测**（cookie 跨子域，需部署+真扫码）
+* [x] 超时/失败有清晰错误提示（PR1 LoginError→503 + PR2 error UI + 4min 超时）
+
+## 实现状态（PR1+PR2 已 commit）
+
+- PR1 `8b0a29c2`：后端 service + 3 endpoint + 36 测
+- PR2 `6578e63c`：前端 API + QrLoginModal + 面板按钮 + i18n + qrcode 依赖
+- 校验全绿：ruff + mypy + pytest 1139 过 + vue-tsc + vite build
+
+## 待人工验证清单（部署后跑）
+
+容器需重新部署含 PR#179 迁移（accounts.chrome_profile_path 列）+ PR1 代码的镜像，然后：
+
+1. 跑 `verify_qr_login_e2e.py <account_id>`（容器内）—— 全链路 + cookie 跨子域自动判定
+2. 若 creator publish 跳登录 → cookie 跨子域失败 → 走 Xvfb 降级（creator 页 headed 扫码）或改 publisher 用 www 域
+3. web 端 Settings→账号→扫码登录，真机扫码走通 UI
 
 ## Definition of Done
 
