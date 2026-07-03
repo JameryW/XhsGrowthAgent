@@ -30,6 +30,32 @@ _PUBLISH_READY_SELECTORS = (
     "text=发布笔记",
     "text=发布图文",
 )
+_PUBLISH_ALERT_KEYWORDS = (
+    "未绑定",
+    "绑定",
+    "手机号",
+    "实名",
+    "验证码",
+    "安全验证",
+    "违规",
+    "失败",
+    "错误",
+    "异常",
+    "成功",
+    "确认",
+)
+_PUBLISH_BLOCKING_ALERT_KEYWORDS = (
+    "未绑定",
+    "绑定手机号",
+    "手机号",
+    "实名",
+    "验证码",
+    "安全验证",
+    "违规",
+    "失败",
+    "错误",
+    "异常",
+)
 
 # ponytail: playwright is an optional [browser] extra. Import it lazily so the
 # module is importable (and unit-testable with a mock Page) without it installed.
@@ -472,19 +498,35 @@ class XHSPublisher:
 
     async def _click_publish(self, page: Page) -> None:
         """点击发布按钮"""
+        # 现网页面会渲染一个可直接点击的提交按钮。优先点这个真实 button；
+        # 只有不存在时才回退到 xhs-publish-btn 坐标点击。
+        for selector in (
+            ".publish-page-publish-btn button.bg-red",
+            ".publish-page-publish-btn button",
+            "button.bg-red",
+        ):
+            direct_btn = page.locator(selector)
+            if await direct_btn.count() > 0:
+                try:
+                    await direct_btn.first.click(timeout=15000)
+                    logger.info(f"_click_publish: clicked direct submit button {selector}")
+                    return
+                except Exception as e:
+                    logger.warning(f"_click_publish: direct submit click failed {selector}: {e}")
+
         # 现网发布提交按钮在 <xhs-publish-btn> 的 closed shadow DOM 内
         # （属性暴露：submit-text=发布, submit-disabled=false, save-text=暂存离开）。
-        # 点外层标签只触发 tab 切换/展开，不触发内部 submit——submit 按钮在
-        # shadow 右侧（save 在左）。用 Playwright click(position=右侧) 命中
-        # shadow 内 submit 按钮的渲染位置。
+        # 点外层标签只触发 tab 切换/展开，不触发内部 submit。现网 shadow 内两个
+        # 按钮在底部居中：save 在左，submit 在右；submit 中心约在组件宽度 61%
+        # 处。用渲染坐标命中 shadow 内 submit 按钮。
         btn = page.locator("xhs-publish-btn")
         if await btn.count() > 0:
             # 取实际 rect 算右侧坐标（submit 按钮区，约元素右 15%）
             box = await btn.bounding_box()
             if box:
-                # 先试点 shadow 右侧 submit 区
-                await page.mouse.click(box["x"] + box["width"] * 0.85, box["y"] + box["height"] / 2)
-                logger.info("_click_publish: clicked xhs-publish-btn right (submit region)")
+                # 先试点 shadow 内 submit 按钮中心（约组件宽度 61% 处）
+                await page.mouse.click(box["x"] + box["width"] * 0.61, box["y"] + box["height"] / 2)
+                logger.info("_click_publish: clicked xhs-publish-btn submit region")
                 return
             # rect 拿不到则 fallback 元素中心 click
             await btn.first.click()
@@ -501,6 +543,28 @@ class XHSPublisher:
         # 最后兜底
         await page.locator("text=发布笔记").first.click()
 
+    async def _collect_visible_alerts(self, page: Page, limit: int = 10) -> list[str]:
+        """Collect short visible platform toasts/validation messages."""
+
+        try:
+            alerts = await page.evaluate(
+                """(arg)=>{
+                    const keywords = arg.keywords || [];
+                    const limit = arg.limit || 10;
+                    const all=[...document.querySelectorAll('*')];
+                    return all.filter(e=>e.offsetParent!==null && e.children.length===0)
+                        .map(e=>(e.innerText||e.textContent||'').trim())
+                        .filter(t=>t && t.length<80)
+                        .filter(t=>keywords.some(k=>t.includes(k)))
+                        .slice(0, limit);
+                }""",
+                {"keywords": list(_PUBLISH_ALERT_KEYWORDS), "limit": limit},
+            )
+        except Exception:
+            return []
+
+        return [str(alert) for alert in alerts if str(alert).strip()]
+
     async def _wait_for_success(self, page: Page) -> dict[str, Any]:
         """等待发布成功并获取结果。
 
@@ -510,12 +574,36 @@ class XHSPublisher:
         publish_url = "creator.xiaohongshu.com/publish/publish"
         deadline_left = 30.0
         try:
+            latest_alerts: list[str] = []
             # 轮询：URL 离开发布页 或 出现"发布成功"文字，任一先到即成功
             while deadline_left > 0:
                 url_now = page.url
                 if publish_url not in url_now:
                     # 已跳转离开发布页 → 发布成功
                     break
+
+                alerts = await self._collect_visible_alerts(page)
+                if alerts:
+                    latest_alerts = alerts
+                    blocking_alert = next(
+                        (
+                            alert
+                            for alert in alerts
+                            if any(k in alert for k in _PUBLISH_BLOCKING_ALERT_KEYWORDS)
+                        ),
+                        "",
+                    )
+                    if blocking_alert:
+                        logger.warning(f"发布被平台拦截，页面提示: {alerts}")
+                        reqs = getattr(self, "_publish_requests", [])
+                        logger.warning(f"发布相关网络请求 ({len(reqs)}): {reqs}")
+                        return {
+                            "post_id": "",
+                            "post_url": "",
+                            "status": "failed",
+                            "error": blocking_alert,
+                        }
+
                 # 检查"发布成功"提示（短轮询，避免长阻塞错过 URL 跳转）
                 try:
                     await page.wait_for_selector("text=发布成功", timeout=2000)
@@ -535,18 +623,9 @@ class XHSPublisher:
             if publish_url in current_url and not post_id:
                 # 诊断：dump 页面提示文字，便于排查"卡在哪"
                 try:
-                    alerts = await page.evaluate(
-                        """()=>{
-                        const all=[...document.querySelectorAll('*')];
-                        return all.filter(e=>e.offsetParent!==null && e.children.length===0)
-                            .filter(e=>{
-                                const t=(e.innerText||'').trim();
-                                if(!t || t.length>=40) return false;
-                                return ['成功','失败','错误','请','确认'].some(k=>t.includes(k));
-                            })
-                            .slice(0,5).map(e=>(e.innerText||'').trim());
-                    }"""
-                    )
+                    alerts = await self._collect_visible_alerts(page, limit=5)
+                    if not alerts:
+                        alerts = latest_alerts
                     logger.warning(f"发布后仍停在发布页，页面提示: {alerts}")
                 except Exception:
                     pass

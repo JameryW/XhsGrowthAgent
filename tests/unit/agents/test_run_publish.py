@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.agents.publisher import run_publish
+from backend.agents.publisher import _resolve_cdp_endpoint, run_publish
 
 
 def _state(**overrides):
@@ -58,6 +58,18 @@ def _patch_client(monkeypatch, client):
     ctor = MagicMock(side_effect=lambda **kw: client)
     monkeypatch.setattr("backend.services.xhs_client.XHSClient", ctor)
     return ctor
+
+
+def test_resolve_cdp_endpoint_uses_env_when_settings_attr_missing(monkeypatch):
+    class Platform:
+        pass
+
+    class RuntimeSettings:
+        platform = Platform()
+
+    monkeypatch.setenv("XHS_CDP_ENDPOINT", "http://cdp.example:9222")
+
+    assert _resolve_cdp_endpoint(RuntimeSettings()) == "http://cdp.example:9222"
 
 
 def _mock_history(monkeypatch):
@@ -147,6 +159,31 @@ async def test_classifies_auth_error(_browser_settings, mock_store, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_preserves_publish_service_error(_browser_settings, mock_store, monkeypatch):
+    """publish_post returning a platform error keeps error/recovery in state."""
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_x"})
+    m_cookie = AsyncMock(return_value=("COOKIE", "ACC_UID"))
+    monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
+
+    client = MagicMock()
+    client.publish_post = AsyncMock(
+        return_value={"post_id": "", "status": "failed", "error": "未绑定手机号"}
+    )
+    client.close = AsyncMock()
+    monkeypatch.setattr("backend.services.xhs_client.XHSClient", lambda **kw: client)
+    _mock_history(monkeypatch)
+
+    result = await run_publish(state, store=mock_store)
+
+    pr = result["publish_result"]
+    assert pr["status"] == "failed"
+    assert pr["error"] == "未绑定手机号"
+    assert pr["error_type"] == "account_unverified"
+    assert pr["recovery"]["action"] == "verify_account"
+
+
+@pytest.mark.asyncio
 async def test_never_honors_dry_run(_browser_settings, mock_store, monkeypatch):
     """run_publish ignores dry_run=True — retry always means real publish.
 
@@ -194,3 +231,18 @@ async def test_records_history_on_success_only(_browser_settings, mock_store, mo
     await run_publish(state, store=mock_store)
 
     hist.return_value.record.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ignores_past_suggested_timing(_browser_settings, mock_store, monkeypatch):
+    """Historical plan suggestions must not turn a real retry into scheduled publish."""
+
+    state = _state(content_plan={"suggested_timing": "2023-10-29T20:30:00Z"})
+    client = _mock_client("p_sched")
+    _patch_client(monkeypatch, client)
+    _mock_history(monkeypatch)
+
+    await run_publish(state, store=mock_store)
+
+    post = client.publish_post.await_args.args[0]
+    assert post.scheduled_time == ""

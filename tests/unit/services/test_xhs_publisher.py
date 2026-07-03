@@ -106,6 +106,52 @@ class TestPublishNote:
         page.goto.assert_not_called()
 
 
+class TestClickPublish:
+    """_click_publish — real submit button selection."""
+
+    async def test_prefers_direct_publish_button(self, publisher: XHSPublisher):
+        page = MagicMock()
+        direct_first = MagicMock()
+        direct_first.click = AsyncMock()
+        direct_locator = MagicMock()
+        direct_locator.count = AsyncMock(return_value=1)
+        direct_locator.first = direct_first
+
+        empty_locator = MagicMock()
+        empty_locator.count = AsyncMock(return_value=0)
+
+        def locator(selector: str):
+            if selector == ".publish-page-publish-btn button.bg-red":
+                return direct_locator
+            return empty_locator
+
+        page.locator = MagicMock(side_effect=locator)
+
+        await publisher._click_publish(page)
+
+        direct_first.click.assert_awaited_once_with(timeout=15000)
+        page.locator.assert_any_call(".publish-page-publish-btn button.bg-red")
+        selectors = [call.args[0] for call in page.locator.call_args_list]
+        assert "xhs-publish-btn" not in selectors
+
+
+class TestWaitForSuccess:
+    """_wait_for_success — platform result detection after clicking publish."""
+
+    async def test_unbound_phone_toast_returns_failed(self, publisher: XHSPublisher):
+        page = AsyncMock()
+        page.url = publisher.CREATOR_URL
+        publisher._collect_visible_alerts = AsyncMock(return_value=["未绑定手机号"])  # type: ignore[method-assign]
+
+        result = await publisher._wait_for_success(page)
+
+        assert result["status"] == "failed"
+        assert result["post_id"] == ""
+        assert result["post_url"] == ""
+        assert result["error"] == "未绑定手机号"
+        page.wait_for_selector.assert_not_awaited()
+
+
 class TestPublishPageNavigation:
     """Publish page navigation should not block on never-idle creator traffic."""
 

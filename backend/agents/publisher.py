@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import logging
+import os
+import socket
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -21,6 +24,55 @@ def _as_str_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
+def _normalize_scheduled_time(value: Any) -> str:
+    """Return a future schedule time formatted for XHS, or empty for immediate publish."""
+
+    if not isinstance(value, str):
+        return ""
+    raw = value.strip()
+    if not raw:
+        return ""
+
+    parsed: datetime | None = None
+    for candidate in (raw, raw.replace("Z", "+00:00")):
+        try:
+            parsed = datetime.fromisoformat(candidate)
+            break
+        except ValueError:
+            continue
+
+    if parsed is None:
+        logger.warning("忽略无法解析的定时发布时间: %s", raw)
+        return ""
+
+    now = datetime.now(parsed.tzinfo) if parsed.tzinfo else datetime.now()
+    if parsed <= now:
+        logger.info("忽略已过期的定时发布时间: %s", raw)
+        return ""
+
+    if parsed.tzinfo:
+        parsed = parsed.astimezone()
+    return parsed.strftime("%Y-%m-%d %H:%M")
+
+
+def _resolve_cdp_endpoint(settings: Settings) -> str:
+    """Resolve the real-Chrome CDP endpoint across old/new runtime settings."""
+
+    platform = settings.platform
+    endpoint = getattr(platform, "cdp_endpoint", "") or os.getenv("XHS_CDP_ENDPOINT", "")
+    if endpoint:
+        return endpoint
+
+    host = "host.containers.internal"
+    port = 9223
+    try:
+        address = socket.gethostbyname(host)
+        with socket.create_connection((address, port), timeout=0.2):
+            return f"http://{address}:{port}"
+    except OSError:
+        return ""
 
 
 class PublisherAgent(BaseAgent):
@@ -114,7 +166,7 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
         user_id=user_id,
         use_browser=True,
         headless=settings.platform.headless,
-        cdp_endpoint=settings.platform.cdp_endpoint,
+        cdp_endpoint=_resolve_cdp_endpoint(settings),
     )
 
     try:
@@ -147,7 +199,7 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
             category=cast(str, plan.get("category", "")),
             location=cast(str, plan.get("location", "")),
             is_private=False,
-            scheduled_time=plan.get("suggested_timing", ""),
+            scheduled_time=_normalize_scheduled_time(plan.get("suggested_timing", "")),
         )
 
         # 执行发布
@@ -160,6 +212,13 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
             "ab_variant": cast(Any, None),
             "status": result.get("status", "unknown"),
         }
+        if result.get("error"):
+            publish_result["error"] = result["error"]
+            from backend.api.errors import classify_publish_error
+
+            error_type, recovery = classify_publish_error(str(result["error"]))
+            publish_result["error_type"] = result.get("error_type") or error_type.value
+            publish_result["recovery"] = result.get("recovery") or recovery
 
         logger.info(f"发布完成: {publish_result['post_id']}")
 

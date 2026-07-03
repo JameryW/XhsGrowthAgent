@@ -160,6 +160,7 @@ class PublishErrorType(StrEnum):
     """Structured publish error types for actionable recovery."""
 
     AUTH_EXPIRED = "auth_expired"
+    ACCOUNT_UNVERIFIED = "account_unverified"
     RATE_LIMITED = "rate_limited"
     CONTENT_VIOLATION = "content_violation"
     IMAGE_MISSING = "image_missing"
@@ -176,6 +177,10 @@ _PUBLISH_ERROR_PATTERNS: list[tuple[str, PublishErrorType]] = [
     ("auth", PublishErrorType.AUTH_EXPIRED),
     ("401", PublishErrorType.AUTH_EXPIRED),
     ("403", PublishErrorType.AUTH_EXPIRED),
+    ("未绑定手机号", PublishErrorType.ACCOUNT_UNVERIFIED),
+    ("绑定手机号", PublishErrorType.ACCOUNT_UNVERIFIED),
+    ("手机号", PublishErrorType.ACCOUNT_UNVERIFIED),
+    ("实名", PublishErrorType.ACCOUNT_UNVERIFIED),
     ("rate limit", PublishErrorType.RATE_LIMITED),
     ("429", PublishErrorType.RATE_LIMITED),
     ("too many", PublishErrorType.RATE_LIMITED),
@@ -201,6 +206,12 @@ _PUBLISH_RECOVERY_ACTIONS: dict[PublishErrorType, dict[str, Any]] = {
         "action": "reconfigure",
         "action_label": "重新配置",
         "hint": "在 .env 文件中更新 XHS_COOKIE 后重启服务",
+    },
+    PublishErrorType.ACCOUNT_UNVERIFIED: {
+        "message": "小红书账号未完成平台要求的手机号/实名校验",
+        "action": "verify_account",
+        "action_label": "绑定手机号",
+        "hint": "请在当前小红书账号中绑定手机号或完成账号安全校验后重试发布",
     },
     PublishErrorType.RATE_LIMITED: {
         "message": "发布频率过高，请稍后再试",
