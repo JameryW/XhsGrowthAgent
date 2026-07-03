@@ -1,0 +1,4 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "代码标准/禁用模式"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "错误处理校验"}
+{"file": ".trellis/tasks/07-03-scan-login-frontend-page/research/xhs-creator-login-qr.md", "reason": "验证实现是否符合 spike 结论"}

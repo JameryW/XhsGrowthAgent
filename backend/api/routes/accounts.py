@@ -223,6 +223,120 @@ async def delete_credential(account_id: str, key_name: str) -> ApiResponse[Any]:
     return success(data={"deleted": True, "key_name": key_name})
 
 
+# ── Scan-login (QR code) ──
+
+
+@router.post("/{account_id}/login/qr")
+async def start_qr_login(account_id: str) -> ApiResponse[Any]:
+    """启动扫码登录：headless Chrome 开 www 登录页，拦截 qrcode/create.
+
+    Returns:
+        ``{qr_id, url, account_id}`` — 前端用 ``qrcode`` JS 库渲染 ``url``
+        为矢量二维码。登录态 cookie 由 ``launch_persistent_context`` 写入
+        ``account.chrome_profile_path``，launcher 常驻 CDP Chrome 复用。
+
+    Raises:
+        AccountNotFoundError: 账号不存在.
+        ValidationError: 账号未绑定 chrome_profile_path.
+    """
+    from backend.db.accounts import get_account
+    from backend.services.xhs_login import LoginError, get_or_create_session
+
+    account = await get_account(account_id)
+    if account is None:
+        raise AccountNotFoundError(account_id)
+
+    if not account.chrome_profile_path:
+        raise ValidationError(
+            "chrome_profile_path",
+            "该账号未绑定 chrome_profile_path，无法扫码登录。"
+            "创建账号时会自动分配（需设 XHS_CHROME_PROFILES_DIR），或经账号管理 API 设置。",
+        )
+
+    session = get_or_create_session(account_id, account.chrome_profile_path)
+    try:
+        result = await session.start()
+    except LoginError as e:
+        # LoginError 是预期内的启动失败（playwright 未装 / shield 拦截），
+        # 返回 SERVICE_UNAVAILABLE 而非 500，让前端能区分"登录服务不可用"
+        # 与"内部错误"。
+        raise APIError(
+            code=ErrorCode.SERVICE_UNAVAILABLE,
+            message=str(e),
+            details={"account_id": account_id},
+            status_code=503,
+        ) from e
+    return success(data=result)
+
+
+@router.get("/{account_id}/login/qr/status")
+async def get_qr_login_status(account_id: str) -> ApiResponse[Any]:
+    """查询扫码登录状态.
+
+    Returns:
+        ``{status, qr_id, url?, account_id}`` where status is one of:
+        - ``waiting`` — 待扫码
+        - ``scanned`` — 已扫待确认
+        - ``confirmed`` — 已确认登录，cookie 已写 profile
+        - ``expired`` — 二维码过期，已自动刷新，返回新 url
+
+    Raises:
+        AccountNotFoundError: 账号不存在.
+        ValidationError: 账号未绑定 chrome_profile_path 或无进行中的登录会话.
+    """
+    from backend.db.accounts import get_account
+    from backend.services.xhs_login import LoginError, get_session
+
+    account = await get_account(account_id)
+    if account is None:
+        raise AccountNotFoundError(account_id)
+
+    if not account.chrome_profile_path:
+        raise ValidationError(
+            "chrome_profile_path",
+            "该账号未绑定 chrome_profile_path，无法扫码登录。",
+        )
+
+    session = get_session(account_id)
+    if session is None:
+        raise ValidationError(
+            "login_session",
+            "该账号没有进行中的扫码登录会话。先调用 POST /accounts/{id}/login/qr 启动。",
+        )
+
+    try:
+        result = await session.get_status()
+    except LoginError as e:
+        raise APIError(
+            code=ErrorCode.SERVICE_UNAVAILABLE,
+            message=str(e),
+            details={"account_id": account_id},
+            status_code=503,
+        ) from e
+    return success(data=result)
+
+
+@router.post("/{account_id}/login/qr/stop")
+async def stop_qr_login(account_id: str) -> ApiResponse[Any]:
+    """关闭扫码登录会话（profile 已落盘，可由 launcher 起常驻 CDP Chrome）.
+
+    登录确认后调用此端点释放 headless Chrome。即使不调，进程退出时也会
+    回收（profile 已持久化）。
+
+    Raises:
+        AccountNotFoundError: 账号不存在.
+    """
+    from backend.db.accounts import get_account
+    from backend.services.xhs_login import stop_session
+
+    account = await get_account(account_id)
+    if account is None:
+        raise AccountNotFoundError(account_id)
+
+    stopped = await stop_session(account_id)
+    return success(data={"stopped": stopped, "account_id": account_id})
+
+
 # ── Error classes ──
 
 
