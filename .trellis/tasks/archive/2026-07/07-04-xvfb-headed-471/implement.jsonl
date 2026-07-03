@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "diff 最小化、env 可配回退"}
+{"file": ".trellis/tasks/07-03-scan-login-frontend-page/research/xhs-creator-login-qr.md", "reason": "路径 A Xvfb 降级方案 + 471 风控背景"}
