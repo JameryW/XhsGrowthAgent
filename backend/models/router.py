@@ -15,8 +15,11 @@ from backend.config.models import ModelConfig, ModelProvider, TaskType, resolve_
 from backend.models.retry import with_retry
 
 # 加载 .env 文件（确保环境变量可用）
+# override=False：不覆盖已设的 os.environ——host 跑 launcher 时 shell export 的
+# POSTGRES_URI=localhost 不被 .env 的 postgres-xhs 覆盖（host/容器 URL 区分）。
+# 容器内 deploy.sh podman -e 传的值同样保留。.env 仅作未设时的 fallback。
 _project_root = Path(__file__).resolve().parent.parent.parent
-load_dotenv(_project_root / ".env", override=True)
+load_dotenv(_project_root / ".env", override=False)
 
 _PROVIDER_ENV_VARS: dict[ModelProvider, str] = {
     ModelProvider.ANTHROPIC: "ANTHROPIC_API_KEY",

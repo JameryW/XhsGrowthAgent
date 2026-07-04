@@ -29,7 +29,11 @@ def _build_mock_response(url: str, method: str, body: dict) -> MagicMock:
 
 
 def _wire_playwright_mock(
-    *, pages: list[MagicMock] | None = None, goto_side_effect=None
+    *,
+    pages: list[MagicMock] | None = None,
+    goto_side_effect=None,
+    cookies: list[dict] | None = None,
+    page_text: str = "",
 ) -> tuple[MagicMock, MagicMock, list]:
     """Wire up a controllable playwright mock chain.
 
@@ -39,7 +43,11 @@ def _wire_playwright_mock(
     """
     mock_page = MagicMock()
     mock_page.goto = AsyncMock(side_effect=goto_side_effect) if goto_side_effect else AsyncMock()
+    mock_page.evaluate = AsyncMock(return_value=page_text)
+    mock_page.bring_to_front = AsyncMock()
     mock_page.close = AsyncMock()
+    mock_page.frames = [mock_page]
+    mock_page.main_frame = mock_page
     on_response_calls: list = []
     mock_page.on = lambda event, handler: on_response_calls.append((event, handler))
 
@@ -48,9 +56,13 @@ def _wire_playwright_mock(
     mock_context.new_page = AsyncMock(return_value=mock_page)
     mock_context.close = AsyncMock()
     mock_context.add_init_script = AsyncMock()
+    mock_context.cookies = AsyncMock(return_value=cookies or [])
 
     mock_chromium = MagicMock()
     mock_chromium.launch_persistent_context = AsyncMock(return_value=mock_context)
+    mock_browser = MagicMock()
+    mock_browser.contexts = [mock_context]
+    mock_chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
 
     mock_pw = MagicMock()
     mock_pw.chromium = mock_chromium
@@ -119,6 +131,30 @@ class TestStart:
         ):
             await session.start()
         await session.stop()
+
+    async def test_start_returns_confirmed_when_profile_already_logged_in(self, tmp_path):
+        """Existing profile login state → no QR is needed and no 30s wait."""
+        from backend.services.xhs_login import XhsLoginSession
+
+        mock_module, mock_page, on_calls = _wire_playwright_mock(
+            cookies=[{"name": "web_session", "value": "session-1"}],
+            page_text="首页 发布 通知 消息 我",
+        )
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+
+        with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
+            result = await session.start()
+
+        assert result == {
+            "status": "confirmed",
+            "qr_id": "",
+            "url": "",
+            "account_id": "acc-1",
+        }
+        assert on_calls, "page.on('response', ...) was not registered"
+        mock_page.close.assert_awaited()
+        assert session._confirmed is True
+        assert session._context is None
 
     async def test_start_failure_closes_context_no_leak(self, tmp_path):
         """start() launch/wait failure → context closed, no zombie Chrome.
@@ -215,6 +251,23 @@ class TestGetStatus:
             result = await session.get_status()
         assert result["status"] == "waiting"
         assert result["qr_id"] == "qr123"
+        await session.stop()
+
+    async def test_status_confirmed_when_profile_cookie_is_present(self, tmp_path):
+        """Durable profile login cookie wins when qrcode/status still says waiting."""
+        from backend.services.xhs_login import XhsLoginSession
+
+        mock_module, _, on_calls = _wire_playwright_mock(
+            cookies=[{"name": "id_token", "value": "token-1"}],
+            page_text="登录后推荐更懂你的笔记",
+        )
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+        with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
+            await self._start_session(session, on_calls)
+            result = await session.get_status()
+
+        assert result["status"] == "confirmed"
+        assert result["url"] == ""
         await session.stop()
 
     async def test_status_scanned_after_code_status_1(self, tmp_path):
@@ -364,6 +417,61 @@ class TestGetStatus:
         assert result["status"] == "expired"
         assert result["qr_id"] == "qr456"
         assert result["url"] == "https://x/qr?qrId=qr456"
+        await session.stop()
+
+    async def test_status_471_keeps_current_qr(self, tmp_path):
+        """XHS security 471 while confirming → keep QR instead of racing phone confirm."""
+        from backend.services.xhs_login import XhsLoginSession
+
+        mock_module, mock_page, on_calls = _wire_playwright_mock()
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+        with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
+            await self._start_session(session, on_calls)
+            session._code_status = 1
+            mock_page.evaluate = AsyncMock(return_value={"status": 471, "body": {"data": {}}})
+
+            result = await session.get_status()
+
+        assert result["status"] == "scanned"
+        assert result["qr_id"] == "qr123"
+        assert result["url"] == "https://x/qr?qrId=qr123"
+        await session.stop()
+
+    async def test_status_code_status_3_refreshes_qr(self, tmp_path):
+        """XHS code_status=3 → refresh QR instead of staying waiting."""
+        from backend.services.xhs_login import XhsLoginSession
+
+        mock_module, mock_page, on_calls = _wire_playwright_mock()
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+        with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
+            await self._start_session(session, on_calls)
+            mock_page.evaluate = AsyncMock(
+                return_value={"status": 200, "body": {"data": {"code_status": 3}}}
+            )
+
+            async def _fire_refresh_create():
+                await asyncio.sleep(0.05)
+                handler = on_calls[0][1]
+                await handler(
+                    _build_mock_response(
+                        "https://x/api/sns/web/v1/login/qrcode/create",
+                        "POST",
+                        {
+                            "data": {
+                                "qr_id": "qr3",
+                                "code": "c3",
+                                "url": "https://x/qr?qrId=qr3",
+                            }
+                        },
+                    )
+                )
+
+            result = await asyncio.gather(session.get_status(), _fire_refresh_create())
+
+        result = result[0]
+        assert result["status"] == "expired"
+        assert result["qr_id"] == "qr3"
+        assert result["url"] == "https://x/qr?qrId=qr3"
         await session.stop()
 
     async def test_status_when_no_session_returns_waiting(self, tmp_path):
@@ -574,6 +682,123 @@ class TestStealthFallback:
         # _apply_stealth is called on the context; check it was invoked.
         assert session._context is not None
         await session.stop()
+
+
+class TestInspectProfileLoginStatus:
+    """inspect_profile_login_status() — read-only durable profile status."""
+
+    async def test_logged_in_when_strong_cookie_present(self):
+        from backend.services.xhs_login import inspect_profile_login_status
+
+        mock_module, _, _ = _wire_playwright_mock(
+            cookies=[{"name": "id_token", "value": "token-1"}]
+        )
+
+        with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
+            result = await inspect_profile_login_status("acc-1", "http://127.0.0.1:9223")
+
+        assert result["status"] == "logged_in"
+        assert result["is_logged_in"] is True
+        assert result["signals"] == ["id_token"]
+
+    async def test_logged_out_when_only_anonymous_cookie_present(self):
+        from backend.services.xhs_login import inspect_profile_login_status
+
+        mock_module, _, _ = _wire_playwright_mock(
+            cookies=[{"name": "web_session", "value": "anonymous"}]
+        )
+
+        with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
+            result = await inspect_profile_login_status("acc-1", "http://127.0.0.1:9223")
+
+        assert result["status"] == "logged_out"
+        assert result["is_logged_in"] is False
+        assert result["reason"] == "missing_strong_cookie"
+
+    async def test_unavailable_when_cdp_connection_fails(self):
+        from backend.services.xhs_login import inspect_profile_login_status
+
+        mock_module, _, _ = _wire_playwright_mock()
+        mock_pw = mock_module.async_playwright.return_value.start.return_value
+        mock_pw.chromium.connect_over_cdp.side_effect = TimeoutError("cdp timeout")
+
+        with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
+            result = await inspect_profile_login_status("acc-1", "http://127.0.0.1:9223")
+
+        assert result["status"] == "unavailable"
+        assert result["is_logged_in"] is False
+        assert result["reason"] == "cdp_unreachable"
+
+    async def test_unavailable_port_down_when_cdp_refuses_connection(self):
+        from backend.services.xhs_login import inspect_profile_login_status
+
+        mock_module, _, _ = _wire_playwright_mock()
+        mock_pw = mock_module.async_playwright.return_value.start.return_value
+        mock_pw.chromium.connect_over_cdp.side_effect = RuntimeError("connect ECONNREFUSED")
+
+        with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
+            result = await inspect_profile_login_status("acc-1", "http://127.0.0.1:9225")
+
+        assert result["status"] == "unavailable"
+        assert result["reason"] == "cdp_port_down"
+
+
+class TestSubmitVerificationCode:
+    """submit_verification_code() — fill numeric code into active CDP page."""
+
+    async def test_fills_verification_code_in_page_frame(self, tmp_path):
+        from backend.services.xhs_login import XhsLoginSession
+
+        frame = MagicMock()
+        frame.evaluate = AsyncMock(
+            return_value={
+                "filled": True,
+                "clicked": True,
+                "target_count": 1,
+                "frame_url": "https://www.xiaohongshu.com/explore",
+            }
+        )
+        page = MagicMock()
+        page.frames = [frame]
+        page.bring_to_front = AsyncMock()
+
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+        session._page = page
+        session._qr_id = "qr123"
+        session._qr_url = "https://x/qr"
+
+        result = await session.submit_verification_code("123456")
+
+        assert result["submitted"] is True
+        assert result["clicked"] is True
+        assert result["status"] == "waiting"
+        frame.evaluate.assert_awaited_once()
+        assert frame.evaluate.await_args.args[1] == "123456"
+
+    async def test_returns_not_submitted_when_input_missing(self, tmp_path):
+        from backend.services.xhs_login import XhsLoginSession
+
+        frame = MagicMock()
+        frame.evaluate = AsyncMock(
+            return_value={
+                "filled": False,
+                "reason": "verification_input_not_found",
+                "frame_url": "https://www.xiaohongshu.com/explore",
+            }
+        )
+        page = MagicMock()
+        page.frames = [frame]
+        page.bring_to_front = AsyncMock()
+
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+        session._page = page
+        session._qr_id = "qr123"
+        session._qr_url = "https://x/qr"
+
+        result = await session.submit_verification_code("123456")
+
+        assert result["submitted"] is False
+        assert result["reason"] == "verification_input_not_found"
 
 
 # ── Helpers ──

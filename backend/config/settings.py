@@ -47,7 +47,7 @@ class XHSPlatformSettings(BaseSettings):
     # 创建账号时自动分配 <dir>/<account_id>。留空则不分配 profile_path（fallback 全局 CDP）。
     # cdp_base_port = 起始 port，创建账号时从 base+1 起递增找首个未占用 port。
     # env-only（mirror cdp_endpoint，不入 system_config SYSTEM_KEYS）。
-    chrome_profiles_dir: str = ""
+    chrome_profiles_dir: str = "/test/xhs/.chrome-profiles"
     cdp_base_port: int = 9222
 
     model_config = {"env_prefix": "XHS_", "env_file": ".env", "extra": "ignore"}

@@ -64,3 +64,11 @@ frontend/package-lock.json
 # Build temp dir (TMPDIR for podman builds) and stray empty files
 .tmp-build/
 oom
+
+# Local Chrome profile dirs (runtime artifacts, never commit)
+.chrome-profile/
+.chrome-profiles/
+
+# Throwaway probe/verify scripts from debugging sessions
+probe_*.py
+verify_*.py

@@ -7,6 +7,7 @@ import NeonButton from '@/components/NeonButton.vue'
 import {
   startQrLogin,
   getQrLoginStatus,
+  submitQrVerificationCode,
   stopQrLogin,
   type QrLoginStatus,
 } from '@/api/accounts'
@@ -30,6 +31,8 @@ const qrImgSrc = ref<string>('')
 const status = ref<QrLoginStatus | null>(null)
 const errorMsg = ref<string>('')
 const isStarting = ref(false)
+const verificationCode = ref('')
+const isSubmittingVerificationCode = ref(false)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 // Guard: once set, in-flight async callbacks (pollOnce / startSession) treat
@@ -99,6 +102,17 @@ async function startSession() {
   try {
     const res = await startQrLogin(props.accountId)
     if (disposed) return
+    if (res.status === 'confirmed') {
+      status.value = 'confirmed'
+      qrImgSrc.value = ''
+      stopPolling()
+      emit('confirmed')
+      await stopQrLogin(props.accountId).catch(() => {})
+      return
+    }
+    if (!res.url) {
+      throw new Error(t('settings.xhsAccounts.qrStartError'))
+    }
     await renderQr(res.url)
     if (disposed) return
     status.value = 'waiting'
@@ -165,6 +179,40 @@ async function pollOnce() {
   }
 }
 
+async function submitVerificationCode() {
+  if (disposed) return
+  const code = verificationCode.value.trim()
+  if (!/^\d{4,8}$/.test(code)) {
+    errorMsg.value = t('settings.xhsAccounts.verificationCodeInvalid')
+    return
+  }
+  isSubmittingVerificationCode.value = true
+  errorMsg.value = ''
+  try {
+    const res = await submitQrVerificationCode(props.accountId, code)
+    if (disposed) return
+    verificationCode.value = ''
+    if (!res.submitted) {
+      errorMsg.value = t('settings.xhsAccounts.verificationCodeNotFound')
+      status.value = res.status
+      return
+    }
+    status.value = res.status
+    if (res.status === 'confirmed') {
+      stopPolling()
+      emit('confirmed')
+      await stopQrLogin(props.accountId).catch(() => {})
+    } else {
+      await pollOnce()
+    }
+  } catch (e: any) {
+    if (disposed) return
+    errorMsg.value = e?.message || t('settings.xhsAccounts.verificationCodeSubmitError')
+  } finally {
+    if (!disposed) isSubmittingVerificationCode.value = false
+  }
+}
+
 // ── Close / cleanup ──
 function handleClose() {
   cleanup()
@@ -183,6 +231,7 @@ async function cleanup() {
   qrImgSrc.value = ''
   status.value = null
   errorMsg.value = ''
+  verificationCode.value = ''
 }
 
 // Reset/refresh QR on manual retry
@@ -292,6 +341,38 @@ onUnmounted(() => {
           <div v-if="status && status !== 'confirmed'" class="flex items-center justify-center gap-2 mb-3">
             <AppIcon :name="statusIconName" size="sm" :variant="statusIconVariant" />
             <span class="text-sm text-slate-600">{{ statusText }}</span>
+          </div>
+
+          <!-- Numeric verification code forwarding -->
+          <div v-if="status && status !== 'confirmed'" class="mb-3 p-3 rounded-lg bg-slate-50/80 border border-slate-100">
+            <label class="block text-xs font-medium text-slate-500 mb-2">
+              {{ t('settings.xhsAccounts.verificationCodeLabel') }}
+            </label>
+            <div class="flex items-center gap-2">
+              <input
+                v-model="verificationCode"
+                type="text"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                maxlength="8"
+                :placeholder="t('settings.xhsAccounts.verificationCodePlaceholder')"
+                class="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 outline-none"
+                @keydown.enter.prevent="submitVerificationCode"
+              />
+              <NeonButton
+                variant="cyan"
+                size="sm"
+                :loading="isSubmittingVerificationCode"
+                :disabled="!verificationCode.trim()"
+                @click="submitVerificationCode"
+              >
+                <AppIcon name="Check" size="xs" variant="white" />
+                <span class="ml-1">{{ t('settings.xhsAccounts.verificationCodeSubmit') }}</span>
+              </NeonButton>
+            </div>
+            <p class="mt-2 text-[11px] leading-relaxed text-slate-400">
+              {{ t('settings.xhsAccounts.verificationCodeHint') }}
+            </p>
           </div>
 
           <!-- Error -->

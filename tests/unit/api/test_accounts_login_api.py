@@ -71,6 +71,11 @@ def test_start_qr_login_returns_qr_id_and_url(client):
     with (
         patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
         patch(
+            "backend.db.accounts.get_account_cdp_endpoint",
+            new_callable=AsyncMock,
+            return_value="http://172.19.0.1:9224",
+        ),
+        patch(
             "backend.services.xhs_login.get_or_create_session",
             return_value=mock_session,
         ),
@@ -82,6 +87,35 @@ def test_start_qr_login_returns_qr_id_and_url(client):
     assert data["qr_id"] == "qr123"
     assert data["url"] == "https://x/qr?qrId=qr123"
     assert data["account_id"] == "acc-1"
+    mock_session.start.assert_awaited_once()
+
+
+def test_start_qr_login_can_return_already_confirmed(client):
+    """Already logged-in profile → start returns confirmed instead of a QR URL."""
+    account = _mock_account()
+    mock_session = MagicMock()
+    mock_session.start = AsyncMock(
+        return_value={"status": "confirmed", "qr_id": "", "url": "", "account_id": "acc-1"}
+    )
+
+    with (
+        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.db.accounts.get_account_cdp_endpoint",
+            new_callable=AsyncMock,
+            return_value="http://172.19.0.1:9224",
+        ),
+        patch(
+            "backend.services.xhs_login.get_or_create_session",
+            return_value=mock_session,
+        ),
+    ):
+        resp = client.post("/api/accounts/acc-1/login/qr")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["status"] == "confirmed"
+    assert data["url"] == ""
     mock_session.start.assert_awaited_once()
 
 
@@ -122,6 +156,11 @@ def test_start_qr_login_503_on_login_error(client):
     with (
         patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
         patch(
+            "backend.db.accounts.get_account_cdp_endpoint",
+            new_callable=AsyncMock,
+            return_value="http://172.19.0.1:9224",
+        ),
+        patch(
             "backend.services.xhs_login.get_or_create_session",
             return_value=mock_session,
         ),
@@ -137,6 +176,51 @@ def test_start_qr_login_503_on_login_error(client):
 
 
 # ── GET /login/qr/status ──
+
+
+def test_get_login_status_returns_profile_state(client):
+    """GET /accounts/{id}/login/status → durable profile login status."""
+    account = _mock_account()
+    with (
+        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.db.accounts.get_account_cdp_endpoint",
+            new_callable=AsyncMock,
+            return_value="http://172.19.0.1:9224",
+        ),
+        patch(
+            "backend.services.xhs_login.inspect_profile_login_status",
+            new_callable=AsyncMock,
+            return_value={
+                "account_id": "acc-1",
+                "status": "logged_in",
+                "is_logged_in": True,
+                "reason": "strong_cookie",
+                "signals": ["id_token"],
+            },
+        ) as mock_status,
+    ):
+        resp = client.get("/api/accounts/acc-1/login/status")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["status"] == "logged_in"
+    assert data["is_logged_in"] is True
+    mock_status.assert_awaited_once_with("acc-1", "http://172.19.0.1:9224")
+
+
+def test_get_login_status_unavailable_when_no_profile(client):
+    """Missing profile binding → unavailable status, not a QR/session error."""
+    from backend.db.accounts import AccountRow
+
+    account = AccountRow(id="acc-1", name="No Profile", chrome_profile_path="", cdp_port=0)
+    with patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account):
+        resp = client.get("/api/accounts/acc-1/login/status")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["status"] == "unavailable"
+    assert data["reason"] == "missing_profile"
 
 
 def test_get_qr_status_returns_current_status(client):
@@ -203,6 +287,67 @@ def test_get_qr_status_confirmed_clears_url(client):
     data = resp.json()["data"]
     assert data["status"] == "confirmed"
     assert data["url"] == ""
+
+
+# ── POST /login/qr/verification-code ──
+
+
+def test_submit_verification_code_forwards_to_session(client):
+    """POST /accounts/{id}/login/qr/verification-code → session submit result."""
+    account = _mock_account()
+    mock_session = MagicMock()
+    mock_session.submit_verification_code = AsyncMock(
+        return_value={
+            "submitted": True,
+            "status": "scanned",
+            "qr_id": "qr123",
+            "url": "https://x/qr",
+            "account_id": "acc-1",
+            "clicked": True,
+        }
+    )
+
+    with (
+        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.services.xhs_login.get_session", return_value=mock_session),
+    ):
+        resp = client.post(
+            "/api/accounts/acc-1/login/qr/verification-code",
+            json={"code": "123456"},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["submitted"] is True
+    assert data["clicked"] is True
+    mock_session.submit_verification_code.assert_awaited_once_with("123456")
+
+
+def test_submit_verification_code_rejects_non_numeric_code(client):
+    """Non-numeric verification code → ValidationError."""
+    account = _mock_account()
+    with (
+        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        pytest.raises(Exception, match="验证码必须"),
+    ):
+        client.post(
+            "/api/accounts/acc-1/login/qr/verification-code",
+            json={"code": "12ab"},
+        )
+
+
+def test_submit_verification_code_400_when_no_session(client):
+    """No active login session → ValidationError."""
+    account = _mock_account()
+    with (
+        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.services.xhs_login.get_session", return_value=None),
+        pytest.raises(Exception, match="没有进行中的扫码登录会话"),
+    ):
+        client.post(
+            "/api/accounts/acc-1/login/qr/verification-code",
+            json={"code": "123456"},
+        )
 
 
 # ── POST /login/qr/stop ──

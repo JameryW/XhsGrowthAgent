@@ -1,0 +1,3 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"验收：account→port 解析经 backend.db.accounts、migration idempotent、DB 不可用降级"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"验收守卫：fallback/无 port 失败路径 isinstance(recovery, dict)"}
+{"file":".trellis/tasks/07-03-cdp-profile-chrome-user-data-dir/research/cdp-per-profile.md","reason":"验收：launcher 探活+stale lock 清理、SingletonLock 不抢同 dir、headed 扫码"}

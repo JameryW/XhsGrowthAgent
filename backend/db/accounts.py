@@ -367,15 +367,18 @@ def _resolve_cdp_host() -> str:
     Mirrors the host-probe in ``backend.agents.publisher._resolve_cdp_endpoint``:
     inside a container, ``host.containers.internal`` resolves and points at the
     host where the always-on Chromes run; in local dev it doesn't resolve, so we
-    fall back to ``127.0.0.1``. Kept here (not imported from publisher) to avoid
-    a circular import — publisher imports accounts at runtime.
+    fall back to ``127.0.0.1``. Returns the **IP** (not the hostname) — Chrome 144
+    CDP rejects requests whose Host header isn't an IP or localhost (500
+    "Host header is specified and is not an IP address or localhost"), so the
+    endpoint must be ``http://<ip>:<port>`` not ``http://host.containers.internal``.
+    Kept here (not imported from publisher) to avoid a circular import —
+    publisher imports accounts at runtime.
     """
     import socket
 
     host = "host.containers.internal"
     try:
-        socket.gethostbyname(host)
-        return host
+        return socket.gethostbyname(host)
     except OSError:
         return "127.0.0.1"
 

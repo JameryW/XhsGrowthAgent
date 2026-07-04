@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "验证 no_cookie recovery 结构未破坏"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验证 diff 最小、无多余抽象"}

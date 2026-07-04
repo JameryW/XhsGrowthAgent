@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAccountsStore } from '@/stores/accounts'
 import { useToastStore } from '@/stores/toast'
+import {
+  getAccountLoginStatus,
+  type Account,
+  type AccountLoginStatus,
+  type AccountLoginStatusValue,
+} from '@/api/accounts'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import QrLoginModal from './QrLoginModal.vue'
@@ -11,15 +17,20 @@ const { t } = useI18n()
 const store = useAccountsStore()
 const toast = useToastStore()
 
-// XHS account credentials are restricted to these two keys.
-// All other keys live in the System Config layer.
-const XHS_KEYS = ['XHS_COOKIE', 'XHS_USER_ID']
-
 const newAccountName = ref('')
 const isCreating = ref(false)
 const editingAccountId = ref<string | null>(null)
-const credEdits = ref<Record<string, string>>({})
-const isSavingCreds = ref(false)
+
+type LoginStatusValue = AccountLoginStatusValue | 'checking'
+type LoginStatusView = AccountLoginStatus | {
+  account_id: string
+  status: 'checking'
+  is_logged_in: false
+  reason?: string
+}
+
+const loginStatuses = ref<Record<string, LoginStatusView>>({})
+const isRefreshingLoginStatuses = ref(false)
 
 // ── Scan-login (QR) modal state ──
 const qrLoginOpen = ref(false)
@@ -30,25 +41,12 @@ const qrLoginAccount = computed(() =>
   store.accounts.find(a => a.id === qrLoginAccountId.value)
 )
 
-const editingAccount = computed(() =>
-  store.accounts.find(a => a.id === editingAccountId.value)
-)
-
-watch(editingAccountId, async (id) => {
-  if (id) {
-    await store.fetchCredentials(id)
-    credEdits.value = {}
-  } else {
-    store.credentials = []
-    credEdits.value = {}
-  }
-})
-
 onMounted(async () => {
   await store.fetchAccounts()
   if (store.activeAccountId) {
     editingAccountId.value = store.activeAccountId
   }
+  await refreshAllLoginStatuses()
 })
 
 async function createAccount() {
@@ -59,6 +57,7 @@ async function createAccount() {
     newAccountName.value = ''
     toast.success(t('settings.toasts.accountCreated', { name: account.name }))
     editingAccountId.value = account.id
+    await refreshLoginStatus(account.id)
   } catch (e: any) {
     toast.error(e.message)
   } finally {
@@ -86,54 +85,96 @@ async function removeAccount(accountId: string, name: string) {
   }
 }
 
-async function saveCredentials() {
-  if (!editingAccountId.value) return
-  const toSave: Record<string, string> = {}
-  for (const [k, v] of Object.entries(credEdits.value)) {
-    if (v !== undefined) toSave[k] = v
-  }
-  if (Object.keys(toSave).length === 0) return
-  isSavingCreds.value = true
+function canScanLogin(account: Account): boolean {
+  const status = loginStatusFor(account.id).status
+  return Boolean(account.chrome_profile_path && account.cdp_port && status !== 'unavailable')
+}
+
+function setLoginStatus(accountId: string, status: LoginStatusView) {
+  loginStatuses.value = { ...loginStatuses.value, [accountId]: status }
+}
+
+async function refreshLoginStatus(accountId: string) {
+  setLoginStatus(accountId, {
+    account_id: accountId,
+    status: 'checking',
+    is_logged_in: false,
+  })
   try {
-    await store.saveCredentials(editingAccountId.value, toSave)
-    credEdits.value = {}
-    toast.success(t('settings.toasts.credsSaved'))
+    setLoginStatus(accountId, await getAccountLoginStatus(accountId))
   } catch (e: any) {
-    toast.error(e.message)
+    setLoginStatus(accountId, {
+      account_id: accountId,
+      status: 'unknown',
+      is_logged_in: false,
+      reason: 'request_failed',
+      message: e?.message,
+    })
+  }
+}
+
+async function refreshAllLoginStatuses() {
+  if (store.accounts.length === 0) return
+  isRefreshingLoginStatuses.value = true
+  try {
+    await Promise.allSettled(store.accounts.map(account => refreshLoginStatus(account.id)))
   } finally {
-    isSavingCreds.value = false
+    isRefreshingLoginStatuses.value = false
   }
 }
 
-async function deleteCred(keyName: string) {
-  if (!editingAccountId.value) return
-  try {
-    await store.removeCredential(editingAccountId.value, keyName)
-    toast.success(t('settings.toasts.credDeleted', { key: keyName }))
-  } catch (e: any) {
-    toast.error(e.message)
+function loginStatusFor(accountId: string): LoginStatusView {
+  return loginStatuses.value[accountId] ?? {
+    account_id: accountId,
+    status: 'checking',
+    is_logged_in: false,
   }
 }
 
-function getCredDisplay(keyName: string): string {
-  if (credEdits.value[keyName] !== undefined) {
-    const v = credEdits.value[keyName]
-    return v ? '●●●●' + v.slice(-4) : t('settings.willDelete')
+function loginStatusText(accountId: string): string {
+  const status = loginStatusFor(accountId)
+  switch (status.status) {
+    case 'logged_in': return t('settings.xhsAccounts.loginStatusLoggedIn')
+    case 'logged_out': return t('settings.xhsAccounts.loginStatusLoggedOut')
+    case 'unavailable':
+      if (status.reason === 'missing_profile') return t('settings.xhsAccounts.loginStatusMissingProfile')
+      if (status.reason === 'cdp_port_down') return t('settings.xhsAccounts.loginStatusBrowserDown')
+      if (status.reason === 'cdp_unreachable') return t('settings.xhsAccounts.loginStatusCdpUnreachable')
+      return t('settings.xhsAccounts.loginStatusUnavailable')
+    case 'unknown': return t('settings.xhsAccounts.loginStatusUnknown')
+    case 'checking': return t('settings.xhsAccounts.loginStatusChecking')
   }
-  return store.credentials.find(c => c.key_name === keyName)?.masked_value || t('settings.notSet')
 }
 
-function isCredSet(keyName: string): boolean {
-  if (credEdits.value[keyName] !== undefined) return !!credEdits.value[keyName]
-  return store.credentials.find(c => c.key_name === keyName)?.is_set ?? false
+function loginStatusIcon(accountId: string): string {
+  const value: LoginStatusValue = loginStatusFor(accountId).status
+  switch (value) {
+    case 'logged_in': return 'CheckCircle'
+    case 'logged_out': return 'LogOut'
+    case 'unavailable': return 'WifiOff'
+    case 'unknown': return 'AlertCircle'
+    case 'checking': return 'Loader2'
+  }
 }
 
-function startEditCred(keyName: string) { credEdits.value[keyName] = '' }
-function cancelEditCred(keyName: string) { delete credEdits.value[keyName] }
+function loginStatusClass(accountId: string): string {
+  const value: LoginStatusValue = loginStatusFor(accountId).status
+  switch (value) {
+    case 'logged_in': return 'text-emerald-600'
+    case 'logged_out': return 'text-slate-400'
+    case 'unavailable': return 'text-amber-600'
+    case 'unknown': return 'text-rose-500'
+    case 'checking': return 'text-slate-400'
+  }
+}
 
-function openQrLogin(accountId: string, accountName: string) {
-  qrLoginAccountId.value = accountId
-  qrLoginAccountName.value = accountName
+function openQrLogin(account: Account) {
+  if (!canScanLogin(account)) {
+    toast.error(t('settings.xhsAccounts.loginStatusUnavailable'))
+    return
+  }
+  qrLoginAccountId.value = account.id
+  qrLoginAccountName.value = account.name
   qrLoginOpen.value = true
 }
 
@@ -143,6 +184,12 @@ function closeQrLogin() {
 
 function onQrConfirmed() {
   toast.success(t('settings.toasts.qrLoginSuccess', { name: qrLoginAccountName.value }))
+  setLoginStatus(qrLoginAccountId.value, {
+    account_id: qrLoginAccountId.value,
+    status: 'logged_in',
+    is_logged_in: true,
+    reason: 'qr_confirmed',
+  })
   qrLoginOpen.value = false
 }
 </script>
@@ -157,7 +204,17 @@ function onQrConfirmed() {
     <!-- Account list + creation -->
     <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-3">
       <div class="flex items-center justify-between">
-        <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">{{ t('settings.accounts') }}</h3>
+        <div class="flex items-center gap-2">
+          <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">{{ t('settings.accounts') }}</h3>
+          <button
+            type="button"
+            class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+            :title="t('settings.xhsAccounts.refreshLoginStatus')"
+            @click="refreshAllLoginStatuses"
+          >
+            <AppIcon name="RefreshCw" size="xs" variant="cyan" :animate="isRefreshingLoginStatuses" />
+          </button>
+        </div>
         <form @submit.prevent="createAccount" class="flex items-center gap-2">
           <input
             v-model="newAccountName"
@@ -184,18 +241,33 @@ function onQrConfirmed() {
         @click="editingAccountId = account.id"
       >
         <div class="w-2 h-2 rounded-full shrink-0" :class="account.is_active ? 'bg-emerald-500' : 'bg-slate-300'" />
-        <span class="flex-1 text-sm font-medium" :class="account.is_active ? 'text-slate-800' : 'text-slate-500'">
-          {{ account.name }}
-        </span>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-medium truncate" :class="account.is_active ? 'text-slate-800' : 'text-slate-500'">
+            {{ account.name }}
+          </div>
+          <div class="mt-1 flex items-center gap-1 text-[11px]" :class="loginStatusClass(account.id)">
+            <AppIcon
+              :name="loginStatusIcon(account.id)"
+              size="xs"
+              :variant="loginStatusFor(account.id).status === 'logged_in' ? 'cyan' : 'pink'"
+              :animate="loginStatusFor(account.id).status === 'checking'"
+            />
+            <span>{{ loginStatusText(account.id) }}</span>
+          </div>
+        </div>
         <span v-if="account.is_active"
           class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-600 font-medium"
         >
           {{ t('settings.active') }}
         </span>
         <div class="flex items-center gap-1" @click.stop>
-          <button @click="openQrLogin(account.id, account.name)"
-            class="text-xs text-rose-500 hover:text-rose-600 px-2 py-1 rounded hover:bg-rose-50 transition-colors flex items-center gap-1"
-            :title="t('settings.xhsAccounts.qrLogin')"
+          <button @click="openQrLogin(account)"
+            class="text-xs px-2 py-1 rounded transition-colors flex items-center gap-1"
+            :class="canScanLogin(account)
+              ? 'text-rose-500 hover:text-rose-600 hover:bg-rose-50'
+              : 'text-slate-300 cursor-not-allowed'"
+            :disabled="!canScanLogin(account)"
+            :title="canScanLogin(account) ? t('settings.xhsAccounts.qrLogin') : t('settings.xhsAccounts.loginStatusUnavailable')"
           >
             <AppIcon name="LogIn" size="xs" variant="pink" />
             <span>{{ t('settings.xhsAccounts.qrLogin') }}</span>
@@ -210,72 +282,6 @@ function onQrConfirmed() {
           >
             <AppIcon name="Trash2" size="xs" variant="pink" />
           </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- XHS credentials for selected account -->
-    <div v-if="editingAccount" class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-3">
-      <div class="flex items-center justify-between">
-        <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-          {{ t('settings.credentialsFor') }} — {{ editingAccount.name }}
-        </h3>
-        <NeonButton
-          v-if="Object.keys(credEdits).length > 0"
-          variant="cyan" size="sm"
-          :loading="isSavingCreds"
-          @click="saveCredentials"
-        >
-          <AppIcon name="Save" size="xs" variant="white" />
-          <span class="ml-1">{{ t('settings.saveCredentials') }}</span>
-        </NeonButton>
-      </div>
-
-      <div class="space-y-1">
-        <div v-for="keyName in XHS_KEYS" :key="keyName"
-          class="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-slate-50/80 transition-colors"
-        >
-          <span class="text-xs font-mono text-slate-500 w-44 shrink-0">{{ keyName }}</span>
-
-          <div class="flex-1 min-w-0">
-            <input
-              v-if="credEdits[keyName] !== undefined"
-              v-model="credEdits[keyName]"
-              type="password"
-              :placeholder="t('settings.enterValue')"
-              class="w-full px-2 py-1 text-sm rounded border border-rose-200 bg-white focus:border-rose-400 outline-none"
-              @keydown.escape="cancelEditCred(keyName)"
-            />
-            <span v-else class="text-sm" :class="isCredSet(keyName) ? 'text-slate-600' : 'text-slate-300'">
-              {{ getCredDisplay(keyName) }}
-            </span>
-          </div>
-
-          <div class="w-2 h-2 rounded-full shrink-0" :class="isCredSet(keyName) ? 'bg-emerald-500' : 'bg-slate-200'" />
-
-          <div class="flex items-center gap-1 shrink-0">
-            <template v-if="credEdits[keyName] !== undefined">
-              <button @click="cancelEditCred(keyName)"
-                class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
-              >
-                <AppIcon name="X" size="xs" variant="pink" />
-              </button>
-            </template>
-            <template v-else>
-              <button @click="startEditCred(keyName)"
-                class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
-                :title="t('settings.edit')"
-              >
-                <AppIcon name="Pencil" size="xs" variant="cyan" />
-              </button>
-              <button v-if="isCredSet(keyName)" @click="deleteCred(keyName)"
-                class="p-1 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors"
-                :title="t('settings.delete')"
-              >
-                <AppIcon name="Trash2" size="xs" variant="pink" />
-              </button>
-            </template>
-          </div>
         </div>
       </div>
     </div>

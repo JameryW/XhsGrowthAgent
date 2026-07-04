@@ -187,8 +187,10 @@ async def test_ensure_chrome_skips_when_port_alive(_profile_dir: Path, monkeypat
 @pytest.mark.asyncio
 async def test_ensure_chrome_launches_when_down_and_no_lock(_profile_dir: Path, monkeypatch):
     """Port down, no lock → launch Chrome, write pidfile."""
-    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=False))
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(side_effect=[False, False, True, False, True]))
     monkeypatch.setattr(cl, "_resolve_chrome_bin", lambda: "/usr/bin/google-chrome")
+    forwarder = AsyncMock()
+    monkeypatch.setattr(cl, "_ensure_socat_forwarder", forwarder)
 
     fake_proc = MagicMock()
     fake_proc.pid = 12345
@@ -200,10 +202,38 @@ async def test_ensure_chrome_launches_when_down_and_no_lock(_profile_dir: Path, 
     status = await ensure_chrome(account)
 
     assert status.action == "launched"
+    assert status.alive is True
     assert status.port == 9223
     launch.assert_awaited_once()
+    forwarder.assert_awaited_once_with(str(_profile_dir), 9223)
     # pidfile written
     assert (_profile_dir / "chrome.pid").read_text() == "12345"
+
+
+@pytest.mark.asyncio
+async def test_ensure_chrome_repairs_forwarder_when_internal_port_alive(
+    _profile_dir: Path, monkeypatch
+):
+    """Public port down but internal Chrome alive → repair socat before lock logic."""
+    lock = _profile_dir / "SingletonLock"
+    os.symlink("host-11111", lock)
+
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(side_effect=[False, True, False, True]))
+    monkeypatch.setattr(cl, "_pid_alive", lambda pid: True)
+    forwarder = AsyncMock()
+    monkeypatch.setattr(cl, "_ensure_socat_forwarder", forwarder)
+    launch = AsyncMock()
+    monkeypatch.setattr(cl.asyncio, "create_subprocess_exec", launch)
+    monkeypatch.setattr(cl.asyncio, "sleep", AsyncMock())
+
+    account = _account(profile=str(_profile_dir))
+    status = await ensure_chrome(account)
+
+    assert status.action == "skipped"
+    assert status.alive is True
+    assert "public forwarder ready" in status.message
+    forwarder.assert_awaited_once_with(str(_profile_dir), 9223)
+    launch.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -212,9 +242,10 @@ async def test_ensure_chrome_clears_stale_lock_then_launches(_profile_dir: Path,
     lock = _profile_dir / "SingletonLock"
     os.symlink("host-99998", lock)
 
-    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=False))
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(side_effect=[False, False, False, True, True]))
     monkeypatch.setattr(cl, "_pid_alive", lambda pid: False)  # lock PID dead
     monkeypatch.setattr(cl, "_resolve_chrome_bin", lambda: "/usr/bin/google-chrome")
+    monkeypatch.setattr(cl, "_ensure_socat_forwarder", AsyncMock())
     fake_proc = MagicMock()
     fake_proc.pid = 22222
     monkeypatch.setattr(cl.asyncio, "create_subprocess_exec", AsyncMock(return_value=fake_proc))
@@ -233,7 +264,7 @@ async def test_ensure_chrome_refuses_when_live_lock_holds_dir(_profile_dir: Path
     lock = _profile_dir / "SingletonLock"
     os.symlink("host-11111", lock)
 
-    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=False))
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(side_effect=[False, False]))
     monkeypatch.setattr(cl, "_pid_alive", lambda pid: True)  # lock PID alive
     launch = AsyncMock()
     monkeypatch.setattr(cl.asyncio, "create_subprocess_exec", launch)
@@ -265,7 +296,7 @@ async def test_ensure_chrome_fails_when_no_binding(monkeypatch):
 @pytest.mark.asyncio
 async def test_ensure_chrome_fails_when_no_chrome_binary(_profile_dir: Path, monkeypatch):
     """Port down, no lock, but no Chrome binary installed → action=failed with message."""
-    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=False))
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(side_effect=[False, False]))
 
     def _no_chrome() -> str:
         raise RuntimeError("No Chrome binary found")
@@ -285,7 +316,7 @@ async def test_ensure_chrome_fails_when_no_chrome_binary(_profile_dir: Path, mon
 @pytest.mark.asyncio
 async def test_ensure_chrome_fails_on_launch_oserror(_profile_dir: Path, monkeypatch):
     """create_subprocess_exec raises OSError → action=failed, no pidfile written."""
-    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=False))
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(side_effect=[False, False]))
     monkeypatch.setattr(cl, "_resolve_chrome_bin", lambda: "/usr/bin/google-chrome")
     monkeypatch.setattr(
         cl.asyncio,
@@ -538,14 +569,26 @@ def test_format_status_table_renders_rows():
 
 
 def test_build_launch_cmd_includes_core_flags():
-    """The launch command carries user-data-dir, port, and the default flags."""
+    """The launch command carries user-data-dir, internal port (cdp_port+OFFSET),
+    and the default flags. Chrome listens on internal port (loopback only —
+    Chrome 144 ignores --remote-debugging-address); socat exposes cdp_port."""
     cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223, headless=False)
     assert "/usr/bin/google-chrome" in cmd
     assert "--user-data-dir=/p/acc" in cmd
-    assert "--remote-debugging-port=9223" in cmd
+    # Chrome binds the *internal* port (cdp_port + _INTERNAL_PORT_OFFSET);
+    # socat maps the public cdp_port → internal. See _ensure_socat_forwarder.
+    assert f"--remote-debugging-port={cl._internal_cdp_port(9223)}" in cmd
+    assert "--remote-debugging-port=9223" not in cmd
     assert "--remote-debugging-address=0.0.0.0" in cmd
+    assert "--remote-allow-origins=*" in cmd
     assert "--no-first-run" in cmd
     assert "--headless=new" not in cmd
+
+
+def test_internal_cdp_port_offset():
+    """Internal port = cdp_port + _INTERNAL_PORT_OFFSET (Chrome loopback port,
+    socat forwards public cdp_port → internal)."""
+    assert cl._internal_cdp_port(9223) == 9223 + cl._INTERNAL_PORT_OFFSET
 
 
 def test_build_launch_cmd_headless_flag():

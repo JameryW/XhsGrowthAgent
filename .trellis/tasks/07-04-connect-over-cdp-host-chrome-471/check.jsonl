@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验证 diff 最小、env 可配回退"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "验证 LoginError→503 + recovery 结构未破坏"}
