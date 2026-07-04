@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "校验删除后无悬空引用、setup 内无未使用变量"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "校验 store 调用一致性"}

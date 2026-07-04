@@ -32,6 +32,14 @@ if [[ -f "$PROJECT_DIR/.env" ]]; then
     set +a
 fi
 
+# This script runs on the host, while .env is also consumed by the backend
+# container. The container reaches Postgres as postgres-xhs; the host reaches the
+# published DB port on localhost. Normalize only that deployment hostname and
+# leave explicit operator overrides untouched.
+if [[ "${POSTGRES_URI:-}" == *"@postgres-xhs:"* ]]; then
+    export POSTGRES_URI="${POSTGRES_URI/@postgres-xhs:/@localhost:}"
+fi
+
 cd "$PROJECT_DIR"
 
 # Forward all args (subcommand + flags like --headless) to the python CLI.

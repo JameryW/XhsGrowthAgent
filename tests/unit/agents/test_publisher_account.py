@@ -148,6 +148,9 @@ async def test_no_cookie_when_account_unconfigured(_browser_settings, mock_store
     state = _state(publish_options={"dry_run": False, "account_id": "acc_empty"})
     m_cookie = AsyncMock(return_value=("", ""))
     monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="")
+    monkeypatch.setattr("backend.agents.publisher._resolve_cdp_endpoint", lambda _s: "")
     m_client = MagicMock()
     monkeypatch.setattr("backend.services.xhs_client.XHSClient", m_client)
 

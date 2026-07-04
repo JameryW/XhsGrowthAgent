@@ -1343,7 +1343,16 @@
     },
     "xhsAccounts": {
       "title": "XHS Accounts",
-      "subtitle": "Each account holds its own Cookie & user_id; switching activates them",
+      "subtitle": "Each account uses its own Chrome profile; Cookie / user_id are legacy fallback only",
+      "refreshLoginStatus": "Refresh login status",
+      "loginStatusChecking": "Checking…",
+      "loginStatusLoggedIn": "Logged in",
+      "loginStatusLoggedOut": "Not logged in",
+      "loginStatusUnavailable": "Browser unavailable",
+      "loginStatusMissingProfile": "Browser not bound",
+      "loginStatusBrowserDown": "Browser not running",
+      "loginStatusCdpUnreachable": "Browser connection failed",
+      "loginStatusUnknown": "Check failed",
       "qrLogin": "Scan Login",
       "qrLoginTitle": "Scan to Log In — Xiaohongshu",
       "qrWaiting": "Scan with the Xiaohongshu app",
@@ -1356,7 +1365,14 @@
       "qrRenderError": "QR rendering failed, please refresh",
       "qrStartError": "Failed to start scan-login",
       "qrPollError": "Failed to query login status",
-      "qrTimeout": "Scan timed out, please refresh the QR"
+      "qrTimeout": "Scan timed out, please refresh the QR",
+      "verificationCodeLabel": "Web verification code",
+      "verificationCodePlaceholder": "Enter code",
+      "verificationCodeSubmit": "Submit",
+      "verificationCodeHint": "If the XHS web page shows a numeric code prompt, enter it here and the system will forward it to the CDP Chrome page.",
+      "verificationCodeInvalid": "Enter a 4-8 digit verification code",
+      "verificationCodeNotFound": "No verification input was found on the CDP page. Confirm the prompt is still visible in Chrome.",
+      "verificationCodeSubmitError": "Failed to submit verification code"
     },
     "systemConfig": {
       "title": "System Config",

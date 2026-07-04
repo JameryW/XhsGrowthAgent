@@ -12,8 +12,10 @@ WORKDIR /app
 
 # Install system deps + bun runtime + omp CLI (needed by OmpSession for agent mode TUI).
 # ponytail: single apt layer; curl/unzip only for bun install, then purged.
+# xvfb: headed Chrome for scan-login (headless triggers xhs 471 风控——见
+# .trellis/tasks/07-04-xvfb-headed-471). Xvfb 提供虚拟 DISPLAY 给 launch_persistent_context(headless=False)。
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev curl unzip \
+    build-essential libpq-dev curl unzip xvfb \
     && curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash -s "bun-v1.3.14" \
     && /usr/local/bin/bun install -g @oh-my-pi/pi-coding-agent \
     && ln -s /root/.bun/bin/omp /usr/local/bin/omp \

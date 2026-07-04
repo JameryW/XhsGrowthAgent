@@ -35,6 +35,10 @@ class SetCredentialsRequest(BaseModel):
     credentials: dict[str, str]
 
 
+class SubmitVerificationCodeRequest(BaseModel):
+    code: str
+
+
 # ── Account CRUD ──
 
 
@@ -223,21 +227,46 @@ async def delete_credential(account_id: str, key_name: str) -> ApiResponse[Any]:
     return success(data={"deleted": True, "key_name": key_name})
 
 
+@router.get("/{account_id}/login/status")
+async def get_account_login_status(account_id: str) -> ApiResponse[Any]:
+    """Check whether the account's Chrome profile has a durable XHS login."""
+    from backend.db.accounts import get_account, get_account_cdp_endpoint
+    from backend.services.xhs_login import inspect_profile_login_status
+
+    account = await get_account(account_id)
+    if account is None:
+        raise AccountNotFoundError(account_id)
+
+    if not account.chrome_profile_path:
+        return success(
+            data={
+                "account_id": account_id,
+                "status": "unavailable",
+                "is_logged_in": False,
+                "reason": "missing_profile",
+            }
+        )
+
+    cdp_endpoint = await get_account_cdp_endpoint(account_id)
+    result = await inspect_profile_login_status(account_id, cdp_endpoint or "")
+    return success(data=result)
+
+
 # ── Scan-login (QR code) ──
 
 
 @router.post("/{account_id}/login/qr")
 async def start_qr_login(account_id: str) -> ApiResponse[Any]:
-    """启动扫码登录：headless Chrome 开 www 登录页，拦截 qrcode/create.
+    """启动扫码登录：connect_over_cdp 连 host 真实 Chrome，拦 qrcode/create.
 
     Returns:
         ``{qr_id, url, account_id}`` — 前端用 ``qrcode`` JS 库渲染 ``url``
-        为矢量二维码。登录态 cookie 由 ``launch_persistent_context`` 写入
-        ``account.chrome_profile_path``，launcher 常驻 CDP Chrome 复用。
+        为矢量二维码。登录态 cookie 写 host Chrome 的 user-data-dir
+        (``account.chrome_profile_path``)，常驻 Chrome 后续 CDP 发布复用。
 
     Raises:
         AccountNotFoundError: 账号不存在.
-        ValidationError: 账号未绑定 chrome_profile_path.
+        ValidationError: 账号未绑定 chrome_profile_path / cdp_port，或 host Chrome 未启动.
     """
     from backend.db.accounts import get_account
     from backend.services.xhs_login import LoginError, get_or_create_session
@@ -253,7 +282,17 @@ async def start_qr_login(account_id: str) -> ApiResponse[Any]:
             "创建账号时会自动分配（需设 XHS_CHROME_PROFILES_DIR），或经账号管理 API 设置。",
         )
 
-    session = get_or_create_session(account_id, account.chrome_profile_path)
+    from backend.db.accounts import get_account_cdp_endpoint
+
+    cdp_endpoint = await get_account_cdp_endpoint(account_id)
+    if not cdp_endpoint:
+        raise ValidationError(
+            "cdp_port",
+            "该账号未绑定 cdp_port 或 host Chrome 未启动。先跑 scripts/chrome-profiles.sh start "
+            "启动该账号的常驻 Chrome，再扫码登录。",
+        )
+
+    session = get_or_create_session(account_id, account.chrome_profile_path, cdp_endpoint)
     try:
         result = await session.start()
     except LoginError as e:
@@ -306,6 +345,41 @@ async def get_qr_login_status(account_id: str) -> ApiResponse[Any]:
 
     try:
         result = await session.get_status()
+    except LoginError as e:
+        raise APIError(
+            code=ErrorCode.SERVICE_UNAVAILABLE,
+            message=str(e),
+            details={"account_id": account_id},
+            status_code=503,
+        ) from e
+    return success(data=result)
+
+
+@router.post("/{account_id}/login/qr/verification-code")
+async def submit_qr_verification_code(
+    account_id: str, request: SubmitVerificationCodeRequest
+) -> ApiResponse[Any]:
+    """Submit a numeric web verification code into the active CDP login page."""
+    from backend.db.accounts import get_account
+    from backend.services.xhs_login import LoginError, get_session
+
+    account = await get_account(account_id)
+    if account is None:
+        raise AccountNotFoundError(account_id)
+
+    code = request.code.strip()
+    if not code.isdigit() or not (4 <= len(code) <= 8):
+        raise ValidationError("code", "验证码必须是 4-8 位数字")
+
+    session = get_session(account_id)
+    if session is None:
+        raise ValidationError(
+            "login_session",
+            "该账号没有进行中的扫码登录会话。先调用 POST /accounts/{id}/login/qr 启动。",
+        )
+
+    try:
+        result = await session.submit_verification_code(code)
     except LoginError as e:
         raise APIError(
             code=ErrorCode.SERVICE_UNAVAILABLE,

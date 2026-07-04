@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/07-03-cdp-profile-chrome-user-data-dir/research/cdp-per-profile.md","reason":"connect_over_cdp per-account 扩展、SingletonLock gotcha、Chrome binary/ headed 扫码、always-on daemon 模式"}
+{"file":".trellis/tasks/07-03-cdp-profile-chrome-user-data-dir/research/account-profile-binding.md","reason":"accounts 加列 migration 范式、XHSPlatformSettings env mirror、run_publish seam 位置"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Account-Scoped XHS Credentials 范式——get_account 经 backend.db.accounts 非 ad hoc SQL；DB 不可用优雅降级 is_pool_ready"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"publish-failure recovery 必须 dict 非字符串——无 port/无 profile 失败路径同此约束"}

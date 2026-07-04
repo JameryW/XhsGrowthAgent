@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Vue SFC 组件结构约定——删模板区块+setup 函数后保持单文件组件一致性"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Pinia store 调用清理边界——确认 store.credentials/fetchCredentials 留还是删"}

@@ -235,6 +235,8 @@ LLMEOF"
         -e XHS_COOKIE="${XHS_COOKIE:-}" \
         -e XHS_USER_ID="${XHS_USER_ID:-}" \
         -e XHS_USE_BROWSER="${XHS_USE_BROWSER:-false}" \
+        -e XHS_CHROME_PROFILES_DIR="${XHS_CHROME_PROFILES_DIR:-$PROJECT_DIR/.chrome-profiles}" \
+        -e XHS_CDP_BASE_PORT="${XHS_CDP_BASE_PORT:-9222}" \
         -e RIPPLE_BASE_URL=http://ripple-service:8080 \
         -e RIPPLE_API_TOKEN="${RIPPLE_API_TOKEN:-}" \
         -e RIPPLE_ENABLED=true \

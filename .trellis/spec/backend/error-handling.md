@@ -213,7 +213,9 @@ publish_result = {
 ```
 
 ### 4. Validation & Error Matrix
-- account has no cookie (pre-publish) → `error_type="no_cookie"`, structured `recovery` dict, `XHSClient` NOT constructed (fail fast)
+- account has no cookie AND no CDP endpoint (pre-publish) → `error_type="no_cookie"`, structured `recovery` dict, `XHSClient` NOT constructed (fail fast). Recovery hint mentions both "配置 XHS_COOKIE" and "扫码登录写入 profile".
+- account has no cookie BUT per-account CDP endpoint present → **NOT a fail**. CDP mode (`xhs_publisher._ensure_page` CDP branch) uses the profile's login state and ignores `self.cookie`, so the cookie check is skipped. Empty cookie is passed through to `XHSClient` (harmless under CDP). `run_publish` logs "靠 CDP profile 登录态发布".
+- account is_active=False (pre-publish) → `error_type="account_inactive"`, structured `recovery` dict, `XHSClient` NOT constructed (fail fast). Checked BEFORE the cookie/CDP check (cheaper, avoids a wasted real-Chrome publish).
 - cookie present but publish throws auth error → `classify_publish_error` maps to `error_type="auth_expired"`, structured `recovery` dict (from `_PUBLISH_RECOVERY_ACTIONS`)
 - any new failure path returning `recovery` → MUST be a dict, never a bare string
 
@@ -224,8 +226,12 @@ publish_result = {
 
 ### 6. Tests Required
 `tests/unit/agents/test_publisher_account.py`:
-- `test_no_cookie_when_account_unconfigured`: assert `recovery` is `dict`, `recovery["action"]=="reconfigure"`, non-empty `hint` and `action_label`.
+- `test_no_cookie_when_account_unconfigured`: assert `recovery` is `dict`, `recovery["action"]=="reconfigure"`, non-empty `hint` and `action_label`. Mocks `get_account` (active) + both CDP endpoints empty, so the no-cookie-and-no-CDP fail path triggers.
 - `test_selected_account_expired_cookie_classified`: assert `error_type=="auth_expired"` and `recovery` is `dict` with `action=="reconfigure"`.
+
+`tests/unit/agents/test_run_publish.py`:
+- `test_no_cookie_returns_failed_no_cookie`: no cookie + no CDP endpoint (global resolver mocked to `""`) → `no_cookie` fail, `XHSClient` NOT constructed.
+- `test_no_cookie_with_cdp_endpoint_proceeds`: no cookie + per-account CDP endpoint present → NO fail, `XHSClient` constructed with `cookie=""` and the endpoint, publish proceeds. Locks the "CDP profile covers missing cookie" contract.
 
 Assertion point: any test covering a publish-failure path MUST assert `isinstance(recovery, dict)` — this is the regression guard.
 

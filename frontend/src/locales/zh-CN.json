@@ -1343,7 +1343,16 @@
     },
     "xhsAccounts": {
       "title": "小红书账号",
-      "subtitle": "每个账号挂自己的 Cookie 与 user_id；切换激活账号时自动加载",
+      "subtitle": "每个账号使用独立 Chrome profile；Cookie / user_id 仅作为旧版兜底",
+      "refreshLoginStatus": "刷新登录状态",
+      "loginStatusChecking": "检查中…",
+      "loginStatusLoggedIn": "已登录",
+      "loginStatusLoggedOut": "未登录",
+      "loginStatusUnavailable": "浏览器不可用",
+      "loginStatusMissingProfile": "未绑定浏览器",
+      "loginStatusBrowserDown": "浏览器未启动",
+      "loginStatusCdpUnreachable": "浏览器连接失败",
+      "loginStatusUnknown": "检查失败",
       "qrLogin": "扫码登录",
       "qrLoginTitle": "扫码登录小红书",
       "qrWaiting": "请用小红书 App 扫码",
@@ -1356,7 +1365,14 @@
       "qrRenderError": "二维码渲染失败，请刷新重试",
       "qrStartError": "启动扫码登录失败",
       "qrPollError": "查询登录状态失败",
-      "qrTimeout": "扫码超时，请刷新二维码重试"
+      "qrTimeout": "扫码超时，请刷新二维码重试",
+      "verificationCodeLabel": "网页数字验证码",
+      "verificationCodePlaceholder": "输入验证码",
+      "verificationCodeSubmit": "提交",
+      "verificationCodeHint": "如果小红书网页端出现数字验证码，把验证码填在这里，系统会转交给 CDP Chrome 页面。",
+      "verificationCodeInvalid": "请输入 4-8 位数字验证码",
+      "verificationCodeNotFound": "没有在 CDP 页面找到验证码输入框，请确认验证码仍显示在浏览器页面中",
+      "verificationCodeSubmitError": "提交验证码失败"
     },
     "systemConfig": {
       "title": "系统配置",

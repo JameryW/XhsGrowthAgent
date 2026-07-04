@@ -52,11 +52,16 @@ _SINGLETON_FILES = ("SingletonLock", "SingletonCookie", "SingletonSocket")
 # --no-default-browser-check suppress first-run UX that would block automation.
 # --remote-debugging-address=0.0.0.0 makes the port reachable from inside the
 # backend container (via host.containers.internal).
+# --remote-allow-origins=* : Chrome 144 CDP rejects requests whose Host header
+# doesn't match the bind address (returns 500). socat forwards container
+# requests whose Host is host.containers.internal:9224 — chrome 19224 sees a
+# mismatched Host and 500s. Allow all origins so CDP accepts the forwarded req.
 _DEFAULT_FLAGS = (
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-dev-shm-usage",
     "--remote-debugging-address=0.0.0.0",
+    "--remote-allow-origins=*",
 )
 
 
@@ -135,6 +140,16 @@ async def probe_port(port: int, host: str = "127.0.0.1", timeout: float = 1.0) -
         return False
 
 
+async def _wait_for_port(port: int, *, attempts: int = 10, delay: float = 0.2) -> bool:
+    """Poll a CDP port briefly until Chrome/socat is ready."""
+    for attempt in range(attempts):
+        if await probe_port(port):
+            return True
+        if attempt < attempts - 1:
+            await asyncio.sleep(delay)
+    return False
+
+
 # ── SingletonLock handling ──
 
 
@@ -151,6 +166,86 @@ def _write_pidfile(profile_path: str, pid: int) -> None:
     """Record the launched Chrome's PID so stop/stale-lock checks have a source of truth."""
     Path(profile_path).mkdir(parents=True, exist_ok=True)
     (Path(profile_path) / "chrome.pid").write_text(str(pid), encoding="utf-8")
+
+
+async def _ensure_socat_forwarder(profile_path: str, port: int) -> int | None:
+    """Start a socat forwarder 0.0.0.0:<port> → 127.0.0.1:<internal_port>.
+
+    Chrome 144+ binds 127.0.0.1 only (ignores --remote-debugging-address=0.0.0.0),
+    so the backend container (via host.containers.internal) can't connect. socat
+    exposes the public ``port`` on 0.0.0.0 and forwards to Chrome's internal
+    loopback port. Chrome and socat use *different* ports (0.0.0.0:port would
+    conflict with 127.0.0.1:port since 0.0.0.0 subsumes loopback).
+
+    No-op if 0.0.0.0:<port> is already listening (socat already up) or socat
+    isn't installed. Returns the socat pid, or None when not started.
+    """
+    if _port_bound_inet(port):
+        return None
+    internal = _internal_cdp_port(port)
+    if not await probe_port(internal, host="127.0.0.1"):
+        return None
+    bin_ = shutil.which("socat")
+    if bin_ is None:
+        logger.warning(
+            "socat 未安装：Chrome 绑 127.0.0.1:%d，容器无法连接。装 socat 或换 Chrome 版本。",
+            internal,
+        )
+        return None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            bin_,
+            f"TCP-LISTEN:{port},bind=0.0.0.0,reuseaddr,fork",
+            f"TCP:127.0.0.1:{internal}",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError as e:
+        logger.warning("socat forwarder 启动失败 (port %d): %s", port, e)
+        return None
+    (Path(profile_path) / "socat.pid").write_text(str(proc.pid), encoding="utf-8")
+    logger.info("socat forwarder up: 0.0.0.0:%d → 127.0.0.1:%d (pid %d)", port, internal, proc.pid)
+    return proc.pid
+
+
+def _port_bound_inet(port: int) -> bool:
+    """Return True if any process is listening on 0.0.0.0:<port> (all interfaces).
+
+    Used to decide whether socat forwarding is needed: Chrome 144 binds only
+    127.0.0.1 even when --remote-debugging-address=0.0.0.0 is passed, so we check
+    the actual socket table rather than HTTP-probing (0.0.0.0 as a connect target
+    resolves to loopback and would lie).
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["ss", "-tlnH"], capture_output=True, text=True, timeout=2, check=False
+        ).stdout
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return False
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 4 and parts[0] == "LISTEN":
+            local = parts[3]
+            # local like "0.0.0.0:9224" or "[::]:9224"
+            if local.endswith(f":{port}") and ("0.0.0.0" in local or "::" in local):
+                return True
+    return False
+
+
+async def _stop_socat_forwarder(profile_path: str) -> None:
+    """Terminate the socat forwarder for this profile (best-effort)."""
+    pidfile = Path(profile_path) / "socat.pid"
+    try:
+        pid = int(pidfile.read_text(encoding="utf-8").strip())
+    except (FileNotFoundError, ValueError, OSError):
+        return
+    with contextlib.suppress(ProcessLookupError, OSError):
+        os.kill(pid, signal.SIGTERM)
+    with contextlib.suppress(FileNotFoundError, OSError):
+        pidfile.unlink()
 
 
 def _clear_pidfile(profile_path: str) -> None:
@@ -238,10 +333,29 @@ def clear_stale_lock(profile_path: str) -> bool:
 # ── Launch / stop ──
 
 
+# Chrome 144+ binds 127.0.0.1 even with --remote-debugging-address=0.0.0.0, so the
+# container can't reach it. We run a socat forwarder 0.0.0.0:<cdp_port> →
+# 127.0.0.1:<cdp_port+INTERNAL_PORT_OFFSET>. Chrome must listen on a *different*
+# port than socat (0.0.0.0:cdp_port and 127.0.0.1:cdp_port conflict — 0.0.0.0
+# subsumes loopback), so Chrome takes cdp_port+OFFSET internally and socat
+# exposes the public cdp_port.
+_INTERNAL_PORT_OFFSET = 10000
+
+
+def _internal_cdp_port(cdp_port: int) -> int:
+    """Chrome's actual --remote-debugging-port (loopback only). socat maps the
+    public cdp_port → this internal port."""
+    return cdp_port + _INTERNAL_PORT_OFFSET
+
+
 def _build_launch_cmd(
     chrome_bin: str, profile_path: str, port: int, headless: bool = False
 ) -> list[str]:
     """Construct the Chrome command line for a per-account instance.
+
+    Chrome listens on ``_internal_cdp_port(port)`` (127.0.0.1 only — Chrome 144
+    ignores --remote-debugging-address). A socat forwarder exposes the public
+    ``port`` on 0.0.0.0 for the backend container. See ``_ensure_socat_forwarder``.
 
     Uses ``create_subprocess_exec`` (not a shell) — args are passed directly to
     execve, so no shell-injection surface even if profile_path/port ever came
@@ -250,7 +364,7 @@ def _build_launch_cmd(
     cmd = [
         chrome_bin,
         f"--user-data-dir={profile_path}",
-        f"--remote-debugging-port={port}",
+        f"--remote-debugging-port={_internal_cdp_port(port)}",
     ]
     cmd.extend(_DEFAULT_FLAGS)
     if headless:
@@ -290,7 +404,7 @@ async def ensure_chrome(
     profile_path = account.chrome_profile_path
     Path(profile_path).mkdir(parents=True, exist_ok=True)
 
-    # 1. Already up?
+    # 1. Already reachable from the backend container?
     if await probe_port(port):
         return ChromeStatus(
             account_id=account.id,
@@ -299,6 +413,27 @@ async def ensure_chrome(
             alive=True,
             action="skipped",
             message="chrome already running on port",
+        )
+
+    # Chrome 144+ may be alive only on the internal loopback port while the
+    # public socat forwarder is missing or died. Repair that before consulting
+    # SingletonLock; otherwise a live profile lock would make us refuse the
+    # launch without restoring container reachability.
+    internal = _internal_cdp_port(port)
+    if await probe_port(internal):
+        await _ensure_socat_forwarder(profile_path, port)
+        public_alive = await _wait_for_port(port)
+        return ChromeStatus(
+            account_id=account.id,
+            port=port,
+            profile_path=profile_path,
+            alive=public_alive,
+            action="skipped" if public_alive else "failed",
+            message=(
+                "chrome internal port alive; public forwarder ready"
+                if public_alive
+                else "chrome internal port alive but public CDP port is not reachable"
+            ),
         )
 
     # 2. Stale lock?
@@ -375,18 +510,29 @@ async def ensure_chrome(
         profile_path,
     )
 
-    # Give Chrome a moment to bind the DevTools port. We don't block long —
-    # the publisher's connect_over_cdp has its own retry/timeout, and a
-    # short probe here just gives the status report a better answer.
-    await asyncio.sleep(0.5)
-    alive = await probe_port(port)
+    # Give Chrome a moment to bind the DevTools port. Chrome 144 headed under
+    # Xvfb can take ~2s to bind + answer /json/version — probe with retries
+    # so socat (which needs Chrome up on 127.0.0.1) gets a ready target.
+    # Chrome listens on _internal_cdp_port (loopback); socat exposes cdp_port.
+    internal_alive = False
+    for _ in range(10):
+        await asyncio.sleep(0.5)
+        internal_alive = await probe_port(internal)
+        if internal_alive:
+            break
+    # Chrome 144+ binds 127.0.0.1 despite --remote-debugging-address=0.0.0.0;
+    # socat forwards 0.0.0.0:cdp_port → 127.0.0.1:internal so the container can reach it.
+    public_alive = False
+    if internal_alive:
+        await _ensure_socat_forwarder(profile_path, port)
+        public_alive = await _wait_for_port(port)
     return ChromeStatus(
         account_id=account.id,
         port=port,
         profile_path=profile_path,
-        alive=alive,
-        action="launched",
-        message=f"pid={proc.pid}, port_up={alive}",
+        alive=public_alive,
+        action="launched" if public_alive else "failed",
+        message=f"pid={proc.pid}, internal_port_up={internal_alive}, public_port_up={public_alive}",
     )
 
 
@@ -411,6 +557,7 @@ async def stop_chrome(account: AccountRow) -> ChromeStatus:
     pid = _read_pidfile(profile_path)
     if pid is None or not _pid_alive(pid):
         # Already down — just tidy any stale locks.
+        await _stop_socat_forwarder(profile_path)
         clear_stale_lock(profile_path)
         _clear_pidfile(profile_path)
         return ChromeStatus(
@@ -448,6 +595,7 @@ async def stop_chrome(account: AccountRow) -> ChromeStatus:
         await asyncio.sleep(0.3)
 
     alive = _pid_alive(pid)
+    await _stop_socat_forwarder(profile_path)
     clear_stale_lock(profile_path)
     _clear_pidfile(profile_path)
     return ChromeStatus(

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "diff 最小、env 可配回退、无多余抽象"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "LoginError → 503 映射契约，扫码失败路径 recovery 结构"}
+{"file": ".trellis/tasks/07-03-cdp-profile-chrome-user-data-dir/research/cdp-per-profile.md", "reason": "connect_over_cdp vs launch_persistent_context 决策、host 常驻 Chrome 架构"}
+{"file": ".trellis/tasks/07-03-scan-login-frontend-page/research/xhs-creator-login-qr.md", "reason": "471 风控根因、qrcode/create+status 接口结构、code_status 字段"}
