@@ -818,3 +818,39 @@ Exposed evaluator epoch/weights/samples/trend to omp: new GET /evaluation/epochs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 59: 真实发布跑通 + bug 修复链 #187-190 + 部署
+
+**Date**: 2026-07-05
+**Task**: 真实发布跑通 + bug 修复链 #187-190 + 部署
+**Branch**: `main`
+
+### Summary
+
+#182-186 cookie 凭证移除系列合并后部署，跑真实发布暴露 blogger_scout join dict 崩(#187)+evaluator ainvoke 无 timeout 挂起(#188)+_extract_keywords extend dict 拆 keys(#189)+publish-retry 用 post_id 判 completed 致真实发布成功标 error(#190)。4 PR 全合 main 重部署，host Chrome 9225 重启后 publish-retry 跑通真实发布到小红书(creator.xiaohongshu.com/publish/success, pub_status=published)。发现既存 publish-retry guard 缺陷(不查 graph 中断点→thread 卡 ripple_gate 时重试致状态错乱)+status 端点覆盖 DB status 致 #190 治标。loop 检查改动 bug 多轮无新发现。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `84e0cb9b` | (see git log) |
+| `3d89ff67` | (see git log) |
+| `1af52957` | (see git log) |
+| `51d9a884` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
