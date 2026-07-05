@@ -823,13 +823,12 @@ class TestReviewOutcomeRouter:
     not directly to publisher.
     """
 
-    def test_review_outcome_routes_to_evaluator_gate_without_xhs_config(self):
-        """review_outcome should route to evaluator_gate even without XHS credentials."""
-        # State with approved review, no XHS config
+    def test_review_outcome_routes_to_evaluator_gate_without_publish_config(self):
+        """review_outcome should route to evaluator_gate without publish config."""
+        # State with approved review, no publish config
         state = {
             "phase": WorkflowPhase.REVIEWING,
             "human_feedback": {"decision": ContentStatus.APPROVED},
-            # No XHS_COOKIE, no XHS_USER_ID
         }
 
         result = review_outcome(state)

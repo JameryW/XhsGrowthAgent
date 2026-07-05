@@ -69,6 +69,7 @@ async function activateAccount(accountId: string) {
   try {
     await store.setActiveAccount(accountId)
     toast.success(t('settings.toasts.activeSwitched'))
+    await refreshAllLoginStatuses()
   } catch (e: any) {
     toast.error(e.message)
   }
@@ -87,7 +88,7 @@ async function removeAccount(accountId: string, name: string) {
 
 function canScanLogin(account: Account): boolean {
   const status = loginStatusFor(account.id).status
-  return Boolean(account.chrome_profile_path && account.cdp_port && status !== 'unavailable')
+  return Boolean(account.is_active && account.chrome_profile_path && account.cdp_port && status !== 'unavailable')
 }
 
 function setLoginStatus(accountId: string, status: LoginStatusView) {
@@ -95,6 +96,17 @@ function setLoginStatus(accountId: string, status: LoginStatusView) {
 }
 
 async function refreshLoginStatus(accountId: string) {
+  const account = store.accounts.find(a => a.id === accountId)
+  if (account && !account.is_active) {
+    setLoginStatus(accountId, {
+      account_id: accountId,
+      status: 'unavailable',
+      is_logged_in: false,
+      reason: 'account_inactive',
+    })
+    return
+  }
+
   setLoginStatus(accountId, {
     account_id: accountId,
     status: 'checking',
@@ -137,6 +149,7 @@ function loginStatusText(accountId: string): string {
     case 'logged_in': return t('settings.xhsAccounts.loginStatusLoggedIn')
     case 'logged_out': return t('settings.xhsAccounts.loginStatusLoggedOut')
     case 'unavailable':
+      if (status.reason === 'account_inactive') return t('settings.xhsAccounts.loginStatusInactive')
       if (status.reason === 'missing_profile') return t('settings.xhsAccounts.loginStatusMissingProfile')
       if (status.reason === 'cdp_port_down') return t('settings.xhsAccounts.loginStatusBrowserDown')
       if (status.reason === 'cdp_unreachable') return t('settings.xhsAccounts.loginStatusCdpUnreachable')
@@ -158,7 +171,9 @@ function loginStatusIcon(accountId: string): string {
 }
 
 function loginStatusClass(accountId: string): string {
-  const value: LoginStatusValue = loginStatusFor(accountId).status
+  const status = loginStatusFor(accountId)
+  const value: LoginStatusValue = status.status
+  if (status.reason === 'account_inactive') return 'text-slate-400'
   switch (value) {
     case 'logged_in': return 'text-emerald-600'
     case 'logged_out': return 'text-slate-400'
@@ -169,6 +184,10 @@ function loginStatusClass(accountId: string): string {
 }
 
 function openQrLogin(account: Account) {
+  if (!account.is_active) {
+    toast.error(t('settings.xhsAccounts.loginStatusInactive'))
+    return
+  }
   if (!canScanLogin(account)) {
     toast.error(t('settings.xhsAccounts.loginStatusUnavailable'))
     return
@@ -267,7 +286,11 @@ function onQrConfirmed() {
               ? 'text-rose-500 hover:text-rose-600 hover:bg-rose-50'
               : 'text-slate-300 cursor-not-allowed'"
             :disabled="!canScanLogin(account)"
-            :title="canScanLogin(account) ? t('settings.xhsAccounts.qrLogin') : t('settings.xhsAccounts.loginStatusUnavailable')"
+            :title="canScanLogin(account)
+              ? t('settings.xhsAccounts.qrLogin')
+              : account.is_active
+                ? t('settings.xhsAccounts.loginStatusUnavailable')
+                : t('settings.xhsAccounts.loginStatusInactive')"
           >
             <AppIcon name="LogIn" size="xs" variant="pink" />
             <span>{{ t('settings.xhsAccounts.qrLogin') }}</span>

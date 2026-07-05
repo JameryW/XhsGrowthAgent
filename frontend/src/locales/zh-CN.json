@@ -28,7 +28,6 @@
     "ready": "就绪",
     "needsConfig": "需配置",
     "apiUnreachable": "API 不可达",
-    "xhsPlatform": "小红书平台",
     "storage": "数据存储",
     "memory": "记忆存储",
     "enabled": "已启用",
@@ -48,7 +47,6 @@
     },
     "guide": {
       "llmMissing": "请在 .env 文件中设置至少一个 LLM API Key（如 ANTHROPIC_API_KEY）以启用 AI 功能。",
-      "xhsMissing": "未配置小红书凭证，发布阶段将自动跳过（仅生成预览）。如需发布，请在 .env 中设置 XHS_COOKIE 和 XHS_USER_ID。",
       "rippleMissing": "请在 .env 文件中设置 RIPPLE_BASE_URL 和 RIPPLE_API_TOKEN（可选，用于内容传播预测）。",
       "rippleDisabled": "Ripple 引擎未启用。如需使用，请在 .env 中设置 RIPPLE_ENABLED=true。",
       "apiUnreachable": "请确保后端服务已启动：xhs-growth serve --port 8000"
@@ -121,7 +119,7 @@
     "form": {
       "accountId": "账号 ID",
       "accountIdPlaceholder": "选择账号",
-      "accountIdHelp": "选择运行此工作流的账号；可在「设置」中管理账号和凭证",
+      "accountIdHelp": "选择运行此工作流的账号；可在「设置」中管理账号和扫码登录状态",
       "startPhase": "起始阶段",
       "options": "运行选项",
       "dryRun": "试运行模式",
@@ -550,7 +548,7 @@
     "dryRunMode": "试运行",
     "liveMode": "实时发布",
     "publishSkipped": "发布已跳过",
-    "publishSkippedReason": "XHS 凭证未配置，请在 .env 中设置 XHS_COOKIE 和 XHS_USER_ID",
+    "publishSkippedReason": "未能完成真实发布，请检查账号浏览器登录态",
     "publishConfirm": {
       "title": "确认发布",
       "subtitle": "发布前请检查以下设置",
@@ -566,8 +564,7 @@
       "dryCardTitle": "试运行",
       "dryCardDesc": "预览不实际发布",
       "liveCardTitle": "真实发布",
-      "liveCardDesc": "上线到小红书平台",
-      "useBrowserOffWarning": "当前环境无法真实发布（XHS_USE_BROWSER 未开启）。选择真实发布仍只会模拟发布。"
+      "liveCardDesc": "上线到小红书平台"
     },
     "stateLost": "该工作流审核状态因容器重启而丢失，请重新启动工作流以生成审核内容。",
     "errorStateLost": "审核状态丢失",
@@ -995,7 +992,6 @@
     "required": "必需",
     "optional": "可选",
     "readyFull": "完全就绪",
-    "readyDryRun": "仅试运行",
     "blocked": "需要配置",
     "apiError": "无法检查系统状态",
     "refresh": "刷新",
@@ -1005,13 +1001,6 @@
       "description": "用于内容生成的 AI 模型",
       "impact": "所有 AI 操作必需",
       "fixGuide": "在 .env 中设置至少一个 API Key（如 ANTHROPIC_API_KEY、OPENAI_API_KEY）"
-    },
-    "xhs": {
-      "label": "小红书平台",
-      "description": "发布到小红书的凭证",
-      "impactReal": "可真实发布到小红书",
-      "impactDryRun": "仅可预览（无法真实发布）",
-      "fixGuide": "在 .env 中设置 XHS_COOKIE 和 XHS_USER_ID 以启用发布功能"
     },
     "ripple": {
       "label": "Ripple CAS 引擎",
@@ -1024,9 +1013,7 @@
       "description": "工作流持久化层",
       "impactMemory": "使用内存存储（重启后数据丢失）",
       "impactPersistent": "使用持久化数据库存储"
-    },
-    "suggestDryRun": "建议使用试运行模式",
-    "suggestDryRunReason": "小红书凭证未配置，工作流将以预览模式运行，不会实际发布。"
+    }
   },
   "brief": {
     "uploadLabel": "上传商单 PDF",
@@ -1287,7 +1274,6 @@
     "noAccounts": "暂无账号，请添加第一个账号",
     "active": "活跃",
     "activate": "设为活跃",
-    "credentialsFor": "凭证配置",
     "saveCredentials": "保存",
     "enterValue": "输入新值，留空则删除",
     "edit": "编辑",
@@ -1296,7 +1282,6 @@
     "willDelete": "(将删除)",
     "groups": {
       "llmProviders": "LLM 提供商",
-      "xhsPlatform": "小红书平台",
       "rippleCas": "Ripple CAS",
       "searchEmbedding": "搜索与嵌入"
     },
@@ -1304,7 +1289,6 @@
       "accountCreated": "账号 \"{name}\" 已创建",
       "accountDeleted": "账号 \"{name}\" 已删除",
       "activeSwitched": "活跃账号已切换",
-      "credsSaved": "凭证已保存并生效",
       "credDeleted": "已删除 {key}",
       "systemConfigSaved": "系统配置已保存并生效",
       "qrLoginSuccess": "账号 \"{name}\" 扫码登录成功，登录态已写入 profile"
@@ -1317,7 +1301,7 @@
       "consoleUsers": "管控台用户",
       "consoleUsersDesc": "登录此后台的人员",
       "xhsAccounts": "小红书账号",
-      "xhsAccountsDesc": "运营的小红书号 + Cookie",
+      "xhsAccountsDesc": "运营的小红书号与浏览器登录态",
       "systemConfig": "系统配置",
       "systemConfigDesc": "LLM、Ripple、向量等全局密钥"
     },
@@ -1343,11 +1327,12 @@
     },
     "xhsAccounts": {
       "title": "小红书账号",
-      "subtitle": "每个账号使用独立 Chrome profile；Cookie / user_id 仅作为旧版兜底",
+      "subtitle": "每个账号使用独立 Chrome profile；扫码登录状态写入对应 profile",
       "refreshLoginStatus": "刷新登录状态",
       "loginStatusChecking": "检查中…",
       "loginStatusLoggedIn": "已登录",
       "loginStatusLoggedOut": "未登录",
+      "loginStatusInactive": "账号未启用",
       "loginStatusUnavailable": "浏览器不可用",
       "loginStatusMissingProfile": "未绑定浏览器",
       "loginStatusBrowserDown": "浏览器未启动",
@@ -1357,6 +1342,7 @@
       "qrLoginTitle": "扫码登录小红书",
       "qrWaiting": "请用小红书 App 扫码",
       "qrScanned": "已扫码，请在手机上确认",
+      "qrVerificationRequired": "已扫码，网页端需要二次校验",
       "qrConfirmed": "登录成功",
       "qrExpired": "二维码已过期",
       "qrScanTip": "打开小红书 App → 我的 → 左上角菜单 → 扫一扫",
@@ -1366,10 +1352,12 @@
       "qrStartError": "启动扫码登录失败",
       "qrPollError": "查询登录状态失败",
       "qrTimeout": "扫码超时，请刷新二维码重试",
-      "verificationCodeLabel": "网页数字验证码",
-      "verificationCodePlaceholder": "输入验证码",
+      "verificationCodeLabel": "网页二次校验码",
+      "verificationCodeRequiredLabel": "需要完成网页二次校验",
+      "verificationCodePlaceholder": "输入页面显示的校验码",
       "verificationCodeSubmit": "提交",
-      "verificationCodeHint": "如果小红书网页端出现数字验证码，把验证码填在这里，系统会转交给 CDP Chrome 页面。",
+      "verificationCodeHint": "这不是短信验证码。只有小红书网页端显示数字校验码时才需要填写；没有看到校验码就刷新二维码重试。",
+      "verificationCodeRequiredHint": "这不是短信验证码。请查看小红书网页端是否显示数字校验码；如果没有显示，刷新二维码后重新扫码。",
       "verificationCodeInvalid": "请输入 4-8 位数字验证码",
       "verificationCodeNotFound": "没有在 CDP 页面找到验证码输入框，请确认验证码仍显示在浏览器页面中",
       "verificationCodeSubmitError": "提交验证码失败"

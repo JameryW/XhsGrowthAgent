@@ -1,4 +1,4 @@
-"""Account and credentials CRUD — multi-tenant account management."""
+"""Account CRUD — multi-tenant XHS account management."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from backend.db.crypto import decrypt_value, encrypt_value, mask_value
+from backend.db.crypto import decrypt_value, mask_value
 from backend.db.pool import get_pool
 
 logger = logging.getLogger("xhs_growth.db.accounts")
@@ -49,20 +49,6 @@ class CredentialRow:
         return mask_value(v) if v else ""
 
 
-# ── Known credential keys ──
-#
-# After the console-account-system refactor, accounts only hold XHS platform
-# credentials. LLM/Ripple/embedding/search keys live in system_config (global).
-# `CREDENTIAL_KEYS` is kept as an alias for `XHS_KEYS` so older imports still work.
-
-XHS_KEYS = [
-    "XHS_COOKIE",
-    "XHS_USER_ID",
-]
-
-# Backward-compat alias — do not extend with non-XHS keys.
-CREDENTIAL_KEYS = XHS_KEYS
-
 # ── Table creation ──
 
 _CREATE_ACCOUNTS_SQL = """
@@ -101,7 +87,7 @@ _ADD_CDP_PORT_COL_SQL = (
 
 
 async def ensure_tables() -> None:
-    """Create accounts + credentials tables if they don't exist, and ensure
+    """Create accounts + legacy credentials tables if they don't exist, and ensure
     the CDP multi-profile columns exist on pre-existing accounts tables."""
     pool = get_pool()
     async with pool.connection() as conn:
@@ -110,7 +96,7 @@ async def ensure_tables() -> None:
         await conn.execute(_CREATE_INDEX_SQL)
         await conn.execute(_ADD_CHROME_PROFILE_COL_SQL)
         await conn.execute(_ADD_CDP_PORT_COL_SQL)
-    logger.info("accounts + credentials tables ensured")
+    logger.info("accounts tables ensured")
 
 
 # ── Account CRUD ──
@@ -278,7 +264,7 @@ async def set_active_account(account_id: str) -> AccountRow | None:
     return _account_from_dict(row)
 
 
-# ── Credential CRUD ──
+# ── Legacy credential table compatibility ──
 
 
 async def list_credentials(account_id: str) -> list[CredentialRow]:
@@ -304,61 +290,6 @@ async def list_credentials(account_id: str) -> list[CredentialRow]:
         )
         for r in rows
     ]
-
-
-async def set_credentials(account_id: str, creds: dict[str, str]) -> None:
-    """Batch-set credentials for an account. Upserts each key.
-
-    Non-XHS keys are silently dropped — they belong in system_config.
-    """
-    pool = get_pool()
-    async with pool.connection() as conn:
-        for key_name, plain_value in creds.items():
-            if key_name not in XHS_KEYS:
-                logger.warning(
-                    f"Ignoring non-XHS key on account {account_id}: {key_name} "
-                    "(belongs in system_config)"
-                )
-                continue
-            if not plain_value:
-                # Delete empty values
-                await conn.execute(
-                    "DELETE FROM account_credentials WHERE account_id = %s AND key_name = %s",
-                    (account_id, key_name),
-                )
-                continue
-            encrypted = encrypt_value(plain_value)
-            await conn.execute(
-                """
-                INSERT INTO account_credentials (account_id, key_name, encrypted_value)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (account_id, key_name)
-                DO UPDATE SET encrypted_value = EXCLUDED.encrypted_value
-                """,
-                (account_id, key_name, encrypted),
-            )
-    logger.info(f"Set {len(creds)} credentials for account {account_id}")
-
-
-async def delete_credential(account_id: str, key_name: str) -> bool:
-    pool = get_pool()
-    async with pool.connection() as conn:
-        cur = await conn.execute(
-            "DELETE FROM account_credentials WHERE account_id = %s AND key_name = %s",
-            (account_id, key_name),
-        )
-    return cur.rowcount == 1
-
-
-async def get_account_cookie(account_id: str) -> tuple[str, str]:
-    """Return (cookie, user_id) for an account — decrypted, for publishing.
-
-    Empty strings if a key is not set. Used by publisher to publish as a
-    specific account without disturbing the global active-account env.
-    """
-    creds = await list_credentials(account_id)
-    by_key = {c.key_name: c.value for c in creds}
-    return by_key.get("XHS_COOKIE", ""), by_key.get("XHS_USER_ID", "")
 
 
 def _resolve_cdp_host() -> str:
@@ -405,83 +336,6 @@ async def get_account_cdp_endpoint(account_id: str) -> str:
     if account is None or account.cdp_port <= 0:
         return ""
     return f"http://{_resolve_cdp_host()}:{account.cdp_port}"
-
-
-# ── Hot reload ──
-
-
-async def activate_credentials(account_id: str) -> dict[str, str]:
-    """Load an account's credentials and push them to os.environ (hot reload).
-
-    Clears all DB-managed keys from os.environ first so a previously-active
-    account's keys don't leak into the new one (e.g. switching from an account
-    with ANTHROPIC_API_KEY set to one without).
-
-    Returns the dict of {env_var: value} that was loaded.
-    """
-    import os
-
-    # Clear stale keys from any previously-active account
-    for key in CREDENTIAL_KEYS:
-        os.environ.pop(key, None)
-
-    creds = await list_credentials(account_id)
-    loaded = {}
-    for cred in creds:
-        value = cred.value
-        if value:
-            os.environ[cred.key_name] = value
-            loaded[cred.key_name] = value
-    logger.info(f"Activated {len(loaded)} credentials for account {account_id} into os.environ")
-    return loaded
-
-
-async def deactivate_credentials() -> None:
-    """Remove all credential keys from os.environ that are managed by DB."""
-    import os
-
-    for key in CREDENTIAL_KEYS:
-        os.environ.pop(key, None)
-    logger.info("Deactivated all DB-managed credentials from os.environ")
-
-
-async def load_active_credentials() -> dict[str, str]:
-    """On startup: load the active account's credentials into os.environ.
-
-    If no accounts exist yet, bootstrap a 'default' account seeded from the
-    current os.environ — so first-time users coming from a .env-only setup
-    don't have to re-paste every key in the UI.
-
-    Returns empty dict if bootstrap had nothing to seed.
-    """
-    active = await get_active_account()
-    if active is None:
-        await _bootstrap_default_account()
-        active = await get_active_account()
-        if active is None:
-            return {}
-    return await activate_credentials(active.id)
-
-
-async def _bootstrap_default_account() -> None:
-    """Create a 'default' active account, seeded from os.environ XHS keys.
-
-    No-op if any account already exists (keeps idempotent across restarts).
-    System-wide keys (LLM/Ripple/etc.) are NOT seeded here — they belong in
-    `backend.db.system_config`.
-    """
-    import os
-
-    accounts = await list_accounts()
-    if accounts:
-        return
-
-    acc = await create_account(name="default", is_active=False)
-    await set_active_account(acc.id)
-    seed = {k: os.environ[k] for k in XHS_KEYS if os.environ.get(k)}
-    if seed:
-        await set_credentials(acc.id, seed)
-    logger.info(f"Bootstrapped default account with {len(seed)} XHS keys from os.environ")
 
 
 # ── Helpers ──

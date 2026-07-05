@@ -12,12 +12,6 @@ export interface Account {
   cdp_port?: number
 }
 
-export interface Credential {
-  key_name: string
-  masked_value: string
-  is_set: boolean
-}
-
 // ── Account CRUD ──
 
 export async function listAccounts(): Promise<Account[]> {
@@ -38,20 +32,6 @@ export async function updateAccount(accountId: string, data: { name?: string; is
 
 export async function deleteAccount(accountId: string): Promise<void> {
   await client.delete(`/accounts/${accountId}`)
-}
-
-// ── Credentials ──
-
-export async function listCredentials(accountId: string): Promise<Credential[]> {
-  return client.get(`/accounts/${accountId}/credentials`) as unknown as Credential[]
-}
-
-export async function setCredentials(accountId: string, credentials: Record<string, string>): Promise<{ updated_keys: string[] }> {
-  return client.put(`/accounts/${accountId}/credentials`, { credentials }) as unknown as { updated_keys: string[] }
-}
-
-export async function deleteCredential(accountId: string, keyName: string): Promise<void> {
-  await client.delete(`/accounts/${accountId}/credentials/${keyName}`)
 }
 
 // ── Durable profile login status ──
@@ -87,6 +67,7 @@ export interface QrLoginStatusResponse {
   qr_id: string
   url?: string
   account_id: string
+  verification_required?: boolean
 }
 
 export interface QrVerificationCodeResult extends QrLoginStatusResponse {
@@ -98,7 +79,11 @@ export interface QrVerificationCodeResult extends QrLoginStatusResponse {
 }
 
 export async function startQrLogin(accountId: string): Promise<QrLoginStart> {
-  return client.post(`/accounts/${accountId}/login/qr`) as unknown as QrLoginStart
+  return client.post(
+    `/accounts/${accountId}/login/qr`,
+    undefined,
+    { timeout: 12000 }
+  ) as unknown as QrLoginStart
 }
 
 export async function getQrLoginStatus(accountId: string): Promise<QrLoginStatusResponse> {

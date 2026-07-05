@@ -175,6 +175,38 @@ def test_start_qr_login_503_on_login_error(client):
     assert err.status_code == 503
 
 
+def test_start_qr_login_503_on_start_timeout(client):
+    """Hung Playwright/CDP start → 503 and session cleanup instead of endless loading."""
+    from backend.api.errors import ErrorCode
+
+    account = _mock_account()
+    mock_session = MagicMock()
+    mock_session.start = AsyncMock(side_effect=TimeoutError())
+
+    with (
+        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.db.accounts.get_account_cdp_endpoint",
+            new_callable=AsyncMock,
+            return_value="http://172.19.0.1:9224",
+        ),
+        patch(
+            "backend.services.xhs_login.get_or_create_session",
+            return_value=mock_session,
+        ),
+        patch("backend.services.xhs_login.stop_session", new_callable=AsyncMock) as mock_stop,
+        pytest.raises(Exception) as exc_info,
+    ):
+        client.post("/api/accounts/acc-1/login/qr")
+
+    err = exc_info.value
+    assert hasattr(err, "code")
+    assert err.code == ErrorCode.SERVICE_UNAVAILABLE
+    assert err.status_code == 503
+    assert "启动扫码登录超时" in err.message
+    mock_stop.assert_awaited_once_with("acc-1")
+
+
 # ── GET /login/qr/status ──
 
 
@@ -188,6 +220,11 @@ def test_get_login_status_returns_profile_state(client):
             new_callable=AsyncMock,
             return_value="http://172.19.0.1:9224",
         ),
+        patch(
+            "backend.services.chrome_launcher.probe_port",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_probe,
         patch(
             "backend.services.xhs_login.inspect_profile_login_status",
             new_callable=AsyncMock,
@@ -206,6 +243,7 @@ def test_get_login_status_returns_profile_state(client):
     data = resp.json()["data"]
     assert data["status"] == "logged_in"
     assert data["is_logged_in"] is True
+    mock_probe.assert_awaited_once_with(9224, host="172.19.0.1")
     mock_status.assert_awaited_once_with("acc-1", "http://172.19.0.1:9224")
 
 
@@ -221,6 +259,37 @@ def test_get_login_status_unavailable_when_no_profile(client):
     data = resp.json()["data"]
     assert data["status"] == "unavailable"
     assert data["reason"] == "missing_profile"
+
+
+def test_get_login_status_browser_down_when_cdp_endpoint_not_answering(client):
+    """CDP port not answering → browser-not-running status for the settings UI."""
+    account = _mock_account()
+    with (
+        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.db.accounts.get_account_cdp_endpoint",
+            new_callable=AsyncMock,
+            return_value="http://172.19.0.1:9224",
+        ),
+        patch(
+            "backend.services.chrome_launcher.probe_port",
+            new_callable=AsyncMock,
+            return_value=False,
+        ) as mock_probe,
+        patch(
+            "backend.services.xhs_login.inspect_profile_login_status",
+            new_callable=AsyncMock,
+        ) as mock_status,
+    ):
+        resp = client.get("/api/accounts/acc-1/login/status")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["status"] == "unavailable"
+    assert data["is_logged_in"] is False
+    assert data["reason"] == "cdp_port_down"
+    mock_probe.assert_awaited_once_with(9224, host="172.19.0.1")
+    mock_status.assert_not_awaited()
 
 
 def test_get_qr_status_returns_current_status(client):
