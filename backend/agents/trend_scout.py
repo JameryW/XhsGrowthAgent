@@ -124,7 +124,7 @@ class TrendScoutAgent(BaseAgent):
 
             data_source = "real"
         else:
-            data_context = "\n\n## 无实时数据\n未配置小红书 API 凭证，基于你的知识生成趋势分析。"
+            data_context = "\n\n## 无实时数据\n小红书实时数据不可用，基于你的知识生成趋势分析。"
             data_source = "llm_generated"
 
         system_prompt = self._build_system_prompt(

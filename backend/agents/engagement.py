@@ -53,8 +53,6 @@ class EngagementAgent(BaseAgent):
         from backend.services.xhs_client import XHSClient
 
         client = XHSClient(
-            cookie=settings.platform.cookie,
-            user_id=settings.platform.user_id,
             use_browser=True,
             headless=settings.platform.headless,
         )

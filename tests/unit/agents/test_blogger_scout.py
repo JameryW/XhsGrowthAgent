@@ -1,11 +1,11 @@
 """Unit tests for BloggerScoutAgent."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+import json
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from backend.agents.blogger_scout import BloggerScoutAgent
-from backend.services.xhs_client import XHSSearchResult
 from backend.state.enums import WorkflowMode, WorkflowPhase
 
 
@@ -29,7 +29,6 @@ class TestBloggerScoutAgent:
             "account_id": "test_account",
             "workflow_mode": WorkflowMode.TREND,
             "phase": WorkflowPhase.CREATING,
-            "xhs_cookie": "test_cookie",
             "trend_data": {
                 "trending_keywords": ["美食探店", "咖啡推荐", "甜品"],
             },
@@ -46,7 +45,6 @@ class TestBloggerScoutAgent:
             "account_id": "test_account",
             "workflow_mode": WorkflowMode.BRIEF,
             "phase": WorkflowPhase.CREATING,
-            "xhs_cookie": "test_cookie",
             "brief_content": {
                 "required_keywords": ["几素风扇", "婴儿车风扇"],
                 "brand_name": "几素",
@@ -103,81 +101,39 @@ class TestBloggerScoutAgent:
 
     @pytest.mark.asyncio
     async def test_execute_returns_candidates(self, agent, trend_state, mock_store):
-        """Execute returns blogger candidates with engagement sorting."""
-        mock_search_results = [
-            XHSSearchResult(
-                note_id="n1",
-                title="美食探店",
-                user_name="博主A",
-                user_id="u1",
-                likes=100,
-                comments=20,
-                collects=30,
-                cover_url="",
-                note_url="",
-            ),
-            XHSSearchResult(
-                note_id="n2",
-                title="咖啡推荐",
-                user_name="博主B",
-                user_id="u2",
-                likes=50,
-                comments=10,
-                collects=15,
-                cover_url="",
-                note_url="",
-            ),
-        ]
+        """Execute returns LLM-generated blogger candidates."""
+        mock_response = MagicMock()
+        mock_response.content = '{"candidates": [{"user_id": "mock_001", "nickname": "博主A", "follower_count": 5000, "note_count": 100, "total_engagement": 3000, "top_note_title": "美食探店"}, {"user_id": "mock_002", "nickname": "博主B", "follower_count": 3000, "note_count": 80, "total_engagement": 2000, "top_note_title": "咖啡推荐"}]}'  # noqa: E501
+        agent._model = AsyncMock()
+        agent._model.ainvoke = AsyncMock(return_value=mock_response)
 
-        mock_user_info = {
-            "avatar": "http://avatar.jpg",
-            "follows": 5000,
-            "notes_count": 100,
-        }
-
-        with patch("backend.services.xhs_client.XHSClient") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client._http = MagicMock()
-            mock_client.search_posts = AsyncMock(return_value=mock_search_results)
-            mock_client.get_user_info = AsyncMock(return_value=mock_user_info)
-            mock_client.close = AsyncMock()
-            mock_client_cls.return_value = mock_client
-
-            result = await agent.execute(trend_state, store=mock_store)
+        result = await agent.execute(trend_state, store=mock_store)
 
         assert "blogger_candidates" in result
         assert len(result["blogger_candidates"]) == 2
-        # Sorted by engagement: 博主A (150/keyword×keywords) > 博主B (75/keyword×keywords)
-        assert result["blogger_candidates"][0]["user_id"] == "u1"
+        assert result["blogger_candidates"][0]["user_id"] == "mock_001"
         assert result["blogger_candidates"][0]["total_engagement"] > 0
 
     @pytest.mark.asyncio
     async def test_execute_respects_candidate_limit(self, agent, brief_state, mock_store):
         """Execute respects blogger_candidate_limit."""
-        mock_search_results = [
-            XHSSearchResult(
-                note_id=f"n{i}",
-                title=f"Note {i}",
-                user_name=f"User {i}",
-                user_id=f"u{i}",
-                likes=10 * i,
-                comments=0,
-                collects=0,
-                cover_url="",
-                note_url="",
-            )
+        candidates = [
+            {
+                "user_id": f"mock_{i}",
+                "nickname": f"User {i}",
+                "follower_count": 1000 + i,
+                "note_count": 10,
+                "total_engagement": 100 + i,
+                "top_note_title": f"Note {i}",
+            }
             for i in range(10)
         ]
+        mock_response = MagicMock()
+        mock_response.content = json.dumps({"candidates": candidates}, ensure_ascii=False)
+        agent._model = AsyncMock()
+        agent._model.ainvoke = AsyncMock(return_value=mock_response)
 
-        with patch("backend.services.xhs_client.XHSClient") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client._http = MagicMock()
-            mock_client.search_posts = AsyncMock(return_value=mock_search_results)
-            mock_client.get_user_info = AsyncMock(return_value={})
-            mock_client.close = AsyncMock()
-            mock_client_cls.return_value = mock_client
-
-            result = await agent.execute(brief_state, store=mock_store)
+        result = await agent.execute(brief_state, store=mock_store)
 
         assert len(result["blogger_candidates"]) <= brief_state["blogger_candidate_limit"]
 
@@ -199,10 +155,8 @@ class TestBloggerScoutAgent:
         assert result["phase"] == WorkflowPhase.CREATING
 
     @pytest.mark.asyncio
-    async def test_execute_no_cookie_falls_back_to_llm(self, agent, trend_state, mock_store):
-        """Falls back to LLM mock generation when no XHS cookie available."""
-        trend_state["xhs_cookie"] = ""
-
+    async def test_execute_uses_llm_generation(self, agent, trend_state, mock_store):
+        """Uses LLM mock generation for blogger candidates."""
         mock_response = MagicMock()
         mock_response.content = '{"candidates": [{"user_id": "mock_001", "nickname": "测试博主", "follower_count": 5000, "note_count": 50, "total_engagement": 3000, "top_note_title": "测试笔记标题"}]}'  # noqa: E501
 
@@ -218,8 +172,6 @@ class TestBloggerScoutAgent:
     @pytest.mark.asyncio
     async def test_execute_llm_fallback_ensures_mock_prefix(self, agent, trend_state, mock_store):
         """LLM fallback ensures all user_ids have mock_ prefix even if LLM omits it."""
-        trend_state["xhs_cookie"] = ""
-
         mock_response = MagicMock()
         mock_response.content = '{"candidates": [{"user_id": "001", "nickname": "博主A", "follower_count": 1000, "note_count": 20, "total_engagement": 500, "top_note_title": "标题"}]}'  # noqa: E501
 
@@ -232,8 +184,6 @@ class TestBloggerScoutAgent:
     @pytest.mark.asyncio
     async def test_execute_llm_fallback_adds_avatar_url(self, agent, trend_state, mock_store):
         """LLM fallback adds empty avatar_url if not present in LLM response."""
-        trend_state["xhs_cookie"] = ""
-
         mock_response = MagicMock()
         mock_response.content = '{"candidates": [{"user_id": "mock_001", "nickname": "博主A", "follower_count": 1000, "note_count": 20, "total_engagement": 500, "top_note_title": "标题"}]}'  # noqa: E501
 
@@ -246,8 +196,6 @@ class TestBloggerScoutAgent:
     @pytest.mark.asyncio
     async def test_execute_llm_fallback_failure_returns_empty(self, agent, trend_state, mock_store):
         """Returns hardcoded fallback when LLM fallback also fails."""
-        trend_state["xhs_cookie"] = ""
-
         agent._model = AsyncMock()
         agent._model.ainvoke = AsyncMock(side_effect=Exception("LLM error"))
         result = await agent.execute(trend_state, store=mock_store)
@@ -255,96 +203,6 @@ class TestBloggerScoutAgent:
         # Should get hardcoded fallback instead of empty
         assert len(result["blogger_candidates"]) > 0
         assert result["phase"] == WorkflowPhase.CREATING
-
-    @pytest.mark.asyncio
-    async def test_execute_xhs_cookie_takes_priority(self, agent, trend_state, mock_store):
-        """Real XHS client takes priority over LLM fallback."""
-        mock_search_results = [
-            XHSSearchResult(
-                note_id="n1",
-                title="真实笔记",
-                user_name="真实博主",
-                user_id="real_u1",
-                likes=200,
-                comments=30,
-                collects=50,
-                cover_url="",
-                note_url="",
-            ),
-        ]
-
-        mock_model = AsyncMock()
-
-        with patch("backend.services.xhs_client.XHSClient") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client._http = MagicMock()
-            mock_client.search_posts = AsyncMock(return_value=mock_search_results)
-            mock_client.get_user_info = AsyncMock(return_value={})
-            mock_client.close = AsyncMock()
-            mock_client_cls.return_value = mock_client
-
-            agent._model = mock_model
-            result = await agent.execute(trend_state, store=mock_store)
-
-        mock_model.ainvoke.assert_not_called()
-        assert result["blogger_candidates"][0]["user_id"] == "real_u1"
-
-    @pytest.mark.asyncio
-    async def test_execute_api_error_returns_empty(self, agent, trend_state, mock_store):
-        """Returns hardcoded fallback candidates on API error."""
-        with patch("backend.services.xhs_client.XHSClient") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client._http = MagicMock()
-            mock_client.search_posts = AsyncMock(side_effect=Exception("API error"))
-            mock_client.close = AsyncMock()
-            mock_client_cls.return_value = mock_client
-
-            result = await agent.execute(trend_state, store=mock_store)
-
-        assert len(result["blogger_candidates"]) > 0
-        assert result["phase"] == WorkflowPhase.CREATING
-
-    @pytest.mark.asyncio
-    async def test_execute_top_note_tracking(self, agent, trend_state, mock_store):
-        """Tracks top note title per blogger based on engagement."""
-        # Two notes from same blogger — second has higher engagement
-        mock_search_results = [
-            XHSSearchResult(
-                note_id="n1",
-                title="低互动笔记",
-                user_name="博主A",
-                user_id="u1",
-                likes=10,
-                comments=0,
-                collects=0,
-                cover_url="",
-                note_url="",
-            ),
-            XHSSearchResult(
-                note_id="n2",
-                title="高互动笔记",
-                user_name="博主A",
-                user_id="u1",
-                likes=500,
-                comments=50,
-                collects=100,
-                cover_url="",
-                note_url="",
-            ),
-        ]
-
-        with patch("backend.services.xhs_client.XHSClient") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client._http = MagicMock()
-            mock_client.search_posts = AsyncMock(return_value=mock_search_results)
-            mock_client.get_user_info = AsyncMock(return_value={})
-            mock_client.close = AsyncMock()
-            mock_client_cls.return_value = mock_client
-
-            result = await agent.execute(trend_state, store=mock_store)
-
-        assert len(result["blogger_candidates"]) == 1
-        assert result["blogger_candidates"][0]["top_note_title"] == "高互动笔记"
 
     def test_summarize_trend_data_empty(self, agent):
         """Returns default message for empty trend data."""

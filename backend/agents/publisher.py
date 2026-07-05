@@ -127,20 +127,14 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
     publish_account_id = publish_options.get("account_id")
     settings = Settings()
 
-    # 解析发布账号的 cookie: 选定 account_id 优先, 否则 fallback 全局活跃账号
-    cookie = settings.platform.cookie
-    user_id = settings.platform.user_id
     # CDP multi-profile: per-account endpoint takes priority over the global
     # _resolve_cdp_endpoint. Accounts without a port binding (cdp_port=0 or
     # account missing) fall back to the global endpoint — backward compat with
     # the single-account .chrome-profile/ flow.
     cdp_endpoint = _resolve_cdp_endpoint(settings)
     if publish_account_id:
-        from backend.db.accounts import get_account_cookie
-
-        cookie, user_id = await get_account_cookie(publish_account_id)
         # 停用账号早 fail：is_active=false 直接拒绝，避免浪费一次真实 Chrome 发布
-        # 等 XHS 平台返回 auth_expired（mirror no_cookie short-circuit 范式）。
+        # 等 XHS 平台返回 auth_expired。
         from backend.db.accounts import get_account
 
         account = await get_account(publish_account_id)
@@ -170,41 +164,36 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
         if per_account_endpoint:
             cdp_endpoint = per_account_endpoint
 
-        # 无 cookie 且无 CDP endpoint → 真 fail：profile 无登录态、也无 cookie 可注入，
-        # 发布必被平台拒。CDP 模式（endpoint 命中）靠 profile 登录态，cookie 被忽略
-        # （见 xhs_publisher._ensure_page CDP 分支），故有 endpoint 即放行。
-        if not cookie and not cdp_endpoint:
-            logger.error(f"账号 {publish_account_id} 未配置 XHS_COOKIE 且无 CDP endpoint，无法发布")
+        if not cdp_endpoint:
+            logger.error("账号 %s 未绑定可用 CDP endpoint，无法发布", publish_account_id)
             publish_result = {
                 "post_id": "",
                 "post_url": "",
                 "status": "failed",
-                "error": f"账号 {publish_account_id} 未配置 cookie 且无 CDP profile 登录态",
-                "error_type": "no_cookie",
+                "error": f"账号 {publish_account_id} 未绑定 CDP profile 登录态",
+                "error_type": "missing_cdp_endpoint",
                 # Structured recovery dict — same shape as
                 # classify_publish_error() returns, so Dashboard.vue's
                 # publishError.recovery.{hint,action,action_label} renders.
                 "recovery": {
-                    "message": "该账号未配置 XHS_COOKIE，且未扫码登录建立 CDP profile 登录态",
+                    "message": "该账号未绑定可用 CDP profile 登录态",
                     "action": "reconfigure",
-                    "action_label": "重新配置",
-                    "hint": "请在设置页为该账号配置 XHS_COOKIE，或用扫码登录写入 profile",
+                    "action_label": "去设置",
+                    "hint": "请在设置页启动该账号浏览器并完成扫码登录后再发布",
                 },
             }
             return {
                 "publish_result": publish_result,
                 "phase": WorkflowPhase.PUBLISHING,
             }
-        if not cookie and cdp_endpoint:
-            logger.info(f"账号 {publish_account_id} 无 cookie，靠 CDP profile 登录态发布")
-        logger.info(f"按选中账号 {publish_account_id} 发布")
+        logger.info("按选中账号 %s 的 CDP profile 登录态发布", publish_account_id)
 
     # 调用真实发布服务
     from backend.services.xhs_client import XHSClient, XHSPost
 
     client = XHSClient(
-        cookie=cookie,
-        user_id=user_id,
+        cookie="",
+        user_id="",
         use_browser=True,
         headless=settings.platform.headless,
         cdp_endpoint=cdp_endpoint,

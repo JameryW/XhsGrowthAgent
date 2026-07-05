@@ -109,60 +109,8 @@ async def _fetch_blogger_notes(
     if user_id.startswith("mock_"):
         return await _generate_mock_notes(state, user_id, limit)
 
-    try:
-        from backend.services.xhs_client import XHSClient
-
-        cookie = cast(str, state.get("xhs_cookie", ""))
-        client = XHSClient(cookie=cookie) if cookie else None
-        if not client or not client._http:
-            logger.warning("No XHS client available for fetching blogger notes")
-            return []
-
-        raw_notes = await client.get_user_notes(user_id=user_id, limit=limit)
-        await client.close()
-
-        # Sort by engagement (likes + collects + comments) descending
-        notes_with_engagement = []
-        for note in raw_notes:
-            likes = note.get("like_count", 0)
-            collects = note.get("collect_count", 0)
-            comments = note.get("comment_count", 0)
-            total = likes + collects + comments
-            notes_with_engagement.append((total, note))
-
-        notes_with_engagement.sort(key=lambda x: x[0], reverse=True)
-
-        # Take top N and format as BloggerNote
-        result = []
-        for total_eng, note in notes_with_engagement[:limit]:
-            likes = note.get("like_count", 0)
-            collects = note.get("collect_count", 0)
-            comments = note.get("comment_count", 0)
-            engagement_rate = round(total_eng / max(likes, 1), 2) if likes else 0.0
-
-            result.append(
-                {
-                    "note_id": note.get("note_id", note.get("id", "")),
-                    "title": note.get("display_title", note.get("title", "")),
-                    "body": note.get("desc", note.get("body", "")),
-                    "hashtags": note.get("tag_list", []),
-                    "likes": likes,
-                    "collects": collects,
-                    "comments": comments,
-                    "engagement_rate": engagement_rate,
-                    "cover_url": (
-                        note.get("cover", {}).get("url", "")
-                        if isinstance(note.get("cover"), dict)
-                        else ""
-                    ),
-                }
-            )
-
-        return result
-
-    except Exception as e:
-        logger.warning(f"Failed to fetch blogger notes: {e}")
-        return []
+    logger.info("Generating simulated notes for selected blogger")
+    return await _generate_mock_notes(state, user_id, limit)
 
 
 async def _generate_mock_notes(

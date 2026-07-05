@@ -13,52 +13,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger("xhs_growth.tools.trending")
 
 
-def _normalize_header_value(value: str) -> str:
-    """Collapse accidental copied whitespace so HTTP header values stay valid."""
-    return " ".join(value.split()) if value else ""
-
-
-async def _resolve_db_credentials(account_id: str = "") -> tuple[str, str]:
-    """Resolve XHS credentials from DB, preferring the requested account."""
-    try:
-        from backend.db.pool import is_pool_ready
-
-        if not is_pool_ready():
-            return "", ""
-
-        from backend.db.accounts import get_account_cookie, get_active_account
-
-        if account_id:
-            cookie, user_id = await get_account_cookie(account_id)
-            if cookie:
-                return cookie, user_id
-
-        active = await get_active_account()
-        if active is None:
-            return "", ""
-
-        cookie, user_id = await get_account_cookie(active.id)
-        if cookie:
-            return cookie, user_id
-    except Exception:
-        logger.warning("Failed to load XHS credentials from DB; falling back to settings")
-    return "", ""
-
-
 async def _get_client(account_id: str = "") -> XHSClient:
-    """获取 XHSClient 实例，优先使用数据库中的账号凭证。"""
+    """获取 XHSClient 实例.
+
+    account_id is kept for workflow/tool-call compatibility; XHS browser login
+    state is resolved by CDP profile during publishing, not by HTTP credentials.
+    """
     from backend.config.settings import Settings
     from backend.services.xhs_client import XHSClient
 
     settings = Settings()
-    cookie, user_id = await _resolve_db_credentials(account_id)
-    if not cookie:
-        cookie = settings.platform.cookie
-        user_id = settings.platform.user_id
-
     return XHSClient(
-        cookie=_normalize_header_value(cookie),
-        user_id=_normalize_header_value(user_id),
         use_browser=settings.platform.use_browser,
         headless=settings.platform.headless,
     )
@@ -70,7 +35,7 @@ async def xhs_trending(category: str = "", account_id: str = "") -> list[dict[st
 
     Args:
         category: 分类筛选（可选）
-        account_id: 工作流账号 ID（可选），用于从数据库读取小红书凭证
+        account_id: 工作流账号 ID（保留用于兼容调用签名）
 
     Returns:
         热门话题列表，每个包含 topic_id, title, heat_score, growth_rate
@@ -111,7 +76,7 @@ async def keyword_monitor(keywords: list[str], account_id: str = "") -> list[dic
 
     Args:
         keywords: 关键词列表
-        account_id: 工作流账号 ID（可选），用于从数据库读取小红书凭证
+        account_id: 工作流账号 ID（保留用于兼容调用签名）
 
     Returns:
         每个关键词的热度数据，包含 post_count, total_likes, avg_likes
@@ -154,7 +119,7 @@ async def competitor_analyzer(
     Args:
         account_id: 竞品账号 ID 或搜索关键词
         niche: 所属垂直领域
-        credential_account_id: 工作流账号 ID（可选），用于从数据库读取小红书凭证
+        credential_account_id: 工作流账号 ID（保留用于兼容调用签名）
 
     Returns:
         竞品分析结果，包含热门帖子、平均互动数据
