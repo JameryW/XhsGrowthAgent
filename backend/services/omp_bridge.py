@@ -885,7 +885,6 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 lines = [
                     f"System Health: {data.get('status', 'unknown').upper()}",
                     f"  LLM Providers: {checks.get('llm_providers', {}).get('status', '?')}",
-                    f"  XHS Platform: {checks.get('xhs_platform', {}).get('status', '?')}",
                     f"  Ripple CAS: {checks.get('ripple_cas', {}).get('status', '?')}",
                 ]
                 db_check = checks.get("database", {})

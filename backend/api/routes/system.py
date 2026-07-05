@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from datetime import UTC, datetime
 from typing import Any
@@ -11,8 +10,6 @@ import httpx
 from fastapi import APIRouter
 
 from backend.api.responses import ApiResponse, success
-
-logger = logging.getLogger("xhs_growth.api.system")
 
 router = APIRouter()
 
@@ -41,56 +38,6 @@ def _check_llm_providers() -> dict[str, Any]:
         "message": "至少一个 LLM Provider 已配置" if any_configured else "未配置任何 LLM Provider",
         "providers": providers,
     }
-
-
-async def _check_xhs() -> dict[str, Any]:
-    """Check XHS platform credentials.
-
-    Credentials are account-scoped DB data now (see backend.db.accounts); the
-    env-backed XHS_COOKIE/XHS_USER_ID is the legacy fallback. ok when either
-    source yields a usable cookie+user_id pair.
-    """
-    cookie, user_id = await _resolve_xhs_credentials()
-    configured = bool(cookie and user_id)
-    use_browser = os.environ.get("XHS_USE_BROWSER", "").lower() == "true"
-    message = (
-        "小红书凭证已配置" if configured else "缺少账号凭证（DB 账号或 XHS_COOKIE/XHS_USER_ID）"
-    )
-    return {
-        "status": "ok" if configured else "warning",
-        "configured": configured,
-        "cookie_set": bool(cookie),
-        "user_id_set": bool(user_id),
-        # Exposed so the review approve modal can warn that real publishing
-        # is impossible when use_browser is off (publisher.py mocks in that case).
-        "use_browser": use_browser,
-        "message": message,
-    }
-
-
-async def _resolve_xhs_credentials() -> tuple[str, str]:
-    """Resolve XHS credentials: DB active account first, env fallback.
-
-    ponytail: mirrors tools/xhs/trending._resolve_db_credentials but health-only
-    — returns masked presence, never the raw value.
-    """
-    try:
-        from backend.db.pool import is_pool_ready
-
-        if is_pool_ready():
-            from backend.db.accounts import get_account_cookie, get_active_account
-
-            active = await get_active_account()
-            if active is not None:
-                cookie, user_id = await get_account_cookie(active.id)
-                if cookie:
-                    return cookie, user_id
-    except Exception as exc:  # noqa: BLE001 — health check must never crash
-        logger.warning("DB XHS credential lookup failed, falling back to env: %s", exc)
-
-    cookie = os.environ.get("XHS_COOKIE", "")
-    user_id = os.environ.get("XHS_USER_ID", "")
-    return cookie, user_id
 
 
 async def _check_ripple() -> dict[str, Any]:
@@ -266,18 +213,16 @@ async def system_health() -> ApiResponse[Any]:
 
     检查所有外部依赖的可用性：
     - LLM Provider API keys
-    - XHS 平台凭证
     - Ripple CAS 引擎
     - 数据库/存储
     - 搜索 API (Tavily)
     """
     llm = _check_llm_providers()
-    xhs = await _check_xhs()
     ripple = await _check_ripple()
     search = _check_search()
     memory = await _check_memory_store()
 
-    # Overall status: ok if LLM is configured (XHS is optional — preview-only without it)
+    # Overall status: ok if LLM is configured.
     overall = "ok" if llm["status"] == "ok" else "degraded"
 
     # Detect checkpointer mode from app state
@@ -331,7 +276,6 @@ async def system_health() -> ApiResponse[Any]:
 
     checks = {
         "llm_providers": llm,
-        "xhs_platform": xhs,
         "ripple_cas": ripple,
         "search_api": search,
         "database": database_check,

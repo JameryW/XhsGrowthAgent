@@ -72,7 +72,6 @@ const issueCount = computed(() => {
   if (!health.value) return 0
   let count = 0
   if (health.value.checks.llm_providers.status !== 'ok') count++
-  // XHS platform is optional (preview-only without it), don't count as issue
   if (health.value.checks.ripple_cas.status !== 'ok' && health.value.checks.ripple_cas.status !== 'disabled') count++
   return count
 })
@@ -167,34 +166,6 @@ const issueCount = computed(() => {
               </span>
             </div>
             <p class="text-xs text-amber-600 mt-1">{{ t('health.guide.llmMissing') }}</p>
-          </div>
-        </div>
-
-        <!-- XHS Platform (Optional - controls real publishing) -->
-        <div class="rounded-lg p-3 border" :class="statusBg(health.checks.xhs_platform.status)">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <AppIcon name="Smartphone" size="sm" variant="pink" />
-              <span class="text-sm font-medium text-slate-700">{{ t('health.xhsPlatform') }}</span>
-              <span class="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">{{ t('health.optional') }}</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <span :class="[statusColor(health.checks.xhs_platform.status), 'w-2 h-2 rounded-full']" />
-              <span class="text-xs font-medium" :class="health.checks.xhs_platform.status === 'ok' ? 'text-emerald-600' : 'text-amber-600'">
-                {{ statusText(health.checks.xhs_platform.status) }}
-              </span>
-            </div>
-          </div>
-          <div v-if="health.checks.xhs_platform.status !== 'ok'" class="mt-2">
-            <div class="flex gap-3 text-xs text-slate-500">
-              <span :class="health.checks.xhs_platform.cookie_set ? 'text-emerald-600' : 'text-rose-500'">
-                Cookie: {{ health.checks.xhs_platform.cookie_set ? t('health.set') : t('health.notSet') }}
-              </span>
-              <span :class="health.checks.xhs_platform.user_id_set ? 'text-emerald-600' : 'text-rose-500'">
-                User ID: {{ health.checks.xhs_platform.user_id_set ? t('health.set') : t('health.notSet') }}
-              </span>
-            </div>
-            <p class="text-xs text-amber-600 mt-1">{{ t('health.guide.xhsMissing') }}</p>
           </div>
         </div>
 

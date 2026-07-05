@@ -8,7 +8,6 @@ interface HealthResponse {
   version: string;
   checks: {
     llm_providers: { status: string; message: string; providers: Record<string, { status: string; configured: boolean; preview?: string }> };
-    xhs_platform: { status: string; configured: boolean; use_browser: boolean };
     ripple_cas: { status: string; configured: boolean; reason?: string };
     database: { status: string; mode: string };
     memory_store: { status: string; backend: string; semantic_index: boolean; embed_model?: string };
@@ -21,7 +20,7 @@ export default function register(pi: ExtensionAPI) {
   const tool: ToolDefinition<typeof schema> = {
     name: "xhs_system_health",
     label: "XHS System Health",
-    description: "Check XhsGrowthAgent system health — LLM providers, XHS platform, Ripple, database, memory store",
+    description: "Check XhsGrowthAgent system health — LLM providers, Ripple, database, memory store",
     parameters: schema,
     async execute(_id, _params, _signal, _onUpdate, _ctx) {
       try {
@@ -43,7 +42,6 @@ export default function register(pi: ExtensionAPI) {
         }
 
         lines.push(
-          `  XHS Platform: ${result.checks.xhs_platform.status} ${result.checks.xhs_platform.configured ? "(configured)" : "(not configured)"}`,
           `  Ripple CAS: ${result.checks.ripple_cas.status} ${result.checks.ripple_cas.configured ? "(configured)" : "(not configured)"}`,
           `  Database: ${result.checks.database.status} (${result.checks.database.mode})`,
           `  Memory Store: ${result.checks.memory_store.status} ${result.checks.memory_store.semantic_index ? "(semantic index on)" : "(semantic index off)"}${result.checks.memory_store.embed_model ? ` — ${result.checks.memory_store.embed_model}` : ""}`,
