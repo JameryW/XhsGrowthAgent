@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, cast
 
@@ -146,9 +147,30 @@ class EvaluatorAgent(BaseAgent):
             memory_context=audience_ctx,
         )
 
-        response = await self.model.ainvoke(
-            [SystemMessage(content=system_prompt), HumanMessage(content=user_msg)]
-        )
+        # ponytail: ainvoke 无内置 timeout；astron-code-latest 不稳时会挂起整个
+        # review submit 请求（HTTP 长连接等待，不抛异常），evaluator_node 的 try/except
+        # 捕不到 → 降级放行失效。60s 上限：超时抛 TimeoutError → node except 捕获 → 降级。
+        try:
+            response = await asyncio.wait_for(
+                self.model.ainvoke(
+                    [SystemMessage(content=system_prompt), HumanMessage(content=user_msg)]
+                ),
+                timeout=60.0,
+            )
+        except TimeoutError as e:
+            logger.warning("Evaluator LLM 调用超时(60s)，降级放行: %s", e)
+            from backend.state.enums import ContentStatus
+
+            return {
+                "evaluation_result": {
+                    "overall_score": 100.0,
+                    "dimensions": [],
+                    "decision": ContentStatus.APPROVED,
+                    "revision_hints": [],
+                    "bias_warning": "",
+                    "summary": f"评估器 LLM 超时，降级放行: {e}",
+                }
+            }
         raw = self._parse_json_response(cast(str, response.content))
 
         result = self._build_evaluation_result(raw)
