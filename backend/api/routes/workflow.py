@@ -647,6 +647,9 @@ async def get_workflow_status(thread_id: str, request: Request) -> ApiResponse[A
             label = row.label if row else ""
 
         perf_log = state.values.get("performance_log") or []
+        # ponytail: filter to node-level entries (kind=="node" or absent for
+        # back-compat with pre-kind entries). llm/ripple/human_wait entries
+        # share the list but don't populate the agent_timeline schema.
         agent_timeline = [
             AgentTimelineEntry(
                 agent=entry.get("agent", "unknown"),
@@ -657,6 +660,7 @@ async def get_workflow_status(thread_id: str, request: Request) -> ApiResponse[A
                 error=entry.get("error"),
             )
             for entry in perf_log
+            if entry.get("kind", "node") == "node"
         ]
 
         return success(
@@ -714,6 +718,7 @@ async def get_workflow_status(thread_id: str, request: Request) -> ApiResponse[A
                 error=entry.get("error"),
             )
             for entry in perf_log
+            if entry.get("kind", "node") == "node"
         ]
         return success(
             data=WorkflowStatusResponse(
