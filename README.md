@@ -93,8 +93,6 @@ result = await graph.ainvoke(initial_state, {"configurable": {"thread_id": "xxx"
 | `OPENAI_API_KEY` | OpenAI API key | OpenAI API密钥 | Yes* |
 | `DEEPSEEK_API_KEY` | DeepSeek API key | DeepSeek API密钥 | Yes* |
 | `DASHSCOPE_API_KEY` | Alibaba Qwen API key | 通义千问API密钥 | Yes* |
-| `XHS_COOKIE` | XHS session cookie | 小红书登录Cookie | Yes |
-| `XHS_USER_ID` | XHS user ID | 小红书用户ID | Yes |
 | `RIPPLE_BASE_URL` | Ripple CAS engine URL | Ripple引擎地址 | No |
 | `RIPPLE_API_TOKEN` | Ripple API token | Ripple API令牌 | No |
 | `POSTGRES_URI` | PostgreSQL connection | PostgreSQL连接串 | Prod only |

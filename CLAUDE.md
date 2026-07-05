@@ -299,7 +299,6 @@ LangGraph BaseStore integration with namespaces per account, semantic search, an
 
 System health endpoint checks all external dependencies:
 - `llm_providers`: API key availability for Anthropic, OpenAI, DeepSeek, DashScope
-- `xhs_platform`: XHS cookie and user ID (optional — preview-only without it)
 - `ripple_cas`: Ripple CAS engine connectivity
 - `search_api`: Tavily API key
 - `database`: Checkpointer mode detection (postgres/sqlite/memory)
@@ -346,7 +345,6 @@ from backend.api.responses import success, error
 
 Required environment variables (see `.env.example`):
 - `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY` — LLM providers
-- `XHS_COOKIE`, `XHS_USER_ID` — Xiaohongshu platform access
 - `RIPPLE_BASE_URL`, `RIPPLE_API_TOKEN` — Ripple CAS engine
 - `POSTGRES_URI`, `REDIS_URI` — Production persistence
 - `XHS_EMBED_MODEL`, `XHS_EMBED_DIMS`, `XHS_EMBED_BASE_URL` — Memory store semantic search (optional; defaults to `openai:text-embedding-3-small`, 1536 dims). Use `local:BAAI/bge-small-zh-v1.5` with `XHS_EMBED_DIMS=512` for on-device CPU embedding (no API key needed; requires `langchain-huggingface` + `sentence-transformers`)
