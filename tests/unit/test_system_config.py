@@ -133,7 +133,6 @@ async def test_migrate_from_accounts_skips_when_already_populated():
 if __name__ == "__main__":
     import asyncio
 
-    test_system_keys_disjoint_from_xhs_keys()
     test_system_key_groups_cover_all_keys()
     asyncio.run(test_set_config_filters_unknown_keys())
     asyncio.run(test_set_config_empty_value_deletes())
