@@ -232,8 +232,6 @@ LLMEOF"
         -e XHS_EMBED_BASE_URL="${XHS_EMBED_BASE_URL:-}" \
         -e HF_HOME=/opt/hf-cache \
         -e HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}" \
-        -e XHS_COOKIE="${XHS_COOKIE:-}" \
-        -e XHS_USER_ID="${XHS_USER_ID:-}" \
         -e XHS_USE_BROWSER="${XHS_USE_BROWSER:-false}" \
         -e XHS_CHROME_PROFILES_DIR="${XHS_CHROME_PROFILES_DIR:-$PROJECT_DIR/.chrome-profiles}" \
         -e XHS_CDP_BASE_PORT="${XHS_CDP_BASE_PORT:-9222}" \

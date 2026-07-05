@@ -1,9 +1,12 @@
-"""Account management API routes — CRUD for accounts and credentials."""
+"""Account management API routes — CRUD for XHS accounts and QR login."""
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -14,6 +17,21 @@ from backend.api.responses import ApiResponse, success
 logger = logging.getLogger("xhs_growth.api.accounts")
 
 router = APIRouter()
+
+_QR_LOGIN_START_TIMEOUT_S = 10.0
+
+
+async def _is_cdp_endpoint_up(cdp_endpoint: str) -> bool:
+    """Return True when a per-account CDP endpoint answers /json/version."""
+    if not cdp_endpoint:
+        return False
+    parsed = urlparse(cdp_endpoint)
+    if not parsed.hostname or parsed.port is None:
+        return False
+
+    from backend.services.chrome_launcher import probe_port
+
+    return await probe_port(parsed.port, host=parsed.hostname)
 
 
 # ── Request/Response models ──
@@ -29,10 +47,6 @@ class UpdateAccountRequest(BaseModel):
     is_active: bool | None = None
     chrome_profile_path: str | None = None
     cdp_port: int | None = None
-
-
-class SetCredentialsRequest(BaseModel):
-    credentials: dict[str, str]
 
 
 class SubmitVerificationCodeRequest(BaseModel):
@@ -56,9 +70,6 @@ async def create_account(request: CreateAccountRequest) -> ApiResponse[Any]:
     # If this is the first account or explicitly set active, activate it
     if request.is_active:
         await set_active_account(account.id)
-        from backend.db.accounts import activate_credentials
-
-        await activate_credentials(account.id)
 
     return success(
         data={
@@ -114,7 +125,7 @@ async def get_active_account() -> ApiResponse[Any]:
 @router.put("/{account_id}")
 async def update_account(account_id: str, request: UpdateAccountRequest) -> ApiResponse[Any]:
     """Update an account's name, active status, or Chrome profile binding."""
-    from backend.db.accounts import activate_credentials, set_active_account
+    from backend.db.accounts import set_active_account
     from backend.db.accounts import update_account as db_update
 
     # If setting active, use set_active_account which handles deactivation of others
@@ -122,7 +133,6 @@ async def update_account(account_id: str, request: UpdateAccountRequest) -> ApiR
         account = await set_active_account(account_id)
         if account is None:
             raise AccountNotFoundError(account_id)
-        await activate_credentials(account_id)
     else:
         fields: dict[str, Any] = {}
         if request.name is not None:
@@ -154,77 +164,14 @@ async def update_account(account_id: str, request: UpdateAccountRequest) -> ApiR
 
 @router.delete("/{account_id}")
 async def delete_account(account_id: str) -> ApiResponse[Any]:
-    """Delete an account and all its credentials."""
-    from backend.db.accounts import deactivate_credentials, get_active_account
+    """Delete an account."""
     from backend.db.accounts import delete_account as db_delete
-
-    # Deactivate env vars if deleting the active account
-    active = await get_active_account()
-    if active and active.id == account_id:
-        await deactivate_credentials()
 
     deleted = await db_delete(account_id)
     if not deleted:
         raise AccountNotFoundError(account_id)
 
     return success(data={"deleted": True, "account_id": account_id})
-
-
-# ── Credentials ──
-
-
-@router.get("/{account_id}/credentials")
-async def get_credentials(account_id: str) -> ApiResponse[Any]:
-    """Get all credentials for an account (values masked)."""
-    from backend.db.accounts import list_credentials as db_list
-
-    creds = await db_list(account_id)
-    return success(
-        data=[
-            {
-                "key_name": c.key_name,
-                "masked_value": c.masked,
-                "is_set": bool(c.masked),
-            }
-            for c in creds
-        ]
-    )
-
-
-@router.put("/{account_id}/credentials")
-async def set_credentials(account_id: str, request: SetCredentialsRequest) -> ApiResponse[Any]:
-    """Batch-set credentials for an account. Empty values delete the key."""
-    from backend.db.accounts import activate_credentials, get_active_account
-    from backend.db.accounts import set_credentials as db_set
-
-    await db_set(account_id, request.credentials)
-
-    # If this is the active account, hot-reload into os.environ
-    active = await get_active_account()
-    if active and active.id == account_id:
-        await activate_credentials(account_id)
-
-    return success(data={"updated_keys": list(request.credentials.keys())})
-
-
-@router.delete("/{account_id}/credentials/{key_name}")
-async def delete_credential(account_id: str, key_name: str) -> ApiResponse[Any]:
-    """Delete a single credential."""
-    import os
-
-    from backend.db.accounts import delete_credential as db_delete
-    from backend.db.accounts import get_active_account
-
-    deleted = await db_delete(account_id, key_name)
-    if not deleted:
-        return success(data={"deleted": False, "message": "Credential not found"})
-
-    # Remove from os.environ if this is the active account
-    active = await get_active_account()
-    if active and active.id == account_id:
-        os.environ.pop(key_name, None)
-
-    return success(data={"deleted": True, "key_name": key_name})
 
 
 @router.get("/{account_id}/login/status")
@@ -248,6 +195,16 @@ async def get_account_login_status(account_id: str) -> ApiResponse[Any]:
         )
 
     cdp_endpoint = await get_account_cdp_endpoint(account_id)
+    if not await _is_cdp_endpoint_up(cdp_endpoint or ""):
+        return success(
+            data={
+                "account_id": account_id,
+                "status": "unavailable",
+                "is_logged_in": False,
+                "reason": "cdp_port_down",
+            }
+        )
+
     result = await inspect_profile_login_status(account_id, cdp_endpoint or "")
     return success(data=result)
 
@@ -261,7 +218,7 @@ async def start_qr_login(account_id: str) -> ApiResponse[Any]:
 
     Returns:
         ``{qr_id, url, account_id}`` — 前端用 ``qrcode`` JS 库渲染 ``url``
-        为矢量二维码。登录态 cookie 写 host Chrome 的 user-data-dir
+        为矢量二维码。登录态写 host Chrome 的 user-data-dir
         (``account.chrome_profile_path``)，常驻 Chrome 后续 CDP 发布复用。
 
     Raises:
@@ -294,7 +251,21 @@ async def start_qr_login(account_id: str) -> ApiResponse[Any]:
 
     session = get_or_create_session(account_id, account.chrome_profile_path, cdp_endpoint)
     try:
-        result = await session.start()
+        result = await asyncio.wait_for(session.start(), timeout=_QR_LOGIN_START_TIMEOUT_S)
+    except TimeoutError as e:
+        from backend.services.xhs_login import stop_session
+
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(stop_session(account_id), timeout=3.0)
+        raise APIError(
+            code=ErrorCode.SERVICE_UNAVAILABLE,
+            message=(
+                "启动扫码登录超时：小红书页面未能生成二维码。"
+                "当前页面可能被安全限制拦截，请切换网络或稍后重试。"
+            ),
+            details={"account_id": account_id, "timeout_s": _QR_LOGIN_START_TIMEOUT_S},
+            status_code=503,
+        ) from e
     except LoginError as e:
         # LoginError 是预期内的启动失败（playwright 未装 / shield 拦截），
         # 返回 SERVICE_UNAVAILABLE 而非 500，让前端能区分"登录服务不可用"
@@ -316,7 +287,7 @@ async def get_qr_login_status(account_id: str) -> ApiResponse[Any]:
         ``{status, qr_id, url?, account_id}`` where status is one of:
         - ``waiting`` — 待扫码
         - ``scanned`` — 已扫待确认
-        - ``confirmed`` — 已确认登录，cookie 已写 profile
+        - ``confirmed`` — 已确认登录，登录态已写 profile
         - ``expired`` — 二维码过期，已自动刷新，返回新 url
 
     Raises:

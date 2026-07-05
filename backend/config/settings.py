@@ -34,13 +34,11 @@ class ModelSettings(BaseSettings):
 class XHSPlatformSettings(BaseSettings):
     """小红书平台配置"""
 
-    cookie: str = ""
-    user_id: str = ""
     api_base: str = "https://edith.xiaohongshu.com"
     use_browser: bool = False
     headless: bool = True
     # CDP 连接真实 Chrome 的端点（如 http://127.0.0.1:9222）。设了则 connect_over_cdp
-    # 连常驻真实 Chrome（用户扫码登录的持久 profile），绕过 XHS shield/sec 反爬。
+    # 连常驻真实 Chrome（用户扫码登录的持久 profile）。
     cdp_endpoint: str = ""
     # CDP 多 profile：每账号独立 Chrome user-data-dir + 独立 CDP port。
     # chrome_profiles_dir = 存放 per-account profile 的基础目录（如 /test/xhs/.chrome-profiles），

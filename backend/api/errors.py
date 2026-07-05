@@ -202,10 +202,10 @@ _PUBLISH_ERROR_PATTERNS: list[tuple[str, PublishErrorType]] = [
 
 _PUBLISH_RECOVERY_ACTIONS: dict[PublishErrorType, dict[str, Any]] = {
     PublishErrorType.AUTH_EXPIRED: {
-        "message": "登录凭证已失效，请重新配置 XHS_COOKIE",
+        "message": "小红书登录态已失效，请重新扫码登录",
         "action": "reconfigure",
-        "action_label": "重新配置",
-        "hint": "在 .env 文件中更新 XHS_COOKIE 后重启服务",
+        "action_label": "去设置",
+        "hint": "请在设置页启动该账号浏览器并重新扫码登录",
     },
     PublishErrorType.ACCOUNT_UNVERIFIED: {
         "message": "小红书账号未完成平台要求的手机号/实名校验",

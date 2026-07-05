@@ -419,7 +419,6 @@ def config() -> None:
         ("DEEPSEEK_API_KEY", "DeepSeek API"),
         ("DASHSCOPE_API_KEY", "阿里云 Qwen API"),
         ("XIAOMIMIMO_API_KEY", "MiMo API"),
-        ("XHS_COOKIE", "小红书 Cookie"),
         ("RIPPLE_BASE_URL", "Ripple CAS 服务"),
     ]
 

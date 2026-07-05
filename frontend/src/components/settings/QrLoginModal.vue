@@ -32,6 +32,7 @@ const status = ref<QrLoginStatus | null>(null)
 const errorMsg = ref<string>('')
 const isStarting = ref(false)
 const verificationCode = ref('')
+const verificationRequired = ref(false)
 const isSubmittingVerificationCode = ref(false)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -50,7 +51,10 @@ let pollStartTs = 0
 const statusText = computed(() => {
   switch (status.value) {
     case 'waiting': return t('settings.xhsAccounts.qrWaiting')
-    case 'scanned': return t('settings.xhsAccounts.qrScanned')
+    case 'scanned':
+      return verificationRequired.value
+        ? t('settings.xhsAccounts.qrVerificationRequired')
+        : t('settings.xhsAccounts.qrScanned')
     case 'confirmed': return t('settings.xhsAccounts.qrConfirmed')
     case 'expired': return t('settings.xhsAccounts.qrExpired')
     default: return t('settings.xhsAccounts.qrWaiting')
@@ -77,9 +81,14 @@ const statusIconVariant = computed(() => {
 
 const showQrImage = computed(() => status.value === 'waiting' || status.value === 'expired' || status.value === null)
 const showSpinner = computed(() => isStarting.value && !qrImgSrc.value)
+const showVerificationCodeInput = computed(() => Boolean(status.value && status.value !== 'confirmed'))
 
 // ── QR rendering ──
 async function renderQr(url: string) {
+  if (url.startsWith('data:image/')) {
+    qrImgSrc.value = url
+    return
+  }
   try {
     qrImgSrc.value = await QRCode.toDataURL(url, {
       width: 240,
@@ -99,11 +108,13 @@ async function startSession() {
   errorMsg.value = ''
   qrImgSrc.value = ''
   status.value = null
+  verificationRequired.value = false
   try {
     const res = await startQrLogin(props.accountId)
     if (disposed) return
     if (res.status === 'confirmed') {
       status.value = 'confirmed'
+      verificationRequired.value = false
       qrImgSrc.value = ''
       stopPolling()
       emit('confirmed')
@@ -116,6 +127,7 @@ async function startSession() {
     await renderQr(res.url)
     if (disposed) return
     status.value = 'waiting'
+    verificationRequired.value = false
     pollStartTs = Date.now()
     startPolling()
   } catch (e: any) {
@@ -159,12 +171,15 @@ async function pollOnce() {
       await renderQr(res.url)
       if (disposed) return
       status.value = 'waiting'
+      verificationRequired.value = false
       // The backend refreshed the QR; reset the overall timeout window so
       // the user gets a fresh full poll budget on the new QR.
       pollStartTs = Date.now()
     } else {
       status.value = res.status
+      verificationRequired.value = Boolean(res.verification_required)
       if (res.status === 'confirmed') {
+        verificationRequired.value = false
         stopPolling()
         emit('confirmed')
         // Best-effort cleanup; profile already persisted on the backend.
@@ -195,10 +210,13 @@ async function submitVerificationCode() {
     if (!res.submitted) {
       errorMsg.value = t('settings.xhsAccounts.verificationCodeNotFound')
       status.value = res.status
+      verificationRequired.value = Boolean(res.verification_required)
       return
     }
     status.value = res.status
+    verificationRequired.value = Boolean(res.verification_required)
     if (res.status === 'confirmed') {
+      verificationRequired.value = false
       stopPolling()
       emit('confirmed')
       await stopQrLogin(props.accountId).catch(() => {})
@@ -232,6 +250,7 @@ async function cleanup() {
   status.value = null
   errorMsg.value = ''
   verificationCode.value = ''
+  verificationRequired.value = false
 }
 
 // Reset/refresh QR on manual retry
@@ -325,7 +344,7 @@ onUnmounted(() => {
               <div class="w-16 h-16 rounded-full bg-cyan-100 flex items-center justify-center">
                 <AppIcon name="Smartphone" size="xl" variant="cyan" />
               </div>
-              <p class="text-sm text-cyan-700 font-medium">{{ statusText }}</p>
+              <p class="text-sm text-cyan-700 font-medium text-center">{{ statusText }}</p>
             </div>
 
             <!-- Confirmed -->
@@ -344,9 +363,17 @@ onUnmounted(() => {
           </div>
 
           <!-- Numeric verification code forwarding -->
-          <div v-if="status && status !== 'confirmed'" class="mb-3 p-3 rounded-lg bg-slate-50/80 border border-slate-100">
+          <div
+            v-if="showVerificationCodeInput"
+            class="mb-3 p-3 rounded-lg border"
+            :class="verificationRequired
+              ? 'bg-cyan-50/80 border-cyan-100'
+              : 'bg-slate-50/80 border-slate-100'"
+          >
             <label class="block text-xs font-medium text-slate-500 mb-2">
-              {{ t('settings.xhsAccounts.verificationCodeLabel') }}
+              {{ verificationRequired
+                ? t('settings.xhsAccounts.verificationCodeRequiredLabel')
+                : t('settings.xhsAccounts.verificationCodeLabel') }}
             </label>
             <div class="flex items-center gap-2">
               <input
@@ -371,7 +398,9 @@ onUnmounted(() => {
               </NeonButton>
             </div>
             <p class="mt-2 text-[11px] leading-relaxed text-slate-400">
-              {{ t('settings.xhsAccounts.verificationCodeHint') }}
+              {{ verificationRequired
+                ? t('settings.xhsAccounts.verificationCodeRequiredHint')
+                : t('settings.xhsAccounts.verificationCodeHint') }}
             </p>
           </div>
 

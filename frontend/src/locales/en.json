@@ -28,7 +28,6 @@
     "ready": "Ready",
     "needsConfig": "Needs Config",
     "apiUnreachable": "API Unreachable",
-    "xhsPlatform": "Xiaohongshu Platform",
     "storage": "Data Storage",
     "memory": "Memory Store",
     "enabled": "Enabled",
@@ -48,7 +47,6 @@
     },
     "guide": {
       "llmMissing": "Set at least one LLM API key (e.g. ANTHROPIC_API_KEY) in .env to enable AI features.",
-      "xhsMissing": "XHS credentials not set — publishing will be skipped (preview only). Set XHS_COOKIE and XHS_USER_ID in .env to enable publishing.",
       "rippleMissing": "Set RIPPLE_BASE_URL and RIPPLE_API_TOKEN in .env (optional, for content spread prediction).",
       "rippleDisabled": "Ripple engine is not enabled. Set RIPPLE_ENABLED=true in .env to enable it.",
       "apiUnreachable": "Ensure the backend server is running: xhs-growth serve --port 8000"
@@ -121,7 +119,7 @@
     "form": {
       "accountId": "Account ID",
       "accountIdPlaceholder": "Select an account",
-      "accountIdHelp": "Choose the account to run this workflow under; manage accounts and credentials in Settings",
+      "accountIdHelp": "Choose the account to run this workflow under; manage accounts and scan-login state in Settings",
       "startPhase": "Starting Phase",
       "options": "Run Options",
       "dryRun": "Dry Run Mode",
@@ -550,7 +548,7 @@
     "dryRunMode": "Dry Run",
     "liveMode": "Live",
     "publishSkipped": "Publishing skipped",
-    "publishSkippedReason": "XHS credentials not configured. Set XHS_COOKIE and XHS_USER_ID in .env",
+    "publishSkippedReason": "Live publishing did not complete. Check the account browser login state.",
     "publishConfirm": {
       "title": "Confirm Publish",
       "subtitle": "Review publish settings before proceeding",
@@ -566,8 +564,7 @@
       "dryCardTitle": "Dry Run",
       "dryCardDesc": "Preview without publishing",
       "liveCardTitle": "Live Publish",
-      "liveCardDesc": "Publish to Xiaohongshu",
-      "useBrowserOffWarning": "Real publishing is disabled in this environment (XHS_USE_BROWSER is off). Selecting Live will still only mock-publish."
+      "liveCardDesc": "Publish to Xiaohongshu"
     },
     "stateLost": "The review state was lost after a container restart. Please restart the workflow to regenerate review content.",
     "errorStateLost": "Review State Lost",
@@ -995,7 +992,6 @@
     "required": "Required",
     "optional": "Optional",
     "readyFull": "Fully Ready",
-    "readyDryRun": "Dry-Run Only",
     "blocked": "Setup Required",
     "apiError": "Cannot check system status",
     "refresh": "Refresh",
@@ -1005,13 +1001,6 @@
       "description": "AI model for content generation",
       "impact": "Required for all AI operations",
       "fixGuide": "Set at least one API key in .env (e.g., ANTHROPIC_API_KEY, OPENAI_API_KEY)"
-    },
-    "xhs": {
-      "label": "Xiaohongshu Platform",
-      "description": "Credentials for publishing to XHS",
-      "impactReal": "Enables real publishing to Xiaohongshu",
-      "impactDryRun": "Only preview mode available (no real publishing)",
-      "fixGuide": "Set XHS_COOKIE and XHS_USER_ID in .env to enable publishing"
     },
     "ripple": {
       "label": "Ripple CAS Engine",
@@ -1024,9 +1013,7 @@
       "description": "Workflow persistence layer",
       "impactMemory": "Using in-memory storage (data lost on restart)",
       "impactPersistent": "Using persistent database storage"
-    },
-    "suggestDryRun": "Dry-run mode recommended",
-    "suggestDryRunReason": "XHS credentials not configured. Workflow will run in preview mode without actual publishing."
+    }
   },
   "brief": {
     "uploadLabel": "Upload Brief PDF",
@@ -1287,7 +1274,6 @@
     "noAccounts": "No accounts yet. Add your first account.",
     "active": "Active",
     "activate": "Set Active",
-    "credentialsFor": "Credentials",
     "saveCredentials": "Save",
     "enterValue": "Enter new value, leave empty to delete",
     "edit": "Edit",
@@ -1296,7 +1282,6 @@
     "willDelete": "(will delete)",
     "groups": {
       "llmProviders": "LLM Providers",
-      "xhsPlatform": "XHS Platform",
       "rippleCas": "Ripple CAS",
       "searchEmbedding": "Search & Embedding"
     },
@@ -1304,7 +1289,6 @@
       "accountCreated": "Account \"{name}\" created",
       "accountDeleted": "Account \"{name}\" deleted",
       "activeSwitched": "Active account switched",
-      "credsSaved": "Credentials saved",
       "credDeleted": "Deleted {key}",
       "systemConfigSaved": "System config saved & activated",
       "qrLoginSuccess": "Account \"{name}\" scan-login successful; session written to profile"
@@ -1317,7 +1301,7 @@
       "consoleUsers": "Console Users",
       "consoleUsersDesc": "Who can log into this admin",
       "xhsAccounts": "XHS Accounts",
-      "xhsAccountsDesc": "Xiaohongshu accounts + cookies",
+      "xhsAccountsDesc": "Xiaohongshu accounts and browser login state",
       "systemConfig": "System Config",
       "systemConfigDesc": "LLM, Ripple, embedding global keys"
     },
@@ -1343,11 +1327,12 @@
     },
     "xhsAccounts": {
       "title": "XHS Accounts",
-      "subtitle": "Each account uses its own Chrome profile; Cookie / user_id are legacy fallback only",
+      "subtitle": "Each account uses its own Chrome profile; scan-login state is written to that profile",
       "refreshLoginStatus": "Refresh login status",
       "loginStatusChecking": "Checking…",
       "loginStatusLoggedIn": "Logged in",
       "loginStatusLoggedOut": "Not logged in",
+      "loginStatusInactive": "Account inactive",
       "loginStatusUnavailable": "Browser unavailable",
       "loginStatusMissingProfile": "Browser not bound",
       "loginStatusBrowserDown": "Browser not running",
@@ -1357,6 +1342,7 @@
       "qrLoginTitle": "Scan to Log In — Xiaohongshu",
       "qrWaiting": "Scan with the Xiaohongshu app",
       "qrScanned": "Scanned — please confirm on your phone",
+      "qrVerificationRequired": "Scanned — web-side verification required",
       "qrConfirmed": "Login successful",
       "qrExpired": "QR code expired",
       "qrScanTip": "Open the XHS app → Me → top-left menu → Scan",
@@ -1366,10 +1352,12 @@
       "qrStartError": "Failed to start scan-login",
       "qrPollError": "Failed to query login status",
       "qrTimeout": "Scan timed out, please refresh the QR",
-      "verificationCodeLabel": "Web verification code",
-      "verificationCodePlaceholder": "Enter code",
+      "verificationCodeLabel": "Web-side verification code",
+      "verificationCodeRequiredLabel": "Web-side verification required",
+      "verificationCodePlaceholder": "Enter the code shown on the web page",
       "verificationCodeSubmit": "Submit",
-      "verificationCodeHint": "If the XHS web page shows a numeric code prompt, enter it here and the system will forward it to the CDP Chrome page.",
+      "verificationCodeHint": "This is not an SMS code. Fill this only if the XHS web page shows a numeric verification code; otherwise refresh the QR and scan again.",
+      "verificationCodeRequiredHint": "This is not an SMS code. Check whether the XHS web page shows a numeric code; if it does not, refresh the QR and scan again.",
       "verificationCodeInvalid": "Enter a 4-8 digit verification code",
       "verificationCodeNotFound": "No verification input was found on the CDP page. Confirm the prompt is still visible in Chrome.",
       "verificationCodeSubmitError": "Failed to submit verification code"

@@ -1,22 +1,18 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Account, Credential } from '@/api/accounts'
+import type { Account } from '@/api/accounts'
 import {
   listAccounts,
   getActiveAccount,
   createAccount as apiCreate,
   updateAccount as apiUpdate,
   deleteAccount as apiDelete,
-  listCredentials as apiListCreds,
-  setCredentials as apiSetCreds,
-  deleteCredential as apiDeleteCred,
 } from '@/api/accounts'
 
 export const useAccountsStore = defineStore('accounts', () => {
   // ── State ──
   const accounts = ref<Account[]>([])
   const activeAccount = ref<Account | null>(null)
-  const credentials = ref<Credential[]>([])
   const isLoading = ref(false)
   const error = ref<string | null>(null)
 
@@ -52,10 +48,6 @@ export const useAccountsStore = defineStore('accounts', () => {
     const updated = await apiUpdate(accountId, { is_active: true })
     // Refresh list to reflect active state changes
     await fetchAccounts()
-    // Also reload credentials for the new active account
-    if (updated) {
-      await fetchCredentials(accountId)
-    }
     return updated
   }
 
@@ -72,35 +64,12 @@ export const useAccountsStore = defineStore('accounts', () => {
     // If deleted the active account, refresh active
     if (activeAccount.value?.id === accountId) {
       activeAccount.value = await getActiveAccount()
-      credentials.value = []
     }
-  }
-
-  async function fetchCredentials(accountId: string) {
-    try {
-      credentials.value = await apiListCreds(accountId)
-    } catch (e: any) {
-      error.value = e.message
-      credentials.value = []
-    }
-  }
-
-  async function saveCredentials(accountId: string, creds: Record<string, string>) {
-    const result = await apiSetCreds(accountId, creds)
-    // Refresh credentials display
-    await fetchCredentials(accountId)
-    return result
-  }
-
-  async function removeCredential(accountId: string, keyName: string) {
-    await apiDeleteCred(accountId, keyName)
-    credentials.value = credentials.value.filter(c => c.key_name !== keyName)
   }
 
   return {
     accounts,
     activeAccount,
-    credentials,
     isLoading,
     error,
     activeAccountId,
@@ -110,8 +79,5 @@ export const useAccountsStore = defineStore('accounts', () => {
     setActiveAccount,
     updateAccountName,
     removeAccount,
-    fetchCredentials,
-    saveCredentials,
-    removeCredential,
   }
 })

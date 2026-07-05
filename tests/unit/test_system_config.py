@@ -45,15 +45,6 @@ def _make_mock_conn(cursor):
     return mock_conn
 
 
-def test_system_keys_disjoint_from_xhs_keys():
-    """Critical invariant: SYSTEM_KEYS and XHS_KEYS must not overlap."""
-    from backend.db.accounts import XHS_KEYS
-    from backend.db.system_config import SYSTEM_KEYS
-
-    overlap = set(SYSTEM_KEYS) & set(XHS_KEYS)
-    assert not overlap, f"Keys appear in both layers: {overlap}"
-
-
 def test_system_key_groups_cover_all_keys():
     """Every SYSTEM_KEY should appear in exactly one group (UI rendering invariant)."""
     from backend.db.system_config import SYSTEM_KEY_GROUPS, SYSTEM_KEYS

@@ -87,11 +87,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await bootstrap_from_environ()
             await bootstrap_default_user()
 
-            # Load credentials into os.environ
-            from backend.db.accounts import load_active_credentials
             from backend.db.system_config import activate_system_config
 
-            await load_active_credentials()
             await activate_system_config()
         except Exception as e:
             logging.getLogger("xhs_growth").warning(f"Postgres setup failed, using SQLite: {e}")
@@ -212,8 +209,12 @@ if frontend_dist.exists():
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str) -> Response:
         """Serve SPA frontend — return index.html for all non-API routes."""
-        # WebSocket 和事件恢复路径不处理
-        if full_path.startswith("ws") or full_path.startswith("events/"):
+        # API、WebSocket 和事件恢复路径不处理
+        if (
+            full_path.startswith("api/")
+            or full_path.startswith("ws")
+            or full_path.startswith("events/")
+        ):
             return Response(status_code=404)
         # assets 目录提供静态文件（带缓存头）
         if full_path.startswith("assets/"):

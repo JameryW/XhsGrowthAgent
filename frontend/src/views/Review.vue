@@ -13,7 +13,6 @@ import { useReviewStore, useToastStore, useAccountsStore } from '@/stores'
 import { listWorkflows, getWorkflowStatus, uploadImages } from '@/api/workflow'
 import { updateCopy } from '@/api/review'
 import { getEvaluationResult } from '@/api/evaluation'
-import { getSystemHealth } from '@/api/system'
 import type { ContentStatus } from '@/types'
 import type { WorkflowListItem, WorkflowStateResponse } from '@/types/workflow'
 import type { EvaluationResult } from '@/types/evaluation'
@@ -417,9 +416,6 @@ const showPublishConfirm = ref(false)
 type PublishMode = 'dry' | 'live' | null
 const publishMode = ref<PublishMode>(null)
 const publishAccountId = ref<string | null>(null)
-// Whether real publishing is possible in this environment (XHS_USE_BROWSER).
-const canRealPublish = ref(true)
-
 // Celebration effect
 const showCelebration = ref(false)
 
@@ -564,10 +560,6 @@ const requestDecision = async (tid: string, decision: ContentStatus) => {
     publishAccountId.value = accountsStore.activeAccountId
     // Force explicit mode choice: reset to unset each time the modal opens.
     publishMode.value = null
-    // Detect whether the backend can actually publish (XHS_USE_BROWSER).
-    getSystemHealth()
-      .then((h) => { canRealPublish.value = h.checks.xhs_platform.use_browser })
-      .catch(() => { canRealPublish.value = true })
     showPublishConfirm.value = true
   } else {
     executeDecision(tid, decision)
@@ -1195,12 +1187,6 @@ const handleCancelConfirm = () => {
               </div>
             </div>
 
-            <div v-if="publishMode === 'live' && !canRealPublish" class="p-3 rounded-lg liquid-glass-amber liquid-glass-hover">
-              <div class="flex items-start gap-2">
-                <AppIcon name="AlertTriangle" size="sm" variant="peach" />
-                <p class="text-xs text-amber-700">{{ t('review.publishConfirm.useBrowserOffWarning') }}</p>
-              </div>
-            </div>
           </div>
 
           <div class="p-4 md:p-5 border-t border-slate-100 flex gap-2 md:gap-3">
