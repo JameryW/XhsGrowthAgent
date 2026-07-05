@@ -271,7 +271,12 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
 
     # 记录到长期记忆
     account_id = state.get("account_id", "default")
-    if publish_result.get("post_id"):
+    # ponytail: 真实 XHS 发布成功只 redirect 到 /publish/success，post_id 从 URL
+    # regex 提取常为空（见 xhs_publisher._wait_for_success）。原 gate `post_id`
+    # 非空会让真实成功跳过 ContentHistory 记录。用 status=="published" 判成功，
+    # 仍把 post_id（可能为空）传下去做 key。
+    pub_ok = publish_result.get("status") == "published"
+    if pub_ok or publish_result.get("post_id"):
         try:
             from backend.memory.content_history import ContentHistory
 

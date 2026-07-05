@@ -313,6 +313,37 @@ async def test_records_history_on_success_only(_browser_settings, mock_store, mo
 
 
 @pytest.mark.asyncio
+async def test_records_history_when_published_without_post_id(
+    _browser_settings, mock_store, monkeypatch
+):
+    """Real XHS publish redirects to /publish/success — post_id regex-miss → empty.
+
+    status=="published" must still record to ContentHistory (was skipped when
+    gate was post_id-only). Regression for the same bug class as PR #190.
+    """
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
+    # post_id="" but status="published" — real-world success shape
+    client = _mock_client(post_id="")
+    client.publish_post = AsyncMock(
+        return_value={
+            "post_id": "",
+            "post_url": "https://creator.xiaohongshu.com/publish/success",
+            "status": "published",
+            "published_at": "now",
+        }
+    )
+    _mock_account_active(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
+    _patch_client(monkeypatch, client)
+    hist = _mock_history(monkeypatch)
+
+    await run_publish(state, store=mock_store)
+
+    hist.return_value.record.assert_awaited_once()
+    assert hist.return_value.record.await_args.kwargs["post_id"] == ""
+
+
+@pytest.mark.asyncio
 async def test_ignores_past_suggested_timing(_browser_settings, mock_store, monkeypatch):
     """Historical plan suggestions must not turn a real retry into scheduled publish."""
 
