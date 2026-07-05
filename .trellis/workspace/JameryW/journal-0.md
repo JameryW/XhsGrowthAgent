@@ -781,3 +781,40 @@ Exposed evaluator epoch/weights/samples/trend to omp: new GET /evaluation/epochs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 58: 提 PR #182-186 cookie 凭证移除系列 + 部署 + CI 修复
+
+**Date**: 2026-07-05
+**Task**: 提 PR #182-186 cookie 凭证移除系列 + 部署 + CI 修复
+**Branch**: `main`
+
+### Summary
+
+5 PR 拆分提交流程：#182 CDP host-chrome 连接 / #183 移除 xhs_platform 健康检查 / #184 移除 cookie 凭证路径(agents+tools) / #185 删 XHS_COOKIE 文档 / #186 accounts 层凭证管理移除+扫码登录统一。54 文件按主题拆 5 PR，合并顺序 #184→#186(删调用先于删函数)。CI F821 修复(test_system_config __main__ 残留调用)，记 ruff check . 全量规则 memory。重新部署 deploy.sh，全服务健康检查绿。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cdc3460a` | (see git log) |
+| `e3a1cc68` | (see git log) |
+| `2d1c5d75` | (see git log) |
+| `54a30c4f` | (see git log) |
+| `8b77871f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
