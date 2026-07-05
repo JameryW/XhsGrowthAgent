@@ -53,20 +53,6 @@ const checklistItems = computed<ChecklistItem[]>(() => {
     fixGuide: llmStatus.status !== 'ok' ? t('checklist.llm.fixGuide') : undefined,
   })
 
-  // XHS Platform (Optional but affects publishing mode)
-  const xhsStatus = health.value.checks.xhs_platform
-  items.push({
-    id: 'xhs',
-    label: t('checklist.xhs.label'),
-    description: t('checklist.xhs.description'),
-    status: xhsStatus.status as ChecklistItem['status'],
-    required: false,
-    impact: xhsStatus.status === 'ok'
-      ? t('checklist.xhs.impactReal')
-      : t('checklist.xhs.impactDryRun'),
-    fixGuide: xhsStatus.status !== 'ok' ? t('checklist.xhs.fixGuide') : undefined,
-  })
-
   // Ripple CAS (Optional)
   const rippleStatus = health.value.checks.ripple_cas
   if (rippleStatus.status !== 'disabled') {
@@ -103,17 +89,13 @@ const readiness = computed(() => {
   if (items.length === 0) return { status: 'loading', canStart: false, canPublish: false }
 
   const requiredOk = items.filter(i => i.required).every(i => i.status === 'ok')
-  const xhsOk = items.find(i => i.id === 'xhs')?.status === 'ok'
 
   return {
-    status: requiredOk ? (xhsOk ? 'full' : 'dry-run') : 'blocked',
+    status: requiredOk ? 'full' : 'blocked',
     canStart: requiredOk,
-    canPublish: xhsOk,
+    canPublish: requiredOk,
   }
 })
-
-// Auto-set dry-run based on XHS status
-const suggestedDryRun = computed(() => !readiness.value.canPublish)
 
 // Status styling
 const statusIcon = (status: string) => {
@@ -147,7 +129,7 @@ const statusBg = (status: string) => {
 }
 
 // Expose readiness for parent
-defineExpose({ readiness, suggestedDryRun })
+defineExpose({ readiness })
 </script>
 
 <template>
@@ -172,12 +154,6 @@ defineExpose({ readiness, suggestedDryRun })
             class="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 text-xs font-medium border border-emerald-100"
           >
             {{ t('checklist.readyFull') }}
-          </span>
-          <span
-            v-else-if="readiness.status === 'dry-run'"
-            class="px-2.5 py-1 rounded-full bg-amber-50 text-amber-600 text-xs font-medium border border-amber-100"
-          >
-            {{ t('checklist.readyDryRun') }}
           </span>
           <span
             v-else-if="readiness.status === 'blocked'"
@@ -268,20 +244,6 @@ defineExpose({ readiness, suggestedDryRun })
 
     <!-- Summary & Actions -->
     <div v-if="!isLoading && !error" class="px-3 py-2.5 md:px-4 md:py-3 liquid-glass-inset border-t border-white/10">
-      <!-- Dry-run suggestion -->
-      <div
-        v-if="suggestedDryRun && readiness.canStart"
-        class="mb-3 p-2.5 rounded-lg liquid-glass-amber liquid-glass-hover"
-      >
-        <div class="flex items-start gap-2">
-          <AppIcon name="FlaskConical" size="sm" variant="peach" class="mt-0.5" />
-          <div>
-            <p class="text-xs font-medium text-amber-700">{{ t('checklist.suggestDryRun') }}</p>
-            <p class="text-xs text-amber-600 mt-0.5">{{ t('checklist.suggestDryRunReason') }}</p>
-          </div>
-        </div>
-      </div>
-
       <!-- Action buttons -->
       <div class="flex items-center justify-between">
         <button

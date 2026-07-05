@@ -8,14 +8,6 @@ export interface HealthCheck {
       message: string
       providers: Record<string, { status: string; configured: boolean; preview: string | null }>
     }
-    xhs_platform: {
-      status: string
-      configured: boolean
-      cookie_set: boolean
-      user_id_set: boolean
-      use_browser: boolean
-      message: string
-    }
     ripple_cas: {
       status: string
       configured: boolean

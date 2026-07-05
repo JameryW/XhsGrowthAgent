@@ -306,7 +306,6 @@ class TestAnalyticsTools:
             "status": "ok",
             "checks": {
                 "llm_providers": {"status": "ok"},
-                "xhs_platform": {"status": "ok"},
                 "ripple_cas": {"status": "ok"},
                 "database": {"status": "ok", "mode": "sqlite"},
                 "memory_store": {"status": "ok"},
