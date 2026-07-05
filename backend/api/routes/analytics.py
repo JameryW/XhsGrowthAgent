@@ -244,6 +244,10 @@ async def get_costs(period: str = "weekly", request: Request = None) -> ApiRespo
         state = wf.get("_state", {})
         perf_log = state.get("performance_log") or []
         for entry in perf_log:
+            # ponytail: skip node/human_wait entries (no cost_usd); llm/ripple
+            # and back-compat entries (no kind) carry cost.
+            if entry.get("kind") in ("node", "human_wait"):
+                continue
             cost = entry.get("cost_usd", 0.0)
             model = entry.get("model", "unknown")
             total_cost += cost
@@ -369,6 +373,10 @@ async def get_dashboard(
         state = wf.get("_state", {})
         perf_log = state.get("performance_log") or []
         for entry in perf_log:
+            # ponytail: skip node/human_wait entries (no cost_usd); llm/ripple
+            # and back-compat entries (no kind) carry cost.
+            if entry.get("kind") in ("node", "human_wait"):
+                continue
             cost = entry.get("cost_usd", 0.0)
             model = entry.get("model", "unknown")
             total_cost += cost

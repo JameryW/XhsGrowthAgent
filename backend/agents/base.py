@@ -192,15 +192,54 @@ class BaseAgent(ABC):
         ...
 
     async def __call__(self, state: XHSGrowthState, *, store: BaseStore) -> dict[str, Any]:
-        """LangGraph node entry point."""
+        """LangGraph node entry point.
+
+        Wraps execute() with node-level timing → appends one performance_log
+        entry per successful call. The entry rides the returned dict under
+        `performance_log: [entry]`; LangGraph's `_append_list` reducer merges
+        it into state. Recording is best-effort: a timer failure must not
+        break the node (see PRD: 节点级指标).
+
+        On failure we re-raise (LangGraph retry needs the exception); a failed
+        entry can't be written to state mid-exception, so retries/failed-count
+        is captured indirectly: the next successful call's `retries` field
+        (sourced from state.retry_count, which the retry router increments)
+        records how many attempts preceded this success.
+        """
+        from backend.agents.nodes._base import node_perf_entry
         from backend.core.error_handling import AgentError
 
+        started = _now_iso()
+        retries = int(state.get("retry_count", 0) or 0)
         try:
             result = await self.execute(state, store)
-            result["current_agent"] = self.agent_name
-            result["error"] = None  # Clear stale error on success
-            return result
         except Exception as e:
             logger.error(f"Agent {self.agent_name} failed: {e}", exc_info=True)
-            # Propagate to LangGraph retry mechanism
+            # Propagate to LangGraph retry mechanism. State can't be updated
+            # on a raised exception — the retry's next successful call records
+            # the attempt count via its `retries` field.
             raise AgentError(self.agent_name, e) from e
+
+        result["current_agent"] = self.agent_name
+        result["error"] = None  # Clear stale error on success
+        try:
+            result["performance_log"] = [
+                node_perf_entry(
+                    self.agent_name,
+                    started_at=started,
+                    completed_at=_now_iso(),
+                    status="success",
+                    error=None,
+                    retries=retries,
+                )
+            ]
+        except Exception as timer_err:  # best-effort: never break the node
+            logger.debug("performance_log node entry failed: %s", timer_err)
+        return result
+
+
+def _now_iso() -> str:
+    """UTC ISO8601 timestamp for performance_log entries."""
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).isoformat()

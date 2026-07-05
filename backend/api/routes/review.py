@@ -134,6 +134,12 @@ async def submit_review(
         pub_opts = decision.publish_options or PublishOptions(dry_run=True)
         updates["publish_options"] = pub_opts.model_dump()
 
+    # ponytail: record how long the user waited at review_gate (PRD 节点级指标).
+    # entered_at = last node completion before the gate; merged via _append_list.
+    from backend.agents.nodes._base import record_human_wait
+
+    updates["performance_log"] = [record_human_wait(values, "review_gate")]
+
     # Write decision + optional version/publish_options to state
     await graph.aupdate_state(config, updates, as_node=_runner._get_as_node(state))
 
