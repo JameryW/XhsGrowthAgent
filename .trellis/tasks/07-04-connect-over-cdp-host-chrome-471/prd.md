@@ -49,3 +49,38 @@ launcher `start_all` 对 active+有 profile 绑定的账号启 host Chrome（`--
 
 - creator 跨子域复用验证（登录成功后再验，可能需 www→creator SSO 跳转）。
 - Xvfb 回退（connect_over_cdp 模式不需容器内 Chrome，Xvfb 改动可回退——本 task 评估后清理）。
+
+---
+
+## PoC 失败结论（2026-07-04）— 推翻原 R2/R3 决策
+
+原决策"Chrome `--remote-debugging-address=0.0.0.0` 绑 0.0.0.0"已被实测推翻。socat/反代路也死。
+
+### 实测事实
+
+- Chrome 144（headless + headed）**强制 CDP 绑 127.0.0.1**，`--remote-debugging-address=0.0.0.0` 完全失效（headless + Xvfb headed 都验过）。
+- `--remote-allow-origins=*` 只覆盖 Origin header，**不覆盖 Host header 校验**。容器经 socat 转发请求 Host=`host.containers.internal:<port>` ≠ Chrome 绑的 127.0.0.1 → HTTP 500。
+- HTTP 反代重写 Host + body（nginx `sub_filter` 改 ws url）→ `/json/version` 200，ws url 重写正确，WS 握手 101 通（含 permessage-deflate 协商）。
+- **WS frame 阶段卡死**：nginx `<ws connected>` 后无 frame 流（tcpdump 抓 9229 无 PSH frame）；python 自写 TCP 代理 WS 连接都没建。
+- publisher 用同套 `connect_over_cdp(host.containers.internal:<port>)`，**同样会坏**——现有 publisher CDP 链路大概率从没真成功过。
+- **关键修正**：playwright 1.60 `connect_over_cdp` **host 直连** 127.0.0.1:19225（不经任何反代）同样 `<ws connected>` 后卡死。问题**不在反代**，在 playwright 1.60 ↔ Chrome 144 CDP WS 协议不兼容——手动 WS 握手 101 通，但 playwright 发的首个 CDP frame Chrome 不回。CDP-aware 代理（方案 2）也救不了：代理透传 frame 照样卡。
+
+### 推翻
+
+- ~~R2: host Chrome `--remote-debugging-address=0.0.0.0` 绑 0.0.0.0~~ — Chrome 144 忽略该 flag。
+- ~~socat 纯 TCP 转发~~ — HTTP 500（Host 校验）。
+- ~~nginx/python 反代重写 Host + body~~ — WS frame 透传不工作（playwright CDP WS 密集双向 frame 与通用 HTTP 反代不兼容）。
+
+### 仍待验证的可行路（brainstorm 候选）
+
+1. **降 Chrome 到 143** — `<144` 版本 `--remote-debugging-address=0.0.0.0` 生效，无反代，容器直连。最省。需验证 143 真绑 0.0.0.0 + host 可装。
+2. **CDP-aware 代理工具** — 自写理解 CDP WS 的代理，或 browserless chrome-proxy 类现成工具。重。**注：已证 playwright↔Chrome 144 协议不兼容，代理透传 frame 照样卡，此路大概率死。**
+3. **backend 跑 host 非 container** — 架构大改，publisher/扫码 service 都改 host 跑。host 直连也卡，此路同死，除非配合方案 4。
+4. **升 playwright 或降 Chrome 对齐 protocol** — 实测 playwright 1.60 ↔ Chrome 144 CDP WS 协议不兼容（host 直连也卡）。升 playwright 到支持 Chrome 144 的版本，或降 Chrome 到 playwright 1.60 支持的版本，可能直接解决。需查 playwright↔Chrome 版本兼容矩阵。
+
+## Open Questions（重新 brainstorm）
+
+- Q1: playwright 1.60 支持的 Chrome 版本上限？Chrome 144 是否超出？（research-first）
+- Q2: 升 playwright 版本（容器内）是否解决 CDP WS 卡？还是降 Chrome 对齐 playwright 更省？
+- Q3: Chrome 143 + `--remote-debugging-address=0.0.0.0` 是否生效（若降 Chrome 143 同时解决协议兼容 + loopback，一箭双雕）？
+
