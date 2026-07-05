@@ -46,7 +46,15 @@ class BloggerScoutAgent(BaseAgent):
 
         # Trend mode keywords
         if trend_data.get("trending_keywords"):
-            keywords.extend(trend_data["trending_keywords"][:3])
+            # ponytail: 元素可能是 dict（trending tool 返回 {topic,...}）或 str。
+            # extend dict 会拆成 dict 的 keys 污染 keywords，先取 str/字段。
+            for k in trend_data["trending_keywords"][:3]:
+                if isinstance(k, str):
+                    keywords.append(k)
+                elif isinstance(k, Mapping):
+                    val = k.get("topic") or k.get("keyword") or ""
+                    if val:
+                        keywords.append(str(val))
         if content_plan.get("selected_topic"):
             keywords.append(content_plan["selected_topic"])
 
