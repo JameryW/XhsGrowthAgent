@@ -82,6 +82,7 @@ class TestPublishNote:
     async def test_success_path_returns_published(self, publisher: XHSPublisher):
         """Full mocked happy path → status=published with post_url."""
         page = AsyncMock()
+        page.on = MagicMock()  # sync handler registration — real page.on is sync, not a coroutine
         publisher._ensure_page = AsyncMock(return_value=page)  # type: ignore[method-assign]
         publisher._check_login = AsyncMock(return_value=True)  # type: ignore[method-assign]
         publisher._wait_for_publish_ready = AsyncMock(return_value=True)  # type: ignore[method-assign]
@@ -181,6 +182,7 @@ class TestPublishRetrySafety:
         returns the same stuck page every attempt, so retries fail the same way.
         """
         page = AsyncMock()
+        page.on = MagicMock()  # sync handler registration — real page.on is sync
         publisher._ensure_page = AsyncMock(return_value=page)  # type: ignore[method-assign]
         publisher._check_login = AsyncMock(side_effect=RuntimeError("page exploded"))  # type: ignore[method-assign]
         publisher._page = page  # simulate an already-attached page
