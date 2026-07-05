@@ -100,6 +100,47 @@ def test_returns_retrying_and_schedules_task(app_and_client):
     assert graph.aupdate_state.call_args.args[1]["publish_result"] == pr
 
 
+def test_publish_success_without_post_id_marks_completed(app_and_client):
+    """Real XHS publish redirects to success page with no post_id (regex miss).
+    Status=published must still mark workflow completed, not error.
+    """
+    app, client, graph = app_and_client
+    # post_id="" but status="published" — the real-world success shape
+    pr = {
+        "post_id": "",
+        "post_url": "https://creator.xiaohongshu.com/publish/success",
+        "status": "published",
+    }
+    captured = {}
+
+    def fake_create_task(coro, **kw):
+        captured["coro"] = coro
+        task = MagicMock()
+        task.add_done_callback = MagicMock()
+        task.get_name = lambda: kw.get("name", "")
+        return task
+
+    with (
+        patch(_RUN_PUBLISH, new_callable=AsyncMock, return_value={"publish_result": pr}),
+        patch(_DB_UPSERT, new_callable=AsyncMock) as mock_db,
+        patch(_EVENT_BUS) as mock_bus_cls,
+        patch("backend.api.routes.workflow.asyncio.create_task", side_effect=fake_create_task),
+    ):
+        mock_bus_cls.get_instance.return_value = MagicMock()
+        client.post("/api/workflow/publish-retry/thr1")
+        coro = captured["coro"]
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    # status="published" → db_upsert called with status="completed", error=None
+    call = mock_db.await_args
+    assert call.kwargs["status"] == "completed"
+    assert call.kwargs["error"] is None
+
+
 def test_rejects_already_published(app_and_client):
     """publish_result.status=published → skipped, no retry task spawned."""
     app, client, graph = app_and_client

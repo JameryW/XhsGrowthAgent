@@ -2014,11 +2014,14 @@ async def retry_publish(thread_id: str, request: Request) -> ApiResponse[Any]:
                 {"publish_result": publish_result, "phase": WorkflowPhase.PUBLISHING},
                 as_node=_get_as_node(snap),
             )
+            # ponytail: 真实 XHS 发布成功只 redirect 到 success 页，post_id 从 URL
+            # regex 提取，常为空（line 620）。用 status=="published" 判成功，非 post_id。
+            pub_ok = publish_result.get("status") == "published"
             await _db_upsert(
                 thread_id,
-                status="completed" if publish_result.get("post_id") else "error",
+                status="completed" if pub_ok else "error",
                 phase=WorkflowPhase.PUBLISHING.value,
-                error=publish_result.get("error"),
+                error=None if pub_ok else publish_result.get("error"),
             )
             _emit_retry_event(thread_id, publish_result)
         except Exception:
