@@ -13,12 +13,13 @@
 | `DEEPSEEK_API_KEY` | 是 | DeepSeek API key | 无 |
 | `DASHSCOPE_API_KEY` | 否 | 阿里云 Qwen API key | 无 |
 
-### 小红书平台
+### 小红书浏览器登录
 
 | 变量 | 必填 | 说明 | 注意 |
 |------|------|------|------|
-| `XHS_COOKIE` | 是 | 小红书登录 cookie | 有效期约30天，需定期刷新 |
-| `XHS_USER_ID` | 是 | 用户 ID | 从 cookie 中提取 |
+| `XHS_USE_BROWSER` | 否 | 启用浏览器/CDP 发布流程 | 生产发布建议启用 |
+| `XHS_CHROME_PROFILES_DIR` | 否 | 小红书账号浏览器 profile 目录 | 默认使用项目内 `.chrome-profiles` |
+| `XHS_CDP_BASE_PORT` | 否 | 账号浏览器 CDP 起始端口 | 默认 `9222` |
 
 ### 数据库
 

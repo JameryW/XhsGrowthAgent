@@ -116,9 +116,10 @@ OPENAI_API_KEY=your_key
 DEEPSEEK_API_KEY=your_key
 DASHSCOPE_API_KEY=your_key
 
-# XHS Platform
-XHS_COOKIE=your_cookie
-XHS_USER_ID=your_user_id
+# XHS browser login
+XHS_USE_BROWSER=true
+XHS_CHROME_PROFILES_DIR=/path/to/.chrome-profiles
+XHS_CDP_BASE_PORT=9222
 
 # Database
 POSTGRES_URI=postgresql://user:pass@host:5432/db?sslmode=require

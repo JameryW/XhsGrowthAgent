@@ -12,8 +12,6 @@
 | `OPENAI_API_KEY` | GPT 模型 | HIGH |
 | `DEEPSEEK_API_KEY` | DeepSeek 模型 | HIGH |
 | `DASHSCOPE_API_KEY` | Qwen 模型 | HIGH |
-| `XHS_COOKIE` | 小红书认证 | CRITICAL |
-| `XHS_USER_ID` | 用户标识 | MEDIUM |
 
 ### 安全实践
 
@@ -35,32 +33,13 @@
 3. **Key 权限最小化**
    - Anthropic: 只授予必要模型访问权限
    - OpenAI: 设置使用限额
-   - XHS Cookie: 定期刷新，不使用主账号
+   - 小红书账号：使用独立创作者账号，通过浏览器扫码登录，不提交浏览器 profile 数据
 
-## 小红书 Cookie 安全
+## 小红书账号安全
 
-### Cookie 获取方式
-
-1. 浏览器登录小红书创作者平台
-2. DevTools → Application → Cookies
-3. 复制必要 cookie 值
-
-### Cookie 刷新
-
-- Cookie 有效期约 30 天
-- 设置定期刷新机制
-- 使用独立创作者账号（非主账号）
-
-### Cookie 存储
-
-```python
-# 不要硬编码 Cookie
-XHS_COOKIE = os.environ.get("XHS_COOKIE")  # 从环境变量读取
-
-# 生产环境使用加密存储
-from cryptography.fernet import Fernet
-encrypted_cookie = Fernet(key).encrypt(cookie_value)
-```
+- 使用账号页面的扫码登录流程，不在 `.env`、文档或代码中保存 Cookie。
+- 浏览器 profile 目录只保存在部署机器本地，避免提交到仓库或日志。
+- 使用独立创作者账号，降低主账号风险。
 
 ## API 安全
 

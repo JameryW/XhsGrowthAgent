@@ -34,7 +34,6 @@ cp .env.example .env
 - `ANTHROPIC_API_KEY` - Claude 模型
 - `OPENAI_API_KEY` - GPT 模型
 - `DEEPSEEK_API_KEY` - DeepSeek 模型
-- `XHS_COOKIE` - 小红书平台认证
 
 ## 代码风格
 
