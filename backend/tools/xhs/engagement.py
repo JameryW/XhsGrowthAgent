@@ -21,7 +21,7 @@ def _get_engagement() -> XHSEngagement:
 
     settings = Settings()
     return XHSEngagement(
-        cookie=settings.platform.cookie,
+        cookie="",
         headless=settings.platform.headless,
     )
 
@@ -33,8 +33,6 @@ def _get_client() -> XHSClient:
 
     settings = Settings()
     return XHSClient(
-        cookie=settings.platform.cookie,
-        user_id=settings.platform.user_id,
         use_browser=settings.platform.use_browser,
     )
 

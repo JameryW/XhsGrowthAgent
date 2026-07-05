@@ -63,7 +63,7 @@ class ContentStrategistAgent(BaseAgent):
 
         # ponytail: 对候选话题打分（topic_scorer 已注册但此前从未调用——死代码）
         # 评分结果拼入 extra_context，让 LLM 基于热度/增长/竞争度选话题。
-        # topic_scorer 内部已处理无凭证降级（返回 heat_score=50），此处只透传。
+        # topic_scorer 内部已处理实时数据不可用降级（返回 heat_score=50），此处只透传。
         topic_scores_ctx = await self._score_trend_topics(trend_data, niche)
         if topic_scores_ctx:
             memory_context += f"\n{topic_scores_ctx}"

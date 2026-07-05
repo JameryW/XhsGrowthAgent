@@ -20,8 +20,9 @@ def _get_publisher() -> XHSPublisher:
 
     settings = Settings()
     return XHSPublisher(
-        cookie=settings.platform.cookie,
+        cookie="",
         headless=settings.platform.headless,
+        cdp_endpoint=settings.platform.cdp_endpoint,
     )
 
 

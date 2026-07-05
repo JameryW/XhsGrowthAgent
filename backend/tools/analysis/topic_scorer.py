@@ -35,14 +35,9 @@ async def topic_scorer(
         keywords = []
     logger.info(f"Scoring topic: {topic}")
 
-    from backend.config.settings import Settings
     from backend.services.xhs_client import XHSClient
 
-    settings = Settings()
-    client = XHSClient(
-        cookie=settings.platform.cookie,
-        user_id=settings.platform.user_id,
-    )
+    client = XHSClient()
 
     try:
         # 1. 搜索话题相关帖子

@@ -2,7 +2,7 @@
 
 Locks that: (1) extraction from PublisherAgent.execute preserved behavior,
 (2) run_publish NEVER honors dry_run (retry always means real publish),
-(3) account cookie resolution, (4) no-cookie fast-fail with structured recovery,
+(3) account CDP endpoint resolution, (4) missing-CDP fast-fail with structured recovery,
 (5) auth error classification, (6) history recording gated on post_id.
 """
 
@@ -34,8 +34,7 @@ def _browser_settings(monkeypatch):
     fake = MagicMock()
     fake.platform.use_browser = True
     fake.platform.headless = True
-    fake.platform.cookie = "GLOBAL_COOKIE"
-    fake.platform.user_id = "GLOBAL_UID"
+    fake.platform.cdp_endpoint = ""
     monkeypatch.setattr("backend.agents.publisher.Settings", lambda: fake)
     return fake
 
@@ -96,42 +95,41 @@ def _mock_cdp_endpoint(monkeypatch, endpoint=""):
 
 
 @pytest.mark.asyncio
-async def test_uses_selected_account_cookie(_browser_settings, mock_store, monkeypatch):
-    """account_id in publish_options → get_account_cookie called, its cookie used."""
+async def test_uses_selected_account_cdp_profile(_browser_settings, mock_store, monkeypatch):
+    """account_id in publish_options → per-account CDP endpoint passed to XHSClient."""
     state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
     client = _mock_client("p1")
-    m_cookie = AsyncMock(return_value=("ACC_COOKIE", "ACC_UID"))
-    monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
     _mock_account_active(monkeypatch)
-    _mock_cdp_endpoint(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9225")
     m_client = _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
 
     result = await run_publish(state, store=mock_store)
 
-    m_cookie.assert_awaited_once_with("acc_1")
     kwargs = m_client.call_args.kwargs
-    assert kwargs["cookie"] == "ACC_COOKIE"
-    assert kwargs["user_id"] == "ACC_UID"
+    assert kwargs["cookie"] == ""
+    assert kwargs["user_id"] == ""
+    assert kwargs["cdp_endpoint"] == "http://127.0.0.1:9225"
     assert result["publish_result"]["post_id"] == "p1"
 
 
 @pytest.mark.asyncio
 async def test_falls_back_to_global_when_no_account(_browser_settings, mock_store, monkeypatch):
-    """No account_id → use global settings.platform.cookie."""
+    """No account_id → use global CDP endpoint."""
     state = _state(publish_options={"dry_run": False})
     client = _mock_client("p2")
-    m_cookie = AsyncMock()
-    monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
+    monkeypatch.setattr(
+        "backend.agents.publisher._resolve_cdp_endpoint", lambda _s: "http://global:9223"
+    )
     m_client = _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
 
     await run_publish(state, store=mock_store)
 
-    m_cookie.assert_not_called()
     kwargs = m_client.call_args.kwargs
-    assert kwargs["cookie"] == "GLOBAL_COOKIE"
-    assert kwargs["user_id"] == "GLOBAL_UID"
+    assert kwargs["cookie"] == ""
+    assert kwargs["user_id"] == ""
+    assert kwargs["cdp_endpoint"] == "http://global:9223"
 
 
 @pytest.mark.asyncio
@@ -142,8 +140,6 @@ async def test_per_account_cdp_endpoint_passed_to_client(
     overriding the global _resolve_cdp_endpoint result."""
     state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
     client = _mock_client("p1")
-    m_cookie = AsyncMock(return_value=("ACC_COOKIE", "ACC_UID"))
-    monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
     m_client = _patch_client(monkeypatch, client)
@@ -159,12 +155,9 @@ async def test_per_account_cdp_endpoint_passed_to_client(
 async def test_per_account_empty_endpoint_falls_back_to_global(
     _browser_settings, mock_store, monkeypatch
 ):
-    """Selected account with no cdp_port binding (empty endpoint) → global
-    _resolve_cdp_endpoint result is used (backward compat with single-account)."""
+    """Selected account with no cdp_port binding → global endpoint is used."""
     state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
     client = _mock_client("p1")
-    m_cookie = AsyncMock(return_value=("ACC_COOKIE", "ACC_UID"))
-    monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="")  # account has no port binding
     # Make the global resolver return a known value so we can assert the fallback.
@@ -181,15 +174,9 @@ async def test_per_account_empty_endpoint_falls_back_to_global(
 
 
 @pytest.mark.asyncio
-async def test_no_cookie_returns_failed_no_cookie(_browser_settings, mock_store, monkeypatch):
-    """No cookie AND no CDP endpoint → fail fast with no_cookie, no XHSClient built.
-
-    CDP profile absent (endpoint=""), so the new "CDP covers missing cookie"
-    path does NOT apply — true fail, same as before.
-    """
+async def test_missing_cdp_endpoint_returns_failed(_browser_settings, mock_store, monkeypatch):
+    """Selected account without CDP endpoint → fail fast, no XHSClient built."""
     state = _state(publish_options={"dry_run": False, "account_id": "acc_empty"})
-    m_cookie = AsyncMock(return_value=("", ""))
-    monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="")  # no per-account CDP profile
     monkeypatch.setattr(
@@ -201,23 +188,19 @@ async def test_no_cookie_returns_failed_no_cookie(_browser_settings, mock_store,
 
     result = await run_publish(state, store=mock_store)
 
-    m_cookie.assert_awaited_once_with("acc_empty")
-    m_client.assert_not_called()  # must not attempt to publish without a cookie
+    m_client.assert_not_called()
     pr = result["publish_result"]
     assert pr["status"] == "failed"
-    assert pr["error_type"] == "no_cookie"
+    assert pr["error_type"] == "missing_cdp_endpoint"
     rec = pr["recovery"]
     assert isinstance(rec, dict)
     assert rec["action"] == "reconfigure"
 
 
 @pytest.mark.asyncio
-async def test_no_cookie_with_cdp_endpoint_proceeds(_browser_settings, mock_store, monkeypatch):
-    """No cookie BUT CDP endpoint present → proceed (CDP profile has login state,
-    xhs_publisher CDP branch ignores the cookie arg). No no_cookie fail."""
+async def test_cdp_endpoint_proceeds_with_empty_cookie(_browser_settings, mock_store, monkeypatch):
+    """CDP endpoint present → proceed with empty cookie/user_id."""
     state = _state(publish_options={"dry_run": False, "account_id": "acc_cdp"})
-    m_cookie = AsyncMock(return_value=("", ""))  # no cookie
-    monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
     _mock_account_active(monkeypatch)
     _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
     client = _mock_client("p_cdp")
@@ -226,9 +209,9 @@ async def test_no_cookie_with_cdp_endpoint_proceeds(_browser_settings, mock_stor
 
     result = await run_publish(state, store=mock_store)
 
-    m_cookie.assert_awaited_once_with("acc_cdp")
     kwargs = m_client.call_args.kwargs
-    assert kwargs["cookie"] == ""  # empty cookie passed through (CDP ignores it)
+    assert kwargs["cookie"] == ""
+    assert kwargs["user_id"] == ""
     assert kwargs["cdp_endpoint"] == "http://127.0.0.1:9223"
     assert result["publish_result"]["post_id"] == "p_cdp"
 
@@ -237,10 +220,8 @@ async def test_no_cookie_with_cdp_endpoint_proceeds(_browser_settings, mock_stor
 async def test_classifies_auth_error(_browser_settings, mock_store, monkeypatch):
     """publish throws auth error → auth_expired error_type + structured recovery."""
     state = _state(publish_options={"dry_run": False, "account_id": "acc_x"})
-    m_cookie = AsyncMock(return_value=("STALE_COOKIE", "ACC_UID"))
-    monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
     _mock_account_active(monkeypatch)
-    _mock_cdp_endpoint(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
 
     client = MagicMock()
     client.publish_post = AsyncMock(side_effect=RuntimeError("cookie expired, login required"))
@@ -261,10 +242,8 @@ async def test_preserves_publish_service_error(_browser_settings, mock_store, mo
     """publish_post returning a platform error keeps error/recovery in state."""
 
     state = _state(publish_options={"dry_run": False, "account_id": "acc_x"})
-    m_cookie = AsyncMock(return_value=("COOKIE", "ACC_UID"))
-    monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
     _mock_account_active(monkeypatch)
-    _mock_cdp_endpoint(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
 
     client = MagicMock()
     client.publish_post = AsyncMock(
@@ -292,10 +271,8 @@ async def test_never_honors_dry_run(_browser_settings, mock_store, monkeypatch):
     """
     state = _state(publish_options={"dry_run": True, "account_id": "acc_1"})
     client = _mock_client("p_real")
-    m_cookie = AsyncMock(return_value=("ACC_COOKIE", "ACC_UID"))
-    monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
     _mock_account_active(monkeypatch)
-    _mock_cdp_endpoint(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
     _patch_client(monkeypatch, client)
     _mock_history(monkeypatch)
 
@@ -312,10 +289,8 @@ async def test_records_history_on_success_only(_browser_settings, mock_store, mo
     """ContentHistory.record called on success (post_id present), skipped on failure."""
     state = _state(publish_options={"dry_run": False, "account_id": "acc_1"})
     client = _mock_client("p_ok")
-    m_cookie = AsyncMock(return_value=("ACC_COOKIE", "ACC_UID"))
-    monkeypatch.setattr("backend.db.accounts.get_account_cookie", m_cookie)
     _mock_account_active(monkeypatch)
-    _mock_cdp_endpoint(monkeypatch)
+    _mock_cdp_endpoint(monkeypatch, endpoint="http://127.0.0.1:9223")
     _patch_client(monkeypatch, client)
     hist = _mock_history(monkeypatch)
 
