@@ -40,6 +40,18 @@ if [[ "${POSTGRES_URI:-}" == *"@postgres-xhs:"* ]]; then
     export POSTGRES_URI="${POSTGRES_URI/@postgres-xhs:/@localhost:}"
 fi
 
+# Host Chrome needs an X display in headed mode. In service/agent shells DISPLAY
+# is often unset even though an Xvfb socket is already available, so pick one
+# before the launcher starts Chrome.
+if [[ -z "${DISPLAY:-}" && -d /tmp/.X11-unix ]]; then
+    for socket in /tmp/.X11-unix/X99 /tmp/.X11-unix/X97 /tmp/.X11-unix/X*; do
+        if [[ -S "$socket" ]]; then
+            export DISPLAY=":${socket##*X}"
+            break
+        fi
+    done
+fi
+
 cd "$PROJECT_DIR"
 
 # Forward all args (subcommand + flags like --headless) to the python CLI.

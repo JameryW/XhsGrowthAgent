@@ -34,6 +34,8 @@ def _wire_playwright_mock(
     goto_side_effect=None,
     cookies: list[dict] | None = None,
     page_text: str = "",
+    page_url: str = "https://www.xiaohongshu.com/explore",
+    page_title: str = "",
 ) -> tuple[MagicMock, MagicMock, list]:
     """Wire up a controllable playwright mock chain.
 
@@ -42,6 +44,8 @@ def _wire_playwright_mock(
     The test can then invoke the handler with synthetic responses.
     """
     mock_page = MagicMock()
+    mock_page.url = page_url
+    mock_page.title = AsyncMock(return_value=page_title)
     mock_page.goto = AsyncMock(side_effect=goto_side_effect) if goto_side_effect else AsyncMock()
     mock_page.evaluate = AsyncMock(return_value=page_text)
     mock_page.bring_to_front = AsyncMock()
@@ -117,7 +121,7 @@ class TestStart:
         await session.stop()
 
     async def test_start_raises_login_error_when_no_qr_create_response(self, tmp_path):
-        """No qrcode/create response within timeout → LoginError."""
+        """No network response or DOM QR within timeout → LoginError."""
         from backend.services.xhs_login import XhsLoginSession
 
         mock_module, _, _ = _wire_playwright_mock()
@@ -126,11 +130,56 @@ class TestStart:
 
         with (
             patch.dict(sys.modules, {"playwright.async_api": mock_module}),
+            patch("backend.services.xhs_login._ALREADY_LOGIN_CHECK_S", 0.01),
             patch("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.2),
-            pytest.raises(Exception, match="未收到 qrcode/create"),
+            pytest.raises(Exception, match="未找到登录二维码"),
         ):
             await session.start()
         await session.stop()
+
+    async def test_start_returns_rendered_dom_qr_when_create_response_missing(self, tmp_path):
+        """XHS may render img.qrcode-img without exposing qrcode/create to our listener."""
+        from backend.services.xhs_login import XhsLoginSession
+
+        data_url = "data:image/png;base64,qr-image"
+        mock_module, mock_page, _ = _wire_playwright_mock()
+        mock_page.evaluate = AsyncMock(return_value=data_url)
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+
+        with (
+            patch.dict(sys.modules, {"playwright.async_api": mock_module}),
+            patch("backend.services.xhs_login._ALREADY_LOGIN_CHECK_S", 0.01),
+        ):
+            result = await session.start()
+
+        assert result["qr_id"].startswith("dom-")
+        assert result["url"] == data_url
+        assert session.qr_url == data_url
+        await session.stop()
+
+    async def test_start_raises_immediately_on_xhs_security_restriction(self, tmp_path):
+        """XHS safety block page → actionable LoginError, no QR wait loop."""
+        from backend.services.xhs_login import LoginError, XhsLoginSession
+
+        mock_module, mock_page, _ = _wire_playwright_mock(
+            page_url=(
+                "https://www.xiaohongshu.com/website-login/error?"
+                "redirectPath=https://www.xiaohongshu.com/explore"
+                "&error_code=300012"
+                "&error_msg=IP%20at%20risk.%20Switch%20to%20a%20secure%20network%20and%20retry."
+            ),
+            page_title="安全限制",
+        )
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+
+        with (
+            patch.dict(sys.modules, {"playwright.async_api": mock_module}),
+            pytest.raises(LoginError, match="当前网络/IP"),
+        ):
+            await session.start()
+
+        mock_page.close.assert_awaited()
+        assert session._context is None
 
     async def test_start_returns_confirmed_when_profile_already_logged_in(self, tmp_path):
         """Existing profile login state → no QR is needed and no 30s wait."""
@@ -169,8 +218,9 @@ class TestStart:
 
         with (
             patch.dict(sys.modules, {"playwright.async_api": mock_module}),
+            patch("backend.services.xhs_login._ALREADY_LOGIN_CHECK_S", 0.01),
             patch("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.2),
-            pytest.raises(Exception, match="未收到 qrcode/create"),
+            pytest.raises(Exception, match="未找到登录二维码"),
         ):
             await session.start()
         # start() failure path called stop() internally → context/page released.
@@ -228,6 +278,68 @@ class TestStart:
         launch_mock = pw_handle.chromium.launch_persistent_context
         assert launch_mock.await_count == 1
         await session.stop()
+
+    async def test_start_reuses_existing_raw_cdp_session(self, tmp_path):
+        """Raw-CDP sessions are active even though they do not populate _context."""
+        from backend.services.xhs_login import XhsLoginSession
+
+        session = XhsLoginSession(
+            "acc-1",
+            str(tmp_path / "profile"),
+            cdp_endpoint="http://host.containers.internal:9224",
+        )
+        raw_ws = MagicMock()
+        raw_ws.close = AsyncMock()
+        session._raw_ws = raw_ws
+        session._raw_target_id = "target-1"
+        session._raw_session_id = "session-1"
+        session._qr_id = "dom-1"
+        session._qr_url = "data:image/png;base64,abc"
+
+        result = await session.start()
+
+        assert result == {
+            "qr_id": "dom-1",
+            "url": "data:image/png;base64,abc",
+            "account_id": "acc-1",
+        }
+        raw_ws.close.assert_not_awaited()
+        session._raw_ws = None
+
+    async def test_raw_cdp_create_target_ignores_stale_session_id(self, tmp_path):
+        """Target.createTarget is browser-scoped and must not carry an old sessionId."""
+        from backend.services.xhs_login import XhsLoginSession
+
+        session = XhsLoginSession(
+            "acc-1",
+            str(tmp_path / "profile"),
+            cdp_endpoint="http://host.containers.internal:9224",
+        )
+        session._raw_session_id = "stale-session"
+        calls = []
+
+        async def _fake_raw_send(method, params=None, *, session_id=""):
+            calls.append((method, session_id))
+            if method == "Target.createTarget":
+                return {"targetId": "target-1"}
+            if method == "Target.attachToTarget":
+                return {"sessionId": "session-1"}
+            return {}
+
+        session._raw_connect = AsyncMock()
+        session._raw_send = _fake_raw_send
+        session._raw_wait_for_qr = AsyncMock(
+            return_value={"qr_id": "dom-1", "url": "data:image/png;base64,abc"}
+        )
+
+        result = await session._start_raw_cdp()
+
+        assert result["qr_id"] == "dom-1"
+        assert calls[:2] == [
+            ("Target.createTarget", None),
+            ("Target.attachToTarget", None),
+        ]
+        assert session._raw_session_id == "session-1"
 
 
 class TestGetStatus:
@@ -483,6 +595,40 @@ class TestGetStatus:
         assert result["status"] == "waiting"
         assert result["qr_id"] == ""
 
+    async def test_raw_status_reports_scanned_when_page_needs_verification(self, tmp_path):
+        from backend.services.xhs_login import XhsLoginSession
+
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+        session._raw_ws = MagicMock()
+        session._qr_id = "dom-1"
+        session._qr_url = "data:image/png;base64,abc"
+        session._raw_has_strong_cookie = AsyncMock(return_value=False)
+        session._raw_login_page_state = AsyncMock(
+            return_value={"scanned": True, "verification_required": True}
+        )
+
+        result = await session.get_status()
+
+        assert result["status"] == "scanned"
+        assert result["url"] == ""
+        assert result["verification_required"] is True
+        session._raw_ws = None
+
+    async def test_raw_status_disconnect_raises_login_error_and_cleans_up(self, tmp_path):
+        from backend.services.xhs_login import LoginError, XhsLoginSession
+
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+        raw_ws = MagicMock()
+        raw_ws.close = AsyncMock()
+        session._raw_ws = raw_ws
+        session._get_raw_status = AsyncMock(side_effect=RuntimeError("keepalive ping timeout"))
+
+        with pytest.raises(LoginError, match="会话已断开"):
+            await session.get_status()
+
+        raw_ws.close.assert_awaited()
+        assert session._raw_ws is None
+
     async def test_refresh_failure_closes_context_no_zombie(self, tmp_path):
         """Expired refresh that fails → context closed, session not stuck.
 
@@ -715,6 +861,42 @@ class TestInspectProfileLoginStatus:
         assert result["is_logged_in"] is False
         assert result["reason"] == "missing_strong_cookie"
 
+    async def test_container_endpoint_uses_raw_cdp_storage_cookies(self):
+        from backend.services.xhs_login import XhsLoginSession, inspect_profile_login_status
+
+        raw_ws = MagicMock()
+        raw_ws.close = AsyncMock()
+        calls = []
+
+        async def _fake_raw_connect(session):
+            session._raw_ws = raw_ws
+
+        async def _fake_raw_send(session, method, params=None, *, session_id=""):
+            calls.append((method, session_id))
+            return {
+                "cookies": [
+                    {
+                        "name": "id_token",
+                        "value": "token-1",
+                        "domain": ".xiaohongshu.com",
+                    }
+                ]
+            }
+
+        with (
+            patch.object(XhsLoginSession, "_raw_connect", _fake_raw_connect),
+            patch.object(XhsLoginSession, "_raw_send", _fake_raw_send),
+        ):
+            result = await inspect_profile_login_status(
+                "acc-1", "http://host.containers.internal:9224"
+            )
+
+        assert result["status"] == "logged_in"
+        assert result["is_logged_in"] is True
+        assert result["signals"] == ["id_token"]
+        assert calls == [("Storage.getCookies", None)]
+        raw_ws.close.assert_awaited_once()
+
     async def test_unavailable_when_cdp_connection_fails(self):
         from backend.services.xhs_login import inspect_profile_login_status
 
@@ -799,6 +981,37 @@ class TestSubmitVerificationCode:
 
         assert result["submitted"] is False
         assert result["reason"] == "verification_input_not_found"
+
+    async def test_fills_verification_code_in_raw_cdp_session(self, tmp_path):
+        from backend.services.xhs_login import XhsLoginSession
+
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+        session._raw_ws = MagicMock()
+        session._qr_id = "dom-1"
+        session._raw_fill_verification_code = AsyncMock(
+            return_value={
+                "filled": True,
+                "clicked": True,
+                "target_count": 1,
+                "frame_url": "https://www.xiaohongshu.com/explore",
+            }
+        )
+        session._get_raw_status = AsyncMock(
+            return_value={
+                "status": "scanned",
+                "qr_id": "dom-1",
+                "url": "",
+                "account_id": "acc-1",
+            }
+        )
+
+        result = await session.submit_verification_code("123456")
+
+        assert result["submitted"] is True
+        assert result["clicked"] is True
+        assert result["status"] == "scanned"
+        session._raw_fill_verification_code.assert_awaited_once_with("123456")
+        session._raw_ws = None
 
 
 # ── Helpers ──

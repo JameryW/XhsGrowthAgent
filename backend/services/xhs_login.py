@@ -22,11 +22,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import time
+import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import parse_qs, urlparse, urlunparse
 
 # playwright is an optional [browser] extra. Import lazily inside methods so
 # the module is importable (and unit-testable with mocks) without it installed.
@@ -44,6 +47,7 @@ _EXPLORE_URL = "https://www.xiaohongshu.com/explore"
 # 拦截的 XHR 路径片段（match by substring — full URL varies by CDN/gateway）。
 _QR_CREATE_PATH = "/api/sns/web/v1/login/qrcode/create"
 _QR_STATUS_PATH = "/api/sns/web/v1/login/qrcode/status"
+_SECURITY_ERROR_PATH = "/website-login/error"
 _LOGIN_COOKIE_NAMES = {
     "web_session",
     "id_token",
@@ -65,10 +69,12 @@ _CODE_EXPIRED = 3  # 已失效/需刷新
 # XHS qrcode/status 也会返回 code_status=3 表示当前二维码不可继续确认。
 _QR_CONFIRM_TIMEOUT_S = 120.0
 
-# 拿到 qrcode/create 响应后的等待窗口（秒）。超时仍未收到 → 启动失败
-# （可能 headless 被 shield 拦或网络异常）。
-_QR_CREATE_WAIT_S = 30.0
+# 等待二维码就绪的窗口（秒）。优先取 qrcode/create 响应；若 XHS 前端
+# 已渲染二维码但接口响应被 service worker/时序隐藏，则回退读取 DOM 图片。
+# API route 外层有 10s 硬超时，内部等待必须短于它。
+_QR_CREATE_WAIT_S = 5.0
 _ALREADY_LOGIN_CHECK_S = 3.0
+_EXPLORE_GOTO_TIMEOUT_MS = 15000
 
 _VERIFICATION_CODE_FILL_SCRIPT = r"""
 async (code) => {
@@ -179,6 +185,103 @@ async (code) => {
 }
 """
 
+_QR_IMAGE_EXTRACT_SCRIPT = """
+() => {
+    const visible = (img) => {
+        const rect = img.getBoundingClientRect();
+        const style = window.getComputedStyle(img);
+        return rect.width >= 80 && rect.height >= 80
+            && style.display !== 'none'
+            && style.visibility !== 'hidden';
+    };
+    const score = (img) => {
+        const src = String(img.currentSrc || img.src || '');
+        const cls = String(img.className || '').toLowerCase();
+        const alt = String(img.alt || '').toLowerCase();
+        const w = Number(img.naturalWidth || img.width || 0);
+        const h = Number(img.naturalHeight || img.height || 0);
+        const square = w >= 96 && h >= 96 && Math.abs(w - h) <= 12;
+        let value = 0;
+        if (cls.includes('qrcode') || cls.includes('qr')) value += 10;
+        if (alt.includes('qrcode') || alt.includes('二维码')) value += 8;
+        if (src.startsWith('data:image/')) value += 5;
+        if (src.includes('qrcode') || src.includes('qr')) value += 4;
+        if (square) value += 3;
+        if (!visible(img)) value -= 20;
+        return { src, value };
+    };
+    const candidates = Array.from(document.images)
+        .map(score)
+        .filter((item) => item.src && item.value >= 8)
+        .sort((a, b) => b.value - a.value);
+    return candidates[0]?.src || '';
+}
+"""
+
+_RAW_LOGIN_STATE_SCRIPT = """
+() => {
+    const text = String(document.body?.innerText || '');
+    const lower = text.toLowerCase();
+    return {
+        scanned: text.includes('扫码成功') || text.includes('请在手机上确认'),
+        verification_required:
+            text.includes('验证码')
+            || text.includes('校验码')
+            || lower.includes('sms verification')
+            || lower.includes('verification code'),
+        qr_expired: text.includes('二维码已过期'),
+        text: text.slice(0, 500),
+    };
+}
+"""
+
+
+async def _resolve_cdp_connect_endpoint(cdp_endpoint: str) -> str:
+    """Return a Playwright-compatible CDP endpoint.
+
+    Chrome DevTools rejects ``Host: host.containers.internal:<port>`` on
+    ``/json/version``. Playwright cannot override that header when given an
+    HTTP endpoint, so container deployments must pre-fetch the browser websocket
+    URL with a localhost Host header, then rewrite the host back to the reachable
+    container-to-host address.
+    """
+    endpoint = cdp_endpoint.strip()
+    if endpoint.startswith(("ws://", "wss://")):
+        return endpoint
+
+    parsed = urlparse(endpoint)
+    if not parsed.hostname or parsed.port is None:
+        return endpoint
+    if parsed.hostname in {"127.0.0.1", "localhost", "::1"}:
+        return endpoint
+
+    version_url = urlunparse((parsed.scheme or "http", parsed.netloc, "/json/version", "", "", ""))
+    loop = asyncio.get_running_loop()
+
+    def _fetch_ws_url() -> str:
+        req = urllib.request.Request(
+            version_url,
+            headers={"Host": f"127.0.0.1:{parsed.port}"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+        ws_url = str(data.get("webSocketDebuggerUrl") or "")
+        if not ws_url:
+            return endpoint
+        ws = urlparse(ws_url)
+        return urlunparse((ws.scheme or "ws", parsed.netloc, ws.path, "", ws.query, ""))
+
+    try:
+        return await loop.run_in_executor(None, _fetch_ws_url)
+    except Exception as e:
+        logger.debug("CDP websocket endpoint 解析失败，回退原 endpoint: %s", e)
+        return endpoint
+
+
+def _should_try_raw_cdp_endpoint(cdp_endpoint: str) -> bool:
+    parsed = urlparse(cdp_endpoint)
+    return parsed.hostname not in {None, "127.0.0.1", "localhost", "::1"}
+
 
 class LoginError(Exception):
     """扫码登录流程错误（启动失败 / playwright 未装 / 超时等）。"""
@@ -224,6 +327,12 @@ class XhsLoginSession:
         self._started_at: float = 0.0
         # 最近一次 qrcode/create 响应到达时间，用于过期判定。
         self._qr_created_at: float = 0.0
+        # Raw-CDP fallback for container → host Chrome deployments where
+        # Playwright's connect_over_cdp handshake stalls behind the TCP forwarder.
+        self._raw_ws: Any = None
+        self._raw_target_id: str = ""
+        self._raw_session_id: str = ""
+        self._raw_msg_id: int = 0
 
     @property
     def qr_id(self) -> str:
@@ -246,6 +355,18 @@ class XhsLoginSession:
                 "url": "",
                 "account_id": self.account_id,
             }
+
+        # Raw-CDP sessions do not populate _context. Treat them as active
+        # sessions here as well, otherwise repeated start() calls open a new
+        # websocket while reusing the previous target session id.
+        if self._raw_ws is not None and not self._confirmed:
+            if self._qr_id and self._qr_url and not self._is_qr_expired():
+                return {
+                    "qr_id": self._qr_id,
+                    "url": self._qr_url,
+                    "account_id": self.account_id,
+                }
+            await self.stop()
 
         # 已有进行中会话：复用（返回当前 qr_id+url），符合"同一账号 start 复用"约定。
         if self._context is not None and self._qr_id and not self._confirmed:
@@ -278,11 +399,27 @@ class XhsLoginSession:
                 # 真实 Chrome 指纹≠playwright bundled chromium，避 xhs 471 风控。
                 # 登录态写 host Chrome 的 user-data-dir（= account.chrome_profile_path），
                 # 后续 CDP 发布复用同 profile——profile 共享 gap 自然消解。
+                if self._should_try_raw_cdp():
+                    with contextlib.suppress(Exception):
+                        await self._playwright.stop()
+                    self._playwright = None
+                    return await self._start_raw_cdp()
                 try:
+                    connect_endpoint = await _resolve_cdp_connect_endpoint(self.cdp_endpoint)
                     self._browser = await self._playwright.chromium.connect_over_cdp(
-                        self.cdp_endpoint
+                        connect_endpoint
                     )
                 except Exception as e:
+                    if self._should_try_raw_cdp():
+                        logger.warning(
+                            "Playwright CDP 连接失败，尝试 raw CDP fallback account=%s: %s",
+                            self.account_id,
+                            e,
+                        )
+                        with contextlib.suppress(Exception):
+                            await self._playwright.stop()
+                        self._playwright = None
+                        return await self._start_raw_cdp()
                     raise LoginError(
                         f"连接 host Chrome CDP 失败: {self.cdp_endpoint} ({type(e).__name__}: {e})"
                         "——确认 launcher 已启动该账号 Chrome（chrome-profiles.sh start）"
@@ -325,7 +462,7 @@ class XhsLoginSession:
             self._page.on("response", self._on_response)
 
             # 开 explore 页——登录浮层自动触发 qrcode/create。
-            await self._page.goto(_EXPLORE_URL, wait_until="domcontentloaded", timeout=45000)
+            await self._goto_explore()
 
             # If the persistent profile is already logged in, XHS does not show
             # the login layer and therefore will not call qrcode/create. Treat
@@ -342,12 +479,13 @@ class XhsLoginSession:
                     "account_id": self.account_id,
                 }
 
-            # 等 qrcode/create 响应到达（_on_response 填充 self._qr_id）。
-            qr_data = await self._wait_for_qr_create(timeout=_QR_CREATE_WAIT_S)
+            # 等二维码就绪：优先等 qrcode/create 响应；若当前 XHS 前端只把
+            # data:image 二维码渲染到 DOM，也直接返回该图片让前端显示。
+            qr_data = await self._wait_for_qr_ready(timeout=_QR_CREATE_WAIT_S)
             if qr_data is None:
                 raise LoginError(
-                    f"启动扫码登录失败：{_QR_CREATE_WAIT_S:.0f}s 内未收到 qrcode/create 响应"
-                    "（可能被 XHS shield 拦截或网络异常）"
+                    f"启动扫码登录失败：{_QR_CREATE_WAIT_S:.0f}s 内未找到登录二维码"
+                    "（可能被 XHS shield 拦截、页面结构变化或网络异常）"
                 )
         except LoginError:
             # 显式 LoginError（未装 / CDP 连不上 / 超时）：关 context 后原样抛出。
@@ -399,6 +537,18 @@ class XhsLoginSession:
                 "url": "",
                 "account_id": self.account_id,
             }
+
+        if self._raw_ws is not None:
+            try:
+                return await self._get_raw_status()
+            except Exception as e:
+                logger.warning(
+                    "raw CDP 扫码会话已断开 account=%s: %s",
+                    self.account_id,
+                    e,
+                )
+                await self.stop()
+                raise LoginError("扫码登录会话已断开，请刷新二维码后重试。") from e
 
         if self._context is None:
             return {
@@ -480,6 +630,8 @@ class XhsLoginSession:
         code = code.strip()
         if not code.isdigit() or not (4 <= len(code) <= 8):
             raise LoginError("验证码必须是 4-8 位数字")
+        if self._raw_ws is not None:
+            return await self._submit_raw_verification_code(code)
         if self._page is None:
             raise LoginError("没有可填写验证码的登录页面，请重新启动扫码登录")
 
@@ -527,6 +679,19 @@ class XhsLoginSession:
         不 close host Chrome 的 context（launcher 管 host Chrome 生命周期）。
         launch_persistent_context 模式：close context 即杀 Chrome 进程（原行为）。
         """
+        if self._raw_ws is not None:
+            with contextlib.suppress(Exception):
+                if self._raw_target_id:
+                    await self._raw_send(
+                        "Target.closeTarget",
+                        {"targetId": self._raw_target_id},
+                        session_id=None,
+                    )
+            with contextlib.suppress(Exception):
+                await self._raw_ws.close()
+            self._raw_ws = None
+            self._raw_target_id = ""
+            self._raw_session_id = ""
         if self._page is not None:
             with contextlib.suppress(Exception):
                 await self._page.close()
@@ -679,11 +844,11 @@ class XhsLoginSession:
 
         logger.info("刷新二维码: account=%s", self.account_id)
         try:
-            await self._page.goto(_EXPLORE_URL, wait_until="domcontentloaded", timeout=45000)
+            await self._goto_explore()
 
-            qr_data = await self._wait_for_qr_create(timeout=_QR_CREATE_WAIT_S)
+            qr_data = await self._wait_for_qr_ready(timeout=_QR_CREATE_WAIT_S)
             if qr_data is None:
-                raise LoginError("刷新二维码失败：未收到 qrcode/create 响应")
+                raise LoginError("刷新二维码失败：未找到登录二维码")
         except LoginError:
             # 显式 LoginError：关 context 后原样抛出（保留具体错误信息）。
             await self.stop()
@@ -710,6 +875,310 @@ class XhsLoginSession:
             if self._qr_id and self._qr_url:
                 return {"qr_id": self._qr_id, "url": self._qr_url}
             await asyncio.sleep(0.3)
+        return None
+
+    async def _submit_raw_verification_code(self, code: str) -> dict[str, Any]:
+        fill_result = await self._raw_fill_verification_code(code)
+        status = await self.get_status()
+        if not isinstance(fill_result, dict) or not fill_result.get("filled"):
+            return {
+                **status,
+                "submitted": False,
+                "reason": "verification_input_not_found",
+            }
+
+        return {
+            **status,
+            "submitted": True,
+            "reason": "verification_code_filled",
+            "clicked": bool(fill_result.get("clicked")),
+            "target_count": fill_result.get("target_count"),
+            "frame_url": fill_result.get("frame_url"),
+        }
+
+    async def _raw_fill_verification_code(self, code: str) -> dict[str, Any] | None:
+        expression = f"({_VERIFICATION_CODE_FILL_SCRIPT.strip()})({json.dumps(code)})"
+        result = await self._raw_eval(expression)
+        return result if isinstance(result, dict) else None
+
+    async def _wait_for_qr_ready(self, timeout: float) -> dict[str, Any] | None:
+        """Wait until a QR is available from network response or rendered DOM."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self._qr_id and self._qr_url:
+                return {"qr_id": self._qr_id, "url": self._qr_url}
+
+            qr_image = await self._extract_qr_image_from_dom()
+            if qr_image:
+                self._qr_id = self._qr_id or f"dom-{int(time.time() * 1000)}"
+                self._qr_url = qr_image
+                self._qr_created_at = time.time()
+                logger.info("从 XHS 页面 DOM 提取到登录二维码: account=%s", self.account_id)
+                return {"qr_id": self._qr_id, "url": self._qr_url}
+
+            await asyncio.sleep(0.3)
+        return None
+
+    async def _extract_qr_image_from_dom(self) -> str:
+        """Return the rendered login QR image data URL when XHS skips create capture."""
+        if self._page is None:
+            return ""
+        try:
+            result = await self._page.evaluate(_QR_IMAGE_EXTRACT_SCRIPT)
+        except Exception as e:
+            logger.debug("读取 XHS DOM 二维码失败: %s", e)
+            return ""
+        if not isinstance(result, str):
+            return ""
+        result = result.strip()
+        if not result:
+            return ""
+        if result.startswith("data:image/") or "qrcode" in result.lower():
+            return result
+        return ""
+
+    def _should_try_raw_cdp(self) -> bool:
+        return _should_try_raw_cdp_endpoint(self.cdp_endpoint)
+
+    async def _start_raw_cdp(self) -> dict[str, Any]:
+        """Start QR login through a minimal raw CDP client.
+
+        This avoids Playwright's CDP browser bootstrap, which can stall when a
+        container reaches host Chrome through a TCP forwarder even though raw CDP
+        messages work.
+        """
+        if self._raw_ws is not None:
+            await self.stop()
+        self._raw_target_id = ""
+        self._raw_session_id = ""
+        await self._raw_connect()
+        target = await self._raw_send(
+            "Target.createTarget", {"url": "about:blank"}, session_id=None
+        )
+        self._raw_target_id = str(target.get("targetId") or "")
+        attached = await self._raw_send(
+            "Target.attachToTarget",
+            {"targetId": self._raw_target_id, "flatten": True},
+            session_id=None,
+        )
+        self._raw_session_id = str(attached.get("sessionId") or "")
+        await self._raw_send("Page.enable")
+        await self._raw_send("Runtime.enable")
+        await self._raw_send("Network.enable")
+        await self._raw_send("Page.navigate", {"url": _EXPLORE_URL})
+
+        qr_data = await self._raw_wait_for_qr(timeout=_QR_CREATE_WAIT_S)
+        if qr_data is None:
+            await self.stop()
+            raise LoginError(
+                f"启动扫码登录失败：{_QR_CREATE_WAIT_S:.0f}s 内未找到登录二维码"
+                "（可能被 XHS shield 拦截、页面结构变化或网络异常）"
+            )
+        return {
+            "qr_id": qr_data["qr_id"],
+            "url": qr_data["url"],
+            "account_id": self.account_id,
+        }
+
+    async def _raw_connect(self) -> None:
+        import websockets
+
+        endpoint = await _resolve_cdp_connect_endpoint(self.cdp_endpoint)
+        parsed = urlparse(self.cdp_endpoint)
+        headers = {"Host": f"127.0.0.1:{parsed.port}"} if parsed.port else {}
+        try:
+            self._raw_ws = await websockets.connect(
+                endpoint,
+                additional_headers=headers,
+                open_timeout=5,
+            )
+        except TypeError:
+            self._raw_ws = await websockets.connect(
+                endpoint,
+                extra_headers=headers,
+                open_timeout=5,
+            )
+
+    async def _raw_send(
+        self, method: str, params: dict[str, Any] | None = None, *, session_id: str | None = ""
+    ) -> dict[str, Any]:
+        if self._raw_ws is None:
+            raise LoginError("raw CDP 未连接")
+        self._raw_msg_id += 1
+        msg_id = self._raw_msg_id
+        payload: dict[str, Any] = {"id": msg_id, "method": method}
+        if params:
+            payload["params"] = params
+        sid = self._raw_session_id if session_id == "" else session_id
+        if sid:
+            payload["sessionId"] = sid
+        await self._raw_ws.send(json.dumps(payload))
+        while True:
+            raw = await asyncio.wait_for(self._raw_ws.recv(), timeout=10)
+            message = json.loads(raw)
+            if message.get("id") != msg_id:
+                continue
+            if "error" in message:
+                raise LoginError(f"raw CDP {method} 失败: {message['error']}")
+            result = message.get("result")
+            return result if isinstance(result, dict) else {}
+
+    async def _raw_eval(self, expression: str) -> Any:
+        source = expression.strip()
+        if source.startswith("() =>") or source.startswith("async () =>"):
+            source = f"({source})()"
+        result = await self._raw_send(
+            "Runtime.evaluate",
+            {
+                "expression": source,
+                "returnByValue": True,
+                "awaitPromise": True,
+            },
+        )
+        remote = result.get("result") if isinstance(result, dict) else None
+        if isinstance(remote, dict):
+            return remote.get("value")
+        return None
+
+    async def _raw_wait_for_qr(self, timeout: float) -> dict[str, Any] | None:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            result = await self._raw_eval(_QR_IMAGE_EXTRACT_SCRIPT)
+            if isinstance(result, str) and result.startswith("data:image/"):
+                self._qr_id = self._qr_id or f"dom-{int(time.time() * 1000)}"
+                self._qr_url = result
+                self._qr_created_at = time.time()
+                return {"qr_id": self._qr_id, "url": self._qr_url}
+            await asyncio.sleep(0.3)
+        return None
+
+    async def _get_raw_status(self) -> dict[str, Any]:
+        if self._is_qr_expired():
+            await self._raw_send("Page.navigate", {"url": _EXPLORE_URL})
+            refreshed = await self._raw_wait_for_qr(timeout=_QR_CREATE_WAIT_S)
+            if refreshed:
+                return {
+                    "status": "expired",
+                    "qr_id": refreshed["qr_id"],
+                    "url": refreshed["url"],
+                    "account_id": self.account_id,
+                }
+
+        if await self._raw_has_strong_cookie():
+            self._confirmed = True
+            self._code_status = _CODE_CONFIRMED
+            await self.stop()
+            return {
+                "status": "confirmed",
+                "qr_id": self._qr_id,
+                "url": "",
+                "account_id": self.account_id,
+            }
+
+        page_state = await self._raw_login_page_state()
+        if page_state.get("verification_required") or page_state.get("scanned"):
+            self._code_status = _CODE_SCANNED
+            return {
+                "status": "scanned",
+                "qr_id": self._qr_id,
+                "url": "",
+                "account_id": self.account_id,
+                "verification_required": bool(page_state.get("verification_required")),
+            }
+        if page_state.get("qr_expired"):
+            return {
+                "status": "expired",
+                "qr_id": self._qr_id,
+                "url": self._qr_url,
+                "account_id": self.account_id,
+            }
+        return {
+            "status": "waiting",
+            "qr_id": self._qr_id,
+            "url": self._qr_url,
+            "account_id": self.account_id,
+        }
+
+    async def _raw_login_page_state(self) -> dict[str, Any]:
+        try:
+            result = await self._raw_eval(_RAW_LOGIN_STATE_SCRIPT)
+        except Exception as e:
+            logger.debug("raw CDP 读取扫码页面状态失败: %s", e)
+            return {}
+        return result if isinstance(result, dict) else {}
+
+    async def _raw_has_strong_cookie(self) -> bool:
+        try:
+            result = await self._raw_send("Network.getCookies", {"urls": _LOGIN_STATUS_URLS})
+        except Exception as e:
+            logger.debug("raw CDP 读取 cookie 失败: %s", e)
+            return False
+        cookies = result.get("cookies") if isinstance(result, dict) else None
+        if not isinstance(cookies, list):
+            return False
+        names = {
+            str(cookie.get("name") or "")
+            for cookie in cookies
+            if isinstance(cookie, dict) and bool(cookie.get("value"))
+        }
+        return bool(names & _STRONG_LOGIN_COOKIE_NAMES)
+
+    async def _goto_explore(self) -> None:
+        """Navigate to XHS explore without blocking on safety pages forever."""
+        if self._page is None:
+            raise LoginError("无法打开小红书登录页：页面未初始化")
+        try:
+            # `commit` returns as soon as the main document response starts.
+            # XHS safety pages can leave domcontentloaded pending while the
+            # visible tab already shows the block page, so waiting for DOMContentLoaded
+            # makes the UI spin even though the outcome is known.
+            await self._page.goto(
+                _EXPLORE_URL,
+                wait_until="commit",
+                timeout=_EXPLORE_GOTO_TIMEOUT_MS,
+            )
+        except Exception as e:
+            security_error = await self._detect_security_restriction()
+            if security_error:
+                raise LoginError(security_error) from e
+            raise
+
+        security_error = await self._detect_security_restriction()
+        if security_error:
+            raise LoginError(security_error)
+
+    async def _detect_security_restriction(self) -> str | None:
+        """Return an actionable error when XHS redirects to a safety block page."""
+        if self._page is None:
+            return None
+
+        current_url = str(getattr(self._page, "url", "") or "")
+        parsed = urlparse(current_url)
+        if _SECURITY_ERROR_PATH in parsed.path:
+            query = parse_qs(parsed.query)
+            error_code = (query.get("error_code") or [""])[0]
+            error_msg = (query.get("error_msg") or query.get("verifyMsg") or [""])[0]
+            if error_code == "300012" or "IP at risk" in error_msg:
+                return (
+                    "小红书安全限制：当前网络/IP 被判定存在风险，无法生成登录二维码。"
+                    "请切换安全网络或稍后重试。"
+                )
+            detail = f"error_code={error_code}" if error_code else "未知错误码"
+            if error_msg:
+                detail = f"{detail}, {error_msg}"
+            return (
+                f"小红书安全限制：无法生成登录二维码（{detail}）。请在浏览器中完成安全校验后重试。"
+            )
+
+        try:
+            title = await self._page.title()
+        except Exception:
+            title = ""
+        if "安全限制" in str(title):
+            return (
+                "小红书安全限制：当前浏览器页面被安全校验拦截，无法生成登录二维码。"
+                "请在浏览器中完成安全校验或切换网络后重试。"
+            )
         return None
 
     async def _on_response(self, response: Any) -> None:
@@ -850,6 +1319,54 @@ async def stop_all_sessions() -> None:
             await session.stop()
 
 
+async def _inspect_profile_login_status_raw(account_id: str, cdp_endpoint: str) -> dict[str, Any]:
+    """Read durable profile login state through raw browser-level CDP."""
+    session = XhsLoginSession(account_id=account_id, profile_path="", cdp_endpoint=cdp_endpoint)
+    try:
+        await session._raw_connect()
+        result = await session._raw_send("Storage.getCookies", session_id=None)
+        cookies = result.get("cookies") if isinstance(result, dict) else None
+        if not isinstance(cookies, list):
+            return {
+                "account_id": account_id,
+                "status": "unknown",
+                "is_logged_in": False,
+                "reason": "cookies_unavailable",
+            }
+
+        cookie_names = {
+            str(cookie.get("name") or "")
+            for cookie in cookies
+            if isinstance(cookie, dict)
+            and bool(cookie.get("value"))
+            and "xiaohongshu.com" in str(cookie.get("domain") or "")
+        }
+        signals = sorted(cookie_names & _STRONG_LOGIN_COOKIE_NAMES)
+        is_logged_in = bool(signals)
+        return {
+            "account_id": account_id,
+            "status": "logged_in" if is_logged_in else "logged_out",
+            "is_logged_in": is_logged_in,
+            "reason": "strong_cookie" if is_logged_in else "missing_strong_cookie",
+            "signals": signals,
+        }
+    except Exception as e:
+        logger.warning("raw CDP 检查小红书登录状态失败 account=%s: %s", account_id, e)
+        reason = "cdp_port_down" if "ECONNREFUSED" in str(e) else "cdp_unreachable"
+        return {
+            "account_id": account_id,
+            "status": "unavailable",
+            "is_logged_in": False,
+            "reason": reason,
+            "message": str(e),
+        }
+    finally:
+        if session._raw_ws is not None:
+            with contextlib.suppress(Exception):
+                await session._raw_ws.close()
+            session._raw_ws = None
+
+
 async def inspect_profile_login_status(account_id: str, cdp_endpoint: str) -> dict[str, Any]:
     """Return the durable login state for an account's Chrome profile.
 
@@ -866,6 +1383,9 @@ async def inspect_profile_login_status(account_id: str, cdp_endpoint: str) -> di
             "reason": "cdp_unavailable",
         }
 
+    if _should_try_raw_cdp_endpoint(cdp_endpoint):
+        return await _inspect_profile_login_status_raw(account_id, cdp_endpoint)
+
     try:
         from playwright.async_api import async_playwright
     except ImportError as e:
@@ -880,7 +1400,8 @@ async def inspect_profile_login_status(account_id: str, cdp_endpoint: str) -> di
     playwright = await async_playwright().start()
     try:
         try:
-            browser = await playwright.chromium.connect_over_cdp(cdp_endpoint, timeout=5000)
+            connect_endpoint = await _resolve_cdp_connect_endpoint(cdp_endpoint)
+            browser = await playwright.chromium.connect_over_cdp(connect_endpoint, timeout=5000)
         except Exception as e:
             logger.warning("连接小红书登录状态 CDP 失败 account=%s: %s", account_id, e)
             reason = "cdp_port_down" if "ECONNREFUSED" in str(e) else "cdp_unreachable"

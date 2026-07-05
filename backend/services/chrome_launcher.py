@@ -126,7 +126,11 @@ async def probe_port(port: int, host: str = "127.0.0.1", timeout: float = 1.0) -
 
     def _fetch() -> bool:
         try:
-            with urllib.request.urlopen(url, timeout=timeout) as resp:
+            headers = {}
+            if host not in {"127.0.0.1", "localhost", "::1"}:
+                headers["Host"] = f"127.0.0.1:{port}"
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 if resp.status != 200:
                     return False
                 data = json.loads(resp.read().decode("utf-8", errors="replace"))
