@@ -262,10 +262,25 @@ class BloggerScoutAgent(BaseAgent):
 
         parts = []
         if trend_data.get("trending_keywords"):
-            parts.append(f"热门关键词: {', '.join(trend_data['trending_keywords'][:5])}")
+            kws = trend_data["trending_keywords"][:5]
+            # ponytail: 元素可能是 dict（trending tool 返回 {topic,...}）或 str。
+            kw_strs = [
+                k if isinstance(k, str) else str(k.get("topic") or k.get("keyword") or "")
+                for k in kws
+            ]
+            kw_strs = [k for k in kw_strs if k]
+            if kw_strs:
+                parts.append(f"热门关键词: {', '.join(kw_strs)}")
         if trend_data.get("hot_topics"):
             topics = trend_data["hot_topics"][:3]
-            parts.append(f"热门话题: {', '.join(topics)}")
+            # ponytail: 元素可能是 dict（LLM/topics tool），取 title/topic。
+            topic_strs = [
+                t if isinstance(t, str) else str(t.get("title") or t.get("topic") or "")
+                for t in topics
+            ]
+            topic_strs = [t for t in topic_strs if t]
+            if topic_strs:
+                parts.append(f"热门话题: {', '.join(topic_strs)}")
         if trend_data.get("trending_notes"):
             notes = trend_data["trending_notes"][:2]
             titles = [n.get("title", "") for n in notes if n.get("title")]
