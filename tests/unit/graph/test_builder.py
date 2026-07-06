@@ -79,13 +79,14 @@ class TestCompileGraphDev:
 
     @pytest.mark.asyncio
     async def test_compile_graph_dev_uses_interrupt_before(self):
-        """Dev graph uses interrupt_before for review, choice, and draft gates.
+        """Dev graph uses interrupt_before for choice and draft gates.
 
-        review_gate, choice_gate, and draft_gate all require human confirmation
-        before proceeding, so they are listed in interrupt_before.
+        review_gate now uses dynamic interrupt() (like ripple_gate) so its
+        low-risk auto-pass path runs inside the node; only choice_gate and
+        draft_gate remain in interrupt_before.
         """
         async with dev_graph() as graph:
-            assert "review_gate" in graph.interrupt_before_nodes
+            assert "review_gate" not in graph.interrupt_before_nodes
             assert "choice_gate" in graph.interrupt_before_nodes
             assert "draft_gate" in graph.interrupt_before_nodes
 
@@ -186,10 +187,10 @@ class TestCompileGraphProd:
         assert calls["store_index"] is not None  # prod store must receive index
         assert calls["compile_kwargs"]["checkpointer"] is checkpointer
         assert calls["compile_kwargs"]["store"] is store_context.store
-        # ripple_gate and blogger_gate removed from interrupt_before — they use dynamic interrupt()
+        # ripple_gate/blogger_gate/review_gate use dynamic interrupt() — not in interrupt_before
         assert "ripple_gate" not in calls["compile_kwargs"]["interrupt_before"]
         assert "blogger_gate" not in calls["compile_kwargs"]["interrupt_before"]
+        assert "review_gate" not in calls["compile_kwargs"]["interrupt_before"]
         # Static gates still in interrupt_before
-        assert "review_gate" in calls["compile_kwargs"]["interrupt_before"]
         assert "choice_gate" in calls["compile_kwargs"]["interrupt_before"]
         assert "draft_gate" in calls["compile_kwargs"]["interrupt_before"]

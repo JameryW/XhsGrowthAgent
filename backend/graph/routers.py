@@ -335,6 +335,12 @@ def visual_designer_router(
     state: XHSGrowthState,
 ) -> Literal["review_gate", "__end__"]:
     """Route after visual_designer — both modes go to review_gate.
+
+    review_gate uses dynamic interrupt() (like ripple_gate): low-risk drafts
+    with auto_approve_low_risk enabled auto-pass inside the node (writing the
+    auto_low_risk audit trace); all others interrupt for human review. The
+    router never bypasses review_gate, so the audit trace is always written.
+
     Returns __end__ only for terminal states (paused/cancelled/error).
     """
     if _check_terminal(state):

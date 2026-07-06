@@ -41,6 +41,22 @@ def _is_at_ripple_gate(state: StateSnapshot) -> bool:
     return False
 
 
+def _is_at_review_gate(state: StateSnapshot) -> bool:
+    """Check if workflow is paused at review_gate.
+
+    review_gate now uses dynamic interrupt() (like ripple_gate), so the pause
+    shows up as snapshot.interrupts with gate='review'. The next_nodes check is
+    kept as a fallback for any interrupt_before legacy path.
+    """
+    if "review_gate" in (state.next or []):
+        return True
+    if state.interrupts:
+        for intr in state.interrupts:
+            if isinstance(intr.value, dict) and intr.value.get("gate") == "review":
+                return True
+    return False
+
+
 class PublishOptions(BaseModel):
     dry_run: bool = False
     auto_publish: bool = False
@@ -83,8 +99,8 @@ async def get_pending_review(thread_id: str, request: Request) -> ApiResponse[An
 
     state = await graph.aget_state(config)
 
-    # 检查是否在审核门等待
-    if "review_gate" in state.next:
+    # 检查是否在审核门等待（动态 interrupt 或 interrupt_before 兜底）
+    if _is_at_review_gate(state):
         values = state.values
         return success(
             data={
@@ -109,17 +125,20 @@ async def submit_review(
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
-    # Verify workflow is awaiting review before resuming
+    # Verify workflow is awaiting review before resuming (dynamic interrupt or
+    # interrupt_before fallback).
     state = await graph.aget_state(config)
-    if "review_gate" not in state.next:
+    if not _is_at_review_gate(state):
         current_phase = state.values.get("phase", "unknown")
         raise ReviewNotPendingError(thread_id=thread_id, current_phase=current_phase)
 
     values = state.values or {}
 
-    # Build state updates: always write human_feedback (review_outcome router
-    # reads human_feedback.decision to route after this node runs)
-    updates: dict[str, Any] = {"human_feedback": decision.model_dump()}
+    # Side updates written via aupdate_state before resuming. human_feedback is
+    # NOT written here — review_gate_node reads the decision from the
+    # Command(resume=...) value and writes human_feedback itself (mirrors
+    # ripple_gate). review_outcome routes on human_feedback in state.
+    updates: dict[str, Any] = {}
 
     # On 'needs_revision', save current content as a version before resuming
     if decision.decision == "needs_revision":
@@ -140,16 +159,17 @@ async def submit_review(
 
     updates["performance_log"] = [record_human_wait(values, "review_gate")]
 
-    # Write decision + optional version/publish_options to state
-    await graph.aupdate_state(config, updates, as_node=_runner._get_as_node(state))
+    # Write side updates (versions / publish_options / perf log) to state.
+    if updates:
+        await graph.aupdate_state(config, updates, as_node=_runner._get_as_node(state))
 
-    # Advance graph past interrupt_before via ainvoke(None).
-    # Command(resume=...) only works for dynamic interrupt(), not interrupt_before.
+    # Resume the dynamic interrupt() inside review_gate_node with the decision.
+    # The node reads this value, writes human_feedback, and sets phase.
     result = await _runner._run_graph_and_persist(
         thread_id,
         graph,
         config,
-        None,
+        Command(resume=decision.model_dump()),
         source="review",
     )
 
@@ -332,8 +352,8 @@ async def update_copy_content(
 
     state = await graph.aget_state(config)
 
-    # 校验 awaiting_review：review_gate 必须在 next
-    if "review_gate" not in (state.next or []):
+    # 校验 awaiting_review：review_gate 暂停中（动态 interrupt 或 next 兜底）
+    if not _is_at_review_gate(state):
         current_phase = (state.values or {}).get("phase", "unknown")
         return success(
             data={

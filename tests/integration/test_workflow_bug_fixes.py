@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -391,15 +391,17 @@ class TestReviewSelectUpdates:
             "error": None,
         }
 
-        # Simulate review submit: write human_feedback to state, then ainvoke(None)
+        # Simulate review submit: review_gate uses dynamic interrupt(), so
+        # submit_review resumes via Command(resume=decision). The node reads the
+        # decision from the resume value and writes human_feedback to state.
         decision = {
             "decision": "approved",
             "comments": "Looks good!",
             "revisions": [],
         }
 
-        # Write human_feedback to state (as submit_review does via aupdate_state)
-        await mock_graph.aupdate_state(config, {"human_feedback": decision})
+        # Side updates (publish_options etc.) still go via aupdate_state.
+        await mock_graph.aupdate_state(config, {"publish_options": {"dry_run": True}})
 
         # Mock the graph invoke to return publishing phase
         mock_graph.ainvoke.return_value = {
@@ -418,9 +420,8 @@ class TestReviewSelectUpdates:
         )
         mock_graph.aget_state.return_value = publishing_snapshot
 
-        # Simulate the _run_graph_and_persist behavior
-        # (submit_review now uses ainvoke(None) for interrupt_before gates)
-        result = await mock_graph.ainvoke(None, config)
+        # Simulate the _run_graph_and_persist behavior (Command(resume=decision))
+        result = await mock_graph.ainvoke(Command(resume=decision), config)
         snapshot = await mock_graph.aget_state(config)
         derive_status(snapshot)  # Verify derivation works
 
@@ -1468,46 +1469,79 @@ class TestDraftGateBehavior:
 
 
 class TestGateInterruptFix:
-    """Tests for the gate double-interrupt fix (方案 B).
+    """Tests for gate interrupt design.
 
-    Validates that:
-    - Gate nodes (review_gate, choice_gate, draft_gate) do NOT call interrupt()
-    - Submit endpoints use ainvoke(None) instead of Command(resume=value)
-    - Decisions are passed via aupdate_state, not Command(resume=...)
+    review_gate uses dynamic interrupt() (like ripple_gate) so its low-risk
+    auto-pass path runs inside the node; choice_gate and draft_gate still use
+    interrupt_before and do NOT call interrupt(). Submit endpoints for review
+    resume via Command(resume=...); choice/draft still use ainvoke(None).
     """
 
     @pytest.mark.asyncio
-    async def test_review_gate_node_no_interrupt(self):
-        """review_gate_node returns REVIEWING phase without calling interrupt()."""
-        from backend.agents.nodes.review_gate import review_gate_node
+    async def test_review_gate_node_calls_interrupt_when_not_auto_pass(self):
+        """review_gate_node calls interrupt() on the non-auto-pass path."""
+        from backend.agents.nodes import review_gate as rg
 
-        state = {
-            "phase": WorkflowPhase.REVIEWING,
-            "session_id": "test_session",
-            "human_feedback": {"decision": "approved"},
-        }
+        called = {"v": False}
 
-        result = await review_gate_node(state, store=MagicMock())
+        def _fake_interrupt(payload: dict) -> dict:
+            called["v"] = True
+            assert payload["gate"] == "review"
+            return {"decision": "approved"}
 
-        assert result.get("phase") == WorkflowPhase.REVIEWING
-        assert result.get("current_agent") == "review_gate"
-        # human_feedback is NOT in result — it's already in state via aupdate_state
-        assert "human_feedback" not in result
+        with patch.object(rg, "interrupt", _fake_interrupt):
+            result = await rg.review_gate_node(
+                {
+                    "phase": WorkflowPhase.REVIEWING,
+                    "session_id": "test_session",
+                    "copy_content": {"selected_title": "好标题", "body_text": "正文" * 20},
+                    "visual_plan": {"image_paths": ["/tmp/x.jpg"]},
+                },
+                store=MagicMock(),
+            )
+        assert called["v"] is True
+        # On resume with approved → PUBLISHING + human_feedback written by node
+        assert result["phase"] == WorkflowPhase.PUBLISHING
+        assert result["human_feedback"]["decision"] == "approved"
 
     @pytest.mark.asyncio
-    async def test_review_gate_node_no_interrupt_import(self):
-        """review_gate module does not import or call interrupt()."""
+    async def test_review_gate_node_auto_pass_skips_interrupt(self, monkeypatch):
+        """review_gate_node skips interrupt() on the low-risk auto-pass path."""
+        from backend.agents.nodes import review_gate as rg
+
+        monkeypatch.setenv("AUTO_APPROVE_LOW_RISK", "true")
+
+        def _no_interrupt(_: dict) -> dict:
+            raise AssertionError("interrupt() must not be called on auto-pass path")
+
+        with patch.object(rg, "interrupt", _no_interrupt):
+            result = await rg.review_gate_node(
+                {
+                    "phase": WorkflowPhase.REVIEWING,
+                    "session_id": "test_session",
+                    "copy_content": {
+                        "selected_title": "夏日清爽穿搭分享",
+                        "body_text": "今天分享一套夏日清爽穿搭，简约又好看。" * 2,
+                    },
+                    "visual_plan": {"image_paths": ["/tmp/x.jpg"]},
+                },
+                store=MagicMock(),
+            )
+        assert result["phase"] == WorkflowPhase.PUBLISHING
+        assert result["human_feedback"]["source"] == "auto_low_risk"
+
+    @pytest.mark.asyncio
+    async def test_review_gate_node_uses_dynamic_interrupt(self):
+        """review_gate module imports and calls interrupt() (dynamic, like ripple_gate)."""
         import inspect
 
         from backend.agents.nodes import review_gate as review_gate_module
 
         source = inspect.getsource(review_gate_module)
-        # interrupt() function should not be called
-        assert "interrupt(" not in source
-        # interrupt should not be imported from langgraph.types
-        for line in source.split("\n"):
-            if "import" in line and "langgraph" in line:
-                assert "interrupt" not in line
+        # interrupt() IS called (dynamic interrupt, like ripple_gate)
+        assert "interrupt(" in source
+        # interrupt is imported from langgraph.types
+        assert "from langgraph.types import interrupt" in source
 
     @pytest.mark.asyncio
     async def test_choice_gate_node_no_interrupt_import(self):
@@ -1535,8 +1569,8 @@ class TestGateInterruptFix:
             if "import" in line and "langgraph" in line:
                 assert "interrupt" not in line
 
-    def test_submit_review_uses_ainvoke_none(self, client, mock_graph):
-        """submit_review calls ainvoke(None), not Command(resume=...)."""
+    def test_submit_review_uses_command_resume(self, client, mock_graph):
+        """submit_review resumes the dynamic interrupt via Command(resume=...)."""
         thread_id = "xhs_test_gate_fix_review_001"
 
         mock_state = MagicMock()
@@ -1557,14 +1591,22 @@ class TestGateInterruptFix:
         )
 
         assert response.status_code == 200
-        # Verify ainvoke was called with None (not Command)
+        # review_gate uses dynamic interrupt() — resume via Command(resume=decision)
         assert mock_graph.ainvoke.called
         call_args = mock_graph.ainvoke.call_args
         input_data = call_args[0][0] if call_args[0] else call_args[1].get("input_data")
-        assert input_data is None
+        assert isinstance(input_data, Command)
+        resume_value = input_data.resume
+        assert isinstance(resume_value, dict)
+        assert resume_value.get("decision") == "approved"
 
-    def test_submit_review_writes_human_feedback(self, client, mock_graph):
-        """submit_review writes human_feedback to state via aupdate_state."""
+    def test_submit_review_passes_decision_via_resume(self, client, mock_graph):
+        """submit_review passes the decision to review_gate_node via Command resume.
+
+        human_feedback is now written by review_gate_node (from the resume value),
+        not by submit_review — so submit_review only writes side data (publish_options
+        for approved) and passes the decision as the resume payload.
+        """
         thread_id = "xhs_test_gate_fix_review_hf_001"
 
         mock_state = MagicMock()
@@ -1585,17 +1627,16 @@ class TestGateInterruptFix:
         )
 
         assert response.status_code == 200
-        # Verify aupdate_state was called with human_feedback containing decision
+        # human_feedback is NOT written by submit_review (node writes it on resume)
         aupdate_calls = mock_graph.aupdate_state.call_args_list
-        # Find the call that contains human_feedback
-        hf_update = None
         for call in aupdate_calls:
             updates = call[0][1] if len(call[0]) > 1 else {}
-            if "human_feedback" in updates:
-                hf_update = updates["human_feedback"]
-                break
-        assert hf_update is not None, "human_feedback not written to state"
-        assert hf_update.get("decision") == "approved"
+            assert "human_feedback" not in updates
+        # The decision reaches the graph via Command(resume=...) resume value
+        call_args = mock_graph.ainvoke.call_args
+        input_data = call_args[0][0] if call_args[0] else call_args[1].get("input_data")
+        assert isinstance(input_data, Command)
+        assert input_data.resume.get("decision") == "approved"
 
     def test_select_version_uses_ainvoke_none(self, client, mock_graph):
         """select_version calls ainvoke(None), not Command(resume=...)."""
