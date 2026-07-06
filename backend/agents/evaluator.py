@@ -1,7 +1,8 @@
 """EvaluatorAgent — 创作质量评估器 (基于 RQGM agent-as-a-judge 面板).
 
 论文 arxiv 2606.26294 (Red Queen Gödel Machine) 核心方法：
-- agent-as-a-judge 多评审面板（6 维：文案/视觉/合规/传播/受众 + 对抗偏倚检测）
+- agent-as-a-judge 多评审面板（9 维：文案/视觉/合规/传播/受众/AI味儿/图片质量/
+  商业味儿 + 对抗偏倚检测）
 - 对抗偏倚检测维度校准面板是否对 AI 生成内容过度宽容（论文 1.91x 纠偏）
 - verifiable metric + judge signal 互补：LLM 给原始评分，代码用确定规则重算
   overall_score/decision，保证判定一致性。
@@ -31,11 +32,14 @@ logger = logging.getLogger("xhs_growth.agents.evaluator")
 
 # 维度权重（compliance 由 is_blocking 单独兜底，不参与加权平均的拉高）
 _DIMENSION_WEIGHTS: dict[str, float] = {
-    "copywriting": 0.25,
-    "visual": 0.20,
-    "compliance": 0.20,
+    "copywriting": 0.20,
+    "visual": 0.15,
+    "compliance": 0.15,
     "reach": 0.15,
-    "audience": 0.20,
+    "audience": 0.15,
+    "ai_taste": 0.08,
+    "image_quality": 0.07,
+    "commercial_tone": 0.05,
 }
 
 DEFAULT_PASS_THRESHOLD = 70.0
@@ -88,7 +92,7 @@ class EvaluatorAgent(BaseAgent):
         niche = state.get("niche", "母婴")
         template = template.replace("{account_niche}", niche)
         template = template.replace("{memory_context}", extra_context)
-        # weights block: "copywriting 0.25, visual 0.20, ..."
+        # weights block: "copywriting 0.20, visual 0.15, ..."
         weights_block = ", ".join(
             f"{k} {v:.2f}" for k, v in self._weights.dimension_weights.items()
         )

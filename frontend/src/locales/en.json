@@ -78,8 +78,8 @@
     "reviewShort": "Review",
     "analytics": "Analytics",
     "analyticsShort": "Stats",
-    "startWorkflow": "Start New Workflow",
-    "startShort": "Start",
+    "startWorkflow": "Start Creating",
+    "startShort": "Create",
     "logout": "Logout",
     "more": "More",
     "phase": "Phase",
@@ -104,7 +104,7 @@
   "home": {
     "title": "XHS Growth Engine",
     "subtitle": "AI-powered automated content creation platform",
-    "startWorkflow": "Start New Workflow",
+    "startWorkflow": "Start Creating",
     "viewDashboard": "View Dashboard",
     "systemStatus": "System Status",
     "account": "Account",
@@ -169,14 +169,22 @@
       }
     },
     "confirm": {
-      "title": "Confirm Workflow Start",
+      "title": "Confirm Simple Mode",
       "subtitle": "Please review the configuration",
       "enabled": "Enabled",
       "disabled": "Disabled",
       "liveWarning": "Live mode is on. Content will be published to Xiaohongshu for real.",
       "autoPublishWarning": "Auto-publish is on. Content will be published automatically after approval.",
       "expectedSteps": "Expected Steps",
-      "start": "Confirm Start"
+      "start": "Start Fixed Workflow"
+    },
+    "creationMode": {
+      "title": "Start Creating",
+      "subtitle": "Choose a creation mode",
+      "simpleTitle": "Simple Mode (Fixed Workflow)",
+      "simpleDesc": "Run the existing fixed flow for trend, strategy, creation, evaluation, and publishing.",
+      "freeTitle": "Free Mode (Automated Orchestration)",
+      "freeDesc": "Open the TUI and let the agent freely orchestrate creation, evaluation, and publishing through conversation."
     }
   },
   "dashboard": {
@@ -216,8 +224,8 @@
     },
     "actionButtons": {
       "ariaLabel": "Workflow action buttons",
-      "startNew": "Start New Workflow",
-      "startNewDesc": "Launch a new content growth workflow",
+      "startNew": "Start Creating",
+      "startNewDesc": "Choose simple or free mode to start creating",
       "goReview": "Go to review page to view content",
       "goReviewDesc": "Go to Review",
       "goReviewPending": "Go to review page to review and decide",
@@ -671,8 +679,8 @@
     "refreshing": "Refreshing...",
     "empty": {
       "title": "No Analytics Data",
-      "description": "Start a workflow to generate content and see performance analytics here.",
-      "startWorkflow": "Start New Workflow"
+      "description": "Start creating and publish content to see performance analytics here.",
+      "startWorkflow": "Start Creating"
     },
     "error": {
       "title": "Failed to Load Data",
@@ -883,8 +891,8 @@
     "title": "Workflow History",
     "subtitle": "View and manage past workflows",
     "empty": "No workflow history",
-    "emptyDesc": "Start your first workflow to begin your content growth journey",
-    "startNew": "Start New Workflow",
+    "emptyDesc": "Start your first creation to begin your content growth journey",
+    "startNew": "Start Creating",
     "backHome": "Back to Home",
     "resume": "Resume",
     "view": "View",
@@ -928,8 +936,8 @@
         "desc": "View each stage of the workflow, including trend scouting, strategy, creation, review, publishing, and analytics."
       },
       "start": {
-        "title": "Start a Workflow",
-        "desc": "Click the button to start a new workflow. The system will automatically execute each stage."
+        "title": "Start Creating",
+        "desc": "Click the button to choose simple or free mode. Simple mode runs the fixed flow automatically."
       },
       "review": {
         "title": "Review & Publish",
@@ -1370,11 +1378,18 @@
   "tui": {
     "welcome": "XhsGrowthAgent TUI v0.1",
     "welcomeHint": "Type a topic to start, or /help for commands.",
+    "terminalHint": "Type /help for commands, or start chatting.",
+    "workflowFlow": "trend → strategy → copy → visual → publish",
+    "freeFlow": "free orchestration → creation → evaluation → publish",
+    "freeWelcomeHint": "Free mode is active: describe your creation goal and the agent will orchestrate creation, evaluation, and publishing.",
+    "freeTopic": "Topic: {topic}",
+    "freeAgentUnavailable": "Free mode requires the Agent connection; the fixed workflow will not start while disconnected.",
+    "freeStartDisabled": "Free mode does not start the fixed workflow. Chat to orchestrate freely, or go back and choose Simple Mode.",
     "processing": "Processing...",
     "inputPlaceholder": "Type a command or topic...",
     "noActiveWorkflow": "No active workflow. Start one with /start or /start <topic>",
-    "startingWorkflow": "Starting workflow{topic}...",
-    "workflowStarted": "Workflow started!\n  Thread: {threadId}\n  Phase: {phase}\n  Status: {status}",
+    "startingWorkflow": "Starting creation{topic}...",
+    "workflowStarted": "Creation flow started!\n  Thread: {threadId}\n  Phase: {phase}\n  Status: {status}",
     "fetchingStatus": "Fetching status for {threadId}...",
     "workflowPaused": "Workflow {threadId} paused.",
     "workflowResumed": "Workflow {threadId} resumed.",
@@ -1385,11 +1400,11 @@
     "reviewPending": "Content awaiting review. Type /approve or /reject <feedback>",
     "unknownCommand": "Unknown command: {command}. Type /help for available commands.",
     "resumingWorkflow": "Resuming active workflow: {threadId}",
-    "helpText": "Available commands:\n  /start [topic]  - Start a workflow (optional topic)\n  /status [id]    - Check workflow status\n  /pause [id]     - Pause workflow\n  /resume [id]    - Resume workflow\n  /cancel [id]    - Cancel workflow\n  /approve [id]   - Approve content\n  /reject <msg>   - Reject with feedback\n  /help           - Show this help\n  /clear          - Clear terminal\n\nOr type a topic directly to start a workflow."
+    "helpText": "Available commands:\n  /start [topic]  - Start fixed-flow creation (optional topic)\n  /status [id]    - Check workflow status\n  /pause [id]     - Pause workflow\n  /resume [id]    - Resume workflow\n  /cancel [id]    - Cancel workflow\n  /approve [id]   - Approve content\n  /reject <msg>   - Reject with feedback\n  /help           - Show this help\n  /clear          - Clear terminal\n\nOr type a topic directly to start fixed-flow creation."
   },
   "evaluation": {
     "title": "Creation Quality Evaluation",
-    "subtitle": "RQGM agent-as-a-judge panel · 6-dimension scoring & revision hints",
+    "subtitle": "RQGM agent-as-a-judge panel · 9-dimension scoring & revision hints",
     "list": {
       "subtitle": "Workflows with evaluation results — click to view detail",
       "searchPlaceholder": "Search title / thread_id / account",
@@ -1406,7 +1421,7 @@
     "searching": "Searching…",
     "initialHint": "Enter a workflow ID to view its creation-quality evaluation",
     "overall": "Overall",
-    "radarTitle": "6-Dimension Radar",
+    "radarTitle": "9-Dimension Radar",
     "radarSeries": "Quality Score",
     "dimensionsTitle": "Dimension Details",
     "hintsTitle": "Revision Hints",
@@ -1431,6 +1446,9 @@
       "compliance": "Compliance",
       "reach": "Reach",
       "audience": "Audience",
+      "ai_taste": "AI Taste",
+      "image_quality": "Image Quality",
+      "commercial_tone": "Commercial Tone",
       "bias_check": "Bias Check",
       "unknown": "{dim}"
     },

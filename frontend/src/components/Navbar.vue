@@ -106,7 +106,7 @@ const handleLogout = async () => {
       </div>
     </div>
 
-    <!-- 启动新工作流按钮 -->
+    <!-- 开始创作按钮 -->
     <button
       @click="router.push('/start')"
       class="mb-4 w-full p-3 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-lg shadow-rose-500/25 hover:shadow-rose-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"

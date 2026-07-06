@@ -7,6 +7,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import PreLaunchChecklist from '@/components/PreLaunchChecklist.vue'
 import WorkflowStartForm from '@/components/WorkflowStartForm.vue'
 import ConfirmStartModal from '@/components/ConfirmStartModal.vue'
+import CreationModeModal from '@/components/CreationModeModal.vue'
 import type { WorkflowConfig, WorkflowMode } from '@/components/WorkflowStartForm.vue'
 import { useWorkflowStore } from '@/stores'
 
@@ -16,6 +17,7 @@ const router = useRouter()
 const route = useRoute()
 const workflowStore = useWorkflowStore()
 const isStarting = ref(false)
+const showCreationMode = ref(false)
 const showConfirm = ref(false)
 const startFormRef = ref<InstanceType<typeof WorkflowStartForm> | null>(null)
 const checklistRef = ref<InstanceType<typeof PreLaunchChecklist> | null>(null)
@@ -58,7 +60,21 @@ const handleFormSubmit = () => {
     formConfig.value = startFormRef.value.getConfig()
   }
 
+  showCreationMode.value = true
+}
+
+const chooseSimpleMode = () => {
+  showCreationMode.value = false
   showConfirm.value = true
+}
+
+const chooseFreeMode = () => {
+  showCreationMode.value = false
+  const query: Record<string, string> = { mode: 'free' }
+  if (formConfig.value.topic) query.topic = formConfig.value.topic
+  if (formConfig.value.niche) query.niche = formConfig.value.niche
+  if (formConfig.value.accountId) query.account_id = formConfig.value.accountId
+  router.push({ name: 'tui', query })
 }
 
 const confirmStart = async () => {
@@ -150,6 +166,15 @@ const confirmStart = async () => {
         </div>
       </div>
     </div>
+
+    <!-- Creation Mode Modal -->
+    <CreationModeModal
+      :is-open="showCreationMode"
+      :is-loading="isStarting"
+      @simple="chooseSimpleMode"
+      @free="chooseFreeMode"
+      @cancel="showCreationMode = false"
+    />
 
     <!-- Confirmation Modal -->
     <ConfirmStartModal

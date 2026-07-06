@@ -44,6 +44,9 @@ class TestHostToolSchemas:
         We verify the set is consistent and that newly added tools are present.
         """
         assert len(_XHS_TOOL_NAMES) == len(XHS_HOST_TOOLS)
+        # OMP free orchestration must not expose the fixed workflow starter.
+        assert "xhs_workflow_start" not in _XHS_TOOL_NAMES
+        assert "xhs_publish_retry" in _XHS_TOOL_NAMES
         # Evaluation tools (RQGM agent-as-a-judge) must be in the auto-exec whitelist
         assert "xhs_evaluation_result" in _XHS_TOOL_NAMES
         assert "xhs_evaluation_run" in _XHS_TOOL_NAMES
@@ -110,17 +113,13 @@ def _make_async_context_manager(client: AsyncMock) -> AsyncMock:
 
 @pytest.mark.asyncio
 class TestWorkflowTools:
-    async def test_workflow_start(self):
-        data = {"thread_id": "t1", "phase": "scouting", "status": "running"}
-        client = _mock_client_post(data)
-        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
-            result = await _execute_xhs_host_tool(
-                "xhs_workflow_start",
-                {"account_id": "acc1", "workflow_mode": "trend"},
-            )
-        assert result.get("isError") is not True
-        assert "t1" in result["content"][0]["text"]
-        assert "scouting" in result["content"][0]["text"]
+    async def test_workflow_start_disabled_for_omp_free_orchestration(self):
+        result = await _execute_xhs_host_tool(
+            "xhs_workflow_start",
+            {"account_id": "acc1", "workflow_mode": "trend"},
+        )
+        assert result["isError"] is True
+        assert "disabled" in result["content"][0]["text"]
 
     async def test_workflow_status(self):
         data = {
@@ -161,6 +160,16 @@ class TestWorkflowTools:
         with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
             result = await _execute_xhs_host_tool("xhs_workflow_delete", {"thread_id": "t1"})
         assert "deleted" in result["content"][0]["text"]
+
+    async def test_publish_retry(self):
+        data = {"thread_id": "t1", "status": "retrying", "message": "正在重新发布"}
+        client = _mock_client_post(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool("xhs_publish_retry", {"thread_id": "t1"})
+        assert result.get("isError") is not True
+        assert "retrying" in result["content"][0]["text"]
+        client.post.assert_awaited_once()
+        assert "/workflow/publish-retry/t1" in client.post.await_args.args[0]
 
 
 @pytest.mark.asyncio

@@ -305,7 +305,9 @@ class BloggerNote(TypedDict, total=False):
 class DimensionScore(TypedDict, total=False):
     """单维度 judge 评分（agent-as-a-judge 面板的一维）."""
 
-    dimension: str  # copywriting | visual | compliance | reach | audience | bias_check
+    # copywriting | visual | compliance | reach | audience | ai_taste | image_quality |
+    # commercial_tone | bias_check
+    dimension: str
     score: float  # 0-100
     rationale: str  # 该维度评分理由
     issues: list[str]  # 发现的具体问题
@@ -320,7 +322,8 @@ class DimensionScore(TypedDict, total=False):
 class EvaluationResult(TypedDict, total=False):
     """创作质量评估结果 — RQGM agent-as-a-judge 面板输出.
 
-    6 维 judge 面板：文案/视觉/合规/传播潜力/受众匹配 + 对抗偏倚检测。
+    9 维 judge 面板：文案/视觉/合规/传播潜力/受众匹配/AI味儿/图片质量/
+    商业味儿 + 对抗偏倚检测。
     对抗偏倚检测维度（dimension="bias_check"）校准面板是否对 AI 生成内容
     过度宽容（论文 1.91x 纠偏）。bias_check 维度有两个互补字段：
     - score：严苛性校准建议分（越高越无需调整）。

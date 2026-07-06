@@ -50,7 +50,7 @@ TASK_TIMEOUT_OVERRIDES: dict[str, int] = {
     "content_analysis": 120,
     "brief_analysis": 120,
     "shooting_plan": 120,
-    "evaluation": 120,  # 6 维 judge 面板单次调用，多维评分需较长超时
+    "evaluation": 120,  # 9 维 judge 面板单次调用，多维评分需较长超时
 }
 
 

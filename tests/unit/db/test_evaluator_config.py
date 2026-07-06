@@ -56,6 +56,9 @@ async def test_load_weights_defaults_when_no_rows():
         "compliance",
         "reach",
         "audience",
+        "ai_taste",
+        "image_quality",
+        "commercial_tone",
         "bias_check",
     ]
 
@@ -188,7 +191,7 @@ def test_apply_override_unknown_key_ignored():
     w = EvaluatorWeights()
     _apply_override(w, "weight.bogus", 1.0)
     _apply_override(w, "unknown.thing", 1.0)
-    assert w.dimension_weights["copywriting"] == 0.25  # unchanged
+    assert w.dimension_weights["copywriting"] == 0.20  # unchanged
 
 
 # ── Online weight training (fit_weights) ──

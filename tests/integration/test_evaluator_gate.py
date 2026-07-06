@@ -31,7 +31,17 @@ from backend.state.enums import ContentStatus, WorkflowPhase
 def _panel_json(decision: str, hints: list[str] | None = None) -> str:
     dims = ",".join(
         '{"dimension": "%s", "score": 80, "rationale": "r", "issues": [], "is_blocking": false}' % n
-        for n in ("copywriting", "visual", "compliance", "reach", "audience", "bias_check")
+        for n in (
+            "copywriting",
+            "visual",
+            "compliance",
+            "reach",
+            "audience",
+            "ai_taste",
+            "image_quality",
+            "commercial_tone",
+            "bias_check",
+        )
     )
     return (
         '{"overall_score": 80, "dimensions": [%s], "decision": "%s", '

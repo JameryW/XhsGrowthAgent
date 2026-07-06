@@ -28,6 +28,9 @@ const DIMENSION_LABEL_KEYS: Record<string, string> = {
   compliance: 'evaluation.dim.compliance',
   reach: 'evaluation.dim.reach',
   audience: 'evaluation.dim.audience',
+  ai_taste: 'evaluation.dim.ai_taste',
+  image_quality: 'evaluation.dim.image_quality',
+  commercial_tone: 'evaluation.dim.commercial_tone',
   bias_check: 'evaluation.dim.bias_check',
 }
 

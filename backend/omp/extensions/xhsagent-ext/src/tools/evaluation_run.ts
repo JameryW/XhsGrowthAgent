@@ -27,7 +27,7 @@ export default function register(pi: ExtensionAPI) {
     name: "xhs_evaluation_run",
     label: "XHS Evaluation Run",
     description:
-      "Manually evaluate the current copy/visual content of a workflow using the RQGM agent-as-a-judge panel (6 dimensions + adversarial bias check). Does NOT advance the workflow. Use xhs_evaluation_result to read a prior evaluation.",
+      "Manually evaluate the current copy/visual content of a workflow using the RQGM agent-as-a-judge panel (9 dimensions including AI taste, image quality, commercial tone, and adversarial bias check). Does NOT advance the workflow. Use xhs_evaluation_result to read a prior evaluation.",
     parameters: schema,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       try {

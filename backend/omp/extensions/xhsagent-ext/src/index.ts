@@ -1,12 +1,11 @@
 /**
  * xhsagent-ext — XhsGrowthAgent domain tools and commands for oh-my-pi.
  *
- * Registers 27 domain tools, 4 commands, and 2 event hooks that connect
- * omp to the XhsGrowthAgent Python API service.
+ * Registers XHS domain tools, commands, and event hooks that connect omp to the
+ * XhsGrowthAgent Python API service.
  */
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
-import registerWorkflowStart from "./tools/workflow_start.js";
 import registerWorkflowStatus from "./tools/workflow_status.js";
 import registerWorkflowPause from "./tools/workflow_pause.js";
 import registerWorkflowResume from "./tools/workflow_resume.js";
@@ -15,6 +14,7 @@ import registerWorkflowList from "./tools/workflow_list.js";
 import registerWorkflowDelete from "./tools/workflow_delete.js";
 import registerWorkflowHistory from "./tools/workflow_history.js";
 import registerWorkflowTriggerAnalytics from "./tools/workflow_trigger_analytics.js";
+import registerPublishRetry from "./tools/publish_retry.js";
 import registerReviewApprove from "./tools/review_approve.js";
 import registerReviewReject from "./tools/review_reject.js";
 import registerReviewPending from "./tools/review_pending.js";
@@ -47,7 +47,6 @@ import registerEvents from "./events.js";
 
 export default function xhsagentExt(pi: ExtensionAPI) {
   // Workflow tools
-  registerWorkflowStart(pi);
   registerWorkflowStatus(pi);
   registerWorkflowPause(pi);
   registerWorkflowResume(pi);
@@ -56,6 +55,7 @@ export default function xhsagentExt(pi: ExtensionAPI) {
   registerWorkflowDelete(pi);
   registerWorkflowHistory(pi);
   registerWorkflowTriggerAnalytics(pi);
+  registerPublishRetry(pi);
 
   // Review tools
   registerReviewApprove(pi);

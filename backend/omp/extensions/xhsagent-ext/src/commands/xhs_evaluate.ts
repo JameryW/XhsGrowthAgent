@@ -11,7 +11,7 @@ export default function register(pi: ExtensionAPI) {
         threadId ? `Workflow: ${threadId}` : "Find the workflow using xhs_workflow_list or xhs_workflow_status.",
         "",
         "Use xhs_evaluation_run to evaluate the current content (copy/visual), then xhs_evaluation_result to read the verdict.",
-        "The panel scores 6 dimensions: copywriting, visual, compliance, reach, audience, and an adversarial bias check.",
+        "The panel scores 9 dimensions: copywriting, visual, compliance, reach, audience, AI taste, image quality, commercial tone, and an adversarial bias check.",
         "If decision is needs_revision, the workflow auto-routes back to the copywriter with revision hints.",
       ].join("\n"));
     },

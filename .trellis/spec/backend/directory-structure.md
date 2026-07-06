@@ -205,11 +205,11 @@ backend/
                 ├── api_client.ts        # HTTP + SSE client (unwraps ApiResponse envelope)
                 ├── events.ts            # session_start health check + before_agent_start context
                 ├── tools/               # omp tools (one file per API endpoint)
-                │   ├── workflow_start.ts    # xhs_workflow_start (SSE progress)
                 │   ├── workflow_status.ts   # xhs_workflow_status (full snapshot)
                 │   ├── workflow_pause.ts
                 │   ├── workflow_resume.ts
                 │   ├── workflow_cancel.ts
+                │   ├── publish_retry.ts     # xhs_publish_retry (publish existing content)
                 │   ├── review_approve.ts    # xhs_review_approve (decision: "approved")
                 │   └── review_reject.ts     # xhs_review_reject (decision: "needs_revision")
                 └── commands/            # omp slash commands
