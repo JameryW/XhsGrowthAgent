@@ -27,6 +27,7 @@ from backend.agents.nodes import (
     publisher_node,
     review_gate_node,
     revise_content_node,
+    ripple_finalize_node,
     ripple_gate_node,
     shooting_planner_node,
     trend_scout_node,
@@ -44,12 +45,14 @@ from backend.graph.routers import (
     blogger_gate_router,
     choice_outcome,
     content_analyzer_router,
+    content_strategist_router,
     copywriter_router,
     draft_gate_router,
     engagement_router,
     evaluator_outcome,
     orchestrator_router,
     review_outcome,
+    ripple_finalize_router,
     ripple_gate_router,
     shooting_planner_router,
     should_continue,
@@ -99,6 +102,8 @@ def build_graph() -> StateGraph[XHSGrowthState]:
     builder.add_node("revise_content", revise_content_node)
     # Ripple gate — conditional interrupt when Ripple results are suboptimal
     builder.add_node("ripple_gate", ripple_gate_node)
+    # Ripple finalize — reads background Ripple result from store (background mode only)
+    builder.add_node("ripple_finalize", ripple_finalize_node)
     # 发布前优化节点
     builder.add_node("draft_gate", draft_gate_node)
     builder.add_node("viral_matcher", viral_matcher_node)
@@ -150,8 +155,30 @@ def build_graph() -> StateGraph[XHSGrowthState]:
     )
 
     # ── 内容创作流水线 ──
-    # content_strategist → ripple_gate (conditional interrupt for suboptimal Ripple results)
-    builder.add_edge("content_strategist", "ripple_gate")
+    # content_strategist → [ripple_finalize | ripple_gate] based on Ripple mode.
+    # Background mode (ripple_pending): skip ripple_gate, go to ripple_finalize
+    # which reads the store-written background result. Blocking mode: ripple_gate.
+    builder.add_conditional_edges(
+        "content_strategist",
+        content_strategist_router,
+        {
+            "ripple_finalize": "ripple_finalize",
+            "ripple_gate": "ripple_gate",
+        },
+    )
+
+    # ripple_finalize → [copywriter | content_strategist | trend_scout] (user decision)
+    builder.add_conditional_edges(
+        "ripple_finalize",
+        ripple_finalize_router,
+        {
+            "copywriter": "copywriter",
+            "content_strategist": "content_strategist",
+            "brief_analyzer": "brief_analyzer",
+            "trend_scout": "trend_scout",
+            "__end__": END,
+        },
+    )
 
     # ripple_gate → [copywriter | content_strategist | trend_scout] (user decision)
     builder.add_conditional_edges(

@@ -85,6 +85,8 @@ class RippleSettings(BaseSettings):
     request_timeout: int = 300
     workflow_timeout: int = 1800
     enabled: bool = False
+    # 后台模式：strategist fire-and-forget Ripple，不阻塞主链；结果由 ripple_finalize 读回
+    background: bool = False
     health_check_interval: float = 30.0
     # LLM config passed to Ripple engine for simulation roles
     llm_model: str = "deepseek-v4-flash"
