@@ -166,6 +166,7 @@ from backend.api.routes import (  # noqa: E402
     auth,
     blogger,
     evaluation,
+    inbox,
     optimization,
     realtime,
     review,
@@ -189,6 +190,7 @@ app.include_router(realtime.router, tags=["realtime"])  # WebSocket 不需要 /a
 app.include_router(agent_router, tags=["agent"])  # WebSocket at /api/agent/ws
 app.include_router(optimization.router, prefix="/api/optimization", tags=["optimization"])
 app.include_router(blogger.router, prefix="/api/optimization", tags=["blogger"])
+app.include_router(inbox.router, prefix="/api", tags=["inbox"])
 
 
 @app.get("/health")
