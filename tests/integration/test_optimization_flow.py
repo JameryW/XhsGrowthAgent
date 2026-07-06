@@ -154,13 +154,14 @@ class TestOptimizationGraphIntegration:
 
     @pytest.mark.asyncio
     async def test_compile_graph_uses_interrupt_before(self):
-        """Dev graph uses interrupt_before for review, choice, and draft gates.
+        """Dev graph uses interrupt_before for choice and draft gates.
 
-        All three gates require human confirmation before proceeding.
+        review_gate uses dynamic interrupt() (like ripple_gate) so its
+        auto-pass path runs inside the node; only choice_gate and draft_gate
+        remain in interrupt_before.
         """
         async with dev_graph() as graph:
-            # interrupt_before contains review_gate, choice_gate, and draft_gate
-            assert "review_gate" in graph.interrupt_before_nodes
+            assert "review_gate" not in graph.interrupt_before_nodes
             assert "choice_gate" in graph.interrupt_before_nodes
             assert "draft_gate" in graph.interrupt_before_nodes
             assert graph.interrupt_after_nodes == []

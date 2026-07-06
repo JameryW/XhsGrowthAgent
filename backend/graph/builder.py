@@ -269,6 +269,8 @@ def build_graph() -> StateGraph[XHSGrowthState]:
     )
 
     # visual_designer → review_gate (both modes go through review)
+    # review_gate uses dynamic interrupt() (like ripple_gate): low-risk auto-pass
+    # happens inside the node, so the router never bypasses it.
     builder.add_conditional_edges(
         "visual_designer",
         visual_designer_router,
@@ -406,8 +408,9 @@ async def compile_graph_dev() -> CompiledStateGraph[Any]:
     graph = builder.compile(
         checkpointer=checkpointer,
         store=store,
+        # review_gate uses dynamic interrupt() like ripple_gate — low-risk
+        # auto-pass runs inside the node; everything else interrupts there.
         interrupt_before=[
-            "review_gate",
             "choice_gate",
             "draft_gate",
         ],
@@ -472,7 +475,7 @@ async def compile_graph_prod(db_uri: str) -> tuple[CompiledStateGraph[Any], Any]
         store_context = None
         store_context_entered = False
         graph_interrupts = [
-            "review_gate",
+            # review_gate uses dynamic interrupt() like ripple_gate — not here.
             "choice_gate",
             "draft_gate",
         ]

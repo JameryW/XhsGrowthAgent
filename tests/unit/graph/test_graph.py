@@ -41,13 +41,14 @@ async def test_graph_compiles_dev():
 
 @pytest.mark.asyncio
 async def test_graph_uses_interrupt_before():
-    """编译后的图使用 interrupt_before 在 review_gate, choice_gate, draft_gate 处中断。
+    """编译后的图使用 interrupt_before 在 choice_gate, draft_gate 处中断。
 
-    所有三个 gate 都需要人工确认才能继续。
+    review_gate 改用动态 interrupt()（同 ripple_gate），低风险自动放行在节点内
+    执行，故不在 interrupt_before。choice_gate / draft_gate 仍需人工确认。
     """
     from backend.graph.builder import dev_graph
 
     async with dev_graph() as graph:
-        assert "review_gate" in graph.interrupt_before_nodes
+        assert "review_gate" not in graph.interrupt_before_nodes
         assert "choice_gate" in graph.interrupt_before_nodes
         assert "draft_gate" in graph.interrupt_before_nodes
