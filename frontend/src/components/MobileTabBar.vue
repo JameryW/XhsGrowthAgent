@@ -15,7 +15,6 @@ const tabs = computed(() => [
   { path: '/start', icon: 'Rocket', label: t('nav.startShort') },
   { path: '/dashboard', icon: 'Home', label: t('nav.dashboardShort') },
   { path: '/review', icon: 'CheckCircle', label: t('nav.reviewShort') },
-  { path: '/tui', icon: 'Terminal', label: t('nav.tui') },
 ])
 
 const currentPath = computed(() => route.path)

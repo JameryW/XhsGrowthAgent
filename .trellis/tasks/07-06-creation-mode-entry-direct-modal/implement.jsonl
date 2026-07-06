@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Vue 组件交互/modal/表单模式，改 Home.vue 流程时遵循"}
+{"file": "frontend/src/views/Home.vue", "reason": "唯一改动文件：表单显隐 + CreationModeModal 触发时序"}
+{"file": "frontend/src/components/CreationModeModal.vue", "reason": "已存在的模式选择 modal，simple/free emit 接口不变"}

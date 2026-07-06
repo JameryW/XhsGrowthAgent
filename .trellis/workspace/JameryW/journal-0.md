@@ -854,3 +854,36 @@ Exposed evaluator epoch/weights/samples/trend to omp: new GET /evaluation/epochs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 60: 删除独立 TUI 入口
+
+**Date**: 2026-07-06
+**Task**: 删除独立 TUI 入口
+**Branch**: `main`
+
+### Summary
+
+Navbar/MobileTabBar 移除 /tui 导航项，TUI 仅经「开始创作」→自由模式进入；/tui 路由保留供 Home free-mode push。vue-tsc+ruff 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4daf08a5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
