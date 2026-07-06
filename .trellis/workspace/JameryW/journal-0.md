@@ -887,3 +887,37 @@ Navbar/MobileTabBar 移除 /tui 导航项，TUI 仅经「开始创作」→自�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 61: 开始创作模式分流重构 + 工作流链路十轮审查
+
+**Date**: 2026-07-07
+**Task**: 开始创作模式分流重构 + 工作流链路十轮审查
+**Branch**: `main`
+
+### Summary
+
+PR#203: 删 CreationModeModal 中间遮罩，自由模式并入 WorkflowStartForm 做第三模式（trend/brief/free），消除两个同文案「开始创作」按钮困惑；free 纯前端路由不进后端 API 类型。PR#204: 工作流链路十轮循环审查（单元→横切→e2e→pre-push）修 7 真 bug——evaluator/continuous 无限循环 cap 防护、dry_run 真实 API 泄漏双源守卫、SSE terminal-on-connect 挂死+回放去重、cancel toast 错、OMP SSE 事件名点号不匹配；+~25 测试 mutation testing 验证。两个 PR 均合并部署。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `abfc509a` | (see git log) |
+| `5c192abe` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
