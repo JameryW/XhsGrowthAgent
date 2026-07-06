@@ -11,10 +11,11 @@ import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
+from langgraph.types import Command
 from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile
 
@@ -271,6 +272,25 @@ def _failed_node(state: Any) -> str | None:
     return None
 
 
+def _last_success_node(state: Any) -> str | None:
+    """Name of the most recently completed (non-error) named task in state.tasks.
+
+    Used by /recover strategy=retry_from_last_success: we Command(goto=) this
+    node to re-run it and everything downstream. We scan state.tasks in order
+    and pick the last named task whose .error is empty — that's the most
+    recent success before the failure.
+    """
+    last_success: str | None = None
+    for task in state.tasks or ():
+        name = _task_name(task)
+        if not name:
+            continue
+        if _task_has_error(task):
+            continue
+        last_success = name
+    return last_success
+
+
 # ── Request/Response models ──
 
 
@@ -285,6 +305,20 @@ class WorkflowStartRequest(BaseModel):
     execution_mode: str = Field(default="single", description="执行模式: single/continuous")
     workflow_mode: str = Field(default="trend", description="工作模式: trend/brief")
     brief_text: str | None = Field(default=None, description="商单 brief 文本内容")
+
+
+class RecoverRequest(BaseModel):
+    """恢复策略请求体 — /recover 端点入参。
+
+    strategy:
+      - retry_failed: 等同 /resume error 路径，native ainvoke(None) 重跑失败 task
+      - retry_from_last_success: Command(goto=last_success) 从上次成功节点重跑下游
+      - skip_to_next: Command(goto=next) 跳过失败节点，从后继节点继续
+    """
+
+    strategy: Literal["retry_failed", "retry_from_last_success", "skip_to_next"] = Field(
+        default="retry_failed", description="恢复策略"
+    )
 
 
 class AgentTimelineEntry(BaseModel):
@@ -1062,7 +1096,6 @@ async def resume_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
             else {}
         )
         resume_value = body.get("resume_value", {"action": "skip"})
-        from langgraph.types import Command
 
         result = await _runner._run_graph_and_persist(
             thread_id,
@@ -1089,7 +1122,6 @@ async def resume_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
             else {}
         )
         resume_value = body.get("resume_value", {"action": "accept"})
-        from langgraph.types import Command
 
         result = await _runner._run_graph_and_persist(
             thread_id,
@@ -1117,7 +1149,6 @@ async def resume_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
             else {}
         )
         resume_value = body.get("resume_value", {"skip": True})
-        from langgraph.types import Command
 
         result = await _runner._run_graph_and_persist(
             thread_id,
@@ -1208,6 +1239,111 @@ async def resume_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
             "thread_id": thread_id,
             "status": "running",
             "phase": prev_phase,
+        }
+    )
+
+
+@router.post("/recover/{thread_id}")
+async def recover_workflow(
+    thread_id: str, req: RecoverRequest, request: Request
+) -> ApiResponse[Any]:
+    """显式恢复操作 — 把状态诊断变成可执行操作。
+
+    仅 error/stale 状态可 recover。三种策略：
+      - retry_failed: 等同 /resume error 路径（native ainvoke(None) 重跑失败 task）
+      - retry_from_last_success: Command(goto=上次成功节点) 重跑该节点起的链
+      - skip_to_next: Command(goto=state.next[0]) 跳过失败节点，从后继继续
+    """
+    if not thread_id or thread_id.strip() == "":
+        raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    state = await graph.aget_state(config)
+    if not state.values or state.values.get("session_id") is None:
+        raise WorkflowNotFoundError(thread_id)
+
+    has_active = (
+        thread_id in _runner._background_tasks and not _runner._background_tasks[thread_id].done()
+    ) or (thread_id in _runner._active_sync_executions)
+    derived = derive_status(state, has_active_task=has_active)
+
+    # 仅 error/stale 可 recover；其他状态给出明确拒绝信息
+    if derived not in (WorkflowStatus.ERROR, WorkflowStatus.STALE):
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": str(derived.value),
+                "strategy": req.strategy,
+                "recovered": False,
+                "message": (
+                    f"工作流当前状态为 {derived.value}，不可 recover。"
+                    "paused 用 /resume，completed/cancelled 用 /resume restart。"
+                ),
+            }
+        )
+
+    # ── 定位目标节点 + 构造 input_data ──
+    target_node: str | None = None
+    input_data: Any = None
+
+    if req.strategy == "retry_failed":
+        # 等同 /resume error 路径：native ainvoke(None) 重跑失败 task
+        input_data = None
+        infer_nodes = tuple(state.next or ())
+        if not infer_nodes:
+            infer_nodes = _resume_nodes_from_tasks(state.tasks)
+        if not infer_nodes and state.values:
+            last_node = state.values.get("_last_node")
+            if last_node:
+                infer_nodes = (last_node,)
+        prev_phase = _resume_phase_for_next_nodes(
+            infer_nodes,
+            state.values.get("prev_phase") or WorkflowPhase.CREATING,
+        )
+        target_node = infer_nodes[0] if infer_nodes else None
+
+    elif req.strategy == "retry_from_last_success":
+        target_node = _last_success_node(state)
+        if not target_node:
+            # 上次成功节点无法确定 → 400 带诊断，不盲跑
+            raise ValidationError(
+                "strategy",
+                "无法确定上次成功节点：state.tasks 中没有非失败的命名 task。"
+                "可改用 retry_failed 或 skip_to_next。",
+            )
+        prev_phase = _resume_phase_for_next_nodes(
+            (target_node,),
+            state.values.get("prev_phase") or WorkflowPhase.CREATING,
+        )
+        input_data = Command(goto=target_node)
+
+    else:  # skip_to_next
+        next_nodes = tuple(state.next or ())
+        if not next_nodes:
+            raise ValidationError(
+                "strategy",
+                "无法确定后继节点：state.next 为空，失败节点没有可跳转的后继。"
+                "可改用 retry_failed 或 retry_from_last_success。",
+            )
+        target_node = next_nodes[0]
+        prev_phase = _resume_phase_for_next_nodes(
+            next_nodes,
+            state.values.get("prev_phase") or WorkflowPhase.CREATING,
+        )
+        input_data = Command(goto=target_node)
+
+    await _start_resume_task(thread_id, graph, config, prev_phase, input_data=input_data)
+
+    return success(
+        data={
+            "thread_id": thread_id,
+            "status": "running",
+            "strategy": req.strategy,
+            "target_node": target_node,
+            "phase": prev_phase,
+            "recovered": True,
         }
     )
 
@@ -1871,8 +2007,6 @@ async def upload_images(thread_id: str, request: Request) -> ApiResponse[Any]:
 @router.post("/trigger-analytics/{thread_id}")
 async def trigger_analytics(thread_id: str, request: Request) -> ApiResponse[Any]:
     """手动触发 analyst 节点（发布后手动运行 Ripple 分析）"""
-    from langgraph.types import Command
-
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
 
