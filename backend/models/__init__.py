@@ -9,7 +9,7 @@ Components:
 """
 
 from backend.models.context_cap import cap_context, estimate_tokens
-from backend.models.cost_tracker import CostTracker, TokenUsage
+from backend.models.cost_tracker import COST_PER_1K, CostTracker, TokenUsage, calc_cost
 from backend.models.retry import with_retry
 from backend.models.router import ModelRouter, get_model, get_router
 from backend.models.visual_types import (
@@ -28,6 +28,8 @@ __all__ = [
     "cap_context",
     "CostTracker",
     "TokenUsage",
+    "calc_cost",
+    "COST_PER_1K",
     "ColorPalette",
     "LayoutOption",
     "StyleOption",

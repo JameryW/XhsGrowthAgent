@@ -71,6 +71,10 @@ class RippleService:
     _bg_task: asyncio.Task[None] | None = None
     # Track active simulation progress per (thread_id, job_id)
     _progress_store: dict[str, dict[str, Any]] = {}
+    # ponytail: ripple-call perf entries (kind:"ripple") buffered per instance;
+    # agents read via drain_ripple_perf() after a Ripple call to fold into the
+    # node's performance_log flush (PRD 节点级指标 PR2).
+    _ripple_perf: list[dict[str, Any]] = []
 
     def __new__(cls) -> RippleService:
         """单例模式"""
@@ -84,6 +88,16 @@ class RippleService:
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
+
+    def drain_ripple_perf(self) -> list[dict[str, Any]]:
+        """Return and clear buffered ripple perf entries.
+
+        Agents calling RippleService read this after their call to fold
+        ripple-call timing entries into the agent's own performance_log flush.
+        """
+        entries = list(self._ripple_perf)
+        self._ripple_perf.clear()
+        return entries
 
     def _get_config(self) -> dict[str, Any]:
         """读取配置"""
@@ -1554,3 +1568,57 @@ class RippleService:
             "ripple_job_id": job_id,
             "ripple_pmf": parsed_pmf,
         }
+
+
+def _time_ripple(operation: str):  # type: ignore[no-untyped-def]
+    """Decorator: time a RippleService async method, buffer a perf entry.
+
+    ponytail: best-effort — timer failure must not break the Ripple call.
+    Entry buffered on the instance _ripple_perf; agents drain via
+    drain_ripple_perf() (PRD 节点级指标 PR2).
+    """
+    from datetime import UTC, datetime
+    from functools import wraps
+
+    def deco(fn):  # type: ignore[no-untyped-def]
+        @wraps(fn)
+        async def wrapper(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            started = datetime.now(UTC)
+            status = "success"
+            try:
+                return await fn(self, *args, **kwargs)
+            except Exception:
+                status = "failed"
+                raise
+            finally:
+                try:
+                    elapsed = round((datetime.now(UTC) - started).total_seconds(), 4)
+                    self._ripple_perf.append(
+                        {
+                            "kind": "ripple",
+                            "operation": operation,
+                            "started_at": started.isoformat(),
+                            "completed_at": datetime.now(UTC).isoformat(),
+                            "duration_seconds": elapsed,
+                            "status": status,
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        }
+                    )
+                except Exception:
+                    pass
+
+        return wrapper
+
+    return deco
+
+
+# Re-bind the three public Ripple methods with timing instrumentation.
+RippleService.predict_spread = _time_ripple("predict_spread")(  # type: ignore[method-assign]
+    RippleService.predict_spread
+)
+RippleService.validate_pmf = _time_ripple("validate_pmf")(  # type: ignore[method-assign]
+    RippleService.validate_pmf
+)
+RippleService.get_simulation_status = _time_ripple("get_simulation_status")(  # type: ignore[method-assign]
+    RippleService.get_simulation_status
+)

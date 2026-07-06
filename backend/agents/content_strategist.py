@@ -165,6 +165,15 @@ class ContentStrategistAgent(BaseAgent):
 
         ripple_prediction, ripple_pmf = await asyncio.gather(_predict(), _validate_pmf())
 
+        # ponytail: drain Ripple call perf entries into the agent buffer so they
+        # flush with the node entry (PRD 节点级指标 PR2).
+        try:
+            from backend.services.ripple_service import RippleService
+
+            self._perf_buffer.extend(RippleService.get_instance().drain_ripple_perf())
+        except Exception:
+            pass
+
         # Set Ripple data (including fallback when unavailable)
         if ripple_prediction and not isinstance(ripple_prediction, dict):
             # Should not happen, but guard against unexpected types

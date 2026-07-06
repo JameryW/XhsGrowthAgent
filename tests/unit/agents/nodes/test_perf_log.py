@@ -155,3 +155,174 @@ class TestRecordHumanWait:
         }
         entry = record_human_wait(state, "review_gate", now_iso="2026-07-06T00:01:05+00:00")
         assert entry["entered_at"] == "2026-07-06T00:00:05+00:00"
+
+
+class TestLLMInstrumentation:
+    """PRD 节点级指标 PR2: _InstrumentedModel records kind:"llm" entries."""
+
+    async def test_ainvoke_records_llm_entry_with_cost(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from backend.agents.base import BaseAgent, _InstrumentedModel
+        from backend.config.models import TaskType
+
+        class _A(BaseAgent):
+            task_type = TaskType.WRITING
+            agent_name = "llm_test"
+            prompt_file = ""
+
+            async def execute(self, state, store):  # type: ignore[override]
+                return {}
+
+        agent = _A()
+        raw = MagicMock()
+        raw.model = "claude-sonnet-4-20250514"
+        raw.ainvoke = AsyncMock()
+        raw.ainvoke.return_value = MagicMock(
+            usage_metadata={"input_tokens": 1000, "output_tokens": 500}
+        )
+
+        instrumented = _InstrumentedModel(raw, agent)
+        await instrumented.ainvoke("msgs")
+
+        assert len(agent._perf_buffer) == 1
+        entry = agent._perf_buffer[0]
+        assert entry["kind"] == "llm"
+        assert entry["model"] == "claude-sonnet-4-20250514"
+        assert entry["input_tokens"] == 1000
+        assert entry["output_tokens"] == 500
+        # 1000/1000 * 0.003 + 500/1000 * 0.015 = 0.003 + 0.0075 = 0.0105
+        assert entry["cost_usd"] == round(0.0105, 6)
+
+    async def test_ainvoke_returns_original_response(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from backend.agents.base import BaseAgent, _InstrumentedModel
+        from backend.config.models import TaskType
+
+        class _A(BaseAgent):
+            task_type = TaskType.WRITING
+            agent_name = "llm_test2"
+            prompt_file = ""
+
+            async def execute(self, state, store):  # type: ignore[override]
+                return {}
+
+        agent = _A()
+        raw = MagicMock()
+        raw.model = "gpt-4o"
+        original_resp = MagicMock(usage_metadata={})
+        raw.ainvoke = AsyncMock(return_value=original_resp)
+
+        instrumented = _InstrumentedModel(raw, agent)
+        result = await instrumented.ainvoke("msgs")
+        assert result is original_resp
+
+    async def test_instrument_failure_does_not_break_call(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from backend.agents.base import BaseAgent, _InstrumentedModel
+        from backend.config.models import TaskType
+
+        class _A(BaseAgent):
+            task_type = TaskType.WRITING
+            agent_name = "llm_test3"
+            prompt_file = ""
+
+            async def execute(self, state, store):  # type: ignore[override]
+                return {}
+
+        agent = _A()
+        raw = MagicMock()
+        raw.model = "claude-sonnet-4-20250514"
+        # usage_metadata access raises → instrumentation must swallow, not break
+        resp = MagicMock()
+        type(resp).usage_metadata = property(
+            lambda self: (_ for _ in ()).throw(RuntimeError("nope"))
+        )
+        raw.ainvoke = AsyncMock(return_value=resp)
+
+        instrumented = _InstrumentedModel(raw, agent)
+        result = await instrumented.ainvoke("msgs")
+        assert result is resp
+        assert agent._perf_buffer == []
+
+    async def test_call_flushes_llm_buffer_with_node_entry(self):
+
+        from backend.agents.base import BaseAgent
+        from backend.config.models import TaskType
+
+        class _A(BaseAgent):
+            task_type = TaskType.WRITING
+            agent_name = "flush_test"
+            prompt_file = ""
+
+            async def execute(self, state, store):  # type: ignore[override]
+                # simulate an LLM call during execute
+                self._perf_buffer.append({"kind": "llm", "model": "x", "cost_usd": 0.01})
+                return {}
+
+        agent = _A()
+        result = await agent({}, store=None)
+        kinds = [e["kind"] for e in result["performance_log"]]
+        assert kinds == ["node", "llm"]
+        assert agent._perf_buffer == []  # flushed
+
+
+class TestRippleInstrumentation:
+    """PRD 节点级指标 PR2: _time_ripple buffers kind:"ripple" entries.
+
+    Uses object.__new__ to bypass the conftest auto-mock of
+    RippleService.get_instance (which returns a MagicMock for the rest of
+    the suite).
+    """
+
+    def _fresh_svc(self):
+        from backend.services.ripple_service import RippleService
+
+        svc = object.__new__(RippleService)
+        svc._ripple_perf = []
+        return svc
+
+    async def test_time_ripple_records_success_entry(self):
+        from backend.services.ripple_service import _time_ripple
+
+        svc = self._fresh_svc()
+
+        @_time_ripple("predict_spread")
+        async def fake_call(self, topic):  # type: ignore[no-untyped-def]
+            return {"topic": topic}
+
+        await fake_call(svc, topic="t")  # type: ignore[arg-type]
+
+        entries = svc.drain_ripple_perf()
+        assert len(entries) == 1
+        assert entries[0]["kind"] == "ripple"
+        assert entries[0]["operation"] == "predict_spread"
+        assert entries[0]["status"] == "success"
+        assert entries[0]["duration_seconds"] >= 0.0
+
+    async def test_time_ripple_records_failed_entry_and_reraises(self):
+        import pytest
+
+        from backend.services.ripple_service import _time_ripple
+
+        svc = self._fresh_svc()
+
+        @_time_ripple("validate_pmf")
+        async def boom(self, *a, **kw):  # type: ignore[no-untyped-def]
+            raise RuntimeError("ripple down")
+
+        with pytest.raises(RuntimeError):
+            await boom(svc)  # type: ignore[arg-type]
+
+        entries = svc.drain_ripple_perf()
+        assert len(entries) == 1
+        assert entries[0]["status"] == "failed"
+
+    def test_drain_ripple_perf_clears_buffer(self):
+        svc = self._fresh_svc()
+        svc._ripple_perf.append({"kind": "ripple", "operation": "x"})
+        first = svc.drain_ripple_perf()
+        assert len(first) == 1
+        assert svc.drain_ripple_perf() == []

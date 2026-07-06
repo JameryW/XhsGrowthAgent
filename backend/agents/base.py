@@ -28,13 +28,23 @@ class BaseAgent(ABC):
     prompt_file: str = ""
 
     def __init__(self) -> None:
-        self._model: BaseChatModel | None = None
+        # _model holds the instrumented proxy (not a strict BaseChatModel
+        # subtype), so type as Any — see _InstrumentedModel (PRD PR2).
+        self._model: Any = None
         self._prompt_template: dict[str, str] | None = None
+        # ponytail: perf buffer — LLM-call entries (kind:"llm") accumulated
+        # during execute() are flushed into the node return's performance_log
+        # alongside the node entry (PRD 节点级指标 PR2). Cleared per __call__.
+        self._perf_buffer: list[dict[str, Any]] = []
 
     @property
-    def model(self) -> BaseChatModel:
+    def model(self) -> Any:
+        # Returns the instrumented proxy (duck-typed: forwards via __getattr__
+        # to the real BaseChatModel). Typed Any — callers use .ainvoke/.invoke
+        # which the proxy implements (PRD 节点级指标 PR2).
         if self._model is None:
-            self._model = get_model(self.task_type.value)
+            raw = get_model(self.task_type.value)
+            self._model = _InstrumentedModel(raw, self)
         return self._model
 
     @property
@@ -223,7 +233,7 @@ class BaseAgent(ABC):
         result["current_agent"] = self.agent_name
         result["error"] = None  # Clear stale error on success
         try:
-            result["performance_log"] = [
+            entries: list[dict[str, Any]] = [
                 node_perf_entry(
                     self.agent_name,
                     started_at=started,
@@ -233,9 +243,63 @@ class BaseAgent(ABC):
                     retries=retries,
                 )
             ]
+            # Flush LLM-call entries accumulated during execute() (PRD PR2).
+            entries.extend(self._perf_buffer)
+            self._perf_buffer.clear()
+            result["performance_log"] = entries
         except Exception as timer_err:  # best-effort: never break the node
             logger.debug("performance_log node entry failed: %s", timer_err)
         return result
+
+
+class _InstrumentedModel:
+    """Proxy wrapping a BaseChatModel to record LLM-call perf entries.
+
+    ponytail: __getattr__透传所有非 ainvoke 属性给原 model，ainvoke 包一层
+    读 response.usage_metadata 算成本追加到 agent._perf_buffer。包装失败
+    best-effort 不影响主调用（返回原 response）。
+    """
+
+    def __init__(self, wrapped: BaseChatModel, agent: BaseAgent) -> None:
+        self._wrapped = wrapped
+        self._agent = agent
+
+    def __getattr__(self, name: str) -> Any:
+        # __getattr__ only fires for attrs not found normally; _wrapped/_agent
+        # are set in __init__ so they bypass this.
+        return getattr(self._wrapped, name)
+
+    async def ainvoke(self, *args: Any, **kwargs: Any) -> Any:
+        response = await self._wrapped.ainvoke(*args, **kwargs)
+        try:
+            self._record_llm_entry(response)
+        except Exception as err:  # best-effort
+            logger.debug("perf_log llm entry failed: %s", err)
+        return response
+
+    def _record_llm_entry(self, response: Any) -> None:
+        from datetime import UTC, datetime
+
+        from backend.models.cost_tracker import calc_cost
+
+        usage = getattr(response, "usage_metadata", None) or {}
+        input_tokens = int(usage.get("input_tokens", 0) or 0)
+        output_tokens = int(usage.get("output_tokens", 0) or 0)
+        model_name = (
+            getattr(self._wrapped, "model", "") or getattr(self._wrapped, "name", "") or "unknown"
+        )
+        cost = calc_cost(str(model_name), input_tokens, output_tokens)
+        self._agent._perf_buffer.append(
+            {
+                "kind": "llm",
+                "model": str(model_name),
+                "task": self._agent.task_type.value,
+                "cost_usd": cost,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
 
 
 def _now_iso() -> str:

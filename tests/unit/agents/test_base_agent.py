@@ -265,7 +265,9 @@ Some text after"""
             model = agent.model
 
             mock_get_model.assert_called_once_with("writing")
-            assert model == mock_model
+            # model is wrapped in an instrumentation proxy (PRD 节点级指标 PR2)
+            # that transparently forwards attributes via __getattr__.
+            assert model._wrapped is mock_model
 
     def test_prompt_template_property(self):
         """prompt_template property loads template once."""

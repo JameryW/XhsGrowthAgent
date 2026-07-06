@@ -52,6 +52,15 @@ class AnalystAgent(BaseAgent):
         # 尝试获取 Ripple 预测报告（如果之前有模拟）
         ripple_report = await self._ripple_report(state)
 
+        # ponytail: drain Ripple call perf entries into the agent buffer so they
+        # flush with the node entry (PRD 节点级指标 PR2).
+        try:
+            from backend.services.ripple_service import RippleService
+
+            self._perf_buffer.extend(RippleService.get_instance().drain_ripple_perf())
+        except Exception:
+            pass
+
         system_prompt = self._build_system_prompt(state)
 
         ripple_context = ""

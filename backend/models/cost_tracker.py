@@ -28,6 +28,22 @@ COST_PER_1K: dict[str, dict[str, float]] = {
     "qwen-plus": {"input": 0.0004, "output": 0.0012},
 }
 
+# 未知 model 的 fallback 单价
+_DEFAULT_COST: dict[str, float] = {"input": 0.001, "output": 0.005}
+
+
+def calc_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+    """USD cost for one LLM call given token usage.
+
+    Reuses COST_PER_1K (shared with CostTracker). Unknown model → default
+    pricing. Used by the LLM perf-log instrumentation (PRD 节点级指标 PR2).
+    """
+    rates = COST_PER_1K.get(model, _DEFAULT_COST)
+    return round(
+        (input_tokens / 1000) * rates["input"] + (output_tokens / 1000) * rates["output"],
+        6,
+    )
+
 
 class CostTracker:
     """追踪 LLM 调用成本，日预算熔断"""
