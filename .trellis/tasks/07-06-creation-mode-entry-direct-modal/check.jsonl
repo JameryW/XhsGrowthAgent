@@ -1,0 +1,2 @@
+{"file": "frontend/src/views/Home.vue", "reason": "验证：表单默认隐藏、点开始创作立即弹 modal、简单模式才展表单、自由模式直跳 TUI"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "组件模式合规校验"}

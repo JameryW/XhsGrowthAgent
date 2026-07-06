@@ -19,6 +19,7 @@ const workflowStore = useWorkflowStore()
 const isStarting = ref(false)
 const showCreationMode = ref(false)
 const showConfirm = ref(false)
+const showSimpleForm = ref(false)
 const startFormRef = ref<InstanceType<typeof WorkflowStartForm> | null>(null)
 const checklistRef = ref<InstanceType<typeof PreLaunchChecklist> | null>(null)
 
@@ -56,23 +57,28 @@ const goToHistory = () => {
 }
 
 const handleFormSubmit = () => {
-  if (startFormRef.value) {
-    formConfig.value = startFormRef.value.getConfig()
-  }
-
   showCreationMode.value = true
 }
 
 const chooseSimpleMode = () => {
   showCreationMode.value = false
+  showSimpleForm.value = true
+}
+
+const submitSimpleForm = () => {
+  if (startFormRef.value) {
+    formConfig.value = startFormRef.value.getConfig()
+  }
   showConfirm.value = true
 }
 
 const chooseFreeMode = () => {
   showCreationMode.value = false
   const query: Record<string, string> = { mode: 'free' }
-  if (formConfig.value.topic) query.topic = formConfig.value.topic
-  if (formConfig.value.niche) query.niche = formConfig.value.niche
+  const topic = prefilledTopic.value || (route.query.topic as string)
+  const niche = route.query.niche as string
+  if (topic) query.topic = topic
+  if (niche) query.niche = niche
   if (formConfig.value.accountId) query.account_id = formConfig.value.accountId
   router.push({ name: 'tui', query })
 }
@@ -128,8 +134,25 @@ const confirmStart = async () => {
           </div>
           <h2 class="text-sm font-semibold text-slate-700">{{ t('home.startWorkflow') }}</h2>
         </div>
-        <WorkflowStartForm ref="startFormRef" :initial-topic="prefilledTopic || undefined" />
-        <div class="mt-5">
+        <template v-if="showSimpleForm">
+          <WorkflowStartForm ref="startFormRef" :initial-topic="prefilledTopic || undefined" />
+          <div class="mt-5">
+            <NeonButton
+              variant="pink"
+              size="md"
+              class="w-full max-w-xs mx-auto group/btn"
+              @click="submitSimpleForm()"
+              :loading="isStarting"
+              :aria-label="t('home.startWorkflow')"
+            >
+              <span class="inline-flex items-center gap-2 transition-transform duration-200 group-hover/btn:translate-x-1">
+                <AppIcon name="Rocket" size="sm" variant="white" aria-hidden="true" />
+                <span class="font-semibold">{{ t('home.startWorkflow') }}</span>
+              </span>
+            </NeonButton>
+          </div>
+        </template>
+        <div v-else class="mt-1">
           <NeonButton
             variant="pink"
             size="md"
