@@ -11,8 +11,10 @@ Multi-session:
   keyed by session_id. Sessions start on-demand and stop after idle timeout.
 
 Host tools:
-  Known XHS tools (xhs_workflow_start, etc.) are auto-executed by the backend
-  via internal API calls. Unknown host tools are forwarded to the frontend.
+  Known XHS tools are auto-executed by the backend via internal API calls.
+  The fixed workflow start tool is intentionally not exposed to OMP free
+  orchestration; users choose that path from the Simple Mode UI.
+  Unknown host tools are forwarded to the frontend.
 
 Extension UI:
   omp can request UI interaction (select, confirm, input, editor).
@@ -112,39 +114,9 @@ class AgentStatus:
 # ── XHS host tool definitions ───────────────────────────────────────────────
 
 # ponytail: tool schemas derived from xhsagent-ext/src/tools/*.ts
-# These are the 25 tools the omp agent can call via host_tool_call mechanism.
+# These are the XHS tools the omp agent can call via host_tool_call mechanism.
 
 XHS_HOST_TOOLS: list[dict[str, Any]] = [
-    {
-        "name": "xhs_workflow_start",
-        "label": "XHS Workflow Start",
-        "description": ("Start a XHS content creation workflow with real-time SSE progress"),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "account_id": {
-                    "type": "string",
-                    "description": "XHS account ID to run the workflow for",
-                },
-                "workflow_mode": {
-                    "type": "string",
-                    "enum": ["trend", "brief"],
-                    "default": "trend",
-                    "description": "Workflow mode: trend-based or brief-based",
-                },
-                "topic": {
-                    "type": "string",
-                    "description": "Topic or niche to focus on (optional)",
-                },
-                "async_mode": {
-                    "type": "boolean",
-                    "default": True,
-                    "description": "Run workflow asynchronously with SSE progress",
-                },
-            },
-            "required": ["account_id"],
-        },
-    },
     {
         "name": "xhs_workflow_status",
         "label": "XHS Workflow Status",
@@ -402,6 +374,24 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "xhs_publish_retry",
+        "label": "XHS Publish Retry",
+        "description": (
+            "Publish or retry publishing existing workflow content without restarting the "
+            "fixed creation workflow"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "thread_id": {
+                    "type": "string",
+                    "description": "Workflow thread ID with generated content and a publish result",
+                },
+            },
+            "required": ["thread_id"],
+        },
+    },
+    {
         "name": "xhs_ripple_pending",
         "label": "XHS Ripple Pending",
         "description": ("Get Ripple CAS decision status and available options"),
@@ -497,7 +487,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "label": "XHS Evaluation Result",
         "description": (
             "Get the creation-quality evaluation (RQGM agent-as-a-judge panel) for a "
-            "workflow. Returns 6-dimension scores + overall + decision + revision hints."
+            "workflow. Returns 9-dimension scores + overall + decision + revision hints."
         ),
         "parameters": {
             "type": "object",
@@ -604,30 +594,21 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
     api_base = os.environ.get("XHS_AGENT_API_BASE", "http://localhost:8889")
     url = f"{api_base}/api"
 
+    if tool_name == "xhs_workflow_start":
+        return _make_text_result(
+            (
+                "xhs_workflow_start is disabled in OMP free orchestration. "
+                "Use the Simple Mode UI to run the fixed workflow."
+            ),
+            None,
+            is_error=True,
+        )
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as raw_client:
             # Wrap client methods with retry logic
             client = _RetryingClient(raw_client, tool_name)
-            if tool_name == "xhs_workflow_start":
-                body: dict[str, Any] = {
-                    "account_id": arguments.get("account_id", "default"),
-                    "workflow_mode": arguments.get("workflow_mode", "trend"),
-                    "async_mode": arguments.get("async_mode", True),
-                }
-                if arguments.get("topic"):
-                    body["topic"] = arguments["topic"]
-                resp = await client.post(f"{url}/workflow/start", json=body)
-                data = _unwrap_envelope(resp)
-                text = (
-                    f"Workflow started!\n"
-                    f"Thread: {data.get('thread_id', '')}\n"
-                    f"Phase: {data.get('phase', '')}\n"
-                    f"Status: {data.get('status', '')}\n"
-                    f"Mode: {arguments.get('workflow_mode', 'trend')}"
-                )
-                return _make_text_result(text, data)
-
-            elif tool_name == "xhs_workflow_status":
+            if tool_name == "xhs_workflow_status":
                 thread_id = arguments.get("thread_id", "")
                 resp = await client.get(f"{url}/workflow/status/{thread_id}")
                 data = _unwrap_envelope(resp)
@@ -933,6 +914,17 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     f"Analytics triggered for {thread_id}. Phase: {data.get('phase', 'analyzing')}",
                     data,
                 )
+
+            elif tool_name == "xhs_publish_retry":
+                thread_id = arguments.get("thread_id", "")
+                resp = await client.post(f"{url}/workflow/publish-retry/{thread_id}")
+                data = _unwrap_envelope(resp)
+                status = data.get("status", "")
+                message = data.get("message", "")
+                text = f"Publish retry for {thread_id}: {status}"
+                if message:
+                    text += f"\n{message}"
+                return _make_text_result(text, data)
 
             elif tool_name == "xhs_ripple_pending":
                 thread_id = arguments.get("thread_id", "")

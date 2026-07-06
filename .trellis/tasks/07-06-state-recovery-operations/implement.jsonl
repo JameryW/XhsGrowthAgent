@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/07-06-state-recovery-operations/prd.md", "reason": "Task PRD — 3 recovery strategies, /recover endpoint spec, AC"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend quality bar + test coverage"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Non-recoverable state must reject; can't-determine-target → 400 not blind run"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "derive_status/stale/checkpoint_lost + Command(goto) resume semantics"}

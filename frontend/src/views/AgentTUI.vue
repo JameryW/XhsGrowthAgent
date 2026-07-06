@@ -13,6 +13,7 @@
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -32,6 +33,7 @@ import { submitReview } from '@/api/review'
 import { markdownToAnsi, ANSI } from '@/utils/markdownToAnsi'
 
 const { t } = useI18n()
+const route = useRoute()
 const workflowStore = useWorkflowStore()
 const authStore = useAuthStore()
 
@@ -696,6 +698,8 @@ async function processCommandMode(text: string) {
   try {
     if (text.startsWith('/')) {
       await processSlashCommand(text)
+    } else if (isFreeCreationEntry.value) {
+      writeLineColored(t('tui.freeAgentUnavailable'), ANSI.YELLOW)
     } else {
       await handleStart(text)
     }
@@ -712,7 +716,13 @@ async function processSlashCommand(cmd: string) {
   const arg = args.join(' ')
 
   switch (command) {
-    case '/start': await handleStart(arg || undefined); break
+    case '/start':
+      if (isFreeCreationEntry.value) {
+        writeLineColored(t('tui.freeStartDisabled'), ANSI.YELLOW)
+      } else {
+        await handleStart(arg || undefined)
+      }
+      break
     case '/status': await handleStatus(arg || activeThreadId.value || ''); break
     case '/pause': await handlePause(arg || activeThreadId.value || ''); break
     case '/resume': await handleResume(arg || activeThreadId.value || ''); break
@@ -829,14 +839,19 @@ function showHelp() {
     writeLine('')
     writeLine(`  ${Y}Command Mode${R}`)
     writeLine(`  ${sep}`)
-    writeLine(`  ${G}/start${R} ${D}[topic]${R}  Start workflow`)
-    writeLine(`  ${G}/status${R} ${D}[id]${R}    Check workflow status`)
-    writeLine(`  ${G}/pause${R} ${D}[id]${R}     Pause workflow`)
-    writeLine(`  ${G}/resume${R} ${D}[id]${R}    Resume workflow`)
-    writeLine(`  ${G}/cancel${R} ${D}[id]${R}    Cancel workflow`)
-    writeLine(`  ${G}/approve${R} ${D}[id]${R}   Approve content`)
-    writeLine(`  ${G}/reject${R} ${D}<msg>${R}   Reject with feedback`)
-    writeLine(`  ${G}/mode${R}          Switch to agent mode`)
+    if (isFreeCreationEntry.value) {
+      writeLine(`  ${G}/mode${R}          Switch to agent mode`)
+      writeLine(`  ${D}${t('tui.freeStartDisabled')}${R}`)
+    } else {
+      writeLine(`  ${G}/start${R} ${D}[topic]${R}  Start workflow`)
+      writeLine(`  ${G}/status${R} ${D}[id]${R}    Check workflow status`)
+      writeLine(`  ${G}/pause${R} ${D}[id]${R}     Pause workflow`)
+      writeLine(`  ${G}/resume${R} ${D}[id]${R}    Resume workflow`)
+      writeLine(`  ${G}/cancel${R} ${D}[id]${R}    Cancel workflow`)
+      writeLine(`  ${G}/approve${R} ${D}[id]${R}   Approve content`)
+      writeLine(`  ${G}/reject${R} ${D}<msg>${R}   Reject with feedback`)
+      writeLine(`  ${G}/mode${R}          Switch to agent mode`)
+    }
   }
 
   writeLine('')
@@ -857,6 +872,10 @@ function showHelp() {
 
 const modeLabel = computed(() => mode.value === 'agent' ? 'AGENT' : 'CMD')
 // ponytail: modeIndicatorColor removed — mode badge uses :class binding directly
+const isFreeCreationEntry = computed(() => route.query.mode === 'free')
+const freeCreationTopic = computed(() => (
+  typeof route.query.topic === 'string' ? route.query.topic : ''
+))
 
 // ── Lifecycle ───────────────────────────────────────────────────────────
 
@@ -985,10 +1004,14 @@ onMounted(() => {
   writeLine(`${W}│${R}  ${G}XHS Growth Agent${R}  ${D}v1.0${R}${' '.repeat(Math.max(0, bannerWidth - 22))}${W}│${R}`)
   writeLine(`${W}│${R}  ${D}小红书内容增长智能体${R}${' '.repeat(Math.max(0, bannerWidth - 12))}${W}│${R}`)
   writeLine(`${W}├${'─'.repeat(bannerWidth)}┤${R}`)
-  writeLine(`${W}│${R}  ${Y}trend → strategy → copy → visual → publish${R}${' '.repeat(Math.max(0, bannerWidth - 38))}${W}│${R}`)
+  const flowText = isFreeCreationEntry.value ? t('tui.freeFlow') : t('tui.workflowFlow')
+  writeLine(`${W}│${R}  ${Y}${flowText}${R}${' '.repeat(Math.max(0, bannerWidth - getStringWidth(flowText) - 2))}${W}│${R}`)
   writeLine(`${W}╰${'─'.repeat(bannerWidth)}╯${R}`)
   writeLine('')
-  writeLineColored(`  Type ${ANSI.BRIGHT_WHITE}/help${ANSI.RESET} for commands, or just start chatting.`, ANSI.DIM)
+  writeLineColored(`  ${isFreeCreationEntry.value ? t('tui.freeWelcomeHint') : t('tui.terminalHint')}`, ANSI.DIM)
+  if (isFreeCreationEntry.value && freeCreationTopic.value) {
+    writeLineColored(`  ${t('tui.freeTopic', { topic: freeCreationTopic.value })}`, ANSI.DIM)
+  }
   writeLine('')
 
   // Try connecting to agent WebSocket

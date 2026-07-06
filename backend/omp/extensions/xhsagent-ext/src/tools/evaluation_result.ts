@@ -37,7 +37,7 @@ export default function register(pi: ExtensionAPI) {
     name: "xhs_evaluation_result",
     label: "XHS Evaluation Result",
     description:
-      "Get the creation-quality evaluation (RQGM agent-as-a-judge panel) for a workflow. Returns 6-dimension scores (copywriting/visual/compliance/reach/audience/bias_check), overall score, decision (approved/needs_revision/rejected), and revision hints.",
+      "Get the creation-quality evaluation (RQGM agent-as-a-judge panel) for a workflow. Returns 9-dimension scores (copywriting/visual/compliance/reach/audience/ai_taste/image_quality/commercial_tone/bias_check), overall score, decision (approved/needs_revision/rejected), and revision hints.",
     parameters: schema,
     async execute(_id, params, _signal, _onUpdate, _ctx) {
       try {

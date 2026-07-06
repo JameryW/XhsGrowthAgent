@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/07-06-ripple-decouple-background/prd.md", "reason": "Task PRD — background Ripple mode, fire-and-forget + finalize gate, config switch"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend quality bar + test coverage"}
+{"file": ".trellis/spec/backend/ripple-integration.md", "reason": "Ripple call pattern, timeout handling, fallback"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Background task exception must not break main chain; timeout non-blocking"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "LangGraph state update semantics, Command(update=), store write-back across nodes"}

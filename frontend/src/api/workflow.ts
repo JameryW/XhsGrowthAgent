@@ -19,7 +19,7 @@ export async function listWorkflows(params?: {
   return client.get('/workflow/list', { params }) as unknown as WorkflowListResponse
 }
 
-// 启动工作流
+// 启动固定工作流（简单模式）
 export async function startWorkflow(req: WorkflowStartRequest): Promise<WorkflowResponse> {
   const { retryWithBackoff } = useRetry()
   return retryWithBackoff(async () => {

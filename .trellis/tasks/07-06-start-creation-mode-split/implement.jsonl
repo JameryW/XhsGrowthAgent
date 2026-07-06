@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "OMP bridge and host tool contract for TUI free orchestration"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Workflow status and gate behavior while preserving fixed workflow"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Vue component, i18n, and API-call conventions for creation entry changes"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Workflow store and route state conventions for mode selection"}

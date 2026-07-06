@@ -78,8 +78,8 @@
     "reviewShort": "审核",
     "analytics": "数据分析",
     "analyticsShort": "数据",
-    "startWorkflow": "启动新工作流",
-    "startShort": "启动",
+    "startWorkflow": "开始创作",
+    "startShort": "创作",
     "logout": "退出登录",
     "more": "更多",
     "phase": "阶段",
@@ -104,7 +104,7 @@
   "home": {
     "title": "小红书增长引擎",
     "subtitle": "AI驱动的自动化内容创作平台",
-    "startWorkflow": "启动新工作流",
+    "startWorkflow": "开始创作",
     "viewDashboard": "查看现有工作流",
     "systemStatus": "系统状态",
     "account": "账户",
@@ -169,14 +169,22 @@
       }
     },
     "confirm": {
-      "title": "确认启动工作流",
+      "title": "确认简单模式",
       "subtitle": "请检查以下配置",
       "enabled": "已开启",
       "disabled": "已关闭",
       "liveWarning": "当前为实时模式，发布的内容将真实发布到小红书平台。",
       "autoPublishWarning": "自动发布已开启，审核通过后将自动发布，无需二次确认。",
       "expectedSteps": "预期执行步骤",
-      "start": "确认启动"
+      "start": "开始固定工作流"
+    },
+    "creationMode": {
+      "title": "开始创作",
+      "subtitle": "选择创作模式",
+      "simpleTitle": "简单模式（固定工作流）",
+      "simpleDesc": "按现有固定流程自动完成趋势、策略、创作、评估与发布。",
+      "freeTitle": "自由模式（自动化编排）",
+      "freeDesc": "进入 TUI，由智能体按对话自由编排创作、评估和发布。"
     }
   },
   "dashboard": {
@@ -216,8 +224,8 @@
     },
     "actionButtons": {
       "ariaLabel": "工作流操作按钮",
-      "startNew": "启动新工作流",
-      "startNewDesc": "启动新的内容增长工作流",
+      "startNew": "开始创作",
+      "startNewDesc": "选择简单模式或自由模式开始创作",
       "goReview": "前往审核页面查看内容",
       "goReviewDesc": "进入审核页面",
       "goReviewPending": "前往审核页面查看并决定内容",
@@ -595,7 +603,7 @@
       "loading": "加载评估结果中…",
       "loadFailed": "评估结果加载失败",
       "overall": "综合分",
-      "radarTitle": "6 维评分雷达",
+      "radarTitle": "9 维评分雷达",
       "dimensionsTitle": "维度详情",
       "hintsTitle": "修订建议",
       "biasTitle": "对抗偏倚检测",
@@ -671,8 +679,8 @@
     "refreshing": "刷新中...",
     "empty": {
       "title": "暂无分析数据",
-      "description": "启动工作流生成内容后，即可在此查看表现数据分析。",
-      "startWorkflow": "启动新工作流"
+      "description": "开始创作并发布内容后，即可在此查看表现数据分析。",
+      "startWorkflow": "开始创作"
     },
     "error": {
       "title": "数据加载失败",
@@ -883,8 +891,8 @@
     "title": "工作流历史",
     "subtitle": "查看和管理历史工作流",
     "empty": "暂无工作流记录",
-    "emptyDesc": "启动您的第一个工作流，开始内容增长之旅",
-    "startNew": "启动新工作流",
+    "emptyDesc": "开始第一次创作，进入内容增长之旅",
+    "startNew": "开始创作",
     "backHome": "返回首页",
     "resume": "恢复",
     "view": "查看",
@@ -928,8 +936,8 @@
         "desc": "查看工作流的各个阶段，包括选品、策划、创作、审核、发布和分析。"
       },
       "start": {
-        "title": "启动工作流",
-        "desc": "点击按钮开始新的工作流，系统会自动执行各个阶段。"
+        "title": "开始创作",
+        "desc": "点击按钮选择简单模式或自由模式。简单模式会自动执行固定流程。"
       },
       "review": {
         "title": "审核与发布",
@@ -1370,10 +1378,17 @@
   "tui": {
     "welcome": "XhsGrowthAgent TUI v0.1",
     "welcomeHint": "输入话题开始创作，或输入 /help 查看命令。",
+    "terminalHint": "输入 /help 查看命令，或直接开始对话。",
+    "workflowFlow": "trend → strategy → copy → visual → publish",
+    "freeFlow": "自由编排 → 创作 → 评估 → 发布",
+    "freeWelcomeHint": "自由模式已开启：请直接描述你的创作目标，智能体会编排创作、评估与发布。",
+    "freeTopic": "带入主题：{topic}",
+    "freeAgentUnavailable": "自由模式需要 Agent 连接；当前未连接时不会启动固定工作流。",
+    "freeStartDisabled": "自由模式不会启动固定工作流。请直接对话编排，或返回选择简单模式。",
     "processing": "处理中...",
     "inputPlaceholder": "输入命令或话题...",
     "noActiveWorkflow": "没有活跃的工作流。使用 /start 或 /start <话题> 启动",
-    "startingWorkflow": "正在启动工作流{topic}...",
+    "startingWorkflow": "正在开始创作{topic}...",
     "workflowStarted": "工作流已启动！\n  线程: {threadId}\n  阶段: {phase}\n  状态: {status}",
     "fetchingStatus": "正在获取 {threadId} 的状态...",
     "workflowPaused": "工作流 {threadId} 已暂停。",
@@ -1385,11 +1400,11 @@
     "reviewPending": "内容待审核。输入 /approve 通过 或 /reject <修改意见> 驳回",
     "unknownCommand": "未知命令：{command}。输入 /help 查看可用命令。",
     "resumingWorkflow": "恢复活跃工作流：{threadId}",
-    "helpText": "可用命令：\n  /start [话题]  - 启动工作流（可选话题）\n  /status [id]   - 查看工作流状态\n  /pause [id]    - 暂停工作流\n  /resume [id]   - 恢复工作流\n  /cancel [id]   - 取消工作流\n  /approve [id]  - 通过审核\n  /reject <意见> - 驳回并附修改意见\n  /help          - 显示帮助\n  /clear         - 清除终端\n\n或直接输入话题启动工作流。"
+    "helpText": "可用命令：\n  /start [话题]  - 开始固定流程创作（可选话题）\n  /status [id]   - 查看工作流状态\n  /pause [id]    - 暂停工作流\n  /resume [id]   - 恢复工作流\n  /cancel [id]   - 取消工作流\n  /approve [id]  - 通过审核\n  /reject <意见> - 驳回并附修改意见\n  /help          - 显示帮助\n  /clear         - 清除终端\n\n或直接输入话题开始固定流程创作。"
   },
   "evaluation": {
     "title": "创作质量评估",
-    "subtitle": "RQGM agent-as-a-judge 面板 · 6 维质量评分与修订建议",
+    "subtitle": "RQGM agent-as-a-judge 面板 · 9 维质量评分与修订建议",
     "list": {
       "subtitle": "查看有评估结果的工作流，点击进入详情",
       "searchPlaceholder": "搜索标题 / thread_id / 账号",
@@ -1406,7 +1421,7 @@
     "searching": "查询中…",
     "initialHint": "输入工作流 ID 查看其创作质量评估结果",
     "overall": "综合分",
-    "radarTitle": "6 维评分雷达",
+    "radarTitle": "9 维评分雷达",
     "radarSeries": "质量评分",
     "dimensionsTitle": "维度详情",
     "hintsTitle": "修订建议",
@@ -1431,6 +1446,9 @@
       "compliance": "合规",
       "reach": "传播潜力",
       "audience": "受众匹配",
+      "ai_taste": "AI味儿",
+      "image_quality": "图片质量",
+      "commercial_tone": "商业味儿",
       "bias_check": "偏倚检测",
       "unknown": "{dim}"
     },

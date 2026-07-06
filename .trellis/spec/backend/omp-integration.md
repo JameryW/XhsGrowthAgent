@@ -43,7 +43,8 @@
 ### 3. Contracts
 
 **Host Tool Auto-Execution**:
-- Known XHS tools (`xhs_workflow_start`, `xhs_workflow_status`, `xhs_workflow_pause`, `xhs_workflow_resume`, `xhs_workflow_cancel`, `xhs_review_approve`, `xhs_review_reject`) are **auto-executed by the backend** via internal API calls (httpx to `localhost:8000/api/...`)
+- Known XHS tools (`xhs_workflow_status`, `xhs_workflow_pause`, `xhs_workflow_resume`, `xhs_workflow_cancel`, `xhs_review_approve`, `xhs_review_reject`, `xhs_publish_retry`, etc.) are **auto-executed by the backend** via internal API calls (httpx to `localhost:8000/api/...`)
+- `xhs_workflow_start` is intentionally **not exposed** to OMP free orchestration. The fixed workflow is launched only from the Simple Mode UI; OMP focuses on free orchestration for creation, evaluation, and publishing.
 - Unknown host tools are forwarded to frontend as `host_tool_call` event
 - Frontend must respond with `host_tool_result` message for unknown tools
 
@@ -88,7 +89,7 @@
 
 ### 5. Good/Base/Bad Cases
 
-**Good**: Connect → send "帮我写一篇母婴笔记" → streaming agent_message → tool_call (xhs_workflow_start auto-executed) → tool_result → session_end
+**Good**: Connect → send "帮我写一篇母婴笔记" → streaming agent_message with draft content and evaluation guidance → optional tool_call (`xhs_evaluation_result` / `xhs_publish_retry` for an existing thread) auto-executed → tool_result → session_end
 
 **Base**: Connect → get_status → receives `{status: "idle", model: "claude-sonnet-4-20250514", session_id: "..."}`
 
@@ -173,6 +174,7 @@ if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
 | xhs_workflow_pause | POST | `/workflow/pause/{id}` | — | `{ thread_id, status }` |
 | xhs_workflow_resume | POST | `/workflow/resume/{id}` | `{ resume_value? }` | `{ thread_id, status, phase }` |
 | xhs_workflow_cancel | POST | `/workflow/cancel/{id}` | — | `{ thread_id, status, message }` |
+| xhs_publish_retry | POST | `/workflow/publish-retry/{id}` | — | `{ thread_id, status, message }` |
 | xhs_review_approve | POST | `/review/submit/{id}` | `{ decision: "approved", comments? }` | `{ thread_id, status, decision }` |
 | xhs_review_reject | POST | `/review/submit/{id}` | `{ decision: "needs_revision", comments }` | `{ thread_id, status, decision }` |
 | Health check | GET | `/system/health` | — | `{ status, ... }` (inside envelope.data) |

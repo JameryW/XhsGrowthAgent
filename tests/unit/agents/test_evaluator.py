@@ -53,9 +53,19 @@ class TestEvaluatorAgent:
         }
 
     def _full_panel_response(self, scores: dict[str, float], blocking: str | None = None) -> str:
-        """Build a full 6-dimension LLM JSON response string."""
+        """Build a full 9-dimension LLM JSON response string."""
         dims = []
-        for name in ["copywriting", "visual", "compliance", "reach", "audience", "bias_check"]:
+        for name in [
+            "copywriting",
+            "visual",
+            "compliance",
+            "reach",
+            "audience",
+            "ai_taste",
+            "image_quality",
+            "commercial_tone",
+            "bias_check",
+        ]:
             dims.append(
                 '{"dimension": "%s", "score": %s, "rationale": "r", "issues": [], "is_blocking": %s}'
                 % (name, scores.get(name, 80.0), "true" if name == blocking else "false")
@@ -93,7 +103,7 @@ class TestEvaluatorAgent:
         ev = result["evaluation_result"]
         assert ev["decision"] == ContentStatus.APPROVED
         assert ev["overall_score"] >= 70
-        assert len(ev["dimensions"]) == 6
+        assert len(ev["dimensions"]) == 9
         assert ev["revision_hints"] == []
 
     @pytest.mark.asyncio
@@ -208,9 +218,19 @@ class TestEvaluatorAgent:
             result = await agent.execute(mock_state, store=mock_store)
 
         dims = result["evaluation_result"]["dimensions"]
-        assert len(dims) == 6
+        assert len(dims) == 9
         names = {d["dimension"] for d in dims}
-        assert names == {"copywriting", "visual", "compliance", "reach", "audience", "bias_check"}
+        assert names == {
+            "copywriting",
+            "visual",
+            "compliance",
+            "reach",
+            "audience",
+            "ai_taste",
+            "image_quality",
+            "commercial_tone",
+            "bias_check",
+        }
 
     @pytest.mark.asyncio
     async def test_decision_ignores_llm_self_reported_decision(self, agent, mock_state, mock_store):
@@ -368,6 +388,6 @@ class TestEvaluatorAgent:
         """Fresh agent (defaults) → prompt shows default weights, no placeholders."""
         state = {"niche": "母婴"}
         prompt = agent._build_system_prompt(state)
-        assert "copywriting 0.25" in prompt  # default
+        assert "copywriting 0.20" in prompt  # default
         assert "{weights_block}" not in prompt
         assert "{bias_severity_note}" not in prompt  # standard note (may be empty-ish)

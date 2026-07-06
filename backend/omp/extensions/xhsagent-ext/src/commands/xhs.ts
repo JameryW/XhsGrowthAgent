@@ -1,18 +1,18 @@
-/** /xhs command — start a XHS content creation workflow. */
+/** /xhs command — free-orchestrate XHS content creation. */
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
 
 export default function register(pi: ExtensionAPI) {
   pi.registerCommand("xhs", {
-    description: "Start a XHS content creation workflow",
+    description: "Free-orchestrate XHS content creation, evaluation, and publishing",
     async handler(args: string, _ctx: ExtensionCommandContext) {
       const topic = (args || "").trim();
       pi.sendUserMessage([
-        `Create a Xiaohongshu (小红书) content post.`,
-        topic ? `Topic: ${topic}` : "Pick a trending topic using the workflow.",
-        "Use xhs_workflow_start to launch the workflow, then track progress with xhs_workflow_status.",
-        "At blogger selection: xhs_blogger_pending then xhs_blogger_select.",
-        "At review: xhs_review_pending then xhs_review_approve or xhs_review_reject.",
-        "At optimization: xhs_optimization_draft then xhs_optimization_select.",
+        "Free-orchestrate a Xiaohongshu (小红书) content post.",
+        topic ? `Topic: ${topic}` : "Ask clarifying questions or propose a topic before drafting.",
+        "Do not start the fixed workflow from OMP; the fixed workflow belongs to Simple Mode in the web UI.",
+        "Create: draft titles, body copy, hashtags, and image prompts directly in the conversation.",
+        "Evaluate: check AI taste, image quality, commercial tone, compliance, reach, and audience fit. Use xhs_evaluation_run/result only when a workflow thread_id exists.",
+        "Publish: for existing workflow content, use xhs_review_approve or xhs_publish_retry; otherwise prepare publish-ready copy and ask the user before publishing.",
       ].join("\n"));
     },
   });

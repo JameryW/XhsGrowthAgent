@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/07-06-gate-ripple/prd.md", "reason": "AC checklist — verify risk classifier + auto-pass + config gate + high-risk never auto"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality gate — lint/type/test green"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify fail-safe: default off, high risk never auto-approve"}

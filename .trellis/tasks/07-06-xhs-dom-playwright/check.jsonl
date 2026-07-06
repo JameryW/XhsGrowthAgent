@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/07-06-xhs-dom-playwright/prd.md", "reason": "Acceptance criteria checklist — verify each AC met before complete"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality gate — lint/type/test green, best-effort error handling"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify graceful skip path on missing CDP/cookie env"}
