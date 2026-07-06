@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/07-06-decision-inbox-merge-gates/prd.md", "reason": "Task PRD — /inbox endpoint aggregating all at-gate threads"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend quality bar + test coverage"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "gate detection via state.next/state.interrupts, gate types"}

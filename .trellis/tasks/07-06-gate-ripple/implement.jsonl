@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/07-06-gate-ripple/prd.md", "reason": "Task PRD — review_gate auto-pass scope, risk classifier rules, config gate"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend quality bar + test coverage"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "auto-approve must fail safe (default off, high risk never auto)"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "review_gate interrupt_before semantics + human_feedback.decision routing"}

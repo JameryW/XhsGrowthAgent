@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/07-06-xhs-dom-playwright/prd.md", "reason": "Task PRD — DOM probe scope, selectors to assert, out-of-scope (no publish/upload)"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend quality bar — best-effort error handling, test coverage expectations"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Graceful skip when no CDP/cookie env; probe must not crash on missing env"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Where to place probe module (backend/services/) + script (scripts/)"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse XHSPublisher._ensure_browser/_ensure_page/_goto_creator_page rather than reimplement"}

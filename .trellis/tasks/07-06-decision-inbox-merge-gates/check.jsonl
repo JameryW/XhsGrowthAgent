@@ -1,0 +1,2 @@
+{"file": ".trellis/tasks/07-06-decision-inbox-merge-gates/prd.md", "reason": "AC checklist — inbox aggregation + gate snapshot + empty list no 500"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality gate — lint/type/test green"}

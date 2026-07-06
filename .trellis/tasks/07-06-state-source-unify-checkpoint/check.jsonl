@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/07-06-state-source-unify-checkpoint/prd.md", "reason": "AC checklist — orphan detection + /list标注 + lazy + recoverable"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality gate — lint/type/test green"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "Verify derive_status/stale reuse, no new status enum"}

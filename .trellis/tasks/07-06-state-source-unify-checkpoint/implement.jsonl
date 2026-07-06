@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/07-06-state-source-unify-checkpoint/prd.md", "reason": "Task PRD — orphan detection, lazy /list //status, reuse stale semantics"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend quality bar + test coverage"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "derive_status/has_active_task/stale semantics, checkpoint as truth source"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Orphan must be recoverable, not silent"}
