@@ -90,20 +90,27 @@ export async function del(path: string): Promise<unknown> {
 
 // ── SSE helper ──────────────────────────────────────────────────────────
 
-/** SSE event types sent by the backend (from EventType enum). */
+/** SSE event types sent by the backend (from EventType enum, dot-notation).
+ *  Backend emits named events: `event: workflow.completed` etc.
+ *  These must match backend/realtime/events.py EventType values exactly —
+ *  addEventListener is name-sensitive, so underscore-vs-dot mismatches
+ *  silently drop events (the onmessage fallback never fires for named events). */
 const SSE_EVENT_TYPES = [
-  "workflow_started",
-  "workflow_completed",
-  "workflow_error",
-  "phase_changed",
-  "agent_started",
-  "agent_completed",
-  "review_requested",
-  "progress_update",
+  "workflow.started",
+  "workflow.phase_changed",
+  "workflow.agent_started",
+  "workflow.agent_completed",
+  "workflow.data_updated",
+  "workflow.paused",
+  "workflow.resumed",
+  "workflow.completed",
+  "workflow.error",
+  "review.pending",
+  "ripple.progress",
 ] as const;
 
 /** Subscribe to SSE stream for a workflow. Backend sends named events
- *  (e.g. `event: phase_changed`), not anonymous messages.
+ *  (e.g. `event: workflow.phase_changed`), not anonymous messages.
  *  Returns a cleanup function to close the connection. */
 export function subscribeSSE(
   threadId: string,
@@ -119,7 +126,7 @@ export function subscribeSSE(
     resolveRef = resolve;
     es = new EventSource(url);
 
-    // Backend sends named events: event: phase_changed, event: progress_update, etc.
+    // Backend sends named events: event: workflow.phase_changed, event: workflow.completed, etc.
     // We must use addEventListener for each type; onmessage only catches unnamed events.
     for (const eventType of SSE_EVENT_TYPES) {
       es.addEventListener(eventType, (msg: MessageEvent) => {

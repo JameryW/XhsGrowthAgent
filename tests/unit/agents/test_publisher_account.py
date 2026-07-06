@@ -202,6 +202,42 @@ async def test_dry_run_records_account_id(mock_store, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_state_dry_run_overrides_publish_options(mock_store, monkeypatch):
+    """Top-level state["dry_run"]=True must force mock publish even when
+    publish_options.dry_run=False.
+
+    Defense in depth: a workflow started with dry_run=True must NEVER call the
+    real XHS publish API, regardless of what publish_options says. Without this
+    guard, a user approving with explicit publish_options={dry_run: false}
+    would silently flip a dry_run workflow into a real publish.
+    """
+    fake = MagicMock()
+    fake.platform.use_browser = True
+    fake.platform.headless = True
+    fake.platform.cdp_endpoint = ""
+    monkeypatch.setattr("backend.agents.publisher.Settings", lambda: fake)
+
+    state = _state(publish_options={"dry_run": False, "account_id": "acc_x"})
+    state["dry_run"] = True  # top-level dry_run from /start
+    _mock_history(monkeypatch)
+
+    # If the guard fails, the publisher would try to construct XHSClient and
+    # call get_account — we mock them to ensure the test fails loudly if the
+    # real-publish branch is reached.
+    get_account_mock = AsyncMock(return_value=MagicMock(is_active=True))
+    monkeypatch.setattr("backend.db.accounts.get_account", get_account_mock)
+    client = _mock_client()
+    monkeypatch.setattr("backend.services.xhs_client.XHSClient", lambda **kw: client)
+
+    result = await PublisherAgent().execute(state, store=mock_store)
+
+    assert result["publish_result"]["status"] == "mock_published"
+    # Real-publish branch must NOT have been entered
+    get_account_mock.assert_not_awaited()
+    client.publish_post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_selected_account_expired_cookie_classified(
     _browser_settings, mock_store, monkeypatch
 ):

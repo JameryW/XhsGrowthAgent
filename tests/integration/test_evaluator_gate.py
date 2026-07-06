@@ -167,6 +167,28 @@ class TestReviseContentPreservesHints:
         # no revision_hints → human_feedback not set (or empty)
         assert "revisions" not in (result.get("human_feedback") or {})
 
+    @pytest.mark.asyncio
+    async def test_revision_count_incremented(self):
+        """revise_content_node increments revision_count for loop guard."""
+        state = {
+            "evaluation_result": {
+                "decision": ContentStatus.NEEDS_REVISION,
+                "revision_hints": ["fix"],
+            },
+            "revision_count": 1,
+        }
+        store = AsyncMock()
+        result = await revise_content_node(state, store=store)
+        assert result["revision_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_revision_count_starts_from_zero(self):
+        """Missing revision_count defaults to 0, incremented to 1."""
+        state = {"evaluation_result": {"decision": ContentStatus.NEEDS_REVISION}}
+        store = AsyncMock()
+        result = await revise_content_node(state, store=store)
+        assert result["revision_count"] == 1
+
 
 class TestGraphTopologyEvaluatorGate:
     """build_graph wires review_gate → evaluator_gate → publisher."""

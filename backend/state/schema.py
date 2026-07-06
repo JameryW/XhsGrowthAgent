@@ -63,6 +63,16 @@ class XHSGrowthState(TypedDict, total=False):
     # 创作质量评估 (RQGM agent-as-a-judge 面板) — 发布前 AI 质量关卡
     evaluation_result: EvaluationResult
 
+    # Revision loop guard — counts evaluator→revise_content→copywriter cycles.
+    # evaluator_outcome force-approves after _MAX_REVISION_COUNT to prevent
+    # infinite revision loops when the panel is miscalibrated or adversarial.
+    revision_count: int
+
+    # Continuous-mode cycle guard — counts analyst→orchestrator (or engagement→
+    # orchestrator) cycles. should_continue/engagement_router force-end after
+    # _MAX_CYCLE_COUNT to prevent runaway workflows in continuous execution mode.
+    cycle_count: int
+
     # Ripple CAS engine
     ripple_prediction: RipplePrediction
     ripple_pmf: RipplePMFResult
@@ -105,6 +115,14 @@ class XHSGrowthState(TypedDict, total=False):
     # Optional optimization control
     skip_optimization: bool
     optimization_error: str | None
+
+    # Engagement (post-publish interactions) error — non-fatal: the post was
+    # published successfully, but comment replies / DM handling failed.
+    # Mirrors optimization_error pattern: recorded for observability without
+    # reclassifying a completed workflow as ERROR (derive_status ignores this
+    # field; setting the generic ``error`` field would flip a COMPLETED
+    # workflow to ERROR since engagement has no next_nodes).
+    engagement_error: str | None
 
     # ── 博主参考系统 ──
 

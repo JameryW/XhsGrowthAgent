@@ -854,6 +854,7 @@
     "resumed": "工作流已恢复",
     "resumeFailed": "恢复失败",
     "cancelFailed": "取消失败",
+    "cancelled": "工作流已取消",
     "statusRefreshFailed": "状态刷新失败",
     "staleDetected": "工作流状态异常",
     "staleHint": "后台任务已终止但仍有待执行节点，点击恢复继续执行",
