@@ -211,6 +211,59 @@ class TestEvaluatorOutcome:
         state = {}
         assert evaluator_outcome(state) == "publisher"
 
+    def test_needs_revision_force_approves_at_limit(self):
+        """revision_count >= MAX → force publisher (prevent infinite loop)."""
+        state = {
+            "evaluation_result": {"decision": ContentStatus.NEEDS_REVISION},
+            "revision_count": 2,
+        }
+        assert evaluator_outcome(state) == "publisher"
+
+    def test_rejected_force_approves_at_limit(self):
+        """REJECTED at revision limit → publisher (not infinite loop)."""
+        state = {
+            "evaluation_result": {"decision": ContentStatus.REJECTED},
+            "revision_count": 2,
+        }
+        assert evaluator_outcome(state) == "publisher"
+
+    def test_needs_revision_still_revises_below_limit(self):
+        """revision_count < MAX → still routes to revise_content."""
+        state = {
+            "evaluation_result": {"decision": ContentStatus.NEEDS_REVISION},
+            "revision_count": 1,
+        }
+        assert evaluator_outcome(state) == "revise_content"
+
+    def test_needs_revision_revises_at_zero(self):
+        """revision_count=0 (first cycle) → still routes to revise_content."""
+        state = {
+            "evaluation_result": {"decision": ContentStatus.NEEDS_REVISION},
+            "revision_count": 0,
+        }
+        assert evaluator_outcome(state) == "revise_content"
+
+    def test_approved_ignores_revision_count(self):
+        """APPROVED always routes to publisher — guard must not interfere.
+
+        The revision_count guard only applies to needs_revision/rejected.
+        An approved decision at revision_count >= MAX must still go to
+        publisher (not get stuck or re-route to revise_content).
+        """
+        state = {
+            "evaluation_result": {"decision": ContentStatus.APPROVED},
+            "revision_count": 99,
+        }
+        assert evaluator_outcome(state) == "publisher"
+
+    def test_above_limit_force_approves(self):
+        """revision_count > MAX (not just ==) → force publisher."""
+        state = {
+            "evaluation_result": {"decision": ContentStatus.NEEDS_REVISION},
+            "revision_count": 5,
+        }
+        assert evaluator_outcome(state) == "publisher"
+
 
 class TestShouldContinue:
     """Tests for should_continue conditional edge."""
@@ -239,6 +292,34 @@ class TestShouldContinue:
         result = should_continue(state)
         assert result == "orchestrator"
 
+    def test_continuous_mode_caps_at_max_cycle_count(self):
+        """ANALYZING + continuous + cycle_count >= _MAX_CYCLE_COUNT → END.
+
+        Prevents an unbounded analyst→orchestrator→analyst loop in continuous
+        mode when the orchestrator keeps routing back to analyst.
+        """
+        from backend.graph.routers import _MAX_CYCLE_COUNT
+
+        state = {
+            "phase": WorkflowPhase.ANALYZING,
+            "error": None,
+            "execution_mode": "continuous",
+            "cycle_count": _MAX_CYCLE_COUNT,
+        }
+        result = should_continue(state)
+        assert result == "__end__"
+
+    def test_continuous_mode_below_cap_still_loops(self):
+        """ANALYZING + continuous + cycle_count < _MAX_CYCLE_COUNT → orchestrator."""
+        state = {
+            "phase": WorkflowPhase.ANALYZING,
+            "error": None,
+            "execution_mode": "continuous",
+            "cycle_count": 2,
+        }
+        result = should_continue(state)
+        assert result == "orchestrator"
+
     def test_routes_to_end_default(self):
         """Default phase → END."""
         state = {"phase": WorkflowPhase.IDLE}
@@ -263,6 +344,29 @@ class TestEngagementRouter:
     def test_continuous_mode_routes_to_orchestrator(self):
         """Continuous execution mode → orchestrator (next cycle)."""
         state = {"execution_mode": "continuous", "phase": WorkflowPhase.ENGAGING}
+        assert engagement_router(state) == "orchestrator"
+
+    def test_continuous_mode_caps_at_max_cycle_count(self):
+        """Continuous + cycle_count >= _MAX_CYCLE_COUNT → END.
+
+        Prevents an unbounded engagement→orchestrator→engagement loop.
+        """
+        from backend.graph.routers import _MAX_CYCLE_COUNT
+
+        state = {
+            "execution_mode": "continuous",
+            "phase": WorkflowPhase.ENGAGING,
+            "cycle_count": _MAX_CYCLE_COUNT,
+        }
+        assert engagement_router(state) == "__end__"
+
+    def test_continuous_mode_below_cap_still_loops(self):
+        """Continuous + cycle_count < _MAX_CYCLE_COUNT → orchestrator."""
+        state = {
+            "execution_mode": "continuous",
+            "phase": WorkflowPhase.ENGAGING,
+            "cycle_count": 1,
+        }
         assert engagement_router(state) == "orchestrator"
 
     def test_cancelled_routes_to_end(self):

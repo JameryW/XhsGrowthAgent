@@ -85,9 +85,19 @@ class PublisherAgent(BaseAgent):
         settings = Settings()
         use_browser = settings.platform.use_browser
 
-        # Read publish options from review decision (overrides defaults)
+        # dry_run guard — defense in depth. Two sources of truth, both must
+        # agree to allow real publish:
+        #   1. Top-level state["dry_run"] — set by /start when user requests
+        #      dry_run. This is the workflow-level contract: a dry_run workflow
+        #      must NEVER call the real XHS publish API, regardless of what
+        #      publish_options says (a user could pass publish_options.dry_run
+        #      =False in the approve decision and silently flip it).
+        #   2. publish_options["dry_run"] — set by review.py /approve (defaults
+        #      to True when the decision omits publish_options).
+        # Either being True triggers the mock path. Mirrors the engagement
+        # agent's is_dry_run check (state.get("dry_run") or mock_ post_id).
         publish_options = state.get("publish_options") or {}
-        is_dry_run = publish_options.get("dry_run", False)
+        is_dry_run = bool(state.get("dry_run")) or publish_options.get("dry_run", False)
 
         if is_dry_run or not use_browser:
             if is_dry_run:

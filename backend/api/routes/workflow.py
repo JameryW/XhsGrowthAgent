@@ -1424,19 +1424,123 @@ async def cancel_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
 
 @router.get("/stream/{thread_id}")
 async def stream_workflow_progress(thread_id: str, request: Request) -> StreamingResponse:
-    """SSE 流式进度推送 — EventBus驱动"""
+    """SSE 流式进度推送 — EventBus驱动
+
+    Recovery: if the workflow is already in a terminal state (completed/error/
+    cancelled) when the client connects, emit a synthetic terminal event
+    immediately so the client doesn't hang waiting for a WORKFLOW_COMPLETED
+    that was already broadcast before subscription. On reconnect (client sends
+    the SSE-standard ``Last-Event-ID`` header), events missed since that seq
+    are replayed first, scoped to this thread — mirroring the WebSocket
+    ``get_missed?since=<seq>`` recovery path. Fresh connects skip the replay;
+    full event recovery for dropped connections is the WebSocket path's job.
+    """
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
 
+    graph = request.app.state.graph
+
+    # Last-Event-ID is the SSE standard header EventSource sends on reconnect
+    # (auto-set to the seq of the last event the client received). We use it to
+    # avoid re-delivering events the client already saw — without it (fresh
+    # connect), we only check for terminal state, never bulk-replay history.
+    last_event_id = request.headers.get("Last-Event-ID")
+    try:
+        last_seq = int(last_event_id) if last_event_id is not None else -1
+    except ValueError:
+        last_seq = -1
+
     async def event_generator() -> Any:
         bus = EventBusService.get_instance()
+
+        # On reconnect (Last-Event-ID present), replay events the client missed
+        # since its last seen seq — scoped to this thread. On fresh connect
+        # (no header), skip the replay: a brand-new client doesn't need history,
+        # and bulk-replaying the whole ring buffer would re-deliver events to a
+        # reconnecting client that forgot to send Last-Event-ID. Full event
+        # recovery for dropped connections is the WebSocket /events/missed path.
+        if last_seq >= 0:
+            for event in bus.get_events_since(last_seq):
+                if event.thread_id != thread_id:
+                    continue
+                event_data = json.dumps(event.payload, ensure_ascii=False)
+                yield f"event: {event.event_type.value}\ndata: {event_data}\n\n"
+                if event.event_type in (
+                    EventType.WORKFLOW_COMPLETED,
+                    EventType.WORKFLOW_ERROR,
+                ):
+                    return
+
+        # Check if the workflow is already terminal but no terminal event was
+        # emitted (e.g. completed via a code path that bypassed EventBus, or
+        # the event was evicted from the ring buffer). Emit a synthetic one so
+        # the SSE client closes cleanly instead of hanging forever.
+        # CANCELLED is mapped to WORKFLOW_COMPLETED with status=cancelled in
+        # the payload so consumers can distinguish it from a real completion;
+        # the frontend never sees this synthetic event (it uses WebSocket,
+        # where _runner emits WORKFLOW_DATA_UPDATED for cancelled).
+        config = {"configurable": {"thread_id": thread_id}}
+        try:
+            state = await graph.aget_state(config)
+            if state.values and state.values.get("session_id") is not None:
+                has_active = (
+                    thread_id in _runner._background_tasks
+                    and not _runner._background_tasks[thread_id].done()
+                ) or (thread_id in _runner._active_sync_executions)
+                derived = derive_status(state, has_active_task=has_active)
+                if derived in (
+                    WorkflowStatus.COMPLETED,
+                    WorkflowStatus.ERROR,
+                    WorkflowStatus.CANCELLED,
+                ):
+                    if derived == WorkflowStatus.ERROR:
+                        synthetic_type = EventType.WORKFLOW_ERROR
+                    else:
+                        # COMPLETED and CANCELLED both close the stream via
+                        # WORKFLOW_COMPLETED; consumers read status from payload.
+                        synthetic_type = EventType.WORKFLOW_COMPLETED
+                    values = state.values or {}
+                    payload: dict[str, Any] = {
+                        "status": derived.value,
+                        "phase": values.get("phase", ""),
+                    }
+                    # Enrich with the same content fields the real
+                    # WORKFLOW_COMPLETED carries (runner._emit_progress), so
+                    # consumers don't see an empty/sparse terminal payload.
+                    if synthetic_type == EventType.WORKFLOW_COMPLETED:
+                        for k in (
+                            "publish_result",
+                            "copy_content",
+                            "trend_data",
+                            "content_plan",
+                            "visual_plan",
+                            "analytics",
+                            "ripple_prediction",
+                            "ripple_pmf",
+                            "ripple_comparison",
+                        ):
+                            v = values.get(k)
+                            if v:
+                                payload[k] = v
+                    else:  # WORKFLOW_ERROR
+                        payload["error"] = values.get("error", "")
+                    event_data = json.dumps(payload, ensure_ascii=False)
+                    yield (
+                        f"event: {synthetic_type.value}\n"
+                        f"id: {bus.current_seq()}\n"
+                        f"data: {event_data}\n\n"
+                    )
+                    return
+        except Exception:
+            logger.debug("SSE terminal-check failed for %s", thread_id, exc_info=True)
+
         queue = bus.subscribe_thread(thread_id)
 
         try:
             while True:
                 event = await queue.get()
                 event_data = json.dumps(event.payload, ensure_ascii=False)
-                yield f"event: {event.event_type.value}\ndata: {event_data}\n\n"
+                yield f"event: {event.event_type.value}\nid: {event.seq}\ndata: {event_data}\n\n"
 
                 if event.event_type in (
                     EventType.WORKFLOW_COMPLETED,

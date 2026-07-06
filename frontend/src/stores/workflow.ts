@@ -885,7 +885,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         next_steps: [],
       } as Partial<WorkflowStateResponse>)
       updateProgressFromPhase('cancelled')
-      toastStore.info(t('workflow.paused'), `${t('workflow.thread')}: ${threadId}`)
+      toastStore.info(t('workflow.cancelled'), `${t('workflow.thread')}: ${threadId}`)
     } catch (e: any) {
       error.value = e.message
       toastStore.error(t('workflow.cancelFailed'), e.message)

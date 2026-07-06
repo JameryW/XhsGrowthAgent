@@ -32,6 +32,24 @@ class EngagementAgent(BaseAgent):
         use_browser = settings.platform.use_browser
 
         engagement_actions: list[EngagementAction] = []
+        engagement_error: str | None = None
+
+        # dry_run guard — publisher returned a mock post_id ("mock_<session>").
+        # Skip real XHS API calls so a manually-triggered engagement on a
+        # dry_run thread doesn't leak real API calls against a fake post_id.
+        # Normal flow never reaches here (dry_run publisher → END), but a
+        # resume with phase=ANALYZING could route analyst → engagement.
+        is_dry_run = bool(state.get("dry_run")) or (
+            str(publish_result.get("post_id", "")).startswith("mock_")
+        )
+        if is_dry_run:
+            logger.info("dry_run 或 mock post，跳过真实互动")
+            mode = state.get("execution_mode", "single")
+            return {
+                "engagement_actions": engagement_actions,
+                "phase": WorkflowPhase.COMPLETED if mode == "single" else WorkflowPhase.ENGAGING,
+                "engagement_error": engagement_error,
+            }
 
         if not publish_result.get("post_id"):
             logger.info("无已发布帖子，跳过互动处理")
@@ -39,6 +57,7 @@ class EngagementAgent(BaseAgent):
             return {
                 "engagement_actions": engagement_actions,
                 "phase": WorkflowPhase.COMPLETED if mode == "single" else WorkflowPhase.ENGAGING,
+                "engagement_error": engagement_error,
             }
 
         if not use_browser:
@@ -47,6 +66,7 @@ class EngagementAgent(BaseAgent):
             return {
                 "engagement_actions": engagement_actions,
                 "phase": WorkflowPhase.COMPLETED if mode == "single" else WorkflowPhase.ENGAGING,
+                "engagement_error": engagement_error,
             }
 
         # 调用真实互动服务
@@ -120,6 +140,13 @@ class EngagementAgent(BaseAgent):
 
         except Exception as e:
             logger.error(f"互动处理失败: {e}")
+            # Record the failure for observability without failing the workflow —
+            # the post was already published successfully. Mirrors the
+            # optimization_error pattern: derive_status ignores engagement_error
+            # so a completed workflow stays COMPLETED (setting the generic
+            # ``error`` field would flip it to ERROR since engagement has no
+            # next_nodes).
+            engagement_error = str(e)
 
         finally:
             await client.close()
@@ -149,9 +176,11 @@ class EngagementAgent(BaseAgent):
             return {
                 "engagement_actions": engagement_actions,
                 "phase": WorkflowPhase.COMPLETED,
+                "engagement_error": engagement_error,
             }
 
         return {
             "engagement_actions": engagement_actions,
             "phase": WorkflowPhase.ENGAGING,
+            "engagement_error": engagement_error,
         }

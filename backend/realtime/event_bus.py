@@ -114,3 +114,12 @@ class EventBusService:
         """获取seq > since_seq的所有事件（用于补传）."""
         with self._lock:
             return [e for e in self._events if e.seq > since_seq]
+
+    def current_seq(self) -> int:
+        """返回下一个待分配的 seq（即 self._seq 当前值）.
+
+        用于 SSE 合成事件写 ``id:`` 字段，使 EventSource 在断线重连时
+        通过 Last-Event-ID 头回传该 seq，从而跳过已投递事件的重复回放。
+        """
+        with self._lock:
+            return self._seq

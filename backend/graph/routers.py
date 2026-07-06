@@ -114,6 +114,17 @@ def review_outcome(state: XHSGrowthState) -> Literal["evaluator_gate", "revise_c
     return "__end__"
 
 
+# Max evaluator→revise_content cycles before force-approving.
+# Mirrors ripple_gate's _MAX_RESELECT_COUNT: prevents infinite revision loops
+# when the RQGM panel is miscalibrated or adversarial (keeps rejecting).
+_MAX_REVISION_COUNT = 2
+
+# Max analyst→orchestrator (or engagement→orchestrator) cycles in continuous
+# execution mode before force-ending. Prevents runaway workflows when the
+# orchestrator keeps routing back to the same phase without making progress.
+_MAX_CYCLE_COUNT = 5
+
+
 def evaluator_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_content"]:
     """创作质量评估路由 — RQGM agent-as-a-judge 面板判定.
 
@@ -121,25 +132,38 @@ def evaluator_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_con
     - approved → publisher
     - needs_revision / rejected → revise_content（revision_hints 随 evaluation_result 携带）
 
+    循环防护：revision_count >= _MAX_REVISION_COUNT 时强制放行 publisher，
+    防止评估器反复否决导致无限修订循环（与 ripple_gate 的 reselect 上限同理）。
+
     不读 _check_terminal：评估器节点已自带降级放行，且此处只在人审通过后触发，
     不会有 cancelled/paused 分支（那些在 review_outcome 已拦截）。
     """
     evaluation = state.get("evaluation_result") or {}
     decision: Any = evaluation.get("decision", ContentStatus.APPROVED)
 
+    revision_count = state.get("revision_count", 0)
     if decision in (
         ContentStatus.NEEDS_REVISION,
         ContentStatus.REJECTED,
         "needs_revision",
         "rejected",
     ):
+        # Force-approve if revision limit reached — prevent infinite loop
+        if revision_count >= _MAX_REVISION_COUNT:
+            return "publisher"
         return "revise_content"
     # approved 或未知 → 放行发布
     return "publisher"
 
 
 def should_continue(state: XHSGrowthState) -> Literal["orchestrator", "engagement", "__end__"]:
-    """分析后决定是否继续下一个周期"""
+    """分析后决定是否继续下一个周期
+
+    Continuous-mode loop guard: cycle_count >= _MAX_CYCLE_COUNT forces __end__,
+    preventing an unbounded analyst→orchestrator→analyst loop when the
+    orchestrator keeps routing back to analyst (phase stays ANALYZING).
+    Mirrors the revision_count / reselect_count caps on the other loops.
+    """
     if terminal := _check_terminal(state):
         return terminal
 
@@ -148,6 +172,9 @@ def should_continue(state: XHSGrowthState) -> Literal["orchestrator", "engagemen
     if phase == WorkflowPhase.ANALYZING:
         mode = state.get("execution_mode", "single")
         if mode == "continuous":
+            # Cap continuous-mode cycles — no infinite orchestrator loop
+            if state.get("cycle_count", 0) >= _MAX_CYCLE_COUNT:
+                return "__end__"
             return "orchestrator"
         return "engagement"
 
@@ -159,12 +186,18 @@ def engagement_router(state: XHSGrowthState) -> Literal["orchestrator", "__end__
 
     In single-execution mode (default), engagement is the final node → END.
     In continuous mode, engagement feeds back to orchestrator for the next cycle.
+
+    Continuous-mode loop guard: cycle_count >= _MAX_CYCLE_COUNT forces __end__,
+    preventing an unbounded engagement→orchestrator→engagement loop.
     """
     if terminal := _check_terminal(state):
         return terminal
 
     mode = state.get("execution_mode", "single")
     if mode == "continuous":
+        # Cap continuous-mode cycles — no infinite orchestrator loop
+        if state.get("cycle_count", 0) >= _MAX_CYCLE_COUNT:
+            return "__end__"
         return "orchestrator"
     return "__end__"
 

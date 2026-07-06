@@ -854,6 +854,7 @@
     "resumed": "Workflow resumed",
     "resumeFailed": "Resume failed",
     "cancelFailed": "Cancel failed",
+    "cancelled": "Workflow cancelled",
     "statusRefreshFailed": "Status refresh failed",
     "staleDetected": "Workflow Stale",
     "staleHint": "Background task stopped with pending nodes. Click resume to continue.",
