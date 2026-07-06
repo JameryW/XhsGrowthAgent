@@ -4,8 +4,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 59
-- **Last Active**: 2026-07-05
+- **Total Sessions**: 60
+- **Last Active**: 2026-07-06
 <!-- @@@/auto:current-status -->
 
 ## Active Documents
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~856 | Active |
+| `journal-0.md` | ~889 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 60 | 2026-07-06 | 删除独立 TUI 入口 | `4daf08a5` | `main` |
 | 59 | 2026-07-05 | 真实发布跑通 + bug 修复链 #187-190 + 部署 | `84e0cb9b`, `3d89ff67`, `1af52957`, `51d9a884` | `main` |
 | 58 | 2026-07-05 | 提 PR #182-186 cookie 凭证移除系列 + 部署 + CI 修复 | `cdc3460a`, `e3a1cc68`, `2d1c5d75`, `54a30c4f`, `8b77871f` | `main` |
 | 57 | 2026-07-01 | Evaluator evolution-state omp visibility | `b33ddb72`, `b5f0a30f` | `main` |
