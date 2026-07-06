@@ -372,3 +372,36 @@ def ripple_gate_router(
 
     # Default: accept → continue to copywriter
     return "copywriter"
+
+
+def content_strategist_router(
+    state: XHSGrowthState,
+) -> Literal["ripple_finalize", "ripple_gate"]:
+    """Route after content_strategist based on Ripple mode.
+
+    Background mode (ripple_pending=True): skip ripple_gate, go to
+    ripple_finalize which reads the store-written background result.
+    Blocking mode: go to ripple_gate (existing behavior).
+    """
+    if state.get("ripple_pending"):
+        return "ripple_finalize"
+    return "ripple_gate"
+
+
+def ripple_finalize_router(
+    state: XHSGrowthState,
+) -> Literal["copywriter", "content_strategist", "brief_analyzer", "trend_scout", "__end__"]:
+    """Route after ripple_finalize — mirrors ripple_gate_router."""
+    if terminal := _check_terminal(state):
+        return terminal
+
+    decision = state.get("ripple_decision") or {}
+    action = decision.get("action", "accept")
+
+    if action == "reangle":
+        mode = state.get("workflow_mode", "trend")
+        return "brief_analyzer" if mode == "brief" else "content_strategist"
+    if action == "retopic":
+        return "trend_scout"
+
+    return "copywriter"

@@ -125,10 +125,22 @@ class ContentStrategistAgent(BaseAgent):
             if trend_data.get("market_saturation"):
                 ripple_env["market_saturation"] = trend_data["market_saturation"]
 
-        result = {
+        result: dict[str, Any] = {
             "content_plan": content_plan,
             "phase": WorkflowPhase.PLANNING,
         }
+
+        if Settings().ripple.background and thread_id:
+            # 后台模式：fire-and-forget Ripple，不阻塞主链
+            self._schedule_ripple_background(
+                store, thread_id, content_plan, ripple_timeout, ripple_env
+            )
+            content_plan["ripple_pending"] = True
+            result["ripple_pending"] = True
+            result["ripple_reason"] = "pending"
+            # ── Creative Memory: 沉淀策略 ──
+            await self._deposit_creative_memory(cm, content_plan, niche)
+            return result
 
         async def _predict() -> dict[str, Any] | None:
             try:
@@ -275,25 +287,130 @@ class ContentStrategistAgent(BaseAgent):
             result["ripple_pmf"] = ripple_pmf
 
         # ── Creative Memory: 沉淀策略 ──
-        angle = content_plan.get("content_angle", "")
-        topic = content_plan.get("selected_topic", "")
-        if angle or topic:
-            from backend.memory.types import ConversionPlay
-
-            play = ConversionPlay(
-                trigger_condition=topic,
-                title_formula=content_plan.get("title_formula", ""),
-                opening_hook=content_plan.get("opening_hook", ""),
-                niche=niche,
-                content_type=str(content_plan.get("content_type", "note")),
-            )
-            await cm.deposit_play(play)
-            # Write play_id back to content_plan for calibration chain
-            play_id = play.get("play_id", "")
-            if play_id:
-                content_plan["play_id"] = play_id
+        await self._deposit_creative_memory(cm, content_plan, niche)
 
         return result
+
+    async def _deposit_creative_memory(
+        self, cm: Any, content_plan: dict[str, Any], niche: str
+    ) -> None:
+        """Deposit conversion play from content plan to creative memory."""
+        angle = content_plan.get("content_angle", "")
+        topic = content_plan.get("selected_topic", "")
+        if not (angle or topic):
+            return
+        from backend.memory.types import ConversionPlay
+
+        play = ConversionPlay(
+            trigger_condition=topic,
+            title_formula=content_plan.get("title_formula", ""),
+            opening_hook=content_plan.get("opening_hook", ""),
+            niche=niche,
+            content_type=str(content_plan.get("content_type", "note")),
+        )
+        await cm.deposit_play(play)
+        play_id = play.get("play_id", "")
+        if play_id:
+            content_plan["play_id"] = play_id
+
+    def _schedule_ripple_background(
+        self,
+        store: BaseStore,
+        thread_id: str,
+        content_plan: dict[str, Any],
+        ripple_timeout: float,
+        ripple_env: dict[str, Any] | None,
+    ) -> None:
+        """Fire-and-forget Ripple in background mode.
+
+        Background task runs predict_spread + validate_pmf, writes results to
+        store namespace ``ripple/{thread_id}`` key ``result``, and emits a
+        WORKFLOW_DATA_UPDATED event. Exceptions are isolated — logged via done
+        callback, never crash the main workflow chain.
+        """
+
+        async def _run() -> None:
+            stored: dict[str, Any] = {"ripple_pending": False}
+            try:
+                prediction, pmf = await asyncio.gather(
+                    self._ripple_predict(
+                        content_plan,
+                        max_wait=ripple_timeout,
+                        thread_id=thread_id,
+                        environment=ripple_env,
+                    ),
+                    self._ripple_validate_pmf(
+                        content_plan,
+                        max_wait=ripple_timeout,
+                        thread_id=thread_id,
+                    ),
+                )
+            except RippleTimeoutError as e:
+                # Background Ripple timed out — surface reason so finalize won't
+                # wait forever. Attempt cancel (best-effort), then persist.
+                stored["ripple_reason"] = "timeout"
+                if e.job_id:
+                    stored["ripple_job_id"] = e.job_id
+                await self._safe_store_put(store, thread_id, stored)
+                logger.warning(f"Ripple background timed out (job_id={e.job_id}), cancel attempted")
+                await self._ripple_cancel_safely(e.job_id)
+                return
+            except Exception as e:
+                stored["ripple_reason"] = "unreachable"
+                await self._safe_store_put(store, thread_id, stored)
+                logger.warning(f"Ripple background failed: {e}")
+                return
+
+            if prediction and isinstance(prediction, dict) and "ripple_reason" not in prediction:
+                stored["ripple_prediction"] = prediction
+            elif isinstance(prediction, dict) and prediction.get("ripple_reason") == "timeout":
+                stored["ripple_reason"] = "timeout"
+                if job_id := prediction.get("ripple_job_id"):
+                    stored["ripple_job_id"] = job_id
+            else:
+                stored["ripple_reason"] = "unreachable"
+            if pmf and isinstance(pmf, dict) and "ripple_reason" not in pmf:
+                stored["ripple_pmf"] = pmf
+            await self._safe_store_put(store, thread_id, stored)
+
+            # 发事件通知 Ripple 结果就绪
+            from backend.realtime import EventBusService, EventType
+
+            EventBusService.get_instance().emit(
+                EventType.WORKFLOW_DATA_UPDATED,
+                thread_id=thread_id,
+                payload={"data_type": "ripple_ready", "data": stored},
+            )
+
+        def _on_done(task: asyncio.Task[None]) -> None:
+            if task.cancelled():
+                return
+            exc = task.exception()
+            if exc:
+                logger.error(f"Ripple background task failed: {exc}", exc_info=True)
+
+        try:
+            task = asyncio.create_task(_run())
+            task.add_done_callback(_on_done)
+        except RuntimeError:
+            # No running event loop — degrade to blocking would defeat the
+            # purpose; just log and continue without ripple.
+            logger.warning("No event loop for background Ripple, skipping")
+
+    @staticmethod
+    async def _safe_store_put(store: BaseStore, thread_id: str, value: dict[str, Any]) -> None:
+        """Persist Ripple background result; swallow store errors (best-effort)."""
+        try:
+            await store.aput(("ripple", thread_id), "result", value=value)
+        except Exception as e:
+            logger.error(f"Failed to persist Ripple background result: {e}", exc_info=True)
+
+    async def _ripple_cancel_safely(self, job_id: str) -> None:
+        """Best-effort cancel — never raises into the background task."""
+        try:
+            await self._ripple_cancel(job_id)
+        except Exception as e:
+            logger.warning(f"Ripple background cancel failed for {job_id}: {e}")
 
     @staticmethod
     def _extract_candidate_topics(trend_data: dict[str, Any], limit: int = 10) -> list[str]:
