@@ -199,6 +199,19 @@ def _persisted_status(phase: str | WorkflowPhase, error: str | None = None) -> s
     return WorkflowStatus.RUNNING.value
 
 
+def _is_orphan_running(thread_id: str, db_status: str) -> bool:
+    """Detect restart orphans: DB says running but no live in-process task.
+
+    After deploy/restart the in-process task registry is empty, so DB rows
+    left at status="running" are orphans — the workflow is not actually
+    executing. Reuses STALE semantics via derive_status; does not mutate DB.
+    """
+    if db_status != WorkflowStatus.RUNNING.value:
+        return False
+    task = _runner._background_tasks.get(thread_id)
+    return task is None or task.done()
+
+
 async def _start_resume_task(
     thread_id: str,
     graph: Any,
@@ -375,6 +388,10 @@ class WorkflowStatusResponse(BaseModel):
     checkpoint_lost: bool = Field(
         default=False,
         description="Checkpoint lost after container restart",
+    )
+    orphan: bool = Field(
+        default=False,
+        description="DB running but no live in-process task (restart orphan) — derived stale",
     )
 
 
@@ -630,6 +647,9 @@ async def get_workflow_status(thread_id: str, request: Request) -> ApiResponse[A
         ) or (thread_id in _runner._active_sync_executions)
         derived_status = derive_status(state, has_active_task=has_active)
         status_str = str(derived_status.value)
+        # Orphan: DB reported running but no live in-process task (restart orphan).
+        # derive_status already maps this to STALE — flag it for the response.
+        is_orphan = derived_status == WorkflowStatus.STALE and not has_active
 
         # Compute progress: completed → always 100; awaiting gates → phase-based; error → 0
         if status_str == "completed":
@@ -734,6 +754,7 @@ async def get_workflow_status(thread_id: str, request: Request) -> ApiResponse[A
                 reselect_count=state.values.get("reselect_count", 0),
                 ripple_reason=state.values.get("ripple_reason") or "",
                 label=label,
+                orphan=is_orphan,
             ).model_dump()
         )
 
@@ -820,10 +841,15 @@ async def get_workflow_status(thread_id: str, request: Request) -> ApiResponse[A
             )
             and not has_active_task
         )
+        # Orphan: DB running with no live task — restart orphan. Surface as
+        # stale in the response so /recover can pick it up.
+        is_orphan = _is_orphan_running(thread_id, row.status)
+        fallback_status = row.status or _persisted_status(row.phase, row.error)
+        effective_status = "stale" if is_orphan else fallback_status
         data = WorkflowStatusResponse(
             thread_id=thread_id,
             phase=row.phase,
-            status=row.status or _persisted_status(row.phase, row.error),
+            status=effective_status,
             current_agent="unknown",
             next_steps=[],
             error=row.error,
@@ -832,6 +858,7 @@ async def get_workflow_status(thread_id: str, request: Request) -> ApiResponse[A
             updated_at=row.updated_at,
             label=row.label or "",
             checkpoint_lost=checkpoint_lost,
+            orphan=is_orphan,
         ).model_dump()
         return success(data=data)
 
@@ -1446,9 +1473,21 @@ async def list_workflows_endpoint(
             limit=limit,
             offset=offset,
         )
+        workflows: list[dict[str, Any]] = []
+        for r in rows:
+            item = r.to_dict()
+            orphan = _is_orphan_running(r.thread_id, r.status)
+            if orphan:
+                # Restart orphan: DB running but no live task. Reuse STALE
+                # semantics so /recover can resume; do not mutate DB on read.
+                item["status"] = WorkflowStatus.STALE.value
+                item["orphan"] = True
+            else:
+                item["orphan"] = False
+            workflows.append(item)
         return success(
             data={
-                "workflows": [r.to_dict() for r in rows],
+                "workflows": workflows,
                 "total": total,
                 "limit": limit,
                 "offset": offset,

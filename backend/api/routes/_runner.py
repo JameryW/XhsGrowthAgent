@@ -22,6 +22,9 @@ logger = logging.getLogger("xhs_growth.api.runner")
 _active_sync_executions: set[str] = set()
 
 # Background task registry (for cancellation + has_active checks)
+# In-process runtime cache only; DB is index/summary; checkpoint is truth source.
+# Cleared on process restart — DB "running" rows with no matching task here are
+# restart orphans, detected lazily in /list and /status (no startup scan).
 _background_tasks: dict[str, asyncio.Task[Any]] = {}
 
 # Track last known status per thread to detect transitions
