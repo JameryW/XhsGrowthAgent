@@ -2,6 +2,7 @@
 import { ref, watch, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+import NeonButton from '@/components/NeonButton.vue'
 import BriefFileUpload from '@/components/BriefFileUpload.vue'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useAccountsStore } from '@/stores/accounts'
@@ -11,7 +12,7 @@ const { t } = useI18n()
 const workflowStore = useWorkflowStore()
 const accountsStore = useAccountsStore()
 
-export type WorkflowMode = 'trend' | 'brief'
+export type WorkflowMode = 'trend' | 'brief' | 'free'
 
 export interface WorkflowConfig {
   accountId: string
@@ -26,6 +27,11 @@ export interface WorkflowConfig {
 
 const props = defineProps<{
   initialTopic?: string
+  isLoading?: boolean
+}>()
+
+const emit = defineEmits<{
+  submit: []
 }>()
 
 const workflowMode = ref<WorkflowMode>('trend')
@@ -111,6 +117,20 @@ const phases: { value: WorkflowPhase; key: string; icon: string }[] = [
   { value: 'reviewing', key: 'reviewing', icon: 'ClipboardList' },
 ]
 
+// Array-driven mode selector (extensible for future modes)
+const modes: { value: WorkflowMode; icon: string; labelKey: string }[] = [
+  { value: 'trend', icon: 'Compass', labelKey: 'home.trendMode' },
+  { value: 'brief', icon: 'FileText', labelKey: 'home.briefMode' },
+  { value: 'free', icon: 'Terminal', labelKey: 'home.freeMode' },
+]
+
+// Submit button label: free mode → enterFree, else startWorkflow
+const submitLabel = computed(() =>
+  workflowMode.value === 'free'
+    ? t('home.form.enterFree')
+    : t('home.startWorkflow')
+)
+
 function getConfig(): WorkflowConfig {
   // When PDF is uploaded, don't pass preview text as briefText — it's truncated.
   // The workflow starts without brief_text (triggers "waiting for upload" path),
@@ -141,39 +161,36 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
         <AppIcon name="Workflow" size="sm" variant="pink" />
         {{ t('home.form.workflowMode') }}
       </label>
-      <div class="grid grid-cols-2 gap-2">
+      <div class="grid grid-cols-3 gap-2" role="group" :aria-label="t('home.form.workflowMode')">
         <button
-          @click="workflowMode = 'trend'"
+          v-for="m in modes"
+          :key="m.value"
+          @click="workflowMode = m.value"
+          :aria-pressed="workflowMode === m.value"
           :class="[
             'relative flex flex-col items-center gap-1.5 p-3.5 rounded-xl border-2 text-center',
             'transition-all duration-300 ease-out cursor-pointer select-none',
-            workflowMode === 'trend'
+            workflowMode === m.value
               ? 'border-neon-pink/50 bg-gradient-to-br from-neon-pink/10 to-neon-peach/5 shadow-neon-pink-sm'
               : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50 hover:shadow-sm'
           ]"
         >
-          <AppIcon name="Compass" size="md" :variant="workflowMode === 'trend' ? 'pink' : 'cyan'" />
-          <span :class="['text-sm font-semibold', workflowMode === 'trend' ? 'text-neon-pinkDark' : 'text-slate-500']">
-            {{ t('home.trendMode') }}
-          </span>
-        </button>
-        <button
-          @click="workflowMode = 'brief'"
-          :class="[
-            'relative flex flex-col items-center gap-1.5 p-3.5 rounded-xl border-2 text-center',
-            'transition-all duration-300 ease-out cursor-pointer select-none',
-            workflowMode === 'brief'
-              ? 'border-neon-pink/50 bg-gradient-to-br from-neon-pink/10 to-neon-peach/5 shadow-neon-pink-sm'
-              : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50 hover:shadow-sm'
-          ]"
-        >
-          <AppIcon name="FileText" size="md" :variant="workflowMode === 'brief' ? 'pink' : 'cyan'" />
-          <span :class="['text-sm font-semibold', workflowMode === 'brief' ? 'text-neon-pinkDark' : 'text-slate-500']">
-            {{ t('home.briefMode') }}
+          <AppIcon
+            :name="m.icon"
+            size="md"
+            :variant="workflowMode === m.value ? 'pink' : 'cyan'"
+          />
+          <span :class="['text-sm font-semibold', workflowMode === m.value ? 'text-neon-pinkDark' : 'text-slate-500']">
+            {{ t(m.labelKey) }}
           </span>
         </button>
       </div>
     </div>
+
+    <!-- Free mode help text (only in free mode) -->
+    <p v-if="workflowMode === 'free'" class="text-xs text-slate-400 pl-1 leading-5">
+      {{ t('home.form.freeModeHelp') }}
+    </p>
 
     <!-- Account ID -->
     <div class="group">
@@ -268,13 +285,13 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
       </div>
     </div>
 
-    <!-- Divider -->
-    <div class="flex items-center gap-3 py-1">
+    <!-- Divider (hidden in free mode) -->
+    <div v-if="workflowMode !== 'free'" class="flex items-center gap-3 py-1">
       <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
     </div>
 
-    <!-- Niche / Track -->
-    <div>
+    <!-- Niche / Track (hidden in free mode) -->
+    <div v-if="workflowMode !== 'free'">
       <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">
         <AppIcon name="Compass" size="sm" variant="pink" />
         {{ t('home.form.niche') }}
@@ -307,8 +324,8 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
       <p class="text-xs text-slate-400 mt-2 pl-1">{{ t('home.form.nicheHelp') }}</p>
     </div>
 
-    <!-- Divider -->
-    <div class="flex items-center gap-3 py-1">
+    <!-- Divider (hidden in free mode; follows phase block) -->
+    <div v-if="workflowMode !== 'free'" class="flex items-center gap-3 py-1">
       <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
     </div>
 
@@ -359,13 +376,13 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
       </div>
     </div>
 
-    <!-- Divider -->
-    <div class="flex items-center gap-3 py-1">
+    <!-- Divider (hidden in free mode) -->
+    <div v-if="workflowMode !== 'free'" class="flex items-center gap-3 py-1">
       <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
     </div>
 
-    <!-- Options -->
-    <div>
+    <!-- Options (hidden in free mode) -->
+    <div v-if="workflowMode !== 'free'">
       <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
         <AppIcon name="Settings" size="sm" variant="cyan" />
         {{ t('home.form.options') }}
@@ -430,6 +447,23 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- Submit button (moved from Home into form) -->
+    <div class="pt-1">
+      <NeonButton
+        variant="pink"
+        size="md"
+        class="w-full max-w-xs mx-auto group/btn"
+        :loading="props.isLoading"
+        :aria-label="submitLabel"
+        @click="emit('submit')"
+      >
+        <span class="inline-flex items-center gap-2 transition-transform duration-200 group-hover/btn:translate-x-1">
+          <AppIcon name="Rocket" size="sm" variant="white" aria-hidden="true" />
+          <span class="font-semibold">{{ submitLabel }}</span>
+        </span>
+      </NeonButton>
     </div>
   </div>
 </template>

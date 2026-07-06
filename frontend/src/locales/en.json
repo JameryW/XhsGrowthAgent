@@ -116,6 +116,7 @@
     "recommendedTopic": "Recommended Topic",
     "briefMode": "Brief Mode",
     "trendMode": "Trend Discovery",
+    "freeMode": "Free Mode",
     "form": {
       "accountId": "Account ID",
       "accountIdPlaceholder": "Select an account",
@@ -135,6 +136,8 @@
       "briefFile": "Upload Brief File",
       "briefFileHelp": "Supports PDF brief documents",
       "workflowMode": "Workflow Mode",
+      "enterFree": "Enter Free Mode",
+      "freeModeHelp": "Enter TUI; agent orchestrates creation, review, and publishing via conversation",
       "niche": "Content Track",
       "nicheHelp": "Select a vertical track, affects trend discovery and content strategy",
       "niches": {
@@ -177,14 +180,6 @@
       "autoPublishWarning": "Auto-publish is on. Content will be published automatically after approval.",
       "expectedSteps": "Expected Steps",
       "start": "Start Fixed Workflow"
-    },
-    "creationMode": {
-      "title": "Start Creating",
-      "subtitle": "Choose a creation mode",
-      "simpleTitle": "Simple Mode (Fixed Workflow)",
-      "simpleDesc": "Run the existing fixed flow for trend, strategy, creation, evaluation, and publishing.",
-      "freeTitle": "Free Mode (Automated Orchestration)",
-      "freeDesc": "Open the TUI and let the agent freely orchestrate creation, evaluation, and publishing through conversation."
     }
   },
   "dashboard": {

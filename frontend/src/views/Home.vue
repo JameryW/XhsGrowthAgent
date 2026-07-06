@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { useRouter, useRoute } from 'vue-router'
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import PreLaunchChecklist from '@/components/PreLaunchChecklist.vue'
 import WorkflowStartForm from '@/components/WorkflowStartForm.vue'
 import ConfirmStartModal from '@/components/ConfirmStartModal.vue'
-import CreationModeModal from '@/components/CreationModeModal.vue'
 import type { WorkflowConfig, WorkflowMode } from '@/components/WorkflowStartForm.vue'
 import { useWorkflowStore } from '@/stores'
 
@@ -17,9 +16,7 @@ const router = useRouter()
 const route = useRoute()
 const workflowStore = useWorkflowStore()
 const isStarting = ref(false)
-const showCreationMode = ref(false)
 const showConfirm = ref(false)
-const showSimpleForm = ref(false)
 const startFormRef = ref<InstanceType<typeof WorkflowStartForm> | null>(null)
 const checklistRef = ref<InstanceType<typeof PreLaunchChecklist> | null>(null)
 
@@ -35,6 +32,12 @@ const formConfig = ref<WorkflowConfig>({
   niche: '母婴',
   workflowMode: 'trend' as WorkflowMode,
 })
+
+// ConfirmStartModal only receives trend/brief (free mode never opens it).
+// Narrow the form's WorkflowMode to the modal's strict prop type.
+const confirmWorkflowMode = computed<'trend' | 'brief'>(() =>
+  formConfig.value.workflowMode === 'brief' ? 'brief' : 'trend'
+)
 
 // Check for topic and niche query params from analytics
 onMounted(() => {
@@ -56,34 +59,37 @@ const goToHistory = () => {
   router.push('/history')
 }
 
-const handleFormSubmit = () => {
-  showCreationMode.value = true
-}
-
-const chooseSimpleMode = () => {
-  showCreationMode.value = false
-  showSimpleForm.value = true
-}
-
-const submitSimpleForm = () => {
+// Single submit entry: form emit('submit') → getConfig → branch by mode.
+// Async so the free branch can guard against rapid double-clicks (router.push
+// is a Promise; isStarting disables the submit button via :is-loading while
+// the navigation is in flight, mirroring the trend/brief confirmStart guard).
+const handleSubmit = async () => {
   if (startFormRef.value) {
     formConfig.value = startFormRef.value.getConfig()
+  }
+  if (formConfig.value.workflowMode === 'free') {
+    isStarting.value = true
+    try {
+      const query: Record<string, string> = { mode: 'free' }
+      const topic = formConfig.value.topic || prefilledTopic.value || (route.query.topic as string)
+      const niche = formConfig.value.niche || (route.query.niche as string)
+      if (topic) query.topic = topic
+      if (niche) query.niche = niche
+      if (formConfig.value.accountId) query.account_id = formConfig.value.accountId
+      await router.push({ name: 'tui', query })
+    } finally {
+      isStarting.value = false
+    }
+    return
   }
   showConfirm.value = true
 }
 
-const chooseFreeMode = () => {
-  showCreationMode.value = false
-  const query: Record<string, string> = { mode: 'free' }
-  const topic = prefilledTopic.value || (route.query.topic as string)
-  const niche = route.query.niche as string
-  if (topic) query.topic = topic
-  if (niche) query.niche = niche
-  if (formConfig.value.accountId) query.account_id = formConfig.value.accountId
-  router.push({ name: 'tui', query })
-}
-
 const confirmStart = async () => {
+  // ConfirmStartModal is only shown for trend/brief (free mode returns early in handleSubmit),
+  // but narrow the type here so the API request type stays strict (trend|brief only).
+  const mode = formConfig.value.workflowMode
+  if (mode === 'free') return
   isStarting.value = true
   try {
     const result = await workflowStore.startWorkflow(
@@ -94,7 +100,7 @@ const confirmStart = async () => {
         autoPublish: formConfig.value.autoPublish,
         topic: formConfig.value.topic,
         niche: formConfig.value.niche,
-        workflowMode: formConfig.value.workflowMode,
+        workflowMode: mode,
         briefText: formConfig.value.briefText,
       }
     )
@@ -134,39 +140,12 @@ const confirmStart = async () => {
           </div>
           <h2 class="text-sm font-semibold text-slate-700">{{ t('home.startWorkflow') }}</h2>
         </div>
-        <template v-if="showSimpleForm">
-          <WorkflowStartForm ref="startFormRef" :initial-topic="prefilledTopic || undefined" />
-          <div class="mt-5">
-            <NeonButton
-              variant="pink"
-              size="md"
-              class="w-full max-w-xs mx-auto group/btn"
-              @click="submitSimpleForm()"
-              :loading="isStarting"
-              :aria-label="t('home.startWorkflow')"
-            >
-              <span class="inline-flex items-center gap-2 transition-transform duration-200 group-hover/btn:translate-x-1">
-                <AppIcon name="Rocket" size="sm" variant="white" aria-hidden="true" />
-                <span class="font-semibold">{{ t('home.startWorkflow') }}</span>
-              </span>
-            </NeonButton>
-          </div>
-        </template>
-        <div v-else class="mt-1">
-          <NeonButton
-            variant="pink"
-            size="md"
-            class="w-full max-w-xs mx-auto group/btn"
-            @click="handleFormSubmit()"
-            :loading="isStarting"
-            :aria-label="t('home.startWorkflow')"
-          >
-            <span class="inline-flex items-center gap-2 transition-transform duration-200 group-hover/btn:translate-x-1">
-              <AppIcon name="Rocket" size="sm" variant="white" aria-hidden="true" />
-              <span class="font-semibold">{{ t('home.startWorkflow') }}</span>
-            </span>
-          </NeonButton>
-        </div>
+        <WorkflowStartForm
+          ref="startFormRef"
+          :initial-topic="prefilledTopic || undefined"
+          :is-loading="isStarting"
+          @submit="handleSubmit"
+        />
       </div>
 
       <!-- Checklist + nav -->
@@ -190,15 +169,6 @@ const confirmStart = async () => {
       </div>
     </div>
 
-    <!-- Creation Mode Modal -->
-    <CreationModeModal
-      :is-open="showCreationMode"
-      :is-loading="isStarting"
-      @simple="chooseSimpleMode"
-      @free="chooseFreeMode"
-      @cancel="showCreationMode = false"
-    />
-
     <!-- Confirmation Modal -->
     <ConfirmStartModal
       :is-open="showConfirm"
@@ -207,7 +177,7 @@ const confirmStart = async () => {
       :dry-run="formConfig.dryRun"
       :auto-publish="formConfig.autoPublish"
       :niche="formConfig.niche"
-      :workflow-mode="formConfig.workflowMode"
+      :workflow-mode="confirmWorkflowMode"
       :brief-text="formConfig.briefText"
       :is-loading="isStarting"
       @confirm="confirmStart"
