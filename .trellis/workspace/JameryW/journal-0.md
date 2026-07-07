@@ -987,3 +987,36 @@ PR#206: handle_agent_error 死代码接入——BaseAgent.__call__ except 从 ra
 ### Next Steps
 
 - None - task complete
+
+
+## Session 64: OMP 扩展 typecheck 纳入 CI
+
+**Date**: 2026-07-07
+**Task**: OMP 扩展 typecheck 纳入 CI
+**Branch**: `main`
+
+### Summary
+
+PR#207: OMP 扩展（xhsagent-ext TS）此前无 typecheck script + CI 不跑。加 package.json scripts.typecheck + ci.yml omp-typecheck job（setup-node 20 + npm install + tsc）。CI 5 job 全绿（含新 OMP Typecheck 41s）。纯 CI 改动无需部署。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7b68a9d2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
