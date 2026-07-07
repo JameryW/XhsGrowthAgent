@@ -723,12 +723,24 @@ async function processSlashCommand(cmd: string) {
         await handleStart(arg || undefined)
       }
       break
-    case '/status': await handleStatus(arg || activeThreadId.value || ''); break
-    case '/pause': await handlePause(arg || activeThreadId.value || ''); break
-    case '/resume': await handleResume(arg || activeThreadId.value || ''); break
-    case '/cancel': await handleCancel(arg || activeThreadId.value || ''); break
-    case '/approve': await handleApprove(arg || activeThreadId.value || ''); break
-    case '/reject': await handleReject(activeThreadId.value || '', arg); break
+    case '/status':
+      if (isFreeCreationEntry.value) { writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW); break }
+      await handleStatus(arg || activeThreadId.value || ''); break
+    case '/pause':
+      if (isFreeCreationEntry.value) { writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW); break }
+      await handlePause(arg || activeThreadId.value || ''); break
+    case '/resume':
+      if (isFreeCreationEntry.value) { writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW); break }
+      await handleResume(arg || activeThreadId.value || ''); break
+    case '/cancel':
+      if (isFreeCreationEntry.value) { writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW); break }
+      await handleCancel(arg || activeThreadId.value || ''); break
+    case '/approve':
+      if (isFreeCreationEntry.value) { writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW); break }
+      await handleApprove(arg || activeThreadId.value || ''); break
+    case '/reject':
+      if (isFreeCreationEntry.value) { writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW); break }
+      await handleReject(activeThreadId.value || '', arg); break
     case '/mode':
       mode.value = 'agent'
       reconnectAttempts = 0
@@ -1017,8 +1029,8 @@ onMounted(() => {
   // Try connecting to agent WebSocket
   connectAgentWs()
 
-  // Resume active workflow if any
-  if (workflowStore.activeThreadId) {
+  // Resume active workflow if any (skipped in free creation mode — fully isolated from workflows)
+  if (!isFreeCreationEntry.value && workflowStore.activeThreadId) {
     activeThreadId.value = workflowStore.activeThreadId
     writeLineColored(t('tui.resumingWorkflow', { threadId: workflowStore.activeThreadId }), ANSI.YELLOW)
   }
