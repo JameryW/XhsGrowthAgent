@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "OMP extension <-> backend API integration contract; tool shapes must match backend routes"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Tool error/result conventions shared by TS ext and Python bridge"}
