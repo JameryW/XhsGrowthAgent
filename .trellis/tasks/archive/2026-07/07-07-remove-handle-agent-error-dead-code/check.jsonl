@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "校验 handle_agent_error 接入符合错误处理规范"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "校验 retry_count/phase ERROR 状态转移正确"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "校验 error state → should_plan/orchestrator → SSE 前端可观测的跨层数据流"}
