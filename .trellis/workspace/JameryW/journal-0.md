@@ -921,3 +921,36 @@ PR#203: 删 CreationModeModal 中间遮罩，自由模式并入 WorkflowStartFor
 ### Next Steps
 
 - None - task complete
+
+
+## Session 62: 自由模式完全工作流隔离
+
+**Date**: 2026-07-07
+**Task**: 自由模式完全工作流隔离
+**Branch**: `main`
+
+### Summary
+
+PR#205: 自由创作模式（/tui?mode=free）完全与工作流隔离——onMounted 不绑活跃工作流/不显示恢复提示，/status /pause /resume /cancel /approve /reject 6 命令全禁用，activeThreadId 保持 null。修复前 free 模式仍绑活跃工作流并允许操作命令。CI 全绿，已合并部署。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `11df5af6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
