@@ -195,19 +195,20 @@ class BaseAgent(ABC):
         """LangGraph node entry point.
 
         Wraps execute() with node-level timing → appends one performance_log
-        entry per successful call. The entry rides the returned dict under
+        entry per call. On success, the entry rides the returned dict under
         `performance_log: [entry]`; LangGraph's `_append_list` reducer merges
         it into state. Recording is best-effort: a timer failure must not
         break the node (see PRD: 节点级指标).
 
-        On failure we re-raise (LangGraph retry needs the exception); a failed
-        entry can't be written to state mid-exception, so retries/failed-count
-        is captured indirectly: the next successful call's `retries` field
-        (sourced from state.retry_count, which the retry router increments)
-        records how many attempts preceded this success.
+        On failure we return an error state update (NOT raise) so LangGraph
+        merges it and should_plan/orchestrator routers can read retry_count
+        to decide stateful retry vs termination. This activates the original
+        stateful retry design — see prd ADR-lite (07-07-remove-handle-agent-error-dead-code).
+        LangGraph's RetryPolicy (framework-level) only triggers on exceptions;
+        by not raising we trade it for stateful cross-super-step retry.
         """
         from backend.agents.nodes._base import node_perf_entry
-        from backend.core.error_handling import AgentError
+        from backend.core.error_handling import handle_agent_error
 
         started = _now_iso()
         retries = int(state.get("retry_count", 0) or 0)
@@ -215,10 +216,26 @@ class BaseAgent(ABC):
             result = await self.execute(state, store)
         except Exception as e:
             logger.error(f"Agent {self.agent_name} failed: {e}", exc_info=True)
-            # Propagate to LangGraph retry mechanism. State can't be updated
-            # on a raised exception — the retry's next successful call records
-            # the attempt count via its `retries` field.
-            raise AgentError(self.agent_name, e) from e
+            # Stateful retry: return error state (not raise) so LangGraph
+            # merges it and should_plan/orchestrator routers can read
+            # retry_count to retry/terminate. See prd ADR-lite.
+            result = handle_agent_error(e, state, agent_name=self.agent_name)
+            # Best-effort failed perf entry — now possible because we return
+            # (not raise), so the dict reaches the reducer.
+            try:
+                result["performance_log"] = [
+                    node_perf_entry(
+                        self.agent_name,
+                        started_at=started,
+                        completed_at=_now_iso(),
+                        status="failed",
+                        error=str(e),
+                        retries=retries + 1,
+                    )
+                ]
+            except Exception as timer_err:  # best-effort: never break the node
+                logger.debug("performance_log failed entry failed: %s", timer_err)
+            return result
 
         result["current_agent"] = self.agent_name
         result["error"] = None  # Clear stale error on success

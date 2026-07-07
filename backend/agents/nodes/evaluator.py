@@ -31,12 +31,16 @@ async def evaluator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str
     """Run the creation-quality evaluator and emit its result."""
     _check_cancelled(state)
 
-    try:
-        result = await _evaluator(state, store=store)
-    except Exception as e:
-        # ponytail: degrade — a quality-check failure must not block publishing.
-        # Log and pass through to publisher with a synthetic pass result.
-        logger.warning("Evaluator failed, degrading to pass-through: %s", e)
+    result = await _evaluator(state, store=store)
+
+    # Degrade on failure: BaseAgent.__call__ returns an error state (phase=ERROR,
+    # error, retry_count) instead of raising (prd 07-07 stateful retry). The
+    # evaluator is a non-blocking quality gate — a failure must not block
+    # publishing. Detect the error state (no evaluation_result key) and
+    # replace with a synthetic pass-through result.
+    if "evaluation_result" not in result:
+        error = result.get("error", "unknown evaluator failure")
+        logger.warning("Evaluator failed, degrading to pass-through: %s", error)
         from backend.state.enums import ContentStatus
 
         result = {
@@ -46,7 +50,7 @@ async def evaluator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str
                 "decision": ContentStatus.APPROVED,
                 "revision_hints": [],
                 "bias_warning": "",
-                "summary": f"评估器异常，降级放行: {e}",
+                "summary": f"评估器异常，降级放行: {error}",
             }
         }
 
