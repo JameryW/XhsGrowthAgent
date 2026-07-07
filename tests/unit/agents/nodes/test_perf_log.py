@@ -7,8 +7,6 @@ on `kind` for back-compat.
 
 from __future__ import annotations
 
-import pytest
-
 from backend.agents.base import BaseAgent
 from backend.agents.nodes._base import (
     node_perf_entry,
@@ -79,15 +77,20 @@ class TestCallTiming:
         result = await agent({"retry_count": 2}, store=None)
         assert result["performance_log"][0]["retries"] == 2
 
-    async def test_failure_reraises_no_perf_in_result(self):
-        # On exception __call__ re-raises (LangGraph retry needs it); no dict
-        # is returned, so no perf entry can be written mid-exception. The
-        # retry's next successful call records the attempt count via retries.
+    async def test_failure_returns_error_state_with_failed_entry(self):
+        # After prd 07-07: __call__ returns handle_agent_error(e, state)
+        # instead of raising. The returned dict includes a status=failed
+        # perf entry (now possible because we return, not raise).
         agent = _DummyAgent(exc=RuntimeError("boom"))
-        from backend.core.error_handling import AgentError
+        from backend.state.enums import WorkflowPhase
 
-        with pytest.raises(AgentError):
-            await agent({}, store=None)
+        result = await agent({"retry_count": 0}, store=None)
+        assert result["phase"] == WorkflowPhase.ERROR
+        assert "boom" in result["error"]
+        assert result["retry_count"] == 1
+        assert result["performance_log"][0]["status"] == "failed"
+        assert result["performance_log"][0]["agent"] == "dummy"
+        assert result["performance_log"][0]["retries"] == 1
 
     async def test_timer_failure_does_not_break_node(self, monkeypatch):
         # If node_perf_entry throws, the node must still return its result.

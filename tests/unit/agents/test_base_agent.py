@@ -225,8 +225,14 @@ Some text after"""
 
     @pytest.mark.asyncio
     async def test_call_handles_exception(self):
-        """__call__ propagates exceptions as AgentError."""
-        from backend.core.error_handling import AgentError
+        """__call__ returns an error state update (not raises) on failure.
+
+        After prd 07-07: BaseAgent.__call__ returns handle_agent_error(e,
+        state) instead of raising AgentError, so the error state merges into
+        LangGraph state and should_plan/orchestrator routers can read
+        retry_count for stateful retry.
+        """
+        from backend.state.enums import WorkflowPhase
 
         class DummyAgent(BaseAgent):
             task_type = TaskType.WRITING
@@ -240,11 +246,12 @@ Some text after"""
         mock_state = {"retry_count": 0}
         mock_store = AsyncMock()
 
-        with pytest.raises(AgentError) as exc_info:
-            await agent(mock_state, store=mock_store)
+        result = await agent(mock_state, store=mock_store)
 
-        assert "failing_agent" in str(exc_info.value)
-        assert "Test error" in str(exc_info.value)
+        assert result["phase"] == WorkflowPhase.ERROR
+        assert "Test error" in result["error"]
+        assert result["retry_count"] == 1
+        assert result["current_agent"] == "failing_agent"
 
     def test_model_property_returns_model(self):
         """model property returns configured LLM."""

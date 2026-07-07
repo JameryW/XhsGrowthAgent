@@ -33,10 +33,23 @@ class WorkflowCancelledError(Exception):
     pass
 
 
-def handle_agent_error(error: Exception, state: XHSGrowthState) -> dict[str, Any]:
-    """统一错误处理，返回状态更新"""
+def handle_agent_error(
+    error: Exception, state: XHSGrowthState, *, agent_name: str = ""
+) -> dict[str, Any]:
+    """统一错误处理，返回状态更新。
+
+    Called from BaseAgent.__call__ except block (stateful retry path).
+    Returns a state update dict — NOT raising — so LangGraph merges it into
+    state and downstream routers (should_plan/orchestrator) can read
+    retry_count to decide stateful retry vs termination.
+
+    See prd ADR-lite: trading LangGraph RetryPolicy (framework-level, only
+    triggers on exceptions) for stateful cross-super-step retry (business
+    routers reading retry_count).
+    """
     return {
         "phase": WorkflowPhase.ERROR,
         "error": str(error),
         "retry_count": state.get("retry_count", 0) + 1,
+        "current_agent": agent_name,
     }
