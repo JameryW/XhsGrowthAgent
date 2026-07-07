@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "TS package.json scripts + tsconfig 约定，OMP 扩展 typecheck script 对齐"}
