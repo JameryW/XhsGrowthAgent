@@ -1,6 +1,6 @@
-/** HTTP + SSE client for XhsGrowthAgent API. */
+/** HTTP client for XhsGrowthAgent API. */
 import { config } from "./config.js";
-import type { HealthResponse, SSEEvent } from "./types.js";
+import type { HealthResponse } from "./types.js";
 
 const BASE = `${config.apiBase}/api`;
 
@@ -86,88 +86,4 @@ export async function post(path: string, body?: Record<string, unknown>): Promis
 /** DELETE request to XhsGrowthAgent API. Returns unwrapped data. */
 export async function del(path: string): Promise<unknown> {
   return request("DELETE", path);
-}
-
-// ── SSE helper ──────────────────────────────────────────────────────────
-
-/** SSE event types sent by the backend (from EventType enum, dot-notation).
- *  Backend emits named events: `event: workflow.completed` etc.
- *  These must match backend/realtime/events.py EventType values exactly —
- *  addEventListener is name-sensitive, so underscore-vs-dot mismatches
- *  silently drop events (the onmessage fallback never fires for named events). */
-const SSE_EVENT_TYPES = [
-  "workflow.started",
-  "workflow.phase_changed",
-  "workflow.agent_started",
-  "workflow.agent_completed",
-  "workflow.data_updated",
-  "workflow.paused",
-  "workflow.resumed",
-  "workflow.completed",
-  "workflow.error",
-  "review.pending",
-  "ripple.progress",
-] as const;
-
-/** Subscribe to SSE stream for a workflow. Backend sends named events
- *  (e.g. `event: workflow.phase_changed`), not anonymous messages.
- *  Returns a cleanup function to close the connection. */
-export function subscribeSSE(
-  threadId: string,
-  onUpdate: (event: SSEEvent) => void,
-  onError?: (err: Error) => void,
-): { close: () => void; promise: Promise<void> } {
-  const url = `${BASE}/workflow/stream/${threadId}`;
-  let closed = false;
-  let es: EventSource | null = null;
-  let resolveRef: ((value: void) => void) | null = null;
-
-  const promise = new Promise<void>((resolve) => {
-    resolveRef = resolve;
-    es = new EventSource(url);
-
-    // Backend sends named events: event: workflow.phase_changed, event: workflow.completed, etc.
-    // We must use addEventListener for each type; onmessage only catches unnamed events.
-    for (const eventType of SSE_EVENT_TYPES) {
-      es.addEventListener(eventType, (msg: MessageEvent) => {
-        if (closed) return;
-        try {
-          const data = JSON.parse(msg.data) as SSEEvent["data"];
-          onUpdate({ event: eventType, data });
-        } catch {
-          // ignore malformed SSE data
-        }
-      });
-    }
-
-    // Also listen for unnamed events as fallback
-    es.onmessage = (msg) => {
-      if (closed) return;
-      try {
-        const data = JSON.parse(msg.data) as SSEEvent["data"];
-        onUpdate({ event: "message", data });
-      } catch {
-        // ignore malformed SSE data
-      }
-    };
-
-    es.onerror = () => {
-      if (closed) return;
-      if (es!.readyState === EventSource.CLOSED) {
-        onError?.(new Error(`SSE connection closed for workflow ${threadId}`));
-      }
-      // Don't reject — EventSource auto-reconnects on transient errors.
-      // Only the close() method resolves the promise.
-    };
-  });
-
-  return {
-    close: () => {
-      if (closed) return;
-      closed = true;
-      es?.close();
-      resolveRef?.();
-    },
-    promise,
-  };
 }
