@@ -2,6 +2,9 @@
   "name": "xhsagent-ext",
   "version": "0.1.0",
   "description": "XhsGrowthAgent domain tools and commands for oh-my-pi",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "omp": {
     "extensions": [
       "./src/index.ts"
