@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 65
+- **Total Sessions**: 66
 - **Last Active**: 2026-07-07
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~1056 | Active |
+| `journal-0.md` | ~1088 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,7 +21,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
-| 65 | 2026-07-07 | Fix omp tool impl bugs (TS ext vs backend contract) | `abc63f69`, `cf922fab` | `fix/omp-tool-impl-bugs` |
+| 66 | 2026-07-07 | Complete omp fixes: draft echo + field drift + mypy debt | `78d9bf16` | `fix/omp-draft-echo-mypy-debt` |
+| 65 | 2026-07-07 | Fix omp tool impl bugs (TS ext vs backend contract) | `abc63f69`, `cf922fab` | `main` |
 | 64 | 2026-07-07 | OMP 扩展 typecheck 纳入 CI | `7b68a9d2` | `main` |
 | 63 | 2026-07-07 | 接入 handle_agent_error 激活 stateful retry | `e3cf5da8` | `main` |
 | 62 | 2026-07-07 | 自由模式完全工作流隔离 | `11df5af6` | `main` |
