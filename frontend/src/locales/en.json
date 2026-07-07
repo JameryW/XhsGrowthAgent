@@ -1381,6 +1381,7 @@
     "freeTopic": "Topic: {topic}",
     "freeAgentUnavailable": "Free mode requires the Agent connection; the fixed workflow will not start while disconnected.",
     "freeStartDisabled": "Free mode does not start the fixed workflow. Chat to orchestrate freely, or go back and choose Simple Mode.",
+    "freeWorkflowOpDisabled": "Free mode is isolated from workflows — workflow operations are disabled. Chat to orchestrate freely.",
     "processing": "Processing...",
     "inputPlaceholder": "Type a command or topic...",
     "noActiveWorkflow": "No active workflow. Start one with /start or /start <topic>",

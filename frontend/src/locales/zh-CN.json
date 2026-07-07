@@ -1381,6 +1381,7 @@
     "freeTopic": "带入主题：{topic}",
     "freeAgentUnavailable": "自由模式需要 Agent 连接；当前未连接时不会启动固定工作流。",
     "freeStartDisabled": "自由模式不会启动固定工作流。请直接对话编排，或返回选择简单模式。",
+    "freeWorkflowOpDisabled": "自由模式与工作流完全隔离——工作流操作已禁用，请直接对话自由编排。",
     "processing": "处理中...",
     "inputPlaceholder": "输入命令或话题...",
     "noActiveWorkflow": "没有活跃的工作流。使用 /start 或 /start <话题> 启动",
