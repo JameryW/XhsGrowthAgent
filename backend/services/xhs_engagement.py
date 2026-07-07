@@ -12,9 +12,14 @@ import asyncio
 import logging
 import time
 from types import TracebackType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+
+if TYPE_CHECKING:
+    # SetCookieParam is not re-exported from playwright.async_api in the
+    # installed version; import from the internal module for typing only.
+    from playwright._impl._api_structures import SetCookieParam
 
 logger = logging.getLogger("xhs_growth.engagement")
 
@@ -66,7 +71,7 @@ class XHSEngagement:
 
     async def _set_cookies(self, context: BrowserContext) -> None:
         """设置 Cookie"""
-        cookies: list[dict[str, str]] = []
+        cookies: list[SetCookieParam] = []
         for item in self.cookie.split(";"):
             if "=" in item.strip():
                 name, value = item.strip().split("=", 1)
@@ -111,6 +116,9 @@ class XHSEngagement:
 
             # 3. 点击评论下的回复按钮
             comment_element = await page.query_selector(comment_selector)
+            if comment_element is None:
+                logger.warning("未找到评论元素: %s", comment_selector)
+                return {"success": False, "error": "未找到目标评论"}
             reply_btn = await comment_element.query_selector("text=回复, .reply-btn")
             if reply_btn:
                 await reply_btn.click()

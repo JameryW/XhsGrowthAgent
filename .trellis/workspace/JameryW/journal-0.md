@@ -1054,3 +1054,35 @@ Audited omp TS extension + Python bridge against backend API. Fixed 3 TS-ext bug
 ### Next Steps
 
 - None - task complete
+
+## Session 66: Complete omp fixes: draft echo + field drift + mypy debt
+
+**Date**: 2026-07-07
+**Task**: Complete omp fixes: draft echo + field drift + mypy debt
+**Branch**: `fix/omp-draft-echo-mypy-debt`
+
+### Summary
+
+Drift audit of 27 shared omp tools (TS ext vs Python bridge vs backend routes) found 25 clean, 1 latent bug. Fixed: optimization_draft route now echoes draft_content + optimization_analysis (both tools read them for preview but route never returned them). Cross-audit caught additional field-name drift: tools read draft.body but backend DraftContent uses text - fixed in both bridge and TS. Cleared 3 pre-existing mypy errors on main HEAD (xhs_publisher None-guard, xhs_engagement SetCookieParam typing + None-guard) that broke CI mypy gate. mypy 0 errors, pytest 1367 pass, ruff+typecheck clean. Spec convention (two-parallel-impl cross-audit) proven: F1 echo fix alone was incomplete until field-name audit ran.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `78d9bf16` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

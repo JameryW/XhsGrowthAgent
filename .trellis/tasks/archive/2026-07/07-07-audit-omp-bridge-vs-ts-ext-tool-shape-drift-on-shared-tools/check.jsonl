@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "Verify optimization_draft route now echoes draft_content/optimization_analysis both impls read"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "mypy + pytest + ruff gates the fixes must pass (mypy clean is the F2 acceptance)"}
+{"file": ".trellis/tasks/07-07-audit-omp-bridge-vs-ts-ext-tool-shape-drift-on-shared-tools/research/drift-audit.md", "reason": "Audit finding #1 + #2 to verify against after fix"}

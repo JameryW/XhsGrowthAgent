@@ -409,6 +409,8 @@ class XHSPublisher:
             await page.click(".upload-c, .drag-over, .upload-area, .image-upload-btn")
             await asyncio.sleep(1)
             file_input = await page.query_selector("input[type=file]")
+            if file_input is None:
+                raise RuntimeError("未找到文件上传 input 元素，无法上传图片")
             await file_input.set_input_files(valid_paths)
             await page.wait_for_selector(".item-picture, .image-item", timeout=60000)
 

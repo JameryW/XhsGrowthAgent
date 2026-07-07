@@ -58,6 +58,15 @@ async def submit_draft(
         as_node=_runner._get_as_node(state),
     )
 
+    # Re-read state after the update so we echo back the persisted
+    # draft_content + optimization_analysis. The omp tools (TS ext +
+    # Python bridge) read these fields to render an inline title/body
+    # preview; without the echo the preview is permanently empty.
+    updated_state = await graph.aget_state(config)
+    values = updated_state.values or {}
+    echoed_draft = values.get("draft_content") or draft_data
+    echoed_analysis = values.get("optimization_analysis") or {}
+
     # If graph is interrupted at draft_gate, advance via ainvoke(None).
     # Command(resume=...) only works for dynamic interrupt(), not interrupt_before.
     if "draft_gate" in state.next:
@@ -69,9 +78,24 @@ async def submit_draft(
             source="draft",
         )
         next_phase = result.get("phase", "unknown") if result else "unknown"
-        return success(data={"thread_id": thread_id, "status": "resumed", "next_phase": next_phase})
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": "resumed",
+                "next_phase": next_phase,
+                "draft_content": echoed_draft,
+                "optimization_analysis": echoed_analysis,
+            }
+        )
 
-    return success(data={"thread_id": thread_id, "status": "draft_submitted"})
+    return success(
+        data={
+            "thread_id": thread_id,
+            "status": "draft_submitted",
+            "draft_content": echoed_draft,
+            "optimization_analysis": echoed_analysis,
+        }
+    )
 
 
 @router.post("/select/{thread_id}")

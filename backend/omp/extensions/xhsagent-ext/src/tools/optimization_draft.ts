@@ -37,7 +37,7 @@ export default function register(pi: ExtensionAPI) {
         const draft = result.draft_content;
         if (draft && Object.keys(draft).length) {
           const title = (draft as any).title || "";
-          const body = (draft as any).body || "";
+          const body = (draft as any).text || "";
           if (title) lines.push(`  Title: ${title}`);
           if (body) lines.push(`  Body: ${typeof body === "string" ? body.slice(0, 500) : JSON.stringify(body).slice(0, 500)}`);
         }
