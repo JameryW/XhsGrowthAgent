@@ -60,19 +60,6 @@ export interface HealthResponse {
   timestamp: string;
 }
 
-/** SSE event payload from /workflow/stream/{id} */
-export interface SSEEvent {
-  event: string;
-  data: {
-    thread_id?: string;
-    phase?: string;
-    status?: string;
-    progress_percent?: number;
-    current_agent?: string;
-    error?: string | null;
-  };
-}
-
 /** Tool result content helper */
 export interface ToolResult {
   content: Array<{ type: "text"; text: string }>;

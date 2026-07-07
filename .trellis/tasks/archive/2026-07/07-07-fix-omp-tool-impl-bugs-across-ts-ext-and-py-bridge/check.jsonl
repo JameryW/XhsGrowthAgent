@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "Verify tool shapes match backend API contract after fixes"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Typecheck + test + lint gates the fix must pass"}

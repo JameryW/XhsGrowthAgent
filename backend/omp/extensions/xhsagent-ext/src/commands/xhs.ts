@@ -11,7 +11,7 @@ export default function register(pi: ExtensionAPI) {
         topic ? `Topic: ${topic}` : "Ask clarifying questions or propose a topic before drafting.",
         "Do not start the fixed workflow from OMP; the fixed workflow belongs to Simple Mode in the web UI.",
         "Create: draft titles, body copy, hashtags, and image prompts directly in the conversation.",
-        "Evaluate: check AI taste, image quality, commercial tone, compliance, reach, and audience fit. Use xhs_evaluation_run/result only when a workflow thread_id exists.",
+        "Evaluate: check copywriting, visual, compliance, reach, audience, AI taste, image quality, and commercial tone (plus an adversarial bias check) — 9 dimensions total. Use xhs_evaluation_run/result only when a workflow thread_id exists.",
         "Publish: for existing workflow content, use xhs_review_approve or xhs_publish_retry; otherwise prepare publish-ready copy and ask the user before publishing.",
       ].join("\n"));
     },

@@ -25,7 +25,7 @@ export default function register(pi: ExtensionAPI) {
         "",
         "Free orchestration loop:",
         "1. Creation: draft titles, body copy, hashtags, and image prompts directly in conversation.",
-        "2. Evaluation: check AI taste, image quality, commercial tone, compliance, reach, and audience fit. Use xhs_evaluation_run/result when a workflow thread_id exists.",
+        "2. Evaluation: check copywriting, visual, compliance, reach, audience, AI taste, image quality, and commercial tone (plus an adversarial bias check) — 9 dimensions total. Use xhs_evaluation_run/result when a workflow thread_id exists.",
         "3. Publishing: for existing workflow content, use xhs_review_approve or xhs_publish_retry; never call xhs_workflow_start.",
         "4. Post-publish: xhs_workflow_trigger_analytics (if analytics not auto-run).",
         "",

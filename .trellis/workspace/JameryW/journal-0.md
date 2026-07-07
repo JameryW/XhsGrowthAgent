@@ -1020,3 +1020,37 @@ PR#207: OMP 扩展（xhsagent-ext TS）此前无 typecheck script + CI 不跑。
 ### Next Steps
 
 - None - task complete
+
+
+## Session 65: Fix omp tool impl bugs (TS ext vs backend contract)
+
+**Date**: 2026-07-07
+**Task**: Fix omp tool impl bugs (TS ext vs backend contract)
+**Branch**: `fix/omp-tool-impl-bugs`
+
+### Summary
+
+Audited omp TS extension + Python bridge against backend API. Fixed 3 TS-ext bugs: stale 6-dim eval prompt list (missing copywriting/visual, backend has 9), workflow_list read count field backend never returns (uses total), dead subscribeSSE code with stale event list. pytest 1365 pass, typecheck+ ruff clean. 3 pre-existing mypy errors in xhs_publisher/engagement = unrelated baseline debt. Spec: documented two-parallel-impl cross-audit convention + fixed stale SSE event names in omp-integration.md.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `abc63f69` | (see git log) |
+| `cf922fab` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

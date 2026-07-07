@@ -212,20 +212,23 @@ if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
 - `"needs_revision"` → content sent back to copywriter with comments
 - `"rejected"` → hard reject (not currently used in review flow)
 
-**SSE Event Format** (named events, NOT anonymous):
+**SSE Event Format** (named events, NOT anonymous). Event names use **dot-notation** matching `backend/realtime/events.py` `EventType` enum exactly — `addEventListener` is name-sensitive, so a mismatch silently drops the event (the `onmessage` fallback never fires for named events):
+
 ```
-event: phase_changed
+event: workflow.phase_changed
 data: {"thread_id": "...", "phase": "creating", "current_agent": "copywriter"}
 
-event: progress_update
+event: workflow.data_updated
 data: {"thread_id": "...", "progress_percent": 45}
 
-event: review_requested
+event: review.pending
 data: {"thread_id": "...", "status": "awaiting_review"}
 
-event: workflow_completed
+event: workflow.completed
 data: {"thread_id": "...", "status": "completed"}
 ```
+
+Full backend enum (`EventType`): `workflow.{started,phase_changed,agent_started,agent_completed,data_updated,paused,resumed,completed,error}`, `review.{pending,submitted,approved,rejected,needs_revision}`, `ripple.progress`, `analytics.{report_updated,cost_alert,performance_new}`, `evaluator.epoch_evolved`. Any SSE listener must subscribe to each named type explicitly via `addEventListener` — there is no catch-all.
 
 **Environment Keys**:
 | Key | Required | Default | Description |
@@ -303,3 +306,27 @@ await post("/review/submit/" + id, { action: "approve", feedback })
 ```typescript
 await post("/review/submit/" + id, { decision: "approved", comments: feedback })
 ```
+
+---
+
+## Convention: Two Parallel omp Tool Implementations — Cross-Audit on Every Fix
+
+**What**: The omp integration has **two parallel tool implementations** that expose the same XHS host tools to omp:
+
+1. **TypeScript extension** — `backend/omp/extensions/xhsagent-ext/src/tools/*.ts` (≈31 tools). Registered via the omp `ExtensionAPI`; calls the backend over HTTP using native `fetch`. Richer toolset (includes `evaluation_epochs/weights/samples/trend` the bridge lacks).
+2. **Python host-tool bridge** — `backend/services/omp_bridge.py` (`XHS_HOST_TOOLS`, 27 tools, `_execute_xhs_host_tool`). Auto-executes known XHS tools server-side via `httpx` to `localhost:8000/api/...`; forwards unknown tools to the frontend as `host_tool_call`.
+
+`tests/unit/services/test_omp_bridge.py` covers **only** the Python bridge. The TS extension has **no unit tests** — it relies on `npm run typecheck` (CI `omp-typecheck` job) and shape-conformance to the backend API.
+
+**Why**: Because the two implementations evolved independently, a data-shape or logic bug fixed in one is frequently still present in the other. Discovered during `07-07-fix-omp-tool-impl-bugs`:
+- `workflow_list` read `result.count` (TS ext) while backend returns `total` — the Python bridge already used `len(workflows)` and was correct. Bug existed only in TS ext.
+- Evaluation dimension list in `xhs.ts` / `events.ts` system prompts drifted to 6 dims while backend has 9 — TS-only; bridge renders dims dynamically so it never drifted.
+
+**How to apply**: When fixing a tool's logic, data shape, or field name in one implementation, **immediately cross-audit the same tool in the other implementation** for the same bug. Concretely:
+1. Grep the tool name in both `backend/omp/extensions/xhsagent-ext/src/` and `backend/services/omp_bridge.py`.
+2. Compare the field names / response-type / render logic against the backend route (`backend/api/routes/<area>.py`) — the backend route is the source of truth, NOT either implementation.
+3. If only one implementation has a unit test, add an assertion covering the fixed field to the other's test (or add a shape-conformance test) so the drift cannot recur silently.
+
+**Don't assume the bridge and TS ext are in sync.** They are not. The bridge is an intentional subset (no eval sub-tools); the TS ext is the superset. A field-shape mismatch in either is a silent bug until a tool call hits it at runtime — there is no compile-time guarantee that TS interface `X` matches the backend Pydantic model `Y`.
+
+**Related**: [[backend/api/routes]] shapes; [[backend/realtime/events]] EventType enum for SSE names.
