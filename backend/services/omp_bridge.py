@@ -769,7 +769,7 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 lines = [f"Optimization Draft — {thread_id}:", f"  Status: {status}"]
                 draft = data.get("draft_content") or {}
                 title = draft.get("title") or ""
-                body_text = draft.get("body") or ""
+                body_text = draft.get("text") or ""
                 if title:
                     lines.append(f"  Title: {title}")
                 if body_text:

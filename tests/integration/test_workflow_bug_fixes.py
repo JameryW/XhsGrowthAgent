@@ -1733,3 +1733,114 @@ class TestGateInterruptFix:
         call_args = mock_graph.ainvoke.call_args
         input_data = call_args[0][0] if call_args[0] else call_args[1].get("input_data")
         assert input_data is None
+
+    def test_submit_draft_echoes_draft_content_when_resumed(self, client, mock_graph):
+        """submit_draft echoes draft_content + optimization_analysis in the response.
+
+        Both the TS omp tool and Python bridge read these fields from the
+        response to render an inline title/body preview. Without the echo the
+        preview is permanently empty (regression guard).
+        """
+        thread_id = "xhs_test_draft_echo_resumed_001"
+
+        # First aget_state: interrupted at draft_gate (triggers resumed branch)
+        gate_snapshot = MagicMock()
+        gate_snapshot.values = {
+            "phase": "creating",
+            "session_id": thread_id,
+            "account_id": "test_account",
+        }
+        gate_snapshot.next = ["draft_gate"]
+        gate_snapshot.tasks = []
+        gate_snapshot.interrupts = []
+
+        # Second aget_state: after aupdate_state, echoes the persisted draft
+        updated_snapshot = MagicMock()
+        updated_snapshot.values = {
+            "phase": "creating",
+            "session_id": thread_id,
+            "draft_content": {
+                "title": "My Draft",
+                "text": "Content here",
+                "hashtags": ["test"],
+                "source": "user_submitted",
+            },
+            "optimization_analysis": {"gaps": [{"dimension": "标题"}]},
+        }
+        updated_snapshot.next = ["viral_matcher"]
+        updated_snapshot.tasks = []
+        updated_snapshot.interrupts = []
+
+        # _run_graph_and_persist calls aget_state a third time internally
+        mock_graph.aget_state.side_effect = [gate_snapshot, updated_snapshot, updated_snapshot]
+        mock_graph.ainvoke.return_value = {"phase": "creating", "session_id": thread_id}
+
+        response = client.post(
+            f"/api/optimization/draft/{thread_id}",
+            json={"title": "My Draft", "text": "Content here", "hashtags": ["test"]},
+        )
+
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["status"] == "resumed"
+        assert data["next_phase"] == "creating"
+        # Echoed draft must contain the submitted title/text
+        draft = data["draft_content"]
+        assert draft["title"] == "My Draft"
+        assert draft["text"] == "Content here"
+        assert draft["source"] == "user_submitted"
+        # Echoed analysis must be present
+        assert data["optimization_analysis"] == {"gaps": [{"dimension": "标题"}]}
+
+    def test_submit_draft_echoes_draft_content_when_not_at_gate(self, client, mock_graph):
+        """submit_draft echoes draft_content even when not at draft_gate.
+
+        Covers the draft_submitted branch (not interrupted at draft_gate).
+        """
+        thread_id = "xhs_test_draft_echo_nogate_001"
+
+        # First aget_state: NOT at draft_gate (review_gate instead)
+        review_snapshot = MagicMock()
+        review_snapshot.values = {
+            "phase": "reviewing",
+            "session_id": thread_id,
+            "account_id": "test_account",
+        }
+        review_snapshot.next = ["review_gate"]
+        review_snapshot.tasks = []
+        review_snapshot.interrupts = []
+
+        # Second aget_state: after aupdate_state, echoes the persisted draft
+        updated_snapshot = MagicMock()
+        updated_snapshot.values = {
+            "phase": "reviewing",
+            "session_id": thread_id,
+            "draft_content": {
+                "title": "User Title",
+                "text": "User body",
+                "hashtags": [],
+                "source": "user_submitted",
+            },
+            "optimization_analysis": {},
+        }
+        updated_snapshot.next = ["review_gate"]
+        updated_snapshot.tasks = []
+        updated_snapshot.interrupts = []
+
+        mock_graph.aget_state.side_effect = [review_snapshot, updated_snapshot]
+        mock_graph.ainvoke.return_value = {"phase": "reviewing", "session_id": thread_id}
+
+        response = client.post(
+            f"/api/optimization/draft/{thread_id}",
+            json={"title": "User Title", "text": "User body", "hashtags": []},
+        )
+
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["status"] == "draft_submitted"
+        assert "next_phase" not in data
+        draft = data["draft_content"]
+        assert draft["title"] == "User Title"
+        assert draft["text"] == "User body"
+        assert draft["source"] == "user_submitted"
+        assert data["optimization_analysis"] == {}
