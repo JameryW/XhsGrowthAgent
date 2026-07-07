@@ -954,3 +954,36 @@ PR#205: 自由创作模式（/tui?mode=free）完全与工作流隔离——onMo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 63: 接入 handle_agent_error 激活 stateful retry
+
+**Date**: 2026-07-07
+**Task**: 接入 handle_agent_error 激活 stateful retry
+**Branch**: `main`
+
+### Summary
+
+PR#206: handle_agent_error 死代码接入——BaseAgent.__call__ except 从 raise AgentError 改 return handle_agent_error(e,state)，节点失败返 error state（phase=ERROR+retry_count+1），激活 should_plan/orchestrator stateful retry。放弃 LangGraph RetryPolicy（零代价）。evaluator 降级改检测 dict。+7 测试 mutation testing 验证。CI 全绿，已合并部署。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e3cf5da8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

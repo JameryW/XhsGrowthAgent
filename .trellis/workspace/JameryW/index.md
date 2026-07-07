@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 62
+- **Total Sessions**: 63
 - **Last Active**: 2026-07-07
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~956 | Active |
+| `journal-0.md` | ~989 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 63 | 2026-07-07 | 接入 handle_agent_error 激活 stateful retry | `e3cf5da8` | `main` |
 | 62 | 2026-07-07 | 自由模式完全工作流隔离 | `11df5af6` | `main` |
 | 61 | 2026-07-07 | 开始创作模式分流重构 + 工作流链路十轮审查 | `abfc509a`, `5c192abe` | `main` |
 | 60 | 2026-07-06 | 删除独立 TUI 入口 | `4daf08a5` | `main` |
