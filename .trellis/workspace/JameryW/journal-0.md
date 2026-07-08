@@ -1119,3 +1119,36 @@ Free mode now delivers banner promise: 3 thread-less backend routes (/api/free/d
 ### Next Steps
 
 - None - task complete
+
+
+## Session 68: Free mode draft CRUD + TUI /drafts + spec
+
+**Date**: 2026-07-08
+**Task**: Free mode draft CRUD + TUI /drafts + spec
+**Branch**: `main`
+
+### Summary
+
+PR#210 shipped create/evaluate/publish but draft management was create-only. Added: GET/PATCH/DELETE free draft routes (alist/aput/adelete, reuse _load_draft), 3 omp host tools (list/update/delete + _RetryingClient.patch), AgentTUI /drafts command (fixed default-import bug), spec/free-creation.md contract. +13 tests, 1392 green, CI 5/5.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `22cdae97` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 67
+- **Total Sessions**: 68
 - **Last Active**: 2026-07-08
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~1121 | Active |
+| `journal-0.md` | ~1154 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 68 | 2026-07-08 | Free mode draft CRUD + TUI /drafts + spec | `22cdae97` | `main` |
 | 67 | 2026-07-08 | Free creation mode overhaul — thread-less creation/evaluate/publish + TUI unlock | `dfcc58c1` | `feat/free-creation-mode-overhaul` |
 | 66 | 2026-07-07 | Complete omp fixes: draft echo + field drift + mypy debt | `78d9bf16` | `fix/omp-draft-echo-mypy-debt` |
 | 65 | 2026-07-07 | Fix omp tool impl bugs (TS ext vs backend contract) | `abc63f69`, `cf922fab` | `main` |
