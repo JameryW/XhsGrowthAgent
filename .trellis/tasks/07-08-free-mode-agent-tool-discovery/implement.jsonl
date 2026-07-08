@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "host tool 注册 + _execute_xhs_host_tool 机制；新增 xhs_free_guide + description 强化必读"}
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "free 模式契约 — 工具链 + 隔离 + 交叉审计约定（TS ext vs bridge 一致）"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "后端质量 + mypy/pytest 要求"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "bridge host tool ↔ TS ext prompt 两套引导一致性"}

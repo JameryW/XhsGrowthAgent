@@ -43,6 +43,25 @@ internal httpx to `/api/free/*` (the `url` already includes `/api`, so paths are
 - `xhs_free_draft_list` → GET `/free/drafts/{account_id}`
 - `xhs_free_draft_update` → PATCH `/free/draft/{draft_id}?account_id=...`
 - `xhs_free_draft_delete` → DELETE `/free/draft/{draft_id}?account_id=...`
+- `xhs_free_guide` → no backend call (local); returns the orchestration guide text
+
+### Discovery — no system prompt on the bridge path
+
+The Web TUI free mode goes through the Python RPC bridge (`OmpSession`), NOT
+the TS extension. The omp RPC protocol has **no `set_system_prompt` command**
+and no `before_agent_start` hook (that hook is TS-extension-API only). So the
+bridge **cannot inject a system prompt** — the agent discovers the free tool
+chain via:
+
+1. Each `xhs_free_*` tool's `description` carries step numbering + chain hints
+   (e.g. "Step 1 of 3 (create) ... feed draft_id to xhs_free_evaluate (step 2)").
+2. `xhs_free_guide` is a read-only host tool returning the full orchestration
+   guide (create → evaluate → publish + draft management + "do not call
+   thread-bound tools"). The agent can call it first to learn the loop.
+
+The TS extension path (`events.ts` `before_agent_start`) DOES inject a system
+prompt — kept in sync with the bridge's tool descriptions per the cross-audit
+convention (both guide the agent to the same `xhs_free_*` chain).
 
 ---
 

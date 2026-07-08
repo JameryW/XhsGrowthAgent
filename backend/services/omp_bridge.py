@@ -516,8 +516,10 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "name": "xhs_free_draft_create",
         "label": "XHS Free Draft Create",
         "description": (
-            "Create a free-mode content draft (thread-less). Returns draft_id for use with "
-            "xhs_free_evaluate / xhs_free_publish."
+            "Step 1 of 3 (create). Create a free-mode content draft (thread-less). "
+            "Returns draft_id — feed it to xhs_free_evaluate (step 2) "
+            "then xhs_free_publish (step 3). "
+            "For the full orchestration guide call xhs_free_guide."
         ),
         "parameters": {
             "type": "object",
@@ -552,8 +554,9 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "name": "xhs_free_evaluate",
         "label": "XHS Free Draft Evaluate",
         "description": (
-            "Evaluate a free-mode draft via the RQGM agent-as-a-judge panel. Returns "
-            "EvaluationResult (overall_score, dimensions, decision)."
+            "Step 2 of 3 (evaluate). Evaluate a free-mode draft via the RQGM agent-as-a-judge "
+            "panel. Input draft_id from xhs_free_draft_create. Returns EvaluationResult "
+            "(overall_score, dimensions, decision)."
         ),
         "parameters": {
             "type": "object",
@@ -571,8 +574,9 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "name": "xhs_free_publish",
         "label": "XHS Free Draft Publish",
         "description": (
-            "Publish a free-mode draft to Xiaohongshu (thread-less). Publishes via the "
-            "account's CDP profile login state."
+            "Step 3 of 3 (publish). Publish a free-mode draft to Xiaohongshu (thread-less) "
+            "via the account's CDP profile login state. Input draft_id from xhs_free_draft_create. "
+            "Run xhs_free_evaluate first for a quality check."
         ),
         "parameters": {
             "type": "object",
@@ -591,7 +595,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "label": "XHS Free Draft List",
         "description": (
             "List free-mode drafts for an account (thread-less). Returns draft_id + title "
-            "summary, no full body."
+            "summary, no full body. Use to find a draft_id for evaluate/publish/update/delete."
         ),
         "parameters": {
             "type": "object",
@@ -606,7 +610,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "label": "XHS Free Draft Update",
         "description": (
             "Update a free-mode draft (thread-less). Overwrites specified fields, keeps "
-            "draft_id unchanged."
+            "draft_id unchanged. Use to refine before evaluate/publish."
         ),
         "parameters": {
             "type": "object",
@@ -659,6 +663,16 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
             },
             "required": ["draft_id"],
         },
+    },
+    {
+        "name": "xhs_free_guide",
+        "label": "XHS Free Mode Guide",
+        "description": (
+            "Read-only guide for free creation mode. Returns the orchestration steps and tool "
+            "chain. Call this first in free mode to learn the create→evaluate→publish loop and "
+            "which tools to use."
+        ),
+        "parameters": {"type": "object", "properties": {}, "required": []},
     },
 ]
 
@@ -754,6 +768,33 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
             None,
             is_error=True,
         )
+
+    if tool_name == "xhs_free_guide":
+        # Local-only: no backend call, just return the orchestration guide text.
+        guide = (
+            "Free Creation Mode — Orchestration Guide\n"
+            "\n"
+            "You are in free creation mode (no workflow thread). Use these thread-less tools:\n"
+            "\n"
+            "1. CREATE: xhs_free_draft_create (title, body, hashtags, image_paths, niche) "
+            "→ returns draft_id\n"
+            "2. EVALUATE: xhs_free_evaluate (draft_id) → RQGM 6-dimension quality score "
+            "+ decision\n"
+            "3. PUBLISH: xhs_free_publish (draft_id) → publishes via account CDP login state\n"
+            "\n"
+            "Draft management:\n"
+            "- xhs_free_draft_list (account_id) → list drafts\n"
+            "- xhs_free_draft_update (draft_id, fields...) → refine a draft (keeps draft_id)\n"
+            "- xhs_free_draft_delete (draft_id) → remove a draft\n"
+            "\n"
+            "Rules:\n"
+            "- Do NOT call thread-bound tools (xhs_workflow_status/pause/resume/cancel, "
+            "xhs_review_*, xhs_optimization_*) — free mode has no thread_id; they will fail.\n"
+            "- xhs_workflow_start is disabled in free mode.\n"
+            "- Reuse draft_id across create→evaluate→publish; do not recreate on each step.\n"
+            "- Run xhs_free_evaluate before xhs_free_publish for a quality gate."
+        )
+        return _make_text_result(guide, {"mode": "free"})
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as raw_client:

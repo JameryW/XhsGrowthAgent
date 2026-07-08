@@ -20,7 +20,7 @@ class TestHostToolSchemas:
     """Verify XHS_HOST_TOOLS list integrity."""
 
     def test_tool_count(self):
-        assert len(XHS_HOST_TOOLS) == 33
+        assert len(XHS_HOST_TOOLS) == 34
 
     def test_all_tools_have_required_fields(self):
         for tool in XHS_HOST_TOOLS:
@@ -57,6 +57,7 @@ class TestHostToolSchemas:
         assert "xhs_free_draft_list" in _XHS_TOOL_NAMES
         assert "xhs_free_draft_update" in _XHS_TOOL_NAMES
         assert "xhs_free_draft_delete" in _XHS_TOOL_NAMES
+        assert "xhs_free_guide" in _XHS_TOOL_NAMES
 
 
 # ── Helper functions ─────────────────────────────────────────────────────
@@ -605,3 +606,17 @@ class TestFreeModeTools:
         client.delete.assert_awaited_once()
         assert "/free/draft/d-del" in client.delete.await_args.args[0]
         assert client.delete.await_args.kwargs["params"]["account_id"] == "acc1"
+
+    async def test_free_guide_returns_orchestration_text(self):
+        """xhs_free_guide returns orchestration text locally — no httpx call."""
+        with patch("httpx.AsyncClient") as mock_httpx:
+            result = await _execute_xhs_host_tool("xhs_free_guide", {})
+        text = result["content"][0]["text"]
+        assert "CREATE" in text
+        assert "EVALUATE" in text
+        assert "PUBLISH" in text
+        assert "xhs_free_draft_create" in text
+        # No httpx client was instantiated (branch is local-only)
+        mock_httpx.assert_not_called()
+        # Not an error
+        assert result.get("isError") is not True
