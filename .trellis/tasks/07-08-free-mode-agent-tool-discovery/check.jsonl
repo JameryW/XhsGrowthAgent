@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "验证 host tool 注册 + _execute 分支覆盖"}
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "验证工具链 + 交叉审计（bridge vs TS ext 一致）"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验证 mypy/pytest/ruff 全绿"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "验证两套引导一致"}
