@@ -512,6 +512,80 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
             "required": ["thread_id"],
         },
     },
+    {
+        "name": "xhs_free_draft_create",
+        "label": "XHS Free Draft Create",
+        "description": (
+            "Create a free-mode content draft (thread-less). Returns draft_id for use with "
+            "xhs_free_evaluate / xhs_free_publish."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "default": "default", "description": "Account ID"},
+                "title": {"type": "string", "description": "Post title"},
+                "body": {"type": "string", "description": "Post body text"},
+                "hashtags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Hashtag list",
+                },
+                "image_paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Image file paths",
+                },
+                "niche": {"type": "string", "description": "Account niche (for evaluation)"},
+                "content_angle": {
+                    "type": "string",
+                    "description": "Content angle (for evaluation)",
+                },
+                "target_audience": {
+                    "type": "string",
+                    "description": "Target audience (for evaluation)",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "xhs_free_evaluate",
+        "label": "XHS Free Draft Evaluate",
+        "description": (
+            "Evaluate a free-mode draft via the RQGM agent-as-a-judge panel. Returns "
+            "EvaluationResult (overall_score, dimensions, decision)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "default": "default", "description": "Account ID"},
+                "draft_id": {
+                    "type": "string",
+                    "description": "Draft ID from xhs_free_draft_create",
+                },
+            },
+            "required": ["draft_id"],
+        },
+    },
+    {
+        "name": "xhs_free_publish",
+        "label": "XHS Free Draft Publish",
+        "description": (
+            "Publish a free-mode draft to Xiaohongshu (thread-less). Publishes via the "
+            "account's CDP profile login state."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "default": "default", "description": "Account ID"},
+                "draft_id": {
+                    "type": "string",
+                    "description": "Draft ID from xhs_free_draft_create",
+                },
+            },
+            "required": ["draft_id"],
+        },
+    },
 ]
 
 # Names of XHS tools that the backend auto-executes
@@ -1075,6 +1149,67 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 for h in ev.get("revision_hints") or []:
                     lines.append(f"  hint: {h}")
                 return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_free_draft_create":
+                body = {
+                    "account_id": arguments.get("account_id", "default"),
+                    "title": arguments.get("title", ""),
+                    "body": arguments.get("body", ""),
+                    "hashtags": arguments.get("hashtags", []),
+                    "image_paths": arguments.get("image_paths", []),
+                    "niche": arguments.get("niche", ""),
+                    "content_angle": arguments.get("content_angle", ""),
+                    "target_audience": arguments.get("target_audience", ""),
+                }
+                resp = await client.post(f"{url}/free/draft", json=body)
+                data = _unwrap_envelope(resp)
+                draft = data.get("draft") or {}
+                draft_id = data.get("draft_id", "")
+                lines = [
+                    f"Free Draft Created — draft_id: {draft_id}",
+                    f"Title: {draft.get('title', '')}",
+                ]
+                return _make_text_result("\n".join(lines), {"draft_id": draft_id, **data})
+
+            elif tool_name == "xhs_free_evaluate":
+                account_id = arguments.get("account_id", "default")
+                draft_id = arguments.get("draft_id", "")
+                resp = await client.post(
+                    f"{url}/free/evaluate",
+                    json={"account_id": account_id, "draft_id": draft_id},
+                )
+                data = _unwrap_envelope(resp)
+                ev = data.get("evaluation_result") or {}
+                lines = [
+                    f"Free Draft Evaluation — {draft_id}",
+                    f"  Overall: {ev.get('overall_score', 'N/A')}"
+                    f"  Decision: {ev.get('decision', '?')}",
+                ]
+                if ev.get("bias_warning"):
+                    lines.append(f"  ⚠ Bias: {ev['bias_warning']}")
+                for d in ev.get("dimensions") or []:
+                    block = " [BLOCKING]" if d.get("is_blocking") else ""
+                    lines.append(f"  - {d.get('dimension')}: {d.get('score')}{block}")
+                for h in ev.get("revision_hints") or []:
+                    lines.append(f"  hint: {h}")
+                return _make_text_result("\n".join(lines), {"evaluation_result": ev, **data})
+
+            elif tool_name == "xhs_free_publish":
+                account_id = arguments.get("account_id", "default")
+                draft_id = arguments.get("draft_id", "")
+                resp = await client.post(
+                    f"{url}/free/publish",
+                    json={"account_id": account_id, "draft_id": draft_id},
+                )
+                data = _unwrap_envelope(resp)
+                pub = data.get("publish_result") or {}
+                lines = [
+                    f"Free Draft Published — {draft_id}",
+                    f"  Post ID: {pub.get('post_id', '')}",
+                    f"  URL: {pub.get('post_url', '')}",
+                    f"  Status: {pub.get('status', '')}",
+                ]
+                return _make_text_result("\n".join(lines), {"publish_result": pub, **data})
 
             else:
                 return _make_text_result(f"Unknown tool: {tool_name}", None, is_error=True)

@@ -20,7 +20,7 @@ class TestHostToolSchemas:
     """Verify XHS_HOST_TOOLS list integrity."""
 
     def test_tool_count(self):
-        assert len(XHS_HOST_TOOLS) == 27
+        assert len(XHS_HOST_TOOLS) == 30
 
     def test_all_tools_have_required_fields(self):
         for tool in XHS_HOST_TOOLS:
@@ -50,6 +50,10 @@ class TestHostToolSchemas:
         # Evaluation tools (RQGM agent-as-a-judge) must be in the auto-exec whitelist
         assert "xhs_evaluation_result" in _XHS_TOOL_NAMES
         assert "xhs_evaluation_run" in _XHS_TOOL_NAMES
+        # Free-mode thread-less creation/evaluation/publish tools
+        assert "xhs_free_draft_create" in _XHS_TOOL_NAMES
+        assert "xhs_free_evaluate" in _XHS_TOOL_NAMES
+        assert "xhs_free_publish" in _XHS_TOOL_NAMES
 
 
 # ── Helper functions ─────────────────────────────────────────────────────
@@ -399,3 +403,125 @@ class TestErrorHandling:
             result = await _execute_xhs_host_tool("xhs_workflow_status", {"thread_id": "t1"})
         assert result["isError"] is True
         assert "Failed" in result["content"][0]["text"]
+
+
+@pytest.mark.asyncio
+class TestFreeModeTools:
+    """Thread-less free creation/evaluation/publish host tools."""
+
+    async def test_free_draft_create(self):
+        data = {
+            "draft_id": "draft-abc123",
+            "draft": {
+                "title": "我的母婴好物分享",
+                "body": "正文内容",
+                "hashtags": ["母婴", "好物"],
+            },
+        }
+        client = _mock_client_post(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool(
+                "xhs_free_draft_create",
+                {
+                    "account_id": "acc1",
+                    "title": "我的母婴好物分享",
+                    "body": "正文内容",
+                    "hashtags": ["母婴", "好物"],
+                    "image_paths": [],
+                    "niche": "母婴",
+                    "content_angle": "",
+                    "target_audience": "",
+                },
+            )
+        assert result.get("isError") is not True
+        text = result["content"][0]["text"]
+        assert "draft-abc123" in text
+        assert "我的母婴好物分享" in text
+        # Structured result carries draft_id
+        assert result["details"]["draft_id"] == "draft-abc123"
+        # Posted to /free/draft with the full draft body
+        client.post.assert_awaited_once()
+        assert "/free/draft" in client.post.await_args.args[0]
+        sent_json = client.post.await_args.kwargs["json"]
+        assert sent_json["account_id"] == "acc1"
+        assert sent_json["title"] == "我的母婴好物分享"
+        assert sent_json["hashtags"] == ["母婴", "好物"]
+
+    async def test_free_draft_create_defaults_account_id(self):
+        """account_id is optional; defaults to "default" when omitted."""
+        data = {"draft_id": "d1", "draft": {"title": "T"}}
+        client = _mock_client_post(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            await _execute_xhs_host_tool(
+                "xhs_free_draft_create",
+                {"title": "T", "body": "B"},
+            )
+        sent_json = client.post.await_args.kwargs["json"]
+        assert sent_json["account_id"] == "default"
+
+    async def test_free_evaluate(self):
+        data = {
+            "draft_id": "draft-xyz",
+            "account_id": "acc1",
+            "evaluation_result": {
+                "overall_score": 78.5,
+                "decision": "approved",
+                "bias_warning": "",
+                "dimensions": [
+                    {"dimension": "copywriting", "score": 80, "is_blocking": False},
+                    {"dimension": "compliance", "score": 60, "is_blocking": True},
+                ],
+                "revision_hints": ["[compliance] 修正绝对化用语"],
+            },
+        }
+        client = _mock_client_post(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool(
+                "xhs_free_evaluate",
+                {"account_id": "acc1", "draft_id": "draft-xyz"},
+            )
+        assert result.get("isError") is not True
+        text = result["content"][0]["text"]
+        assert "draft-xyz" in text
+        assert "78.5" in text
+        assert "approved" in text
+        assert "BLOCKING" in text
+        # Structured result carries evaluation_result
+        assert result["details"]["evaluation_result"]["overall_score"] == 78.5
+        # Posted to /free/evaluate with account_id + draft_id
+        client.post.assert_awaited_once()
+        assert "/free/evaluate" in client.post.await_args.args[0]
+        sent_json = client.post.await_args.kwargs["json"]
+        assert sent_json["account_id"] == "acc1"
+        assert sent_json["draft_id"] == "draft-xyz"
+
+    async def test_free_publish(self):
+        data = {
+            "draft_id": "draft-pub",
+            "account_id": "acc1",
+            "publish_result": {
+                "post_id": "post-42",
+                "post_url": "https://www.xiaohongshu.com/discovery/item/post-42",
+                "status": "published",
+            },
+        }
+        client = _mock_client_post(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool(
+                "xhs_free_publish",
+                {"account_id": "acc1", "draft_id": "draft-pub"},
+            )
+        assert result.get("isError") is not True
+        text = result["content"][0]["text"]
+        assert "draft-pub" in text
+        assert "post-42" in text
+        assert "post-42" in text  # post_url contains it too
+        assert "published" in text
+        # Structured result carries publish_result
+        assert result["details"]["publish_result"]["post_id"] == "post-42"
+        # Posted to /free/publish with account_id + draft_id
+        client.post.assert_awaited_once()
+        assert "/free/publish" in client.post.await_args.args[0]
+        sent_json = client.post.await_args.kwargs["json"]
+        assert sent_json["account_id"] == "acc1"
+        assert sent_json["draft_id"] == "draft-pub"
