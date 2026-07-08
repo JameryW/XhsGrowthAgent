@@ -1152,3 +1152,36 @@ PR#210 shipped create/evaluate/publish but draft management was create-only. Add
 ### Next Steps
 
 - None - task complete
+
+
+## Session 69: Free mode agent tool discovery — guide tool + descriptions + prompt sync
+
+**Date**: 2026-07-08
+**Task**: Free mode agent tool discovery — guide tool + descriptions + prompt sync
+**Branch**: `main`
+
+### Summary
+
+omp agent in Web TUI free mode (Python bridge) had no system prompt guiding it to xhs_free_* chain (RPC has no set_system_prompt). Fix: strengthen 6 free tool descriptions with step numbering + add xhs_free_guide read-only host tool (local, no httpx) returning orchestration guide. Synced stale TS-ext events.ts prompt to reference free tools. Spec updated with discovery mechanism. 1393 tests green, CI 5/5.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b5fee4f6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
