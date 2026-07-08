@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "host tool 注册 + _execute_xhs_host_tool 机制；新增 free draft list/update/delete host tool 必读"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "free.py 路由扩展 + spec 新文件放置规范"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "新路由错误处理风格（ValidationError 统一异常）"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "BaseStore adelete/alist/aput 用法 + namespace 约束"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "后端质量 + mypy/pytest 要求"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "AgentTUI /drafts 命令 + 渲染约定"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "host tool↔路由↔TUI 三层数据流一致"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用 _load_draft/_draft_ns/_to_copy_content，避免重造"}

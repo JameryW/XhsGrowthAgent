@@ -25,10 +25,30 @@ def mock_store():
             return None
         item = MagicMock()
         item.value = rec
+        item.key = key
+        item.namespace = ns
         return item
+
+    async def _alist(*, namespace_prefix, limit=100):
+        # Return Item-like objects for every record under this namespace prefix.
+        items = []
+        for key, value in store._records.items():
+            item = MagicMock()
+            item.key = key
+            item.value = value
+            item.namespace = namespace_prefix
+            items.append(item)
+        return items[:limit]
+
+    async def _adelete(ns, *, key=None):
+        # adelete(namespace, key) — key may be positional or kw; tolerate both.
+        k = key if key is not None else ns
+        store._records.pop(k, None)
 
     store.aput = AsyncMock(side_effect=_aput)
     store.aget = AsyncMock(side_effect=_aget)
+    store.alist = AsyncMock(side_effect=_alist)
+    store.adelete = AsyncMock(side_effect=_adelete)
     return store
 
 
@@ -140,4 +160,87 @@ class TestPublishDraft:
             "/api/free/publish",
             json={"account_id": "acct1", "draft_id": "any"},
         )
+        assert r.status_code == 400
+
+
+class TestListDrafts:
+    def test_list_returns_seeded_drafts(self, client, mock_store):
+        client.post("/api/free/draft", json=DRAFT_BODY)
+        client.post(
+            "/api/free/draft",
+            json={**DRAFT_BODY, "title": "第二篇"},
+        )
+        r = client.get("/api/free/drafts/acct1")
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["account_id"] == "acct1"
+        assert len(data["drafts"]) == 2
+        titles = {d["title"] for d in data["drafts"]}
+        assert "夏日穿搭" in titles and "第二篇" in titles
+        # summary only — no full body in list payload
+        assert "body" not in data["drafts"][0]
+
+    def test_list_empty_when_no_drafts(self, client):
+        r = client.get("/api/free/drafts/acct1")
+        assert r.status_code == 200
+        assert r.json()["data"]["drafts"] == []
+
+    def test_list_no_store_returns_400(self, client):
+        app.state.graph.store = None
+        r = client.get("/api/free/drafts/acct1")
+        assert r.status_code == 400
+
+
+class TestUpdateDraft:
+    def test_update_overwrites_fields_keeps_draft_id(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        r = client.patch(
+            f"/api/free/draft/{draft_id}?account_id=acct1",
+            json={"title": "改过的标题", "hashtags": ["新标签"]},
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["draft_id"] == draft_id  # draft_id unchanged
+        assert data["draft"]["title"] == "改过的标题"
+        assert data["draft"]["hashtags"] == ["新标签"]
+        # untouched fields preserved
+        assert data["draft"]["body"] == DRAFT_BODY["body"]
+
+    def test_update_missing_draft_returns_400(self, client):
+        r = client.patch(
+            "/api/free/draft/nope?account_id=acct1",
+            json={"title": "x"},
+        )
+        assert r.status_code == 400
+
+    def test_update_no_store_returns_400(self, client):
+        app.state.graph.store = None
+        r = client.patch(
+            "/api/free/draft/any?account_id=acct1",
+            json={"title": "x"},
+        )
+        assert r.status_code == 400
+
+
+class TestDeleteDraft:
+    def test_delete_removes_draft(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        r = client.delete(f"/api/free/draft/{draft_id}?account_id=acct1")
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["deleted"] is True
+        # gone from store
+        assert mock_store._records.get(draft_id) is None
+
+    def test_delete_idempotent_for_missing(self, client, mock_store):
+        r = client.delete("/api/free/draft/never-existed?account_id=acct1")
+        assert r.status_code == 200
+        assert r.json()["data"]["deleted"] is True
+
+    def test_delete_no_store_returns_400(self, client):
+        app.state.graph.store = None
+        r = client.delete("/api/free/draft/any?account_id=acct1")
         assert r.status_code == 400

@@ -30,6 +30,7 @@ import {
   getWorkflowStatus,
 } from '@/api/workflow'
 import { submitReview } from '@/api/review'
+import client from '@/api/client'
 import { markdownToAnsi, ANSI } from '@/utils/markdownToAnsi'
 
 const { t } = useI18n()
@@ -195,7 +196,7 @@ function historyDown() {
 
 const SLASH_COMMANDS = [
   '/start', '/status', '/pause', '/resume', '/cancel',
-  '/approve', '/reject', '/mode', '/help', '/clear', '/new', '/abort',
+  '/approve', '/reject', '/mode', '/help', '/clear', '/new', '/abort', '/drafts',
 ]
 
 function tabComplete() {
@@ -684,6 +685,10 @@ async function processAgentCommand(text: string) {
         term?.clear(); writePrompt()
         isProcessing.value = false
         break
+      case '/drafts':
+        await handleDrafts()
+        isProcessing.value = false; writePrompt()
+        break
       default:
         writeLineColored(t('tui.unknownCommand', { command: cmd }), ANSI.RED)
         isProcessing.value = false; writePrompt()
@@ -825,6 +830,30 @@ async function handleReject(threadId: string, feedback: string) {
   if (!feedback) { writeLineColored(t('tui.rejectUsage'), ANSI.RED); return }
   await submitReview(threadId, { decision: 'needs_revision', comments: feedback })
   writeLineColored(t('tui.contentRejected', { feedback }), ANSI.BRIGHT_GREEN)
+}
+
+async function handleDrafts() {
+  if (!isFreeCreationEntry.value) {
+    writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
+    return
+  }
+  const accountId = authStore.user?.id || 'default'
+  try {
+    const resp = await client.get(`/free/drafts/${accountId}`)
+    const data = resp as unknown as { drafts: Array<{ draft_id: string; title: string }> }
+    writeLine('')
+    writeLineColored(`Free Drafts — ${accountId}:`, ANSI.BRIGHT_CYAN)
+    if (!data.drafts || data.drafts.length === 0) {
+      writeLineColored('  (none)', ANSI.DIM)
+    } else {
+      for (const d of data.drafts) {
+        writeLine(`  ${ANSI.BRIGHT_GREEN}${d.draft_id}${ANSI.RESET}: ${d.title || `${ANSI.DIM}(untitled)${ANSI.RESET}`}`)
+      }
+    }
+    writeLine('')
+  } catch (err: any) {
+    writeLineColored(err.message || 'Failed to fetch drafts', ANSI.RED)
+  }
 }
 
 function showHelp() {

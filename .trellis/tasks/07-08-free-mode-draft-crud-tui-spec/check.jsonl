@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "check 阶段对照后端质量 + mypy/pytest 全绿"}
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "验证 host tool 注册 + _execute 分支覆盖"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "验证 3 路由错误路径 + 边界（空 account_id/草稿不存在/delete 已删）"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "验证 /drafts 命令 + 渲染符合组件规范"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "验证 host tool↔路由↔TUI 数据流端到端"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "验证无重造，_load_draft/_draft_ns 正确复用"}
