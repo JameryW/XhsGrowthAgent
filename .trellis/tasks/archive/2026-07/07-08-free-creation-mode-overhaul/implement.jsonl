@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "omp bridge host tool 注册 + _execute_xhs_host_tool 机制；新增 free host tool 必读"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "新路由 backend/api/routes/free.py 放置 + __init__ 注册规范"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "新路由错误处理风格（ValidationError/WorkflowNotFound 等统一异常）"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "BaseStore 命名空间 free_drafts 用法；store_content_record 复用约束"}
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "合成最小 XHSGrowthState 调 EvaluatorAgent 的 state 字段契约（copy_content/niche/account_id）"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "后端代码质量 + mypy/pytest 要求"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "AgentTUI.vue 解锁 + 反馈展示 + WorkflowStartForm free 选项的组件约定"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "host tool ↔ 后端路由 ↔ 前端反馈 三层数据流一致性"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用 EvaluatorAgent/XHSPublisher/store_content_record，避免重造"}

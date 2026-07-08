@@ -1086,3 +1086,36 @@ Drift audit of 27 shared omp tools (TS ext vs Python bridge vs backend routes) f
 ### Next Steps
 
 - None - task complete
+
+
+## Session 67: Free creation mode overhaul — thread-less creation/evaluate/publish + TUI unlock
+
+**Date**: 2026-07-08
+**Task**: Free creation mode overhaul — thread-less creation/evaluate/publish + TUI unlock
+**Branch**: `feat/free-creation-mode-overhaul`
+
+### Summary
+
+Free mode now delivers banner promise: 3 thread-less backend routes (/api/free/draft|evaluate|publish) reusing EvaluatorAgent + run_publish + BaseStore namespace; 3 omp host tools exposing them to the agent over WS; AgentTUI free entry defaults to agent mode (plain text → omp chat) and /start=omp new_session. Non-free behavior unchanged. 1379 tests green, mypy/ruff green, frontend build+typecheck green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dfcc58c1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

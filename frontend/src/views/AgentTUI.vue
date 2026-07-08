@@ -718,7 +718,8 @@ async function processSlashCommand(cmd: string) {
   switch (command) {
     case '/start':
       if (isFreeCreationEntry.value) {
-        writeLineColored(t('tui.freeStartDisabled'), ANSI.YELLOW)
+        sendAgentMessage({ type: 'new_session' })
+        writeLineColored(t('tui.freeNewSession'), ANSI.BRIGHT_GREEN)
       } else {
         await handleStart(arg || undefined)
       }
@@ -852,8 +853,8 @@ function showHelp() {
     writeLine(`  ${Y}Command Mode${R}`)
     writeLine(`  ${sep}`)
     if (isFreeCreationEntry.value) {
+      writeLine(`  ${G}/start${R}         ${D}${t('tui.freeNewSession')}${R}`)
       writeLine(`  ${G}/mode${R}          Switch to agent mode`)
-      writeLine(`  ${D}${t('tui.freeStartDisabled')}${R}`)
     } else {
       writeLine(`  ${G}/start${R} ${D}[topic]${R}  Start workflow`)
       writeLine(`  ${G}/status${R} ${D}[id]${R}    Check workflow status`)
@@ -1025,6 +1026,13 @@ onMounted(() => {
     writeLineColored(`  ${t('tui.freeTopic', { topic: freeCreationTopic.value })}`, ANSI.DIM)
   }
   writeLine('')
+
+  // Free mode: default to agent mode so plain text routes to omp conversation immediately.
+  // Non-free (trend/brief) keeps command mode default — behavior unchanged.
+  if (isFreeCreationEntry.value) {
+    mode.value = 'agent'
+    writeLineColored(`  ${t('tui.freeAgentReady')}`, ANSI.DIM)
+  }
 
   // Try connecting to agent WebSocket
   connectAgentWs()

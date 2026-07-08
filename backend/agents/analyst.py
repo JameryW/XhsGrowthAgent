@@ -152,11 +152,14 @@ class AnalystAgent(BaseAgent):
                 from backend.db.pool import is_pool_ready
 
                 if is_pool_ready():
-                    engagement = {
-                        k: publish_result.get(k, 0)
-                        for k in ("views", "likes", "collects", "comments", "shares")
-                        if k in publish_result
-                    }
+                    engagement = cast(
+                        "dict[str, Any]",
+                        {
+                            k: publish_result.get(k, 0)
+                            for k in ("views", "likes", "collects", "comments", "shares")
+                            if k in publish_result
+                        },
+                    )
                     if engagement:
                         await backfill_engagement(thread_id, engagement)
                         # ── Online co-evolution (RQGM epoch boundary) ──
