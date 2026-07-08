@@ -22,7 +22,7 @@ import logging
 import uuid
 from typing import Any, cast
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
 from backend.agents.evaluator import EvaluatorAgent
@@ -56,6 +56,18 @@ class FreeDraftRef(BaseModel):
 
     account_id: str = Field(default="default", description="账号 ID")
     draft_id: str = Field(description="草稿 ID")
+
+
+class FreeDraftUpdate(BaseModel):
+    """Partial update for a free draft — all fields optional (PATCH semantics)."""
+
+    title: str | None = None
+    body: str | None = None
+    hashtags: list[str] | None = None
+    image_paths: list[str] | None = None
+    niche: str | None = None
+    content_angle: str | None = None
+    target_audience: str | None = None
 
 
 def _draft_ns(account_id: str) -> tuple[str, str, str]:
@@ -220,3 +232,90 @@ async def publish_draft(ref: FreeDraftRef, request: Request) -> ApiResponse[Any]
             "publish_result": publish_result,
         }
     )
+
+
+@router.get("/drafts/{account_id}")
+async def list_drafts(account_id: str, request: Request) -> ApiResponse[Any]:
+    """List free-mode drafts for an account (thread-less).
+
+    Returns a summary list (draft_id + title + hashtags) — no full body, to
+    keep payloads small. Uses BaseStore.alist, which is on InMemoryStore and
+    AsyncPostgresStore but not the BaseStore ABC, so it's wrapped in
+    try/except (same pattern as system.py health check).
+    """
+    graph = getattr(request.app.state, "graph", None)
+    store = getattr(graph, "store", None)
+    if store is None:
+        raise ValidationError("store", "Memory store unavailable; cannot list drafts")
+
+    drafts: list[dict[str, Any]] = []
+    try:
+        items = await store.alist(namespace_prefix=_draft_ns(account_id), limit=100)
+        for item in items:
+            value = item.value
+            if not isinstance(value, dict):
+                continue
+            drafts.append(
+                {
+                    "draft_id": item.key,
+                    "title": value.get("title", ""),
+                    "hashtags": value.get("hashtags", []),
+                }
+            )
+    except Exception:
+        logger.warning("store.alist failed for account %s; returning empty list", account_id)
+    return success(data={"account_id": account_id, "drafts": drafts})
+
+
+@router.patch("/draft/{draft_id}")
+async def update_draft(
+    draft_id: str,
+    update: FreeDraftUpdate,
+    request: Request,
+    account_id: str = Query(..., description="账号 ID"),
+) -> ApiResponse[Any]:
+    """Update a free-mode draft (thread-less). Overwrites specified fields,
+    keeps the draft_id unchanged.
+    """
+    existing = await _load_draft(request, account_id, draft_id)
+    graph = getattr(request.app.state, "graph", None)
+    store = getattr(graph, "store", None)
+    if store is None:
+        raise ValidationError("store", "Memory store unavailable; cannot update draft")
+
+    merged = dict(existing)
+    for field in (
+        "title",
+        "body",
+        "hashtags",
+        "image_paths",
+        "niche",
+        "content_angle",
+        "target_audience",
+    ):
+        val = getattr(update, field)
+        if val is not None:
+            merged[field] = val
+    merged["draft_id"] = draft_id
+    await store.aput(_draft_ns(account_id), key=draft_id, value=merged)
+    logger.info("free draft updated: account=%s draft=%s", account_id, draft_id)
+    return success(data={"draft_id": draft_id, "draft": merged})
+
+
+@router.delete("/draft/{draft_id}")
+async def delete_draft(
+    draft_id: str,
+    request: Request,
+    account_id: str = Query(..., description="账号 ID"),
+) -> ApiResponse[Any]:
+    """Delete a free-mode draft (thread-less). Idempotent — deleting a
+    non-existent draft returns success.
+    """
+    graph = getattr(request.app.state, "graph", None)
+    store = getattr(graph, "store", None)
+    if store is None:
+        raise ValidationError("store", "Memory store unavailable; cannot delete draft")
+
+    await store.adelete(_draft_ns(account_id), key=draft_id)
+    logger.info("free draft deleted: account=%s draft=%s", account_id, draft_id)
+    return success(data={"draft_id": draft_id, "deleted": True})

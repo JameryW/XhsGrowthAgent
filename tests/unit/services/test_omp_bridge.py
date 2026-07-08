@@ -20,7 +20,7 @@ class TestHostToolSchemas:
     """Verify XHS_HOST_TOOLS list integrity."""
 
     def test_tool_count(self):
-        assert len(XHS_HOST_TOOLS) == 30
+        assert len(XHS_HOST_TOOLS) == 33
 
     def test_all_tools_have_required_fields(self):
         for tool in XHS_HOST_TOOLS:
@@ -50,10 +50,13 @@ class TestHostToolSchemas:
         # Evaluation tools (RQGM agent-as-a-judge) must be in the auto-exec whitelist
         assert "xhs_evaluation_result" in _XHS_TOOL_NAMES
         assert "xhs_evaluation_run" in _XHS_TOOL_NAMES
-        # Free-mode thread-less creation/evaluation/publish tools
+        # Free-mode thread-less creation/evaluation/publish + draft CRUD tools
         assert "xhs_free_draft_create" in _XHS_TOOL_NAMES
         assert "xhs_free_evaluate" in _XHS_TOOL_NAMES
         assert "xhs_free_publish" in _XHS_TOOL_NAMES
+        assert "xhs_free_draft_list" in _XHS_TOOL_NAMES
+        assert "xhs_free_draft_update" in _XHS_TOOL_NAMES
+        assert "xhs_free_draft_delete" in _XHS_TOOL_NAMES
 
 
 # ── Helper functions ─────────────────────────────────────────────────────
@@ -94,6 +97,7 @@ def _mock_client_get(data: dict) -> AsyncMock:
     client = AsyncMock()
     client.get = AsyncMock(return_value=_mock_response(data))
     client.post = AsyncMock(return_value=_mock_response({}))
+    client.patch = AsyncMock(return_value=_mock_response({}))
     client.delete = AsyncMock(return_value=_mock_response({}))
     return client
 
@@ -103,6 +107,7 @@ def _mock_client_post(data: dict) -> AsyncMock:
     client = AsyncMock()
     client.get = AsyncMock(return_value=_mock_response({}))
     client.post = AsyncMock(return_value=_mock_response(data))
+    client.patch = AsyncMock(return_value=_mock_response({}))
     client.delete = AsyncMock(return_value=_mock_response({}))
     return client
 
@@ -525,3 +530,78 @@ class TestFreeModeTools:
         sent_json = client.post.await_args.kwargs["json"]
         assert sent_json["account_id"] == "acc1"
         assert sent_json["draft_id"] == "draft-pub"
+
+    async def test_free_draft_list(self):
+        """xhs_free_draft_list GETs /free/drafts/{account_id} and renders the list."""
+        data = {
+            "account_id": "acc1",
+            "drafts": [
+                {"draft_id": "d1", "title": "标题一", "hashtags": []},
+                {"draft_id": "d2", "title": "标题二", "hashtags": []},
+            ],
+        }
+        client = _mock_client_get(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool("xhs_free_draft_list", {"account_id": "acc1"})
+        assert result.get("isError") is not True
+        text = result["content"][0]["text"]
+        assert "acc1" in text
+        assert "d1" in text and "标题一" in text
+        assert "d2" in text and "标题二" in text
+        # Structured result carries drafts
+        assert len(result["details"]["drafts"]) == 2
+        # GET to /free/drafts/{account_id}
+        client.get.assert_awaited_once()
+        assert "/free/drafts/acc1" in client.get.await_args.args[0]
+
+    async def test_free_draft_list_empty(self):
+        data = {"account_id": "acc1", "drafts": []}
+        client = _mock_client_get(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool("xhs_free_draft_list", {"account_id": "acc1"})
+        assert result.get("isError") is not True
+        assert "(none)" in result["content"][0]["text"]
+
+    async def test_free_draft_update(self):
+        """xhs_free_draft_update PATCHes /free/draft/{id}?account_id= with the provided fields."""
+        data = {
+            "draft_id": "d-up",
+            "draft": {"title": "新标题", "body": "正文"},
+        }
+        client = _mock_client_post(data)
+        # _mock_client_post sets .patch to return {} — override to return our data
+        client.patch = AsyncMock(return_value=_mock_response(data))
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool(
+                "xhs_free_draft_update",
+                {"account_id": "acc1", "draft_id": "d-up", "title": "新标题"},
+            )
+        assert result.get("isError") is not True
+        text = result["content"][0]["text"]
+        assert "d-up" in text
+        assert "新标题" in text
+        # PATCH to /free/draft/{draft_id} with account_id as query param
+        client.patch.assert_awaited_once()
+        assert "/free/draft/d-up" in client.patch.await_args.args[0]
+        assert client.patch.await_args.kwargs["params"]["account_id"] == "acc1"
+        # Body carries only the provided field (title), not account_id/draft_id
+        sent_json = client.patch.await_args.kwargs["json"]
+        assert sent_json["title"] == "新标题"
+        assert "account_id" not in sent_json
+        assert "draft_id" not in sent_json
+
+    async def test_free_draft_delete(self):
+        """xhs_free_draft_delete DELETEs /free/draft/{id}?account_id=."""
+        data = {"draft_id": "d-del", "deleted": True}
+        client = _mock_client_get(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool(
+                "xhs_free_draft_delete",
+                {"account_id": "acc1", "draft_id": "d-del"},
+            )
+        assert result.get("isError") is not True
+        assert "d-del" in result["content"][0]["text"]
+        # DELETE to /free/draft/{draft_id} with account_id as query param
+        client.delete.assert_awaited_once()
+        assert "/free/draft/d-del" in client.delete.await_args.args[0]
+        assert client.delete.await_args.kwargs["params"]["account_id"] == "acc1"

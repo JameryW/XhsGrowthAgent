@@ -586,6 +586,80 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
             "required": ["draft_id"],
         },
     },
+    {
+        "name": "xhs_free_draft_list",
+        "label": "XHS Free Draft List",
+        "description": (
+            "List free-mode drafts for an account (thread-less). Returns draft_id + title "
+            "summary, no full body."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "default": "default", "description": "Account ID"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "xhs_free_draft_update",
+        "label": "XHS Free Draft Update",
+        "description": (
+            "Update a free-mode draft (thread-less). Overwrites specified fields, keeps "
+            "draft_id unchanged."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "default": "default", "description": "Account ID"},
+                "draft_id": {
+                    "type": "string",
+                    "description": "Draft ID to update",
+                },
+                "title": {"type": "string", "description": "New title"},
+                "body": {"type": "string", "description": "New body text"},
+                "hashtags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "New hashtag list",
+                },
+                "image_paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "New image file paths",
+                },
+                "niche": {"type": "string", "description": "Account niche (for evaluation)"},
+                "content_angle": {
+                    "type": "string",
+                    "description": "Content angle (for evaluation)",
+                },
+                "target_audience": {
+                    "type": "string",
+                    "description": "Target audience (for evaluation)",
+                },
+            },
+            "required": ["draft_id"],
+        },
+    },
+    {
+        "name": "xhs_free_draft_delete",
+        "label": "XHS Free Draft Delete",
+        "description": (
+            "Delete a free-mode draft (thread-less). Idempotent — deleting a non-existent "
+            "draft is not an error."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "default": "default", "description": "Account ID"},
+                "draft_id": {
+                    "type": "string",
+                    "description": "Draft ID to delete",
+                },
+            },
+            "required": ["draft_id"],
+        },
+    },
 ]
 
 # Names of XHS tools that the backend auto-executes
@@ -652,6 +726,9 @@ class _RetryingClient:
 
     async def post(self, *args: Any, **kwargs: Any) -> Any:
         return await _retry_http(self._client.post, *args, tool_name=self._tool_name, **kwargs)
+
+    async def patch(self, *args: Any, **kwargs: Any) -> Any:
+        return await _retry_http(self._client.patch, *args, tool_name=self._tool_name, **kwargs)
 
     async def delete(self, *args: Any, **kwargs: Any) -> Any:
         return await _retry_http(self._client.delete, *args, tool_name=self._tool_name, **kwargs)
@@ -1210,6 +1287,50 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     f"  Status: {pub.get('status', '')}",
                 ]
                 return _make_text_result("\n".join(lines), {"publish_result": pub, **data})
+
+            elif tool_name == "xhs_free_draft_list":
+                account_id = arguments.get("account_id", "default")
+                resp = await client.get(f"{url}/free/drafts/{account_id}")
+                data = _unwrap_envelope(resp)
+                drafts = data.get("drafts", [])
+                if not drafts:
+                    return _make_text_result(f"Free Drafts — {account_id}\n  (none)", data)
+                lines = [f"Free Drafts — {account_id}"]
+                for d in drafts:
+                    lines.append(f"  - {d.get('draft_id', '')}: {d.get('title', '')}")
+                return _make_text_result("\n".join(lines), {"drafts": drafts, **data})
+
+            elif tool_name == "xhs_free_draft_update":
+                account_id = arguments.get("account_id", "default")
+                draft_id = arguments.get("draft_id", "")
+                body = {k: v for k, v in arguments.items() if k not in ("account_id", "draft_id")}
+                resp = await client.patch(
+                    f"{url}/free/draft/{draft_id}",
+                    params={"account_id": account_id},
+                    json=body,
+                )
+                data = _unwrap_envelope(resp)
+                draft = data.get("draft") or {}
+                lines = [
+                    f"Free Draft Updated — {draft_id}",
+                    f"Title: {draft.get('title', '')}",
+                ]
+                return _make_text_result(
+                    "\n".join(lines), {"draft_id": draft_id, "draft": draft, **data}
+                )
+
+            elif tool_name == "xhs_free_draft_delete":
+                account_id = arguments.get("account_id", "default")
+                draft_id = arguments.get("draft_id", "")
+                resp = await client.delete(
+                    f"{url}/free/draft/{draft_id}",
+                    params={"account_id": account_id},
+                )
+                data = _unwrap_envelope(resp)
+                return _make_text_result(
+                    f"Free Draft Deleted — {draft_id}",
+                    {"draft_id": draft_id, "deleted": True, **data},
+                )
 
             else:
                 return _make_text_result(f"Unknown tool: {tool_name}", None, is_error=True)
