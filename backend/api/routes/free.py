@@ -239,9 +239,11 @@ async def list_drafts(account_id: str, request: Request) -> ApiResponse[Any]:
     """List free-mode drafts for an account (thread-less).
 
     Returns a summary list (draft_id + title + hashtags) — no full body, to
-    keep payloads small. Uses BaseStore.alist, which is on InMemoryStore and
-    AsyncPostgresStore but not the BaseStore ABC, so it's wrapped in
-    try/except (same pattern as system.py health check).
+    keep payloads small. Uses BaseStore.asearch with an empty query (returns
+    all items in the namespace). asearch is on BaseStore; alist is NOT (only
+    on some concrete stores), so asearch is the correct portable call.
+    Wrapped in try/except — degrades to empty list if the store lacks a
+    semantic index.
     """
     graph = getattr(request.app.state, "graph", None)
     store = getattr(graph, "store", None)
@@ -250,7 +252,7 @@ async def list_drafts(account_id: str, request: Request) -> ApiResponse[Any]:
 
     drafts: list[dict[str, Any]] = []
     try:
-        items = await store.alist(namespace_prefix=_draft_ns(account_id), limit=100)
+        items = await store.asearch(_draft_ns(account_id), query="", limit=100)
         for item in items:
             value = item.value
             if not isinstance(value, dict):
