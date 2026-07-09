@@ -4,7 +4,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 70
+- **Total Sessions**: 71
 - **Last Active**: 2026-07-09
 <!-- @@@/auto:current-status -->
 
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~1220 | Active |
+| `journal-0.md` | ~1253 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 71 | 2026-07-09 | Fix free draft list alist bug (runtime-caught) | `31795772` | `main` |
 | 70 | 2026-07-09 | TUI agent execution detail i18n | `a33ddfb7` | `main` |
 | 69 | 2026-07-08 | Free mode agent tool discovery — guide tool + descriptions + prompt sync | `b5fee4f6` | `main` |
 | 68 | 2026-07-08 | Free mode draft CRUD + TUI /drafts + spec | `22cdae97` | `main` |

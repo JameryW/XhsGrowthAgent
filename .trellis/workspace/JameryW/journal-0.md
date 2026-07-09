@@ -1218,3 +1218,36 @@ AgentTUI execution-detail had hardcoded English (status labels, disconnect, erro
 ### Next Steps
 
 - None - task complete
+
+
+## Session 71: Fix free draft list alist bug (runtime-caught)
+
+**Date**: 2026-07-09
+**Task**: Fix free draft list alist bug (runtime-caught)
+**Branch**: `main`
+
+### Summary
+
+E2E curl found GET /api/free/drafts returned empty on real AsyncPostgresStore — store.alist not on BaseStore/AsyncPostgresStore (only asearch). Mock set alist=AsyncMock so tests missed it. Fixed list_drafts to use store.asearch(ns, query='', limit). 1393 tests green, CI 5/5. Deploying + E2E re-verify.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `31795772` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
