@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Vue 组件 + i18n t() 用法约定；AgentTUI 文案本地化必读"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Pinia/i18n store 模式（若有相关）"}

@@ -132,6 +132,12 @@ function writeLineColored(text: string, color: string) {
   writeLine(`${color}${text}${ANSI.RESET}`)
 }
 
+/** Pad a label string to a fixed display width (accounting for CJK width) for aligned terminal output */
+function padLabel(label: string, width: number): string {
+  const w = getStringWidth(label)
+  return w >= width ? label : label + ' '.repeat(width - w)
+}
+
 function writePrompt() {
   const prompt = isProcessing.value
     ? `${ANSI.DIM}⏳${ANSI.RESET} `
@@ -549,10 +555,10 @@ function connectAgentWs() {
       mode.value = 'command'
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts++
-        writeLineColored(`⚠ Agent disconnected, reconnecting (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`, ANSI.YELLOW)
+        writeLineColored(t('tui.agentDisconnected', { cur: reconnectAttempts, max: MAX_RECONNECT_ATTEMPTS }), ANSI.YELLOW)
         reconnectTimer = setTimeout(connectAgentWs, 3000)
       } else {
-        writeLineColored('✗ Agent disconnected after max retries, switched to command mode', ANSI.RED)
+        writeLineColored(t('tui.agentDisconnectedMax'), ANSI.RED)
         writePrompt()
       }
     }
@@ -617,7 +623,7 @@ function handleAgentEvent(event: Record<string, unknown>) {
     writePrompt()
   } else if (type === 'error') {
     // ponytail: 2-space indent aligns with ▸/↳ tool block; red mark + default-color msg for hierarchy
-    writeLine(`  ${ANSI.RED}⚠${ANSI.RESET} ${event.message || 'Unknown error'}`)
+    writeLine(`  ${ANSI.RED}⚠${ANSI.RESET} ${event.message || t('tui.unknownError')}`)
     isProcessing.value = false
     writePrompt()
   }
@@ -792,11 +798,11 @@ async function handleStatus(threadId: string) {
   const filled = Math.round((pct / 100) * barW)
   const bar = `${G}${'█'.repeat(filled)}${D}${'░'.repeat(barW - filled)}${R}`
   writeLine('')
-  writeLine(`  ${D}phase${R}    ${C}${state.phase}${R}`)
-  writeLine(`  ${D}status${R}   ${W}${state.status}${R}`)
-  writeLine(`  ${D}progress${R} ${bar} ${G}${pct}%${R}`)
-  writeLine(`  ${D}agent${R}    ${state.current_agent || `${D}none${R}`}`)
-  writeLine(`  ${D}next${R}     ${state.next_steps?.length ? state.next_steps.join(', ') : `${D}none${R}`}`)
+  writeLine(`  ${D}${padLabel(t('tui.statusPhase'), 9)}${R}    ${C}${state.phase}${R}`)
+  writeLine(`  ${D}${padLabel(t('tui.statusStatus'), 9)}${R}   ${W}${state.status}${R}`)
+  writeLine(`  ${D}${padLabel(t('tui.statusProgress'), 9)}${R} ${bar} ${G}${pct}%${R}`)
+  writeLine(`  ${D}${padLabel(t('tui.statusAgent'), 9)}${R}    ${state.current_agent || `${D}${t('tui.statusNone')}${R}`}`)
+  writeLine(`  ${D}${padLabel(t('tui.statusNext'), 9)}${R}     ${state.next_steps?.length ? state.next_steps.join(', ') : `${D}${t('tui.statusNone')}${R}`}`)
   writeLine('')
 }
 
@@ -842,17 +848,17 @@ async function handleDrafts() {
     const resp = await client.get(`/free/drafts/${accountId}`)
     const data = resp as unknown as { drafts: Array<{ draft_id: string; title: string }> }
     writeLine('')
-    writeLineColored(`Free Drafts — ${accountId}:`, ANSI.BRIGHT_CYAN)
+    writeLineColored(t('tui.draftsListTitle', { accountId }), ANSI.BRIGHT_CYAN)
     if (!data.drafts || data.drafts.length === 0) {
-      writeLineColored('  (none)', ANSI.DIM)
+      writeLineColored(`  ${t('tui.draftsNone')}`, ANSI.DIM)
     } else {
       for (const d of data.drafts) {
-        writeLine(`  ${ANSI.BRIGHT_GREEN}${d.draft_id}${ANSI.RESET}: ${d.title || `${ANSI.DIM}(untitled)${ANSI.RESET}`}`)
+        writeLine(`  ${ANSI.BRIGHT_GREEN}${d.draft_id}${ANSI.RESET}: ${d.title || `${ANSI.DIM}${t('tui.draftUntitled')}${ANSI.RESET}`}`)
       }
     }
     writeLine('')
   } catch (err: any) {
-    writeLineColored(err.message || 'Failed to fetch drafts', ANSI.RED)
+    writeLineColored(err.message || t('tui.draftsFetchFailed'), ANSI.RED)
   }
 }
 
