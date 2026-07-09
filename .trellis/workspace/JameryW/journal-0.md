@@ -1284,3 +1284,36 @@ Replaced AgentTUI formatResult (single-line 160-cap) with formatResultLines: sho
 ### Next Steps
 
 - None - task complete
+
+
+## Session 73: free TUI help draft commands
+
+**Date**: 2026-07-10
+**Task**: free TUI help draft commands
+**Branch**: `main`
+
+### Summary
+
+showHelp never listed free-mode draft commands (/drafts /draft /delete from #216/#218/#219). Added 'Free Draft Commands' sub-section gated by isFreeCreationEntry in BOTH agent-mode + command-mode+free branches. Non-free shows nothing. Style matches surrounding hardcoded-English help (pre-existing non-i18n debt, stayed consistent not half-i18n). Additive. vue-tsc/ruff clean.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b4a6811f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
