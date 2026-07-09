@@ -27,7 +27,7 @@ drafts never enter the checkpoint, and the workflow slash commands stay disabled
 | POST | `/draft` | `FreeDraft` (account_id, title, body, hashtags, image_paths, niche, content_angle, target_audience) | `{draft_id, draft}` |
 | POST | `/evaluate` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, evaluation_result}` |
 | POST | `/publish` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, publish_result}` |
-| GET | `/drafts/{account_id}` | — | `{account_id, drafts: [{draft_id, title, hashtags}]}` |
+| GET | `/drafts/{account_id}` | — | `{account_id, drafts: [{draft_id, title, hashtags, created_at, updated_at, last_evaluation, published}]}` (sorted newest-first by `updated_at`; metadata fields optional — see Draft Status Metadata) |
 | GET | `/draft/{draft_id}` | query `account_id` | `{draft_id, draft}` |
 | PATCH | `/draft/{draft_id}` | query `account_id`; body `FreeDraftUpdate` (all fields optional) | `{draft_id, draft}` |
 | DELETE | `/draft/{draft_id}` | query `account_id` | `{draft_id, deleted: true}` |
