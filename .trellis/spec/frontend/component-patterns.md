@@ -150,6 +150,31 @@ For horizontal layouts that overflow on mobile (< 320px viewport):
 
 ---
 
+## AgentTUI tool_result Display (Terminal TUI)
+
+`AgentTUI.vue` renders tool results into an xterm.js terminal (not the Vue template), so it uses ANSI colors + `term.writeln` — **not** `t()` i18n keys or `<template>` strings. The terminal domain is exempt from the i18n rule above.
+
+Tool results are formatted by `formatResultLines(result, isError)` and rendered under a `↳ ✓ toolName` header:
+
+- **Short results** (primitives, single-key objects like `{draft_id}`): one line, 160-char cap with a dim `…` suffix — stays scannable.
+- **Multi-line / structured results** (text with newlines, or JSON object/array with >1 member): pretty-printed across lines, each subsequent line indented 4 spaces under the `↳`. This is what makes `xhs_free_evaluate` (6-dimension scores + decision + revision_hints) and `xhs_free_guide` (orchestration steps) readable instead of flattened+truncated.
+- **Line budget**: multi-line output capped at `MAX_RESULT_LINES` (12); overflow appends a dim `… (N more lines)` footer. **Errors bypass the cap** — full diagnostics must stay visible.
+- **Detection is content-based**, never tool-name-based: any tool returning multi-line/structured JSON benefits; no per-tool formatters.
+- **omp ToolResult envelope**: backend/extension tools return `{content:[{type:"text",text}], details?}`. The human-readable multi-line output (6-dim scores, guide steps) lives in `content[].text` — `formatResultLines` extracts it first via `_extractToolText()` (shape check, not tool name), so it renders as readable lines rather than a JSON dump that buries the text as an escaped single-line string. Values without that envelope (plain dicts, primitives, raw strings) fall through to the string/JSON path.
+
+```ts
+// tool_result render (AgentTUI.vue)
+const lines = formatResultLines(event.result, isError)
+const header = `  ${ANSI.DIM}↳${ANSI.RESET} ${mark} ${ANSI.DIM}${toolName}${ANSI.RESET}`
+writeLine(`${header} ${lines[0]}`)
+const indent = '    '
+for (const ln of lines.slice(1)) writeLine(`${indent}${ln}`)  // 4-space indent aligns under ↳
+```
+
+Never collapse structured results to one line — that destroys the 6-dimension breakdown and guide steps the user needs.
+
+---
+
 ## i18n Rules
 
 1. All user-visible strings must use `t('key')`
@@ -188,3 +213,44 @@ export interface WorkflowState {
 ```
 
 Keep frontend types in sync with backend `substates.py`.
+
+---
+
+## AgentTUI tool_result Display
+
+The web TUI (`AgentTUI.vue`) renders omp tool results via `formatResultLines`, which pretty-prints structured JSON across lines (capped at 12 lines) and extracts human-readable text from the omp `{content:[{type:"text",text}]}` envelope first. Conventions governing tool result rendering:
+
+### Multi-line rendering (content-based detection)
+
+Detection of whether to render multi-line is **content-based, not tool-name-based**: explicit newlines in the extracted text, or a structured object/array with >1 member, triggers multi-line pretty-print. Single-key objects (`{draft_id: "x"}`) stay single-line and dim.
+
+### Envelope text shape
+
+The omp envelope `text` field (from `backend/services/omp_bridge.py` `_make_text_result` and `xhsagent-ext` `textResult`) is **human-readable pre-formatted text**, not a JSON string — e.g. `xhs_free_evaluate` emits `"Free Draft Evaluation — <id>\n  Overall: <n>  Decision: <verdict>\n  - <dim>: <score>…"` . `formatResultLines` still attempts `JSON.parse` on strings that trim to `{`/`[` (try/catch fallback to raw string) as a robustness path for any genuinely-JSON envelope text; free text and parse failures render as raw dim text unchanged.
+
+### Semantic color convention
+
+Result lines are colored by **content pattern** (content-based, never by tool name), so any tool result emitting these patterns benefits. The `colorizeResultLine` helper matches two line families:
+
+**JSON-key form** (from `JSON.stringify(obj, null, 2)`: `<indent>"<key>": <value>,?`):
+
+| Key pattern | Value | Color |
+|-------------|-------|-------|
+| `"decision"` | `"approved"` | `BRIGHT_GREEN` (success) |
+| `"decision"` | `"needs_revision"` | `BRIGHT_YELLOW` (warning) |
+| `"decision"` | `"rejected"` | `RED` (error) |
+| `overall_score` / any key ending in `_score` | numeric | `BRIGHT_CYAN` |
+| `bias_warning` | truthy (`true` / non-empty string) | `BRIGHT_MAGENTA` |
+| `bias_warning` | falsy (`false` / `""` / `null`) | `DIM` (no alarm) |
+
+**Human-readable form** (the omp bridge / xhsagent-ext evaluate output actually emits this):
+
+| Line pattern | Colored element | Color |
+|--------------|-----------------|-------|
+| `  Overall: <num>  Decision: <verdict>` | `<num>` | `BRIGHT_CYAN` |
+| `  Overall: <num>  Decision: <verdict>` | `<verdict>` approved/needs_revision/rejected | `BRIGHT_GREEN` / `BRIGHT_YELLOW` / `RED` |
+| `  - <dimension>: <score>[…]` | `<score>` | `BRIGHT_CYAN` |
+| `  ⚠ Bias: <text>` (only present when truthy) | `<text>` | `BRIGHT_MAGENTA` |
+| (all other lines) | — | `DIM` (baseline) |
+
+Indentation and surrounding punctuation/labels stay `DIM` so structure stays scannable while the verdict jumps out. Non-matching free-text lines (e.g. `xhs_free_guide` steps) get `DIM` per-line unchanged.

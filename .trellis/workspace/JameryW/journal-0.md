@@ -1251,3 +1251,36 @@ E2E curl found GET /api/free/drafts returned empty on real AsyncPostgresStore â€
 ### Next Steps
 
 - None - task complete
+
+
+## Session 72: TUI tool_result multiline display
+
+**Date**: 2026-07-09
+**Task**: TUI tool_result multiline display
+**Branch**: `feat/tui-tool-result-multiline`
+
+### Summary
+
+Replaced AgentTUI formatResult (single-line 160-cap) with formatResultLines: short results stay single-line, multi-line/structured tool results (xhs_free_evaluate 6-dim scores, xhs_free_guide steps) pretty-print across lines indented under the â†³ header, capped at 12 lines with dim overflow footer, errors bypass cap. Added _extractToolText to unwrap the omp {content:[{type:text,text}]} envelope so readable text renders as lines instead of a JSON-escaped string. Cross-layer verified via trellis-check. vue-tsc clean; vite build OOMs on low-RAM box (env, CI builds it). Spec note added to frontend/component-patterns.md.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f31fbf39` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
