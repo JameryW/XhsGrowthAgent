@@ -213,3 +213,44 @@ export interface WorkflowState {
 ```
 
 Keep frontend types in sync with backend `substates.py`.
+
+---
+
+## AgentTUI tool_result Display
+
+The web TUI (`AgentTUI.vue`) renders omp tool results via `formatResultLines`, which pretty-prints structured JSON across lines (capped at 12 lines) and extracts human-readable text from the omp `{content:[{type:"text",text}]}` envelope first. Conventions governing tool result rendering:
+
+### Multi-line rendering (content-based detection)
+
+Detection of whether to render multi-line is **content-based, not tool-name-based**: explicit newlines in the extracted text, or a structured object/array with >1 member, triggers multi-line pretty-print. Single-key objects (`{draft_id: "x"}`) stay single-line and dim.
+
+### Envelope text shape
+
+The omp envelope `text` field (from `backend/services/omp_bridge.py` `_make_text_result` and `xhsagent-ext` `textResult`) is **human-readable pre-formatted text**, not a JSON string — e.g. `xhs_free_evaluate` emits `"Free Draft Evaluation — <id>\n  Overall: <n>  Decision: <verdict>\n  - <dim>: <score>…"` . `formatResultLines` still attempts `JSON.parse` on strings that trim to `{`/`[` (try/catch fallback to raw string) as a robustness path for any genuinely-JSON envelope text; free text and parse failures render as raw dim text unchanged.
+
+### Semantic color convention
+
+Result lines are colored by **content pattern** (content-based, never by tool name), so any tool result emitting these patterns benefits. The `colorizeResultLine` helper matches two line families:
+
+**JSON-key form** (from `JSON.stringify(obj, null, 2)`: `<indent>"<key>": <value>,?`):
+
+| Key pattern | Value | Color |
+|-------------|-------|-------|
+| `"decision"` | `"approved"` | `BRIGHT_GREEN` (success) |
+| `"decision"` | `"needs_revision"` | `BRIGHT_YELLOW` (warning) |
+| `"decision"` | `"rejected"` | `RED` (error) |
+| `overall_score` / any key ending in `_score` | numeric | `BRIGHT_CYAN` |
+| `bias_warning` | truthy (`true` / non-empty string) | `BRIGHT_MAGENTA` |
+| `bias_warning` | falsy (`false` / `""` / `null`) | `DIM` (no alarm) |
+
+**Human-readable form** (the omp bridge / xhsagent-ext evaluate output actually emits this):
+
+| Line pattern | Colored element | Color |
+|--------------|-----------------|-------|
+| `  Overall: <num>  Decision: <verdict>` | `<num>` | `BRIGHT_CYAN` |
+| `  Overall: <num>  Decision: <verdict>` | `<verdict>` approved/needs_revision/rejected | `BRIGHT_GREEN` / `BRIGHT_YELLOW` / `RED` |
+| `  - <dimension>: <score>[…]` | `<score>` | `BRIGHT_CYAN` |
+| `  ⚠ Bias: <text>` (only present when truthy) | `<text>` | `BRIGHT_MAGENTA` |
+| (all other lines) | — | `DIM` (baseline) |
+
+Indentation and surrounding punctuation/labels stay `DIM` so structure stays scannable while the verdict jumps out. Non-matching free-text lines (e.g. `xhs_free_guide` steps) get `DIM` per-line unchanged.

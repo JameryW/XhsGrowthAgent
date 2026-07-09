@@ -661,7 +661,25 @@ function formatResultLines(result: unknown, isError = false): string[] {
   // bury that text as an escaped single-line string. Extract it first; fall back to
   // details if no text content. Detection is content-based (shape check), not tool-name.
   const extracted = _extractToolText(result)
-  const value: unknown = extracted ?? result
+  let value: unknown = extracted ?? result
+
+  // ponytail: robustness path — if the extracted text is itself a JSON string
+  // (starts with {/[), parse it so JSON.stringify(obj, null, 2) produces real
+  // indented lines with each key on its own line. The omp bridge / xhsagent-ext
+  // actually emit human-readable pre-formatted text (not JSON), so this branch
+  // is a no-op for evaluate/guide today; it exists for any future tool that
+  // returns a JSON-string envelope. Free text and parse failures keep the raw
+  // string untouched, which is what the human-readable colorizer below expects.
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        value = JSON.parse(trimmed)
+      } catch {
+        // not valid JSON — keep the raw string (e.g. guide free text)
+      }
+    }
+  }
 
   const isObj = typeof value === 'object'
   const str = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
@@ -684,7 +702,11 @@ function formatResultLines(result: unknown, isError = false): string[] {
     lines = lines.slice(0, MAX_RESULT_LINES)
     lines.push(`${ANSI.DIM}… (${omitted} more lines)${ANSI.RESET}`)
   }
-  return lines.map((ln) => `${ANSI.DIM}${ln}${ANSI.RESET}`)
+  // ponytail: semantic color — let the verdict jump out. Color by key/value
+  // pattern (content-based), not by tool name, so any tool result with a
+  // decision / *_score / bias_warning field benefits. Non-matching JSON lines
+  // stay dim as before; non-JSON free text is also dim per-line.
+  return lines.map((ln) => colorizeResultLine(ln))
 }
 
 /** Extract the human-readable text from an omp ToolResult envelope
@@ -710,6 +732,84 @@ function _memberCount(v: unknown): number {
   if (Array.isArray(v)) return v.length
   if (v && typeof v === 'object') return Object.keys(v as Record<string, unknown>).length
   return 0
+}
+
+/** Apply semantic color to a tool-result line based on its content.
+ *
+ *  Two line families are recognized — both detected by content (regex on the
+ *  line text), never by tool name:
+ *
+ *  1. JSON-key form (from JSON.stringify(obj, null, 2)):
+ *       `<indent>"<key>": <value>,?`
+ *     - `"decision": "approved|needs_revision|rejected"` → verdict color
+ *     - `overall_score` / any key ending in `_score` → bright cyan on value
+ *     - `bias_warning` truthy (true / non-empty string) → bright magenta; falsy → dim
+ *
+ *  2. Human-readable form (the omp bridge / xhsagent-ext format evaluation
+ *     tools actually emit — pre-formatted text, NOT JSON):
+ *       `  Overall: <num>  Decision: <verdict>`  → cyan num + verdict color
+ *       `  - <dimension>: <score>[ [BLOCKING]]`   → cyan score
+ *       `  ⚠ Bias: <text>`                        → bright magenta (only present when truthy)
+ *
+ *  Every other line stays dim (the baseline multi-line look). This keeps the
+ *  content-based principle: any tool emitting these patterns benefits, and
+ *  free text (e.g. xhs_free_guide) is untouched. */
+function colorizeResultLine(line: string): string {
+  // ── JSON-key form: <indent>"<key>": <value>,? ──────────────────────────
+  const jm = line.match(/^(\s*)"(decision|overall_score|\w+_score|bias_warning)"\s*:\s*(.+?)(,?)\s*$/)
+  if (jm) {
+    const [, indent, key, rawVal, comma] = jm
+    if (key === 'decision') {
+      const valMatch = rawVal.match(/^"(.+)"$/)
+      const verdict = valMatch ? valMatch[1] : rawVal
+      let color: string
+      if (verdict === 'approved') color = ANSI.BRIGHT_GREEN
+      else if (verdict === 'needs_revision') color = ANSI.BRIGHT_YELLOW
+      else if (verdict === 'rejected') color = ANSI.RED
+      else color = ANSI.DIM
+      return `${indent}${ANSI.DIM}"${key}": ${color}${rawVal}${ANSI.RESET}${comma}`
+    }
+    if (key === 'overall_score' || key.endsWith('_score')) {
+      return `${indent}${ANSI.DIM}"${key}": ${ANSI.BRIGHT_CYAN}${rawVal}${ANSI.RESET}${comma}`
+    }
+    // bias_warning truthy → magenta; falsy ("" / false / null) → dim
+    const truthy = rawVal === 'true' || (rawVal.startsWith('"') && rawVal.length > 2)
+    const color = key === 'bias_warning' && truthy ? ANSI.BRIGHT_MAGENTA : ANSI.DIM
+    return `${indent}${ANSI.DIM}"${key}": ${color}${rawVal}${ANSI.RESET}${comma}`
+  }
+
+  // ── Human-readable form: the omp bridge / xhsagent-ext evaluate output ──
+  // `  Overall: <num>  Decision: <verdict>` — Overall num cyan, Decision verdict-colored.
+  // Matches "N/A" overall (no number to color) and any decision word.
+  const od = line.match(/^(\s*Overall:\s*)(\S+)(\s+Decision:\s+)(\S+)\s*$/)
+  if (od) {
+    const [, preOverall, overallVal, midDecision, decisionVal] = od
+    const overallColor = /\d/.test(overallVal) ? ANSI.BRIGHT_CYAN : ANSI.DIM
+    let decisionColor: string
+    if (decisionVal === 'approved') decisionColor = ANSI.BRIGHT_GREEN
+    else if (decisionVal === 'needs_revision') decisionColor = ANSI.BRIGHT_YELLOW
+    else if (decisionVal === 'rejected') decisionColor = ANSI.RED
+    else decisionColor = ANSI.DIM
+    return `${ANSI.DIM}${preOverall}${overallColor}${overallVal}${ANSI.RESET}${ANSI.DIM}${midDecision}${decisionColor}${decisionVal}${ANSI.RESET}`
+  }
+
+  // `  - <dimension>: <score>[ [BLOCKING]]` — score number cyan. Trailing
+  // rationale (" — ...") or [BLOCKING] tag is left dim.
+  const dim = line.match(/^(\s*-\s*[^:]+:\s*)(\d+(?:\.\d+)?)(.*)$/)
+  if (dim) {
+    const [, preScore, score, tail] = dim
+    return `${ANSI.DIM}${preScore}${ANSI.BRIGHT_CYAN}${score}${ANSI.RESET}${ANSI.DIM}${tail}${ANSI.RESET}`
+  }
+
+  // `  ⚠ Bias: <text>` — only emitted when bias_warning is non-empty (truthy).
+  const bias = line.match(/^(\s*⚠\s*Bias:\s*)(.+)$/)
+  if (bias) {
+    const [, pre, text] = bias
+    return `${ANSI.DIM}${pre}${ANSI.BRIGHT_MAGENTA}${text}${ANSI.RESET}`
+  }
+
+  // not a semantic line — keep the dim baseline
+  return `${ANSI.DIM}${line}${ANSI.RESET}`
 }
 
 // ── Command processing ──────────────────────────────────────────────────
