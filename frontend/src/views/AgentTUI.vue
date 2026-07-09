@@ -202,7 +202,7 @@ function historyDown() {
 
 const SLASH_COMMANDS = [
   '/start', '/status', '/pause', '/resume', '/cancel',
-  '/approve', '/reject', '/mode', '/help', '/clear', '/new', '/abort', '/drafts', '/draft',
+  '/approve', '/reject', '/mode', '/help', '/clear', '/new', '/abort', '/drafts', '/draft', '/delete',
 ]
 
 function tabComplete() {
@@ -868,6 +868,13 @@ async function processAgentCommand(text: string) {
         isProcessing.value = false; writePrompt()
         break
       }
+      case '/delete': {
+        const parts = text.split(/\s+/)
+        const draftId = parts.slice(1).join(' ').trim()
+        await handleDelete(draftId)
+        isProcessing.value = false; writePrompt()
+        break
+      }
       default:
         writeLineColored(t('tui.unknownCommand', { command: cmd }), ANSI.RED)
         isProcessing.value = false; writePrompt()
@@ -1153,6 +1160,36 @@ async function handleDraft(draftId: string) {
     writeLine('')
   } catch (err: any) {
     writeLineColored(err.message || t('tui.draftDetailFetchFailed'), ANSI.RED)
+  }
+}
+
+async function handleDelete(draftId: string) {
+  if (!isFreeCreationEntry.value) {
+    writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
+    return
+  }
+  if (!draftId) {
+    writeLineColored(t('tui.draftDeleteUsage'), ANSI.RED)
+    return
+  }
+  const accountId = authStore.user?.id || 'default'
+  let title = ''
+  // GET first so the user sees what is being deleted (acts as confirmation).
+  // GET 400 (not found) aborts the delete — no silent success on a bad id.
+  try {
+    const resp = await client.get(`/free/draft/${draftId}?account_id=${encodeURIComponent(accountId)}`)
+    const data = resp as unknown as { draft_id: string; draft: FreeDraftRecord }
+    title = data.draft?.title || t('tui.draftUntitled')
+    writeLineColored(t('tui.draftDeleting', { title }), ANSI.YELLOW)
+  } catch (err: any) {
+    writeLineColored(t('tui.draftNotFound'), ANSI.RED)
+    return
+  }
+  try {
+    await client.delete(`/free/draft/${draftId}?account_id=${encodeURIComponent(accountId)}`)
+    writeLineColored(t('tui.draftDeleted', { title }), ANSI.BRIGHT_GREEN)
+  } catch (err: any) {
+    writeLineColored(err.message || t('tui.draftDeleteFailed'), ANSI.RED)
   }
 }
 
