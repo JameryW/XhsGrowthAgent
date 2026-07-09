@@ -75,7 +75,7 @@ Free drafts live in the LangGraph `BaseStore` under namespace
 - `store.aput(ns, key=draft_id, value=record)` — create / overwrite (update reuses the same key)
 - `store.aget(ns, key=draft_id)` → `Item | None` (`.value` is the record dict)
 - `store.adelete(ns, key=draft_id)` — real delete, idempotent
-- `store.alist(namespace_prefix=ns, limit=100)` — list items; **not on the `BaseStore` ABC**, only on `InMemoryStore` / `AsyncPostgresStore` concrete classes → must wrap in `try/except` + `# type: ignore[attr-defined]` (same pattern as `system.py` health check)
+- `store.asearch(ns, query="", limit=100)` → list items; **on the `BaseStore` ABC**, portable across `InMemoryStore` / `AsyncPostgresStore` (no `# type: ignore`). An empty `query` returns all items in the namespace. Wrap in `try/except` — a store backend without a semantic index throws, degrading to an empty list (graceful). **Do NOT use `store.alist`** — it is not on the `BaseStore` ABC (see the Wrong-vs-Correct section below).
 
 Drafts never enter the LangGraph checkpoint. Free mode has no `thread_id`. Drafts
 do NOT participate in workflow resume/retry.
@@ -108,7 +108,7 @@ All new logic is guarded by `isFreeCreationEntry` (`route.query.mode === 'free'`
 | Empty `draft_id` on evaluate/publish/update/delete | `ValidationError("draft_id", ...)` → 400 |
 | Draft not found (evaluate/publish/update) | `_load_draft` raises `ValidationError` → 400 |
 | Delete non-existent draft | `adelete` is idempotent → returns `{deleted: true}` (no 404) |
-| `store.alist` unsupported / throws | caught → returns empty drafts list (graceful) |
+| `store.asearch` unsupported (no semantic index) / throws | caught → returns empty drafts list (graceful) |
 | Corrupt draft value (non-dict) | `_load_draft` raises `ValidationError` → 400 |
 | Free-mode account has no cookie / no CDP endpoint | `run_publish` returns structured `recovery` dict (fail fast) |
 
@@ -144,15 +144,17 @@ pub_state = _build_publish_state(draft)  # synthesized minimal XHSGrowthState
 result = await run_publish(pub_state, store)
 ```
 
-### Wrong: calling `store.alist` without a guard
+### Wrong: calling `store.alist`
 
-`alist` is not on the `BaseStore` ABC → mypy strict fails, and a store backend without it throws at runtime.
+`alist` is not on the `BaseStore` ABC → mypy strict fails (`# type: ignore[attr-defined]` needed), and a store backend without it throws at runtime. It is only on concrete classes (`InMemoryStore` / `AsyncPostgresStore`), so it is not portable.
 
-### Correct: wrap in try/except + type:ignore
+### Correct: use `store.asearch` (on the `BaseStore` ABC, portable)
+
+`asearch` is on the `BaseStore` ABC — no `# type: ignore`, portable across store backends. An empty `query` lists all items in the namespace. Wrap in `try/except` because a backend without a semantic index throws (degrade to empty list):
 
 ```python
 try:
-    items = await store.alist(namespace_prefix=_draft_ns(account_id), limit=100)  # type: ignore[attr-defined]
+    items = await store.asearch(_draft_ns(account_id), query="", limit=100)
 except Exception:
     items = []
 ```
