@@ -85,6 +85,16 @@ class TestCreateDraft:
         ns_arg = mock_store.aput.call_args.args[0]
         assert ns_arg == ("accounts", "acct1", "free_drafts")
 
+    def test_create_sets_timestamps_and_default_metadata(self, client, mock_store):
+        r = client.post("/api/free/draft", json=DRAFT_BODY)
+        assert r.status_code == 200, r.text
+        draft = r.json()["data"]["draft"]
+        assert "created_at" in draft and draft["created_at"]
+        assert "updated_at" in draft and draft["updated_at"]
+        assert draft["created_at"] == draft["updated_at"]
+        assert draft["last_evaluation"] is None
+        assert draft["published"] is False
+
     def test_create_defaults_account_id(self, client):
         body = {**DRAFT_BODY}
         del body["account_id"]
@@ -111,6 +121,23 @@ class TestEvaluateDraft:
         data = r.json()["data"]
         assert data["draft_id"] == draft_id
         assert data["evaluation_result"]["decision"] == "approved"
+
+    def test_evaluate_writes_last_evaluation_back_to_draft(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        eval_result = {"overall_score": 72.0, "decision": "needs_revision"}
+        with patch(
+            "backend.api.routes.free._evaluator.execute",
+            AsyncMock(return_value={"evaluation_result": eval_result}),
+        ):
+            client.post("/api/free/evaluate", json={"account_id": "acct1", "draft_id": draft_id})
+        # draft in store now has last_evaluation persisted
+        stored = mock_store._records[draft_id]
+        assert stored["last_evaluation"] == {"overall_score": 72.0, "decision": "needs_revision"}
+        assert "updated_at" in stored and stored["updated_at"]
+        # full evaluation_result not stored on draft — only the summary pair
+        assert "evaluation_result" not in stored
 
     def test_evaluate_missing_draft_returns_400(self, client):
         r = client.post(
@@ -147,6 +174,33 @@ class TestPublishDraft:
         assert state_arg["copy_content"]["selected_title"] == "夏日穿搭"
         assert state_arg["publish_options"]["account_id"] == "acct1"
 
+    def test_publish_success_marks_draft_published(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        pub_result = {"post_id": "x123", "status": "published"}
+        with patch(
+            "backend.api.routes.free.run_publish",
+            AsyncMock(return_value={"publish_result": pub_result}),
+        ):
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+        stored = mock_store._records[draft_id]
+        assert stored["published"] is True
+        assert "updated_at" in stored and stored["updated_at"]
+
+    def test_publish_failure_does_not_mark_published(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        pub_result = {"status": "failed", "error": "auth_expired"}
+        with patch(
+            "backend.api.routes.free.run_publish",
+            AsyncMock(return_value={"publish_result": pub_result}),
+        ):
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+        stored = mock_store._records[draft_id]
+        assert stored["published"] is False
+
     def test_publish_missing_draft_returns_400(self, client):
         r = client.post(
             "/api/free/publish",
@@ -181,6 +235,50 @@ class TestListDrafts:
         # summary only — no full body in list payload
         assert "body" not in data["drafts"][0]
 
+    def test_list_includes_status_metadata(self, client, mock_store):
+        client.post("/api/free/draft", json=DRAFT_BODY)
+        r = client.get("/api/free/drafts/acct1")
+        assert r.status_code == 200
+        d = r.json()["data"]["drafts"][0]
+        assert "created_at" in d and d["created_at"]
+        assert "updated_at" in d and d["updated_at"]
+        assert d["last_evaluation"] is None
+        assert d["published"] is False
+
+    def test_list_sorted_newest_first_by_updated_at(self, client, mock_store):
+        # seed two drafts; second is newer (created after, so updated_at >= first)
+        client.post("/api/free/draft", json={**DRAFT_BODY, "title": "old"})
+        client.post("/api/free/draft", json={**DRAFT_BODY, "title": "new"})
+        r = client.get("/api/free/drafts/acct1")
+        drafts = r.json()["data"]["drafts"]
+        # newest-first: "new" should come before "old"
+        assert drafts[0]["title"] == "new"
+        assert drafts[1]["title"] == "old"
+        # updated_at descending
+        assert drafts[0]["updated_at"] >= drafts[1]["updated_at"]
+
+    def test_list_old_drafts_without_metadata_degrade_gracefully(self, client, mock_store):
+        # seed a draft the old way (no metadata fields) directly into the store
+        mock_store._records["legacy-1"] = {
+            "draft_id": "legacy-1",
+            "title": "legacy draft",
+            "hashtags": [],
+            "body": "old shape",
+            # no created_at / updated_at / last_evaluation / published
+        }
+        r = client.get("/api/free/drafts/acct1")
+        assert r.status_code == 200, r.text
+        drafts = r.json()["data"]["drafts"]
+        assert len(drafts) == 1
+        d = drafts[0]
+        assert d["draft_id"] == "legacy-1"
+        assert d["title"] == "legacy draft"
+        # missing fields degrade to defaults
+        assert d["created_at"] is None
+        assert d["updated_at"] is None
+        assert d["last_evaluation"] is None
+        assert d["published"] is False
+
     def test_list_empty_when_no_drafts(self, client):
         r = client.get("/api/free/drafts/acct1")
         assert r.status_code == 200
@@ -208,6 +306,22 @@ class TestUpdateDraft:
         assert data["draft"]["hashtags"] == ["新标签"]
         # untouched fields preserved
         assert data["draft"]["body"] == DRAFT_BODY["body"]
+
+    def test_update_refreshes_updated_at(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+        original_updated = create.json()["data"]["draft"]["updated_at"]
+
+        r = client.patch(
+            f"/api/free/draft/{draft_id}?account_id=acct1",
+            json={"title": "改过的标题"},
+        )
+        assert r.status_code == 200
+        new_updated = r.json()["data"]["draft"]["updated_at"]
+        assert new_updated >= original_updated
+        # created_at should NOT change on update
+        created_at = create.json()["data"]["draft"]["created_at"]
+        assert r.json()["data"]["draft"]["created_at"] == created_at
 
     def test_update_missing_draft_returns_400(self, client):
         r = client.patch(

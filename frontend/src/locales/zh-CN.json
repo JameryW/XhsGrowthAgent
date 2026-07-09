@@ -1396,6 +1396,8 @@
     "draftsNone": "（无）",
     "draftUntitled": "（无标题）",
     "draftsFetchFailed": "获取草稿失败",
+    "draftEvalBadge": "评估 {score} {decision}",
+    "draftPublished": "已发布",
     "processing": "处理中...",
     "inputPlaceholder": "输入命令或话题...",
     "noActiveWorkflow": "没有活跃的工作流。使用 /start 或 /start <话题> 启动",
