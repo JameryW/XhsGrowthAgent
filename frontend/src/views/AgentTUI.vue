@@ -1012,14 +1012,46 @@ async function handleDrafts() {
   const accountId = authStore.user?.id || 'default'
   try {
     const resp = await client.get(`/free/drafts/${accountId}`)
-    const data = resp as unknown as { drafts: Array<{ draft_id: string; title: string }> }
+    const data = resp as unknown as {
+      drafts: Array<{
+        draft_id: string
+        title: string
+        created_at?: string | null
+        updated_at?: string | null
+        last_evaluation?: { overall_score?: number | null; decision?: string | null } | null
+        published?: boolean | null
+      }>
+    }
     writeLine('')
     writeLineColored(t('tui.draftsListTitle', { accountId }), ANSI.BRIGHT_CYAN)
     if (!data.drafts || data.drafts.length === 0) {
       writeLineColored(`  ${t('tui.draftsNone')}`, ANSI.DIM)
     } else {
       for (const d of data.drafts) {
-        writeLine(`  ${ANSI.BRIGHT_GREEN}${d.draft_id}${ANSI.RESET}: ${d.title || `${ANSI.DIM}${t('tui.draftUntitled')}${ANSI.RESET}`}`)
+        const titlePart = d.title
+          ? d.title
+          : `${ANSI.DIM}${t('tui.draftUntitled')}${ANSI.RESET}`
+        let line = `  ${ANSI.BRIGHT_GREEN}${d.draft_id}${ANSI.RESET}: ${titlePart}`
+        // evaluation badge (only if last_evaluation present)
+        const le = d.last_evaluation
+        if (le && le.decision) {
+          const decColor =
+            le.decision === 'approved' ? ANSI.BRIGHT_GREEN
+            : le.decision === 'needs_revision' ? ANSI.BRIGHT_YELLOW
+            : ANSI.RED
+          const score = le.overall_score != null ? le.overall_score : ''
+          line += `  ${decColor}[${t('tui.draftEvalBadge', { score, decision: le.decision })}]${ANSI.RESET}`
+        }
+        // published badge
+        if (d.published) {
+          line += `  ${ANSI.BRIGHT_CYAN}[${t('tui.draftPublished')}]${ANSI.RESET}`
+        }
+        // updated_at (short, YYYY-MM-DDTHH:MM)
+        if (d.updated_at) {
+          const short = d.updated_at.slice(0, 16)
+          line += `  ${ANSI.DIM}${short}${ANSI.RESET}`
+        }
+        writeLine(line)
       }
     }
     writeLine('')

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from fastapi import APIRouter, Query, Request
@@ -73,6 +74,17 @@ class FreeDraftUpdate(BaseModel):
 def _draft_ns(account_id: str) -> tuple[str, str, str]:
     """BaseStore namespace for a free draft."""
     return ("accounts", account_id, "free_drafts")
+
+
+def _now_iso() -> str:
+    """Current UTC time as an ISO 8601 string (for draft timestamps)."""
+    return datetime.now(UTC).isoformat()
+
+
+# Publish status values that count as a successful publish. Real publishes
+# return "published" (services/xhs_publisher.py), mock dry-runs return
+# "mock_published" (agents/publisher.py); anything else is a failure.
+_PUBLISH_SUCCESS_STATUSES = frozenset({"published", "mock_published"})
 
 
 def _to_copy_content(draft: dict[str, Any]) -> dict[str, Any]:
@@ -167,6 +179,11 @@ async def create_draft(draft: FreeDraft, request: Request) -> ApiResponse[Any]:
     draft_id = str(uuid.uuid4())
     record = draft.model_dump()
     record["draft_id"] = draft_id
+    now = _now_iso()
+    record["created_at"] = now
+    record["updated_at"] = now
+    record["last_evaluation"] = None
+    record["published"] = False
     await store.aput(_draft_ns(account_id), key=draft_id, value=record)
     logger.info("free draft created: account=%s draft=%s", account_id, draft_id)
     return success(data={"draft_id": draft_id, "draft": record})
@@ -190,6 +207,18 @@ async def evaluate_draft(ref: FreeDraftRef, request: Request) -> ApiResponse[Any
     # tolerates None (skips memory recall), same as evaluation.py:run_evaluation.
     result = await _evaluator(eval_state, store=store)  # type: ignore[arg-type]
     evaluation = result.get("evaluation_result") or {}
+
+    # Persist the last evaluation summary back onto the draft so list_drafts can
+    # surface the score + decision. The full evaluation_result is still returned
+    # to the agent; only the {overall_score, decision} pair is written back.
+    if store is not None:
+        draft["last_evaluation"] = {
+            "overall_score": evaluation.get("overall_score"),
+            "decision": evaluation.get("decision"),
+        }
+        draft["updated_at"] = _now_iso()
+        await store.aput(_draft_ns(account_id), key=ref.draft_id, value=draft)
+
     logger.info("free draft evaluated: account=%s draft=%s", account_id, ref.draft_id)
     return success(
         data={
@@ -219,11 +248,19 @@ async def publish_draft(ref: FreeDraftRef, request: Request) -> ApiResponse[Any]
     pub_state = _build_publish_state(draft)
     result = await run_publish(pub_state, store)
     publish_result = result.get("publish_result") or {}
+    pub_status = publish_result.get("status", "unknown")
+
+    # On a successful publish, mark the draft as published + refresh updated_at.
+    if pub_status in _PUBLISH_SUCCESS_STATUSES:
+        draft["published"] = True
+        draft["updated_at"] = _now_iso()
+        await store.aput(_draft_ns(account_id), key=ref.draft_id, value=draft)
+
     logger.info(
         "free draft published: account=%s draft=%s status=%s",
         account_id,
         ref.draft_id,
-        publish_result.get("status", "unknown"),
+        pub_status,
     )
     return success(
         data={
@@ -257,15 +294,23 @@ async def list_drafts(account_id: str, request: Request) -> ApiResponse[Any]:
             value = item.value
             if not isinstance(value, dict):
                 continue
+            last_eval = value.get("last_evaluation")
             drafts.append(
                 {
                     "draft_id": item.key,
                     "title": value.get("title", ""),
                     "hashtags": value.get("hashtags", []),
+                    "created_at": value.get("created_at"),
+                    "updated_at": value.get("updated_at"),
+                    "last_evaluation": last_eval,
+                    "published": value.get("published", False),
                 }
             )
     except Exception:
         logger.warning("store.alist failed for account %s; returning empty list", account_id)
+    # Sort newest-first by updated_at (ISO strings sort lexicographically =
+    # chronologically). Drafts without updated_at (old records) sort last.
+    drafts.sort(key=lambda d: d.get("updated_at") or "", reverse=True)
     return success(data={"account_id": account_id, "drafts": drafts})
 
 
@@ -299,6 +344,7 @@ async def update_draft(
         if val is not None:
             merged[field] = val
     merged["draft_id"] = draft_id
+    merged["updated_at"] = _now_iso()
     await store.aput(_draft_ns(account_id), key=draft_id, value=merged)
     logger.info("free draft updated: account=%s draft=%s", account_id, draft_id)
     return success(data={"draft_id": draft_id, "draft": merged})

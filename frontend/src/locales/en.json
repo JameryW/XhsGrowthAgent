@@ -1396,6 +1396,8 @@
     "draftsNone": "(none)",
     "draftUntitled": "(untitled)",
     "draftsFetchFailed": "Failed to fetch drafts",
+    "draftEvalBadge": "Eval {score} {decision}",
+    "draftPublished": "Published",
     "processing": "Processing...",
     "inputPlaceholder": "Type a command or topic...",
     "noActiveWorkflow": "No active workflow. Start one with /start or /start <topic>",

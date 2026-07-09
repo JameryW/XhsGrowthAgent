@@ -161,6 +161,69 @@ except Exception:
 
 ---
 
+## Draft Status Metadata
+
+Free draft records carry lightweight status metadata so the `/drafts` list can
+surface which draft is newest, which has been evaluated (and its score/decision),
+and which has been published. These are **server-set** (not client input) — they
+do NOT appear on the `FreeDraft` input model; they are set on the `record` dict
+after `model_dump()`, the same way `draft_id` is set.
+
+### Fields
+
+| Field | Type | Set by | Notes |
+|-------|------|--------|-------|
+| `created_at` | ISO 8601 UTC str | `create_draft` | Set once; never changed by update. |
+| `updated_at` | ISO 8601 UTC str | `create_draft`, `update_draft`, `evaluate_draft`, `publish_draft` (on success) | Refreshed on every write-back. |
+| `last_evaluation` | `{overall_score, decision} \| None` | `evaluate_draft` | Only the summary pair is persisted; the full `evaluation_result` is still returned to the agent but not stored on the draft. |
+| `published` | `bool` | `publish_draft` (on success) | Set `True` only when `publish_result.status` ∈ `{"published", "mock_published"}`. |
+
+### Write-back behavior
+
+- **`evaluate_draft`**: after computing `evaluation`, loads the draft via
+  `_load_draft`, sets `draft["last_evaluation"] = {"overall_score": ..., "decision": ...}`
+  + refreshes `updated_at`, then `store.aput` back. The full `evaluation_result`
+  is returned to the agent unchanged.
+- **`publish_draft`**: only on success (`status` ∈ `{"published", "mock_published"}`)
+  sets `draft["published"] = True` + refreshes `updated_at`. Failures (`status == "failed"`,
+  `"auth_failed"`, etc.) do NOT mutate the draft.
+- **`update_draft`**: refreshes `updated_at` on the merged record; `created_at` is preserved.
+
+### `list_drafts` surface + sort
+
+`list_drafts` returns `created_at`, `updated_at`, `last_evaluation`, `published`
+alongside the existing `draft_id` / `title` / `hashtags`. Drafts are sorted
+newest-first by `updated_at`:
+
+```python
+drafts.sort(key=lambda d: d.get("updated_at") or "", reverse=True)
+```
+
+ISO strings sort lexicographically = chronologically; drafts without `updated_at`
+(old records) map to `""` and sort last.
+
+### Graceful degradation
+
+Existing stored drafts lack these fields. All reads use `value.get(field, default)`:
+missing `last_evaluation` → `None` (no badge), missing `published` → `False` (no badge),
+missing `updated_at` → sorts last. No migration is needed; fields are optional.
+
+### TUI display
+
+`handleDrafts` (AgentTUI.vue) renders one line per draft with status badges:
+
+```
+  <id>: <title>  [评估 <score> <decision>] [已发布]  <updated_at>
+```
+
+- Evaluation badge: only if `last_evaluation` present; decision colored
+  (`approved`→green, `needs_revision`→yellow, `rejected`→red).
+- Published badge: cyan `已发布` if `published`.
+- `updated_at`: trimmed to `YYYY-MM-DDTHH:MM`, dim.
+- Drafts with no metadata: title only (no badges).
+
+---
+
 ## Related
 
 - `backend/agents/evaluator.py` — `EvaluatorAgent.execute` (reused, not modified)
