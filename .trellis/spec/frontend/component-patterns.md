@@ -150,6 +150,31 @@ For horizontal layouts that overflow on mobile (< 320px viewport):
 
 ---
 
+## AgentTUI tool_result Display (Terminal TUI)
+
+`AgentTUI.vue` renders tool results into an xterm.js terminal (not the Vue template), so it uses ANSI colors + `term.writeln` — **not** `t()` i18n keys or `<template>` strings. The terminal domain is exempt from the i18n rule above.
+
+Tool results are formatted by `formatResultLines(result, isError)` and rendered under a `↳ ✓ toolName` header:
+
+- **Short results** (primitives, single-key objects like `{draft_id}`): one line, 160-char cap with a dim `…` suffix — stays scannable.
+- **Multi-line / structured results** (text with newlines, or JSON object/array with >1 member): pretty-printed across lines, each subsequent line indented 4 spaces under the `↳`. This is what makes `xhs_free_evaluate` (6-dimension scores + decision + revision_hints) and `xhs_free_guide` (orchestration steps) readable instead of flattened+truncated.
+- **Line budget**: multi-line output capped at `MAX_RESULT_LINES` (12); overflow appends a dim `… (N more lines)` footer. **Errors bypass the cap** — full diagnostics must stay visible.
+- **Detection is content-based**, never tool-name-based: any tool returning multi-line/structured JSON benefits; no per-tool formatters.
+- **omp ToolResult envelope**: backend/extension tools return `{content:[{type:"text",text}], details?}`. The human-readable multi-line output (6-dim scores, guide steps) lives in `content[].text` — `formatResultLines` extracts it first via `_extractToolText()` (shape check, not tool name), so it renders as readable lines rather than a JSON dump that buries the text as an escaped single-line string. Values without that envelope (plain dicts, primitives, raw strings) fall through to the string/JSON path.
+
+```ts
+// tool_result render (AgentTUI.vue)
+const lines = formatResultLines(event.result, isError)
+const header = `  ${ANSI.DIM}↳${ANSI.RESET} ${mark} ${ANSI.DIM}${toolName}${ANSI.RESET}`
+writeLine(`${header} ${lines[0]}`)
+const indent = '    '
+for (const ln of lines.slice(1)) writeLine(`${indent}${ln}`)  // 4-space indent aligns under ↳
+```
+
+Never collapse structured results to one line — that destroys the 6-dimension breakdown and guide steps the user needs.
+
+---
+
 ## i18n Rules
 
 1. All user-visible strings must use `t('key')`

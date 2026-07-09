@@ -609,10 +609,15 @@ function handleAgentEvent(event: Record<string, unknown>) {
   } else if (type === 'tool_result') {
     const toolName = event.tool_name as string
     const isError = event.is_error as boolean
-    const resultStr = formatResult(event.result)
+    const lines = formatResultLines(event.result, isError)
     const mark = isError ? `${ANSI.RED}✗${ANSI.RESET}` : `${ANSI.BRIGHT_GREEN}✓${ANSI.RESET}`
-    // ponytail: ↳ indent signals result is subordinate to the preceding ▸ call
-    writeLine(`  ${ANSI.DIM}↳${ANSI.RESET} ${mark} ${ANSI.DIM}${toolName}${ANSI.RESET} ${resultStr}`)
+    // ponytail: ↳ indent signals result is subordinate to the preceding ▸ call;
+    // multi-line structured results (free_evaluate 6-dim, free_guide steps) render
+    // across lines indented under the ↳, instead of being flattened+truncated.
+    const header = `  ${ANSI.DIM}↳${ANSI.RESET} ${mark} ${ANSI.DIM}${toolName}${ANSI.RESET}`
+    writeLine(`${header} ${lines[0]}`)
+    const indent = '    '
+    for (const ln of lines.slice(1)) writeLine(`${indent}${ln}`)
   } else if (type === 'status') {
     const status = event.status as string
     wsStatus.value = status as 'idle' | 'running' | 'streaming'
@@ -638,12 +643,73 @@ function formatArgs(args: Record<string, unknown>): string {
   return parts.join(', ') + suffix
 }
 
-function formatResult(result: unknown): string {
-  if (result === null || result === undefined) return `${ANSI.DIM}(no result)${ANSI.RESET}`
-  const str = typeof result === 'string' ? result : JSON.stringify(result)
-  // ponytail: collapse internal newlines, single-line view; cap at 160 chars for scannability
-  const flat = str.replace(/\s*\n\s*/g, ' ').trim()
-  return flat.length > 160 ? flat.slice(0, 160) + `${ANSI.DIM} …${ANSI.RESET}` : flat
+// ponytail: line budget for multi-line tool results — keeps the TUI scannable
+// without flattening structured output (6-dim scores, guide steps).
+const MAX_RESULT_LINES = 12
+
+/** Format a tool result as display lines.
+ *  - short primitives / single-key objects: one line, 160-char cap (scannable)
+ *  - multi-line text or structured JSON (object/array with >1 key/element):
+ *    pretty-printed across lines, capped at MAX_RESULT_LINES with a dim overflow footer
+ *  - errors: full text, never truncated (diagnostics must stay visible) */
+function formatResultLines(result: unknown, isError = false): string[] {
+  if (result === null || result === undefined) return [`${ANSI.DIM}(no result)${ANSI.RESET}`]
+
+  // ponytail: omp/extension tools return {content:[{type:"text",text}], details?}.
+  // The human-readable multi-line output (6-dim scores, guide steps) lives in
+  // content[].text — pretty-printing the {content,details} envelope as JSON would
+  // bury that text as an escaped single-line string. Extract it first; fall back to
+  // details if no text content. Detection is content-based (shape check), not tool-name.
+  const extracted = _extractToolText(result)
+  const value: unknown = extracted ?? result
+
+  const isObj = typeof value === 'object'
+  const str = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+
+  // Decide multi-line: explicit newlines, OR a structured object/array with more
+  // than one member. Single-key objects ({draft_id: "x"}) stay single-line.
+  const hasNewlines = str.includes('\n')
+  const multiMember = isObj && _memberCount(value) > 1
+  const multiline = hasNewlines || multiMember
+
+  if (!multiline) {
+    const flat = str.replace(/\s*\n\s*/g, ' ').trim()
+    return [flat.length > 160 && !isError ? flat.slice(0, 160) + `${ANSI.DIM} …${ANSI.RESET}` : flat]
+  }
+
+  let lines = str.split('\n')
+  // ponytail: errors bypass the line cap so full stacktraces/messages survive
+  if (!isError && lines.length > MAX_RESULT_LINES) {
+    const omitted = lines.length - MAX_RESULT_LINES
+    lines = lines.slice(0, MAX_RESULT_LINES)
+    lines.push(`${ANSI.DIM}… (${omitted} more lines)${ANSI.RESET}`)
+  }
+  return lines.map((ln) => `${ANSI.DIM}${ln}${ANSI.RESET}`)
+}
+
+/** Extract the human-readable text from an omp ToolResult envelope
+ *  ({content:[{type:"text",text}], details?}). Returns the concatenated text,
+ *  or null if the value isn't that shape (primitives, plain dicts, etc.). */
+function _extractToolText(v: unknown): string | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null
+  const obj = v as Record<string, unknown>
+  const content = obj.content
+  if (!Array.isArray(content)) return null
+  const texts: string[] = []
+  for (const part of content) {
+    if (part && typeof part === 'object' && (part as Record<string, unknown>).type === 'text') {
+      const t = (part as Record<string, unknown>).text
+      if (typeof t === 'string') texts.push(t)
+    }
+  }
+  return texts.length > 0 ? texts.join('\n') : null
+}
+
+/** Count top-level members of a JSON value (object keys or array elements); 0 for primitives. */
+function _memberCount(v: unknown): number {
+  if (Array.isArray(v)) return v.length
+  if (v && typeof v === 'object') return Object.keys(v as Record<string, unknown>).length
+  return 0
 }
 
 // ── Command processing ──────────────────────────────────────────────────
