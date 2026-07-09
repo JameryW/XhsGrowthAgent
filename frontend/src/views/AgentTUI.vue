@@ -202,7 +202,7 @@ function historyDown() {
 
 const SLASH_COMMANDS = [
   '/start', '/status', '/pause', '/resume', '/cancel',
-  '/approve', '/reject', '/mode', '/help', '/clear', '/new', '/abort', '/drafts',
+  '/approve', '/reject', '/mode', '/help', '/clear', '/new', '/abort', '/drafts', '/draft',
 ]
 
 function tabComplete() {
@@ -861,6 +861,13 @@ async function processAgentCommand(text: string) {
         await handleDrafts()
         isProcessing.value = false; writePrompt()
         break
+      case '/draft': {
+        const parts = text.split(/\s+/)
+        const draftId = parts.slice(1).join(' ').trim()
+        await handleDraft(draftId)
+        isProcessing.value = false; writePrompt()
+        break
+      }
       default:
         writeLineColored(t('tui.unknownCommand', { command: cmd }), ANSI.RED)
         isProcessing.value = false; writePrompt()
@@ -1057,6 +1064,95 @@ async function handleDrafts() {
     writeLine('')
   } catch (err: any) {
     writeLineColored(err.message || t('tui.draftsFetchFailed'), ANSI.RED)
+  }
+}
+
+interface FreeDraftRecord {
+  draft_id?: string
+  account_id?: string
+  title?: string
+  body?: string
+  hashtags?: string[]
+  image_paths?: string[]
+  niche?: string
+  content_angle?: string
+  target_audience?: string
+  created_at?: string
+  updated_at?: string
+  last_evaluation?: { overall_score?: number; decision?: string } | null
+  published?: boolean
+}
+
+async function handleDraft(draftId: string) {
+  if (!isFreeCreationEntry.value) {
+    writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
+    return
+  }
+  if (!draftId) {
+    writeLineColored(t('tui.draftDetailMissing'), ANSI.RED)
+    return
+  }
+  const accountId = authStore.user?.id || 'default'
+  try {
+    const resp = await client.get(`/free/draft/${draftId}?account_id=${encodeURIComponent(accountId)}`)
+    const data = resp as unknown as { draft_id: string; draft: FreeDraftRecord }
+    const draft = data.draft || {}
+    const C = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, W = ANSI.BRIGHT_WHITE
+    const Y = ANSI.BRIGHT_YELLOW, R = ANSI.RESET
+    writeLine('')
+    writeLine(`${C}╭${'─'.repeat(52)}╮${R}`)
+    writeLine(`${C}│${R} ${W}${t('tui.draftDetailTitle')}${R}${' '.repeat(Math.max(0, 51 - getStringWidth(t('tui.draftDetailTitle'))))}${C}│${R}`)
+    writeLine(`${C}╰${'─'.repeat(52)}╯${R}`)
+    writeLine(`  ${D}${t('tui.draftDetailDraftIdLabel')}${R}: ${G}${data.draft_id}${R}`)
+    if (draft.account_id) {
+      writeLine(`  ${D}${t('tui.draftDetailAccountLabel')}${R}: ${draft.account_id}`)
+    }
+    writeLine(`  ${D}${t('tui.draftDetailTitleLabel')}${R}: ${draft.title || `${D}${t('tui.draftUntitled')}${R}`}`)
+    if (draft.body) {
+      writeLine(`  ${D}${t('tui.draftDetailBodyLabel')}${R}:`)
+      writeLine(`    ${draft.body}`)
+    }
+    if (draft.hashtags && draft.hashtags.length > 0) {
+      writeLine(`  ${D}${t('tui.draftDetailHashtagsLabel')}${R}: ${G}${draft.hashtags.join(', ')}${R}`)
+    }
+    if (draft.image_paths && draft.image_paths.length > 0) {
+      writeLine(`  ${D}${t('tui.draftDetailImagesLabel')}${R}: ${draft.image_paths.join(', ')}`)
+    }
+    if (draft.niche) {
+      writeLine(`  ${D}${t('tui.draftDetailNicheLabel')}${R}: ${draft.niche}`)
+    }
+    if (draft.content_angle) {
+      writeLine(`  ${D}${t('tui.draftDetailAngleLabel')}${R}: ${draft.content_angle}`)
+    }
+    if (draft.target_audience) {
+      writeLine(`  ${D}${t('tui.draftDetailAudienceLabel')}${R}: ${draft.target_audience}`)
+    }
+    // Status fields — render only if present (graceful for pre-#216 drafts)
+    const hasStatus = draft.created_at || draft.updated_at || draft.last_evaluation || draft.published !== undefined
+    if (hasStatus) {
+      writeLine(`  ${D}${'─'.repeat(20)}${R}`)
+      if (draft.last_evaluation) {
+        const score = draft.last_evaluation.overall_score
+        const decision = draft.last_evaluation.decision
+        const scoreStr = score !== undefined ? score.toFixed(1) : '?'
+        const decisionColor = decision === 'approved' ? G : (decision === 'rejected' ? ANSI.RED : Y)
+        writeLine(`  ${D}${t('tui.draftDetailEvalLabel')}${R}: ${decisionColor}${scoreStr} (${decision || '?'})${R}`)
+      }
+      if (draft.published !== undefined) {
+        const pubColor = draft.published ? G : D
+        const pubStr = draft.published ? t('tui.draftDetailPublishedYes') : t('tui.draftDetailPublishedNo')
+        writeLine(`  ${D}${t('tui.draftDetailPublishedLabel')}${R}: ${pubColor}${pubStr}${R}`)
+      }
+      if (draft.created_at) {
+        writeLine(`  ${D}${t('tui.draftDetailCreatedLabel')}${R}: ${draft.created_at}`)
+      }
+      if (draft.updated_at) {
+        writeLine(`  ${D}${t('tui.draftDetailUpdatedLabel')}${R}: ${draft.updated_at}`)
+      }
+    }
+    writeLine('')
+  } catch (err: any) {
+    writeLineColored(err.message || t('tui.draftDetailFetchFailed'), ANSI.RED)
   }
 }
 

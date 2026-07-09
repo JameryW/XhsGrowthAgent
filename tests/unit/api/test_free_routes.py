@@ -218,6 +218,45 @@ class TestPublishDraft:
         assert r.status_code == 400
 
 
+class TestGetDraft:
+    def test_get_returns_full_record(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        r = client.get(f"/api/free/draft/{draft_id}?account_id=acct1")
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["draft_id"] == draft_id
+        # full record — every FreeDraft field present
+        draft = data["draft"]
+        assert draft["title"] == "夏日穿搭"
+        assert draft["body"] == "三套夏日 OOTD"
+        assert draft["hashtags"] == ["穿搭", "OOTD"]
+        assert draft["image_paths"] == ["/tmp/a.png"]
+        assert draft["niche"] == "fashion"
+
+    def test_get_missing_draft_returns_400(self, client):
+        r = client.get("/api/free/draft/nope?account_id=acct1")
+        assert r.status_code == 400
+
+    def test_get_no_store_returns_400(self, client):
+        app.state.graph.store = None
+        r = client.get("/api/free/draft/any?account_id=acct1")
+        assert r.status_code == 400
+
+    def test_get_defaults_account_id(self, client):
+        # create under the default account (no account_id in body → "default")
+        body = {**DRAFT_BODY}
+        del body["account_id"]
+        create = client.post("/api/free/draft", json=body)
+        draft_id = create.json()["data"]["draft_id"]
+
+        # GET without account_id query → defaults to "default"
+        r = client.get(f"/api/free/draft/{draft_id}")
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["draft_id"] == draft_id
+
+
 class TestListDrafts:
     def test_list_returns_seeded_drafts(self, client, mock_store):
         client.post("/api/free/draft", json=DRAFT_BODY)

@@ -10,7 +10,7 @@
 - Any route in `backend/api/routes/free.py`
 - Any omp host tool named `xhs_free_*`
 - Any frontend logic gated by `isFreeCreationEntry` (`route.query.mode === 'free'`)
-- The free creation entry (`/tui?mode=free`) and its TUI commands (`/start`, `/drafts`)
+- The free creation entry (`/tui?mode=free`) and its TUI commands (`/start`, `/drafts`, `/draft <id>`)
 
 Free mode lets the omp agent drive creation conversationally **without a LangGraph
 workflow thread**. It is fully isolated from the fixed trend/brief workflow:
@@ -28,6 +28,7 @@ drafts never enter the checkpoint, and the workflow slash commands stay disabled
 | POST | `/evaluate` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, evaluation_result}` |
 | POST | `/publish` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, publish_result}` |
 | GET | `/drafts/{account_id}` | — | `{account_id, drafts: [{draft_id, title, hashtags}]}` |
+| GET | `/draft/{draft_id}` | query `account_id` | `{draft_id, draft}` |
 | PATCH | `/draft/{draft_id}` | query `account_id`; body `FreeDraftUpdate` (all fields optional) | `{draft_id, draft}` |
 | DELETE | `/draft/{draft_id}` | query `account_id` | `{draft_id, deleted: true}` |
 
@@ -91,6 +92,7 @@ do NOT participate in workflow resume/retry.
 - Free drafts stay out of the LangGraph checkpoint.
 - Free-mode `/start` = omp `new_session` (clears conversation), NOT `handleStart`.
 - Free-mode `/drafts` lists free drafts; non-free mode shows `freeWorkflowOpDisabled`.
+- Free-mode `/draft <id>` renders a single draft's full record; non-free mode shows `freeWorkflowOpDisabled`.
 - Workflow slash commands (`/status` `/pause` `/resume` `/cancel` `/approve` `/reject`) stay disabled in free mode.
 - AgentTUI free entry defaults to **agent mode** on mount (plain text → omp conversation); non-free (trend/brief) keeps command mode.
 
@@ -107,6 +109,7 @@ All new logic is guarded by `isFreeCreationEntry` (`route.query.mode === 'free'`
 | `store is None` (graph has no store) | POST/GET/PATCH/DELETE raise `ValidationError("store", ...)` → 400 |
 | Empty `draft_id` on evaluate/publish/update/delete | `ValidationError("draft_id", ...)` → 400 |
 | Draft not found (evaluate/publish/update) | `_load_draft` raises `ValidationError` → 400 |
+| Draft not found (get) | `_load_draft` raises `ValidationError` → 400 |
 | Delete non-existent draft | `adelete` is idempotent → returns `{deleted: true}` (no 404) |
 | `store.asearch` unsupported (no semantic index) / throws | caught → returns empty drafts list (graceful) |
 | Corrupt draft value (non-dict) | `_load_draft` raises `ValidationError` → 400 |
@@ -116,7 +119,7 @@ All new logic is guarded by `isFreeCreationEntry` (`route.query.mode === 'free'`
 
 ## Tests Required
 
-- `tests/unit/api/test_free_routes.py`: create/evaluate/publish + list/update/delete (draft persistence, draft_id stability on update, delete empties list, missing-draft 400s)
+- `tests/unit/api/test_free_routes.py`: create/evaluate/publish + list/get/update/delete (draft persistence, draft_id stability on update, delete empties list, missing-draft 400s)
 - `tests/unit/services/test_omp_bridge.py`: each `xhs_free_*` host tool — assert POST/GET/PATCH/DELETE path + json body + text result shape
 
 ---

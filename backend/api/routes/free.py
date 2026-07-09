@@ -314,6 +314,23 @@ async def list_drafts(account_id: str, request: Request) -> ApiResponse[Any]:
     return success(data={"account_id": account_id, "drafts": drafts})
 
 
+@router.get("/draft/{draft_id}")
+async def get_draft(
+    draft_id: str,
+    request: Request,
+    account_id: str = Query(default="default", description="账号 ID"),
+) -> ApiResponse[Any]:
+    """Fetch a single free draft's full record (thread-less).
+
+    Thin wrapper over `_load_draft` — returns the complete draft record
+    (title, body, hashtags, image_paths, niche/angle/audience + any
+    server-set metadata like created_at/updated_at/last_evaluation/published).
+    Raises ValidationError → 400 if the draft is missing or corrupt.
+    """
+    draft = await _load_draft(request, account_id, draft_id)
+    return success(data={"draft_id": draft_id, "draft": draft})
+
+
 @router.patch("/draft/{draft_id}")
 async def update_draft(
     draft_id: str,
