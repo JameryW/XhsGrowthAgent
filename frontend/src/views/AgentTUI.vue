@@ -1214,6 +1214,14 @@ function showHelp() {
     writeLine(`  ${G}/new${R}           Start new session`)
     writeLine(`  ${G}/abort${R}         Abort current turn`)
     writeLine(`  ${G}/mode${R}          Switch to command mode`)
+    if (isFreeCreationEntry.value) {
+      writeLine('')
+      writeLine(`  ${Y}Free Draft Commands${R}`)
+      writeLine(`  ${sep}`)
+      writeLine(`  ${G}/drafts${R}          List free drafts`)
+      writeLine(`  ${G}/draft${R} ${D}<id>${R}     View a draft`)
+      writeLine(`  ${G}/delete${R} ${D}<id>${R}    Delete a draft`)
+    }
   } else {
     writeLine('')
     writeLine(`  ${Y}Command Mode${R}`)
@@ -1221,6 +1229,12 @@ function showHelp() {
     if (isFreeCreationEntry.value) {
       writeLine(`  ${G}/start${R}         ${D}${t('tui.freeNewSession')}${R}`)
       writeLine(`  ${G}/mode${R}          Switch to agent mode`)
+      writeLine('')
+      writeLine(`  ${Y}Free Draft Commands${R}`)
+      writeLine(`  ${sep}`)
+      writeLine(`  ${G}/drafts${R}          List free drafts`)
+      writeLine(`  ${G}/draft${R} ${D}<id>${R}     View a draft`)
+      writeLine(`  ${G}/delete${R} ${D}<id>${R}    Delete a draft`)
     } else {
       writeLine(`  ${G}/start${R} ${D}[topic]${R}  Start workflow`)
       writeLine(`  ${G}/status${R} ${D}[id]${R}    Check workflow status`)
