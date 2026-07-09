@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "free 路由契约 — list 用 asearch 非 alist"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "BaseStore asearch 用法 + alist 不存在的陷阱"}

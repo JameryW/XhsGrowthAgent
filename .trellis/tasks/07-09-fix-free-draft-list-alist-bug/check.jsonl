@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "验证 list 路由用 asearch"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "验证 BaseStore 方法正确"}

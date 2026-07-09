@@ -29,14 +29,15 @@ def mock_store():
         item.namespace = ns
         return item
 
-    async def _alist(*, namespace_prefix, limit=100):
-        # Return Item-like objects for every record under this namespace prefix.
+    async def _asearch(ns, query="", limit=100):
+        # asearch(namespace, query, limit) — empty query returns all items.
+        # Mirrors AsyncPostgresStore/InMemoryStore asearch semantics.
         items = []
         for key, value in store._records.items():
             item = MagicMock()
             item.key = key
             item.value = value
-            item.namespace = namespace_prefix
+            item.namespace = ns
             items.append(item)
         return items[:limit]
 
@@ -47,7 +48,7 @@ def mock_store():
 
     store.aput = AsyncMock(side_effect=_aput)
     store.aget = AsyncMock(side_effect=_aget)
-    store.alist = AsyncMock(side_effect=_alist)
+    store.asearch = AsyncMock(side_effect=_asearch)
     store.adelete = AsyncMock(side_effect=_adelete)
     return store
 
