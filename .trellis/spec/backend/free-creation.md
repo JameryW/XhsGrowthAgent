@@ -10,7 +10,7 @@
 - Any route in `backend/api/routes/free.py`
 - Any omp host tool named `xhs_free_*`
 - Any frontend logic gated by `isFreeCreationEntry` (`route.query.mode === 'free'`)
-- The free creation entry (`/tui?mode=free`) and its TUI commands (`/start`, `/drafts`, `/draft <id>`)
+- The free creation entry (`/tui?mode=free`) and its TUI commands (`/start`, `/drafts`, `/draft <id>`, `/delete <id>`)
 
 Free mode lets the omp agent drive creation conversationally **without a LangGraph
 workflow thread**. It is fully isolated from the fixed trend/brief workflow:
@@ -93,6 +93,7 @@ do NOT participate in workflow resume/retry.
 - Free-mode `/start` = omp `new_session` (clears conversation), NOT `handleStart`.
 - Free-mode `/drafts` lists free drafts; non-free mode shows `freeWorkflowOpDisabled`.
 - Free-mode `/draft <id>` renders a single draft's full record; non-free mode shows `freeWorkflowOpDisabled`.
+- Free-mode `/delete <id>` GETs the draft (to show its title — acts as confirmation, since there is no y/n state machine), then DELETEs it; non-free mode shows `freeWorkflowOpDisabled`. The DELETE route is idempotent, so re-running is safe. A GET 400 (draft not found) aborts the delete — no silent success on a bad id.
 - Workflow slash commands (`/status` `/pause` `/resume` `/cancel` `/approve` `/reject`) stay disabled in free mode.
 - AgentTUI free entry defaults to **agent mode** on mount (plain text → omp conversation); non-free (trend/brief) keeps command mode.
 
