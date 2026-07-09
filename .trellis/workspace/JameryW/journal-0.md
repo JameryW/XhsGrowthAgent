@@ -1185,3 +1185,36 @@ omp agent in Web TUI free mode (Python bridge) had no system prompt guiding it t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 70: TUI agent execution detail i18n
+
+**Date**: 2026-07-09
+**Task**: TUI agent execution detail i18n
+**Branch**: `main`
+
+### Summary
+
+AgentTUI execution-detail had hardcoded English (status labels, disconnect, errors, drafts list). Localized via t() + 13 new tui.* keys (zh+en). padLabel helper for CJK/Latin alignment. Help/banner stay English per scope. frontend typecheck+build green, CI 5/5.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a33ddfb7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
