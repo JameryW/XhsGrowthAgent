@@ -179,13 +179,13 @@ after `model_dump()`, the same way `draft_id` is set.
 |-------|------|--------|-------|
 | `created_at` | ISO 8601 UTC str | `create_draft` | Set once; never changed by update. |
 | `updated_at` | ISO 8601 UTC str | `create_draft`, `update_draft`, `evaluate_draft`, `publish_draft` (on success) | Refreshed on every write-back. |
-| `last_evaluation` | `{overall_score, decision} \| None` | `evaluate_draft` | Only the summary pair is persisted; the full `evaluation_result` is still returned to the agent but not stored on the draft. |
+| `last_evaluation` | `{overall_score, decision, revision_hints} \| None` | `evaluate_draft` | The {overall_score, decision, revision_hints} triple is persisted; the full `evaluation_result` (dimensions, bias_warning, summary) is still returned to the agent but not stored on the draft. |
 | `published` | `bool` | `publish_draft` (on success) | Set `True` only when `publish_result.status` ∈ `{"published", "mock_published"}`. |
 
 ### Write-back behavior
 
 - **`evaluate_draft`**: after computing `evaluation`, loads the draft via
-  `_load_draft`, sets `draft["last_evaluation"] = {"overall_score": ..., "decision": ...}`
+  `_load_draft`, sets `draft["last_evaluation"] = {"overall_score": ..., "decision": ..., "revision_hints": [...]}`
   + refreshes `updated_at`, then `store.aput` back. The full `evaluation_result`
   is returned to the agent unchanged.
 - **`publish_draft`**: only on success (`status` ∈ `{"published", "mock_published"}`)

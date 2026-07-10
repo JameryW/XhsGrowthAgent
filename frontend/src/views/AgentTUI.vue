@@ -1086,7 +1086,7 @@ interface FreeDraftRecord {
   target_audience?: string
   created_at?: string
   updated_at?: string
-  last_evaluation?: { overall_score?: number; decision?: string } | null
+  last_evaluation?: { overall_score?: number; decision?: string; revision_hints?: string[] } | null
   published?: boolean
 }
 
@@ -1144,6 +1144,15 @@ async function handleDraft(draftId: string) {
         const scoreStr = score !== undefined ? score.toFixed(1) : '?'
         const decisionColor = decision === 'approved' ? G : (decision === 'rejected' ? ANSI.RED : Y)
         writeLine(`  ${D}${t('tui.draftDetailEvalLabel')}${R}: ${decisionColor}${scoreStr} (${decision || '?'})${R}`)
+        // revision hints — only render if present + non-empty (graceful for
+        // pre-#217 drafts without the revision_hints key)
+        const hints = draft.last_evaluation.revision_hints
+        if (hints && hints.length > 0) {
+          writeLine(`  ${D}${t('tui.draftDetailHintsLabel')}${R}:`)
+          for (const hint of hints) {
+            writeLine(`    ${D}• ${hint}${R}`)
+          }
+        }
       }
       if (draft.published !== undefined) {
         const pubColor = draft.published ? G : D

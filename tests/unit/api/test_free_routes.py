@@ -126,18 +126,55 @@ class TestEvaluateDraft:
         create = client.post("/api/free/draft", json=DRAFT_BODY)
         draft_id = create.json()["data"]["draft_id"]
 
-        eval_result = {"overall_score": 72.0, "decision": "needs_revision"}
+        eval_result = {
+            "overall_score": 72.0,
+            "decision": "needs_revision",
+            "revision_hints": ["标题需更有吸引力", "正文缺开头钩子"],
+        }
         with patch(
             "backend.api.routes.free._evaluator.execute",
             AsyncMock(return_value={"evaluation_result": eval_result}),
         ):
             client.post("/api/free/evaluate", json={"account_id": "acct1", "draft_id": draft_id})
-        # draft in store now has last_evaluation persisted
+        # draft in store now has last_evaluation persisted with the triple
         stored = mock_store._records[draft_id]
-        assert stored["last_evaluation"] == {"overall_score": 72.0, "decision": "needs_revision"}
+        assert stored["last_evaluation"] == {
+            "overall_score": 72.0,
+            "decision": "needs_revision",
+            "revision_hints": ["标题需更有吸引力", "正文缺开头钩子"],
+        }
         assert "updated_at" in stored and stored["updated_at"]
-        # full evaluation_result not stored on draft — only the summary pair
+        # full evaluation_result not stored on draft — only the triple
         assert "evaluation_result" not in stored
+
+    def test_evaluate_approved_writes_empty_revision_hints(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        eval_result = {"overall_score": 92.0, "decision": "approved", "revision_hints": []}
+        with patch(
+            "backend.api.routes.free._evaluator.execute",
+            AsyncMock(return_value={"evaluation_result": eval_result}),
+        ):
+            client.post("/api/free/evaluate", json={"account_id": "acct1", "draft_id": draft_id})
+        stored = mock_store._records[draft_id]
+        # approved drafts persist revision_hints as [] (not None)
+        assert stored["last_evaluation"]["revision_hints"] == []
+
+    def test_evaluate_missing_revision_hints_defaults_to_empty(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        # evaluator result omits revision_hints entirely (e.g. older code path)
+        eval_result = {"overall_score": 80.0, "decision": "approved"}
+        with patch(
+            "backend.api.routes.free._evaluator.execute",
+            AsyncMock(return_value={"evaluation_result": eval_result}),
+        ):
+            client.post("/api/free/evaluate", json={"account_id": "acct1", "draft_id": draft_id})
+        stored = mock_store._records[draft_id]
+        # absent revision_hints degrades to [] (the `or []` guard)
+        assert stored["last_evaluation"]["revision_hints"] == []
 
     def test_evaluate_missing_draft_returns_400(self, client):
         r = client.post(
