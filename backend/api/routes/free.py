@@ -210,11 +210,13 @@ async def evaluate_draft(ref: FreeDraftRef, request: Request) -> ApiResponse[Any
 
     # Persist the last evaluation summary back onto the draft so list_drafts can
     # surface the score + decision. The full evaluation_result is still returned
-    # to the agent; only the {overall_score, decision} pair is written back.
+    # to the agent; only the {overall_score, decision, revision_hints} triple is
+    # written back.
     if store is not None:
         draft["last_evaluation"] = {
             "overall_score": evaluation.get("overall_score"),
             "decision": evaluation.get("decision"),
+            "revision_hints": evaluation.get("revision_hints") or [],
         }
         draft["updated_at"] = _now_iso()
         await store.aput(_draft_ns(account_id), key=ref.draft_id, value=draft)
