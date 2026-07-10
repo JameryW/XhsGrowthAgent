@@ -20,7 +20,7 @@ class TestHostToolSchemas:
     """Verify XHS_HOST_TOOLS list integrity."""
 
     def test_tool_count(self):
-        assert len(XHS_HOST_TOOLS) == 34
+        assert len(XHS_HOST_TOOLS) == 35
 
     def test_all_tools_have_required_fields(self):
         for tool in XHS_HOST_TOOLS:

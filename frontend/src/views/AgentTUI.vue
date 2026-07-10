@@ -202,7 +202,7 @@ function historyDown() {
 
 const SLASH_COMMANDS = [
   '/start', '/status', '/pause', '/resume', '/cancel',
-  '/approve', '/reject', '/mode', '/help', '/clear', '/new', '/abort', '/drafts', '/draft', '/delete',
+  '/approve', '/reject', '/mode', '/help', '/clear', '/new', '/abort', '/drafts', '/draft', '/delete', '/analytics',
 ]
 
 function tabComplete() {
@@ -875,6 +875,13 @@ async function processAgentCommand(text: string) {
         isProcessing.value = false; writePrompt()
         break
       }
+      case '/analytics': {
+        const parts = text.split(/\s+/)
+        const draftId = parts.slice(1).join(' ').trim()
+        await handleAnalytics(draftId)
+        isProcessing.value = false; writePrompt()
+        break
+      }
       default:
         writeLineColored(t('tui.unknownCommand', { command: cmd }), ANSI.RED)
         isProcessing.value = false; writePrompt()
@@ -933,6 +940,8 @@ async function processSlashCommand(cmd: string) {
     case '/reject':
       if (isFreeCreationEntry.value) { writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW); break }
       await handleReject(activeThreadId.value || '', arg); break
+    case '/analytics':
+      await handleAnalytics(arg); break
     case '/mode':
       mode.value = 'agent'
       reconnectAttempts = 0
@@ -1202,6 +1211,58 @@ async function handleDelete(draftId: string) {
   }
 }
 
+async function handleAnalytics(draftId: string) {
+  if (!isFreeCreationEntry.value) {
+    writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
+    return
+  }
+  if (!draftId) {
+    writeLineColored(t('tui.analyticsMissing'), ANSI.RED)
+    return
+  }
+  const accountId = authStore.user?.id || 'default'
+  try {
+    const resp = await client.get(`/free/analytics/${draftId}?account_id=${encodeURIComponent(accountId)}`)
+    const data = resp as unknown as {
+      draft_id: string
+      post_id: string
+      analytics: {
+        post_id?: string
+        views?: number
+        likes?: number
+        collects?: number
+        comments?: number
+        shares?: number
+        engagement_rate?: number
+        fetched_at?: string
+      }
+    }
+    const a = data.analytics || {}
+    const C = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, W = ANSI.BRIGHT_WHITE
+    const Y = ANSI.BRIGHT_YELLOW, R = ANSI.RESET
+    writeLine('')
+    writeLine(`${C}╭${'─'.repeat(52)}╮${R}`)
+    writeLine(`${C}│${R} ${W}${t('tui.analyticsTitle')}${R}${' '.repeat(Math.max(0, 51 - getStringWidth(t('tui.analyticsTitle'))))}${C}│${R}`)
+    writeLine(`${C}╰${'─'.repeat(52)}╯${R}`)
+    writeLine(`  ${D}${t('tui.analyticsDraftIdLabel')}${R}: ${G}${data.draft_id}${R}`)
+    writeLine(`  ${D}${t('tui.analyticsPostIdLabel')}${R}: ${data.post_id || ''}`)
+    writeLine(`  ${D}${'─'.repeat(20)}${R}`)
+    writeLine(`  ${D}${t('tui.analyticsViewsLabel')}${R}:      ${G}${a.views ?? 0}${R}`)
+    writeLine(`  ${D}${t('tui.analyticsLikesLabel')}${R}:      ${G}${a.likes ?? 0}${R}`)
+    writeLine(`  ${D}${t('tui.analyticsCollectsLabel')}${R}:   ${G}${a.collects ?? 0}${R}`)
+    writeLine(`  ${D}${t('tui.analyticsCommentsLabel')}${R}:   ${G}${a.comments ?? 0}${R}`)
+    writeLine(`  ${D}${t('tui.analyticsSharesLabel')}${R}:     ${G}${a.shares ?? 0}${R}`)
+    const er = a.engagement_rate ?? 0
+    writeLine(`  ${D}${t('tui.analyticsEngagementLabel')}${R}: ${Y}${er.toFixed(2)}%${R}`)
+    if (a.fetched_at) {
+      writeLine(`  ${D}${t('tui.analyticsFetchedAtLabel')}${R}:  ${a.fetched_at}`)
+    }
+    writeLine('')
+  } catch (err: any) {
+    writeLineColored(err.message || t('tui.analyticsFetchFailed'), ANSI.RED)
+  }
+}
+
 function showHelp() {
   const C = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, W = ANSI.BRIGHT_WHITE, R = ANSI.RESET
   const Y = ANSI.BRIGHT_YELLOW, B = ANSI.BRIGHT_BLUE
@@ -1237,6 +1298,10 @@ function showHelp() {
     writeLine(`  ${sep}`)
     if (isFreeCreationEntry.value) {
       writeLine(`  ${G}/start${R}         ${D}${t('tui.freeNewSession')}${R}`)
+      writeLine(`  ${G}/drafts${R}        ${D}List free drafts${R}`)
+      writeLine(`  ${G}/draft${R} ${D}<id>${R}  Show draft detail`)
+      writeLine(`  ${G}/delete${R} ${D}<id>${R}  Delete a draft`)
+      writeLine(`  ${G}/analytics${R} ${D}<id>${R} Post-publish engagement`)
       writeLine(`  ${G}/mode${R}          Switch to agent mode`)
       writeLine('')
       writeLine(`  ${Y}Free Draft Commands${R}`)

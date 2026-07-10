@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.api.app import app
+from backend.services.xhs_client import XHSAnalytics
 
 
 @pytest.fixture
@@ -225,6 +226,40 @@ class TestPublishDraft:
         assert stored["published"] is True
         assert "updated_at" in stored and stored["updated_at"]
 
+    def test_publish_persists_post_id_and_post_url(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        pub_result = {
+            "post_id": "note_abc",
+            "post_url": "https://www.xiaohongshu.com/explore/note_abc",
+            "status": "published",
+        }
+        with patch(
+            "backend.api.routes.free.run_publish",
+            AsyncMock(return_value={"publish_result": pub_result}),
+        ):
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+        stored = mock_store._records[draft_id]
+        assert stored["published"] is True
+        assert stored["post_id"] == "note_abc"
+        assert stored["post_url"] == "https://www.xiaohongshu.com/explore/note_abc"
+
+    def test_publish_failure_does_not_persist_post_id(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        pub_result = {"status": "failed", "error": "auth_expired"}
+        with patch(
+            "backend.api.routes.free.run_publish",
+            AsyncMock(return_value={"publish_result": pub_result}),
+        ):
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+        stored = mock_store._records[draft_id]
+        assert stored["published"] is False
+        assert "post_id" not in stored
+        assert "post_url" not in stored
+
     def test_publish_failure_does_not_mark_published(self, client, mock_store):
         create = client.post("/api/free/draft", json=DRAFT_BODY)
         draft_id = create.json()["data"]["draft_id"]
@@ -435,3 +470,124 @@ class TestDeleteDraft:
         app.state.graph.store = None
         r = client.delete("/api/free/draft/any?account_id=acct1")
         assert r.status_code == 400
+
+
+class TestGetAnalytics:
+    """GET /free/analytics/{draft_id} — post-publish engagement (thread-less)."""
+
+    def _seed_published_draft(self, client, mock_store, post_id="real_note_1"):
+        """Create + 'publish' a draft via mocked run_publish, returning the draft_id."""
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+        pub_result = {
+            "post_id": post_id,
+            "post_url": f"https://xhs/explore/{post_id}",
+            "status": "published",
+        }
+        with patch(
+            "backend.api.routes.free.run_publish",
+            AsyncMock(return_value={"publish_result": pub_result}),
+        ):
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+        return draft_id
+
+    def test_analytics_returns_engagement(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        analytics_obj = XHSAnalytics(
+            post_id="real_note_1",
+            views=1500,
+            likes=320,
+            collects=80,
+            comments=45,
+            shares=12,
+            engagement_rate=0.0305,
+            fetched_at="2026-07-10 12:00:00",
+        )
+        with (
+            patch(
+                "backend.db.accounts.get_account_cdp_endpoint",
+                AsyncMock(return_value="http://localhost:9222"),
+            ),
+            patch("backend.services.xhs_client.XHSClient") as mock_client_cls,
+            patch("backend.api.routes.free.Settings") as mock_settings,
+        ):
+            mock_settings.return_value.platform.headless = True
+            instance = mock_client_cls.return_value
+            instance.get_post_analytics = AsyncMock(return_value=analytics_obj)
+            instance.close = AsyncMock()
+            r = client.get(f"/api/free/analytics/{draft_id}?account_id=acct1")
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["draft_id"] == draft_id
+        assert data["post_id"] == "real_note_1"
+        a = data["analytics"]
+        assert a["views"] == 1500
+        assert a["likes"] == 320
+        assert a["collects"] == 80
+        assert a["comments"] == 45
+        assert a["shares"] == 12
+        assert a["engagement_rate"] == 0.0305
+        assert a["fetched_at"] == "2026-07-10 12:00:00"
+        # client was closed
+        instance.close.assert_awaited_once()
+
+    def test_analytics_requires_published_returns_400(self, client, mock_store):
+        # create a draft but never publish it → no post_id
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+        r = client.get(f"/api/free/analytics/{draft_id}?account_id=acct1")
+        assert r.status_code == 400
+        assert "post_id" in r.text
+
+    def test_analytics_mock_published_returns_400(self, client, mock_store):
+        # mock-published (dry-run) draft carries a "mock_*" post_id — analytics
+        # must fail fast with a clear error, not return zero-engagement.
+        draft_id = self._seed_published_draft(client, mock_store, post_id="mock_session_0")
+        r = client.get(f"/api/free/analytics/{draft_id}?account_id=acct1")
+        assert r.status_code == 400
+        assert "mock" in r.text.lower()
+
+    def test_analytics_missing_draft_returns_400(self, client):
+        r = client.get("/api/free/analytics/nope?account_id=acct1")
+        assert r.status_code == 400
+
+    def test_analytics_no_store_returns_400(self, client):
+        app.state.graph.store = None
+        r = client.get("/api/free/analytics/any?account_id=acct1")
+        assert r.status_code == 400
+
+    def test_analytics_no_cdp_endpoint_returns_400(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        with (
+            patch(
+                "backend.db.accounts.get_account_cdp_endpoint",
+                AsyncMock(return_value=""),
+            ),
+            patch("backend.api.routes.free.Settings") as mock_settings,
+        ):
+            # No per-account CDP override + no global cdp_endpoint on settings →
+            # _resolve_cdp_endpoint falls through to the socket check, which
+            # fails in the test env → "". Route must raise ValidationError 400.
+            mock_settings.return_value.platform.cdp_endpoint = ""
+            mock_settings.return_value.platform.headless = True
+            r = client.get(f"/api/free/analytics/{draft_id}?account_id=acct1")
+        assert r.status_code == 400
+        assert "cdp" in r.text.lower()
+
+    def test_analytics_fetch_failure_returns_400(self, client, mock_store):
+        draft_id = self._seed_published_draft(client, mock_store)
+        with (
+            patch(
+                "backend.db.accounts.get_account_cdp_endpoint",
+                AsyncMock(return_value="http://localhost:9222"),
+            ),
+            patch("backend.services.xhs_client.XHSClient") as mock_client_cls,
+            patch("backend.api.routes.free.Settings") as mock_settings,
+        ):
+            mock_settings.return_value.platform.headless = True
+            instance = mock_client_cls.return_value
+            instance.get_post_analytics = AsyncMock(side_effect=RuntimeError("post deleted"))
+            instance.close = AsyncMock()
+            r = client.get(f"/api/free/analytics/{draft_id}?account_id=acct1")
+        assert r.status_code == 400
+        assert "analytics" in r.text.lower()

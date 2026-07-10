@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "verify analytics route + post_id persistence + error matrix in spec"}
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "verify xhs_free_analytics host tool registered + dispatched + system prompt synced"}
