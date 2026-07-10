@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "verify last_evaluation includes revision_hints in spec + write-back behavior"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "verify hints rendering + i18n both locales + graceful degradation"}
