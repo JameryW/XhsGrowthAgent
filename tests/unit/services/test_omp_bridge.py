@@ -649,8 +649,20 @@ class TestFreeModeTools:
                     "last_evaluation": {"overall_score": 51.0, "decision": "needs_revision"},
                     "published": False,
                 },
+                {
+                    "draft_id": "d4",
+                    "title": "标题四",
+                    "hashtags": [],
+                    "published": False,
+                    "last_publish": {
+                        "status": "failed",
+                        "error": "账号已停用",
+                        "error_type": "account_inactive",
+                        "at": "2026-07-12T10:00:00Z",
+                    },
+                },
             ],
-            "count": 3,
+            "count": 4,
             "truncated": True,
         }
         client = _mock_client_get(data)
@@ -660,7 +672,7 @@ class TestFreeModeTools:
         text = result["content"][0]["text"]
         assert "acc1" in text
         # count header + truncated note
-        assert "(3)" in text
+        assert "(4)" in text
         assert "truncated" in text
         assert "d1" in text and "标题一" in text
         assert "d2" in text and "标题二" in text
@@ -669,8 +681,12 @@ class TestFreeModeTools:
         assert "[published]" in text
         # d2 has no eval/published badge
         assert "needs_revision" in text  # d3
+        # d4 — publish-failed badge (last_publish.status non-success)
+        assert "[publish failed]" in text
+        # success-status last_publish does NOT get the badge
+        assert text.count("[published]") == 1
         # Structured result carries drafts
-        assert len(result["details"]["drafts"]) == 3
+        assert len(result["details"]["drafts"]) == 4
         # GET to /free/drafts/{account_id}
         client.get.assert_awaited_once()
         assert "/free/drafts/acc1" in client.get.await_args.args[0]

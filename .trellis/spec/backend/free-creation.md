@@ -56,10 +56,11 @@ and append a conditional `next:`/`note:` cue:
 - **`xhs_free_draft_list`**: header with `count`, a `truncated` note when the
   route's 100-cap dropped older drafts, and per-draft badges —
   `[<score> <decision>]` when `last_evaluation` has a decision, `[published]`
-  when published — so the agent can pick the next step from the list
+  when published, `[publish failed]` when `last_publish.status` is a non-success
+  (failed/auth_expired/...) — so the agent can pick the next step from the list
   (unevaluated→evaluate, needs_revision→revise, approved/published→publish or
-  analytics) without calling `xhs_free_draft` per item. Mirrors TUI `/drafts`
-  (#216/#226/#227).
+  analytics, publish-failed→re-attempt after fixing cause) without calling
+  `xhs_free_draft` per item. Mirrors TUI `/drafts` (#216/#226/#227).
 - **`xhs_free_publish`**: real publish (`status == "published"`, non-`mock_` post_id) →
   `next: call xhs_free_analytics(<draft_id>) ...`; mock publish (`mock_published` /
   `mock_*` post_id, dry-run) → `note: dry-run mock publish ... analytics not available`
@@ -219,9 +220,10 @@ after `model_dump()`, the same way `draft_id` is set.
 | Field | Type | Set by | Notes |
 |-------|------|--------|-------|
 | `created_at` | ISO 8601 UTC str | `create_draft` | Set once; never changed by update. |
-| `updated_at` | ISO 8601 UTC str | `create_draft`, `update_draft`, `evaluate_draft`, `publish_draft` (on success) | Refreshed on every write-back. |
+| `updated_at` | ISO 8601 UTC str | `create_draft`, `update_draft`, `evaluate_draft`, `publish_draft` | Refreshed on every write-back — including failed publish attempts (a publish attempt is a meaningful update). |
 | `last_evaluation` | `{overall_score, decision, revision_hints} \| None` | `evaluate_draft` | The {overall_score, decision, revision_hints} triple is persisted; the full `evaluation_result` (dimensions, bias_warning, summary) is still returned to the agent but not stored on the draft. |
-| `published` | `bool` | `publish_draft` (on success) | Set `True` only when `publish_result.status` ∈ `{"published", "mock_published"}`. |
+| `last_publish` | `{status, error?, error_type?, at} \| None` | `publish_draft` (every attempt) | Persisted on **every** publish attempt — success writes `status` (`published`/`mock_published`) with error fields `None`; failure writes `status` (`failed`/`auth_expired`/...) + `error` + `error_type`. `at` is the attempt timestamp. Lets `/draft <id>` and the agent list render surface a failed publish's cause after the turn ends (#239 only surfaces it for the single tool call). A later success overwrites it. |
+| `published` | `bool` | `publish_draft` (on success) | Set `True` only when `publish_result.status` ∈ `{"published", "mock_published"}`. Failures do NOT flip `published` (they only record via `last_publish`). |
 | `post_id` | `str` | `publish_draft` (on success) | The XHS note id, from `publish_result.post_id`. Empty for mock-published. Used by `GET /free/analytics/{draft_id}` to fetch engagement. |
 | `post_url` | `str` | `publish_draft` (on success) | The XHS note URL, from `publish_result.post_url`. |
 

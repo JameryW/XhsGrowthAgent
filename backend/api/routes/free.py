@@ -286,17 +286,26 @@ async def publish_draft(ref: FreeDraftRef, request: Request) -> ApiResponse[Any]
     publish_result = result.get("publish_result") or {}
     pub_status = publish_result.get("status", "unknown")
 
+    # Persist the latest publish outcome on every attempt (success + failure)
+    # so /draft <id> and the agent list render can surface a failed publish's
+    # cause after the turn ends (#239 only surfaces it for the single tool call).
+    draft["last_publish"] = {
+        "status": pub_status,
+        "error": publish_result.get("error"),
+        "error_type": publish_result.get("error_type"),
+        "at": _now_iso(),
+    }
     # On a successful publish, mark the draft as published, persist the post_id
-    # + post_url (so /analytics can fetch engagement later), and refresh
-    # updated_at. Failures (failed / auth_expired / mock_published without a
-    # real post_id) do NOT mutate the draft — mock_published from dry-run has
-    # no real post_id, so analytics can't be fetched for it either.
+    # + post_url (so /analytics can fetch engagement later). Failures (failed /
+    # auth_expired / unknown) do NOT flip published — they only record the
+    # attempt via last_publish above. A publish attempt always refreshes
+    # updated_at (it is a meaningful update to the record).
     if pub_status in _PUBLISH_SUCCESS_STATUSES:
         draft["published"] = True
         draft["post_id"] = publish_result.get("post_id", "")
         draft["post_url"] = publish_result.get("post_url", "")
-        draft["updated_at"] = _now_iso()
-        await store.aput(_draft_ns(account_id), key=ref.draft_id, value=draft)
+    draft["updated_at"] = _now_iso()
+    await store.aput(_draft_ns(account_id), key=ref.draft_id, value=draft)
 
     logger.info(
         "free draft published: account=%s draft=%s status=%s",

@@ -1172,6 +1172,7 @@ interface FreeDraftRecord {
   created_at?: string
   updated_at?: string
   last_evaluation?: { overall_score?: number; decision?: string; revision_hints?: string[] } | null
+  last_publish?: { status?: string; error?: string | null; error_type?: string | null; at?: string } | null
   published?: boolean
   post_id?: string
   post_url?: string
@@ -1263,6 +1264,17 @@ async function handleDraft(draftId: string) {
         writeLine(`  ${Y}${t('tui.draftDetailMockPublishedHint')}${R}`)
       } else if (pid) {
         writeLine(`  ${Y}${t('tui.draftDetailAnalyticsHint', { id: data.draft_id })}${R}`)
+      }
+      // Last publish outcome — on a failure, surface the durable cause + when
+      // (#239 only surfaces it for the single publish turn; this persists it).
+      // Success is already conveyed by the published/post_url/hint lines above,
+      // so only render the failure case to avoid redundancy.
+      const lp = draft.last_publish
+      if (lp && lp.status && lp.status !== 'published' && lp.status !== 'mock_published') {
+        const etype = lp.error_type ? ` (${lp.error_type})` : ''
+        const detail = lp.error ? ` — ${lp.error}${etype}` : etype
+        const at = lp.at ? `  ${D}${lp.at}${R}` : ''
+        writeLine(`  ${ANSI.RED}${t('tui.draftDetailLastPublishLabel')}${R}: ${ANSI.RED}${lp.status}${detail}${R}${at}`)
       }
       if (draft.created_at) {
         writeLine(`  ${D}${t('tui.draftDetailCreatedLabel')}${R}: ${draft.created_at}`)

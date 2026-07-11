@@ -1449,6 +1449,13 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                         parts.append(f"  [{score_str} {le.get('decision')}]")
                     if d.get("published"):
                         parts.append("  [published]")
+                    # Publish-failed badge — last_publish with a non-success status
+                    # lets the agent see from the list that a publish attempt failed
+                    # (→ re-attempt after fixing cause) without opening the detail.
+                    lp = d.get("last_publish") or {}
+                    lp_status = lp.get("status") or ""
+                    if lp_status and lp_status not in ("published", "mock_published"):
+                        parts.append("  [publish failed]")
                     lines.append("".join(parts))
                 return _make_text_result("\n".join(lines), {"drafts": drafts, **data})
 

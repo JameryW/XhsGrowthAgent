@@ -318,6 +318,46 @@ class TestPublishDraft:
         stored = mock_store._records[draft_id]
         assert stored["published"] is False
 
+    def test_publish_failure_persists_last_publish(self, client, mock_store):
+        # Failures record the attempt via last_publish (status/error/error_type/at)
+        # so /draft <id> + the agent list can surface the cause after the turn.
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        pub_result = {
+            "status": "failed",
+            "error": "账号 acct1 已停用，无法发布",
+            "error_type": "account_inactive",
+        }
+        with patch(
+            "backend.api.routes.free.run_publish",
+            AsyncMock(return_value={"publish_result": pub_result}),
+        ):
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+        stored = mock_store._records[draft_id]
+        assert stored["last_publish"]["status"] == "failed"
+        assert stored["last_publish"]["error"] == "账号 acct1 已停用，无法发布"
+        assert stored["last_publish"]["error_type"] == "account_inactive"
+        assert stored["last_publish"]["at"]
+        # failure does NOT flip published / persist post_id
+        assert stored["published"] is False
+        assert "post_id" not in stored
+
+    def test_publish_success_persists_last_publish(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        pub_result = {"post_id": "x123", "post_url": "u", "status": "published"}
+        with patch(
+            "backend.api.routes.free.run_publish",
+            AsyncMock(return_value={"publish_result": pub_result}),
+        ):
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+        stored = mock_store._records[draft_id]
+        assert stored["last_publish"]["status"] == "published"
+        assert stored["last_publish"]["error"] is None
+        assert stored["last_publish"]["at"]
+
     def test_publish_missing_draft_returns_400(self, client):
         r = client.post(
             "/api/free/publish",

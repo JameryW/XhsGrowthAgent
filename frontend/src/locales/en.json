@@ -1443,6 +1443,7 @@
     "draftDetailAnalyticsHint": "Run /analytics {id} for engagement",
     "draftDetailMockPublishedHint": "mock-published (dry-run) — re-publish without dry-run for a real post",
     "draftDetailReviseHint": "Use /edit {id} <field> <value> to revise per the hints above, then /evaluate again",
+    "draftDetailLastPublishLabel": "Last Publish",
     "analyticsTitle": "Draft Analytics",
     "analyticsMissing": "Usage: /analytics <draft_id>",
     "analyticsFetchFailed": "Failed to fetch analytics",
