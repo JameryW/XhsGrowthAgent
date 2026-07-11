@@ -10,7 +10,7 @@
 - Any route in `backend/api/routes/free.py`
 - Any omp host tool named `xhs_free_*`
 - Any frontend logic gated by `isFreeCreationEntry` (`route.query.mode === 'free'`)
-- The free creation entry (`/tui?mode=free`) and its TUI commands (`/start`, `/drafts`, `/draft <id>`, `/delete <id>`, `/analytics <id>`)
+- The free creation entry (`/tui?mode=free`) and its TUI commands (`/start`, `/drafts`, `/draft <id>`, `/edit <id> <field> <value>`, `/delete <id>`, `/analytics <id>`)
 
 Free mode lets the omp agent drive creation conversationally **without a LangGraph
 workflow thread**. It is fully isolated from the fixed trend/brief workflow:
@@ -96,6 +96,7 @@ do NOT participate in workflow resume/retry.
 - Free-mode `/drafts` lists free drafts; non-free mode shows `freeWorkflowOpDisabled`.
 - Free-mode `/draft <id>` renders a single draft's full record; non-free mode shows `freeWorkflowOpDisabled`.
 - Free-mode `/delete <id>` GETs the draft (to show its title — acts as confirmation, since there is no y/n state machine), then DELETEs it; non-free mode shows `freeWorkflowOpDisabled`. The DELETE route is idempotent, so re-running is safe. A GET 400 (draft not found) aborts the delete — no silent success on a bad id.
+- Free-mode `/edit <id> <field> <value>` PATCHes `/free/draft/{id}` with `{<field>: <value>}` — single-line scalar-field edit. Allowed fields: `title`, `niche`, `content_angle`, `target_audience`. Unknown field → red error listing the allowed set; missing id/field/value → usage line. `body`/`hashtags`/`image_paths` are excluded (multi-line / list — agent handles those via `xhs_free_draft_update`). draft_id + created_at preserved, updated_at refreshed. Non-free mode shows `freeWorkflowOpDisabled`.
 - Free-mode `/analytics <id>` GETs `/free/analytics/{draft_id}` and renders a boxed engagement table (views/likes/collects/comments/shares/engagement_rate/fetched_at); non-free mode shows `freeWorkflowOpDisabled`. Missing `<id>` prints `tui.analyticsMissing`; a 400 from the route (unpublished / mock-published / no CDP / fetch failure) prints the route's error message in red.
 - Workflow slash commands (`/status` `/pause` `/resume` `/cancel` `/approve` `/reject`) stay disabled in free mode.
 - AgentTUI free entry defaults to **agent mode** on mount (plain text → omp conversation); non-free (trend/brief) keeps command mode.

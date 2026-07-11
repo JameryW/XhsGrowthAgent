@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "AgentTUI handleEdit pattern (parse id/field/value, PATCH, render) + i18n + showHelp/SLASH_COMMANDS"}
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "PATCH /draft/{id} route + FreeDraftUpdate fields; TUI command list + Isolation behavior; free-only guard convention"}

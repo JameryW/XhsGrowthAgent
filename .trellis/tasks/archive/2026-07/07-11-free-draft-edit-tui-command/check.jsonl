@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "verify /edit <id> <field> <value> added to TUI command list + Isolation behavior + allowed-field set"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "verify handleEdit + i18n + showHelp entry follow AgentTUI conventions"}
