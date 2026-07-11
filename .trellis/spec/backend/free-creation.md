@@ -50,8 +50,9 @@ internal httpx to `/api/free/*` (the `url` already includes `/api`, so paths are
 
 **Agent-side render** (`omp_bridge._execute_xhs_host_tool`): free mode defaults
 to agent mode, so the omp agent reads these renders as plain text and needs the
-loop's state surfaced (not just raw fields). The renders align with the TUI
-surfaces, not duplicate the minimal backend response:
+loop's state and next step surfaced (not just raw fields or the verdict). The
+renders align with the TUI surfaces, not duplicate the minimal backend response,
+and append a conditional `next:`/`note:` cue:
 - **`xhs_free_draft_list`**: header with `count`, a `truncated` note when the
   route's 100-cap dropped older drafts, and per-draft badges —
   `[<score> <decision>]` when `last_evaluation` has a decision, `[published]`
@@ -59,6 +60,11 @@ surfaces, not duplicate the minimal backend response:
   (unevaluated→evaluate, needs_revision→revise, approved/published→publish or
   analytics) without calling `xhs_free_draft` per item. Mirrors TUI `/drafts`
   (#216/#226/#227).
+- **`xhs_free_publish`**: real publish (`status == "published"`, non-`mock_` post_id) →
+  `next: call xhs_free_analytics(<draft_id>) ...`; mock publish (`mock_published` /
+  `mock_*` post_id, dry-run) → `note: dry-run mock publish ... analytics not available`
+  (so the agent doesn't call analytics and 400 on a synthetic post_id). Failed/unknown → no cue.
+  Mirrors the TUI post-publish hint (#223: real post_id → analytics hint; mock_* → mock hint).
 - **`xhs_free_evaluate`**: the verdict is rendered as plain text for the omp agent
   (overall/decision/bias/dimensions/hints). When `decision ∈ {needs_revision, rejected}`
   AND `revision_hints` is non-empty, the render appends a `next:` cue pointing the
