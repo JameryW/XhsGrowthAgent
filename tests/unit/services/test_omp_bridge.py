@@ -530,6 +530,37 @@ class TestFreeModeTools:
         assert "xhs_free_draft_update" in text
         assert "xhs_free_evaluate again" in text
 
+    async def test_free_evaluate_degraded_markers(self):
+        # degraded=True (LLM timeout fallback): the render must surface the
+        # degradation marker + cause + a re-run cue, NOT present the fake
+        # 100/approved as a real verdict, and NOT the revise cue.
+        data = {
+            "draft_id": "draft-deg",
+            "account_id": "acc1",
+            "evaluation_result": {
+                "overall_score": 100.0,
+                "decision": "approved",
+                "bias_warning": "",
+                "dimensions": [],
+                "revision_hints": [],
+                "degraded": True,
+                "summary": "评估器 LLM 超时，降级放行: llm slow",
+            },
+        }
+        client = _mock_client_post(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool(
+                "xhs_free_evaluate",
+                {"account_id": "acc1", "draft_id": "draft-deg"},
+            )
+        text = result["content"][0]["text"]
+        assert "Evaluation degraded" in text
+        assert "pass-through fallback" in text
+        assert "降级放行" in text  # cause summary surfaced
+        # re-run cue present (not the revise cue)
+        assert "re-run xhs_free_evaluate" in text
+        assert "xhs_free_draft_update" not in text
+
     async def test_free_publish(self):
         data = {
             "draft_id": "draft-pub",
@@ -661,8 +692,20 @@ class TestFreeModeTools:
                         "at": "2026-07-12T10:00:00Z",
                     },
                 },
+                {
+                    "draft_id": "d5",
+                    "title": "标题五",
+                    "hashtags": [],
+                    "published": False,
+                    "last_evaluation": {
+                        "overall_score": 100.0,
+                        "decision": "approved",
+                        "degraded": True,
+                        "summary": "评估器 LLM 超时，降级放行",
+                    },
+                },
             ],
-            "count": 4,
+            "count": 5,
             "truncated": True,
         }
         client = _mock_client_get(data)
@@ -672,7 +715,7 @@ class TestFreeModeTools:
         text = result["content"][0]["text"]
         assert "acc1" in text
         # count header + truncated note
-        assert "(4)" in text
+        assert "(5)" in text
         assert "truncated" in text
         assert "d1" in text and "标题一" in text
         assert "d2" in text and "标题二" in text
@@ -683,10 +726,12 @@ class TestFreeModeTools:
         assert "needs_revision" in text  # d3
         # d4 — publish-failed badge (last_publish.status non-success)
         assert "[publish failed]" in text
+        # d5 — degraded eval shows [degraded] instead of [100 approved]
+        assert "[degraded]" in text
         # success-status last_publish does NOT get the badge
         assert text.count("[published]") == 1
         # Structured result carries drafts
-        assert len(result["details"]["drafts"]) == 4
+        assert len(result["details"]["drafts"]) == 5
         # GET to /free/drafts/{account_id}
         client.get.assert_awaited_once()
         assert "/free/drafts/acc1" in client.get.await_args.args[0]

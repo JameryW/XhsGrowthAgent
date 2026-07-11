@@ -106,6 +106,25 @@ class TestEvaluatorAgent:
         assert len(ev["dimensions"]) == 9
         assert ev["revision_hints"] == []
 
+    async def test_execute_timeout_degrades_with_flag(self, agent, mock_state, mock_store):
+        """LLM timeout → pass-through fallback verdict with degraded=True.
+
+        The fallback's 100/approved is fake — the degraded flag lets callers
+        (free-mode evaluate_draft, agent render) surface it instead of trusting
+        the score.
+        """
+        with patch.object(type(agent), "model", new_callable=PropertyMock) as m:
+            model = MagicMock()
+            model.ainvoke = AsyncMock(side_effect=TimeoutError("llm slow"))
+            m.return_value = model
+            result = await agent.execute(mock_state, store=mock_store)
+
+        ev = result["evaluation_result"]
+        assert ev["decision"] == ContentStatus.APPROVED
+        assert ev["overall_score"] == 100.0
+        assert ev["degraded"] is True
+        assert "降级" in ev["summary"]
+
     @pytest.mark.asyncio
     async def test_low_score_needs_revision(self, agent, mock_state, mock_store):
         mock_response = MagicMock()

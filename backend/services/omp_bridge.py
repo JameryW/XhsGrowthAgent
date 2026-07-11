@@ -1326,11 +1326,23 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 )
                 data = _unwrap_envelope(resp)
                 ev = data.get("evaluation_result") or {}
+                # Degraded (LLM timeout → pass-through fallback): the 100/approved
+                # is fake, not a real score. Surface it so the agent doesn't trust
+                # the verdict or publish an unevaluated draft. Mirrors #240's
+                # publish-failure surfacing for the evaluate path.
+                degraded = bool(ev.get("degraded"))
                 lines = [
                     f"Free Draft Evaluation — {draft_id}",
                     f"  Overall: {ev.get('overall_score', 'N/A')}"
                     f"  Decision: {ev.get('decision', '?')}",
                 ]
+                if degraded:
+                    lines.append(
+                        "  ⚠ Evaluation degraded (LLM timeout/failure) — verdict is a "
+                        "pass-through fallback, NOT a real score; do not publish on it."
+                    )
+                    if ev.get("summary"):
+                        lines.append(f"  cause: {ev['summary']}")
                 if ev.get("bias_warning"):
                     lines.append(f"  ⚠ Bias: {ev['bias_warning']}")
                 for d in ev.get("dimensions") or []:
@@ -1342,9 +1354,17 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 # the agent (free mode's default driver). Mirrors the TUI /draft
                 # revise hint (#229): needs_revision/rejected with concrete hints
                 # points at xhs_free_draft_update → re-evaluate, not straight to
-                # publish. approved/rejected-without-hints get no cue.
+                # publish. approved/rejected-without-hints get no cue. A degraded
+                # (fake-approved) eval gets a re-run cue instead.
                 decision = ev.get("decision", "")
-                if decision in ("needs_revision", "rejected") and (ev.get("revision_hints") or []):
+                if degraded:
+                    lines.append(
+                        "  next: re-run xhs_free_evaluate (draft_id unchanged) once the "
+                        "LLM is available; do not publish on a degraded verdict."
+                    )
+                elif decision in ("needs_revision", "rejected") and (
+                    ev.get("revision_hints") or []
+                ):
                     lines.append(
                         "  next: revise per the hints via xhs_free_draft_update "
                         "(keep draft_id), then xhs_free_evaluate again before publish."
@@ -1441,9 +1461,13 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     parts = [f"  - {d.get('draft_id', '')}: {d.get('title', '')}"]
                     # Eval badge — last_evaluation with a decision lets the agent
                     # pick next step from the list (unevaluated→evaluate,
-                    # needs_revision→revise, approved→publish/analytics).
+                    # needs_revision→revise, approved→publish/analytics). A
+                    # degraded (fake-approved fallback) eval shows [degraded]
+                    # instead of the misleading [100 approved].
                     le = d.get("last_evaluation") or {}
-                    if le and le.get("decision"):
+                    if le and le.get("degraded"):
+                        parts.append("  [degraded]")
+                    elif le and le.get("decision"):
                         score = le.get("overall_score")
                         score_str = f"{score}" if score is not None else "?"
                         parts.append(f"  [{score_str} {le.get('decision')}]")

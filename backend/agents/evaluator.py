@@ -173,6 +173,12 @@ class EvaluatorAgent(BaseAgent):
                     "revision_hints": [],
                     "bias_warning": "",
                     "summary": f"评估器 LLM 超时，降级放行: {e}",
+                    # degraded flag: this is a pass-through fallback (LLM failed),
+                    # NOT a real evaluation — callers must not trust the 100/approved.
+                    # free-mode evaluate_draft persists it so /draft + /drafts + the
+                    # agent render can surface the degradation instead of showing a
+                    # fake "100 approved" verdict.
+                    "degraded": True,
                 }
             }
         raw = self._parse_json_response(cast(str, response.content))
