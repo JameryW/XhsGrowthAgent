@@ -103,6 +103,51 @@ class TestCreateDraft:
         assert r.status_code == 200
         assert r.json()["data"]["draft"]["account_id"] == "default"
 
+    def test_create_empty_niche_falls_back_to_default(self, client):
+        """FreeDraft(niche="") → niche=="母婴".
+
+        omp_bridge may explicitly pass niche="" when the agent omits it;
+        the field_validator normalizes empty strings to the default.
+        """
+        body = {**DRAFT_BODY, "niche": ""}
+        r = client.post("/api/free/draft", json=body)
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["draft"]["niche"] == "母婴"
+
+    def test_create_whitespace_niche_falls_back_to_default(self, client):
+        """FreeDraft(niche="   ") → niche=="母婴"."""
+        body = {**DRAFT_BODY, "niche": "   "}
+        r = client.post("/api/free/draft", json=body)
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["draft"]["niche"] == "母婴"
+
+    def test_create_null_niche_falls_back_to_default(self, client):
+        """FreeDraft(niche=null) → niche=="母婴".
+
+        A caller (e.g. omp agent passing niche=None explicitly, or a direct
+        API client) must not get a 422 — the before-validator normalizes
+        explicit null to the default, same as empty string.
+        """
+        body = {**DRAFT_BODY, "niche": None}
+        r = client.post("/api/free/draft", json=body)
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["draft"]["niche"] == "母婴"
+
+    def test_create_absent_niche_uses_field_default(self, client):
+        """FreeDraft(niche omitted) → niche=="母婴" (Pydantic Field default)."""
+        body = {**DRAFT_BODY}
+        del body["niche"]
+        r = client.post("/api/free/draft", json=body)
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["draft"]["niche"] == "母婴"
+
+    def test_create_nonempty_niche_preserved(self, client):
+        """FreeDraft(niche="fashion") → niche=="fashion" (unchanged)."""
+        body = {**DRAFT_BODY, "niche": "fashion"}
+        r = client.post("/api/free/draft", json=body)
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["draft"]["niche"] == "fashion"
+
 
 class TestEvaluateDraft:
     def test_evaluate_loads_draft_and_runs_evaluator(self, client, mock_store):
@@ -618,6 +663,43 @@ class TestUpdateDraft:
             json={"title": "x"},
         )
         assert r.status_code == 400
+
+    def test_update_empty_niche_falls_back_to_default(self, client, mock_store):
+        """PATCH niche="" → niche=="母婴" (same validator as create)."""
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        r = client.patch(
+            f"/api/free/draft/{draft_id}?account_id=acct1",
+            json={"niche": ""},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["draft"]["niche"] == "母婴"
+
+    def test_update_null_niche_falls_back_to_default(self, client, mock_store):
+        """PATCH niche=null → niche=="母婴" (null normalized, not 422)."""
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        r = client.patch(
+            f"/api/free/draft/{draft_id}?account_id=acct1",
+            json={"niche": None},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["draft"]["niche"] == "母婴"
+
+    def test_update_niche_omitted_preserves_existing(self, client, mock_store):
+        """PATCH without niche field → existing niche preserved (None = don't change)."""
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+        original_niche = create.json()["data"]["draft"]["niche"]
+
+        r = client.patch(
+            f"/api/free/draft/{draft_id}?account_id=acct1",
+            json={"title": "新标题"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["draft"]["niche"] == original_niche
 
     def test_update_no_store_returns_400(self, client):
         app.state.graph.store = None

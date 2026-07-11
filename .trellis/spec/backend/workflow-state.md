@@ -288,6 +288,30 @@ def callback(task):
     asyncio.ensure_future(_do_update())
 ```
 
+### Recover: checkpoint_lost diagnostic (not 404)
+
+`POST /recover/{thread_id}` checks for a live LangGraph checkpoint first. When
+`aget_state` returns no state (checkpoint lost — e.g. after a container restart
+where the checkpoint DB was wiped but the `workflows` metadata row survived),
+it does NOT immediately 404. Instead:
+
+1. If `is_pool_ready()`, query the DB row via `db_get(thread_id)`.
+2. If the DB row exists AND its status is non-terminal (running/stale/paused/
+   awaiting_*) AND there is no active background task → return 200 with
+   `{recovered: False, status: "checkpoint_lost", message: "...建议 /resume restart 重新开始"}`.
+3. If the DB row is terminal (completed/cancelled/error) or missing entirely →
+   `WorkflowNotFoundError` 404 (truly nonexistent or already finished).
+
+**Why:** A bare 404 on `/recover` for a workflow that `/status` shows as
+"checkpoint_lost / recoverable" is a broken UX — the user sees "可恢复" then
+gets 404 on the recover attempt. The diagnostic tells them to use `/resume`
+with a restart strategy instead.
+
+**Consistency:** The `checkpoint_lost` condition uses the same non-terminal
+status set and `has_active_task` check as the `/status` route's
+`checkpoint_lost` field — the two routes agree on what constitutes "lost but
+recoverable."
+
 ## Progress Calculation
 
 ### PHASE_PROGRESS mapping
@@ -452,6 +476,40 @@ def engagement_router(state: XHSGrowthState) -> Literal["orchestrator", "__end__
 **Common Mistake:** Using `add_edge("engagement", "orchestrator")` creates an infinite loop in single-exec mode because engagement always routes back to orchestrator.
 
 **Fix:** Use `add_conditional_edges("engagement", engagement_router, ...)` instead.
+
+## Router Terminal Guard Convention
+
+### All conditional routers must call `_check_terminal(state)` first
+
+Every conditional edge router in `backend/graph/routers.py` MUST start with:
+
+```python
+if terminal := _check_terminal(state):
+    return terminal
+```
+
+**Why:** Without the guard, a router may route to a node that overwrites the error
+phase. The critical case is `content_strategist_router`: without the guard,
+phase=ERROR falls through to `ripple_gate`, which auto-accepts when Ripple data
+is absent (viral_prob/pmf default to 1.0), overwriting the error phase with
+`creating` — silently swallowing the strategist failure.
+
+**Convention:** The return type of a router that gets the guard must include
+`"__end__"` in its `Literal[...]` annotation. Example:
+
+```python
+def content_strategist_router(
+    state: XHSGrowthState,
+) -> Literal["ripple_finalize", "ripple_gate", "__end__"]:
+    if terminal := _check_terminal(state):
+        return terminal
+    ...
+```
+
+**Audit:** Most routers already have the guard (e.g. `ripple_finalize_router`,
+`engagement_router`, `orchestrator_router`). If a new router is added or an
+existing one is missing the guard, add it — the risk of silent error-phase
+overwrite is high for any router that feeds into a node with auto-accept logic.
 
 ## Tests Required
 

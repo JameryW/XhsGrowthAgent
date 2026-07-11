@@ -415,13 +415,19 @@ def ripple_gate_router(
 
 def content_strategist_router(
     state: XHSGrowthState,
-) -> Literal["ripple_finalize", "ripple_gate"]:
+) -> Literal["ripple_finalize", "ripple_gate", "__end__"]:
     """Route after content_strategist based on Ripple mode.
 
     Background mode (ripple_pending=True): skip ripple_gate, go to
     ripple_finalize which reads the store-written background result.
     Blocking mode: go to ripple_gate (existing behavior).
     """
+    # Terminal guard: if content_strategist errored (phase=ERROR), do NOT
+    # fall through to ripple_gate — ripple_gate auto-accepts when Ripple data
+    # is absent (viral_prob/pmf default to 1.0), which would overwrite the
+    # error phase with `creating` and silently swallow the failure. End here.
+    if terminal := _check_terminal(state):
+        return terminal
     if state.get("ripple_pending"):
         return "ripple_finalize"
     return "ripple_gate"

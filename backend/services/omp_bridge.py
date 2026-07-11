@@ -1300,7 +1300,7 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     "body": arguments.get("body", ""),
                     "hashtags": arguments.get("hashtags", []),
                     "image_paths": arguments.get("image_paths", []),
-                    "niche": arguments.get("niche", ""),
+                    "niche": arguments.get("niche") or "母婴",
                     "content_angle": arguments.get("content_angle", ""),
                     "target_audience": arguments.get("target_audience", ""),
                 }
