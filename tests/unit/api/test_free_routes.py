@@ -420,6 +420,159 @@ class TestListDrafts:
         assert data["count"] == 100
         assert data["truncated"] is True
 
+    def test_list_status_filter_published(self, client, mock_store):
+        # seed 3: one published, two not
+        mock_store._records["pub-1"] = {
+            "draft_id": "pub-1",
+            "title": "已发布",
+            "hashtags": [],
+            "body": "x",
+            "published": True,
+            "updated_at": "2026-07-11T00:00:01",
+        }
+        mock_store._records["unpub-1"] = {
+            "draft_id": "unpub-1",
+            "title": "未发布",
+            "hashtags": [],
+            "body": "x",
+            "published": False,
+            "updated_at": "2026-07-11T00:00:02",
+        }
+        mock_store._records["unpub-2"] = {
+            "draft_id": "unpub-2",
+            "title": "草稿",
+            "hashtags": [],
+            "body": "x",
+            "updated_at": "2026-07-11T00:00:03",  # published absent → False
+        }
+        r = client.get("/api/free/drafts/acct1?status=published")
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        ids = {d["draft_id"] for d in data["drafts"]}
+        assert ids == {"pub-1"}
+        assert data["count"] == 1
+        assert data["status"] == "published"
+
+    def test_list_status_filter_unpublished(self, client, mock_store):
+        mock_store._records["pub-1"] = {
+            "draft_id": "pub-1",
+            "title": "已发布",
+            "hashtags": [],
+            "body": "x",
+            "published": True,
+            "updated_at": "2026-07-11T00:00:01",
+        }
+        mock_store._records["unpub-1"] = {
+            "draft_id": "unpub-1",
+            "title": "未发布",
+            "hashtags": [],
+            "body": "x",
+            "published": False,
+            "updated_at": "2026-07-11T00:00:02",
+        }
+        mock_store._records["unpub-2"] = {
+            "draft_id": "unpub-2",
+            "title": "草稿",
+            "hashtags": [],
+            "body": "x",
+            "updated_at": "2026-07-11T00:00:03",
+        }
+        r = client.get("/api/free/drafts/acct1?status=unpublished")
+        data = r.json()["data"]
+        ids = {d["draft_id"] for d in data["drafts"]}
+        assert ids == {"unpub-1", "unpub-2"}
+
+    def test_list_status_filter_evaluated(self, client, mock_store):
+        mock_store._records["eval-1"] = {
+            "draft_id": "eval-1",
+            "title": "评估过",
+            "hashtags": [],
+            "body": "x",
+            "last_evaluation": {"overall_score": 80.0, "decision": "approved"},
+            "updated_at": "2026-07-11T00:00:01",
+        }
+        mock_store._records["uneval-1"] = {
+            "draft_id": "uneval-1",
+            "title": "没评估",
+            "hashtags": [],
+            "body": "x",
+            "updated_at": "2026-07-11T00:00:02",  # last_evaluation absent → None
+        }
+        r = client.get("/api/free/drafts/acct1?status=evaluated")
+        data = r.json()["data"]
+        ids = {d["draft_id"] for d in data["drafts"]}
+        assert ids == {"eval-1"}
+
+    def test_list_status_filter_unevaluated(self, client, mock_store):
+        mock_store._records["eval-1"] = {
+            "draft_id": "eval-1",
+            "title": "评估过",
+            "hashtags": [],
+            "body": "x",
+            "last_evaluation": {"overall_score": 80.0, "decision": "approved"},
+            "updated_at": "2026-07-11T00:00:01",
+        }
+        mock_store._records["uneval-1"] = {
+            "draft_id": "uneval-1",
+            "title": "没评估",
+            "hashtags": [],
+            "body": "x",
+            "updated_at": "2026-07-11T00:00:02",
+        }
+        r = client.get("/api/free/drafts/acct1?status=unevaluated")
+        data = r.json()["data"]
+        ids = {d["draft_id"] for d in data["drafts"]}
+        assert ids == {"uneval-1"}
+
+    def test_list_title_search_case_insensitive(self, client, mock_store):
+        mock_store._records["d1"] = {
+            "draft_id": "d1",
+            "title": "夏日穿搭",
+            "hashtags": [],
+            "body": "x",
+            "updated_at": "2026-07-11T00:00:01",
+        }
+        mock_store._records["d2"] = {
+            "draft_id": "d2",
+            "title": "冬季护肤",
+            "hashtags": [],
+            "body": "x",
+            "updated_at": "2026-07-11T00:00:02",
+        }
+        r = client.get("/api/free/drafts/acct1?q=夏日")
+        data = r.json()["data"]
+        titles = {d["title"] for d in data["drafts"]}
+        assert titles == {"夏日穿搭"}
+        assert data["q"] == "夏日"
+
+    def test_list_status_and_q_combined(self, client, mock_store):
+        # two published drafts, only one matches title substring
+        mock_store._records["pub-1"] = {
+            "draft_id": "pub-1",
+            "title": "夏日穿搭",
+            "hashtags": [],
+            "body": "x",
+            "published": True,
+            "updated_at": "2026-07-11T00:00:01",
+        }
+        mock_store._records["pub-2"] = {
+            "draft_id": "pub-2",
+            "title": "冬季护肤",
+            "hashtags": [],
+            "body": "x",
+            "published": True,
+            "updated_at": "2026-07-11T00:00:02",
+        }
+        r = client.get("/api/free/drafts/acct1?status=published&q=夏日")
+        data = r.json()["data"]
+        ids = {d["draft_id"] for d in data["drafts"]}
+        assert ids == {"pub-1"}
+
+    def test_list_invalid_status_returns_400(self, client):
+        r = client.get("/api/free/drafts/acct1?status=bogus")
+        assert r.status_code == 400
+        assert "status" in r.json()["error"]["message"]
+
     def test_list_no_store_returns_400(self, client):
         app.state.graph.store = None
         r = client.get("/api/free/drafts/acct1")
