@@ -1407,6 +1407,7 @@
     "draftsFilterSep": "，{filter}",
     "draftsFilterPublished": "已发布",
     "draftsFilterUnpublished": "未发布",
+    "draftsFilterPublish_failed": "发布失败",
     "draftsFilterEvaluated": "已评估",
     "draftsFilterUnevaluated": "未评估",
     "draftsFilterQuery": "搜索“{q}”",

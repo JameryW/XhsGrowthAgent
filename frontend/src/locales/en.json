@@ -1407,6 +1407,7 @@
     "draftsFilterSep": ", {filter}",
     "draftsFilterPublished": "published",
     "draftsFilterUnpublished": "unpublished",
+    "draftsFilterPublish_failed": "publish failed",
     "draftsFilterEvaluated": "evaluated",
     "draftsFilterUnevaluated": "unevaluated",
     "draftsFilterQuery": "search \"{q}\"",

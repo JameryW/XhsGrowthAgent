@@ -27,7 +27,7 @@ drafts never enter the checkpoint, and the workflow slash commands stay disabled
 | POST | `/draft` | `FreeDraft` (account_id, title, body, hashtags, image_paths, niche, content_angle, target_audience) | `{draft_id, draft}` |
 | POST | `/evaluate` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, evaluation_result}` |
 | POST | `/publish` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, publish_result}` |
-| GET | `/drafts/{account_id}` | query `status` (optional: all\|published\|unpublished\|evaluated\|unevaluated), `q` (optional title substring) | `{account_id, drafts: [{draft_id, title, hashtags, created_at, updated_at, last_evaluation, published}], count, truncated, status, q}` (sorted newest-first by `updated_at`; metadata fields optional — see Draft Status Metadata; `count`/`truncated` reflect filtered/total respectively — see Status filter + title search) |
+| GET | `/drafts/{account_id}` | query `status` (optional: all\|published\|unpublished\|publish_failed\|evaluated\|unevaluated), `q` (optional title substring) | `{account_id, drafts: [{draft_id, title, hashtags, created_at, updated_at, last_evaluation, last_publish, published}], count, truncated, status, q}` (sorted newest-first by `updated_at`; metadata fields optional — see Draft Status Metadata; `count`/`truncated` reflect filtered/total respectively — see Status filter + title search) |
 | GET | `/draft/{draft_id}` | query `account_id` | `{draft_id, draft}` |
 | PATCH | `/draft/{draft_id}` | query `account_id`; body `FreeDraftUpdate` (all fields optional) | `{draft_id, draft}` |
 | DELETE | `/draft/{draft_id}` | query `account_id` | `{draft_id, deleted: true}` |
@@ -269,7 +269,7 @@ capped asearch page (no extra store call):
 
 | param | values | semantics |
 |-------|--------|-----------|
-| `status` | `all` (default) \| `published` \| `unpublished` \| `evaluated` \| `unevaluated` | `published` ↔ `published == True`; `evaluated` ↔ `last_evaluation is not None`. Invalid value → 400 (whitelist fail-fast, not silent fallback). |
+| `status` | `all` (default) \| `published` \| `unpublished` \| `publish_failed` \| `evaluated` \| `unevaluated` | `published` ↔ `published == True`; `publish_failed` ↔ `last_publish.status` present and not a success status (`published`/`mock_published`); `evaluated` ↔ `last_evaluation is not None`. Invalid value → 400 (whitelist fail-fast, not silent fallback). |
 | `q` | title substring | case-insensitive `contains` against `title`; empty = no filter. |
 
 `status` and `q` combine (AND). `count` reflects the **filtered** set; `truncated`

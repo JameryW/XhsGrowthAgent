@@ -326,6 +326,7 @@ _DRAFT_STATUS_FILTERS = {
     "all",
     "published",
     "unpublished",
+    "publish_failed",
     "evaluated",
     "unevaluated",
 }
@@ -337,6 +338,8 @@ def _draft_matches_status(draft: dict[str, Any], status: str) -> bool:
     Runs over the capped asearch page (no extra store call). `evaluated` is
     "has a last_evaluation record", not a field-value match — so we can't
     push it into asearch's `filter=` dict; post-filter is the portable call.
+    `publish_failed` matches drafts whose last publish attempt failed
+    (`last_publish.status` present and not a success status).
     """
     if status == "all":
         return True
@@ -344,6 +347,10 @@ def _draft_matches_status(draft: dict[str, Any], status: str) -> bool:
         return bool(draft.get("published"))
     if status == "unpublished":
         return not draft.get("published", False)
+    if status == "publish_failed":
+        lp = draft.get("last_publish") or {}
+        lp_status = lp.get("status") or ""
+        return bool(lp_status) and lp_status not in _PUBLISH_SUCCESS_STATUSES
     if status == "evaluated":
         return draft.get("last_evaluation") is not None
     if status == "unevaluated":
@@ -357,7 +364,7 @@ async def list_drafts(
     request: Request,
     status: str = Query(
         default="all",
-        description="过滤草稿: all | published | unpublished | evaluated | unevaluated",
+        description="过滤草稿: all|published|unpublished|publish_failed|evaluated|unevaluated",
     ),
     q: str = Query(default="", description="标题子串 (case-insensitive contains)"),
 ) -> ApiResponse[Any]:

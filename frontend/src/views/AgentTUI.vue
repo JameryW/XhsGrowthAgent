@@ -1052,7 +1052,7 @@ async function handleReject(threadId: string, feedback: string) {
 }
 
 const DRAFT_STATUS_FILTERS = new Set([
-  'published', 'unpublished', 'evaluated', 'unevaluated',
+  'published', 'unpublished', 'publish_failed', 'evaluated', 'unevaluated',
 ])
 
 /**
