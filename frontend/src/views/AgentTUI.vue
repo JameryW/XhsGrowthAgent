@@ -202,7 +202,7 @@ function historyDown() {
 
 const SLASH_COMMANDS = [
   '/start', '/status', '/pause', '/resume', '/cancel',
-  '/approve', '/reject', '/mode', '/help', '/clear', '/new', '/abort', '/drafts', '/draft', '/delete', '/analytics',
+  '/approve', '/reject', '/mode', '/help', '/clear', '/new', '/abort', '/drafts', '/draft', '/delete', '/analytics', '/edit',
 ]
 
 function tabComplete() {
@@ -882,6 +882,12 @@ async function processAgentCommand(text: string) {
         isProcessing.value = false; writePrompt()
         break
       }
+      case '/edit': {
+        const parts = text.split(/\s+/)
+        await handleEdit(parts.slice(1).join(' ').trim())
+        isProcessing.value = false; writePrompt()
+        break
+      }
       default:
         writeLineColored(t('tui.unknownCommand', { command: cmd }), ANSI.RED)
         isProcessing.value = false; writePrompt()
@@ -942,6 +948,8 @@ async function processSlashCommand(cmd: string) {
       await handleReject(activeThreadId.value || '', arg); break
     case '/analytics':
       await handleAnalytics(arg); break
+    case '/edit':
+      await handleEdit(arg); break
     case '/mode':
       mode.value = 'agent'
       reconnectAttempts = 0
@@ -1277,6 +1285,47 @@ async function handleAnalytics(draftId: string) {
   }
 }
 
+// /edit <id> <field> <value...> — single-line scalar-field edit (title, niche,
+// content_angle, target_audience). body/hashtags/image_paths excluded (multi-
+// line/list — agent handles via xhs_free_draft_update). PATCHes the existing
+// /free/draft/{id} route; draft_id + created_at preserved, updated_at refreshed.
+async function handleEdit(args: string) {
+  if (!isFreeCreationEntry.value) {
+    writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
+    return
+  }
+  const parts = args.split(/\s+/).filter(Boolean)
+  const draftId = parts[0] || ''
+  const field = parts[1] || ''
+  const value = parts.slice(2).join(' ').trim()
+  if (!draftId || !field || !value) {
+    writeLineColored(t('tui.editUsage'), ANSI.RED)
+    return
+  }
+  const ALLOWED = ['title', 'niche', 'content_angle', 'target_audience']
+  if (!ALLOWED.includes(field)) {
+    writeLineColored(t('tui.editUnknownField', { field, allowed: ALLOWED.join(', ') }), ANSI.RED)
+    return
+  }
+  const accountId = authStore.user?.id || 'default'
+  try {
+    const resp = await client.patch(
+      `/free/draft/${draftId}?account_id=${encodeURIComponent(accountId)}`,
+      { [field]: value },
+    )
+    const data = resp as unknown as { draft_id: string; draft: { updated_at?: string } }
+    const D = ANSI.DIM, C = ANSI.BRIGHT_CYAN, R = ANSI.RESET
+    writeLine('')
+    writeLineColored(t('tui.editUpdated', { field, value }), ANSI.BRIGHT_GREEN)
+    if (data.draft?.updated_at) {
+      writeLine(`  ${D}${t('tui.draftDetailUpdatedLabel')}${R}: ${C}${data.draft.updated_at}${R}`)
+    }
+    writeLine('')
+  } catch (err: any) {
+    writeLineColored(err.message || t('tui.editFailed'), ANSI.RED)
+  }
+}
+
 function showHelp() {
   const C = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, W = ANSI.BRIGHT_WHITE, R = ANSI.RESET
   const Y = ANSI.BRIGHT_YELLOW, B = ANSI.BRIGHT_BLUE
@@ -1305,6 +1354,8 @@ function showHelp() {
       writeLine(`  ${G}/drafts${R}          List free drafts`)
       writeLine(`  ${G}/draft${R} ${D}<id>${R}     View a draft`)
       writeLine(`  ${G}/delete${R} ${D}<id>${R}    Delete a draft`)
+      writeLine(`  ${G}/edit${R} ${D}<id> <f> <v>${R} Edit a draft field`)
+      writeLine(`  ${G}/analytics${R} ${D}<id>${R} Post-publish engagement`)
     }
   } else {
     writeLine('')
@@ -1315,6 +1366,7 @@ function showHelp() {
       writeLine(`  ${G}/drafts${R}        ${D}List free drafts${R}`)
       writeLine(`  ${G}/draft${R} ${D}<id>${R}  Show draft detail`)
       writeLine(`  ${G}/delete${R} ${D}<id>${R}  Delete a draft`)
+      writeLine(`  ${G}/edit${R} ${D}<id> <field> <value>${R}  Edit a draft field`)
       writeLine(`  ${G}/analytics${R} ${D}<id>${R} Post-publish engagement`)
       writeLine(`  ${G}/mode${R}          Switch to agent mode`)
       writeLine('')
@@ -1323,6 +1375,7 @@ function showHelp() {
       writeLine(`  ${G}/drafts${R}          List free drafts`)
       writeLine(`  ${G}/draft${R} ${D}<id>${R}     View a draft`)
       writeLine(`  ${G}/delete${R} ${D}<id>${R}    Delete a draft`)
+      writeLine(`  ${G}/edit${R} ${D}<id> <f> <v>${R} Edit a draft field`)
     } else {
       writeLine(`  ${G}/start${R} ${D}[topic]${R}  Start workflow`)
       writeLine(`  ${G}/status${R} ${D}[id]${R}    Check workflow status`)
