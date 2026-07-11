@@ -280,8 +280,45 @@ async def publish_draft(ref: FreeDraftRef, request: Request) -> ApiResponse[Any]
     )
 
 
+_DRAFT_STATUS_FILTERS = {
+    "all",
+    "published",
+    "unpublished",
+    "evaluated",
+    "unevaluated",
+}
+
+
+def _draft_matches_status(draft: dict[str, Any], status: str) -> bool:
+    """Post-filter predicate for the `status` query param.
+
+    Runs over the capped asearch page (no extra store call). `evaluated` is
+    "has a last_evaluation record", not a field-value match — so we can't
+    push it into asearch's `filter=` dict; post-filter is the portable call.
+    """
+    if status == "all":
+        return True
+    if status == "published":
+        return bool(draft.get("published"))
+    if status == "unpublished":
+        return not draft.get("published", False)
+    if status == "evaluated":
+        return draft.get("last_evaluation") is not None
+    if status == "unevaluated":
+        return draft.get("last_evaluation") is None
+    return True  # unreachable — status is whitelisted upstream
+
+
 @router.get("/drafts/{account_id}")
-async def list_drafts(account_id: str, request: Request) -> ApiResponse[Any]:
+async def list_drafts(
+    account_id: str,
+    request: Request,
+    status: str = Query(
+        default="all",
+        description="过滤草稿: all | published | unpublished | evaluated | unevaluated",
+    ),
+    q: str = Query(default="", description="标题子串 (case-insensitive contains)"),
+) -> ApiResponse[Any]:
     """List free-mode drafts for an account (thread-less).
 
     Returns a summary list (draft_id + title + hashtags) — no full body, to
@@ -290,7 +327,21 @@ async def list_drafts(account_id: str, request: Request) -> ApiResponse[Any]:
     on some concrete stores), so asearch is the correct portable call.
     Wrapped in try/except — degrades to empty list if the store lacks a
     semantic index.
+
+    Optional `status` (publish/eval state) and `q` (title substring) are
+    post-filtered over the capped asearch page — no extra store call, no
+    dependency on BaseStore's `filter=` exact-match semantics (which can't
+    express "has last_evaluation" or substring match). `count` reflects the
+    filtered set; `truncated` reflects the pre-filter 100-cap (whether the
+    store likely holds more than 100 drafts total), independent of filter.
     """
+    if status not in _DRAFT_STATUS_FILTERS:
+        raise ValidationError(
+            "status",
+            f"invalid status filter: {status!r} — expected one of {sorted(_DRAFT_STATUS_FILTERS)}",
+        )
+    q_norm = q.strip().lower()
+
     graph = getattr(request.app.state, "graph", None)
     store = getattr(graph, "store", None)
     if store is None:
@@ -309,10 +360,16 @@ async def list_drafts(account_id: str, request: Request) -> ApiResponse[Any]:
             if not isinstance(value, dict):
                 continue
             last_eval = value.get("last_evaluation")
+            title = value.get("title", "")
+            # post-filter: status (publish/eval state) + q (title substring)
+            if status != "all" and not _draft_matches_status(value, status):
+                continue
+            if q_norm and q_norm not in str(title).lower():
+                continue
             drafts.append(
                 {
                     "draft_id": item.key,
-                    "title": value.get("title", ""),
+                    "title": title,
                     "hashtags": value.get("hashtags", []),
                     "created_at": value.get("created_at"),
                     "updated_at": value.get("updated_at"),
@@ -327,8 +384,11 @@ async def list_drafts(account_id: str, request: Request) -> ApiResponse[Any]:
     drafts.sort(key=lambda d: d.get("updated_at") or "", reverse=True)
     if hit_limit:
         logger.info(
-            "free drafts list hit 100-cap for account %s — older drafts hidden",
+            "free drafts list hit 100-cap for account %s — older drafts hidden "
+            "(status filter applied: %s, q: %r)",
             account_id,
+            status,
+            q_norm,
         )
     return success(
         data={
@@ -336,6 +396,8 @@ async def list_drafts(account_id: str, request: Request) -> ApiResponse[Any]:
             "drafts": drafts,
             "count": len(drafts),
             "truncated": hit_limit,
+            "status": status,
+            "q": q_norm,
         }
     )
 

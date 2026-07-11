@@ -27,7 +27,7 @@ drafts never enter the checkpoint, and the workflow slash commands stay disabled
 | POST | `/draft` | `FreeDraft` (account_id, title, body, hashtags, image_paths, niche, content_angle, target_audience) | `{draft_id, draft}` |
 | POST | `/evaluate` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, evaluation_result}` |
 | POST | `/publish` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, publish_result}` |
-| GET | `/drafts/{account_id}` | — | `{account_id, drafts: [{draft_id, title, hashtags, created_at, updated_at, last_evaluation, published}], count, truncated}` (sorted newest-first by `updated_at`; metadata fields optional — see Draft Status Metadata) |
+| GET | `/drafts/{account_id}` | query `status` (optional: all\|published\|unpublished\|evaluated\|unevaluated), `q` (optional title substring) | `{account_id, drafts: [{draft_id, title, hashtags, created_at, updated_at, last_evaluation, published}], count, truncated, status, q}` (sorted newest-first by `updated_at`; metadata fields optional — see Draft Status Metadata; `count`/`truncated` reflect filtered/total respectively — see Status filter + title search) |
 | GET | `/draft/{draft_id}` | query `account_id` | `{draft_id, draft}` |
 | PATCH | `/draft/{draft_id}` | query `account_id`; body `FreeDraftUpdate` (all fields optional) | `{draft_id, draft}` |
 | DELETE | `/draft/{draft_id}` | query `account_id` | `{draft_id, deleted: true}` |
@@ -224,6 +224,35 @@ returned items hit the limit (`len(items) >= 100`), meaning more likely
 exist. This is surfaced (not silently dropped) per the no-silent-caps
 convention — the TUI renders a dim "showing first 100 — older drafts hidden"
 line when `truncated`, and logs an info line server-side.
+
+### Status filter + title search
+
+`list_drafts` accepts two optional query params, both **post-filtered** over the
+capped asearch page (no extra store call):
+
+| param | values | semantics |
+|-------|--------|-----------|
+| `status` | `all` (default) \| `published` \| `unpublished` \| `evaluated` \| `unevaluated` | `published` ↔ `published == True`; `evaluated` ↔ `last_evaluation is not None`. Invalid value → 400 (whitelist fail-fast, not silent fallback). |
+| `q` | title substring | case-insensitive `contains` against `title`; empty = no filter. |
+
+`status` and `q` combine (AND). `count` reflects the **filtered** set; `truncated`
+reflects the **pre-filter** 100-cap (whether the store likely holds >100 drafts
+total) and is independent of the filter — a filtered-to-empty list can still
+report `truncated=True`.
+
+Why post-filter, not `asearch(filter=)`: BaseStore's `filter=` dict is exact
+field-value match — it can't express "has `last_evaluation`" (presence check)
+or substring match. Running both predicates over the already-returned page is
+the portable call and costs nothing (the page is already in memory). This also
+keeps `truncated` semantics honest (it measures the total set, not a filtered
+slice). No-silent-caps: the filter narrows the view but never hides the fact
+that older drafts beyond the 100-cap exist.
+
+TUI `/drafts [status] [query…]`: first token matching the status whitelist is
+the filter; the rest (or all, if no status token) is the title query. The title
+line shows the active filter (e.g. `Free Drafts — acct (3, published):`). An
+invalid status fails fast client-side with a localized message before the
+request.
 
 ### Graceful degradation
 

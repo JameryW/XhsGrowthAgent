@@ -857,10 +857,12 @@ async function processAgentCommand(text: string) {
         term?.clear(); writePrompt()
         isProcessing.value = false
         break
-      case '/drafts':
-        await handleDrafts()
+      case '/drafts': {
+        const argStr = text.split(/\s+/).slice(1).join(' ').trim()
+        await handleDrafts(argStr)
         isProcessing.value = false; writePrompt()
         break
+      }
       case '/draft': {
         const parts = text.split(/\s+/)
         const draftId = parts.slice(1).join(' ').trim()
@@ -1035,14 +1037,59 @@ async function handleReject(threadId: string, feedback: string) {
   writeLineColored(t('tui.contentRejected', { feedback }), ANSI.BRIGHT_GREEN)
 }
 
-async function handleDrafts() {
+const DRAFT_STATUS_FILTERS = new Set([
+  'published', 'unpublished', 'evaluated', 'unevaluated',
+])
+
+/**
+ * Parse `/drafts [status] [query...]` args. First token matching the status
+ * whitelist is the filter; the rest (or all, if no status token) is the title
+ * substring query. Returns normalized status + query strings.
+ */
+function parseDraftsArgs(argStr: string): { status: string; query: string } {
+  const tokens = argStr.split(/\s+/).filter(Boolean)
+  let status = 'all'
+  let query = ''
+  if (tokens.length > 0 && DRAFT_STATUS_FILTERS.has(tokens[0])) {
+    status = tokens[0]
+    query = tokens.slice(1).join(' ').trim()
+  } else {
+    query = tokens.join(' ').trim()
+  }
+  return { status, query }
+}
+
+/** Build the localized filter suffix for the drafts title line (e.g. ", published"). */
+function draftsFilterLabel(status: string, query: string): string {
+  const parts: string[] = []
+  if (status !== 'all') {
+    const key = `tui.draftsFilter${status.charAt(0).toUpperCase()}${status.slice(1)}`
+    parts.push(t(key))
+  }
+  if (query) parts.push(t('tui.draftsFilterQuery', { q: query }))
+  if (parts.length === 0) return ''
+  return t('tui.draftsFilterSep', { filter: parts.join(' · ') })
+}
+
+async function handleDrafts(argStr = '') {
   if (!isFreeCreationEntry.value) {
     writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
     return
   }
+  const { status, query } = parseDraftsArgs(argStr)
+  // client-side guard mirrors the server whitelist so a typo doesn't round-
+  // trip a 400 — fail fast with the localized message before the request.
+  if (status !== 'all' && !DRAFT_STATUS_FILTERS.has(status)) {
+    writeLineColored(t('tui.draftsInvalidStatus', { status }), ANSI.RED)
+    return
+  }
   const accountId = authStore.user?.id || 'default'
   try {
-    const resp = await client.get(`/free/drafts/${accountId}`)
+    const params = new URLSearchParams()
+    if (status !== 'all') params.set('status', status)
+    if (query) params.set('q', query)
+    const qs = params.toString() ? `?${params.toString()}` : ''
+    const resp = await client.get(`/free/drafts/${accountId}${qs}`)
     const data = resp as unknown as {
       drafts: Array<{
         draft_id: string
@@ -1057,7 +1104,8 @@ async function handleDrafts() {
     }
     writeLine('')
     const count = data.count ?? data.drafts?.length ?? 0
-    writeLineColored(t('tui.draftsListTitle', { accountId, count }), ANSI.BRIGHT_CYAN)
+    const filterLabel = draftsFilterLabel(status, query)
+    writeLineColored(t('tui.draftsListTitle', { accountId, count, filter: filterLabel }), ANSI.BRIGHT_CYAN)
     if (data.truncated) {
       writeLineColored(`  ${t('tui.draftsTruncated')}`, ANSI.DIM)
     }
@@ -1357,7 +1405,7 @@ function showHelp() {
       writeLine('')
       writeLine(`  ${Y}Free Draft Commands${R}`)
       writeLine(`  ${sep}`)
-      writeLine(`  ${G}/drafts${R}          List free drafts`)
+      writeLine(`  ${G}/drafts${R} ${D}[status] [q]${R}  List/filter drafts${R}`)
       writeLine(`  ${G}/draft${R} ${D}<id>${R}     View a draft`)
       writeLine(`  ${G}/delete${R} ${D}<id>${R}    Delete a draft`)
       writeLine(`  ${G}/edit${R} ${D}<id> <f> <v>${R} Edit a draft field`)
@@ -1369,7 +1417,7 @@ function showHelp() {
     writeLine(`  ${sep}`)
     if (isFreeCreationEntry.value) {
       writeLine(`  ${G}/start${R}         ${D}${t('tui.freeNewSession')}${R}`)
-      writeLine(`  ${G}/drafts${R}        ${D}List free drafts${R}`)
+      writeLine(`  ${G}/drafts${R} ${D}[status] [q]${R}  List/filter drafts${R}`)
       writeLine(`  ${G}/draft${R} ${D}<id>${R}  Show draft detail`)
       writeLine(`  ${G}/delete${R} ${D}<id>${R}  Delete a draft`)
       writeLine(`  ${G}/edit${R} ${D}<id> <field> <value>${R}  Edit a draft field`)
@@ -1378,7 +1426,7 @@ function showHelp() {
       writeLine('')
       writeLine(`  ${Y}Free Draft Commands${R}`)
       writeLine(`  ${sep}`)
-      writeLine(`  ${G}/drafts${R}          List free drafts`)
+      writeLine(`  ${G}/drafts${R} ${D}[status] [q]${R}  List/filter drafts${R}`)
       writeLine(`  ${G}/draft${R} ${D}<id>${R}     View a draft`)
       writeLine(`  ${G}/delete${R} ${D}<id>${R}    Delete a draft`)
       writeLine(`  ${G}/edit${R} ${D}<id> <f> <v>${R} Edit a draft field`)
