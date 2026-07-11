@@ -317,14 +317,21 @@ discovers draft management without typing `/help` first:
   Free orchestration chat mode is active — type to create, evaluate, and publish.
   Draft commands (also in /help):
     /start            clear the conversation (new session)
-    /drafts          list your free drafts + status badges
+    /drafts [status] [q]  list/filter your free drafts + status badges
     /draft <id>      view a draft's full record
+    /edit <id> <field> <value>  edit a draft's scalar field (title/niche/content_angle/target_audience)
     /delete <id>    delete a draft
     /analytics <id> post-publish engagement
+    /evaluate <id>  re-evaluate a draft (RQGM quality verdict)
     /mode            switch to command mode
 ```
 
 - Dim, compact — the full styled reference stays in `/help` (showHelp).
+- The banner must list **every** free-mode slash command (the full set in the
+  Scope line above: `/start` `/drafts` `/draft` `/edit` `/delete` `/evaluate`
+  `/analytics` `/mode`) so a new command added to the dispatchers also lands
+  here — a past regression omitted `/edit` (and the spec block missed
+  `/evaluate`).
 - `/analytics <id>` is listed (shipped via the post-publish analytics PR).
 - Non-free (trend/brief) banner is unchanged (`terminalHint` → `/help`).
 
