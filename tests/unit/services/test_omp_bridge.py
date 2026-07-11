@@ -590,6 +590,44 @@ class TestFreeModeTools:
         assert "analytics not available" in text
         assert "xhs_free_analytics(" not in text
 
+    async def test_free_publish_failed_error_render(self):
+        # Failed publish (status==failed/auth_expired/...) → surface the cause
+        # (error/error_type) + recovery path (message/hint) that run_publish returns
+        # so the agent can tell the user why and what to do. Mirrors #234/#235 cues.
+        data = {
+            "draft_id": "draft-fail",
+            "account_id": "acc1",
+            "publish_result": {
+                "post_id": "",
+                "post_url": "",
+                "status": "failed",
+                "error": "账号 acc1 已停用，无法发布",
+                "error_type": "account_inactive",
+                "recovery": {
+                    "message": "请在设置页重新启用该账号",
+                    "action": "reconfigure",
+                    "action_label": "去设置",
+                    "hint": "启动该账号浏览器并重新扫码登录",
+                },
+            },
+        }
+        client = _mock_client_post(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool(
+                "xhs_free_publish",
+                {"account_id": "acc1", "draft_id": "draft-fail"},
+            )
+        text = result["content"][0]["text"]
+        assert "failed" in text
+        # cause + recovery surfaced
+        assert "Error: 账号 acc1 已停用，无法发布" in text
+        assert "Error Type: account_inactive" in text
+        assert "Recovery: 请在设置页重新启用该账号" in text
+        assert "Hint: 启动该账号浏览器并重新扫码登录" in text
+        # no success/mock cues on a failure
+        assert "xhs_free_analytics(" not in text
+        assert "dry-run mock publish" not in text
+
     async def test_free_draft_list(self):
         """xhs_free_draft_list GETs /free/drafts/{account_id} and renders the list
         with published/eval badges + count header (mirrors TUI /drafts)."""

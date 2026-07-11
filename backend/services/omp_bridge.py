@@ -1371,7 +1371,7 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 # non-mock post_id) → point at xhs_free_analytics for engagement.
                 # Mock publish (dry-run, "mock_*" post_id / mock_published) → flag
                 # it as simulated so the agent doesn't call analytics (which 400s
-                # on a synthetic post_id). Failed/unknown → no cue.
+                # on a synthetic post_id). Failed publish → surface cause + recovery.
                 pid = pub.get("post_id", "") or ""
                 pstatus = pub.get("status", "") or ""
                 if pstatus == "published" and pid and not pid.startswith("mock_"):
@@ -1385,6 +1385,18 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                         "not available; re-run xhs_free_publish without dry-run for a "
                         "real post."
                     )
+                elif pstatus != "published" and pub.get("error"):
+                    # Failed publish (status==failed/auth_expired/...) — surface the
+                    # cause + recovery path that run_publish returns so the agent can
+                    # tell the user why and what to do (mirrors #234/#235 cue pattern).
+                    lines.append(f"  Error: {pub['error']}")
+                    if pub.get("error_type"):
+                        lines.append(f"  Error Type: {pub['error_type']}")
+                    recovery = pub.get("recovery") or {}
+                    if recovery.get("message"):
+                        lines.append(f"  Recovery: {recovery['message']}")
+                    if recovery.get("hint"):
+                        lines.append(f"  Hint: {recovery['hint']}")
                 return _make_text_result("\n".join(lines), {"publish_result": pub, **data})
 
             elif tool_name == "xhs_free_analytics":
