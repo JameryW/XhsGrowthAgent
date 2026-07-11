@@ -63,7 +63,11 @@ and append a conditional `next:`/`note:` cue:
 - **`xhs_free_publish`**: real publish (`status == "published"`, non-`mock_` post_id) →
   `next: call xhs_free_analytics(<draft_id>) ...`; mock publish (`mock_published` /
   `mock_*` post_id, dry-run) → `note: dry-run mock publish ... analytics not available`
-  (so the agent doesn't call analytics and 400 on a synthetic post_id). Failed/unknown → no cue.
+  (so the agent doesn't call analytics and 400 on a synthetic post_id). Failed publish
+  (`status` not `published`/`mock_published` + an `error`) → surface the cause and
+  recovery path `run_publish` returns: `Error: <error>`, `Error Type: <error_type>`
+  (if present), `Recovery: <recovery.message>` (if present), `Hint: <recovery.hint>`
+  (if present) — so the agent can tell the user why the publish failed and what to do.
   Mirrors the TUI post-publish hint (#223: real post_id → analytics hint; mock_* → mock hint).
 - **`xhs_free_evaluate`**: the verdict is rendered as plain text for the omp agent
   (overall/decision/bias/dimensions/hints). When `decision ∈ {needs_revision, rejected}`
