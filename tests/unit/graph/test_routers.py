@@ -4,6 +4,7 @@ from backend.graph.routers import (
     blogger_gate_router,
     choice_outcome,
     content_analyzer_router,
+    content_strategist_router,
     copywriter_router,
     draft_gate_router,
     engagement_router,
@@ -421,6 +422,41 @@ class TestShouldPresentChoice:
             "content_versions": [{"version_id": "v1"}, {"version_id": "v2"}],
         }
         assert should_present_choice(state) == "__end__"
+
+
+class TestContentStrategistRouter:
+    """Tests for content_strategist_router conditional edge.
+
+    Regression: without the _check_terminal guard, phase=ERROR falls through
+    to ripple_gate, which auto-accepts when Ripple data is absent (viral_prob/
+    pmf default to 1.0) and overwrites the error phase with `creating` —
+    silently swallowing the strategist failure.
+    """
+
+    def test_error_routes_to_end(self):
+        """phase=ERROR → __end__ (do NOT reach ripple_gate)."""
+        state = {"phase": WorkflowPhase.ERROR}
+        assert content_strategist_router(state) == "__end__"
+
+    def test_cancelled_routes_to_end(self):
+        """CANCELLED → __end__."""
+        state = {"phase": WorkflowPhase.CANCELLED}
+        assert content_strategist_router(state) == "__end__"
+
+    def test_blocking_mode_routes_to_ripple_gate(self):
+        """No ripple_pending (blocking mode) → ripple_gate."""
+        state = {}
+        assert content_strategist_router(state) == "ripple_gate"
+
+    def test_background_mode_routes_to_ripple_finalize(self):
+        """ripple_pending=True → ripple_finalize."""
+        state = {"ripple_pending": True}
+        assert content_strategist_router(state) == "ripple_finalize"
+
+    def test_error_overrides_ripple_pending(self):
+        """phase=ERROR takes priority over ripple_pending (terminal guard first)."""
+        state = {"phase": WorkflowPhase.ERROR, "ripple_pending": True}
+        assert content_strategist_router(state) == "__end__"
 
 
 class TestRippleGateRouter:

@@ -18,6 +18,8 @@ from backend.api.routes.workflow import router
 
 _START_RESUME = "backend.api.routes.workflow._start_resume_task"
 _DB_UPSERT = "backend.api.routes.workflow._db_upsert"
+_POOL_READY = "backend.api.routes.workflow.is_pool_ready"
+_DB_GET = "backend.api.routes.workflow.db_get"
 
 
 def _make_snapshot(values: dict, next_nodes=(), tasks=()):
@@ -252,4 +254,143 @@ def test_retry_from_last_success_no_successful_task_returns_400(app_and_client):
     body = resp.json()
     assert body["success"] is False
     assert "上次成功节点" in body["error"]["message"]
+    mock_start.assert_not_awaited()
+
+
+# ── checkpoint_lost diagnostics ──
+
+
+def _make_empty_snapshot() -> MagicMock:
+    """A snapshot with no values — simulates a lost LangGraph checkpoint."""
+    snapshot = MagicMock()
+    snapshot.values = {}
+    snapshot.next = ()
+    snapshot.tasks = ()
+    snapshot.interrupts = ()
+    return snapshot
+
+
+def _make_db_row(status: str = "running") -> MagicMock:
+    """A fake WorkflowRow for db_get."""
+    row = MagicMock()
+    row.status = status
+    row.phase = "creating"
+    row.error = None
+    row.created_at = "2026-07-10T00:00:00"
+    row.updated_at = "2026-07-10T00:00:00"
+    row.label = ""
+    row.progress_percent = 50
+    return row
+
+
+def test_checkpoint_lost_returns_diagnostic_not_404(app_and_client):
+    """No checkpoint + DB row running → 200 diagnostic (recovered=False, checkpoint_lost).
+
+    The user sees a clear message instead of a bare 404, telling them to
+    /resume restart.
+    """
+    app, client, graph = app_and_client
+    graph.aget_state.return_value = _make_empty_snapshot()
+    _clear_active_tasks("thr_cl1")
+    try:
+        with (
+            patch(_POOL_READY, return_value=True),
+            patch(_DB_GET, new_callable=AsyncMock, return_value=_make_db_row("running")),
+            patch(_START_RESUME, new_callable=AsyncMock) as mock_start,
+        ):
+            resp = client.post("/api/workflow/recover/thr_cl1", json={"strategy": "retry_failed"})
+    finally:
+        _clear_active_tasks("thr_cl1")
+
+    assert resp.status_code == 200
+    body = resp.json()["data"]
+    assert body["recovered"] is False
+    assert body["status"] == "checkpoint_lost"
+    assert "checkpoint" in body["message"].lower() or "/resume" in body["message"]
+    mock_start.assert_not_awaited()
+
+
+def test_checkpoint_lost_stale_db_row_also_diagnosed(app_and_client):
+    """No checkpoint + DB row stale → 200 diagnostic (same as running)."""
+    app, client, graph = app_and_client
+    graph.aget_state.return_value = _make_empty_snapshot()
+    _clear_active_tasks("thr_cl2")
+    try:
+        with (
+            patch(_POOL_READY, return_value=True),
+            patch(_DB_GET, new_callable=AsyncMock, return_value=_make_db_row("stale")),
+            patch(_START_RESUME, new_callable=AsyncMock) as mock_start,
+        ):
+            resp = client.post("/api/workflow/recover/thr_cl2", json={"strategy": "retry_failed"})
+    finally:
+        _clear_active_tasks("thr_cl2")
+
+    assert resp.status_code == 200
+    body = resp.json()["data"]
+    assert body["recovered"] is False
+    assert body["status"] == "checkpoint_lost"
+    mock_start.assert_not_awaited()
+
+
+def test_no_checkpoint_no_db_row_still_404(app_and_client):
+    """No checkpoint + no DB row → 404 (truly nonexistent thread)."""
+    app, client, graph = app_and_client
+    graph.aget_state.return_value = _make_empty_snapshot()
+    _clear_active_tasks("thr_cl3")
+    try:
+        with (
+            patch(_POOL_READY, return_value=True),
+            patch(_DB_GET, new_callable=AsyncMock, return_value=None),
+            patch(_START_RESUME, new_callable=AsyncMock) as mock_start,
+        ):
+            resp = client.post("/api/workflow/recover/thr_cl3", json={"strategy": "retry_failed"})
+    finally:
+        _clear_active_tasks("thr_cl3")
+
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body["success"] is False
+    mock_start.assert_not_awaited()
+
+
+def test_checkpoint_lost_terminal_db_row_still_404(app_and_client):
+    """No checkpoint + DB row completed (terminal) → 404, not checkpoint_lost.
+
+    A completed/cancelled DB row is not "checkpoint lost" — it finished
+    normally. Only non-terminal rows with no live task qualify.
+    """
+    app, client, graph = app_and_client
+    graph.aget_state.return_value = _make_empty_snapshot()
+    _clear_active_tasks("thr_cl4")
+    try:
+        with (
+            patch(_POOL_READY, return_value=True),
+            patch(_DB_GET, new_callable=AsyncMock, return_value=_make_db_row("completed")),
+            patch(_START_RESUME, new_callable=AsyncMock) as mock_start,
+        ):
+            resp = client.post("/api/workflow/recover/thr_cl4", json={"strategy": "retry_failed"})
+    finally:
+        _clear_active_tasks("thr_cl4")
+
+    assert resp.status_code == 404
+    mock_start.assert_not_awaited()
+
+
+def test_checkpoint_lost_pool_not_ready_still_404(app_and_client):
+    """No checkpoint + pool not ready (no DB) → 404 (can't check DB)."""
+    app, client, graph = app_and_client
+    graph.aget_state.return_value = _make_empty_snapshot()
+    _clear_active_tasks("thr_cl5")
+    try:
+        with (
+            patch(_POOL_READY, return_value=False),
+            patch(_DB_GET, new_callable=AsyncMock) as mock_db_get,
+            patch(_START_RESUME, new_callable=AsyncMock) as mock_start,
+        ):
+            resp = client.post("/api/workflow/recover/thr_cl5", json={"strategy": "retry_failed"})
+    finally:
+        _clear_active_tasks("thr_cl5")
+
+    assert resp.status_code == 404
+    mock_db_get.assert_not_awaited()
     mock_start.assert_not_awaited()

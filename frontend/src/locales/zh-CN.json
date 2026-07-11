@@ -1402,7 +1402,7 @@
     "statusNone": "无",
     "draftsListTitle": "自由草稿 — {accountId}（{count} 篇{filter}）：",
     "draftsNone": "（无）",
-    "draftsTruncated": "仅显示最近 100 篇——更早的草稿已隐藏",
+    "draftsTruncated": "仅显示最近 100 篇——更早的草稿已隐藏（筛选仅在最近 100 篇内生效）",
     "draftsFilterSep": "，{filter}",
     "draftsFilterPublished": "已发布",
     "draftsFilterUnpublished": "未发布",

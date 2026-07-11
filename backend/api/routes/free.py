@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from fastapi import APIRouter, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from backend.agents.evaluator import EvaluatorAgent
 from backend.agents.publisher import run_publish
@@ -52,6 +52,22 @@ class FreeDraft(BaseModel):
     content_angle: str = Field(default="", description="内容角度（评估用）")
     target_audience: str = Field(default="", description="目标受众（评估用）")
 
+    @field_validator("niche", mode="before")
+    @classmethod
+    def _niche_fallback(cls, v: Any) -> str:
+        """Empty/None/whitespace niche → default "母婴".
+
+        omp_bridge may explicitly pass niche="" or niche=None when the agent
+        omits it; Pydantic's Field default only kicks in when the key is absent,
+        not when it's an explicit empty string or null. mode="before" lets us
+        intercept None (which would otherwise 422 on str coercion) alongside
+        empty strings, normalizing all three cases so the evaluation context
+        always has a non-empty niche.
+        """
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "母婴"
+        return cast("str", v)
+
 
 class FreeDraftRef(BaseModel):
     """Reference to a stored free draft."""
@@ -70,6 +86,23 @@ class FreeDraftUpdate(BaseModel):
     niche: str | None = None
     content_angle: str | None = None
     target_audience: str | None = None
+
+    @field_validator("niche", mode="before")
+    @classmethod
+    def _niche_fallback(cls, v: Any) -> str:
+        """Normalize niche on PATCH: None/empty/whitespace → "母婴".
+
+        Mirrors FreeDraft._niche_fallback so a PATCH cannot blank out the
+        niche (the evaluation context always needs non-empty). mode="before"
+        intercepts explicit null (which would 422 on str coercion) and
+        normalizes it alongside empty strings. update_draft uses
+        model_dump(exclude_unset=True), so a PATCH that omits the niche field
+        entirely won't write anything — "omitted" preserves existing, while
+        "explicit null/empty" resets to the default.
+        """
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "母婴"
+        return cast("str", v)
 
 
 def _draft_ns(account_id: str) -> tuple[str, str, str]:
@@ -436,18 +469,14 @@ async def update_draft(
         raise ValidationError("store", "Memory store unavailable; cannot update draft")
 
     merged = dict(existing)
-    for field in (
-        "title",
-        "body",
-        "hashtags",
-        "image_paths",
-        "niche",
-        "content_angle",
-        "target_audience",
-    ):
-        val = getattr(update, field)
-        if val is not None:
-            merged[field] = val
+    # exclude_unset=True: only fields the client explicitly provided in the
+    # PATCH body. This distinguishes "field omitted" (preserve existing) from
+    # "field explicitly null/empty" (normalize via validator → "母婴" for
+    # niche). A plain getattr loop can't tell the two apart — both yield the
+    # model default None after validation.
+    provided = update.model_dump(exclude_unset=True)
+    for field, val in provided.items():
+        merged[field] = val
     merged["draft_id"] = draft_id
     merged["updated_at"] = _now_iso()
     await store.aput(_draft_ns(account_id), key=draft_id, value=merged)

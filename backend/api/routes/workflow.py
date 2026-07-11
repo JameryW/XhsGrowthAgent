@@ -1289,6 +1289,48 @@ async def recover_workflow(
 
     state = await graph.aget_state(config)
     if not state.values or state.values.get("session_id") is None:
+        # No live LangGraph checkpoint. Before returning 404, check if the DB
+        # has a running/stale row for this thread — that's the "checkpoint_lost"
+        # case (e.g. after a container restart where the checkpoint DB was lost
+        # but the workflow metadata row survived). Return a diagnostic 200 so
+        # the user knows to /resume restart instead of hitting a bare 404.
+        if is_pool_ready():
+            row = await db_get(thread_id)
+        else:
+            row = None
+        if row:
+            has_active_task = (
+                thread_id in _runner._background_tasks
+                and not _runner._background_tasks[thread_id].done()
+            )
+            checkpoint_lost = (
+                row.status
+                in (
+                    "running",
+                    "stale",
+                    "paused",
+                    "awaiting_review",
+                    "awaiting_choice",
+                    "awaiting_draft",
+                    "awaiting_brief",
+                    "awaiting_ripple_decision",
+                    "awaiting_blogger_selection",
+                )
+                and not has_active_task
+            )
+            if checkpoint_lost:
+                return success(
+                    data={
+                        "thread_id": thread_id,
+                        "status": "checkpoint_lost",
+                        "strategy": req.strategy,
+                        "recovered": False,
+                        "message": (
+                            "DB 有记录但 LangGraph checkpoint 丢失，无法续跑；"
+                            "建议 /resume restart 重新开始。"
+                        ),
+                    }
+                )
         raise WorkflowNotFoundError(thread_id)
 
     has_active = (

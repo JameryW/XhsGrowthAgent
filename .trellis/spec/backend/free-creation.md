@@ -122,6 +122,8 @@ All new logic is guarded by `isFreeCreationEntry` (`route.query.mode === 'free'`
 | Free-mode account has no cookie / no CDP endpoint | `run_publish` returns structured `recovery` dict (fail fast) |
 | Analytics on unpublished draft (no `post_id`) | `get_analytics` raises `ValidationError("post_id", ...)` → 400 (mock-published included — no real post_id) |
 | Analytics with no CDP endpoint / fetch failure | `get_analytics` raises `ValidationError("cdp_endpoint"` / `"analytics", ...)` → 400 |
+| `niche` empty/whitespace on create (POST `/draft`) | `FreeDraft` `field_validator(mode="after")` normalizes to `"母婴"` — omp_bridge may explicitly pass `niche=""` when the agent omits it; Pydantic Field default only fires on absent key, not on empty string. Bridge uses `arguments.get("niche") or "母婴"` as defense-in-depth. |
+| `niche` empty/whitespace on update (PATCH `/draft/{id}`) | `FreeDraftUpdate._niche_fallback` normalizes empty to `"母婴"`; `None` (field omitted) = don't change (PATCH semantics). Prevents blanking niche via edit. |
 
 ---
 
