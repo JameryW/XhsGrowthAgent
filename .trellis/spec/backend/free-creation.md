@@ -233,6 +233,23 @@ missing `updated_at` → sorts last. No migration is needed; fields are optional
 - `updated_at`: trimmed to `YYYY-MM-DDTHH:MM`, dim.
 - Drafts with no metadata: title only (no badges).
 
+### `handleDraft` detail view
+
+`/draft <id>` renders the full record, then a status block (after a `─` rule).
+For published drafts, the block additionally shows the post URL + an action
+hint, derived from the persisted `post_id`/`post_url` (see Draft Status
+Metadata):
+
+- `post_url` line (cyan) — only if `post_url` present.
+- Real `post_id` (does not start with `mock_`): yellow hint
+  `运行 /analytics <id> 查看互动数据` — points the user at the engagement
+  command (closes the publish→analytics discoverability loop).
+- Mock `post_id` (`mock_*`, from dry-run publish): yellow
+  `mock-published (dry-run) — re-publish without dry-run for a real post`
+  instead — mock-published drafts have no real note, so the analytics hint
+  would mislead.
+- Unpublished draft: no post lines (graceful).
+
 ---
 
 ## Related

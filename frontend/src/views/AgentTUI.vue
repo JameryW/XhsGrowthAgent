@@ -1097,6 +1097,8 @@ interface FreeDraftRecord {
   updated_at?: string
   last_evaluation?: { overall_score?: number; decision?: string; revision_hints?: string[] } | null
   published?: boolean
+  post_id?: string
+  post_url?: string
 }
 
 async function handleDraft(draftId: string) {
@@ -1167,6 +1169,18 @@ async function handleDraft(draftId: string) {
         const pubColor = draft.published ? G : D
         const pubStr = draft.published ? t('tui.draftDetailPublishedYes') : t('tui.draftDetailPublishedNo')
         writeLine(`  ${D}${t('tui.draftDetailPublishedLabel')}${R}: ${pubColor}${pubStr}${R}`)
+      }
+      // Post URL + action hint — only when published with a post_id (PR #223 persists
+      // post_id/post_url on real publish). Mock-published (dry-run) carries a
+      // "mock_*" post_id → show the mock hint instead of the analytics hint.
+      if (draft.post_url) {
+        writeLine(`  ${D}${t('tui.draftDetailPostUrlLabel')}${R}: ${C}${draft.post_url}${R}`)
+      }
+      const pid = draft.post_id || ''
+      if (pid && pid.startsWith('mock_')) {
+        writeLine(`  ${Y}${t('tui.draftDetailMockPublishedHint')}${R}`)
+      } else if (pid) {
+        writeLine(`  ${Y}${t('tui.draftDetailAnalyticsHint', { id: data.draft_id })}${R}`)
       }
       if (draft.created_at) {
         writeLine(`  ${D}${t('tui.draftDetailCreatedLabel')}${R}: ${draft.created_at}`)
