@@ -1385,6 +1385,7 @@
     "freeCmdStart": "/start            清空对话（开启新会话）",
     "freeCmdDrafts": "/drafts [status] [q]  列出/筛选自由草稿（status: published/unpublished/evaluated/unevaluated）",
     "freeCmdDraft": "/draft <id>      查看草稿完整记录",
+    "freeCmdEdit": "/edit <id> <字段> <值>  编辑草稿（字段：title/niche/content_angle/target_audience）",
     "freeCmdDelete": "/delete <id>    删除草稿",
     "freeCmdAnalytics": "/analytics <id> 发布后互动数据",
     "freeCmdEvaluate": "/evaluate <id>  重新评估草稿（RQGM 质量判定）",

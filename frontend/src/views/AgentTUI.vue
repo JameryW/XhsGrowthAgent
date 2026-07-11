@@ -890,6 +890,12 @@ async function processAgentCommand(text: string) {
         isProcessing.value = false; writePrompt()
         break
       }
+      case '/evaluate': {
+        const parts = text.split(/\s+/)
+        await handleEvaluate(parts.slice(1).join(' ').trim())
+        isProcessing.value = false; writePrompt()
+        break
+      }
       default:
         writeLineColored(t('tui.unknownCommand', { command: cmd }), ANSI.RED)
         isProcessing.value = false; writePrompt()
@@ -954,6 +960,12 @@ async function processSlashCommand(cmd: string) {
       await handleEdit(arg); break
     case '/evaluate':
       await handleEvaluate(arg); break
+    case '/drafts':
+      await handleDrafts(arg); break
+    case '/draft':
+      await handleDraft(arg); break
+    case '/delete':
+      await handleDelete(arg); break
     case '/mode':
       mode.value = 'agent'
       reconnectAttempts = 0
@@ -1507,15 +1519,6 @@ function showHelp() {
       writeLine(`  ${G}/analytics${R} ${D}<id>${R} Post-publish engagement`)
       writeLine(`  ${G}/evaluate${R} ${D}<id>${R}  Re-evaluate a draft`)
       writeLine(`  ${G}/mode${R}          Switch to agent mode`)
-      writeLine('')
-      writeLine(`  ${Y}Free Draft Commands${R}`)
-      writeLine(`  ${sep}`)
-      writeLine(`  ${G}/drafts${R} ${D}[status] [q]${R}  List/filter drafts${R}`)
-      writeLine(`  ${G}/draft${R} ${D}<id>${R}     View a draft`)
-      writeLine(`  ${G}/delete${R} ${D}<id>${R}    Delete a draft`)
-      writeLine(`  ${G}/edit${R} ${D}<id> <f> <v>${R} Edit a draft field`)
-      writeLine(`  ${G}/analytics${R} ${D}<id>${R} Post-publish engagement`)
-      writeLine(`  ${G}/evaluate${R} ${D}<id>${R} Re-evaluate a draft`)
     } else {
       writeLine(`  ${G}/start${R} ${D}[topic]${R}  Start workflow`)
       writeLine(`  ${G}/status${R} ${D}[id]${R}    Check workflow status`)
@@ -1700,6 +1703,7 @@ onMounted(() => {
     writeLineColored(`    ${t('tui.freeCmdStart')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdDrafts')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdDraft')}`, ANSI.DIM)
+    writeLineColored(`    ${t('tui.freeCmdEdit')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdDelete')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdAnalytics')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdEvaluate')}`, ANSI.DIM)

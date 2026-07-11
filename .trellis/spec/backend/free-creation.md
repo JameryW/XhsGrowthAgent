@@ -59,6 +59,15 @@ surfaces, not duplicate the minimal backend response:
   (unevaluated→evaluate, needs_revision→revise, approved/published→publish or
   analytics) without calling `xhs_free_draft` per item. Mirrors TUI `/drafts`
   (#216/#226/#227).
+- **`xhs_free_evaluate`**: the verdict is rendered as plain text for the omp agent
+  (overall/decision/bias/dimensions/hints). When `decision ∈ {needs_revision, rejected}`
+  AND `revision_hints` is non-empty, the render appends a `next:` cue pointing the
+  agent at `xhs_free_draft_update` (keep draft_id) → `xhs_free_evaluate` again
+  before publish — the agent-side mirror of the TUI `/draft <id>` revise hint
+  (#229). `approved` (even with hints present) gets no cue; `rejected` without
+  hints gets no cue. The guide text (`xhs_free_guide`) documents the same
+  evaluate→revise→re-evaluate loop so an agent that reads the guide first also
+  learns the revise path, not only the happy path.
 
 ### Discovery — no system prompt on the bridge path
 
@@ -113,6 +122,7 @@ do NOT participate in workflow resume/retry.
 - Free-mode `/evaluate <id>` POSTs `/free/evaluate` (`{account_id, draft_id}`) and renders a boxed evaluation summary: `overall_score` (cyan), `decision` (approved→green / needs_revision→yellow / rejected→red), `dimensions` (`- dimension: score [BLOCKING]`, score cyan, BLOCKING tag red), `bias_warning` (magenta, only if non-empty), `revision_hints` (`•` list, only if non-empty). The route writes the `{overall_score, decision, revision_hints}` triple back onto the draft's `last_evaluation` + refreshes `updated_at`, so `/drafts` and `/draft <id>` reflect the new verdict after the command. Missing `<id>` prints `tui.evaluateMissing`; non-free mode shows `freeWorkflowOpDisabled`; a 400 (draft not found) prints the route's error in red. Closes the evaluate→edit loop — the `/draft <id>` revise hint points here.
 - Workflow slash commands (`/status` `/pause` `/resume` `/cancel` `/approve` `/reject`) stay disabled in free mode.
 - AgentTUI free entry defaults to **agent mode** on mount (plain text → omp conversation); non-free (trend/brief) keeps command mode.
+- **Dispatch consistency:** all seven free slash commands (`/start`, `/drafts`, `/draft`, `/edit`, `/delete`, `/evaluate`, `/analytics`) must be registered in **both** dispatchers — `processAgentCommand` (agent mode, the free default) and `processSlashCommand` (command mode, reachable via `/mode`). The handlers enforce the `isFreeCreationEntry` guard themselves, so both dispatchers just parse the trailing arg and forward. A command added to one dispatcher but not the other falls through to `unknownCommand` in the other mode — a past regression for `/evaluate` (agent mode) and `/drafts`/`/draft`/`/delete` (command mode).
 
 ### Non-free behavior unchanged
 
@@ -328,14 +338,21 @@ discovers draft management without typing `/help` first:
   Free orchestration chat mode is active — type to create, evaluate, and publish.
   Draft commands (also in /help):
     /start            clear the conversation (new session)
-    /drafts          list your free drafts + status badges
+    /drafts [status] [q]  list/filter your free drafts + status badges
     /draft <id>      view a draft's full record
+    /edit <id> <field> <value>  edit a draft's scalar field (title/niche/content_angle/target_audience)
     /delete <id>    delete a draft
     /analytics <id> post-publish engagement
+    /evaluate <id>  re-evaluate a draft (RQGM quality verdict)
     /mode            switch to command mode
 ```
 
 - Dim, compact — the full styled reference stays in `/help` (showHelp).
+- The banner must list **every** free-mode slash command (the full set in the
+  Scope line above: `/start` `/drafts` `/draft` `/edit` `/delete` `/evaluate`
+  `/analytics` `/mode`) so a new command added to the dispatchers also lands
+  here — a past regression omitted `/edit` (and the spec block missed
+  `/evaluate`).
 - `/analytics <id>` is listed (shipped via the post-publish analytics PR).
 - Non-free (trend/brief) banner is unchanged (`terminalHint` → `/help`).
 

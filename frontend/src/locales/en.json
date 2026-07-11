@@ -1385,6 +1385,7 @@
     "freeCmdStart": "/start            clear the conversation (new session)",
     "freeCmdDrafts": "/drafts [status] [q]  list/filter your free drafts (status: published/unpublished/evaluated/unevaluated)",
     "freeCmdDraft": "/draft <id>      view a draft's full record",
+    "freeCmdEdit": "/edit <id> <field> <value>  edit a draft (field: title/niche/content_angle/target_audience)",
     "freeCmdDelete": "/delete <id>    delete a draft",
     "freeCmdAnalytics": "/analytics <id> post-publish engagement",
     "freeCmdEvaluate": "/evaluate <id>  re-evaluate a draft (RQGM quality verdict)",

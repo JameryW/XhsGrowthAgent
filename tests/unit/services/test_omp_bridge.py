@@ -492,6 +492,8 @@ class TestFreeModeTools:
         assert "78.5" in text
         assert "approved" in text
         assert "BLOCKING" in text
+        # approved (even with hints present) does NOT trigger the revise cue
+        assert "xhs_free_evaluate again" not in text
         # Structured result carries evaluation_result
         assert result["details"]["evaluation_result"]["overall_score"] == 78.5
         # Posted to /free/evaluate with account_id + draft_id
@@ -500,6 +502,33 @@ class TestFreeModeTools:
         sent_json = client.post.await_args.kwargs["json"]
         assert sent_json["account_id"] == "acc1"
         assert sent_json["draft_id"] == "draft-xyz"
+
+    async def test_free_evaluate_needs_revision_revise_hint(self):
+        # needs_revision + non-empty hints → the agent render surfaces the
+        # update→re-evaluate next step (evaluate→revise loop, agent-side mirror
+        # of the TUI /draft revise hint #229).
+        data = {
+            "draft_id": "draft-rev",
+            "account_id": "acc1",
+            "evaluation_result": {
+                "overall_score": 52.0,
+                "decision": "needs_revision",
+                "bias_warning": "",
+                "dimensions": [],
+                "revision_hints": ["[compliance] 修正绝对化用语"],
+            },
+        }
+        client = _mock_client_post(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool(
+                "xhs_free_evaluate",
+                {"account_id": "acc1", "draft_id": "draft-rev"},
+            )
+        text = result["content"][0]["text"]
+        assert "needs_revision" in text
+        # revise-loop next-step cue present
+        assert "xhs_free_draft_update" in text
+        assert "xhs_free_evaluate again" in text
 
     async def test_free_publish(self):
         data = {
