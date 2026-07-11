@@ -1500,6 +1500,16 @@ onMounted(() => {
   if (isFreeCreationEntry.value) {
     mode.value = 'agent'
     writeLineColored(`  ${t('tui.freeAgentReady')}`, ANSI.DIM)
+    // Surface the free-mode TUI commands on first entry so the user knows
+    // draft management exists without typing /help first (discoverability —
+    // same class as the post_url hint). Dim, compact; full reference in /help.
+    writeLineColored(`  ${t('tui.freeCommandsLabel')}`, ANSI.DIM)
+    writeLineColored(`    ${t('tui.freeCmdStart')}`, ANSI.DIM)
+    writeLineColored(`    ${t('tui.freeCmdDrafts')}`, ANSI.DIM)
+    writeLineColored(`    ${t('tui.freeCmdDraft')}`, ANSI.DIM)
+    writeLineColored(`    ${t('tui.freeCmdDelete')}`, ANSI.DIM)
+    writeLineColored(`    ${t('tui.freeCmdAnalytics')}`, ANSI.DIM)
+    writeLineColored(`    ${t('tui.freeCmdMode')}`, ANSI.DIM)
   }
 
   // Try connecting to agent WebSocket

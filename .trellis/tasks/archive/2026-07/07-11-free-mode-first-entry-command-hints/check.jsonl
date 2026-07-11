@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "verify first-entry banner command-list note added to TUI display section"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "verify onMounted render + i18n keys follow AgentTUI conventions"}
