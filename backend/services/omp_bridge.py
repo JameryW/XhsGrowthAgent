@@ -807,7 +807,9 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
             "(views/likes/collects/comments/shares/engagement_rate)\n"
             "\n"
             "Draft management:\n"
-            "- xhs_free_draft_list (account_id) → list drafts\n"
+            "- xhs_free_draft_list (account_id) → list drafts (shows [score decision] /\n"
+            "  [published] / [publish failed] badges so you can pick the next step\n"
+            "  from the list)\n"
             "- xhs_free_draft_update (draft_id, fields...) → refine a draft (keeps draft_id)\n"
             "- xhs_free_draft_delete (draft_id) → remove a draft\n"
             "\n"
@@ -820,7 +822,13 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
             "- If evaluate returns needs_revision/rejected, use xhs_free_draft_update "
             "per the revision_hints (keep the same draft_id), then xhs_free_evaluate "
             "again before publish — do not publish a needs_revision draft.\n"
-            "- After publish, call xhs_free_analytics to check engagement feedback."
+            "- Publish can fail (status=failed/auth_expired): the render shows "
+            "Error/Error Type/Recovery — read the recovery hint, fix the cause "
+            "(e.g. re-login the account, verify it), then re-run xhs_free_publish "
+            "(keep the same draft_id). Do NOT call xhs_free_analytics on a failed "
+            "publish (no post_id → 400). The failed attempt is persisted as "
+            "last_publish; the draft list shows a [publish failed] badge.\n"
+            "- After a successful publish, call xhs_free_analytics to check engagement."
         )
         return _make_text_result(guide, {"mode": "free"})
 

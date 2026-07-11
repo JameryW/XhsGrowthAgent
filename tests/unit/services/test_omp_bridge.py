@@ -752,6 +752,14 @@ class TestFreeModeTools:
         assert "EVALUATE" in text
         assert "PUBLISH" in text
         assert "xhs_free_draft_create" in text
+        # evaluate→revise loop rule (#234 sync)
+        assert "needs_revision" in text
+        # publish-failure recovery rule (#239/#240 sync) — the guide must teach
+        # the failure path, not only the success→analytics happy path
+        assert "Publish can fail" in text
+        assert "re-run xhs_free_publish" in text
+        assert "Do NOT call xhs_free_analytics on a failed publish" in text
+        assert "[publish failed]" in text  # draft-list badge documented
         # No httpx client was instantiated (branch is local-only)
         mock_httpx.assert_not_called()
         # Not an error

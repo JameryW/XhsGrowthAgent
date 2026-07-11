@@ -78,7 +78,12 @@ and append a conditional `next:`/`note:` cue:
   (#229). `approved` (even with hints present) gets no cue; `rejected` without
   hints gets no cue. The guide text (`xhs_free_guide`) documents the same
   evaluate→revise→re-evaluate loop so an agent that reads the guide first also
-  learns the revise path, not only the happy path.
+  learns the revise path, not only the happy path. The guide also documents the
+  publish-failure recovery loop: publish can fail (`status=failed`/`auth_expired`),
+  the render surfaces `Error`/`Recovery`, the agent fixes the cause and re-runs
+  `xhs_free_publish` (keep draft_id); the failed attempt persists as `last_publish`
+  and the draft list shows a `[publish failed]` badge — so the agent learns the
+  failure path, not only the success→analytics happy path (#239/#240 sync).
 
 ### Discovery — no system prompt on the bridge path
 
