@@ -297,8 +297,13 @@ async def list_drafts(account_id: str, request: Request) -> ApiResponse[Any]:
         raise ValidationError("store", "Memory store unavailable; cannot list drafts")
 
     drafts: list[dict[str, Any]] = []
+    hit_limit = False
     try:
         items = await store.asearch(_draft_ns(account_id), query="", limit=100)
+        # asearch limit is page size, not total — if it returns exactly limit
+        # items, more likely exist (heuristic; no portable total-count on
+        # BaseStore). Surfaced as `truncated` so the list isn't silently capped.
+        hit_limit = len(items) >= 100
         for item in items:
             value = item.value
             if not isinstance(value, dict):
@@ -320,7 +325,19 @@ async def list_drafts(account_id: str, request: Request) -> ApiResponse[Any]:
     # Sort newest-first by updated_at (ISO strings sort lexicographically =
     # chronologically). Drafts without updated_at (old records) sort last.
     drafts.sort(key=lambda d: d.get("updated_at") or "", reverse=True)
-    return success(data={"account_id": account_id, "drafts": drafts})
+    if hit_limit:
+        logger.info(
+            "free drafts list hit 100-cap for account %s — older drafts hidden",
+            account_id,
+        )
+    return success(
+        data={
+            "account_id": account_id,
+            "drafts": drafts,
+            "count": len(drafts),
+            "truncated": hit_limit,
+        }
+    )
 
 
 @router.get("/draft/{draft_id}")
