@@ -202,7 +202,7 @@ function historyDown() {
 
 const SLASH_COMMANDS = [
   '/start', '/status', '/pause', '/resume', '/cancel',
-  '/approve', '/reject', '/mode', '/help', '/clear', '/new', '/abort', '/drafts', '/draft', '/delete', '/analytics', '/edit',
+  '/approve', '/reject', '/mode', '/help', '/clear', '/new', '/abort', '/drafts', '/draft', '/delete', '/analytics', '/edit', '/evaluate',
 ]
 
 function tabComplete() {
@@ -952,6 +952,8 @@ async function processSlashCommand(cmd: string) {
       await handleAnalytics(arg); break
     case '/edit':
       await handleEdit(arg); break
+    case '/evaluate':
+      await handleEvaluate(arg); break
     case '/mode':
       mode.value = 'agent'
       reconnectAttempts = 0
@@ -1345,6 +1347,80 @@ async function handleAnalytics(draftId: string) {
   }
 }
 
+// /evaluate <id> — re-evaluate a free draft via the RQGM agent-as-a-judge panel
+// (thread-less POST /free/evaluate). Renders a boxed summary of overall_score /
+// decision / dimensions / bias_warning / revision_hints. The route writes the
+// {overall_score, decision, revision_hints} triple back onto the draft's
+// last_evaluation, so /drafts and /draft <id> reflect the new verdict after.
+async function handleEvaluate(draftId: string) {
+  if (!isFreeCreationEntry.value) {
+    writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
+    return
+  }
+  if (!draftId) {
+    writeLineColored(t('tui.evaluateMissing'), ANSI.RED)
+    return
+  }
+  const accountId = authStore.user?.id || 'default'
+  try {
+    const resp = await client.post('/free/evaluate', {
+      account_id: accountId,
+      draft_id: draftId,
+    })
+    const data = resp as unknown as {
+      draft_id: string
+      evaluation_result: {
+        overall_score?: number | null
+        decision?: string | null
+        revision_hints?: string[] | null
+        dimensions?: Array<{ dimension?: string; score?: number | null; is_blocking?: boolean; rationale?: string | null }>
+        bias_warning?: string | null
+      }
+    }
+    const ev = data.evaluation_result || {}
+    const C = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, W = ANSI.BRIGHT_WHITE
+    const Y = ANSI.BRIGHT_YELLOW, M = ANSI.BRIGHT_MAGENTA, R = ANSI.RESET
+    const score = ev.overall_score
+    const scoreStr = score !== undefined && score !== null ? score.toFixed(1) : '?'
+    const decision = ev.decision || ''
+    const decisionColor = decision === 'approved' ? G
+      : decision === 'rejected' ? ANSI.RED
+      : decision === 'needs_revision' ? Y : D
+    writeLine('')
+    writeLine(`${C}╭${'─'.repeat(52)}╮${R}`)
+    writeLine(`${C}│${R} ${W}${t('tui.evaluateTitle')}${R}${' '.repeat(Math.max(0, 51 - getStringWidth(t('tui.evaluateTitle'))))}${C}│${R}`)
+    writeLine(`${C}╰${'─'.repeat(52)}╯${R}`)
+    writeLine(`  ${D}${t('tui.evaluateDraftIdLabel')}${R}: ${G}${data.draft_id}${R}`)
+    writeLine(`  ${D}${t('tui.evaluateOverallLabel')}${R}:  ${C}${scoreStr}${R}`)
+    writeLine(`  ${D}${t('tui.evaluateDecisionLabel')}${R}: ${decisionColor}${decision || '?'}${R}`)
+    const dims = ev.dimensions || []
+    if (dims.length > 0) {
+      writeLine(`  ${D}${'─'.repeat(20)}${R}`)
+      writeLine(`  ${D}${t('tui.evaluateDimensionsLabel')}${R}:`)
+      for (const d of dims) {
+        const dScore = d.score !== undefined && d.score !== null ? d.score.toFixed(1) : '?'
+        const blk = d.is_blocking ? ` ${ANSI.RED}[BLOCKING]${R}` : ''
+        writeLine(`    ${D}- ${d.dimension || '?'}: ${C}${dScore}${R}${blk}${R}`)
+      }
+    }
+    if (ev.bias_warning) {
+      writeLine(`  ${D}${'─'.repeat(20)}${R}`)
+      writeLine(`  ${D}⚠ ${t('tui.evaluateBiasLabel')}${R}: ${M}${ev.bias_warning}${R}`)
+    }
+    const hints = ev.revision_hints || []
+    if (hints.length > 0) {
+      writeLine(`  ${D}${t('tui.evaluateHintsLabel')}${R}:`)
+      for (const hint of hints) {
+        writeLine(`    ${D}• ${hint}${R}`)
+      }
+    }
+    writeLine(`  ${G}${t('tui.evaluateWrittenBack', { id: data.draft_id })}${R}`)
+    writeLine('')
+  } catch (err: any) {
+    writeLineColored(err.message || t('tui.evaluateFailed'), ANSI.RED)
+  }
+}
+
 // /edit <id> <field> <value...> — single-line scalar-field edit (title, niche,
 // content_angle, target_audience). body/hashtags/image_paths excluded (multi-
 // line/list — agent handles via xhs_free_draft_update). PATCHes the existing
@@ -1416,6 +1492,7 @@ function showHelp() {
       writeLine(`  ${G}/delete${R} ${D}<id>${R}    Delete a draft`)
       writeLine(`  ${G}/edit${R} ${D}<id> <f> <v>${R} Edit a draft field`)
       writeLine(`  ${G}/analytics${R} ${D}<id>${R} Post-publish engagement`)
+      writeLine(`  ${G}/evaluate${R} ${D}<id>${R} Re-evaluate a draft`)
     }
   } else {
     writeLine('')
@@ -1428,6 +1505,7 @@ function showHelp() {
       writeLine(`  ${G}/delete${R} ${D}<id>${R}  Delete a draft`)
       writeLine(`  ${G}/edit${R} ${D}<id> <field> <value>${R}  Edit a draft field`)
       writeLine(`  ${G}/analytics${R} ${D}<id>${R} Post-publish engagement`)
+      writeLine(`  ${G}/evaluate${R} ${D}<id>${R}  Re-evaluate a draft`)
       writeLine(`  ${G}/mode${R}          Switch to agent mode`)
       writeLine('')
       writeLine(`  ${Y}Free Draft Commands${R}`)
@@ -1436,6 +1514,8 @@ function showHelp() {
       writeLine(`  ${G}/draft${R} ${D}<id>${R}     View a draft`)
       writeLine(`  ${G}/delete${R} ${D}<id>${R}    Delete a draft`)
       writeLine(`  ${G}/edit${R} ${D}<id> <f> <v>${R} Edit a draft field`)
+      writeLine(`  ${G}/analytics${R} ${D}<id>${R} Post-publish engagement`)
+      writeLine(`  ${G}/evaluate${R} ${D}<id>${R} Re-evaluate a draft`)
     } else {
       writeLine(`  ${G}/start${R} ${D}[topic]${R}  Start workflow`)
       writeLine(`  ${G}/status${R} ${D}[id]${R}    Check workflow status`)
@@ -1622,6 +1702,7 @@ onMounted(() => {
     writeLineColored(`    ${t('tui.freeCmdDraft')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdDelete')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdAnalytics')}`, ANSI.DIM)
+    writeLineColored(`    ${t('tui.freeCmdEvaluate')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdMode')}`, ANSI.DIM)
   }
 
