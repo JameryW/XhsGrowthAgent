@@ -591,6 +591,28 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "xhs_free_analytics",
+        "label": "XHS Free Draft Analytics",
+        "description": (
+            "Post-publish engagement check. Fetch views/likes/collects/comments/shares/"
+            "engagement_rate for a published free draft via XHSClient.get_post_analytics. "
+            "Input draft_id from xhs_free_draft_create/publish. The draft must have been "
+            "published (post_id persisted) — call xhs_free_publish first. Returns current "
+            "engagement snapshot (single fetch, not trend over time)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "default": "default", "description": "Account ID"},
+                "draft_id": {
+                    "type": "string",
+                    "description": "Draft ID (must have been published)",
+                },
+            },
+            "required": ["draft_id"],
+        },
+    },
+    {
         "name": "xhs_free_draft_list",
         "label": "XHS Free Draft List",
         "description": (
@@ -781,6 +803,8 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
             "2. EVALUATE: xhs_free_evaluate (draft_id) → RQGM 6-dimension quality score "
             "+ decision\n"
             "3. PUBLISH: xhs_free_publish (draft_id) → publishes via account CDP login state\n"
+            "4. ANALYTICS: xhs_free_analytics (draft_id) → post-publish engagement "
+            "(views/likes/collects/comments/shares/engagement_rate)\n"
             "\n"
             "Draft management:\n"
             "- xhs_free_draft_list (account_id) → list drafts\n"
@@ -792,7 +816,8 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
             "xhs_review_*, xhs_optimization_*) — free mode has no thread_id; they will fail.\n"
             "- xhs_workflow_start is disabled in free mode.\n"
             "- Reuse draft_id across create→evaluate→publish; do not recreate on each step.\n"
-            "- Run xhs_free_evaluate before xhs_free_publish for a quality gate."
+            "- Run xhs_free_evaluate before xhs_free_publish for a quality gate.\n"
+            "- After publish, call xhs_free_analytics to check engagement feedback."
         )
         return _make_text_result(guide, {"mode": "free"})
 
@@ -1328,6 +1353,28 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     f"  Status: {pub.get('status', '')}",
                 ]
                 return _make_text_result("\n".join(lines), {"publish_result": pub, **data})
+
+            elif tool_name == "xhs_free_analytics":
+                account_id = arguments.get("account_id", "default")
+                draft_id = arguments.get("draft_id", "")
+                resp = await client.get(
+                    f"{url}/free/analytics/{draft_id}",
+                    params={"account_id": account_id},
+                )
+                data = _unwrap_envelope(resp)
+                a = data.get("analytics") or {}
+                lines = [
+                    f"Free Draft Analytics — {draft_id}",
+                    f"  Post ID: {data.get('post_id', '')}",
+                    f"  Views: {a.get('views', 0)}",
+                    f"  Likes: {a.get('likes', 0)}",
+                    f"  Collects: {a.get('collects', 0)}",
+                    f"  Comments: {a.get('comments', 0)}",
+                    f"  Shares: {a.get('shares', 0)}",
+                    f"  Engagement Rate: {a.get('engagement_rate', 0)}%",
+                    f"  Fetched At: {a.get('fetched_at', '')}",
+                ]
+                return _make_text_result("\n".join(lines), {"analytics": a, **data})
 
             elif tool_name == "xhs_free_draft_list":
                 account_id = arguments.get("account_id", "default")

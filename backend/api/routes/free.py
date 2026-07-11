@@ -30,6 +30,7 @@ from backend.agents.evaluator import EvaluatorAgent
 from backend.agents.publisher import run_publish
 from backend.api.errors import ValidationError
 from backend.api.responses import ApiResponse, success
+from backend.config.settings import Settings
 from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.api.free")
@@ -252,9 +253,15 @@ async def publish_draft(ref: FreeDraftRef, request: Request) -> ApiResponse[Any]
     publish_result = result.get("publish_result") or {}
     pub_status = publish_result.get("status", "unknown")
 
-    # On a successful publish, mark the draft as published + refresh updated_at.
+    # On a successful publish, mark the draft as published, persist the post_id
+    # + post_url (so /analytics can fetch engagement later), and refresh
+    # updated_at. Failures (failed / auth_expired / mock_published without a
+    # real post_id) do NOT mutate the draft — mock_published from dry-run has
+    # no real post_id, so analytics can't be fetched for it either.
     if pub_status in _PUBLISH_SUCCESS_STATUSES:
         draft["published"] = True
+        draft["post_id"] = publish_result.get("post_id", "")
+        draft["post_url"] = publish_result.get("post_url", "")
         draft["updated_at"] = _now_iso()
         await store.aput(_draft_ns(account_id), key=ref.draft_id, value=draft)
 
@@ -386,3 +393,97 @@ async def delete_draft(
     await store.adelete(_draft_ns(account_id), key=draft_id)
     logger.info("free draft deleted: account=%s draft=%s", account_id, draft_id)
     return success(data={"draft_id": draft_id, "deleted": True})
+
+
+async def _resolve_free_cdp_endpoint(account_id: str) -> str:
+    """Resolve the CDP endpoint for a free-mode account (thread-less).
+
+    Mirrors run_publish's per-account CDP resolution: start from the global
+    _resolve_cdp_endpoint(settings), then override with the per-account
+    endpoint if one is bound. Returns "" when no endpoint is available.
+    """
+    from backend.agents.publisher import _resolve_cdp_endpoint
+    from backend.db.accounts import get_account_cdp_endpoint
+
+    settings = Settings()
+    cdp_endpoint = _resolve_cdp_endpoint(settings)
+    per_account = await get_account_cdp_endpoint(account_id)
+    if per_account:
+        cdp_endpoint = per_account
+    return cdp_endpoint
+
+
+@router.get("/analytics/{draft_id}")
+async def get_analytics(
+    draft_id: str,
+    request: Request,
+    account_id: str = Query(default="default", description="账号 ID"),
+) -> ApiResponse[Any]:
+    """Fetch post-publish engagement analytics for a free draft (thread-less).
+
+    Loads the draft, reads its persisted post_id, and calls
+    XHSClient.get_post_analytics(post_id) — the same thread-agnostic method
+    the fixed workflow's analyst uses. Returns views/likes/collects/comments/
+    shares/engagement_rate. Raises ValidationError → 400 if the draft hasn't
+    been published (no post_id) or no CDP endpoint is available.
+    """
+    draft = await _load_draft(request, account_id, draft_id)
+    post_id = draft.get("post_id", "")
+    if not post_id:
+        raise ValidationError(
+            "post_id",
+            "draft not published / no post_id — publish the draft first",
+        )
+    # Mock-published (dry-run) drafts carry a "mock_*" post_id — no real XHS
+    # note exists, so analytics can't be fetched. Fail fast with a clear error
+    # rather than returning a zero-engagement snapshot.
+    if post_id.startswith("mock_"):
+        raise ValidationError(
+            "post_id",
+            "draft was mock-published (dry-run) — no real post_id, "
+            "analytics unavailable. Re-publish without dry-run for real data.",
+        )
+
+    cdp_endpoint = await _resolve_free_cdp_endpoint(account_id)
+    if not cdp_endpoint:
+        raise ValidationError(
+            "cdp_endpoint",
+            "no CDP endpoint available for this account — "
+            "start the account browser and scan-login first",
+        )
+
+    from backend.services.xhs_client import XHSClient
+
+    settings = Settings()
+    client = XHSClient(
+        cookie="",
+        user_id="",
+        use_browser=True,
+        headless=settings.platform.headless,
+        cdp_endpoint=cdp_endpoint,
+    )
+    try:
+        analytics_obj = await client.get_post_analytics(post_id)
+        # XHSAnalytics is a dataclass — convert to a plain dict for the API
+        # response (JSON-serializable, no dataclass schema on the wire).
+        from dataclasses import asdict
+
+        analytics = asdict(analytics_obj)
+    except Exception as e:
+        logger.warning(
+            "free analytics fetch failed: account=%s draft=%s err=%s", account_id, draft_id, e
+        )
+        raise ValidationError("analytics", f"failed to fetch analytics: {e}") from e
+    finally:
+        await client.close()
+
+    logger.info(
+        "free analytics fetched: account=%s draft=%s post=%s", account_id, draft_id, post_id
+    )
+    return success(
+        data={
+            "draft_id": draft_id,
+            "post_id": post_id,
+            "analytics": analytics,
+        }
+    )

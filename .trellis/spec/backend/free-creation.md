@@ -10,7 +10,7 @@
 - Any route in `backend/api/routes/free.py`
 - Any omp host tool named `xhs_free_*`
 - Any frontend logic gated by `isFreeCreationEntry` (`route.query.mode === 'free'`)
-- The free creation entry (`/tui?mode=free`) and its TUI commands (`/start`, `/drafts`, `/draft <id>`, `/delete <id>`)
+- The free creation entry (`/tui?mode=free`) and its TUI commands (`/start`, `/drafts`, `/draft <id>`, `/delete <id>`, `/analytics <id>`)
 
 Free mode lets the omp agent drive creation conversationally **without a LangGraph
 workflow thread**. It is fully isolated from the fixed trend/brief workflow:
@@ -31,6 +31,7 @@ drafts never enter the checkpoint, and the workflow slash commands stay disabled
 | GET | `/draft/{draft_id}` | query `account_id` | `{draft_id, draft}` |
 | PATCH | `/draft/{draft_id}` | query `account_id`; body `FreeDraftUpdate` (all fields optional) | `{draft_id, draft}` |
 | DELETE | `/draft/{draft_id}` | query `account_id` | `{draft_id, deleted: true}` |
+| GET | `/analytics/{draft_id}` | query `account_id` | `{draft_id, post_id, analytics}` (400 if not published / no post_id / no CDP endpoint / fetch failure) |
 
 ### omp host tools (`backend/services/omp_bridge.py`)
 
@@ -44,6 +45,7 @@ internal httpx to `/api/free/*` (the `url` already includes `/api`, so paths are
 - `xhs_free_draft_list` → GET `/free/drafts/{account_id}`
 - `xhs_free_draft_update` → PATCH `/free/draft/{draft_id}?account_id=...`
 - `xhs_free_draft_delete` → DELETE `/free/draft/{draft_id}?account_id=...`
+- `xhs_free_analytics` → GET `/free/analytics/{draft_id}?account_id=...` (post-publish engagement; thread-less — uses `XHSClient.get_post_analytics(post_id)`, not the thread-bound workflow analytics)
 - `xhs_free_guide` → no backend call (local); returns the orchestration guide text
 
 ### Discovery — no system prompt on the bridge path
@@ -94,6 +96,7 @@ do NOT participate in workflow resume/retry.
 - Free-mode `/drafts` lists free drafts; non-free mode shows `freeWorkflowOpDisabled`.
 - Free-mode `/draft <id>` renders a single draft's full record; non-free mode shows `freeWorkflowOpDisabled`.
 - Free-mode `/delete <id>` GETs the draft (to show its title — acts as confirmation, since there is no y/n state machine), then DELETEs it; non-free mode shows `freeWorkflowOpDisabled`. The DELETE route is idempotent, so re-running is safe. A GET 400 (draft not found) aborts the delete — no silent success on a bad id.
+- Free-mode `/analytics <id>` GETs `/free/analytics/{draft_id}` and renders a boxed engagement table (views/likes/collects/comments/shares/engagement_rate/fetched_at); non-free mode shows `freeWorkflowOpDisabled`. Missing `<id>` prints `tui.analyticsMissing`; a 400 from the route (unpublished / mock-published / no CDP / fetch failure) prints the route's error message in red.
 - Workflow slash commands (`/status` `/pause` `/resume` `/cancel` `/approve` `/reject`) stay disabled in free mode.
 - AgentTUI free entry defaults to **agent mode** on mount (plain text → omp conversation); non-free (trend/brief) keeps command mode.
 
@@ -115,6 +118,8 @@ All new logic is guarded by `isFreeCreationEntry` (`route.query.mode === 'free'`
 | `store.asearch` unsupported (no semantic index) / throws | caught → returns empty drafts list (graceful) |
 | Corrupt draft value (non-dict) | `_load_draft` raises `ValidationError` → 400 |
 | Free-mode account has no cookie / no CDP endpoint | `run_publish` returns structured `recovery` dict (fail fast) |
+| Analytics on unpublished draft (no `post_id`) | `get_analytics` raises `ValidationError("post_id", ...)` → 400 (mock-published included — no real post_id) |
+| Analytics with no CDP endpoint / fetch failure | `get_analytics` raises `ValidationError("cdp_endpoint"` / `"analytics", ...)` → 400 |
 
 ---
 
@@ -181,6 +186,8 @@ after `model_dump()`, the same way `draft_id` is set.
 | `updated_at` | ISO 8601 UTC str | `create_draft`, `update_draft`, `evaluate_draft`, `publish_draft` (on success) | Refreshed on every write-back. |
 | `last_evaluation` | `{overall_score, decision, revision_hints} \| None` | `evaluate_draft` | The {overall_score, decision, revision_hints} triple is persisted; the full `evaluation_result` (dimensions, bias_warning, summary) is still returned to the agent but not stored on the draft. |
 | `published` | `bool` | `publish_draft` (on success) | Set `True` only when `publish_result.status` ∈ `{"published", "mock_published"}`. |
+| `post_id` | `str` | `publish_draft` (on success) | The XHS note id, from `publish_result.post_id`. Empty for mock-published. Used by `GET /free/analytics/{draft_id}` to fetch engagement. |
+| `post_url` | `str` | `publish_draft` (on success) | The XHS note URL, from `publish_result.post_url`. |
 
 ### Write-back behavior
 
@@ -225,6 +232,23 @@ missing `updated_at` → sorts last. No migration is needed; fields are optional
 - Published badge: cyan `已发布` if `published`.
 - `updated_at`: trimmed to `YYYY-MM-DDTHH:MM`, dim.
 - Drafts with no metadata: title only (no badges).
+
+### `handleDraft` detail view
+
+`/draft <id>` renders the full record, then a status block (after a `─` rule).
+For published drafts, the block additionally shows the post URL + an action
+hint, derived from the persisted `post_id`/`post_url` (see Draft Status
+Metadata):
+
+- `post_url` line (cyan) — only if `post_url` present.
+- Real `post_id` (does not start with `mock_`): yellow hint
+  `运行 /analytics <id> 查看互动数据` — points the user at the engagement
+  command (closes the publish→analytics discoverability loop).
+- Mock `post_id` (`mock_*`, from dry-run publish): yellow
+  `mock-published (dry-run) — re-publish without dry-run for a real post`
+  instead — mock-published drafts have no real note, so the analytics hint
+  would mislead.
+- Unpublished draft: no post lines (graceful).
 
 ---
 

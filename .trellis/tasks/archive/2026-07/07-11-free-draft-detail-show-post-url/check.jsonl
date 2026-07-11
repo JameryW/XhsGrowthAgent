@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "verify /draft <id> detail post_url + mock-hint rendering added to TUI display section"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "verify handleDraft render + i18n keys follow AgentTUI conventions"}

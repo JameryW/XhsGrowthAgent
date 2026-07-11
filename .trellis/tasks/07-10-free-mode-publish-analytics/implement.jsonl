@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "free route signatures + error matrix + omp tool list; analytics route + post_id persistence spec note"}
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "omp host tool registration + dispatch + system prompt sync convention"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "ValidationError for unpublished/no-post_id draft; CDP/XHS unreachable graceful"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "AgentTUI handleAnalytics + i18n + showHelp entry"}
