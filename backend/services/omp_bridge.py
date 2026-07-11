@@ -817,6 +817,9 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
             "- xhs_workflow_start is disabled in free mode.\n"
             "- Reuse draft_id across create→evaluate→publish; do not recreate on each step.\n"
             "- Run xhs_free_evaluate before xhs_free_publish for a quality gate.\n"
+            "- If evaluate returns needs_revision/rejected, use xhs_free_draft_update "
+            "per the revision_hints (keep the same draft_id), then xhs_free_evaluate "
+            "again before publish — do not publish a needs_revision draft.\n"
             "- After publish, call xhs_free_analytics to check engagement feedback."
         )
         return _make_text_result(guide, {"mode": "free"})
@@ -1335,6 +1338,17 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     lines.append(f"  - {d.get('dimension')}: {d.get('score')}{block}")
                 for h in ev.get("revision_hints") or []:
                     lines.append(f"  hint: {h}")
+                # Revise-loop next step — closes evaluate→update→re-evaluate for
+                # the agent (free mode's default driver). Mirrors the TUI /draft
+                # revise hint (#229): needs_revision/rejected with concrete hints
+                # points at xhs_free_draft_update → re-evaluate, not straight to
+                # publish. approved/rejected-without-hints get no cue.
+                decision = ev.get("decision", "")
+                if decision in ("needs_revision", "rejected") and (ev.get("revision_hints") or []):
+                    lines.append(
+                        "  next: revise per the hints via xhs_free_draft_update "
+                        "(keep draft_id), then xhs_free_evaluate again before publish."
+                    )
                 return _make_text_result("\n".join(lines), {"evaluation_result": ev, **data})
 
             elif tool_name == "xhs_free_publish":
