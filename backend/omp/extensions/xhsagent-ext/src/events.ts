@@ -31,6 +31,7 @@ export default function register(pi: ExtensionAPI) {
         "Draft management: xhs_free_draft_list / xhs_free_draft_update / xhs_free_draft_delete.",
         "Call xhs_free_guide for the full orchestration guide.",
         "Reuse draft_id across create→evaluate→publish; run xhs_free_evaluate before xhs_free_publish.",
+        "If evaluate returns needs_revision/rejected, use xhs_free_draft_update per the revision_hints (keep draft_id), then xhs_free_evaluate again before publish — do not publish a needs_revision draft.",
         "After publish, call xhs_free_analytics to check engagement feedback.",
         "Do NOT call thread-bound tools (xhs_workflow_status/pause/resume/cancel, xhs_review_*, xhs_optimization_*) in free mode — there is no thread_id.",
         "For existing workflow content with a thread_id, use xhs_review_approve or xhs_publish_retry instead.",
