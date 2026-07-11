@@ -890,6 +890,12 @@ async function processAgentCommand(text: string) {
         isProcessing.value = false; writePrompt()
         break
       }
+      case '/evaluate': {
+        const parts = text.split(/\s+/)
+        await handleEvaluate(parts.slice(1).join(' ').trim())
+        isProcessing.value = false; writePrompt()
+        break
+      }
       default:
         writeLineColored(t('tui.unknownCommand', { command: cmd }), ANSI.RED)
         isProcessing.value = false; writePrompt()
@@ -954,6 +960,12 @@ async function processSlashCommand(cmd: string) {
       await handleEdit(arg); break
     case '/evaluate':
       await handleEvaluate(arg); break
+    case '/drafts':
+      await handleDrafts(arg); break
+    case '/draft':
+      await handleDraft(arg); break
+    case '/delete':
+      await handleDelete(arg); break
     case '/mode':
       mode.value = 'agent'
       reconnectAttempts = 0
