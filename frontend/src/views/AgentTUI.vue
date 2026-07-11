@@ -1110,7 +1110,7 @@ async function handleDrafts(argStr = '') {
         title: string
         created_at?: string | null
         updated_at?: string | null
-        last_evaluation?: { overall_score?: number | null; decision?: string | null } | null
+        last_evaluation?: { overall_score?: number | null; decision?: string | null; degraded?: boolean } | null
         published?: boolean | null
       }>
       count?: number
@@ -1131,9 +1131,13 @@ async function handleDrafts(argStr = '') {
           ? d.title
           : `${ANSI.DIM}${t('tui.draftUntitled')}${ANSI.RESET}`
         let line = `  ${ANSI.BRIGHT_GREEN}${d.draft_id}${ANSI.RESET}: ${titlePart}`
-        // evaluation badge (only if last_evaluation present)
+        // evaluation badge (only if last_evaluation present). A degraded
+        // (fake-approved fallback) eval shows [degraded] — the score is
+        // meaningless when the LLM failed.
         const le = d.last_evaluation
-        if (le && le.decision) {
+        if (le && le.degraded) {
+          line += `  ${ANSI.BRIGHT_YELLOW}[${t('tui.draftsBadgeDegraded')}]${ANSI.RESET}`
+        } else if (le && le.decision) {
           const decColor =
             le.decision === 'approved' ? ANSI.BRIGHT_GREEN
             : le.decision === 'needs_revision' ? ANSI.BRIGHT_YELLOW
@@ -1171,7 +1175,7 @@ interface FreeDraftRecord {
   target_audience?: string
   created_at?: string
   updated_at?: string
-  last_evaluation?: { overall_score?: number; decision?: string; revision_hints?: string[] } | null
+  last_evaluation?: { overall_score?: number; decision?: string; revision_hints?: string[]; degraded?: boolean; summary?: string | null } | null
   last_publish?: { status?: string; error?: string | null; error_type?: string | null; at?: string } | null
   published?: boolean
   post_id?: string
@@ -1229,22 +1233,34 @@ async function handleDraft(draftId: string) {
       if (draft.last_evaluation) {
         const score = draft.last_evaluation.overall_score
         const decision = draft.last_evaluation.decision
-        const scoreStr = score !== undefined ? score.toFixed(1) : '?'
-        const decisionColor = decision === 'approved' ? G : (decision === 'rejected' ? ANSI.RED : Y)
-        writeLine(`  ${D}${t('tui.draftDetailEvalLabel')}${R}: ${decisionColor}${scoreStr} (${decision || '?'})${R}`)
-        // revision hints — only render if present + non-empty (graceful for
-        // pre-#217 drafts without the revision_hints key)
-        const hints = draft.last_evaluation.revision_hints
-        if (hints && hints.length > 0) {
-          writeLine(`  ${D}${t('tui.draftDetailHintsLabel')}${R}:`)
-          for (const hint of hints) {
-            writeLine(`    ${D}• ${hint}${R}`)
+        const degraded = draft.last_evaluation.degraded
+        if (degraded) {
+          // Degraded (LLM timeout → fake-approved fallback): the 100/approved is
+          // not a real score — surface the degradation + cause instead, and point
+          // at re-running /evaluate (do not publish on a degraded verdict).
+          writeLine(`  ${Y}${t('tui.draftDetailEvalDegraded')}${R}`)
+          if (draft.last_evaluation.summary) {
+            writeLine(`  ${D}${draft.last_evaluation.summary}${R}`)
           }
-          // Next-step hint for revise-able drafts — closes the evaluate→edit
-          // loop. approved drafts already get an analytics hint below; only
-          // needs_revision/rejected with concrete hints point at /edit→/evaluate.
-          if (decision === 'needs_revision' || decision === 'rejected') {
-            writeLine(`  ${Y}${t('tui.draftDetailReviseHint', { id: data.draft_id })}${R}`)
+          writeLine(`  ${Y}${t('tui.draftDetailReEvaluateHint', { id: data.draft_id })}${R}`)
+        } else {
+          const scoreStr = score !== undefined ? score.toFixed(1) : '?'
+          const decisionColor = decision === 'approved' ? G : (decision === 'rejected' ? ANSI.RED : Y)
+          writeLine(`  ${D}${t('tui.draftDetailEvalLabel')}${R}: ${decisionColor}${scoreStr} (${decision || '?'})${R}`)
+          // revision hints — only render if present + non-empty (graceful for
+          // pre-#217 drafts without the revision_hints key)
+          const hints = draft.last_evaluation.revision_hints
+          if (hints && hints.length > 0) {
+            writeLine(`  ${D}${t('tui.draftDetailHintsLabel')}${R}:`)
+            for (const hint of hints) {
+              writeLine(`    ${D}• ${hint}${R}`)
+            }
+            // Next-step hint for revise-able drafts — closes the evaluate→edit
+            // loop. approved drafts already get an analytics hint below; only
+            // needs_revision/rejected with concrete hints point at /edit→/evaluate.
+            if (decision === 'needs_revision' || decision === 'rejected') {
+              writeLine(`  ${Y}${t('tui.draftDetailReviseHint', { id: data.draft_id })}${R}`)
+            }
           }
         }
       }

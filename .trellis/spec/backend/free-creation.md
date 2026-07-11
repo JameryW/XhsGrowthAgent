@@ -55,12 +55,15 @@ renders align with the TUI surfaces, not duplicate the minimal backend response,
 and append a conditional `next:`/`note:` cue:
 - **`xhs_free_draft_list`**: header with `count`, a `truncated` note when the
   route's 100-cap dropped older drafts, and per-draft badges —
-  `[<score> <decision>]` when `last_evaluation` has a decision, `[published]`
-  when published, `[publish failed]` when `last_publish.status` is a non-success
+  `[<score> <decision>]` when `last_evaluation` has a decision, `[degraded]`
+  when `last_evaluation.degraded` is truthy (fake-approved fallback — shown
+  instead of the misleading `[100 approved]`), `[published]` when published,
+  `[publish failed]` when `last_publish.status` is a non-success
   (failed/auth_expired/...) — so the agent can pick the next step from the list
   (unevaluated→evaluate, needs_revision→revise, approved/published→publish or
-  analytics, publish-failed→re-attempt after fixing cause) without calling
-  `xhs_free_draft` per item. Mirrors TUI `/drafts` (#216/#226/#227).
+  analytics, publish-failed→re-attempt after fixing cause, degraded→re-evaluate)
+  without calling `xhs_free_draft` per item. Mirrors TUI `/drafts`
+  (#216/#226/#227).
 - **`xhs_free_publish`**: real publish (`status == "published"`, non-`mock_` post_id) →
   `next: call xhs_free_analytics(<draft_id>) ...`; mock publish (`mock_published` /
   `mock_*` post_id, dry-run) → `note: dry-run mock publish ... analytics not available`
@@ -76,7 +79,11 @@ and append a conditional `next:`/`note:` cue:
   agent at `xhs_free_draft_update` (keep draft_id) → `xhs_free_evaluate` again
   before publish — the agent-side mirror of the TUI `/draft <id>` revise hint
   (#229). `approved` (even with hints present) gets no cue; `rejected` without
-  hints gets no cue. The guide text (`xhs_free_guide`) documents the same
+  hints gets no cue. When `evaluation_result.degraded` is truthy (LLM timeout →
+  pass-through fallback), the render prepends a `⚠ Evaluation degraded` marker +
+  the cause, and a `next: re-run xhs_free_evaluate` cue instead of the revise
+  cue — the 100/approved is fake, not a real score; the agent must not publish
+  on a degraded verdict. The guide text (`xhs_free_guide`) documents the same
   evaluate→revise→re-evaluate loop so an agent that reads the guide first also
   learns the revise path, not only the happy path. The guide also documents the
   publish-failure recovery loop: publish can fail (`status=failed`/`auth_expired`),
@@ -226,7 +233,7 @@ after `model_dump()`, the same way `draft_id` is set.
 |-------|------|--------|-------|
 | `created_at` | ISO 8601 UTC str | `create_draft` | Set once; never changed by update. |
 | `updated_at` | ISO 8601 UTC str | `create_draft`, `update_draft`, `evaluate_draft`, `publish_draft` | Refreshed on every write-back — including failed publish attempts (a publish attempt is a meaningful update). |
-| `last_evaluation` | `{overall_score, decision, revision_hints} \| None` | `evaluate_draft` | The {overall_score, decision, revision_hints} triple is persisted; the full `evaluation_result` (dimensions, bias_warning, summary) is still returned to the agent but not stored on the draft. |
+| `last_evaluation` | `{overall_score, decision, revision_hints, degraded?, summary?} \| None` | `evaluate_draft` | The {overall_score, decision, revision_hints} triple + `degraded` + `summary` are persisted; the full `evaluation_result` (dimensions, bias_warning) is still returned to the agent but not stored on the draft. `degraded: True` marks a pass-through fallback (LLM timeout) — the 100/approved is fake, not a real score; `summary` carries the cause so `/draft <id>` + `/drafts` + the agent render can surface the degradation instead of showing a misleading "100 approved". |
 | `last_publish` | `{status, error?, error_type?, at} \| None` | `publish_draft` (every attempt) | Persisted on **every** publish attempt — success writes `status` (`published`/`mock_published`) with error fields `None`; failure writes `status` (`failed`/`auth_expired`/...) + `error` + `error_type`. `at` is the attempt timestamp. Lets `/draft <id>` and the agent list render surface a failed publish's cause after the turn ends (#239 only surfaces it for the single tool call). A later success overwrites it. |
 | `published` | `bool` | `publish_draft` (on success) | Set `True` only when `publish_result.status` ∈ `{"published", "mock_published"}`. Failures do NOT flip `published` (they only record via `last_publish`). |
 | `post_id` | `str` | `publish_draft` (on success) | The XHS note id, from `publish_result.post_id`. Empty for mock-published. Used by `GET /free/analytics/{draft_id}` to fetch engagement. |
