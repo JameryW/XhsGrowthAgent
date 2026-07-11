@@ -250,6 +250,27 @@ Metadata):
   would mislead.
 - Unpublished draft: no post lines (graceful).
 
+### First-entry banner (onMounted)
+
+When `isFreeCreationEntry`, the TUI mounts into agent mode and writes a banner:
+`freeWelcomeHint` + `freeAgentReady`, then a **dim command list** so the user
+discovers draft management without typing `/help` first:
+
+```
+  Free orchestration chat mode is active — type to create, evaluate, and publish.
+  Draft commands (also in /help):
+    /start            clear the conversation (new session)
+    /drafts          list your free drafts + status badges
+    /draft <id>      view a draft's full record
+    /delete <id>    delete a draft
+    /analytics <id> post-publish engagement
+    /mode            switch to command mode
+```
+
+- Dim, compact — the full styled reference stays in `/help` (showHelp).
+- `/analytics <id>` is listed (shipped via the post-publish analytics PR).
+- Non-free (trend/brief) banner is unchanged (`terminalHint` → `/help`).
+
 ---
 
 ## Related
