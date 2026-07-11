@@ -4,8 +4,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 73
-- **Last Active**: 2026-07-10
+- **Total Sessions**: 74
+- **Last Active**: 2026-07-11
 <!-- @@@/auto:current-status -->
 
 ## Active Documents
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~1319 | Active |
+| `journal-0.md` | ~1352 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 74 | 2026-07-11 | free draft revise next-step hint | `fe92d589` | `feat/free-draft-revise-next-step-hint` |
 | 73 | 2026-07-10 | free TUI help draft commands | `b4a6811f` | `main` |
 | 72 | 2026-07-09 | TUI tool_result multiline display | `f31fbf39` | `feat/tui-tool-result-multiline` |
 | 71 | 2026-07-09 | Fix free draft list alist bug (runtime-caught) | `31795772` | `main` |

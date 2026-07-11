@@ -1225,6 +1225,12 @@ async function handleDraft(draftId: string) {
           for (const hint of hints) {
             writeLine(`    ${D}• ${hint}${R}`)
           }
+          // Next-step hint for revise-able drafts — closes the evaluate→edit
+          // loop. approved drafts already get an analytics hint below; only
+          // needs_revision/rejected with concrete hints point at /edit→/evaluate.
+          if (decision === 'needs_revision' || decision === 'rejected') {
+            writeLine(`  ${Y}${t('tui.draftDetailReviseHint', { id: data.draft_id })}${R}`)
+          }
         }
       }
       if (draft.published !== undefined) {

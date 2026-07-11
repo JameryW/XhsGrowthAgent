@@ -1440,6 +1440,7 @@
     "draftDetailPostUrlLabel": "帖子链接",
     "draftDetailAnalyticsHint": "运行 /analytics {id} 查看互动数据",
     "draftDetailMockPublishedHint": "模拟发布（dry-run）—— 取消 dry-run 重新发布以获得真实帖子",
+    "draftDetailReviseHint": "按上方建议用 /edit {id} <字段> <值> 修改后重新 /evaluate",
     "analyticsTitle": "草稿数据分析",
     "analyticsMissing": "用法：/analytics <草稿ID>",
     "analyticsFetchFailed": "获取分析数据失败",
