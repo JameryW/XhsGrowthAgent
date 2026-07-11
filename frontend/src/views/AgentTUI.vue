@@ -1700,6 +1700,7 @@ onMounted(() => {
     writeLineColored(`    ${t('tui.freeCmdStart')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdDrafts')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdDraft')}`, ANSI.DIM)
+    writeLineColored(`    ${t('tui.freeCmdEdit')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdDelete')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdAnalytics')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdEvaluate')}`, ANSI.DIM)
