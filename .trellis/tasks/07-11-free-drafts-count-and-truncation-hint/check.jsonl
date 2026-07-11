@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "verify count + truncated fields in list_drafts response contract + surface/sort section"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "no-silent-caps convention; truncation surfaced not hidden"}

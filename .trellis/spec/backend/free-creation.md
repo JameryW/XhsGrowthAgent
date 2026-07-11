@@ -27,7 +27,7 @@ drafts never enter the checkpoint, and the workflow slash commands stay disabled
 | POST | `/draft` | `FreeDraft` (account_id, title, body, hashtags, image_paths, niche, content_angle, target_audience) | `{draft_id, draft}` |
 | POST | `/evaluate` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, evaluation_result}` |
 | POST | `/publish` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, publish_result}` |
-| GET | `/drafts/{account_id}` | — | `{account_id, drafts: [{draft_id, title, hashtags, created_at, updated_at, last_evaluation, published}]}` (sorted newest-first by `updated_at`; metadata fields optional — see Draft Status Metadata) |
+| GET | `/drafts/{account_id}` | — | `{account_id, drafts: [{draft_id, title, hashtags, created_at, updated_at, last_evaluation, published}], count, truncated}` (sorted newest-first by `updated_at`; metadata fields optional — see Draft Status Metadata) |
 | GET | `/draft/{draft_id}` | query `account_id` | `{draft_id, draft}` |
 | PATCH | `/draft/{draft_id}` | query `account_id`; body `FreeDraftUpdate` (all fields optional) | `{draft_id, draft}` |
 | DELETE | `/draft/{draft_id}` | query `account_id` | `{draft_id, deleted: true}` |
@@ -212,6 +212,17 @@ drafts.sort(key=lambda d: d.get("updated_at") or "", reverse=True)
 
 ISO strings sort lexicographically = chronologically; drafts without `updated_at`
 (old records) map to `""` and sort last.
+
+### Count + truncation
+
+The response also carries `count` (len of the returned `drafts` list) and
+`truncated` (bool). `list_drafts` caps `store.asearch` at `limit=100`; the
+`asearch` limit is page size, not total — there is no portable total-count
+API on `BaseStore`. So `truncated` is a **heuristic**: `true` when the
+returned items hit the limit (`len(items) >= 100`), meaning more likely
+exist. This is surfaced (not silently dropped) per the no-silent-caps
+convention — the TUI renders a dim "showing first 100 — older drafts hidden"
+line when `truncated`, and logs an info line server-side.
 
 ### Graceful degradation
 

@@ -1044,9 +1044,15 @@ async function handleDrafts() {
         last_evaluation?: { overall_score?: number | null; decision?: string | null } | null
         published?: boolean | null
       }>
+      count?: number
+      truncated?: boolean
     }
     writeLine('')
-    writeLineColored(t('tui.draftsListTitle', { accountId }), ANSI.BRIGHT_CYAN)
+    const count = data.count ?? data.drafts?.length ?? 0
+    writeLineColored(t('tui.draftsListTitle', { accountId, count }), ANSI.BRIGHT_CYAN)
+    if (data.truncated) {
+      writeLineColored(`  ${t('tui.draftsTruncated')}`, ANSI.DIM)
+    }
     if (!data.drafts || data.drafts.length === 0) {
       writeLineColored(`  ${t('tui.draftsNone')}`, ANSI.DIM)
     } else {

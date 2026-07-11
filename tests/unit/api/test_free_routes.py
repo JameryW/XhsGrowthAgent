@@ -395,6 +395,31 @@ class TestListDrafts:
         assert r.status_code == 200
         assert r.json()["data"]["drafts"] == []
 
+    def test_list_returns_count_and_not_truncated(self, client, mock_store):
+        client.post("/api/free/draft", json=DRAFT_BODY)
+        client.post("/api/free/draft", json={**DRAFT_BODY, "title": "第二篇"})
+        r = client.get("/api/free/drafts/acct1")
+        data = r.json()["data"]
+        assert data["count"] == 2
+        assert data["truncated"] is False
+
+    def test_list_truncated_when_at_limit(self, client, mock_store):
+        # Seed >100 drafts → asearch caps at 100 → truncated=True (heuristic:
+        # returned items hit the limit, so more likely exist). count reflects
+        # the returned (capped) list, not the true total.
+        for i in range(101):
+            mock_store._records[f"draft-{i}"] = {
+                "draft_id": f"draft-{i}",
+                "title": f"草稿 {i}",
+                "hashtags": [],
+                "body": "x",
+                "updated_at": f"2026-07-11T00:00:{i:02d}",
+            }
+        r = client.get("/api/free/drafts/acct1")
+        data = r.json()["data"]
+        assert data["count"] == 100
+        assert data["truncated"] is True
+
     def test_list_no_store_returns_400(self, client):
         app.state.graph.store = None
         r = client.get("/api/free/drafts/acct1")
