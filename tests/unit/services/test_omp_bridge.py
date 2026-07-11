@@ -591,13 +591,29 @@ class TestFreeModeTools:
         assert "xhs_free_analytics(" not in text
 
     async def test_free_draft_list(self):
-        """xhs_free_draft_list GETs /free/drafts/{account_id} and renders the list."""
+        """xhs_free_draft_list GETs /free/drafts/{account_id} and renders the list
+        with published/eval badges + count header (mirrors TUI /drafts)."""
         data = {
             "account_id": "acc1",
             "drafts": [
-                {"draft_id": "d1", "title": "标题一", "hashtags": []},
+                {
+                    "draft_id": "d1",
+                    "title": "标题一",
+                    "hashtags": [],
+                    "last_evaluation": {"overall_score": 82.0, "decision": "approved"},
+                    "published": True,
+                },
                 {"draft_id": "d2", "title": "标题二", "hashtags": []},
+                {
+                    "draft_id": "d3",
+                    "title": "标题三",
+                    "hashtags": [],
+                    "last_evaluation": {"overall_score": 51.0, "decision": "needs_revision"},
+                    "published": False,
+                },
             ],
+            "count": 3,
+            "truncated": True,
         }
         client = _mock_client_get(data)
         with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
@@ -605,10 +621,18 @@ class TestFreeModeTools:
         assert result.get("isError") is not True
         text = result["content"][0]["text"]
         assert "acc1" in text
+        # count header + truncated note
+        assert "(3)" in text
+        assert "truncated" in text
         assert "d1" in text and "标题一" in text
         assert "d2" in text and "标题二" in text
+        # eval badge (score + decision) + published marker on d1
+        assert "82.0" in text and "approved" in text
+        assert "[published]" in text
+        # d2 has no eval/published badge
+        assert "needs_revision" in text  # d3
         # Structured result carries drafts
-        assert len(result["details"]["drafts"]) == 2
+        assert len(result["details"]["drafts"]) == 3
         # GET to /free/drafts/{account_id}
         client.get.assert_awaited_once()
         assert "/free/drafts/acc1" in client.get.await_args.args[0]

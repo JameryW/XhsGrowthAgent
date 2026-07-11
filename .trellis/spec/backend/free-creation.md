@@ -48,10 +48,18 @@ internal httpx to `/api/free/*` (the `url` already includes `/api`, so paths are
 - `xhs_free_analytics` → GET `/free/analytics/{draft_id}?account_id=...` (post-publish engagement; thread-less — uses `XHSClient.get_post_analytics(post_id)`, not the thread-bound workflow analytics)
 - `xhs_free_guide` → no backend call (local); returns the orchestration guide text
 
-**Agent-side render next-step cues** (`omp_bridge._execute_xhs_host_tool`): free
-mode defaults to agent mode, so the omp agent reads these renders as plain text
-and needs the loop's next step surfaced (not just the verdict). The renders
-append a conditional `next:`/`note:` cue:
+**Agent-side render** (`omp_bridge._execute_xhs_host_tool`): free mode defaults
+to agent mode, so the omp agent reads these renders as plain text and needs the
+loop's state and next step surfaced (not just raw fields or the verdict). The
+renders align with the TUI surfaces, not duplicate the minimal backend response,
+and append a conditional `next:`/`note:` cue:
+- **`xhs_free_draft_list`**: header with `count`, a `truncated` note when the
+  route's 100-cap dropped older drafts, and per-draft badges —
+  `[<score> <decision>]` when `last_evaluation` has a decision, `[published]`
+  when published — so the agent can pick the next step from the list
+  (unevaluated→evaluate, needs_revision→revise, approved/published→publish or
+  analytics) without calling `xhs_free_draft` per item. Mirrors TUI `/drafts`
+  (#216/#226/#227).
 - **`xhs_free_publish`**: real publish (`status == "published"`, non-`mock_` post_id) →
   `next: call xhs_free_analytics(<draft_id>) ...`; mock publish (`mock_published` /
   `mock_*` post_id, dry-run) → `note: dry-run mock publish ... analytics not available`
