@@ -48,16 +48,24 @@ internal httpx to `/api/free/*` (the `url` already includes `/api`, so paths are
 - `xhs_free_analytics` → GET `/free/analytics/{draft_id}?account_id=...` (post-publish engagement; thread-less — uses `XHSClient.get_post_analytics(post_id)`, not the thread-bound workflow analytics)
 - `xhs_free_guide` → no backend call (local); returns the orchestration guide text
 
-**Agent-side evaluate render** (`omp_bridge._execute_xhs_host_tool` for `xhs_free_evaluate`):
-the verdict is rendered as plain text for the omp agent (overall/decision/bias/
-dimensions/hints). When `decision ∈ {needs_revision, rejected}` AND
-`revision_hints` is non-empty, the render appends a `next:` cue pointing the
-agent at `xhs_free_draft_update` (keep draft_id) → `xhs_free_evaluate` again
-before publish — the agent-side mirror of the TUI `/draft <id>` revise hint
-(#229). `approved` (even with hints present) gets no cue; `rejected` without
-hints gets no cue. The guide text (`xhs_free_guide`) documents the same
-evaluate→revise→re-evaluate loop so an agent that reads the guide first also
-learns the revise path, not only the happy path.
+**Agent-side render next-step cues** (`omp_bridge._execute_xhs_host_tool`): free
+mode defaults to agent mode, so the omp agent reads these renders as plain text
+and needs the loop's next step surfaced (not just the verdict). The renders
+append a conditional `next:`/`note:` cue:
+- **`xhs_free_publish`**: real publish (`status == "published"`, non-`mock_` post_id) →
+  `next: call xhs_free_analytics(<draft_id>) ...`; mock publish (`mock_published` /
+  `mock_*` post_id, dry-run) → `note: dry-run mock publish ... analytics not available`
+  (so the agent doesn't call analytics and 400 on a synthetic post_id). Failed/unknown → no cue.
+  Mirrors the TUI post-publish hint (#223: real post_id → analytics hint; mock_* → mock hint).
+- **`xhs_free_evaluate`**: the verdict is rendered as plain text for the omp agent
+  (overall/decision/bias/dimensions/hints). When `decision ∈ {needs_revision, rejected}`
+  AND `revision_hints` is non-empty, the render appends a `next:` cue pointing the
+  agent at `xhs_free_draft_update` (keep draft_id) → `xhs_free_evaluate` again
+  before publish — the agent-side mirror of the TUI `/draft <id>` revise hint
+  (#229). `approved` (even with hints present) gets no cue; `rejected` without
+  hints gets no cue. The guide text (`xhs_free_guide`) documents the same
+  evaluate→revise→re-evaluate loop so an agent that reads the guide first also
+  learns the revise path, not only the happy path.
 
 ### Discovery — no system prompt on the bridge path
 
