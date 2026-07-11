@@ -1317,3 +1317,36 @@ showHelp never listed free-mode draft commands (/drafts /draft /delete from #216
 ### Next Steps
 
 - None - task complete
+
+
+## Session 74: free draft revise next-step hint
+
+**Date**: 2026-07-11
+**Task**: free draft revise next-step hint
+**Branch**: `feat/free-draft-revise-next-step-hint`
+
+### Summary
+
+/draft <id> detail rendered revision_hints for needs_revision/rejected drafts but had no next-step pointer — approved gets analytics hint, mock-published gets re-publish hint, revise-able drafts had closed loop. Added yellow hint after hints list when decision in {needs_revision,rejected} and hints non-empty: 按上方建议用 /edit <id> <字段> <值> 修改后重新 /evaluate. Suppressed for approved (analytics hint covers) and empty hints. Closes evaluate→edit discoverability loop. i18n draftDetailReviseHint zh+en. Spec handleDraft detail section documents hint+suppression. vue-tsc green. PR #229.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fe92d589` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
