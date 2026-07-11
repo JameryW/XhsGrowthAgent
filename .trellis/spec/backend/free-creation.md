@@ -291,6 +291,18 @@ Metadata):
   would mislead.
 - Unpublished draft: no post lines (graceful).
 
+The status block also renders `last_evaluation` (score/decision) and, when
+present, `revision_hints` as a `•`-bulleted list. For `needs_revision` /
+`rejected` drafts with non-empty hints, a yellow next-step hint follows the
+list:
+
+- `按上方建议用 /edit <id> <字段> <值> 修改后重新 /evaluate` (zh) /
+  `Use /edit <id> <field> <value> to revise per the hints above, then /evaluate again` (en)
+  — closes the evaluate→edit loop (approved drafts already get the analytics
+  hint above; only revise-able drafts with concrete hints need this pointer).
+  Suppressed when `decision == "approved"` or when `revision_hints` is
+  empty/absent (nothing concrete to point at).
+
 ### First-entry banner (onMounted)
 
 When `isFreeCreationEntry`, the TUI mounts into agent mode and writes a banner:
