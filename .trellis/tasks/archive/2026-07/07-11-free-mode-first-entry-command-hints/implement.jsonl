@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "AgentTUI onMounted banner render + i18n key convention + ANSI dim rendering"}
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "TUI display section: first-entry banner contract; free-mode command list (start/drafts/draft/delete/analytics/mode)"}
