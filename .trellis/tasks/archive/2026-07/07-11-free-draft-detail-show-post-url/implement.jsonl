@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "AgentTUI handleDraft render + i18n key convention + ANSI rendering pattern"}
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "TUI display section + /draft <id> detail contract; post_id/post_url fields published by publish_draft"}
