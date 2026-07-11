@@ -1352,6 +1352,25 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     f"  URL: {pub.get('post_url', '')}",
                     f"  Status: {pub.get('status', '')}",
                 ]
+                # Next-step cue — mirrors the evaluate render (#234) and the TUI
+                # post-publish hint (#223). Real publish (status=="published",
+                # non-mock post_id) → point at xhs_free_analytics for engagement.
+                # Mock publish (dry-run, "mock_*" post_id / mock_published) → flag
+                # it as simulated so the agent doesn't call analytics (which 400s
+                # on a synthetic post_id). Failed/unknown → no cue.
+                pid = pub.get("post_id", "") or ""
+                pstatus = pub.get("status", "") or ""
+                if pstatus == "published" and pid and not pid.startswith("mock_"):
+                    lines.append(
+                        f"  next: call xhs_free_analytics({draft_id}) to check "
+                        "post-publish engagement."
+                    )
+                elif pstatus == "mock_published" or pid.startswith("mock_"):
+                    lines.append(
+                        "  note: dry-run mock publish (no real XHS post) — analytics "
+                        "not available; re-run xhs_free_publish without dry-run for a "
+                        "real post."
+                    )
                 return _make_text_result("\n".join(lines), {"publish_result": pub, **data})
 
             elif tool_name == "xhs_free_analytics":

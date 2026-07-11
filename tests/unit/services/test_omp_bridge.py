@@ -523,6 +523,9 @@ class TestFreeModeTools:
         assert "post-42" in text
         assert "post-42" in text  # post_url contains it too
         assert "published" in text
+        # Real publish (non-mock post_id) → analytics next-step cue
+        assert "xhs_free_analytics" in text
+        assert "engagement" in text
         # Structured result carries publish_result
         assert result["details"]["publish_result"]["post_id"] == "post-42"
         # Posted to /free/publish with account_id + draft_id
@@ -531,6 +534,32 @@ class TestFreeModeTools:
         sent_json = client.post.await_args.kwargs["json"]
         assert sent_json["account_id"] == "acc1"
         assert sent_json["draft_id"] == "draft-pub"
+
+    async def test_free_publish_mock_dry_run_hint(self):
+        # mock_published (dry-run, "mock_*" post_id) → flag as simulated so the
+        # agent doesn't call analytics (which 400s on a synthetic post_id).
+        # Mirrors the TUI mock hint (#223); agent-side render #234 cue pattern.
+        data = {
+            "draft_id": "draft-mock",
+            "account_id": "acc1",
+            "publish_result": {
+                "post_id": "mock_42",
+                "post_url": "",
+                "status": "mock_published",
+            },
+        }
+        client = _mock_client_post(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool(
+                "xhs_free_publish",
+                {"account_id": "acc1", "draft_id": "draft-mock"},
+            )
+        text = result["content"][0]["text"]
+        assert "mock_published" in text
+        # mock cue present, analytics cue absent
+        assert "dry-run mock publish" in text
+        assert "analytics not available" in text
+        assert "xhs_free_analytics(" not in text
 
     async def test_free_draft_list(self):
         """xhs_free_draft_list GETs /free/drafts/{account_id} and renders the list."""

@@ -48,6 +48,16 @@ internal httpx to `/api/free/*` (the `url` already includes `/api`, so paths are
 - `xhs_free_analytics` → GET `/free/analytics/{draft_id}?account_id=...` (post-publish engagement; thread-less — uses `XHSClient.get_post_analytics(post_id)`, not the thread-bound workflow analytics)
 - `xhs_free_guide` → no backend call (local); returns the orchestration guide text
 
+**Agent-side render next-step cues** (`omp_bridge._execute_xhs_host_tool`): free
+mode defaults to agent mode, so the omp agent reads these renders as plain text
+and needs the loop's next step surfaced (not just the verdict). The renders
+append a conditional `next:`/`note:` cue:
+- **`xhs_free_publish`**: real publish (`status == "published"`, non-`mock_` post_id) →
+  `next: call xhs_free_analytics(<draft_id>) ...`; mock publish (`mock_published` /
+  `mock_*` post_id, dry-run) → `note: dry-run mock publish ... analytics not available`
+  (so the agent doesn't call analytics and 400 on a synthetic post_id). Failed/unknown → no cue.
+  Mirrors the TUI post-publish hint (#223: real post_id → analytics hint; mock_* → mock hint).
+
 ### Discovery — no system prompt on the bridge path
 
 The Web TUI free mode goes through the Python RPC bridge (`OmpSession`), NOT
