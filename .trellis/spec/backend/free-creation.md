@@ -350,7 +350,7 @@ discovers draft management without typing `/help` first:
   Free orchestration chat mode is active — type to create, evaluate, and publish.
   Draft commands (also in /help):
     /start            clear the conversation (new session)
-    /drafts [status] [q]  list/filter your free drafts + status badges
+    /drafts [status] [q]  list/filter your free drafts (status: published/unpublished/publish_failed/evaluated/unevaluated) + status badges
     /draft <id>      view a draft's full record
     /edit <id> <field> <value>  edit a draft's scalar field (title/niche/content_angle/target_audience)
     /delete <id>    delete a draft
