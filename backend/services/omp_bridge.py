@@ -1383,9 +1383,28 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 drafts = data.get("drafts", [])
                 if not drafts:
                     return _make_text_result(f"Free Drafts — {account_id}\n  (none)", data)
-                lines = [f"Free Drafts — {account_id}"]
+                # Header with count — count is the filtered count from the route;
+                # the agent can see how many drafts match without scanning lines.
+                count = data.get("count", len(drafts))
+                lines = [f"Free Drafts — {account_id} ({count})"]
+                if data.get("truncated"):
+                    # Route caps asearch at 100 — older drafts beyond the cap
+                    # aren't visible. Surface it so the agent knows the list
+                    # may be incomplete (mirrors the TUI /drafts truncated hint).
+                    lines.append("  (truncated — older drafts not shown)")
                 for d in drafts:
-                    lines.append(f"  - {d.get('draft_id', '')}: {d.get('title', '')}")
+                    parts = [f"  - {d.get('draft_id', '')}: {d.get('title', '')}"]
+                    # Eval badge — last_evaluation with a decision lets the agent
+                    # pick next step from the list (unevaluated→evaluate,
+                    # needs_revision→revise, approved→publish/analytics).
+                    le = d.get("last_evaluation") or {}
+                    if le and le.get("decision"):
+                        score = le.get("overall_score")
+                        score_str = f"{score}" if score is not None else "?"
+                        parts.append(f"  [{score_str} {le.get('decision')}]")
+                    if d.get("published"):
+                        parts.append("  [published]")
+                    lines.append("".join(parts))
                 return _make_text_result("\n".join(lines), {"drafts": drafts, **data})
 
             elif tool_name == "xhs_free_draft_update":
