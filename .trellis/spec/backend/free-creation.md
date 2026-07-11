@@ -27,7 +27,7 @@ drafts never enter the checkpoint, and the workflow slash commands stay disabled
 | POST | `/draft` | `FreeDraft` (account_id, title, body, hashtags, image_paths, niche, content_angle, target_audience) | `{draft_id, draft}` |
 | POST | `/evaluate` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, evaluation_result}` |
 | POST | `/publish` | `FreeDraftRef` (account_id, draft_id) | `{draft_id, account_id, publish_result}` |
-| GET | `/drafts/{account_id}` | query `status` (optional: all\|published\|unpublished\|evaluated\|unevaluated), `q` (optional title substring) | `{account_id, drafts: [{draft_id, title, hashtags, created_at, updated_at, last_evaluation, published}], count, truncated, status, q}` (sorted newest-first by `updated_at`; metadata fields optional — see Draft Status Metadata; `count`/`truncated` reflect filtered/total respectively — see Status filter + title search) |
+| GET | `/drafts/{account_id}` | query `status` (optional: all\|published\|unpublished\|publish_failed\|evaluated\|unevaluated), `q` (optional title substring) | `{account_id, drafts: [{draft_id, title, hashtags, created_at, updated_at, last_evaluation, last_publish, published}], count, truncated, status, q}` (sorted newest-first by `updated_at`; metadata fields optional — see Draft Status Metadata; `count`/`truncated` reflect filtered/total respectively — see Status filter + title search) |
 | GET | `/draft/{draft_id}` | query `account_id` | `{draft_id, draft}` |
 | PATCH | `/draft/{draft_id}` | query `account_id`; body `FreeDraftUpdate` (all fields optional) | `{draft_id, draft}` |
 | DELETE | `/draft/{draft_id}` | query `account_id` | `{draft_id, deleted: true}` |
@@ -56,10 +56,11 @@ and append a conditional `next:`/`note:` cue:
 - **`xhs_free_draft_list`**: header with `count`, a `truncated` note when the
   route's 100-cap dropped older drafts, and per-draft badges —
   `[<score> <decision>]` when `last_evaluation` has a decision, `[published]`
-  when published — so the agent can pick the next step from the list
+  when published, `[publish failed]` when `last_publish.status` is a non-success
+  (failed/auth_expired/...) — so the agent can pick the next step from the list
   (unevaluated→evaluate, needs_revision→revise, approved/published→publish or
-  analytics) without calling `xhs_free_draft` per item. Mirrors TUI `/drafts`
-  (#216/#226/#227).
+  analytics, publish-failed→re-attempt after fixing cause) without calling
+  `xhs_free_draft` per item. Mirrors TUI `/drafts` (#216/#226/#227).
 - **`xhs_free_publish`**: real publish (`status == "published"`, non-`mock_` post_id) →
   `next: call xhs_free_analytics(<draft_id>) ...`; mock publish (`mock_published` /
   `mock_*` post_id, dry-run) → `note: dry-run mock publish ... analytics not available`
@@ -219,9 +220,10 @@ after `model_dump()`, the same way `draft_id` is set.
 | Field | Type | Set by | Notes |
 |-------|------|--------|-------|
 | `created_at` | ISO 8601 UTC str | `create_draft` | Set once; never changed by update. |
-| `updated_at` | ISO 8601 UTC str | `create_draft`, `update_draft`, `evaluate_draft`, `publish_draft` (on success) | Refreshed on every write-back. |
+| `updated_at` | ISO 8601 UTC str | `create_draft`, `update_draft`, `evaluate_draft`, `publish_draft` | Refreshed on every write-back — including failed publish attempts (a publish attempt is a meaningful update). |
 | `last_evaluation` | `{overall_score, decision, revision_hints} \| None` | `evaluate_draft` | The {overall_score, decision, revision_hints} triple is persisted; the full `evaluation_result` (dimensions, bias_warning, summary) is still returned to the agent but not stored on the draft. |
-| `published` | `bool` | `publish_draft` (on success) | Set `True` only when `publish_result.status` ∈ `{"published", "mock_published"}`. |
+| `last_publish` | `{status, error?, error_type?, at} \| None` | `publish_draft` (every attempt) | Persisted on **every** publish attempt — success writes `status` (`published`/`mock_published`) with error fields `None`; failure writes `status` (`failed`/`auth_expired`/...) + `error` + `error_type`. `at` is the attempt timestamp. Lets `/draft <id>` and the agent list render surface a failed publish's cause after the turn ends (#239 only surfaces it for the single tool call). A later success overwrites it. |
+| `published` | `bool` | `publish_draft` (on success) | Set `True` only when `publish_result.status` ∈ `{"published", "mock_published"}`. Failures do NOT flip `published` (they only record via `last_publish`). |
 | `post_id` | `str` | `publish_draft` (on success) | The XHS note id, from `publish_result.post_id`. Empty for mock-published. Used by `GET /free/analytics/{draft_id}` to fetch engagement. |
 | `post_url` | `str` | `publish_draft` (on success) | The XHS note URL, from `publish_result.post_url`. |
 
@@ -267,7 +269,7 @@ capped asearch page (no extra store call):
 
 | param | values | semantics |
 |-------|--------|-----------|
-| `status` | `all` (default) \| `published` \| `unpublished` \| `evaluated` \| `unevaluated` | `published` ↔ `published == True`; `evaluated` ↔ `last_evaluation is not None`. Invalid value → 400 (whitelist fail-fast, not silent fallback). |
+| `status` | `all` (default) \| `published` \| `unpublished` \| `publish_failed` \| `evaluated` \| `unevaluated` | `published` ↔ `published == True`; `publish_failed` ↔ `last_publish.status` present and not a success status (`published`/`mock_published`); `evaluated` ↔ `last_evaluation is not None`. Invalid value → 400 (whitelist fail-fast, not silent fallback). |
 | `q` | title substring | case-insensitive `contains` against `title`; empty = no filter. |
 
 `status` and `q` combine (AND). `count` reflects the **filtered** set; `truncated`
@@ -348,7 +350,7 @@ discovers draft management without typing `/help` first:
   Free orchestration chat mode is active — type to create, evaluate, and publish.
   Draft commands (also in /help):
     /start            clear the conversation (new session)
-    /drafts [status] [q]  list/filter your free drafts + status badges
+    /drafts [status] [q]  list/filter your free drafts (status: published/unpublished/publish_failed/evaluated/unevaluated) + status badges
     /draft <id>      view a draft's full record
     /edit <id> <field> <value>  edit a draft's scalar field (title/niche/content_angle/target_audience)
     /delete <id>    delete a draft

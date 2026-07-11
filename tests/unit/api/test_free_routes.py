@@ -318,6 +318,46 @@ class TestPublishDraft:
         stored = mock_store._records[draft_id]
         assert stored["published"] is False
 
+    def test_publish_failure_persists_last_publish(self, client, mock_store):
+        # Failures record the attempt via last_publish (status/error/error_type/at)
+        # so /draft <id> + the agent list can surface the cause after the turn.
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        pub_result = {
+            "status": "failed",
+            "error": "账号 acct1 已停用，无法发布",
+            "error_type": "account_inactive",
+        }
+        with patch(
+            "backend.api.routes.free.run_publish",
+            AsyncMock(return_value={"publish_result": pub_result}),
+        ):
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+        stored = mock_store._records[draft_id]
+        assert stored["last_publish"]["status"] == "failed"
+        assert stored["last_publish"]["error"] == "账号 acct1 已停用，无法发布"
+        assert stored["last_publish"]["error_type"] == "account_inactive"
+        assert stored["last_publish"]["at"]
+        # failure does NOT flip published / persist post_id
+        assert stored["published"] is False
+        assert "post_id" not in stored
+
+    def test_publish_success_persists_last_publish(self, client, mock_store):
+        create = client.post("/api/free/draft", json=DRAFT_BODY)
+        draft_id = create.json()["data"]["draft_id"]
+
+        pub_result = {"post_id": "x123", "post_url": "u", "status": "published"}
+        with patch(
+            "backend.api.routes.free.run_publish",
+            AsyncMock(return_value={"publish_result": pub_result}),
+        ):
+            client.post("/api/free/publish", json={"account_id": "acct1", "draft_id": draft_id})
+        stored = mock_store._records[draft_id]
+        assert stored["last_publish"]["status"] == "published"
+        assert stored["last_publish"]["error"] is None
+        assert stored["last_publish"]["at"]
+
     def test_publish_missing_draft_returns_400(self, client):
         r = client.post(
             "/api/free/publish",
@@ -526,6 +566,48 @@ class TestListDrafts:
         data = r.json()["data"]
         ids = {d["draft_id"] for d in data["drafts"]}
         assert ids == {"unpub-1", "unpub-2"}
+
+    def test_list_status_filter_publish_failed(self, client, mock_store):
+        # publish_failed matches drafts whose last_publish.status is a non-success
+        # (failed / auth_expired / ...). Published success + no-publish + mock
+        # are excluded.
+        mock_store._records["fail-1"] = {
+            "draft_id": "fail-1",
+            "title": "发布失败",
+            "hashtags": [],
+            "body": "x",
+            "published": False,
+            "last_publish": {
+                "status": "failed",
+                "error": "停用",
+                "error_type": "account_inactive",
+                "at": "2026-07-12T00:00:01",
+            },
+            "updated_at": "2026-07-12T00:00:01",
+        }
+        mock_store._records["pub-1"] = {
+            "draft_id": "pub-1",
+            "title": "已发布",
+            "hashtags": [],
+            "body": "x",
+            "published": True,
+            "last_publish": {"status": "published", "error": None, "at": "2026-07-12T00:00:02"},
+            "updated_at": "2026-07-12T00:00:02",
+        }
+        mock_store._records["never-1"] = {
+            "draft_id": "never-1",
+            "title": "没发过",
+            "hashtags": [],
+            "body": "x",
+            "updated_at": "2026-07-12T00:00:03",  # last_publish absent
+        }
+        r = client.get("/api/free/drafts/acct1?status=publish_failed")
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        ids = {d["draft_id"] for d in data["drafts"]}
+        assert ids == {"fail-1"}
+        assert data["count"] == 1
+        assert data["status"] == "publish_failed"
 
     def test_list_status_filter_evaluated(self, client, mock_store):
         mock_store._records["eval-1"] = {
