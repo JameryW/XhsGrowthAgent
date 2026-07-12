@@ -382,6 +382,67 @@ def logs(
     asyncio.run(_logs())
 
 
+@app.command("sync-stats")
+def sync_stats(
+    account_id: str = typer.Option("default", help="账号 ID"),
+    dry_run: bool = typer.Option(
+        True, help="使用 fixture 跑完整导入链路（不访问 creator.xiaohongshu.com）"
+    ),
+    cookie: str = typer.Option("", help="创作者中心 Cookie（live 同步）"),
+    period: str = typer.Option("30d", help="统计周期"),
+) -> None:
+    """从创作者中心统计页导入账户/笔记数据，分析并沉淀创作风格。"""
+    from dotenv import load_dotenv
+
+    load_dotenv(override=True)
+    console.print(Panel("📊 同步创作者中心统计", style="bold cyan"))
+
+    async def _sync() -> None:
+        from backend.services.creator_stats.pipeline import sync_account_stats
+
+        # Pass dry_run as-is: empty cookie + live mode returns a clear error
+        # from the pipeline (does not silently write fixture rows).
+        result = await sync_account_stats(
+            account_id,
+            cookie=cookie,
+            dry_run=dry_run,
+            period=period,
+        )
+        if result.error:
+            console.print(f"[red]同步失败: {result.error}[/red]")
+            # Partial success: import may have succeeded while analysis failed
+            if result.account_synced and result.notes_imported + result.notes_updated > 0:
+                console.print(
+                    f"[yellow]已导入 notes_imported={result.notes_imported} "
+                    f"notes_updated={result.notes_updated}（分析阶段失败）[/yellow]"
+                )
+            raise typer.Exit(1)
+
+        table = Table(title=f"同步结果 — {result.account_id}")
+        table.add_column("指标", style="cyan")
+        table.add_column("值", style="white")
+        table.add_row("source", result.source)
+        table.add_row("notes_imported", str(result.notes_imported))
+        table.add_row("notes_updated", str(result.notes_updated))
+        table.add_row("account_synced", str(result.account_synced))
+        if result.analysis:
+            table.add_row("note_count", str(result.analysis.note_count))
+            table.add_row("avg_engagement_rate", f"{result.analysis.avg_engagement_rate:.2%}")
+            table.add_row("styles_deposited", str(result.analysis.styles_deposited))
+            table.add_row("findings", str(len(result.analysis.findings)))
+        if result.niche_resolution:
+            nr = result.niche_resolution
+            table.add_row(
+                "niche",
+                f"{nr.get('niche') or '—'} ({nr.get('source') or '?'})",
+            )
+        for mode, items in (result.suggestions or {}).items():
+            table.add_row(f"suggestions[{mode}]", str(len(items)))
+        console.print(table)
+
+    asyncio.run(_sync())
+
+
 @app.command()
 def version() -> None:
     """显示版本信息"""

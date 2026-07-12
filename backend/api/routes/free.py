@@ -48,25 +48,26 @@ class FreeDraft(BaseModel):
     body: str = Field(default="", description="正文")
     hashtags: list[str] = Field(default_factory=list, description="话题标签")
     image_paths: list[str] = Field(default_factory=list, description="图片路径")
-    niche: str = Field(default="母婴", description="账号 niche（评估用）")
+    niche: str = Field(
+        default="",
+        description="垂类赛道；空/省略=根据历史笔记自动推断，非空=手动指定",
+    )
     content_angle: str = Field(default="", description="内容角度（评估用）")
     target_audience: str = Field(default="", description="目标受众（评估用）")
 
     @field_validator("niche", mode="before")
     @classmethod
-    def _niche_fallback(cls, v: Any) -> str:
-        """Empty/None/whitespace niche → default "母婴".
+    def _niche_normalize(cls, v: Any) -> str:
+        """Empty/None/whitespace niche → "" (auto-infer), never silent 母婴.
 
-        omp_bridge may explicitly pass niche="" or niche=None when the agent
-        omits it; Pydantic's Field default only kicks in when the key is absent,
-        not when it's an explicit empty string or null. mode="before" lets us
-        intercept None (which would otherwise 422 on str coercion) alongside
-        empty strings, normalizing all three cases so the evaluation context
-        always has a non-empty niche.
+        Auto-infer runs in create_draft via resolve_account_niche. Cold-start
+        default 母婴 is applied only after resolve when no history/manual.
         """
-        if v is None or (isinstance(v, str) and not v.strip()):
-            return "母婴"
-        return cast("str", v)
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()
+        return str(v).strip()
 
 
 class FreeDraftRef(BaseModel):
@@ -89,20 +90,16 @@ class FreeDraftUpdate(BaseModel):
 
     @field_validator("niche", mode="before")
     @classmethod
-    def _niche_fallback(cls, v: Any) -> str:
-        """Normalize niche on PATCH: None/empty/whitespace → "母婴".
+    def _niche_normalize(cls, v: Any) -> str:
+        """PATCH niche: None/empty/whitespace → "" (re-resolve auto on update).
 
-        Mirrors FreeDraft._niche_fallback so a PATCH cannot blank out the
-        niche (the evaluation context always needs non-empty). mode="before"
-        intercepts explicit null (which would 422 on str coercion) and
-        normalizes it alongside empty strings. update_draft uses
-        model_dump(exclude_unset=True), so a PATCH that omits the niche field
-        entirely won't write anything — "omitted" preserves existing, while
-        "explicit null/empty" resets to the default.
+        Omitted field (exclude_unset) leaves existing niche unchanged.
         """
-        if v is None or (isinstance(v, str) and not v.strip()):
-            return "母婴"
-        return cast("str", v)
+        if v is None:
+            return ""
+        if isinstance(v, str):
+            return v.strip()
+        return str(v).strip()
 
 
 def _draft_ns(account_id: str) -> tuple[str, str, str]:
@@ -212,6 +209,34 @@ async def create_draft(draft: FreeDraft, request: Request) -> ApiResponse[Any]:
 
     draft_id = str(uuid.uuid4())
     record = draft.model_dump()
+    # Niche resolve: only treat client-provided *non-empty* niche as manual.
+    # Omitted / "" / null → auto-infer from imported notes (not default 母婴).
+    from backend.services.niche_resolver import resolve_account_niche
+
+    client_set_niche = "niche" in draft.model_fields_set
+    raw_niche = (draft.niche or "").strip()
+    manual_niche = raw_niche if client_set_niche and raw_niche else ""
+    niche_res = await resolve_account_niche(
+        account_id,
+        manual_niche=manual_niche,
+        cold_start_default="母婴",
+        # Never persist cold_start default as "manual". Only bind when the
+        # client deliberately set niche or we inferred from history.
+        persist=False,
+    )
+    if niche_res.source in ("manual", "inferred") and niche_res.niche:
+        try:
+            from backend.db.accounts import update_account as db_update_account
+
+            await db_update_account(
+                account_id,
+                niche=niche_res.niche,
+                niche_source=niche_res.source,
+            )
+        except Exception as e:
+            logger.debug("persist free-draft niche skipped: %s", e)
+    record["niche"] = niche_res.niche or "母婴"
+    record["niche_resolution"] = niche_res.to_dict()
     record["draft_id"] = draft_id
     now = _now_iso()
     record["created_at"] = now
@@ -220,7 +245,42 @@ async def create_draft(draft: FreeDraft, request: Request) -> ApiResponse[Any]:
     record["published"] = False
     await store.aput(_draft_ns(account_id), key=draft_id, value=record)
     logger.info("free draft created: account=%s draft=%s", account_id, draft_id)
-    return success(data={"draft_id": draft_id, "draft": record})
+
+    # Attach free-mode creative suggestions + durable style DNA context
+    # (shared recall surface with trend/brief). Never fail draft create on this.
+    creative_suggestions: list[dict[str, Any]] = []
+    creative_context = ""
+    try:
+        from backend.services.creator_stats.suggestions import get_suggestions_for_mode
+
+        sugs = await get_suggestions_for_mode(account_id, "free", store=store)
+        creative_suggestions = [s.to_dict() for s in sugs]
+    except Exception as e:
+        logger.debug("free draft creative suggestions skipped: %s", e)
+    try:
+        from backend.memory.creative import CreativeMemory
+
+        cm = CreativeMemory(account_id, store=store)
+        niche = str(record.get("niche") or "")
+        styles = await cm.recall_style(query=f"free draft {niche}".strip())
+        plays = await cm.recall_plays(condition="free creation", niche=niche)
+        materials = await cm.recall_materials(
+            category="文案片段", tags=["高转化", "爆款标题", "开头"]
+        )
+        creative_context = cm.build_creative_context(styles, plays, materials)
+    except Exception as e:
+        logger.debug("free draft creative_context skipped: %s", e)
+
+    return success(
+        data={
+            "draft_id": draft_id,
+            "draft": record,
+            "niche_resolution": niche_res.to_dict(),
+            "creative_suggestions": creative_suggestions,
+            "creative_suggestions_count": len(creative_suggestions),
+            "creative_context": creative_context,
+        }
+    )
 
 
 @router.post("/evaluate")
@@ -491,13 +551,34 @@ async def update_draft(
 
     merged = dict(existing)
     # exclude_unset=True: only fields the client explicitly provided in the
-    # PATCH body. This distinguishes "field omitted" (preserve existing) from
-    # "field explicitly null/empty" (normalize via validator → "母婴" for
-    # niche). A plain getattr loop can't tell the two apart — both yield the
-    # model default None after validation.
+    # PATCH body. Omitted niche preserves existing; empty/null niche re-infers.
     provided = update.model_dump(exclude_unset=True)
     for field, val in provided.items():
         merged[field] = val
+    if "niche" in provided:
+        from backend.services.niche_resolver import resolve_account_niche
+
+        raw = (provided.get("niche") or "").strip()
+        manual = raw  # non-empty = manual; empty = auto
+        niche_res = await resolve_account_niche(
+            account_id,
+            manual_niche=manual,
+            cold_start_default="母婴",
+            persist=False,
+        )
+        if niche_res.source in ("manual", "inferred") and niche_res.niche:
+            try:
+                from backend.db.accounts import update_account as db_update_account
+
+                await db_update_account(
+                    account_id,
+                    niche=niche_res.niche,
+                    niche_source=niche_res.source,
+                )
+            except Exception as e:
+                logger.debug("persist free-draft niche on patch skipped: %s", e)
+        merged["niche"] = niche_res.niche or "母婴"
+        merged["niche_resolution"] = niche_res.to_dict()
     merged["draft_id"] = draft_id
     merged["updated_at"] = _now_iso()
     await store.aput(_draft_ns(account_id), key=draft_id, value=merged)
@@ -614,5 +695,32 @@ async def get_analytics(
             "draft_id": draft_id,
             "post_id": post_id,
             "analytics": analytics,
+        }
+    )
+
+
+@router.get("/suggestions/{account_id}")
+async def free_mode_suggestions(
+    account_id: str,
+    request: Request,
+) -> ApiResponse[Any]:
+    """Free-mode creative suggestions from imported creator-center stats.
+
+    Shares the same recall/advice surface as trend/brief modes.
+    """
+    from backend.services.creator_stats.suggestions import get_suggestions_for_mode
+
+    account_id = (account_id or "").strip() or "default"
+    graph = getattr(request.app.state, "graph", None)
+    store = getattr(graph, "store", None) if graph is not None else None
+    suggestions = await get_suggestions_for_mode(account_id, "free", store=store)
+    return success(
+        data={
+            "account_id": account_id,
+            "mode": "free",
+            "suggestions": [s.to_dict() for s in suggestions],
+            "count": len(suggestions),
+            "cold_start": bool(suggestions)
+            and all(s.category == "cold_start" for s in suggestions),
         }
     )

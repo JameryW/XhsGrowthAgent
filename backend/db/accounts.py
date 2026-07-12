@@ -28,6 +28,9 @@ class AccountRow:
     # Empty/0 means "no per-account binding → fallback to global CDP endpoint".
     chrome_profile_path: str = ""
     cdp_port: int = 0
+    # Bound content niche (赛道): manual override or inferred from history notes
+    niche: str = ""
+    niche_source: str = ""  # manual | inferred | account_bound | ""
 
 
 @dataclass
@@ -84,6 +87,10 @@ _ADD_CHROME_PROFILE_COL_SQL = (
 _ADD_CDP_PORT_COL_SQL = (
     "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS cdp_port INTEGER NOT NULL DEFAULT 0"
 )
+_ADD_NICHE_COL_SQL = "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS niche TEXT NOT NULL DEFAULT ''"
+_ADD_NICHE_SOURCE_COL_SQL = (
+    "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS niche_source TEXT NOT NULL DEFAULT ''"
+)
 
 
 async def ensure_tables() -> None:
@@ -96,6 +103,8 @@ async def ensure_tables() -> None:
         await conn.execute(_CREATE_INDEX_SQL)
         await conn.execute(_ADD_CHROME_PROFILE_COL_SQL)
         await conn.execute(_ADD_CDP_PORT_COL_SQL)
+        await conn.execute(_ADD_NICHE_COL_SQL)
+        await conn.execute(_ADD_NICHE_SOURCE_COL_SQL)
     logger.info("accounts tables ensured")
 
 
@@ -192,9 +201,23 @@ async def list_accounts() -> list[AccountRow]:
     return [_account_from_dict(r) for r in rows]
 
 
+_ALLOWED_UPDATE_FIELDS = frozenset(
+    {
+        "name",
+        "is_active",
+        "chrome_profile_path",
+        "cdp_port",
+        "niche",
+        "niche_source",
+        "updated_at",
+    }
+)
+
+
 async def update_account(account_id: str, **fields: Any) -> AccountRow | None:
     from datetime import UTC, datetime
 
+    fields = {k: v for k, v in fields.items() if k in _ALLOWED_UPDATE_FIELDS}
     fields["updated_at"] = datetime.now(UTC).isoformat()
 
     if not fields:
@@ -350,4 +373,6 @@ def _account_from_dict(d: dict[str, Any]) -> AccountRow:
         updated_at=d.get("updated_at", ""),
         chrome_profile_path=d.get("chrome_profile_path", "") or "",
         cdp_port=int(d.get("cdp_port") or 0),
+        niche=d.get("niche", "") or "",
+        niche_source=d.get("niche_source", "") or "",
     )

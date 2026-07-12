@@ -47,6 +47,15 @@ class UpdateAccountRequest(BaseModel):
     is_active: bool | None = None
     chrome_profile_path: str | None = None
     cdp_port: int | None = None
+    niche: str | None = None
+    niche_source: str | None = None
+
+
+class ResolveNicheRequest(BaseModel):
+    """Resolve account niche from history notes and/or manual override."""
+
+    manual_niche: str = ""
+    persist: bool = False
 
 
 class SubmitVerificationCodeRequest(BaseModel):
@@ -79,6 +88,8 @@ async def create_account(request: CreateAccountRequest) -> ApiResponse[Any]:
             "created_at": account.created_at,
             "chrome_profile_path": account.chrome_profile_path,
             "cdp_port": account.cdp_port,
+            "niche": account.niche,
+            "niche_source": account.niche_source,
         }
     )
 
@@ -99,6 +110,8 @@ async def list_accounts() -> ApiResponse[Any]:
                 "updated_at": a.updated_at,
                 "chrome_profile_path": a.chrome_profile_path,
                 "cdp_port": a.cdp_port,
+                "niche": a.niche,
+                "niche_source": a.niche_source,
             }
             for a in accounts
         ]
@@ -118,6 +131,12 @@ async def get_active_account() -> ApiResponse[Any]:
             "id": account.id,
             "name": account.name,
             "is_active": account.is_active,
+            "created_at": account.created_at,
+            "updated_at": getattr(account, "updated_at", None),
+            "chrome_profile_path": account.chrome_profile_path,
+            "cdp_port": account.cdp_port,
+            "niche": account.niche,
+            "niche_source": account.niche_source,
         }
     )
 
@@ -147,6 +166,15 @@ async def update_account(account_id: str, request: UpdateAccountRequest) -> ApiR
             if request.cdp_port < 0:
                 raise ValidationError("cdp_port", "cdp_port must be non-negative")
             fields["cdp_port"] = request.cdp_port
+        if request.niche is not None:
+            fields["niche"] = request.niche.strip()
+            fields["niche_source"] = (
+                request.niche_source.strip()
+                if request.niche_source
+                else ("manual" if fields["niche"] else "")
+            )
+        elif request.niche_source is not None:
+            fields["niche_source"] = request.niche_source.strip()
         account = await db_update(account_id, **fields)
         if account is None:
             raise AccountNotFoundError(account_id)
@@ -158,6 +186,8 @@ async def update_account(account_id: str, request: UpdateAccountRequest) -> ApiR
             "is_active": account.is_active,
             "chrome_profile_path": account.chrome_profile_path,
             "cdp_port": account.cdp_port,
+            "niche": account.niche,
+            "niche_source": account.niche_source,
         }
     )
 
@@ -172,6 +202,36 @@ async def delete_account(account_id: str) -> ApiResponse[Any]:
         raise AccountNotFoundError(account_id)
 
     return success(data={"deleted": True, "account_id": account_id})
+
+
+@router.post("/{account_id}/niche/resolve")
+async def resolve_account_niche_route(
+    account_id: str, body: ResolveNicheRequest
+) -> ApiResponse[Any]:
+    """Infer niche from imported note history, or apply manual niche override.
+
+    Manual non-empty ``manual_niche`` always wins. Empty → keyword infer from
+    creator-center note stats; no signal → cold_start.
+    """
+    from backend.db.accounts import get_account
+    from backend.services.niche_resolver import resolve_account_niche
+
+    account = await get_account(account_id)
+    if account is None:
+        raise AccountNotFoundError(account_id)
+
+    result = await resolve_account_niche(
+        account_id,
+        manual_niche=body.manual_niche,
+        cold_start_default="",
+        persist=body.persist,
+    )
+    return success(
+        data={
+            "account_id": account_id,
+            **result.to_dict(),
+        }
+    )
 
 
 @router.get("/{account_id}/login/status")

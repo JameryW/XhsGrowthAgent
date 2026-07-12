@@ -314,7 +314,10 @@ class WorkflowStartRequest(BaseModel):
     dry_run: bool = Field(default=False, description="试运行模式（不实际发布）")
     auto_publish: bool = Field(default=False, description="审核通过后自动发布")
     topic: str | None = Field(default=None, description="内容主题/关键词")
-    niche: str = Field(default="母婴", description="垂类赛道")
+    niche: str = Field(
+        default="",
+        description="垂类赛道；空字符串=根据历史笔记自动推断，非空=手动指定（优先于推断）",
+    )
     execution_mode: str = Field(default="single", description="执行模式: single/continuous")
     workflow_mode: str = Field(default="trend", description="工作模式: trend/brief")
     brief_text: str | None = Field(default=None, description="商单 brief 文本内容")
@@ -478,6 +481,16 @@ async def start_workflow(req: WorkflowStartRequest, request: Request) -> ApiResp
     graph = request.app.state.graph
     thread_id = f"xhs_{req.account_id}_{uuid.uuid4().hex[:8]}"
 
+    # Resolve niche: manual (non-empty) wins; else infer from imported history notes
+    from backend.services.niche_resolver import resolve_account_niche
+
+    niche_res = await resolve_account_niche(
+        req.account_id,
+        manual_niche=req.niche,
+        cold_start_default="母婴",
+        persist=True,
+    )
+
     initial_state: dict[str, Any] = {
         "phase": req.phase,
         "current_agent": "orchestrator",
@@ -500,7 +513,8 @@ async def start_workflow(req: WorkflowStartRequest, request: Request) -> ApiResp
         "session_id": thread_id,
         "thread_id": thread_id,
         "topic": req.topic,
-        "niche": req.niche,
+        "niche": niche_res.niche or "母婴",
+        "niche_resolution": niche_res.to_dict(),
         "dry_run": req.dry_run,
         "auto_publish": req.auto_publish,
         "created_at": datetime.now(UTC).isoformat(),

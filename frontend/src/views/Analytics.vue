@@ -6,6 +6,7 @@ import MetricCard from '@/components/MetricCard.vue'
 import DataTable from '@/components/DataTable.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import CreatorStatsPanel from '@/components/settings/CreatorStatsPanel.vue'
 import { AnalyticsSkeleton } from '@/components/skeletons'
 import { useAnalyticsStore, useAccountsStore } from '@/stores'
 
@@ -218,6 +219,14 @@ function startWithTopic(topic: string, niche?: string) {
         </button>
       </div>
     </div>
+    <!-- Import still available when dashboard fetch fails -->
+    <CreatorStatsPanel
+      v-if="accountsStore.activeAccountId || analyticsStore.accountId"
+      :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
+      :account-name="accountsStore.activeAccount?.name"
+      compact
+      @updated="refreshData"
+    />
   </div>
 
   <!-- Empty state -->
@@ -230,19 +239,41 @@ function startWithTopic(topic: string, niche?: string) {
         </div>
         <div class="text-base md:text-lg font-semibold text-slate-800">{{ t('analytics.empty.title') }}</div>
         <div class="text-xs md:text-sm text-slate-500 text-center max-w-md">{{ t('analytics.empty.description') }}</div>
-        <button
-          @click="goHome"
-          class="px-4 py-2 rounded-lg bg-teal-500 text-white text-sm font-medium hover:bg-teal-600 transition-all duration-200 flex items-center gap-2"
-        >
-          <AppIcon name="Plus" size="sm" variant="white" />
-          {{ t('analytics.empty.startWorkflow') }}
-        </button>
+        <div class="flex flex-wrap items-center justify-center gap-2">
+          <button
+            @click="goHome"
+            class="px-4 py-2 rounded-lg bg-teal-500 text-white text-sm font-medium hover:bg-teal-600 transition-all duration-200 flex items-center gap-2"
+          >
+            <AppIcon name="Plus" size="sm" variant="white" />
+            {{ t('analytics.empty.startWorkflow') }}
+          </button>
+        </div>
+        <p class="text-[11px] text-slate-400 text-center max-w-md">
+          {{ t('analytics.empty.importHint') }}
+        </p>
       </div>
     </div>
+    <!-- Still allow creator-center import when workflow posts are empty -->
+    <CreatorStatsPanel
+      v-if="accountsStore.activeAccountId || analyticsStore.accountId"
+      :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
+      :account-name="accountsStore.activeAccount?.name"
+      compact
+      @updated="refreshData"
+    />
   </div>
 
   <!-- Data view -->
   <div v-else class="relative space-y-4 md:space-y-6">
+    <!-- Creator-center import / niche bind for active account -->
+    <CreatorStatsPanel
+      v-if="accountsStore.activeAccountId || analyticsStore.accountId"
+      :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
+      :account-name="accountsStore.activeAccount?.name"
+      compact
+      @updated="refreshData"
+    />
+
     <!-- Header -->
     <div class="card">
       <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5">

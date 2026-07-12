@@ -1,5 +1,6 @@
 import client from './client'
 import type { GrowthReport, PerformanceData, CostData } from '@/types/analytics'
+import type { NicheResolution } from './accounts'
 
 // 获取增长报告
 export async function getGrowthReport(
@@ -30,4 +31,125 @@ export async function getDashboard(
   limit: number = 20
 ): Promise<{ report: GrowthReport; performance: PerformanceData; costs: CostData }> {
   return client.get(`/analytics/dashboard/${accountId}`, { params: { period, limit } })
+}
+
+// ── Creator-center stats import ────────────────────────────────────────────
+
+export interface CreatorNoteStats {
+  note_id: string
+  account_id: string
+  title: string
+  views: number
+  likes: number
+  comments: number
+  collects: number
+  shares: number
+  published_at: string
+  content_type: string
+  tags: string[]
+  cover_url: string
+  engagement_rate: number
+  synced_at: string
+  source: string
+}
+
+export interface CreatorAccountStats {
+  account_id: string
+  views: number
+  likes: number
+  comments: number
+  collects: number
+  shares: number
+  fans: number
+  note_count: number
+  period: string
+  synced_at: string
+  source: string
+}
+
+export interface CreatorStatsSyncResult {
+  account_id: string
+  notes_imported: number
+  notes_updated: number
+  account_synced: boolean
+  analysis?: {
+    note_count?: number
+    avg_engagement_rate?: number
+    styles_deposited?: number
+    findings?: unknown[]
+  } | null
+  suggestions?: Record<string, CreatorSuggestion[]>
+  source: string
+  error?: string | null
+  niche_resolution?: NicheResolution | null
+  ok?: boolean
+  import_ok?: boolean
+  analyzed?: boolean
+}
+
+export interface CreatorSuggestion {
+  mode: string
+  category: string
+  title: string
+  advice: string
+  priority: number
+  evidence: string
+}
+
+export interface CreatorStatsPayload {
+  account_id: string
+  account: CreatorAccountStats | null
+  notes: CreatorNoteStats[]
+  /** Full note count (not limited by page size) */
+  total: number
+  limit?: number
+  fetched_at: string
+}
+
+export interface CreatorSuggestionsPayload {
+  account_id: string
+  mode: string
+  suggestions: CreatorSuggestion[]
+  count: number
+  cold_start: boolean
+}
+
+/** Import creator-center account/note stats. dry_run uses fixture (no remote). */
+export async function syncCreatorStats(body: {
+  account_id: string
+  dry_run?: boolean
+  cookie?: string
+  period?: string
+  analyze?: boolean
+}): Promise<CreatorStatsSyncResult> {
+  return client.post(
+    '/analytics/creator-stats/sync',
+    {
+      account_id: body.account_id,
+      dry_run: body.dry_run ?? true,
+      cookie: body.cookie ?? '',
+      period: body.period ?? '30d',
+      analyze: body.analyze ?? true,
+    },
+    // Live crawl can exceed default 30s
+    { timeout: body.dry_run === false ? 120000 : 60000 }
+  ) as unknown as CreatorStatsSyncResult
+}
+
+export async function getCreatorStats(
+  accountId: string,
+  limit = 50
+): Promise<CreatorStatsPayload> {
+  return client.get(`/analytics/creator-stats/${accountId}`, {
+    params: { limit },
+  }) as unknown as CreatorStatsPayload
+}
+
+export async function getCreatorSuggestions(
+  accountId: string,
+  mode: string = 'trend'
+): Promise<CreatorSuggestionsPayload> {
+  return client.get(`/analytics/creator-stats/${accountId}/suggestions`, {
+    params: { mode },
+  }) as unknown as CreatorSuggestionsPayload
 }

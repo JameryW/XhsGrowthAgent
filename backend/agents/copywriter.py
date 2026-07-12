@@ -77,6 +77,20 @@ class CopywriterAgent(BaseAgent):
         if creative_ctx:
             memory_context += f"\n{creative_ctx}"
 
+        # 创作者中心导入数据建议（trend / brief 共用召回面）
+        try:
+            from backend.services.creator_stats.suggestions import (
+                build_mode_creative_context,
+            )
+            from backend.services.creator_stats.types import CreativeMode
+
+            mode: CreativeMode = "brief" if is_brief_mode else "trend"
+            stats_ctx = await build_mode_creative_context(account_id, mode, store=store)
+            if stats_ctx:
+                memory_context += f"\n{stats_ctx}"
+        except Exception as e:
+            logger.debug("creator_stats suggestions skipped: %s", e)
+
         system_prompt = self._build_system_prompt(state, extra_context=memory_context)
 
         # 构建 Ripple 传播预测上下文
