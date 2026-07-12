@@ -57,8 +57,11 @@ def test_resolve_fixture_path_relative_from_other_cwd(tmp_path):
     """Relative fixture path must resolve via project root when cwd is elsewhere."""
     assert DEFAULT_FIXTURE_PATH.is_file()
     rel = Path("tests/fixtures/creator_stats_sample.json")
+    # ponytail: derive repo root from this file, not a hardcoded absolute path
+    # (CI runners don't have /test/xhs). parents[3] = repo root from tests/.../creator_stats/
+    project_root = Path(__file__).resolve().parents[3]
     # From project root works
-    os.chdir("/test/xhs")
+    os.chdir(project_root)
     assert _resolve_fixture_path(rel).is_file()
     # From unrelated cwd still works
     os.chdir(tmp_path)
@@ -69,7 +72,7 @@ def test_resolve_fixture_path_relative_from_other_cwd(tmp_path):
         assert "notes" in payload
         assert len(payload["notes"]) >= 3
     finally:
-        os.chdir("/test/xhs")
+        os.chdir(project_root)
 
 
 def test_api_suggestions_mode_case_insensitive():
