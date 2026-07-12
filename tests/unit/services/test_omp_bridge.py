@@ -443,6 +443,9 @@ class TestFreeModeTools:
         text = result["content"][0]["text"]
         assert "draft-abc123" in text
         assert "我的母婴好物分享" in text
+        # Create→evaluate next-step cue (chain entry point surfaces the next step)
+        assert "next: call xhs_free_evaluate(draft-abc123)" in text
+        assert "quality check before publish" in text
         # Structured result carries draft_id
         assert result["details"]["draft_id"] == "draft-abc123"
         # Posted to /free/draft with the full draft body

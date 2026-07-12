@@ -53,6 +53,11 @@ to agent mode, so the omp agent reads these renders as plain text and needs the
 loop's state and next step surfaced (not just raw fields or the verdict). The
 renders align with the TUI surfaces, not duplicate the minimal backend response,
 and append a conditional `next:`/`note:` cue:
+- **`xhs_free_draft_create`**: `Free Draft Created — draft_id: <id>` + `Title`.
+  On success (draft_id present) appends `next: call xhs_free_evaluate(<draft_id>)
+  for a quality check before publish` — the create render is the chain entry
+  point (yields the draft_id evaluate/publish depend on), so it surfaces the
+  immediate next step like the other renders. No cue on a failed create.
 - **`xhs_free_draft_list`**: header with `count`, a `truncated` note when the
   route's 100-cap dropped older drafts, and per-draft badges —
   `[<score> <decision>]` when `last_evaluation` has a decision, `[degraded]`
