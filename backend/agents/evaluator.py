@@ -1,8 +1,8 @@
 """EvaluatorAgent — 创作质量评估器 (基于 RQGM agent-as-a-judge 面板).
 
 论文 arxiv 2606.26294 (Red Queen Gödel Machine) 核心方法：
-- agent-as-a-judge 多评审面板（9 维：文案/视觉/合规/传播/受众/AI味儿/图片质量/
-  商业味儿 + 对抗偏倚检测）
+- agent-as-a-judge 多评审面板（10 维：文案/视觉/合规/传播/受众/AI味儿/图片质量/
+  商业味儿/利他性 + 对抗偏倚检测）
 - 对抗偏倚检测维度校准面板是否对 AI 生成内容过度宽容（论文 1.91x 纠偏）
 - verifiable metric + judge signal 互补：LLM 给原始评分，代码用确定规则重算
   overall_score/decision，保证判定一致性。
@@ -31,16 +31,21 @@ from backend.state.schema import XHSGrowthState
 logger = logging.getLogger("xhs_growth.agents.evaluator")
 
 # 维度权重（compliance 由 is_blocking 单独兜底，不参与加权平均的拉高）
+# Keep in sync with backend.db.evaluator_config.DEFAULT_DIMENSION_WEIGHTS
 _DIMENSION_WEIGHTS: dict[str, float] = {
-    "copywriting": 0.20,
-    "visual": 0.15,
-    "compliance": 0.15,
-    "reach": 0.15,
-    "audience": 0.15,
+    "copywriting": 0.18,
+    "visual": 0.13,
+    "compliance": 0.14,
+    "reach": 0.13,
+    "audience": 0.13,
     "ai_taste": 0.08,
     "image_quality": 0.07,
     "commercial_tone": 0.05,
+    "altruism": 0.09,
 }
+
+# Below this score, ensure revision_hints name 利他性 with actionable advice
+_ALTRUISM_HINT_THRESHOLD = 65.0
 
 DEFAULT_PASS_THRESHOLD = 70.0
 DEFAULT_REJECT_THRESHOLD = 50.0
@@ -315,13 +320,45 @@ class EvaluatorAgent(BaseAgent):
 
         hints = [str(h) for h in raw_hints if h]
         if decision == ContentStatus.APPROVED:
-            hints = []
-        elif not hints:
+            # Surface 利他性 tips even when overall passed but altruism is weak
+            return decision, self._altruism_suggestions(dimensions)
+
+        if not hints:
             # 无 LLM hints 时从 issues 兜底；issues 也空则给一条综合兜底
             hints = self._hints_from_issues(dimensions) or [
                 f"综合分 {overall:.0f} 低于发布阈值，建议全面优化文案与视觉表达"
             ]
+        # Ensure low-altruism always yields named, actionable revision advice
+        altruism_hints = self._altruism_suggestions(dimensions)
+        for h in altruism_hints:
+            if h not in hints:
+                hints.insert(0, h)
         return decision, hints
+
+    @staticmethod
+    def _altruism_suggestions(dimensions: list[dict[str, Any]]) -> list[str]:
+        """Actionable 利他性 suggestions when score is weak or issues present."""
+        d = next((x for x in dimensions if x.get("dimension") == "altruism"), None)
+        if d is None:
+            return []
+        score = float(d.get("score") or 0)
+        issues = [str(i) for i in (d.get("issues") or []) if i]
+        if score >= _ALTRUISM_HINT_THRESHOLD and not issues:
+            return []
+        hints: list[str] = []
+        for issue in issues:
+            line = f"[altruism/利他性] {issue}"
+            if line not in hints:
+                hints.append(line)
+        if score < _ALTRUISM_HINT_THRESHOLD:
+            defaults = [
+                "[altruism/利他性] 补充 2-3 条读者可直接照做的具体方法或步骤，减少纯自我展示",
+                "[altruism/利他性] 明确说明这篇笔记能帮读者解决什么问题，避免空泛种草话术",
+            ]
+            for h in defaults:
+                if h not in hints:
+                    hints.append(h)
+        return hints
 
     @staticmethod
     def _hints_from_issues(dimensions: list[dict[str, Any]]) -> list[str]:
@@ -331,7 +368,10 @@ class EvaluatorAgent(BaseAgent):
             if d["dimension"] == "bias_check":
                 continue
             for issue in d["issues"]:
-                hints.append(f"[{d['dimension']}] {issue}")
+                prefix = d["dimension"]
+                if prefix == "altruism":
+                    prefix = "altruism/利他性"
+                hints.append(f"[{prefix}] {issue}")
         return hints
 
 

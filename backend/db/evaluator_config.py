@@ -30,14 +30,16 @@ logger = logging.getLogger("xhs_growth.db.evaluator_config")
 # evaluator falls back to these when no DB row exists.
 
 DEFAULT_DIMENSION_WEIGHTS: dict[str, float] = {
-    "copywriting": 0.20,
-    "visual": 0.15,
-    "compliance": 0.15,
-    "reach": 0.15,
-    "audience": 0.15,
+    "copywriting": 0.18,
+    "visual": 0.13,
+    "compliance": 0.14,
+    "reach": 0.13,
+    "audience": 0.13,
     "ai_taste": 0.08,
     "image_quality": 0.07,
     "commercial_tone": 0.05,
+    # 利他性：内容对读者的实际帮助（可执行建议、非纯自夸/硬广）
+    "altruism": 0.09,
 }
 DEFAULT_PASS_THRESHOLD = 70.0
 DEFAULT_REJECT_THRESHOLD = 50.0

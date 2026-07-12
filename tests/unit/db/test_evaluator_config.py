@@ -59,6 +59,7 @@ async def test_load_weights_defaults_when_no_rows():
         "ai_taste",
         "image_quality",
         "commercial_tone",
+        "altruism",
         "bias_check",
     ]
 
@@ -186,12 +187,17 @@ async def test_backfill_engagement_updates_latest_sample():
 
 def test_apply_override_unknown_key_ignored():
     """Unknown keys are silently skipped (forward-compat with new DB rows)."""
-    from backend.db.evaluator_config import EvaluatorWeights, _apply_override
+    from backend.db.evaluator_config import (
+        DEFAULT_DIMENSION_WEIGHTS,
+        EvaluatorWeights,
+        _apply_override,
+    )
 
     w = EvaluatorWeights()
     _apply_override(w, "weight.bogus", 1.0)
     _apply_override(w, "unknown.thing", 1.0)
-    assert w.dimension_weights["copywriting"] == 0.20  # unchanged
+    assert w.dimension_weights["copywriting"] == DEFAULT_DIMENSION_WEIGHTS["copywriting"]
+    assert "altruism" in w.dimension_weights
 
 
 # ── Online weight training (fit_weights) ──
