@@ -55,6 +55,16 @@ class ContentStrategistAgent(BaseAgent):
         if creative_ctx:
             memory_context += f"\n{creative_ctx}"
 
+        # 创作者中心导入数据建议（trend 模式选题策略）
+        try:
+            from backend.services.creator_stats.suggestions import build_mode_creative_context
+
+            stats_ctx = await build_mode_creative_context(account_id, "trend", store=store)
+            if stats_ctx:
+                memory_context += f"\n{stats_ctx}"
+        except Exception as e:
+            logger.debug("creator_stats suggestions skipped: %s", e)
+
         # 先用基础 prompt 生成初版策略（暂无 Ripple 数据）
         system_prompt = self._build_system_prompt(state, extra_context=memory_context)
         system_prompt = system_prompt.replace("{ripple_context}", "")

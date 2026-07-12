@@ -1,0 +1,75 @@
+{
+  "period": "30d",
+  "source": "creator_statistics",
+  "account": {
+    "view_count": 128400,
+    "like_count": 9320,
+    "comment_count": 1480,
+    "collect_count": 4210,
+    "share_count": 610,
+    "fans_count": 15600,
+    "note_count": 5
+  },
+  "notes": [
+    {
+      "note_id": "note_heal_001",
+      "title": "慢慢来也很好：三岁宝宝的温柔日常陪伴",
+      "view_count": 42000,
+      "like_count": 3800,
+      "comment_count": 520,
+      "collect_count": 2100,
+      "share_count": 180,
+      "publish_time": "2026-07-01T10:30:00+00:00",
+      "note_type": "normal",
+      "tags": ["母婴", "育儿日常", "治愈"]
+    },
+    {
+      "note_id": "note_pro_002",
+      "title": "5个方法解决宝宝夜醒：儿科护士干货清单",
+      "view_count": 35000,
+      "like_count": 2900,
+      "comment_count": 410,
+      "collect_count": 1600,
+      "share_count": 220,
+      "publish_time": "2026-07-03T14:00:00+00:00",
+      "note_type": "normal",
+      "tags": ["母婴", "睡眠训练", "干货"]
+    },
+    {
+      "note_id": "note_vibe_003",
+      "title": "姐妹们！这套辅食工具绝绝子必入",
+      "view_count": 28000,
+      "like_count": 1500,
+      "comment_count": 260,
+      "collect_count": 320,
+      "share_count": 90,
+      "publish_time": "2026-07-05T09:15:00+00:00",
+      "note_type": "video",
+      "tags": ["辅食", "好物分享"]
+    },
+    {
+      "note_id": "note_sharp_004",
+      "title": "避雷：这三款奶瓶别买，真实踩坑记录",
+      "view_count": 15000,
+      "like_count": 800,
+      "comment_count": 190,
+      "collect_count": 140,
+      "share_count": 70,
+      "publish_time": "2026-07-08T18:45:00+00:00",
+      "note_type": "normal",
+      "tags": ["避雷", "母婴用品"]
+    },
+    {
+      "note_id": "note_heal_005",
+      "title": "你有没有发现：午睡仪式感让宝宝更安心",
+      "view_count": 8400,
+      "like_count": 320,
+      "comment_count": 100,
+      "collect_count": 50,
+      "share_count": 50,
+      "publish_time": "2026-07-10T08:00:00+00:00",
+      "note_type": "carousel",
+      "tags": ["母婴", "午睡", "治愈"]
+    }
+  ]
+}

@@ -28,6 +28,17 @@ from backend.db.console_users import (
 from backend.db.console_users import (
     ensure_tables as ensure_console_users_tables,
 )
+from backend.db.creator_stats import (
+    ensure_tables as ensure_creator_stats_tables,
+)
+from backend.db.creator_stats import (
+    get_account_stats,
+    get_note_stats,
+    list_note_stats,
+    upsert_account_stats,
+    upsert_note_stats,
+    upsert_notes,
+)
 from backend.db.evaluator_config import (
     BIAS_SEVERITY_LEVELS,
     BIAS_SEVERITY_NOTES,
@@ -148,4 +159,12 @@ __all__ = [
     "load_weights",
     "set_weight",
     "train_weights",
+    # Creator-center stats
+    "ensure_creator_stats_tables",
+    "get_account_stats",
+    "get_note_stats",
+    "list_note_stats",
+    "upsert_account_stats",
+    "upsert_note_stats",
+    "upsert_notes",
 ]

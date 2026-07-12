@@ -58,6 +58,21 @@ export const useAccountsStore = defineStore('accounts', () => {
     return updated
   }
 
+  async function updateAccountFields(
+    accountId: string,
+    data: { name?: string; is_active?: boolean; niche?: string; niche_source?: string }
+  ) {
+    const updated = await apiUpdate(accountId, data)
+    const idx = accounts.value.findIndex(a => a.id === accountId)
+    if (idx >= 0) {
+      accounts.value[idx] = { ...accounts.value[idx], ...updated }
+    }
+    if (activeAccount.value?.id === accountId) {
+      activeAccount.value = { ...activeAccount.value, ...updated }
+    }
+    return updated
+  }
+
   async function removeAccount(accountId: string) {
     await apiDelete(accountId)
     accounts.value = accounts.value.filter(a => a.id !== accountId)
@@ -78,6 +93,7 @@ export const useAccountsStore = defineStore('accounts', () => {
     createAccount,
     setActiveAccount,
     updateAccountName,
+    updateAccountFields,
     removeAccount,
   }
 })

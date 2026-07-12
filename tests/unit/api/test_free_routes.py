@@ -103,50 +103,55 @@ class TestCreateDraft:
         assert r.status_code == 200
         assert r.json()["data"]["draft"]["account_id"] == "default"
 
-    def test_create_empty_niche_falls_back_to_default(self, client):
-        """FreeDraft(niche="") → niche=="母婴".
-
-        omp_bridge may explicitly pass niche="" when the agent omits it;
-        the field_validator normalizes empty strings to the default.
-        """
+    def test_create_empty_niche_auto_resolves_cold_start(self, client):
+        """Empty niche → auto-infer; no notes → cold_start default 母婴 (not source=manual)."""
         body = {**DRAFT_BODY, "niche": ""}
         r = client.post("/api/free/draft", json=body)
         assert r.status_code == 200, r.text
-        assert r.json()["data"]["draft"]["niche"] == "母婴"
+        data = r.json()["data"]
+        assert data["draft"]["niche"] == "母婴"
+        res = data.get("niche_resolution") or data["draft"].get("niche_resolution")
+        assert res is not None
+        assert res["source"] == "cold_start"
+        assert res.get("cold_start") is True
 
-    def test_create_whitespace_niche_falls_back_to_default(self, client):
-        """FreeDraft(niche="   ") → niche=="母婴"."""
+    def test_create_whitespace_niche_auto_resolves(self, client):
+        """Whitespace niche treated as empty → auto-infer path."""
         body = {**DRAFT_BODY, "niche": "   "}
         r = client.post("/api/free/draft", json=body)
         assert r.status_code == 200, r.text
-        assert r.json()["data"]["draft"]["niche"] == "母婴"
+        data = r.json()["data"]
+        assert data["draft"]["niche"] == "母婴"
+        res = data["niche_resolution"]
+        assert res["source"] != "manual"
 
-    def test_create_null_niche_falls_back_to_default(self, client):
-        """FreeDraft(niche=null) → niche=="母婴".
-
-        A caller (e.g. omp agent passing niche=None explicitly, or a direct
-        API client) must not get a 422 — the before-validator normalizes
-        explicit null to the default, same as empty string.
-        """
+    def test_create_null_niche_auto_resolves_not_422(self, client):
+        """null niche must not 422; auto-infer then cold_start default."""
         body = {**DRAFT_BODY, "niche": None}
         r = client.post("/api/free/draft", json=body)
         assert r.status_code == 200, r.text
-        assert r.json()["data"]["draft"]["niche"] == "母婴"
+        data = r.json()["data"]
+        assert data["draft"]["niche"] == "母婴"
+        assert data["niche_resolution"]["source"] == "cold_start"
 
-    def test_create_absent_niche_uses_field_default(self, client):
-        """FreeDraft(niche omitted) → niche=="母婴" (Pydantic Field default)."""
+    def test_create_absent_niche_auto_resolves(self, client):
+        """Omitted niche → auto-infer, not Field default 母婴-as-manual."""
         body = {**DRAFT_BODY}
         del body["niche"]
         r = client.post("/api/free/draft", json=body)
         assert r.status_code == 200, r.text
-        assert r.json()["data"]["draft"]["niche"] == "母婴"
+        data = r.json()["data"]
+        assert data["draft"]["niche"] == "母婴"
+        assert data["niche_resolution"]["source"] == "cold_start"
 
-    def test_create_nonempty_niche_preserved(self, client):
-        """FreeDraft(niche="fashion") → niche=="fashion" (unchanged)."""
+    def test_create_nonempty_niche_preserved_as_manual(self, client):
+        """FreeDraft(niche="fashion") → manual override preserved."""
         body = {**DRAFT_BODY, "niche": "fashion"}
         r = client.post("/api/free/draft", json=body)
         assert r.status_code == 200, r.text
-        assert r.json()["data"]["draft"]["niche"] == "fashion"
+        data = r.json()["data"]
+        assert data["draft"]["niche"] == "fashion"
+        assert data["niche_resolution"]["source"] == "manual"
 
 
 class TestEvaluateDraft:
@@ -788,8 +793,8 @@ class TestUpdateDraft:
         )
         assert r.status_code == 400
 
-    def test_update_empty_niche_falls_back_to_default(self, client, mock_store):
-        """PATCH niche="" → niche=="母婴" (same validator as create)."""
+    def test_update_empty_niche_re_resolves_auto(self, client, mock_store):
+        """PATCH niche="" → auto-infer; no notes → cold_start 母婴 (not manual)."""
         create = client.post("/api/free/draft", json=DRAFT_BODY)
         draft_id = create.json()["data"]["draft_id"]
 
@@ -798,10 +803,16 @@ class TestUpdateDraft:
             json={"niche": ""},
         )
         assert r.status_code == 200, r.text
-        assert r.json()["data"]["draft"]["niche"] == "母婴"
+        draft = r.json()["data"]["draft"]
+        assert draft["niche"] == "母婴"
+        assert draft.get("niche_resolution", {}).get("source") in (
+            "cold_start",
+            "inferred",
+            "account_bound",
+        )
 
-    def test_update_null_niche_falls_back_to_default(self, client, mock_store):
-        """PATCH niche=null → niche=="母婴" (null normalized, not 422)."""
+    def test_update_null_niche_re_resolves_not_422(self, client, mock_store):
+        """PATCH niche=null → auto path, not 422."""
         create = client.post("/api/free/draft", json=DRAFT_BODY)
         draft_id = create.json()["data"]["draft_id"]
 

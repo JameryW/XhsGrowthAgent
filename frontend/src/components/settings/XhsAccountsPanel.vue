@@ -12,6 +12,7 @@ import {
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import QrLoginModal from './QrLoginModal.vue'
+import CreatorStatsPanel from './CreatorStatsPanel.vue'
 
 const { t } = useI18n()
 const store = useAccountsStore()
@@ -264,14 +265,29 @@ function onQrConfirmed() {
           <div class="text-sm font-medium truncate" :class="account.is_active ? 'text-slate-800' : 'text-slate-500'">
             {{ account.name }}
           </div>
-          <div class="mt-1 flex items-center gap-1 text-[11px]" :class="loginStatusClass(account.id)">
-            <AppIcon
-              :name="loginStatusIcon(account.id)"
-              size="xs"
-              :variant="loginStatusFor(account.id).status === 'logged_in' ? 'cyan' : 'pink'"
-              :animate="loginStatusFor(account.id).status === 'checking'"
-            />
-            <span>{{ loginStatusText(account.id) }}</span>
+          <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <div class="flex items-center gap-1 text-[11px]" :class="loginStatusClass(account.id)">
+              <AppIcon
+                :name="loginStatusIcon(account.id)"
+                size="xs"
+                :variant="loginStatusFor(account.id).status === 'logged_in' ? 'cyan' : 'pink'"
+                :animate="loginStatusFor(account.id).status === 'checking'"
+              />
+              <span>{{ loginStatusText(account.id) }}</span>
+            </div>
+            <span
+              v-if="account.niche"
+              class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600 font-medium"
+              :title="account.niche_source || ''"
+            >
+              {{ account.niche }}
+            </span>
+            <span
+              v-else
+              class="text-[10px] text-slate-400"
+            >
+              {{ t('creatorStats.nicheUnbound') }}
+            </span>
           </div>
         </div>
         <span v-if="account.is_active"
@@ -308,6 +324,14 @@ function onQrConfirmed() {
         </div>
       </div>
     </div>
+
+    <!-- Selected account: import stats + niche bind -->
+    <CreatorStatsPanel
+      v-if="editingAccountId"
+      :account-id="editingAccountId"
+      :account-name="store.accounts.find(a => a.id === editingAccountId)?.name"
+      @updated="store.fetchAccounts()"
+    />
 
     <!-- Scan-login (QR) modal -->
     <QrLoginModal

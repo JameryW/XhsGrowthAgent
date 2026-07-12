@@ -675,12 +675,69 @@
     "empty": {
       "title": "暂无分析数据",
       "description": "开始创作并发布内容后，即可在此查看表现数据分析。",
-      "startWorkflow": "开始创作"
+      "startWorkflow": "开始创作",
+      "importHint": "也可先从创作者中心导入历史笔记，绑定赛道并获取创作建议。"
     },
     "error": {
       "title": "数据加载失败",
       "description": "无法获取分析数据，请检查网络连接后重试。",
       "retry": "重试"
+    }
+  },
+  "creatorStats": {
+    "title": "创作者中心数据",
+    "subtitle": "导入账户/笔记统计，自动绑定赛道并生成创作建议",
+    "refresh": "刷新已导入数据",
+    "nicheSection": "赛道绑定",
+    "nicheHint": "有历史笔记时可自动推断；没有则手动选择赛道后绑定。",
+    "nicheUnbound": "未绑定赛道",
+    "nichePlaceholder": "选择赛道",
+    "nicheCustomPlaceholder": "或输入自定义赛道",
+    "nicheRequired": "请先选择或输入赛道",
+    "nicheColdStart": "暂无历史笔记信号，请先导入数据或手动指定赛道",
+    "nicheBound": "赛道已绑定：{niche}（{source}）",
+    "nicheFailed": "赛道绑定失败",
+    "bindManual": "手动绑定",
+    "bindAuto": "从笔记推断",
+    "importSection": "导入统计",
+    "importHint": "默认用样例数据验证链路；取消「样例干跑」并填写 Cookie 可拉取创作者中心真实数据。",
+    "dryRun": "样例干跑（不访问小红书）",
+    "analyze": "导入后分析风格",
+    "liveCookie": "真实同步 / Cookie 设置",
+    "cookiePlaceholder": "粘贴 creator.xiaohongshu.com 登录 Cookie",
+    "cookieHint": "在浏览器登录创作者中心后，从开发者工具 Network 请求头复制 Cookie。",
+    "cookieRequired": "真实同步需要填写创作者中心 Cookie",
+    "syncDryRun": "导入样例数据",
+    "syncLive": "同步创作者中心",
+    "syncSuccess": "导入完成：新增 {imported}，更新 {updated}",
+    "syncFailed": "同步失败",
+    "lastSync": "上次：{source} · +{imported} / ~{updated}",
+    "importedSection": "已导入概览",
+    "noImported": "尚未导入笔记数据，请先点击上方导入。",
+    "suggestionsSection": "创作建议",
+    "metrics": {
+      "notes": "笔记数",
+      "views": "浏览",
+      "likes": "点赞",
+      "fans": "粉丝"
+    },
+    "table": {
+      "title": "标题",
+      "views": "浏览",
+      "likes": "赞",
+      "rate": "互动率"
+    },
+    "mode": {
+      "trend": "热点",
+      "brief": "Brief",
+      "free": "自由"
+    },
+    "sourceNone": "无",
+    "source": {
+      "manual": "手动",
+      "inferred": "笔记推断",
+      "account_bound": "账号已绑",
+      "cold_start": "冷启动"
     }
   },
   "versionCompare": {

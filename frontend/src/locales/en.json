@@ -675,12 +675,69 @@
     "empty": {
       "title": "No Analytics Data",
       "description": "Start creating and publish content to see performance analytics here.",
-      "startWorkflow": "Start Creating"
+      "startWorkflow": "Start Creating",
+      "importHint": "You can also import historical notes from Creator Center to bind a niche and get creative suggestions."
     },
     "error": {
       "title": "Failed to Load Data",
       "description": "Could not fetch analytics data. Please check your connection and try again.",
       "retry": "Retry"
+    }
+  },
+  "creatorStats": {
+    "title": "Creator Center Stats",
+    "subtitle": "Import account/note stats, auto-bind niche, and generate creative suggestions",
+    "refresh": "Refresh imported data",
+    "nicheSection": "Niche binding",
+    "nicheHint": "With historical notes we can infer the niche; otherwise pick one manually.",
+    "nicheUnbound": "No niche bound",
+    "nichePlaceholder": "Select niche",
+    "nicheCustomPlaceholder": "Or type a custom niche",
+    "nicheRequired": "Please select or enter a niche",
+    "nicheColdStart": "No note signal yet — import data first or set a niche manually",
+    "nicheBound": "Niche bound: {niche} ({source})",
+    "nicheFailed": "Failed to bind niche",
+    "bindManual": "Bind manually",
+    "bindAuto": "Infer from notes",
+    "importSection": "Import stats",
+    "importHint": "Dry-run uses sample data. Uncheck dry-run and paste a Cookie to pull live Creator Center data.",
+    "dryRun": "Sample dry-run (no remote call)",
+    "analyze": "Analyze style after import",
+    "liveCookie": "Live sync / Cookie",
+    "cookiePlaceholder": "Paste creator.xiaohongshu.com login Cookie",
+    "cookieHint": "Log into Creator Center, then copy the Cookie header from DevTools → Network.",
+    "cookieRequired": "Live sync requires a Creator Center Cookie",
+    "syncDryRun": "Import sample data",
+    "syncLive": "Sync Creator Center",
+    "syncSuccess": "Import done: +{imported} new, ~{updated} updated",
+    "syncFailed": "Sync failed",
+    "lastSync": "Last: {source} · +{imported} / ~{updated}",
+    "importedSection": "Imported overview",
+    "noImported": "No notes imported yet — use the import button above.",
+    "suggestionsSection": "Creative suggestions",
+    "metrics": {
+      "notes": "Notes",
+      "views": "Views",
+      "likes": "Likes",
+      "fans": "Fans"
+    },
+    "table": {
+      "title": "Title",
+      "views": "Views",
+      "likes": "Likes",
+      "rate": "Eng. rate"
+    },
+    "mode": {
+      "trend": "Trend",
+      "brief": "Brief",
+      "free": "Free"
+    },
+    "sourceNone": "none",
+    "source": {
+      "manual": "manual",
+      "inferred": "inferred",
+      "account_bound": "account bound",
+      "cold_start": "cold start"
     }
   },
   "versionCompare": {

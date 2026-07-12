@@ -1,4 +1,4 @@
-"""Analytics API routes — growth reports and performance data from real workflows."""
+"""Analytics API routes — growth reports, creator-stats import, and creative advice."""
 
 from __future__ import annotations
 
@@ -7,12 +7,34 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from fastapi import APIRouter, Query, Request
+from pydantic import BaseModel, Field, field_validator
 
 from backend.api.responses import ApiResponse, success
 from backend.db.pool import is_pool_ready
 from backend.db.workflows import list_workflows as db_list
 
 router = APIRouter()
+
+
+class CreatorStatsSyncRequest(BaseModel):
+    """Trigger creator-center stats sync/import."""
+
+    account_id: str = Field(..., min_length=1, description="账号 ID")
+    dry_run: bool = Field(
+        default=True,
+        description="使用内置 fixture 跑完整导入链路（不访问 creator.xiaohongshu.com）",
+    )
+    cookie: str = Field(default="", description="创作者中心 Cookie（live 同步时需要）")
+    period: str = Field(default="30d", description="统计周期")
+    analyze: bool = Field(default=True, description="导入后是否跑创作分析并沉淀风格")
+
+    @field_validator("account_id", mode="before")
+    @classmethod
+    def _strip_account_id(cls, v: Any) -> str:
+        if v is None:
+            return ""
+        return str(v).strip()
+
 
 # Simple in-memory cache with TTL
 _cache: dict[str, tuple[float, Any]] = {}
@@ -72,20 +94,45 @@ def _period_cutoff_hours(period: str) -> int:
 
 
 def _filter_by_period(posts: list[dict[str, Any]], period: str) -> list[dict[str, Any]]:
-    """Filter posts by time period."""
+    """Filter posts by time period.
+
+    Posts without a parseable ``published_at`` are excluded (period-scoped
+    analytics must not treat undated rows as always-in-range).
+    """
     now = datetime.now(UTC)
     cutoff_hours = _period_cutoff_hours(period)
     filtered = []
     for p in posts:
+        published = p.get("published_at")
+        if published is None or published == "":
+            continue
         try:
-            pub = datetime.fromisoformat(p["published_at"].replace(" ", "T"))
+            pub = datetime.fromisoformat(str(published).replace(" ", "T"))
             if pub.tzinfo is None:
                 pub = pub.replace(tzinfo=UTC)
             if (now - pub).total_seconds() / 3600 <= cutoff_hours:
                 filtered.append(p)
-        except (ValueError, AttributeError):
-            filtered.append(p)
+        except (ValueError, AttributeError, TypeError):
+            continue
     return filtered
+
+
+def _as_percent_engagement_rate(value: Any) -> float:
+    """Normalize engagement rate to a 0–100 percent-like number for UI/report.
+
+    Workflow analytics may store fractions (0.05) or percents (5.0). Imported
+    creator-center notes use 0–1 fractions. Mixing them without conversion
+    corrupts dashboard averages.
+    """
+    try:
+        er = float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+    if er < 0:
+        return 0.0
+    if er <= 1.0:
+        return round(er * 100.0, 2)
+    return round(er, 2)
 
 
 def _extract_post_data(wf_state: dict[str, Any]) -> dict[str, Any] | None:
@@ -107,6 +154,21 @@ def _extract_post_data(wf_state: dict[str, Any]) -> dict[str, Any] | None:
 
     is_dry_run = status == "mock_published"
 
+    # Prefer explicit engagement_rate; otherwise derive from counts/views
+    raw_er = analytics.get("engagement_rate")
+    if raw_er is None or raw_er == "":
+        views = int(analytics.get("views") or 0)
+        if views > 0:
+            eng = (
+                int(analytics.get("likes") or 0)
+                + int(analytics.get("comments") or 0)
+                + int(analytics.get("collects") or 0)
+                + int(analytics.get("shares") or 0)
+            )
+            raw_er = eng / views
+        else:
+            raw_er = 0.0
+
     return {
         "id": publish.get("post_id", wf_state.get("session_id", "")),
         "title": title,
@@ -115,9 +177,62 @@ def _extract_post_data(wf_state: dict[str, Any]) -> dict[str, Any] | None:
         "collects": analytics.get("collects", 0),
         "shares": analytics.get("shares", 0),
         "views": analytics.get("views", 0),
-        "engagement_rate": round(analytics.get("engagement_rate", 0.0), 2),
+        "engagement_rate": _as_percent_engagement_rate(raw_er),
         "published_at": publish.get("published_at", wf_state.get("updated_at", "")),
         "dry_run": is_dry_run,
+    }
+
+
+def _build_growth_report(
+    account_id: str,
+    period: str,
+    filtered_posts: list[dict[str, Any]],
+    topics: dict[str, int],
+) -> dict[str, Any]:
+    """Shared report payload for /report and /dashboard."""
+    total_engagement = sum(p["likes"] + p["comments"] + p["collects"] for p in filtered_posts)
+    avg_rate = (
+        sum(p["engagement_rate"] for p in filtered_posts) / len(filtered_posts)
+        if filtered_posts
+        else 0.0
+    )
+    best = max(filtered_posts, key=lambda p: p["likes"] + p["comments"], default=None)
+    trend_topics = sorted(topics, key=lambda k: topics[k], reverse=True)[:5]
+
+    insights: list[dict[str, str]] = []
+    if avg_rate > 4.0:
+        insights.append({"type": "trend", "message": "互动率表现优秀，继续保持当前内容策略"})
+    elif filtered_posts:
+        insights.append({"type": "opportunity", "message": "互动率有提升空间，建议优化标题和封面"})
+    if trend_topics:
+        insights.append({"type": "trend", "message": f"热门话题：{'、'.join(trend_topics[:3])}"})
+    if not filtered_posts:
+        insights.append(
+            {
+                "type": "info",
+                "message": "暂无表现数据：请完成工作流发布或同步创作者中心统计",
+            }
+        )
+    elif any(p.get("source") in ("creator_statistics", "fixture") for p in filtered_posts):
+        insights.append(
+            {
+                "type": "trend",
+                "message": "已纳入创作者中心导入笔记表现，可用于风格沉淀与选题建议",
+            }
+        )
+
+    return {
+        "account_id": account_id,
+        "period": period,
+        "metrics": {
+            "total_posts": len(filtered_posts),
+            "total_engagement": total_engagement,
+            "avg_engagement_rate": round(avg_rate, 1),
+            "best_post_title": best["title"] if best else "",
+            "trend_topics": trend_topics,
+        },
+        "insights": insights,
+        "generated_at": datetime.now().isoformat(),
     }
 
 
@@ -127,12 +242,13 @@ async def get_growth_report(
     period: str = "weekly",
     request: Request = None,  # type: ignore[assignment]
 ) -> ApiResponse[Any]:
-    """获取增长报告 — from real completed workflows."""
+    """获取增长报告 — workflows + imported creator-center notes."""
     assert request is not None
+    account_id = (account_id or "").strip()
     graph = request.app.state.graph
     workflows = await _get_completed_workflows(graph, account_id)
 
-    posts = []
+    posts: list[dict[str, Any]] = []
     topics: dict[str, int] = {}
     for wf in workflows:
         state = wf.get("_state", {})
@@ -144,46 +260,76 @@ async def get_growth_report(
         if topic:
             topics[topic] = topics.get(topic, 0) + 1
 
-    # Filter by period
+    posts = await _merge_imported_posts(account_id, posts, limit=100)
+    for t, c in _topics_from_imported(posts).items():
+        topics[t] = topics.get(t, 0) + c
     filtered_posts = _filter_by_period(posts, period)
+    return success(data=_build_growth_report(account_id, period, filtered_posts, topics))
 
-    total_engagement = sum(p["likes"] + p["comments"] + p["collects"] for p in filtered_posts)
-    avg_rate = (
-        sum(p["engagement_rate"] for p in filtered_posts) / len(filtered_posts)
-        if filtered_posts
-        else 0.0
-    )
-    best = max(filtered_posts, key=lambda p: p["likes"] + p["comments"], default=None)
-    trend_topics = sorted(topics, key=lambda k: topics[k], reverse=True)[:5]
 
-    # Generate insights from real data
-    insights = []
-    if avg_rate > 4.0:
-        insights.append({"type": "trend", "message": "互动率表现优秀，继续保持当前内容策略"})
-    elif filtered_posts:
-        insights.append({"type": "opportunity", "message": "互动率有提升空间，建议优化标题和封面"})
+def _imported_notes_as_posts(notes: list[Any]) -> list[dict[str, Any]]:
+    """Map persisted creator-center NoteStats into the performance table shape."""
+    posts: list[dict[str, Any]] = []
+    for n in notes:
+        # Accept dataclass or plain dict
+        if hasattr(n, "to_dict"):
+            d = n.to_dict()
+        elif isinstance(n, dict):
+            d = n
+        else:
+            continue
+        posts.append(
+            {
+                "id": d.get("note_id", ""),
+                "title": d.get("title", ""),
+                "likes": int(d.get("likes") or 0),
+                "comments": int(d.get("comments") or 0),
+                "collects": int(d.get("collects") or 0),
+                "shares": int(d.get("shares") or 0),
+                "views": int(d.get("views") or 0),
+                "engagement_rate": _as_percent_engagement_rate(d.get("engagement_rate")),
+                "published_at": d.get("published_at", ""),
+                "dry_run": False,
+                "source": d.get("source") or "creator_statistics",
+            }
+        )
+    return posts
 
-    if trend_topics:
-        insights.append({"type": "trend", "message": f"热门话题：{'、'.join(trend_topics[:3])}"})
 
-    if not filtered_posts:
-        insights.append({"type": "info", "message": "暂无已完成的工作流数据，请先完成一次内容发布"})
+async def _merge_imported_posts(
+    account_id: str,
+    posts: list[dict[str, Any]],
+    *,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Append imported creator-center notes not already present (by post id)."""
+    try:
+        from backend.db import creator_stats as stats_db
 
-    return success(
-        data={
-            "account_id": account_id,
-            "period": period,
-            "metrics": {
-                "total_posts": len(filtered_posts),
-                "total_engagement": total_engagement,
-                "avg_engagement_rate": round(avg_rate, 1),
-                "best_post_title": best["title"] if best else "",
-                "trend_topics": trend_topics,
-            },
-            "insights": insights,
-            "generated_at": datetime.now().isoformat(),
-        }
-    )
+        imported = await stats_db.list_note_stats(account_id, limit=limit, order_by="published")
+    except Exception:
+        return posts
+    seen_ids = {p.get("id") for p in posts if p.get("id")}
+    for ip in _imported_notes_as_posts(imported):
+        if ip["id"] and ip["id"] in seen_ids:
+            continue
+        posts.append(ip)
+        if ip["id"]:
+            seen_ids.add(ip["id"])
+    return posts
+
+
+def _topics_from_imported(posts: list[dict[str, Any]]) -> dict[str, int]:
+    """Lightweight topic counts from imported post titles (fallback when no plan)."""
+    topics: dict[str, int] = {}
+    for p in posts:
+        if p.get("source") not in ("creator_statistics", "fixture"):
+            continue
+        title = (p.get("title") or "").strip()
+        if title:
+            # Use full title as a soft topic key (UI only needs a short list)
+            topics[title] = topics.get(title, 0) + 1
+    return topics
 
 
 @router.get("/performance/{account_id}")
@@ -193,22 +339,21 @@ async def get_performance(
     limit: int = Query(20, ge=1, le=100),
     request: Request = None,  # type: ignore[assignment]
 ) -> ApiResponse[Any]:
-    """获取最近帖子表现数据 — from real completed workflows."""
+    """获取最近帖子表现 — workflow publish analytics + imported creator-center notes."""
     assert request is not None
+    account_id = (account_id or "").strip()
     graph = request.app.state.graph
     workflows = await _get_completed_workflows(graph, account_id)
 
-    posts = []
+    posts: list[dict[str, Any]] = []
     for wf in workflows:
         state = wf.get("_state", {})
         post = _extract_post_data(state)
         if post:
             posts.append(post)
 
-    # Filter by period
+    posts = await _merge_imported_posts(account_id, posts, limit=max(limit, 50))
     posts = _filter_by_period(posts, period)
-
-    # Sort by published_at descending
     posts.sort(key=lambda p: p.get("published_at", ""), reverse=True)
     posts = posts[:limit]
 
@@ -292,14 +437,16 @@ async def get_dashboard(
     """Single-request analytics bundle — report + performance + costs.
 
     Avoids 3× the cold-start cost of _get_completed_workflows by computing
-    all three payloads from one fetch.
+    all three payloads from one fetch. Includes imported creator-center notes
+    (frontend Analytics uses this path exclusively).
     """
     assert request is not None
+    account_id = (account_id or "").strip()
     graph = request.app.state.graph
     workflows = await _get_completed_workflows(graph, account_id)
 
     # ── Extract posts once ──
-    posts = []
+    posts: list[dict[str, Any]] = []
     topics: dict[str, int] = {}
     for wf in workflows:
         state = wf.get("_state", {})
@@ -311,41 +458,13 @@ async def get_dashboard(
         if topic:
             topics[topic] = topics.get(topic, 0) + 1
 
+    # Merge imported creator-center stats (same as /performance)
+    posts = await _merge_imported_posts(account_id, posts, limit=max(limit, 50))
+    for t, c in _topics_from_imported(posts).items():
+        topics[t] = topics.get(t, 0) + c
+
     filtered_posts = _filter_by_period(posts, period)
-
-    # ── Growth report ──
-    total_engagement = sum(p["likes"] + p["comments"] + p["collects"] for p in filtered_posts)
-    avg_rate = (
-        (sum(p["engagement_rate"] for p in filtered_posts) / len(filtered_posts))
-        if filtered_posts
-        else 0.0
-    )
-    best = max(filtered_posts, key=lambda p: p["likes"] + p["comments"], default=None)
-    trend_topics = sorted(topics, key=lambda k: topics[k], reverse=True)[:5]
-
-    insights = []
-    if avg_rate > 4.0:
-        insights.append({"type": "trend", "message": "互动率表现优秀，继续保持当前内容策略"})
-    elif filtered_posts:
-        insights.append({"type": "opportunity", "message": "互动率有提升空间，建议优化标题和封面"})
-    if trend_topics:
-        insights.append({"type": "trend", "message": f"热门话题：{'、'.join(trend_topics[:3])}"})
-    if not filtered_posts:
-        insights.append({"type": "info", "message": "暂无已完成的工作流数据，请先完成一次内容发布"})
-
-    report = {
-        "account_id": account_id,
-        "period": period,
-        "metrics": {
-            "total_posts": len(filtered_posts),
-            "total_engagement": total_engagement,
-            "avg_engagement_rate": round(avg_rate, 1),
-            "best_post_title": best["title"] if best else "",
-            "trend_topics": trend_topics,
-        },
-        "insights": insights,
-        "generated_at": datetime.now().isoformat(),
-    }
+    report = _build_growth_report(account_id, period, filtered_posts, topics)
 
     # ── Performance ──
     sorted_posts = sorted(filtered_posts, key=lambda p: p.get("published_at", ""), reverse=True)[
@@ -406,3 +525,126 @@ async def get_dashboard(
     }
 
     return success(data={"report": report, "performance": performance, "costs": costs})
+
+
+# ── Creator-center stats import + creative suggestions ──────────────────────
+
+
+@router.post("/creator-stats/sync")
+async def sync_creator_stats(
+    body: CreatorStatsSyncRequest,
+    request: Request,
+) -> ApiResponse[Any]:
+    """从创作者中心统计页导入账户/笔记数据，并沉淀创作风格。
+
+    dry_run=true（默认）走内置 fixture，完整覆盖 import→persist→analyze→suggest。
+    dry_run=false 且提供 cookie 时拉取 creator.xiaohongshu.com 真实数据。
+    """
+    from backend.services.creator_stats.pipeline import sync_account_stats
+
+    graph = getattr(request.app.state, "graph", None)
+    store = getattr(graph, "store", None) if graph is not None else None
+
+    result = await sync_account_stats(
+        body.account_id,
+        cookie=body.cookie,
+        dry_run=body.dry_run,
+        store=store,
+        period=body.period,
+        run_creative_analysis=body.analyze,
+    )
+    data = result.to_dict()
+    # Primary observables for clients/tests (not merely HTTP 200).
+    # Import can succeed while analysis fails — still "ok" for the import path.
+    import_ok = bool(result.account_synced) and (
+        result.error is None or str(result.error).startswith("import succeeded")
+    )
+    data["ok"] = import_ok and (
+        result.error is None or str(result.error).startswith("import succeeded")
+    )
+    # Live auth/network failures leave account_synced False → ok False
+    if result.error and not result.account_synced:
+        data["ok"] = False
+    data["analyzed"] = result.analysis is not None
+    data["import_ok"] = bool(result.account_synced)
+    return success(data=data)
+
+
+@router.get("/creator-stats/{account_id}")
+async def get_creator_stats(
+    account_id: str,
+    limit: int = Query(50, ge=1, le=200),
+) -> ApiResponse[Any]:
+    """读取本地已导入的创作者中心账户/笔记统计。"""
+    from backend.db import creator_stats as stats_db
+
+    account_id = (account_id or "").strip()
+    account = await stats_db.get_account_stats(account_id)
+    notes = await stats_db.list_note_stats(account_id, limit=limit)
+    # total = full count (not page size); note_count on account is a fallback
+    total = await stats_db.count_note_stats(account_id)
+    if total == 0 and account is not None:
+        total = int(getattr(account, "note_count", 0) or 0)
+    return success(
+        data={
+            "account_id": account_id,
+            "account": account.to_dict() if account else None,
+            "notes": [n.to_dict() for n in notes],
+            "total": total,
+            "limit": limit,
+            "fetched_at": datetime.now(UTC).isoformat(),
+        }
+    )
+
+
+@router.get("/creator-stats/{account_id}/suggestions")
+async def get_creator_suggestions(
+    account_id: str,
+    mode: str = Query(
+        "trend",
+        description="创作模式：trend | brief | free（大小写不敏感）",
+    ),
+    request: Request = None,  # type: ignore[assignment]
+) -> ApiResponse[Any]:
+    """按创作模式返回账户级创作建议（共享召回面）。"""
+    from backend.services.creator_stats.suggestions import (
+        _normalize_mode,
+        get_suggestions_for_mode,
+    )
+
+    assert request is not None
+    account_id = (account_id or "").strip()
+    graph = getattr(request.app.state, "graph", None)
+    store = getattr(graph, "store", None) if graph is not None else None
+    mode_norm = _normalize_mode(mode)
+    suggestions = await get_suggestions_for_mode(account_id, mode_norm, store=store)
+    return success(
+        data={
+            "account_id": account_id,
+            "mode": mode_norm,
+            "suggestions": [s.to_dict() for s in suggestions],
+            "count": len(suggestions),
+            "cold_start": all(s.category == "cold_start" for s in suggestions)
+            if suggestions
+            else True,
+        }
+    )
+
+
+@router.get("/creator-stats/{account_id}/analysis")
+async def get_creator_analysis(account_id: str) -> ApiResponse[Any]:
+    """对已导入笔记即时跑创作分析（不强制重新拉取远端）。"""
+    from backend.db import creator_stats as stats_db
+    from backend.services.creator_stats.analyze import analyze_notes
+    from backend.services.creator_stats.suggestions import suggestions_from_analysis
+
+    account_id = (account_id or "").strip()
+    notes = await stats_db.list_note_stats(account_id, limit=100)
+    analysis = analyze_notes(notes, account_id)
+    suggestions = suggestions_from_analysis(analysis, notes)
+    return success(
+        data={
+            "analysis": analysis.to_dict(),
+            "suggestions": {m: [s.to_dict() for s in items] for m, items in suggestions.items()},
+        }
+    )
