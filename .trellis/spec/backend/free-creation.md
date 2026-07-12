@@ -113,7 +113,12 @@ chain via:
 
 The TS extension path (`events.ts` `before_agent_start`) DOES inject a system
 prompt — kept in sync with the bridge's tool descriptions per the cross-audit
-convention (both guide the agent to the same `xhs_free_*` chain).
+convention (both guide the agent to the same `xhs_free_*` chain). The TS
+prompt documents the same failure-path rules as the bridge guide:
+evaluate-degradation (#242 — don't publish on a degraded verdict, re-run) and
+publish-failure recovery (#241 — read Error/Recovery, fix the cause, re-run;
+don't call analytics on a failed publish). Both paths (bridge guide + TS
+prompt) must stay aligned when a failure-path cue is added or changed.
 
 ---
 
