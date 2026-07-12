@@ -1329,6 +1329,15 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     f"Free Draft Created — draft_id: {draft_id}",
                     f"Title: {draft.get('title', '')}",
                 ]
+                # Create→evaluate next-step cue — the create render is the chain
+                # entry point (yields the draft_id evaluate/publish depend on),
+                # so surface the immediate next step. Mirrors the evaluate/publish
+                # render cues (#234/#235); no cue on a failed create (no draft_id).
+                if draft_id:
+                    lines.append(
+                        f"  next: call xhs_free_evaluate({draft_id}) for a quality "
+                        "check before publish."
+                    )
                 return _make_text_result("\n".join(lines), {"draft_id": draft_id, **data})
 
             elif tool_name == "xhs_free_evaluate":
