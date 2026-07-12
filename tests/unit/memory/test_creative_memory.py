@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from backend.db.creative_memory import _reset_memory_store as _reset_cm_db
 from backend.memory.creative import (
     DOWNGRADE_FACTOR,
     CreativeMemory,
@@ -17,6 +18,14 @@ from backend.memory.types import (
     NicheBenchmark,
     StyleDNA,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_durable_cm():
+    _reset_cm_db()
+    yield
+    _reset_cm_db()
+
 
 # ── Helpers ──
 
@@ -81,27 +90,42 @@ class TestColdStart:
         assert all(s.get("sample_count") == 0 for s in defaults)
 
     @pytest.mark.asyncio
-    async def test_recall_style_returns_defaults_when_store_none(self):
-        cm = CreativeMemory("test_acct", store=None)
+    async def test_recall_style_returns_defaults_when_store_none_and_empty(self):
+        cm = CreativeMemory("test_acct_empty", store=None)
         result = await cm.recall_style()
         assert len(result) == 3
         assert result[0]["tone"] == "治愈"
 
     @pytest.mark.asyncio
+    async def test_deposit_and_recall_without_store_uses_durable(self):
+        """Import/CLI path: store=None still persists style for next creation."""
+        cm = CreativeMemory("durable_acct", store=None)
+        style = _sample_style(tone="治愈", visual="温暖治愈", rate=0.12, n=4)
+        style["style_id"] = "creator_stats_治愈"
+        await cm.deposit_style(style)
+        # Simulate next creation session — new CreativeMemory, no store
+        cm2 = CreativeMemory("durable_acct", store=None)
+        styles = await cm2.recall_style(query="content strategy 母婴")
+        assert any(s.get("style_id") == "creator_stats_治愈" for s in styles)
+        ctx = cm2.build_creative_context(styles, [], [])
+        assert "治愈" in ctx
+        assert "风格指纹" in ctx
+
+    @pytest.mark.asyncio
     async def test_recall_plays_returns_empty_when_store_none(self):
-        cm = CreativeMemory("test_acct", store=None)
+        cm = CreativeMemory("test_acct_empty2", store=None)
         result = await cm.recall_plays()
         assert result == []
 
     @pytest.mark.asyncio
     async def test_recall_materials_returns_empty_when_store_none(self):
-        cm = CreativeMemory("test_acct", store=None)
+        cm = CreativeMemory("test_acct_empty3", store=None)
         result = await cm.recall_materials()
         assert result == []
 
     @pytest.mark.asyncio
     async def test_recall_benchmark_returns_none_when_store_none(self):
-        cm = CreativeMemory("test_acct", store=None)
+        cm = CreativeMemory("test_acct_empty4", store=None)
         result = await cm.recall_benchmark("母婴")
         assert result is None
 

@@ -28,6 +28,17 @@ from backend.db.console_users import (
 from backend.db.console_users import (
     ensure_tables as ensure_console_users_tables,
 )
+from backend.db.creative_memory import (
+    ensure_tables as ensure_creative_memory_tables,
+)
+from backend.db.creative_memory import (
+    list_materials,
+    list_plays,
+    list_styles,
+    upsert_material,
+    upsert_play,
+    upsert_style,
+)
 from backend.db.creator_stats import (
     ensure_tables as ensure_creator_stats_tables,
 )
@@ -167,4 +178,12 @@ __all__ = [
     "upsert_account_stats",
     "upsert_note_stats",
     "upsert_notes",
+    # Durable creative memory (style DNA / playbook / materials)
+    "ensure_creative_memory_tables",
+    "list_materials",
+    "list_plays",
+    "list_styles",
+    "upsert_material",
+    "upsert_play",
+    "upsert_style",
 ]
