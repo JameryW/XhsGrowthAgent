@@ -799,6 +799,12 @@ class TestFreeModeTools:
         assert "xhs_free_draft_create" in text
         # evaluate→revise loop rule (#234 sync)
         assert "needs_revision" in text
+        # evaluate-degradation rule (#242 sync) — the guide must teach that
+        # evaluate can degrade to a fake-approved fallback (don't publish on it)
+        assert "Evaluate can degrade" in text
+        assert "degraded=True" in text
+        assert "re-run xhs_free_evaluate" in text
+        assert "[degraded]" in text  # draft-list badge documented
         # publish-failure recovery rule (#239/#240 sync) — the guide must teach
         # the failure path, not only the success→analytics happy path
         assert "Publish can fail" in text

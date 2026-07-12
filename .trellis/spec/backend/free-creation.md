@@ -85,12 +85,17 @@ and append a conditional `next:`/`note:` cue:
   cue — the 100/approved is fake, not a real score; the agent must not publish
   on a degraded verdict. The guide text (`xhs_free_guide`) documents the same
   evaluate→revise→re-evaluate loop so an agent that reads the guide first also
-  learns the revise path, not only the happy path. The guide also documents the
-  publish-failure recovery loop: publish can fail (`status=failed`/`auth_expired`),
-  the render surfaces `Error`/`Recovery`, the agent fixes the cause and re-runs
-  `xhs_free_publish` (keep draft_id); the failed attempt persists as `last_publish`
-  and the draft list shows a `[publish failed]` badge — so the agent learns the
-  failure path, not only the success→analytics happy path (#239/#240 sync).
+  learns the revise path, not only the happy path. The guide also documents
+  evaluate degradation: evaluate can return a pass-through fallback
+  (`degraded=True`, fake `overall_score=100`/`approved`) on LLM timeout — the
+  agent must NOT publish on a degraded verdict; re-run `xhs_free_evaluate`
+  (keep draft_id); the draft list shows a `[degraded]` badge (#242 sync). The
+  guide also documents the publish-failure recovery loop: publish can fail
+  (`status=failed`/`auth_expired`), the render surfaces `Error`/`Recovery`, the
+  agent fixes the cause and re-runs `xhs_free_publish` (keep draft_id); the
+  failed attempt persists as `last_publish` and the draft list shows a
+  `[publish failed]` badge — so the agent learns the failure path, not only
+  the success→analytics happy path (#239/#240 sync).
 
 ### Discovery — no system prompt on the bridge path
 
