@@ -2,7 +2,7 @@
 
 /** 单维度 judge 评分（agent-as-a-judge 面板的一维）. */
 export interface DimensionScore {
-  /** copywriting | visual | compliance | reach | audience | ai_taste | image_quality | commercial_tone | bias_check */
+  /** copywriting | visual | compliance | reach | audience | ai_taste | image_quality | commercial_tone | altruism | bias_check */
   dimension: string
   /** 0-100 */
   score: number

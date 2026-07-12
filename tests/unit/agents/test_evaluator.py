@@ -53,7 +53,7 @@ class TestEvaluatorAgent:
         }
 
     def _full_panel_response(self, scores: dict[str, float], blocking: str | None = None) -> str:
-        """Build a full 9-dimension LLM JSON response string."""
+        """Build a full 10-dimension LLM JSON response string (incl. altruism)."""
         dims = []
         for name in [
             "copywriting",
@@ -64,11 +64,18 @@ class TestEvaluatorAgent:
             "ai_taste",
             "image_quality",
             "commercial_tone",
+            "altruism",
             "bias_check",
         ]:
+            extra = ', "bias_severity": 10' if name == "bias_check" else ""
             dims.append(
-                '{"dimension": "%s", "score": %s, "rationale": "r", "issues": [], "is_blocking": %s}'
-                % (name, scores.get(name, 80.0), "true" if name == blocking else "false")
+                '{"dimension": "%s", "score": %s, "rationale": "r", "issues": [], "is_blocking": %s%s}'
+                % (
+                    name,
+                    scores.get(name, 80.0),
+                    "true" if name == blocking else "false",
+                    extra,
+                )
             )
         return (
             '{"overall_score": 80, "dimensions": [%s], "decision": "approved", "revision_hints": [], "bias_warning": "", "summary": "ok"}'
@@ -103,8 +110,10 @@ class TestEvaluatorAgent:
         ev = result["evaluation_result"]
         assert ev["decision"] == ContentStatus.APPROVED
         assert ev["overall_score"] >= 70
-        assert len(ev["dimensions"]) == 9
-        assert ev["revision_hints"] == []
+        assert len(ev["dimensions"]) == 10
+        assert any(d["dimension"] == "altruism" for d in ev["dimensions"])
+        # High altruism (default 80) → no forced 利他性 hints
+        assert not any("利他性" in h for h in ev["revision_hints"])
 
     async def test_execute_timeout_degrades_with_flag(self, agent, mock_state, mock_store):
         """LLM timeout → pass-through fallback verdict with degraded=True.
@@ -237,7 +246,7 @@ class TestEvaluatorAgent:
             result = await agent.execute(mock_state, store=mock_store)
 
         dims = result["evaluation_result"]["dimensions"]
-        assert len(dims) == 9
+        assert len(dims) == 10
         names = {d["dimension"] for d in dims}
         assert names == {
             "copywriting",
@@ -248,6 +257,7 @@ class TestEvaluatorAgent:
             "ai_taste",
             "image_quality",
             "commercial_tone",
+            "altruism",
             "bias_check",
         }
 
@@ -407,6 +417,7 @@ class TestEvaluatorAgent:
         """Fresh agent (defaults) → prompt shows default weights, no placeholders."""
         state = {"niche": "母婴"}
         prompt = agent._build_system_prompt(state)
-        assert "copywriting 0.20" in prompt  # default
+        assert "copywriting 0.18" in prompt  # default (incl. altruism rebalance)
+        assert "altruism 0.09" in prompt
         assert "{weights_block}" not in prompt
         assert "{bias_severity_note}" not in prompt  # standard note (may be empty-ish)
