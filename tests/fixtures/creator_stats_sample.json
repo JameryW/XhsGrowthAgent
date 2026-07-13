@@ -1,6 +1,15 @@
 {
   "period": "30d",
   "source": "creator_statistics",
+  "profile": {
+    "userId": "creator_fixture_001",
+    "userName": "温柔育儿笔记",
+    "redId": "gentle_parenting",
+    "userAvatar": "https://example.com/avatar.jpg",
+    "userDesc": "记录轻松、可靠的育儿日常",
+    "role": "creator",
+    "zone": "上海"
+  },
   "account": {
     "view_count": 128400,
     "like_count": 9320,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -398,47 +399,102 @@ def sync_stats(
     console.print(Panel("📊 同步创作者中心统计", style="bold cyan"))
 
     async def _sync() -> None:
+        from backend.db.accounts import (
+            ensure_tables as ensure_account_tables,
+        )
+        from backend.db.accounts import get_account_cdp_endpoint
+        from backend.db.creative_memory import ensure_tables as ensure_creative_memory_tables
+        from backend.db.creator_stats import ensure_tables as ensure_creator_stats_tables
+        from backend.db.pool import close_pool, init_pool, is_pool_ready
         from backend.services.creator_stats.pipeline import sync_account_stats
 
-        # Pass dry_run as-is: empty cookie + live mode returns a clear error
-        # from the pipeline (does not silently write fixture rows).
-        result = await sync_account_stats(
-            account_id,
-            cookie=cookie,
-            dry_run=dry_run,
-            period=period,
-        )
-        if result.error:
-            console.print(f"[red]同步失败: {result.error}[/red]")
-            # Partial success: import may have succeeded while analysis failed
-            if result.account_synced and result.notes_imported + result.notes_updated > 0:
-                console.print(
-                    f"[yellow]已导入 notes_imported={result.notes_imported} "
-                    f"notes_updated={result.notes_updated}（分析阶段失败）[/yellow]"
-                )
-            raise typer.Exit(1)
+        # CLI has no FastAPI lifespan. A live import must open/prepare the app
+        # DB explicitly so account stats and CreativeMemory deposits survive
+        # process exit instead of falling back to process-local dictionaries.
+        # A fixture dry-run intentionally retains its offline/memory-only
+        # behavior, which keeps it usable in CI and on a developer laptop
+        # without PostgreSQL.
+        opened_pool_here = False
+        try:
+            if not dry_run:
+                try:
+                    if not is_pool_ready():
+                        await init_pool()
+                        opened_pool_here = True
+                    # ``init_pool`` opens the pool lazily; acquiring a schema
+                    # connection here verifies reachability before a live pull.
+                    await asyncio.wait_for(
+                        asyncio.gather(
+                            ensure_account_tables(),
+                            ensure_creator_stats_tables(),
+                            ensure_creative_memory_tables(),
+                        ),
+                        timeout=5.0,
+                    )
+                except Exception as e:
+                    if opened_pool_here:
+                        with contextlib.suppress(Exception):
+                            await close_pool()
+                        opened_pool_here = False
+                    console.print(
+                        "[red]同步失败：Postgres 不可用；为避免真实导入仅保留在内存中，"
+                        f"本次同步未开始（{type(e).__name__}）。[/red]"
+                    )
+                    raise typer.Exit(1) from e
 
-        table = Table(title=f"同步结果 — {result.account_id}")
-        table.add_column("指标", style="cyan")
-        table.add_column("值", style="white")
-        table.add_row("source", result.source)
-        table.add_row("notes_imported", str(result.notes_imported))
-        table.add_row("notes_updated", str(result.notes_updated))
-        table.add_row("account_synced", str(result.account_synced))
-        if result.analysis:
-            table.add_row("note_count", str(result.analysis.note_count))
-            table.add_row("avg_engagement_rate", f"{result.analysis.avg_engagement_rate:.2%}")
-            table.add_row("styles_deposited", str(result.analysis.styles_deposited))
-            table.add_row("findings", str(len(result.analysis.findings)))
-        if result.niche_resolution:
-            nr = result.niche_resolution
-            table.add_row(
-                "niche",
-                f"{nr.get('niche') or '—'} ({nr.get('source') or '?'})",
+            # 非干跑：优先 CDP 连账号常驻 Chrome（已登录，cookie jar 自带）；
+            # 无绑定再 fallback cookie。
+            cdp_endpoint = ""
+            if not dry_run:
+                try:
+                    cdp_endpoint = (await get_account_cdp_endpoint(account_id)).strip()
+                except Exception:
+                    cdp_endpoint = ""
+
+            # Pass dry_run as-is: no cdp + empty cookie + live mode returns a
+            # clear error (never silently write fixture rows under a real id).
+            result = await sync_account_stats(
+                account_id,
+                cookie=cookie,
+                dry_run=dry_run,
+                period=period,
+                cdp_endpoint=cdp_endpoint,
             )
-        for mode, items in (result.suggestions or {}).items():
-            table.add_row(f"suggestions[{mode}]", str(len(items)))
-        console.print(table)
+            if result.error:
+                console.print(f"[red]同步失败: {result.error}[/red]")
+                # Partial success: import may have succeeded while analysis failed
+                if result.account_synced and result.notes_imported + result.notes_updated > 0:
+                    console.print(
+                        f"[yellow]已导入 notes_imported={result.notes_imported} "
+                        f"notes_updated={result.notes_updated}（分析阶段失败）[/yellow]"
+                    )
+                raise typer.Exit(1)
+
+            table = Table(title=f"同步结果 — {result.account_id}")
+            table.add_column("指标", style="cyan")
+            table.add_column("值", style="white")
+            table.add_row("source", result.source)
+            table.add_row("notes_imported", str(result.notes_imported))
+            table.add_row("notes_updated", str(result.notes_updated))
+            table.add_row("account_synced", str(result.account_synced))
+            if result.analysis:
+                table.add_row("note_count", str(result.analysis.note_count))
+                table.add_row("avg_engagement_rate", f"{result.analysis.avg_engagement_rate:.2%}")
+                table.add_row("styles_deposited", str(result.analysis.styles_deposited))
+                table.add_row("findings", str(len(result.analysis.findings)))
+            if result.niche_resolution:
+                nr = result.niche_resolution
+                table.add_row(
+                    "niche",
+                    f"{nr.get('niche') or '—'} ({nr.get('source') or '?'})",
+                )
+            for mode, items in (result.suggestions or {}).items():
+                table.add_row(f"suggestions[{mode}]", str(len(items)))
+            console.print(table)
+        finally:
+            if opened_pool_here:
+                with contextlib.suppress(Exception):
+                    await close_pool()
 
     asyncio.run(_sync())
 

@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/omp-integration.md","reason":"Defines the two parallel OMP tool surfaces, API-envelope contract, and required cross-audit."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Defines backend typing, test, and formatting expectations for bridge changes."}

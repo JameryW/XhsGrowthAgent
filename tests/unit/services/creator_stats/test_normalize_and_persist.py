@@ -17,6 +17,7 @@ from backend.db.creator_stats import (
 )
 from backend.services.creator_stats.normalize import (
     normalize_account_overview,
+    normalize_account_profile,
     normalize_bundle,
     normalize_note_list,
 )
@@ -55,7 +56,25 @@ def test_normalize_account_maps_creator_aliases():
         "fans_count": 50,
         "note_count": 3,
     }
-    overview = normalize_account_overview(raw, "acc_a", period="30d", synced_at="t0")
+    profile = {
+        "data": {
+            "userId": "creator-a",
+            "userName": "创作者 A",
+            "redId": "red_a",
+            "userAvatar": "https://img.example/a.jpg",
+            "userDesc": "账号简介",
+            "role": "creator",
+            "zone": "杭州",
+            "phone": "must-not-be-saved",
+        }
+    }
+    overview = normalize_account_overview(
+        raw,
+        "acc_a",
+        period="30d",
+        synced_at="t0",
+        profile_raw=profile,
+    )
     assert overview.account_id == "acc_a"
     assert overview.views == 100
     assert overview.likes == 10
@@ -64,6 +83,37 @@ def test_normalize_account_maps_creator_aliases():
     assert overview.shares == 1
     assert overview.fans == 50
     assert overview.note_count == 3
+    assert overview.creator_user_id == "creator-a"
+    assert overview.creator_name == "创作者 A"
+    assert overview.red_id == "red_a"
+    assert overview.avatar_url == "https://img.example/a.jpg"
+    assert overview.bio == "账号简介"
+    assert overview.creator_role == "creator"
+    assert overview.zone == "杭州"
+    assert "phone" not in overview.to_dict()
+
+
+def test_normalize_account_profile_ignores_sensitive_and_nested_fields():
+    profile = normalize_account_profile(
+        {
+            "data": {
+                "userId": "creator-a",
+                "phone": "must-not-be-saved",
+                "permissions": {"creator": True},
+                "realNameVerified": True,
+            }
+        }
+    )
+    assert profile["creator_user_id"] == "creator-a"
+    assert set(profile) == {
+        "creator_user_id",
+        "creator_name",
+        "red_id",
+        "avatar_url",
+        "bio",
+        "creator_role",
+        "zone",
+    }
 
 
 def test_normalize_notes_maps_metrics_and_engagement():
@@ -110,6 +160,7 @@ async def test_upsert_round_trip_identity_and_metrics():
         "acct_rt",
         period="30d",
         synced_at="2026-07-12T00:00:00+00:00",
+        profile_raw=payload["profile"],
     )
     await upsert_account_stats(bundle.account)
     imported, updated = await upsert_notes(bundle.notes)
@@ -123,6 +174,13 @@ async def test_upsert_round_trip_identity_and_metrics():
     assert loaded_account.comments == bundle.account.comments
     assert loaded_account.collects == bundle.account.collects
     assert loaded_account.shares == bundle.account.shares
+    assert loaded_account.creator_user_id == bundle.account.creator_user_id
+    assert loaded_account.creator_name == bundle.account.creator_name
+    assert loaded_account.red_id == bundle.account.red_id
+    assert loaded_account.avatar_url == bundle.account.avatar_url
+    assert loaded_account.bio == bundle.account.bio
+    assert loaded_account.creator_role == bundle.account.creator_role
+    assert loaded_account.zone == bundle.account.zone
 
     notes = await list_note_stats("acct_rt", limit=20)
     assert len(notes) == len(bundle.notes)
@@ -161,6 +219,31 @@ async def test_upsert_is_idempotent_by_note_id():
 
     notes = await list_note_stats("acct_idem")
     assert len(notes) == 5
+
+
+@pytest.mark.asyncio
+async def test_missing_profile_response_does_not_clear_previously_saved_profile():
+    payload = load_fixture_payload(FIXTURE)
+    await sync_from_payload(
+        "acct_profile_keep",
+        payload["account"],
+        payload["notes"],
+        profile_raw=payload["profile"],
+        source="fixture",
+    )
+    await sync_from_payload(
+        "acct_profile_keep",
+        payload["account"],
+        payload["notes"],
+        profile_raw=None,
+        source="creator_statistics",
+    )
+
+    account = await get_account_stats("acct_profile_keep")
+    assert account is not None
+    assert account.creator_name == "温柔育儿笔记"
+    assert account.red_id == "gentle_parenting"
+    assert account.avatar_url == "https://example.com/avatar.jpg"
 
 
 @pytest.mark.asyncio

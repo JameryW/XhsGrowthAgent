@@ -6,11 +6,13 @@ can be tuned per-account and eventually trained from real engagement feedback
 / env-overrides): weights are learnable scalar parameters, not secrets.
 
 Tables:
-- `evaluator_config`: weight_key / account_id (nullable=global default) / value
+- `evaluator_config`: weight_key / account_id (empty string=global default) / value
 - `evaluator_samples`: training samples — (dimensions, decision, engagement)
   collected from each evaluation + post-publish feedback, for future finetuning.
 
-`account_id IS NULL` means the global default; per-account rows override it.
+``account_id == ""`` means the global default; per-account rows override it.
+PostgreSQL primary-key columns cannot be NULL, so an empty-string sentinel is
+used rather than the previously documented-but-unwritable NULL scope.
 """
 
 from __future__ import annotations
@@ -41,6 +43,24 @@ DEFAULT_DIMENSION_WEIGHTS: dict[str, float] = {
     # 利他性：内容对读者的实际帮助（可执行建议、非纯自夸/硬广）
     "altruism": 0.09,
 }
+
+# The dimensional panel before altruism was introduced.  Existing deployments
+# may have saved a full set of these eight weights summing to 1.0; loading them
+# over the new defaults would otherwise add altruism=0.09 and make the total
+# 1.09.  Keep the compatibility rule narrow so partial user overrides retain
+# their historical behavior.
+_LEGACY_WEIGHTED_DIMENSIONS: frozenset[str] = frozenset(
+    {
+        "copywriting",
+        "visual",
+        "compliance",
+        "reach",
+        "audience",
+        "ai_taste",
+        "image_quality",
+        "commercial_tone",
+    }
+)
 DEFAULT_PASS_THRESHOLD = 70.0
 DEFAULT_REJECT_THRESHOLD = 50.0
 DEFAULT_BIAS_PENALTY_THRESHOLD = 60.0
@@ -82,12 +102,17 @@ class EvaluatorWeights:
 _CREATE_CONFIG_SQL = """
 CREATE TABLE IF NOT EXISTS evaluator_config (
     weight_key   TEXT NOT NULL,
-    account_id   TEXT,
+    account_id   TEXT NOT NULL DEFAULT '',
     weight_value DOUBLE PRECISION NOT NULL,
     updated_at   TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (weight_key, account_id)
 );
 """
+
+# Safe for old installations: the original primary key already made NULL
+# impossible in normal Postgres tables, but this also repairs any hand-migrated
+# nullable variant before the empty-string scope is queried/written.
+_MIGRATE_GLOBAL_SCOPE_SQL = "UPDATE evaluator_config SET account_id = '' WHERE account_id IS NULL"
 
 _CREATE_SAMPLES_SQL = """
 CREATE TABLE IF NOT EXISTS evaluator_samples (
@@ -132,6 +157,7 @@ async def ensure_tables() -> None:
     pool = get_pool()
     async with pool.connection() as conn:
         await conn.execute(_CREATE_CONFIG_SQL)
+        await conn.execute(_MIGRATE_GLOBAL_SCOPE_SQL)
         await conn.execute(_CREATE_SAMPLES_SQL)
         await conn.execute(_ADD_SNAPSHOT_COL_SQL)  # upgrade pre-existing tables
         await conn.execute(_CREATE_SAMPLES_INDEX_SQL)
@@ -174,6 +200,7 @@ async def load_weights(account_id: str | None = None) -> EvaluatorWeights:
 
     for key, val in overrides.items():
         _apply_override(weights, key, val)
+    _normalize_legacy_weight_panel(weights, overrides)
     return weights
 
 
@@ -182,14 +209,17 @@ async def _fetch_overrides(account_id: str | None) -> dict[str, float]:
     from psycopg.rows import dict_row
 
     pool = get_pool()
+    scope_id = (account_id or "").strip()
     rows: dict[str, float] = {}
     try:
         async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-            # global first (account_id IS NULL), then account-specific override
+            # Global empty-string scope first, then account-specific rows.  The
+            # explicit ORDER BY makes the override rule deterministic.
             await cur.execute(
                 "SELECT weight_key, weight_value FROM evaluator_config "
-                "WHERE account_id IS NULL OR account_id = %s",
-                (account_id,),
+                "WHERE account_id = '' OR account_id = %s "
+                "ORDER BY CASE WHEN account_id = '' THEN 0 ELSE 1 END",
+                (scope_id,),
             )
             for r in await cur.fetchall():
                 rows[r["weight_key"]] = float(r["weight_value"])
@@ -214,10 +244,30 @@ def _apply_override(w: EvaluatorWeights, key: str, val: float) -> None:
         w.bias_penalty = val
 
 
+def _normalize_legacy_weight_panel(weights: EvaluatorWeights, overrides: dict[str, float]) -> None:
+    """Scale a complete pre-altruism saved panel to keep its sum at 1.0.
+
+    Only a complete legacy panel triggers this migration.  A single custom
+    override has always been interpreted literally and is intentionally not
+    changed here.
+    """
+    overridden_dims = {
+        key.removeprefix("weight.") for key in overrides if key.startswith("weight.")
+    }
+    if "altruism" in overridden_dims or not _LEGACY_WEIGHTED_DIMENSIONS.issubset(overridden_dims):
+        return
+    total = sum(float(v) for v in weights.dimension_weights.values())
+    if total <= 0 or abs(total - 1.0) < 1e-9:
+        return
+    for name in weights.dimension_weights:
+        weights.dimension_weights[name] = float(weights.dimension_weights[name]) / total
+
+
 async def set_weight(key: str, value: float, account_id: str | None = None) -> None:
     """Upsert one weight override. Validates key against DEFAULT_WEIGHTS."""
     if key not in DEFAULT_WEIGHTS:
         raise ValueError(f"unknown evaluator weight key: {key}")
+    scope_id = (account_id or "").strip()
     now = datetime.now(UTC).isoformat()
     pool = get_pool()
     async with pool.connection() as conn:
@@ -228,7 +278,7 @@ async def set_weight(key: str, value: float, account_id: str | None = None) -> N
             ON CONFLICT (weight_key, account_id) DO UPDATE SET weight_value = EXCLUDED.weight_value,
                 updated_at = EXCLUDED.updated_at
             """,
-            (key, value, account_id, now),
+            (key, value, scope_id, now),
         )
 
 

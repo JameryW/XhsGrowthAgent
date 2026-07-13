@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.db.creative_memory import _reset_memory_store as _reset_cm_db
+from backend.db import creative_memory as cm_db
 from backend.memory.creative import (
     DOWNGRADE_FACTOR,
     CreativeMemory,
@@ -22,9 +23,9 @@ from backend.memory.types import (
 
 @pytest.fixture(autouse=True)
 def _clear_durable_cm():
-    _reset_cm_db()
+    cm_db._reset_memory_store()
     yield
-    _reset_cm_db()
+    cm_db._reset_memory_store()
 
 
 # ── Helpers ──
@@ -227,6 +228,55 @@ class TestStyleMerging:
         cm = CreativeMemory("test_acct", store=store)
         await cm.deposit_style(_sample_style())
         store.aput.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_concurrent_deposits_merge_one_style_identity(self):
+        """The process lock prevents a concurrent read/merge/write lost update."""
+        first = CreativeMemory("concurrent_acct", store=None)
+        second = CreativeMemory("concurrent_acct", store=None)
+        await asyncio.gather(
+            first.deposit_style(_sample_style(rate=0.05, n=3)),
+            second.deposit_style(_sample_style(rate=0.08, n=2)),
+        )
+
+        styles = await CreativeMemory("concurrent_acct", store=None).recall_style()
+        real_styles = [style for style in styles if not style["style_id"].startswith("default_")]
+        assert len(real_styles) == 1
+        assert real_styles[0]["sample_count"] == 5
+
+
+class TestDurableStyleMerge:
+    @pytest.mark.asyncio
+    async def test_style_merge_transaction_uses_postgres_advisory_lock(self):
+        """The DB path serializes a tone/visual merge across worker processes."""
+
+        class _AsyncContext:
+            def __init__(self, value):
+                self.value = value
+
+            async def __aenter__(self):
+                return self.value
+
+            async def __aexit__(self, *args):
+                return False
+
+        connection = MagicMock()
+        connection.execute = AsyncMock()
+        connection.transaction.return_value = _AsyncContext(None)
+        pool = MagicMock()
+        pool.connection.return_value = _AsyncContext(connection)
+
+        with (
+            patch("backend.db.creative_memory.is_pool_ready", return_value=True),
+            patch("backend.db.creative_memory.get_pool", return_value=pool),
+        ):
+            async with cm_db.style_merge_transaction("acct", "治愈", "温暖") as conn:
+                assert conn is connection
+
+        connection.execute.assert_awaited_once_with(
+            "SELECT pg_advisory_xact_lock(hashtext(%s), hashtext(%s))",
+            ("acct", "治愈\x1f温暖"),
+        )
 
 
 # ── Material Vault Soft Downgrade ──

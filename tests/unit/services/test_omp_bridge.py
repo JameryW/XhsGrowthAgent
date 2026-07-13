@@ -20,7 +20,7 @@ class TestHostToolSchemas:
     """Verify XHS_HOST_TOOLS list integrity."""
 
     def test_tool_count(self):
-        assert len(XHS_HOST_TOOLS) == 35
+        assert len(XHS_HOST_TOOLS) == 38
 
     def test_all_tools_have_required_fields(self):
         for tool in XHS_HOST_TOOLS:
@@ -50,6 +50,10 @@ class TestHostToolSchemas:
         # Evaluation tools (RQGM agent-as-a-judge) must be in the auto-exec whitelist
         assert "xhs_evaluation_result" in _XHS_TOOL_NAMES
         assert "xhs_evaluation_run" in _XHS_TOOL_NAMES
+        # Imported Creator Center stats must be available through both OMP paths.
+        assert "xhs_creator_stats" in _XHS_TOOL_NAMES
+        assert "xhs_creator_analysis" in _XHS_TOOL_NAMES
+        assert "xhs_creator_suggestions" in _XHS_TOOL_NAMES
         # Free-mode thread-less creation/evaluation/publish + draft CRUD tools
         assert "xhs_free_draft_create" in _XHS_TOOL_NAMES
         assert "xhs_free_evaluate" in _XHS_TOOL_NAMES
@@ -336,6 +340,117 @@ class TestAnalyticsTools:
         text = result["content"][0]["text"]
         assert "OK" in text
         assert "sqlite" in text
+
+    async def test_creator_stats(self):
+        data = {
+            "account": {
+                "views": 1200,
+                "likes": 90,
+                "comments": 8,
+                "collects": 15,
+                "shares": 4,
+                "fans": 30,
+                "note_count": 2,
+                "period": "30d",
+                "source": "creator_statistics",
+            },
+            "notes": [
+                {
+                    "note_id": "n1",
+                    "title": "Top note",
+                    "views": 1000,
+                    "likes": 80,
+                    "comments": 5,
+                    "collects": 12,
+                    "engagement_rate": 0.097,
+                },
+                {
+                    "note_id": "n2",
+                    "title": "Second note",
+                    "views": 200,
+                    "likes": 10,
+                    "comments": 3,
+                    "collects": 3,
+                    "engagement_rate": 0.08,
+                },
+            ],
+            "total": 2,
+        }
+        client = _mock_client_get(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool(
+                "xhs_creator_stats", {"account_id": "acc1", "limit": 20}
+            )
+        text = result["content"][0]["text"]
+        assert "Creator Statistics" in text
+        assert "Top note" in text
+        assert "9.70%" in text
+        assert client.get.await_args.kwargs["params"] == {"limit": 20}
+        assert client.get.await_args.args[0].endswith("/analytics/creator-stats/acc1")
+
+    async def test_creator_stats_empty(self):
+        client = _mock_client_get({"account": None, "notes": [], "total": 0})
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool("xhs_creator_stats", {"account_id": "acc1"})
+        assert "No imported notes" in result["content"][0]["text"]
+
+    async def test_creator_analysis(self):
+        data = {
+            "analysis": {
+                "note_count": 2,
+                "avg_engagement_rate": 0.09,
+                "findings": [
+                    {
+                        "finding_type": "topic",
+                        "label": "育儿",
+                        "evidence": "高互动",
+                        "score": 0.1,
+                        "sample_count": 2,
+                    }
+                ],
+            },
+            "suggestions": {
+                "trend": [
+                    {
+                        "title": "延续育儿选题",
+                        "advice": "复用高互动角度",
+                        "evidence": "高互动",
+                    }
+                ]
+            },
+        }
+        client = _mock_client_get(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool("xhs_creator_analysis", {"account_id": "acc1"})
+        text = result["content"][0]["text"]
+        assert "Creator Data Analysis" in text
+        assert "育儿" in text
+        assert "延续育儿选题" in text
+        assert client.get.await_args.args[0].endswith("/analytics/creator-stats/acc1/analysis")
+
+    async def test_creator_suggestions(self):
+        data = {
+            "mode": "free",
+            "cold_start": False,
+            "suggestions": [
+                {
+                    "priority": 1,
+                    "title": "增加收藏引导",
+                    "advice": "结尾给出可保存清单",
+                    "evidence": "收藏率高",
+                }
+            ],
+        }
+        client = _mock_client_get(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool(
+                "xhs_creator_suggestions", {"account_id": "acc1", "mode": "free"}
+            )
+        text = result["content"][0]["text"]
+        assert "Creator Suggestions" in text
+        assert "增加收藏引导" in text
+        assert client.get.await_args.kwargs["params"] == {"mode": "free"}
+        assert client.get.await_args.args[0].endswith("/analytics/creator-stats/acc1/suggestions")
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -128,6 +129,57 @@ def test_cli_live_without_cookie_fails_honestly():
     )
     assert result.exit_code == 1
     assert "cookie" in result.output.lower() or "失败" in result.output
+
+
+def test_cli_live_prepares_db_and_uses_account_cdp_endpoint():
+    """A standalone live CLI must prepare durable storage before it pulls data."""
+    fake_result = SimpleNamespace(
+        account_id="cli_live",
+        source="creator_statistics",
+        notes_imported=1,
+        notes_updated=0,
+        account_synced=True,
+        analysis=None,
+        niche_resolution=None,
+        suggestions={},
+        error=None,
+    )
+    with (
+        patch("backend.db.pool.is_pool_ready", return_value=False),
+        patch("backend.db.pool.init_pool", new_callable=AsyncMock) as init_pool,
+        patch("backend.db.pool.close_pool", new_callable=AsyncMock) as close_pool,
+        patch("backend.db.accounts.ensure_tables", new_callable=AsyncMock) as ensure_accounts,
+        patch("backend.db.creator_stats.ensure_tables", new_callable=AsyncMock) as ensure_stats,
+        patch("backend.db.creative_memory.ensure_tables", new_callable=AsyncMock) as ensure_memory,
+        patch(
+            "backend.db.accounts.get_account_cdp_endpoint",
+            new_callable=AsyncMock,
+            return_value="http://127.0.0.1:9225",
+        ),
+        patch(
+            "backend.services.creator_stats.pipeline.sync_account_stats",
+            new_callable=AsyncMock,
+            return_value=fake_result,
+        ) as sync,
+    ):
+        result = CliRunner().invoke(
+            cli_app,
+            ["sync-stats", "--account-id", "cli_live", "--no-dry-run"],
+        )
+
+    assert result.exit_code == 0, result.output
+    init_pool.assert_awaited_once()
+    ensure_accounts.assert_awaited_once()
+    ensure_stats.assert_awaited_once()
+    ensure_memory.assert_awaited_once()
+    sync.assert_awaited_once_with(
+        "cli_live",
+        cookie="",
+        dry_run=False,
+        period="30d",
+        cdp_endpoint="http://127.0.0.1:9225",
+    )
+    close_pool.assert_awaited_once()
 
 
 # ── Agent wiring uses real build_mode_creative_context ──────────────────────

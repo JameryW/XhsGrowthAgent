@@ -225,6 +225,7 @@ const DIMENSION_LABEL_KEYS: Record<string, string> = {
   ai_taste: 'evaluation.dim.ai_taste',
   image_quality: 'evaluation.dim.image_quality',
   commercial_tone: 'evaluation.dim.commercial_tone',
+  altruism: 'evaluation.dim.altruism',
   bias_check: 'evaluation.dim.bias_check',
 }
 

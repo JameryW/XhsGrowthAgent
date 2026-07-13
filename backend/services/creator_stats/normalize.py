@@ -104,6 +104,70 @@ def _str_field(data: dict[str, Any], *keys: str, default: str = "") -> str:
     return default
 
 
+_PROFILE_FIELD_KEYS: tuple[str, ...] = (
+    "userId",
+    "user_id",
+    "userName",
+    "user_name",
+    "redId",
+    "red_id",
+    "userAvatar",
+    "user_avatar",
+    "userDesc",
+    "user_desc",
+    "role",
+    "zone",
+)
+
+
+def _profile_text(data: dict[str, Any], *keys: str) -> str:
+    """Return a scalar profile field without serializing nested API metadata."""
+    for key in keys:
+        value = data.get(key)
+        if value is None or isinstance(value, (bool, dict, list)):
+            continue
+        return str(value).strip()
+    return ""
+
+
+def normalize_account_profile(raw: dict[str, Any] | None) -> dict[str, str]:
+    """Whitelist public Creator Center identity fields from a current-user payload."""
+    if not isinstance(raw, dict):
+        return {
+            "creator_user_id": "",
+            "creator_name": "",
+            "red_id": "",
+            "avatar_url": "",
+            "bio": "",
+            "creator_role": "",
+            "zone": "",
+        }
+
+    candidates = [raw]
+    for candidate in candidates:
+        for key in ("data", "result", "profile", "user", "user_info", "userInfo"):
+            nested = candidate.get(key)
+            if isinstance(nested, dict):
+                candidates.append(nested)
+    data = next(
+        (
+            candidate
+            for candidate in candidates
+            if any(key in candidate for key in _PROFILE_FIELD_KEYS)
+        ),
+        {},
+    )
+    return {
+        "creator_user_id": _profile_text(data, "userId", "user_id", "uid"),
+        "creator_name": _profile_text(data, "userName", "user_name", "nickname", "name"),
+        "red_id": _profile_text(data, "redId", "red_id"),
+        "avatar_url": _profile_text(data, "userAvatar", "user_avatar", "avatar", "avatar_url"),
+        "bio": _profile_text(data, "userDesc", "user_desc", "description", "desc"),
+        "creator_role": _profile_text(data, "role", "user_role"),
+        "zone": _profile_text(data, "zone", "location", "region"),
+    }
+
+
 # Keys used by creator-center note list envelopes (galaxy/datacenter variants)
 _NOTE_LIST_KEYS: tuple[str, ...] = (
     "notes",
@@ -253,11 +317,39 @@ def normalize_account_overview(
     *,
     period: str = "30d",
     synced_at: str | None = None,
+    profile_raw: dict[str, Any] | None = None,
 ) -> AccountStatsOverview:
     """Map a creator-center account overview payload to AccountStatsOverview."""
-    # Nested data envelopes used by galaxy APIs
+    # Current Creator Center returns ``data.seven`` / ``data.thirty`` from
+    # /api/galaxy/v2/creator/datacenter/account/base.  Select the requested
+    # bucket before the generic envelope aliases below; otherwise the outer
+    # envelope has no metric keys and every account total silently becomes 0.
     data = raw
+    root_data = raw.get("data") if isinstance(raw, dict) else None
+    if isinstance(root_data, dict):
+        bucket_key = "seven" if period == "7d" else "thirty"
+        bucket = root_data.get(bucket_key)
+        if isinstance(bucket, dict):
+            data = bucket
+        elif any(
+            k in root_data
+            for k in (
+                "view_count",
+                "viewCount",
+                "views",
+                "like_count",
+                "likeCount",
+                "likes",
+                "fans_count",
+                "note_count",
+            )
+        ):
+            data = root_data
+
+    # Nested data envelopes used by older galaxy APIs.
     for key in ("data", "result", "account_data", "overview"):
+        if data is not raw:
+            break
         nested = data.get(key) if isinstance(data, dict) else None
         if isinstance(nested, dict) and any(
             k in nested
@@ -275,20 +367,38 @@ def normalize_account_overview(
             data = nested
             break
 
+    profile = normalize_account_profile(profile_raw if profile_raw is not None else raw)
     now = synced_at or datetime.now(UTC).isoformat()
     return AccountStatsOverview(
         account_id=account_id,
-        views=_int_field(data, "views", "view_count", "viewCount", "impression_count"),
-        likes=_int_field(data, "likes", "like_count", "likeCount", "liked_count"),
-        comments=_int_field(data, "comments", "comment_count", "commentCount"),
-        collects=_int_field(
-            data, "collects", "collect_count", "collectCount", "fav_count", "favorite_count"
+        **profile,
+        views=_int_field(
+            data, "views", "view_count", "viewCount", "home_view_count", "impression_count"
         ),
-        shares=_int_field(data, "shares", "share_count", "shareCount"),
-        fans=_int_field(data, "fans", "fans_count", "fansCount", "follower_count"),
+        likes=_int_field(data, "likes", "like_count", "likeCount", "liked_count"),
+        comments=_int_field(data, "comments", "comment_count", "commentCount", "comments_count"),
+        collects=_int_field(
+            data,
+            "collects",
+            "collect_count",
+            "collectCount",
+            "collected_count",
+            "fav_count",
+            "favorite_count",
+        ),
+        shares=_int_field(data, "shares", "share_count", "shareCount", "shared_count"),
+        fans=_int_field(
+            data, "fans", "fans_count", "fansCount", "follower_count", "net_rise_fans_count"
+        ),
         # Avoid generic "total" — galaxy payloads often use total for page size/total hits
         note_count=_int_field(
-            data, "note_count", "noteCount", "notes_count", "note_number", "publish_count"
+            data,
+            "note_count",
+            "noteCount",
+            "notes_count",
+            "note_number",
+            "publish_count",
+            "publish_note_num",
         ),
         period=period,
         synced_at=now,
@@ -327,11 +437,17 @@ def normalize_note(
 
     views = _int_field(metrics, "views", "view_count", "viewCount", "read_count", "impression")
     likes = _int_field(metrics, "likes", "like_count", "likeCount", "liked_count")
-    comments = _int_field(metrics, "comments", "comment_count", "commentCount")
+    comments = _int_field(metrics, "comments", "comment_count", "commentCount", "comments_count")
     collects = _int_field(
-        metrics, "collects", "collect_count", "collectCount", "fav_count", "favorite_count"
+        metrics,
+        "collects",
+        "collect_count",
+        "collectCount",
+        "collected_count",
+        "fav_count",
+        "favorite_count",
     )
-    shares = _int_field(metrics, "shares", "share_count", "shareCount")
+    shares = _int_field(metrics, "shares", "share_count", "shareCount", "shared_count")
 
     title = _str_field(data, "title", "display_title", "note_title", "name")
     if not title:
@@ -362,6 +478,14 @@ def normalize_note(
     )
     tags = _list_str_field(data, "tags", "tag_list", "topics", "hashtags")
     cover = _str_field(data, "cover_url", "cover", "image", "cover_image")
+    if not cover:
+        images = data.get("images_list")
+        if isinstance(images, list) and images:
+            first = images[0]
+            if isinstance(first, dict):
+                cover = _str_field(first, "url", "image_url", "origin_url", "preview_url")
+            elif isinstance(first, str):
+                cover = first.strip()
     published = _publish_time(data) or _publish_time(metrics)
     now = synced_at or datetime.now(UTC).isoformat()
 
@@ -420,11 +544,16 @@ def normalize_bundle(
     *,
     period: str = "30d",
     synced_at: str | None = None,
+    profile_raw: dict[str, Any] | None = None,
 ) -> CreatorStatsBundle:
     """Build a full CreatorStatsBundle from raw account + notes payloads."""
     now = synced_at or datetime.now(UTC).isoformat()
     account = normalize_account_overview(
-        account_raw or {}, account_id, period=period, synced_at=now
+        account_raw or {},
+        account_id,
+        period=period,
+        synced_at=now,
+        profile_raw=profile_raw,
     )
     notes = normalize_note_list(notes_raw, account_id, synced_at=now)
     if account.note_count == 0 and notes:

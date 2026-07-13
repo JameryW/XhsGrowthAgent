@@ -8,8 +8,11 @@ restarts and CLI/API paths without a graph store.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
 
@@ -22,6 +25,47 @@ _mem_styles: dict[str, dict[str, dict[str, Any]]] = {}
 _mem_plays: dict[str, dict[str, dict[str, Any]]] = {}
 _mem_materials: dict[str, dict[str, dict[str, Any]]] = {}
 _mem_benchmarks: dict[str, dict[str, Any]] = {}  # niche -> payload
+
+# Same-process serialization for read/merge/write of a style identity. A
+# workflow and a creator-stats import can finish at nearly the same time. The
+# matching PostgreSQL advisory transaction lock below extends that protection
+# across application processes.
+_style_merge_locks: dict[tuple[str, str, str], asyncio.Lock] = {}
+
+
+def get_style_merge_lock(account_id: str, tone: str, visual_style: str) -> asyncio.Lock:
+    key = (account_id, tone, visual_style)
+    lock = _style_merge_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _style_merge_locks[key] = lock
+    return lock
+
+
+@asynccontextmanager
+async def style_merge_transaction(
+    account_id: str, tone: str, visual_style: str
+) -> AsyncIterator[Any | None]:
+    """Serialize one style identity's read/merge/write across DB processes.
+
+    PostgreSQL advisory transaction locks avoid adding a brittle unique-index
+    migration to existing style rows while ensuring concurrent new deposits
+    cannot create separate tone/visual identities or lose a sample-count merge.
+    When durable storage is unavailable, the caller's process-local lock is the
+    available consistency boundary and ``None`` is yielded.
+    """
+    if not is_pool_ready():
+        yield None
+        return
+
+    pool = get_pool()
+    identity = f"{tone}\x1f{visual_style}"
+    async with pool.connection() as conn, conn.transaction():
+        await conn.execute(
+            "SELECT pg_advisory_xact_lock(hashtext(%s), hashtext(%s))",
+            (account_id, identity),
+        )
+        yield conn
 
 
 def _reset_memory_store() -> None:
@@ -38,6 +82,7 @@ CREATE TABLE IF NOT EXISTS creative_style_dna (
     style_id     TEXT NOT NULL,
     tone         TEXT NOT NULL DEFAULT '',
     visual_style TEXT NOT NULL DEFAULT '',
+    engagement_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
     payload_json TEXT NOT NULL DEFAULT '{}',
     updated_at   TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (account_id, style_id)
@@ -78,11 +123,18 @@ CREATE TABLE IF NOT EXISTS creative_niche_benchmark (
 _CREATE_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_creative_style_account
     ON creative_style_dna (account_id);
+CREATE INDEX IF NOT EXISTS idx_creative_style_engagement
+    ON creative_style_dna (account_id, engagement_rate DESC);
 CREATE INDEX IF NOT EXISTS idx_creative_play_account
     ON creative_playbook (account_id);
 CREATE INDEX IF NOT EXISTS idx_creative_material_account
     ON creative_material_vault (account_id, category);
 """
+
+_ADD_STYLE_ENGAGEMENT_COL_SQL = (
+    "ALTER TABLE creative_style_dna "
+    "ADD COLUMN IF NOT EXISTS engagement_rate DOUBLE PRECISION NOT NULL DEFAULT 0"
+)
 
 
 async def ensure_tables() -> None:
@@ -92,6 +144,7 @@ async def ensure_tables() -> None:
     pool = get_pool()
     async with pool.connection() as conn:
         await conn.execute(_CREATE_STYLE_SQL)
+        await conn.execute(_ADD_STYLE_ENGAGEMENT_COL_SQL)
         await conn.execute(_CREATE_PLAY_SQL)
         await conn.execute(_CREATE_MATERIAL_SQL)
         await conn.execute(_CREATE_BENCHMARK_SQL)
@@ -124,7 +177,36 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-async def upsert_style(account_id: str, style_id: str, payload: dict[str, Any]) -> None:
+async def _upsert_style_on_conn(
+    conn: Any,
+    *,
+    account_id: str,
+    style_id: str,
+    tone: str,
+    visual_style: str,
+    engagement_rate: float,
+    payload_json: str,
+    updated_at: str,
+) -> None:
+    await conn.execute(
+        """
+        INSERT INTO creative_style_dna (
+            account_id, style_id, tone, visual_style, engagement_rate, payload_json, updated_at
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (account_id, style_id) DO UPDATE SET
+            tone = EXCLUDED.tone,
+            visual_style = EXCLUDED.visual_style,
+            engagement_rate = EXCLUDED.engagement_rate,
+            payload_json = EXCLUDED.payload_json,
+            updated_at = EXCLUDED.updated_at
+        """,
+        (account_id, style_id, tone, visual_style, engagement_rate, payload_json, updated_at),
+    )
+
+
+async def upsert_style(
+    account_id: str, style_id: str, payload: dict[str, Any], *, conn: Any | None = None
+) -> None:
     account_id = (account_id or "").strip()
     style_id = (style_id or "").strip()
     if not account_id or not style_id:
@@ -133,27 +215,41 @@ async def upsert_style(account_id: str, style_id: str, payload: dict[str, Any]) 
     row["style_id"] = style_id
     tone = str(row.get("tone") or "")
     visual = str(row.get("visual_style") or "")
+    try:
+        engagement_rate = float(row.get("engagement_rate") or 0)
+    except (TypeError, ValueError):
+        engagement_rate = 0.0
     updated_at = str(row.get("last_used") or row.get("updated_at") or "") or _now_iso()
     row.setdefault("last_used", updated_at)
 
-    if not is_pool_ready():
+    if conn is None and not is_pool_ready():
         _mem_styles.setdefault(account_id, {})[style_id] = row
         return
 
+    if conn is not None:
+        await _upsert_style_on_conn(
+            conn,
+            account_id=account_id,
+            style_id=style_id,
+            tone=tone,
+            visual_style=visual,
+            engagement_rate=engagement_rate,
+            payload_json=_dumps(row),
+            updated_at=updated_at,
+        )
+        return
+
     pool = get_pool()
-    async with pool.connection() as conn:
-        await conn.execute(
-            """
-            INSERT INTO creative_style_dna (
-                account_id, style_id, tone, visual_style, payload_json, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (account_id, style_id) DO UPDATE SET
-                tone = EXCLUDED.tone,
-                visual_style = EXCLUDED.visual_style,
-                payload_json = EXCLUDED.payload_json,
-                updated_at = EXCLUDED.updated_at
-            """,
-            (account_id, style_id, tone, visual, _dumps(row), updated_at),
+    async with pool.connection() as pool_conn:
+        await _upsert_style_on_conn(
+            pool_conn,
+            account_id=account_id,
+            style_id=style_id,
+            tone=tone,
+            visual_style=visual,
+            engagement_rate=engagement_rate,
+            payload_json=_dumps(row),
+            updated_at=updated_at,
         )
 
 
@@ -178,29 +274,16 @@ async def get_style(account_id: str, style_id: str) -> dict[str, Any] | None:
     return _loads(raw) or None
 
 
-async def find_style_by_tone_visual(
-    account_id: str, tone: str, visual_style: str
+async def _find_style_by_tone_visual_on_conn(
+    conn: Any, account_id: str, tone: str, visual_style: str
 ) -> tuple[str, dict[str, Any]] | None:
-    """Exact tone+visual match for merge-on-deposit."""
-    account_id = (account_id or "").strip()
-    if not account_id:
-        return None
-    tone = (tone or "").strip()
-    visual_style = (visual_style or "").strip()
-
-    if not is_pool_ready():
-        for sid, payload in _mem_styles.get(account_id, {}).items():
-            if payload.get("tone") == tone and payload.get("visual_style") == visual_style:
-                return sid, dict(payload)
-        return None
-
-    pool = get_pool()
-    async with pool.connection() as conn, conn.cursor() as cur:
+    async with conn.cursor() as cur:
         await cur.execute(
             """
             SELECT style_id, payload_json FROM creative_style_dna
             WHERE account_id = %s AND tone = %s AND visual_style = %s
-            LIMIT 1
+            ORDER BY updated_at DESC
+            LIMIT 1 FOR UPDATE
             """,
             (account_id, tone, visual_style),
         )
@@ -210,6 +293,30 @@ async def find_style_by_tone_visual(
     if isinstance(row, dict):
         return str(row["style_id"]), _loads(row["payload_json"])
     return str(row[0]), _loads(row[1])
+
+
+async def find_style_by_tone_visual(
+    account_id: str, tone: str, visual_style: str, *, conn: Any | None = None
+) -> tuple[str, dict[str, Any]] | None:
+    """Exact tone+visual match for merge-on-deposit."""
+    account_id = (account_id or "").strip()
+    if not account_id:
+        return None
+    tone = (tone or "").strip()
+    visual_style = (visual_style or "").strip()
+
+    if conn is None and not is_pool_ready():
+        for sid, payload in _mem_styles.get(account_id, {}).items():
+            if payload.get("tone") == tone and payload.get("visual_style") == visual_style:
+                return sid, dict(payload)
+        return None
+
+    if conn is not None:
+        return await _find_style_by_tone_visual_on_conn(conn, account_id, tone, visual_style)
+
+    pool = get_pool()
+    async with pool.connection() as pool_conn:
+        return await _find_style_by_tone_visual_on_conn(pool_conn, account_id, tone, visual_style)
 
 
 async def list_styles(account_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
@@ -229,7 +336,7 @@ async def list_styles(account_id: str, *, limit: int = 20) -> list[dict[str, Any
             """
             SELECT payload_json FROM creative_style_dna
             WHERE account_id = %s
-            ORDER BY updated_at DESC
+            ORDER BY engagement_rate DESC, updated_at DESC
             LIMIT %s
             """,
             (account_id, limit),

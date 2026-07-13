@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/omp-integration.md","reason":"Verifies extension and bridge parity plus correct API-envelope handling."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Verifies targeted Python tests, Ruff, mypy, and TypeScript typecheck."}

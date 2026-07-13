@@ -85,6 +85,36 @@ async def test_load_weights_per_account_overrides_global():
 
 
 @pytest.mark.asyncio
+async def test_load_weights_scales_complete_legacy_panel_when_altruism_is_new():
+    """A persisted pre-altruism full panel must not become a 1.09 total."""
+    from backend.db.evaluator_config import load_weights
+
+    legacy = {
+        "copywriting": 0.20,
+        "visual": 0.15,
+        "compliance": 0.15,
+        "reach": 0.15,
+        "audience": 0.15,
+        "ai_taste": 0.08,
+        "image_quality": 0.07,
+        "commercial_tone": 0.05,
+    }
+    rows = [
+        {"weight_key": f"weight.{name}", "weight_value": value} for name, value in legacy.items()
+    ]
+    cursor = MagicMock()
+    cursor.execute = AsyncMock()
+    cursor.fetchall = AsyncMock(return_value=rows)
+    conn = _make_mock_conn(cursor=cursor)
+    with patch("backend.db.evaluator_config.get_pool", return_value=_make_mock_pool(conn)):
+        w = await load_weights("acct1")
+
+    assert sum(w.dimension_weights.values()) == pytest.approx(1.0)
+    assert w.dimension_weights["altruism"] == pytest.approx(0.09 / 1.09)
+    assert w.dimension_weights["copywriting"] == pytest.approx(0.20 / 1.09)
+
+
+@pytest.mark.asyncio
 async def test_load_weights_falls_back_on_db_error():
     """DB exception → defaults, no raise (non-blocking contract)."""
     from backend.db.evaluator_config import EvaluatorWeights, load_weights
@@ -115,6 +145,19 @@ async def test_set_weight_validates_key_and_upserts():
 
     with pytest.raises(ValueError):
         await set_weight("weight.bogus", 1.0)
+
+
+@pytest.mark.asyncio
+async def test_set_weight_uses_empty_scope_for_global_override():
+    from backend.db.evaluator_config import set_weight
+
+    execute_mock = AsyncMock()
+    conn = _make_mock_conn(execute_mock=execute_mock)
+    with patch("backend.db.evaluator_config.get_pool", return_value=_make_mock_pool(conn)):
+        await set_weight("weight.altruism", 0.09)
+
+    args = execute_mock.await_args.args
+    assert args[1][2] == ""
 
 
 @pytest.mark.asyncio

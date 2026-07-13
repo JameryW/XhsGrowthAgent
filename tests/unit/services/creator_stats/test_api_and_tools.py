@@ -80,6 +80,16 @@ def test_get_creator_stats_after_import():
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["account"]["views"] == 128400
+    assert data["account"]["creator_user_id"] == "creator_fixture_001"
+    assert data["account"]["creator_name"] == "温柔育儿笔记"
+    assert data["account"]["red_id"] == "gentle_parenting"
+    assert data["account"]["avatar_url"] == "https://example.com/avatar.jpg"
+    assert data["account"]["bio"] == "记录轻松、可靠的育儿日常"
+    assert data["account"]["creator_role"] == "creator"
+    assert data["account"]["zone"] == "上海"
+    assert "phone" not in data["account"]
+    assert "permissions" not in data["account"]
+    assert "real_name_verified" not in data["account"]
     assert data["total"] == 5
     ids = {n["note_id"] for n in data["notes"]}
     assert "note_heal_001" in ids
