@@ -10,7 +10,7 @@
 - Any route in `backend/api/routes/free.py`
 - Any omp host tool named `xhs_free_*`
 - Any frontend logic gated by `isFreeCreationEntry` (`route.query.mode === 'free'`)
-- The free creation entry (`/tui?mode=free`) and its TUI commands (`/start`, `/drafts`, `/draft <id>`, `/edit <id> <field> <value>`, `/delete <id>`, `/evaluate <id>`, `/analytics <id>`)
+- The free creation entry (`/tui?mode=free`) and its TUI commands (`/start`, `/drafts`, `/draft <id>`, `/edit <id> <field> <value>`, `/delete <id>`, `/evaluate <id>`, `/analytics <id>`, `/suggest`)
 
 Free mode lets the omp agent drive creation conversationally **without a LangGraph
 workflow thread**. It is fully isolated from the fixed trend/brief workflow:
@@ -32,6 +32,7 @@ drafts never enter the checkpoint, and the workflow slash commands stay disabled
 | PATCH | `/draft/{draft_id}` | query `account_id`; body `FreeDraftUpdate` (all fields optional) | `{draft_id, draft}` |
 | DELETE | `/draft/{draft_id}` | query `account_id` | `{draft_id, deleted: true}` |
 | GET | `/analytics/{draft_id}` | query `account_id` | `{draft_id, post_id, analytics}` (400 if not published / no post_id / no CDP endpoint / fetch failure) |
+| GET | `/suggestions/{account_id}` | — | `{account_id, mode: "free", suggestions: [{mode, category, title, advice, priority, evidence}], count, cold_start}` (atomic data fetch — delegates to `get_suggestions_for_mode`; carries NO orchestration cue; the omp agent decides what to do with the advice) |
 
 ### omp host tools (`backend/services/omp_bridge.py`)
 
@@ -46,6 +47,7 @@ internal httpx to `/api/free/*` (the `url` already includes `/api`, so paths are
 - `xhs_free_draft_update` → PATCH `/free/draft/{draft_id}?account_id=...`
 - `xhs_free_draft_delete` → DELETE `/free/draft/{draft_id}?account_id=...`
 - `xhs_free_analytics` → GET `/free/analytics/{draft_id}?account_id=...` (post-publish engagement; thread-less — uses `XHSClient.get_post_analytics(post_id)`, not the thread-bound workflow analytics)
+- `xhs_free_suggestions` → GET `/free/suggestions/{account_id}` (creative suggestions from imported Creator Center stats; thread-less, no draft_id — atomic data fetch; `cold_start` flag when no stats imported)
 - `xhs_free_guide` → no backend call (local); returns the orchestration guide text
 
 **Agent-side render** (`omp_bridge._execute_xhs_host_tool`): free mode defaults
@@ -78,6 +80,14 @@ and append a conditional `next:`/`note:` cue:
   (if present), `Recovery: <recovery.message>` (if present), `Hint: <recovery.hint>`
   (if present) — so the agent can tell the user why the publish failed and what to do.
   Mirrors the TUI post-publish hint (#223: real post_id → analytics hint; mock_* → mock hint).
+- **`xhs_free_suggestions`**: rendered as a header line (`Free Creative Suggestions —
+  <account_id>:`), a cold-start note when `cold_start` is true (limited-evidence
+  advice), then one line per suggestion: `- [<category>] <title>: <advice> Evidence:
+  <evidence>` (evidence omitted when empty). **Atomic data fetch only — no `next:`
+  cue.** Per the free-mode atomic-tool principle, this tool surfaces suggestion data
+  and nothing more; the omp agent owns all orchestration (whether/how to act on a
+  suggestion is the agent's decision, not the tool's). Mirrors `xhs_creator_suggestions`
+  minus the thread-bound mode param.
 - **`xhs_free_evaluate`**: the verdict is rendered as plain text for the omp agent
   (overall/decision/bias/dimensions/hints). When `decision ∈ {needs_revision, rejected}`
   AND `revision_hints` is non-empty, the render appends a `next:` cue pointing the
@@ -160,7 +170,8 @@ do NOT participate in workflow resume/retry.
 - Free-mode `/evaluate <id>` POSTs `/free/evaluate` (`{account_id, draft_id}`) and renders a boxed evaluation summary: `overall_score` (cyan), `decision` (approved→green / needs_revision→yellow / rejected→red), `dimensions` (`- dimension: score [BLOCKING]`, score cyan, BLOCKING tag red), `bias_warning` (magenta, only if non-empty), `revision_hints` (`•` list, only if non-empty). The route writes the `{overall_score, decision, revision_hints}` triple back onto the draft's `last_evaluation` + refreshes `updated_at`, so `/drafts` and `/draft <id>` reflect the new verdict after the command. Missing `<id>` prints `tui.evaluateMissing`; non-free mode shows `freeWorkflowOpDisabled`; a 400 (draft not found) prints the route's error in red. Closes the evaluate→edit loop — the `/draft <id>` revise hint points here.
 - Workflow slash commands (`/status` `/pause` `/resume` `/cancel` `/approve` `/reject`) stay disabled in free mode.
 - AgentTUI free entry defaults to **agent mode** on mount (plain text → omp conversation); non-free (trend/brief) keeps command mode.
-- **Dispatch consistency:** all seven free slash commands (`/start`, `/drafts`, `/draft`, `/edit`, `/delete`, `/evaluate`, `/analytics`) must be registered in **both** dispatchers — `processAgentCommand` (agent mode, the free default) and `processSlashCommand` (command mode, reachable via `/mode`). The handlers enforce the `isFreeCreationEntry` guard themselves, so both dispatchers just parse the trailing arg and forward. A command added to one dispatcher but not the other falls through to `unknownCommand` in the other mode — a past regression for `/evaluate` (agent mode) and `/drafts`/`/draft`/`/delete` (command mode).
+- **Dispatch consistency:** all eight free slash commands (`/start`, `/drafts`, `/draft`, `/edit`, `/delete`, `/evaluate`, `/analytics`, `/suggest`) must be registered in **both** dispatchers — `processAgentCommand` (agent mode, the free default) and `processSlashCommand` (command mode, reachable via `/mode`). The handlers enforce the `isFreeCreationEntry` guard themselves, so both dispatchers just parse the trailing arg and forward. A command added to one dispatcher but not the other falls through to `unknownCommand` in the other mode — a past regression for `/evaluate` (agent mode) and `/drafts`/`/draft`/`delete` (command mode).
+- **Atomic-tool principle (free mode):** free-mode host tools expose only atomic data operations — fetch suggestions, create/evaluate/publish a draft, list/get/update/delete. They carry **no orchestration**: no `next:` cue prescribing the next tool, no "use this to inform create" pointer, no step-numbering in descriptions. The omp agent owns all flow orchestration (create→evaluate→publish→analytics is the agent's decision, not the tool's). The exception is safety/handoff cues that prevent a wrong call (e.g. publish-failure `Recovery` hint, evaluate-`degraded` "do not publish / re-run" marker, mock-publish "analytics not available") — those are correctness guards, not flow prescription. `xhs_free_suggestions` follows this: it returns suggestion data + a count header + cold-start note, nothing more.
 
 ### Non-free behavior unchanged
 
@@ -383,6 +394,7 @@ discovers draft management without typing `/help` first:
     /delete <id>    delete a draft
     /analytics <id> post-publish engagement
     /evaluate <id>  re-evaluate a draft (RQGM quality verdict)
+    /suggest         creative suggestions (atomic data fetch, no orchestration)
     /mode            switch to command mode
 ```
 
