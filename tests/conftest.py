@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from unittest.mock import AsyncMock, MagicMock
+
+# Tests must never inherit a developer's local browser setting from `.env`.
+# The real-browser paths are opt-in and explicitly configured by the tests that
+# cover them; all other graph/integration tests should remain hermetic.
+os.environ.setdefault("XHS_USE_BROWSER", "false")
 
 # Mock playwright before any imports
 playwright_mock = MagicMock()

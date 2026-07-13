@@ -1,10 +1,17 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import { useToastStore } from '@/stores'
 
 const { t } = useI18n()
+
+interface Props {
+  /** Optional controlled connectivity state for shells and deterministic tests. */
+  isOnline?: boolean
+}
+
+const props = defineProps<Props>()
 
 // Emits
 const emit = defineEmits<{
@@ -15,16 +22,37 @@ const emit = defineEmits<{
 // Stores
 const toastStore = useToastStore()
 
-// Internal state - initialized from navigator.onLine after browser is ready
-const internalIsOnline = ref(true) // Start with true to prevent false warning on initial render
+// Internal state - initialized from navigator.onLine after browser is ready when
+// the component is uncontrolled. A supplied prop takes precedence immediately.
+const internalIsOnline = ref(props.isOnline ?? true)
 const wasOffline = ref(false)
-const initialized = ref(false)
+const initialized = ref(props.isOnline !== undefined)
 
-const isOffline = computed(() => !internalIsOnline.value)
+const isOffline = computed(() => !(props.isOnline ?? internalIsOnline.value))
+
+watch(
+  () => props.isOnline,
+  (nextOnline, previousOnline) => {
+    if (nextOnline === undefined) {
+      // Preserve the last internal value when switching back to browser events.
+      initialized.value = true
+      return
+    }
+
+    internalIsOnline.value = nextOnline
+    initialized.value = true
+    if (!nextOnline) {
+      wasOffline.value = true
+    } else if (previousOnline === false) {
+      wasOffline.value = false
+    }
+  },
+)
 
 // Handle online/offline events
 const handleOnline = () => {
   internalIsOnline.value = true
+  initialized.value = true
   emit('online')
 
   if (wasOffline.value) {
@@ -35,6 +63,7 @@ const handleOnline = () => {
 
 const handleOffline = () => {
   internalIsOnline.value = false
+  initialized.value = true
   wasOffline.value = true
   emit('offline')
   toastStore.warning(t('offline.lost'), t('offline.lostMessage'))
@@ -46,17 +75,22 @@ onMounted(() => {
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
 
-  // Initialize state from navigator.onLine immediately after mount
-  // Use requestAnimationFrame to ensure DOM is ready
-  requestAnimationFrame(() => {
-    const currentOnlineStatus = navigator.onLine
-    internalIsOnline.value = currentOnlineStatus
-    initialized.value = true
+  // Initialize state from navigator.onLine immediately after mount when no
+  // controlled prop was supplied. Use requestAnimationFrame so the first
+  // browser paint is not blocked by a connectivity probe.
+  if (props.isOnline === undefined) {
+    requestAnimationFrame(() => {
+      // A parent may have supplied a prop while the frame was pending.
+      if (props.isOnline !== undefined) return
+      const currentOnlineStatus = navigator.onLine
+      internalIsOnline.value = currentOnlineStatus
+      initialized.value = true
 
-    if (!currentOnlineStatus) {
-      wasOffline.value = true
-    }
-  })
+      if (!currentOnlineStatus) {
+        wasOffline.value = true
+      }
+    })
+  }
 })
 
 onUnmounted(() => {

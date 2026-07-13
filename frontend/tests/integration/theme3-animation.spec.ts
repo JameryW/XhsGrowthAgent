@@ -356,7 +356,7 @@ describe('Theme 3 Acceptance Tests', () => {
       })
 
       // Loading state should show spinner text
-      expect(wrapper.text()).toContain('Loading...')
+      expect(wrapper.text()).toContain('加载中...')
       expect(wrapper.props('loading')).toBe(true)
 
       // Check aria-busy for accessibility

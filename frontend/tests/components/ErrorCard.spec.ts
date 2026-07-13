@@ -61,7 +61,7 @@ describe('ErrorCard', () => {
         props: { type: 'api', message: 'Error' }
       })
 
-      expect(wrapper.text()).toContain('API错误')
+      expect(wrapper.text()).toContain('API 错误')
     })
 
     it('displays correct title for timeout type', () => {

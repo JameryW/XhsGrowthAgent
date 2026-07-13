@@ -51,7 +51,12 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM"]
 ruff check .          # lint
 ruff format .         # auto-format
 ruff check --fix .    # auto-fix safe violations
+ruff format --check . # CI gate: fail when formatting is not committed
 ```
+
+CI runs the formatting check in `--check` mode, so run `ruff format .` and
+commit the resulting changes before opening a pull request. This keeps local
+formatting drift from breaking an otherwise passing build.
 
 ---
 

@@ -36,7 +36,7 @@ const handleCancel = () => {
     <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
 
     <!-- Content container -->
-    <div class="relative liquid-glass-elevated rounded-2xl p-8 flex flex-col items-center gap-6 max-w-md mx-4">
+    <div class="relative liquid-glass-elevated bg-white rounded-2xl p-8 flex flex-col items-center gap-6 max-w-md mx-4">
       <!-- Rotating spinner -->
       <div
         class="w-16 h-16 rounded-full border-4 border-slate-200 border-t-rose-500 rotate-animation"

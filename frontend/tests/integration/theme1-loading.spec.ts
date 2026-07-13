@@ -129,28 +129,28 @@ describe('Theme 1 Acceptance Tests', () => {
       let progressBar = wrapper.find('.progress-bar-fill')
       expect(progressBar.attributes('style')).toContain('width: 10%')
       expect(progressBar.attributes('style')).toContain('#f43f5e')
-      expect(wrapper.text()).toContain('scouting')
+      expect(wrapper.text()).toContain('趋势侦察')
 
       // Update to planning phase
       await wrapper.setProps({ percent: 20, currentPhase: 'planning' })
       progressBar = wrapper.find('.progress-bar-fill')
       expect(progressBar.attributes('style')).toContain('width: 20%')
       expect(progressBar.attributes('style')).toContain('#8b5cf6')
-      expect(wrapper.text()).toContain('planning')
+      expect(wrapper.text()).toContain('内容策划')
 
       // Update to creating phase
       await wrapper.setProps({ percent: 40, currentPhase: 'creating' })
       progressBar = wrapper.find('.progress-bar-fill')
       expect(progressBar.attributes('style')).toContain('width: 40%')
       expect(progressBar.attributes('style')).toContain('#14b8a6')
-      expect(wrapper.text()).toContain('creating')
+      expect(wrapper.text()).toContain('内容创作')
 
       // Update to completed phase
       await wrapper.setProps({ percent: 100, currentPhase: 'completed' })
       progressBar = wrapper.find('.progress-bar-fill')
       expect(progressBar.attributes('style')).toContain('width: 100%')
       expect(progressBar.attributes('style')).toContain('#10b981')
-      expect(wrapper.text()).toContain('completed')
+      expect(wrapper.text()).toContain('已完成')
     })
 
     it('useLoading composable provides correct phase-to-percent mapping', () => {

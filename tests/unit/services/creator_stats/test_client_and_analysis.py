@@ -127,12 +127,8 @@ def test_note_detail_id_accepts_page_and_api_query_names():
         _note_detail_id("https://creator.xiaohongshu.com/statistics/note-detail?noteId=n-1")
         == "n-1"
     )
-    assert (
-        _note_detail_id("https://creator.xiaohongshu.com/api/detail?note_id=n-2") == "n-2"
-    )
-    assert (
-        _note_detail_id("https://creator.xiaohongshu.com/api/detail?note-id=n-3") == "n-3"
-    )
+    assert _note_detail_id("https://creator.xiaohongshu.com/api/detail?note_id=n-2") == "n-2"
+    assert _note_detail_id("https://creator.xiaohongshu.com/api/detail?note-id=n-3") == "n-3"
     assert _note_detail_id("https://creator.xiaohongshu.com/api/detail") == ""
 
 

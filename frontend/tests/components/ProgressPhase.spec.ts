@@ -23,7 +23,7 @@ describe('ProgressPhase', () => {
     const wrapper = mount(ProgressPhase, {
       props: { percent: 20, currentPhase: 'planning' }
     })
-    expect(wrapper.text()).toContain('planning')
+    expect(wrapper.text()).toContain('内容策划')
   })
 
   it('updates progress percent reactively', async () => {

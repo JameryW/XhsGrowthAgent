@@ -871,7 +871,7 @@ def analyze_note_quality(
     strengths, weaknesses = _strengths_and_weaknesses(metrics, report_locale)
     title = (note.title or "").strip()
     note_label_zh = f"「{title}」" if title else f"（{note_id or '未命名笔记'}）"
-    note_label_en = f'“{title}”' if title else f"({note_id or 'untitled note'})"
+    note_label_en = f"“{title}”" if title else f"({note_id or 'untitled note'})"
     score_summary = _copy(
         report_locale,
         (
