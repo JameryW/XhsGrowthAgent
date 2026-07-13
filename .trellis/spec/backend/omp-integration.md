@@ -329,4 +329,21 @@ await post("/review/submit/" + id, { decision: "approved", comments: feedback })
 
 **Don't assume the bridge and TS ext are in sync.** They are not. The bridge is an intentional subset (no eval sub-tools); the TS ext is the superset. A field-shape mismatch in either is a silent bug until a tool call hits it at runtime — there is no compile-time guarantee that TS interface `X` matches the backend Pydantic model `Y`.
 
+### Creator Center statistics analysis tools
+
+`xhs_creator_stats`, `xhs_creator_analysis`, and `xhs_creator_suggestions` are a paired,
+read-only tool surface in both implementations. They must preserve the following contract:
+
+| Tool | Backend route | Required arguments |
+|------|---------------|--------------------|
+| `xhs_creator_stats` | `GET /analytics/creator-stats/{account_id}` | `account_id`; optional `limit` (default `20`) |
+| `xhs_creator_analysis` | `GET /analytics/creator-stats/{account_id}/analysis` | `account_id` |
+| `xhs_creator_suggestions` | `GET /analytics/creator-stats/{account_id}/suggestions` | `account_id`; optional `mode` (`trend`, `brief`, or `free`; default `trend`) |
+
+These tools only analyze notes already imported from Creator Center. They must not start a
+browser, trigger login, use cookies, or synchronize remote data as a side effect. Render
+the API's evidence and cold-start status rather than presenting recommendations as
+unsupported facts. When the route shape changes, update both the TypeScript extension and
+the Python bridge, and extend `tests/unit/services/test_omp_bridge.py` for the bridge.
+
 **Related**: [[backend/api/routes]] shapes; [[backend/realtime/events]] EventType enum for SSE names.

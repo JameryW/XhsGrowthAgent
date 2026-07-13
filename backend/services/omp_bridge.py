@@ -483,6 +483,71 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "xhs_creator_stats",
+        "label": "XHS Creator Statistics",
+        "description": (
+            "Inspect imported Creator Center account and note metrics; summarizes engagement and "
+            "top notes without triggering a live sync"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string",
+                    "description": "Account ID with imported Creator Center statistics",
+                },
+                "limit": {
+                    "type": "number",
+                    "default": 20,
+                    "description": "Maximum imported notes to inspect (1-200)",
+                },
+            },
+            "required": ["account_id"],
+        },
+    },
+    {
+        "name": "xhs_creator_analysis",
+        "label": "XHS Creator Data Analysis",
+        "description": (
+            "Analyze imported Creator Center notes for engagement patterns, style findings, and "
+            "actionable recommendations"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string",
+                    "description": "Account ID with imported Creator Center statistics",
+                },
+            },
+            "required": ["account_id"],
+        },
+    },
+    {
+        "name": "xhs_creator_suggestions",
+        "label": "XHS Creator Suggestions",
+        "description": (
+            "Get trend, brief, or free-creation recommendations derived from an account's imported "
+            "Creator Center statistics"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string",
+                    "description": "Account ID with imported Creator Center statistics",
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["trend", "brief", "free"],
+                    "default": "trend",
+                    "description": "Creation mode to guide",
+                },
+            },
+            "required": ["account_id"],
+        },
+    },
+    {
         "name": "xhs_evaluation_result",
         "label": "XHS Evaluation Result",
         "description": (
@@ -768,6 +833,22 @@ class _RetryingClient:
 
     async def delete(self, *args: Any, **kwargs: Any) -> Any:
         return await _retry_http(self._client.delete, *args, tool_name=self._tool_name, **kwargs)
+
+
+def _creator_number(value: Any) -> float:
+    """Coerce an imported Creator Center metric without breaking tool rendering."""
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _creator_percent(value: Any) -> str:
+    """Render Creator Center's fractional engagement rate as a percentage."""
+    rate = _creator_number(value)
+    if rate <= 1:
+        rate *= 100
+    return f"{rate:.2f}%"
 
 
 async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1264,6 +1345,167 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                         f" 💬{p.get('comments', 0)}"
                         f" ⭐{p.get('collects', 0)}"
                         f" ({p.get('engagement_rate', 0)}%)"
+                    )
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_creator_stats":
+                account_id = arguments.get("account_id", "")
+                limit = arguments.get("limit", 20)
+                resp = await client.get(
+                    f"{url}/analytics/creator-stats/{account_id}",
+                    params={"limit": limit},
+                )
+                data = _unwrap_envelope(resp)
+                account = data.get("account") if isinstance(data.get("account"), dict) else {}
+                notes = [note for note in data.get("notes", []) if isinstance(note, dict)]
+                lines = [f"Creator Statistics — {account_id}:"]
+                if account:
+                    lines.extend(
+                        [
+                            (
+                                f"  Account ({account.get('period') or 'unknown window'}): "
+                                f"{account.get('views', 0)} views, "
+                                f"{account.get('likes', 0)} likes, "
+                                f"{account.get('collects', 0)} collects, "
+                                f"{account.get('comments', 0)} comments, "
+                                f"{account.get('shares', 0)} shares"
+                            ),
+                            (
+                                f"  Followers: {account.get('fans', 0)}; reported notes: "
+                                f"{account.get('note_count') or data.get('total', 0)}; "
+                                f"source: {account.get('source') or 'unknown'}"
+                            ),
+                        ]
+                    )
+                if not notes:
+                    lines.append(
+                        "  No imported notes are available. Sync Creator Center statistics before "
+                        "analyzing content."
+                    )
+                    return _make_text_result("\n".join(lines), data)
+
+                average_rate = sum(
+                    _creator_number(note.get("engagement_rate")) for note in notes
+                ) / len(notes)
+                top_notes = sorted(
+                    notes,
+                    key=lambda note: (
+                        _creator_number(note.get("engagement_rate")),
+                        _creator_number(note.get("views")),
+                    ),
+                    reverse=True,
+                )[:5]
+                lines.extend(
+                    [
+                        (
+                            f"  Loaded: {len(notes)}/{data.get('total') or len(notes)} notes; "
+                            f"average note engagement: {_creator_percent(average_rate)}"
+                        ),
+                        "  Top notes by engagement:",
+                    ]
+                )
+                for index, note in enumerate(top_notes, 1):
+                    lines.append(
+                        f"  {index}. {note.get('title') or '(untitled)'} — "
+                        f"{_creator_percent(note.get('engagement_rate'))}; "
+                        f"{note.get('views', 0)} views; ❤{note.get('likes', 0)} "
+                        f"⭐{note.get('collects', 0)} 💬{note.get('comments', 0)}"
+                    )
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_creator_analysis":
+                account_id = arguments.get("account_id", "")
+                resp = await client.get(f"{url}/analytics/creator-stats/{account_id}/analysis")
+                data = _unwrap_envelope(resp)
+                analysis_raw = data.get("analysis")
+                analysis: dict[str, Any] = analysis_raw if isinstance(analysis_raw, dict) else {}
+                findings = [
+                    finding for finding in analysis.get("findings", []) if isinstance(finding, dict)
+                ]
+                lines = [
+                    f"Creator Data Analysis — {account_id}:",
+                    (
+                        f"  Notes analyzed: {analysis.get('note_count', 0)}; average engagement: "
+                        f"{_creator_percent(analysis.get('avg_engagement_rate'))}"
+                    ),
+                ]
+                if not findings:
+                    lines.append(
+                        "  No evidence-backed findings yet. Import more notes for a stronger "
+                        "analysis."
+                    )
+                else:
+                    lines.append("  Findings:")
+                    for finding in findings[:8]:
+                        evidence = (
+                            f" — {finding.get('evidence')}" if finding.get("evidence") else ""
+                        )
+                        lines.append(
+                            f"  - [{finding.get('finding_type') or 'pattern'}] "
+                            f"{finding.get('label') or 'unnamed'}{evidence} "
+                            f"(score {_creator_number(finding.get('score')):.3f}, "
+                            f"n={finding.get('sample_count') or 0})"
+                        )
+                suggestions_raw = data.get("suggestions")
+                suggestions: dict[str, Any] = (
+                    suggestions_raw if isinstance(suggestions_raw, dict) else {}
+                )
+                for mode, items in suggestions.items():
+                    mode_items = (
+                        [item for item in items if isinstance(item, dict)]
+                        if isinstance(items, list)
+                        else []
+                    )
+                    if not mode_items:
+                        continue
+                    lines.append(f"  {mode} recommendations:")
+                    for suggestion in mode_items[:2]:
+                        title = (
+                            suggestion.get("title")
+                            or suggestion.get("category")
+                            or "Recommendation"
+                        )
+                        advice = suggestion.get("advice") or suggestion.get("evidence") or ""
+                        lines.append(f"  - {title}: {advice}")
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_creator_suggestions":
+                account_id = arguments.get("account_id", "")
+                mode = arguments.get("mode", "trend")
+                resp = await client.get(
+                    f"{url}/analytics/creator-stats/{account_id}/suggestions",
+                    params={"mode": mode},
+                )
+                data = _unwrap_envelope(resp)
+                creator_suggestions = [
+                    item for item in data.get("suggestions", []) if isinstance(item, dict)
+                ]
+                lines = [f"Creator Suggestions — {account_id} ({data.get('mode') or mode}):"]
+                if data.get("cold_start"):
+                    lines.append(
+                        "  Note: this account is in cold start; recommendations use limited "
+                        "evidence."
+                    )
+                if not creator_suggestions:
+                    lines.append(
+                        "  No suggestions are available yet. Import and analyze Creator Center "
+                        "notes first."
+                    )
+                    return _make_text_result("\n".join(lines), data)
+                for creator_suggestion in creator_suggestions:
+                    evidence = (
+                        f" Evidence: {creator_suggestion.get('evidence')}"
+                        if creator_suggestion.get("evidence")
+                        else ""
+                    )
+                    title = (
+                        creator_suggestion.get("title")
+                        or creator_suggestion.get("category")
+                        or "Recommendation"
+                    )
+                    lines.append(
+                        f"  - [P{creator_suggestion.get('priority', '?')}] {title}: "
+                        f"{creator_suggestion.get('advice') or ''}{evidence}"
                     )
                 return _make_text_result("\n".join(lines), data)
 
