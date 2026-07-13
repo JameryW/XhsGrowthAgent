@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/error-handling.md","reason":"Return actionable browser-binding failures without silently substituting fixture data."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Log browser-sync prerequisite and transport failures using the repository logging convention."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Preserve durable imported data and avoid writes on an unavailable browser."}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Use the established Vue API, toast, i18n, and component conventions for the panel update."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Keep async UI state and account refresh behavior consistent with project conventions."}

@@ -41,11 +41,9 @@ const isSyncing = ref(false)
 const isResolvingNiche = ref(false)
 const isLoadingStats = ref(false)
 
-const dryRun = ref(true)
-const cookie = ref('')
 const period = ref('30d')
 const analyze = ref(true)
-const showAdvanced = ref(false)
+const syncError = ref('')
 
 const manualNiche = ref('')
 const lastSync = ref<CreatorStatsSyncResult | null>(null)
@@ -120,6 +118,7 @@ watch(
     if (!id) return
     if (id !== prev) {
       lastSync.value = null
+      syncError.value = ''
       nicheResult.value = null
       notesTotal.value = 0
       manualNiche.value = account.value?.niche || ''
@@ -173,20 +172,18 @@ function applySuggestionsFromSync(result: CreatorStatsSyncResult) {
 
 async function runSync() {
   if (!props.accountId) return
-  // Live mode: backend auto-resolves the account's CDP Chrome (logged-in,
-  // cookie jar built-in). cookie is now optional fallback only.
   isSyncing.value = true
+  syncError.value = ''
   try {
     const result = await syncCreatorStats({
       account_id: props.accountId,
-      dry_run: dryRun.value,
-      cookie: cookie.value.trim(),
       period: period.value,
       analyze: analyze.value,
     })
     lastSync.value = result
     if (result.ok === false || (result.error && !result.import_ok && !result.account_synced)) {
-      toast.error(result.error || t('creatorStats.syncFailed'))
+      syncError.value = result.error || t('creatorStats.syncFailed')
+      toast.error(syncError.value)
     } else {
       toast.success(
         t('creatorStats.syncSuccess', {
@@ -209,7 +206,8 @@ async function runSync() {
     await accountsStore.fetchAccounts()
     emit('updated')
   } catch (e: any) {
-    toast.error(e?.message || t('creatorStats.syncFailed'))
+    syncError.value = e?.message || t('creatorStats.syncFailed')
+    toast.error(syncError.value)
   } finally {
     isSyncing.value = false
   }
@@ -392,16 +390,11 @@ function formatNum(n: number | undefined): string {
       <p class="text-[11px] text-slate-400 leading-relaxed">
         {{ t('creatorStats.importHint') }}
       </p>
+      <p class="text-[11px] text-violet-600 leading-relaxed">
+        {{ t('creatorStats.browserPrerequisite') }}
+      </p>
 
       <div class="flex flex-wrap items-center gap-3">
-        <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
-          <input
-            v-model="dryRun"
-            type="checkbox"
-            class="rounded border-slate-300 text-violet-500 focus:ring-violet-400"
-          />
-          <span>{{ t('creatorStats.dryRun') }}</span>
-        </label>
         <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
           <input
             v-model="analyze"
@@ -414,30 +407,10 @@ function formatNum(n: number | undefined): string {
           v-model="period"
           class="px-2 py-1 text-xs rounded-lg border border-slate-200 bg-white outline-none"
         >
-          <option value="7d">7d</option>
-          <option value="30d">30d</option>
-          <option value="90d">90d</option>
+          <option value="7d">{{ t('creatorStats.period.last7Days') }}</option>
+          <option value="30d">{{ t('creatorStats.period.last30Days') }}</option>
+          <option value="90d">{{ t('creatorStats.period.last90Days') }}</option>
         </select>
-      </div>
-
-      <button
-        type="button"
-        class="text-[11px] text-violet-600 hover:text-violet-700 flex items-center gap-1"
-        @click="showAdvanced = !showAdvanced"
-      >
-        <AppIcon :name="showAdvanced ? 'ChevronUp' : 'ChevronDown'" size="xs" variant="purple" />
-        {{ t('creatorStats.liveCookie') }}
-      </button>
-
-      <div v-if="showAdvanced" class="space-y-1.5">
-        <textarea
-          v-model="cookie"
-          rows="2"
-          :placeholder="t('creatorStats.cookiePlaceholder')"
-          class="w-full px-3 py-2 text-xs font-mono rounded-lg border border-slate-200 bg-white focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 outline-none resize-y"
-          :disabled="dryRun"
-        />
-        <p class="text-[10px] text-slate-400">{{ t('creatorStats.cookieHint') }}</p>
       </div>
 
       <div class="flex items-center gap-2">
@@ -449,11 +422,9 @@ function formatNum(n: number | undefined): string {
           @click="runSync"
         >
           <AppIcon name="Upload" size="xs" variant="white" />
-          <span class="ml-1">
-            {{ dryRun ? t('creatorStats.syncDryRun') : t('creatorStats.syncLive') }}
-          </span>
+          <span class="ml-1">{{ t('creatorStats.syncBrowser') }}</span>
         </NeonButton>
-        <span v-if="lastSync" class="text-[11px] text-slate-400">
+        <span v-if="lastSync && !syncError" class="text-[11px] text-slate-400">
           {{ t('creatorStats.lastSync', {
             source: lastSync.source,
             imported: lastSync.notes_imported ?? 0,
@@ -461,7 +432,9 @@ function formatNum(n: number | undefined): string {
           }) }}
         </span>
       </div>
-      <p v-if="lastSync?.error" class="text-[11px] text-rose-500">{{ lastSync.error }}</p>
+      <p v-if="syncError || lastSync?.error" class="text-[11px] text-rose-500">
+        {{ syncError || lastSync?.error }}
+      </p>
     </div>
 
     <!-- Imported overview -->

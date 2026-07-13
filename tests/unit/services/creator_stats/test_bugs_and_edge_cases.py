@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -23,6 +23,7 @@ from backend.services.creator_stats.normalize import (
 )
 from backend.services.creator_stats.pipeline import sync_account_stats, sync_from_fixture
 from backend.services.creator_stats.types import NoteStats
+from backend.services.niche_resolver import infer_niche_from_notes
 
 
 @pytest.fixture(autouse=True)
@@ -127,49 +128,142 @@ async def test_run_analysis_with_store_reports_real_deposits():
     assert any(ns[2] == "style_dna" for (ns, _k) in store._data)
 
 
-# ── analyze=false API flag ──────────────────────────────────────────────────
+# ── Fixture-only service path / browser-only API route ─────────────────────
 
 
-def test_api_analyze_false_skips_analysis_but_persists():
+@pytest.mark.asyncio
+async def test_fixture_service_analyze_false_skips_analysis_but_persists():
+    """Fixture behavior stays below the HTTP product route for offline tests."""
+    result = await sync_from_fixture("api_no_an", run_creative_analysis=False)
+
+    assert result.account_synced is True
+    assert result.notes_imported == 5
+    assert result.analysis is None
+    assert result.suggestions == {}
+    assert await list_note_stats("api_no_an")
+
+
+@pytest.mark.asyncio
+async def test_api_browser_sync_requires_bound_browser_even_with_legacy_fields():
+    await sync_from_fixture("api_live_empty", run_creative_analysis=False)
+    before = await list_note_stats("api_live_empty")
+
     app = FastAPI()
     app.include_router(analytics_routes.router, prefix="/api/analytics")
     app.state.graph = MagicMock()
     app.state.graph.store = None
     client = TestClient(app)
 
-    resp = client.post(
-        "/api/analytics/creator-stats/sync",
-        json={"account_id": "api_no_an", "dry_run": True, "analyze": False},
-    )
-    assert resp.status_code == 200
-    data = resp.json()["data"]
-    assert data["ok"] is True
-    assert data["notes_imported"] == 5
-    assert data["analysis"] is None
-    assert data["analyzed"] is False
-    assert data["suggestions"] == {} or data["suggestions"] is None or data["suggestions"] == {}
+    with (
+        patch(
+            "backend.db.accounts.get_account_cdp_endpoint",
+            new_callable=AsyncMock,
+            return_value="",
+        ),
+        patch(
+            "backend.services.creator_stats.pipeline.sync_account_stats",
+            new_callable=AsyncMock,
+        ) as sync,
+    ):
+        resp = client.post(
+            "/api/analytics/creator-stats/sync",
+            json={
+                "account_id": "api_live_empty",
+                "dry_run": True,
+                "cookie": "legacy-cookie",
+            },
+        )
 
-    # rows still readable
-    get_resp = client.get("/api/analytics/creator-stats/api_no_an")
-    assert get_resp.json()["data"]["total"] == 5
-
-
-def test_api_live_without_cookie_returns_error_payload():
-    app = FastAPI()
-    app.include_router(analytics_routes.router, prefix="/api/analytics")
-    app.state.graph = MagicMock()
-    app.state.graph.store = None
-    client = TestClient(app)
-
-    resp = client.post(
-        "/api/analytics/creator-stats/sync",
-        json={"account_id": "api_live_empty", "dry_run": False, "cookie": ""},
-    )
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["ok"] is False
-    assert data["error"]
+    assert "浏览器会话" in data["error"]
+    assert data["source"] == "creator_statistics"
     assert data["notes_imported"] == 0
+    sync.assert_not_awaited()
+    after = await list_note_stats("api_live_empty")
+    assert [note.note_id for note in after] == [note.note_id for note in before]
+
+
+def test_api_browser_sync_ignores_legacy_fields_and_uses_bound_browser():
+    app = FastAPI()
+    app.include_router(analytics_routes.router, prefix="/api/analytics")
+    app.state.graph = MagicMock()
+    app.state.graph.store = None
+    client = TestClient(app)
+
+    with (
+        patch(
+            "backend.db.accounts.get_account_cdp_endpoint",
+            new_callable=AsyncMock,
+            return_value="http://127.0.0.1:9225",
+        ),
+        patch(
+            "backend.services.creator_stats.pipeline.sync_account_stats",
+            new_callable=AsyncMock,
+            return_value=MagicMock(
+                account_id="api_browser",
+                account_synced=True,
+                error=None,
+                analysis=None,
+                to_dict=lambda: {
+                    "account_id": "api_browser",
+                    "notes_imported": 2,
+                    "notes_updated": 0,
+                    "account_synced": True,
+                    "analysis": None,
+                    "suggestions": {},
+                    "source": "creator_statistics",
+                    "error": None,
+                    "niche_resolution": None,
+                },
+            ),
+        ) as sync,
+    ):
+        resp = client.post(
+            "/api/analytics/creator-stats/sync",
+            json={
+                "account_id": "api_browser",
+                "dry_run": True,
+                "cookie": "legacy-cookie",
+            },
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["ok"] is True
+    assert data["source"] == "creator_statistics"
+    sync.assert_awaited_once_with(
+        "api_browser",
+        cookie="",
+        dry_run=False,
+        store=None,
+        period="30d",
+        run_creative_analysis=True,
+        cdp_endpoint="http://127.0.0.1:9225",
+    )
+
+
+def test_ai_and_software_titles_infer_tech_niche():
+    result = infer_niche_from_notes(
+        [
+            {"title": "AI模型工具如何辅助内容创作"},
+            {"title": "Claude Code 和 Codex 的编程体验"},
+            {"title": "GPT 与 Gemini 大模型怎么选"},
+        ]
+    )
+
+    assert result.niche == "数码"
+    assert result.source == "inferred"
+    assert result.cold_start is False
+
+
+def test_ai_keyword_does_not_match_inside_unrelated_english_words():
+    result = infer_niche_from_notes([{"title": "Daily routine recap"}])
+
+    assert result.niche == ""
+    assert result.source == "cold_start"
+    assert result.cold_start is True
 
 
 # ── Normalize edge cases ────────────────────────────────────────────────────

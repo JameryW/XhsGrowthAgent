@@ -75,7 +75,8 @@ def test_resolve_fixture_path_relative_from_other_cwd(tmp_path):
         os.chdir(project_root)
 
 
-def test_api_suggestions_mode_case_insensitive():
+@pytest.mark.asyncio
+async def test_api_suggestions_mode_case_insensitive():
     app = FastAPI()
     app.include_router(analytics_routes.router, prefix="/api/analytics")
     app.state.graph = MagicMock()
@@ -85,12 +86,9 @@ def test_api_suggestions_mode_case_insensitive():
         patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=None),
         patch("backend.db.accounts.update_account", new_callable=AsyncMock),
     ):
-        sync = client.post(
-            "/api/analytics/creator-stats/sync",
-            json={"account_id": "api_mode", "dry_run": True},
-        )
-        assert sync.status_code == 200
-        assert sync.json()["data"]["ok"] is True
+        sync = await sync_from_fixture("api_mode")
+        assert sync.account_synced is True
+        assert sync.source == "fixture"
 
         r = client.get("/api/analytics/creator-stats/api_mode/suggestions?mode=FREE")
         assert r.status_code == 200, r.text

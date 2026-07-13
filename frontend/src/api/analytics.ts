@@ -121,11 +121,9 @@ export interface CreatorSuggestionsPayload {
   cold_start: boolean
 }
 
-/** Import creator-center account/note stats. dry_run uses fixture (no remote). */
+/** Import real Creator Center account/note stats through the account's bound browser. */
 export async function syncCreatorStats(body: {
   account_id: string
-  dry_run?: boolean
-  cookie?: string
   period?: string
   analyze?: boolean
 }): Promise<CreatorStatsSyncResult> {
@@ -133,13 +131,11 @@ export async function syncCreatorStats(body: {
     '/analytics/creator-stats/sync',
     {
       account_id: body.account_id,
-      dry_run: body.dry_run ?? true,
-      cookie: body.cookie ?? '',
       period: body.period ?? '30d',
       analyze: body.analyze ?? true,
     },
-    // Live crawl can exceed default 30s
-    { timeout: body.dry_run === false ? 120000 : 60000 }
+    // Browser-backed Creator Center capture can exceed the default 30s.
+    { timeout: 120000 }
   ) as unknown as CreatorStatsSyncResult
 }
 

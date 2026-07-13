@@ -7,6 +7,7 @@ Manual niche always wins when non-empty — inference never silently replaces it
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
@@ -64,7 +65,33 @@ _NICHE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "家居": ("家居", "装修", "收纳", "家具", "软装", "室内", "客厅", "卧室", "布置"),
     "健身": ("健身", "运动", "瑜伽", "减脂", "增肌", "跑步", "训练", "塑形", "拉伸"),
     "旅行": ("旅行", "旅游", "攻略", "景点", "出行", "机票", "酒店", "打卡", "周末游"),
-    "数码": ("数码", "手机", "电脑", "相机", "耳机", "评测", "开箱", "科技", "平板", "智能"),
+    "数码": (
+        "数码",
+        "手机",
+        "电脑",
+        "相机",
+        "耳机",
+        "评测",
+        "开箱",
+        "科技",
+        "平板",
+        "智能",
+        "ai",
+        "人工智能",
+        "大模型",
+        "模型",
+        "claude",
+        "codex",
+        "chatgpt",
+        "gpt",
+        "gemini",
+        "openai",
+        "deepseek",
+        "glm",
+        "编程",
+        "代码",
+        "开发",
+    ),
     "宠物": ("宠物", "猫", "狗", "铲屎", "萌宠", "猫咪", "狗狗", "养宠", "猫粮", "狗粮"),
     "知识": ("知识", "干货", "学习", "读书", "职场", "技能", "科普", "教程", "成长", "方法论"),
 }
@@ -114,7 +141,16 @@ def score_niches_from_text(text: str) -> dict[str, int]:
     for niche, keywords in _NICHE_KEYWORDS.items():
         for kw in keywords:
             if kw.isascii():
-                if kw.lower() in lower:
+                normalized_kw = kw.lower()
+                # ``ai`` is a useful signal in Chinese titles such as
+                # ``AI模型`` but is too short to substring-match safely:
+                # ``Daily`` would otherwise infer the 数码 niche. Chinese
+                # characters count as valid token boundaries here.
+                if normalized_kw == "ai":
+                    matched = re.search(r"(?<![a-z0-9])ai(?![a-z0-9])", lower) is not None
+                else:
+                    matched = normalized_kw in lower
+                if matched:
                     scores[niche] += 1
             elif kw in text:
                 scores[niche] += 1
