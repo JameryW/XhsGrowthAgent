@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Verify analysis stays durable-history-backed and read-only."}
+{"file":".trellis/spec/backend/omp-integration.md","reason":"Verify REST/omp response-envelope compatibility."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Backend test, Ruff, and Mypy criteria."}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Verify i18n, API-client use, and responsive component behavior."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review data flow and boundary contracts end to end."}
+{"file":".trellis/tasks/07-13-historical-note-quality-analysis/research/current-state.md","reason":"Audit implemented behavior against source and design constraints."}

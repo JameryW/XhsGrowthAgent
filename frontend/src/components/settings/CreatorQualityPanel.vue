@@ -1,0 +1,330 @@
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import {
+  getCreatorQuality,
+  type CreatorQualityReport,
+  type CreatorQualityRecommendation,
+} from '@/api/analytics'
+import AppIcon from '@/components/AppIcon.vue'
+import NeonButton from '@/components/NeonButton.vue'
+
+const props = withDefaults(defineProps<{
+  accountId: string
+  accountName?: string
+  /** Increment after a real import to reload this read-only report. */
+  refreshToken?: number
+}>(), {
+  accountName: '',
+  refreshToken: 0,
+})
+
+const { t, locale } = useI18n()
+
+const report = ref<CreatorQualityReport | null>(null)
+const isLoading = ref(false)
+const errorMessage = ref('')
+let latestRequest = 0
+
+const isLowData = computed(() => Boolean(
+  report.value?.cold_start
+  || report.value?.insufficient_data
+  || report.value?.overall_score == null
+))
+
+const reportScore = computed(() => formatScore(report.value?.overall_score))
+const sampleValue = computed(() => report.value
+  ? t('creatorQuality.sampleValue', {
+    analyzed: report.value.notes_analyzed,
+    total: report.value.total_notes,
+  })
+  : '')
+
+const visibleRecommendations = computed<CreatorQualityRecommendation[]>(() => {
+  if (!report.value) return []
+  return [...report.value.recommendations]
+    .sort((a, b) => a.priority - b.priority)
+    .slice(0, 3)
+})
+
+const lowDataTitle = computed(() => report.value?.cold_start
+  ? t('creatorQuality.empty.title')
+  : t('creatorQuality.lowData.title'))
+
+const lowDataDescription = computed(() => report.value?.cold_start
+  ? t('creatorQuality.empty.description')
+  : t('creatorQuality.lowData.description'))
+
+watch(
+  () => [props.accountId, props.refreshToken, locale.value] as const,
+  ([accountId, , reportLocale]) => {
+    void loadReport(accountId, reportLocale)
+  },
+  { immediate: true }
+)
+
+async function loadReport(accountId = props.accountId, reportLocale = locale.value) {
+  const request = ++latestRequest
+  if (!accountId) {
+    report.value = null
+    errorMessage.value = ''
+    isLoading.value = false
+    return
+  }
+
+  isLoading.value = true
+  errorMessage.value = ''
+  report.value = null
+  try {
+    const result = await getCreatorQuality(accountId, reportLocale)
+    if (request !== latestRequest) return
+    report.value = result
+  } catch (error: unknown) {
+    if (request !== latestRequest) return
+    errorMessage.value = error instanceof Error
+      ? error.message
+      : t('creatorQuality.error.description')
+  } finally {
+    if (request === latestRequest) isLoading.value = false
+  }
+}
+
+function formatScore(score: number | null | undefined): string {
+  if (score == null) return '—'
+  return `${Math.round(score)}`
+}
+
+function translateEnum(group: 'grade' | 'confidence' | 'scope', value: string): string {
+  const key = `creatorQuality.${group}.${value}`
+  const translated = t(key)
+  return translated === key ? value : translated
+}
+
+function dimensionLabel(key: string): string {
+  const translationKey = `creatorQuality.dimension.${key}`
+  const translated = t(translationKey)
+  return translated === translationKey ? key : translated
+}
+</script>
+
+<template>
+  <section
+    class="min-w-0 rounded-xl border border-slate-200/50 bg-white/90 p-4 backdrop-blur-sm"
+    :aria-label="t('creatorQuality.title')"
+  >
+    <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-blue-500">
+            <AppIcon name="Brain" size="xs" variant="white" />
+          </div>
+          <h3 class="text-sm font-semibold text-slate-800">
+            {{ t('creatorQuality.title') }}
+          </h3>
+        </div>
+        <p class="mt-1 break-words text-[11px] leading-relaxed text-slate-400">
+          {{ t('creatorQuality.subtitle') }}
+          <span v-if="accountName || accountId" class="text-slate-500">
+            · {{ accountName || accountId }}
+          </span>
+        </p>
+      </div>
+      <NeonButton
+        variant="ghost"
+        size="sm"
+        class="w-full shrink-0 sm:w-auto"
+        :disabled="isLoading"
+        :aria-label="t('creatorQuality.refresh')"
+        :title="t('creatorQuality.refresh')"
+        @click="loadReport()"
+      >
+        <AppIcon name="RefreshCw" size="xs" variant="cyan" :animate="isLoading" />
+        <span>{{ t('creatorQuality.refresh') }}</span>
+      </NeonButton>
+    </div>
+
+    <div
+      v-if="isLoading"
+      class="mt-4 space-y-3"
+      aria-live="polite"
+      :aria-label="t('creatorQuality.loading')"
+    >
+      <div class="h-20 animate-pulse rounded-lg bg-slate-100" />
+      <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div v-for="index in 4" :key="index" class="h-24 animate-pulse rounded-lg bg-slate-50" />
+      </div>
+      <p class="text-center text-xs text-slate-400">{{ t('creatorQuality.loading') }}</p>
+    </div>
+
+    <div
+      v-else-if="errorMessage"
+      class="mt-4 rounded-lg border border-rose-100 bg-rose-50/70 p-3"
+      aria-live="polite"
+    >
+      <div class="flex min-w-0 items-start gap-2">
+        <AppIcon name="AlertTriangle" size="sm" variant="pink" class="mt-0.5 shrink-0" />
+        <div class="min-w-0">
+          <div class="text-xs font-semibold text-rose-700">{{ t('creatorQuality.error.title') }}</div>
+          <p class="mt-1 break-words text-[11px] leading-relaxed text-rose-600">{{ errorMessage }}</p>
+        </div>
+      </div>
+      <NeonButton variant="ghost" size="sm" class="mt-3 w-full sm:w-auto" @click="loadReport()">
+        <AppIcon name="RefreshCw" size="xs" variant="cyan" />
+        <span>{{ t('creatorQuality.error.retry') }}</span>
+      </NeonButton>
+    </div>
+
+    <div v-else-if="report" class="mt-4 space-y-4">
+      <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div class="min-w-0 rounded-lg border border-cyan-100 bg-cyan-50/70 p-3 sm:col-span-1">
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-cyan-600">
+            {{ t('creatorQuality.score') }}
+          </div>
+          <div class="mt-1 flex items-end gap-1">
+            <span class="text-3xl font-bold leading-none text-cyan-700">{{ reportScore }}</span>
+            <span v-if="report.overall_score != null" class="text-xs text-cyan-600">{{ t('creatorQuality.scoreOutOf') }}</span>
+          </div>
+          <p v-if="report.overall_score == null" class="mt-1 text-[10px] text-cyan-600">
+            {{ t('creatorQuality.notScored') }}
+          </p>
+        </div>
+        <div class="min-w-0 rounded-lg border border-slate-100 bg-slate-50/70 p-3">
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            {{ t('creatorQuality.gradeLabel') }}
+          </div>
+          <div class="mt-1 break-words text-sm font-semibold text-slate-700">
+            {{ translateEnum('grade', report.grade) }}
+          </div>
+        </div>
+        <div class="min-w-0 rounded-lg border border-slate-100 bg-slate-50/70 p-3">
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            {{ t('creatorQuality.confidenceLabel') }}
+          </div>
+          <div class="mt-1 break-words text-sm font-semibold text-slate-700">
+            {{ translateEnum('confidence', report.confidence) }}
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+        <div class="flex flex-wrap items-center justify-between gap-1.5">
+          <div class="text-xs font-semibold text-slate-600">{{ t('creatorQuality.summary') }}</div>
+          <span class="text-[10px] text-slate-400">{{ sampleValue }}</span>
+        </div>
+        <p class="mt-1.5 break-words text-xs leading-relaxed text-slate-600">{{ report.summary }}</p>
+        <p class="mt-2 text-[10px] leading-relaxed text-slate-400">
+          {{ t('creatorQuality.scopeLabel') }}: {{ translateEnum('scope', report.scope) }}
+        </p>
+      </div>
+
+      <div
+        v-if="isLowData"
+        class="rounded-lg border border-amber-100 bg-amber-50/70 p-3"
+        aria-live="polite"
+      >
+        <div class="flex min-w-0 items-start gap-2">
+          <AppIcon name="HelpCircle" size="sm" variant="peach" class="mt-0.5 shrink-0" />
+          <div class="min-w-0">
+            <div class="text-xs font-semibold text-amber-700">{{ lowDataTitle }}</div>
+            <p class="mt-1 break-words text-[11px] leading-relaxed text-amber-700">{{ lowDataDescription }}</p>
+          </div>
+        </div>
+      </div>
+
+      <section>
+        <div class="mb-2 flex items-center gap-1.5">
+          <AppIcon name="BarChart3" size="xs" variant="cyan" />
+          <h4 class="text-xs font-semibold text-slate-600">{{ t('creatorQuality.dimensions') }}</h4>
+        </div>
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div
+            v-for="dimension in report.dimensions"
+            :key="dimension.key"
+            class="min-w-0 rounded-lg border border-slate-100 bg-white p-3"
+            :class="isLowData ? 'opacity-75' : ''"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0 text-xs font-semibold text-slate-700">
+                {{ dimensionLabel(dimension.key) }}
+              </div>
+              <span v-if="!isLowData && dimension.score != null" class="shrink-0 text-sm font-bold text-cyan-700">
+                {{ formatScore(dimension.score) }}
+              </span>
+              <span v-else class="shrink-0 text-[10px] font-medium text-slate-400">
+                {{ t('creatorQuality.notScored') }}
+              </span>
+            </div>
+            <p class="mt-1.5 break-words text-[11px] leading-relaxed text-slate-500">
+              {{ dimension.evidence }}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <template v-if="!isLowData">
+
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <section class="min-w-0 rounded-lg border border-emerald-100 bg-emerald-50/50 p-3">
+            <div class="flex items-center gap-1.5">
+              <AppIcon name="Star" size="xs" variant="cyan" />
+              <h4 class="text-xs font-semibold text-emerald-700">{{ t('creatorQuality.strengths') }}</h4>
+            </div>
+            <ul v-if="report.strengths.length" class="mt-2 space-y-2">
+              <li v-for="strength in report.strengths" :key="`${strength.dimension}-${strength.title}`" class="min-w-0">
+                <div class="break-words text-xs font-medium text-slate-700">{{ strength.title }}</div>
+                <p class="mt-0.5 break-words text-[11px] leading-relaxed text-slate-500">{{ strength.evidence }}</p>
+              </li>
+            </ul>
+            <p v-else class="mt-2 text-[11px] text-slate-400">{{ t('creatorQuality.none') }}</p>
+          </section>
+
+          <section class="min-w-0 rounded-lg border border-rose-100 bg-rose-50/50 p-3">
+            <div class="flex items-center gap-1.5">
+              <AppIcon name="AlertTriangle" size="xs" variant="pink" />
+              <h4 class="text-xs font-semibold text-rose-700">{{ t('creatorQuality.weaknesses') }}</h4>
+            </div>
+            <ul v-if="report.weaknesses.length" class="mt-2 space-y-2">
+              <li v-for="weakness in report.weaknesses" :key="`${weakness.dimension}-${weakness.title}`" class="min-w-0">
+                <div class="break-words text-xs font-medium text-slate-700">{{ weakness.title }}</div>
+                <p class="mt-0.5 break-words text-[11px] leading-relaxed text-slate-500">{{ weakness.evidence }}</p>
+              </li>
+            </ul>
+            <p v-else class="mt-2 text-[11px] text-slate-400">{{ t('creatorQuality.none') }}</p>
+          </section>
+        </div>
+      </template>
+
+      <section class="rounded-lg border border-violet-100 bg-violet-50/50 p-3">
+        <div class="flex items-center gap-1.5">
+          <AppIcon name="Lightbulb" size="xs" variant="purple" />
+          <h4 class="text-xs font-semibold text-violet-700">{{ t('creatorQuality.recommendations') }}</h4>
+        </div>
+        <ol v-if="visibleRecommendations.length" class="mt-2 space-y-2">
+          <li
+            v-for="recommendation in visibleRecommendations"
+            :key="`${recommendation.priority}-${recommendation.dimension}-${recommendation.title}`"
+            class="flex min-w-0 items-start gap-2 rounded-lg border border-violet-100/70 bg-white/80 p-2.5"
+          >
+            <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-100 text-[10px] font-semibold text-violet-700">
+              {{ recommendation.priority }}
+            </span>
+            <div class="min-w-0">
+              <div class="break-words text-xs font-semibold text-slate-700">{{ recommendation.title }}</div>
+              <p class="mt-0.5 break-words text-[11px] leading-relaxed text-slate-600">{{ recommendation.advice }}</p>
+              <p class="mt-1 break-words text-[10px] leading-relaxed text-slate-400">{{ recommendation.evidence }}</p>
+            </div>
+          </li>
+        </ol>
+        <p v-else class="mt-2 text-[11px] text-slate-400">{{ t('creatorQuality.none') }}</p>
+      </section>
+
+      <p class="border-t border-slate-100 pt-3 text-[10px] leading-relaxed text-slate-400">
+        {{ t('creatorQuality.scopeLimit') }}
+      </p>
+    </div>
+
+    <div v-else class="mt-4 rounded-lg border border-slate-100 bg-slate-50/60 p-3 text-center text-xs text-slate-400">
+      {{ t('creatorQuality.empty.description') }}
+    </div>
+  </section>
+</template>

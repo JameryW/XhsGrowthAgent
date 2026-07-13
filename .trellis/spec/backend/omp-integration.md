@@ -331,7 +331,8 @@ await post("/review/submit/" + id, { decision: "approved", comments: feedback })
 
 ### Creator Center statistics analysis tools
 
-`xhs_creator_stats`, `xhs_creator_analysis`, and `xhs_creator_suggestions` are a paired,
+`xhs_creator_stats`, `xhs_creator_analysis`, `xhs_creator_suggestions`, and
+`xhs_creator_quality` are a paired,
 read-only tool surface in both implementations. They must preserve the following contract:
 
 | Tool | Backend route | Required arguments |
@@ -339,11 +340,15 @@ read-only tool surface in both implementations. They must preserve the following
 | `xhs_creator_stats` | `GET /analytics/creator-stats/{account_id}` | `account_id`; optional `limit` (default `20`) |
 | `xhs_creator_analysis` | `GET /analytics/creator-stats/{account_id}/analysis` | `account_id` |
 | `xhs_creator_suggestions` | `GET /analytics/creator-stats/{account_id}/suggestions` | `account_id`; optional `mode` (`trend`, `brief`, or `free`; default `trend`) |
+| `xhs_creator_quality` | `GET /analytics/creator-stats/{account_id}/quality` | `account_id`; request `locale=en` for OMP-readable copy |
 
 These tools only analyze notes already imported from Creator Center. They must not start a
 browser, trigger login, use cookies, or synchronize remote data as a side effect. Render
 the API's evidence and cold-start status rather than presenting recommendations as
-unsupported facts. When the route shape changes, update both the TypeScript extension and
-the Python bridge, and extend `tests/unit/services/test_omp_bridge.py` for the bridge.
+unsupported facts. `xhs_creator_quality` must retain the complete report in tool details,
+render strengths/gaps and up to three priority actions, and clearly state that fewer than
+three notes is not a score. When the route shape changes, update both the TypeScript
+extension and the Python bridge, and extend `tests/unit/services/test_omp_bridge.py` for
+the bridge.
 
 **Related**: [[backend/api/routes]] shapes; [[backend/realtime/events]] EventType enum for SSE names.

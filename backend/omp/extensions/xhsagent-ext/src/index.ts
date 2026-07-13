@@ -39,6 +39,7 @@ import registerAnalyticsPerformance from "./tools/analytics_performance.js";
 import registerCreatorStats from "./tools/creator_stats.js";
 import registerCreatorAnalysis from "./tools/creator_analysis.js";
 import registerCreatorSuggestions from "./tools/creator_suggestions.js";
+import registerCreatorQuality from "./tools/creator_quality.js";
 import registerSystemHealth from "./tools/system_health.js";
 
 import registerXhsCommand from "./commands/xhs.js";
@@ -95,6 +96,7 @@ export default function xhsagentExt(pi: ExtensionAPI) {
   registerCreatorStats(pi);
   registerCreatorAnalysis(pi);
   registerCreatorSuggestions(pi);
+  registerCreatorQuality(pi);
 
   // System tools
   registerSystemHealth(pi);

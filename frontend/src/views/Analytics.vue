@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, computed, defineAsyncComponent } from 'vue'
+import { onMounted, computed, defineAsyncComponent, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import MetricCard from '@/components/MetricCard.vue'
@@ -7,6 +7,7 @@ import DataTable from '@/components/DataTable.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import CreatorStatsPanel from '@/components/settings/CreatorStatsPanel.vue'
+import CreatorQualityPanel from '@/components/settings/CreatorQualityPanel.vue'
 import { AnalyticsSkeleton } from '@/components/skeletons'
 import { useAnalyticsStore, useAccountsStore } from '@/stores'
 
@@ -17,6 +18,7 @@ const { t } = useI18n()
 const router = useRouter()
 const analyticsStore = useAnalyticsStore()
 const accountsStore = useAccountsStore()
+const qualityRefreshToken = ref(0)
 
 onMounted(async () => {
   if (!accountsStore.activeAccountId) await accountsStore.fetchAccounts()
@@ -147,6 +149,11 @@ function refreshData() {
   analyticsStore.fetchAllData()
 }
 
+function handleCreatorStatsUpdated() {
+  qualityRefreshToken.value += 1
+  refreshData()
+}
+
 function goHome() {
   router.push('/start')
 }
@@ -225,7 +232,13 @@ function startWithTopic(topic: string, niche?: string) {
       :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
       :account-name="accountsStore.activeAccount?.name"
       compact
-      @updated="refreshData"
+      @updated="handleCreatorStatsUpdated"
+    />
+    <CreatorQualityPanel
+      v-if="accountsStore.activeAccountId || analyticsStore.accountId"
+      :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
+      :account-name="accountsStore.activeAccount?.name"
+      :refresh-token="qualityRefreshToken"
     />
   </div>
 
@@ -259,7 +272,13 @@ function startWithTopic(topic: string, niche?: string) {
       :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
       :account-name="accountsStore.activeAccount?.name"
       compact
-      @updated="refreshData"
+      @updated="handleCreatorStatsUpdated"
+    />
+    <CreatorQualityPanel
+      v-if="accountsStore.activeAccountId || analyticsStore.accountId"
+      :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
+      :account-name="accountsStore.activeAccount?.name"
+      :refresh-token="qualityRefreshToken"
     />
   </div>
 
@@ -329,7 +348,20 @@ function startWithTopic(topic: string, niche?: string) {
         :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
         :account-name="accountsStore.activeAccount?.name"
         compact
-        @updated="refreshData"
+        @updated="handleCreatorStatsUpdated"
+      />
+    </section>
+
+    <!-- Historical creative-quality report, read-only and refreshed after an import. -->
+    <section
+      v-if="accountsStore.activeAccountId || analyticsStore.accountId"
+      class="min-w-0"
+      :aria-label="t('creatorQuality.title')"
+    >
+      <CreatorQualityPanel
+        :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
+        :account-name="accountsStore.activeAccount?.name"
+        :refresh-token="qualityRefreshToken"
       />
     </section>
 

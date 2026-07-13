@@ -10,6 +10,9 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
 CreativeMode = Literal["trend", "brief", "free"]
+QualityDimensionKey = Literal["engagement", "save_value", "title_craft", "consistency"]
+QualityGrade = Literal["strong", "developing", "needs_attention", "insufficient_data"]
+QualityConfidence = Literal["low", "medium", "high"]
 
 
 @dataclass
@@ -196,6 +199,105 @@ class AnalysisResult:
             "avg_engagement_rate": self.avg_engagement_rate,
             "top_note_ids": self.top_note_ids,
             "cold_start": self.cold_start,
+        }
+
+
+@dataclass
+class QualityDimension:
+    """One transparent historical creative-quality dimension.
+
+    Scores are heuristic 0--100 signals.  Consumers must use the parent
+    report's ``insufficient_data`` flag before treating them as an overall
+    quality judgement.
+    """
+
+    key: QualityDimensionKey
+    score: float = 0.0
+    evidence: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "key": self.key,
+            "score": self.score,
+            "evidence": self.evidence,
+        }
+
+
+@dataclass
+class QualityInsight:
+    """A metric-backed account strength or shortfall."""
+
+    dimension: str
+    title: str
+    evidence: str
+    related_note_ids: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "dimension": self.dimension,
+            "title": self.title,
+            "evidence": self.evidence,
+            "related_note_ids": self.related_note_ids,
+        }
+
+
+@dataclass
+class QualityRecommendation:
+    """A prioritized next-post action grounded in historical metrics."""
+
+    priority: int
+    dimension: str
+    title: str
+    advice: str
+    evidence: str
+    related_note_ids: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "priority": self.priority,
+            "dimension": self.dimension,
+            "title": self.title,
+            "advice": self.advice,
+            "evidence": self.evidence,
+            "related_note_ids": self.related_note_ids,
+        }
+
+
+@dataclass
+class CreatorQualityReport:
+    """Read-only quality report over one account's full persisted note history."""
+
+    account_id: str
+    total_notes: int = 0
+    notes_analyzed: int = 0
+    scope: str = "all_imported_history"
+    overall_score: float | None = None
+    grade: QualityGrade = "insufficient_data"
+    confidence: QualityConfidence = "low"
+    summary: str = ""
+    dimensions: list[QualityDimension] = field(default_factory=list)
+    strengths: list[QualityInsight] = field(default_factory=list)
+    weaknesses: list[QualityInsight] = field(default_factory=list)
+    recommendations: list[QualityRecommendation] = field(default_factory=list)
+    cold_start: bool = False
+    insufficient_data: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "account_id": self.account_id,
+            "total_notes": self.total_notes,
+            "notes_analyzed": self.notes_analyzed,
+            "scope": self.scope,
+            "overall_score": self.overall_score,
+            "grade": self.grade,
+            "confidence": self.confidence,
+            "summary": self.summary,
+            "dimensions": [item.to_dict() for item in self.dimensions],
+            "strengths": [item.to_dict() for item in self.strengths],
+            "weaknesses": [item.to_dict() for item in self.weaknesses],
+            "recommendations": [item.to_dict() for item in self.recommendations],
+            "cold_start": self.cold_start,
+            "insufficient_data": self.insufficient_data,
         }
 
 

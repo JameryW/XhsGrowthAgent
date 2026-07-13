@@ -548,6 +548,24 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "xhs_creator_quality",
+        "label": "XHS Historical Creative Quality",
+        "description": (
+            "Assess an account's imported Creator Center history for overall creative-quality "
+            "signals, strengths, gaps, and prioritized next-post actions without a live sync"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string",
+                    "description": "Account ID with imported Creator Center note history",
+                },
+            },
+            "required": ["account_id"],
+        },
+    },
+    {
         "name": "xhs_evaluation_result",
         "label": "XHS Evaluation Result",
         "description": (
@@ -1507,6 +1525,104 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                         f"  - [P{creator_suggestion.get('priority', '?')}] {title}: "
                         f"{creator_suggestion.get('advice') or ''}{evidence}"
                     )
+                return _make_text_result("\n".join(lines), data)
+
+            elif tool_name == "xhs_creator_quality":
+                account_id = arguments.get("account_id", "")
+                resp = await client.get(
+                    f"{url}/analytics/creator-stats/{account_id}/quality",
+                    params={"locale": "en"},
+                )
+                data = _unwrap_envelope(resp)
+                report_account_id = data.get("account_id") or account_id
+                notes_analyzed = int(_creator_number(data.get("notes_analyzed")))
+                total_notes = int(_creator_number(data.get("total_notes")))
+                insufficient_history = bool(
+                    data.get("cold_start")
+                    or data.get("insufficient_data")
+                    or data.get("grade") == "insufficient_data"
+                    or notes_analyzed < 3
+                )
+                lines = [f"Historical Creative Quality — {report_account_id}:"]
+                if insufficient_history:
+                    lines.extend(
+                        [
+                            (
+                                "  Imported history is not yet sufficient "
+                                f"({notes_analyzed}/{total_notes} notes analyzed)."
+                            ),
+                            (
+                                "  Overall: not scored; grade: "
+                                f"{data.get('grade') or 'insufficient_data'}; confidence: "
+                                f"{data.get('confidence') or 'low'}"
+                            ),
+                        ]
+                    )
+                    if data.get("summary"):
+                        lines.append(f"  {data['summary']}")
+                    recommendations = [
+                        item for item in data.get("recommendations", []) if isinstance(item, dict)
+                    ]
+                    if recommendations:
+                        recommendation = recommendations[0]
+                        title = recommendation.get("title") or "Action"
+                        advice = (
+                            recommendation.get("advice") or recommendation.get("evidence") or ""
+                        )
+                        lines.append(f"  Next action: {title}: {advice}")
+                    return _make_text_result("\n".join(lines), data)
+
+                score = data.get("overall_score")
+                score_text = (
+                    f"{_creator_number(score):.1f}/100"
+                    if isinstance(score, (int, float))
+                    else "not scored"
+                )
+                lines.extend(
+                    [
+                        (
+                            f"  Overall: {score_text}; grade: {data.get('grade') or 'unknown'}; "
+                            f"confidence: {data.get('confidence') or 'unknown'}"
+                        ),
+                        (
+                            f"  Scope: {data.get('scope') or 'imported history'}; "
+                            f"notes analyzed: {notes_analyzed}/{total_notes}"
+                        ),
+                    ]
+                )
+                if data.get("summary"):
+                    lines.append(f"  Summary: {data['summary']}")
+                for heading, key, fallback in (
+                    ("Strengths", "strengths", "No evidence-backed strengths were returned."),
+                    ("Gaps", "weaknesses", "No evidence-backed gaps were returned."),
+                ):
+                    lines.append(f"  {heading}:")
+                    insights = [item for item in data.get(key, []) if isinstance(item, dict)]
+                    if not insights:
+                        lines.append(f"  - {fallback}")
+                    for insight in insights:
+                        title = insight.get("title") or insight.get("dimension") or heading[:-1]
+                        evidence = f" — {insight['evidence']}" if insight.get("evidence") else ""
+                        lines.append(f"  - {title}{evidence}")
+                lines.append("  Priority actions:")
+                recommendations = [
+                    item for item in data.get("recommendations", []) if isinstance(item, dict)
+                ]
+                if not recommendations:
+                    lines.append("  - No prioritized actions were returned.")
+                for index, recommendation in enumerate(
+                    sorted(
+                        recommendations,
+                        key=lambda item: _creator_number(item.get("priority")),
+                    )[:3],
+                    start=1,
+                ):
+                    priority = int(_creator_number(recommendation.get("priority"))) or index
+                    title = (
+                        recommendation.get("title") or recommendation.get("dimension") or "Action"
+                    )
+                    advice = recommendation.get("advice") or recommendation.get("evidence") or ""
+                    lines.append(f"  - [P{priority}] {title}: {advice}")
                 return _make_text_result("\n".join(lines), data)
 
             elif tool_name == "xhs_evaluation_result":

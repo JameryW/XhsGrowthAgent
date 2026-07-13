@@ -20,7 +20,7 @@ class TestHostToolSchemas:
     """Verify XHS_HOST_TOOLS list integrity."""
 
     def test_tool_count(self):
-        assert len(XHS_HOST_TOOLS) == 38
+        assert len(XHS_HOST_TOOLS) == 39
 
     def test_all_tools_have_required_fields(self):
         for tool in XHS_HOST_TOOLS:
@@ -54,6 +54,7 @@ class TestHostToolSchemas:
         assert "xhs_creator_stats" in _XHS_TOOL_NAMES
         assert "xhs_creator_analysis" in _XHS_TOOL_NAMES
         assert "xhs_creator_suggestions" in _XHS_TOOL_NAMES
+        assert "xhs_creator_quality" in _XHS_TOOL_NAMES
         # Free-mode thread-less creation/evaluation/publish + draft CRUD tools
         assert "xhs_free_draft_create" in _XHS_TOOL_NAMES
         assert "xhs_free_evaluate" in _XHS_TOOL_NAMES
@@ -451,6 +452,81 @@ class TestAnalyticsTools:
         assert "增加收藏引导" in text
         assert client.get.await_args.kwargs["params"] == {"mode": "free"}
         assert client.get.await_args.args[0].endswith("/analytics/creator-stats/acc1/suggestions")
+
+    async def test_creator_quality(self):
+        data = {
+            "account_id": "acc1",
+            "scope": "all_imported_history",
+            "total_notes": 12,
+            "notes_analyzed": 12,
+            "overall_score": 71.5,
+            "grade": "strong",
+            "confidence": "high",
+            "summary": "Imported history supports a quality assessment.",
+            "strengths": [
+                {
+                    "dimension": "save_value",
+                    "title": "Save value is relatively strong",
+                    "evidence": "Average save rate is 0.85%.",
+                }
+            ],
+            "weaknesses": [
+                {
+                    "dimension": "title_craft",
+                    "title": "Title hooks have room to improve",
+                    "evidence": "Only 6 of 12 titles have a hook.",
+                }
+            ],
+            "recommendations": [
+                {
+                    "priority": 1,
+                    "dimension": "title_craft",
+                    "title": "Increase title-hook coverage",
+                    "advice": "Try a number, question, comparison, or checklist.",
+                }
+            ],
+            "cold_start": False,
+            "insufficient_data": False,
+        }
+        client = _mock_client_get(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool("xhs_creator_quality", {"account_id": "acc1"})
+        text = result["content"][0]["text"]
+        assert "Historical Creative Quality" in text
+        assert "71.5/100" in text
+        assert "Save value is relatively strong" in text
+        assert "Increase title-hook coverage" in text
+        assert result["details"] == data
+        assert client.get.await_args.kwargs["params"] == {"locale": "en"}
+        assert client.get.await_args.args[0].endswith("/analytics/creator-stats/acc1/quality")
+
+    async def test_creator_quality_insufficient_history(self):
+        data = {
+            "account_id": "acc1",
+            "total_notes": 2,
+            "notes_analyzed": 2,
+            "overall_score": None,
+            "grade": "insufficient_data",
+            "confidence": "low",
+            "summary": "Only two imported notes are available.",
+            "recommendations": [
+                {
+                    "priority": 1,
+                    "dimension": "data_collection",
+                    "title": "Build a comparable historical sample first",
+                    "advice": "Import more real Creator Center history.",
+                }
+            ],
+            "cold_start": False,
+            "insufficient_data": True,
+        }
+        client = _mock_client_get(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool("xhs_creator_quality", {"account_id": "acc1"})
+        text = result["content"][0]["text"]
+        assert "not yet sufficient" in text
+        assert "Build a comparable historical sample first" in text
+        assert result["details"] == data
 
 
 @pytest.mark.asyncio
