@@ -71,6 +71,36 @@ async def persist_bundle(bundle: CreatorStatsBundle) -> tuple[int, int]:
     return await stats_db.upsert_bundle(bundle.account, bundle.notes)
 
 
+async def _sync_imported_account_name(bundle: CreatorStatsBundle) -> None:
+    """Mirror a verified public Creator Center nickname onto the account row.
+
+    Creator statistics keep the complete allowlisted profile snapshot, while
+    account pickers read ``accounts.name``. Keep those two user-facing labels
+    aligned after a successful import without letting an absent profile erase
+    a name the user already has.
+    """
+    if bundle.account.source != "creator_statistics":
+        return
+    creator_name = (bundle.account.creator_name or "").strip()
+    if not creator_name:
+        return
+
+    try:
+        from backend.db.accounts import get_account, update_account
+
+        account = await get_account(bundle.account.account_id)
+        if account is not None and account.name != creator_name:
+            await update_account(bundle.account.account_id, name=creator_name)
+    except Exception as e:
+        # The durable statistics snapshot already succeeded. A best-effort
+        # display-name refresh must never turn that import into a failure.
+        logger.warning(
+            "creator account name sync skipped for %s: %s",
+            bundle.account.account_id,
+            e,
+        )
+
+
 async def import_bundle(
     bundle: CreatorStatsBundle,
     *,
@@ -84,6 +114,7 @@ async def import_bundle(
     ``account_synced`` stays True.
     """
     imported, updated = await persist_bundle(bundle)
+    await _sync_imported_account_name(bundle)
     analysis = None
     suggestions: dict[str, Any] = {}
     analysis_error: str | None = None

@@ -109,6 +109,8 @@ _PROFILE_FIELD_KEYS: tuple[str, ...] = (
     "user_id",
     "userName",
     "user_name",
+    "nickname",
+    "name",
     "redId",
     "red_id",
     "userAvatar",

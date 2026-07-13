@@ -96,6 +96,23 @@ No polling — all updates are push-based via WebSocket/SSE.
 
 ---
 
+## Account-Bound Form Defaults
+
+Creation forms may derive a default from the selected durable account (for
+example, its bound content niche). Treat that as a default only:
+
+- an explicit route/query value wins over the account value;
+- a user's in-form selection wins over both and must survive account changes;
+- before a manual selection, changing the account recomputes the account-bound
+  default; and
+- an empty bound value falls back to the product default rather than retaining
+  a previous account's niche.
+
+Keep the chosen value in the component's submitted configuration, not as a
+side-effectful mutation of a Pinia store.
+
+---
+
 ## Common Mistakes
 
 - **Don't** create new stores for data that belongs in `workflowStore` (e.g., ripple data is part of workflow state)

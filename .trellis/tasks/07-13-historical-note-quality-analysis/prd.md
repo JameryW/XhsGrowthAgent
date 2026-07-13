@@ -17,11 +17,13 @@ historical Creator Center snapshot.
 
 ## Product outcome
 
-On the Analytics page, an account with imported Creator Center notes can view a
-historical creative-quality report. The same report is available to omp so an
-agent can use it during a conversation. The report is generated locally from
-the account's full persisted note history, never from sample data or a remote
-LLM call.
+On the dedicated Quality Evaluation page, an account with imported Creator
+Center notes can view a historical creative-quality report alongside the
+existing per-workflow evaluation history. Analytics retains the import and
+performance views, with a clear route into the dedicated quality view. The
+same report is available to omp so an agent can use it during a conversation.
+The report is generated locally from the account's full persisted note history,
+never from sample data or a remote LLM call.
 
 ## Data flow
 
@@ -83,17 +85,32 @@ reader limit is included.
 
 ## UX
 
-Add a dedicated, compact `CreatorQualityPanel` below the creator import panel
-on the Analytics data view.
+Make historical account quality a first-class mode of the existing independent
+Quality Evaluation page, rather than a compact card buried in Analytics.
 
-- It loads the account-level report for the active account without triggering
-  a browser import.
-- It shows a score/grade, sample confidence, summary, dimension cards,
-  strengths, weaknesses, and the top actionable recommendations.
-- Loading, empty/low-data, and failure states are explicit and non-blocking.
+- The page offers two unambiguous views: historical account quality and the
+  existing individual-workflow evaluation history. A workflow detail URL keeps
+  opening its existing detail view.
+- Historical quality has an account selector, score/grade, sample confidence,
+  summary, dimension cards, strengths, weaknesses, and prioritized next actions.
+- Loading, no-account, empty/low-data, and failure states are explicit and
+  non-blocking. The import entry stays available from Analytics/Settings.
 - It remains readable on a 390px viewport with no page-level horizontal
   overflow.
 - All user-visible strings use both Chinese and English locale files.
+
+## Follow-up account synchronization
+
+The account selected for a new workflow must automatically use that account's
+bound niche when the user has not manually chosen a niche. Changing accounts
+updates this default; an explicit query parameter or manual niche selection
+continues to win.
+
+After a successful real Creator Center import, a non-empty imported
+`creator_name` is also written back to the durable `accounts.name` field. This
+makes the real XHS nickname consistently appear in the account picker,
+navigation, and quality page. Empty or unavailable profile names never erase an
+existing account name.
 
 ## omp
 

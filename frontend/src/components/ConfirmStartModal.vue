@@ -9,6 +9,7 @@ const { t } = useI18n()
 const props = defineProps<{
   isOpen: boolean
   accountId: string
+  accountName?: string
   phase: string
   dryRun: boolean
   autoPublish: boolean
@@ -98,7 +99,9 @@ const expectedSteps = computed(() => {
             </div>
             <div class="flex items-center justify-between py-2">
               <span class="text-sm text-slate-500">{{ t('home.form.accountId') }}</span>
-              <span class="text-sm font-medium text-slate-700">{{ accountId }}</span>
+              <span class="max-w-[65%] truncate text-sm font-medium text-slate-700" :title="accountName || accountId">
+                {{ accountName || accountId }}
+              </span>
             </div>
             <div v-if="niche" class="flex items-center justify-between py-2">
               <span class="text-sm text-slate-500">{{ t('home.form.niche') }}</span>

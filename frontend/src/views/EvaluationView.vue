@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import EvaluationRadar from '@/components/charts/EvaluationRadar.vue'
 import TrendChart from '@/components/charts/TrendChart.vue'
+import CreatorQualityWorkspace from '@/components/evaluation/CreatorQualityWorkspace.vue'
 import { getEvaluationList, getEvaluationResult, getEvaluationTrend } from '@/api/evaluation'
 import type {
   EvaluationListItem,
@@ -20,6 +21,18 @@ const router = useRouter()
 // ── 视图模式：列表 vs 详情（由路由 param 决定）──
 const detailThreadId = computed(() => (route.params.threadId as string | undefined) ?? null)
 const isDetailView = computed(() => !!detailThreadId.value)
+const activeTab = computed<'creator' | 'workflow'>(() =>
+  route.query.tab === 'workflow' ? 'workflow' : 'creator'
+)
+const isCreatorQualityView = computed(() => activeTab.value === 'creator')
+
+function selectTab(tab: 'creator' | 'workflow') {
+  if (tab === activeTab.value) return
+  void router.replace({
+    name: 'evaluation',
+    query: tab === 'workflow' ? { tab: 'workflow' } : {},
+  })
+}
 
 // ════════════════════════════════════════════════════════════
 // 列表页状态
@@ -78,24 +91,33 @@ const filteredItems = computed(() => {
 })
 
 function openDetail(threadId: string) {
-  router.push({ name: 'evaluation-detail', params: { threadId } })
+  router.push({ name: 'evaluation-detail', params: { threadId }, query: { tab: 'workflow' } })
 }
 
 function backToList() {
-  router.push({ name: 'evaluation' })
+  router.push({ name: 'evaluation', query: { tab: 'workflow' } })
 }
 
 // 列表页首次挂载加载
 onMounted(() => {
-  if (!isDetailView.value) {
+  if (!isDetailView.value && activeTab.value === 'workflow') {
     loadList(true)
   }
 })
 
 // 路由切换到列表页时按需加载（从详情返回且列表为空）
 watch(isDetailView, (detail) => {
-  if (!detail && listItems.value.length === 0 && !listLoading.value) {
+  if (!detail && activeTab.value === 'workflow' && listItems.value.length === 0 && !listLoading.value) {
     loadList(true)
+  }
+})
+
+watch(activeTab, (tab) => {
+  if (tab === 'workflow' && listItems.value.length === 0 && !listLoading.value) {
+    void loadList(true)
+  }
+  if (tab === 'workflow' && !trend.value && !trendLoading.value) {
+    void loadTrend()
   }
 })
 
@@ -235,7 +257,9 @@ function dimLabel(dim: string): string {
 
 // 趋势图：列表页挂载时加载一次（详情页不重复加载）
 onMounted(() => {
-  loadTrend()
+  if (!isDetailView.value && activeTab.value === 'workflow') {
+    loadTrend()
+  }
 })
 </script>
 
@@ -243,11 +267,44 @@ onMounted(() => {
   <div class="evaluation-view page-container">
     <!-- ════════ 列表视图 ════════ -->
     <template v-if="!isDetailView">
-      <header class="page-header">
-        <h1 class="page-title">{{ t('evaluation.title') }}</h1>
-        <p class="page-subtitle">{{ t('evaluation.list.subtitle') }}</p>
+      <header class="page-header evaluation-hub-header">
+        <div class="flex min-w-0 items-start gap-3">
+          <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-rose-500 to-violet-600 shadow-sm">
+            <AppIcon name="ClipboardCheck" size="md" variant="white" />
+          </div>
+          <div class="min-w-0">
+            <h1 class="page-title">{{ t('evaluation.title') }}</h1>
+            <p class="page-subtitle">{{ t('creatorQuality.page.hubSubtitle') }}</p>
+          </div>
+        </div>
+        <div class="evaluation-tabs" role="tablist" :aria-label="t('evaluation.title')">
+          <button
+            type="button"
+            class="evaluation-tab"
+            :class="{ 'evaluation-tab-active': isCreatorQualityView }"
+            role="tab"
+            :aria-selected="isCreatorQualityView"
+            @click="selectTab('creator')"
+          >
+            <AppIcon name="Brain" size="sm" :variant="isCreatorQualityView ? 'white' : 'cyan'" />
+            {{ t('creatorQuality.page.tab') }}
+          </button>
+          <button
+            type="button"
+            class="evaluation-tab"
+            :class="{ 'evaluation-tab-active': !isCreatorQualityView }"
+            role="tab"
+            :aria-selected="!isCreatorQualityView"
+            @click="selectTab('workflow')"
+          >
+            <AppIcon name="CheckSquare" size="sm" :variant="!isCreatorQualityView ? 'white' : 'cyan'" />
+            {{ t('creatorQuality.page.workflowTab') }}
+          </button>
+        </div>
       </header>
 
+      <CreatorQualityWorkspace v-if="isCreatorQualityView" />
+      <template v-else>
       <!-- 评估历史趋势 -->
       <section class="trend-card">
         <h3 class="card-title">{{ t('evaluation.trend.title') }}</h3>
@@ -339,6 +396,7 @@ onMounted(() => {
         </button>
       </div>
       <div v-else-if="listItems.length > 0" class="no-more">{{ t('evaluation.list.noMore') }}</div>
+      </template>
     </template>
 
     <!-- ════════ 详情视图 ════════ -->
@@ -438,6 +496,53 @@ onMounted(() => {
 .page-header { margin-bottom: 1.5rem; }
 .page-title { font-size: 1.5rem; font-weight: 700; color: #1e293b; margin: 0; }
 .page-subtitle { font-size: 0.875rem; color: #64748b; margin: 0.25rem 0 0; }
+.evaluation-hub-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.125rem;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(250, 245, 255, 0.92));
+  box-shadow: 0 8px 24px rgba(71, 85, 105, 0.06);
+}
+.evaluation-tabs {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.875rem;
+  background: rgba(248, 250, 252, 0.92);
+}
+.evaluation-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  padding: 0.45rem 0.7rem;
+  border: 0;
+  border-radius: 0.625rem;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.evaluation-tab:hover { background: #fff; color: #334155; }
+.evaluation-tab-active {
+  background: linear-gradient(135deg, #f43f5e, #8b5cf6);
+  color: #fff;
+  box-shadow: 0 3px 8px rgba(139, 92, 246, 0.22);
+}
+@media (max-width: 640px) {
+  .evaluation-hub-header { align-items: stretch; flex-direction: column; padding: 1rem; }
+  .evaluation-tabs { width: 100%; }
+  .evaluation-tab { flex: 1; padding-inline: 0.4rem; }
+}
 
 /* ── 详情页返回头 ── */
 .detail-header { display: flex; align-items: center; gap: 0.75rem; }

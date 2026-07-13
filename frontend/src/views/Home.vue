@@ -8,13 +8,14 @@ import PreLaunchChecklist from '@/components/PreLaunchChecklist.vue'
 import WorkflowStartForm from '@/components/WorkflowStartForm.vue'
 import ConfirmStartModal from '@/components/ConfirmStartModal.vue'
 import type { WorkflowConfig, WorkflowMode } from '@/components/WorkflowStartForm.vue'
-import { useWorkflowStore } from '@/stores'
+import { useAccountsStore, useWorkflowStore } from '@/stores'
 
 const { t } = useI18n()
 
 const router = useRouter()
 const route = useRoute()
 const workflowStore = useWorkflowStore()
+const accountsStore = useAccountsStore()
 const isStarting = ref(false)
 const showConfirm = ref(false)
 const startFormRef = ref<InstanceType<typeof WorkflowStartForm> | null>(null)
@@ -22,6 +23,10 @@ const checklistRef = ref<InstanceType<typeof PreLaunchChecklist> | null>(null)
 
 // Pre-filled topic from analytics
 const prefilledTopic = ref<string | null>(null)
+const prefilledNiche = computed(() => {
+  const niche = route.query.niche
+  return typeof niche === 'string' && niche.trim() ? niche : undefined
+})
 
 // Form state
 const formConfig = ref<WorkflowConfig>({
@@ -37,6 +42,9 @@ const formConfig = ref<WorkflowConfig>({
 // Narrow the form's WorkflowMode to the modal's strict prop type.
 const confirmWorkflowMode = computed<'trend' | 'brief'>(() =>
   formConfig.value.workflowMode === 'brief' ? 'brief' : 'trend'
+)
+const selectedAccountName = computed(() =>
+  accountsStore.accounts.find((account) => account.id === formConfig.value.accountId)?.name || ''
 )
 
 // Check for topic and niche query params from analytics
@@ -143,6 +151,7 @@ const confirmStart = async () => {
         <WorkflowStartForm
           ref="startFormRef"
           :initial-topic="prefilledTopic || undefined"
+          :initial-niche="prefilledNiche"
           :is-loading="isStarting"
           @submit="handleSubmit"
         />
@@ -173,6 +182,7 @@ const confirmStart = async () => {
     <ConfirmStartModal
       :is-open="showConfirm"
       :account-id="formConfig.accountId"
+      :account-name="selectedAccountName"
       :phase="formConfig.phase"
       :dry-run="formConfig.dryRun"
       :auto-publish="formConfig.autoPublish"

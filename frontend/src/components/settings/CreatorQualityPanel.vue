@@ -33,6 +33,11 @@ const isLowData = computed(() => Boolean(
 ))
 
 const reportScore = computed(() => formatScore(report.value?.overall_score))
+const scoreProgress = computed(() => {
+  const score = report.value?.overall_score
+  if (score == null) return '0%'
+  return `${Math.min(100, Math.max(0, Math.round(score)))}%`
+})
 const sampleValue = computed(() => report.value
   ? t('creatorQuality.sampleValue', {
     analyzed: report.value.notes_analyzed,
@@ -109,20 +114,20 @@ function dimensionLabel(key: string): string {
 
 <template>
   <section
-    class="min-w-0 rounded-xl border border-slate-200/50 bg-white/90 p-4 backdrop-blur-sm"
+    class="min-w-0 rounded-2xl border border-slate-200/70 bg-white/95 p-4 shadow-sm backdrop-blur-sm md:p-6"
     :aria-label="t('creatorQuality.title')"
   >
-    <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div class="flex min-w-0 flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
       <div class="min-w-0">
         <div class="flex items-center gap-2">
-          <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-blue-500">
-            <AppIcon name="Brain" size="xs" variant="white" />
+          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 shadow-sm">
+            <AppIcon name="Brain" size="sm" variant="white" />
           </div>
-          <h3 class="text-sm font-semibold text-slate-800">
+          <h3 class="text-base font-semibold text-slate-800">
             {{ t('creatorQuality.title') }}
           </h3>
         </div>
-        <p class="mt-1 break-words text-[11px] leading-relaxed text-slate-400">
+        <p class="mt-1.5 break-words text-xs leading-relaxed text-slate-500">
           {{ t('creatorQuality.subtitle') }}
           <span v-if="accountName || accountId" class="text-slate-500">
             · {{ accountName || accountId }}
@@ -175,20 +180,23 @@ function dimensionLabel(key: string): string {
     </div>
 
     <div v-else-if="report" class="mt-4 space-y-4">
-      <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <div class="min-w-0 rounded-lg border border-cyan-100 bg-cyan-50/70 p-3 sm:col-span-1">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div class="min-w-0 rounded-xl border border-cyan-100 bg-gradient-to-br from-cyan-50 to-blue-50/70 p-4 sm:col-span-1">
           <div class="text-[10px] font-semibold uppercase tracking-wider text-cyan-600">
             {{ t('creatorQuality.score') }}
           </div>
-          <div class="mt-1 flex items-end gap-1">
-            <span class="text-3xl font-bold leading-none text-cyan-700">{{ reportScore }}</span>
+          <div class="mt-1.5 flex items-end gap-1">
+            <span class="text-4xl font-bold leading-none text-cyan-700">{{ reportScore }}</span>
             <span v-if="report.overall_score != null" class="text-xs text-cyan-600">{{ t('creatorQuality.scoreOutOf') }}</span>
           </div>
           <p v-if="report.overall_score == null" class="mt-1 text-[10px] text-cyan-600">
             {{ t('creatorQuality.notScored') }}
           </p>
+          <div v-else class="mt-3 h-1.5 overflow-hidden rounded-full bg-cyan-100">
+            <div class="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-500" :style="{ width: scoreProgress }" />
+          </div>
         </div>
-        <div class="min-w-0 rounded-lg border border-slate-100 bg-slate-50/70 p-3">
+        <div class="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-4">
           <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
             {{ t('creatorQuality.gradeLabel') }}
           </div>
@@ -196,7 +204,7 @@ function dimensionLabel(key: string): string {
             {{ translateEnum('grade', report.grade) }}
           </div>
         </div>
-        <div class="min-w-0 rounded-lg border border-slate-100 bg-slate-50/70 p-3">
+        <div class="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-4">
           <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
             {{ t('creatorQuality.confidenceLabel') }}
           </div>
@@ -206,12 +214,12 @@ function dimensionLabel(key: string): string {
         </div>
       </div>
 
-      <div class="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+      <div class="rounded-xl border border-slate-100 bg-slate-50/60 p-4">
         <div class="flex flex-wrap items-center justify-between gap-1.5">
           <div class="text-xs font-semibold text-slate-600">{{ t('creatorQuality.summary') }}</div>
           <span class="text-[10px] text-slate-400">{{ sampleValue }}</span>
         </div>
-        <p class="mt-1.5 break-words text-xs leading-relaxed text-slate-600">{{ report.summary }}</p>
+        <p class="mt-2 break-words text-sm leading-6 text-slate-600">{{ report.summary }}</p>
         <p class="mt-2 text-[10px] leading-relaxed text-slate-400">
           {{ t('creatorQuality.scopeLabel') }}: {{ translateEnum('scope', report.scope) }}
         </p>
@@ -219,7 +227,7 @@ function dimensionLabel(key: string): string {
 
       <div
         v-if="isLowData"
-        class="rounded-lg border border-amber-100 bg-amber-50/70 p-3"
+        class="rounded-xl border border-amber-100 bg-amber-50/70 p-4"
         aria-live="polite"
       >
         <div class="flex min-w-0 items-start gap-2">
@@ -236,11 +244,11 @@ function dimensionLabel(key: string): string {
           <AppIcon name="BarChart3" size="xs" variant="cyan" />
           <h4 class="text-xs font-semibold text-slate-600">{{ t('creatorQuality.dimensions') }}</h4>
         </div>
-        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div
             v-for="dimension in report.dimensions"
             :key="dimension.key"
-            class="min-w-0 rounded-lg border border-slate-100 bg-white p-3"
+            class="min-w-0 rounded-xl border border-slate-100 bg-white p-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]"
             :class="isLowData ? 'opacity-75' : ''"
           >
             <div class="flex items-start justify-between gap-2">
@@ -254,7 +262,7 @@ function dimensionLabel(key: string): string {
                 {{ t('creatorQuality.notScored') }}
               </span>
             </div>
-            <p class="mt-1.5 break-words text-[11px] leading-relaxed text-slate-500">
+            <p class="mt-1.5 break-words text-xs leading-5 text-slate-500">
               {{ dimension.evidence }}
             </p>
           </div>
@@ -264,7 +272,7 @@ function dimensionLabel(key: string): string {
       <template v-if="!isLowData">
 
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <section class="min-w-0 rounded-lg border border-emerald-100 bg-emerald-50/50 p-3">
+          <section class="min-w-0 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
             <div class="flex items-center gap-1.5">
               <AppIcon name="Star" size="xs" variant="cyan" />
               <h4 class="text-xs font-semibold text-emerald-700">{{ t('creatorQuality.strengths') }}</h4>
@@ -272,13 +280,13 @@ function dimensionLabel(key: string): string {
             <ul v-if="report.strengths.length" class="mt-2 space-y-2">
               <li v-for="strength in report.strengths" :key="`${strength.dimension}-${strength.title}`" class="min-w-0">
                 <div class="break-words text-xs font-medium text-slate-700">{{ strength.title }}</div>
-                <p class="mt-0.5 break-words text-[11px] leading-relaxed text-slate-500">{{ strength.evidence }}</p>
+                <p class="mt-0.5 break-words text-xs leading-5 text-slate-500">{{ strength.evidence }}</p>
               </li>
             </ul>
             <p v-else class="mt-2 text-[11px] text-slate-400">{{ t('creatorQuality.none') }}</p>
           </section>
 
-          <section class="min-w-0 rounded-lg border border-rose-100 bg-rose-50/50 p-3">
+          <section class="min-w-0 rounded-xl border border-rose-100 bg-rose-50/50 p-4">
             <div class="flex items-center gap-1.5">
               <AppIcon name="AlertTriangle" size="xs" variant="pink" />
               <h4 class="text-xs font-semibold text-rose-700">{{ t('creatorQuality.weaknesses') }}</h4>
@@ -286,7 +294,7 @@ function dimensionLabel(key: string): string {
             <ul v-if="report.weaknesses.length" class="mt-2 space-y-2">
               <li v-for="weakness in report.weaknesses" :key="`${weakness.dimension}-${weakness.title}`" class="min-w-0">
                 <div class="break-words text-xs font-medium text-slate-700">{{ weakness.title }}</div>
-                <p class="mt-0.5 break-words text-[11px] leading-relaxed text-slate-500">{{ weakness.evidence }}</p>
+                <p class="mt-0.5 break-words text-xs leading-5 text-slate-500">{{ weakness.evidence }}</p>
               </li>
             </ul>
             <p v-else class="mt-2 text-[11px] text-slate-400">{{ t('creatorQuality.none') }}</p>
@@ -294,7 +302,7 @@ function dimensionLabel(key: string): string {
         </div>
       </template>
 
-      <section class="rounded-lg border border-violet-100 bg-violet-50/50 p-3">
+      <section class="rounded-xl border border-violet-100 bg-violet-50/50 p-4">
         <div class="flex items-center gap-1.5">
           <AppIcon name="Lightbulb" size="xs" variant="purple" />
           <h4 class="text-xs font-semibold text-violet-700">{{ t('creatorQuality.recommendations') }}</h4>
@@ -303,14 +311,14 @@ function dimensionLabel(key: string): string {
           <li
             v-for="recommendation in visibleRecommendations"
             :key="`${recommendation.priority}-${recommendation.dimension}-${recommendation.title}`"
-            class="flex min-w-0 items-start gap-2 rounded-lg border border-violet-100/70 bg-white/80 p-2.5"
+            class="flex min-w-0 items-start gap-3 rounded-xl border border-violet-100/70 bg-white/80 p-3"
           >
             <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-100 text-[10px] font-semibold text-violet-700">
               {{ recommendation.priority }}
             </span>
             <div class="min-w-0">
               <div class="break-words text-xs font-semibold text-slate-700">{{ recommendation.title }}</div>
-              <p class="mt-0.5 break-words text-[11px] leading-relaxed text-slate-600">{{ recommendation.advice }}</p>
+              <p class="mt-0.5 break-words text-xs leading-5 text-slate-600">{{ recommendation.advice }}</p>
               <p class="mt-1 break-words text-[10px] leading-relaxed text-slate-400">{{ recommendation.evidence }}</p>
             </div>
           </li>
