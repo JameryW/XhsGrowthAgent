@@ -986,3 +986,93 @@ class TestGetAnalytics:
             r = client.get(f"/api/free/analytics/{draft_id}?account_id=acct1")
         assert r.status_code == 400
         assert "analytics" in r.text.lower()
+
+
+class TestGetSuggestions:
+    """GET /free/suggestions/{account_id} — thread-less creative suggestions.
+
+    Atomic data fetch only (delegates to get_suggestions_for_mode); the route
+    carries no orchestration — the omp agent decides what to do with the advice.
+    """
+
+    def test_suggestions_returns_list(self, client, mock_store):
+        from backend.services.creator_stats.types import CreativeSuggestion
+
+        suggestions = [
+            CreativeSuggestion(
+                mode="free",
+                category="topic",
+                title="高互动选题",
+                advice="辅食记录互动率高于均值 1.4 倍",
+                priority=2,
+                evidence="note_analytics",
+            ),
+            CreativeSuggestion(
+                mode="free",
+                category="style",
+                title="暖色调封面",
+                advice="前 3 篇高收藏为暖光近景",
+                priority=1,
+            ),
+        ]
+        with patch(
+            "backend.services.creator_stats.suggestions.get_suggestions_for_mode",
+            AsyncMock(return_value=suggestions),
+        ):
+            r = client.get("/api/free/suggestions/acct1")
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["account_id"] == "acct1"
+        assert data["mode"] == "free"
+        assert data["count"] == 2
+        assert data["cold_start"] is False
+        assert len(data["suggestions"]) == 2
+        assert data["suggestions"][0]["category"] == "topic"
+        assert data["suggestions"][0]["evidence"] == "note_analytics"
+        assert data["suggestions"][1]["evidence"] == ""
+
+    def test_suggestions_cold_start_flag(self, client, mock_store):
+        from backend.services.creator_stats.types import CreativeSuggestion
+
+        suggestions = [
+            CreativeSuggestion(
+                mode="free",
+                category="cold_start",
+                title="暂无创作中心数据",
+                advice="尚未导入统计数据。",
+                priority=0,
+                evidence="no_imported_stats",
+            )
+        ]
+        with patch(
+            "backend.services.creator_stats.suggestions.get_suggestions_for_mode",
+            AsyncMock(return_value=suggestions),
+        ):
+            r = client.get("/api/free/suggestions/acct1")
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        # cold_start is True only when ALL suggestions are cold_start category
+        assert data["cold_start"] is True
+
+    def test_suggestions_defaults_account_id(self, client, mock_store):
+        """Empty/missing path account_id falls back to 'default'."""
+        with patch(
+            "backend.services.creator_stats.suggestions.get_suggestions_for_mode",
+            AsyncMock(return_value=[]),
+        ) as mock_fn:
+            r = client.get("/api/free/suggestions/%20")  # whitespace → 'default'
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["account_id"] == "default"
+        assert mock_fn.await_args.args[0] == "default"
+
+    def test_suggestions_empty_returns_count_zero(self, client, mock_store):
+        with patch(
+            "backend.services.creator_stats.suggestions.get_suggestions_for_mode",
+            AsyncMock(return_value=[]),
+        ):
+            r = client.get("/api/free/suggestions/acct1")
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["count"] == 0
+        # cold_start=False when there are no suggestions (all() over empty = False)
+        assert data["cold_start"] is False

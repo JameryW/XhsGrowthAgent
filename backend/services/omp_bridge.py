@@ -696,6 +696,22 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "xhs_free_suggestions",
+        "label": "XHS Free Creative Suggestions",
+        "description": (
+            "Creative suggestions (style/topic/format/timing) for the account from "
+            "imported Creator Center stats. No draft_id needed — call any time. "
+            "Returns a cold-start note when no stats are imported yet."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "default": "default", "description": "Account ID"},
+            },
+            "required": [],
+        },
+    },
+    {
         "name": "xhs_free_draft_list",
         "label": "XHS Free Draft List",
         "description": (
@@ -904,6 +920,10 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
             "3. PUBLISH: xhs_free_publish (draft_id) → publishes via account CDP login state\n"
             "4. ANALYTICS: xhs_free_analytics (draft_id) → post-publish engagement "
             "(views/likes/collects/comments/shares/engagement_rate)\n"
+            "\n"
+            "Suggestions:\n"
+            "- xhs_free_suggestions (account_id) → style/topic/format/timing advice "
+            "from imported Creator Center stats (cold-start note if no data).\n"
             "\n"
             "Draft management:\n"
             "- xhs_free_draft_list (account_id) → list drafts (shows [score decision] /\n"
@@ -1821,6 +1841,39 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     f"  Fetched At: {a.get('fetched_at', '')}",
                 ]
                 return _make_text_result("\n".join(lines), {"analytics": a, **data})
+
+            elif tool_name == "xhs_free_suggestions":
+                account_id = arguments.get("account_id", "default")
+                resp = await client.get(f"{url}/free/suggestions/{account_id}")
+                data = _unwrap_envelope(resp)
+                free_suggestions = [
+                    item for item in data.get("suggestions", []) if isinstance(item, dict)
+                ]
+                count = data.get("count")
+                lines = [
+                    f"Free Creative Suggestions — {account_id}"
+                    + (f" ({count})" if count is not None else "")
+                    + ":"
+                ]
+                if data.get("cold_start"):
+                    lines.append(
+                        "  Note: this account is in cold start; recommendations use "
+                        "limited evidence. Import Creator Center stats for richer advice."
+                    )
+                if not free_suggestions:
+                    lines.append(
+                        "  No suggestions are available yet. Import and analyze Creator "
+                        "Center notes first."
+                    )
+                    return _make_text_result("\n".join(lines), data)
+                for sug in free_suggestions:
+                    evidence = f" Evidence: {sug.get('evidence')}" if sug.get("evidence") else ""
+                    title = sug.get("title") or sug.get("category") or "Recommendation"
+                    lines.append(
+                        f"  - [{sug.get('category', '?')}] {title}: "
+                        f"{sug.get('advice') or ''}{evidence}"
+                    )
+                return _make_text_result("\n".join(lines), data)
 
             elif tool_name == "xhs_free_draft_list":
                 account_id = arguments.get("account_id", "default")

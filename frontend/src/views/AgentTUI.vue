@@ -202,7 +202,7 @@ function historyDown() {
 
 const SLASH_COMMANDS = [
   '/start', '/status', '/pause', '/resume', '/cancel',
-  '/approve', '/reject', '/mode', '/help', '/clear', '/new', '/abort', '/drafts', '/draft', '/delete', '/analytics', '/edit', '/evaluate',
+  '/approve', '/reject', '/mode', '/help', '/clear', '/new', '/abort', '/drafts', '/draft', '/delete', '/analytics', '/edit', '/evaluate', '/suggest',
 ]
 
 function tabComplete() {
@@ -896,6 +896,11 @@ async function processAgentCommand(text: string) {
         isProcessing.value = false; writePrompt()
         break
       }
+      case '/suggest': {
+        await handleSuggest()
+        isProcessing.value = false; writePrompt()
+        break
+      }
       default:
         writeLineColored(t('tui.unknownCommand', { command: cmd }), ANSI.RED)
         isProcessing.value = false; writePrompt()
@@ -960,6 +965,8 @@ async function processSlashCommand(cmd: string) {
       await handleEdit(arg); break
     case '/evaluate':
       await handleEvaluate(arg); break
+    case '/suggest':
+      await handleSuggest(); break
     case '/drafts':
       await handleDrafts(arg); break
     case '/draft':
@@ -1387,6 +1394,63 @@ async function handleAnalytics(draftId: string) {
   }
 }
 
+// /suggest — creative suggestions (style/topic/format/timing) for free mode from
+// the account's imported Creator Center stats (thread-less GET /free/suggestions).
+// No draft_id needed — atomic data fetch only (no orchestration cue; what to do
+// with the advice is the user's/agent's call). Cold-start note when no stats
+// imported yet. Closes the discoverability gap: the route shipped but had no
+// TUI command, so free users had to leave the TUI for the Settings panel.
+async function handleSuggest() {
+  if (!isFreeCreationEntry.value) {
+    writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
+    return
+  }
+  const accountId = authStore.user?.id || 'default'
+  try {
+    const resp = await client.get(`/free/suggestions/${encodeURIComponent(accountId)}`)
+    const data = resp as unknown as {
+      account_id: string
+      suggestions: Array<{
+        category?: string
+        title?: string
+        advice?: string
+        priority?: number
+        evidence?: string
+      }>
+      count?: number
+      cold_start?: boolean
+    }
+    const suggestions = data.suggestions || []
+    const C = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, W = ANSI.BRIGHT_WHITE
+    const Y = ANSI.BRIGHT_YELLOW, R = ANSI.RESET
+    writeLine('')
+    writeLine(`${C}╭${'─'.repeat(52)}╮${R}`)
+    writeLine(`${C}│${R} ${W}${t('tui.suggestTitle')}${R}${' '.repeat(Math.max(0, 51 - getStringWidth(t('tui.suggestTitle'))))}${C}│${R}`)
+    writeLine(`${C}╰${'─'.repeat(52)}╯${R}`)
+    writeLine(`  ${D}${t('tui.suggestCountLabel')}${R}: ${G}${data.count ?? suggestions.length}${R}`)
+    if (data.cold_start) {
+      writeLine(`  ${Y}${t('tui.suggestColdStart')}${R}`)
+    }
+    writeLine(`  ${D}${'─'.repeat(20)}${R}`)
+    if (!suggestions.length) {
+      writeLine(`  ${D}${t('tui.suggestEmpty')}${R}`)
+      writeLine('')
+      return
+    }
+    for (const s of suggestions) {
+      const cat = s.category || '?'
+      const title = s.title || cat
+      writeLine(`  ${Y}[${cat}]${R} ${W}${title}${R}`)
+      if (s.advice) writeLine(`    ${D}${s.advice}${R}`)
+      if (s.evidence) writeLine(`    ${D}${t('tui.suggestEvidenceLabel')}: ${s.evidence}${R}`)
+    }
+    writeLine(`  ${D}${t('tui.suggestNextHint')}${R}`)
+    writeLine('')
+  } catch (err: any) {
+    writeLineColored(err.message || t('tui.suggestFetchFailed'), ANSI.RED)
+  }
+}
+
 // /evaluate <id> — re-evaluate a free draft via the RQGM agent-as-a-judge panel
 // (thread-less POST /free/evaluate). Renders a boxed summary of overall_score /
 // decision / dimensions / bias_warning / revision_hints. The route writes the
@@ -1533,6 +1597,7 @@ function showHelp() {
       writeLine(`  ${G}/edit${R} ${D}<id> <f> <v>${R} Edit a draft field`)
       writeLine(`  ${G}/analytics${R} ${D}<id>${R} Post-publish engagement`)
       writeLine(`  ${G}/evaluate${R} ${D}<id>${R} Re-evaluate a draft`)
+      writeLine(`  ${G}/suggest${R}       Creative suggestions (style/topic/format/timing)`)
     }
   } else {
     writeLine('')
@@ -1546,6 +1611,7 @@ function showHelp() {
       writeLine(`  ${G}/edit${R} ${D}<id> <field> <value>${R}  Edit a draft field`)
       writeLine(`  ${G}/analytics${R} ${D}<id>${R} Post-publish engagement`)
       writeLine(`  ${G}/evaluate${R} ${D}<id>${R}  Re-evaluate a draft`)
+      writeLine(`  ${G}/suggest${R}       Creative suggestions (style/topic/format/timing)`)
       writeLine(`  ${G}/mode${R}          Switch to agent mode`)
     } else {
       writeLine(`  ${G}/start${R} ${D}[topic]${R}  Start workflow`)
@@ -1735,6 +1801,7 @@ onMounted(() => {
     writeLineColored(`    ${t('tui.freeCmdDelete')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdAnalytics')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdEvaluate')}`, ANSI.DIM)
+    writeLineColored(`    ${t('tui.freeCmdSuggest')}`, ANSI.DIM)
     writeLineColored(`    ${t('tui.freeCmdMode')}`, ANSI.DIM)
   }
 

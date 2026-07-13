@@ -20,7 +20,7 @@ class TestHostToolSchemas:
     """Verify XHS_HOST_TOOLS list integrity."""
 
     def test_tool_count(self):
-        assert len(XHS_HOST_TOOLS) == 39
+        assert len(XHS_HOST_TOOLS) == 40
 
     def test_all_tools_have_required_fields(self):
         for tool in XHS_HOST_TOOLS:
@@ -62,6 +62,7 @@ class TestHostToolSchemas:
         assert "xhs_free_draft_list" in _XHS_TOOL_NAMES
         assert "xhs_free_draft_update" in _XHS_TOOL_NAMES
         assert "xhs_free_draft_delete" in _XHS_TOOL_NAMES
+        assert "xhs_free_suggestions" in _XHS_TOOL_NAMES
         assert "xhs_free_guide" in _XHS_TOOL_NAMES
 
 
@@ -938,6 +939,94 @@ class TestFreeModeTools:
         assert result.get("isError") is not True
         assert "(none)" in result["content"][0]["text"]
 
+    async def test_free_suggestions(self):
+        """xhs_free_suggestions GETs /free/suggestions/{account_id} and renders
+        the list with a count header + cold-start note + per-suggestion lines.
+        Atomic data fetch only — no orchestration cue (编排交给 omp)."""
+        data = {
+            "account_id": "acc1",
+            "mode": "free",
+            "suggestions": [
+                {
+                    "mode": "free",
+                    "category": "topic",
+                    "title": "高互动选题方向",
+                    "advice": "近期母婴类「辅食记录」互动率高于均值 1.4 倍",
+                    "priority": 2,
+                    "evidence": "note_analytics:engagement_rate",
+                },
+                {
+                    "mode": "free",
+                    "category": "style",
+                    "title": "暖色调封面",
+                    "advice": "前 3 篇高收藏笔记均为暖光、近景",
+                    "priority": 1,
+                    "evidence": "",
+                },
+            ],
+            "count": 2,
+            "cold_start": False,
+        }
+        client = _mock_client_get(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool("xhs_free_suggestions", {"account_id": "acc1"})
+        assert result.get("isError") is not True
+        text = result["content"][0]["text"]
+        assert "acc1" in text
+        # count header + per-suggestion lines with category badge
+        assert "2" in text
+        assert "[topic]" in text and "[style]" in text
+        assert "高互动选题方向" in text
+        assert "辅食记录" in text
+        assert "Evidence:" in text  # only when evidence present (d1 has it)
+        # atomic tool — must NOT prescribe next-step orchestration (编排交 omp)
+        assert "xhs_free_draft_create" not in text
+        assert "next:" not in text
+        # no cold-start note when cold_start is False
+        assert "cold start" not in text
+        # GET to /free/suggestions/{account_id}
+        client.get.assert_awaited_once()
+        assert "/free/suggestions/acc1" in client.get.await_args.args[0]
+
+    async def test_free_suggestions_cold_start(self):
+        """Cold-start (no imported stats) renders the note + the empty advice line."""
+        data = {
+            "account_id": "acc1",
+            "mode": "free",
+            "suggestions": [
+                {
+                    "mode": "free",
+                    "category": "cold_start",
+                    "title": "暂无创作中心数据",
+                    "advice": "尚未导入创作者中心统计数据。",
+                    "priority": 0,
+                    "evidence": "no_imported_stats",
+                }
+            ],
+            "count": 1,
+            "cold_start": True,
+        }
+        client = _mock_client_get(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool("xhs_free_suggestions", {"account_id": "acc1"})
+        text = result["content"][0]["text"]
+        assert "cold start" in text.lower()
+
+    async def test_free_suggestions_empty(self):
+        """No suggestions → empty advice line, no per-suggestion rows."""
+        data = {
+            "account_id": "acc1",
+            "mode": "free",
+            "suggestions": [],
+            "count": 0,
+            "cold_start": False,
+        }
+        client = _mock_client_get(data)
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool("xhs_free_suggestions", {"account_id": "acc1"})
+        text = result["content"][0]["text"]
+        assert "No suggestions" in text
+
     async def test_free_draft_update(self):
         """xhs_free_draft_update PATCHes /free/draft/{id}?account_id= with the provided fields."""
         data = {
@@ -1005,6 +1094,9 @@ class TestFreeModeTools:
         assert "re-run xhs_free_publish" in text
         assert "Do NOT call xhs_free_analytics on a failed publish" in text
         assert "[publish failed]" in text  # draft-list badge documented
+        # suggestions tool documented in the guide (atomic data fetch, no orchestration cue)
+        assert "xhs_free_suggestions" in text
+        assert "style/topic/format/timing" in text
         # No httpx client was instantiated (branch is local-only)
         mock_httpx.assert_not_called()
         # Not an error
