@@ -488,6 +488,39 @@ async def count_note_stats(account_id: str) -> int:
     return int(row[0] or 0)
 
 
+async def list_all_note_stats(account_id: str) -> list[NoteStats]:
+    """Read every persisted note for one account without the display-page cap.
+
+    This intentionally has no ``LIMIT`` clause.  Account-level historical
+    analysis needs a complete durable snapshot, whereas ``list_note_stats`` is
+    a bounded reader for normal API/UI pages.
+    """
+    account_id = (account_id or "").strip()
+    if not account_id:
+        return []
+    if not is_pool_ready():
+        bucket = _mem_notes.get(account_id, {})
+        # A stable order keeps pure consumers deterministic even when the
+        # process-local test store was populated in a different order.
+        return [NoteStats.from_dict(bucket[note_id]) for note_id in sorted(bucket)]
+
+    pool = get_pool()
+    async with pool.connection() as conn, conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT account_id, note_id, title, body_text, views, likes, comments, collects,
+                   shares, published_at, content_type, tags_json, cover_url,
+                   engagement_rate, synced_at, source
+            FROM creator_note_stats
+            WHERE account_id = %s
+            ORDER BY published_at ASC, note_id ASC
+            """,
+            (account_id,),
+        )
+        rows = await cur.fetchall()
+    return [_note_from_row(row) for row in rows]
+
+
 async def list_note_stats(
     account_id: str, *, limit: int = 100, order_by: str = "engagement"
 ) -> list[NoteStats]:

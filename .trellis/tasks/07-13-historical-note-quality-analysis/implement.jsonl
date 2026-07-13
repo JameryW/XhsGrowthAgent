@@ -1,0 +1,8 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend package conventions and required quality checks."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Durable creator-statistics history contract and read-only persistence constraints."}
+{"file":".trellis/spec/backend/omp-integration.md","reason":"REST envelope and omp extension integration contract."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Python typing, test, lint, and import conventions."}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Vue component, i18n, API-client, and mobile layout conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Composition-store and async state conventions."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Defines the required API/service/UI contract mapping."}
+{"file":".trellis/tasks/07-13-historical-note-quality-analysis/research/current-state.md","reason":"Documents the existing source of truth and the deliberately separate historical-quality design."}

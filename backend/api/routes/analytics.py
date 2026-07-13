@@ -622,6 +622,24 @@ async def get_creator_stats(
     )
 
 
+@router.get("/creator-stats/{account_id}/quality")
+async def get_creator_quality(
+    account_id: str,
+    locale: str = Query("zh-CN", max_length=16, description="报告文案语言：zh-CN | en"),
+) -> ApiResponse[Any]:
+    """Return a read-only quality report over every imported note for an account."""
+    from backend.db import creator_stats as stats_db
+    from backend.services.creator_stats.quality import analyze_historical_quality
+
+    normalized_account_id = (account_id or "").strip()
+    # Do not use list_note_stats here: that reader is intentionally capped for
+    # interactive display.  Historical quality must state and analyze the full
+    # durable note history without triggering a browser re-sync or DB writes.
+    notes = await stats_db.list_all_note_stats(normalized_account_id)
+    report = analyze_historical_quality(notes, normalized_account_id, locale=locale)
+    return success(data=report.to_dict())
+
+
 @router.get("/creator-stats/{account_id}/suggestions")
 async def get_creator_suggestions(
     account_id: str,

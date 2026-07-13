@@ -40,7 +40,7 @@ export default function register(pi: ExtensionAPI) {
         "Post-publish: xhs_workflow_trigger_analytics (only when a thread_id exists).",
         "",
         "Use xhs_system_health to check API status. Use xhs_workflow_list to find workflows.",
-        "Use xhs_analytics_dashboard/report/performance for workflow insights. For imported Creator Center notes, use xhs_creator_stats, xhs_creator_analysis, and xhs_creator_suggestions. Use xhs_analytics_costs for LLM spend.",
+        "Use xhs_analytics_dashboard/report/performance for workflow insights. For imported Creator Center notes, use xhs_creator_stats, xhs_creator_analysis, xhs_creator_suggestions, and xhs_creator_quality. Use xhs_analytics_costs for LLM spend.",
       ],
     };
   });
