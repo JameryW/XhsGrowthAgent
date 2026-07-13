@@ -6,7 +6,9 @@ after a successful fetch/normalize of the payload).
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +29,13 @@ from backend.services.creator_stats.types import (
 )
 
 logger = logging.getLogger("xhs_growth.creator_stats.pipeline")
+
+# A single process may have both a manual request and the periodic worker.  A
+# run-level lock makes the all-account operation an idempotent atomic unit from
+# the caller's perspective and prevents two browser crawls from competing for
+# the same profile.  Each account is still persisted transactionally by
+# ``upsert_bundle``; a failed account never rolls back another account.
+_active_accounts_sync_lock = asyncio.Lock()
 
 # Bundled fixture used by dry-run / CLI --fixture path
 DEFAULT_FIXTURE_PATH = (
@@ -367,6 +376,105 @@ async def sync_account_stats(
         client=None,
         run_creative_analysis=run_creative_analysis,
     )
+
+
+async def sync_all_active_accounts(
+    *,
+    store: BaseStore | None = None,
+    period: str = "30d",
+    run_creative_analysis: bool = True,
+) -> dict[str, Any]:
+    """Import Creator Center data for every active account, sequentially.
+
+    Only rows with ``accounts.is_active = TRUE`` are selected.  The operation
+    shares a process-wide lock with the scheduler and the HTTP trigger, so a
+    second invocation returns ``already_running`` instead of starting a
+    duplicate browser crawl.  Network failures are isolated per account and
+    represented in the returned batch summary.
+    """
+    if _active_accounts_sync_lock.locked():
+        return {
+            "ok": False,
+            "status": "already_running",
+            "active_accounts": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "results": [],
+        }
+
+    async with _active_accounts_sync_lock:
+        started_at = datetime.now(UTC).isoformat()
+        from backend.db.accounts import get_account_cdp_endpoint, list_active_accounts
+
+        try:
+            accounts = await list_active_accounts()
+        except Exception as exc:
+            logger.exception("list active accounts failed before creator stats sync")
+            return {
+                "ok": False,
+                "status": "failed",
+                "active_accounts": 0,
+                "succeeded": 0,
+                "failed": 1,
+                "results": [],
+                "error": str(exc),
+                "started_at": started_at,
+                "finished_at": datetime.now(UTC).isoformat(),
+            }
+
+        results: list[dict[str, Any]] = []
+        for account in accounts:
+            account_id = str(account.id).strip()
+            if not account_id:
+                continue
+            try:
+                cdp_endpoint = (await get_account_cdp_endpoint(account_id)).strip()
+            except Exception as exc:
+                logger.warning(
+                    "CDP endpoint lookup failed for active account %s: %s", account_id, exc
+                )
+                cdp_endpoint = ""
+
+            if not cdp_endpoint:
+                result = SyncResult(
+                    account_id=account_id,
+                    source="creator_statistics",
+                    error="未检测到该激活账号可用的浏览器会话。",
+                )
+            else:
+                try:
+                    result = await sync_account_stats(
+                        account_id,
+                        cookie="",
+                        dry_run=False,
+                        store=store,
+                        period=period,
+                        run_creative_analysis=run_creative_analysis,
+                        cdp_endpoint=cdp_endpoint,
+                    )
+                except Exception as exc:
+                    # A single account must not abort the remaining active
+                    # accounts in this batch.
+                    logger.exception("creator stats sync failed for active account %s", account_id)
+                    result = SyncResult(
+                        account_id=account_id,
+                        source="creator_statistics",
+                        error=str(exc),
+                    )
+            results.append(result.to_dict())
+
+        succeeded = sum(1 for item in results if item.get("account_synced"))
+        failed = len(results) - succeeded
+        return {
+            "ok": failed == 0,
+            "status": "completed",
+            "active_accounts": len(accounts),
+            "succeeded": succeeded,
+            "failed": failed,
+            "results": results,
+            "started_at": started_at,
+            "finished_at": datetime.now(UTC).isoformat(),
+        }
 
 
 def fixture_transport_from_file(path: str | Path | None = None) -> FixtureTransport:

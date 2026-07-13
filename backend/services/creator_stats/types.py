@@ -111,6 +111,7 @@ class NoteStats:
     # these only for some note/detail surfaces, so absence is a valid state.
     view_sources: list[dict[str, Any]] = field(default_factory=list)
     audience_profile: list[dict[str, Any]] = field(default_factory=list)
+    audience_trend: list[dict[str, Any]] = field(default_factory=list)
     detail_metrics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -146,6 +147,7 @@ class NoteStats:
             source=str(data.get("source") or "creator_statistics"),
             view_sources=_dict_list(data.get("view_sources")),
             audience_profile=_dict_list(data.get("audience_profile")),
+            audience_trend=_dict_list(data.get("audience_trend")),
             detail_metrics=_dict_map(data.get("detail_metrics")),
         )
 
