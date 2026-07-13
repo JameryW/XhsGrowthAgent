@@ -54,6 +54,66 @@ async def test_null_account_data_degrades_to_empty_dict():
 
 
 @pytest.mark.asyncio
+async def test_import_bundle_syncs_real_creator_name_to_account_picker():
+    """A browser-imported nickname becomes the durable account display name."""
+    from backend.db.accounts import AccountRow
+
+    bundle = normalize_bundle(
+        {"view_count": 10},
+        [],
+        "profile_name_acc",
+        profile_raw={"nickname": "真实创作者昵称"},
+    )
+    account = AccountRow(id="profile_name_acc", name="待登录账号")
+    with (
+        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.db.accounts.update_account", new_callable=AsyncMock) as update,
+    ):
+        result = await import_bundle(bundle, run_creative_analysis=False)
+
+    assert result.account_synced is True
+    update.assert_awaited_once_with("profile_name_acc", name="真实创作者昵称")
+
+
+@pytest.mark.asyncio
+async def test_import_bundle_keeps_existing_name_when_profile_name_is_missing():
+    """A partial profile response must not blank a user-visible account name."""
+    from backend.db.accounts import AccountRow
+
+    bundle = normalize_bundle({"view_count": 10}, [], "missing_profile_name")
+    account = AccountRow(id="missing_profile_name", name="保留原账号名")
+    with (
+        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.db.accounts.update_account", new_callable=AsyncMock) as update,
+    ):
+        await import_bundle(bundle, run_creative_analysis=False)
+
+    update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_fixture_import_never_replaces_account_display_name():
+    """Only the real browser import path may alter the account picker label."""
+    from backend.db.accounts import AccountRow
+
+    bundle = normalize_bundle(
+        {"view_count": 10},
+        [],
+        "fixture_profile_name",
+        profile_raw={"nickname": "样例昵称"},
+    )
+    bundle.account.source = "fixture"
+    account = AccountRow(id="fixture_profile_name", name="保留账号名")
+    with (
+        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.db.accounts.update_account", new_callable=AsyncMock) as update,
+    ):
+        await import_bundle(bundle, run_creative_analysis=False)
+
+    update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_import_bundle_attaches_inferred_niche_from_notes():
     bundle = normalize_bundle(
         {"view_count": 10},

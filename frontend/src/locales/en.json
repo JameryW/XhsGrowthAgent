@@ -118,7 +118,7 @@
     "trendMode": "Trend Discovery",
     "freeMode": "Free Mode",
     "form": {
-      "accountId": "Account ID",
+      "accountId": "Account",
       "accountIdPlaceholder": "Select an account",
       "accountIdHelp": "Choose the account to run this workflow under; manage accounts and scan-login state in Settings",
       "startPhase": "Starting Phase",
@@ -140,6 +140,7 @@
       "freeModeHelp": "Enter TUI; agent orchestrates creation, review, and publishing via conversation",
       "niche": "Content Track",
       "nicheHelp": "Select a vertical track, affects trend discovery and content strategy",
+      "nicheBound": "Using this account's bound track: {niche}",
       "niches": {
         "baby": "Baby",
         "beauty": "Beauty",
@@ -751,6 +752,21 @@
   "creatorQuality": {
     "title": "Historical Note Quality",
     "subtitle": "A read-only signal from imported note engagement, saves, titles, and consistency",
+    "page": {
+      "eyebrow": "Account-level creative diagnosis",
+      "hubSubtitle": "Review historical creative quality and single-workflow evaluations in one place",
+      "tab": "Historical quality",
+      "workflowTab": "Single-content evaluation",
+      "description": "Use real Creator Center history imported through the browser to understand account-level strengths, gaps, and next actions.",
+      "accountLabel": "Account to analyze",
+      "refreshAccounts": "Refresh account list",
+      "refresh": "Refresh accounts",
+      "noAccountTitle": "Add and bind an account first",
+      "noAccountDescription": "Create an account in Settings, log in to its browser, then import real historical notes to generate a quality report.",
+      "manageAccounts": "Open account settings",
+      "importHint": "The report only reads imported real historical notes. Import or refresh the data, then return here for the latest findings.",
+      "manageData": "Manage and import data"
+    },
     "refresh": "Refresh quality report",
     "loading": "Analyzing imported historical notes…",
     "score": "Overall quality score",
@@ -793,7 +809,7 @@
     },
     "empty": {
       "title": "Import historical notes first",
-      "description": "No imported historical notes are available to analyze yet. Import real data from Creator Center above first."
+      "description": "No imported historical notes are available to analyze yet. Import real data from Creator Center in Account Settings first."
     },
     "error": {
       "title": "Could not load the quality report",

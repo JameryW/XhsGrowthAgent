@@ -263,6 +263,12 @@ in-memory convenience path.
   explicit allowlist: platform user ID, nickname, RED ID, avatar URL, bio,
   creator role, and region. The profile response is an enrichment, so a missing
   profile response must not roll back successfully fetched metrics or notes.
+- After a successful **real browser** Creator Center import, mirror a non-empty
+  allowlisted `creator_name` into `accounts.name` when it differs. Account
+  selectors must then show the imported XHS nickname consistently. This
+  best-effort display update happens after the durable statistics upsert, never
+  lets an empty profile erase an existing name, and is forbidden on fixture
+  imports.
 - Schema upgrades for those profile columns must use `ADD COLUMN IF NOT EXISTS`
   and the profile fields must be included in the same account upsert as the
   metric snapshot. This keeps old deployments upgrade-safe and readers

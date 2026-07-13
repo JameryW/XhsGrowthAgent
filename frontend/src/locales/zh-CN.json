@@ -118,7 +118,7 @@
     "trendMode": "趋势发现模式",
     "freeMode": "自由模式",
     "form": {
-      "accountId": "账号 ID",
+      "accountId": "账号",
       "accountIdPlaceholder": "选择账号",
       "accountIdHelp": "选择运行此工作流的账号；可在「设置」中管理账号和扫码登录状态",
       "startPhase": "起始阶段",
@@ -140,6 +140,7 @@
       "freeModeHelp": "进入 TUI，由智能体按对话自由编排创作、评估和发布",
       "niche": "垂类赛道",
       "nicheHelp": "选择内容垂类，影响趋势发现和内容策略",
+      "nicheBound": "已自动使用账号绑定赛道：{niche}",
       "niches": {
         "baby": "母婴",
         "beauty": "美妆",
@@ -751,6 +752,21 @@
   "creatorQuality": {
     "title": "历史笔记创作质量",
     "subtitle": "基于已导入历史笔记的互动、收藏、标题和稳定性信号生成",
+    "page": {
+      "eyebrow": "账号级创作诊断",
+      "hubSubtitle": "从历史创作质量到单篇内容审核，集中查看可执行的改进信号",
+      "tab": "历史创作质量",
+      "workflowTab": "单篇内容评估",
+      "description": "基于浏览器导入的真实创作者中心数据，查看账号整体创作表现、短板与下一步行动。",
+      "accountLabel": "分析账号",
+      "refreshAccounts": "刷新账号列表",
+      "refresh": "刷新账号",
+      "noAccountTitle": "先添加并绑定一个账号",
+      "noAccountDescription": "在账号设置中创建账号、登录对应浏览器后，即可导入真实历史笔记并生成质量报告。",
+      "manageAccounts": "前往账号设置",
+      "importHint": "质量报告只读取已导入的真实历史笔记；导入或更新数据后，可在这里刷新查看最新结论。",
+      "manageData": "管理并导入数据"
+    },
     "refresh": "刷新质量报告",
     "loading": "正在分析已导入的历史笔记…",
     "score": "综合质量分",
@@ -793,7 +809,7 @@
     },
     "empty": {
       "title": "先导入历史笔记",
-      "description": "尚未发现可分析的已导入历史笔记。请先从上方创作者中心导入真实数据。"
+      "description": "尚未发现可分析的已导入历史笔记。请先在账号设置中从创作者中心导入真实数据。"
     },
     "error": {
       "title": "质量报告加载失败",

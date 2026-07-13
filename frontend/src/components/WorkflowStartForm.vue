@@ -27,6 +27,8 @@ export interface WorkflowConfig {
 
 const props = defineProps<{
   initialTopic?: string
+  /** Explicit route-level niche (for example, from an Analytics recommendation). */
+  initialNiche?: string
   isLoading?: boolean
 }>()
 
@@ -41,12 +43,37 @@ const dryRun = ref(false)
 const autoPublish = ref(false)
 const topic = ref(props.initialTopic || '')
 const niche = ref('母婴')
+const hasManualNiche = ref(false)
 const briefText = ref('')
 const briefPdfText = ref<string | null>(null)
 const hasPdfUpload = computed(() => !!briefPdfText.value)
 
 const pendingPdfFile = ref<File | null>(null)
 const pendingPdfName = computed(() => pendingPdfFile.value?.name ?? null)
+
+const selectedAccount = computed(() =>
+  accountsStore.accounts.find((account) => account.id === accountId.value)
+)
+const boundNiche = computed(() => selectedAccount.value?.niche?.trim() || '')
+const explicitNiche = computed(() => props.initialNiche?.trim() || '')
+const isUsingBoundNiche = computed(() =>
+  !hasManualNiche.value
+  && !explicitNiche.value
+  && Boolean(boundNiche.value)
+  && niche.value === boundNiche.value
+)
+
+function applyNicheDefault() {
+  // A manual click is always intentional. Route-level recommendations are the
+  // next priority; otherwise use the selected account's durable niche.
+  if (hasManualNiche.value) return
+  niche.value = explicitNiche.value || boundNiche.value || '母婴'
+}
+
+function selectNiche(value: string) {
+  niche.value = value
+  hasManualNiche.value = true
+}
 
 // Load accounts and auto-select the active one
 onMounted(async () => {
@@ -58,9 +85,11 @@ onMounted(async () => {
     } else if (accountsStore.accountOptions.length > 0) {
       accountId.value = accountsStore.accountOptions[0].id
     }
+    applyNicheDefault()
   } catch {
     // Accounts API unavailable — fallback to 'default'
     accountId.value = 'default'
+    applyNicheDefault()
   }
 })
 
@@ -97,6 +126,22 @@ watch(workflowMode, (mode) => {
   }
 })
 
+watch(accountId, () => {
+  applyNicheDefault()
+})
+
+watch(boundNiche, () => {
+  applyNicheDefault()
+})
+
+watch(explicitNiche, (next, previous) => {
+  // A new route recommendation starts a fresh default-selection context. A
+  // manual choice made afterwards still takes precedence while the user stays
+  // on this page.
+  if (next && next !== previous) hasManualNiche.value = false
+  applyNicheDefault()
+}, { immediate: true })
+
 const niches = [
   { value: '母婴', key: 'baby', icon: 'Baby', color: 'rose' },
   { value: '美妆', key: 'beauty', icon: 'Sparkles', color: 'pink' },
@@ -109,6 +154,13 @@ const niches = [
   { value: '宠物', key: 'pets', icon: 'PawPrint', color: 'orange' },
   { value: '知识', key: 'knowledge', icon: 'BookOpen', color: 'emerald' },
 ]
+
+const availableNiches = computed(() => {
+  if (!niche.value || niches.some((item) => item.value === niche.value)) return niches
+  // A manually bound niche may be outside the built-in taxonomy. Keep it
+  // visible and selected instead of silently replacing it with a preset.
+  return [...niches, { value: niche.value, key: 'custom', icon: 'Compass', color: 'violet' }]
+})
 
 const phases: { value: WorkflowPhase; key: string; icon: string }[] = [
   { value: 'scouting', key: 'scouting', icon: 'Compass' },
@@ -298,9 +350,9 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
       </label>
       <div class="flex flex-wrap gap-2">
         <button
-          v-for="n in niches"
+          v-for="n in availableNiches"
           :key="n.value"
-          @click="niche = n.value"
+          @click="selectNiche(n.value)"
           :class="[
             'group/chip relative flex items-center gap-2 px-3.5 py-2 rounded-full border-2 text-sm font-medium',
             'transition-all duration-300 ease-out cursor-pointer select-none',
@@ -314,14 +366,19 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
             size="sm"
             :variant="niche === n.value ? 'pink' : 'cyan'"
           />
-          <span class="text-xs font-semibold whitespace-nowrap">{{ t(`home.form.niches.${n.key}`) }}</span>
+          <span class="text-xs font-semibold whitespace-nowrap">
+            {{ n.key === 'custom' ? n.value : t(`home.form.niches.${n.key}`) }}
+          </span>
           <div
             v-if="niche === n.value"
             class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-neon-pink animate-pulse-glow"
           />
         </button>
       </div>
-      <p class="text-xs text-slate-400 mt-2 pl-1">{{ t('home.form.nicheHelp') }}</p>
+      <p v-if="isUsingBoundNiche" class="text-xs text-violet-500 mt-2 pl-1">
+        {{ t('home.form.nicheBound', { niche }) }}
+      </p>
+      <p v-else class="text-xs text-slate-400 mt-2 pl-1">{{ t('home.form.nicheHelp') }}</p>
     </div>
 
     <!-- Divider (hidden in free mode; follows phase block) -->
