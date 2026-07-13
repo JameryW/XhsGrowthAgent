@@ -1,0 +1,3 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Creator-center account snapshots require an idempotent schema upgrade and an atomic account-plus-note persistence transaction."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Backend DTO, CDP capture, persistence, API and tests must satisfy strict typing, lint and error-handling conventions."}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"CreatorStatsPanel is a shared Vue component; new profile display must follow i18n, API-client and component conventions."}

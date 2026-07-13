@@ -715,6 +715,14 @@
     "importedSection": "已导入概览",
     "noImported": "尚未导入笔记数据，请先点击上方导入。",
     "suggestionsSection": "创作建议",
+    "profile": {
+      "title": "账号资料",
+      "avatarAlt": "{name} 的头像",
+      "redId": "小红书号",
+      "userId": "平台用户 ID",
+      "role": "角色",
+      "zone": "地区"
+    },
     "metrics": {
       "notes": "笔记数",
       "views": "浏览",

@@ -14,6 +14,7 @@ import pytest
 
 from backend.services.creator_stats.client import (
     ACCOUNT_OVERVIEW_PATH,
+    CREATOR_PROFILE_PATH,
     NOTE_LIST_PATH,
     CdpTransport,
     CreatorStatsClient,
@@ -48,10 +49,29 @@ def _native_note() -> dict:
     }
 
 
+def _native_profile() -> dict:
+    return {
+        "code": 0,
+        "success": True,
+        "data": {
+            "userId": "creator-1",
+            "userName": "真实创作者",
+            "redId": "creator_red",
+            "userAvatar": "https://img.example/avatar.jpg",
+            "userDesc": "真实创作者简介",
+            "role": "creator",
+            "zone": "上海",
+            "phone": "must-not-be-persisted",
+        },
+    }
+
+
 async def test_cdp_fetch_all_uses_native_creator_page_data():
     """CDP uses the page-captured payload, not a copied Cookie header/API call."""
     transport = CdpTransport("http://127.0.0.1:9222")
-    transport.fetch_creator_center = AsyncMock(return_value=(_native_account(), [_native_note()]))
+    transport.fetch_creator_center = AsyncMock(
+        return_value=(_native_account(), _native_profile(), [_native_note()])
+    )
     client = CreatorStatsClient(cookie="must-not-be-used", transport=transport)
 
     bundle = await client.fetch_all("acct", period="30d", max_pages=3)
@@ -60,6 +80,14 @@ async def test_cdp_fetch_all_uses_native_creator_page_data():
     assert bundle.account.views == 30
     assert bundle.account.likes == 8
     assert bundle.account.note_count == 2
+    assert bundle.account.creator_user_id == "creator-1"
+    assert bundle.account.creator_name == "真实创作者"
+    assert bundle.account.red_id == "creator_red"
+    assert bundle.account.avatar_url == "https://img.example/avatar.jpg"
+    assert bundle.account.bio == "真实创作者简介"
+    assert bundle.account.creator_role == "creator"
+    assert bundle.account.zone == "上海"
+    assert "phone" not in bundle.account.to_dict()
     assert len(bundle.notes) == 1
     note = bundle.notes[0]
     assert (note.comments, note.collects, note.shares) == (2, 3, 4)
@@ -68,7 +96,9 @@ async def test_cdp_fetch_all_uses_native_creator_page_data():
 
 async def test_cdp_get_adapts_native_data_without_forwarding_headers():
     transport = CdpTransport("http://127.0.0.1:9222")
-    transport.fetch_creator_center = AsyncMock(return_value=(_native_account(), [_native_note()]))
+    transport.fetch_creator_center = AsyncMock(
+        return_value=(_native_account(), _native_profile(), [_native_note()])
+    )
 
     status, account = await transport.get(
         f"https://creator.xiaohongshu.com{ACCOUNT_OVERVIEW_PATH}",
@@ -78,6 +108,13 @@ async def test_cdp_get_adapts_native_data_without_forwarding_headers():
     assert status == 200
     assert account == _native_account()
 
+    status, profile = await transport.get(
+        f"https://creator.xiaohongshu.com{CREATOR_PROFILE_PATH}",
+        headers={"Cookie": "must-not-be-forwarded"},
+    )
+    assert status == 200
+    assert profile == _native_profile()
+
     status, notes = await transport.get(
         f"https://creator.xiaohongshu.com{NOTE_LIST_PATH}",
         headers={"Cookie": "must-not-be-forwarded"},
@@ -85,7 +122,7 @@ async def test_cdp_get_adapts_native_data_without_forwarding_headers():
     )
     assert status == 200
     assert notes == {"data": {"notes": [_native_note()]}}
-    assert transport.fetch_creator_center.await_count == 2
+    assert transport.fetch_creator_center.await_count == 3
 
 
 async def test_cdp_transport_aclose_clears_state():

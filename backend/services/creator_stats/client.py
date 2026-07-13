@@ -29,6 +29,7 @@ CREATOR_STATS_PAGE = "https://creator.xiaohongshu.com/statistics/account/v2"
 # Galaxy/datacenter endpoints used by the account statistics page.
 # Paths are reverse-engineered and may change; client isolates that risk.
 ACCOUNT_OVERVIEW_PATH = "/api/galaxy/v2/creator/datacenter/account/base"
+CREATOR_PROFILE_PATH = "/api/galaxy/user/info"
 # This is the signed endpoint that the Creator Center's Note Manager itself
 # calls.  It is intentionally distinct from the legacy cookie/httpx endpoint:
 # current creator-center requests require browser-generated x-s/x-t headers.
@@ -133,7 +134,7 @@ class CdpTransport:
     and related trace headers).  A standalone ``httpx`` or Playwright
     ``APIRequestContext`` request does not have those signatures, even when it
     shares the profile cookie jar.  We therefore open a disposable Note Manager
-    tab and capture the page's *own* successful account/note responses.  This
+    tab and capture the page's *own* successful account/profile/note responses.  This
     keeps the authenticated request in the real Chrome profile and never reads
     or serializes its cookies/signatures.
     """
@@ -203,8 +204,8 @@ class CdpTransport:
 
     async def fetch_creator_center(
         self, *, max_pages: int = 5
-    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        """Capture account overview plus up to ``max_pages`` native note pages.
+    ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+        """Capture overview, public profile, and up to ``max_pages`` native note pages.
 
         The Note Manager starts at page 0 and loads later pages when its own
         ``div.content`` scroll container reaches the bottom.  We only observe
@@ -221,15 +222,17 @@ class CdpTransport:
             context = browser.contexts[0]
             page = await context.new_page()
             account_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
+            profile_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
             note_responses: dict[int, tuple[int, dict[str, Any] | list[Any] | None]] = {}
             account_ready = asyncio.Event()
+            profile_ready = asyncio.Event()
             first_notes_ready = asyncio.Event()
             pending: set[asyncio.Task[None]] = set()
 
             async def capture(response: Any) -> None:
-                nonlocal account_response
+                nonlocal account_response, profile_response
                 path = urlsplit(response.url).path
-                if path not in (ACCOUNT_OVERVIEW_PATH, NOTE_LIST_PATH):
+                if path not in (ACCOUNT_OVERVIEW_PATH, CREATOR_PROFILE_PATH, NOTE_LIST_PATH):
                     return
                 try:
                     body: dict[str, Any] | list[Any] | None = await response.json()
@@ -238,6 +241,10 @@ class CdpTransport:
                 if path == ACCOUNT_OVERVIEW_PATH:
                     account_response = (response.status, body)
                     account_ready.set()
+                    return
+                if path == CREATOR_PROFILE_PATH:
+                    profile_response = (response.status, body)
+                    profile_ready.set()
                     return
                 page_index = self._page_index(response.url)
                 note_responses[page_index] = (response.status, body)
@@ -296,6 +303,11 @@ class CdpTransport:
                     )
                 self._validate_creator_response(*account_response, operation="account overview")
                 self._validate_creator_response(*note_responses[0], operation="note list")
+                try:
+                    await asyncio.wait_for(profile_ready.wait(), timeout=min(2.0, self._timeout))
+                except TimeoutError:
+                    # Identity data enriches the snapshot but must not discard already-read stats.
+                    logger.info("creator profile response was not observed during stats sync")
 
                 # The Creator Center app itself knows how to generate a fresh
                 # signature for every page. Trigger its infinite-scroll path
@@ -338,9 +350,13 @@ class CdpTransport:
                         items = data.get("notes")
                         if isinstance(items, list):
                             raw_notes.extend(item for item in items if isinstance(item, dict))
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
                 account_body = account_response[1]
+                profile_body = profile_response[1] if profile_response is not None else {}
                 return (
                     account_body if isinstance(account_body, dict) else {},
+                    profile_body if isinstance(profile_body, dict) else {},
                     raw_notes,
                 )
             finally:
@@ -360,10 +376,12 @@ class CdpTransport:
         signed request construction.  ``fetch_all`` calls ``fetch_creator_center``
         directly to obtain multiple pages efficiently.
         """
-        account_body, notes = await self.fetch_creator_center(max_pages=1)
+        account_body, profile_body, notes = await self.fetch_creator_center(max_pages=1)
         path = urlsplit(url).path
         if path == ACCOUNT_OVERVIEW_PATH:
             return 200, account_body
+        if path == CREATOR_PROFILE_PATH:
+            return 200, profile_body
         if path in (NOTE_LIST_PATH, LEGACY_NOTE_LIST_PATH):
             return 200, {"data": {"notes": notes}}
         raise CreatorStatsFetchError(f"unsupported CDP creator endpoint: {path}")
@@ -548,12 +566,15 @@ class CreatorStatsClient:
         max_pages = max(1, min(max_pages, 50))
         period_norm = normalize_period(period)
         if isinstance(self.transport, CdpTransport):
-            account_raw, notes_raw = await self.transport.fetch_creator_center(max_pages=max_pages)
+            account_raw, profile_raw, notes_raw = await self.transport.fetch_creator_center(
+                max_pages=max_pages
+            )
             return normalize_bundle(
                 account_raw,
                 notes_raw,
                 account_id,
                 period=period_norm,
+                profile_raw=profile_raw,
             )
         account_raw = await self.fetch_account_overview(period=period_norm)
         all_notes: list[Any] = []

@@ -81,6 +81,27 @@ const sourceLabel = computed(() => {
   return translated === key ? s : translated
 })
 
+const hasCreatorProfile = computed(() => {
+  const profile = accountStats.value
+  return Boolean(
+    profile && (
+      profile.creator_user_id
+      || profile.creator_name
+      || profile.red_id
+      || profile.avatar_url
+      || profile.bio
+      || profile.creator_role
+      || profile.zone
+    )
+  )
+})
+
+const profileDisplayName = computed(() =>
+  accountStats.value?.creator_name || props.accountName || props.accountId
+)
+
+const profileInitial = computed(() => profileDisplayName.value.trim().slice(0, 1) || '?')
+
 // Keep manual niche field in sync when account store loads/refreshes
 watch(
   () => [props.accountId, account.value?.niche, account.value?.niche_source] as const,
@@ -447,6 +468,59 @@ function formatNum(n: number | undefined): string {
     <div v-if="accountStats || notes.length" class="space-y-2">
       <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
         {{ t('creatorStats.importedSection') }}
+      </div>
+      <div
+        v-if="accountStats && hasCreatorProfile"
+        class="rounded-lg border border-slate-100 bg-slate-50/70 p-3"
+      >
+        <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+          {{ t('creatorStats.profile.title') }}
+        </div>
+        <div class="flex items-start gap-3">
+          <img
+            v-if="accountStats.avatar_url"
+            :src="accountStats.avatar_url"
+            :alt="t('creatorStats.profile.avatarAlt', { name: profileDisplayName })"
+            class="h-11 w-11 shrink-0 rounded-full object-cover border border-slate-200 bg-white"
+          />
+          <div
+            v-else
+            class="h-11 w-11 shrink-0 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-sm font-semibold"
+          >
+            {{ profileInitial }}
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-slate-700 truncate">{{ profileDisplayName }}</div>
+            <div class="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+              <span v-if="accountStats.red_id">
+                {{ t('creatorStats.profile.redId') }}: {{ accountStats.red_id }}
+              </span>
+              <span v-if="accountStats.creator_user_id">
+                {{ t('creatorStats.profile.userId') }}: {{ accountStats.creator_user_id }}
+              </span>
+            </div>
+            <p v-if="accountStats.bio" class="mt-1 text-[11px] text-slate-500 leading-relaxed line-clamp-2">
+              {{ accountStats.bio }}
+            </p>
+          </div>
+        </div>
+        <div
+          v-if="accountStats.creator_role || accountStats.zone"
+          class="mt-2 flex flex-wrap gap-1.5 text-[10px]"
+        >
+          <span
+            v-if="accountStats.creator_role"
+            class="rounded-full bg-violet-100 px-2 py-0.5 text-violet-700"
+          >
+            {{ t('creatorStats.profile.role') }}: {{ accountStats.creator_role }}
+          </span>
+          <span
+            v-if="accountStats.zone"
+            class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600"
+          >
+            {{ t('creatorStats.profile.zone') }}: {{ accountStats.zone }}
+          </span>
+        </div>
       </div>
       <div v-if="accountStats" class="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div class="rounded-lg bg-slate-50 border border-slate-100 p-2 text-center">

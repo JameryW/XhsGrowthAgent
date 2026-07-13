@@ -20,6 +20,16 @@ logger = logging.getLogger("xhs_growth.db.creator_stats")
 _mem_accounts: dict[str, dict[str, Any]] = {}
 _mem_notes: dict[str, dict[str, dict[str, Any]]] = {}  # account_id -> note_id -> row
 
+_PROFILE_FIELD_NAMES = (
+    "creator_user_id",
+    "creator_name",
+    "red_id",
+    "avatar_url",
+    "bio",
+    "creator_role",
+    "zone",
+)
+
 
 def _reset_memory_store() -> None:
     """Test helper: clear in-memory rows."""
@@ -29,18 +39,25 @@ def _reset_memory_store() -> None:
 
 _CREATE_ACCOUNT_SQL = """
 CREATE TABLE IF NOT EXISTS creator_account_stats (
-    account_id   TEXT PRIMARY KEY,
-    views        INTEGER NOT NULL DEFAULT 0,
-    likes        INTEGER NOT NULL DEFAULT 0,
-    comments     INTEGER NOT NULL DEFAULT 0,
-    collects     INTEGER NOT NULL DEFAULT 0,
-    shares       INTEGER NOT NULL DEFAULT 0,
-    fans         INTEGER NOT NULL DEFAULT 0,
-    note_count   INTEGER NOT NULL DEFAULT 0,
-    period       TEXT NOT NULL DEFAULT '30d',
-    synced_at    TEXT NOT NULL DEFAULT '',
-    source       TEXT NOT NULL DEFAULT 'creator_statistics',
-    raw_json     TEXT NOT NULL DEFAULT '{}'
+    account_id       TEXT PRIMARY KEY,
+    creator_user_id  TEXT NOT NULL DEFAULT '',
+    creator_name     TEXT NOT NULL DEFAULT '',
+    red_id           TEXT NOT NULL DEFAULT '',
+    avatar_url       TEXT NOT NULL DEFAULT '',
+    bio              TEXT NOT NULL DEFAULT '',
+    creator_role     TEXT NOT NULL DEFAULT '',
+    zone             TEXT NOT NULL DEFAULT '',
+    views            INTEGER NOT NULL DEFAULT 0,
+    likes            INTEGER NOT NULL DEFAULT 0,
+    comments         INTEGER NOT NULL DEFAULT 0,
+    collects         INTEGER NOT NULL DEFAULT 0,
+    shares           INTEGER NOT NULL DEFAULT 0,
+    fans             INTEGER NOT NULL DEFAULT 0,
+    note_count       INTEGER NOT NULL DEFAULT 0,
+    period           TEXT NOT NULL DEFAULT '30d',
+    synced_at        TEXT NOT NULL DEFAULT '',
+    source           TEXT NOT NULL DEFAULT 'creator_statistics',
+    raw_json         TEXT NOT NULL DEFAULT '{}'
 );
 """
 
@@ -78,14 +95,36 @@ _ADD_BODY_TEXT_COL_SQL = (
     "ALTER TABLE creator_note_stats ADD COLUMN IF NOT EXISTS body_text TEXT NOT NULL DEFAULT ''"
 )
 
+_ADD_PROFILE_COLUMNS_SQL = (
+    "ALTER TABLE creator_account_stats "
+    "ADD COLUMN IF NOT EXISTS creator_user_id TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE creator_account_stats "
+    "ADD COLUMN IF NOT EXISTS creator_name TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE creator_account_stats ADD COLUMN IF NOT EXISTS red_id TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE creator_account_stats "
+    "ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE creator_account_stats ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE creator_account_stats "
+    "ADD COLUMN IF NOT EXISTS creator_role TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE creator_account_stats ADD COLUMN IF NOT EXISTS zone TEXT NOT NULL DEFAULT ''",
+)
+
 _UPSERT_ACCOUNT_SQL = """
-INSERT INTO creator_account_stats (
-    account_id, views, likes, comments, collects, shares,
-    fans, note_count, period, synced_at, source, raw_json
+INSERT INTO creator_account_stats AS stored (
+    account_id, creator_user_id, creator_name, red_id, avatar_url, bio, creator_role, zone,
+    views, likes, comments, collects, shares, fans, note_count, period, synced_at, source,
+    raw_json
 ) VALUES (
-    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 )
 ON CONFLICT (account_id) DO UPDATE SET
+    creator_user_id = COALESCE(NULLIF(EXCLUDED.creator_user_id, ''), stored.creator_user_id),
+    creator_name = COALESCE(NULLIF(EXCLUDED.creator_name, ''), stored.creator_name),
+    red_id = COALESCE(NULLIF(EXCLUDED.red_id, ''), stored.red_id),
+    avatar_url = COALESCE(NULLIF(EXCLUDED.avatar_url, ''), stored.avatar_url),
+    bio = COALESCE(NULLIF(EXCLUDED.bio, ''), stored.bio),
+    creator_role = COALESCE(NULLIF(EXCLUDED.creator_role, ''), stored.creator_role),
+    zone = COALESCE(NULLIF(EXCLUDED.zone, ''), stored.zone),
     views = EXCLUDED.views,
     likes = EXCLUDED.likes,
     comments = EXCLUDED.comments,
@@ -138,6 +177,8 @@ async def ensure_tables() -> None:
         await conn.execute(_CREATE_NOTE_INDEX_SQL)
         # Upgrade path for pre-body_text tables
         await conn.execute(_ADD_BODY_TEXT_COL_SQL)
+        for sql in _ADD_PROFILE_COLUMNS_SQL:
+            await conn.execute(sql)
     logger.info("creator_stats tables ensured")
 
 
@@ -145,6 +186,13 @@ def _account_values(overview: AccountStatsOverview) -> tuple[Any, ...]:
     row = overview.to_dict()
     return (
         overview.account_id,
+        overview.creator_user_id,
+        overview.creator_name,
+        overview.red_id,
+        overview.avatar_url,
+        overview.bio,
+        overview.creator_role,
+        overview.zone,
         overview.views,
         overview.likes,
         overview.comments,
@@ -207,6 +255,11 @@ async def upsert_account_stats(overview: AccountStatsOverview) -> None:
     overview.account_id = account_id
     row = overview.to_dict()
     if not is_pool_ready():
+        existing = _mem_accounts.get(overview.account_id)
+        if existing:
+            for field in _PROFILE_FIELD_NAMES:
+                if not row[field]:
+                    row[field] = str(existing.get(field) or "")
         _mem_accounts[overview.account_id] = row
         return
     pool = get_pool()
@@ -330,7 +383,8 @@ async def get_account_stats(account_id: str) -> AccountStatsOverview | None:
     async with pool.connection() as conn, conn.cursor() as cur:
         await cur.execute(
             """
-            SELECT account_id, views, likes, comments, collects, shares,
+            SELECT account_id, creator_user_id, creator_name, red_id, avatar_url, bio,
+                   creator_role, zone, views, likes, comments, collects, shares,
                    fans, note_count, period, synced_at, source
             FROM creator_account_stats WHERE account_id = %s
             """,
@@ -343,16 +397,23 @@ async def get_account_stats(account_id: str) -> AccountStatsOverview | None:
         return AccountStatsOverview.from_dict(row)
     return AccountStatsOverview(
         account_id=row[0],
-        views=row[1],
-        likes=row[2],
-        comments=row[3],
-        collects=row[4],
-        shares=row[5],
-        fans=row[6],
-        note_count=row[7],
-        period=row[8],
-        synced_at=row[9],
-        source=row[10],
+        creator_user_id=row[1],
+        creator_name=row[2],
+        red_id=row[3],
+        avatar_url=row[4],
+        bio=row[5],
+        creator_role=row[6],
+        zone=row[7],
+        views=row[8],
+        likes=row[9],
+        comments=row[10],
+        collects=row[11],
+        shares=row[12],
+        fans=row[13],
+        note_count=row[14],
+        period=row[15],
+        synced_at=row[16],
+        source=row[17],
     )
 
 

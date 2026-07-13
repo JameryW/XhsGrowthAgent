@@ -715,6 +715,14 @@
     "importedSection": "Imported overview",
     "noImported": "No notes imported yet — use the import button above.",
     "suggestionsSection": "Creative suggestions",
+    "profile": {
+      "title": "Account profile",
+      "avatarAlt": "Avatar for {name}",
+      "redId": "RED ID",
+      "userId": "Platform user ID",
+      "role": "Role",
+      "zone": "Region"
+    },
     "metrics": {
       "notes": "Notes",
       "views": "Views",

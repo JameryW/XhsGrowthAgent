@@ -134,6 +134,7 @@ async def sync_from_payload(
     account_raw: dict[str, Any] | None,
     notes_raw: Any,
     *,
+    profile_raw: dict[str, Any] | None = None,
     store: BaseStore | None = None,
     period: str = "30d",
     source: str = "fixture",
@@ -143,7 +144,13 @@ async def sync_from_payload(
     from backend.services.creator_stats.client import normalize_period
 
     period_norm = normalize_period(period)
-    bundle = normalize_bundle(account_raw, notes_raw, account_id, period=period_norm)
+    bundle = normalize_bundle(
+        account_raw,
+        notes_raw,
+        account_id,
+        period=period_norm,
+        profile_raw=profile_raw,
+    )
     bundle.account.source = source
     for n in bundle.notes:
         n.source = source
@@ -178,6 +185,7 @@ async def sync_from_fixture(
             error=f"fixture load failed: {e}",
         )
     account_raw = payload.get("account") or payload.get("account_overview") or {}
+    profile_raw = payload.get("profile") or payload.get("account_profile") or {}
     notes_raw = payload.get("notes") or payload.get("note_list") or payload.get("note_infos") or []
     # Caller period wins; else fixture JSON; else 30d
     period_use = normalize_period(period if period is not None else payload.get("period"))
@@ -186,6 +194,7 @@ async def sync_from_fixture(
         account_id,
         account_raw,
         notes_raw,
+        profile_raw=profile_raw if isinstance(profile_raw, dict) else None,
         store=store,
         period=period_use,
         source="fixture",

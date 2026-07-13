@@ -55,6 +55,13 @@ export interface CreatorNoteStats {
 
 export interface CreatorAccountStats {
   account_id: string
+  creator_user_id: string
+  creator_name: string
+  red_id: string
+  avatar_url: string
+  bio: string
+  creator_role: string
+  zone: string
   views: number
   likes: number
   comments: number

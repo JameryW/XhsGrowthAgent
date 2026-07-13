@@ -6,6 +6,7 @@ from backend.services.creator_stats.analyze import (
     run_analysis,
 )
 from backend.services.creator_stats.client import (
+    CREATOR_PROFILE_PATH,
     CREATOR_STATS_PAGE,
     CreatorStatsClient,
     CreatorStatsFetchError,
@@ -16,6 +17,7 @@ from backend.services.creator_stats.client import (
 from backend.services.creator_stats.normalize import (
     extract_note_items,
     normalize_account_overview,
+    normalize_account_profile,
     normalize_bundle,
     normalize_note,
     normalize_note_list,
@@ -44,6 +46,7 @@ from backend.services.creator_stats.types import (
 )
 
 __all__ = [
+    "CREATOR_PROFILE_PATH",
     "CREATOR_STATS_PAGE",
     "AccountStatsOverview",
     "AnalysisResult",
@@ -63,6 +66,7 @@ __all__ = [
     "get_suggestions_for_mode",
     "import_bundle",
     "extract_note_items",
+    "normalize_account_profile",
     "normalize_account_overview",
     "normalize_bundle",
     "normalize_note",

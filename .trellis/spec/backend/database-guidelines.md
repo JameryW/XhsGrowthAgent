@@ -252,6 +252,15 @@ in-memory convenience path.
 - Persist an account overview and all imported note rows through one database
   transaction (`upsert_bundle`), so readers never observe a partially written
   creator-statistics snapshot.
+- When the authenticated Creator Center page emits `/api/galaxy/user/info`,
+  capture its public account identity in the same snapshot and persist only the
+  explicit allowlist: platform user ID, nickname, RED ID, avatar URL, bio,
+  creator role, and region. The profile response is an enrichment, so a missing
+  profile response must not roll back successfully fetched metrics or notes.
+- Schema upgrades for those profile columns must use `ADD COLUMN IF NOT EXISTS`
+  and the profile fields must be included in the same account upsert as the
+  metric snapshot. This keeps old deployments upgrade-safe and readers
+  consistent after a sync.
 - Style-DNA deposits merge by `(account_id, tone, visual_style)`. Use both the
   in-process identity lock and `style_merge_transaction`'s PostgreSQL advisory
   transaction lock around the read/merge/write sequence; a primary key on a
@@ -262,5 +271,7 @@ in-memory convenience path.
 - Do not let a standalone CLI rely on FastAPI's lifespan to initialize its
   database pool.
 - Do not split the account overview and note upserts into independent commits.
+- Do not store `phone`, permission maps, real-name verification, cookies,
+  tokens, or other non-allowlisted current-user fields from Creator Center.
 - Do not use a generated style ID as the only concurrency guard for a
   tone/visual merge.

@@ -17,6 +17,13 @@ class AccountStatsOverview:
     """Account-level performance snapshot from creator statistics."""
 
     account_id: str
+    creator_user_id: str = ""
+    creator_name: str = ""
+    red_id: str = ""
+    avatar_url: str = ""
+    bio: str = ""
+    creator_role: str = ""
+    zone: str = ""
     views: int = 0
     likes: int = 0
     comments: int = 0
@@ -35,6 +42,13 @@ class AccountStatsOverview:
     def from_dict(cls, data: dict[str, Any]) -> AccountStatsOverview:
         return cls(
             account_id=str(data.get("account_id", "")),
+            creator_user_id=str(data.get("creator_user_id") or ""),
+            creator_name=str(data.get("creator_name") or ""),
+            red_id=str(data.get("red_id") or ""),
+            avatar_url=str(data.get("avatar_url") or ""),
+            bio=str(data.get("bio") or ""),
+            creator_role=str(data.get("creator_role") or ""),
+            zone=str(data.get("zone") or ""),
             views=int(data.get("views") or 0),
             likes=int(data.get("likes") or 0),
             comments=int(data.get("comments") or 0),
