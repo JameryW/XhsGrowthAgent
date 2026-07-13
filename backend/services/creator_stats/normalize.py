@@ -600,6 +600,12 @@ def normalize_note(
         or metrics.get("audience_profile")
         or metrics.get("audience")
     )
+    audience_trend = _safe_dict_list(
+        data.get("audience_trend")
+        or data.get("trend_list")
+        or metrics.get("audience_trend")
+        or metrics.get("trend_list")
+    )
     detail_value = (
         data.get("detail_metrics")
         or data.get("note_detail")
@@ -628,6 +634,7 @@ def normalize_note(
         source="creator_statistics",
         view_sources=view_sources,
         audience_profile=audience_profile,
+        audience_trend=audience_trend,
         detail_metrics=detail_metrics if isinstance(detail_metrics, dict) else {},
     )
     return note

@@ -201,6 +201,25 @@ async def list_accounts() -> list[AccountRow]:
     return [_account_from_dict(r) for r in rows]
 
 
+async def list_active_accounts() -> list[AccountRow]:
+    """Return only accounts explicitly enabled for background imports.
+
+    Keep this query separate from :func:`list_accounts` so callers cannot
+    accidentally start a browser session for a disabled account when running
+    the all-account import job.
+    """
+    pool = get_pool()
+    async with pool.connection() as conn:
+        from psycopg.rows import dict_row
+
+        async with conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                "SELECT * FROM accounts WHERE is_active = TRUE ORDER BY created_at ASC"
+            )
+            rows = await cur.fetchall()
+    return [_account_from_dict(r) for r in rows]
+
+
 _ALLOWED_UPDATE_FIELDS = frozenset(
     {
         "name",

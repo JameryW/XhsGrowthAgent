@@ -26,6 +26,32 @@ from backend.services.ripple_service import RippleService
 load_dotenv(override=True)
 
 
+async def _creator_stats_scheduler(app: FastAPI, interval_hours: float) -> None:
+    """Periodically import data for active accounts without blocking startup."""
+    interval_seconds = max(60.0, float(interval_hours) * 3600.0)
+    logger = logging.getLogger("xhs_growth.creator_stats.scheduler")
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            from backend.services.creator_stats.pipeline import sync_all_active_accounts
+
+            graph = getattr(app.state, "graph", None)
+            store = getattr(graph, "store", None) if graph is not None else None
+            result = await sync_all_active_accounts(store=store, period="30d")
+            logger.info(
+                "scheduled creator stats import finished: status=%s active=%s "
+                "succeeded=%s failed=%s",
+                result.get("status"),
+                result.get("active_accounts", 0),
+                result.get("succeeded", 0),
+                result.get("failed", 0),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("scheduled creator stats import failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # ── DB + checkpointer initialization ──
@@ -33,6 +59,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     checkpointer = None
     checkpoint_pool = None
     store_context = None
+    creator_stats_scheduler: asyncio.Task[None] | None = None
 
     if db_uri:
         try:
@@ -122,8 +149,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logging.getLogger("xhs_growth").warning(f"omp bridge manager not started: {e}")
         app.state.omp_bridge_manager = None
 
+    # Import only enabled accounts in the background.  The scheduler is
+    # deliberately started after DB/bootstrap and bridge initialization so it
+    # cannot race account table creation or Chrome startup.  A non-positive
+    # interval disables it while leaving the manual API available.
+    pool_ready = False
+    try:
+        from backend.db.pool import is_pool_ready
+
+        pool_ready = is_pool_ready()
+        interval_hours = float(settings.creator_stats.sync_interval_hours)
+    except (AttributeError, TypeError, ValueError):
+        interval_hours = 0.0
+    if db_uri and interval_hours > 0 and pool_ready:
+        creator_stats_scheduler = asyncio.create_task(
+            _creator_stats_scheduler(app, interval_hours),
+            name="creator-stats-active-account-scheduler",
+        )
+        app.state.creator_stats_scheduler = creator_stats_scheduler
+    else:
+        app.state.creator_stats_scheduler = None
+
     yield
     # ── Cleanup ──
+    if creator_stats_scheduler is not None:
+        creator_stats_scheduler.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await creator_stats_scheduler
+
     # Stop omp bridge manager
     if getattr(app.state, "omp_bridge_manager", None):
         with contextlib.suppress(Exception):

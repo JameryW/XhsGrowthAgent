@@ -39,6 +39,13 @@ class CreatorStatsSyncRequest(BaseModel):
         return str(v).strip()
 
 
+class CreatorStatsSyncAllRequest(BaseModel):
+    """Trigger the atomic batch import for enabled accounts only."""
+
+    period: str = Field(default="30d", description="统计周期")
+    analyze: bool = Field(default=True, description="导入后是否跑创作分析并沉淀风格")
+
+
 # Simple in-memory cache with TTL
 _cache: dict[str, tuple[float, Any]] = {}
 _CACHE_TTL = 30  # seconds
@@ -592,6 +599,24 @@ async def sync_creator_stats(
         data["ok"] = False
     data["analyzed"] = result.analysis is not None
     data["import_ok"] = bool(result.account_synced)
+    return success(data=data)
+
+
+@router.post("/creator-stats/sync-all")
+async def sync_all_creator_stats(
+    body: CreatorStatsSyncAllRequest,
+    request: Request,
+) -> ApiResponse[Any]:
+    """导入所有激活账号；停用账号不会启动浏览器或写入数据。"""
+    from backend.services.creator_stats.pipeline import sync_all_active_accounts
+
+    graph = getattr(request.app.state, "graph", None)
+    store = getattr(graph, "store", None) if graph is not None else None
+    data = await sync_all_active_accounts(
+        store=store,
+        period=body.period,
+        run_creative_analysis=body.analyze,
+    )
     return success(data=data)
 
 

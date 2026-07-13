@@ -66,6 +66,7 @@ export interface CreatorNoteStats {
   body_text?: string
   view_sources?: CreatorAggregatePoint[]
   audience_profile?: CreatorAggregatePoint[]
+  audience_trend?: CreatorAggregatePoint[]
   detail_metrics?: Record<string, unknown>
 }
 
@@ -126,6 +127,18 @@ export interface CreatorStatsSyncResult {
   ok?: boolean
   import_ok?: boolean
   analyzed?: boolean
+}
+
+export interface CreatorStatsBatchSyncResult {
+  ok: boolean
+  status: 'completed' | 'already_running' | 'failed' | string
+  active_accounts: number
+  succeeded: number
+  failed: number
+  results: CreatorStatsSyncResult[]
+  started_at?: string
+  finished_at?: string
+  error?: string
 }
 
 export interface CreatorSuggestion {
@@ -220,6 +233,17 @@ export async function syncCreatorStats(body: {
     // Browser-backed Creator Center capture can exceed the default 30s.
     { timeout: 120000 }
   ) as unknown as CreatorStatsSyncResult
+}
+
+/** Import real Creator Center stats for every active account. */
+export async function syncAllCreatorStats(body: {
+  period?: string
+  analyze?: boolean
+} = {}): Promise<CreatorStatsBatchSyncResult> {
+  return client.post('/analytics/creator-stats/sync-all', {
+    period: body.period ?? '30d',
+    analyze: body.analyze ?? true,
+  }, { timeout: 120000 }) as unknown as CreatorStatsBatchSyncResult
 }
 
 export async function getCreatorStats(

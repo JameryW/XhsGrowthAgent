@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from backend.services.creator_stats.types import AccountStatsOverview, NoteStats
@@ -20,6 +21,32 @@ def _label(item: dict[str, Any]) -> str:
         if value not in (None, ""):
             return str(value)
     return "未命名"
+
+
+def _average_note_rows(notes: list[NoteStats], field: str) -> list[dict[str, Any]]:
+    """Average repeated per-note percentage buckets for account-level display."""
+    buckets: dict[tuple[str, str], tuple[dict[str, Any], list[float]]] = {}
+    for note in notes:
+        for raw in getattr(note, field, []) or []:
+            if not isinstance(raw, dict):
+                continue
+            dimension = str(raw.get("dimension") or "")
+            key = (dimension, _label(raw))
+            if key not in buckets:
+                buckets[key] = (dict(raw), [])
+            value = raw.get("value")
+            if value in (None, ""):
+                value = raw.get("count")
+            with contextlib.suppress(TypeError, ValueError):
+                buckets[key][1].append(float(str(value)))
+
+    result: list[dict[str, Any]] = []
+    for item, values in buckets.values():
+        if values:
+            average = round(sum(values) / len(values), 2)
+            item["value"] = int(average) if average.is_integer() else average
+        result.append(item)
+    return result
 
 
 def summarize_audience(
@@ -43,10 +70,14 @@ def summarize_audience(
         }
 
     sources = [dict(item) for item in account.audience_sources]
+    if not sources:
+        sources = _average_note_rows(notes or [], "view_sources")
     sources.sort(key=lambda item: _number(item.get("value") or item.get("count")), reverse=True)
     periods = [dict(item) for item in account.audience_view_periods]
     periods.sort(key=lambda item: _number(item.get("count") or item.get("value")), reverse=True)
     profile = [dict(item) for item in account.audience_profile]
+    if not profile:
+        profile = _average_note_rows(notes or [], "audience_profile")
 
     insights: list[str] = []
     if sources:

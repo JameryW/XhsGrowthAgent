@@ -120,6 +120,21 @@ class AuthSettings(BaseSettings):
     model_config = {"env_prefix": "AUTH_", "env_file": ".env", "extra": "ignore"}
 
 
+class CreatorStatsSettings(BaseSettings):
+    """后台 Creator Center 导入配置。"""
+
+    # A complete account crawl opens a real logged-in browser tab, so keep the
+    # default conservative.  Set to 0 to disable the background worker while
+    # retaining the manual ``sync-all`` API.
+    sync_interval_hours: float = 6.0
+
+    model_config = {
+        "env_prefix": "CREATOR_STATS_",
+        "env_file": ".env",
+        "extra": "ignore",
+    }
+
+
 class Settings(BaseSettings):
     """全局配置聚合"""
 
@@ -130,5 +145,6 @@ class Settings(BaseSettings):
     notification: NotificationSettings = Field(default_factory=NotificationSettings)
     ripple: RippleSettings = Field(default_factory=RippleSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
+    creator_stats: CreatorStatsSettings = Field(default_factory=CreatorStatsSettings)
 
     model_config = {"env_file": ".env", "extra": "ignore"}
