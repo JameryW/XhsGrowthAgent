@@ -151,6 +151,33 @@ def test_normalize_bundle_fills_account_totals_from_notes():
     assert bundle.account.note_count == 1
 
 
+def test_normalize_creator_insights_keeps_aggregate_data_and_drops_tokens():
+    raw = {
+        "data": {"thirty": {"view_count": 10}},
+        "_creator_insights": {
+            "audience_source": {
+                "data": {"thirty": [{"title": "首页", "value": 8, "xsec_token": "drop"}]}
+            },
+            "audience_periods": {
+                "data": {"thirty": [{"start_point": "20:00", "end_point": "21:00", "count": 5}]}
+            },
+            "note_detail": {
+                "data": {
+                    "thirty": {
+                        "gender": [{"title": "女性", "value": 0.7}],
+                        "xsec_token": "drop",
+                    }
+                }
+            },
+        },
+    }
+    overview = normalize_account_overview(raw, "acc-insight", period="30d", synced_at="t0")
+    assert overview.audience_sources == [{"title": "首页", "value": 8}]
+    assert overview.audience_view_periods[0]["start_point"] == "20:00"
+    assert overview.audience_profile == [{"title": "女性", "value": 0.7}]
+    assert "xsec_token" not in overview.detail_metrics
+
+
 @pytest.mark.asyncio
 async def test_upsert_round_trip_identity_and_metrics():
     payload = load_fixture_payload(FIXTURE)

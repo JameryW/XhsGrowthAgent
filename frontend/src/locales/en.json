@@ -734,7 +734,17 @@
       "title": "Title",
       "views": "Views",
       "likes": "Likes",
+      "comments": "Comments",
+      "sources": "Sources",
       "rate": "Eng. rate"
+    },
+    "audience": {
+      "sources": "View sources",
+      "periods": "Peak viewing periods",
+      "profile": "Audience profile",
+      "analysis": "Audience analysis",
+      "unavailable": "Unavailable",
+      "profileHint": "This import did not return profile segments; only aggregate data is shown."
     },
     "mode": {
       "trend": "Trend",

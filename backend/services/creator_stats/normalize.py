@@ -249,6 +249,97 @@ def _list_str_field(data: dict[str, Any], *keys: str) -> list[str]:
     return []
 
 
+_SENSITIVE_KEY_PARTS = ("token", "cookie", "secret", "password", "authorization", "x-s")
+
+
+def _safe_aggregate(value: Any, *, depth: int = 0) -> Any:
+    """Copy public aggregate JSON while dropping auth material and huge blobs."""
+    if depth > 4:
+        return None
+    if isinstance(value, dict):
+        result: dict[str, Any] = {}
+        for key, child in list(value.items())[:100]:
+            name = str(key)
+            lowered = name.lower().replace("_", "-")
+            if any(part in lowered for part in _SENSITIVE_KEY_PARTS):
+                continue
+            safe = _safe_aggregate(child, depth=depth + 1)
+            if safe is not None:
+                result[name] = safe
+        return result
+    if isinstance(value, list):
+        return [_safe_aggregate(item, depth=depth + 1) for item in value[:100]]
+    if isinstance(value, (str, int, float, bool)):
+        if isinstance(value, str) and len(value) > 500:
+            return value[:500]
+        return value
+    return None
+
+
+def _safe_dict_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in value[:100]:
+        safe = _safe_aggregate(item)
+        if isinstance(safe, dict):
+            result.append(safe)
+    return result
+
+
+def _unwrap_insight_data(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    for key in ("data", "result"):
+        nested = value.get(key)
+        if isinstance(nested, dict):
+            return nested
+    return value
+
+
+def _insight_bucket(value: Any, period: str) -> Any:
+    data = _unwrap_insight_data(value)
+    key = "seven" if period == "7d" else "thirty"
+    return data.get(key, data)
+
+
+def _extract_creator_insights(raw: dict[str, Any], period: str) -> dict[str, Any]:
+    """Normalize optional audience/detail captures attached by the CDP client."""
+    bundle = raw.get("_creator_insights") if isinstance(raw, dict) else None
+    if not isinstance(bundle, dict):
+        return {
+            "audience_sources": [],
+            "audience_view_periods": [],
+            "audience_profile": [],
+            "detail_metrics": {},
+        }
+
+    source_bucket = _insight_bucket(bundle.get("audience_source"), period)
+    period_bucket = _insight_bucket(bundle.get("audience_periods"), period)
+    detail_bucket = _insight_bucket(bundle.get("note_detail"), period)
+    if not isinstance(source_bucket, list):
+        source_bucket = []
+    if not isinstance(period_bucket, list):
+        period_bucket = []
+    detail_data = detail_bucket if isinstance(detail_bucket, dict) else {}
+    profile: Any = []
+    for key in ("audience_profile", "audience", "profile", "gender", "age", "region", "interest"):
+        candidate = detail_data.get(key)
+        if isinstance(candidate, list):
+            profile.extend(candidate)
+        elif isinstance(candidate, dict):
+            profile.append(candidate)
+
+    return {
+        "audience_sources": _safe_dict_list(source_bucket),
+        "audience_view_periods": _safe_dict_list(period_bucket),
+        "audience_profile": _safe_dict_list(profile),
+        "detail_metrics": (
+            _safe_aggregate(detail_data) if isinstance(_safe_aggregate(detail_data), dict) else {}
+        ),
+    }
+
+
 def _content_type(raw: Any) -> str:
     if raw is None:
         return "note"
@@ -370,10 +461,13 @@ def normalize_account_overview(
             break
 
     profile = normalize_account_profile(profile_raw if profile_raw is not None else raw)
+    insights = _extract_creator_insights(raw, period)
+    profile_data: dict[str, Any] = dict(profile)
+    profile_data.update(insights)
     now = synced_at or datetime.now(UTC).isoformat()
     return AccountStatsOverview(
         account_id=account_id,
-        **profile,
+        **profile_data,
         views=_int_field(
             data, "views", "view_count", "viewCount", "home_view_count", "impression_count"
         ),
@@ -491,6 +585,30 @@ def normalize_note(
     published = _publish_time(data) or _publish_time(metrics)
     now = synced_at or datetime.now(UTC).isoformat()
 
+    view_sources = _safe_dict_list(
+        data.get("view_sources")
+        or data.get("view_source")
+        or data.get("traffic_sources")
+        or data.get("view_source_list")
+        or metrics.get("view_sources")
+        or metrics.get("traffic_sources")
+    )
+    audience_profile = _safe_dict_list(
+        data.get("audience_profile")
+        or data.get("audience")
+        or data.get("audience_list")
+        or metrics.get("audience_profile")
+        or metrics.get("audience")
+    )
+    detail_value = (
+        data.get("detail_metrics")
+        or data.get("note_detail")
+        or metrics.get("detail_metrics")
+        or metrics.get("note_detail")
+        or {}
+    )
+    detail_metrics = _safe_aggregate(detail_value)
+
     note = NoteStats(
         note_id=note_id,
         account_id=account_id,
@@ -508,6 +626,9 @@ def normalize_note(
         engagement_rate=compute_engagement_rate(views, likes, comments, collects, shares),
         synced_at=now,
         source="creator_statistics",
+        view_sources=view_sources,
+        audience_profile=audience_profile,
+        detail_metrics=detail_metrics if isinstance(detail_metrics, dict) else {},
     )
     return note
 

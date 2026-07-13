@@ -602,6 +602,7 @@ async def get_creator_stats(
 ) -> ApiResponse[Any]:
     """读取本地已导入的创作者中心账户/笔记统计。"""
     from backend.db import creator_stats as stats_db
+    from backend.services.creator_stats.audience import summarize_audience
 
     account_id = (account_id or "").strip()
     account = await stats_db.get_account_stats(account_id)
@@ -615,6 +616,7 @@ async def get_creator_stats(
             "account_id": account_id,
             "account": account.to_dict() if account else None,
             "notes": [n.to_dict() for n in notes],
+            "audience_analysis": summarize_audience(account, notes),
             "total": total,
             "limit": limit,
             "fetched_at": datetime.now(UTC).isoformat(),
@@ -679,15 +681,18 @@ async def get_creator_analysis(account_id: str) -> ApiResponse[Any]:
     """对已导入笔记即时跑创作分析（不强制重新拉取远端）。"""
     from backend.db import creator_stats as stats_db
     from backend.services.creator_stats.analyze import analyze_notes
+    from backend.services.creator_stats.audience import summarize_audience
     from backend.services.creator_stats.suggestions import suggestions_from_analysis
 
     account_id = (account_id or "").strip()
     notes = await stats_db.list_note_stats(account_id, limit=100)
+    account = await stats_db.get_account_stats(account_id)
     analysis = analyze_notes(notes, account_id)
     suggestions = suggestions_from_analysis(analysis, notes)
     return success(
         data={
             "analysis": analysis.to_dict(),
             "suggestions": {m: [s.to_dict() for s in items] for m, items in suggestions.items()},
+            "audience_analysis": summarize_audience(account, notes),
         }
     )

@@ -13,6 +13,8 @@ import {
   getCreatorSuggestions,
   type CreatorAccountStats,
   type CreatorNoteStats,
+  type CreatorAggregatePoint,
+  type CreatorAudienceAnalysis,
   type CreatorSuggestion,
   type CreatorStatsSyncResult,
 } from '@/api/analytics'
@@ -51,6 +53,7 @@ const accountStats = ref<CreatorAccountStats | null>(null)
 const notes = ref<CreatorNoteStats[]>([])
 const notesTotal = ref(0)
 const suggestions = ref<CreatorSuggestion[]>([])
+const audience = ref<CreatorAudienceAnalysis | null>(null)
 const suggestionMode = ref<'trend' | 'brief' | 'free'>('trend')
 const nicheResult = ref<NicheResolution | null>(null)
 
@@ -100,6 +103,18 @@ const profileDisplayName = computed(() =>
 
 const profileInitial = computed(() => profileDisplayName.value.trim().slice(0, 1) || '?')
 
+/**
+ * Creator Center profile data is authoritative for the display name after a
+ * real import. Keep the shared account store in sync immediately, including
+ * when the page was opened before the import completed and still holds an
+ * older account name.
+ */
+function syncImportedDisplayName(profile: CreatorAccountStats | null) {
+  const importedName = profile?.creator_name?.trim()
+  if (!importedName || !props.accountId) return
+  accountsStore.syncImportedAccountName(props.accountId, importedName)
+}
+
 // Keep manual niche field in sync when account store loads/refreshes
 watch(
   () => [props.accountId, account.value?.niche, account.value?.niche_source] as const,
@@ -121,6 +136,7 @@ watch(
       syncError.value = ''
       nicheResult.value = null
       notesTotal.value = 0
+      audience.value = null
       manualNiche.value = account.value?.niche || ''
     }
     await loadImported()
@@ -143,18 +159,21 @@ async function loadImported() {
   isLoadingStats.value = true
   try {
     const [stats, tips] = await Promise.all([
-      getCreatorStats(props.accountId, 20),
+      getCreatorStats(props.accountId, 100),
       getCreatorSuggestions(props.accountId, suggestionMode.value),
     ])
     accountStats.value = stats.account
+    syncImportedDisplayName(accountStats.value)
     notes.value = stats.notes || []
     notesTotal.value = stats.total ?? notes.value.length
+    audience.value = stats.audience_analysis || null
     suggestions.value = tips.suggestions || []
   } catch {
     // No imported data yet is fine
     accountStats.value = null
     notes.value = []
     notesTotal.value = 0
+    audience.value = null
     suggestions.value = []
   } finally {
     isLoadingStats.value = false
@@ -291,6 +310,17 @@ function formatRate(rate: number | undefined): string {
 function formatNum(n: number | undefined): string {
   if (n == null) return '0'
   return n.toLocaleString()
+}
+
+function pointLabel(point: CreatorAggregatePoint): string {
+  return String(point.title || point.name || point.label || point.text || point.start_point || '未命名')
+}
+
+function pointValue(point: CreatorAggregatePoint): string {
+  const value = point.value ?? point.count
+  if (value == null) return '—'
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? formatNum(numeric) : String(value)
 }
 </script>
 
@@ -516,6 +546,63 @@ function formatNum(n: number | undefined): string {
         </div>
       </div>
 
+      <!-- Audience enrichment is aggregate Creator Center data; an empty
+           dimension means the signed endpoint was unavailable, not zero. -->
+      <div v-if="audience" class="grid gap-2 lg:grid-cols-3">
+        <div class="rounded-lg border border-slate-100 bg-white p-3">
+          <div class="flex items-center justify-between gap-2">
+            <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+              {{ t('creatorStats.audience.sources') }}
+            </div>
+            <span v-if="!audience.coverage.sources" class="text-[10px] text-slate-400">
+              {{ t('creatorStats.audience.unavailable') }}
+            </span>
+          </div>
+          <div v-if="audience.source_distribution.length" class="mt-2 space-y-1.5">
+            <div v-for="item in audience.source_distribution.slice(0, 5)" :key="pointLabel(item)" class="flex items-center justify-between gap-2 text-[11px]">
+              <span class="truncate text-slate-600">{{ pointLabel(item) }}</span>
+              <span class="shrink-0 font-medium text-violet-700">{{ pointValue(item) }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="rounded-lg border border-slate-100 bg-white p-3">
+          <div class="flex items-center justify-between gap-2">
+            <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+              {{ t('creatorStats.audience.periods') }}
+            </div>
+            <span v-if="!audience.coverage.periods" class="text-[10px] text-slate-400">
+              {{ t('creatorStats.audience.unavailable') }}
+            </span>
+          </div>
+          <div v-if="audience.peak_view_periods.length" class="mt-2 space-y-1.5">
+            <div v-for="item in audience.peak_view_periods.slice(0, 5)" :key="`${item.start_point}-${item.end_point}`" class="flex items-center justify-between gap-2 text-[11px]">
+              <span class="truncate text-slate-600">{{ item.start_point || item.end_point || pointLabel(item) }}</span>
+              <span class="shrink-0 font-medium text-cyan-700">{{ pointValue(item) }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="rounded-lg border border-slate-100 bg-white p-3">
+          <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+            {{ t('creatorStats.audience.profile') }}
+          </div>
+          <div v-if="audience.audience_profile.length" class="mt-2 flex flex-wrap gap-1.5">
+            <span v-for="item in audience.audience_profile.slice(0, 8)" :key="pointLabel(item)" class="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
+              {{ pointLabel(item) }}<span v-if="item.value != null || item.count != null"> · {{ pointValue(item) }}</span>
+            </span>
+          </div>
+          <p v-else class="mt-2 text-[11px] leading-relaxed text-slate-400">
+            {{ t('creatorStats.audience.profileHint') }}
+          </p>
+        </div>
+      </div>
+
+      <div v-if="audience?.insights?.length" class="rounded-lg bg-violet-50/70 border border-violet-100 px-3 py-2">
+        <div class="text-[10px] font-semibold text-violet-700 uppercase tracking-wider">{{ t('creatorStats.audience.analysis') }}</div>
+        <ul class="mt-1 space-y-0.5 text-[11px] text-violet-800">
+          <li v-for="line in audience.insights.slice(0, 3)" :key="line">{{ line }}</li>
+        </ul>
+      </div>
+
       <div v-if="notes.length" class="overflow-x-auto rounded-lg border border-slate-100">
         <table class="w-full text-xs">
           <thead class="bg-slate-50 text-slate-500">
@@ -523,12 +610,14 @@ function formatNum(n: number | undefined): string {
               <th class="text-left px-2 py-1.5 font-medium">{{ t('creatorStats.table.title') }}</th>
               <th class="text-right px-2 py-1.5 font-medium">{{ t('creatorStats.table.views') }}</th>
               <th class="text-right px-2 py-1.5 font-medium">{{ t('creatorStats.table.likes') }}</th>
+              <th class="text-right px-2 py-1.5 font-medium">{{ t('creatorStats.table.comments') }}</th>
+              <th class="text-right px-2 py-1.5 font-medium">{{ t('creatorStats.table.sources') }}</th>
               <th class="text-right px-2 py-1.5 font-medium">{{ t('creatorStats.table.rate') }}</th>
             </tr>
           </thead>
           <tbody>
             <tr
-              v-for="n in notes.slice(0, compact ? 5 : 10)"
+              v-for="n in notes.slice(0, compact ? 8 : 20)"
               :key="n.note_id"
               class="border-t border-slate-50 hover:bg-slate-50/80"
             >
@@ -537,6 +626,8 @@ function formatNum(n: number | undefined): string {
               </td>
               <td class="px-2 py-1.5 text-right text-slate-600">{{ formatNum(n.views) }}</td>
               <td class="px-2 py-1.5 text-right text-slate-600">{{ formatNum(n.likes) }}</td>
+              <td class="px-2 py-1.5 text-right text-slate-600">{{ formatNum(n.comments) }}</td>
+              <td class="px-2 py-1.5 text-right text-slate-600">{{ n.view_sources?.length || '—' }}</td>
               <td class="px-2 py-1.5 text-right text-slate-600">{{ formatRate(n.engagement_rate) }}</td>
             </tr>
           </tbody>

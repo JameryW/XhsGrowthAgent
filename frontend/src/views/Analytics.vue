@@ -19,7 +19,9 @@ const analyticsStore = useAnalyticsStore()
 const accountsStore = useAccountsStore()
 
 onMounted(async () => {
-  if (!accountsStore.activeAccountId) await accountsStore.fetchAccounts()
+  // Refresh the shared account labels so a name imported from Creator Center
+  // is visible even when this route stayed mounted across the import.
+  await accountsStore.fetchAccounts()
   if (!analyticsStore.posts.length && !analyticsStore.isLoading && !analyticsStore.error) {
     analyticsStore.fetchAllData()
   }

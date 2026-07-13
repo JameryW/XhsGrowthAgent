@@ -58,6 +58,20 @@ export const useAccountsStore = defineStore('accounts', () => {
     return updated
   }
 
+  /** Apply a verified Creator Center display name to the local account cache. */
+  function syncImportedAccountName(accountId: string, name: string) {
+    const importedName = name.trim()
+    if (!accountId || !importedName) return
+
+    const idx = accounts.value.findIndex(a => a.id === accountId)
+    if (idx >= 0 && accounts.value[idx].name !== importedName) {
+      accounts.value[idx] = { ...accounts.value[idx], name: importedName }
+    }
+    if (activeAccount.value?.id === accountId && activeAccount.value.name !== importedName) {
+      activeAccount.value = { ...activeAccount.value, name: importedName }
+    }
+  }
+
   async function updateAccountFields(
     accountId: string,
     data: { name?: string; is_active?: boolean; niche?: string; niche_source?: string }
@@ -93,6 +107,7 @@ export const useAccountsStore = defineStore('accounts', () => {
     createAccount,
     setActiveAccount,
     updateAccountName,
+    syncImportedAccountName,
     updateAccountFields,
     removeAccount,
   }
