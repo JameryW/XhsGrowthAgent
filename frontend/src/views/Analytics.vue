@@ -265,59 +265,73 @@ function startWithTopic(topic: string, niche?: string) {
 
   <!-- Data view -->
   <div v-else class="relative space-y-4 md:space-y-6">
-    <!-- Creator-center import / niche bind for active account -->
-    <CreatorStatsPanel
-      v-if="accountsStore.activeAccountId || analyticsStore.accountId"
-      :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
-      :account-name="accountsStore.activeAccount?.name"
-      compact
-      @updated="refreshData"
-    />
-
     <!-- Header -->
     <div class="card">
-      <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5">
-        <div class="w-10 h-10 md:w-14 md:h-14 rounded-lg md:rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm flex-shrink-0">
-          <AppIcon name="BarChart3" size="md" variant="white" class="md:hidden" :aria-label="t('analytics.title')" />
-          <AppIcon name="BarChart3" size="xl" variant="white" class="hidden md:block" :aria-label="t('analytics.title')" />
-        </div>
-        <div class="flex-1">
-          <div class="flex items-center gap-2 mb-1">
-            <span class="px-1.5 md:px-2 py-0.5 md:py-1 rounded bg-teal-50 text-teal-600 text-[10px] md:text-xs uppercase tracking-wide font-medium">{{ t('analytics.analyticsLabel') }}</span>
+      <div class="flex flex-col gap-4 xl:flex-row xl:items-center">
+        <div class="flex min-w-0 flex-1 items-start gap-3 sm:items-center sm:gap-5">
+          <div class="w-10 h-10 md:w-14 md:h-14 rounded-lg md:rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm flex-shrink-0">
+            <AppIcon name="BarChart3" size="md" variant="white" class="md:hidden" :aria-label="t('analytics.title')" />
+            <AppIcon name="BarChart3" size="xl" variant="white" class="hidden md:block" :aria-label="t('analytics.title')" />
           </div>
-          <div class="text-lg md:text-xl font-semibold text-slate-800">{{ t('analytics.title') }}</div>
-          <div class="text-[10px] md:text-xs text-slate-400 mt-1">
-            {{ t('analytics.account') }}: {{ analyticsStore.accountId }} | {{ t('analytics.period') }}: {{ analyticsStore.period }}
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="px-1.5 md:px-2 py-0.5 md:py-1 rounded bg-teal-50 text-teal-600 text-[10px] md:text-xs uppercase tracking-wide font-medium">{{ t('analytics.analyticsLabel') }}</span>
+            </div>
+            <div class="text-lg md:text-xl font-semibold text-slate-800">{{ t('analytics.title') }}</div>
+            <div class="text-[10px] md:text-xs text-slate-400 mt-1 break-words">
+              {{ t('analytics.account') }}: {{ analyticsStore.accountId }} | {{ t('analytics.period') }}: {{ analyticsStore.period }}
+            </div>
           </div>
         </div>
 
-        <div class="flex items-center gap-2 flex-wrap">
-          <!-- Refresh button -->
-          <NeonButton variant="cyan" size="sm" @click="refreshData" :disabled="analyticsStore.isLoading">
+        <div class="flex w-full flex-col gap-2 sm:flex-row sm:items-center xl:w-auto xl:shrink-0">
+          <NeonButton
+            variant="cyan"
+            size="sm"
+            class="w-full sm:w-auto"
+            @click="refreshData"
+            :disabled="analyticsStore.isLoading"
+          >
             <span class="inline-flex items-center gap-1.5">
               <AppIcon name="RefreshCw" size="sm" variant="white" :class="{ 'animate-spin': analyticsStore.isLoading }" />
               {{ analyticsStore.isLoading ? t('analytics.refreshing') : t('analytics.refresh') }}
             </span>
           </NeonButton>
 
-          <!-- Period selector -->
-          <NeonButton
-            v-for="p in ['daily', 'weekly', 'monthly']"
-            :key="p"
-            :variant="analyticsStore.period === p ? 'cyan' : 'ghost'"
-            size="sm"
-            @click="setPeriod(p as any)"
-            :aria-pressed="analyticsStore.period === p"
-            :aria-label="`${p === 'daily' ? t('analytics.thisWeek') : p === 'weekly' ? t('analytics.thisMonth') : t('analytics.thisYear')}`"
-          >
-            <span class="inline-flex items-center gap-1.5">
-              <AppIcon name="Calendar" size="sm" :variant="analyticsStore.period === p ? 'white' : 'cyan'" />
-              {{ p === 'daily' ? t('analytics.thisWeek') : p === 'weekly' ? t('analytics.thisMonth') : t('analytics.thisYear') }}
-            </span>
-          </NeonButton>
+          <div class="grid grid-cols-3 gap-1.5 sm:w-auto">
+            <NeonButton
+              v-for="p in ['daily', 'weekly', 'monthly']"
+              :key="p"
+              :variant="analyticsStore.period === p ? 'cyan' : 'ghost'"
+              size="sm"
+              class="min-w-0 justify-center px-2 sm:px-3"
+              @click="setPeriod(p as any)"
+              :aria-pressed="analyticsStore.period === p"
+              :aria-label="`${p === 'daily' ? t('analytics.thisWeek') : p === 'weekly' ? t('analytics.thisMonth') : t('analytics.thisYear')}`"
+            >
+              <span class="inline-flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap">
+                <AppIcon name="Calendar" size="sm" :variant="analyticsStore.period === p ? 'white' : 'cyan'" />
+                {{ p === 'daily' ? t('analytics.thisWeek') : p === 'weekly' ? t('analytics.thisMonth') : t('analytics.thisYear') }}
+              </span>
+            </NeonButton>
+          </div>
         </div>
       </div>
     </div>
+
+    <!-- Creator-center import / niche bind for active account -->
+    <section
+      v-if="accountsStore.activeAccountId || analyticsStore.accountId"
+      class="min-w-0"
+      :aria-label="t('creatorStats.title')"
+    >
+      <CreatorStatsPanel
+        :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
+        :account-name="accountsStore.activeAccount?.name"
+        compact
+        @updated="refreshData"
+      />
+    </section>
 
     <!-- Metric cards (5 columns on xl) -->
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-5">
