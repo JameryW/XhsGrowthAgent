@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Preserve Postgres/in-memory compatibility and safe migrations for creator snapshots."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Keep imported account and audience state updates inside Pinia actions."}

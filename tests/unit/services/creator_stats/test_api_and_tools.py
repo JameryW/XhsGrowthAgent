@@ -73,6 +73,12 @@ async def test_get_creator_stats_after_fixture_service_import():
     assert "permissions" not in data["account"]
     assert "real_name_verified" not in data["account"]
     assert data["total"] == 5
+    assert data["audience_analysis"]["coverage"] == {
+        "sources": False,
+        "periods": False,
+        "profile": False,
+        "notes_with_view_sources": 0,
+    }
     ids = {n["note_id"] for n in data["notes"]}
     assert "note_heal_001" in ids
     note = next(n for n in data["notes"] if n["note_id"] == "note_heal_001")

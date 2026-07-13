@@ -385,7 +385,7 @@ async def get_account_stats(account_id: str) -> AccountStatsOverview | None:
             """
             SELECT account_id, creator_user_id, creator_name, red_id, avatar_url, bio,
                    creator_role, zone, views, likes, comments, collects, shares,
-                   fans, note_count, period, synced_at, source
+                   fans, note_count, period, synced_at, source, raw_json
             FROM creator_account_stats WHERE account_id = %s
             """,
             (account_id,),
@@ -394,7 +394,31 @@ async def get_account_stats(account_id: str) -> AccountStatsOverview | None:
     if not row:
         return None
     if isinstance(row, dict):
-        return AccountStatsOverview.from_dict(row)
+        data = dict(row)
+        raw_json_value = data.get("raw_json")
+        if isinstance(raw_json_value, str):
+            try:
+                raw_json_value = json.loads(raw_json_value)
+            except (TypeError, json.JSONDecodeError):
+                raw_json_value = {}
+        if isinstance(raw_json_value, dict):
+            for key in (
+                "audience_sources",
+                "audience_view_periods",
+                "audience_profile",
+                "detail_metrics",
+            ):
+                if not data.get(key) and raw_json_value.get(key) is not None:
+                    data[key] = raw_json_value[key]
+        return AccountStatsOverview.from_dict(data)
+    raw_account: dict[str, Any] = {}
+    if len(row) > 18 and row[18]:
+        try:
+            parsed = json.loads(row[18]) if isinstance(row[18], str) else row[18]
+            if isinstance(parsed, dict):
+                raw_account = parsed
+        except (TypeError, json.JSONDecodeError):
+            raw_account = {}
     return AccountStatsOverview(
         account_id=row[0],
         creator_user_id=row[1],
@@ -414,6 +438,10 @@ async def get_account_stats(account_id: str) -> AccountStatsOverview | None:
         period=row[15],
         synced_at=row[16],
         source=row[17],
+        audience_sources=raw_account.get("audience_sources") or [],
+        audience_view_periods=raw_account.get("audience_view_periods") or [],
+        audience_profile=raw_account.get("audience_profile") or [],
+        detail_metrics=raw_account.get("detail_metrics") or {},
     )
 
 
@@ -427,18 +455,23 @@ def _note_from_row(row: Any) -> NoteStats:
                 tags = []
         data = dict(row)
         data["tags"] = tags
-        if not data.get("body_text") and data.get("raw_json"):
+        if data.get("raw_json"):
             # Fallback: older rows may only have body in raw_json payload
             try:
-                raw = data["raw_json"]
-                if isinstance(raw, str):
-                    raw = json.loads(raw)
-                if isinstance(raw, dict) and raw.get("body_text"):
-                    data["body_text"] = raw["body_text"]
+                note_raw_value = data["raw_json"]
+                if isinstance(note_raw_value, str):
+                    note_raw_value = json.loads(note_raw_value)
+                if isinstance(note_raw_value, dict):
+                    if note_raw_value.get("body_text"):
+                        data["body_text"] = note_raw_value["body_text"]
+                    for key in ("view_sources", "audience_profile", "detail_metrics"):
+                        if not data.get(key) and note_raw_value.get(key) is not None:
+                            data[key] = note_raw_value[key]
             except (TypeError, json.JSONDecodeError):
                 pass
         return NoteStats.from_dict(data)
-    # Tuple order must match list/get SELECT columns
+    # Tuple order must match list/get SELECT columns.  The final raw_json
+    # column carries optional fields introduced after the initial migration.
     tags_raw = row[11]
     if isinstance(tags_raw, str):
         try:
@@ -447,6 +480,14 @@ def _note_from_row(row: Any) -> NoteStats:
             tags = []
     else:
         tags = tags_raw or []
+    raw_payload: dict[str, Any] = {}
+    if len(row) > 16 and row[16]:
+        try:
+            parsed = json.loads(row[16]) if isinstance(row[16], str) else row[16]
+            if isinstance(parsed, dict):
+                raw_payload = parsed
+        except (TypeError, json.JSONDecodeError):
+            raw_payload = {}
     return NoteStats(
         account_id=row[0],
         note_id=row[1],
@@ -464,6 +505,9 @@ def _note_from_row(row: Any) -> NoteStats:
         engagement_rate=float(row[13] or 0),
         synced_at=row[14],
         source=row[15],
+        view_sources=raw_payload.get("view_sources") or [],
+        audience_profile=raw_payload.get("audience_profile") or [],
+        detail_metrics=raw_payload.get("detail_metrics") or {},
     )
 
 
@@ -510,7 +554,7 @@ async def list_all_note_stats(account_id: str) -> list[NoteStats]:
             """
             SELECT account_id, note_id, title, body_text, views, likes, comments, collects,
                    shares, published_at, content_type, tags_json, cover_url,
-                   engagement_rate, synced_at, source
+                   engagement_rate, synced_at, source, raw_json
             FROM creator_note_stats
             WHERE account_id = %s
             ORDER BY published_at ASC, note_id ASC
@@ -553,7 +597,7 @@ async def list_note_stats(
             f"""
             SELECT account_id, note_id, title, body_text, views, likes, comments, collects,
                    shares, published_at, content_type, tags_json, cover_url,
-                   engagement_rate, synced_at, source
+                   engagement_rate, synced_at, source, raw_json
             FROM creator_note_stats
             WHERE account_id = %s
             ORDER BY {order_sql}
@@ -579,7 +623,7 @@ async def get_note_stats(account_id: str, note_id: str) -> NoteStats | None:
             """
             SELECT account_id, note_id, title, body_text, views, likes, comments, collects,
                    shares, published_at, content_type, tags_json, cover_url,
-                   engagement_rate, synced_at, source
+                   engagement_rate, synced_at, source, raw_json
             FROM creator_note_stats
             WHERE account_id = %s AND note_id = %s
             """,

@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Verify persisted aggregate insights remain backward compatible."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify UI refreshes use store actions and do not mutate state directly."}

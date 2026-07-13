@@ -35,6 +35,10 @@ CREATOR_PROFILE_PATH = "/api/galaxy/user/info"
 # current creator-center requests require browser-generated x-s/x-t headers.
 NOTE_LIST_PATH = "/api/galaxy/v2/creator/note/user/posted"
 LEGACY_NOTE_LIST_PATH = "/api/galaxy/creator/datacenter/note/analyze/list"
+# Optional aggregate insight surfaces loaded by the statistics dashboard.
+AUDIENCE_SOURCE_PATH = "/api/galaxy/v2/creator/datacenter/audience/source/account"
+AUDIENCE_PERIODS_PATH = "/api/galaxy/v2/creator/datacenter/audience/view/periods"
+NOTE_DETAIL_PATH = "/api/galaxy/creator/data/note_detail_new"
 CREATOR_NOTE_MANAGER_PAGE = "https://creator.xiaohongshu.com/new/note-manager"
 
 # Known date_type values on account overview (reverse-engineered):
@@ -203,7 +207,7 @@ class CdpTransport:
         _unwrap_api_body(body)
 
     async def fetch_creator_center(
-        self, *, max_pages: int = 5
+        self, *, max_pages: int = 50
     ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
         """Capture overview, public profile, and up to ``max_pages`` native note pages.
 
@@ -215,7 +219,7 @@ class CdpTransport:
         try:
             max_pages = max(1, min(int(max_pages), 50))
         except (TypeError, ValueError):
-            max_pages = 5
+            max_pages = 50
 
         async with self._fetch_lock:
             browser = await self._ensure_browser()
@@ -224,6 +228,7 @@ class CdpTransport:
             account_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
             profile_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
             note_responses: dict[int, tuple[int, dict[str, Any] | list[Any] | None]] = {}
+            insight_responses: dict[str, tuple[int, dict[str, Any] | list[Any] | None]] = {}
             account_ready = asyncio.Event()
             profile_ready = asyncio.Event()
             first_notes_ready = asyncio.Event()
@@ -232,7 +237,14 @@ class CdpTransport:
             async def capture(response: Any) -> None:
                 nonlocal account_response, profile_response
                 path = urlsplit(response.url).path
-                if path not in (ACCOUNT_OVERVIEW_PATH, CREATOR_PROFILE_PATH, NOTE_LIST_PATH):
+                if path not in (
+                    ACCOUNT_OVERVIEW_PATH,
+                    CREATOR_PROFILE_PATH,
+                    NOTE_LIST_PATH,
+                    AUDIENCE_SOURCE_PATH,
+                    AUDIENCE_PERIODS_PATH,
+                    NOTE_DETAIL_PATH,
+                ):
                     return
                 try:
                     body: dict[str, Any] | list[Any] | None = await response.json()
@@ -245,6 +257,11 @@ class CdpTransport:
                 if path == CREATOR_PROFILE_PATH:
                     profile_response = (response.status, body)
                     profile_ready.set()
+                    return
+                if path in (AUDIENCE_SOURCE_PATH, AUDIENCE_PERIODS_PATH, NOTE_DETAIL_PATH):
+                    # These are optional enrichment calls.  A permission or
+                    # rollout failure must not discard the note snapshot.
+                    insight_responses[path] = (response.status, body)
                     return
                 page_index = self._page_index(response.url)
                 note_responses[page_index] = (response.status, body)
@@ -341,6 +358,11 @@ class CdpTransport:
                     self._validate_creator_response(
                         *note_responses[page_index], operation=f"note list page {page_index}"
                     )
+                    next_data = _unwrap_api_body(note_responses[page_index][1])
+                    if (isinstance(next_data, dict) and not extract_note_items(next_data)) or (
+                        isinstance(next_data, list) and not next_data
+                    ):
+                        break
 
                 raw_notes: list[dict[str, Any]] = []
                 for page_index in sorted(note_responses):
@@ -352,8 +374,25 @@ class CdpTransport:
                             raw_notes.extend(item for item in items if isinstance(item, dict))
                 if pending:
                     await asyncio.gather(*pending, return_exceptions=True)
+                detail_body = insight_responses.get(NOTE_DETAIL_PATH, (0, {}))[1]
+                details = _note_detail_map(detail_body)
+                if details:
+                    for index, note in enumerate(raw_notes):
+                        note_id = note.get("note_id") or note.get("noteId") or note.get("id")
+                        detail = details.get(str(note_id))
+                        if isinstance(detail, dict):
+                            raw_notes[index] = {**note, **detail}
                 account_body = account_response[1]
                 profile_body = profile_response[1] if profile_response is not None else {}
+                if isinstance(account_body, dict):
+                    account_body = dict(account_body)
+                    account_body["_creator_insights"] = {
+                        "audience_source": insight_responses.get(AUDIENCE_SOURCE_PATH, (0, {}))[1],
+                        "audience_periods": insight_responses.get(AUDIENCE_PERIODS_PATH, (0, {}))[
+                            1
+                        ],
+                        "note_detail": insight_responses.get(NOTE_DETAIL_PATH, (0, {}))[1],
+                    }
                 return (
                     account_body if isinstance(account_body, dict) else {},
                     profile_body if isinstance(profile_body, dict) else {},
@@ -458,6 +497,32 @@ def _unwrap_api_body(body: dict[str, Any] | list[Any] | None) -> Any:
     return body
 
 
+def _note_detail_map(body: dict[str, Any] | list[Any] | None) -> dict[str, dict[str, Any]]:
+    """Extract optional per-note detail rows without retaining auth fields."""
+    root = _unwrap_api_body(body)
+    found: dict[str, dict[str, Any]] = {}
+
+    def visit(value: Any, depth: int = 0) -> None:
+        if depth > 5:
+            return
+        if isinstance(value, list):
+            for item in value[:200]:
+                visit(item, depth + 1)
+            return
+        if not isinstance(value, dict):
+            return
+        note_id = value.get("note_id") or value.get("noteId") or value.get("id")
+        if note_id not in (None, ""):
+            found[str(note_id)] = dict(value)
+        for key in ("data", "result", "notes", "items", "list", "records"):
+            child = value.get(key)
+            if isinstance(child, (dict, list)):
+                visit(child, depth + 1)
+
+    visit(root)
+    return found
+
+
 class CreatorStatsClient:
     """Fetch account + note stats from the creator statistics surface."""
 
@@ -550,7 +615,7 @@ class CreatorStatsClient:
         account_id: str,
         *,
         period: str = "30d",
-        max_pages: int = 5,
+        max_pages: int = 50,
         page_size: int = 50,
     ) -> CreatorStatsBundle:
         """Fetch account overview + paginated notes, return normalized bundle."""
@@ -561,7 +626,7 @@ class CreatorStatsClient:
         try:
             max_pages = int(max_pages)
         except (TypeError, ValueError):
-            max_pages = 5
+            max_pages = 50
         page_size = max(1, min(page_size, 100))
         max_pages = max(1, min(max_pages, 50))
         period_norm = normalize_period(period)

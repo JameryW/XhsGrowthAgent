@@ -15,6 +15,17 @@ QualityGrade = Literal["strong", "developing", "needs_attention", "insufficient_
 QualityConfidence = Literal["low", "medium", "high"]
 
 
+def _dict_list(value: Any) -> list[dict[str, Any]]:
+    """Keep JSON DTO fields predictable when reading older database rows."""
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _dict_map(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
 @dataclass
 class AccountStatsOverview:
     """Account-level performance snapshot from creator statistics."""
@@ -37,6 +48,12 @@ class AccountStatsOverview:
     period: str = "30d"
     synced_at: str = ""
     source: str = "creator_statistics"
+    # Public aggregate audience signals returned by Creator Center.  These
+    # remain JSON-shaped because the platform adds/removes segments over time.
+    audience_sources: list[dict[str, Any]] = field(default_factory=list)
+    audience_view_periods: list[dict[str, Any]] = field(default_factory=list)
+    audience_profile: list[dict[str, Any]] = field(default_factory=list)
+    detail_metrics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -62,6 +79,10 @@ class AccountStatsOverview:
             period=str(data.get("period") or "30d"),
             synced_at=str(data.get("synced_at") or ""),
             source=str(data.get("source") or "creator_statistics"),
+            audience_sources=_dict_list(data.get("audience_sources")),
+            audience_view_periods=_dict_list(data.get("audience_view_periods")),
+            audience_profile=_dict_list(data.get("audience_profile")),
+            detail_metrics=_dict_map(data.get("detail_metrics")),
         )
 
 
@@ -86,6 +107,11 @@ class NoteStats:
     engagement_rate: float = 0.0
     synced_at: str = ""
     source: str = "creator_statistics"
+    # Optional per-note breakdowns.  Current Creator Center accounts expose
+    # these only for some note/detail surfaces, so absence is a valid state.
+    view_sources: list[dict[str, Any]] = field(default_factory=list)
+    audience_profile: list[dict[str, Any]] = field(default_factory=list)
+    detail_metrics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -118,6 +144,9 @@ class NoteStats:
             engagement_rate=float(data.get("engagement_rate") or 0.0),
             synced_at=str(data.get("synced_at") or ""),
             source=str(data.get("source") or "creator_statistics"),
+            view_sources=_dict_list(data.get("view_sources")),
+            audience_profile=_dict_list(data.get("audience_profile")),
+            detail_metrics=_dict_map(data.get("detail_metrics")),
         )
 
     def recompute_engagement_rate(self) -> float:

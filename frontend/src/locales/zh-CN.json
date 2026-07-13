@@ -734,7 +734,17 @@
       "title": "标题",
       "views": "浏览",
       "likes": "赞",
+      "comments": "评论",
+      "sources": "来源数",
       "rate": "互动率"
+    },
+    "audience": {
+      "sources": "观看来源",
+      "periods": "观看高峰时段",
+      "profile": "观众画像",
+      "analysis": "观众分析",
+      "unavailable": "暂无",
+      "profileHint": "当前导入接口未返回画像分段；只展示已获得的聚合数据。"
     },
     "mode": {
       "trend": "热点",

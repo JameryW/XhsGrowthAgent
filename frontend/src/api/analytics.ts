@@ -35,6 +35,18 @@ export async function getDashboard(
 
 // ── Creator-center stats import ────────────────────────────────────────────
 
+export interface CreatorAggregatePoint {
+  title?: string
+  name?: string
+  label?: string
+  value?: number | string
+  count?: number | string
+  color?: string
+  start_point?: string
+  end_point?: string
+  [key: string]: unknown
+}
+
 export interface CreatorNoteStats {
   note_id: string
   account_id: string
@@ -51,6 +63,10 @@ export interface CreatorNoteStats {
   engagement_rate: number
   synced_at: string
   source: string
+  body_text?: string
+  view_sources?: CreatorAggregatePoint[]
+  audience_profile?: CreatorAggregatePoint[]
+  detail_metrics?: Record<string, unknown>
 }
 
 export interface CreatorAccountStats {
@@ -72,6 +88,24 @@ export interface CreatorAccountStats {
   period: string
   synced_at: string
   source: string
+  audience_sources?: CreatorAggregatePoint[]
+  audience_view_periods?: CreatorAggregatePoint[]
+  audience_profile?: CreatorAggregatePoint[]
+  detail_metrics?: Record<string, unknown>
+}
+
+export interface CreatorAudienceAnalysis {
+  source_distribution: CreatorAggregatePoint[]
+  peak_view_periods: CreatorAggregatePoint[]
+  audience_profile: CreatorAggregatePoint[]
+  detail_metrics?: Record<string, unknown>
+  coverage: {
+    sources: boolean
+    periods: boolean
+    profile: boolean
+    notes_with_view_sources?: number
+  }
+  insights: string[]
 }
 
 export interface CreatorStatsSyncResult {
@@ -111,6 +145,7 @@ export interface CreatorStatsPayload {
   total: number
   limit?: number
   fetched_at: string
+  audience_analysis?: CreatorAudienceAnalysis
 }
 
 export interface CreatorSuggestionsPayload {
