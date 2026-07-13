@@ -9,14 +9,16 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from backend.api.middleware import error_handler_middleware
 from backend.api.routes import analytics as analytics_routes
 from backend.db.creator_stats import (
     _reset_memory_store,
+    get_note_stats,
     list_all_note_stats,
     list_note_stats,
     upsert_notes,
 )
-from backend.services.creator_stats.quality import analyze_historical_quality
+from backend.services.creator_stats.quality import analyze_historical_quality, analyze_note_quality
 from backend.services.creator_stats.types import NoteStats
 
 
@@ -29,6 +31,7 @@ def _clear_creator_stats() -> None:
 
 def _app() -> FastAPI:
     app = FastAPI()
+    app.middleware("http")(error_handler_middleware)
     app.include_router(analytics_routes.router, prefix="/api/analytics")
     app.state.graph = MagicMock()
     app.state.graph.store = None
@@ -128,6 +131,51 @@ def test_quality_report_returns_honest_cold_and_sparse_responses():
     assert "未导入可分析标题" in _dimension(sparse, "title_craft")["evidence"]
 
 
+def test_single_note_quality_reuses_historical_dimensions_without_fake_consistency():
+    note = _note(
+        "single",
+        engagement_rate=0.2,
+        likes=200,
+        collects=50,
+        title="5个提高效率的方法清单",
+    )
+    before = note.to_dict()
+
+    report = analyze_note_quality(note, " quality_acc ")
+    data = report.to_dict()
+
+    assert data["account_id"] == "quality_acc"
+    assert data["note_id"] == "single"
+    assert data["scope"] == "single_imported_note"
+    assert data["total_notes"] == 1
+    assert data["notes_analyzed"] == 1
+    assert data["overall_score"] is not None
+    assert data["confidence"] == "low"
+    assert data["insufficient_data"] is False
+    dimensions = {item["key"]: item for item in data["dimensions"]}
+    assert dimensions["engagement"]["available"] is True
+    assert dimensions["save_value"]["available"] is True
+    assert dimensions["title_craft"]["available"] is True
+    assert dimensions["consistency"]["available"] is False
+    assert data["recommendations"]
+    assert note.to_dict() == before
+
+
+def test_single_note_quality_reports_missing_signals_honestly():
+    report = analyze_note_quality(
+        NoteStats(note_id="empty", account_id="quality_acc"),
+        "quality_acc",
+        locale="en",
+    ).to_dict()
+
+    assert report["overall_score"] is None
+    assert report["grade"] == "insufficient_data"
+    assert report["confidence"] == "low"
+    assert report["insufficient_data"] is True
+    assert report["recommendations"][0]["dimension"] == "data_collection"
+    assert "no usable imported signals" in report["summary"]
+
+
 @pytest.mark.asyncio
 async def test_quality_endpoint_uses_all_history_over_display_limit_and_is_read_only():
     """101 durable rows must all reach the report, not the normal 100-row reader."""
@@ -173,3 +221,40 @@ async def test_quality_endpoint_uses_all_history_over_display_limit_and_is_read_
     assert "Based on all 101 imported historical notes" in english["summary"]
     assert "Across all 101 imported notes" in _dimension(english, "engagement")["evidence"]
     assert "全量" not in english["summary"]
+
+
+@pytest.mark.asyncio
+async def test_single_note_detail_and_quality_endpoints_are_read_only():
+    note = _note(
+        "detail_001",
+        engagement_rate=0.12,
+        likes=120,
+        title="5个提高效率的方法清单",
+        body_text="第一步：整理资料。",
+    )
+    await upsert_notes([note])
+    before = (await get_note_stats("quality_acc", "detail_001")).to_dict()  # type: ignore[union-attr]
+
+    client = TestClient(_app())
+    detail = client.get("/api/analytics/creator-stats/quality_acc/notes/detail_001")
+    assert detail.status_code == 200
+    detail_data = detail.json()["data"]
+    assert detail_data["note"]["note_id"] == "detail_001"
+    assert detail_data["note"]["body_text"] == "第一步：整理资料。"
+
+    quality = client.get(
+        "/api/analytics/creator-stats/quality_acc/notes/detail_001/quality?locale=en"
+    )
+    assert quality.status_code == 200
+    quality_data = quality.json()["data"]
+    assert quality_data["note_id"] == "detail_001"
+    assert quality_data["quality"]["scope"] == "single_imported_note"
+    assert quality_data["quality"]["overall_score"] is not None
+    assert "single imported note" in quality_data["quality"]["summary"]
+
+    after = (await get_note_stats("quality_acc", "detail_001")).to_dict()  # type: ignore[union-attr]
+    assert after == before
+
+    missing = client.get("/api/analytics/creator-stats/quality_acc/notes/missing")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "ERROR_CREATOR_NOTE_NOT_FOUND"

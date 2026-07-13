@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"后端测试和集成修复需遵循数据库/测试隔离约定"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"后端 lint、类型检查和测试约定"}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"前端组件断言修复需遵循现有组件和响应式模式"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"前端异步状态和 composable 约定"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"复用已有测试/组件模式，避免平行实现"}

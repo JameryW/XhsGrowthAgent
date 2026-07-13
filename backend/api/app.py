@@ -8,6 +8,7 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -27,17 +28,61 @@ load_dotenv(override=True)
 
 
 async def _creator_stats_scheduler(app: FastAPI, interval_hours: float) -> None:
-    """Periodically import data for active accounts without blocking startup."""
+    """Import active-account data immediately, then repeat at a fixed interval.
+
+    The task is deliberately detached from application startup so a slow
+    browser crawl cannot block readiness.  Its small state summary is exposed
+    through ``/health``; raw account results are kept out of that response.
+    """
     interval_seconds = max(60.0, float(interval_hours) * 3600.0)
     logger = logging.getLogger("xhs_growth.creator_stats.scheduler")
+    # Uvicorn's default logging config does not install a root handler for
+    # application loggers.  Keep this operational summary visible in
+    # container logs without changing the logging setup for the whole app.
+    if not logger.handlers:
+        logger.addHandler(logging.StreamHandler())
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    state = getattr(app.state, "creator_stats_scheduler_status", None)
+    if not isinstance(state, dict):
+        state = {}
+        app.state.creator_stats_scheduler_status = state
+
     while True:
-        await asyncio.sleep(interval_seconds)
+        started_at = datetime.now(UTC)
+        state.update(
+            {
+                "status": "running",
+                "last_started_at": started_at.isoformat(),
+                "last_error": None,
+                "run_count": int(state.get("run_count") or 0) + 1,
+            }
+        )
+        logger.info(
+            "scheduled creator stats import started: interval_hours=%s run=%s",
+            interval_hours,
+            state["run_count"],
+        )
         try:
             from backend.services.creator_stats.pipeline import sync_all_active_accounts
 
             graph = getattr(app.state, "graph", None)
             store = getattr(graph, "store", None) if graph is not None else None
             result = await sync_all_active_accounts(store=store, period="30d")
+            finished_at = datetime.now(UTC)
+            state.update(
+                {
+                    "status": "completed" if result.get("ok") else "failed",
+                    "last_status": result.get("status"),
+                    "last_active_accounts": result.get("active_accounts", 0),
+                    "last_succeeded": result.get("succeeded", 0),
+                    "last_failed": result.get("failed", 0),
+                    "last_started_at": started_at.isoformat(),
+                    "last_finished_at": finished_at.isoformat(),
+                    "last_error": result.get("error"),
+                    "next_run_at": (finished_at + timedelta(seconds=interval_seconds)).isoformat(),
+                }
+            )
             logger.info(
                 "scheduled creator stats import finished: status=%s active=%s "
                 "succeeded=%s failed=%s",
@@ -47,9 +92,25 @@ async def _creator_stats_scheduler(app: FastAPI, interval_hours: float) -> None:
                 result.get("failed", 0),
             )
         except asyncio.CancelledError:
+            state.update(
+                {
+                    "status": "cancelled",
+                    "last_finished_at": datetime.now(UTC).isoformat(),
+                }
+            )
             raise
-        except Exception:
+        except Exception as exc:
+            finished_at = datetime.now(UTC)
+            state.update(
+                {
+                    "status": "failed",
+                    "last_finished_at": finished_at.isoformat(),
+                    "last_error": str(exc),
+                    "next_run_at": (finished_at + timedelta(seconds=interval_seconds)).isoformat(),
+                }
+            )
             logger.exception("scheduled creator stats import failed")
+        await asyncio.sleep(interval_seconds)
 
 
 @asynccontextmanager
@@ -161,7 +222,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         interval_hours = float(settings.creator_stats.sync_interval_hours)
     except (AttributeError, TypeError, ValueError):
         interval_hours = 0.0
+    app.state.creator_stats_scheduler_status = {
+        "enabled": bool(db_uri and interval_hours > 0 and pool_ready),
+        "interval_hours": interval_hours,
+        "status": "disabled",
+        "run_count": 0,
+        "last_started_at": None,
+        "last_finished_at": None,
+        "last_status": None,
+        "last_active_accounts": 0,
+        "last_succeeded": 0,
+        "last_failed": 0,
+        "last_error": None,
+        "next_run_at": None,
+    }
     if db_uri and interval_hours > 0 and pool_ready:
+        app.state.creator_stats_scheduler_status["status"] = "scheduled"
         creator_stats_scheduler = asyncio.create_task(
             _creator_stats_scheduler(app, interval_hours),
             name="creator-stats-active-account-scheduler",
@@ -257,7 +333,32 @@ async def health() -> ApiResponse[Any]:
     from backend.db.pool import is_pool_ready
 
     db_status = "connected" if is_pool_ready() else "unavailable"
-    return success({"status": "ok", "version": "0.1.0", "db": db_status})
+    scheduler_state = getattr(app.state, "creator_stats_scheduler_status", None)
+    scheduler = None
+    if isinstance(scheduler_state, dict):
+        health_fields = (
+            "enabled",
+            "interval_hours",
+            "status",
+            "run_count",
+            "last_started_at",
+            "last_finished_at",
+            "last_status",
+            "last_active_accounts",
+            "last_succeeded",
+            "last_failed",
+            "last_error",
+            "next_run_at",
+        )
+        scheduler = {key: scheduler_state.get(key) for key in health_fields}
+    return success(
+        {
+            "status": "ok",
+            "version": "0.1.0",
+            "db": db_status,
+            "creator_stats_scheduler": scheduler,
+        }
+    )
 
 
 # 托管前端静态文件（生产环境）

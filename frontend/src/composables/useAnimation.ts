@@ -8,6 +8,9 @@ import { ref, onUnmounted } from 'vue'
 export function useAnimation() {
   const animationFrameId = ref<number | null>(null)
   const isAnimating = ref(false)
+  // A generation token makes cancellation safe across browser implementations
+  // where cancelAnimationFrame can race with an already-dispatched frame.
+  let animationGeneration = 0
 
   /**
    * Animated counter using requestAnimationFrame
@@ -25,16 +28,21 @@ export function useAnimation() {
     onUpdate: (currentValue: number) => void
   ): Promise<void> => {
     return new Promise((resolve) => {
-      // Cancel any existing animation
-      if (animationFrameId.value !== null) {
-        cancelAnimationFrame(animationFrameId.value)
-      }
+      // Invalidate any existing animation. The old callback may already be in
+      // the event queue, so avoid cancelling a potentially stale native timer.
+      animationGeneration += 1
+      const generation = animationGeneration
 
       isAnimating.value = true
       const startTime = performance.now()
       const change = end - start
 
       const animate = (currentTime: number) => {
+        if (generation !== animationGeneration) {
+          resolve()
+          return
+        }
+
         const elapsed = currentTime - startTime
         const progress = Math.min(elapsed / duration, 1)
 
@@ -69,11 +77,9 @@ export function useAnimation() {
    * Cancel any ongoing animation
    */
   const cancelAnimation = () => {
-    if (animationFrameId.value !== null) {
-      cancelAnimationFrame(animationFrameId.value)
-      animationFrameId.value = null
-      isAnimating.value = false
-    }
+    animationGeneration += 1
+    animationFrameId.value = null
+    isAnimating.value = false
   }
 
   // Cleanup on component unmount

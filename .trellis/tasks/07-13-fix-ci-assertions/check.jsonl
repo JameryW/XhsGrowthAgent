@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"验证后端 CI 与数据库依赖隔离"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"验证后端 lint、类型和测试质量门禁"}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"验证前端组件回归"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"验证前端状态/composable 回归"}

@@ -2,7 +2,7 @@
 </script>
 
 <template>
-  <div class="relative space-y-4 md:space-y-5">
+  <div class="relative space-y-5 md:space-y-5">
     <!-- Review status bar skeleton -->
     <div class="rounded-2xl p-4 md:p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
       <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">

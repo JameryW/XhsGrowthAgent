@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"确认创作者统计必须通过持久化事务写入，避免只在内存中报告成功。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"遵循 Python 类型、ruff、异步测试和错误处理约定。"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"为调度器增加开始/完成/失败日志时遵循 xhs_growth 命名空间和日志级别约定。"}
+{"file":".trellis/tasks/07-13-fix-audience-profile-scheduler/prd.md","reason":"提供本任务的问题定义、范围和完成标准。"}

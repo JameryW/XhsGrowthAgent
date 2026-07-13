@@ -56,6 +56,10 @@ describe('CreatorQualityWorkspace', () => {
             props: ['accountId', 'accountName'],
             template: '<div data-testid="quality-panel">{{ accountId }} / {{ accountName }}</div>',
           },
+          CreatorNoteQualityPanel: {
+            props: ['accountId', 'accountName'],
+            template: '<div data-testid="note-quality-panel">{{ accountId }} / {{ accountName }}</div>',
+          },
         },
       },
     })

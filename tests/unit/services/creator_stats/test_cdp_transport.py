@@ -8,13 +8,21 @@ actual Note Manager response shape is normalized into note stats.
 
 from __future__ import annotations
 
+import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from backend.services.creator_stats.client import (
     ACCOUNT_OVERVIEW_PATH,
+    CREATOR_NOTE_MANAGER_PAGE,
     CREATOR_PROFILE_PATH,
+    CREATOR_STATS_PAGE,
+    NOTE_AUDIENCE_PROFILE_PATH,
+    NOTE_AUDIENCE_SOURCE_PATH,
+    NOTE_AUDIENCE_TREND_PATH,
+    NOTE_BASE_PATH,
     NOTE_LIST_PATH,
     CdpTransport,
     CreatorStatsClient,
@@ -92,6 +100,88 @@ async def test_cdp_fetch_all_uses_native_creator_page_data():
     note = bundle.notes[0]
     assert (note.comments, note.collects, note.shares) == (2, 3, 4)
     assert note.cover_url == "https://img.example/cover.jpg"
+
+
+async def test_cdp_capture_associates_camel_case_note_id_with_profile_responses():
+    """Detail API requests using noteId must enrich the matching note."""
+
+    class FakePage:
+        def __init__(self) -> None:
+            self._response_handler = None
+
+        def on(self, event: str, handler) -> None:
+            assert event == "response"
+            self._response_handler = handler
+
+        def remove_listener(self, event: str, handler) -> None:
+            assert event == "response"
+            assert handler is self._response_handler
+
+        async def _emit(self, path: str, body: dict, *, query: str = "") -> None:
+            response = SimpleNamespace(
+                url=f"https://creator.xiaohongshu.com{path}{query}",
+                status=200,
+                json=AsyncMock(return_value=body),
+            )
+            assert self._response_handler is not None
+            self._response_handler(response)
+            await asyncio.sleep(0)
+
+        async def goto(self, url: str, **_kwargs) -> None:
+            if url == CREATOR_STATS_PAGE:
+                await self._emit(ACCOUNT_OVERVIEW_PATH, _native_account())
+                await self._emit(CREATOR_PROFILE_PATH, _native_profile())
+            elif url == CREATOR_NOTE_MANAGER_PAGE:
+                await self._emit(NOTE_LIST_PATH, {"data": {"notes": [_native_note()]}})
+            else:
+                query = "?noteId=note-1"
+                await self._emit(NOTE_BASE_PATH, {"data": {"view_count": 100}}, query=query)
+                await self._emit(
+                    NOTE_AUDIENCE_SOURCE_PATH,
+                    {"data": {"source": [{"title": "首页推荐", "value": 48}]}},
+                    query=query,
+                )
+                await self._emit(
+                    NOTE_AUDIENCE_PROFILE_PATH,
+                    {"data": {"gender": [{"title": "女性", "value": 48}]}},
+                    query=query,
+                )
+                await self._emit(
+                    NOTE_AUDIENCE_TREND_PATH,
+                    {"data": {"trend_list": [{"title": "10-11点", "value": 22}]}},
+                    query=query,
+                )
+
+        def get_by_text(self, _text: str, **_kwargs):
+            return self
+
+        async def click(self, **_kwargs) -> None:
+            await self.goto(CREATOR_NOTE_MANAGER_PAGE)
+
+        def locator(self, _selector: str):
+            return self
+
+        async def evaluate(self, _script: str) -> None:
+            return None
+
+        async def close(self) -> None:
+            return None
+
+    class FakeContext:
+        async def new_page(self) -> FakePage:
+            return FakePage()
+
+    class FakeBrowser:
+        contexts = [FakeContext()]
+
+    transport = CdpTransport("http://127.0.0.1:9222", timeout=1)
+    transport._ensure_browser = AsyncMock(return_value=FakeBrowser())
+    account, _profile, notes = await transport.fetch_creator_center(max_pages=1)
+
+    assert account["_creator_insights"]["audience_source"] == {}
+    assert len(notes) == 1
+    assert notes[0]["audience_profile"] == [{"dimension": "gender", "title": "女性", "value": 48}]
+    assert notes[0]["view_sources"] == [{"title": "首页推荐", "value": 48}]
 
 
 async def test_cdp_get_adapts_native_data_without_forwarding_headers():

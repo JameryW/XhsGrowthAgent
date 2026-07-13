@@ -251,8 +251,7 @@ class CdpTransport:
             async def capture(response: Any) -> None:
                 nonlocal account_response, profile_response
                 path = urlsplit(response.url).path
-                query = parse_qs(urlsplit(response.url).query)
-                note_id = query.get("note_id", [""])[0]
+                note_id = _note_detail_id(response.url)
                 if path not in (
                     ACCOUNT_OVERVIEW_PATH,
                     CREATOR_PROFILE_PATH,
@@ -561,6 +560,16 @@ def _unwrap_api_body(body: dict[str, Any] | list[Any] | None) -> Any:
     if "result" in body:
         return body["result"]
     return body
+
+
+def _note_detail_id(url: str) -> str:
+    """Extract a note id from Creator Center detail request URLs."""
+    query = parse_qs(urlsplit(url).query)
+    for key in ("note_id", "noteId", "note-id"):
+        value = query.get(key, [""])[0]
+        if value:
+            return str(value).strip()
+    return ""
 
 
 def _note_detail_map(body: dict[str, Any] | list[Any] | None) -> dict[str, dict[str, Any]]:

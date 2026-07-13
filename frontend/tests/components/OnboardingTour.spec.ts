@@ -108,7 +108,7 @@ describe('OnboardingTour', () => {
         }
       })
       await wrapper.vm.$nextTick()
-      expect(wrapper.text()).toContain('启动工作流')
+      expect(wrapper.text()).toContain('开始创作')
     })
 
     it('shows step 3 content when currentStep=3', async () => {
@@ -263,7 +263,7 @@ describe('OnboardingTour', () => {
       })
       await wrapper.vm.$nextTick()
       const buttons = wrapper.findAll('button')
-      const skipBtn = buttons.find(b => b.text() === '跳过')
+      const skipBtn = buttons.find(b => b.text() === '跳过引导')
       await skipBtn?.trigger('click')
       expect(wrapper.emitted('skip')).toBeTruthy()
     })
@@ -299,7 +299,7 @@ describe('OnboardingTour', () => {
       })
       await wrapper.vm.$nextTick()
       const buttons = wrapper.findAll('button')
-      const completeBtn = buttons.find(b => b.text() === '完成')
+      const completeBtn = buttons.find(b => b.text() === '完成引导')
       await completeBtn?.trigger('click')
       expect(wrapper.emitted('complete')).toBeTruthy()
     })

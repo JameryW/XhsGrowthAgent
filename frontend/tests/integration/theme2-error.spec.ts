@@ -43,7 +43,7 @@ describe('Theme 2 Acceptance Tests', () => {
       expect(wrapper.text()).toContain('Network request failed')
 
       // Verify title for api type
-      expect(wrapper.text()).toContain('API错误')
+      expect(wrapper.text()).toContain('API 错误')
 
       // Verify retry button exists
       const buttons = wrapper.findAllComponents({ name: 'NeonButton' })
@@ -70,7 +70,7 @@ describe('Theme 2 Acceptance Tests', () => {
 
     it('ErrorCard displays correct title and color for each error type', () => {
       const typeTests: Array<{ type: ErrorType; title: string; bgClass: string }> = [
-        { type: 'api', title: 'API错误', bgClass: 'bg-rose-50/80' },
+        { type: 'api', title: 'API 错误', bgClass: 'bg-rose-50/80' },
         { type: 'timeout', title: '请求超时', bgClass: 'bg-amber-50/80' },
         { type: 'unknown', title: '未知错误', bgClass: 'bg-violet-50/80' },
         { type: 'retry_success', title: '重试成功', bgClass: 'bg-green-50/80' }
@@ -164,7 +164,7 @@ describe('Theme 2 Acceptance Tests', () => {
 
       // Error message is clearly displayed
       expect(wrapper.text()).toContain('Network request failed')
-      expect(wrapper.text()).toContain('API错误')
+      expect(wrapper.text()).toContain('API 错误')
 
       // Has rounded card structure for clear visual separation
       expect(wrapper.find('.rounded-2xl').exists()).toBe(true)

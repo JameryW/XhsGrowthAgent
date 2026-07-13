@@ -56,6 +56,14 @@
 
 ## Shared Components
 
+Historical imported-note detail follows the same decomposition rule: a
+dedicated panel owns list selection, stale-response guards, and detail
+rendering, while the route workspace only supplies the selected account. The
+panel calls the typed API client for note detail and quality separately; it
+never starts an import. Detail cards use min-w-0/break-words and responsive
+grid stacks so long note content and audience labels do not create page-level
+horizontal overflow.
+
 | Component | Purpose |
 |-----------|---------|
 | `AppIcon.vue` | SVG icon wrapper (name prop) |

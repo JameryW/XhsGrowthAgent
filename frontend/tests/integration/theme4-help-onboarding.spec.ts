@@ -149,7 +149,7 @@ describe('Theme 4: Help & Onboarding - Acceptance Tests', () => {
 
       // Change to step 2
       await wrapper.setProps({ currentStep: 2 })
-      expect(wrapper.text()).toContain('启动工作流')
+      expect(wrapper.text()).toContain('开始创作')
 
       // Change to step 3
       await wrapper.setProps({ currentStep: 3 })

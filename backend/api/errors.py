@@ -16,6 +16,7 @@ class ErrorCode(StrEnum):
     REVIEW_NOT_PENDING = "ERROR_REVIEW_NOT_PENDING"
     REVIEW_DECISION_INVALID = "ERROR_REVIEW_DECISION_INVALID"
     ACCOUNT_NOT_FOUND = "ERROR_ACCOUNT_NOT_FOUND"
+    CREATOR_NOTE_NOT_FOUND = "ERROR_CREATOR_NOTE_NOT_FOUND"
     ACCOUNT_AUTH_FAILED = "ERROR_ACCOUNT_AUTH_FAILED"
     CONSOLE_USER_NOT_FOUND = "ERROR_CONSOLE_USER_NOT_FOUND"
     CONSOLE_USER_DUPLICATE = "ERROR_CONSOLE_USER_DUPLICATE"
@@ -67,6 +68,18 @@ class WorkflowNotFoundError(APIError):
             code=ErrorCode.WORKFLOW_NOT_FOUND,
             message=f"Workflow '{thread_id}' not found",
             details={"thread_id": thread_id},
+            status_code=404,
+        )
+
+
+class CreatorNoteNotFoundError(APIError):
+    """Imported Creator Center note not found for an account."""
+
+    def __init__(self, account_id: str, note_id: str):
+        super().__init__(
+            code=ErrorCode.CREATOR_NOTE_NOT_FOUND,
+            message=f"Creator note '{note_id}' not found for account '{account_id}'",
+            details={"account_id": account_id, "note_id": note_id},
             status_code=404,
         )
 

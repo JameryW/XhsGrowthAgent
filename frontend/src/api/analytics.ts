@@ -178,13 +178,14 @@ export type CreatorQualityDimensionKey =
 export type CreatorQualityInsightDimension = CreatorQualityDimensionKey | 'data_collection'
 export type CreatorQualityGrade = 'strong' | 'developing' | 'needs_attention' | 'insufficient_data'
 export type CreatorQualityConfidence = 'low' | 'medium' | 'high'
-export type CreatorQualityScope = 'all_imported_history'
+export type CreatorQualityScope = 'all_imported_history' | 'single_imported_note'
 
 /** Deterministic account-level quality signal derived from imported note history. */
 export interface CreatorQualityDimension {
   key: CreatorQualityDimensionKey
   score: number | null
   evidence: string
+  available?: boolean
 }
 
 export interface CreatorQualityInsight {
@@ -201,6 +202,7 @@ export interface CreatorQualityRecommendation extends CreatorQualityInsight {
 
 export interface CreatorQualityReport {
   account_id: string
+  note_id?: string
   /** The historical population covered by this read-only report. */
   scope: CreatorQualityScope
   total_notes: number
@@ -253,6 +255,41 @@ export async function getCreatorStats(
   return client.get(`/analytics/creator-stats/${accountId}`, {
     params: { limit },
   }) as unknown as CreatorStatsPayload
+}
+
+export interface CreatorNoteDetailPayload {
+  account_id: string
+  note: CreatorNoteStats
+  fetched_at: string
+}
+
+export interface CreatorNoteQualityPayload {
+  account_id: string
+  note_id: string
+  quality: CreatorQualityReport
+  analyzed_at: string
+}
+
+/** Read one imported historical note without starting a browser sync. */
+export async function getCreatorNote(
+  accountId: string,
+  noteId: string
+): Promise<CreatorNoteDetailPayload> {
+  return client.get(
+    '/analytics/creator-stats/' + accountId + '/notes/' + noteId
+  ) as unknown as CreatorNoteDetailPayload
+}
+
+/** Evaluate one imported historical note with the deterministic quality analyzer. */
+export async function getCreatorNoteQuality(
+  accountId: string,
+  noteId: string,
+  locale: 'zh-CN' | 'en' | string = 'zh-CN'
+): Promise<CreatorNoteQualityPayload> {
+  return client.get(
+    '/analytics/creator-stats/' + accountId + '/notes/' + noteId + '/quality',
+    { params: { locale } }
+  ) as unknown as CreatorNoteQualityPayload
 }
 
 export async function getCreatorSuggestions(
