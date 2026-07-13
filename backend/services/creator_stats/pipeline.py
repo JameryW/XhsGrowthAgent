@@ -67,9 +67,8 @@ def load_fixture_payload(path: str | Path | None = None) -> dict[str, Any]:
 
 
 async def persist_bundle(bundle: CreatorStatsBundle) -> tuple[int, int]:
-    """Persist account + notes. Returns (notes_imported, notes_updated)."""
-    await stats_db.upsert_account_stats(bundle.account)
-    return await stats_db.upsert_notes(bundle.notes)
+    """Atomically persist an account overview and its imported notes."""
+    return await stats_db.upsert_bundle(bundle.account, bundle.notes)
 
 
 async def import_bundle(
@@ -202,11 +201,20 @@ async def sync_from_creator_center(
     period: str = "30d",
     client: CreatorStatsClient | None = None,
     run_creative_analysis: bool = True,
+    cdp_endpoint: str = "",
 ) -> SyncResult:
-    """Live pull from creator statistics surface; on failure leave DB untouched."""
-    stats_client = client or CreatorStatsClient(cookie=cookie)
+    """Live pull from creator statistics surface; on failure leave DB untouched.
+
+    cdp_endpoint 非空 → 走 CDP 连宿主已登录 Chrome（cookie jar 自带，不用 cookie）。
+    否则 fallback cookie（httpx）。注入的 client 优先级最高。
+    """
+    if client is None:
+        if cdp_endpoint:
+            client = CreatorStatsClient(cdp_endpoint=cdp_endpoint)
+        else:
+            client = CreatorStatsClient(cookie=cookie)
     try:
-        bundle = await stats_client.fetch_all(account_id, period=period)
+        bundle = await client.fetch_all(account_id, period=period)
     except CreatorStatsFetchError as e:
         logger.warning("creator stats fetch failed for %s: %s", account_id, e)
         return SyncResult(
@@ -221,6 +229,9 @@ async def sync_from_creator_center(
             source="creator_statistics",
             error=str(e),
         )
+    finally:
+        # CDP transport 连接需显式释放；httpx/fixture 的 aclose 是 no-op。
+        await client.aclose()
 
     # Only persist after successful fetch/normalize
     result = await import_bundle(bundle, store=store, run_creative_analysis=run_creative_analysis)
@@ -238,6 +249,7 @@ async def sync_account_stats(
     period: str = "30d",
     client: CreatorStatsClient | None = None,
     run_creative_analysis: bool = True,
+    cdp_endpoint: str = "",
 ) -> SyncResult:
     """Primary product entry: dry_run/fixture or live creator-center sync.
 
@@ -245,11 +257,13 @@ async def sync_account_stats(
     1. explicit ``fixture_path`` → fixture file
     2. ``dry_run=True`` → default fixture (safe CI path)
     3. injected ``client`` → use that client (tests / custom transport)
-    4. non-empty ``cookie`` → live creator-center pull
-    5. otherwise → error (never silently write fixture rows under a real account_id)
+    4. non-empty ``cdp_endpoint`` → CDP 连宿主已登录 Chrome（cookie jar 自带）
+    5. non-empty ``cookie`` → live creator-center pull (httpx fallback)
+    6. otherwise → error (never silently write fixture rows under a real account_id)
     """
     account_id = (account_id or "").strip()
     cookie = (cookie or "").strip()
+    cdp_endpoint = (cdp_endpoint or "").strip()
     if not account_id:
         return SyncResult(
             account_id="",
@@ -279,17 +293,29 @@ async def sync_account_stats(
         except Exception as e:
             logger.exception("injected client fetch failed for %s", account_id)
             return SyncResult(account_id=account_id, source="creator_statistics", error=str(e))
+        finally:
+            await client.aclose()
         result = await import_bundle(
             bundle, store=store, run_creative_analysis=run_creative_analysis
         )
         result.source = "creator_statistics"
         return result
+    if cdp_endpoint:
+        return await sync_from_creator_center(
+            account_id,
+            cookie="",
+            store=store,
+            period=period,
+            client=None,
+            run_creative_analysis=run_creative_analysis,
+            cdp_endpoint=cdp_endpoint,
+        )
     if not cookie:
         return SyncResult(
             account_id=account_id,
             source="creator_statistics",
             error=(
-                "cookie required for live creator-stats sync; "
+                "cdp_endpoint or cookie required for live creator-stats sync; "
                 "pass dry_run=True to use the fixture path"
             ),
         )

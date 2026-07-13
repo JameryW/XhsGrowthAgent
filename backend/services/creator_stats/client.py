@@ -8,9 +8,12 @@ Transport is injectable so unit tests never need live cookies.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from dataclasses import dataclass
 from typing import Any, Protocol
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 
@@ -26,7 +29,12 @@ CREATOR_STATS_PAGE = "https://creator.xiaohongshu.com/statistics/account/v2"
 # Galaxy/datacenter endpoints used by the account statistics page.
 # Paths are reverse-engineered and may change; client isolates that risk.
 ACCOUNT_OVERVIEW_PATH = "/api/galaxy/v2/creator/datacenter/account/base"
-NOTE_LIST_PATH = "/api/galaxy/creator/datacenter/note/analyze/list"
+# This is the signed endpoint that the Creator Center's Note Manager itself
+# calls.  It is intentionally distinct from the legacy cookie/httpx endpoint:
+# current creator-center requests require browser-generated x-s/x-t headers.
+NOTE_LIST_PATH = "/api/galaxy/v2/creator/note/user/posted"
+LEGACY_NOTE_LIST_PATH = "/api/galaxy/creator/datacenter/note/analyze/list"
+CREATOR_NOTE_MANAGER_PAGE = "https://creator.xiaohongshu.com/new/note-manager"
 
 # Known date_type values on account overview (reverse-engineered):
 # 1 ≈ 7d window, 2 ≈ 30d window. Longer periods fall back to 2 (not 1).
@@ -86,9 +94,13 @@ class Transport(Protocol):
         """Return (status_code, parsed_json_or_none)."""
         ...
 
+    async def aclose(self) -> None:
+        """Release transport-backed resources (CDP connection, etc.)."""
+        ...
+
 
 class HttpxTransport:
-    """Default httpx-based transport."""
+    """Default httpx-based transport (cookie-driven, fallback / tests)."""
 
     def __init__(self, timeout: float = 30.0):
         self._timeout = timeout
@@ -109,6 +121,266 @@ class HttpxTransport:
                 body = None
             return resp.status_code, body
 
+    async def aclose(self) -> None:
+        """No-op for httpx (per-request clients)."""
+        return None
+
+
+class CdpTransport:
+    """Read Creator Center data through its already-logged-in browser page.
+
+    Creator Center signs each API call in page JavaScript (``x-s``, ``x-t``
+    and related trace headers).  A standalone ``httpx`` or Playwright
+    ``APIRequestContext`` request does not have those signatures, even when it
+    shares the profile cookie jar.  We therefore open a disposable Note Manager
+    tab and capture the page's *own* successful account/note responses.  This
+    keeps the authenticated request in the real Chrome profile and never reads
+    or serializes its cookies/signatures.
+    """
+
+    def __init__(self, cdp_endpoint: str, *, timeout: float = 30.0):
+        self.cdp_endpoint = cdp_endpoint
+        self._timeout = timeout
+        self._playwright: Any = None
+        self._browser: Any = None
+        self._fetch_lock = asyncio.Lock()
+
+    async def _ensure_browser(self) -> Any:
+        if self._browser is not None:
+            return self._browser
+        try:
+            from playwright.async_api import async_playwright  # lazy: optional [browser] extra
+        except ImportError as e:
+            raise CreatorStatsFetchError(
+                "playwright not installed; run: pip install -e '.[browser]'"
+            ) from e
+        self._playwright = await async_playwright().start()
+        try:
+            self._browser = await self._playwright.chromium.connect_over_cdp(self.cdp_endpoint)
+        except Exception as e:
+            await self._cleanup()
+            raise CreatorStatsFetchError(
+                f"CDP connect failed: {self.cdp_endpoint} ({type(e).__name__}: {e})"
+            ) from e
+
+        if not self._browser.contexts:
+            await self._cleanup()
+            raise CreatorStatsFetchError("CDP browser has no logged-in browser context")
+        return self._browser
+
+    @staticmethod
+    async def _wait_for(predicate: Any, timeout: float) -> None:
+        """Wait for an in-memory predicate without relying on page internals."""
+        deadline = asyncio.get_running_loop().time() + timeout
+        while not predicate():
+            if asyncio.get_running_loop().time() >= deadline:
+                raise TimeoutError("timed out waiting for Creator Center response")
+            await asyncio.sleep(0.1)
+
+    @staticmethod
+    def _page_index(url: str) -> int:
+        try:
+            raw = parse_qs(urlsplit(url).query).get("page", ["0"])[0]
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _validate_creator_response(
+        status: int, body: dict[str, Any] | list[Any] | None, *, operation: str
+    ) -> None:
+        if status in (401, 403):
+            raise CreatorStatsFetchError(
+                f"creator stats auth failed during {operation}", status_code=status
+            )
+        if status >= 400:
+            raise CreatorStatsFetchError(
+                f"creator stats {operation} HTTP {status}", status_code=status
+            )
+        # Reuse the shared envelope validation so platform error code/message
+        # becomes the user-facing sync error instead of a misleading empty list.
+        _unwrap_api_body(body)
+
+    async def fetch_creator_center(
+        self, *, max_pages: int = 5
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Capture account overview plus up to ``max_pages`` native note pages.
+
+        The Note Manager starts at page 0 and loads later pages when its own
+        ``div.content`` scroll container reaches the bottom.  We only observe
+        those requests; no request headers, cookies, or user content are
+        fabricated by this service.
+        """
+        try:
+            max_pages = max(1, min(int(max_pages), 50))
+        except (TypeError, ValueError):
+            max_pages = 5
+
+        async with self._fetch_lock:
+            browser = await self._ensure_browser()
+            context = browser.contexts[0]
+            page = await context.new_page()
+            account_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
+            note_responses: dict[int, tuple[int, dict[str, Any] | list[Any] | None]] = {}
+            account_ready = asyncio.Event()
+            first_notes_ready = asyncio.Event()
+            pending: set[asyncio.Task[None]] = set()
+
+            async def capture(response: Any) -> None:
+                nonlocal account_response
+                path = urlsplit(response.url).path
+                if path not in (ACCOUNT_OVERVIEW_PATH, NOTE_LIST_PATH):
+                    return
+                try:
+                    body: dict[str, Any] | list[Any] | None = await response.json()
+                except Exception:
+                    body = None
+                if path == ACCOUNT_OVERVIEW_PATH:
+                    account_response = (response.status, body)
+                    account_ready.set()
+                    return
+                page_index = self._page_index(response.url)
+                note_responses[page_index] = (response.status, body)
+                if page_index == 0:
+                    first_notes_ready.set()
+
+            def on_response(response: Any) -> None:
+                task = asyncio.create_task(capture(response))
+                pending.add(task)
+                task.add_done_callback(pending.discard)
+
+            page.on("response", on_response)
+            try:
+                try:
+                    # Start at the statistics dashboard: it loads the account
+                    # overview request we need, then use the site's own menu
+                    # transition to Note Manager so the signed note request is
+                    # generated by the same app session.
+                    await page.goto(
+                        CREATOR_STATS_PAGE,
+                        wait_until="domcontentloaded",
+                        timeout=self._timeout * 1000,
+                    )
+                    try:
+                        await page.get_by_text("笔记管理", exact=True).click(
+                            timeout=min(15_000, int(self._timeout * 1000))
+                        )
+                    except Exception:
+                        # A direct route is a compatibility fallback for a
+                        # Creator Center navigation redesign.  The account
+                        # response may already have been captured above.
+                        await page.goto(
+                            CREATOR_NOTE_MANAGER_PAGE,
+                            wait_until="domcontentloaded",
+                            timeout=self._timeout * 1000,
+                        )
+                except Exception as e:
+                    raise CreatorStatsFetchError(
+                        f"creator note manager did not load: {type(e).__name__}: {e}"
+                    ) from e
+
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(account_ready.wait(), first_notes_ready.wait()),
+                        timeout=self._timeout,
+                    )
+                except TimeoutError as e:
+                    raise CreatorStatsFetchError(
+                        "creator note manager did not return account and first note page; "
+                        "verify the profile is logged in"
+                    ) from e
+
+                if account_response is None or 0 not in note_responses:
+                    raise CreatorStatsFetchError(
+                        "creator note manager returned incomplete initial data"
+                    )
+                self._validate_creator_response(*account_response, operation="account overview")
+                self._validate_creator_response(*note_responses[0], operation="note list")
+
+                # The Creator Center app itself knows how to generate a fresh
+                # signature for every page. Trigger its infinite-scroll path
+                # instead of replaying a stale signed request.
+                for page_index in range(1, max_pages):
+                    previous_pages = len(note_responses)
+                    try:
+                        await page.locator("div.content").evaluate(
+                            """el => {
+                                el.scrollTop = el.scrollHeight
+                                el.dispatchEvent(new Event('scroll', { bubbles: true }))
+                            }"""
+                        )
+                    except Exception as e:
+                        logger.debug(
+                            "creator note list cannot scroll for page %s: %s", page_index, e
+                        )
+                        break
+                    try:
+                        await self._wait_for(
+                            lambda expected=page_index, before=previous_pages: (
+                                expected in note_responses or len(note_responses) > before
+                            ),
+                            min(8.0, self._timeout),
+                        )
+                    except TimeoutError:
+                        # No next request is the normal end-of-list condition.
+                        break
+                    if page_index not in note_responses:
+                        break
+                    self._validate_creator_response(
+                        *note_responses[page_index], operation=f"note list page {page_index}"
+                    )
+
+                raw_notes: list[dict[str, Any]] = []
+                for page_index in sorted(note_responses):
+                    _status, body = note_responses[page_index]
+                    data = _unwrap_api_body(body)
+                    if isinstance(data, dict):
+                        items = data.get("notes")
+                        if isinstance(items, list):
+                            raw_notes.extend(item for item in items if isinstance(item, dict))
+                account_body = account_response[1]
+                return (
+                    account_body if isinstance(account_body, dict) else {},
+                    raw_notes,
+                )
+            finally:
+                with contextlib.suppress(Exception):
+                    page.remove_listener("response", on_response)
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
+                with contextlib.suppress(Exception):
+                    await page.close()
+
+    async def get(
+        self, url: str, *, headers: dict[str, str], params: dict[str, Any] | None = None
+    ) -> tuple[int, dict[str, Any] | list[Any] | None]:
+        """Compatibility adapter for callers that fetch one logical resource.
+
+        ``headers``/``params`` are deliberately ignored: the native page owns
+        signed request construction.  ``fetch_all`` calls ``fetch_creator_center``
+        directly to obtain multiple pages efficiently.
+        """
+        account_body, notes = await self.fetch_creator_center(max_pages=1)
+        path = urlsplit(url).path
+        if path == ACCOUNT_OVERVIEW_PATH:
+            return 200, account_body
+        if path in (NOTE_LIST_PATH, LEGACY_NOTE_LIST_PATH):
+            return 200, {"data": {"notes": notes}}
+        raise CreatorStatsFetchError(f"unsupported CDP creator endpoint: {path}")
+
+    async def _cleanup(self) -> None:
+        if self._browser is not None:
+            with contextlib.suppress(Exception):
+                await self._browser.close()  # disconnect only; 宿主 Chrome 由 launcher 管
+            self._browser = None
+        if self._playwright is not None:
+            with contextlib.suppress(Exception):
+                await self._playwright.stop()
+            self._playwright = None
+
+    async def aclose(self) -> None:
+        await self._cleanup()
+
 
 @dataclass
 class FixtureTransport:
@@ -125,6 +397,10 @@ class FixtureTransport:
         if "/note/" in url or url.rstrip("/").endswith("analyze/list"):
             return self.status_code, self.notes_payload
         return self.status_code, self.account_payload
+
+    async def aclose(self) -> None:
+        """No-op for fixture transport."""
+        return None
 
 
 def _creator_headers(cookie: str) -> dict[str, str]:
@@ -173,10 +449,27 @@ class CreatorStatsClient:
         *,
         transport: Transport | None = None,
         base_url: str = XHSApiEndpoints.CREATOR_URL,
+        cdp_endpoint: str = "",
     ):
         self.cookie = cookie
-        self.transport: Transport = transport or HttpxTransport()
         self.base_url = base_url.rstrip("/")
+        # 优先级：注入的 transport > cdp_endpoint（CDP）> cookie（httpx fallback）。
+        # CDP 模式连宿主已登录 Chrome，cookie jar 自带，不碰 Cookie header。
+        if transport is not None:
+            self.transport: Transport = transport
+        elif cdp_endpoint:
+            self.transport = CdpTransport(cdp_endpoint)
+        else:
+            self.transport = HttpxTransport()
+
+    async def aclose(self) -> None:
+        """Close any transport-backed resources (CDP connection).
+
+        Guards transports that predate the ``aclose`` protocol member.
+        """
+        close = getattr(self.transport, "aclose", None)
+        if close is not None:
+            await close()
 
     async def fetch_account_overview(self, period: str = "30d") -> dict[str, Any]:
         url = f"{self.base_url}{ACCOUNT_OVERVIEW_PATH}"
@@ -254,6 +547,14 @@ class CreatorStatsClient:
         page_size = max(1, min(page_size, 100))
         max_pages = max(1, min(max_pages, 50))
         period_norm = normalize_period(period)
+        if isinstance(self.transport, CdpTransport):
+            account_raw, notes_raw = await self.transport.fetch_creator_center(max_pages=max_pages)
+            return normalize_bundle(
+                account_raw,
+                notes_raw,
+                account_id,
+                period=period_norm,
+            )
         account_raw = await self.fetch_account_overview(period=period_norm)
         all_notes: list[Any] = []
         for page in range(1, max_pages + 1):

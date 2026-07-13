@@ -152,11 +152,8 @@ function applySuggestionsFromSync(result: CreatorStatsSyncResult) {
 
 async function runSync() {
   if (!props.accountId) return
-  if (!dryRun.value && !cookie.value.trim()) {
-    toast.error(t('creatorStats.cookieRequired'))
-    showAdvanced.value = true
-    return
-  }
+  // Live mode: backend auto-resolves the account's CDP Chrome (logged-in,
+  // cookie jar built-in). cookie is now optional fallback only.
   isSyncing.value = true
   try {
     const result = await syncCreatorStats({
@@ -411,7 +408,7 @@ function formatNum(n: number | undefined): string {
         {{ t('creatorStats.liveCookie') }}
       </button>
 
-      <div v-if="showAdvanced || !dryRun" class="space-y-1.5">
+      <div v-if="showAdvanced" class="space-y-1.5">
         <textarea
           v-model="cookie"
           rows="2"

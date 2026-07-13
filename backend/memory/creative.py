@@ -288,18 +288,27 @@ class CreativeMemory:
     async def deposit_style(self, style: StyleDNA) -> None:
         """沉淀风格指纹（同风格合并，累加 sample_count）— 持久化 + 可选 store"""
         try:
-            existing = await self._find_similar_style(style)
-            if existing:
-                key, old = existing
-                merged = self._merge_style(old, style)
+            from backend.db import creative_memory as cm_db
+
+            tone = str(style.get("tone") or "")
+            visual = str(style.get("visual_style") or "")
+            async with (
+                cm_db.get_style_merge_lock(self.account_id, tone, visual),
+                cm_db.style_merge_transaction(self.account_id, tone, visual) as conn,
+            ):
+                existing = await self._find_similar_style(style, conn=conn)
+                if existing:
+                    key, old = existing
+                    payload = self._merge_style(old, style)
+                else:
+                    key = style.get("style_id") or str(uuid.uuid4())
+                    style.setdefault("sample_count", 1)
+                    style.setdefault("last_used", datetime.now(UTC).isoformat())
+                    payload = dict(style)
                 style["style_id"] = key
-                await self._persist_style(key, merged)
-            else:
-                key = style.get("style_id") or str(uuid.uuid4())
-                style["style_id"] = key
-                style.setdefault("sample_count", 1)
-                style.setdefault("last_used", datetime.now(UTC).isoformat())
-                await self._persist_style(key, dict(style))
+                payload["style_id"] = key
+                await cm_db.upsert_style(self.account_id, key, payload, conn=conn)
+            await self._sync_style_store(key, payload)
         except Exception as e:
             logger.warning(f"deposit_style failed: {e}")
 
@@ -348,6 +357,10 @@ class CreativeMemory:
 
         # Durable write is authoritative; LangGraph store dual-write is best-effort.
         await cm_db.upsert_style(self.account_id, key, payload)
+        await self._sync_style_store(key, payload)
+
+    async def _sync_style_store(self, key: str, payload: dict[str, Any]) -> None:
+        """Best-effort semantic-store mirror after the durable style write commits."""
         if self._has_store:
             try:
                 await self._store.aput(self.style_dna_ns, key=key, value=payload)  # type: ignore[union-attr]
@@ -456,7 +469,9 @@ class CreativeMemory:
 
     # ── 内部方法 ──
 
-    async def _find_similar_style(self, style: StyleDNA) -> tuple[str, dict[str, Any]] | None:
+    async def _find_similar_style(
+        self, style: StyleDNA, *, conn: Any | None = None
+    ) -> tuple[str, dict[str, Any]] | None:
         """查找相似风格（同 tone + visual_style 视为同风格）"""
         tone = style.get("tone", "")
         visual = style.get("visual_style", "")
@@ -466,7 +481,7 @@ class CreativeMemory:
         try:
             from backend.db import creative_memory as cm_db
 
-            hit = await cm_db.find_style_by_tone_visual(self.account_id, tone, visual)
+            hit = await cm_db.find_style_by_tone_visual(self.account_id, tone, visual, conn=conn)
             if hit:
                 return hit
         except Exception as e:

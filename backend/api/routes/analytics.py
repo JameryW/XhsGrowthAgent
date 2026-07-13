@@ -538,12 +538,22 @@ async def sync_creator_stats(
     """从创作者中心统计页导入账户/笔记数据，并沉淀创作风格。
 
     dry_run=true（默认）走内置 fixture，完整覆盖 import→persist→analyze→suggest。
-    dry_run=false 且提供 cookie 时拉取 creator.xiaohongshu.com 真实数据。
+    dry_run=false 时优先用账号绑定的 CDP Chrome（已登录，cookie jar 自带）；
+    无 CDP 绑定则 fallback 到 body.cookie。
     """
+    from backend.db.accounts import get_account_cdp_endpoint
     from backend.services.creator_stats.pipeline import sync_account_stats
 
     graph = getattr(request.app.state, "graph", None)
     store = getattr(graph, "store", None) if graph is not None else None
+
+    # 非干跑：优先 CDP 连账号常驻 Chrome；无绑定再 fallback cookie。
+    cdp_endpoint = ""
+    if not body.dry_run:
+        try:
+            cdp_endpoint = (await get_account_cdp_endpoint(body.account_id)).strip()
+        except Exception:
+            cdp_endpoint = ""
 
     result = await sync_account_stats(
         body.account_id,
@@ -552,6 +562,7 @@ async def sync_creator_stats(
         store=store,
         period=body.period,
         run_creative_analysis=body.analyze,
+        cdp_endpoint=cdp_endpoint,
     )
     data = result.to_dict()
     # Primary observables for clients/tests (not merely HTTP 200).

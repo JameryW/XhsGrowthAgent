@@ -47,6 +47,7 @@ from backend.db.creator_stats import (
     get_note_stats,
     list_note_stats,
     upsert_account_stats,
+    upsert_bundle,
     upsert_note_stats,
     upsert_notes,
 )
@@ -176,6 +177,7 @@ __all__ = [
     "get_note_stats",
     "list_note_stats",
     "upsert_account_stats",
+    "upsert_bundle",
     "upsert_note_stats",
     "upsert_notes",
     # Durable creative memory (style DNA / playbook / materials)

@@ -78,6 +78,53 @@ _ADD_BODY_TEXT_COL_SQL = (
     "ALTER TABLE creator_note_stats ADD COLUMN IF NOT EXISTS body_text TEXT NOT NULL DEFAULT ''"
 )
 
+_UPSERT_ACCOUNT_SQL = """
+INSERT INTO creator_account_stats (
+    account_id, views, likes, comments, collects, shares,
+    fans, note_count, period, synced_at, source, raw_json
+) VALUES (
+    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+)
+ON CONFLICT (account_id) DO UPDATE SET
+    views = EXCLUDED.views,
+    likes = EXCLUDED.likes,
+    comments = EXCLUDED.comments,
+    collects = EXCLUDED.collects,
+    shares = EXCLUDED.shares,
+    fans = EXCLUDED.fans,
+    note_count = EXCLUDED.note_count,
+    period = EXCLUDED.period,
+    synced_at = EXCLUDED.synced_at,
+    source = EXCLUDED.source,
+    raw_json = EXCLUDED.raw_json
+"""
+
+_UPSERT_NOTE_SQL = """
+INSERT INTO creator_note_stats (
+    account_id, note_id, title, body_text, views, likes, comments, collects,
+    shares, published_at, content_type, tags_json, cover_url,
+    engagement_rate, synced_at, source, raw_json
+) VALUES (
+    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+)
+ON CONFLICT (account_id, note_id) DO UPDATE SET
+    title = EXCLUDED.title,
+    body_text = EXCLUDED.body_text,
+    views = EXCLUDED.views,
+    likes = EXCLUDED.likes,
+    comments = EXCLUDED.comments,
+    collects = EXCLUDED.collects,
+    shares = EXCLUDED.shares,
+    published_at = EXCLUDED.published_at,
+    content_type = EXCLUDED.content_type,
+    tags_json = EXCLUDED.tags_json,
+    cover_url = EXCLUDED.cover_url,
+    engagement_rate = EXCLUDED.engagement_rate,
+    synced_at = EXCLUDED.synced_at,
+    source = EXCLUDED.source,
+    raw_json = EXCLUDED.raw_json
+"""
+
 
 async def ensure_tables() -> None:
     """Create creator stats tables when Postgres is available."""
@@ -94,6 +141,63 @@ async def ensure_tables() -> None:
     logger.info("creator_stats tables ensured")
 
 
+def _account_values(overview: AccountStatsOverview) -> tuple[Any, ...]:
+    row = overview.to_dict()
+    return (
+        overview.account_id,
+        overview.views,
+        overview.likes,
+        overview.comments,
+        overview.collects,
+        overview.shares,
+        overview.fans,
+        overview.note_count,
+        overview.period,
+        overview.synced_at,
+        overview.source,
+        json.dumps(row, ensure_ascii=False),
+    )
+
+
+def _note_values(note: NoteStats) -> tuple[Any, ...]:
+    row = note.to_dict()
+    return (
+        note.account_id,
+        note.note_id,
+        note.title,
+        note.body_text or "",
+        note.views,
+        note.likes,
+        note.comments,
+        note.collects,
+        note.shares,
+        note.published_at,
+        note.content_type,
+        json.dumps(note.tags, ensure_ascii=False),
+        note.cover_url,
+        note.engagement_rate,
+        note.synced_at,
+        note.source,
+        json.dumps(row, ensure_ascii=False),
+    )
+
+
+async def _upsert_account_on_conn(conn: Any, overview: AccountStatsOverview) -> None:
+    await conn.execute(_UPSERT_ACCOUNT_SQL, _account_values(overview))
+
+
+async def _upsert_note_on_conn(conn: Any, note: NoteStats) -> bool:
+    """Upsert a validated note through an existing transaction/connection."""
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT note_id FROM creator_note_stats WHERE account_id = %s AND note_id = %s",
+            (note.account_id, note.note_id),
+        )
+        existing = await cur.fetchone()
+    await conn.execute(_UPSERT_NOTE_SQL, _note_values(note))
+    return existing is None
+
+
 async def upsert_account_stats(overview: AccountStatsOverview) -> None:
     """Upsert account-level overview (idempotent by account_id)."""
     account_id = (overview.account_id or "").strip()
@@ -107,42 +211,7 @@ async def upsert_account_stats(overview: AccountStatsOverview) -> None:
         return
     pool = get_pool()
     async with pool.connection() as conn:
-        await conn.execute(
-            """
-            INSERT INTO creator_account_stats (
-                account_id, views, likes, comments, collects, shares,
-                fans, note_count, period, synced_at, source, raw_json
-            ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-            )
-            ON CONFLICT (account_id) DO UPDATE SET
-                views = EXCLUDED.views,
-                likes = EXCLUDED.likes,
-                comments = EXCLUDED.comments,
-                collects = EXCLUDED.collects,
-                shares = EXCLUDED.shares,
-                fans = EXCLUDED.fans,
-                note_count = EXCLUDED.note_count,
-                period = EXCLUDED.period,
-                synced_at = EXCLUDED.synced_at,
-                source = EXCLUDED.source,
-                raw_json = EXCLUDED.raw_json
-            """,
-            (
-                overview.account_id,
-                overview.views,
-                overview.likes,
-                overview.comments,
-                overview.collects,
-                overview.shares,
-                overview.fans,
-                overview.note_count,
-                overview.period,
-                overview.synced_at,
-                overview.source,
-                json.dumps(row, ensure_ascii=False),
-            ),
-        )
+        await _upsert_account_on_conn(conn, overview)
 
 
 async def upsert_note_stats(note: NoteStats) -> bool:
@@ -172,61 +241,7 @@ async def upsert_note_stats(note: NoteStats) -> bool:
 
     pool = get_pool()
     async with pool.connection() as conn:
-        existing = None
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "SELECT note_id FROM creator_note_stats WHERE account_id = %s AND note_id = %s",
-                (note.account_id, note.note_id),
-            )
-            existing = await cur.fetchone()
-        # execute uses connection (not cursor) — keep separate from SELECT
-        await conn.execute(
-            """
-            INSERT INTO creator_note_stats (
-                account_id, note_id, title, body_text, views, likes, comments, collects,
-                shares, published_at, content_type, tags_json, cover_url,
-                engagement_rate, synced_at, source, raw_json
-            ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-            )
-            ON CONFLICT (account_id, note_id) DO UPDATE SET
-                title = EXCLUDED.title,
-                body_text = EXCLUDED.body_text,
-                views = EXCLUDED.views,
-                likes = EXCLUDED.likes,
-                comments = EXCLUDED.comments,
-                collects = EXCLUDED.collects,
-                shares = EXCLUDED.shares,
-                published_at = EXCLUDED.published_at,
-                content_type = EXCLUDED.content_type,
-                tags_json = EXCLUDED.tags_json,
-                cover_url = EXCLUDED.cover_url,
-                engagement_rate = EXCLUDED.engagement_rate,
-                synced_at = EXCLUDED.synced_at,
-                source = EXCLUDED.source,
-                raw_json = EXCLUDED.raw_json
-            """,
-            (
-                note.account_id,
-                note.note_id,
-                note.title,
-                note.body_text or "",
-                note.views,
-                note.likes,
-                note.comments,
-                note.collects,
-                note.shares,
-                note.published_at,
-                note.content_type,
-                json.dumps(note.tags, ensure_ascii=False),
-                note.cover_url,
-                note.engagement_rate,
-                note.synced_at,
-                note.source,
-                json.dumps(row, ensure_ascii=False),
-            ),
-        )
-        return existing is None
+        return await _upsert_note_on_conn(conn, note)
 
 
 async def upsert_notes(notes: list[NoteStats]) -> tuple[int, int]:
@@ -234,16 +249,73 @@ async def upsert_notes(notes: list[NoteStats]) -> tuple[int, int]:
 
     Invalid rows (blank account_id/note_id) are skipped and not counted.
     """
+    if not is_pool_ready():
+        imported = 0
+        updated = 0
+        for note in notes:
+            if not (note.account_id or "").strip() or not (note.note_id or "").strip():
+                continue
+            is_new = await upsert_note_stats(note)
+            if is_new:
+                imported += 1
+            else:
+                updated += 1
+        return imported, updated
+
+    pool = get_pool()
     imported = 0
     updated = 0
-    for note in notes:
-        if not (note.account_id or "").strip() or not (note.note_id or "").strip():
-            continue
-        is_new = await upsert_note_stats(note)
-        if is_new:
-            imported += 1
-        else:
-            updated += 1
+    async with pool.connection() as conn:
+        for note in notes:
+            account_id = (note.account_id or "").strip()
+            note_id = (note.note_id or "").strip()
+            if not account_id or not note_id:
+                continue
+            note.account_id = account_id
+            note.note_id = note_id
+            if await _upsert_note_on_conn(conn, note):
+                imported += 1
+            else:
+                updated += 1
+    return imported, updated
+
+
+async def upsert_bundle(
+    bundle_account: AccountStatsOverview, notes: list[NoteStats]
+) -> tuple[int, int]:
+    """Atomically persist an account snapshot and its note rows.
+
+    A successful fetch used to write the account row and every note through
+    separate implicit transactions.  A failure halfway through left a current
+    account overview paired with a partial note set.  The live Note Manager
+    response is an account-wide snapshot, so these writes must commit together.
+    """
+    account_id = (bundle_account.account_id or "").strip()
+    if not account_id:
+        logger.warning("upsert_bundle skipped: empty account_id")
+        return 0, 0
+    bundle_account.account_id = account_id
+
+    if not is_pool_ready():
+        await upsert_account_stats(bundle_account)
+        return await upsert_notes(notes)
+
+    pool = get_pool()
+    imported = 0
+    updated = 0
+    async with pool.connection() as conn, conn.transaction():
+        await _upsert_account_on_conn(conn, bundle_account)
+        for note in notes:
+            note_account_id = (note.account_id or "").strip()
+            note_id = (note.note_id or "").strip()
+            if not note_account_id or not note_id:
+                continue
+            note.account_id = note_account_id
+            note.note_id = note_id
+            if await _upsert_note_on_conn(conn, note):
+                imported += 1
+            else:
+                updated += 1
     return imported, updated
 
 

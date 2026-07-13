@@ -193,8 +193,9 @@ cmd_start() {
         fi
         sleep 1
     done
-    # Patch llm_config.yaml: add max_tokens and json_mode to prevent truncated/malformed LLM output
-    podman exec ripple-service sh -c "cat > /app/llm_config.yaml <<'LLMEOF'
+    # Patch llm_config.yaml: add max_tokens and json_mode to prevent truncated/malformed LLM output.
+    # Send it through stdin so the API key never appears in command arguments or deployment logs.
+    podman exec -i ripple-service sh -c 'cat > /app/llm_config.yaml' <<LLMEOF
 _default:
   model_platform: ${RIPPLE_LLM_MODEL_PLATFORM:-openai}
   model_name: ${RIPPLE_LLM_MODEL_NAME:-}
@@ -210,8 +211,8 @@ _providers:
     model: ba
     n: 100
     seed: 42
-LLMEOF"
-    podman exec ripple-service cat /app/llm_config.yaml 2>/dev/null || echo "[warn] llm_config.yaml not found"
+LLMEOF
+    echo "  Ripple LLM config written (credentials redacted)"
 
     echo ">>> 启动 XhsGrowthAgent 后端..."
     podman run -d \
