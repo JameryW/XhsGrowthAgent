@@ -55,6 +55,7 @@ def _normalize_locale(value: str | None) -> QualityReportLocale:
 def _copy(locale: QualityReportLocale, chinese: str, english: str) -> str:
     return english if locale == "en" else chinese
 
+
 # Keep title assessment title-only.  Missing ``body_text`` is an import-data
 # limitation and must never be converted into a negative copywriting signal.
 _TITLE_HOOK_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -199,9 +200,9 @@ def _engagement_dimension(
         # Weight normalized per-note rates by each note's views so all imported
         # rows contribute to the account-level rate without averaging percent
         # and fraction scales incorrectly.
-        engagement_rate = sum(
-            sample.engagement_rate * sample.views for sample in samples
-        ) / total_views
+        engagement_rate = (
+            sum(sample.engagement_rate * sample.views for sample in samples) / total_views
+        )
     else:
         engagement_rate = sum(sample.engagement_rate for sample in samples) / len(samples)
     nonzero_count = sum(sample.engagement_rate > 0 for sample in samples)
@@ -403,10 +404,7 @@ def _consistency_dimension(
             score=0.0,
             evidence=_copy(
                 locale,
-                (
-                    f"{len(samples)} 篇历史笔记的互动率均为 0，"
-                    "目前没有可验证的稳定互动信号。"
-                ),
+                (f"{len(samples)} 篇历史笔记的互动率均为 0，目前没有可验证的稳定互动信号。"),
                 (
                     f"All {len(samples)} imported historical notes have a 0 engagement rate; "
                     "there is no verified stable engagement signal yet."
@@ -661,9 +659,7 @@ def _recommendations(
     ]
 
 
-def _low_data_recommendation(
-    note_count: int, locale: QualityReportLocale
-) -> QualityRecommendation:
+def _low_data_recommendation(note_count: int, locale: QualityReportLocale) -> QualityRecommendation:
     return QualityRecommendation(
         priority=1,
         dimension="data_collection",
