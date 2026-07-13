@@ -27,6 +27,7 @@ from backend.services.creator_stats.types import (
 
 MIN_NOTES_FOR_OVERALL_SCORE = 3
 SCOPE_ALL_IMPORTED_HISTORY = "all_imported_history"
+SCOPE_SINGLE_IMPORTED_NOTE = "single_imported_note"
 QualityReportLocale = Literal["zh-CN", "en"]
 
 # Product heuristics for a transparent 0--100 signal.  They are not platform
@@ -455,7 +456,12 @@ def _as_dimensions(
     metrics: dict[QualityDimensionKey, _DimensionMetrics],
 ) -> list[QualityDimension]:
     return [
-        QualityDimension(key=key, score=metrics[key].score, evidence=metrics[key].evidence)
+        QualityDimension(
+            key=key,
+            score=metrics[key].score,
+            evidence=metrics[key].evidence,
+            available=metrics[key].available,
+        )
         for key in _DIMENSION_ORDER
     ]
 
@@ -687,6 +693,31 @@ def _low_data_recommendation(note_count: int, locale: QualityReportLocale) -> Qu
     )
 
 
+def _single_note_data_recommendation(
+    note: NoteStats, locale: QualityReportLocale
+) -> QualityRecommendation:
+    """Explain why a single note has no scorable imported signal."""
+    return QualityRecommendation(
+        priority=1,
+        dimension="data_collection",
+        title=_copy(locale, "补充笔记表现数据", "Import more note-performance signals"),
+        advice=_copy(
+            locale,
+            "该笔记缺少可用的浏览、互动或标题信号；请刷新创作者中心导入后再评估。",
+            (
+                "This note has no usable view, interaction, or title signal; refresh the "
+                "Creator Center import before evaluating it again."
+            ),
+        ),
+        evidence=_copy(
+            locale,
+            "当前没有足够的已导入字段生成单篇质量分。",
+            "There are not enough imported fields to generate a single-note quality score.",
+        ),
+        related_note_ids=[note.note_id] if note.note_id else [],
+    )
+
+
 def analyze_historical_quality(
     notes: list[NoteStats], account_id: str, *, locale: str = "zh-CN"
 ) -> CreatorQualityReport:
@@ -773,6 +804,99 @@ def analyze_historical_quality(
                 "it does not judge visual or body quality that was not imported."
             ),
         ),
+        dimensions=dimensions,
+        strengths=strengths,
+        weaknesses=weaknesses,
+        recommendations=_recommendations(metrics, weaknesses, report_locale),
+        cold_start=False,
+        insufficient_data=False,
+    )
+
+
+def analyze_note_quality(
+    note: NoteStats, account_id: str, *, locale: str = "zh-CN"
+) -> CreatorQualityReport:
+    """Build a transparent quality signal for one imported historical note.
+
+    This deliberately reuses the historical analyzer's normalization,
+    dimension heuristics, evidence, and recommendations.  Cross-note
+    consistency is marked unavailable rather than inferred from one sample.
+    The returned report is read-only and never mutates ``note``.
+    """
+    normalized_account_id = (account_id or note.account_id or "").strip()
+    report_locale = _normalize_locale(locale)
+    samples = _rate_samples([note])
+    metrics = _dimension_metrics(samples, report_locale)
+    dimensions = _as_dimensions(metrics)
+    interactions = sum(
+        _nonnegative_int(getattr(note, field, 0))
+        for field in ("likes", "comments", "collects", "shares")
+    )
+    engagement_signal = bool(
+        _nonnegative_int(getattr(note, "views", 0))
+        or interactions
+        or _normalized_note_rate(note) > 0
+    )
+    usable = [
+        key
+        for key in _DIMENSION_ORDER
+        if metrics[key].available and (key != "engagement" or engagement_signal)
+    ]
+    note_id = str(note.note_id or "").strip()
+
+    if not usable:
+        return CreatorQualityReport(
+            account_id=normalized_account_id,
+            note_id=note_id,
+            total_notes=1,
+            notes_analyzed=1,
+            scope=SCOPE_SINGLE_IMPORTED_NOTE,
+            overall_score=None,
+            grade="insufficient_data",
+            confidence="low",
+            summary=_copy(
+                report_locale,
+                "该篇历史笔记缺少可用的已导入指标，暂时无法生成质量分。",
+                "This historical note has no usable imported signals for a quality score yet.",
+            ),
+            dimensions=dimensions,
+            strengths=[],
+            weaknesses=[],
+            recommendations=[_single_note_data_recommendation(note, report_locale)],
+            cold_start=False,
+            insufficient_data=True,
+        )
+
+    score = _overall_score(metrics)
+    strengths, weaknesses = _strengths_and_weaknesses(metrics, report_locale)
+    title = (note.title or "").strip()
+    note_label_zh = f"「{title}」" if title else f"（{note_id or '未命名笔记'}）"
+    note_label_en = f'“{title}”' if title else f"({note_id or 'untitled note'})"
+    score_summary = _copy(
+        report_locale,
+        (
+            f"基于单篇已导入历史笔记{note_label_zh}"
+            f"的可用信号，当前质量分为 {score:.1f}/100，置信度为 low。"
+            "该结果只覆盖互动、收藏和标题信号；表现稳定性需要跨笔记样本。"
+        ),
+        (
+            f"Based on the available signals for the single imported note "
+            f"{note_label_en}, "
+            f"the quality signal is {score:.1f}/100 with low confidence. "
+            "It covers engagement, saves, and title signals only; consistency requires "
+            "multiple notes."
+        ),
+    )
+    return CreatorQualityReport(
+        account_id=normalized_account_id,
+        note_id=note_id,
+        total_notes=1,
+        notes_analyzed=1,
+        scope=SCOPE_SINGLE_IMPORTED_NOTE,
+        overall_score=score,
+        grade=_grade_for(score),
+        confidence="low",
+        summary=score_summary,
         dimensions=dimensions,
         strengths=strengths,
         weaknesses=weaknesses,

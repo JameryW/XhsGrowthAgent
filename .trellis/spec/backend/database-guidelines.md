@@ -314,3 +314,22 @@ by the default.
   tone/visual merge.
 - Do not reuse the normal note-list pagination limit for account-wide quality
   analysis, or turn a low-sample response into a numeric quality judgement.
+
+### Read-only Single-Note Detail and Quality
+
+Imported historical notes can be read without starting a browser sync. The
+detail route reads one persisted NoteStats DTO, while the quality route passes
+that DTO to the deterministic analyze_note_quality service.
+
+- GET /api/analytics/creator-stats/{account_id}/notes/{note_id} returns one
+  safe note DTO, including the body snippet and optional detail/audience fields.
+- GET /api/analytics/creator-stats/{account_id}/notes/{note_id}/quality returns
+  the single-note quality report.
+
+Both endpoints are read-only. They must not call sync_account_stats, open CDP,
+write creator-statistics rows, or deposit Creative Memory. The single-note
+quality report reuses the historical analyzer's rate normalization, dimensions,
+thresholds, evidence, and recommendations. A dimension that requires multiple
+notes (currently consistency) is returned with available=false; it must not be
+converted into a fabricated score. Missing imported notes return the structured
+ERROR_CREATOR_NOTE_NOT_FOUND 404 response.

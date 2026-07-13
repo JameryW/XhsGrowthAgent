@@ -805,7 +805,8 @@
       "high": "High"
     },
     "scope": {
-      "all_imported_history": "All imported historical notes"
+      "all_imported_history": "All imported historical notes",
+      "single_imported_note": "Selected imported note"
     },
     "dimension": {
       "engagement": "Engagement signal",
@@ -825,6 +826,41 @@
       "title": "Could not load the quality report",
       "description": "The historical-note quality report is unavailable right now. Please try again.",
       "retry": "Reload"
+    }
+  },
+  "creatorNoteQuality": {
+    "title": "Single historical note",
+    "subtitle": "Open an imported note and review its content, audience signals, and quality score",
+    "refresh": "Refresh notes",
+    "loading": "Loading imported notes…",
+    "loadingDetail": "Loading note details and quality…",
+    "listTitle": "Imported notes",
+    "qualityTitle": "Single-note quality signal",
+    "viewSources": "View sources",
+    "audienceProfile": "Audience profile",
+    "audienceTrend": "Audience trend",
+    "unavailable": "Unavailable",
+    "unknown": "Unknown",
+    "unnamed": "Unnamed",
+    "untitled": "Untitled historical note",
+    "noteType": "Note",
+    "noBody": "The imported record does not include note body text.",
+    "metrics": {
+      "views": "Views",
+      "likes": "Likes",
+      "comments": "Comments",
+      "collects": "Saves",
+      "shares": "Shares",
+      "rate": "Eng. rate"
+    },
+    "empty": {
+      "title": "No imported notes",
+      "description": "Import historical notes from Creator Center before opening a single note."
+    },
+    "error": {
+      "title": "Could not load note details",
+      "description": "The historical note details are unavailable right now.",
+      "retry": "Reload notes"
     }
   },
   "versionCompare": {

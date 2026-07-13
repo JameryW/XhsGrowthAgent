@@ -245,12 +245,14 @@ class QualityDimension:
     key: QualityDimensionKey
     score: float = 0.0
     evidence: str = ""
+    available: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "key": self.key,
             "score": self.score,
             "evidence": self.evidence,
+            "available": self.available,
         }
 
 
@@ -296,9 +298,10 @@ class QualityRecommendation:
 
 @dataclass
 class CreatorQualityReport:
-    """Read-only quality report over one account's full persisted note history."""
+    """Read-only quality report over imported account history or one note."""
 
     account_id: str
+    note_id: str = ""
     total_notes: int = 0
     notes_analyzed: int = 0
     scope: str = "all_imported_history"
@@ -316,6 +319,7 @@ class CreatorQualityReport:
     def to_dict(self) -> dict[str, Any]:
         return {
             "account_id": self.account_id,
+            "note_id": self.note_id,
             "total_notes": self.total_notes,
             "notes_analyzed": self.notes_analyzed,
             "scope": self.scope,

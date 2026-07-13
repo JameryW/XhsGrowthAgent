@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import CreatorQualityPanel from '@/components/settings/CreatorQualityPanel.vue'
+import CreatorNoteQualityPanel from '@/components/settings/CreatorNoteQualityPanel.vue'
 import { useAccountsStore } from '@/stores/accounts'
 
 const { t } = useI18n()
@@ -114,6 +115,13 @@ onMounted(() => {
     </header>
 
     <CreatorQualityPanel
+      v-if="selectedAccount"
+      :account-id="selectedAccount.id"
+      :account-name="selectedAccount.name"
+      class="shadow-sm"
+    />
+
+    <CreatorNoteQualityPanel
       v-if="selectedAccount"
       :account-id="selectedAccount.id"
       :account-name="selectedAccount.name"

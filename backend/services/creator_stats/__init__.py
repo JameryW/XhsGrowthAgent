@@ -32,7 +32,9 @@ from backend.services.creator_stats.pipeline import (
 from backend.services.creator_stats.quality import (
     MIN_NOTES_FOR_OVERALL_SCORE,
     SCOPE_ALL_IMPORTED_HISTORY,
+    SCOPE_SINGLE_IMPORTED_NOTE,
     analyze_historical_quality,
+    analyze_note_quality,
 )
 from backend.services.creator_stats.suggestions import (
     build_mode_creative_context,
@@ -81,6 +83,7 @@ __all__ = [
     "SyncResult",
     "analyze_notes",
     "analyze_historical_quality",
+    "analyze_note_quality",
     "as_fraction_engagement_rate",
     "build_mode_creative_context",
     "format_suggestions_context",
@@ -98,6 +101,7 @@ __all__ = [
     "period_to_date_type",
     "run_analysis",
     "SCOPE_ALL_IMPORTED_HISTORY",
+    "SCOPE_SINGLE_IMPORTED_NOTE",
     "suggestions_from_analysis",
     "sync_account_stats",
     "sync_from_fixture",

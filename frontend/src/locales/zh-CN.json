@@ -805,7 +805,8 @@
       "high": "高"
     },
     "scope": {
-      "all_imported_history": "全部已导入历史笔记"
+      "all_imported_history": "全部已导入历史笔记",
+      "single_imported_note": "当前选中的单篇历史笔记"
     },
     "dimension": {
       "engagement": "互动信号",
@@ -825,6 +826,41 @@
       "title": "质量报告加载失败",
       "description": "暂时无法读取历史笔记质量报告，请稍后重试。",
       "retry": "重新加载"
+    }
+  },
+  "creatorNoteQuality": {
+    "title": "单篇历史笔记",
+    "subtitle": "打开已导入笔记，查看内容、观众信号和单篇质量分",
+    "refresh": "刷新笔记",
+    "loading": "正在加载已导入笔记…",
+    "loadingDetail": "正在加载笔记详情和质量评估…",
+    "listTitle": "已导入笔记",
+    "qualityTitle": "单篇质量信号",
+    "viewSources": "观看来源",
+    "audienceProfile": "观众画像",
+    "audienceTrend": "观众趋势",
+    "unavailable": "暂无数据",
+    "unknown": "未知",
+    "unnamed": "未命名",
+    "untitled": "未命名历史笔记",
+    "noteType": "笔记",
+    "noBody": "当前导入记录未包含笔记正文。",
+    "metrics": {
+      "views": "浏览",
+      "likes": "点赞",
+      "comments": "评论",
+      "collects": "收藏",
+      "shares": "分享",
+      "rate": "互动率"
+    },
+    "empty": {
+      "title": "暂无已导入笔记",
+      "description": "请先从创作者中心导入历史笔记，再打开单篇内容。"
+    },
+    "error": {
+      "title": "笔记详情加载失败",
+      "description": "暂时无法读取这篇历史笔记的详情。",
+      "retry": "重新加载笔记"
     }
   },
   "versionCompare": {

@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Use the project's Ruff, Mypy, pytest, and API testing gates."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Verify read-only note retrieval and no persistence regressions."}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Verify locale completeness, component structure, and mobile overflow."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify account selection and async loading behavior."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Audit API response/type/UI contract across layers."}

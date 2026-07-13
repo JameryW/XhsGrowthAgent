@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Backend typing, linting, test, import, and pure-service conventions for the detail and quality APIs."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Read-only persistence access and backward-compatible creator stats row handling."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Consistent API error behavior for missing account/note resources."}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Vue component structure, i18n, API access, and mobile overflow requirements."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Frontend async state and account-bound selection conventions."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse the existing historical quality analyzer instead of creating a parallel evaluation path."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Keep backend DTO, frontend types, API route, and UI behavior aligned."}

@@ -9,6 +9,7 @@ from typing import Any, cast
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
+from backend.api.errors import CreatorNoteNotFoundError, ValidationError
 from backend.api.responses import ApiResponse, success
 from backend.db.pool import is_pool_ready
 from backend.db.workflows import list_workflows as db_list
@@ -645,6 +646,56 @@ async def get_creator_stats(
             "total": total,
             "limit": limit,
             "fetched_at": datetime.now(UTC).isoformat(),
+        }
+    )
+
+
+async def _get_imported_creator_note(account_id: str, note_id: str) -> tuple[str, Any]:
+    """Load one persisted creator note for the detail/quality endpoints."""
+    from backend.db import creator_stats as stats_db
+
+    normalized_account_id = (account_id or "").strip()
+    normalized_note_id = (note_id or "").strip()
+    if not normalized_account_id:
+        raise ValidationError("account_id", "account_id cannot be empty")
+    if not normalized_note_id:
+        raise ValidationError("note_id", "note_id cannot be empty")
+    note = await stats_db.get_note_stats(normalized_account_id, normalized_note_id)
+    if note is None:
+        raise CreatorNoteNotFoundError(normalized_account_id, normalized_note_id)
+    return normalized_account_id, note
+
+
+@router.get("/creator-stats/{account_id}/notes/{note_id}")
+async def get_creator_note_detail(account_id: str, note_id: str) -> ApiResponse[Any]:
+    """Read one imported Creator Center note without starting a sync."""
+    normalized_account_id, note = await _get_imported_creator_note(account_id, note_id)
+    return success(
+        data={
+            "account_id": normalized_account_id,
+            "note": note.to_dict(),
+            "fetched_at": datetime.now(UTC).isoformat(),
+        }
+    )
+
+
+@router.get("/creator-stats/{account_id}/notes/{note_id}/quality")
+async def get_creator_note_quality(
+    account_id: str,
+    note_id: str,
+    locale: str = Query("zh-CN", max_length=16, description="报告文案语言：zh-CN | en"),
+) -> ApiResponse[Any]:
+    """Evaluate one imported note with the historical quality analyzer."""
+    from backend.services.creator_stats.quality import analyze_note_quality
+
+    normalized_account_id, note = await _get_imported_creator_note(account_id, note_id)
+    report = analyze_note_quality(note, normalized_account_id, locale=locale)
+    return success(
+        data={
+            "account_id": normalized_account_id,
+            "note_id": note.note_id,
+            "quality": report.to_dict(),
+            "analyzed_at": datetime.now(UTC).isoformat(),
         }
     )
 
