@@ -271,6 +271,16 @@ in-memory convenience path.
   in-process identity lock and `style_merge_transaction`'s PostgreSQL advisory
   transaction lock around the read/merge/write sequence; a primary key on a
   generated `style_id` alone does not protect that logical identity.
+- Historical creative-quality reports read the account's complete durable note
+  history through `list_all_note_stats(account_id)`, not the bounded
+  `list_note_stats()` display reader. The quality route must never start a
+  browser sync or write a database row.
+- `GET /api/analytics/creator-stats/{account_id}/quality?locale=zh-CN|en`
+  returns a deterministic report over `scope="all_imported_history"`. Fewer
+  than three imported notes is an insufficient-data response: `overall_score`
+  is `null`, `grade="insufficient_data"`, and the only recommendation is to
+  collect more real history. The locale controls generated summary, evidence,
+  and recommendation copy; unsupported values fall back to `zh-CN`.
 
 ### Do Not
 
@@ -284,3 +294,5 @@ in-memory convenience path.
   tokens, or other non-allowlisted current-user fields from Creator Center.
 - Do not use a generated style ID as the only concurrency guard for a
   tone/visual merge.
+- Do not reuse the normal note-list pagination limit for account-wide quality
+  analysis, or turn a low-sample response into a numeric quality judgement.

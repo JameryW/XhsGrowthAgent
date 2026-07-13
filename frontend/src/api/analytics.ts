@@ -121,6 +121,54 @@ export interface CreatorSuggestionsPayload {
   cold_start: boolean
 }
 
+export type CreatorQualityDimensionKey =
+  | 'engagement'
+  | 'save_value'
+  | 'title_craft'
+  | 'consistency'
+
+export type CreatorQualityInsightDimension = CreatorQualityDimensionKey | 'data_collection'
+export type CreatorQualityGrade = 'strong' | 'developing' | 'needs_attention' | 'insufficient_data'
+export type CreatorQualityConfidence = 'low' | 'medium' | 'high'
+export type CreatorQualityScope = 'all_imported_history'
+
+/** Deterministic account-level quality signal derived from imported note history. */
+export interface CreatorQualityDimension {
+  key: CreatorQualityDimensionKey
+  score: number | null
+  evidence: string
+}
+
+export interface CreatorQualityInsight {
+  dimension: CreatorQualityInsightDimension
+  title: string
+  evidence: string
+  related_note_ids: string[]
+}
+
+export interface CreatorQualityRecommendation extends CreatorQualityInsight {
+  priority: number
+  advice: string
+}
+
+export interface CreatorQualityReport {
+  account_id: string
+  /** The historical population covered by this read-only report. */
+  scope: CreatorQualityScope
+  total_notes: number
+  notes_analyzed: number
+  overall_score: number | null
+  grade: CreatorQualityGrade
+  confidence: CreatorQualityConfidence
+  summary: string
+  dimensions: CreatorQualityDimension[]
+  strengths: CreatorQualityInsight[]
+  weaknesses: CreatorQualityInsight[]
+  recommendations: CreatorQualityRecommendation[]
+  cold_start: boolean
+  insufficient_data: boolean
+}
+
 /** Import real Creator Center account/note stats through the account's bound browser. */
 export async function syncCreatorStats(body: {
   account_id: string
@@ -155,4 +203,17 @@ export async function getCreatorSuggestions(
   return client.get(`/analytics/creator-stats/${accountId}/suggestions`, {
     params: { mode },
   }) as unknown as CreatorSuggestionsPayload
+}
+
+/**
+ * Read the account's historical creative-quality report.
+ * This endpoint is analysis-only: it never starts a Creator Center browser sync.
+ */
+export async function getCreatorQuality(
+  accountId: string,
+  locale: 'zh-CN' | 'en' | string = 'zh-CN'
+): Promise<CreatorQualityReport> {
+  return client.get(`/analytics/creator-stats/${accountId}/quality`, {
+    params: { locale },
+  }) as unknown as CreatorQualityReport
 }

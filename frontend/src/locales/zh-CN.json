@@ -748,6 +748,59 @@
       "cold_start": "冷启动"
     }
   },
+  "creatorQuality": {
+    "title": "历史笔记创作质量",
+    "subtitle": "基于已导入历史笔记的互动、收藏、标题和稳定性信号生成",
+    "refresh": "刷新质量报告",
+    "loading": "正在分析已导入的历史笔记…",
+    "score": "综合质量分",
+    "scoreOutOf": "/ 100",
+    "gradeLabel": "质量等级",
+    "confidenceLabel": "样本可信度",
+    "summary": "整体总结",
+    "sampleValue": "已分析 {analyzed} / {total} 条笔记",
+    "scopeLabel": "分析范围",
+    "notScored": "样本不足，暂不评分",
+    "dimensions": "质量维度",
+    "strengths": "当前优势",
+    "weaknesses": "待补短板",
+    "recommendations": "优先行动",
+    "none": "暂无可展示内容",
+    "scopeLimit": "该报告仅依据已导入的互动、收藏、标题和表现稳定性信号，不评价未导入的图片或正文质量。",
+    "grade": {
+      "strong": "表现稳健",
+      "developing": "持续成长",
+      "needs_attention": "需要重点优化",
+      "insufficient_data": "样本不足"
+    },
+    "confidence": {
+      "low": "低",
+      "medium": "中",
+      "high": "高"
+    },
+    "scope": {
+      "all_imported_history": "全部已导入历史笔记"
+    },
+    "dimension": {
+      "engagement": "互动信号",
+      "save_value": "收藏价值",
+      "title_craft": "标题表达",
+      "consistency": "表现稳定性"
+    },
+    "lowData": {
+      "title": "样本量有限，暂不下绝对结论",
+      "description": "继续导入并积累更多历史笔记后，系统会给出更稳定的综合质量判断。"
+    },
+    "empty": {
+      "title": "先导入历史笔记",
+      "description": "尚未发现可分析的已导入历史笔记。请先从上方创作者中心导入真实数据。"
+    },
+    "error": {
+      "title": "质量报告加载失败",
+      "description": "暂时无法读取历史笔记质量报告，请稍后重试。",
+      "retry": "重新加载"
+    }
+  },
   "versionCompare": {
     "analysisReport": "优化分析报告",
     "gapAnalysis": "差距分析",

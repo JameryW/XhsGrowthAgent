@@ -748,6 +748,59 @@
       "cold_start": "cold start"
     }
   },
+  "creatorQuality": {
+    "title": "Historical Note Quality",
+    "subtitle": "A read-only signal from imported note engagement, saves, titles, and consistency",
+    "refresh": "Refresh quality report",
+    "loading": "Analyzing imported historical notes…",
+    "score": "Overall quality score",
+    "scoreOutOf": "/ 100",
+    "gradeLabel": "Quality grade",
+    "confidenceLabel": "Sample confidence",
+    "summary": "Overall summary",
+    "sampleValue": "{analyzed} of {total} notes analyzed",
+    "scopeLabel": "Analysis scope",
+    "notScored": "Not scored — sample too small",
+    "dimensions": "Quality dimensions",
+    "strengths": "Current strengths",
+    "weaknesses": "Gaps to address",
+    "recommendations": "Priority actions",
+    "none": "Nothing to show yet",
+    "scopeLimit": "This report only uses imported interaction, save, title, and performance-consistency signals. It does not judge visual or body-copy quality that was not imported.",
+    "grade": {
+      "strong": "Strong",
+      "developing": "Developing",
+      "needs_attention": "Needs attention",
+      "insufficient_data": "Insufficient data"
+    },
+    "confidence": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
+    "scope": {
+      "all_imported_history": "All imported historical notes"
+    },
+    "dimension": {
+      "engagement": "Engagement signal",
+      "save_value": "Save value",
+      "title_craft": "Title craft",
+      "consistency": "Performance consistency"
+    },
+    "lowData": {
+      "title": "Too little history for an absolute judgement",
+      "description": "Import and accumulate more historical notes to receive a more stable overall quality signal."
+    },
+    "empty": {
+      "title": "Import historical notes first",
+      "description": "No imported historical notes are available to analyze yet. Import real data from Creator Center above first."
+    },
+    "error": {
+      "title": "Could not load the quality report",
+      "description": "The historical-note quality report is unavailable right now. Please try again.",
+      "retry": "Reload"
+    }
+  },
   "versionCompare": {
     "analysisReport": "Optimization Analysis Report",
     "gapAnalysis": "Gap Analysis",

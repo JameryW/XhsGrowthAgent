@@ -45,6 +45,7 @@ from backend.db.creator_stats import (
 from backend.db.creator_stats import (
     get_account_stats,
     get_note_stats,
+    list_all_note_stats,
     list_note_stats,
     upsert_account_stats,
     upsert_bundle,
@@ -175,6 +176,7 @@ __all__ = [
     "ensure_creator_stats_tables",
     "get_account_stats",
     "get_note_stats",
+    "list_all_note_stats",
     "list_note_stats",
     "upsert_account_stats",
     "upsert_bundle",
