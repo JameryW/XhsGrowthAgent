@@ -1561,17 +1561,13 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     if data.get("summary"):
                         lines.append(f"  {data['summary']}")
                     recommendations = [
-                        item
-                        for item in data.get("recommendations", [])
-                        if isinstance(item, dict)
+                        item for item in data.get("recommendations", []) if isinstance(item, dict)
                     ]
                     if recommendations:
                         recommendation = recommendations[0]
                         title = recommendation.get("title") or "Action"
                         advice = (
-                            recommendation.get("advice")
-                            or recommendation.get("evidence")
-                            or ""
+                            recommendation.get("advice") or recommendation.get("evidence") or ""
                         )
                         lines.append(f"  Next action: {title}: {advice}")
                     return _make_text_result("\n".join(lines), data)
@@ -1623,9 +1619,7 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 ):
                     priority = int(_creator_number(recommendation.get("priority"))) or index
                     title = (
-                        recommendation.get("title")
-                        or recommendation.get("dimension")
-                        or "Action"
+                        recommendation.get("title") or recommendation.get("dimension") or "Action"
                     )
                     advice = recommendation.get("advice") or recommendation.get("evidence") or ""
                     lines.append(f"  - [P{priority}] {title}: {advice}")

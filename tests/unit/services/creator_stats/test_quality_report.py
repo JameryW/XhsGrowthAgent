@@ -167,9 +167,7 @@ async def test_quality_endpoint_uses_all_history_over_display_limit_and_is_read_
     after = {note.note_id: note.to_dict() for note in await list_all_note_stats("quality_acc")}
     assert after == before
 
-    english_response = client.get(
-        "/api/analytics/creator-stats/quality_acc/quality?locale=en"
-    )
+    english_response = client.get("/api/analytics/creator-stats/quality_acc/quality?locale=en")
     assert english_response.status_code == 200
     english = english_response.json()["data"]
     assert "Based on all 101 imported historical notes" in english["summary"]
