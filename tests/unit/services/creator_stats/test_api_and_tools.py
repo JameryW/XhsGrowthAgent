@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,10 +11,8 @@ from fastapi.testclient import TestClient
 from backend.api.routes import analytics as analytics_routes
 from backend.api.routes import free as free_routes
 from backend.db.creator_stats import _reset_memory_store
-from backend.services.creator_stats.pipeline import sync_account_stats
+from backend.services.creator_stats.pipeline import sync_account_stats, sync_from_fixture
 from backend.tools.xhs import analytics as analytics_tools
-
-FIXTURE = Path(__file__).resolve().parents[3] / "fixtures" / "creator_stats_sample.json"
 
 
 @pytest.fixture(autouse=True)
@@ -34,48 +31,33 @@ def _app() -> FastAPI:
     return app
 
 
-def test_sync_endpoint_dry_run_returns_import_counts():
+@pytest.mark.asyncio
+async def test_fixture_service_path_returns_import_counts():
+    result = await sync_from_fixture("api_acc")
+    assert result.error is None
+    assert result.source == "fixture"
+    assert result.notes_imported == 5
+    assert result.account_synced is True
+    assert result.account_id == "api_acc"
+    assert result.analysis is not None
+    assert result.analysis.note_count == 5
+    assert result.suggestions["trend"]
+    assert result.suggestions["brief"]
+    assert result.suggestions["free"]
+
+
+@pytest.mark.asyncio
+async def test_fixture_service_path_twice_is_consistent():
+    r1 = await sync_from_fixture("api_twice")
+    r2 = await sync_from_fixture("api_twice")
+    assert r1.notes_imported == 5
+    assert r2.notes_updated == 5
+
+
+@pytest.mark.asyncio
+async def test_get_creator_stats_after_fixture_service_import():
+    await sync_from_fixture("api_get")
     client = TestClient(_app())
-    resp = client.post(
-        "/api/analytics/creator-stats/sync",
-        json={"account_id": "api_acc", "dry_run": True},
-    )
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["success"] is True
-    data = body["data"]
-    assert data["ok"] is True
-    assert data["notes_imported"] == 5
-    assert data["account_synced"] is True
-    assert data["account_id"] == "api_acc"
-    assert data["analysis"] is not None
-    assert data["analysis"]["note_count"] == 5
-    assert data["suggestions"]["trend"]
-    assert data["suggestions"]["brief"]
-    assert data["suggestions"]["free"]
-
-
-def test_sync_endpoint_twice_is_consistent():
-    client = TestClient(_app())
-    r1 = client.post(
-        "/api/analytics/creator-stats/sync",
-        json={"account_id": "api_twice", "dry_run": True},
-    ).json()["data"]
-    r2 = client.post(
-        "/api/analytics/creator-stats/sync",
-        json={"account_id": "api_twice", "dry_run": True},
-    ).json()["data"]
-    assert r1["ok"] and r2["ok"]
-    assert r1["notes_imported"] == 5
-    assert r2["notes_updated"] == 5
-
-
-def test_get_creator_stats_after_import():
-    client = TestClient(_app())
-    client.post(
-        "/api/analytics/creator-stats/sync",
-        json={"account_id": "api_get", "dry_run": True},
-    )
     resp = client.get("/api/analytics/creator-stats/api_get")
     assert resp.status_code == 200
     data = resp.json()["data"]
@@ -98,13 +80,11 @@ def test_get_creator_stats_after_import():
     assert note["views"] == 42000
 
 
-def test_get_creator_stats_total_ignores_limit():
+@pytest.mark.asyncio
+async def test_get_creator_stats_total_ignores_limit():
     """total must be full note count even when page limit < total."""
+    await sync_from_fixture("api_limit")
     client = TestClient(_app())
-    client.post(
-        "/api/analytics/creator-stats/sync",
-        json={"account_id": "api_limit", "dry_run": True},
-    )
     resp = client.get("/api/analytics/creator-stats/api_limit?limit=2")
     assert resp.status_code == 200
     data = resp.json()["data"]
@@ -113,12 +93,10 @@ def test_get_creator_stats_total_ignores_limit():
     assert data["limit"] == 2
 
 
-def test_suggestions_endpoint_each_mode():
+@pytest.mark.asyncio
+async def test_suggestions_endpoint_each_mode():
+    await sync_from_fixture("api_sug")
     client = TestClient(_app())
-    client.post(
-        "/api/analytics/creator-stats/sync",
-        json={"account_id": "api_sug", "dry_run": True},
-    )
     for mode in ("trend", "brief", "free"):
         resp = client.get(f"/api/analytics/creator-stats/api_sug/suggestions?mode={mode}")
         assert resp.status_code == 200
@@ -129,12 +107,10 @@ def test_suggestions_endpoint_each_mode():
         assert any("示例模式" not in s["advice"] for s in data["suggestions"])
 
 
-def test_free_mode_suggestions_route():
+@pytest.mark.asyncio
+async def test_free_mode_suggestions_route():
+    await sync_from_fixture("api_free")
     client = TestClient(_app())
-    client.post(
-        "/api/analytics/creator-stats/sync",
-        json={"account_id": "api_free", "dry_run": True},
-    )
     resp = client.get("/api/free/suggestions/api_free")
     assert resp.status_code == 200
     data = resp.json()["data"]

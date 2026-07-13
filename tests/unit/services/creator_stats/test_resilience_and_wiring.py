@@ -289,7 +289,8 @@ async def test_content_strategist_calls_build_mode_creative_context():
 # ── Free draft returns creative suggestions ─────────────────────────────────
 
 
-def test_free_draft_create_includes_creative_suggestions():
+@pytest.mark.asyncio
+async def test_free_draft_create_includes_creative_suggestions():
     app = FastAPI()
     app.include_router(free_routes.router, prefix="/api/free")
     app.include_router(analytics_routes.router, prefix="/api/analytics")
@@ -315,14 +316,13 @@ def test_free_draft_create_includes_creative_suggestions():
 
     app.state.graph = MagicMock()
     app.state.graph.store = store
-    client = TestClient(app)
+    # Fixture seeding stays on the internal service path; the product HTTP
+    # import route is browser-only.
+    sync = await sync_from_fixture("free_wire", store=store)
+    assert sync.account_synced is True
+    assert sync.source == "fixture"
 
-    # Seed imported stats for this account via dry-run sync (memory DB)
-    sync = client.post(
-        "/api/analytics/creator-stats/sync",
-        json={"account_id": "free_wire", "dry_run": True},
-    )
-    assert sync.json()["data"]["ok"] is True
+    client = TestClient(app)
 
     resp = client.post(
         "/api/free/draft",

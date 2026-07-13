@@ -249,6 +249,12 @@ in-memory convenience path.
   successful live import that disappears on process exit is incorrect.
 - The fixture `--dry-run` path remains offline and may use the in-memory
   fallback, so tests and local smoke checks do not require PostgreSQL.
+- The user-facing `POST /api/analytics/creator-stats/sync` route is
+  browser-only: it resolves the selected account's bound CDP endpoint and
+  passes `dry_run=False` with no cookie fallback to the service. Legacy
+  `dry_run` and `cookie` request fields may be parsed for compatibility, but
+  must never change that route's behavior. An unavailable endpoint returns an
+  actionable failure without touching an existing durable snapshot.
 - Persist an account overview and all imported note rows through one database
   transaction (`upsert_bundle`), so readers never observe a partially written
   creator-statistics snapshot.
@@ -270,6 +276,9 @@ in-memory convenience path.
 
 - Do not let a standalone CLI rely on FastAPI's lifespan to initialize its
   database pool.
+- Do not expose a fixture-backed import through a user-facing HTTP route, even
+  as a default or compatibility fallback. Seed fixture data through the service
+  or CLI test path instead.
 - Do not split the account overview and note upserts into independent commits.
 - Do not store `phone`, permission maps, real-name verification, cookies,
   tokens, or other non-allowlisted current-user fields from Creator Center.

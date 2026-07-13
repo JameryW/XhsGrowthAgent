@@ -17,14 +17,17 @@ router = APIRouter()
 
 
 class CreatorStatsSyncRequest(BaseModel):
-    """Trigger creator-center stats sync/import."""
+    """Trigger creator-center statistics import for a bound account browser."""
 
     account_id: str = Field(..., min_length=1, description="账号 ID")
     dry_run: bool = Field(
-        default=True,
-        description="使用内置 fixture 跑完整导入链路（不访问 creator.xiaohongshu.com）",
+        default=False,
+        description="旧版兼容字段，会被忽略；HTTP 导入始终使用绑定浏览器",
     )
-    cookie: str = Field(default="", description="创作者中心 Cookie（live 同步时需要）")
+    cookie: str = Field(
+        default="",
+        description="旧版兼容字段，会被忽略；真实同步必须使用账号绑定的浏览器登录态",
+    )
     period: str = Field(default="30d", description="统计周期")
     analyze: bool = Field(default=True, description="导入后是否跑创作分析并沉淀风格")
 
@@ -537,33 +540,44 @@ async def sync_creator_stats(
 ) -> ApiResponse[Any]:
     """从创作者中心统计页导入账户/笔记数据，并沉淀创作风格。
 
-    dry_run=true（默认）走内置 fixture，完整覆盖 import→persist→analyze→suggest。
-    dry_run=false 时优先用账号绑定的 CDP Chrome（已登录，cookie jar 自带）；
-    无 CDP 绑定则 fallback 到 body.cookie。
+    产品路径只使用账号绑定且已登录的 CDP Chrome，写入真实 Creator Center
+    响应。旧版 ``dry_run`` 与 ``cookie`` 字段仅为请求兼容性保留，二者
+    都不会改变 HTTP 路由的浏览器唯一导入契约；fixture 仅可由内部
+    service/CLI 测试路径使用。
     """
     from backend.db.accounts import get_account_cdp_endpoint
     from backend.services.creator_stats.pipeline import sync_account_stats
+    from backend.services.creator_stats.types import SyncResult
 
     graph = getattr(request.app.state, "graph", None)
     store = getattr(graph, "store", None) if graph is not None else None
 
-    # 非干跑：优先 CDP 连账号常驻 Chrome；无绑定再 fallback cookie。
+    # 产品同步必须连接账号自己的常驻、已登录 Chrome。不要根据旧版
+    # dry_run/cookie 字段改变该路径，否则调用者可意外写入 fixture 数据。
     cdp_endpoint = ""
-    if not body.dry_run:
-        try:
-            cdp_endpoint = (await get_account_cdp_endpoint(body.account_id)).strip()
-        except Exception:
-            cdp_endpoint = ""
+    try:
+        cdp_endpoint = (await get_account_cdp_endpoint(body.account_id)).strip()
+    except Exception:
+        cdp_endpoint = ""
 
-    result = await sync_account_stats(
-        body.account_id,
-        cookie=body.cookie,
-        dry_run=body.dry_run,
-        store=store,
-        period=body.period,
-        run_creative_analysis=body.analyze,
-        cdp_endpoint=cdp_endpoint,
-    )
+    if not cdp_endpoint:
+        # Do not substitute fixture or a caller-provided cookie under a real
+        # account id. Existing durable imports remain untouched on this path.
+        result = SyncResult(
+            account_id=body.account_id,
+            source="creator_statistics",
+            error="未检测到该账号可用的浏览器会话。请先启动并登录绑定账号的 Chrome 后重试。",
+        )
+    else:
+        result = await sync_account_stats(
+            body.account_id,
+            cookie="",
+            dry_run=False,
+            store=store,
+            period=body.period,
+            run_creative_analysis=body.analyze,
+            cdp_endpoint=cdp_endpoint,
+        )
     data = result.to_dict()
     # Primary observables for clients/tests (not merely HTTP 200).
     # Import can succeed while analysis fails — still "ok" for the import path.
