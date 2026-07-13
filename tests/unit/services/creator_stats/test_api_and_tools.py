@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -11,7 +12,12 @@ from fastapi.testclient import TestClient
 from backend.api.routes import analytics as analytics_routes
 from backend.api.routes import free as free_routes
 from backend.db.creator_stats import _reset_memory_store
-from backend.services.creator_stats.pipeline import sync_account_stats, sync_from_fixture
+from backend.services.creator_stats.pipeline import (
+    sync_account_stats,
+    sync_all_active_accounts,
+    sync_from_fixture,
+)
+from backend.services.creator_stats.types import SyncResult
 from backend.tools.xhs import analytics as analytics_tools
 
 
@@ -44,6 +50,67 @@ async def test_fixture_service_path_returns_import_counts():
     assert result.suggestions["trend"]
     assert result.suggestions["brief"]
     assert result.suggestions["free"]
+
+
+@pytest.mark.asyncio
+async def test_batch_sync_uses_only_active_accounts():
+    active = [
+        SimpleNamespace(id="active-1"),
+        SimpleNamespace(id="active-2"),
+    ]
+
+    async def cdp_endpoint(account_id: str) -> str:
+        return f"http://127.0.0.1:{9000 + int(account_id[-1])}"
+
+    async def sync(account_id: str, **kwargs):
+        return SyncResult(account_id=account_id, account_synced=True)
+
+    with (
+        patch(
+            "backend.db.accounts.list_active_accounts", new_callable=AsyncMock, return_value=active
+        ),
+        patch(
+            "backend.db.accounts.get_account_cdp_endpoint",
+            new_callable=AsyncMock,
+            side_effect=cdp_endpoint,
+        ),
+        patch(
+            "backend.services.creator_stats.pipeline.sync_account_stats",
+            new_callable=AsyncMock,
+            side_effect=sync,
+        ) as sync_mock,
+    ):
+        result = await sync_all_active_accounts(run_creative_analysis=False)
+
+    assert result["ok"] is True
+    assert result["active_accounts"] == 2
+    assert result["succeeded"] == 2
+    assert [call.args[0] for call in sync_mock.await_args_list] == ["active-1", "active-2"]
+
+
+def test_batch_sync_endpoint_returns_atomic_batch_summary():
+    client = TestClient(_app())
+    summary = {
+        "ok": True,
+        "status": "completed",
+        "active_accounts": 1,
+        "succeeded": 1,
+        "failed": 0,
+        "results": [],
+    }
+    with patch(
+        "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+        new_callable=AsyncMock,
+        return_value=summary,
+    ) as sync_all:
+        response = client.post(
+            "/api/analytics/creator-stats/sync-all",
+            json={"period": "7d", "analyze": False},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["data"] == summary
+    sync_all.assert_awaited_once_with(store=None, period="7d", run_creative_analysis=False)
 
 
 @pytest.mark.asyncio

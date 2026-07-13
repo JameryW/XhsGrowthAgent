@@ -464,7 +464,12 @@ def _note_from_row(row: Any) -> NoteStats:
                 if isinstance(note_raw_value, dict):
                     if note_raw_value.get("body_text"):
                         data["body_text"] = note_raw_value["body_text"]
-                    for key in ("view_sources", "audience_profile", "detail_metrics"):
+                    for key in (
+                        "view_sources",
+                        "audience_profile",
+                        "audience_trend",
+                        "detail_metrics",
+                    ):
                         if not data.get(key) and note_raw_value.get(key) is not None:
                             data[key] = note_raw_value[key]
             except (TypeError, json.JSONDecodeError):
@@ -507,6 +512,7 @@ def _note_from_row(row: Any) -> NoteStats:
         source=row[15],
         view_sources=raw_payload.get("view_sources") or [],
         audience_profile=raw_payload.get("audience_profile") or [],
+        audience_trend=raw_payload.get("audience_trend") or [],
         detail_metrics=raw_payload.get("detail_metrics") or {},
     )
 

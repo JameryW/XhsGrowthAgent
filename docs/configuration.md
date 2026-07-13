@@ -28,6 +28,12 @@
 | `POSTGRES_URI` | 生产必填 | PostgreSQL 连接字符串 | 无（开发模式用内存） |
 | `REDIS_URI` | 生产必填 | Redis 连接字符串 | 无（开发模式不使用） |
 
+### 创作者中心数据导入
+
+| 变量 | 必填 | 说明 | 默认值 |
+|------|------|------|--------|
+| `CREATOR_STATS_SYNC_INTERVAL_HOURS` | 否 | 后台定时导入间隔；仅导入 `is_active=true` 的账号，设为 `0` 可关闭 | `6` |
+
 **PostgreSQL URI 格式:**
 ```
 postgresql://user:password@host:5432/database?sslmode=require

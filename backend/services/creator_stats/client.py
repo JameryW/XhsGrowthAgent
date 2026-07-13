@@ -13,7 +13,7 @@ import contextlib
 import logging
 from dataclasses import dataclass
 from typing import Any, Protocol
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 import httpx
 
@@ -39,6 +39,17 @@ LEGACY_NOTE_LIST_PATH = "/api/galaxy/creator/datacenter/note/analyze/list"
 AUDIENCE_SOURCE_PATH = "/api/galaxy/v2/creator/datacenter/audience/source/account"
 AUDIENCE_PERIODS_PATH = "/api/galaxy/v2/creator/datacenter/audience/view/periods"
 NOTE_DETAIL_PATH = "/api/galaxy/creator/data/note_detail_new"
+NOTE_DETAIL_PAGE = "https://creator.xiaohongshu.com/statistics/note-detail"
+NOTE_BASE_PATH = "/api/galaxy/creator/datacenter/note/base"
+NOTE_AUDIENCE_TREND_PATH = "/api/galaxy/creator/datacenter/note/analyze/audience/trend"
+NOTE_AUDIENCE_SOURCE_PATH = "/api/galaxy/creator/datacenter/note/audience/source"
+NOTE_AUDIENCE_PROFILE_PATH = "/api/galaxy/creator/datacenter/note/audience/source/detail"
+NOTE_DETAIL_RESPONSE_PATHS = (
+    NOTE_BASE_PATH,
+    NOTE_AUDIENCE_TREND_PATH,
+    NOTE_AUDIENCE_SOURCE_PATH,
+    NOTE_AUDIENCE_PROFILE_PATH,
+)
 CREATOR_NOTE_MANAGER_PAGE = "https://creator.xiaohongshu.com/new/note-manager"
 
 # Known date_type values on account overview (reverse-engineered):
@@ -229,6 +240,9 @@ class CdpTransport:
             profile_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
             note_responses: dict[int, tuple[int, dict[str, Any] | list[Any] | None]] = {}
             insight_responses: dict[str, tuple[int, dict[str, Any] | list[Any] | None]] = {}
+            note_detail_responses: dict[
+                str, dict[str, tuple[int, dict[str, Any] | list[Any] | None]]
+            ] = {}
             account_ready = asyncio.Event()
             profile_ready = asyncio.Event()
             first_notes_ready = asyncio.Event()
@@ -237,6 +251,8 @@ class CdpTransport:
             async def capture(response: Any) -> None:
                 nonlocal account_response, profile_response
                 path = urlsplit(response.url).path
+                query = parse_qs(urlsplit(response.url).query)
+                note_id = query.get("note_id", [""])[0]
                 if path not in (
                     ACCOUNT_OVERVIEW_PATH,
                     CREATOR_PROFILE_PATH,
@@ -244,6 +260,7 @@ class CdpTransport:
                     AUDIENCE_SOURCE_PATH,
                     AUDIENCE_PERIODS_PATH,
                     NOTE_DETAIL_PATH,
+                    *NOTE_DETAIL_RESPONSE_PATHS,
                 ):
                     return
                 try:
@@ -262,6 +279,9 @@ class CdpTransport:
                     # These are optional enrichment calls.  A permission or
                     # rollout failure must not discard the note snapshot.
                     insight_responses[path] = (response.status, body)
+                    return
+                if path in NOTE_DETAIL_RESPONSE_PATHS and note_id:
+                    note_detail_responses.setdefault(note_id, {})[path] = (response.status, body)
                     return
                 page_index = self._page_index(response.url)
                 note_responses[page_index] = (response.status, body)
@@ -374,12 +394,58 @@ class CdpTransport:
                             raw_notes.extend(item for item in items if isinstance(item, dict))
                 if pending:
                     await asyncio.gather(*pending, return_exceptions=True)
+
+                # The note manager list endpoint does not include the audience
+                # breakdowns shown on the detail page.  Open each note detail
+                # route in the same signed browser session so the page itself
+                # issues the four authenticated requests we capture above.
+                # Keep a bounded batch: a malformed/slow note must not prevent
+                # the account snapshot from being imported.
+                for note in raw_notes[:100]:
+                    note_id = str(
+                        note.get("note_id") or note.get("noteId") or note.get("id") or ""
+                    ).strip()
+                    if not note_id:
+                        continue
+                    try:
+                        await page.goto(
+                            f"{NOTE_DETAIL_PAGE}?noteId={quote(note_id, safe='')}",
+                            wait_until="domcontentloaded",
+                            timeout=self._timeout * 1000,
+                        )
+                        await self._wait_for(
+                            lambda current=note_id: (
+                                len(note_detail_responses.get(current, {})) >= 2
+                            ),
+                            min(5.0, self._timeout),
+                        )
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        logger.info("note detail enrichment skipped for %s: %s", note_id, exc)
+
+                # Wait for response callbacks created by the final navigation
+                # before taking the captured payloads out of the local map.
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
+
+                for index, note in enumerate(raw_notes):
+                    note_id = str(
+                        note.get("note_id") or note.get("noteId") or note.get("id") or ""
+                    ).strip()
+                    if note_id:
+                        enriched = _note_detail_snapshot(note_detail_responses.get(note_id, {}))
+                        if enriched:
+                            raw_notes[index] = {**note, **enriched}
+
                 detail_body = insight_responses.get(NOTE_DETAIL_PATH, (0, {}))[1]
                 details = _note_detail_map(detail_body)
                 if details:
                     for index, note in enumerate(raw_notes):
-                        note_id = note.get("note_id") or note.get("noteId") or note.get("id")
-                        detail = details.get(str(note_id))
+                        legacy_note_id: Any = (
+                            note.get("note_id") or note.get("noteId") or note.get("id")
+                        )
+                        detail = details.get(str(legacy_note_id))
                         if isinstance(detail, dict):
                             raw_notes[index] = {**note, **detail}
                 account_body = account_response[1]
@@ -521,6 +587,95 @@ def _note_detail_map(body: dict[str, Any] | list[Any] | None) -> dict[str, dict[
 
     visit(root)
     return found
+
+
+def _note_detail_snapshot(
+    responses: dict[str, tuple[int, dict[str, Any] | list[Any] | None]],
+) -> dict[str, Any]:
+    """Flatten the note-detail response quartet into normalize-friendly fields."""
+
+    def data_for(path: str) -> Any:
+        item = responses.get(path)
+        if item is None:
+            return None
+        try:
+            return _unwrap_api_body(item[1])
+        except CreatorStatsFetchError:
+            return None
+
+    base = data_for(NOTE_BASE_PATH)
+    source = data_for(NOTE_AUDIENCE_SOURCE_PATH)
+    profile = data_for(NOTE_AUDIENCE_PROFILE_PATH)
+    trend = data_for(NOTE_AUDIENCE_TREND_PATH)
+    enriched: dict[str, Any] = {}
+
+    # Base contains the authoritative scalar metrics for this note.  Restrict
+    # the merge to public metric aliases; response envelopes may contain other
+    # page state that should never be persisted as note fields.
+    if isinstance(base, dict):
+        metric_keys = (
+            "view_count",
+            "like_count",
+            "comment_count",
+            "collect_count",
+            "share_count",
+            "impl_count",
+            "rise_fans_count",
+            "view_time_avg",
+            "cover_click_rate",
+            "full_view_rate",
+            "finish5s_rate",
+            "exit_view2s_rate",
+            "note_post_days",
+        )
+        for key in metric_keys:
+            if key in base:
+                enriched[key] = base[key]
+        note_info = base.get("note_info")
+        if isinstance(note_info, dict):
+            for source_key, target_key in (
+                ("note_id", "note_id"),
+                ("title", "title"),
+                ("desc", "desc"),
+                ("cover", "cover_url"),
+                ("cover_url", "cover_url"),
+                ("tags", "tags"),
+            ):
+                if note_info.get(source_key) not in (None, ""):
+                    enriched[target_key] = note_info[source_key]
+
+    if isinstance(source, dict):
+        source_rows = source.get("source") or source.get("sources")
+        if isinstance(source_rows, list):
+            enriched["view_sources"] = [row for row in source_rows if isinstance(row, dict)]
+
+    if isinstance(profile, dict):
+        profile_rows: list[dict[str, Any]] = []
+        for dimension in ("gender", "age", "city", "region", "interest"):
+            values = profile.get(dimension)
+            if isinstance(values, dict):
+                values = [values]
+            if not isinstance(values, list):
+                continue
+            for row in values:
+                if isinstance(row, dict):
+                    profile_rows.append({"dimension": dimension, **row})
+        if profile_rows:
+            enriched["audience_profile"] = profile_rows
+
+    if isinstance(trend, dict):
+        trend_rows = trend.get("trend_list") or trend.get("trend")
+        if isinstance(trend_rows, list):
+            enriched["audience_trend"] = [row for row in trend_rows if isinstance(row, dict)]
+
+    detail_metrics: dict[str, Any] = {}
+    if isinstance(base, dict):
+        detail_metrics["base"] = base
+    if isinstance(trend, dict):
+        detail_metrics["audience_trend"] = trend
+    if detail_metrics:
+        enriched["detail_metrics"] = detail_metrics
+    return enriched
 
 
 class CreatorStatsClient:

@@ -9,11 +9,13 @@ import pytest
 
 from backend.db.creator_stats import _reset_memory_store, list_note_stats
 from backend.services.creator_stats.analyze import analyze_notes, run_analysis
+from backend.services.creator_stats.audience import summarize_audience
 from backend.services.creator_stats.client import (
     CREATOR_STATS_PAGE,
     CreatorStatsClient,
     CreatorStatsFetchError,
     FixtureTransport,
+    _note_detail_snapshot,
 )
 from backend.services.creator_stats.pipeline import (
     load_fixture_payload,
@@ -26,6 +28,7 @@ from backend.services.creator_stats.suggestions import (
     get_suggestions_for_mode,
     suggestions_from_analysis,
 )
+from backend.services.creator_stats.types import AccountStatsOverview, NoteStats
 
 FIXTURE = Path(__file__).resolve().parents[3] / "fixtures" / "creator_stats_sample.json"
 
@@ -83,6 +86,64 @@ async def test_client_fetch_all_with_fixture_transport():
     assert len(bundle.notes) == 5
     assert all(n.note_id for n in bundle.notes)
     assert CREATOR_STATS_PAGE.startswith("https://creator.xiaohongshu.com/")
+
+
+def test_note_detail_snapshot_normalizes_audience_dimensions():
+    snapshot = _note_detail_snapshot(
+        {
+            "/api/galaxy/creator/datacenter/note/base": (
+                200,
+                {"data": {"view_count": 284, "note_info": {"title": "真实笔记"}}},
+            ),
+            "/api/galaxy/creator/datacenter/note/audience/source": (
+                200,
+                {"data": {"source": [{"title": "首页推荐", "value": 48}]}},
+            ),
+            "/api/galaxy/creator/datacenter/note/audience/source/detail": (
+                200,
+                {
+                    "data": {
+                        "gender": [{"title": "女性", "value": 48}],
+                        "age": [{"title": "25-34", "value": 51}],
+                    }
+                },
+            ),
+            "/api/galaxy/creator/datacenter/note/analyze/audience/trend": (
+                200,
+                {"data": {"trend_list": [{"title": "10-11点", "value": 22}]}},
+            ),
+        }
+    )
+
+    assert snapshot["view_sources"] == [{"title": "首页推荐", "value": 48}]
+    assert {row["dimension"] for row in snapshot["audience_profile"]} == {"gender", "age"}
+    assert snapshot["audience_trend"][0]["value"] == 22
+    assert snapshot["view_count"] == 284
+
+
+def test_audience_analysis_falls_back_to_per_note_breakdowns():
+    account = AccountStatsOverview(account_id="audience")
+    notes = [
+        NoteStats(
+            note_id="note-1",
+            account_id="audience",
+            view_sources=[{"title": "首页推荐", "value": 48}],
+            audience_profile=[{"dimension": "gender", "title": "女性", "value": 48}],
+        ),
+        NoteStats(
+            note_id="note-2",
+            account_id="audience",
+            view_sources=[{"title": "首页推荐", "value": 52}],
+            audience_profile=[{"dimension": "gender", "title": "女性", "value": 50}],
+        ),
+    ]
+
+    result = summarize_audience(account, notes)
+
+    assert result["coverage"]["sources"] is True
+    assert result["coverage"]["profile"] is True
+    assert result["source_distribution"][0]["value"] == 50
+    assert result["audience_profile"][0]["value"] == 49
 
 
 @pytest.mark.asyncio

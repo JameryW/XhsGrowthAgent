@@ -25,6 +25,7 @@ from backend.services.creator_stats.normalize import (
 from backend.services.creator_stats.pipeline import (
     import_bundle,
     sync_account_stats,
+    sync_all_active_accounts,
     sync_from_fixture,
     sync_from_payload,
 )
@@ -85,6 +86,7 @@ __all__ = [
     "format_suggestions_context",
     "get_suggestions_for_mode",
     "import_bundle",
+    "sync_all_active_accounts",
     "MIN_NOTES_FOR_OVERALL_SCORE",
     "extract_note_items",
     "normalize_account_profile",
