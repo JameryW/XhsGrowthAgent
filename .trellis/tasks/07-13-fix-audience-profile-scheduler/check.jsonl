@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"检查修改后的后端代码、测试与 ruff/mypy 约定一致。"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"检查调度器健康和日志输出不泄露敏感数据且级别正确。"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"检查导入成功仍以 durable snapshot 为准。"}
+{"file":".trellis/tasks/07-13-fix-audience-profile-scheduler/prd.md","reason":"按完成标准执行画像和调度器验证。"}

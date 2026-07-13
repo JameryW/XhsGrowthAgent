@@ -258,6 +258,18 @@ in-memory convenience path.
 - Persist an account overview and all imported note rows through one database
   transaction (`upsert_bundle`), so readers never observe a partially written
   creator-statistics snapshot.
+
+### Scheduled Import Operations
+
+The FastAPI lifespan starts one process-local creator-statistics scheduler only
+when PostgreSQL is ready and `CREATOR_STATS_SYNC_INTERVAL_HOURS` is positive.
+The scheduler performs its first active-account import immediately after
+startup, then sleeps for the configured interval.  `/health` exposes only a
+sanitized summary (`enabled`, `status`, run counters, timestamps, counts, and
+the next run time); it must not include raw account payloads, cookies, or
+request signatures.  The deployment script must pass the interval environment
+variable into the backend container so a host setting is not silently replaced
+by the default.
 - When the authenticated Creator Center page emits `/api/galaxy/user/info`,
   capture its public account identity in the same snapshot and persist only the
   explicit allowlist: platform user ID, nickname, RED ID, avatar URL, bio,

@@ -15,6 +15,7 @@ from backend.services.creator_stats.client import (
     CreatorStatsClient,
     CreatorStatsFetchError,
     FixtureTransport,
+    _note_detail_id,
     _note_detail_snapshot,
 )
 from backend.services.creator_stats.pipeline import (
@@ -119,6 +120,20 @@ def test_note_detail_snapshot_normalizes_audience_dimensions():
     assert {row["dimension"] for row in snapshot["audience_profile"]} == {"gender", "age"}
     assert snapshot["audience_trend"][0]["value"] == 22
     assert snapshot["view_count"] == 284
+
+
+def test_note_detail_id_accepts_page_and_api_query_names():
+    assert (
+        _note_detail_id("https://creator.xiaohongshu.com/statistics/note-detail?noteId=n-1")
+        == "n-1"
+    )
+    assert (
+        _note_detail_id("https://creator.xiaohongshu.com/api/detail?note_id=n-2") == "n-2"
+    )
+    assert (
+        _note_detail_id("https://creator.xiaohongshu.com/api/detail?note-id=n-3") == "n-3"
+    )
+    assert _note_detail_id("https://creator.xiaohongshu.com/api/detail") == ""
 
 
 def test_audience_analysis_falls_back_to_per_note_breakdowns():
