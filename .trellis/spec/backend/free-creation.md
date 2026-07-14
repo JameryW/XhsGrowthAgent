@@ -48,38 +48,35 @@ internal httpx to `/api/free/*` (the `url` already includes `/api`, so paths are
 - `xhs_free_draft_delete` → DELETE `/free/draft/{draft_id}?account_id=...`
 - `xhs_free_analytics` → GET `/free/analytics/{draft_id}?account_id=...` (post-publish engagement; thread-less — uses `XHSClient.get_post_analytics(post_id)`, not the thread-bound workflow analytics)
 - `xhs_free_suggestions` → GET `/free/suggestions/{account_id}` (creative suggestions from imported Creator Center stats; thread-less, no draft_id — atomic data fetch; `cold_start` flag when no stats imported)
-- `xhs_free_guide` → no backend call (local); returns the orchestration guide text
+- `xhs_free_guide` → no backend call (local); returns the usage-rules reference text
 
 **Agent-side render** (`omp_bridge._execute_xhs_host_tool`): free mode defaults
-to agent mode, so the omp agent reads these renders as plain text and needs the
-loop's state and next step surfaced (not just raw fields or the verdict). The
-renders align with the TUI surfaces, not duplicate the minimal backend response,
-and append a conditional `next:`/`note:` cue:
+to agent mode, so the omp agent reads these renders as plain text. The renders
+align with the TUI surfaces, not duplicate the minimal backend response.
+Renders carry **only guardrail `note:` cues** (mock/degraded/failure conditions
+that would cause an incorrect subsequent call); they do **not** carry
+orchestration `next:` cues — the omp agent decides the flow, not the tool:
 - **`xhs_free_draft_create`**: `Free Draft Created — draft_id: <id>` + `Title`.
-  On success (draft_id present) appends `next: call xhs_free_evaluate(<draft_id>)
-  for a quality check before publish` — the create render is the chain entry
-  point (yields the draft_id evaluate/publish depend on), so it surfaces the
-  immediate next step like the other renders. No cue on a failed create.
+  No cue on success or failure (orchestration is the agent's job).
 - **`xhs_free_draft_list`**: header with `count`, a `truncated` note when the
   route's 100-cap dropped older drafts, and per-draft badges —
   `[<score> <decision>]` when `last_evaluation` has a decision, `[degraded]`
   when `last_evaluation.degraded` is truthy (fake-approved fallback — shown
   instead of the misleading `[100 approved]`), `[published]` when published,
   `[publish failed]` when `last_publish.status` is a non-success
-  (failed/auth_expired/...) — so the agent can pick the next step from the list
-  (unevaluated→evaluate, needs_revision→revise, approved/published→publish or
-  analytics, publish-failed→re-attempt after fixing cause, degraded→re-evaluate)
-  without calling `xhs_free_draft` per item. Mirrors TUI `/drafts`
+  (failed/auth_expired/...) — so the agent can see each draft's state at a
+  glance without calling `xhs_free_draft` per item. Mirrors TUI `/drafts`
   (#216/#226/#227).
-- **`xhs_free_publish`**: real publish (`status == "published"`, non-`mock_` post_id) →
-  `next: call xhs_free_analytics(<draft_id>) ...`; mock publish (`mock_published` /
-  `mock_*` post_id, dry-run) → `note: dry-run mock publish ... analytics not available`
-  (so the agent doesn't call analytics and 400 on a synthetic post_id). Failed publish
-  (`status` not `published`/`mock_published` + an `error`) → surface the cause and
-  recovery path `run_publish` returns: `Error: <error>`, `Error Type: <error_type>`
-  (if present), `Recovery: <recovery.message>` (if present), `Hint: <recovery.hint>`
-  (if present) — so the agent can tell the user why the publish failed and what to do.
-  Mirrors the TUI post-publish hint (#223: real post_id → analytics hint; mock_* → mock hint).
+- **`xhs_free_publish`**: real publish (`status == "published"`, non-`mock_` post_id)
+  → no cue. Mock publish (`mock_published` / `mock_*` post_id, dry-run) →
+  `note: dry-run mock publish ... analytics not available` (guardrail: so the
+  agent doesn't call analytics and 400 on a synthetic post_id). Failed publish
+  (`status` not `published`/`mock_published` + an `error`) → surface the cause
+  and recovery path `run_publish` returns: `Error: <error>`,
+  `Error Type: <error_type>` (if present), `Recovery: <recovery.message>`
+  (if present), `Hint: <recovery.hint>` (if present) — guardrail so the agent
+  can tell the user why the publish failed and what to do.
+  Mirrors the TUI post-publish hint (#223: mock_* → mock note).
 - **`xhs_free_suggestions`**: rendered as a header line (`Free Creative Suggestions —
   <account_id>:`), a cold-start note when `cold_start` is true (limited-evidence
   advice), then one line per suggestion: `- [<category>] <title>: <advice> Evidence:
@@ -89,51 +86,77 @@ and append a conditional `next:`/`note:` cue:
   suggestion is the agent's decision, not the tool's). Mirrors `xhs_creator_suggestions`
   minus the thread-bound mode param.
 - **`xhs_free_evaluate`**: the verdict is rendered as plain text for the omp agent
-  (overall/decision/bias/dimensions/hints). When `decision ∈ {needs_revision, rejected}`
-  AND `revision_hints` is non-empty, the render appends a `next:` cue pointing the
-  agent at `xhs_free_draft_update` (keep draft_id) → `xhs_free_evaluate` again
-  before publish — the agent-side mirror of the TUI `/draft <id>` revise hint
-  (#229). `approved` (even with hints present) gets no cue; `rejected` without
-  hints gets no cue. When `evaluation_result.degraded` is truthy (LLM timeout →
+  (overall/decision/bias/dimensions/hints). No `next:` cue on any decision
+  (approved/needs_revision/rejected) — the agent decides whether to revise or
+  publish. When `evaluation_result.degraded` is truthy (LLM timeout →
   pass-through fallback), the render prepends a `⚠ Evaluation degraded` marker +
-  the cause, and a `next: re-run xhs_free_evaluate` cue instead of the revise
-  cue — the 100/approved is fake, not a real score; the agent must not publish
-  on a degraded verdict. The guide text (`xhs_free_guide`) documents the same
-  evaluate→revise→re-evaluate loop so an agent that reads the guide first also
-  learns the revise path, not only the happy path. The guide also documents
-  evaluate degradation: evaluate can return a pass-through fallback
-  (`degraded=True`, fake `overall_score=100`/`approved`) on LLM timeout — the
-  agent must NOT publish on a degraded verdict; re-run `xhs_free_evaluate`
-  (keep draft_id); the draft list shows a `[degraded]` badge (#242 sync). The
-  guide also documents the publish-failure recovery loop: publish can fail
-  (`status=failed`/`auth_expired`), the render surfaces `Error`/`Recovery`, the
-  agent fixes the cause and re-runs `xhs_free_publish` (keep draft_id); the
-  failed attempt persists as `last_publish` and the draft list shows a
-  `[publish failed]` badge — so the agent learns the failure path, not only
-  the success→analytics happy path (#239/#240 sync).
+  the cause — guardrail: the 100/approved is fake, not a real score; the agent
+  must not publish on a degraded verdict. The guide text (`xhs_free_guide`)
+  documents the same guardrails (thread-bound tools disabled, degraded verdict,
+  publish failure) so an agent that reads the guide first also learns the
+  guardrails. The guide also documents evaluate degradation: evaluate can return
+  a pass-through fallback (`degraded=True`, fake `overall_score=100`/`approved`)
+  on LLM timeout — the agent must NOT publish on a degraded verdict; the draft
+  list shows a `[degraded]` badge (#242 sync). The guide also documents the
+  publish-failure recovery: publish can fail (`status=failed`/`auth_expired`),
+  the render surfaces `Error`/`Recovery`, the failed attempt persists as
+  `last_publish` and the draft list shows a `[publish failed]` badge (#239/#240
+  sync).
 
 ### Discovery — no system prompt on the bridge path
 
 The Web TUI free mode goes through the Python RPC bridge (`OmpSession`), NOT
 the TS extension. The omp RPC protocol has **no `set_system_prompt` command**
 and no `before_agent_start` hook (that hook is TS-extension-API only). So the
-bridge **cannot inject a system prompt** — the agent discovers the free tool
-chain via:
+bridge **cannot inject a system prompt** — the agent discovers the free tools
+via:
 
-1. Each `xhs_free_*` tool's `description` carries step numbering + chain hints
-   (e.g. "Step 1 of 3 (create) ... feed draft_id to xhs_free_evaluate (step 2)").
-2. `xhs_free_guide` is a read-only host tool returning the full orchestration
-   guide (create → evaluate → publish + draft management + "do not call
-   thread-bound tools"). The agent can call it first to learn the loop.
+1. Each `xhs_free_*` tool's `description` carries only its atomic capability
+   (no step numbering, no chain hints — orchestration is the omp agent's job).
+2. `xhs_free_guide` is a read-only host tool returning the usage-rules
+   reference (tool list + guardrails: thread-bound tools disabled, degraded
+   verdict, publish-failure recovery). The agent can call it to learn the
+   rules.
+
+### Mode-based tool isolation
+
+Free mode registers **only** the free-mode tool subset (xhs_free_* + account-
+bound general tools like xhs_analytics_*, xhs_system_health, xhs_creator_*).
+Thread-bound workflow tools (xhs_workflow_*, xhs_review_*, xhs_optimization_*,
+xhs_blogger_*, xhs_ripple_*, xhs_evaluation_*) are **not registered** — the
+LLM never sees their descriptions. This is enforced at the bridge layer:
+
+- `OmpSession.__init__(session_id, mode="workflow")` — session carries a mode.
+- `OmpSession.start()` calls `register_host_tools(_tools_for_mode(self.mode))`
+  — free mode gets the subset, workflow mode gets the full list.
+- `OmpSession.set_mode(mode)` — re-registers the tool subset on mode switch
+  (omp's `set_host_tools` is a full-replacement command; the tool registry is
+  refreshed before the next model call).
+- `OmpBridgeManager.get_or_create_session(session_id, mode="workflow")` — if
+  an existing session's mode differs, calls `session.set_mode(mode)` (no
+  subprocess restart, preserves conversation context).
+- `agent.py` WebSocket handler reads `mode` query param (default `"workflow"`)
+  and passes it to `get_or_create_session`.
+- Frontend `AgentTUI.vue` appends `?mode=free` to the WebSocket URL when
+  `isFreeCreationEntry` (route.query.mode === 'free').
 
 The TS extension path (`events.ts` `before_agent_start`) DOES inject a system
-prompt — kept in sync with the bridge's tool descriptions per the cross-audit
-convention (both guide the agent to the same `xhs_free_*` chain). The TS
-prompt documents the same failure-path rules as the bridge guide:
-evaluate-degradation (#242 — don't publish on a degraded verdict, re-run) and
-publish-failure recovery (#241 — read Error/Recovery, fix the cause, re-run;
-don't call analytics on a failed publish). Both paths (bridge guide + TS
-prompt) must stay aligned when a failure-path cue is added or changed.
+prompt — the bridge's tool descriptions and the TS prompt must stay aligned
+per the cross-audit convention. The TS prompt documents the same failure-path
+rules as the bridge guide: evaluate-degradation (#242 — don't publish on a
+degraded verdict) and publish-failure recovery (#241 — read Error/Recovery,
+fix the cause; don't call analytics on a failed publish). Both paths (bridge
+guide + TS prompt) must stay aligned when a failure-path guardrail is added
+or changed.
+
+**Atomic-tool principle (free mode)**: free-mode host tools expose only atomic
+data operations (create/evaluate/publish/analytics/draft CRUD). They carry no
+orchestration — no step numbering, no `next:` chain cues, no "call X before Y"
+sequencing in descriptions or renders. Tool descriptions describe only the
+tool's own capability. Renders carry only guardrail `note:` cues (mock/degraded/
+failure conditions that would cause an incorrect subsequent call). All flow
+orchestration (which tool to call next, in what order) is the omp agent's
+responsibility, not the tool's.
 
 ---
 
@@ -171,7 +194,7 @@ do NOT participate in workflow resume/retry.
 - Workflow slash commands (`/status` `/pause` `/resume` `/cancel` `/approve` `/reject`) stay disabled in free mode.
 - AgentTUI free entry defaults to **agent mode** on mount (plain text → omp conversation); non-free (trend/brief) keeps command mode.
 - **Dispatch consistency:** all eight free slash commands (`/start`, `/drafts`, `/draft`, `/edit`, `/delete`, `/evaluate`, `/analytics`, `/suggest`) must be registered in **both** dispatchers — `processAgentCommand` (agent mode, the free default) and `processSlashCommand` (command mode, reachable via `/mode`). The handlers enforce the `isFreeCreationEntry` guard themselves, so both dispatchers just parse the trailing arg and forward. A command added to one dispatcher but not the other falls through to `unknownCommand` in the other mode — a past regression for `/evaluate` (agent mode) and `/drafts`/`/draft`/`delete` (command mode).
-- **Atomic-tool principle (free mode):** free-mode host tools expose only atomic data operations — fetch suggestions, create/evaluate/publish a draft, list/get/update/delete. They carry **no orchestration**: no `next:` cue prescribing the next tool, no "use this to inform create" pointer, no step-numbering in descriptions. The omp agent owns all flow orchestration (create→evaluate→publish→analytics is the agent's decision, not the tool's). The exception is safety/handoff cues that prevent a wrong call (e.g. publish-failure `Recovery` hint, evaluate-`degraded` "do not publish / re-run" marker, mock-publish "analytics not available") — those are correctness guards, not flow prescription. `xhs_free_suggestions` follows this: it returns suggestion data + a count header + cold-start note, nothing more.
+- **Atomic-tool principle (free mode):** free-mode host tools expose only atomic data operations — fetch suggestions, create/evaluate/publish a draft, list/get/update/delete. They carry **no orchestration**: no `next:` cue prescribing the next tool, no "use this to inform create" pointer, no step-numbering in descriptions. The omp agent owns all flow orchestration (create→evaluate→publish→analytics is the agent's decision, not the tool's). The exception is safety/handoff cues that prevent a wrong call (e.g. publish-failure `Recovery` hint, evaluate-`degraded` "do not publish" marker, mock-publish "analytics not available") — those are correctness guards, not flow prescription. `xhs_free_suggestions` follows this: it returns suggestion data + a count header + cold-start note, nothing more.
 
 ### Non-free behavior unchanged
 
