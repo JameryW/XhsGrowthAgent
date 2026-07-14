@@ -1218,6 +1218,7 @@ class TestOmpSessionMode:
             patch.object(OmpSession, "register_host_tools", new_callable=AsyncMock) as mock_reg,
             patch.object(OmpSession, "_drain_stderr", new_callable=AsyncMock),
             patch.object(OmpSession, "_read_stdout", new_callable=AsyncMock),
+            patch("shutil.which", return_value="/fake/omp"),
             patch("asyncio.create_subprocess_exec", new_callable=AsyncMock),
             patch("asyncio.wait_for", new_callable=AsyncMock),
         ):
@@ -1236,6 +1237,7 @@ class TestOmpSessionMode:
             patch.object(OmpSession, "register_host_tools", new_callable=AsyncMock) as mock_reg,
             patch.object(OmpSession, "_drain_stderr", new_callable=AsyncMock),
             patch.object(OmpSession, "_read_stdout", new_callable=AsyncMock),
+            patch("shutil.which", return_value="/fake/omp"),
             patch("asyncio.create_subprocess_exec", new_callable=AsyncMock),
             patch("asyncio.wait_for", new_callable=AsyncMock),
         ):
