@@ -1350,3 +1350,36 @@ showHelp never listed free-mode draft commands (/drafts /draft /delete from #216
 ### Next Steps
 
 - None - task complete
+
+
+## Session 75: 解决 main 分叉 + 修复 OfflineRecovery 黄条误报
+
+**Date**: 2026-07-14
+**Task**: 解决 main 分叉 + 修复 OfflineRecovery 黄条误报
+**Branch**: `main`
+
+### Summary
+
+本地 main 停在 PR#249 squash 前，reset 到 origin/main（3 commit 已在#249 squash 进历史，零丢失）。OfflineRecovery 黄条改受控模式：isBackendOnline=connectionStatus 派生，黄条反映真实后端 WS 连通非 navigator.onLine。Playwright 实测 /tui 页：connected 不亮、disconnected 亮。附带发现 rm -rf dist 重建致 bind mount inode 失效→500，deploy recreate 修复。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3108d8c7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

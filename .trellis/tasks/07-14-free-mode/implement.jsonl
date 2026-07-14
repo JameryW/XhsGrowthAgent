@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/07-14-free-mode/research/research-summary.md", "reason": "调研全貌：工具分类清单、omp set_host_tools 全量替换语义、mode 传递路径、编排措辞逐条清单、guide 编排vs护栏分层、方案A可行依据。实现的直接依据。"}
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "free mode 契约：scope/signatures/host-tool/render/guide/dispatch/atomic-tool principle。render cue 要求(57-113)、guide discovery(115-137)、atomic principle(174) 需同步改。改 spec 是 task 一部分。"}
+{"file": ".trellis/spec/backend/omp-integration.md", "reason": "omp host tool 自动执行机制 + bridge/TS extension cross-audit 约定(312-354)。工具注册/set_host_tools 机制上下文。TS extension 路径本 task 不改(out of scope)但需知约定。"}

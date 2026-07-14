@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/07-14-free-mode/prd.md", "reason": "验收基准：决策(3条)、方案A-E、测试清单、out of scope。check 对照 PRD 确认工具隔离/guide精简/render去next/spec同步均落地。"}
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "check spec 与代码一致：render cue 要求改 note-only、guide 改纯护栏、atomic principle 扩展、新增 mode-based tool isolation 段。"}
+{"file": ".trellis/tasks/07-14-free-mode/research/research-summary.md", "reason": "逐条编排措辞清单(问题5/6)+render cue 清单(问题5末)用于核对：确认该删的删了、该留的护栏留下了。"}
