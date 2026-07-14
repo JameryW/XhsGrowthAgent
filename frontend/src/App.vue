@@ -37,6 +37,12 @@ useShortcuts()
 // Keyboard shortcuts help
 const showShortcutsHelp = ref(false)
 
+// ponytail: OfflineRecovery 用浏览器 navigator.onLine 误报频繁（容器 recreate / VPN / 远程访问触发 offline 后不复位）。
+// 改受控模式：黄条反映真实后端 WS 连通，非网卡状态。未登录或连接中/重连中不亮，仅已认证且 disconnected 才亮。
+const isBackendOnline = computed(
+  () => !authStore.isAuthenticated || realtimeStore.connectionStatus !== "disconnected"
+)
+
 // Onboarding state for OnboardingTour component
 const onboardingCurrentStep = computed(() => onboardingStore.currentStep)
 const isOnboardingActive = computed(() => onboardingStore.isOnboardingActive)
@@ -153,8 +159,8 @@ const handleErrorBoundaryRefresh = () => {
         @complete="handleOnboardingComplete"
       />
 
-      <!-- Offline recovery bar (above navbar) -->
-      <OfflineRecovery />
+      <!-- Offline recovery bar (above navbar) — WS 连通驱动，非 navigator.onLine -->
+      <OfflineRecovery :is-online="isBackendOnline" />
 
       <!-- 左侧导航 (hidden on mobile) -->
       <Navbar v-if="!isMobile" />

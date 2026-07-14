@@ -64,6 +64,22 @@ Key patterns:
 - WebSocket events update store state; components react to store changes
 - Event recovery via `get_missed` endpoint on reconnect
 - Connection lifecycle tied to workflow lifecycle
+- `connectionStatus: WsStatus` (`"disconnected" | "connecting" | "connected" | "reconnecting"`) is the **canonical backend-connectivity signal** for UI, not `navigator.onLine`
+
+### OfflineRecovery bar — WS-driven, not browser-driven
+
+`OfflineRecovery.vue` 黄条 must run in **controlled mode**: `App.vue` passes `:is-online` derived from realtime store:
+
+```ts
+const isBackendOnline = computed(
+  () => !authStore.isAuthenticated || realtimeStore.connectionStatus !== "disconnected"
+)
+```
+
+- `navigator.onLine` 误报频繁（容器 recreate / VPN / 远程访问触发 `offline` 后不复位），常驻黄条但后端实际正常 → never use it to drive the bar.
+- `connecting`/`reconnecting` 算在线（宽限，不闪黄）；仅已认证且 `disconnected` 才亮.
+- 未认证短路为 `true`，但 `showChrome=false` 时组件本就不渲染，分支无害.
+- 组件 `isOffline = !(props.isOnline ?? internal)` — prop 存在优先 prop，浏览器事件只改 `internal` 不影响显示. 故受控模式**只传 prop 即生效，勿改 onMounted 跳过 listener**（缺失可选 prop 的 `!== undefined` 判定在 Vue/jsdom 不稳，会破坏 spec 且无收益）.
 
 ---
 
