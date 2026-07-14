@@ -49,6 +49,7 @@ async def agent_ws(websocket: WebSocket) -> None:
     """
     # Accept query params before accepting the websocket
     session_id_param = websocket.query_params.get("session_id")
+    mode_param = websocket.query_params.get("mode", "workflow")
 
     await websocket.accept()
     manager = get_bridge_manager()
@@ -56,7 +57,7 @@ async def agent_ws(websocket: WebSocket) -> None:
     # Get or create session
     session: OmpSession | None = None
     try:
-        session = await manager.get_or_create_session(session_id_param)
+        session = await manager.get_or_create_session(session_id_param, mode=mode_param)
     except Exception as e:
         logger.exception("failed to start omp session")
         await websocket.send_json(

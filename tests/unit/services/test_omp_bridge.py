@@ -8,9 +8,13 @@ import pytest
 
 from backend.services.omp_bridge import (
     _XHS_TOOL_NAMES,
+    THREAD_BOUND_TOOLS,
     XHS_HOST_TOOLS,
+    OmpBridgeManager,
+    OmpSession,
     _execute_xhs_host_tool,
     _make_text_result,
+    _tools_for_mode,
 )
 
 # ── Schema validation ────────────────────────────────────────────────────
@@ -64,6 +68,33 @@ class TestHostToolSchemas:
         assert "xhs_free_draft_delete" in _XHS_TOOL_NAMES
         assert "xhs_free_suggestions" in _XHS_TOOL_NAMES
         assert "xhs_free_guide" in _XHS_TOOL_NAMES
+
+    def test_free_tool_descriptions_no_orchestration(self):
+        """Free-mode tool descriptions carry only atomic capability — no step
+        numbering, no chain hints, no 'call X before Y' sequencing."""
+        free_descs = {
+            t["name"]: t["description"] for t in XHS_HOST_TOOLS if t["name"].startswith("xhs_free_")
+        }
+        # xhs_free_draft_create — no "Step 1 of 3", no "feed it to"
+        assert "Step 1" not in free_descs["xhs_free_draft_create"]
+        assert "feed it to" not in free_descs["xhs_free_draft_create"]
+        # xhs_free_evaluate — no "Step 2 of 3", no "Input draft_id from"
+        assert "Step 2" not in free_descs["xhs_free_evaluate"]
+        assert "Input draft_id from" not in free_descs["xhs_free_evaluate"]
+        # xhs_free_publish — no "Step 3 of 3", no "Run xhs_free_evaluate first"
+        assert "Step 3" not in free_descs["xhs_free_publish"]
+        assert "Run xhs_free_evaluate first" not in free_descs["xhs_free_publish"]
+        # xhs_free_analytics — dependency guardrail kept, orchestration removed
+        assert "must have been published" in free_descs["xhs_free_analytics"]
+        assert "Input draft_id from" not in free_descs["xhs_free_analytics"]
+        # xhs_free_draft_list — no "Use to find a draft_id for"
+        assert "Use to find a draft_id" not in free_descs["xhs_free_draft_list"]
+        # xhs_free_draft_update — no "Use to refine before"
+        assert "Use to refine before" not in free_descs["xhs_free_draft_update"]
+        # xhs_free_guide — neutral description
+        assert "orchestration steps" not in free_descs["xhs_free_guide"]
+        assert "Call this first" not in free_descs["xhs_free_guide"]
+        assert "Read-only reference" in free_descs["xhs_free_guide"]
 
 
 # ── Helper functions ─────────────────────────────────────────────────────
@@ -635,9 +666,9 @@ class TestFreeModeTools:
         text = result["content"][0]["text"]
         assert "draft-abc123" in text
         assert "我的母婴好物分享" in text
-        # Create→evaluate next-step cue (chain entry point surfaces the next step)
-        assert "next: call xhs_free_evaluate(draft-abc123)" in text
-        assert "quality check before publish" in text
+        # No orchestration next: cue — renders carry only guardrail note: cues
+        assert "next:" not in text
+        assert "xhs_free_evaluate" not in text
         # Structured result carries draft_id
         assert result["details"]["draft_id"] == "draft-abc123"
         # Posted to /free/draft with the full draft body
@@ -687,7 +718,8 @@ class TestFreeModeTools:
         assert "78.5" in text
         assert "approved" in text
         assert "BLOCKING" in text
-        # approved (even with hints present) does NOT trigger the revise cue
+        # No orchestration next: cue — renders carry only guardrail note: cues
+        assert "next:" not in text
         assert "xhs_free_evaluate again" not in text
         # Structured result carries evaluation_result
         assert result["details"]["evaluation_result"]["overall_score"] == 78.5
@@ -698,10 +730,9 @@ class TestFreeModeTools:
         assert sent_json["account_id"] == "acc1"
         assert sent_json["draft_id"] == "draft-xyz"
 
-    async def test_free_evaluate_needs_revision_revise_hint(self):
-        # needs_revision + non-empty hints → the agent render surfaces the
-        # update→re-evaluate next step (evaluate→revise loop, agent-side mirror
-        # of the TUI /draft revise hint #229).
+    async def test_free_evaluate_needs_revision_no_orchestration_cue(self):
+        # needs_revision + non-empty hints → the render surfaces the verdict and
+        # hints, but NO orchestration next: cue (the omp agent decides the flow).
         data = {
             "draft_id": "draft-rev",
             "account_id": "acc1",
@@ -721,9 +752,11 @@ class TestFreeModeTools:
             )
         text = result["content"][0]["text"]
         assert "needs_revision" in text
-        # revise-loop next-step cue present
-        assert "xhs_free_draft_update" in text
-        assert "xhs_free_evaluate again" in text
+        assert "修正绝对化用语" in text  # revision_hints surfaced
+        # No orchestration next: cue — the tool doesn't tell the agent what to do next
+        assert "next:" not in text
+        assert "xhs_free_draft_update" not in text
+        assert "xhs_free_evaluate again" not in text
 
     async def test_free_evaluate_degraded_markers(self):
         # degraded=True (LLM timeout fallback): the render must surface the
@@ -752,8 +785,9 @@ class TestFreeModeTools:
         assert "Evaluation degraded" in text
         assert "pass-through fallback" in text
         assert "降级放行" in text  # cause summary surfaced
-        # re-run cue present (not the revise cue)
-        assert "re-run xhs_free_evaluate" in text
+        # No orchestration next: cue — degraded marker is a guardrail, not a
+        # "re-run" instruction (the agent decides what to do)
+        assert "next:" not in text
         assert "xhs_free_draft_update" not in text
 
     async def test_free_publish(self):
@@ -778,9 +812,9 @@ class TestFreeModeTools:
         assert "post-42" in text
         assert "post-42" in text  # post_url contains it too
         assert "published" in text
-        # Real publish (non-mock post_id) → analytics next-step cue
-        assert "xhs_free_analytics" in text
-        assert "engagement" in text
+        # Real publish gets no orchestration next: cue — the agent decides
+        assert "next:" not in text
+        assert "xhs_free_analytics(" not in text
         # Structured result carries publish_result
         assert result["details"]["publish_result"]["post_id"] == "post-42"
         # Posted to /free/publish with account_id + draft_id
@@ -1071,27 +1105,45 @@ class TestFreeModeTools:
         assert "/free/draft/d-del" in client.delete.await_args.args[0]
         assert client.delete.await_args.kwargs["params"]["account_id"] == "acc1"
 
-    async def test_free_guide_returns_orchestration_text(self):
-        """xhs_free_guide returns orchestration text locally — no httpx call."""
+    async def test_free_guide_returns_guardrail_reference(self):
+        """xhs_free_guide returns guardrail reference text locally — no httpx call.
+
+        The guide is a pure guardrail reference (no orchestration steps, no
+        step numbering, no create→evaluate→publish chain). It lists the
+        available tools (no ordering, no → arrows) and documents the rules:
+        thread-bound tools disabled, degraded verdict guardrail, publish-
+        failure recovery guardrail, draft-list badges.
+        """
         with patch("httpx.AsyncClient") as mock_httpx:
             result = await _execute_xhs_host_tool("xhs_free_guide", {})
         text = result["content"][0]["text"]
-        assert "CREATE" in text
-        assert "EVALUATE" in text
-        assert "PUBLISH" in text
+        # Tool list (neutral, no step numbering)
         assert "xhs_free_draft_create" in text
-        # evaluate→revise loop rule (#234 sync)
-        assert "needs_revision" in text
-        # evaluate-degradation rule (#242 sync) — the guide must teach that
-        # evaluate can degrade to a fake-approved fallback (don't publish on it)
+        assert "xhs_free_evaluate" in text
+        assert "xhs_free_publish" in text
+        assert "xhs_free_analytics" in text
+        assert "xhs_free_draft_list" in text
+        assert "xhs_free_draft_update" in text
+        assert "xhs_free_draft_delete" in text
+        # No orchestration content
+        assert "Step 1" not in text
+        assert "CREATE:" not in text
+        assert "EVALUATE:" not in text
+        assert "PUBLISH:" not in text
+        assert "create→evaluate→publish" not in text
+        assert "Run xhs_free_evaluate before" not in text
+        assert "After a successful publish" not in text
+        # Guardrail: thread-bound tools disabled
+        assert "thread-bound" in text
+        assert "xhs_workflow_status" in text
+        assert "xhs_workflow_start is disabled" in text
+        # Guardrail: degraded verdict (fake 100/approved)
+        assert "degraded" in text
         assert "Evaluate can degrade" in text
-        assert "degraded=True" in text
-        assert "re-run xhs_free_evaluate" in text
-        assert "[degraded]" in text  # draft-list badge documented
-        # publish-failure recovery rule (#239/#240 sync) — the guide must teach
-        # the failure path, not only the success→analytics happy path
+        assert "FAKE fallback" in text
+        assert "[degraded]" in text
+        # Guardrail: publish failure recovery
         assert "Publish can fail" in text
-        assert "re-run xhs_free_publish" in text
         assert "Do NOT call xhs_free_analytics on a failed publish" in text
         assert "[publish failed]" in text  # draft-list badge documented
         # suggestions tool documented in the guide (atomic data fetch, no orchestration cue)
@@ -1101,3 +1153,148 @@ class TestFreeModeTools:
         mock_httpx.assert_not_called()
         # Not an error
         assert result.get("isError") is not True
+
+
+# ── Mode-based tool isolation ────────────────────────────────────────────
+
+
+class TestToolSubsetIsolation:
+    """_tools_for_mode returns the right subset per mode."""
+
+    def test_tools_for_mode_free_excludes_thread_bound(self):
+        free_tools = _tools_for_mode("free")
+        free_names = {t["name"] for t in free_tools}
+        # No thread-bound tools in the free subset
+        assert not (free_names & THREAD_BOUND_TOOLS)
+        # Free-mode tools present
+        assert "xhs_free_draft_create" in free_names
+        assert "xhs_free_evaluate" in free_names
+        assert "xhs_free_publish" in free_names
+        assert "xhs_free_analytics" in free_names
+        assert "xhs_free_draft_list" in free_names
+        assert "xhs_free_draft_update" in free_names
+        assert "xhs_free_draft_delete" in free_names
+        assert "xhs_free_guide" in free_names
+        # Account-bound general tools present
+        assert "xhs_analytics_dashboard" in free_names
+        assert "xhs_system_health" in free_names
+        assert "xhs_creator_stats" in free_names
+        assert "xhs_creator_quality" in free_names
+
+    def test_tools_for_mode_free_no_thread_bound_leak(self):
+        """Every thread-bound tool must be absent from the free subset."""
+        free_tools = _tools_for_mode("free")
+        free_names = {t["name"] for t in free_tools}
+        for tb in THREAD_BOUND_TOOLS:
+            assert tb not in free_names, f"{tb} leaked into free mode subset"
+
+    def test_tools_for_mode_workflow_returns_full(self):
+        wf_tools = _tools_for_mode("workflow")
+        assert len(wf_tools) == len(XHS_HOST_TOOLS)
+        assert {t["name"] for t in wf_tools} == _XHS_TOOL_NAMES
+
+    def test_tools_for_mode_unknown_returns_full(self):
+        """Unknown/None mode defaults to full list (workflow behavior unchanged)."""
+        assert len(_tools_for_mode("trend")) == len(XHS_HOST_TOOLS)
+        assert len(_tools_for_mode("brief")) == len(XHS_HOST_TOOLS)
+
+    def test_free_subset_smaller_than_full(self):
+        free_tools = _tools_for_mode("free")
+        assert len(free_tools) < len(XHS_HOST_TOOLS)
+
+
+@pytest.mark.asyncio
+class TestOmpSessionMode:
+    """OmpSession carries a mode and registers the right tool subset on start."""
+
+    async def test_session_default_mode_is_workflow(self):
+        session = OmpSession("test-1")
+        assert session.mode == "workflow"
+
+    async def test_session_free_mode_registers_subset(self):
+        """OmpSession(mode='free') start() registers only the free subset."""
+        session = OmpSession("test-free", mode="free")
+        with (
+            patch.object(OmpSession, "register_host_tools", new_callable=AsyncMock) as mock_reg,
+            patch.object(OmpSession, "_drain_stderr", new_callable=AsyncMock),
+            patch.object(OmpSession, "_read_stdout", new_callable=AsyncMock),
+            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock),
+            patch("asyncio.wait_for", new_callable=AsyncMock),
+        ):
+            await session.start()
+        mock_reg.assert_awaited_once()
+        registered_tools = mock_reg.await_args.args[0]
+        registered_names = {t["name"] for t in registered_tools}
+        # Free subset only — no thread-bound tools
+        assert not (registered_names & THREAD_BOUND_TOOLS)
+        assert "xhs_free_draft_create" in registered_names
+
+    async def test_session_workflow_mode_registers_full(self):
+        """OmpSession(mode='workflow') start() registers the full list."""
+        session = OmpSession("test-wf", mode="workflow")
+        with (
+            patch.object(OmpSession, "register_host_tools", new_callable=AsyncMock) as mock_reg,
+            patch.object(OmpSession, "_drain_stderr", new_callable=AsyncMock),
+            patch.object(OmpSession, "_read_stdout", new_callable=AsyncMock),
+            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock),
+            patch("asyncio.wait_for", new_callable=AsyncMock),
+        ):
+            await session.start()
+        mock_reg.assert_awaited_once()
+        registered_tools = mock_reg.await_args.args[0]
+        assert len(registered_tools) == len(XHS_HOST_TOOLS)
+
+    async def test_set_mode_reregisters_tools(self):
+        """set_mode updates self.mode and re-registers the new tool subset."""
+        session = OmpSession("test-switch", mode="free")
+        with patch.object(OmpSession, "register_host_tools", new_callable=AsyncMock) as mock_reg:
+            await session.set_mode("workflow")
+        assert session.mode == "workflow"
+        mock_reg.assert_awaited_once()
+        registered_tools = mock_reg.await_args.args[0]
+        assert len(registered_tools) == len(XHS_HOST_TOOLS)
+
+    async def test_set_mode_workflow_to_free_reregisters_subset(self):
+        session = OmpSession("test-switch2", mode="workflow")
+        with patch.object(OmpSession, "register_host_tools", new_callable=AsyncMock) as mock_reg:
+            await session.set_mode("free")
+        assert session.mode == "free"
+        mock_reg.assert_awaited_once()
+        registered_tools = mock_reg.await_args.args[0]
+        registered_names = {t["name"] for t in registered_tools}
+        assert not (registered_names & THREAD_BOUND_TOOLS)
+
+
+@pytest.mark.asyncio
+class TestGetOrCreateSessionMode:
+    """OmpBridgeManager.get_or_create_session passes mode and re-registers on mismatch."""
+
+    async def test_new_session_with_mode(self):
+        manager = OmpBridgeManager()
+        with (
+            patch.object(OmpSession, "start", new_callable=AsyncMock),
+            patch.object(OmpSession, "register_host_tools", new_callable=AsyncMock),
+        ):
+            session = await manager.get_or_create_session(None, mode="free")
+        assert session.mode == "free"
+        assert session.session_id in manager._sessions
+
+    async def test_existing_session_same_mode_no_reregister(self):
+        manager = OmpBridgeManager()
+        session = OmpSession("existing", mode="free")
+        manager._sessions["existing"] = session
+        with patch.object(OmpSession, "set_mode", new_callable=AsyncMock) as mock_set_mode:
+            result = await manager.get_or_create_session("existing", mode="free")
+        assert result is session
+        mock_set_mode.assert_not_awaited()
+
+    async def test_existing_session_mode_mismatch_calls_set_mode(self):
+        manager = OmpBridgeManager()
+        session = OmpSession("existing", mode="workflow")
+        manager._sessions["existing"] = session
+        with patch.object(OmpSession, "set_mode", new_callable=AsyncMock) as mock_set_mode:
+            result = await manager.get_or_create_session("existing", mode="free")
+        assert result is session
+        mock_set_mode.assert_awaited_once_with("free")
+        # set_mode is mocked, so we don't assert session.mode here — the
+        # real set_mode updates self.mode; the mock just verifies the call.

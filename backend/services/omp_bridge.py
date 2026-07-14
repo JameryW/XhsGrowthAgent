@@ -598,12 +598,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
     {
         "name": "xhs_free_draft_create",
         "label": "XHS Free Draft Create",
-        "description": (
-            "Step 1 of 3 (create). Create a free-mode content draft (thread-less). "
-            "Returns draft_id — feed it to xhs_free_evaluate (step 2) "
-            "then xhs_free_publish (step 3). "
-            "For the full orchestration guide call xhs_free_guide."
-        ),
+        "description": ("Create a free-mode content draft (thread-less). Returns draft_id."),
         "parameters": {
             "type": "object",
             "properties": {
@@ -637,9 +632,8 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "name": "xhs_free_evaluate",
         "label": "XHS Free Draft Evaluate",
         "description": (
-            "Step 2 of 3 (evaluate). Evaluate a free-mode draft via the RQGM agent-as-a-judge "
-            "panel. Input draft_id from xhs_free_draft_create. Returns EvaluationResult "
-            "(overall_score, dimensions, decision)."
+            "Evaluate a free-mode draft via the RQGM agent-as-a-judge "
+            "panel. Returns EvaluationResult (overall_score, dimensions, decision)."
         ),
         "parameters": {
             "type": "object",
@@ -647,7 +641,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
                 "account_id": {"type": "string", "default": "default", "description": "Account ID"},
                 "draft_id": {
                     "type": "string",
-                    "description": "Draft ID from xhs_free_draft_create",
+                    "description": "Draft ID to evaluate",
                 },
             },
             "required": ["draft_id"],
@@ -657,9 +651,8 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "name": "xhs_free_publish",
         "label": "XHS Free Draft Publish",
         "description": (
-            "Step 3 of 3 (publish). Publish a free-mode draft to Xiaohongshu (thread-less) "
-            "via the account's CDP profile login state. Input draft_id from xhs_free_draft_create. "
-            "Run xhs_free_evaluate first for a quality check."
+            "Publish a free-mode draft to Xiaohongshu (thread-less) "
+            "via the account's CDP profile login state."
         ),
         "parameters": {
             "type": "object",
@@ -667,7 +660,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
                 "account_id": {"type": "string", "default": "default", "description": "Account ID"},
                 "draft_id": {
                     "type": "string",
-                    "description": "Draft ID from xhs_free_draft_create",
+                    "description": "Draft ID to publish",
                 },
             },
             "required": ["draft_id"],
@@ -679,9 +672,8 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "description": (
             "Post-publish engagement check. Fetch views/likes/collects/comments/shares/"
             "engagement_rate for a published free draft via XHSClient.get_post_analytics. "
-            "Input draft_id from xhs_free_draft_create/publish. The draft must have been "
-            "published (post_id persisted) — call xhs_free_publish first. Returns current "
-            "engagement snapshot (single fetch, not trend over time)."
+            "The draft must have been published (post_id persisted) — call xhs_free_publish first. "
+            "Returns current engagement snapshot (single fetch, not trend over time)."
         ),
         "parameters": {
             "type": "object",
@@ -716,7 +708,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "label": "XHS Free Draft List",
         "description": (
             "List free-mode drafts for an account (thread-less). Returns draft_id + title "
-            "summary, no full body. Use to find a draft_id for evaluate/publish/update/delete."
+            "summary, no full body."
         ),
         "parameters": {
             "type": "object",
@@ -731,7 +723,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "label": "XHS Free Draft Update",
         "description": (
             "Update a free-mode draft (thread-less). Overwrites specified fields, keeps "
-            "draft_id unchanged. Use to refine before evaluate/publish."
+            "draft_id unchanged."
         ),
         "parameters": {
             "type": "object",
@@ -788,17 +780,63 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
     {
         "name": "xhs_free_guide",
         "label": "XHS Free Mode Guide",
-        "description": (
-            "Read-only guide for free creation mode. Returns the orchestration steps and tool "
-            "chain. Call this first in free mode to learn the create→evaluate→publish loop and "
-            "which tools to use."
-        ),
+        "description": ("Read-only reference for free creation mode tools and usage rules."),
         "parameters": {"type": "object", "properties": {}, "required": []},
     },
 ]
 
 # Names of XHS tools that the backend auto-executes
 _XHS_TOOL_NAMES = {t["name"] for t in XHS_HOST_TOOLS}
+
+# ── Mode-based tool isolation ──────────────────────────────────────────────
+# Free mode exposes only thread-less free-mode tools + account-bound general
+# tools. Thread-bound workflow tools (xhs_workflow_*, xhs_review_*,
+# xhs_optimization_*, xhs_blogger_*, xhs_ripple_*, xhs_evaluation_*) are not
+# registered in free mode — the LLM never sees their descriptions.
+THREAD_BOUND_TOOLS: frozenset[str] = frozenset(
+    {
+        "xhs_workflow_status",
+        "xhs_workflow_pause",
+        "xhs_workflow_resume",
+        "xhs_workflow_cancel",
+        "xhs_workflow_list",
+        "xhs_workflow_delete",
+        "xhs_workflow_history",
+        "xhs_workflow_trigger_analytics",
+        "xhs_publish_retry",
+        "xhs_review_approve",
+        "xhs_review_reject",
+        "xhs_review_pending",
+        "xhs_review_versions",
+        "xhs_blogger_pending",
+        "xhs_blogger_select",
+        "xhs_optimization_draft",
+        "xhs_optimization_select",
+        "xhs_ripple_pending",
+        "xhs_ripple_decision",
+        "xhs_ripple_retry",
+        "xhs_evaluation_result",
+        "xhs_evaluation_run",
+    }
+)
+
+# Free-mode tool subset: xhs_free_* + account-bound general tools.
+# Built once from XHS_HOST_TOOLS so it stays in sync with tool definitions.
+_FREE_MODE_TOOL_NAMES: frozenset[str] = frozenset(_XHS_TOOL_NAMES - THREAD_BOUND_TOOLS)
+
+
+def _tools_for_mode(mode: str) -> list[dict[str, Any]]:
+    """Return the host-tool subset for a given mode.
+
+    - ``"free"``: only free-mode + account-bound general tools (no thread-bound
+      workflow tools). The LLM never sees workflow tool descriptions.
+    - any other mode (``"workflow"``, ``"trend"``, ``"brief"``, ``None``-ish):
+      the full ``XHS_HOST_TOOLS`` list — workflow mode unchanged.
+    """
+    if mode == "free":
+        return [t for t in XHS_HOST_TOOLS if t["name"] in _FREE_MODE_TOOL_NAMES]
+    return list(XHS_HOST_TOOLS)
+
 
 # Retry config for transient HTTP errors
 _RETRYABLE_STATUS = {429, 502, 503, 504}
@@ -907,45 +945,32 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
         )
 
     if tool_name == "xhs_free_guide":
-        # Local-only: no backend call, just return the orchestration guide text.
+        # Local-only: no backend call, just return the usage-rules reference.
         guide = (
-            "Free Creation Mode — Orchestration Guide\n"
+            "Free Creation Mode — Usage Rules\n"
             "\n"
             "You are in free creation mode (no workflow thread). Use these thread-less tools:\n"
             "\n"
-            "1. CREATE: xhs_free_draft_create (title, body, hashtags, image_paths, niche) "
-            "→ returns draft_id\n"
-            "2. EVALUATE: xhs_free_evaluate (draft_id) → RQGM 6-dimension quality score "
-            "+ decision\n"
-            "3. PUBLISH: xhs_free_publish (draft_id) → publishes via account CDP login state\n"
-            "4. ANALYTICS: xhs_free_analytics (draft_id) → post-publish engagement "
-            "(views/likes/collects/comments/shares/engagement_rate)\n"
-            "\n"
-            "Suggestions:\n"
-            "- xhs_free_suggestions (account_id) → style/topic/format/timing advice "
-            "from imported Creator Center stats (cold-start note if no data).\n"
-            "\n"
-            "Draft management:\n"
-            "- xhs_free_draft_list (account_id) → list drafts (shows [score decision] /\n"
-            "  [degraded] / [published] / [publish failed] badges so you can pick the\n"
-            "  next step from the list)\n"
-            "- xhs_free_draft_update (draft_id, fields...) → refine a draft (keeps draft_id)\n"
-            "- xhs_free_draft_delete (draft_id) → remove a draft\n"
+            "Thread-less tools available in free mode:\n"
+            "- xhs_free_draft_create (title, body, hashtags, image_paths, niche)\n"
+            "- xhs_free_evaluate (draft_id)\n"
+            "- xhs_free_publish (draft_id)\n"
+            "- xhs_free_analytics (draft_id)\n"
+            "- xhs_free_suggestions (account_id) — style/topic/format/timing advice "
+            "from imported Creator Center stats\n"
+            "- xhs_free_draft_list (account_id)\n"
+            "- xhs_free_draft_update (draft_id, fields...)\n"
+            "- xhs_free_draft_delete (draft_id)\n"
             "\n"
             "Rules:\n"
             "- Do NOT call thread-bound tools (xhs_workflow_status/pause/resume/cancel, "
-            "xhs_review_*, xhs_optimization_*) — free mode has no thread_id; they will fail.\n"
+            "xhs_review_*, xhs_optimization_*, xhs_blogger_*, xhs_ripple_*, "
+            "xhs_evaluation_*) — free mode has no thread_id; they will fail.\n"
             "- xhs_workflow_start is disabled in free mode.\n"
-            "- Reuse draft_id across create→evaluate→publish; do not recreate on each step.\n"
-            "- Run xhs_free_evaluate before xhs_free_publish for a quality gate.\n"
-            "- If evaluate returns needs_revision/rejected, use xhs_free_draft_update "
-            "per the revision_hints (keep the same draft_id), then xhs_free_evaluate "
-            "again before publish — do not publish a needs_revision draft.\n"
             "- Evaluate can degrade (LLM timeout → pass-through fallback with "
             "degraded=True, overall_score=100/decision=approved): the 100/approved "
             "is a FAKE fallback, NOT a real score. The render flags it (⚠ Evaluation "
-            "degraded); do NOT publish on a degraded verdict — re-run xhs_free_evaluate "
-            "(keep draft_id) once the LLM is available. The draft list shows a "
+            "degraded); do NOT publish on a degraded verdict. The draft list shows a "
             "[degraded] badge.\n"
             "- Publish can fail (status=failed/auth_expired): the render shows "
             "Error/Error Type/Recovery — read the recovery hint, fix the cause "
@@ -953,7 +978,8 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
             "(keep the same draft_id). Do NOT call xhs_free_analytics on a failed "
             "publish (no post_id → 400). The failed attempt is persisted as "
             "last_publish; the draft list shows a [publish failed] badge.\n"
-            "- After a successful publish, call xhs_free_analytics to check engagement."
+            "- The draft list shows [score decision] / [degraded] / [published] / "
+            "[publish failed] badges per draft."
         )
         return _make_text_result(guide, {"mode": "free"})
 
@@ -1707,15 +1733,6 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     f"Free Draft Created — draft_id: {draft_id}",
                     f"Title: {draft.get('title', '')}",
                 ]
-                # Create→evaluate next-step cue — the create render is the chain
-                # entry point (yields the draft_id evaluate/publish depend on),
-                # so surface the immediate next step. Mirrors the evaluate/publish
-                # render cues (#234/#235); no cue on a failed create (no draft_id).
-                if draft_id:
-                    lines.append(
-                        f"  next: call xhs_free_evaluate({draft_id}) for a quality "
-                        "check before publish."
-                    )
                 return _make_text_result("\n".join(lines), {"draft_id": draft_id, **data})
 
             elif tool_name == "xhs_free_evaluate":
@@ -1751,25 +1768,6 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     lines.append(f"  - {d.get('dimension')}: {d.get('score')}{block}")
                 for h in ev.get("revision_hints") or []:
                     lines.append(f"  hint: {h}")
-                # Revise-loop next step — closes evaluate→update→re-evaluate for
-                # the agent (free mode's default driver). Mirrors the TUI /draft
-                # revise hint (#229): needs_revision/rejected with concrete hints
-                # points at xhs_free_draft_update → re-evaluate, not straight to
-                # publish. approved/rejected-without-hints get no cue. A degraded
-                # (fake-approved) eval gets a re-run cue instead.
-                decision = ev.get("decision", "")
-                if degraded:
-                    lines.append(
-                        "  next: re-run xhs_free_evaluate (draft_id unchanged) once the "
-                        "LLM is available; do not publish on a degraded verdict."
-                    )
-                elif decision in ("needs_revision", "rejected") and (
-                    ev.get("revision_hints") or []
-                ):
-                    lines.append(
-                        "  next: revise per the hints via xhs_free_draft_update "
-                        "(keep draft_id), then xhs_free_evaluate again before publish."
-                    )
                 return _make_text_result("\n".join(lines), {"evaluation_result": ev, **data})
 
             elif tool_name == "xhs_free_publish":
@@ -1787,20 +1785,14 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     f"  URL: {pub.get('post_url', '')}",
                     f"  Status: {pub.get('status', '')}",
                 ]
-                # Next-step cue — mirrors the evaluate render (#234) and the TUI
-                # post-publish hint (#223). Real publish (status=="published",
-                # non-mock post_id) → point at xhs_free_analytics for engagement.
-                # Mock publish (dry-run, "mock_*" post_id / mock_published) → flag
-                # it as simulated so the agent doesn't call analytics (which 400s
-                # on a synthetic post_id). Failed publish → surface cause + recovery.
+                # Guardrail cues: mock publish (dry-run, "mock_*" post_id /
+                # mock_published) → flag it as simulated so the agent doesn't call
+                # analytics (which 400s on a synthetic post_id). Failed publish →
+                # surface cause + recovery. Real publish gets no cue (orchestration
+                # is the omp agent's job, not the tool's).
                 pid = pub.get("post_id", "") or ""
                 pstatus = pub.get("status", "") or ""
-                if pstatus == "published" and pid and not pid.startswith("mock_"):
-                    lines.append(
-                        f"  next: call xhs_free_analytics({draft_id}) to check "
-                        "post-publish engagement."
-                    )
-                elif pstatus == "mock_published" or pid.startswith("mock_"):
+                if pstatus == "mock_published" or pid.startswith("mock_"):
                     lines.append(
                         "  note: dry-run mock publish (no real XHS post) — analytics "
                         "not available; re-run xhs_free_publish without dry-run for a "
@@ -1808,8 +1800,8 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     )
                 elif pstatus != "published" and pub.get("error"):
                     # Failed publish (status==failed/auth_expired/...) — surface the
-                    # cause + recovery path that run_publish returns so the agent can
-                    # tell the user why and what to do (mirrors #234/#235 cue pattern).
+                    # cause + recovery path that run_publish returns so the agent
+                    # can tell the user why and what to do.
                     lines.append(f"  Error: {pub['error']}")
                     if pub.get("error_type"):
                         lines.append(f"  Error Type: {pub['error_type']}")
@@ -1893,11 +1885,10 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     lines.append("  (truncated — older drafts not shown)")
                 for d in drafts:
                     parts = [f"  - {d.get('draft_id', '')}: {d.get('title', '')}"]
-                    # Eval badge — last_evaluation with a decision lets the agent
-                    # pick next step from the list (unevaluated→evaluate,
-                    # needs_revision→revise, approved→publish/analytics). A
-                    # degraded (fake-approved fallback) eval shows [degraded]
-                    # instead of the misleading [100 approved].
+                    # Eval badge — last_evaluation with a decision lets the
+                    # agent see each draft's state at a glance. A degraded
+                    # (fake-approved fallback) eval shows [degraded] instead
+                    # of the misleading [100 approved].
                     le = d.get("last_evaluation") or {}
                     if le and le.get("degraded"):
                         parts.append("  [degraded]")
@@ -1907,9 +1898,9 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                         parts.append(f"  [{score_str} {le.get('decision')}]")
                     if d.get("published"):
                         parts.append("  [published]")
-                    # Publish-failed badge — last_publish with a non-success status
-                    # lets the agent see from the list that a publish attempt failed
-                    # (→ re-attempt after fixing cause) without opening the detail.
+                    # Publish-failed badge — last_publish with a non-success
+                    # status lets the agent see from the list that a publish
+                    # attempt failed without opening the detail.
                     lp = d.get("last_publish") or {}
                     lp_status = lp.get("status") or ""
                     if lp_status and lp_status not in ("published", "mock_published"):
@@ -1993,8 +1984,9 @@ class OmpSession:
     Each session gets its own subprocess, event callbacks, and pending requests.
     """
 
-    def __init__(self, session_id: str) -> None:
+    def __init__(self, session_id: str, mode: str = "workflow") -> None:
         self.session_id = session_id
+        self.mode = mode
         self._proc: asyncio.subprocess.Process | None = None
         self._ready = asyncio.Event()
         self._event_callbacks: list[Callable[[dict[str, Any]], Coroutine[None, None, None]]] = []
@@ -2054,8 +2046,9 @@ class OmpSession:
 
         logger.info("omp RPC session %s ready", self.session_id)
 
-        # Register XHS host tools right after ready
-        await self.register_host_tools(XHS_HOST_TOOLS)
+        # Register XHS host tools for this session's mode (free mode registers
+        # only the free-mode subset; workflow mode registers the full list).
+        await self.register_host_tools(_tools_for_mode(self.mode))
 
     async def stop(self) -> None:
         """Gracefully shut down omp subprocess."""
@@ -2134,6 +2127,17 @@ class OmpSession:
     async def abort(self) -> None:
         """Translate frontend abort -> omp abort command."""
         await self._write_cmd({"type": "abort"})
+
+    async def set_mode(self, mode: str) -> None:
+        """Switch the session's tool subset and re-register with omp.
+
+        Omp's ``set_host_tools`` is a full-replacement command (the existing
+        tool registry is cleared and the new list is registered before the next
+        model call), so calling ``register_host_tools`` with a different subset
+        is sufficient — no subprocess restart or session rebuild needed.
+        """
+        self.mode = mode
+        await self.register_host_tools(_tools_for_mode(mode))
 
     # ── Host tool mechanism ──────────────────────────────────────────────
 
@@ -2530,11 +2534,15 @@ class OmpBridgeManager:
 
         logger.info("OmpBridgeManager stopped")
 
-    async def get_or_create_session(self, session_id: str | None = None) -> OmpSession:
+    async def get_or_create_session(
+        self, session_id: str | None = None, mode: str = "workflow"
+    ) -> OmpSession:
         """Get an existing session or create a new one.
 
         If session_id is None, generates a new UUID and starts a new session.
-        If session_id is provided and exists, cancels its idle timer and returns it.
+        If session_id is provided and exists, cancels its idle timer, and if
+        the mode differs from the session's current mode, re-registers the
+        tool subset for the new mode (no subprocess restart needed).
         If session_id is provided but doesn't exist, creates a new session with that ID.
         """
         if session_id and session_id in self._sessions:
@@ -2542,15 +2550,26 @@ class OmpBridgeManager:
             timer = self._idle_timers.pop(session_id, None)
             if timer and not timer.done():
                 timer.cancel()
-            return self._sessions[session_id]
+            session = self._sessions[session_id]
+            # Re-register tools if the mode changed since the session was created
+            # (e.g. same session_id reused across free↔workflow page navigation).
+            if session.mode != mode:
+                logger.info(
+                    "Session %s mode changed %s→%s, re-registering tools",
+                    session_id,
+                    session.mode,
+                    mode,
+                )
+                await session.set_mode(mode)
+            return session
 
         # Create new session
         if not session_id:
             session_id = f"omp_{uuid.uuid4().hex[:8]}"
-        session = OmpSession(session_id)
+        session = OmpSession(session_id, mode=mode)
         await session.start()
         self._sessions[session_id] = session
-        logger.info("Created omp session %s", session_id)
+        logger.info("Created omp session %s (mode=%s)", session_id, mode)
         return session
 
     def start_idle_timer(self, session_id: str) -> None:

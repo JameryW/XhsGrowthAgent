@@ -79,7 +79,9 @@ const contextMenuHasSelection = ref(false)
 const mobileInput = ref('')
 
 // ── Agent mode: WebSocket ───────────────────────────────────────────────
-const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/agent/ws`
+// Base WS URL — mode query param appended in connectAgentWs based on
+// isFreeCreationEntry so free mode sessions register the free tool subset.
+const WS_BASE_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/agent/ws`
 let ws: WebSocket | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempts = 0
@@ -532,7 +534,12 @@ function submitMobileInput() {
 function connectAgentWs() {
   if (ws && ws.readyState === WebSocket.OPEN) return
 
-  ws = new WebSocket(WS_URL)
+  // Free mode appends ?mode=free so the backend registers only the free-mode
+  // tool subset (no thread-bound workflow tools visible to the LLM).
+  const wsUrl = isFreeCreationEntry.value
+    ? `${WS_BASE_URL}?mode=free`
+    : WS_BASE_URL
+  ws = new WebSocket(wsUrl)
 
   ws.onopen = () => {
     wsConnected.value = true
