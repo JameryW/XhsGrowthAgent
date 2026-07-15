@@ -34,6 +34,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   submit: []
+  accountChange: [accountId: string]
 }>()
 
 const workflowMode = ref<WorkflowMode>('trend')
@@ -127,8 +128,9 @@ watch(workflowMode, (mode) => {
   }
 })
 
-watch(accountId, () => {
+watch(accountId, (nextAccountId) => {
   applyNicheDefault()
+  emit('accountChange', nextAccountId)
 })
 
 watch(boundNiche, () => {
@@ -177,6 +179,17 @@ const modes: { value: WorkflowMode; icon: string; labelKey: string }[] = [
   { value: 'free', icon: 'Terminal', labelKey: 'home.freeMode' },
 ]
 
+const modeDescriptionKeys: Record<WorkflowMode, string> = {
+  trend: 'home.modeDescriptions.trend',
+  brief: 'home.modeDescriptions.brief',
+  free: 'home.modeDescriptions.free',
+}
+
+const selectedModeLabel = computed(() => {
+  const mode = modes.find((item) => item.value === workflowMode.value)
+  return mode ? t(mode.labelKey) : ''
+})
+
 // Submit button label: free mode → enterFree, else startWorkflow
 const submitLabel = computed(() =>
   workflowMode.value === 'free'
@@ -208,6 +221,18 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
 
 <template>
   <div class="space-y-6">
+    <!-- A compact progress cue keeps the form oriented on both desktop and mobile. -->
+    <div class="flex items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5" role="list" :aria-label="t('home.formIntro')">
+      <div v-for="(step, index) in [t('home.stepConfigure'), t('home.stepReview'), t('home.stepCreate')]" :key="step" class="flex min-w-0 flex-1 items-center gap-2" role="listitem">
+        <span :class="[
+          'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold',
+          index === 0 ? 'bg-neon-pink text-white shadow-neon-pink-sm' : 'bg-white text-slate-400 ring-1 ring-slate-200'
+        ]">{{ index + 1 }}</span>
+        <span :class="['truncate text-[11px] font-semibold', index === 0 ? 'text-slate-700' : 'text-slate-400']">{{ step }}</span>
+        <span v-if="index < 2" class="h-px min-w-2 flex-1 bg-slate-200" aria-hidden="true" />
+      </div>
+    </div>
+
     <!-- Workflow Mode Selector -->
     <div>
       <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">
@@ -218,16 +243,21 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
         <button
           v-for="m in modes"
           :key="m.value"
+          type="button"
           @click="workflowMode = m.value"
           :aria-pressed="workflowMode === m.value"
+          :aria-label="`${t(m.labelKey)}: ${t(modeDescriptionKeys[m.value])}`"
           :class="[
-            'relative flex flex-col items-center gap-1.5 p-3.5 rounded-xl border-2 text-center',
+            'relative flex min-h-[112px] flex-col items-center gap-1.5 rounded-xl border-2 p-3 text-center',
             'transition-all duration-300 ease-out cursor-pointer select-none',
             workflowMode === m.value
               ? 'border-neon-pink/50 bg-gradient-to-br from-neon-pink/10 to-neon-peach/5 shadow-neon-pink-sm'
               : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50 hover:shadow-sm'
           ]"
         >
+          <span v-if="m.value === 'trend'" class="absolute right-2 top-2 rounded-full bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-neon-pinkDark">
+            {{ t('home.modeRecommended') }}
+          </span>
           <AppIcon
             :name="m.icon"
             size="md"
@@ -235,6 +265,11 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
           />
           <span :class="['text-sm font-semibold', workflowMode === m.value ? 'text-neon-pinkDark' : 'text-slate-500']">
             {{ t(m.labelKey) }}
+          </span>
+          <span class="line-clamp-2 text-[10px] leading-4 text-slate-400">{{ t(modeDescriptionKeys[m.value]) }}</span>
+          <span v-if="workflowMode === m.value" class="mt-auto inline-flex items-center gap-1 text-[10px] font-semibold text-neon-pinkDark">
+            <AppIcon name="Check" size="xs" variant="pink" aria-hidden="true" />
+            {{ t('home.selectedMode', { mode: selectedModeLabel }) }}
           </span>
         </button>
       </div>

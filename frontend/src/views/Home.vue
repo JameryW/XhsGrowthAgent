@@ -2,7 +2,6 @@
 import { useRouter, useRoute } from 'vue-router'
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import PreLaunchChecklist from '@/components/PreLaunchChecklist.vue'
 import WorkflowStartForm from '@/components/WorkflowStartForm.vue'
@@ -46,6 +45,16 @@ const confirmWorkflowMode = computed<'trend' | 'brief'>(() =>
 const selectedAccountName = computed(() =>
   accountsStore.accounts.find((account) => account.id === formConfig.value.accountId)?.name || ''
 )
+const selectedAccountNiche = computed(() =>
+  accountsStore.accounts.find((account) => account.id === formConfig.value.accountId)?.niche?.trim() || formConfig.value.niche
+)
+const hasSelectedAccount = computed(() => Boolean(formConfig.value.accountId && selectedAccountName.value))
+
+const handleAccountChange = (accountId: string) => {
+  // Keep the summary Hero in sync with the form's internal selection. The form
+  // remains the source of truth for the complete submitted configuration.
+  formConfig.value.accountId = accountId
+}
 
 // Check for topic and niche query params from analytics
 onMounted(() => {
@@ -126,8 +135,43 @@ const confirmStart = async () => {
 </script>
 
 <template>
-  <div class="min-h-[80vh] flex flex-col justify-center">
-    <div class="w-full">
+  <div class="home-page min-h-[80vh] flex flex-col justify-center">
+    <div class="w-full space-y-4 md:space-y-6">
+      <!-- First-screen orientation: explain the job before asking for configuration. -->
+      <section class="relative overflow-hidden rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white via-rose-50/70 to-cyan-50/70 p-5 shadow-sm md:rounded-3xl md:p-8" aria-labelledby="home-welcome-title">
+        <div class="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-neon-pink/10 blur-3xl" aria-hidden="true" />
+        <div class="pointer-events-none absolute -bottom-24 right-1/3 h-48 w-48 rounded-full bg-neon-cyan/10 blur-3xl" aria-hidden="true" />
+        <div class="relative grid gap-5 md:grid-cols-[1fr_auto] md:items-end">
+          <div class="max-w-2xl">
+            <p class="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-neon-pinkDark">{{ t('home.eyebrow') }}</p>
+            <h1 id="home-welcome-title" class="text-2xl font-bold tracking-tight text-slate-800 md:text-4xl">{{ t('home.welcomeTitle') }}</h1>
+            <p class="mt-2 max-w-xl text-sm leading-6 text-slate-500 md:text-base">{{ t('home.welcomeSubtitle') }}</p>
+          </div>
+
+          <div class="flex min-w-0 items-center gap-3 rounded-2xl border border-white/80 bg-white/80 p-3 shadow-sm backdrop-blur-sm md:min-w-[250px]">
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-neon-cyan to-neon-green shadow-neon-cyan-sm">
+              <AppIcon name="UserCheck" size="md" variant="white" aria-hidden="true" />
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('home.currentContext') }}</p>
+              <p class="truncate text-sm font-bold text-slate-700">{{ selectedAccountName || t('home.noAccountSelected') }}</p>
+              <p class="truncate text-xs text-slate-400">
+                {{ hasSelectedAccount ? t('home.accountNiche', { niche: selectedAccountNiche }) : t('home.accountPending') }}
+              </p>
+            </div>
+            <span v-if="hasSelectedAccount" class="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-600">{{ t('home.readyBadge') }}</span>
+          </div>
+        </div>
+
+        <div class="relative mt-6 flex max-w-md items-center gap-2" role="list" :aria-label="t('home.welcomeSubtitle')">
+          <div v-for="(step, index) in [t('home.stepConfigure'), t('home.stepReview'), t('home.stepCreate')]" :key="step" class="flex min-w-0 flex-1 items-center gap-2" role="listitem">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-neon-pinkDark ring-1 ring-rose-100">{{ index + 1 }}</span>
+            <span class="truncate text-xs font-semibold text-slate-600">{{ step }}</span>
+            <span v-if="index < 2" class="h-px min-w-3 flex-1 bg-slate-200" aria-hidden="true" />
+          </div>
+        </div>
+      </section>
+
       <!-- Pre-filled topic from analytics -->
       <div v-if="prefilledTopic" class="mb-3 md:mb-4 p-2.5 md:p-3 rounded-lg liquid-glass-teal liquid-glass-hover flex items-center gap-2">
         <AppIcon name="Sparkles" size="sm" variant="cyan" />
@@ -141,40 +185,53 @@ const confirmStart = async () => {
       </div>
 
       <!-- Configuration form -->
-      <div class="rounded-xl md:rounded-2xl p-4 md:p-6 liquid-glass liquid-glass-hover mb-3 md:mb-4">
-        <div class="flex items-center gap-2 mb-4">
+      <div class="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(220px,.65fr)] lg:items-start">
+      <section class="rounded-xl md:rounded-2xl p-4 md:p-6 liquid-glass liquid-glass-hover">
+        <div class="mb-1 flex items-center gap-2">
           <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-400 to-amber-400 flex items-center justify-center shadow-sm">
             <AppIcon name="Rocket" size="sm" variant="white" />
           </div>
           <h2 class="text-sm font-semibold text-slate-700">{{ t('home.startWorkflow') }}</h2>
         </div>
+        <p class="mb-4 pl-10 text-xs leading-5 text-slate-400">{{ t('home.formIntro') }}</p>
         <WorkflowStartForm
           ref="startFormRef"
           :initial-topic="prefilledTopic || undefined"
           :initial-niche="prefilledNiche"
           :is-loading="isStarting"
+          @account-change="handleAccountChange"
           @submit="handleSubmit"
         />
+      </section>
+
+      <aside class="rounded-xl border border-slate-200/70 bg-white/80 p-4 shadow-sm md:rounded-2xl md:p-5" aria-labelledby="home-shortcuts-title">
+        <div class="mb-3 flex items-center gap-2">
+          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50">
+            <AppIcon name="Sparkles" size="sm" variant="cyan" aria-hidden="true" />
+          </div>
+          <div>
+            <h2 id="home-shortcuts-title" class="text-sm font-semibold text-slate-700">{{ t('home.shortcutTitle') }}</h2>
+            <p class="text-[11px] text-slate-400">{{ t('home.shortcutDescription') }}</p>
+          </div>
+        </div>
+        <div class="space-y-2">
+          <button type="button" class="flex min-h-11 w-full items-center gap-3 rounded-xl border border-cyan-100 bg-cyan-50/60 px-3 text-left transition hover:border-cyan-200 hover:bg-cyan-50" @click="goToDashboard" :disabled="isStarting">
+            <AppIcon name="BarChart3" size="sm" variant="cyan" aria-hidden="true" />
+            <span class="min-w-0 flex-1 truncate text-xs font-semibold text-slate-700">{{ t('home.viewDashboard') }}</span>
+            <AppIcon name="ArrowRight" size="sm" variant="cyan" aria-hidden="true" />
+          </button>
+          <button type="button" class="flex min-h-11 w-full items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-left transition hover:border-slate-300 hover:bg-white" @click="goToHistory" :disabled="isStarting">
+            <AppIcon name="History" size="sm" variant="cyan" aria-hidden="true" />
+            <span class="min-w-0 flex-1 truncate text-xs font-semibold text-slate-700">{{ t('home.history') }}</span>
+            <AppIcon name="ArrowRight" size="sm" variant="cyan" aria-hidden="true" />
+          </button>
+        </div>
+      </aside>
       </div>
 
       <!-- Checklist + nav -->
       <div class="flex flex-col gap-3 md:gap-4">
         <PreLaunchChecklist ref="checklistRef" />
-
-        <div class="flex gap-3 md:gap-4">
-          <NeonButton variant="cyan" size="sm" class="flex-1" @click="goToDashboard" :disabled="isStarting" :aria-label="t('home.viewDashboard')">
-            <span class="inline-flex items-center gap-1.5">
-              <AppIcon name="BarChart3" size="sm" variant="white" aria-hidden="true" />
-              <span class="text-xs md:text-sm">{{ t('home.viewDashboard') }}</span>
-            </span>
-          </NeonButton>
-          <NeonButton variant="ghost" size="sm" class="flex-1" @click="goToHistory" :disabled="isStarting">
-            <span class="inline-flex items-center gap-1.5">
-              <AppIcon name="History" size="sm" variant="cyan" aria-hidden="true" />
-              <span class="text-xs md:text-sm">{{ t('home.history') }}</span>
-            </span>
-          </NeonButton>
-        </div>
       </div>
     </div>
 
