@@ -405,6 +405,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', updateLoopWidth)
+  if (detailPumpTimer !== null) window.clearTimeout(detailPumpTimer)
   if (deferredDetailTimer !== null) window.clearTimeout(deferredDetailTimer)
   if (ambientTimer !== null) window.clearTimeout(ambientTimer)
 })
