@@ -1,0 +1,3 @@
+{"file":"frontend/src/views/Showcase.vue","reason":"Verify Showcase ordering, states, filtering, and navigation behavior."}
+{"file":"frontend/src/views/WorkflowReplay.vue","reason":"Verify replay selection, stage context, result detail, and responsive state behavior."}
+{"file":"frontend/src/App.vue","reason":"Verify immersive pages remain full bleed and do not inherit the authenticated frame."}

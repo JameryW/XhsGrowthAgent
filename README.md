@@ -220,7 +220,7 @@ Vue 3 前端界面，赛博朋克风格，围绕创作、审核、增长和账�
 | Help Center | `/help` | FAQ、快捷键面板和反馈报告 |
 | Free Creation TUI | `/tui?mode=free` | 登录后进入终端式自由创作；保留命令行，同时提供建议/草稿/帮助快捷操作 |
 
-前端交互约定、连接状态、错误恢复、响应式和无障碍规则见 [docs/frontend-ux-optimization.md](./docs/frontend-ux-optimization.md)。
+前端交互约定、导航层级、连接状态、错误恢复、响应式和无障碍规则见 [docs/frontend-ux-optimization.md](./docs/frontend-ux-optimization.md)。
 
 开始创作页会先展示“配置 → 确认 → 创作”的任务路径和当前账号，再进入模式配置；工作台首屏根据空闲、运行中、等待输入/审核、已完成或错误状态切换主标题、进度摘要和行动入口，减少用户扫描时间。
 

@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import ConsoleUsersPanel from '@/components/settings/ConsoleUsersPanel.vue'
 import XhsAccountsPanel from '@/components/settings/XhsAccountsPanel.vue'
 import SystemConfigPanel from '@/components/settings/SystemConfigPanel.vue'
@@ -40,17 +41,14 @@ const currentTab = computed(() => TABS.find(t => t.id === activeTab.value)!)
 </script>
 
 <template>
-  <div class="max-w-6xl mx-auto">
-    <!-- Header -->
-    <div class="flex items-center gap-3 mb-6">
-      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-700 to-slate-600 flex items-center justify-center shadow-md">
-        <AppIcon name="Settings" size="md" variant="white" />
-      </div>
-      <div>
-        <h1 class="text-xl font-bold text-slate-800">{{ t('settings.title') }}</h1>
-        <p class="text-xs text-slate-400">{{ t('settings.subtitle') }}</p>
-      </div>
-    </div>
+  <div class="mx-auto max-w-6xl space-y-4 md:space-y-6">
+    <PageHeader
+      :title="t('settings.title')"
+      :description="t('settings.subtitle')"
+      :eyebrow="t('nav.systemInfo')"
+      icon="Settings"
+      tone="slate"
+    />
 
     <!-- Two-column layout: sidebar nav + content -->
     <div class="flex flex-col gap-4 sm:flex-row sm:gap-6">
@@ -61,7 +59,7 @@ const currentTab = computed(() => TABS.find(t => t.id === activeTab.value)!)
             v-for="tab in TABS"
             :key="tab.id"
             @click="selectTab(tab.id)"
-            class="min-w-[142px] flex-1 text-left px-3 py-2.5 rounded-lg transition-all flex items-start gap-2.5 group sm:w-full sm:min-w-0 sm:flex-none"
+            class="min-h-11 min-w-[142px] flex-1 text-left px-3 py-2.5 rounded-lg transition-all flex items-start gap-2.5 group sm:w-full sm:min-w-0 sm:flex-none"
             :class="activeTab === tab.id
               ? 'bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200/60 shadow-sm'
               : 'border border-transparent hover:bg-slate-50/80'"

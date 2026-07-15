@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import EvaluationRadar from '@/components/charts/EvaluationRadar.vue'
 import TrendChart from '@/components/charts/TrendChart.vue'
 import CreatorQualityWorkspace from '@/components/evaluation/CreatorQualityWorkspace.vue'
@@ -264,44 +265,44 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="evaluation-view page-container">
+  <div class="app-page-content evaluation-view page-container">
     <!-- ════════ 列表视图 ════════ -->
     <template v-if="!isDetailView">
-      <header class="page-header evaluation-hub-header">
-        <div class="flex min-w-0 items-start gap-3">
-          <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-rose-500 to-violet-600 shadow-sm">
-            <AppIcon name="ClipboardCheck" size="md" variant="white" />
+      <PageHeader
+        :title="t('evaluation.title')"
+        :description="t('creatorQuality.page.hubSubtitle')"
+        :eyebrow="t('creatorQuality.page.eyebrow')"
+        icon="ClipboardCheck"
+        tone="purple"
+        title-id="evaluation-title"
+      >
+        <template #actions>
+          <div class="evaluation-tabs" role="tablist" :aria-label="t('evaluation.title')">
+            <button
+              type="button"
+              class="evaluation-tab"
+              :class="{ 'evaluation-tab-active': isCreatorQualityView }"
+              role="tab"
+              :aria-selected="isCreatorQualityView"
+              @click="selectTab('creator')"
+            >
+              <AppIcon name="Brain" size="sm" :variant="isCreatorQualityView ? 'white' : 'cyan'" />
+              {{ t('creatorQuality.page.tab') }}
+            </button>
+            <button
+              type="button"
+              class="evaluation-tab"
+              :class="{ 'evaluation-tab-active': !isCreatorQualityView }"
+              role="tab"
+              :aria-selected="!isCreatorQualityView"
+              @click="selectTab('workflow')"
+            >
+              <AppIcon name="CheckSquare" size="sm" :variant="!isCreatorQualityView ? 'white' : 'cyan'" />
+              {{ t('creatorQuality.page.workflowTab') }}
+            </button>
           </div>
-          <div class="min-w-0">
-            <h1 class="page-title">{{ t('evaluation.title') }}</h1>
-            <p class="page-subtitle">{{ t('creatorQuality.page.hubSubtitle') }}</p>
-          </div>
-        </div>
-        <div class="evaluation-tabs" role="tablist" :aria-label="t('evaluation.title')">
-          <button
-            type="button"
-            class="evaluation-tab"
-            :class="{ 'evaluation-tab-active': isCreatorQualityView }"
-            role="tab"
-            :aria-selected="isCreatorQualityView"
-            @click="selectTab('creator')"
-          >
-            <AppIcon name="Brain" size="sm" :variant="isCreatorQualityView ? 'white' : 'cyan'" />
-            {{ t('creatorQuality.page.tab') }}
-          </button>
-          <button
-            type="button"
-            class="evaluation-tab"
-            :class="{ 'evaluation-tab-active': !isCreatorQualityView }"
-            role="tab"
-            :aria-selected="!isCreatorQualityView"
-            @click="selectTab('workflow')"
-          >
-            <AppIcon name="CheckSquare" size="sm" :variant="!isCreatorQualityView ? 'white' : 'cyan'" />
-            {{ t('creatorQuality.page.workflowTab') }}
-          </button>
-        </div>
-      </header>
+        </template>
+      </PageHeader>
 
       <CreatorQualityWorkspace v-if="isCreatorQualityView" />
       <template v-else>
@@ -401,13 +402,20 @@ onMounted(() => {
 
     <!-- ════════ 详情视图 ════════ -->
     <template v-else>
-      <header class="page-header detail-header">
-        <button class="back-btn" @click="backToList">
-          <AppIcon name="ArrowLeft" />
-          <span>{{ t('evaluation.list.back') }}</span>
-        </button>
-        <h1 class="page-title">{{ t('evaluation.list.detailTitle') }}</h1>
-      </header>
+      <PageHeader
+        :title="t('evaluation.list.detailTitle')"
+        :eyebrow="t('nav.evaluation')"
+        icon="ClipboardCheck"
+        tone="purple"
+        title-id="evaluation-detail-title"
+      >
+        <template #actions>
+          <button class="back-btn min-h-11" @click="backToList">
+            <AppIcon name="ArrowLeft" />
+            <span>{{ t('evaluation.list.back') }}</span>
+          </button>
+        </template>
+      </PageHeader>
 
       <!-- 加载中 -->
       <div v-if="detailLoading" class="trend-loading">{{ t('evaluation.searching') }}</div>
@@ -493,20 +501,6 @@ onMounted(() => {
 /* ponytail: 宽度/内边距交由 <main> 的 p-6，与 Analytics/Dashboard 同构——
    不自定义 max-width，避免评估页两侧留白与其它页不一致 */
 .evaluation-view { }
-.page-header { margin-bottom: 1.5rem; }
-.page-title { font-size: 1.5rem; font-weight: 700; color: #1e293b; margin: 0; }
-.page-subtitle { font-size: 0.875rem; color: #64748b; margin: 0.25rem 0 0; }
-.evaluation-hub-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1.125rem;
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  border-radius: 1rem;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(250, 245, 255, 0.92));
-  box-shadow: 0 8px 24px rgba(71, 85, 105, 0.06);
-}
 .evaluation-tabs {
   display: inline-flex;
   flex-shrink: 0;
@@ -521,7 +515,7 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  min-height: 2.25rem;
+  min-height: 2.75rem;
   padding: 0.45rem 0.7rem;
   border: 0;
   border-radius: 0.625rem;
@@ -539,15 +533,13 @@ onMounted(() => {
   box-shadow: 0 3px 8px rgba(139, 92, 246, 0.22);
 }
 @media (max-width: 640px) {
-  .evaluation-hub-header { align-items: stretch; flex-direction: column; padding: 1rem; }
   .evaluation-tabs { width: 100%; }
   .evaluation-tab { flex: 1; padding-inline: 0.4rem; }
 }
 
-/* ── 详情页返回头 ── */
-.detail-header { display: flex; align-items: center; gap: 0.75rem; }
+/* ── 详情页返回操作 ── */
 .back-btn {
-  display: inline-flex; align-items: center; gap: 0.4rem;
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
   padding: 0.4rem 0.8rem; border: 1px solid #e2e8f0; border-radius: 0.5rem;
   background: #fff; color: #334155; font-size: 0.8125rem; font-weight: 600;
   cursor: pointer; transition: background 0.15s;

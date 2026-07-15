@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Follow responsive layout, route-root, localization, accessibility, focus, and mobile overflow conventions for the two route pages."}
+{"file":".trellis/spec/frontend/animation-patterns.md","reason":"Keep the restructured layouts visually calm, avoid delayed invisible content, and preserve reduced-motion behavior."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Preserve Showcase list/filter/detail loading and WorkflowReplay checkpoint/effective-state behavior while changing layout only."}

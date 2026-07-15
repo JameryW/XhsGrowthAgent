@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Confirm frontend component and interaction conventions before editing showcase/replay UI."}
+{"file":".trellis/spec/frontend/animation-patterns.md","reason":"Confirm motion and reduced-motion conventions for the replay transition."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Confirm store/composable state boundaries before deriving replay progress."}
+{"file":"frontend/src/views/Showcase.vue","reason":"Strengthen showcase focus and connect the loop to workflow records."}
+{"file":"frontend/src/views/WorkflowReplay.vue","reason":"Add simple progress animation while preserving checkpoint-driven rendering."}
+{"file":"frontend/src/components/replay/CheckpointRail.vue","reason":"Keep checkpoint selection visually synchronized with replay progress."}
+{"file":"frontend/src/locales/zh-CN.json","reason":"Add Chinese copy for replay progress cues."}
+{"file":"frontend/src/locales/en.json","reason":"Add English copy for replay progress cues."}

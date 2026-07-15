@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import { listWorkflows, deleteWorkflow } from '@/api/workflow'
 import type { WorkflowListItem } from '@/types/workflow'
@@ -132,27 +133,24 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
 </script>
 
 <template>
-  <div class="space-y-3 md:space-y-5">
-    <!-- Header -->
-    <div class="rounded-xl md:rounded-2xl p-3 md:p-5 relative overflow-hidden liquid-glass">
-      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
-        <div class="flex items-center gap-3 md:gap-4">
-          <div class="w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
-            <AppIcon name="History" size="md" variant="white" class="md:hidden" />
-            <AppIcon name="History" size="xl" variant="white" class="hidden md:block" />
-          </div>
-          <div>
-            <h1 class="text-lg md:text-xl font-semibold text-slate-800">{{ t('history.title') }}</h1>
-            <p class="text-[10px] md:text-xs text-slate-400 mt-0.5">{{ t('history.subtitle') }}</p>
-          </div>
-        </div>
-        <div class="flex gap-2">
-          <NeonButton variant="ghost" size="sm" @click="fetchWorkflows" :loading="isLoading">
-            <AppIcon name="RefreshCw" size="sm" variant="cyan" />
-          </NeonButton>
-        </div>
-      </div>
-    </div>
+  <div class="app-page-content space-y-4 md:space-y-6">
+    <PageHeader
+      :title="t('history.title')"
+      :description="t('history.subtitle')"
+      :eyebrow="t('nav.sections.insights')"
+      icon="History"
+      tone="purple"
+    >
+      <template #meta>
+        <span>{{ total }} · {{ t('history.records') }}</span>
+      </template>
+      <template #actions>
+        <NeonButton variant="ghost" size="sm" class="min-h-11" @click="fetchWorkflows" :loading="isLoading">
+          <AppIcon name="RefreshCw" size="sm" variant="cyan" />
+          <span class="hidden sm:inline">{{ t('history.refresh') }}</span>
+        </NeonButton>
+      </template>
+    </PageHeader>
 
     <!-- Loading -->
     <div v-if="isLoading" class="space-y-3">

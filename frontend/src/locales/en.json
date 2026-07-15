@@ -102,7 +102,33 @@
     "systemInfo": "System Info",
     "settings": "Settings",
     "tui": "TUI",
-    "evaluation": "Evaluation"
+    "evaluation": "Evaluation",
+    "brandEyebrow": "XHS CREATION WORKSPACE",
+    "sections": {
+      "workspace": "Workspace",
+      "insights": "Insights & history"
+    },
+    "hints": {
+      "dashboard": "Track workflow progress and next steps",
+      "review": "Handle content review and publishing",
+      "analytics": "See account performance and growth data",
+      "evaluation": "Analyze content quality and creator capability",
+      "history": "Resume, replay, and revisit past workflows"
+    },
+    "workspaceStatus": "Workspace status",
+    "status": {
+      "idle": "Ready to start",
+      "running": "Workflow is running",
+      "inputNeeded": "Waiting for your input",
+      "reviewNeeded": "Review required",
+      "completed": "Latest run completed"
+    },
+    "activeAccount": "Active account",
+    "accountSelect": "No account selected",
+    "accountPending": "Choose an account to get started",
+    "accountNiche": "Track: {niche}",
+    "accountManage": "Manage account",
+    "accountInitialFallback": "X"
   },
   "home": {
     "title": "XHS Growth Engine",
@@ -1086,6 +1112,7 @@
   },
   "notFound": {
     "title": "404",
+    "label": "Page not found",
     "message": "Page not found · Please return to home",
     "backHome": "Back to Home",
     "backPrev": "Go Back"
@@ -1146,6 +1173,8 @@
   "history": {
     "title": "Workflow History",
     "subtitle": "View and manage past workflows",
+    "records": "records",
+    "refresh": "Refresh history",
     "empty": "No workflow history",
     "emptyDesc": "Start your first creation to begin your content growth journey",
     "startNew": "Start Creating",
@@ -1391,8 +1420,16 @@
       "analyzing": "Track performance in real-time with AI analytics"
     },
     "dashboard": "Go Create",
+    "navAction": "Open Workspace",
+    "liveWorkspace": "Live Workspace",
+    "liveWorkspaceDesc": "See active workflow status, progress, and content outputs in one place.",
+    "workspaceOverview": "Run Overview",
+    "workflowRecords": "Workflow Records",
+    "workflowCount": "records",
     "empty": "No workflows yet",
     "emptyDesc": "Workflows will appear here once started",
+    "detailUnavailable": "Detailed output is unavailable; open replay to inspect it",
+    "resetFilters": "Clear filters",
     "footer": "XHS Growth Engine — AI-powered automated content creation platform",
     "detail": {
       "topic": "Topic Direction",
@@ -1453,7 +1490,9 @@
     },
     "filter": {
       "all": "All",
-      "allMode": "All Modes"
+      "allMode": "All Modes",
+      "trend": "Trend mode",
+      "brief": "Brief mode"
     },
     "sort": {
       "updated": "Recently Updated",
@@ -1461,6 +1500,7 @@
       "created": "Created"
     },
     "featured": "Featured Workflow",
+    "featuredAttention": "Workflow needing attention",
     "loadMore": "Load More",
     "noResults": "No matching workflows",
     "viewDetail": "View Detail",
@@ -1491,8 +1531,17 @@
     "mode": "Replay Mode",
     "modeDesc": "Click a pipeline node to view execution state at that step",
     "pipeline": "Pipeline",
+    "pipelineProgress": "Workflow progress",
+    "progressStep": "Step {current} of {total}",
+    "creationProcess": "Creative trajectory",
+    "creationProcessDesc": "Each node becomes a frame as the signal moves along the creative arc.",
+    "signalMoving": "Creative signal in motion",
+    "inspectLabel": "Inspect step",
     "clickHint": "Click a node to inspect",
     "clickHintDesc": "Select any node in the pipeline above to view its execution state",
+    "noWorkflow": "No replay data",
+    "noWorkflowDesc": "This workflow has not produced a viewable execution record yet",
+    "checkpointsEmpty": "No checkpoints available",
     "noData": "No data for this node",
     "step": "Step",
     "back": "Back",
@@ -1673,6 +1722,9 @@
   },
   "tui": {
     "welcome": "XhsGrowthAgent TUI v0.1",
+    "bannerName": "XHS Growth Agent",
+    "bannerVersion": "v1.0",
+    "bannerSubtitle": "XHS content growth workspace",
     "statusLabel": "xhs-agent",
     "defaultAccount": "default account",
     "accountContext": "Account: {account}",

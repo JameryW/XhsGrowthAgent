@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import CelebrationEffect from '@/components/CelebrationEffect.vue'
 import WorkflowCardBody from '@/components/WorkflowCardBody.vue'
@@ -652,7 +653,24 @@ const handleCancelConfirm = () => {
 </script>
 
 <template>
-  <div class="review-page">
+  <div class="app-page-content review-page space-y-4 md:space-y-6">
+  <PageHeader
+    :title="t('review.title')"
+    :description="t('review.subtitle')"
+    :eyebrow="t('review.pendingApproval')"
+    icon="Clock"
+    tone="peach"
+  >
+    <template #meta>
+      <span>{{ workflows.length }} {{ t('review.emptyState.reason1') }}</span>
+    </template>
+    <template #actions>
+      <NeonButton variant="ghost" size="sm" class="min-h-11" @click="fetchReviewQueue" :aria-label="t('common.retry')">
+        <AppIcon name="RefreshCw" size="sm" variant="cyan" />
+        <span class="hidden sm:inline">{{ t('common.retry') }}</span>
+      </NeonButton>
+    </template>
+  </PageHeader>
   <ReviewSkeleton v-if="!listLoaded" />
 
   <!-- Empty State -->
@@ -676,26 +694,6 @@ const handleCancelConfirm = () => {
 
   <!-- Review Queue -->
   <div v-else class="space-y-3 md:space-y-4">
-    <!-- Queue header -->
-    <div class="rounded-xl p-4 md:p-5 liquid-glass">
-      <div class="flex items-center gap-3 md:gap-4">
-        <div class="w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl bg-gradient-to-br from-amber-400 to-rose-400 flex items-center justify-center shadow-sm shrink-0">
-          <AppIcon name="Clock" size="lg" variant="white" />
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2">
-            <span class="px-2 py-0.5 rounded bg-amber-50 text-amber-600 text-[10px] uppercase tracking-wide font-medium">{{ t('review.pendingApproval') }}</span>
-            <span class="text-[10px] text-slate-400">{{ workflows.length }} {{ t('review.emptyState.reason1') }}</span>
-          </div>
-          <div class="text-lg md:text-xl font-semibold text-slate-800 mt-0.5">{{ t('review.title') }}</div>
-          <div class="text-[10px] md:text-xs text-slate-400">{{ t('review.subtitle') }}</div>
-        </div>
-        <button @click="fetchReviewQueue" class="p-2 rounded-lg hover:bg-slate-100 transition-colors" :title="t('common.retry')">
-          <AppIcon name="RefreshCw" size="sm" variant="cyan" />
-        </button>
-      </div>
-    </div>
-
     <!-- Error -->
     <div v-if="error" class="rounded-xl p-4 liquid-glass-rose text-center">
       <p class="text-sm text-rose-700 font-medium">{{ error }}</p>

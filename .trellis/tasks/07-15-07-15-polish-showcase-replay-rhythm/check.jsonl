@@ -1,0 +1,3 @@
+{"file":"frontend/src/views/Showcase.vue","reason":"Verify featured loading, filtering, page order, and mobile layout."}
+{"file":"frontend/src/views/WorkflowReplay.vue","reason":"Verify current checkpoint context, pipeline controls, and empty/loading states."}
+{"file":"frontend/src/App.vue","reason":"Verify full-bleed immersive route behavior remains intact."}

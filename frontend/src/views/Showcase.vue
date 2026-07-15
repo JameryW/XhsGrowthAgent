@@ -14,9 +14,11 @@ const router = useRouter()
 const workflows = ref<WorkflowListItem[]>([])
 const workflowDetails = ref<Map<string, WorkflowStateResponse>>(new Map())
 const loadingDetailIds = ref<Set<string>>(new Set())
+const failedDetailIds = ref<Set<string>>(new Set())
 const listLoaded = ref(false)
 const error = ref<string | null>(null)
 const statsReady = ref(false)
+const ambientReady = ref(false)
 
 // Filter & sort state
 type StatusFilter = 'all' | 'running' | 'completed' | 'needs_attention'
@@ -31,6 +33,7 @@ const sortKey = ref<SortKey>('updated')
 const visibleCount = ref(8)
 const ITEMS_PER_PAGE = 8
 const DETAIL_CONCURRENCY = 3
+const DETAIL_IMMEDIATE_COUNT = 3
 const RUNNING_STATUSES: WorkflowStatus[] = [
   'running',
   'awaiting_review',
@@ -45,6 +48,8 @@ const NEEDS_ATTENTION_STATUSES: WorkflowStatus[] = ['error', 'stale', 'paused', 
 const pendingDetailIds = new Set<string>()
 let activeDetailLoads = 0
 let detailPumpTimer: number | null = null
+let deferredDetailTimer: number | null = null
+let ambientTimer: number | null = null
 
 function isRunningStatus(status: WorkflowStatus): boolean {
   return RUNNING_STATUSES.includes(status)
@@ -109,9 +114,17 @@ function loadMore() {
   visibleCount.value += ITEMS_PER_PAGE
 }
 
+function clearFilters() {
+  statusFilter.value = 'all'
+  modeFilter.value = 'all'
+  sortKey.value = 'updated'
+  visibleCount.value = ITEMS_PER_PAGE
+}
+
 // Fetch list first (fast), then lazy-load details for visible cards
 async function fetchWorkflows() {
   error.value = null
+  failedDetailIds.value = new Set()
   try {
     const result = await listWorkflows({ limit: 50 })
     workflows.value = result.workflows
@@ -124,7 +137,7 @@ async function fetchWorkflows() {
 }
 
 function queueDetail(threadId: string) {
-  if (workflowDetails.value.has(threadId) || loadingDetailIds.value.has(threadId)) return
+  if (workflowDetails.value.has(threadId) || loadingDetailIds.value.has(threadId) || failedDetailIds.value.has(threadId)) return
   pendingDetailIds.add(threadId)
   loadingDetailIds.value.add(threadId)
   scheduleDetailPump()
@@ -149,7 +162,7 @@ function pumpDetailQueue() {
         workflowDetails.value.set(threadId, state)
       })
       .catch(() => {
-        // Skip failed detail fetches
+        failedDetailIds.value.add(threadId)
       })
       .finally(() => {
         loadingDetailIds.value.delete(threadId)
@@ -161,11 +174,31 @@ function pumpDetailQueue() {
 
 // Load details for visible cards with a small concurrency cap to keep first paint responsive.
 function loadVisibleDetails() {
-  if (featuredWorkflow.value) {
-    queueDetail(featuredWorkflow.value.thread_id)
+  if (deferredDetailTimer !== null) {
+    window.clearTimeout(deferredDetailTimer)
+    deferredDetailTimer = null
   }
-  for (const wf of visibleWorkflows.value) {
-    queueDetail(wf.thread_id)
+
+  const immediateIds = new Set<string>()
+  if (featuredWorkflow.value) {
+    immediateIds.add(featuredWorkflow.value.thread_id)
+  }
+  for (const wf of visibleWorkflows.value.slice(0, DETAIL_IMMEDIATE_COUNT)) {
+    immediateIds.add(wf.thread_id)
+  }
+  for (const threadId of immediateIds) {
+    queueDetail(threadId)
+  }
+
+  const deferredIds = visibleWorkflows.value
+    .slice(DETAIL_IMMEDIATE_COUNT)
+    .map(wf => wf.thread_id)
+    .filter(threadId => !immediateIds.has(threadId))
+  if (deferredIds.length > 0) {
+    deferredDetailTimer = window.setTimeout(() => {
+      deferredDetailTimer = null
+      for (const threadId of deferredIds) queueDetail(threadId)
+    }, 360)
   }
 }
 
@@ -291,6 +324,12 @@ const featuredDetail = computed<WorkflowStateResponse | undefined>(() => {
   return workflowDetails.value.get(featuredWorkflow.value.thread_id)
 })
 
+const featuredDetailState = computed<'loading' | 'ready' | 'unavailable'>(() => {
+  const threadId = featuredWorkflow.value?.thread_id
+  if (!threadId || featuredDetail.value) return featuredDetail.value ? 'ready' : 'unavailable'
+  return failedDetailIds.value.has(threadId) ? 'unavailable' : 'loading'
+})
+
 // Watch visible list and load details on change
 watch([visibleWorkflows, featuredWorkflow], () => {
   loadVisibleDetails()
@@ -328,16 +367,17 @@ function nodeGlowClass(step: { color: string }): string {
 }
 
 // Ellipse parameters for desktop loop layout
+const LOOP_HEIGHT = 300
 const ellipseRxPct = 36
-const ellipseRyPct = 38
-const nodeSize = 88
+const ellipseRyPct = 28
+const nodeSize = 82
 const containerW = ref(1200)
 const loopContainer = ref<HTMLElement | null>(null)
 const stepsVisible = ref(false)
 
 function stepStyle(i: number, containerWidth: number): Record<string, string> {
   const rx = containerWidth * ellipseRxPct / 100
-  const ry = 460 * ellipseRyPct / 100
+  const ry = LOOP_HEIGHT * ellipseRyPct / 100
   const angleDeg = i * 60 - 90
   const angleRad = angleDeg * Math.PI / 180
   const x = rx * Math.cos(angleRad)
@@ -357,16 +397,22 @@ onMounted(() => {
   updateLoopWidth()
   window.addEventListener('resize', updateLoopWidth)
   window.setTimeout(() => { stepsVisible.value = true }, 200)
+  ambientTimer = window.setTimeout(() => {
+    ambientTimer = null
+    ambientReady.value = true
+  }, 260)
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', updateLoopWidth)
+  if (deferredDetailTimer !== null) window.clearTimeout(deferredDetailTimer)
+  if (ambientTimer !== null) window.clearTimeout(ambientTimer)
 })
 
 const svgCx = computed(() => containerW.value / 2)
-const svgCy = 230
+const svgCy = LOOP_HEIGHT / 2
 const svgRx = computed(() => containerW.value * ellipseRxPct / 100)
-const svgRy = computed(() => 460 * ellipseRyPct / 100)
+const svgRy = computed(() => LOOP_HEIGHT * ellipseRyPct / 100)
 
 const loopMotionPath = computed(() => {
   const cx = svgCx.value
@@ -535,8 +581,8 @@ const evolutionTreeData = computed(() => {
     <!-- Ambient background layers -->
     <div class="showcase-bg-grid" aria-hidden="true" />
     <div class="showcase-bg-mesh" aria-hidden="true" />
-    <div class="showcase-aurora" aria-hidden="true" />
-    <svg class="showcase-constellation" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 1200 800">
+    <div v-if="ambientReady" class="showcase-aurora" aria-hidden="true" />
+    <svg v-if="ambientReady" class="showcase-constellation" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 1200 800">
       <path class="constellation-lines" :d="constellationPath" fill="none" stroke="url(#const-grad)" stroke-width="0.6" stroke-linecap="round" />
       <circle v-for="(d, i) in constellationDots" :key="i" :cx="d.cx" :cy="d.cy" r="1.1" fill="url(#const-grad)" />
       <defs>
@@ -547,7 +593,7 @@ const evolutionTreeData = computed(() => {
         </linearGradient>
       </defs>
     </svg>
-    <svg class="showcase-evolution" aria-hidden="true" preserveAspectRatio="xMidYMid slice" viewBox="0 0 1200 800">
+    <svg v-if="ambientReady" class="showcase-evolution" aria-hidden="true" preserveAspectRatio="xMidYMid slice" viewBox="0 0 1200 800">
       <g v-for="(td, ti) in evolutionTreeData" :key="'evo-'+ti">
         <path
           v-for="(b, bi) in td.tree.branches"
@@ -574,7 +620,7 @@ const evolutionTreeData = computed(() => {
     </svg>
     <!-- Nav -->
     <nav class="relative z-20 liquid-glass-nav showcase-nav">
-      <div class="max-w-[1200px] mx-auto px-3 md:px-6 h-14 flex items-center justify-between">
+      <div class="mx-auto flex min-h-16 max-w-[1200px] items-center justify-between px-3 py-2 md:px-6">
         <div class="flex items-center gap-3">
           <div class="showcase-logo w-8 h-8 rounded-lg bg-gradient-to-br from-rose-500 to-amber-400 flex items-center justify-center shadow-md shadow-rose-500/20">
             <AppIcon name="Rocket" size="sm" variant="white" />
@@ -584,13 +630,44 @@ const evolutionTreeData = computed(() => {
             <p class="text-[11px] text-slate-400 -mt-0.5">{{ t('showcase.subtitle') }}</p>
           </div>
         </div>
-        <button @click="goDashboard" class="showcase-cta-btn px-4 py-1.5 rounded-lg text-xs font-medium text-white transition-all">
-          {{ t('showcase.dashboard') }}
-        </button>
       </div>
     </nav>
 
-    <main class="max-w-[1200px] mx-auto px-3 md:px-6 py-4 md:py-6 relative z-10">
+    <main class="w-full min-w-0 max-w-[1200px] mx-auto px-3 md:px-6 py-4 md:py-6 relative z-10">
+      <!-- Public entry orientation: explain the value before the live workflow data. -->
+      <section class="showcase-intro liquid-glass-liquid mb-5 flex flex-col gap-5 rounded-2xl p-4 shadow-sm md:mb-6 md:flex-row md:items-center md:justify-between md:rounded-3xl md:p-6" aria-labelledby="showcase-intro-title">
+        <div class="showcase-intro-orbit" aria-hidden="true">
+          <span class="showcase-orbit-ring showcase-orbit-ring-a" />
+          <span class="showcase-orbit-ring showcase-orbit-ring-b" />
+          <span class="showcase-orbit-dot showcase-orbit-dot-a" />
+          <span class="showcase-orbit-dot showcase-orbit-dot-b" />
+        </div>
+        <div class="max-w-2xl">
+          <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-500">{{ t('showcase.heroTagline') }}</p>
+          <h2 id="showcase-intro-title" class="mt-2 text-2xl font-bold tracking-tight text-slate-800 md:text-4xl">{{ t('showcase.sectionTitle') }}</h2>
+          <p class="mt-2 text-sm leading-6 text-slate-500">{{ t('showcase.heroDesc') }}</p>
+        </div>
+        <div class="flex w-full shrink-0 flex-col gap-3 sm:flex-row md:w-auto md:flex-col md:items-stretch">
+          <div class="showcase-intro-signal rounded-2xl border border-white/80 bg-white/65 px-4 py-3 shadow-sm" aria-hidden="true">
+            <div class="flex items-center justify-between gap-4">
+              <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{{ t('showcase.closedLoop') }}</span>
+              <span class="showcase-signal-dot h-2 w-2 rounded-full bg-teal-400" />
+            </div>
+            <div class="showcase-signal-steps mt-3 flex gap-1.5">
+              <span v-for="step in howItWorksSteps" :key="`signal-${step.key}`" class="h-1.5 flex-1 rounded-full" :class="step.color" />
+            </div>
+            <div class="mt-2 flex items-end gap-2">
+              <span class="text-3xl font-bold leading-none text-slate-800">6</span>
+              <span class="max-w-[150px] text-[10px] leading-4 text-slate-500">{{ t('showcase.heroTagline') }}</span>
+            </div>
+          </div>
+          <button type="button" @click="goDashboard" class="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-800 px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-700">
+            <AppIcon name="Rocket" size="sm" variant="white" aria-hidden="true" />
+            {{ t('showcase.dashboard') }}
+          </button>
+        </div>
+      </section>
+
       <!-- Error -->
       <div v-if="error" class="rounded-xl p-8 liquid-glass-rose liquid-glass-hover text-center max-w-md w-full mx-auto">
         <div class="w-12 h-12 rounded-xl bg-rose-100 flex items-center justify-center mx-auto mb-4">
@@ -598,27 +675,45 @@ const evolutionTreeData = computed(() => {
         </div>
         <p class="text-sm text-rose-700 font-medium">{{ t('common.apiError') }}</p>
         <p class="text-xs text-rose-500/70 mt-2">{{ error }}</p>
-        <button @click="fetchWorkflows" class="mt-4 px-5 py-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700 text-xs font-medium transition-colors shadow-sm">{{ t('common.retry') }}</button>
+        <button type="button" @click="fetchWorkflows" class="mt-4 min-h-11 rounded-xl bg-rose-600 px-5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-rose-700">{{ t('common.retry') }}</button>
       </div>
 
-      <!-- Empty -->
-      <div v-else-if="isEmpty" class="py-20 text-center max-w-md w-full mx-auto">
-        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center mx-auto mb-5 shadow-sm border border-slate-200/60">
-          <AppIcon name="Inbox" size="lg" variant="cyan" />
+      <!-- Loading keeps the public entry stable while the workflow list arrives. -->
+      <div v-else-if="!listLoaded" class="showcase-loading-shell grid grid-cols-1 gap-4 md:grid-cols-2" aria-live="polite">
+        <div v-for="i in 2" :key="i" class="rounded-2xl border border-white/70 bg-white/60 p-5 shadow-sm">
+          <div class="h-3 w-1/3 animate-pulse rounded bg-slate-200" />
+          <div class="mt-5 h-4 w-4/5 animate-pulse rounded bg-slate-200" />
+          <div class="mt-3 h-3 w-2/3 animate-pulse rounded bg-slate-100" />
+          <div class="mt-6 h-2 w-full animate-pulse rounded bg-slate-100" />
         </div>
-        <p class="text-sm text-slate-600 font-semibold">{{ t('showcase.empty') }}</p>
-        <p class="text-xs text-slate-400 mt-1.5">{{ t('showcase.emptyDesc') }}</p>
+        <p class="col-span-full text-center text-xs text-slate-400">{{ t('common.loading') }}</p>
       </div>
 
       <!-- Content -->
       <template v-else>
+        <div class="showcase-workspace-shell liquid-glass-liquid">
+        <div class="showcase-live-heading mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-teal-600">{{ t('showcase.liveWorkspace') }}</p>
+            <h2 class="mt-1 text-lg font-bold tracking-tight text-slate-800">{{ t('showcase.workspaceOverview') }}</h2>
+          </div>
+          <p class="max-w-md text-xs leading-5 text-slate-400 sm:text-right">{{ t('showcase.liveWorkspaceDesc') }}</p>
+        </div>
+
         <!-- ══════════════════════════════════════════════════════════════
              Layer 1: Closed-loop pipeline — elliptical loop animation
              ══════════════════════════════════════════════════════════════ -->
-        <div class="mb-4 md:mb-6 relative">
+        <section class="showcase-loop-section mb-4 w-full min-w-0 rounded-3xl border border-white/75 bg-white/35 p-3 shadow-sm backdrop-blur-sm md:mb-6 md:p-5" aria-labelledby="showcase-loop-title">
+          <div class="mb-2 flex items-end justify-between gap-3 px-1 md:mb-0 md:px-3">
+            <div>
+              <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{{ t('showcase.howItWorks') }}</p>
+              <h2 id="showcase-loop-title" class="mt-1 text-base font-bold text-slate-700 md:text-lg">{{ t('showcase.closedLoop') }}</h2>
+            </div>
+            <span class="hidden max-w-[220px] text-right text-[11px] leading-4 text-slate-400 sm:block">{{ t('showcase.closedLoopDesc') }}</span>
+          </div>
           <!-- Desktop: elliptical loop with SVG path + circular nodes -->
-          <div ref="loopContainer" class="hidden md:block relative" style="height: 460px;">
-            <svg class="absolute inset-0 w-full h-full pointer-events-none" :viewBox="`0 0 ${containerW} 460`" preserveAspectRatio="xMidYMid meet" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <div ref="loopContainer" class="relative hidden md:block" :style="{ height: `${LOOP_HEIGHT}px` }">
+            <svg class="pointer-events-none absolute inset-0 h-full w-full" :viewBox="`0 0 ${containerW} ${LOOP_HEIGHT}`" preserveAspectRatio="xMidYMid meet" fill="none" xmlns="http://www.w3.org/2000/svg">
               <defs>
                 <linearGradient id="loop-grad" x1="0" :y1="svgCy" :x2="containerW" :y2="svgCy" gradientUnits="userSpaceOnUse">
                   <stop stop-color="#f43f5e" />
@@ -687,7 +782,7 @@ const evolutionTreeData = computed(() => {
               <!-- Hover: outer glow -->
               <div class="absolute inset-[-8px] rounded-full opacity-0 group-hover:opacity-40 transition-opacity duration-300 blur-sm" :class="step.color" />
               <!-- Node circle -->
-              <div class="w-[88px] h-[88px] rounded-full flex items-center justify-center bg-white/90 border-2 shadow-md transition-all duration-300 group-hover:scale-105 group-hover:shadow-lg relative z-10" :class="[step.borderColor, step.iconColor]">
+              <div class="relative z-10 flex h-[82px] w-[82px] items-center justify-center rounded-full border-2 bg-white/90 shadow-md transition-all duration-300 group-hover:scale-105 group-hover:shadow-lg" :class="[step.borderColor, step.iconColor]">
                 <span class="node-sweep" :style="{ animationDelay: `${i * 0.9}s` }" />
                 <AppIcon :name="step.icon" size="lg" :variant="step.iconVariant" />
               </div>
@@ -699,11 +794,11 @@ const evolutionTreeData = computed(() => {
 
           <!-- Mobile: 2x3 grid with compact circular nodes + glow -->
           <div class="md:hidden">
-            <div class="grid grid-cols-3 gap-4 mb-3">
+            <div class="showcase-mobile-grid grid w-full min-w-0 grid-cols-[repeat(3,minmax(0,1fr))] gap-2 mb-3 sm:gap-3">
               <div
                 v-for="(step, i) in howItWorksSteps"
                 :key="step.key"
-                class="flex flex-col items-center text-center transition-all duration-500 ease-out group"
+                class="group flex min-w-0 flex-col items-center text-center transition-all duration-500 ease-out"
                 :class="stepsVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-80'"
                 :style="{ transitionDelay: `${i * 80}ms` }"
               >
@@ -715,8 +810,8 @@ const evolutionTreeData = computed(() => {
                     <AppIcon :name="step.icon" size="md" :variant="step.iconVariant" />
                   </div>
                 </div>
-                <div class="text-[11px] font-bold text-slate-600 mt-1">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
-                <div class="text-[9px] text-slate-400 line-clamp-2 mt-0.5">{{ t(`showcase.steps.${step.key}`) }}</div>
+                <div class="mt-1 min-w-0 max-w-full break-words text-[11px] font-bold text-slate-600">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
+                <div class="mt-0.5 min-w-0 max-w-full break-words text-[9px] leading-3 text-slate-400 line-clamp-2">{{ t(`showcase.steps.${step.key}`) }}</div>
               </div>
             </div>
             <!-- Mobile connecting lines: lightweight animated SVG -->
@@ -744,35 +839,49 @@ const evolutionTreeData = computed(() => {
               <span class="text-[10px] text-slate-400 font-medium">&#x27F3; {{ t('showcase.closedLoop') }}</span>
             </div>
           </div>
+        </section>
+
+        <!-- Empty data is a valid public state: keep the product explanation visible,
+             then give the user one clear next action. -->
+        <div v-if="isEmpty" class="showcase-empty-state liquid-glass-inset mb-5 rounded-2xl px-5 py-8 text-center md:mb-6 md:py-10">
+          <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white/75 shadow-sm ring-1 ring-white/80">
+            <AppIcon name="Inbox" size="lg" variant="cyan" />
+          </div>
+          <p class="mt-4 text-sm font-semibold text-slate-700">{{ t('showcase.empty') }}</p>
+          <p class="mx-auto mt-1.5 max-w-sm text-xs leading-5 text-slate-400">{{ t('showcase.emptyDesc') }}</p>
+          <button type="button" @click="goDashboard" class="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-slate-800 px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-700">
+            <AppIcon name="Rocket" size="sm" variant="white" aria-hidden="true" />
+            {{ t('showcase.dashboard') }}
+          </button>
         </div>
 
         <!-- ══════════════════════════════════════════════════════════════
              Layer 2: Stats — compact horizontal strip
              ══════════════════════════════════════════════════════════════ -->
-        <div class="mb-5 md:mb-6 py-2.5 px-3 rounded-xl liquid-glass-inset flex items-center justify-center gap-5 md:gap-8">
-          <div class="flex items-center gap-2">
+        <div v-if="!isEmpty" class="showcase-stats mb-5 grid grid-cols-2 gap-2 rounded-2xl border border-white/80 bg-white/45 px-2 py-2.5 shadow-sm backdrop-blur-sm sm:flex sm:items-center sm:justify-center sm:gap-5 sm:px-3 md:mb-6 md:gap-8">
+          <div class="showcase-stat-item showcase-stat-total flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 shadow-sm sm:min-h-0 sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 sm:shadow-none">
             <div class="text-lg md:text-xl font-bold text-slate-700"><AnimatedCounter :value="statsReady ? stats.total : 0" :duration="800" /></div>
             <div class="text-[10px] text-slate-400 leading-tight">{{ t('showcase.stats.total') }}</div>
           </div>
-          <div class="w-px h-5 bg-slate-200/60" />
-          <div class="flex items-center gap-2">
+          <div class="hidden h-5 w-px bg-slate-200/60 sm:block" />
+          <div class="showcase-stat-item showcase-stat-running flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 shadow-sm sm:min-h-0 sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 sm:shadow-none">
             <div class="text-lg md:text-xl font-bold text-teal-600"><AnimatedCounter :value="statsReady ? stats.running : 0" :duration="800" /></div>
             <div class="text-[10px] text-slate-400 leading-tight">{{ t('showcase.stats.running') }}</div>
           </div>
-          <div class="w-px h-5 bg-slate-200/60" />
-          <div class="flex items-center gap-2">
+          <div class="hidden h-5 w-px bg-slate-200/60 sm:block" />
+          <div class="showcase-stat-item showcase-stat-completed flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 shadow-sm sm:min-h-0 sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 sm:shadow-none">
             <div class="text-lg md:text-xl font-bold text-emerald-600"><AnimatedCounter :value="statsReady ? stats.completed : 0" :duration="800" /></div>
             <div class="text-[10px] text-slate-400 leading-tight">{{ t('showcase.stats.completed') }}</div>
           </div>
           <template v-if="stats.needsAttention > 0">
-            <div class="w-px h-5 bg-slate-200/60" />
-            <div class="flex items-center gap-2">
+            <div class="hidden h-5 w-px bg-slate-200/60 sm:block" />
+            <div class="showcase-stat-item showcase-stat-attention flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 shadow-sm sm:min-h-0 sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 sm:shadow-none">
               <div class="text-lg md:text-xl font-bold text-rose-600"><AnimatedCounter :value="statsReady ? stats.needsAttention : 0" :duration="800" /></div>
               <div class="text-[10px] text-slate-400 leading-tight">{{ t('showcase.stats.needsAttention') }}</div>
             </div>
           </template>
-          <div class="w-px h-5 bg-slate-200/60" />
-          <div class="flex items-center gap-2">
+          <div class="hidden h-5 w-px bg-slate-200/60 sm:block" />
+          <div class="showcase-stat-item showcase-stat-progress flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 shadow-sm sm:min-h-0 sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 sm:shadow-none">
             <div class="text-lg md:text-xl font-bold text-violet-600"><AnimatedCounter :value="statsReady ? stats.avgProgress : 0" :duration="800" />%</div>
             <div class="text-[10px] text-slate-400 leading-tight">{{ t('showcase.stats.avgProgress') }}</div>
           </div>
@@ -781,7 +890,7 @@ const evolutionTreeData = computed(() => {
         <!-- ══════════════════════════════════════════════════════════════
              Layer 3: Featured workflow
              ══════════════════════════════════════════════════════════════ -->
-        <div v-if="featuredWorkflow && featuredDetail" class="showcase-featured mb-5 md:mb-6 rounded-xl overflow-hidden cursor-pointer transition-shadow hover:shadow-md"
+        <div v-if="!isEmpty && featuredWorkflow" role="button" tabindex="0" :aria-label="t('showcase.viewDetail')" @keydown.enter="goReplay(featuredWorkflow.thread_id)" class="showcase-featured mb-5 cursor-pointer overflow-hidden rounded-2xl transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/70 md:mb-6"
              :class="[featuredMode === 'needs_attention' ? 'liquid-glass-rose liquid-glass-hover' : 'liquid-glass-emerald liquid-glass-hover']"
              @click="goReplay(featuredWorkflow.thread_id)">
           <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-white/10 liquid-glass-inset">
@@ -797,15 +906,36 @@ const evolutionTreeData = computed(() => {
               <AppIcon name="ArrowRight" size="sm" variant="cyan" class="text-slate-400" />
             </div>
           </div>
-          <WorkflowCardBody :detail="featuredDetail" />
+          <WorkflowCardBody v-if="featuredDetailState === 'ready' && featuredDetail" :detail="featuredDetail" />
+          <div v-else-if="featuredDetailState === 'loading'" class="showcase-featured-loading space-y-3 px-4 py-5 md:px-5" aria-live="polite">
+            <div class="h-3 w-1/4 animate-pulse rounded bg-white/70" />
+            <div class="h-4 w-3/4 animate-pulse rounded bg-white/70" />
+            <div class="h-3 w-1/2 animate-pulse rounded bg-white/60" />
+          </div>
+          <div v-else class="showcase-featured-unavailable flex items-center justify-between gap-3 px-4 py-4 md:px-5" aria-live="polite">
+            <div class="min-w-0">
+              <p class="text-xs font-medium text-slate-600">{{ phaseLabel(featuredWorkflow.phase) }}</p>
+              <p class="mt-1 text-[10px] text-slate-400">{{ t('showcase.detailUnavailable') }}</p>
+            </div>
+            <AppIcon name="ArrowRight" size="sm" variant="cyan" aria-hidden="true" />
+          </div>
         </div>
 
         <!-- ══════════════════════════════════════════════════════════════
              Layer 4: Filter bar
              ══════════════════════════════════════════════════════════════ -->
-        <div class="flex flex-wrap items-center gap-2 mb-4">
-          <div class="flex items-center gap-1 p-0.5 rounded-lg bg-slate-100/80">
+        <section v-if="!isEmpty" id="showcase-records" class="showcase-workflows-section" aria-labelledby="showcase-workflows-title">
+          <div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{{ t('showcase.liveWorkspace') }}</p>
+              <h2 id="showcase-workflows-title" class="mt-1 text-lg font-bold tracking-tight text-slate-800">{{ t('showcase.workflowRecords') }}</h2>
+            </div>
+            <div class="flex flex-col items-stretch gap-2 sm:items-end">
+              <span class="showcase-record-count text-[10px] font-medium text-slate-400">{{ filteredWorkflows.length }} {{ t('showcase.workflowCount') }}</span>
+              <div class="showcase-filter-toolbar flex flex-wrap items-center gap-2">
+          <div class="flex items-center gap-1 rounded-xl border border-white/80 bg-white/65 p-1 shadow-sm">
             <button
+              type="button"
               v-for="f in ([
                 { key: 'all', label: t('showcase.filter.all') },
                 { key: 'running', label: t('showcase.stats.running') },
@@ -814,45 +944,54 @@ const evolutionTreeData = computed(() => {
               ] as const)"
               :key="f.key"
               @click="statusFilter = f.key"
-              class="px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors"
+              :aria-pressed="statusFilter === f.key"
+              class="min-h-11 rounded-lg px-2.5 text-[11px] font-medium transition-colors"
               :class="statusFilter === f.key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
             >{{ f.label }}</button>
           </div>
-          <div class="flex items-center gap-1 p-0.5 rounded-lg bg-slate-100/80">
+          <div class="flex items-center gap-1 rounded-xl border border-white/80 bg-white/65 p-1 shadow-sm">
             <button
+              type="button"
               v-for="m in ([
                 { key: 'all', label: t('showcase.filter.allMode') },
-                { key: 'trend', label: 'Trend' },
-                { key: 'brief', label: 'Brief' },
+                { key: 'trend', label: t('showcase.filter.trend') },
+                { key: 'brief', label: t('showcase.filter.brief') },
               ] as const)"
               :key="m.key"
               @click="modeFilter = m.key"
-              class="px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors"
+              :aria-pressed="modeFilter === m.key"
+              class="min-h-11 rounded-lg px-2.5 text-[11px] font-medium transition-colors"
               :class="modeFilter === m.key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
             >{{ m.label }}</button>
           </div>
-          <select v-model="sortKey" class="px-2 py-1 rounded-lg bg-slate-100/80 text-[11px] text-slate-600 font-medium border-0 outline-none cursor-pointer">
+          <select v-model="sortKey" class="min-h-11 rounded-xl border-0 bg-slate-100/80 px-3 text-[11px] font-medium text-slate-600 outline-none cursor-pointer focus:ring-2 focus:ring-rose-400/30">
             <option value="updated">{{ t('showcase.sort.updated') }}</option>
             <option value="progress">{{ t('showcase.sort.progress') }}</option>
             <option value="created">{{ t('showcase.sort.created') }}</option>
           </select>
-        </div>
+              </div>
+            </div>
+          </div>
 
         <!-- ══════════════════════════════════════════════════════════════
              Layer 5: Card grid
              ══════════════════════════════════════════════════════════════ -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="showcase-card-grid grid grid-cols-1 gap-4 md:grid-cols-2">
           <div
             v-for="(card, idx) in visibleCards"
             :key="card.wf.thread_id"
             v-memo="[card.wf.thread_id, card.wf.status, card.wf.progress_percent, card.detail, card.isLoading]"
-            class="showcase-card rounded-xl liquid-glass-hover overflow-hidden cursor-pointer transition-shadow hover:shadow-md"
+            role="button"
+            tabindex="0"
+            :aria-label="`${card.title} · ${card.statusText}`"
+            @keydown.enter="goReplay(card.wf.thread_id)"
+            class="showcase-card cursor-pointer overflow-hidden rounded-2xl transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/70"
             :class="[card.statusClass]"
             :style="{ animationDelay: `${(idx % ITEMS_PER_PAGE) * 60}ms` }"
             @click="goReplay(card.wf.thread_id)"
           >
             <!-- Card header with integrated progress -->
-            <div class="px-4 md:px-5 py-2.5 flex items-center justify-between border-b border-white/10 liquid-glass-inset">
+            <div class="showcase-card-head px-4 md:px-5 py-2.5 flex items-center justify-between border-b border-white/10 liquid-glass-inset">
               <div class="flex items-center gap-1.5 min-w-0 flex-1">
                 <span class="w-2 h-2 rounded-full shrink-0" :class="card.dotClass" />
                 <span class="text-xs font-semibold text-slate-800 truncate">{{ card.title }}</span>
@@ -869,7 +1008,7 @@ const evolutionTreeData = computed(() => {
               <span class="text-[10px] text-slate-400 shrink-0 ml-2">{{ card.updatedLabel }}</span>
             </div>
             <!-- Card body -->
-            <div class="relative min-h-[60px]">
+            <div class="showcase-card-body relative min-h-[60px]">
               <WorkflowCardBody v-if="card.detail" :detail="card.detail" />
               <div v-else-if="card.isLoading" class="px-4 py-4 space-y-2">
                 <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse" />
@@ -883,7 +1022,7 @@ const evolutionTreeData = computed(() => {
               <p class="text-[10px] text-rose-500 line-clamp-1">{{ card.wf.error }}</p>
             </div>
             <!-- Card footer -->
-            <div class="px-4 pb-2.5 pt-1 flex items-center justify-between">
+            <div class="showcase-card-footer px-4 pb-2.5 pt-1 flex items-center justify-between">
               <div class="flex items-center gap-0.5">
                 <template v-for="(_step, i) in pipelineSteps" :key="i">
                   <div class="w-3 h-1 rounded-full transition-colors" :class="i < card.pipelineProgress ? (card.wf.status === 'completed' ? 'bg-emerald-400' : 'bg-teal-400') : 'bg-slate-200'" />
@@ -899,19 +1038,25 @@ const evolutionTreeData = computed(() => {
 
         <!-- Load more -->
         <div v-if="hasMore" class="mt-6 text-center">
-          <button @click="loadMore" class="px-6 py-2 rounded-lg liquid-glass hover:shadow-md text-xs font-medium text-slate-600 transition-shadow">
+          <button type="button" @click="loadMore" class="min-h-11 rounded-xl px-6 liquid-glass text-xs font-medium text-slate-600 transition-shadow hover:shadow-md">
             {{ t('showcase.loadMore') }} ({{ filteredWorkflows.length - visibleCount }})
           </button>
         </div>
 
         <!-- No results after filter -->
-        <div v-if="listLoaded && filteredWorkflows.length === 0 && workflows.length > 0" class="py-12 text-center">
-          <p class="text-sm text-slate-400">{{ t('showcase.noResults') }}</p>
+        <div v-if="listLoaded && filteredWorkflows.length === 0 && workflows.length > 0" class="rounded-2xl border border-slate-200/60 bg-white/60 py-12 text-center">
+          <AppIcon name="SearchX" size="lg" variant="cyan" aria-hidden="true" />
+          <p class="mt-3 text-sm text-slate-400">{{ t('showcase.noResults') }}</p>
+          <button type="button" @click="clearFilters" class="mt-4 min-h-11 rounded-xl border border-slate-200 bg-white/70 px-4 text-xs font-medium text-slate-600 transition hover:bg-white">
+            {{ t('showcase.resetFilters') }}
+          </button>
         </div>
 
         <!-- Footer -->
-        <div class="mt-10 py-4 text-center text-xs text-slate-400 border-t border-slate-200/60">
+        <div class="mt-10 border-t border-slate-200/60 py-4 text-center text-xs text-slate-400">
           {{ t('showcase.footer') }}
+        </div>
+        </section>
         </div>
       </template>
     </main>
@@ -936,18 +1081,365 @@ const evolutionTreeData = computed(() => {
   box-shadow: 0 4px 14px rgba(244, 63, 94, 0.3);
 }
 
-.showcase-cta-btn {
-  background: linear-gradient(135deg, #f43f5e, #e11d48);
-  box-shadow: 0 2px 8px rgba(244, 63, 94, 0.25);
+.showcase-intro,
+.showcase-loop-section {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
 }
-.showcase-cta-btn:hover {
-  background: linear-gradient(135deg, #e11d48, #be123c);
+
+.showcase-intro > * {
+  position: relative;
+  z-index: 1;
+}
+
+.showcase-intro::before {
+  content: '';
+  position: absolute;
+  width: 22rem;
+  height: 22rem;
+  right: -8rem;
+  top: -12rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(244, 63, 94, 0.16), transparent 68%);
+  pointer-events: none;
+}
+
+.showcase-intro::after {
+  content: '';
+  position: absolute;
+  width: 34rem;
+  height: 18rem;
+  right: -8rem;
+  bottom: -12rem;
+  border-radius: 50%;
+  background: repeating-radial-gradient(ellipse at center, rgba(20, 184, 166, 0.12) 0 1px, transparent 1px 18px);
+  opacity: 0.46;
+  transform: rotate(-10deg);
+  pointer-events: none;
+  animation: showcase-radar-drift 12s ease-in-out infinite alternate;
+}
+
+.showcase-intro-orbit {
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  right: 16rem;
+  width: 13rem;
+  height: 7rem;
+  transform: translateY(-50%) rotate(-12deg);
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.showcase-orbit-ring {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(14, 165, 233, 0.2);
+  border-radius: 50%;
+  transform: rotate(18deg);
+  box-shadow: 0 0 22px rgba(14, 165, 233, 0.08);
+}
+
+.showcase-orbit-ring-b {
+  inset: 0.8rem -0.5rem;
+  border-color: rgba(244, 63, 94, 0.17);
+  transform: rotate(-34deg);
+}
+
+.showcase-orbit-dot {
+  position: absolute;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.45), 0 0 14px currentColor;
+  animation: showcase-orbit-blink 3.6s ease-in-out infinite;
+}
+
+.showcase-orbit-dot-a {
+  top: 0.2rem;
+  right: 2.2rem;
+  color: #14b8a6;
+  background: currentColor;
+}
+
+.showcase-orbit-dot-b {
+  bottom: 0.3rem;
+  left: 2.1rem;
+  color: #f43f5e;
+  background: currentColor;
+  animation-delay: 1.4s;
+}
+
+.showcase-intro-signal {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-width: 210px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(240, 253, 250, 0.64)),
+    rgba(255, 255, 255, 0.58);
+}
+
+.showcase-intro-signal::before {
+  content: '';
+  position: absolute;
+  top: -30%;
+  bottom: -30%;
+  left: -42%;
+  width: 26%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.82), transparent);
+  transform: skewX(-18deg);
+  opacity: 0;
+  animation: showcase-signal-sheen 5.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.showcase-intro-signal > * {
+  position: relative;
+  z-index: 1;
+}
+
+.showcase-signal-steps span {
+  opacity: 0.72;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.36);
+}
+
+.showcase-signal-dot {
+  box-shadow: 0 0 0 5px rgba(45, 212, 191, 0.12), 0 0 18px rgba(20, 184, 166, 0.4);
+  animation: showcase-signal-pulse 2.8s ease-in-out infinite;
+}
+
+@keyframes showcase-signal-pulse {
+  0%, 100% { opacity: 0.65; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+.showcase-loop-section {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.48), rgba(240, 253, 250, 0.22)),
+    rgba(255, 255, 255, 0.18);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.03),
+    0 18px 42px rgba(15, 23, 42, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.showcase-loop-section::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at center, rgba(255, 255, 255, 0.48), transparent 58%),
+    repeating-linear-gradient(0deg, transparent 0 30px, rgba(14, 165, 233, 0.025) 31px 32px);
+  opacity: 0.9;
+}
+
+.showcase-loop-section::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: -24%;
+  width: 24%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(20, 184, 166, 0.8), rgba(139, 92, 246, 0.5), transparent);
+  box-shadow: 0 0 14px rgba(20, 184, 166, 0.35);
+  animation: showcase-panel-scan 8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.showcase-loop-section > * {
+  position: relative;
+  z-index: 1;
+}
+
+.showcase-mobile-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.showcase-mobile-grid > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.showcase-stat-item {
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.showcase-stat-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 1rem;
+  right: 1rem;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.22;
+}
+
+.showcase-stat-item:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(244, 63, 94, 0.35);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
 }
-.showcase-cta-btn:active {
-  transform: translateY(0);
-  box-shadow: 0 1px 4px rgba(244, 63, 94, 0.2);
+
+.showcase-stat-total { color: #64748b; }
+.showcase-stat-running { color: #0d9488; }
+.showcase-stat-completed { color: #059669; }
+.showcase-stat-attention { color: #e11d48; }
+.showcase-stat-progress { color: #7c3aed; }
+
+.showcase-stat-item > div:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.showcase-workflows-section {
+  scroll-margin-top: 5rem;
+}
+
+.showcase-workspace-shell {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 0.7rem;
+  border-radius: 1.75rem;
+  box-shadow:
+    0 2px 4px rgba(15, 23, 42, 0.035),
+    0 20px 48px rgba(15, 23, 42, 0.065),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+.showcase-workspace-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(15, 23, 42, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.018) 1px, transparent 1px),
+    radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.56), transparent 62%);
+  background-size: 34px 34px, 34px 34px, auto;
+  opacity: 0.82;
+}
+
+.showcase-workspace-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.showcase-live-heading {
+  position: relative;
+  padding: 0.15rem 0.25rem 0.5rem;
+}
+
+.showcase-live-heading::after {
+  content: '';
+  position: absolute;
+  left: 0.25rem;
+  right: 0.25rem;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(20, 184, 166, 0.3), rgba(148, 163, 184, 0.12), transparent);
+}
+
+.showcase-loading-shell {
+  contain: content;
+}
+
+.showcase-empty-state {
+  border: 1px dashed rgba(148, 163, 184, 0.32);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.78), transparent 66%),
+    rgba(248, 250, 252, 0.44);
+}
+
+.showcase-featured-loading {
+  min-height: 8rem;
+}
+
+.showcase-featured-unavailable {
+  min-height: 5.5rem;
+  background: rgba(248, 250, 252, 0.28);
+}
+
+@media (max-width: 767px) {
+  .showcase-workspace-shell {
+    width: 100%;
+    max-width: 100%;
+    padding: 0.45rem;
+    border-radius: 1.35rem;
+  }
+
+  .showcase-intro,
+  .showcase-loop-section,
+  .showcase-stats,
+  .showcase-featured,
+  .showcase-workflows-section {
+    width: calc(100vw - 1.5rem) !important;
+    max-width: calc(100vw - 1.5rem);
+    min-width: 0;
+  }
+
+  .showcase-mobile-grid {
+    width: 100% !important;
+    max-width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .showcase-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: hidden;
+  }
+
+  .showcase-stat-item:hover,
+  .showcase-card:hover {
+    transform: none;
+  }
+
+  .showcase-constellation,
+  .showcase-evolution {
+    display: none;
+  }
+
+  .showcase-workspace-shell .showcase-loop-section,
+  .showcase-workspace-shell .showcase-stats,
+  .showcase-workspace-shell .showcase-featured,
+  .showcase-workspace-shell .showcase-workflows-section {
+    width: 100% !important;
+    max-width: 100%;
+  }
+
+  .showcase-intro-orbit {
+    right: 5rem;
+    top: 38%;
+    transform: translateY(-50%) rotate(-12deg) scale(0.72);
+    opacity: 0.42;
+  }
+
+  .showcase-aurora {
+    width: 720px;
+    height: 480px;
+    filter: blur(36px);
+    opacity: 0.42;
+    animation: none;
+  }
 }
 
 .showcase-page {
@@ -1001,6 +1493,37 @@ const evolutionTreeData = computed(() => {
   content-visibility: auto;
   contain-intrinsic-size: 280px;
   animation: showcase-card-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 26px rgba(15, 23, 42, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transition: transform 0.28s ease, box-shadow 0.28s ease;
+}
+
+.showcase-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 4px 8px rgba(15, 23, 42, 0.05),
+    0 18px 34px rgba(15, 23, 42, 0.09),
+    inset 0 1px 0 rgba(255, 255, 255, 0.68);
+}
+
+.showcase-card-head {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.08));
+}
+
+.showcase-card-body {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 42%);
+}
+
+.showcase-card-footer {
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.showcase-filter-toolbar {
+  padding: 0.25rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .showcase-card::after {
@@ -1023,9 +1546,62 @@ const evolutionTreeData = computed(() => {
   opacity: 1;
 }
 
+.showcase-card::before {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: -12%;
+  bottom: -12%;
+  left: 0;
+  width: 26%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.42), transparent);
+  transform: translateX(-180%) skewX(-18deg);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.showcase-card:hover::before {
+  opacity: 1;
+  animation: showcase-card-shine 1.05s ease-out;
+}
+
+@keyframes showcase-card-shine {
+  to { transform: translateX(560%) skewX(-18deg); }
+}
+
 @keyframes showcase-card-in {
   from { opacity: 0; transform: translateY(14px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes showcase-grid-sweep {
+  0%, 14% { transform: translateX(0) skewX(-16deg); opacity: 0; }
+  25% { opacity: 0.55; }
+  68% { opacity: 0.55; }
+  82%, 100% { transform: translateX(920%) skewX(-16deg); opacity: 0; }
+}
+
+@keyframes showcase-panel-scan {
+  0%, 15% { transform: translateX(0); opacity: 0; }
+  28% { opacity: 1; }
+  72% { opacity: 1; }
+  88%, 100% { transform: translateX(520%); opacity: 0; }
+}
+
+@keyframes showcase-signal-sheen {
+  0%, 30% { transform: translateX(0) skewX(-18deg); opacity: 0; }
+  42% { opacity: 0.85; }
+  62%, 100% { transform: translateX(560%) skewX(-18deg); opacity: 0; }
+}
+
+@keyframes showcase-radar-drift {
+  0% { transform: rotate(-10deg) scale(0.96); opacity: 0.28; }
+  100% { transform: rotate(-4deg) scale(1.06); opacity: 0.58; }
+}
+
+@keyframes showcase-orbit-blink {
+  0%, 100% { transform: scale(0.7); opacity: 0.45; }
+  50% { transform: scale(1.1); opacity: 1; }
 }
 
 .node-glow-rose:hover { box-shadow: 0 0 16px 3px rgba(244, 63, 94, 0.12); }
@@ -1108,6 +1684,19 @@ const evolutionTreeData = computed(() => {
   opacity: 0.9;
   -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.3));
   mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.3));
+}
+
+.showcase-bg-grid::after {
+  content: '';
+  position: absolute;
+  top: -10%;
+  bottom: -10%;
+  left: -18%;
+  width: 14%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  transform: skewX(-16deg);
+  animation: showcase-grid-sweep 14s ease-in-out infinite;
+  mix-blend-mode: screen;
 }
 
 /* Structural: drifting mesh blobs (two brand-tinted radial blobs) */
@@ -1229,7 +1818,11 @@ const evolutionTreeData = computed(() => {
   .showcase-page::after,
   .showcase-aurora,
   .showcase-bg-mesh::before,
-  .showcase-bg-mesh::after {
+  .showcase-bg-mesh::after,
+  .showcase-bg-grid::after,
+  .showcase-intro::after,
+  .showcase-intro-signal::before,
+  .showcase-loop-section::after {
     animation: none !important;
   }
   .showcase-bg-grid,
@@ -1240,8 +1833,11 @@ const evolutionTreeData = computed(() => {
     opacity: 0.55;
   }
   .showcase-card,
+  .showcase-card::before,
   .node-sweep,
   .showcase-featured::before,
+  .showcase-orbit-dot,
+  .showcase-signal-dot,
   .evo-branch,
   .evo-tip {
     animation: none !important;

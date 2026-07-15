@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Follow responsive layout, localization, accessibility, route-root, and touch-target conventions while polishing the replay page."}
+{"file":".trellis/spec/frontend/animation-patterns.md","reason":"Keep replay ambient motion, active states, and transitions safe under reduced-motion preferences."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Keep visual changes separate from replay state, checkpoint selection, API loading, and navigation behavior."}

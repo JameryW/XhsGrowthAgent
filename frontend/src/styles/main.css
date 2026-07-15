@@ -133,6 +133,23 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.45);
   }
 
+  /* Liquid: primary work surfaces with visible refraction and soft color drift. */
+  .liquid-glass-liquid {
+    background:
+      radial-gradient(120% 100% at 0% 0%, rgba(255, 255, 255, 0.78), transparent 46%),
+      radial-gradient(90% 110% at 100% 100%, rgba(20, 184, 166, 0.1), transparent 58%),
+      linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.34)),
+      rgba(255, 255, 255, 0.52);
+    backdrop-filter: blur(30px) saturate(185%);
+    -webkit-backdrop-filter: blur(30px) saturate(185%);
+    border: 1px solid rgba(255, 255, 255, 0.68);
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.035),
+      0 18px 44px rgba(15, 23, 42, 0.065),
+      inset 0 1px 0 rgba(255, 255, 255, 0.82),
+      inset 0 -1px 0 rgba(15, 23, 42, 0.035);
+  }
+
   /* Inset: recessed/nested surfaces */
   .liquid-glass-inset {
     background:
@@ -226,6 +243,7 @@
     .liquid-glass,
     .liquid-glass-elevated,
     .liquid-glass-deep,
+    .liquid-glass-liquid,
     .liquid-glass-inset,
     .liquid-glass-nav,
     .liquid-glass-rose,
@@ -882,7 +900,44 @@
   z-index: -1;
   overflow: hidden;
   pointer-events: none;
-  background: #f0f2f5;
+  background:
+    linear-gradient(rgba(15, 23, 42, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.025) 1px, transparent 1px),
+    linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  background-size: 42px 42px, 42px 42px, auto;
+}
+
+/* Shared authenticated page frame: one readable column, predictable edges. */
+.app-main {
+  scrollbar-gutter: stable;
+}
+
+.app-main > .error-boundary-wrapper {
+  width: 100%;
+  max-width: 84rem;
+  min-width: 0;
+  margin-inline: auto;
+}
+
+/* Showcase and replay render their own background canvas edge-to-edge. */
+.app-main-immersive {
+  background: transparent;
+}
+
+.app-main.app-main-immersive > .error-boundary-wrapper {
+  max-width: none;
+  margin-inline: 0;
+}
+
+.app-page-content {
+  width: 100%;
+  max-width: 84rem;
+  min-width: 0;
+  margin-inline: auto;
+}
+
+.app-page-content > * {
+  min-width: 0;
 }
 
 .liquid-mesh-bg::before,
@@ -908,4 +963,27 @@
   left: -10%;
   background: radial-gradient(circle, rgba(20, 184, 166, 0.18) 0%, transparent 60%);
   animation: mesh-drift-2 25s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-header-shell::after,
+  .liquid-mesh-bg::before,
+  .liquid-mesh-bg::after {
+    animation: none !important;
+  }
+
+  .page-header-shell,
+  .card,
+  .card-hover,
+  .btn,
+  .form-input {
+    transition-duration: 0.01ms !important;
+  }
+
+  .page-header-shell:hover,
+  .btn-primary:hover,
+  .btn-secondary:hover,
+  .btn-ghost:hover {
+    transform: none !important;
+  }
 }
