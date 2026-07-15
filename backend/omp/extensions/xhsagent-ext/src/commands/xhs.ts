@@ -1,13 +1,13 @@
-/** /xhs command — free-orchestrate XHS content creation. */
+/** /xhs command — free-create XHS content. */
 import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
 
 export default function register(pi: ExtensionAPI) {
   pi.registerCommand("xhs", {
-    description: "Free-orchestrate XHS content creation, evaluation, and publishing",
+    description: "Free-create XHS content, evaluation, and publishing",
     async handler(args: string, _ctx: ExtensionCommandContext) {
       const topic = (args || "").trim();
       pi.sendUserMessage([
-        "Free-orchestrate a Xiaohongshu (小红书) content post.",
+        "Create a Xiaohongshu (小红书) post in Free Creation mode.",
         topic ? `Topic: ${topic}` : "Ask clarifying questions or propose a topic before drafting.",
         "Do not start the fixed workflow from OMP; the fixed workflow belongs to Simple Mode in the web UI.",
         "Use the thread-less xhs_free_* tools (no workflow thread_id):",

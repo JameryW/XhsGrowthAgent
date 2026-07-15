@@ -598,7 +598,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
     {
         "name": "xhs_free_draft_create",
         "label": "XHS Free Draft Create",
-        "description": ("Create a free-mode content draft (thread-less). Returns draft_id."),
+        "description": ("Create a free-creation content draft (thread-less). Returns draft_id."),
         "parameters": {
             "type": "object",
             "properties": {
@@ -632,7 +632,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "name": "xhs_free_evaluate",
         "label": "XHS Free Draft Evaluate",
         "description": (
-            "Evaluate a free-mode draft via the RQGM agent-as-a-judge "
+            "Evaluate a free-creation draft via the RQGM agent-as-a-judge "
             "panel. Returns EvaluationResult (overall_score, dimensions, decision)."
         ),
         "parameters": {
@@ -651,7 +651,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "name": "xhs_free_publish",
         "label": "XHS Free Draft Publish",
         "description": (
-            "Publish a free-mode draft to Xiaohongshu (thread-less) "
+            "Publish a free-creation draft to Xiaohongshu (thread-less) "
             "via the account's CDP profile login state."
         ),
         "parameters": {
@@ -707,7 +707,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "name": "xhs_free_draft_list",
         "label": "XHS Free Draft List",
         "description": (
-            "List free-mode drafts for an account (thread-less). Returns draft_id + title "
+            "List free-creation drafts for an account (thread-less). Returns draft_id + title "
             "summary, no full body."
         ),
         "parameters": {
@@ -722,7 +722,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "name": "xhs_free_draft_update",
         "label": "XHS Free Draft Update",
         "description": (
-            "Update a free-mode draft (thread-less). Overwrites specified fields, keeps "
+            "Update a free-creation draft (thread-less). Overwrites specified fields, keeps "
             "draft_id unchanged."
         ),
         "parameters": {
@@ -762,7 +762,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
         "name": "xhs_free_draft_delete",
         "label": "XHS Free Draft Delete",
         "description": (
-            "Delete a free-mode draft (thread-less). Idempotent — deleting a non-existent "
+            "Delete a free-creation draft (thread-less). Idempotent — deleting a non-existent "
             "draft is not an error."
         ),
         "parameters": {
@@ -779,7 +779,7 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "xhs_free_guide",
-        "label": "XHS Free Mode Guide",
+        "label": "XHS Free Creation Guide",
         "description": ("Read-only reference for free creation mode tools and usage rules."),
         "parameters": {"type": "object", "properties": {}, "required": []},
     },
@@ -937,7 +937,7 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
     if tool_name == "xhs_workflow_start":
         return _make_text_result(
             (
-                "xhs_workflow_start is disabled in OMP free orchestration. "
+                "xhs_workflow_start is disabled in OMP Free Creation mode. "
                 "Use the Simple Mode UI to run the fixed workflow."
             ),
             None,
@@ -951,7 +951,7 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
             "\n"
             "You are in free creation mode (no workflow thread). Use these thread-less tools:\n"
             "\n"
-            "Thread-less tools available in free mode:\n"
+            "Thread-less tools available in free creation mode:\n"
             "- xhs_free_draft_create (title, body, hashtags, image_paths, niche)\n"
             "- xhs_free_evaluate (draft_id)\n"
             "- xhs_free_publish (draft_id)\n"
@@ -965,8 +965,8 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
             "Rules:\n"
             "- Do NOT call thread-bound tools (xhs_workflow_status/pause/resume/cancel, "
             "xhs_review_*, xhs_optimization_*, xhs_blogger_*, xhs_ripple_*, "
-            "xhs_evaluation_*) — free mode has no thread_id; they will fail.\n"
-            "- xhs_workflow_start is disabled in free mode.\n"
+            "xhs_evaluation_*) — Free Creation mode has no thread_id; they will fail.\n"
+            "- xhs_workflow_start is disabled in Free Creation mode.\n"
             "- Evaluate can degrade (LLM timeout → pass-through fallback with "
             "degraded=True, overall_score=100/decision=approved): the 100/approved "
             "is a FAKE fallback, NOT a real score. The render flags it (⚠ Evaluation "
@@ -2028,7 +2028,14 @@ class OmpSession:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
-            env={**os.environ, "PI_NO_PTY": "1", "PI_NO_TITLE": "1"},
+            env={
+                **os.environ,
+                "PI_NO_PTY": "1",
+                "PI_NO_TITLE": "1",
+                # The extension uses this immutable process setting to avoid
+                # registering thread-bound tools in Free Creation sessions.
+                "XHS_AGENT_MODE": self.mode,
+            },
         )
 
         # Start stderr drain (log omp internal errors)
@@ -2551,16 +2558,22 @@ class OmpBridgeManager:
             if timer and not timer.done():
                 timer.cancel()
             session = self._sessions[session_id]
-            # Re-register tools if the mode changed since the session was created
-            # (e.g. same session_id reused across free↔workflow page navigation).
+            # The extension receives XHS_AGENT_MODE at process startup and
+            # conditionally registers its local tools. A host-tool refresh
+            # alone would leave thread-bound extension tools visible after a
+            # free↔workflow navigation, so replace the subprocess when the
+            # mode changes.
             if session.mode != mode:
                 logger.info(
-                    "Session %s mode changed %s→%s, re-registering tools",
+                    "Session %s mode changed %s→%s, restarting omp subprocess",
                     session_id,
                     session.mode,
                     mode,
                 )
-                await session.set_mode(mode)
+                await session.stop()
+                session = OmpSession(session_id, mode=mode)
+                await session.start()
+                self._sessions[session_id] = session
             return session
 
         # Create new session
