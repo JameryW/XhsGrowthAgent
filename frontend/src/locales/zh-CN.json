@@ -67,6 +67,7 @@
       "passwordRequired": "请输入密码",
       "loginFailed": "登录失败，请重试"
     },
+    "logoutSuccess": "已安全退出登录",
     "dismissError": "关闭错误提示",
     "version": "小红书增长引擎 v0.1.0"
   },
@@ -96,6 +97,8 @@
       "reconnect": "重新连接"
     },
     "appName": "增长引擎",
+    "appSubtitle": "小红书增长智能体",
+    "versionValue": "v0.2.0",
     "systemInfo": "系统信息",
     "settings": "设置",
     "tui": "TUI",
@@ -123,6 +126,8 @@
       "accountIdHelp": "选择运行此工作流的账号；可在「设置」中管理账号和扫码登录状态",
       "startPhase": "起始阶段",
       "options": "运行选项",
+      "advancedOptions": "高级选项",
+      "advancedOptionsHide": "收起高级选项",
       "dryRun": "试运行模式",
       "dryRunHelp": "不实际发布到小红书",
       "autoPublish": "自动发布",
@@ -188,6 +193,17 @@
     "completed": "工作流完成",
     "completedMessage": "内容已成功发布到小红书",
     "publishFailed": "发布失败",
+    "nextAction": {
+      "reviewTitle": "内容已准备好，等待审核",
+      "reviewDesc": "查看草稿并决定通过，或提出修改意见。",
+      "reviewCta": "打开审核",
+      "continueTitle": "继续当前创作",
+      "continueDesc": "工作流正在等待你的输入，完成后才能继续。",
+      "continueCta": "继续处理",
+      "startTitle": "准备好创作第一篇笔记了吗？",
+      "startDesc": "选择创作模式和账号，开始一次引导式创作。",
+      "startCta": "开始创作"
+    },
     "header": {
       "status": "工作流状态",
       "progress": "工作流进度",
@@ -673,6 +689,7 @@
     "period": "周期",
     "refresh": "刷新",
     "refreshing": "刷新中...",
+    "lastUpdated": "更新于 {time}",
     "empty": {
       "title": "暂无分析数据",
       "description": "开始创作并发布内容后，即可在此查看表现数据分析。",
@@ -1145,7 +1162,8 @@
     "currentStep": "当前步骤",
     "skip": "跳过引导",
     "next": "下一步",
-    "finish": "完成引导"
+    "finish": "完成引导",
+    "targetUnavailable": "该区域仍在加载中。你可以继续引导，加载完成后即可使用对应控件。"
   },
   "celebration": {
     "title": "恭喜！工作流完成",
@@ -1160,7 +1178,46 @@
     "menu": "帮助菜单",
     "faq": "常见问题",
     "shortcuts": "快捷键",
-    "feedback": "反馈建议"
+    "feedback": "反馈建议",
+    "pageTitle": "帮助中心",
+    "pageDesc": "查看常见问题、键盘快捷键，并快速提交产品反馈。",
+    "faqTitle": "常见问题",
+    "openShortcuts": "查看快捷键",
+    "feedbackTitle": "提交反馈",
+    "feedbackDesc": "告诉我们哪里卡住了，或哪些步骤可以更顺畅。系统会复制一份可直接发送的反馈，不会打开未配置的邮箱地址。",
+    "feedbackLabel": "反馈内容",
+    "feedbackPlaceholder": "请描述发生了什么、你原本期待什么，以及涉及的页面或工作流……",
+    "feedbackHint": "反馈会复制到剪贴板，方便你发送给团队。",
+    "copyFeedback": "复制反馈报告",
+    "feedbackRequired": "请先填写反馈内容",
+    "feedbackCopied": "反馈报告已复制",
+    "feedbackCopyFailed": "无法访问剪贴板，请手动复制文本",
+    "feedbackTemplateTitle": "小红书增长引擎反馈",
+    "shortcutDescriptions": {
+      "show": "打开快捷键帮助",
+      "close": "关闭当前面板",
+      "confirm": "确认当前操作",
+      "next": "移动到下一个控件",
+      "previous": "移动到上一个控件"
+    },
+    "faqItems": {
+      "1": {
+        "question": "如何开始一次创作？",
+        "answer": "在开始创作页选择账号和创作模式后提交。趋势模式和 Brief 模式会先进入确认步骤，自由创作会直接打开引导式工作区。"
+      },
+      "2": {
+        "question": "在哪里审核或发布内容？",
+        "answer": "从侧边栏或移动端的更多菜单进入内容审核。审核页集中处理草稿反馈和发布动作，仪表盘会提示当前最需要处理的下一步。"
+      },
+      "3": {
+        "question": "顶部连接提示代表什么？",
+        "answer": "只有实时同步正在连接、重连或已断开时才会显示提示。工作流数据同时通过 API 获取，短暂的 WebSocket 重连不会创建新的工作流。"
+      },
+      "4": {
+        "question": "如何切换账号？",
+        "answer": "可以在创作表单中选择账号，也可以在设置里管理已绑定的小红书账号。选择的账号会带入工作流和自由创作工作区。"
+      }
+    }
   },
   "loading": {
     "processing": "正在处理...",
@@ -1573,6 +1630,26 @@
   },
   "tui": {
     "welcome": "XhsGrowthAgent TUI v0.1",
+    "statusLabel": "xhs-agent",
+    "defaultAccount": "默认账号",
+    "accountContext": "账号：{account}",
+    "quickActions": "快捷操作",
+    "quickSuggest": "获取建议",
+    "quickDrafts": "查看草稿",
+    "quickHelp": "查看帮助",
+    "searchPlaceholder": "搜索终端内容……",
+    "searchShortcut": "搜索（Ctrl+Shift+F）",
+    "searchCaseSensitive": "区分大小写",
+    "searchRegex": "正则表达式",
+    "searchPrevious": "上一个结果",
+    "searchNext": "下一个结果",
+    "messagePlaceholder": "输入消息……",
+    "commandPlaceholder": "输入命令……",
+    "contextCopy": "复制",
+    "contextPaste": "粘贴",
+    "contextSelectAll": "全选",
+    "contextSearch": "搜索",
+    "contextClear": "清空",
     "welcomeHint": "输入话题开始创作，或输入 /help 查看命令。",
     "terminalHint": "输入 /help 查看命令，或直接开始对话。",
     "workflowFlow": "trend → strategy → copy → visual → publish",

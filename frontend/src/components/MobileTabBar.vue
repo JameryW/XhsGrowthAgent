@@ -18,7 +18,7 @@ const tabs = computed(() => [
 ])
 
 const currentPath = computed(() => route.path)
-const moreActive = computed(() => currentPath.value === '/settings' || currentPath.value === '/analytics' || currentPath.value === '/history')
+const moreActive = computed(() => currentPath.value === '/settings' || currentPath.value === '/analytics' || currentPath.value === '/evaluation' || currentPath.value === '/history')
 const isActiveTab = (path: string) => currentPath.value === path
 
 const navigate = (path: string) => {
@@ -103,6 +103,14 @@ const handleLogout = async () => {
         >
           <AppIcon name="BarChart3" size="sm" variant="cyan" aria-hidden="true" />
           <span>{{ t('nav.analytics') }}</span>
+        </button>
+        <button
+          class="flex w-full items-center gap-2 px-3 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+          role="menuitem"
+          @click="navigate('/evaluation')"
+        >
+          <AppIcon name="ClipboardCheck" size="sm" variant="purple" aria-hidden="true" />
+          <span>{{ t('nav.evaluation') }}</span>
         </button>
         <button
           class="flex w-full items-center gap-2 px-3 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"

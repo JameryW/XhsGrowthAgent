@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed, watch, defineAsyncComponent } from "vue"
+import { onMounted, onUnmounted, computed, watch, nextTick, ref, defineAsyncComponent } from "vue"
 import { useRoute } from "vue-router"
 import { useI18n } from "vue-i18n"
 import Toast from "@/components/Toast.vue"
@@ -8,7 +8,6 @@ import PageTransition from "@/components/PageTransition.vue"
 // ponytail: 以下组件仅在 showChrome（已登录、非 showcase 页）块内渲染，首屏（Showcase/Login）不渲染。
 // 用 defineAsyncComponent 懒加载，把整条依赖链从 entry chunk 剥离成独立 chunk，首屏不下载。
 const ConnectionStatus = defineAsyncComponent(() => import("@/components/ConnectionStatus.vue"))
-const OfflineIndicator = defineAsyncComponent(() => import("@/components/OfflineIndicator.vue"))
 const OfflineRecovery = defineAsyncComponent(() => import("@/components/OfflineRecovery.vue"))
 const KeyboardShortcutsHelp = defineAsyncComponent(() => import("@/components/KeyboardShortcutsHelp.vue"))
 const Navbar = defineAsyncComponent(() => import("@/components/Navbar.vue"))
@@ -35,7 +34,7 @@ const { initOnboarding, skipTour, completeTour, advanceStep } = useOnboarding()
 useShortcuts()
 
 // Keyboard shortcuts help
-const showShortcutsHelp = ref(false)
+const showShortcutsHelp = computed(() => shortcutsStore.showPanel)
 
 // ponytail: OfflineRecovery 用浏览器 navigator.onLine 误报频繁（容器 recreate / VPN / 远程访问触发 offline 后不复位）。
 // 改受控模式：黄条反映真实后端 WS 连通，非网卡状态。未登录或连接中/重连中不亮，仅已认证且 disconnected 才亮。
@@ -46,6 +45,16 @@ const isBackendOnline = computed(
 // Onboarding state for OnboardingTour component
 const onboardingCurrentStep = computed(() => onboardingStore.currentStep)
 const isOnboardingActive = computed(() => onboardingStore.isOnboardingActive)
+const onboardingInitialized = ref(false)
+
+async function initializeContextualOnboarding(routeName = route.name) {
+  // The tour targets dashboard controls. Starting it on settings, history or
+  // the TUI produced a centered tooltip with no actionable target.
+  if (onboardingInitialized.value || !authStore.isAuthenticated || routeName !== 'dashboard') return
+  await nextTick()
+  initOnboarding()
+  onboardingInitialized.value = true
+}
 
 const handleGlobalKeyDown = (e: KeyboardEvent) => {
   // Skip shortcuts when typing in input/textarea/contenteditable
@@ -56,14 +65,12 @@ const handleGlobalKeyDown = (e: KeyboardEvent) => {
 
   // Show shortcuts help with "?" key (Shift+/)
   if (e.key === "?" || (e.shiftKey && e.key === "/")) {
-    showShortcutsHelp.value = true
     shortcutsStore.showShortcutsPanel()
   }
   // Ctrl+K to open command palette
   if (e.ctrlKey && e.key === "k") {
     e.preventDefault()
     shortcutsStore.showShortcutsPanel()
-    showShortcutsHelp.value = true
   }
 }
 
@@ -71,8 +78,11 @@ onMounted(async () => {
   // Auth is already initialized by router guard on first navigation
   // Add global keyboard listener
   window.addEventListener("keydown", handleGlobalKeyDown)
-  // Initialize onboarding - check if user needs to see tour
-  initOnboarding()
+  await initializeContextualOnboarding()
+})
+
+watch(() => route.name, (name) => {
+  void initializeContextualOnboarding(name)
 })
 
 // Connect/disconnect WebSocket when auth state changes
@@ -96,7 +106,6 @@ onUnmounted(() => {
 })
 
 const handleCloseShortcutsHelp = () => {
-  showShortcutsHelp.value = false
   shortcutsStore.hideShortcutsPanel()
 }
 
@@ -144,7 +153,6 @@ const handleErrorBoundaryRefresh = () => {
 
     <!-- Authenticated chrome -->
     <template v-if="showChrome">
-      <OfflineIndicator />
       <ConnectionStatus />
 
       <!-- Keyboard shortcuts help -->

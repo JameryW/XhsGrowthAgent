@@ -53,15 +53,15 @@ const currentTab = computed(() => TABS.find(t => t.id === activeTab.value)!)
     </div>
 
     <!-- Two-column layout: sidebar nav + content -->
-    <div class="flex gap-6">
+    <div class="flex flex-col gap-4 sm:flex-row sm:gap-6">
       <!-- Sidebar -->
-      <aside class="w-56 shrink-0">
-        <nav class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-2 space-y-1 sticky top-4">
+      <aside class="w-full shrink-0 sm:w-56">
+        <nav class="flex gap-1 overflow-x-auto rounded-xl border border-slate-200/50 bg-white/90 p-2 backdrop-blur-sm sm:sticky sm:top-4 sm:block sm:space-y-1">
           <button
             v-for="tab in TABS"
             :key="tab.id"
             @click="selectTab(tab.id)"
-            class="w-full text-left px-3 py-2.5 rounded-lg transition-all flex items-start gap-2.5 group"
+            class="min-w-[142px] flex-1 text-left px-3 py-2.5 rounded-lg transition-all flex items-start gap-2.5 group sm:w-full sm:min-w-0 sm:flex-none"
             :class="activeTab === tab.id
               ? 'bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200/60 shadow-sm'
               : 'border border-transparent hover:bg-slate-50/80'"
@@ -78,7 +78,7 @@ const currentTab = computed(() => TABS.find(t => t.id === activeTab.value)!)
               <div class="text-sm font-medium" :class="activeTab === tab.id ? 'text-rose-700' : 'text-slate-700'">
                 {{ t(tab.labelKey) }}
               </div>
-              <div class="text-[10px] mt-0.5 leading-tight" :class="activeTab === tab.id ? 'text-rose-500/80' : 'text-slate-400'">
+              <div class="hidden text-[10px] mt-0.5 leading-tight sm:block" :class="activeTab === tab.id ? 'text-rose-500/80' : 'text-slate-400'">
                 {{ t(tab.descKey) }}
               </div>
             </div>

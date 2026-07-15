@@ -536,6 +536,11 @@ function submitMobileInput() {
   mobileInput.value = ''
 }
 
+function runQuickAction(command: string) {
+  if (isProcessing.value) return
+  void processCommand(command)
+}
+
 // ── WebSocket ───────────────────────────────────────────────────────────
 
 function connectAgentWs() {
@@ -1661,6 +1666,7 @@ const isFreeCreationEntry = computed(() => route.query.mode === 'free')
 const freeCreationTopic = computed(() => (
   typeof route.query.topic === 'string' ? route.query.topic : ''
 ))
+const accountContextLabel = computed(() => accountsStore.activeAccount?.name || t('tui.defaultAccount'))
 
 // ── Lifecycle ───────────────────────────────────────────────────────────
 
@@ -1864,17 +1870,26 @@ onUnmounted(() => {
     <!-- Status bar — native TUI style -->
     <div class="tui-statusbar flex items-center gap-2 px-3 py-1 shrink-0">
       <div class="tui-status-dot" :class="wsConnected ? 'connected' : 'disconnected'" />
-      <span class="tui-status-label">xhs-agent</span>
+      <span class="tui-status-label">{{ t('tui.statusLabel') }}</span>
       <span class="tui-mode-badge" :class="mode === 'agent' && wsConnected ? 'mode-agent' : 'mode-cmd'">{{ modeLabel }}</span>
       <span v-if="activeThreadId" class="tui-thread-id">{{ activeThreadId.slice(0, 8) }}</span>
       <div class="flex-1" />
-      <span v-if="isProcessing" class="tui-running-indicator">● processing</span>
+      <span v-if="isProcessing" class="tui-running-indicator">● {{ t('tui.processing') }}</span>
       <button
         class="tui-status-btn"
         :class="{ active: searchVisible }"
-        title="Ctrl+Shift+F"
+        :title="t('tui.searchShortcut')"
         @click.stop="toggleSearch"
       >⌕</button>
+    </div>
+
+    <!-- Guided shortcuts keep Free Creation discoverable without hiding the terminal. -->
+    <div v-if="isFreeCreationEntry" class="tui-quick-actions flex flex-wrap items-center gap-2 px-3 py-2 shrink-0">
+      <span class="tui-account-context">{{ t('tui.accountContext', { account: accountContextLabel }) }}</span>
+      <span class="tui-quick-label">{{ t('tui.quickActions') }}</span>
+      <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/suggest')">{{ t('tui.quickSuggest') }}</button>
+      <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/drafts')">{{ t('tui.quickDrafts') }}</button>
+      <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/help')">{{ t('tui.quickHelp') }}</button>
     </div>
 
     <!-- Search bar — native terminal search -->
@@ -1883,18 +1898,18 @@ onUnmounted(() => {
         ref="searchInputRef"
         v-model="searchQuery"
         class="tui-search-input flex-1"
-        placeholder="Search..."
+        :placeholder="t('tui.searchPlaceholder')"
         @input="onSearchInput"
         @keydown.enter="doSearch('next')"
         @keydown.shift.enter="doSearch('prev')"
         @keydown.escape="closeSearch"
       />
-      <button class="tui-search-toggle" :class="{ active: searchCaseSensitive }" title="Case sensitive" @click="searchCaseSensitive = !searchCaseSensitive; onSearchInput()">Aa</button>
-      <button class="tui-search-toggle" :class="{ active: searchRegex }" title="Regex" @click="searchRegex = !searchRegex; onSearchInput()">.*</button>
+      <button class="tui-search-toggle" :class="{ active: searchCaseSensitive }" :title="t('tui.searchCaseSensitive')" @click="searchCaseSensitive = !searchCaseSensitive; onSearchInput()">Aa</button>
+      <button class="tui-search-toggle" :class="{ active: searchRegex }" :title="t('tui.searchRegex')" @click="searchRegex = !searchRegex; onSearchInput()">.*</button>
       <span class="tui-search-info">{{ searchResultInfo }}</span>
-      <button class="tui-search-nav" title="Previous" @click="doSearch('prev')">↑</button>
-      <button class="tui-search-nav" title="Next" @click="doSearch('next')">↓</button>
-      <button class="tui-search-nav" title="Close" @click="closeSearch">✕</button>
+      <button class="tui-search-nav" :title="t('tui.searchPrevious')" @click="doSearch('prev')">↑</button>
+      <button class="tui-search-nav" :title="t('tui.searchNext')" @click="doSearch('next')">↓</button>
+      <button class="tui-search-nav" :title="t('common.close')" @click="closeSearch">✕</button>
     </div>
 
     <!-- xterm.js container -->
@@ -1905,7 +1920,7 @@ onUnmounted(() => {
       <input
         v-model="mobileInput"
         class="tui-mobile-input flex-1"
-        :placeholder="mode === 'agent' && wsConnected ? '输入消息...' : '输入命令...'"
+        :placeholder="mode === 'agent' && wsConnected ? t('tui.messagePlaceholder') : t('tui.commandPlaceholder')"
         enterkeyhint="send"
         @keydown.enter="submitMobileInput"
       />
@@ -1919,12 +1934,12 @@ onUnmounted(() => {
       :style="{ left: `${contextMenuPos.x}px`, top: `${contextMenuPos.y}px` }"
       @click.stop
     >
-      <button v-if="contextMenuHasSelection" class="tui-menu-item" @click="menuCopy">Copy</button>
-      <button class="tui-menu-item" @click="menuPaste">Paste</button>
-      <button class="tui-menu-item" @click="menuSelectAll">Select All</button>
+      <button v-if="contextMenuHasSelection" class="tui-menu-item" @click="menuCopy">{{ t('tui.contextCopy') }}</button>
+      <button class="tui-menu-item" @click="menuPaste">{{ t('tui.contextPaste') }}</button>
+      <button class="tui-menu-item" @click="menuSelectAll">{{ t('tui.contextSelectAll') }}</button>
       <div class="tui-menu-sep" />
-      <button class="tui-menu-item" @click="menuSearch">Search</button>
-      <button class="tui-menu-item" @click="menuClear">Clear</button>
+      <button class="tui-menu-item" @click="menuSearch">{{ t('tui.contextSearch') }}</button>
+      <button class="tui-menu-item" @click="menuClear">{{ t('tui.contextClear') }}</button>
     </div>
   </div>
 </template>
@@ -2039,6 +2054,26 @@ onUnmounted(() => {
 }
 .tui-status-btn:hover { color: #a9b1d6; }
 .tui-status-btn.active { color: #7aa2f7; }
+
+.tui-quick-actions {
+  background: #16161e;
+  border-bottom: 1px solid #292e42;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Menlo', monospace;
+  font-size: 11px;
+}
+.tui-account-context { color: #7dcfff; margin-right: 4px; }
+.tui-quick-label { color: #565f89; }
+.tui-quick-btn {
+  min-height: 2rem;
+  padding: 0.25rem 0.6rem;
+  color: #a9b1d6;
+  background: #1a1b26;
+  border: 1px solid #3b4261;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.tui-quick-btn:hover { color: #c0caf5; border-color: #7aa2f7; }
+.tui-quick-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Search bar — flat, terminal-native ─────────────────────────────── */
 .tui-searchbar {

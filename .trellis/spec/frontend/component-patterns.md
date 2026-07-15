@@ -222,6 +222,22 @@ export interface WorkflowState {
 
 Keep frontend types in sync with backend `substates.py`.
 
+## Navigation & workflow UX
+
+- Protected workflow surfaces support optional `threadId` route params for deep
+  links (`/dashboard/:threadId?`, `/review/:threadId?`). History actions must
+  preserve the selected thread in the route instead of relying only on a
+  mutable store value.
+- The help center is a real protected route (`/help`); shortcut visibility is
+  owned by `useShortcutsStore`, not by onboarding state. Never bind a help
+  action to `startTour()` or an unconfigured `mailto:` URL.
+- Mobile navigation must expose every primary destination. Lower-frequency
+  growth destinations can be grouped in the “More” menu, but they still need an
+  active state and a route entry.
+- Review cards keep the primary decision actions in a sticky action row while
+  the card is expanded. Creation forms should keep advanced options collapsed
+  by default and expose the current account context near the action surface.
+
 ---
 
 ## AgentTUI tool_result Display

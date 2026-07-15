@@ -51,6 +51,37 @@ const showBriefContent = computed(() => {
 const isLoading = computed(() => workflowStore.isLoading && !workflowStore.workflowState)
 const hasError = computed(() => workflowStore.error !== null)
 
+const nextAction = computed(() => {
+  if (workflowStore.isAwaitingReview) {
+    return {
+      icon: 'CheckCircle',
+      title: t('dashboard.nextAction.reviewTitle'),
+      description: t('dashboard.nextAction.reviewDesc'),
+      label: t('dashboard.nextAction.reviewCta'),
+      path: workflowStore.activeThreadId ? `/review/${workflowStore.activeThreadId}` : '/review',
+    }
+  }
+  if (workflowStore.isAwaitingBrief || workflowStore.isAwaitingDraft || workflowStore.isAwaitingChoice) {
+    return {
+      icon: 'Pencil',
+      title: t('dashboard.nextAction.continueTitle'),
+      description: t('dashboard.nextAction.continueDesc'),
+      label: t('dashboard.nextAction.continueCta'),
+      path: '/dashboard',
+    }
+  }
+  if (!workflowStore.activeThreadId && workflowStore.currentPhase === 'idle') {
+    return {
+      icon: 'Rocket',
+      title: t('dashboard.nextAction.startTitle'),
+      description: t('dashboard.nextAction.startDesc'),
+      label: t('dashboard.nextAction.startCta'),
+      path: '/start',
+    }
+  }
+  return null
+})
+
 // Celebration state
 const showCelebration = ref(false)
 const hasShownCelebration = ref(false)
@@ -74,7 +105,11 @@ const handleCloseCelebration = () => {
 // ErrorCard handlers
 const handleErrorRetry = () => {
   errorStore.clearError()
-  workflowStore.startWorkflow('default')
+  if (workflowStore.activeThreadId) {
+    void workflowStore.refreshStatus()
+  } else {
+    router.push('/start')
+  }
 }
 
 const handleErrorDismiss = () => {
@@ -98,6 +133,10 @@ function handleBriefClear() {
 }
 
 onMounted(async () => {
+  const threadId = route.value.params.threadId
+  if (typeof threadId === 'string' && threadId && threadId !== workflowStore.activeThreadId) {
+    workflowStore.setThreadId(threadId)
+  }
   const realtimeStore = useRealtimeStore()
   realtimeStore.connect()
   // Refresh all tabs first — this also cleans up stale IDs from localStorage
@@ -153,6 +192,20 @@ onUnmounted(() => {
         @retry="handleErrorRetry"
         @dismiss="handleErrorDismiss"
       />
+
+      <!-- One prominent next step prevents users from scanning the full timeline. -->
+      <div v-if="nextAction" class="flex items-center gap-3 rounded-xl border border-cyan-200/70 bg-gradient-to-r from-cyan-50/90 to-white p-3 md:p-4">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-100">
+          <AppIcon :name="nextAction.icon" size="md" variant="cyan" aria-hidden="true" />
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-sm font-semibold text-slate-700">{{ nextAction.title }}</div>
+          <p class="mt-0.5 text-xs text-slate-500">{{ nextAction.description }}</p>
+        </div>
+        <NeonButton variant="cyan" size="sm" @click="router.push(nextAction.path)">
+          {{ nextAction.label }}
+        </NeonButton>
+      </div>
 
       <!-- Stale Workflow Recovery -->
       <div v-if="workflowStore.isStale" class="rounded-xl p-3 md:p-4 liquid-glass-amber liquid-glass-hover">
