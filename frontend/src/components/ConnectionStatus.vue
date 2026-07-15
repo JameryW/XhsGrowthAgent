@@ -53,6 +53,7 @@ const currentStyle = computed(() => statusStyles.value[realtimeStore.connectionS
 
 <template>
   <div
+    v-if="realtimeStore.connectionStatus === 'connecting' || realtimeStore.connectionStatus === 'reconnecting'"
     class="fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl flex items-center gap-3 backdrop-blur-sm bg-white/98 border border-slate-200/50 shadow-sm transition-all duration-200"
     :class="[currentStyle.borderClass]"
     role="status"
@@ -70,20 +71,5 @@ const currentStyle = computed(() => statusStyles.value[realtimeStore.connectionS
 
     <span :class="currentStyle.textClass" class="text-xs font-medium">{{ currentStyle.text }}</span>
 
-    <span
-      v-if="realtimeStore.connectionStatus === 'connected'"
-      class="px-2 py-0.5 rounded bg-teal-50 text-teal-600/80 text-xs font-medium"
-      :aria-label="t('connection.seqNumber')"
-    >
-      seq: {{ realtimeStore.getLastSeq() }}
-    </span>
-
-    <span
-      v-if="realtimeStore.lastRecoveredSeq > 0 && realtimeStore.connectionStatus === 'connected'"
-      class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-600/80 text-xs font-medium"
-      :aria-label="t('connection.recoveryTitle')"
-    >
-      {{ t('connection.recoveryTitle') }}
-    </span>
   </div>
 </template>

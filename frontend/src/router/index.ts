@@ -30,13 +30,13 @@ const router = createRouter({
       meta: { transition: 'fade-slide', public: true },
     },
     {
-      path: '/dashboard',
+      path: '/dashboard/:threadId?',
       name: 'dashboard',
       component: () => import('@/views/Dashboard.vue'),
       meta: { transition: 'fade-slide', requiresAuth: true },
     },
     {
-      path: '/review',
+      path: '/review/:threadId?',
       name: 'review',
       component: () => import('@/views/Review.vue'),
       meta: { transition: 'fade-slide', requiresAuth: true },
@@ -66,6 +66,12 @@ const router = createRouter({
       meta: { transition: 'fade-slide', requiresAuth: true },
     },
     {
+      path: '/help',
+      name: 'help',
+      component: () => import('@/views/HelpView.vue'),
+      meta: { transition: 'fade-slide', requiresAuth: true },
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('@/views/Settings.vue'),
@@ -75,7 +81,7 @@ const router = createRouter({
       path: '/tui',
       name: 'tui',
       component: () => import('@/views/AgentTUI.vue'),
-      meta: { transition: 'fade-slide', public: true },
+      meta: { transition: 'fade-slide', requiresAuth: true },
     },
     {
       path: '/:pathMatch(.*)*',

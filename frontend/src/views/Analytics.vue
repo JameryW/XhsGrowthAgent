@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, computed, defineAsyncComponent } from 'vue'
+import { onMounted, computed, ref, defineAsyncComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import MetricCard from '@/components/MetricCard.vue'
@@ -17,13 +17,14 @@ const { t } = useI18n()
 const router = useRouter()
 const analyticsStore = useAnalyticsStore()
 const accountsStore = useAccountsStore()
+const lastUpdatedAt = ref<Date | null>(null)
 
 onMounted(async () => {
   // Refresh the shared account labels so a name imported from Creator Center
   // is visible even when this route stayed mounted across the import.
   await accountsStore.fetchAccounts()
   if (!analyticsStore.posts.length && !analyticsStore.isLoading && !analyticsStore.error) {
-    analyticsStore.fetchAllData()
+    await refreshData()
   }
 })
 
@@ -145,8 +146,9 @@ const setPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
   analyticsStore.setPeriod(period)
 }
 
-function refreshData() {
-  analyticsStore.fetchAllData()
+async function refreshData() {
+  await analyticsStore.fetchAllData()
+  if (!analyticsStore.error) lastUpdatedAt.value = new Date()
 }
 
 function handleCreatorStatsUpdated() {
@@ -286,6 +288,9 @@ function startWithTopic(topic: string, niche?: string) {
             <div class="text-lg md:text-xl font-semibold text-slate-800">{{ t('analytics.title') }}</div>
             <div class="text-[10px] md:text-xs text-slate-400 mt-1 break-words">
               {{ t('analytics.account') }}: {{ accountsStore.activeAccount?.name || analyticsStore.accountId }} | {{ t('analytics.period') }}: {{ analyticsStore.period }}
+            </div>
+            <div v-if="lastUpdatedAt" class="mt-1 text-[10px] text-slate-400" role="status">
+              {{ t('analytics.lastUpdated', { time: lastUpdatedAt.toLocaleTimeString() }) }}
             </div>
           </div>
         </div>

@@ -12,9 +12,9 @@ interface Props {
 }
 
 withDefaults(defineProps<Props>(), {
-  faqUrl: '/faq',
-  shortcutsUrl: '/shortcuts',
-  feedbackEmail: 'feedback@example.com',
+  faqUrl: '/help',
+  shortcutsUrl: '/help?section=shortcuts',
+  feedbackEmail: '',
 })
 
 const emit = defineEmits<{

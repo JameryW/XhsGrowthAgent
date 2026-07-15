@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"检查新增交互组件是否遵循单根节点、Toast、i18n 和响应式约定。"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"检查连接状态、账号上下文和工作流重试是否保持状态同步。"}
+{"file":".trellis/spec/frontend/animation-patterns.md","reason":"检查新增/调整动画在 prefers-reduced-motion 下不会隐藏内容。"}

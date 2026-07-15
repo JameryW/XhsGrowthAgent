@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { useWorkflowStore, useOnboardingStore, useAuthStore, useRealtimeStore } from '@/stores'
+import { useWorkflowStore, useAuthStore, useRealtimeStore, useShortcutsStore, useAccountsStore } from '@/stores'
 import { useBreakpoints } from '@/composables/useBreakpoints'
 import AppIcon from '@/components/AppIcon.vue'
 import HelpCenter from '@/components/HelpCenter.vue'
@@ -13,9 +13,10 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const workflowStore = useWorkflowStore()
-const onboardingStore = useOnboardingStore()
 const authStore = useAuthStore()
 const realtimeStore = useRealtimeStore()
+const shortcutsStore = useShortcutsStore()
+const accountsStore = useAccountsStore()
 const { isTablet } = useBreakpoints()
 
 const navItems = computed(() => [
@@ -51,18 +52,15 @@ const phaseLabel = computed(() => {
 
 // HelpCenter handlers
 const handleOpenFaq = () => {
-  // Navigate to FAQ page or show modal
-  router.push('/faq')
+  router.push('/help')
 }
 
 const handleOpenShortcuts = () => {
-  // Emit event to show shortcuts panel or toggle
-  onboardingStore.startTour() // Could trigger shortcuts panel instead
+  shortcutsStore.showShortcutsPanel()
 }
 
 const handleSendFeedback = () => {
-  // Open feedback modal or navigate to feedback page
-  window.open('mailto:feedback@example.com', '_blank')
+  router.push({ name: 'help', query: { section: 'feedback' } })
 }
 
 // Logout handler
@@ -70,6 +68,10 @@ const handleLogout = async () => {
   await authStore.logout()
   router.push('/login')
 }
+
+onMounted(() => {
+  if (!accountsStore.activeAccount) void accountsStore.fetchAccounts()
+})
 </script>
 
 <template>
@@ -90,7 +92,7 @@ const handleLogout = async () => {
         </div>
         <div v-if="!isTablet">
           <div class="text-slate-800 font-semibold text-lg tracking-tight">{{ t('nav.appName') }}</div>
-          <div class="text-xs text-slate-400 mt-0.5">XHS Growth Agent</div>
+          <div class="text-xs text-slate-400 mt-0.5">{{ t('nav.appSubtitle') }}</div>
         </div>
       </div>
       <div v-if="!isTablet" class="mt-4 liquid-glass-inset rounded-lg px-3 py-2 flex items-center gap-2 transition-all duration-200" role="status" aria-live="polite" :aria-label="t('nav.phase')">
@@ -161,10 +163,22 @@ const handleLogout = async () => {
       <!-- Desktop: compact bottom section -->
       <template v-if="!isTablet">
         <!-- Account & version -->
-        <div class="flex items-center justify-between px-1 mb-2">
-          <span class="text-xs text-slate-400">{{ authStore.user?.username || 'default' }}</span>
-          <span class="text-[10px] text-slate-300">v0.2.0</span>
+        <div class="flex items-center justify-between gap-2 px-1 mb-2">
+          <span class="min-w-0 truncate text-xs text-slate-400">{{ authStore.user?.username || t('nav.account') }}</span>
+          <span class="text-[10px] text-slate-300">{{ t('nav.versionValue') }}</span>
         </div>
+
+        <button
+          class="mb-2 flex min-h-10 w-full items-center gap-2 rounded-lg bg-slate-50 px-2 text-left transition hover:bg-cyan-50"
+          :aria-label="t('nav.account')"
+          :title="accountsStore.activeAccount?.name || t('nav.account')"
+          @click="router.push('/settings?tab=xhs-accounts')"
+        >
+          <AppIcon name="User" size="sm" variant="cyan" aria-hidden="true" />
+          <span class="min-w-0 truncate text-xs font-medium text-slate-600">
+            {{ accountsStore.activeAccount?.name || t('nav.account') }}
+          </span>
+        </button>
 
         <!-- Utilities row: WS status + language -->
         <div class="flex items-center justify-between px-1 mb-2">

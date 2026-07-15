@@ -64,7 +64,7 @@ export const useAuthStore = defineStore('auth', () => {
     } finally {
       clearAuth()
       isLoading.value = false
-      toastStore.info(t('nav.logout'), t('login.error.loginFailed'))
+      toastStore.info(t('nav.logout'), t('login.logoutSuccess'))
     }
   }
 

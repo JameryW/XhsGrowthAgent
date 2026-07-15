@@ -86,19 +86,19 @@ function formatDate(iso: string) {
 async function resumeWorkflow(threadId: string) {
   workflowStore.setThreadId(threadId)
   await workflowStore.refreshStatus()
-  router.push('/dashboard')
+  router.push({ name: 'dashboard', params: { threadId } })
 }
 
 async function viewWorkflow(threadId: string) {
   workflowStore.setThreadId(threadId)
   await workflowStore.refreshStatus()
-  router.push('/dashboard')
+  router.push({ name: 'dashboard', params: { threadId } })
 }
 
 async function replayWorkflow(threadId: string) {
   workflowStore.setThreadId(threadId)
   await workflowStore.refreshStatus()
-  router.push('/dashboard?replay=true')
+  router.push({ name: 'dashboard', params: { threadId }, query: { replay: 'true' } })
 }
 
 function requestDelete(threadId: string) {
@@ -180,7 +180,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
         <NeonButton variant="pink" size="sm" @click="router.push('/start')">
           {{ t('history.startNew') }}
         </NeonButton>
-        <NeonButton variant="ghost" size="sm" @click="router.push('/start')">
+        <NeonButton variant="ghost" size="sm" @click="router.push('/dashboard')">
           {{ t('history.backHome') }}
         </NeonButton>
       </div>

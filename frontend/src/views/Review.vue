@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed, watch, type WatchStopHandle } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
@@ -18,6 +18,7 @@ import type { WorkflowListItem, WorkflowStateResponse } from '@/types/workflow'
 import type { EvaluationResult } from '@/types/evaluation'
 
 const { t } = useI18n()
+const route = useRoute()
 const router = useRouter()
 const reviewStore = useReviewStore()
 const toastStore = useToastStore()
@@ -178,7 +179,16 @@ async function fetchReviewQueue() {
   }
 }
 
-onMounted(fetchReviewQueue)
+onMounted(async () => {
+  const threadId = route.params.threadId
+  if (typeof threadId === 'string' && threadId) {
+    expandedThreadId.value = threadId
+  }
+  await fetchReviewQueue()
+  if (typeof threadId === 'string' && threadId && !workflows.value.some((wf) => wf.thread_id === threadId)) {
+    await ensureWorkflowInQueue(threadId)
+  }
+})
 onUnmounted(() => {
   destroyed.value = true
   if (detailPumpTimer !== null) window.clearTimeout(detailPumpTimer)
@@ -1049,7 +1059,7 @@ const handleCancelConfirm = () => {
               </div>
 
               <!-- Action buttons -->
-              <div class="flex flex-wrap gap-2 pt-1">
+              <div class="sticky bottom-0 z-10 -mx-1 flex flex-wrap gap-2 border-t border-slate-200/70 bg-white/90 px-1 py-3 pt-3 backdrop-blur-sm">
                 <NeonButton
                   variant="cyan"
                   size="sm"

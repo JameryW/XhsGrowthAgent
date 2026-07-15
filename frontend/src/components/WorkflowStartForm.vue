@@ -41,6 +41,7 @@ const accountId = ref('')
 const phase = ref<WorkflowPhase>('scouting')
 const dryRun = ref(false)
 const autoPublish = ref(false)
+const showAdvancedOptions = ref(false)
 const topic = ref(props.initialTopic || '')
 const niche = ref('母婴')
 const hasManualNiche = ref(false)
@@ -381,13 +382,28 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
       <p v-else class="text-xs text-slate-400 mt-2 pl-1">{{ t('home.form.nicheHelp') }}</p>
     </div>
 
+    <!-- Advanced settings stay collapsed until the user needs them. -->
+    <button
+      v-if="workflowMode !== 'free'"
+      type="button"
+      class="flex min-h-11 w-full items-center justify-between rounded-xl border border-slate-200/70 bg-slate-50/60 px-4 text-left text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:bg-white"
+      :aria-expanded="showAdvancedOptions"
+      @click="showAdvancedOptions = !showAdvancedOptions"
+    >
+      <span class="inline-flex items-center gap-2">
+        <AppIcon name="Settings2" size="sm" variant="cyan" />
+        {{ showAdvancedOptions ? t('home.form.advancedOptionsHide') : t('home.form.advancedOptions') }}
+      </span>
+      <AppIcon :name="showAdvancedOptions ? 'ChevronUp' : 'ChevronDown'" size="sm" variant="cyan" />
+    </button>
+
     <!-- Divider (hidden in free mode; follows phase block) -->
-    <div v-if="workflowMode !== 'free'" class="flex items-center gap-3 py-1">
+    <div v-if="workflowMode !== 'free' && showAdvancedOptions" class="flex items-center gap-3 py-1">
       <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
     </div>
 
     <!-- Starting Phase (trend mode only) -->
-    <div v-if="workflowMode === 'trend'">
+    <div v-if="workflowMode === 'trend' && showAdvancedOptions">
       <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">
         <AppIcon name="GitBranch" size="sm" variant="purple" />
         {{ t('home.form.startPhase') }}
@@ -434,12 +450,12 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
     </div>
 
     <!-- Divider (hidden in free mode) -->
-    <div v-if="workflowMode !== 'free'" class="flex items-center gap-3 py-1">
+    <div v-if="workflowMode !== 'free' && showAdvancedOptions" class="flex items-center gap-3 py-1">
       <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
     </div>
 
     <!-- Options (hidden in free mode) -->
-    <div v-if="workflowMode !== 'free'">
+    <div v-if="workflowMode !== 'free' && showAdvancedOptions">
       <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
         <AppIcon name="Settings" size="sm" variant="cyan" />
         {{ t('home.form.options') }}

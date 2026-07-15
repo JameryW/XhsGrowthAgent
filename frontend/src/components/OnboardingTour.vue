@@ -60,12 +60,14 @@ const tooltipPosition = ref({
   top: 0,
   left: 0,
 })
+const targetElementMissing = ref(false)
 
 // Update positions based on target element
 const updatePositions = async () => {
   await nextTick()
   const targetEl = document.querySelector(currentStepConfig.value.targetSelector)
   if (targetEl) {
+    targetElementMissing.value = false
     const rect = targetEl.getBoundingClientRect()
     highlightBox.value = {
       top: rect.top,
@@ -100,7 +102,10 @@ const updatePositions = async () => {
         break
     }
   } else {
-    // Target element not found — center tooltip on screen
+    // Keep the tour usable while async dashboard content is loading, but make
+    // the fallback explicit instead of implying that an invisible element is
+    // highlighted.
+    targetElementMissing.value = true
     highlightBox.value = { top: 0, left: 0, width: 0, height: 0 }
     tooltipPosition.value = {
       top: window.innerHeight / 2 - 100,
@@ -126,6 +131,7 @@ const handleResize = () => {
 
 onMounted(() => {
   window.addEventListener('resize', handleResize)
+  window.addEventListener('keydown', handleWindowKeyDown)
   if (props.isActive) {
     updatePositions()
   }
@@ -133,12 +139,16 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  window.removeEventListener('keydown', handleWindowKeyDown)
 })
 
 // Handle button clicks
 const handleNext = () => emit('next')
 const handleSkip = () => emit('skip')
 const handleComplete = () => emit('complete')
+const handleWindowKeyDown = (e: KeyboardEvent) => {
+  if (props.isActive && e.key === 'Escape') emit('skip')
+}
 
 // Is last step
 const isLastStep = computed(() => props.currentStep === 3)
@@ -205,6 +215,10 @@ const isLastStep = computed(() => props.currentStep === 3)
               />
             </div>
           </div>
+
+          <p v-if="targetElementMissing" class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700" role="status">
+            {{ t('onboarding.targetUnavailable') }}
+          </p>
 
           <!-- Description -->
           <p id="tour-desc" class="text-slate-600 text-sm leading-relaxed mb-4">

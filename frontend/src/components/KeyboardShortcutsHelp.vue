@@ -17,6 +17,7 @@ const emit = defineEmits<{
 
 // Focus management
 const closeButtonRef = ref<HTMLButtonElement | null>(null)
+const dialogRef = ref<HTMLElement | null>(null)
 const previousFocusElement = ref<HTMLElement | null>(null)
 
 // Save and restore focus when modal opens/closes
@@ -33,12 +34,12 @@ watch(() => props.isOpen, async (isOpen) => {
 import { computed } from 'vue'
 
 const shortcuts = computed(() => [
-  { key: '?', description: t('onboarding.steps.workflow.title') },
-  { key: 'Esc', description: t('common.close') + ' / ' + t('common.cancel') },
-  { key: 'Enter', description: t('common.confirm') },
-  { key: 'Space', description: t('common.confirm') },
-  { key: 'Tab', description: 'Tab' },
-  { key: 'Shift+Tab', description: 'Shift+Tab' },
+  { key: '?', description: t('help.shortcutDescriptions.show') },
+  { key: 'Esc', description: t('help.shortcutDescriptions.close') },
+  { key: 'Enter', description: t('help.shortcutDescriptions.confirm') },
+  { key: 'Space', description: t('help.shortcutDescriptions.confirm') },
+  { key: 'Tab', description: t('help.shortcutDescriptions.next') },
+  { key: 'Shift+Tab', description: t('help.shortcutDescriptions.previous') },
   { key: 'R', description: t('dashboard.actionButtons.refresh') },
   { key: 'P', description: t('dashboard.actionButtons.pause') },
 ])
@@ -46,6 +47,17 @@ const shortcuts = computed(() => [
 const handleClose = () => emit('close')
 const handleKeyDown = (e: KeyboardEvent) => {
   if (e.key === 'Escape') handleClose()
+  if (e.key !== 'Tab') return
+  const focusable = Array.from(
+    dialogRef.value?.querySelectorAll<HTMLElement>('button, [href], input') ?? []
+  ).filter((el) => !el.hasAttribute('disabled'))
+  if (focusable.length < 2) return
+  const current = focusable.indexOf(document.activeElement as HTMLElement)
+  const next = e.shiftKey
+    ? (current <= 0 ? focusable.length - 1 : current - 1)
+    : (current === focusable.length - 1 ? 0 : current + 1)
+  e.preventDefault()
+  focusable[next]?.focus()
 }
 </script>
 
@@ -54,6 +66,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
     <Transition name="shortcuts">
       <div
         v-if="isOpen"
+        ref="dialogRef"
         class="fixed inset-0 z-50 flex items-center justify-center"
         role="dialog"
         aria-modal="true"

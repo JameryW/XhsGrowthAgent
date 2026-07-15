@@ -204,16 +204,23 @@ START → orchestrator → [trend_scout | content_strategist | analyst | engagem
 
 ## Frontend Web UI
 
-Vue 3 前端界面，赛博朋克风格，包含三大模块：
+Vue 3 前端界面，赛博朋克风格，围绕创作、审核、增长和账号管理组织工作区：
 
-### Pages
+### Pages and interaction paths
 
 | 页面 | 路径 | 功能 |
 |------|------|------|
-| Dashboard | `/dashboard` | 工作流进度追踪、阶段输出展示 |
-| Review | `/review` | 人机审核、内容预览、通过/修改/拒绝 |
-| Analytics | `/analytics` | 数据统计、帖子表现、成本分析 |
-| TUI | `/tui` | 终端风格交互界面，命令输入 + 实时进度 + 审核操作 |
+| Start Creating | `/start` | 账号选择、趋势/Brief/自由创作模式入口 |
+| Dashboard | `/dashboard/:threadId?` | 工作流进度追踪、阶段输出、下一步动作和深链恢复 |
+| Review | `/review/:threadId?` | 人机审核、内容预览、通过/修改/拒绝，展开卡片后固定操作栏 |
+| Analytics | `/analytics` | 按当前账号和周期查看数据、帖子表现、成本分析 |
+| Evaluation | `/evaluation` | 创作者质量与工作流评估，移动端从“更多”进入 |
+| History | `/history` | 工作流恢复、查看和回放 |
+| Settings | `/settings` | 控制台用户、小红书账号和系统配置；窄屏使用横向标签 |
+| Help Center | `/help` | FAQ、快捷键面板和反馈报告 |
+| Free Creation TUI | `/tui?mode=free` | 登录后进入终端式自由创作；保留命令行，同时提供建议/草稿/帮助快捷操作 |
+
+前端交互约定、连接状态、错误恢复、响应式和无障碍规则见 [docs/frontend-ux-optimization.md](./docs/frontend-ux-optimization.md)。
 
 ### Tech Stack
 
@@ -233,6 +240,10 @@ npm run dev  # http://localhost:3000
 
 # 构建
 npm run build  # 生成 dist/
+
+# 类型检查与前端回归测试
+npm run type-check
+npm run test:run
 
 # 后端托管
 xhs-growth serve --port 8000  # http://localhost:8000 同时托管前端

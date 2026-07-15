@@ -67,6 +67,7 @@
       "passwordRequired": "Please enter password",
       "loginFailed": "Login failed, please try again"
     },
+    "logoutSuccess": "You have been logged out",
     "dismissError": "Dismiss error",
     "version": "XHS Growth Engine v0.1.0"
   },
@@ -96,6 +97,8 @@
       "reconnect": "Reconnect"
     },
     "appName": "Growth Engine",
+    "appSubtitle": "XHS Growth Agent",
+    "versionValue": "v0.2.0",
     "systemInfo": "System Info",
     "settings": "Settings",
     "tui": "TUI",
@@ -123,6 +126,8 @@
       "accountIdHelp": "Choose the account to run this workflow under; manage accounts and scan-login state in Settings",
       "startPhase": "Starting Phase",
       "options": "Run Options",
+      "advancedOptions": "Advanced options",
+      "advancedOptionsHide": "Hide advanced options",
       "dryRun": "Dry Run Mode",
       "dryRunHelp": "Don't actually publish to Xiaohongshu",
       "autoPublish": "Auto Publish",
@@ -188,6 +193,17 @@
     "completed": "Workflow Completed",
     "completedMessage": "Content published to Xiaohongshu successfully",
     "publishFailed": "Publish Failed",
+    "nextAction": {
+      "reviewTitle": "Your content is ready for review",
+      "reviewDesc": "Check the draft and decide whether to approve or request changes.",
+      "reviewCta": "Open review",
+      "continueTitle": "Continue the current creation",
+      "continueDesc": "There is an input waiting for you before the workflow can continue.",
+      "continueCta": "Continue",
+      "startTitle": "Ready to create your first note?",
+      "startDesc": "Choose a mode and account to start a guided creation workflow.",
+      "startCta": "Start creating"
+    },
     "header": {
       "status": "Workflow Status",
       "progress": "Workflow Progress",
@@ -673,6 +689,7 @@
     "period": "Period",
     "refresh": "Refresh",
     "refreshing": "Refreshing...",
+    "lastUpdated": "Updated at {time}",
     "empty": {
       "title": "No Analytics Data",
       "description": "Start creating and publish content to see performance analytics here.",
@@ -1145,7 +1162,8 @@
     "currentStep": "Current step",
     "skip": "Skip Tour",
     "next": "Next",
-    "finish": "Finish Tour"
+    "finish": "Finish Tour",
+    "targetUnavailable": "This section is still loading. You can continue the tour, then use the highlighted controls when they appear."
   },
   "celebration": {
     "title": "Congratulations! Workflow Completed",
@@ -1160,7 +1178,46 @@
     "menu": "Help Menu",
     "faq": "FAQ",
     "shortcuts": "Shortcuts",
-    "feedback": "Feedback"
+    "feedback": "Feedback",
+    "pageTitle": "Help Center",
+    "pageDesc": "Find answers, keyboard shortcuts, and a quick way to send product feedback.",
+    "faqTitle": "Frequently asked questions",
+    "openShortcuts": "View shortcuts",
+    "feedbackTitle": "Send feedback",
+    "feedbackDesc": "Tell us what blocked you or what would make the workflow easier. We will copy a ready-to-send report without opening an unconfigured email address.",
+    "feedbackLabel": "Feedback message",
+    "feedbackPlaceholder": "Describe what happened, what you expected, and the workflow or page involved...",
+    "feedbackHint": "The report is copied to your clipboard so you can share it with your team.",
+    "copyFeedback": "Copy report",
+    "feedbackRequired": "Please enter feedback first",
+    "feedbackCopied": "Feedback report copied",
+    "feedbackCopyFailed": "Could not access the clipboard; please copy the text manually",
+    "feedbackTemplateTitle": "XHS Growth Engine feedback",
+    "shortcutDescriptions": {
+      "show": "Show shortcut help",
+      "close": "Close the current panel",
+      "confirm": "Confirm the current action",
+      "next": "Move to the next control",
+      "previous": "Move to the previous control"
+    },
+    "faqItems": {
+      "1": {
+        "question": "How do I start a creation workflow?",
+        "answer": "Choose an account and creation mode on Start Creating, then submit. Trend and Brief modes open a confirmation step; Free Creation opens the guided workspace directly."
+      },
+      "2": {
+        "question": "Where can I review or publish content?",
+        "answer": "Use Review from the sidebar or mobile More menu. The review page keeps draft feedback and publish actions together, while the dashboard shows the next pending action."
+      },
+      "3": {
+        "question": "What does the connection banner mean?",
+        "answer": "The banner appears only while real-time synchronization is connecting or disconnected. Your workflow data is fetched through the API as well, so a short WebSocket reconnect does not create a new workflow."
+      },
+      "4": {
+        "question": "How do I switch accounts?",
+        "answer": "Select the account on the creation form or manage durable Xiaohongshu accounts in Settings. The selected account is carried into the workflow and Free Creation workspace."
+      }
+    }
   },
   "loading": {
     "processing": "Processing...",
@@ -1573,6 +1630,26 @@
   },
   "tui": {
     "welcome": "XhsGrowthAgent TUI v0.1",
+    "statusLabel": "xhs-agent",
+    "defaultAccount": "default account",
+    "accountContext": "Account: {account}",
+    "quickActions": "Quick actions",
+    "quickSuggest": "Get suggestions",
+    "quickDrafts": "List drafts",
+    "quickHelp": "Show help",
+    "searchPlaceholder": "Search terminal...",
+    "searchShortcut": "Search (Ctrl+Shift+F)",
+    "searchCaseSensitive": "Case sensitive",
+    "searchRegex": "Regular expression",
+    "searchPrevious": "Previous result",
+    "searchNext": "Next result",
+    "messagePlaceholder": "Type a message...",
+    "commandPlaceholder": "Type a command...",
+    "contextCopy": "Copy",
+    "contextPaste": "Paste",
+    "contextSelectAll": "Select all",
+    "contextSearch": "Search",
+    "contextClear": "Clear",
     "welcomeHint": "Type a topic to start, or /help for commands.",
     "terminalHint": "Type /help for commands, or start chatting.",
     "workflowFlow": "trend → strategy → copy → visual → publish",
