@@ -1,4 +1,0 @@
-{"file":".trellis/spec/backend/quality-guidelines.md","reason":"后端测试、格式化、类型检查验收标准"}
-{"file":".trellis/spec/backend/free-creation.md","reason":"免费模式回归测试验收依据"}
-{"file":".trellis/spec/backend/database-guidelines.md","reason":"数据库并发与查询验证依据"}
-{"file":".trellis/spec/frontend/component-patterns.md","reason":"TUI/组件测试和异步状态验证依据"}
