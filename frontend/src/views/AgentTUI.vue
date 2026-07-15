@@ -20,8 +20,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
-import { useWorkflowStore } from '@/stores'
-import { useAuthStore } from '@/stores/auth'
+import { useAccountsStore, useWorkflowStore } from '@/stores'
 import {
   startWorkflow,
   pauseWorkflow,
@@ -36,7 +35,15 @@ import { markdownToAnsi, ANSI } from '@/utils/markdownToAnsi'
 const { t } = useI18n()
 const route = useRoute()
 const workflowStore = useWorkflowStore()
-const authStore = useAuthStore()
+const accountsStore = useAccountsStore()
+
+/** Resolve the selected XHS account, not the console user's UUID. */
+async function getCurrentAccountId(): Promise<string> {
+  if (!accountsStore.activeAccountId) {
+    await accountsStore.fetchAccounts()
+  }
+  return accountsStore.activeAccountId || 'default'
+}
 
 // ── Mobile detection ──────────────────────────────────────────────────
 const isMobile = computed(() =>
@@ -996,7 +1003,7 @@ async function processSlashCommand(cmd: string) {
 // ── Command mode handlers ──────────────────────────────────────────────
 
 async function handleStart(topic?: string) {
-  const accountId = authStore.user?.id || 'default'
+  const accountId = await getCurrentAccountId()
   writeLineColored(t('tui.startingWorkflow', { topic: topic ? ` on topic: ${topic}` : '' }), ANSI.YELLOW)
 
   const result = await startWorkflow({
@@ -1111,7 +1118,7 @@ async function handleDrafts(argStr = '') {
     writeLineColored(t('tui.draftsInvalidStatus', { status }), ANSI.RED)
     return
   }
-  const accountId = authStore.user?.id || 'default'
+  const accountId = await getCurrentAccountId()
   try {
     const params = new URLSearchParams()
     if (status !== 'all') params.set('status', status)
@@ -1205,7 +1212,7 @@ async function handleDraft(draftId: string) {
     writeLineColored(t('tui.draftDetailMissing'), ANSI.RED)
     return
   }
-  const accountId = authStore.user?.id || 'default'
+  const accountId = await getCurrentAccountId()
   try {
     const resp = await client.get(`/free/draft/${draftId}?account_id=${encodeURIComponent(accountId)}`)
     const data = resp as unknown as { draft_id: string; draft: FreeDraftRecord }
@@ -1328,7 +1335,7 @@ async function handleDelete(draftId: string) {
     writeLineColored(t('tui.draftDeleteUsage'), ANSI.RED)
     return
   }
-  const accountId = authStore.user?.id || 'default'
+  const accountId = await getCurrentAccountId()
   let title = ''
   // GET first so the user sees what is being deleted (acts as confirmation).
   // GET 400 (not found) aborts the delete — no silent success on a bad id.
@@ -1358,7 +1365,7 @@ async function handleAnalytics(draftId: string) {
     writeLineColored(t('tui.analyticsMissing'), ANSI.RED)
     return
   }
-  const accountId = authStore.user?.id || 'default'
+  const accountId = await getCurrentAccountId()
   try {
     const resp = await client.get(`/free/analytics/${draftId}?account_id=${encodeURIComponent(accountId)}`)
     const data = resp as unknown as {
@@ -1412,7 +1419,7 @@ async function handleSuggest() {
     writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
     return
   }
-  const accountId = authStore.user?.id || 'default'
+  const accountId = await getCurrentAccountId()
   try {
     const resp = await client.get(`/free/suggestions/${encodeURIComponent(accountId)}`)
     const data = resp as unknown as {
@@ -1472,7 +1479,7 @@ async function handleEvaluate(draftId: string) {
     writeLineColored(t('tui.evaluateMissing'), ANSI.RED)
     return
   }
-  const accountId = authStore.user?.id || 'default'
+  const accountId = await getCurrentAccountId()
   try {
     const resp = await client.post('/free/evaluate', {
       account_id: accountId,
@@ -1554,7 +1561,7 @@ async function handleEdit(args: string) {
     writeLineColored(t('tui.editUnknownField', { field, allowed: ALLOWED.join(', ') }), ANSI.RED)
     return
   }
-  const accountId = authStore.user?.id || 'default'
+  const accountId = await getCurrentAccountId()
   try {
     const resp = await client.patch(
       `/free/draft/${draftId}?account_id=${encodeURIComponent(accountId)}`,

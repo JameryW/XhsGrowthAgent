@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/free-creation.md","reason":"免费模式工具隔离、原子工具与跨入口编排约定"}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"PostgreSQL 事务、分布式锁和持久化查询约定"}
+{"file":".trellis/spec/backend/omp-integration.md","reason":"OMP bridge/extension 注册和 mode 行为约定"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Pinia 账号状态和连接状态管理约定"}

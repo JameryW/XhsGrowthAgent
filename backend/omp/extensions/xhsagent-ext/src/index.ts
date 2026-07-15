@@ -50,43 +50,51 @@ import registerXhsEvaluateCommand from "./commands/xhs_evaluate.js";
 import registerEvents from "./events.js";
 
 export default function xhsagentExt(pi: ExtensionAPI) {
-  // Workflow tools
-  registerWorkflowStatus(pi);
-  registerWorkflowPause(pi);
-  registerWorkflowResume(pi);
-  registerWorkflowCancel(pi);
-  registerWorkflowList(pi);
-  registerWorkflowDelete(pi);
-  registerWorkflowHistory(pi);
-  registerWorkflowTriggerAnalytics(pi);
-  registerPublishRetry(pi);
+  // The bridge sets this once when it starts the omp subprocess.  Free
+  // Creation mode must not expose thread-bound workflow tools through the
+  // extension either; its isolated xhs_free_* host tools are registered by
+  // the bridge after startup.
+  const isFreeCreationMode = process.env.XHS_AGENT_MODE === "free";
 
-  // Review tools
-  registerReviewApprove(pi);
-  registerReviewReject(pi);
-  registerReviewPending(pi);
-  registerReviewVersions(pi);
+  if (!isFreeCreationMode) {
+    // Workflow tools
+    registerWorkflowStatus(pi);
+    registerWorkflowPause(pi);
+    registerWorkflowResume(pi);
+    registerWorkflowCancel(pi);
+    registerWorkflowList(pi);
+    registerWorkflowDelete(pi);
+    registerWorkflowHistory(pi);
+    registerWorkflowTriggerAnalytics(pi);
+    registerPublishRetry(pi);
 
-  // Evaluation tools (RQGM agent-as-a-judge)
-  registerEvaluationResult(pi);
-  registerEvaluationRun(pi);
-  registerEvaluationEpochs(pi);
-  registerEvaluationWeights(pi);
-  registerEvaluationSamples(pi);
-  registerEvaluationTrend(pi);
+    // Review tools
+    registerReviewApprove(pi);
+    registerReviewReject(pi);
+    registerReviewPending(pi);
+    registerReviewVersions(pi);
 
-  // Ripple tools
-  registerRipplePending(pi);
-  registerRippleDecision(pi);
-  registerRippleRetry(pi);
+    // Evaluation tools (RQGM agent-as-a-judge)
+    registerEvaluationResult(pi);
+    registerEvaluationRun(pi);
+    registerEvaluationEpochs(pi);
+    registerEvaluationWeights(pi);
+    registerEvaluationSamples(pi);
+    registerEvaluationTrend(pi);
 
-  // Blogger selection tools
-  registerBloggerPending(pi);
-  registerBloggerSelect(pi);
+    // Ripple tools
+    registerRipplePending(pi);
+    registerRippleDecision(pi);
+    registerRippleRetry(pi);
 
-  // Optimization tools
-  registerOptimizationDraft(pi);
-  registerOptimizationSelect(pi);
+    // Blogger selection tools
+    registerBloggerPending(pi);
+    registerBloggerSelect(pi);
+
+    // Optimization tools
+    registerOptimizationDraft(pi);
+    registerOptimizationSelect(pi);
+  }
 
   // Analytics tools
   registerAnalyticsDashboard(pi);
@@ -103,9 +111,11 @@ export default function xhsagentExt(pi: ExtensionAPI) {
 
   // Commands
   registerXhsCommand(pi);
-  registerXhsReviewCommand(pi);
   registerXhsAnalyticsCommand(pi);
-  registerXhsEvaluateCommand(pi);
+  if (!isFreeCreationMode) {
+    registerXhsReviewCommand(pi);
+    registerXhsEvaluateCommand(pi);
+  }
 
   // Event hooks (API health check + agent context)
   registerEvents(pi);

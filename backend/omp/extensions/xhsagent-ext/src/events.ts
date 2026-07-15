@@ -15,34 +15,31 @@ export default function register(pi: ExtensionAPI) {
     pi.logger.debug("XhsGrowthAgent extension loaded", { apiHealthy: healthy });
   });
 
-  // ── before_agent_start: inject XHS context ──
+  // ── before_agent_start: inject mode-specific XHS context ──
   pi.on("before_agent_start", () => {
-    return {
-      systemPrompt: [
-        "You have access to XhsGrowthAgent tools for Xiaohongshu (小红书) free orchestration.",
-        "Do not start the fixed workflow from OMP. The fixed workflow is only launched from the Simple Mode UI.",
-        "Commands: /xhs (free creation orchestration), /xhs-review (review content), /xhs-analytics (view analytics).",
-        "",
-        "Free orchestration loop (no workflow thread — use thread-less xhs_free_* tools):",
-        "1. CREATE: xhs_free_draft_create (title, body, hashtags, image_paths) → returns draft_id.",
-        "2. EVALUATE: xhs_free_evaluate (draft_id) → 6-dimension RQGM quality score + decision.",
-        "3. PUBLISH: xhs_free_publish (draft_id) → publishes via account CDP login state.",
-        "4. ANALYTICS: xhs_free_analytics (draft_id) → post-publish engagement (views/likes/collects/comments/shares/engagement_rate).",
-        "Draft management: xhs_free_draft_list / xhs_free_draft_update / xhs_free_draft_delete.",
-        "Call xhs_free_guide for the full orchestration guide.",
-        "Reuse draft_id across create→evaluate→publish; run xhs_free_evaluate before xhs_free_publish.",
-        "If evaluate returns needs_revision/rejected, use xhs_free_draft_update per the revision_hints (keep draft_id), then xhs_free_evaluate again before publish — do not publish a needs_revision draft.",
-        "Evaluate can degrade (LLM timeout → pass-through fallback with degraded=True, overall_score=100/decision=approved): the 100/approved is a FAKE fallback, NOT a real score. The render flags it (⚠ Evaluation degraded); do NOT publish on a degraded verdict — re-run xhs_free_evaluate (keep draft_id) once the LLM is available. The draft list shows a [degraded] badge.",
-        "Publish can fail (status=failed/auth_expired): the render shows Error/Error Type/Recovery — read the recovery hint, fix the cause (e.g. re-login the account), then re-run xhs_free_publish (keep draft_id). Do NOT call xhs_free_analytics on a failed publish (no post_id → 400). The failed attempt persists as last_publish; the draft list shows a [publish failed] badge.",
-        "After a successful publish, call xhs_free_analytics to check engagement feedback.",
-        "Do NOT call thread-bound tools (xhs_workflow_status/pause/resume/cancel, xhs_review_*, xhs_optimization_*) in free mode — there is no thread_id.",
-        "For existing workflow content with a thread_id, use xhs_review_approve or xhs_publish_retry instead.",
-        "Post-publish: xhs_workflow_trigger_analytics (only when a thread_id exists).",
-        "",
-        "Use xhs_system_health to check API status. Use xhs_workflow_list to find workflows.",
-        "Use xhs_analytics_dashboard/report/performance for workflow insights. For imported Creator Center notes, use xhs_creator_stats, xhs_creator_analysis, xhs_creator_suggestions, and xhs_creator_quality. Use xhs_analytics_costs for LLM spend.",
-      ],
-    };
+    const isFreeCreationMode = process.env.XHS_AGENT_MODE === "free";
+    const systemPrompt = isFreeCreationMode
+      ? [
+          "You have access to XhsGrowthAgent tools for Xiaohongshu (小红书) Free Creation mode.",
+          "Use the thread-less xhs_free_* tools for conversational creation; do not start the fixed workflow from this session.",
+          "Commands: /xhs (free creation), /xhs-analytics (view analytics).",
+          "",
+          "Free creation loop: create a draft, evaluate it, revise when needed, publish only a real approved result, then inspect analytics.",
+          "Draft management: xhs_free_draft_list / xhs_free_draft_update / xhs_free_draft_delete.",
+          "Call xhs_free_guide for the full usage guide and reuse draft_id across updates, evaluation, and publishing.",
+          "Evaluate can degrade (LLM timeout → pass-through fallback with degraded=True): the result is not a real score and must not be published.",
+          "Publish failures include a recovery hint; fix the account or login state and retry the same draft_id. Do not request analytics without a successful post_id.",
+          "",
+          "Use xhs_system_health to check API status. For imported Creator Center notes, use xhs_creator_stats, xhs_creator_analysis, xhs_creator_suggestions, and xhs_creator_quality.",
+        ]
+      : [
+          "You have access to XhsGrowthAgent workflow tools for Xiaohongshu (小红书).",
+          "Use the fixed workflow tools for workflow sessions; the Free Creation entry is isolated to its own session.",
+          "Commands: /xhs-review (review content), /xhs-analytics (view analytics), /xhs-evaluate (run RQGM evaluation).",
+          "Use xhs_system_health to check API status and xhs_workflow_list to find workflows.",
+          "Use xhs_analytics_dashboard/report/performance for workflow insights. For imported Creator Center notes, use xhs_creator_stats, xhs_creator_analysis, xhs_creator_suggestions, and xhs_creator_quality. Use xhs_analytics_costs for LLM spend.",
+        ];
+    return { systemPrompt };
   });
 
   // ── tool_end: log tool results for debugging ──

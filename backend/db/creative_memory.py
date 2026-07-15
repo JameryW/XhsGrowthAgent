@@ -531,6 +531,11 @@ async def list_materials(
     else:
         pool = get_pool()
         async with pool.connection() as conn, conn.cursor() as cur:
+            # Tags live inside the JSON payload for backwards compatibility,
+            # so they cannot be filtered by the relational columns here. Read
+            # a bounded candidate set large enough that high-weight, unrelated
+            # materials do not hide lower-weight tagged matches.
+            candidate_limit = 1000 if tags else limit * 2
             if category:
                 await cur.execute(
                     """
@@ -538,7 +543,7 @@ async def list_materials(
                     WHERE account_id = %s AND category = %s
                     ORDER BY weight DESC LIMIT %s
                     """,
-                    (account_id, category, limit * 2),
+                    (account_id, category, candidate_limit),
                 )
             else:
                 await cur.execute(
@@ -547,7 +552,7 @@ async def list_materials(
                     WHERE account_id = %s
                     ORDER BY weight DESC LIMIT %s
                     """,
-                    (account_id, limit * 2),
+                    (account_id, candidate_limit),
                 )
             rows = await cur.fetchall()
         items = []

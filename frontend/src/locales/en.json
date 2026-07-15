@@ -116,7 +116,7 @@
     "recommendedTopic": "Recommended Topic",
     "briefMode": "Brief Mode",
     "trendMode": "Trend Discovery",
-    "freeMode": "Free Mode",
+    "freeMode": "Free Creation Mode",
     "form": {
       "accountId": "Account",
       "accountIdPlaceholder": "Select an account",
@@ -136,8 +136,8 @@
       "briefFile": "Upload Brief File",
       "briefFileHelp": "Supports PDF brief documents",
       "workflowMode": "Workflow Mode",
-      "enterFree": "Enter Free Mode",
-      "freeModeHelp": "Enter TUI; agent orchestrates creation, review, and publishing via conversation",
+      "enterFree": "Enter Free Creation Mode",
+      "freeModeHelp": "Enter TUI; the agent freely creates, evaluates, and publishes through conversation",
       "niche": "Content Track",
       "nicheHelp": "Select a vertical track, affects trend discovery and content strategy",
       "nicheBound": "Using this account's bound track: {niche}",
@@ -221,7 +221,7 @@
     "actionButtons": {
       "ariaLabel": "Workflow action buttons",
       "startNew": "Start Creating",
-      "startNewDesc": "Choose simple or free mode to start creating",
+      "startNewDesc": "Choose simple or free creation mode to start creating",
       "goReview": "Go to review page to view content",
       "goReviewDesc": "Go to Review",
       "goReviewPending": "Go to review page to review and decide",
@@ -749,7 +749,7 @@
     "mode": {
       "trend": "Trend",
       "brief": "Brief",
-      "free": "Free"
+      "free": "Free Creation"
     },
     "sourceNone": "none",
     "source": {
@@ -861,6 +861,26 @@
       "title": "Could not load note details",
       "description": "The historical note details are unavailable right now.",
       "retry": "Reload notes"
+    },
+    "rqgm": {
+      "sectionTitle": "Creation Quality Evaluation",
+      "sectionHint": "RQGM judge panel scores the note content; historical notes lack generation-side metadata, so visual dimensions are reference-only",
+      "run": "RQGM Evaluation",
+      "running": "Evaluating…",
+      "overall": "Overall",
+      "radarTitle": "Dimension Radar",
+      "dimensionsTitle": "Dimension Details",
+      "hintsTitle": "Revision Hints",
+      "biasTitle": "Adversarial Bias Check",
+      "blocking": "Blocking",
+      "empty": "Click the button above to run RQGM evaluation on this note",
+      "error": "RQGM evaluation failed, please retry later",
+      "decision": {
+        "approved": "Approved",
+        "needs_revision": "Needs Revision",
+        "rejected": "Rejected",
+        "unknown": "Unknown"
+      }
     }
   },
   "versionCompare": {
@@ -1113,7 +1133,7 @@
       },
       "start": {
         "title": "Start Creating",
-        "desc": "Click the button to choose simple or free mode. Simple mode runs the fixed flow automatically."
+        "desc": "Click the button to choose simple or free creation mode. Simple mode runs the fixed flow automatically."
       },
       "review": {
         "title": "Review & Publish",
@@ -1556,14 +1576,14 @@
     "welcomeHint": "Type a topic to start, or /help for commands.",
     "terminalHint": "Type /help for commands, or start chatting.",
     "workflowFlow": "trend → strategy → copy → visual → publish",
-    "freeFlow": "free orchestration → creation → evaluation → publish",
-    "freeWelcomeHint": "Free mode is active: describe your creation goal and the agent will orchestrate creation, evaluation, and publishing.",
+    "freeFlow": "free creation orchestration → creation → evaluation → publish",
+    "freeWelcomeHint": "Free creation mode is active: describe your creation goal and the agent will orchestrate creation, evaluation, and publishing.",
     "freeTopic": "Topic: {topic}",
-    "freeAgentUnavailable": "Free mode requires the Agent connection; the fixed workflow will not start while disconnected.",
-    "freeAgentReady": "Free orchestration chat mode is active — type to create, evaluate, and publish.",
+    "freeAgentUnavailable": "Free creation mode requires the Agent connection; the fixed workflow will not start while disconnected.",
+    "freeAgentReady": "Free creation chat mode is active — type to create, evaluate, and publish.",
     "freeCommandsLabel": "Draft commands (also in /help):",
     "freeCmdStart": "/start            clear the conversation (new session)",
-    "freeCmdDrafts": "/drafts [status] [q]  list/filter your free drafts (status: published/unpublished/publish_failed/evaluated/unevaluated)",
+    "freeCmdDrafts": "/drafts [status] [q]  list/filter your free creation drafts (status: published/unpublished/publish_failed/evaluated/unevaluated)",
     "freeCmdDraft": "/draft <id>      view a draft's full record",
     "freeCmdEdit": "/edit <id> <field> <value>  edit a draft (field: title/niche/content_angle/target_audience)",
     "freeCmdDelete": "/delete <id>    delete a draft",
@@ -1572,7 +1592,7 @@
     "freeCmdSuggest": "/suggest         creative suggestions (style/topic/format/timing)",
     "freeCmdMode": "/mode            switch to command mode",
     "freeNewSession": "Started a new session — context cleared.",
-    "freeWorkflowOpDisabled": "Free mode is isolated from workflows — workflow operations are disabled. Chat to orchestrate freely.",
+    "freeWorkflowOpDisabled": "Free creation mode is isolated from workflows — workflow operations are disabled. Chat to create freely.",
     "agentDisconnected": "⚠ Agent disconnected, reconnecting ({cur}/{max})...",
     "agentDisconnectedMax": "✗ Agent disconnected after max retries, switched to command mode",
     "unknownError": "Unknown error",

@@ -129,12 +129,14 @@ LLM never sees their descriptions. This is enforced at the bridge layer:
 - `OmpSession.__init__(session_id, mode="workflow")` — session carries a mode.
 - `OmpSession.start()` calls `register_host_tools(_tools_for_mode(self.mode))`
   — free mode gets the subset, workflow mode gets the full list.
-- `OmpSession.set_mode(mode)` — re-registers the tool subset on mode switch
-  (omp's `set_host_tools` is a full-replacement command; the tool registry is
-  refreshed before the next model call).
+- `OmpSession.set_mode(mode)` remains available for host-tool refreshes, but
+  the manager restarts the subprocess when the mode changes so the TS
+  extension's process-level tool registration cannot leak thread-bound tools.
 - `OmpBridgeManager.get_or_create_session(session_id, mode="workflow")` — if
-  an existing session's mode differs, calls `session.set_mode(mode)` (no
-  subprocess restart, preserves conversation context).
+  an existing session's mode differs, replaces the session subprocess with
+  the requested mode and re-registers the corresponding host-tool subset.
+- The bridge sets `XHS_AGENT_MODE` for the subprocess; the TS extension skips
+  thread-bound workflow/review/evaluation tools when it is `free`.
 - `agent.py` WebSocket handler reads `mode` query param (default `"workflow"`)
   and passes it to `get_or_create_session`.
 - Frontend `AgentTUI.vue` appends `?mode=free` to the WebSocket URL when
@@ -180,6 +182,113 @@ do NOT participate in workflow resume/retry.
 - **evaluate**: synthesizes a minimal `XHSGrowthState` (`copy_content` + `content_plan` + `niche` + `account_id`) and calls `EvaluatorAgent.execute(state, store)`. The thread only mattered for checkpoint storage, not the evaluator logic. `EvaluatorAgent` tolerates `store=None` (skips memory recall).
 - **publish**: synthesizes a minimal state (`copy_content` + `content_plan` + `visual_plan` + `publish_options.account_id`) and calls `run_publish(state, store)` — the same real-publish path `PublisherAgent` uses (CDP resolution, account validation, `XHSClient.publish_post`, `ContentHistory` recording). Publish results are recorded to account memory by `run_publish` itself.
 - **helpers**: `_draft_ns(account_id)`, `_load_draft(request, account_id, draft_id)`, `_to_copy_content(draft)` shared across routes.
+
+### Pattern — thread-less RQGM eval over a non-workflow entity
+
+The free-draft `/evaluate` pattern generalizes to any content-bearing entity that
+is NOT a LangGraph checkpoint. The historical-note evaluation
+(`POST /api/evaluation/note`, `backend/api/routes/evaluation.py`) is the second
+instance of this pattern. Reuse it — do not re-thread the entity.
+
+**Problem**: `EvaluatorAgent.execute` reads `copy_content` / `visual_plan` /
+`content_plan` / `niche` from `XHSGrowthState`. A historical note
+(`NoteStats`, imported from Creator Center) has `title` / `body_text` / `tags` /
+`cover_url` / `content_type` and NO `thread_id` / NO generation-side metadata
+(`cover_prompt`, `layout_style`, `content_plan.selected_topic`).
+
+**Solution — synthesize eval_state, call the same agent, do NOT checkpoint**:
+
+```python
+# backend/api/routes/evaluation.py:_build_note_eval_state
+def _build_note_eval_state(note: NoteStats, niche: str) -> XHSGrowthState:
+    cover_url = (note.cover_url or "").strip()
+    return cast("XHSGrowthState", {
+        "account_id": note.account_id,
+        "niche": niche or "母婴",                 # account.niche, fallback 母婴
+        "copy_content": {
+            "selected_title": note.title or "",
+            "body_text": note.body_text or "",
+            "hashtags": list(note.tags or []),
+            "cta": "", "tone": "",                # notes lack these
+        },
+        "content_plan": {
+            "selected_topic": "", "content_angle": "", "target_audience": "",
+            "content_type": note.content_type or "note",
+        },
+        "visual_plan": {
+            "cover_prompt": "",                   # no generation prompt
+            "image_count": 1 if cover_url else 0,
+            "image_prompts": [],
+            "image_urls": [cover_url] if cover_url else [],  # real cover URL
+            "layout_style": "", "color_palette": [],
+        },
+    })
+
+# in the route:
+eval_state = _build_note_eval_state(note, niche)
+result = await _evaluator(eval_state, store=store)   # store may be None
+# result returned to caller, NOT graph.aupdate_state — no thread to write to
+```
+
+**Why**: the evaluator's 10-dimension judge logic is thread-agnostic; only the
+checkpoint persistence was thread-bound. Synthesizing the minimal state reuses
+the exact same agent + weights + prompt epoch as the workflow `evaluator_gate`.
+
+**Contracts**:
+- Request: `POST /evaluation/note` body `{ account_id: str, note_id: str }`.
+- Response `data`: `{ account_id, note_id, evaluation_result: EvaluationResult }`.
+- `evaluation_result` shape is identical to `GET /evaluation/result/{thread_id}`
+  (overall_score / dimensions[10] / decision / revision_hints / bias_warning /
+  summary) — frontend reuses the same `EvaluationRadar` + dimension renderer.
+- No checkpoint write (unlike `POST /evaluation/run/{thread_id}` which calls
+  `graph.aupdate_state`). The note has no thread.
+
+**Validation & Error Matrix**:
+| Condition | Error |
+|-----------|-------|
+| empty `account_id` | `ValidationError("account_id", ...)` → 400 |
+| empty `note_id` | `ValidationError("note_id", ...)` → 400 |
+| note not imported | `CreatorNoteNotFoundError(account_id, note_id)` → 404 |
+| account has no `niche` | falls back `"母婴"` (not an error) |
+| `store` is None | tolerated — `EvaluatorAgent` skips memory recall |
+| LLM timeout (60s) | `EvaluatorAgent` returns `degraded=True` pass-through (100/approved fake) |
+
+**Wrong vs Correct — entity-specific error type**:
+
+```python
+# Wrong — WorkflowNotFoundError takes thread_id; a note is not a thread,
+# and it returns the wrong ErrorCode (WORKFLOW_NOT_FOUND, not CREATOR_NOTE_NOT_FOUND)
+raise WorkflowNotFoundError(f"{account_id}/notes/{note_id}")
+
+# Correct — use the entity's own not-found error
+raise CreatorNoteNotFoundError(account_id, note_id)
+```
+
+**Image input — text-only today, multimodal pre-wired**:
+- `visual_plan.image_urls` is a new field threaded through `evaluator.yaml`
+  user_template (`图片URL：{image_urls}`) and `EvaluatorAgent.execute`.
+- Current model `astron-code-latest` (XUNFEI) is text-only — the URL is injected
+  as text, so `visual` / `image_quality` dimensions are reference scores, not
+  real image judgment.
+- When a multimodal model is routed to `TaskType.EVALUATION`, switch `ainvoke`
+  to pass image+text messages; the `image_urls` field is already in place, no
+  prompt-schema change needed.
+
+**Tests required** (`tests/unit/api/test_evaluation_note.py`):
+- note→state mapping asserts (title/body/hashtags/cover_url/content_type land in
+  the right state sub-dicts).
+- `cover_url=""` → `image_urls=[]`, `image_count=0`.
+- account `niche=""` / account missing → fallback `"母婴"`.
+- note not found → 404, evaluator NOT called.
+- empty account_id / note_id → 400.
+- `store` from `graph.store` passed as positional arg #2 to `execute`.
+
+**Frontend reuse**: `CreatorNoteQualityPanel.vue` keeps the existing
+interaction-signal analyzer (`analyze_note_quality`) and adds the RQGM result as
+an additive section — same `EvaluationRadar` component, same `evaluation.dim.*`
+i18n keys. Trigger is a manual button (LLM call per note), not auto-on-select.
+A `rqgmGeneration` counter is bumped on note/account switch so an in-flight eval
+from the previous note no-ops instead of overwriting the new selection.
 
 ### Isolation — free mode does not touch the workflow
 
@@ -408,7 +517,7 @@ When `isFreeCreationEntry`, the TUI mounts into agent mode and writes a banner:
 discovers draft management without typing `/help` first:
 
 ```
-  Free orchestration chat mode is active — type to create, evaluate, and publish.
+  Free creation chat mode is active — type to create, evaluate, and publish.
   Draft commands (also in /help):
     /start            clear the conversation (new session)
     /drafts [status] [q]  list/filter your free drafts (status: published/unpublished/publish_failed/evaluated/unevaluated) + status badges

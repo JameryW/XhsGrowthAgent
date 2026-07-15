@@ -116,7 +116,7 @@
     "recommendedTopic": "推荐话题",
     "briefMode": "商单 Brief 模式",
     "trendMode": "趋势发现模式",
-    "freeMode": "自由模式",
+    "freeMode": "自由创作模式",
     "form": {
       "accountId": "账号",
       "accountIdPlaceholder": "选择账号",
@@ -136,8 +136,8 @@
       "briefFile": "上传 Brief 文件",
       "briefFileHelp": "支持 PDF 格式的 brief 文档",
       "workflowMode": "工作模式",
-      "enterFree": "进入自由创作",
-      "freeModeHelp": "进入 TUI，由智能体按对话自由编排创作、评估和发布",
+      "enterFree": "进入自由创作模式",
+      "freeModeHelp": "进入 TUI，由智能体按对话自由创作、评估和发布",
       "niche": "垂类赛道",
       "nicheHelp": "选择内容垂类，影响趋势发现和内容策略",
       "nicheBound": "已自动使用账号绑定赛道：{niche}",
@@ -221,7 +221,7 @@
     "actionButtons": {
       "ariaLabel": "工作流操作按钮",
       "startNew": "开始创作",
-      "startNewDesc": "选择简单模式或自由模式开始创作",
+      "startNewDesc": "选择简单模式或自由创作模式开始创作",
       "goReview": "前往审核页面查看内容",
       "goReviewDesc": "进入审核页面",
       "goReviewPending": "前往审核页面查看并决定内容",
@@ -749,7 +749,7 @@
     "mode": {
       "trend": "热点",
       "brief": "Brief",
-      "free": "自由"
+      "free": "自由创作"
     },
     "sourceNone": "无",
     "source": {
@@ -861,6 +861,26 @@
       "title": "笔记详情加载失败",
       "description": "暂时无法读取这篇历史笔记的详情。",
       "retry": "重新加载笔记"
+    },
+    "rqgm": {
+      "sectionTitle": "创作质量评估",
+      "sectionHint": "RQGM 评审面板对笔记内容打分；历史笔记缺生成侧元数据，视觉维度为参考分",
+      "run": "RQGM 评估",
+      "running": "评估中…",
+      "overall": "综合分",
+      "radarTitle": "维度雷达",
+      "dimensionsTitle": "维度详情",
+      "hintsTitle": "修订建议",
+      "biasTitle": "对抗偏倚检测",
+      "blocking": "硬性失败",
+      "empty": "点击上方按钮对这篇笔记跑 RQGM 评估",
+      "error": "RQGM 评估失败，请稍后重试",
+      "decision": {
+        "approved": "通过",
+        "needs_revision": "需修订",
+        "rejected": "驳回",
+        "unknown": "未知"
+      }
     }
   },
   "versionCompare": {
@@ -1113,7 +1133,7 @@
       },
       "start": {
         "title": "开始创作",
-        "desc": "点击按钮选择简单模式或自由模式。简单模式会自动执行固定流程。"
+        "desc": "点击按钮选择简单模式或自由创作模式。简单模式会自动执行固定流程。"
       },
       "review": {
         "title": "审核与发布",
@@ -1556,11 +1576,11 @@
     "welcomeHint": "输入话题开始创作，或输入 /help 查看命令。",
     "terminalHint": "输入 /help 查看命令，或直接开始对话。",
     "workflowFlow": "trend → strategy → copy → visual → publish",
-    "freeFlow": "自由编排 → 创作 → 评估 → 发布",
-    "freeWelcomeHint": "自由模式已开启：请直接描述你的创作目标，智能体会编排创作、评估与发布。",
+    "freeFlow": "自由创作编排 → 创作 → 评估 → 发布",
+    "freeWelcomeHint": "自由创作模式已开启：请直接描述你的创作目标，智能体会编排创作、评估与发布。",
     "freeTopic": "带入主题：{topic}",
-    "freeAgentUnavailable": "自由模式需要 Agent 连接；当前未连接时不会启动固定工作流。",
-    "freeAgentReady": "已进入自由编排对话模式，直接输入文字即可开始创作、评估与发布。",
+    "freeAgentUnavailable": "自由创作模式需要 Agent 连接；当前未连接时不会启动固定工作流。",
+    "freeAgentReady": "已进入自由创作对话模式，直接输入文字即可开始创作、评估与发布。",
     "freeCommandsLabel": "草稿命令（/help 查看完整列表）：",
     "freeCmdStart": "/start            清空对话（开启新会话）",
     "freeCmdDrafts": "/drafts [status] [q]  列出/筛选自由草稿（status: published/unpublished/publish_failed/evaluated/unevaluated）",
@@ -1572,7 +1592,7 @@
     "freeCmdSuggest": "/suggest         创作建议（获取选题灵感）",
     "freeCmdMode": "/mode            切换到命令模式",
     "freeNewSession": "已开启新会话，上下文已清空。",
-    "freeWorkflowOpDisabled": "自由模式与工作流完全隔离——工作流操作已禁用，请直接对话自由编排。",
+    "freeWorkflowOpDisabled": "自由创作模式与工作流完全隔离——工作流操作已禁用，请直接对话自由创作。",
     "agentDisconnected": "⚠ 智能体断开，重连中 ({cur}/{max})...",
     "agentDisconnectedMax": "✗ 智能体重连失败，已切换至命令模式",
     "unknownError": "未知错误",

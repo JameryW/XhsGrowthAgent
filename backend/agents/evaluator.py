@@ -150,6 +150,7 @@ class EvaluatorAgent(BaseAgent):
             cover_prompt=visual_plan.get("cover_prompt", ""),
             image_count=visual_plan.get("image_count", 0),
             image_prompts=visual_plan.get("image_prompts", []),
+            image_urls=visual_plan.get("image_urls", []),
             layout_style=visual_plan.get("layout_style", ""),
             color_palette=visual_plan.get("color_palette", []),
             ripple_context=ripple_context,

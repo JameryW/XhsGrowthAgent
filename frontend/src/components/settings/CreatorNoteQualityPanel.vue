@@ -8,7 +8,10 @@ import {
   type CreatorNoteStats,
   type CreatorQualityReport,
 } from '@/api/analytics'
+import { evaluateNote } from '@/api/evaluation'
+import type { EvaluationResult } from '@/types/evaluation'
 import AppIcon from '@/components/AppIcon.vue'
+import EvaluationRadar from '@/components/charts/EvaluationRadar.vue'
 import NeonButton from '@/components/NeonButton.vue'
 
 const props = withDefaults(defineProps<{
@@ -30,6 +33,59 @@ const isLoadingNotes = ref(false)
 const isLoadingDetail = ref(false)
 const errorMessage = ref('')
 let requestGeneration = 0
+
+// RQGM evaluation (thread-less, manual trigger — runs an LLM call per note)
+const rqgmResult = ref<EvaluationResult | null>(null)
+const rqgmRunning = ref(false)
+const rqgmError = ref('')
+let rqgmGeneration = 0
+
+const rqgmScoreLabel = computed(() => {
+  const score = rqgmResult.value?.overall_score
+  return score == null ? '—' : score.toFixed(1)
+})
+
+const rqgmDecisionClass = computed(() => {
+  const d = rqgmResult.value?.decision
+  if (d === 'approved') return 'bg-emerald-50 text-emerald-700'
+  if (d === 'needs_revision') return 'bg-amber-50 text-amber-700'
+  return 'bg-rose-50 text-rose-700'
+})
+
+const RQGM_DECISION_KEYS: Record<string, string> = {
+  approved: 'creatorNoteQuality.rqgm.decision.approved',
+  needs_revision: 'creatorNoteQuality.rqgm.decision.needs_revision',
+  rejected: 'creatorNoteQuality.rqgm.decision.rejected',
+}
+
+function rqgmDecisionLabel(decision: string): string {
+  return t(RQGM_DECISION_KEYS[decision] ?? 'creatorNoteQuality.rqgm.decision.unknown')
+}
+
+function rqgmScoreTier(score: number): string {
+  if (score >= 70) return 'text-emerald-600'
+  if (score >= 50) return 'text-amber-600'
+  return 'text-rose-600'
+}
+
+async function runRqgmEvaluation() {
+  const noteId = selectedNoteId.value
+  if (!props.accountId || !noteId || rqgmRunning.value) return
+  const gen = ++rqgmGeneration
+  rqgmRunning.value = true
+  rqgmError.value = ''
+  rqgmResult.value = null
+  try {
+    const resp = await evaluateNote(props.accountId, noteId)
+    if (gen !== rqgmGeneration) return
+    rqgmResult.value = resp.evaluation_result || null
+  } catch (e: unknown) {
+    if (gen !== rqgmGeneration) return
+    rqgmError.value = e instanceof Error ? e.message : t('creatorNoteQuality.rqgm.error')
+  } finally {
+    if (gen === rqgmGeneration) rqgmRunning.value = false
+  }
+}
 
 const selectedSummary = computed(() =>
   notes.value.find(note => note.note_id === selectedNoteId.value) || null
@@ -71,6 +127,9 @@ async function loadNotes(accountId = props.accountId) {
   selectedNoteId.value = ''
   selectedNote.value = null
   quality.value = null
+  rqgmGeneration += 1
+  rqgmResult.value = null
+  rqgmError.value = ''
   errorMessage.value = ''
   if (!accountId) return
 
@@ -107,6 +166,10 @@ async function loadSelectedNote(generation = requestGeneration) {
   errorMessage.value = ''
   selectedNote.value = null
   quality.value = null
+  // Bump generation so any in-flight RQGM eval from the previous note no-op.
+  rqgmGeneration += 1
+  rqgmResult.value = null
+  rqgmError.value = ''
   try {
     const [detail, report] = await Promise.all([
       getCreatorNote(props.accountId, noteId),
@@ -171,6 +234,23 @@ function dimensionLabel(key: string): string {
   const translationKey = 'creatorQuality.dimension.' + key
   const translated = t(translationKey)
   return translated === translationKey ? key : translated
+}
+
+const RQGM_DIM_KEYS: Record<string, string> = {
+  copywriting: 'evaluation.dim.copywriting',
+  visual: 'evaluation.dim.visual',
+  compliance: 'evaluation.dim.compliance',
+  reach: 'evaluation.dim.reach',
+  audience: 'evaluation.dim.audience',
+  ai_taste: 'evaluation.dim.ai_taste',
+  image_quality: 'evaluation.dim.image_quality',
+  commercial_tone: 'evaluation.dim.commercial_tone',
+  altruism: 'evaluation.dim.altruism',
+  bias_check: 'evaluation.dim.bias_check',
+}
+
+function rqgmDimLabel(dim: string): string {
+  return t(RQGM_DIM_KEYS[dim] ?? 'evaluation.dim.unknown', { dim })
 }
 </script>
 
@@ -373,6 +453,80 @@ function dimensionLabel(key: string): string {
                   </div>
                 </li>
               </ol>
+            </div>
+          </section>
+
+          <!-- RQGM judge-panel evaluation (thread-less, manual trigger) -->
+          <section class="min-w-0 rounded-xl border border-rose-100 bg-rose-50/30 p-4">
+            <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div class="min-w-0">
+                <div class="text-[10px] font-semibold uppercase tracking-wider text-rose-700">{{ t('creatorNoteQuality.rqgm.sectionTitle') }}</div>
+                <p class="mt-1 break-words text-[11px] leading-4 text-slate-500">{{ t('creatorNoteQuality.rqgm.sectionHint') }}</p>
+              </div>
+              <NeonButton
+                variant="ghost"
+                size="sm"
+                class="shrink-0"
+                :loading="rqgmRunning"
+                :disabled="!selectedNoteId"
+                @click="runRqgmEvaluation"
+              >
+                <AppIcon name="Sparkles" size="xs" variant="cyan" />
+                <span>{{ rqgmRunning ? t('creatorNoteQuality.rqgm.running') : t('creatorNoteQuality.rqgm.run') }}</span>
+              </NeonButton>
+            </div>
+
+            <p v-if="rqgmError" class="mt-3 break-words text-[11px] leading-4 text-rose-600">{{ rqgmError }}</p>
+
+            <div v-else-if="!rqgmResult && !rqgmRunning" class="mt-3 text-[11px] text-slate-400">
+              {{ t('creatorNoteQuality.rqgm.empty') }}
+            </div>
+
+            <div v-if="rqgmResult" class="mt-3 space-y-3">
+              <div class="flex min-w-0 flex-wrap items-end gap-2">
+                <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('creatorNoteQuality.rqgm.overall') }}</span>
+                <span class="text-2xl font-bold leading-none" :class="rqgmScoreTier(rqgmResult.overall_score ?? 0)">{{ rqgmScoreLabel }}</span>
+                <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold" :class="rqgmDecisionClass">
+                  {{ rqgmDecisionLabel(rqgmResult.decision) }}
+                </span>
+                <p v-if="rqgmResult.summary" class="min-w-0 basis-full break-words text-[11px] leading-4 text-slate-500">{{ rqgmResult.summary }}</p>
+              </div>
+
+              <div v-if="rqgmResult.bias_warning" class="rounded-lg border border-amber-200 bg-amber-50/70 p-2.5">
+                <div class="flex items-center gap-1.5 text-[10px] font-semibold text-amber-700">
+                  <AppIcon name="AlertTriangle" size="xs" variant="pink" />
+                  {{ t('creatorNoteQuality.rqgm.biasTitle') }}
+                </div>
+                <p class="mt-1 break-words text-[11px] leading-4 text-amber-700">{{ rqgmResult.bias_warning }}</p>
+              </div>
+
+              <EvaluationRadar :dimensions="rqgmResult.dimensions || []" :height="240" />
+
+              <div>
+                <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('creatorNoteQuality.rqgm.dimensionsTitle') }}</div>
+                <div class="mt-1.5 space-y-1.5">
+                  <div v-for="d in rqgmResult.dimensions || []" :key="d.dimension" class="rounded-lg bg-white/80 p-2.5">
+                    <div class="flex min-w-0 items-center justify-between gap-2">
+                      <span class="truncate text-[11px] font-semibold text-slate-700">
+                        {{ rqgmDimLabel(d.dimension) }}
+                        <span v-if="d.is_blocking" class="ml-1 rounded bg-rose-100 px-1 text-[9px] font-bold text-rose-700">{{ t('creatorNoteQuality.rqgm.blocking') }}</span>
+                      </span>
+                      <span class="shrink-0 text-xs font-bold" :class="rqgmScoreTier(d.score ?? 0)">{{ (d.score ?? 0).toFixed(1) }}</span>
+                    </div>
+                    <p v-if="d.rationale" class="mt-1 break-words text-[10px] leading-4 text-slate-500">{{ d.rationale }}</p>
+                    <ul v-if="d.issues?.length" class="mt-1 list-disc space-y-0.5 pl-4">
+                      <li v-for="(issue, i) in d.issues" :key="i" class="break-words text-[10px] leading-4 text-slate-500">{{ issue }}</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="rqgmResult.revision_hints?.length">
+                <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('creatorNoteQuality.rqgm.hintsTitle') }}</div>
+                <ul class="mt-1.5 list-disc space-y-0.5 pl-4">
+                  <li v-for="(h, i) in rqgmResult.revision_hints" :key="i" class="break-words text-[11px] leading-4 text-slate-600">{{ h }}</li>
+                </ul>
+              </div>
             </div>
           </section>
         </div>

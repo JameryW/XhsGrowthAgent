@@ -16,7 +16,7 @@ export default function register(pi: ExtensionAPI) {
         "- xhs_analytics_costs: LLM cost tracking by model",
         "- xhs_creator_stats: imported Creator Center account/note metrics and top notes",
         "- xhs_creator_analysis: evidence-backed note-performance analysis and recommendations",
-        "- xhs_creator_suggestions: trend, brief, or free-mode advice from imported data",
+        "- xhs_creator_suggestions: trend, brief, or free-creation advice from imported data",
         "- xhs_creator_quality: historical creative-quality score, strengths, gaps, and next-post actions",
         "- xhs_system_health: check system status",
       ].join("\n"));

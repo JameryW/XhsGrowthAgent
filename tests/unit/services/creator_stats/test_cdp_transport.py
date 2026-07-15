@@ -84,7 +84,7 @@ async def test_cdp_fetch_all_uses_native_creator_page_data():
 
     bundle = await client.fetch_all("acct", period="30d", max_pages=3)
 
-    transport.fetch_creator_center.assert_awaited_once_with(max_pages=3)
+    transport.fetch_creator_center.assert_awaited_once_with(max_pages=3, period="30d")
     assert bundle.account.views == 30
     assert bundle.account.likes == 8
     assert bundle.account.note_count == 2
@@ -100,6 +100,18 @@ async def test_cdp_fetch_all_uses_native_creator_page_data():
     note = bundle.notes[0]
     assert (note.comments, note.collects, note.shares) == (2, 3, 4)
     assert note.cover_url == "https://img.example/cover.jpg"
+
+
+async def test_cdp_fetch_all_forwards_requested_period():
+    transport = CdpTransport("http://127.0.0.1:9222")
+    transport.fetch_creator_center = AsyncMock(
+        return_value=(_native_account(), _native_profile(), [_native_note()])
+    )
+    client = CreatorStatsClient(transport=transport)
+
+    await client.fetch_all("acct", period="7d", max_pages=2)
+
+    transport.fetch_creator_center.assert_awaited_once_with(max_pages=2, period="7d")
 
 
 async def test_cdp_capture_associates_camel_case_note_id_with_profile_responses():

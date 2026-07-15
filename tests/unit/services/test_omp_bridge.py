@@ -1269,7 +1269,7 @@ class TestOmpSessionMode:
 
 @pytest.mark.asyncio
 class TestGetOrCreateSessionMode:
-    """OmpBridgeManager.get_or_create_session passes mode and re-registers on mismatch."""
+    """OmpBridgeManager keeps subprocess-local mode and tool isolation coherent."""
 
     async def test_new_session_with_mode(self):
         manager = OmpBridgeManager()
@@ -1290,13 +1290,17 @@ class TestGetOrCreateSessionMode:
         assert result is session
         mock_set_mode.assert_not_awaited()
 
-    async def test_existing_session_mode_mismatch_calls_set_mode(self):
+    async def test_existing_session_mode_mismatch_restarts_subprocess(self):
         manager = OmpBridgeManager()
         session = OmpSession("existing", mode="workflow")
         manager._sessions["existing"] = session
-        with patch.object(OmpSession, "set_mode", new_callable=AsyncMock) as mock_set_mode:
+        with (
+            patch.object(session, "stop", new_callable=AsyncMock) as mock_stop,
+            patch.object(OmpSession, "start", new_callable=AsyncMock) as mock_start,
+        ):
             result = await manager.get_or_create_session("existing", mode="free")
-        assert result is session
-        mock_set_mode.assert_awaited_once_with("free")
-        # set_mode is mocked, so we don't assert session.mode here — the
-        # real set_mode updates self.mode; the mock just verifies the call.
+        assert result is not session
+        assert result.mode == "free"
+        assert result.session_id == "existing"
+        mock_stop.assert_awaited_once()
+        mock_start.assert_awaited_once()

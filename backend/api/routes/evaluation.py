@@ -12,12 +12,16 @@ import logging
 from typing import Any, cast
 
 from fastapi import APIRouter, Query, Request
+from pydantic import BaseModel, Field
 
 from backend.agents.evaluator import EvaluatorAgent
-from backend.api.errors import ValidationError, WorkflowNotFoundError
+from backend.api.errors import CreatorNoteNotFoundError, ValidationError, WorkflowNotFoundError
 from backend.api.responses import ApiResponse, success
+from backend.db.accounts import get_account
+from backend.db.creator_stats import get_note_stats
 from backend.db.pool import is_pool_ready
 from backend.db.workflows import list_workflows as db_list
+from backend.services.creator_stats.types import NoteStats
 from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.api.evaluation")
@@ -198,6 +202,99 @@ async def run_evaluation(thread_id: str, request: Request) -> ApiResponse[Any]:
         data={
             "thread_id": thread_id,
             "status": "evaluated",
+            "evaluation_result": evaluation,
+        }
+    )
+
+
+class NoteEvaluationRequest(BaseModel):
+    """Thread-less RQGM evaluation target: an imported historical note."""
+
+    account_id: str = Field(description="账号 ID")
+    note_id: str = Field(description="笔记 ID")
+
+
+def _build_note_eval_state(note: NoteStats, niche: str) -> XHSGrowthState:
+    """Synthesize a minimal XHSGrowthState for EvaluatorAgent.execute from a note.
+
+    Mirrors free.py `_build_eval_state`: only the content fields matter; the rest
+    default. Historical notes lack generation-side metadata (cover_prompt / layout /
+    content_plan topic/angle), so visual / image_quality / reach are reference scores.
+    `image_urls` carries the real cover URL (text-only until a multimodal model is
+    routed to TaskType.EVALUATION — the field is already wired through the prompt).
+    """
+    cover_url = (note.cover_url or "").strip()
+    return cast(
+        "XHSGrowthState",
+        {
+            "account_id": note.account_id,
+            "niche": niche or "母婴",
+            "copy_content": {
+                "selected_title": note.title or "",
+                "body_text": note.body_text or "",
+                "hashtags": list(note.tags or []),
+                "cta": "",
+                "tone": "",
+            },
+            "content_plan": {
+                "selected_topic": "",
+                "content_angle": "",
+                "target_audience": "",
+                "content_type": note.content_type or "note",
+            },
+            "visual_plan": {
+                "cover_prompt": "",
+                "image_count": 1 if cover_url else 0,
+                "image_prompts": [],
+                "image_urls": [cover_url] if cover_url else [],
+                "layout_style": "",
+                "color_palette": [],
+            },
+        },
+    )
+
+
+@router.post("/note")
+async def run_note_evaluation(ref: NoteEvaluationRequest, request: Request) -> ApiResponse[Any]:
+    """对已导入历史笔记手动触发 RQGM 评估 (thread-less, 不写 checkpoint).
+
+    读 NoteStats → 构造 eval_state (note 字段映射到 copy_content/visual_plan) →
+    调 EvaluatorAgent.execute → 返回 evaluation_result。
+    历史笔记无生成侧元数据，visual/image_quality 维度为参考分。
+    """
+    account_id = (ref.account_id or "").strip()
+    note_id = (ref.note_id or "").strip()
+    if not account_id:
+        raise ValidationError("account_id", "account_id cannot be empty")
+    if not note_id:
+        raise ValidationError("note_id", "note_id cannot be empty")
+
+    note = await get_note_stats(account_id, note_id)
+    if note is None:
+        raise CreatorNoteNotFoundError(account_id, note_id)
+
+    account = await get_account(account_id)
+    niche = account.niche if account else ""
+
+    graph = getattr(request.app.state, "graph", None)
+    store = getattr(graph, "store", None)
+    eval_state = _build_note_eval_state(note, niche)
+    # store may be None on compiled graphs without a store attached; EvaluatorAgent
+    # tolerates None (skips memory recall), same as free.py:evaluate_draft.
+    result = await _evaluator(eval_state, store=store)  # type: ignore[arg-type]
+    evaluation = result.get("evaluation_result") or {}
+
+    logger.info(
+        "note evaluated: account=%s note=%s overall=%s decision=%s",
+        account_id,
+        note_id,
+        evaluation.get("overall_score"),
+        evaluation.get("decision"),
+    )
+    return success(
+        data={
+            "account_id": account_id,
+            "note_id": note_id,
             "evaluation_result": evaluation,
         }
     )

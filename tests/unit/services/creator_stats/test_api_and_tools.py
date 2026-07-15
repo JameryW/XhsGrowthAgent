@@ -88,6 +88,51 @@ async def test_batch_sync_uses_only_active_accounts():
     assert [call.args[0] for call in sync_mock.await_args_list] == ["active-1", "active-2"]
 
 
+@pytest.mark.asyncio
+async def test_batch_sync_returns_already_running_when_postgres_lock_is_busy():
+    class _Cursor:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def execute(self, *_args):
+            return None
+
+        async def fetchone(self):
+            return (False,)
+
+    class _Connection:
+        def connection(self):
+            return self
+
+        def transaction(self):
+            return self
+
+        def cursor(self):
+            return _Cursor()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class _Pool:
+        def connection(self):
+            return _Connection()
+
+    with (
+        patch("backend.db.pool.is_pool_ready", return_value=True),
+        patch("backend.db.pool.get_pool", return_value=_Pool()),
+    ):
+        result = await sync_all_active_accounts(run_creative_analysis=False)
+
+    assert result["ok"] is False
+    assert result["status"] == "already_running"
+
+
 def test_batch_sync_endpoint_returns_atomic_batch_summary():
     client = TestClient(_app())
     summary = {

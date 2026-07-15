@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -36,6 +38,41 @@ logger = logging.getLogger("xhs_growth.creator_stats.pipeline")
 # the same profile.  Each account is still persisted transactionally by
 # ``upsert_bundle``; a failed account never rolls back another account.
 _active_accounts_sync_lock = asyncio.Lock()
+_ACTIVE_ACCOUNTS_SYNC_LOCK_KEY = "xhs_growth.creator_stats.active_accounts"
+
+
+@asynccontextmanager
+async def _distributed_active_accounts_sync_lock() -> AsyncIterator[None]:
+    """Hold a PostgreSQL advisory transaction lock for the batch crawl.
+
+    The process-local asyncio lock remains useful for SQLite/dev mode, but it
+    cannot coordinate Uvicorn workers.  A transaction-scoped advisory lock
+    makes the manual endpoint and every scheduler process share one critical
+    section without introducing a new table or leaving a session-level lock
+    behind after cancellation.
+    """
+    from backend.db.pool import get_pool, is_pool_ready
+
+    if not is_pool_ready():
+        yield
+        return
+
+    pool = get_pool()
+    async with pool.connection() as conn, conn.transaction():
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT pg_try_advisory_xact_lock(hashtext(%s))",
+                (_ACTIVE_ACCOUNTS_SYNC_LOCK_KEY,),
+            )
+            row = await cur.fetchone()
+        if not row or not bool(row[0]):
+            raise _ActiveAccountsSyncBusyError
+        yield
+
+
+class _ActiveAccountsSyncBusyError(Exception):
+    """Internal sentinel used when another process owns the batch lock."""
+
 
 # Bundled fixture used by dry-run / CLI --fixture path
 DEFAULT_FIXTURE_PATH = (
@@ -379,6 +416,40 @@ async def sync_account_stats(
 
 
 async def sync_all_active_accounts(
+    *,
+    store: BaseStore | None = None,
+    period: str = "30d",
+    run_creative_analysis: bool = True,
+) -> dict[str, Any]:
+    """Run the active-account batch under local and distributed locks."""
+    if _active_accounts_sync_lock.locked():
+        return {
+            "ok": False,
+            "status": "already_running",
+            "active_accounts": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "results": [],
+        }
+    try:
+        async with _distributed_active_accounts_sync_lock():
+            return await _sync_all_active_accounts_locked(
+                store=store,
+                period=period,
+                run_creative_analysis=run_creative_analysis,
+            )
+    except _ActiveAccountsSyncBusyError:
+        return {
+            "ok": False,
+            "status": "already_running",
+            "active_accounts": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "results": [],
+        }
+
+
+async def _sync_all_active_accounts_locked(
     *,
     store: BaseStore | None = None,
     period: str = "30d",

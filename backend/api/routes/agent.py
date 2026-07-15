@@ -140,7 +140,12 @@ async def agent_ws(websocket: WebSocket) -> None:
 
                 elif msg_type == ClientMessageType.NEW_SESSION:
                     # Create a new omp session and switch to it
-                    new_session = await manager.get_or_create_session()
+                    # Preserve the connection's mode.  In free mode `/start`
+                    # is implemented as new_session; falling back to the
+                    # manager's workflow default would re-register all
+                    # thread-bound tools after the user intentionally entered
+                    # the isolated free tool set.
+                    new_session = await manager.get_or_create_session(mode=session.mode)
                     # Remove callback from old session
                     session.remove_event_callback(on_bridge_event)
                     # Start idle timer on old session
