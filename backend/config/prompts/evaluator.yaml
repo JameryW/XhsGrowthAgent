@@ -81,6 +81,7 @@ user_template: |
   封面 prompt：{cover_prompt}
   图片数：{image_count}
   图片 prompts：{image_prompts}
+  图片URL：{image_urls}
   版式：{layout_style}
   色彩：{color_palette}
 

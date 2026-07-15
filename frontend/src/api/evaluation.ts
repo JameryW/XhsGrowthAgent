@@ -24,6 +24,14 @@ export async function getEvaluationResult(threadId: string): Promise<EvaluationR
   return client.get(`/evaluation/result/${threadId}`) as unknown as EvaluationResultResponse
 }
 
+// 对已导入历史笔记手动触发 RQGM 评估（thread-less，不写 checkpoint）
+export async function evaluateNote(
+  accountId: string,
+  noteId: string,
+): Promise<{ account_id: string; note_id: string; evaluation_result: EvaluationResultResponse['evaluation_result'] }> {
+  return client.post('/evaluation/note', { account_id: accountId, note_id: noteId }) as unknown as Promise<{ account_id: string; note_id: string; evaluation_result: EvaluationResultResponse['evaluation_result'] }>
+}
+
 // 获取评估历史趋势（overall_score 时序 + 各维度均值）
 export async function getEvaluationTrend(
   accountId?: string,

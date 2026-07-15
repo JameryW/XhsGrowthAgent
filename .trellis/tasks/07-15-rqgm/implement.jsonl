@@ -1,0 +1,7 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "thread-less eval 范式：_build_eval_state 映射、EvaluatorAgent 直调、不写 checkpoint，note 端点同构"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "evaluator 6+4维 RQGM judge 评分规则与结果结构"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "后端分层：agents/api/routes 归属"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "新端点 ValidationError/NotFoundError 用法"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "复用 EvaluationView 展示块 + EvaluationRadar"}
+{"file": ".trellis/tasks/07-15-rqgm/research/findings.md", "reason": "note→state 映射 + 现状链路调研"}
