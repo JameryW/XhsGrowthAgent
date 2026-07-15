@@ -102,7 +102,33 @@
     "systemInfo": "System Info",
     "settings": "Settings",
     "tui": "TUI",
-    "evaluation": "Evaluation"
+    "evaluation": "Evaluation",
+    "brandEyebrow": "XHS CREATION WORKSPACE",
+    "sections": {
+      "workspace": "Workspace",
+      "insights": "Insights & history"
+    },
+    "hints": {
+      "dashboard": "Track workflow progress and next steps",
+      "review": "Handle content review and publishing",
+      "analytics": "See account performance and growth data",
+      "evaluation": "Analyze content quality and creator capability",
+      "history": "Resume, replay, and revisit past workflows"
+    },
+    "workspaceStatus": "Workspace status",
+    "status": {
+      "idle": "Ready to start",
+      "running": "Workflow is running",
+      "inputNeeded": "Waiting for your input",
+      "reviewNeeded": "Review required",
+      "completed": "Latest run completed"
+    },
+    "activeAccount": "Active account",
+    "accountSelect": "No account selected",
+    "accountPending": "Choose an account to get started",
+    "accountNiche": "Track: {niche}",
+    "accountManage": "Manage account",
+    "accountInitialFallback": "X"
   },
   "home": {
     "title": "XHS Growth Engine",

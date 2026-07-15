@@ -102,7 +102,33 @@
     "systemInfo": "系统信息",
     "settings": "设置",
     "tui": "TUI",
-    "evaluation": "质量评估"
+    "evaluation": "质量评估",
+    "brandEyebrow": "小红书创作工作区",
+    "sections": {
+      "workspace": "工作区",
+      "insights": "洞察与历史"
+    },
+    "hints": {
+      "dashboard": "查看工作流进度与下一步",
+      "review": "处理待审核内容与发布动作",
+      "analytics": "查看账号表现与增长数据",
+      "evaluation": "分析内容质量与创作者能力",
+      "history": "恢复、回放和查看过往工作流"
+    },
+    "workspaceStatus": "工作区状态",
+    "status": {
+      "idle": "等待开始",
+      "running": "工作流运行中",
+      "inputNeeded": "等待你的操作",
+      "reviewNeeded": "需要完成审核",
+      "completed": "最近一次已完成"
+    },
+    "activeAccount": "当前账号",
+    "accountSelect": "未选择账号",
+    "accountPending": "选择账号后即可开始",
+    "accountNiche": "赛道：{niche}",
+    "accountManage": "管理账号",
+    "accountInitialFallback": "X"
   },
   "home": {
     "title": "小红书增长引擎",

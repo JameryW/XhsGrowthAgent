@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
-import { useAuthStore } from '@/stores'
+import { useAccountsStore, useAuthStore, useRealtimeStore } from '@/stores'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const accountsStore = useAccountsStore()
+const realtimeStore = useRealtimeStore()
 const showMore = ref(false)
 
 const tabs = computed(() => [
@@ -18,8 +20,20 @@ const tabs = computed(() => [
 ])
 
 const currentPath = computed(() => route.path)
-const moreActive = computed(() => currentPath.value === '/settings' || currentPath.value === '/analytics' || currentPath.value === '/evaluation' || currentPath.value === '/history')
-const isActiveTab = (path: string) => currentPath.value === path
+const moreActive = computed(() => ['/settings', '/analytics', '/evaluation', '/history'].some(path => currentPath.value === path || currentPath.value.startsWith(`${path}/`)))
+const isActiveTab = (path: string) => currentPath.value === path || currentPath.value.startsWith(`${path}/`)
+const activeAccountName = computed(() => accountsStore.activeAccount?.name || t('nav.accountSelect'))
+const accountInitial = computed(() => accountsStore.activeAccount?.name?.trim().slice(0, 1).toUpperCase() || t('nav.accountInitialFallback'))
+const connectionLabel = computed(() => {
+  if (realtimeStore.connectionStatus === 'connected') return t('nav.ws.connected')
+  if (realtimeStore.connectionStatus === 'reconnecting') return t('nav.ws.reconnecting')
+  if (realtimeStore.connectionStatus === 'connecting') return t('nav.ws.connecting')
+  return t('nav.ws.disconnected')
+})
+
+onMounted(() => {
+  if (!accountsStore.activeAccount) void accountsStore.fetchAccounts()
+})
 
 const navigate = (path: string) => {
   showMore.value = false
@@ -43,30 +57,23 @@ const handleLogout = async () => {
     role="navigation"
     :aria-label="t('nav.home')"
   >
-    <div class="relative flex items-center justify-around h-16">
+    <div class="relative flex h-[4.5rem] items-stretch justify-around px-1">
       <button
         v-for="tab in tabs"
         :key="tab.path"
         @click="navigate(tab.path)"
         :class="[
-          'flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors duration-200 relative',
+          'relative flex min-h-11 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 transition-all duration-200',
           isActiveTab(tab.path) ? 'text-rose-500' : 'text-slate-400'
         ]"
         :aria-current="isActiveTab(tab.path) ? 'page' : undefined"
         :aria-label="tab.label"
       >
-        <!-- Active indicator -->
-        <div
-          v-if="isActiveTab(tab.path)"
-          class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-gradient-to-r from-rose-400 to-amber-400"
-          aria-hidden="true"
-        />
-        <AppIcon
-          :name="tab.icon"
-          size="md"
-          :variant="isActiveTab(tab.path) ? 'pink' : 'cyan'"
-        />
+        <span :class="['flex h-8 w-10 items-center justify-center rounded-xl transition-all duration-200', isActiveTab(tab.path) ? 'bg-rose-50 shadow-sm ring-1 ring-rose-100' : '']" aria-hidden="true">
+          <AppIcon :name="tab.icon" size="md" :variant="isActiveTab(tab.path) ? 'pink' : 'cyan'" />
+        </span>
         <span class="max-w-full truncate px-0.5 text-[10px] font-medium leading-tight">{{ tab.label }}</span>
+        <span v-if="isActiveTab(tab.path)" class="absolute bottom-1 h-1 w-1 rounded-full bg-rose-500" aria-hidden="true" />
       </button>
 
       <button
@@ -78,26 +85,33 @@ const handleLogout = async () => {
         :aria-expanded="showMore"
         :aria-label="t('nav.more')"
       >
-        <div
-          v-if="showMore || moreActive"
-          class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-gradient-to-r from-rose-400 to-amber-400"
-          aria-hidden="true"
-        />
-        <AppIcon
-          name="MoreHorizontal"
-          size="md"
-          :variant="showMore || moreActive ? 'pink' : 'cyan'"
-        />
+        <span :class="['flex h-8 w-10 items-center justify-center rounded-xl transition-all duration-200', showMore || moreActive ? 'bg-rose-50 shadow-sm ring-1 ring-rose-100' : '']" aria-hidden="true">
+          <AppIcon name="MoreHorizontal" size="md" :variant="showMore || moreActive ? 'pink' : 'cyan'" />
+        </span>
         <span class="max-w-full truncate px-0.5 text-[10px] font-medium leading-tight">{{ t('nav.more') }}</span>
+        <span v-if="moreActive" class="absolute bottom-1 h-1 w-1 rounded-full bg-rose-500" aria-hidden="true" />
       </button>
 
       <div
         v-if="showMore"
-        class="absolute right-2 bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] w-44 overflow-hidden rounded-xl border border-white/20 bg-white/95 shadow-xl backdrop-blur-md"
+        class="absolute bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-2 w-64 overflow-hidden rounded-2xl border border-white/70 bg-white/95 shadow-xl shadow-slate-900/10 backdrop-blur-md"
         role="menu"
       >
+        <div class="border-b border-slate-100 bg-gradient-to-r from-cyan-50/80 to-white px-4 py-3" role="status" :aria-label="t('nav.activeAccount')">
+          <div class="flex items-center gap-3">
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-emerald-400 text-xs font-bold text-white" aria-hidden="true">{{ accountInitial }}</span>
+            <div class="min-w-0 flex-1">
+              <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">{{ t('nav.activeAccount') }}</div>
+              <div class="truncate text-xs font-bold text-slate-700">{{ activeAccountName }}</div>
+              <div class="flex items-center gap-1.5 text-[10px] text-slate-400">
+                <span class="h-1.5 w-1.5 rounded-full" :class="realtimeStore.connectionStatus === 'connected' ? 'bg-emerald-400' : realtimeStore.connectionStatus === 'disconnected' ? 'bg-rose-400' : 'bg-amber-400'" aria-hidden="true" />
+                {{ connectionLabel }}
+              </div>
+            </div>
+          </div>
+        </div>
         <button
-          class="flex w-full items-center gap-2 px-3 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
           role="menuitem"
           @click="navigate('/analytics')"
         >
@@ -105,7 +119,7 @@ const handleLogout = async () => {
           <span>{{ t('nav.analytics') }}</span>
         </button>
         <button
-          class="flex w-full items-center gap-2 px-3 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
           role="menuitem"
           @click="navigate('/evaluation')"
         >
@@ -113,7 +127,7 @@ const handleLogout = async () => {
           <span>{{ t('nav.evaluation') }}</span>
         </button>
         <button
-          class="flex w-full items-center gap-2 px-3 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
           role="menuitem"
           @click="navigate('/history')"
         >
@@ -121,7 +135,7 @@ const handleLogout = async () => {
           <span>{{ t('nav.history') }}</span>
         </button>
         <button
-          class="flex w-full items-center gap-2 px-3 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
           role="menuitem"
           @click="openSettings"
         >
@@ -129,7 +143,7 @@ const handleLogout = async () => {
           <span>{{ t('nav.settings') }}</span>
         </button>
         <button
-          class="flex w-full items-center gap-2 px-3 py-3 text-left text-sm text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-60"
+          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-60"
           role="menuitem"
           :disabled="authStore.isLoading"
           @click="handleLogout"

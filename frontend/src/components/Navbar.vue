@@ -10,6 +10,23 @@ import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 
 const { t } = useI18n()
 
+type NavColor = 'pink' | 'cyan' | 'purple' | 'peach'
+
+interface NavItem {
+  path: string
+  icon: string
+  label: string
+  hint: string
+  color: NavColor
+  needsAttention?: boolean
+}
+
+interface NavSection {
+  key: string
+  label: string
+  items: NavItem[]
+}
+
 const route = useRoute()
 const router = useRouter()
 const workflowStore = useWorkflowStore()
@@ -19,19 +36,67 @@ const shortcutsStore = useShortcutsStore()
 const accountsStore = useAccountsStore()
 const { isTablet } = useBreakpoints()
 
-const navItems = computed(() => [
-  { path: '/dashboard', icon: 'Home', label: t('nav.dashboard'), color: 'pink' },
-  { path: '/review', icon: 'CheckCircle', label: t('nav.review'), color: 'cyan' },
-  { path: '/analytics', icon: 'BarChart3', label: t('nav.analytics'), color: 'purple' },
-  { path: '/evaluation', icon: 'ClipboardCheck', label: t('nav.evaluation'), color: 'rose' },
-  { path: '/history', icon: 'History', label: t('nav.history'), color: 'peach' },
-])
-
 const currentPath = computed(() => route.path)
 
-const navigateTo = (path: string) => {
-  router.push(path)
-}
+const navSections = computed<NavSection[]>(() => [
+  {
+    key: 'workspace',
+    label: t('nav.sections.workspace'),
+    items: [
+      {
+        path: '/dashboard',
+        icon: 'Home',
+        label: t('nav.dashboard'),
+        hint: t('nav.hints.dashboard'),
+        color: 'pink',
+      },
+      {
+        path: '/review',
+        icon: 'CheckCircle',
+        label: t('nav.review'),
+        hint: t('nav.hints.review'),
+        color: 'cyan',
+        needsAttention: workflowStore.isAwaitingReview,
+      },
+    ],
+  },
+  {
+    key: 'insights',
+    label: t('nav.sections.insights'),
+    items: [
+      {
+        path: '/analytics',
+        icon: 'BarChart3',
+        label: t('nav.analytics'),
+        hint: t('nav.hints.analytics'),
+        color: 'purple',
+      },
+      {
+        path: '/evaluation',
+        icon: 'ClipboardCheck',
+        label: t('nav.evaluation'),
+        hint: t('nav.hints.evaluation'),
+        color: 'pink',
+      },
+      {
+        path: '/history',
+        icon: 'History',
+        label: t('nav.history'),
+        hint: t('nav.hints.history'),
+        color: 'peach',
+      },
+    ],
+  },
+])
+
+const navigateTo = (path: string) => router.push(path)
+
+const isItemActive = (path: string) =>
+  currentPath.value === path || currentPath.value.startsWith(`${path}/`)
+
+const activeNavItem = computed(() =>
+  navSections.value.flatMap(section => section.items).find(item => isItemActive(item.path))
+)
 
 const currentPhase = computed(() => workflowStore.currentPhase)
 
@@ -49,6 +114,56 @@ const phaseLabel = computed(() => {
   const translated = t(key)
   return translated !== key ? translated : phase
 })
+
+const workspaceStatus = computed(() => {
+  if (workflowStore.isAwaitingReview) {
+    return { label: t('nav.status.reviewNeeded'), tone: 'rose' as const, icon: 'CheckCircle' }
+  }
+  if (
+    workflowStore.isAwaitingBrief ||
+    workflowStore.isAwaitingDraft ||
+    workflowStore.isAwaitingChoice ||
+    workflowStore.isAwaitingRippleDecision ||
+    workflowStore.isAwaitingBloggerSelection
+  ) {
+    return { label: t('nav.status.inputNeeded'), tone: 'amber' as const, icon: 'Clock' }
+  }
+  if (workflowStore.currentStatus === 'running') {
+    return { label: t('nav.status.running'), tone: 'cyan' as const, icon: 'Sparkles' }
+  }
+  if (workflowStore.currentPhase === 'completed') {
+    return { label: t('nav.status.completed'), tone: 'emerald' as const, icon: 'CheckCircle' }
+  }
+  return { label: t('nav.status.idle'), tone: 'slate' as const, icon: 'Rocket' }
+})
+
+const activeAccountName = computed(() => accountsStore.activeAccount?.name || t('nav.accountSelect'))
+const activeAccountNiche = computed(() => accountsStore.activeAccount?.niche?.trim())
+const accountInitial = computed(() =>
+  accountsStore.activeAccount?.name?.trim().slice(0, 1).toUpperCase() || t('nav.accountInitialFallback')
+)
+
+const statusDotClass = computed(() => ({
+  'bg-emerald-400 shadow-[0_0_0_4px_rgba(52,211,153,0.14)]': realtimeStore.connectionStatus === 'connected',
+  'bg-amber-400 shadow-[0_0_0_4px_rgba(251,191,36,0.14)]': realtimeStore.connectionStatus === 'connecting' || realtimeStore.connectionStatus === 'reconnecting',
+  'bg-rose-400 shadow-[0_0_0_4px_rgba(251,113,133,0.14)]': realtimeStore.connectionStatus === 'disconnected',
+}))
+
+const connectionLabel = computed(() => {
+  if (realtimeStore.connectionStatus === 'connected') return t('nav.ws.connected')
+  if (realtimeStore.connectionStatus === 'reconnecting') return t('nav.ws.reconnecting')
+  if (realtimeStore.connectionStatus === 'connecting') return t('nav.ws.connecting')
+  return t('nav.ws.disconnected')
+})
+
+const navColorClasses: Record<NavColor, { icon: string; activeIcon: string; marker: string }> = {
+  pink: { icon: 'text-neon-pink', activeIcon: 'bg-neon-pink/12 ring-neon-pink/20', marker: 'from-neon-pink to-neon-peach' },
+  cyan: { icon: 'text-neon-cyan', activeIcon: 'bg-neon-cyan/12 ring-neon-cyan/20', marker: 'from-neon-cyan to-neon-green' },
+  purple: { icon: 'text-neon-purple', activeIcon: 'bg-neon-purple/12 ring-neon-purple/20', marker: 'from-neon-purple to-neon-cyan' },
+  peach: { icon: 'text-neon-peach', activeIcon: 'bg-neon-peach/12 ring-neon-peach/20', marker: 'from-neon-peach to-neon-pink' },
+}
+
+const handleAccountClick = () => router.push('/settings?tab=xhs-accounts')
 
 // HelpCenter handlers
 const handleOpenFaq = () => {
@@ -76,128 +191,142 @@ onMounted(() => {
 
 <template>
   <nav
-    class="liquid-glass-nav flex flex-col border-r border-white/15 relative overflow-hidden transition-all duration-300"
-    :class="isTablet ? 'w-[68px] p-3' : 'w-64 p-6'"
+    class="liquid-glass-nav relative flex flex-col overflow-hidden border-r border-white/30 transition-all duration-300"
+    :class="isTablet ? 'w-[76px] p-3' : 'w-72 p-4'"
     role="navigation"
     :aria-label="t('nav.home')"
   >
-    <!-- Animated glow border -->
-    <div class="absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-rose-300/30 to-transparent animate-pulse" style="animation-duration: 3s;" aria-hidden="true" />
+    <div class="pointer-events-none absolute -left-20 -top-20 h-56 w-56 rounded-full bg-neon-pink/10 blur-3xl" aria-hidden="true" />
+    <div class="pointer-events-none absolute -bottom-24 -right-20 h-64 w-64 rounded-full bg-neon-cyan/10 blur-3xl" aria-hidden="true" />
+    <div class="pointer-events-none absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-rose-300/45 to-transparent" aria-hidden="true" />
 
     <!-- Logo -->
-    <div class="mb-8 relative group">
-      <div class="flex items-center" :class="isTablet ? 'justify-center' : 'gap-4'">
-        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-400 via-rose-500 to-amber-400 flex items-center justify-center shadow-lg shadow-rose-500/20 transition-all duration-300 group-hover:shadow-rose-500/40 group-hover:scale-105 flex-shrink-0" aria-hidden="true">
+    <div class="relative mb-5">
+      <div class="flex items-center" :class="isTablet ? 'justify-center' : 'gap-3'">
+        <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-400 via-rose-500 to-amber-400 shadow-lg shadow-rose-500/25 transition-transform duration-300 hover:scale-105" aria-hidden="true">
           <AppIcon name="BookOpen" size="lg" variant="white" />
         </div>
         <div v-if="!isTablet">
-          <div class="text-slate-800 font-semibold text-lg tracking-tight">{{ t('nav.appName') }}</div>
-          <div class="text-xs text-slate-400 mt-0.5">{{ t('nav.appSubtitle') }}</div>
+          <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-neon-pinkDark">{{ t('nav.brandEyebrow') }}</div>
+          <div class="mt-0.5 text-lg font-bold tracking-tight text-slate-800">{{ t('nav.appName') }}</div>
         </div>
       </div>
-      <div v-if="!isTablet" class="mt-4 liquid-glass-inset rounded-lg px-3 py-2 flex items-center gap-2 transition-all duration-200" role="status" aria-live="polite" :aria-label="t('nav.phase')">
-        <div class="w-2 h-2 rounded-full animate-pulse" :class="currentPhase === 'idle' ? 'bg-amber-400' : 'bg-teal-500'" aria-hidden="true" />
-        <div class="text-xs text-slate-500">
-          {{ t('nav.phase') }}: <span class="text-teal-600 font-medium">{{ phaseLabel }}</span>
+      <div v-if="!isTablet" class="mt-4 rounded-2xl border border-white/70 bg-white/60 p-3 shadow-sm backdrop-blur-sm" role="status" aria-live="polite" :aria-label="t('nav.workspaceStatus')">
+        <div class="flex items-center gap-2">
+          <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900/90" aria-hidden="true">
+            <AppIcon :name="workspaceStatus.icon" size="sm" variant="white" />
+          </span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">{{ t('nav.workspaceStatus') }}</span>
+              <span class="h-2 w-2 rounded-full" :class="workspaceStatus.tone === 'rose' ? 'bg-rose-400' : workspaceStatus.tone === 'amber' ? 'bg-amber-400' : workspaceStatus.tone === 'cyan' ? 'bg-cyan-400' : workspaceStatus.tone === 'emerald' ? 'bg-emerald-400' : 'bg-slate-300'" aria-hidden="true" />
+            </div>
+            <div class="truncate text-xs font-bold text-slate-700">{{ workspaceStatus.label }}</div>
+          </div>
+        </div>
+        <div class="mt-2 flex items-center justify-between gap-2 text-[10px] text-slate-400">
+          <span class="truncate">{{ t('nav.phase') }} · {{ phaseLabel }}</span>
+          <span v-if="activeNavItem" class="shrink-0 text-neon-pinkDark">{{ activeNavItem.label }}</span>
         </div>
       </div>
       <!-- Tablet: phase indicator dot only -->
-      <div v-else class="flex justify-center mt-2" role="status" :aria-label="t('nav.phase')">
-        <div class="w-2 h-2 rounded-full animate-pulse" :class="currentPhase === 'idle' ? 'bg-amber-400' : 'bg-teal-500'" />
+      <div v-else class="mt-3 flex flex-col items-center gap-2" role="status" :aria-label="workspaceStatus.label">
+        <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-900/90" aria-hidden="true">
+          <AppIcon :name="workspaceStatus.icon" size="sm" variant="white" />
+        </span>
+        <span class="h-2 w-2 rounded-full" :class="workspaceStatus.tone === 'rose' ? 'bg-rose-400' : workspaceStatus.tone === 'amber' ? 'bg-amber-400' : workspaceStatus.tone === 'cyan' ? 'bg-cyan-400' : workspaceStatus.tone === 'emerald' ? 'bg-emerald-400' : 'bg-slate-300'" />
       </div>
     </div>
 
     <!-- 开始创作按钮 -->
     <button
       @click="router.push('/start')"
-      class="mb-4 w-full p-3 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-lg shadow-rose-500/25 hover:shadow-rose-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+      class="group mb-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 p-3 text-sm font-bold text-white shadow-lg shadow-rose-500/25 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-rose-500/40 active:translate-y-0"
       :aria-label="t('nav.startWorkflow')"
+      :title="isTablet ? t('nav.startWorkflow') : undefined"
     >
       <AppIcon name="Rocket" size="sm" variant="white" />
       <span v-if="!isTablet">{{ t('nav.startWorkflow') }}</span>
+      <AppIcon v-if="!isTablet" name="ArrowRight" size="xs" variant="white" class="ml-auto transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
     </button>
 
-    <!-- 导航项 -->
-    <div class="space-y-1.5 relative" role="list" :aria-label="t('nav.home')">
-      <button
-        v-for="item in navItems"
-        :key="item.path"
-        @click="navigateTo(item.path)"
-        :class="[
-          'rounded-lg cursor-pointer transition-all duration-200 w-full text-left group relative overflow-hidden',
-          isTablet ? 'p-2 flex justify-center' : 'p-3',
-          currentPath === item.path
-            ? 'bg-gradient-to-r from-slate-100/80 to-white border border-slate-200 shadow-sm'
-            : 'hover:bg-slate-50/50 border border-transparent'
-        ]"
-        :aria-current="currentPath === item.path ? 'page' : undefined"
-        :aria-label="item.label"
-        :title="isTablet ? item.label : undefined"
-      >
-        <!-- Active indicator -->
-        <div v-if="currentPath === item.path && !isTablet" class="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-full bg-gradient-to-b from-rose-400 to-teal-400" aria-hidden="true" />
-        <!-- Active indicator (tablet: top) -->
-        <div v-if="currentPath === item.path && isTablet" class="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-gradient-to-r from-rose-400 to-teal-400" aria-hidden="true" />
-
-        <div :class="isTablet ? '' : 'flex items-center gap-3'">
-          <div :class="[
-            'w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-200',
-            currentPath === item.path
-              ? 'bg-gradient-to-br from-slate-700 to-slate-600 shadow-md'
-              : 'bg-slate-100 group-hover:bg-slate-200'
-          ]" aria-hidden="true">
-            <AppIcon :name="item.icon" size="md" :variant="currentPath === item.path ? 'white' : 'cyan'" />
-          </div>
-          <span v-if="!isTablet" :class="[
-            'text-sm font-medium transition-colors duration-200',
-            currentPath === item.path ? 'text-slate-800' : 'text-slate-500 group-hover:text-slate-600'
-          ]">
-            {{ item.label }}
-          </span>
+    <!-- Grouped navigation -->
+    <div class="relative min-h-0 flex-1 space-y-5 overflow-y-auto pr-0.5" role="list" :aria-label="t('nav.home')">
+      <section v-for="section in navSections" :key="section.key" :aria-labelledby="`nav-section-${section.key}`">
+        <div class="mb-2 flex items-center gap-2 px-2" :class="isTablet ? 'justify-center px-0' : ''">
+          <span class="h-1.5 w-1.5 rounded-full bg-slate-300" aria-hidden="true" />
+          <span :id="`nav-section-${section.key}`" :class="isTablet ? 'sr-only' : 'text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400'">{{ section.label }}</span>
         </div>
-      </button>
+        <div class="space-y-1.5">
+          <button
+            v-for="item in section.items"
+            :key="item.path"
+            @click="navigateTo(item.path)"
+            :class="[
+              'group relative flex min-h-12 w-full items-center rounded-2xl border text-left transition-all duration-200',
+              isTablet ? 'justify-center px-2' : 'gap-3 px-3',
+              isItemActive(item.path)
+                ? 'border-white/80 bg-white/85 shadow-md shadow-slate-900/5 ring-1 ring-slate-200/60'
+                : 'border-transparent hover:border-white/70 hover:bg-white/55 hover:shadow-sm'
+            ]"
+            :aria-current="isItemActive(item.path) ? 'page' : undefined"
+            :aria-label="item.hint ? `${item.label}: ${item.hint}` : item.label"
+            :title="isTablet ? `${item.label} · ${item.hint}` : undefined"
+          >
+            <span
+              v-if="isItemActive(item.path)"
+              class="absolute left-0 top-1/2 h-8 w-1 -translate-y-1/2 rounded-r-full bg-gradient-to-b"
+              :class="navColorClasses[item.color].marker"
+              aria-hidden="true"
+            />
+            <span
+              class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 transition-all duration-200"
+              :class="isItemActive(item.path) ? navColorClasses[item.color].activeIcon : 'bg-slate-100/80 ring-slate-200/60 group-hover:bg-white'"
+              aria-hidden="true"
+            >
+              <AppIcon :name="item.icon" size="md" :variant="isItemActive(item.path) ? 'white' : 'cyan'" :class="!isItemActive(item.path) ? navColorClasses[item.color].icon : ''" />
+            </span>
+            <span v-if="!isTablet" class="min-w-0 flex-1">
+              <span :class="['block truncate text-sm font-bold', isItemActive(item.path) ? 'text-slate-800' : 'text-slate-600 group-hover:text-slate-800']">{{ item.label }}</span>
+              <span class="mt-0.5 block truncate text-[10px] text-slate-400">{{ item.hint }}</span>
+            </span>
+            <span v-if="item.needsAttention" class="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-100 px-1.5 text-[10px] font-bold text-rose-600" :aria-label="t('nav.status.reviewNeeded')">
+              !
+            </span>
+            <AppIcon v-if="isItemActive(item.path) && !isTablet" name="ChevronRight" size="sm" variant="cyan" aria-hidden="true" />
+          </button>
+        </div>
+      </section>
     </div>
 
     <!-- 底部信息 -->
-    <div class="mt-auto pt-4 border-t border-slate-100" :aria-label="t('nav.systemInfo')">
+    <div class="mt-4 border-t border-slate-200/70 pt-4" :aria-label="t('nav.systemInfo')">
       <!-- Desktop: compact bottom section -->
       <template v-if="!isTablet">
-        <!-- Account & version -->
-        <div class="flex items-center justify-between gap-2 px-1 mb-2">
-          <span class="min-w-0 truncate text-xs text-slate-400">{{ authStore.user?.username || t('nav.account') }}</span>
-          <span class="text-[10px] text-slate-300">{{ t('nav.versionValue') }}</span>
-        </div>
-
         <button
-          class="mb-2 flex min-h-10 w-full items-center gap-2 rounded-lg bg-slate-50 px-2 text-left transition hover:bg-cyan-50"
+          class="group mb-3 flex min-h-14 w-full items-center gap-3 rounded-2xl border border-white/75 bg-white/65 px-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-200/70 hover:bg-cyan-50/70"
           :aria-label="t('nav.account')"
-          :title="accountsStore.activeAccount?.name || t('nav.account')"
-          @click="router.push('/settings?tab=xhs-accounts')"
+          :title="t('nav.accountManage')"
+          @click="handleAccountClick"
         >
-          <AppIcon name="User" size="sm" variant="cyan" aria-hidden="true" />
-          <span class="min-w-0 truncate text-xs font-medium text-slate-600">
-            {{ accountsStore.activeAccount?.name || t('nav.account') }}
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-emerald-400 text-xs font-bold text-white shadow-sm" aria-hidden="true">{{ accountInitial }}</span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-[10px] font-bold uppercase tracking-wider text-slate-400">{{ t('nav.activeAccount') }}</span>
+            <span class="block truncate text-xs font-bold text-slate-700">{{ activeAccountName }}</span>
+            <span class="block truncate text-[10px] text-slate-400">{{ activeAccountNiche ? t('nav.accountNiche', { niche: activeAccountNiche }) : t('nav.accountPending') }}</span>
           </span>
+          <AppIcon name="Settings" size="sm" variant="cyan" class="opacity-60 transition-opacity group-hover:opacity-100" aria-hidden="true" />
         </button>
 
-        <!-- Utilities row: WS status + language -->
-        <div class="flex items-center justify-between px-1 mb-2">
-          <div class="flex items-center gap-1.5">
-            <span
-              class="w-1.5 h-1.5 rounded-full"
-              :class="{
-                'bg-emerald-500': realtimeStore.connectionStatus === 'connected',
-                'bg-amber-500 animate-pulse': realtimeStore.connectionStatus === 'connecting' || realtimeStore.connectionStatus === 'reconnecting',
-                'bg-rose-500': realtimeStore.connectionStatus === 'disconnected',
-              }"
-            />
-            <span class="text-[10px] text-slate-400">
-              {{ realtimeStore.connectionStatus === 'connected' ? t('nav.ws.connected') : realtimeStore.connectionStatus === 'reconnecting' ? t('nav.ws.reconnecting') : realtimeStore.connectionStatus === 'connecting' ? t('nav.ws.connecting') : t('nav.ws.disconnected') }}
-            </span>
+        <!-- Utilities row: realtime + language + shortcuts -->
+        <div class="mb-2 flex items-center justify-between gap-2 rounded-xl bg-slate-50/70 px-2.5 py-2">
+          <div class="flex min-w-0 items-center gap-2">
+            <span class="h-2 w-2 shrink-0 rounded-full" :class="statusDotClass" aria-hidden="true" />
+            <span class="truncate text-[10px] font-medium text-slate-500">{{ connectionLabel }}</span>
             <button
               v-if="realtimeStore.connectionStatus === 'disconnected'"
               @click="realtimeStore.connect()"
-              class="text-[10px] text-rose-400 hover:text-rose-500 transition-colors"
+              class="min-h-8 shrink-0 rounded-md px-1.5 text-[10px] font-bold text-rose-500 transition-colors hover:bg-rose-50"
             >
               {{ t('nav.ws.reconnect') }}
             </button>
@@ -206,7 +335,7 @@ onMounted(() => {
         </div>
 
         <!-- Actions: Help + Settings + Logout -->
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5">
           <HelpCenter
             @open-faq="handleOpenFaq"
             @open-shortcuts="handleOpenShortcuts"
@@ -214,16 +343,17 @@ onMounted(() => {
           />
           <button
             @click="router.push('/settings')"
-            class="text-xs text-slate-400 hover:text-teal-500 transition-colors flex items-center gap-1"
+            class="flex min-h-10 items-center gap-1.5 rounded-lg px-2 text-xs text-slate-400 transition-colors hover:bg-cyan-50 hover:text-teal-500"
             :aria-label="t('nav.settings')"
             :title="t('nav.settings')"
           >
             <AppIcon name="Settings" size="xs" variant="cyan" />
+            <span>{{ t('nav.settings') }}</span>
           </button>
           <button
             v-if="authStore.isAuthenticated"
             @click="handleLogout"
-            class="ml-auto text-xs text-slate-400 hover:text-rose-500 transition-colors flex items-center gap-1"
+            class="ml-auto flex min-h-10 items-center gap-1.5 rounded-lg px-2 text-xs text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-500"
             :aria-label="t('nav.logout')"
           >
             <AppIcon name="LogOut" size="xs" variant="pink" />
@@ -237,18 +367,22 @@ onMounted(() => {
         <div class="flex flex-col items-center gap-2">
           <!-- WS status dot -->
           <div
-            class="w-2 h-2 rounded-full"
-            :class="{
-              'bg-emerald-500': realtimeStore.connectionStatus === 'connected',
-              'bg-amber-500 animate-pulse': realtimeStore.connectionStatus === 'connecting' || realtimeStore.connectionStatus === 'reconnecting',
-              'bg-rose-500': realtimeStore.connectionStatus === 'disconnected',
-            }"
-            :title="realtimeStore.connectionStatus"
+            class="h-2 w-2 rounded-full"
+            :class="statusDotClass"
+            :title="connectionLabel"
           />
+          <button
+            class="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-50 text-xs font-bold text-cyan-600 transition hover:bg-cyan-100"
+            :aria-label="t('nav.account')"
+            :title="`${t('nav.activeAccount')}: ${activeAccountName}`"
+            @click="handleAccountClick"
+          >
+            {{ accountInitial }}
+          </button>
           <!-- Settings -->
           <button
             @click="router.push('/settings')"
-            class="p-2 rounded-lg text-slate-400 hover:text-teal-500 hover:bg-teal-50 transition-all"
+            class="flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 transition-all hover:bg-teal-50 hover:text-teal-500"
             :aria-label="t('nav.settings')"
             :title="t('nav.settings')"
           >
@@ -258,7 +392,7 @@ onMounted(() => {
           <button
             v-if="authStore.isAuthenticated"
             @click="handleLogout"
-            class="p-2 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-all"
+            class="flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 transition-all hover:bg-rose-50 hover:text-rose-500"
             :aria-label="t('nav.logout')"
             :title="t('nav.logout')"
           >

@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"检查导航根节点、路由活动态、双语文案、可访问性和响应式结构。"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"检查账号、工作流阶段和 WebSocket 状态没有引入重复或错误数据源。"}
+{"file":".trellis/spec/frontend/animation-patterns.md","reason":"检查导航动效在 prefers-reduced-motion 下立即可见且不阻断操作。"}
