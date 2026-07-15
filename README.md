@@ -210,8 +210,8 @@ Vue 3 前端界面，赛博朋克风格，围绕创作、审核、增长和账�
 
 | 页面 | 路径 | 功能 |
 |------|------|------|
-| Start Creating | `/start` | 账号选择、趋势/Brief/自由创作模式入口 |
-| Dashboard | `/dashboard/:threadId?` | 工作流进度追踪、阶段输出、下一步动作和深链恢复 |
+| Start Creating | `/start` | 首屏欢迎 Hero、当前账号上下文、三步创作 cue，以及趋势/Brief/自由创作模式入口 |
+| Dashboard | `/dashboard/:threadId?` | 状态感知 Hero、进度和唯一下一步行动；支持阶段输出与深链恢复 |
 | Review | `/review/:threadId?` | 人机审核、内容预览、通过/修改/拒绝，展开卡片后固定操作栏 |
 | Analytics | `/analytics` | 按当前账号和周期查看数据、帖子表现、成本分析 |
 | Evaluation | `/evaluation` | 创作者质量与工作流评估，移动端从“更多”进入 |
@@ -221,6 +221,8 @@ Vue 3 前端界面，赛博朋克风格，围绕创作、审核、增长和账�
 | Free Creation TUI | `/tui?mode=free` | 登录后进入终端式自由创作；保留命令行，同时提供建议/草稿/帮助快捷操作 |
 
 前端交互约定、连接状态、错误恢复、响应式和无障碍规则见 [docs/frontend-ux-optimization.md](./docs/frontend-ux-optimization.md)。
+
+开始创作页会先展示“配置 → 确认 → 创作”的任务路径和当前账号，再进入模式配置；工作台首屏根据空闲、运行中、等待输入/审核、已完成或错误状态切换主标题、进度摘要和行动入口，减少用户扫描时间。
 
 ### Tech Stack
 

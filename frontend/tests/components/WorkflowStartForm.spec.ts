@@ -50,6 +50,7 @@ describe('WorkflowStartForm account niche defaults', () => {
       accountId: 'beauty',
       niche: '美妆',
     })
+    expect(wrapper.emitted('accountChange')?.at(-1)).toEqual(['beauty'])
     expect(wrapper.text()).toContain('已自动使用账号绑定赛道：美妆')
   })
 
@@ -60,6 +61,7 @@ describe('WorkflowStartForm account niche defaults', () => {
 
     await wrapper.find('select').setValue('tech')
     expect((wrapper.vm as any).getConfig().niche).toBe('数码')
+    expect(wrapper.emitted('accountChange')?.at(-1)).toEqual(['tech'])
 
     const foodButton = wrapper.findAll('button').find((button) => button.text().includes('美食'))
     expect(foodButton).toBeDefined()
@@ -74,5 +76,22 @@ describe('WorkflowStartForm account niche defaults', () => {
     const wrapper = await mountWithAccounts([active], active, '旅行')
 
     expect((wrapper.vm as any).getConfig().niche).toBe('旅行')
+  })
+
+  it('exposes the three creation paths with descriptions and a visible step cue', async () => {
+    const wrapper = await mountWithAccounts([], null)
+
+    expect(wrapper.text()).toContain('配置')
+    expect(wrapper.text()).toContain('确认')
+    expect(wrapper.text()).toContain('创作')
+    expect(wrapper.text()).toContain('从热门趋势出发，生成完整内容方案')
+    expect(wrapper.text()).toContain('上传商单 Brief，让 AI 按要求完成创作')
+    expect(wrapper.text()).toContain('与智能体对话，自由创作、评估并发布')
+
+    const modeButtons = wrapper.findAll('button[aria-pressed]')
+    expect(modeButtons).toHaveLength(3)
+    expect(modeButtons[0].classes()).toContain('min-h-[112px]')
+    await modeButtons[2].trigger('click')
+    expect((wrapper.vm as any).getConfig().workflowMode).toBe('free')
   })
 })

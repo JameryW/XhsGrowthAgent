@@ -16,6 +16,7 @@ import { DashboardSkeleton } from '@/components/skeletons'
 import ErrorState from '@/components/ErrorState.vue'
 import ErrorCard from '@/components/ErrorCard.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import { getDashboardHero } from '@/composables/dashboardHero'
 import { useWorkflowStore, useToastStore, useErrorStore } from '@/stores'
 import { useRealtimeStore } from '@/stores/realtime'
 
@@ -45,7 +46,7 @@ const showBriefUpload = computed(() =>
   (workflowStore.currentPhase === 'briefing' && !workflowStore.briefUploadedText))
 )
 const showBriefContent = computed(() => {
-  const bc = workflowStore.workflowState?.brief_content
+  const bc = workflowStore.effectiveState?.brief_content
   return bc && Object.keys(bc).length > 0 && (bc.brand_name || bc.raw_text)
 })
 const isLoading = computed(() => workflowStore.isLoading && !workflowStore.workflowState)
@@ -61,7 +62,13 @@ const nextAction = computed(() => {
       path: workflowStore.activeThreadId ? `/review/${workflowStore.activeThreadId}` : '/review',
     }
   }
-  if (workflowStore.isAwaitingBrief || workflowStore.isAwaitingDraft || workflowStore.isAwaitingChoice) {
+  if (
+    workflowStore.isAwaitingBrief ||
+    workflowStore.isAwaitingDraft ||
+    workflowStore.isAwaitingChoice ||
+    workflowStore.isAwaitingRippleDecision ||
+    workflowStore.isAwaitingBloggerSelection
+  ) {
     return {
       icon: 'Pencil',
       title: t('dashboard.nextAction.continueTitle'),
@@ -70,7 +77,7 @@ const nextAction = computed(() => {
       path: '/dashboard',
     }
   }
-  if (!workflowStore.activeThreadId && workflowStore.currentPhase === 'idle') {
+  if (workflowStore.currentPhase === 'idle' && workflowStore.currentStatus === 'idle') {
     return {
       icon: 'Rocket',
       title: t('dashboard.nextAction.startTitle'),
@@ -79,7 +86,25 @@ const nextAction = computed(() => {
       path: '/start',
     }
   }
+  if (workflowStore.currentPhase === 'error') {
+    return {
+      icon: 'RefreshCw',
+      title: t('dashboard.hero.errorTitle'),
+      description: t('dashboard.hero.errorDescription'),
+      label: t('dashboard.nextAction.startCta'),
+      path: '/start',
+    }
+  }
   return null
+})
+
+const dashboardHero = computed(() => {
+  return getDashboardHero({
+    phase: workflowStore.currentPhase,
+    status: workflowStore.currentStatus,
+    progress: workflowStore.effectiveState?.progress_percent ?? workflowStore.progressPercent,
+    isReplay: workflowStore.isReplayMode,
+  }, t)
 })
 
 // Celebration state
@@ -193,8 +218,49 @@ onUnmounted(() => {
         @dismiss="handleErrorDismiss"
       />
 
+      <!-- State-aware hero: the visual hierarchy starts with the current state. -->
+      <section
+        class="relative overflow-hidden rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-cyan-50/70 p-4 shadow-sm md:rounded-3xl md:p-6"
+        :class="{
+          'from-emerald-50/80 via-white to-cyan-50/60': dashboardHero.tone === 'emerald',
+          'from-rose-50/80 via-white to-amber-50/60': dashboardHero.tone === 'rose',
+          'from-violet-50/80 via-white to-cyan-50/60': dashboardHero.tone === 'violet',
+          'from-amber-50/80 via-white to-rose-50/60': dashboardHero.tone === 'amber',
+          'from-cyan-50/80 via-white to-emerald-50/60': dashboardHero.tone === 'cyan',
+          'from-fuchsia-50/80 via-white to-amber-50/60': dashboardHero.tone === 'pink',
+        }"
+        aria-live="polite"
+        :aria-label="t('dashboard.hero.eyebrow')"
+      >
+        <div class="pointer-events-none absolute -right-14 -top-16 h-40 w-40 rounded-full bg-white/70 blur-2xl" aria-hidden="true" />
+        <div class="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex min-w-0 items-start gap-3 md:gap-4">
+            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70 md:h-14 md:w-14">
+              <AppIcon :name="dashboardHero.icon" size="lg" :variant="dashboardHero.tone === 'rose' ? 'pink' : dashboardHero.tone === 'violet' ? 'purple' : dashboardHero.tone === 'amber' ? 'peach' : 'cyan'" aria-hidden="true" />
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{{ t('dashboard.hero.eyebrow') }}</p>
+              <h1 class="mt-1 text-xl font-bold tracking-tight text-slate-800 md:text-2xl">{{ dashboardHero.title }}</h1>
+              <p class="mt-1 max-w-2xl text-sm leading-5 text-slate-500">{{ dashboardHero.description }}</p>
+            </div>
+          </div>
+          <div class="flex shrink-0 items-center gap-3 sm:flex-col sm:items-end sm:gap-1">
+            <span class="rounded-full border border-white/90 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 shadow-sm">{{ dashboardHero.status }}</span>
+            <span class="text-xs font-semibold text-slate-400">{{ t('dashboard.hero.progressLabel', { percent: dashboardHero.progress }) }}</span>
+          </div>
+        </div>
+        <div class="relative mt-4 h-2 overflow-hidden rounded-full bg-white/80 ring-1 ring-slate-200/60" role="progressbar" :aria-valuenow="dashboardHero.progress" aria-valuemin="0" aria-valuemax="100" :aria-label="t('dashboard.header.progress')">
+          <div class="h-full rounded-full bg-gradient-to-r from-neon-pink via-neon-peach to-neon-cyan motion-safe:transition-[width] motion-safe:duration-500" :style="{ width: `${dashboardHero.progress}%` }" />
+        </div>
+        <div v-if="workflowStore.currentPhase === 'completed'" class="relative mt-4 flex justify-end">
+          <NeonButton variant="cyan" size="sm" class="min-h-11" @click="router.push('/history')">
+            <span class="inline-flex items-center gap-2"><AppIcon name="History" size="sm" variant="white" aria-hidden="true" />{{ t('dashboard.hero.completedCta') }}</span>
+          </NeonButton>
+        </div>
+      </section>
+
       <!-- One prominent next step prevents users from scanning the full timeline. -->
-      <div v-if="nextAction" class="flex items-center gap-3 rounded-xl border border-cyan-200/70 bg-gradient-to-r from-cyan-50/90 to-white p-3 md:p-4">
+      <div v-if="nextAction" class="flex flex-col items-stretch gap-3 rounded-xl border border-cyan-200/70 bg-gradient-to-r from-cyan-50/90 to-white p-3 md:flex-row md:items-center md:p-4">
         <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-100">
           <AppIcon :name="nextAction.icon" size="md" variant="cyan" aria-hidden="true" />
         </div>
@@ -202,7 +268,7 @@ onUnmounted(() => {
           <div class="text-sm font-semibold text-slate-700">{{ nextAction.title }}</div>
           <p class="mt-0.5 text-xs text-slate-500">{{ nextAction.description }}</p>
         </div>
-        <NeonButton variant="cyan" size="sm" @click="router.push(nextAction.path)">
+        <NeonButton variant="cyan" size="sm" class="min-h-11 shrink-0" @click="router.push(nextAction.path)">
           {{ nextAction.label }}
         </NeonButton>
       </div>
@@ -304,39 +370,39 @@ onUnmounted(() => {
         <div class="flex items-center gap-2 mb-3">
           <AppIcon name="FileText" size="sm" variant="pink" />
           <span class="text-sm font-semibold text-slate-700">{{ t('brief.contentTitle') }}</span>
-          <span v-if="workflowStore.workflowState?.brief_content?.confidence != null" class="text-[10px] px-1.5 py-0.5 rounded-full"
-            :class="(workflowStore.workflowState?.brief_content?.confidence ?? 0) >= 0.6 ? 'bg-teal-50 text-teal-600' : 'bg-amber-50 text-amber-600'">
-            {{ Math.round((workflowStore.workflowState?.brief_content?.confidence ?? 0) * 100) }}%
+          <span v-if="workflowStore.effectiveState?.brief_content?.confidence != null" class="text-[10px] px-1.5 py-0.5 rounded-full"
+            :class="(workflowStore.effectiveState?.brief_content?.confidence ?? 0) >= 0.6 ? 'bg-teal-50 text-teal-600' : 'bg-amber-50 text-amber-600'">
+            {{ Math.round((workflowStore.effectiveState?.brief_content?.confidence ?? 0) * 100) }}%
           </span>
         </div>
         <div class="space-y-2">
-          <div v-if="workflowStore.workflowState?.brief_content?.brand_name" class="flex items-start gap-2">
+          <div v-if="workflowStore.effectiveState?.brief_content?.brand_name" class="flex items-start gap-2">
             <span class="text-xs text-slate-400 min-w-[60px]">{{ t('brief.brand') }}</span>
-            <span class="text-sm text-slate-700 font-medium">{{ workflowStore.workflowState.brief_content.brand_name }}</span>
+            <span class="text-sm text-slate-700 font-medium">{{ workflowStore.effectiveState.brief_content.brand_name }}</span>
           </div>
-          <div v-if="workflowStore.workflowState?.brief_content?.product_name" class="flex items-start gap-2">
+          <div v-if="workflowStore.effectiveState?.brief_content?.product_name" class="flex items-start gap-2">
             <span class="text-xs text-slate-400 min-w-[60px]">{{ t('brief.product') }}</span>
-            <span class="text-sm text-slate-700 font-medium">{{ workflowStore.workflowState.brief_content.product_name }}</span>
+            <span class="text-sm text-slate-700 font-medium">{{ workflowStore.effectiveState.brief_content.product_name }}</span>
           </div>
-          <div v-if="workflowStore.workflowState?.brief_content?.content_direction" class="flex items-start gap-2">
+          <div v-if="workflowStore.effectiveState?.brief_content?.content_direction" class="flex items-start gap-2">
             <span class="text-xs text-slate-400 min-w-[60px]">{{ t('brief.direction') }}</span>
-            <span class="text-sm text-slate-700">{{ workflowStore.workflowState.brief_content.content_direction }}</span>
+            <span class="text-sm text-slate-700">{{ workflowStore.effectiveState.brief_content.content_direction }}</span>
           </div>
-          <div v-if="workflowStore.workflowState?.brief_content?.selling_points?.length" class="flex items-start gap-2">
+          <div v-if="workflowStore.effectiveState?.brief_content?.selling_points?.length" class="flex items-start gap-2">
             <span class="text-xs text-slate-400 min-w-[60px]">{{ t('brief.sellingPoints') }}</span>
             <div class="flex flex-wrap gap-1">
-              <span v-for="sp in workflowStore.workflowState.brief_content.selling_points" :key="sp" class="text-[11px] px-1.5 py-0.5 rounded bg-pink-50 text-pink-600">{{ sp }}</span>
+              <span v-for="sp in workflowStore.effectiveState.brief_content.selling_points" :key="sp" class="text-[11px] px-1.5 py-0.5 rounded bg-pink-50 text-pink-600">{{ sp }}</span>
             </div>
           </div>
-          <div v-if="workflowStore.workflowState?.brief_content?.required_hashtags?.length" class="flex items-start gap-2">
+          <div v-if="workflowStore.effectiveState?.brief_content?.required_hashtags?.length" class="flex items-start gap-2">
             <span class="text-xs text-slate-400 min-w-[60px]">{{ t('brief.hashtags') }}</span>
             <div class="flex flex-wrap gap-1">
-              <span v-for="tag in workflowStore.workflowState.brief_content.required_hashtags" :key="tag" class="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-600">#{{ tag }}</span>
+              <span v-for="tag in workflowStore.effectiveState.brief_content.required_hashtags" :key="tag" class="text-[11px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-600">#{{ tag }}</span>
             </div>
           </div>
-          <details v-if="workflowStore.workflowState?.brief_content?.raw_text" class="mt-2">
+          <details v-if="workflowStore.effectiveState?.brief_content?.raw_text" class="mt-2">
             <summary class="text-xs text-slate-400 cursor-pointer hover:text-slate-600">{{ t('brief.viewRaw') }}</summary>
-            <pre class="mt-1.5 p-2.5 rounded-lg bg-slate-50 text-xs text-slate-600 whitespace-pre-wrap max-h-40 overflow-y-auto">{{ workflowStore.workflowState.brief_content.raw_text }}</pre>
+            <pre class="mt-1.5 p-2.5 rounded-lg bg-slate-50 text-xs text-slate-600 whitespace-pre-wrap max-h-40 overflow-y-auto">{{ workflowStore.effectiveState.brief_content.raw_text }}</pre>
           </details>
         </div>
       </div>
@@ -353,7 +419,7 @@ onUnmounted(() => {
           @clear="handleBriefClear"
         />
         <!-- Skip button when brief_gate interrupted (has clarification questions) -->
-        <div v-if="workflowStore.isAwaitingBrief && workflowStore.workflowState?.brief_content?.raw_text" class="flex justify-end mt-3">
+        <div v-if="workflowStore.isAwaitingBrief && workflowStore.effectiveState?.brief_content?.raw_text" class="flex justify-end mt-3">
           <NeonButton variant="ghost" size="sm" @click="handleBriefSkip">
             <span class="text-xs">{{ t('brief.skipClarification') }}</span>
           </NeonButton>
