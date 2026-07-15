@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Showcase is a route-level Vue page; layout, i18n, mobile overflow, focus, and touch-target changes must follow shared component conventions."}
+{"file":".trellis/spec/frontend/animation-patterns.md","reason":"The page contains the workflow loop, ambient motion, card entrance, and reduced-motion behavior."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Showcase workflow list, detail loading, filtering, and replay navigation must continue using the existing state/API flow."}

@@ -1792,8 +1792,11 @@ onMounted(() => {
   const bannerWidth = Math.max(30, Math.min(termCols - 4, 50))
   writeLine('')
   writeLine(`${W}╭${'─'.repeat(bannerWidth)}╮${R}`)
-  writeLine(`${W}│${R}  ${G}XHS Growth Agent${R}  ${D}v1.0${R}${' '.repeat(Math.max(0, bannerWidth - 22))}${W}│${R}`)
-  writeLine(`${W}│${R}  ${D}小红书内容增长智能体${R}${' '.repeat(Math.max(0, bannerWidth - 12))}${W}│${R}`)
+  const bannerName = t('tui.bannerName')
+  const bannerVersion = t('tui.bannerVersion')
+  const bannerSubtitle = t('tui.bannerSubtitle')
+  writeLine(`${W}│${R}  ${G}${bannerName}${R}  ${D}${bannerVersion}${R}${' '.repeat(Math.max(0, bannerWidth - getStringWidth(bannerName) - getStringWidth(bannerVersion) - 4))}${W}│${R}`)
+  writeLine(`${W}│${R}  ${D}${bannerSubtitle}${R}${' '.repeat(Math.max(0, bannerWidth - getStringWidth(bannerSubtitle) - 2))}${W}│${R}`)
   writeLine(`${W}├${'─'.repeat(bannerWidth)}┤${R}`)
   const flowText = isFreeCreationEntry.value ? t('tui.freeFlow') : t('tui.workflowFlow')
   writeLine(`${W}│${R}  ${Y}${flowText}${R}${' '.repeat(Math.max(0, bannerWidth - getStringWidth(flowText) - 2))}${W}│${R}`)
@@ -2043,6 +2046,8 @@ onUnmounted(() => {
 }
 
 .tui-status-btn {
+  min-width: 44px;
+  min-height: 44px;
   color: #565f89;
   font-size: 12px;
   padding: 0 4px;
@@ -2064,7 +2069,7 @@ onUnmounted(() => {
 .tui-account-context { color: #7dcfff; margin-right: 4px; }
 .tui-quick-label { color: #565f89; }
 .tui-quick-btn {
-  min-height: 2rem;
+  min-height: 2.75rem;
   padding: 0.25rem 0.6rem;
   color: #a9b1d6;
   background: #1a1b26;
@@ -2098,7 +2103,8 @@ onUnmounted(() => {
   background: #1a1b26;
   color: #a9b1d6;
   font-size: 12px;
-  padding: 2px 6px;
+  min-height: 2.75rem;
+  padding: 2px 8px;
   border-radius: 0;
   border: 1px solid #292e42;
   font-family: inherit;
@@ -2114,6 +2120,8 @@ onUnmounted(() => {
 }
 
 .tui-search-toggle {
+  min-width: 44px;
+  min-height: 44px;
   font-size: 10px;
   font-family: inherit;
   padding: 1px 4px;
@@ -2139,6 +2147,8 @@ onUnmounted(() => {
 }
 
 .tui-search-nav {
+  min-width: 44px;
+  min-height: 44px;
   font-size: 11px;
   font-family: inherit;
   color: #565f89;
@@ -2165,6 +2175,7 @@ onUnmounted(() => {
   background: #1a1b26;
   color: #a9b1d6;
   font-size: 14px;
+  min-height: 2.75rem;
   padding: 6px 10px;
   border-radius: 2px;
   border: 1px solid #292e42;
@@ -2180,6 +2191,8 @@ onUnmounted(() => {
 }
 
 .tui-mobile-send {
+  min-width: 44px;
+  min-height: 44px;
   background: #7aa2f7;
   color: #1a1b26;
   font-size: 13px;
@@ -2213,6 +2226,7 @@ onUnmounted(() => {
   display: block;
   width: 100%;
   text-align: left;
+  min-height: 2.75rem;
   padding: 4px 12px;
   font-size: 12px;
   color: #a9b1d6;

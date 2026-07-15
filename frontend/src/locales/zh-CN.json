@@ -1112,6 +1112,7 @@
   },
   "notFound": {
     "title": "404",
+    "label": "页面不存在",
     "message": "页面不存在 · 请返回首页继续操作",
     "backHome": "返回首页",
     "backPrev": "返回上页"
@@ -1172,6 +1173,8 @@
   "history": {
     "title": "工作流历史",
     "subtitle": "查看和管理历史工作流",
+    "records": "条记录",
+    "refresh": "刷新历史",
     "empty": "暂无工作流记录",
     "emptyDesc": "开始第一次创作，进入内容增长之旅",
     "startNew": "开始创作",
@@ -1417,8 +1420,16 @@
       "analyzing": "实时追踪内容表现，AI分析优化策略"
     },
     "dashboard": "去创作",
+    "navAction": "进入工作台",
+    "liveWorkspace": "实时工作区",
+    "liveWorkspaceDesc": "公开展示正在运行的工作流状态、进度与内容产出。",
+    "workspaceOverview": "运行概览",
+    "workflowRecords": "工作流记录",
+    "workflowCount": "条记录",
     "empty": "暂无工作流",
     "emptyDesc": "工作流启动后将在此展示",
+    "detailUnavailable": "详细产出暂时不可用，可进入回放查看",
+    "resetFilters": "清除筛选",
     "footer": "小红书增长引擎 — AI 驱动的自动化内容创作平台",
     "detail": {
       "topic": "选题方向",
@@ -1479,7 +1490,9 @@
     },
     "filter": {
       "all": "全部",
-      "allMode": "全部模式"
+      "allMode": "全部模式",
+      "trend": "趋势模式",
+      "brief": "Brief 模式"
     },
     "sort": {
       "updated": "最近更新",
@@ -1487,6 +1500,7 @@
       "created": "创建时间"
     },
     "featured": "精选工作流",
+    "featuredAttention": "需关注的工作流",
     "loadMore": "加载更多",
     "noResults": "没有匹配的工作流",
     "viewDetail": "查看详情",
@@ -1517,8 +1531,17 @@
     "mode": "回放模式",
     "modeDesc": "点击流程节点查看当时的执行状态",
     "pipeline": "执行流程",
+    "pipelineProgress": "工作流进度",
+    "progressStep": "第 {current} / {total} 步",
+    "creationProcess": "创作轨迹",
+    "creationProcessDesc": "让每个节点成为一帧，数据沿着创作轨迹向前流动。",
+    "signalMoving": "创作信号持续推进",
+    "inspectLabel": "查看步骤",
     "clickHint": "点击节点查看详情",
     "clickHintDesc": "选择上方流程中的任意节点，查看该步骤的执行状态",
+    "noWorkflow": "暂无可回放数据",
+    "noWorkflowDesc": "该工作流尚未生成可展示的执行记录",
+    "checkpointsEmpty": "暂无可用检查点",
     "noData": "该节点暂无数据",
     "step": "步骤",
     "back": "返回",
@@ -1699,6 +1722,9 @@
   },
   "tui": {
     "welcome": "XhsGrowthAgent TUI v0.1",
+    "bannerName": "小红书增长智能体",
+    "bannerVersion": "v1.0",
+    "bannerSubtitle": "小红书内容增长工作台",
     "statusLabel": "xhs-agent",
     "defaultAccount": "默认账号",
     "accountContext": "账号：{account}",

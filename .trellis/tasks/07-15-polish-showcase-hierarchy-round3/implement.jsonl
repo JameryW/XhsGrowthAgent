@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Follow the Vue route-root, i18n, responsive overflow, accessibility, and touch-target conventions while refining Showcase visual structure."}
+{"file":".trellis/spec/frontend/animation-patterns.md","reason":"Keep any visual polish performant and ensure reduced-motion users see stable, immediately visible content."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Keep the Showcase presentation-only changes separate from workflow data/state behavior and preserve typed state flow."}

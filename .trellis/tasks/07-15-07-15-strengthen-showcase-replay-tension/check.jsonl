@@ -1,0 +1,5 @@
+{"file":"frontend/src/views/Showcase.vue","reason":"Verify single focal action, flow-to-records continuity, and responsive layout."}
+{"file":"frontend/src/views/WorkflowReplay.vue","reason":"Verify progress animation, selected checkpoint state, empty state, and reduced motion."}
+{"file":"frontend/src/components/replay/CheckpointRail.vue","reason":"Verify active checkpoint remains usable and visually legible."}
+{"file":"frontend/src/styles/main.css","reason":"Verify global glass/motion rules remain compatible with the page changes."}
+{"file":"frontend/src/App.vue","reason":"Verify immersive page shell and background alignment."}

@@ -191,8 +191,8 @@ onMounted(() => {
 
 <template>
   <nav
-    class="liquid-glass-nav relative flex flex-col overflow-hidden border-r border-white/30 transition-all duration-300"
-    :class="isTablet ? 'w-[76px] p-3' : 'w-72 p-4'"
+    class="app-sidebar liquid-glass-nav relative flex flex-col overflow-hidden border-r border-white/30 transition-all duration-300"
+    :class="isTablet ? 'w-[76px] p-3' : 'w-[264px] p-4'"
     role="navigation"
     :aria-label="t('nav.home')"
   >
@@ -251,19 +251,19 @@ onMounted(() => {
     </button>
 
     <!-- Grouped navigation -->
-    <div class="relative min-h-0 flex-1 space-y-5 overflow-y-auto pr-0.5" role="list" :aria-label="t('nav.home')">
-      <section v-for="section in navSections" :key="section.key" :aria-labelledby="`nav-section-${section.key}`">
-        <div class="mb-2 flex items-center gap-2 px-2" :class="isTablet ? 'justify-center px-0' : ''">
+    <div class="app-nav-scroll relative min-h-0 flex-1 space-y-4 overflow-y-auto pr-0.5" role="list" :aria-label="t('nav.home')">
+      <section v-for="section in navSections" :key="section.key" class="app-nav-section" :aria-labelledby="`nav-section-${section.key}`">
+        <div class="app-nav-section-title mb-2 flex items-center gap-2 px-2" :class="isTablet ? 'justify-center px-0' : ''">
           <span class="h-1.5 w-1.5 rounded-full bg-slate-300" aria-hidden="true" />
           <span :id="`nav-section-${section.key}`" :class="isTablet ? 'sr-only' : 'text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400'">{{ section.label }}</span>
         </div>
-        <div class="space-y-1.5">
+        <div class="app-nav-items space-y-1.5">
           <button
             v-for="item in section.items"
             :key="item.path"
             @click="navigateTo(item.path)"
             :class="[
-              'group relative flex min-h-12 w-full items-center rounded-2xl border text-left transition-all duration-200',
+              'app-nav-item group relative flex min-h-12 w-full items-center rounded-2xl border text-left transition-all duration-200',
               isTablet ? 'justify-center px-2' : 'gap-3 px-3',
               isItemActive(item.path)
                 ? 'border-white/80 bg-white/85 shadow-md shadow-slate-900/5 ring-1 ring-slate-200/60'
@@ -403,3 +403,60 @@ onMounted(() => {
     </div>
   </nav>
 </template>
+
+<style scoped>
+.app-sidebar {
+  flex-shrink: 0;
+  box-shadow:
+    1px 0 2px rgba(15, 23, 42, 0.03),
+    8px 0 24px rgba(15, 23, 42, 0.035),
+    inset -1px 0 rgba(255, 255, 255, 0.52);
+}
+
+.app-nav-scroll {
+  scrollbar-gutter: stable;
+}
+
+.app-nav-section {
+  padding: 0.45rem 0.35rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 1.25rem;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.app-nav-section-title {
+  min-height: 1.3rem;
+}
+
+.app-nav-item {
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.015);
+}
+
+.app-nav-item[aria-current='page'] {
+  box-shadow:
+    0 5px 14px rgba(15, 23, 42, 0.065),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+.app-nav-item:not([aria-current='page']):hover {
+  transform: translateX(1px);
+}
+
+@media (max-width: 1023px) {
+  .app-nav-section {
+    padding-inline: 0;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .app-nav-item:not([aria-current='page']):hover {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-nav-item:not([aria-current='page']):hover {
+    transform: none;
+  }
+}
+</style>

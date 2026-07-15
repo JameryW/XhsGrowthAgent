@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Check mobile overflow, focus states, localized labels, and interactive target sizing."}
+{"file":".trellis/spec/frontend/animation-patterns.md","reason":"Check reduced-motion behavior and card entrance/hover transitions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Check that workflow list, detail loading, filters, pagination, and replay navigation remain unchanged."}

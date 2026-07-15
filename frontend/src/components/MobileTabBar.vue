@@ -53,11 +53,11 @@ const handleLogout = async () => {
 
 <template>
   <nav
-    class="fixed bottom-0 left-0 right-0 z-50 liquid-glass-nav border-t border-white/15 safe-area-bottom"
+    class="app-mobile-tabbar fixed bottom-0 left-0 right-0 z-50 liquid-glass-nav border-t border-white/15 safe-area-bottom"
     role="navigation"
     :aria-label="t('nav.home')"
   >
-    <div class="relative flex h-[4.5rem] items-stretch justify-around px-1">
+    <div class="app-mobile-tabbar-inner relative flex h-[4.5rem] items-stretch justify-around px-1">
       <button
         v-for="tab in tabs"
         :key="tab.path"
@@ -94,7 +94,7 @@ const handleLogout = async () => {
 
       <div
         v-if="showMore"
-        class="absolute bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-2 w-64 overflow-hidden rounded-2xl border border-white/70 bg-white/95 shadow-xl shadow-slate-900/10 backdrop-blur-md"
+        class="app-mobile-more-menu absolute bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-2 w-64 overflow-hidden rounded-2xl border border-white/70 bg-white/95 shadow-xl shadow-slate-900/10 backdrop-blur-md"
         role="menu"
       >
         <div class="border-b border-slate-100 bg-gradient-to-r from-cyan-50/80 to-white px-4 py-3" role="status" :aria-label="t('nav.activeAccount')">
@@ -157,7 +157,50 @@ const handleLogout = async () => {
 </template>
 
 <style scoped>
+.app-mobile-tabbar {
+  box-shadow:
+    0 -1px 2px rgba(15, 23, 42, 0.04),
+    0 -10px 24px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.app-mobile-tabbar::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  right: 12%;
+  left: 12%;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(244, 63, 94, 0.44), rgba(20, 184, 166, 0.34), transparent);
+  pointer-events: none;
+}
+
+.app-mobile-tabbar-inner {
+  max-width: 32rem;
+  margin-inline: auto;
+}
+
+.app-mobile-more-menu {
+  box-shadow:
+    0 8px 18px rgba(15, 23, 42, 0.08),
+    0 24px 48px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  animation: mobile-menu-in 0.2s ease-out;
+}
+
+@keyframes mobile-menu-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-mobile-more-menu {
+    animation: none;
+  }
 }
 </style>

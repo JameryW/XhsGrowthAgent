@@ -6,6 +6,7 @@ import MetricCard from '@/components/MetricCard.vue'
 import DataTable from '@/components/DataTable.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import CreatorStatsPanel from '@/components/settings/CreatorStatsPanel.vue'
 import { AnalyticsSkeleton } from '@/components/skeletons'
 import { useAnalyticsStore, useAccountsStore } from '@/stores'
@@ -205,6 +206,56 @@ function startWithTopic(topic: string, niche?: string) {
 </script>
 
 <template>
+  <div class="app-page-content space-y-4 md:space-y-6">
+    <PageHeader
+      :title="t('analytics.title')"
+      :description="t('analytics.insights.subtitle')"
+      :eyebrow="t('analytics.analyticsLabel')"
+      icon="BarChart3"
+      tone="cyan"
+    >
+      <template #meta>
+        <span v-if="accountsStore.activeAccount?.name || analyticsStore.accountId">
+          {{ t('analytics.account') }}: {{ accountsStore.activeAccount?.name || analyticsStore.accountId }}
+        </span>
+        <span>{{ t('analytics.period') }}: {{ analyticsStore.period }}</span>
+        <span v-if="lastUpdatedAt" role="status">
+          {{ t('analytics.lastUpdated', { time: lastUpdatedAt.toLocaleTimeString() }) }}
+        </span>
+      </template>
+      <template #actions>
+        <NeonButton
+          variant="cyan"
+          size="sm"
+          class="min-h-11 w-full sm:w-auto"
+          @click="refreshData"
+          :disabled="analyticsStore.isLoading"
+        >
+          <span class="inline-flex items-center gap-1.5">
+            <AppIcon name="RefreshCw" size="sm" variant="white" :class="{ 'animate-spin': analyticsStore.isLoading }" />
+            {{ analyticsStore.isLoading ? t('analytics.refreshing') : t('analytics.refresh') }}
+          </span>
+        </NeonButton>
+        <div v-if="!isLoading && !hasError && !isEmpty" class="grid w-full grid-cols-3 gap-1.5 sm:w-auto">
+          <NeonButton
+            v-for="p in ['daily', 'weekly', 'monthly']"
+            :key="p"
+            :variant="analyticsStore.period === p ? 'cyan' : 'ghost'"
+            size="sm"
+            class="min-h-11 min-w-0 justify-center px-2 sm:px-3"
+            @click="setPeriod(p as any)"
+            :aria-pressed="analyticsStore.period === p"
+            :aria-label="`${p === 'daily' ? t('analytics.thisWeek') : p === 'weekly' ? t('analytics.thisMonth') : t('analytics.thisYear')}`"
+          >
+            <span class="inline-flex items-center justify-center gap-1 whitespace-nowrap">
+              <AppIcon name="Calendar" size="sm" :variant="analyticsStore.period === p ? 'white' : 'cyan'" />
+              {{ p === 'daily' ? t('analytics.thisWeek') : p === 'weekly' ? t('analytics.thisMonth') : t('analytics.thisYear') }}
+            </span>
+          </NeonButton>
+        </div>
+      </template>
+    </PageHeader>
+
   <AnalyticsSkeleton v-if="isLoading" />
 
   <!-- Error state -->
@@ -273,63 +324,6 @@ function startWithTopic(topic: string, niche?: string) {
 
   <!-- Data view -->
   <div v-else class="relative space-y-4 md:space-y-6">
-    <!-- Header -->
-    <div class="card">
-      <div class="flex flex-col gap-4 xl:flex-row xl:items-center">
-        <div class="flex min-w-0 flex-1 items-start gap-3 sm:items-center sm:gap-5">
-          <div class="w-10 h-10 md:w-14 md:h-14 rounded-lg md:rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm flex-shrink-0">
-            <AppIcon name="BarChart3" size="md" variant="white" class="md:hidden" :aria-label="t('analytics.title')" />
-            <AppIcon name="BarChart3" size="xl" variant="white" class="hidden md:block" :aria-label="t('analytics.title')" />
-          </div>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2 mb-1">
-              <span class="px-1.5 md:px-2 py-0.5 md:py-1 rounded bg-teal-50 text-teal-600 text-[10px] md:text-xs uppercase tracking-wide font-medium">{{ t('analytics.analyticsLabel') }}</span>
-            </div>
-            <div class="text-lg md:text-xl font-semibold text-slate-800">{{ t('analytics.title') }}</div>
-            <div class="text-[10px] md:text-xs text-slate-400 mt-1 break-words">
-              {{ t('analytics.account') }}: {{ accountsStore.activeAccount?.name || analyticsStore.accountId }} | {{ t('analytics.period') }}: {{ analyticsStore.period }}
-            </div>
-            <div v-if="lastUpdatedAt" class="mt-1 text-[10px] text-slate-400" role="status">
-              {{ t('analytics.lastUpdated', { time: lastUpdatedAt.toLocaleTimeString() }) }}
-            </div>
-          </div>
-        </div>
-
-        <div class="flex w-full flex-col gap-2 sm:flex-row sm:items-center xl:w-auto xl:shrink-0">
-          <NeonButton
-            variant="cyan"
-            size="sm"
-            class="w-full sm:w-auto"
-            @click="refreshData"
-            :disabled="analyticsStore.isLoading"
-          >
-            <span class="inline-flex items-center gap-1.5">
-              <AppIcon name="RefreshCw" size="sm" variant="white" :class="{ 'animate-spin': analyticsStore.isLoading }" />
-              {{ analyticsStore.isLoading ? t('analytics.refreshing') : t('analytics.refresh') }}
-            </span>
-          </NeonButton>
-
-          <div class="grid grid-cols-3 gap-1.5 sm:w-auto">
-            <NeonButton
-              v-for="p in ['daily', 'weekly', 'monthly']"
-              :key="p"
-              :variant="analyticsStore.period === p ? 'cyan' : 'ghost'"
-              size="sm"
-              class="min-w-0 justify-center px-2 sm:px-3"
-              @click="setPeriod(p as any)"
-              :aria-pressed="analyticsStore.period === p"
-              :aria-label="`${p === 'daily' ? t('analytics.thisWeek') : p === 'weekly' ? t('analytics.thisMonth') : t('analytics.thisYear')}`"
-            >
-              <span class="inline-flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap">
-                <AppIcon name="Calendar" size="sm" :variant="analyticsStore.period === p ? 'white' : 'cyan'" />
-                {{ p === 'daily' ? t('analytics.thisWeek') : p === 'weekly' ? t('analytics.thisMonth') : t('analytics.thisYear') }}
-              </span>
-            </NeonButton>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- Creator-center import / niche bind for active account -->
     <section
       v-if="accountsStore.activeAccountId || analyticsStore.accountId"
@@ -523,5 +517,6 @@ function startWithTopic(topic: string, niche?: string) {
         :highlight-key-value="bestPostTitle"
       />
     </div>
+  </div>
   </div>
 </template>

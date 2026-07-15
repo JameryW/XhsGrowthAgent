@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { useShortcutsStore, useToastStore } from '@/stores'
 
 const { t } = useI18n()
@@ -46,23 +47,23 @@ async function copyFeedbackTemplate() {
 
 <template>
   <div class="mx-auto max-w-4xl space-y-4 md:space-y-6">
-    <header class="rounded-2xl border border-slate-200/60 bg-white/90 p-5 shadow-sm backdrop-blur-sm md:p-7">
-      <div class="flex items-start justify-between gap-4">
-        <div class="flex items-start gap-3">
-          <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-violet-500 shadow-md">
-            <AppIcon name="HelpCircle" size="md" variant="white" aria-hidden="true" />
-          </div>
-          <div>
-            <h1 class="text-xl font-bold text-slate-800">{{ t('help.pageTitle') }}</h1>
-            <p class="mt-1 text-sm text-slate-500">{{ t('help.pageDesc') }}</p>
-          </div>
-        </div>
-        <NeonButton variant="ghost" size="sm" :aria-label="t('common.close')" @click="router.push('/dashboard')">
+    <PageHeader
+      :title="t('help.pageTitle')"
+      :description="t('help.pageDesc')"
+      :eyebrow="t('nav.sections.workspace')"
+      icon="HelpCircle"
+      tone="cyan"
+      title-id="help-title"
+    >
+      <template #actions>
+        <NeonButton variant="ghost" size="sm" class="min-h-11" :aria-label="t('common.close')" @click="router.push('/dashboard')">
           <AppIcon name="X" size="sm" variant="cyan" aria-hidden="true" />
+          <span class="hidden sm:inline">{{ t('common.close') }}</span>
         </NeonButton>
-      </div>
+      </template>
+    </PageHeader>
 
-      <div class="mt-5 flex gap-2 overflow-x-auto border-b border-slate-100" role="tablist">
+    <div class="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200/60 bg-white/80 px-3 shadow-sm backdrop-blur-sm" role="tablist" aria-labelledby="help-title">
         <button
           class="min-h-11 shrink-0 border-b-2 px-3 text-sm font-medium transition-colors"
           :class="activeSection === 'faq' ? 'border-cyan-500 text-cyan-700' : 'border-transparent text-slate-400 hover:text-slate-600'"
@@ -77,8 +78,7 @@ async function copyFeedbackTemplate() {
           :aria-selected="activeSection === 'feedback'"
           @click="selectSection('feedback')"
         >{{ t('help.feedback') }}</button>
-      </div>
-    </header>
+    </div>
 
     <section v-if="activeSection === 'faq'" class="space-y-3" aria-labelledby="faq-title">
       <div class="flex items-center justify-between px-1">

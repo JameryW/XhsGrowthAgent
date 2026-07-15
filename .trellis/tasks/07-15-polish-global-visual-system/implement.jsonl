@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Follow shared component, responsive, accessibility, localization, focus, and touch-target conventions for global visual styles."}
+{"file":".trellis/spec/frontend/animation-patterns.md","reason":"Keep shared header/card motion restrained and provide explicit reduced-motion fallbacks."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Keep the global polish visual-only and preserve existing page/store behavior."}
