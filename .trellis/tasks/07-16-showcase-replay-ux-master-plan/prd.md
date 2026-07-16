@@ -1022,6 +1022,13 @@ git diff --check
 - 同次审计覆盖 320/390/768/1024/1280/1440px、zh-CN/en、light/dark、normal/reduced-motion；wall-clock p50/p75/p95 为 631.55/885.34/1327.74ms，CLS p50/p75/p95 均为 0。该耗时只代表当前部署 + 合成 fixture 的导航到首个结果可见，不替代真实公开案例的 cold/warm、慢 4G、Save-Data 或 Lighthouse 证据。
 - 新增可重复审计入口 `scripts/acceptance/public_ux_audit.py` 与 `@axe-core/playwright` 依赖；脚本默认保留 live private-by-default 检查和 96 页矩阵，支持 `--base-url`、`--output`、`--screenshot-dir` 和快速 smoke 的 `--max-combinations`。
 
+### 17.9 性能与监控补齐（本轮）
+
+- Replay 步骤选择先更新结果状态并开始 checkpoint 读取，再等待 URL deep-link 同步；这样慢路由更新不会阻塞用户先看到已返回的结果。新增回归测试覆盖“URL 更新未完成时结果已渲染”。
+- 审计脚本新增 Largest Contentful Paint（LCP）观察器、warm reload、cached select-to-render 计时和 100ms 缓存回选门槛；新增 `--network-profile slow-4g` 与 `--save-data` 代表性采样入口。默认 online 全矩阵行为不变。
+- Settings 新增认证后的“公开页体验监控”面板，消费现有匿名聚合 summary 接口，支持 1/7/14/30 天、取消过期请求、失败重试和 p50/p75 展示；面板不渲染原始案例 ID、账号、正文或错误原文。
+- 本轮改动的前端全量回归已通过：43 个测试文件、544 个测试；新增面板 3 个测试和 Replay 性能回归测试 1 个。生产构建及发布后审计仍需在合并部署后记录最终证据。
+
 以下项目仍需要真实案例目标环境或人工证据，不把合成 fixture 的自动化结果冒充完成：真实公共案例
 owner 授权后的 390×844/320–1440px 双主题截图矩阵、真实案例 Lighthouse/Web Vitals、慢
 4G/Save-Data 采样、监控面板基线接入、灰度回滚演练，以及中文/英文 Hero、CTA、错误与状态文案
@@ -1039,6 +1046,19 @@ axe smoke 已完成。
 - [x] 成功/失败/部分/空/长内容 fixtures 已准备。
 - [ ] 埋点接收端和基线仪表盘可用。
 - [ ] PR-1 至 PR-6 负责人和依赖顺序明确。
+
+### 18.1 PR 拆分、角色 Owner 与依赖
+
+具体姓名由项目负责人填入发布单；在姓名未确认前，角色 Owner 不能视为业务签字完成。
+
+| PR | 交付物 | 角色 Owner | 前置依赖 | 发布门槛 |
+|---|---|---|---|---|
+| PR-1 | 公共 DTO、脱敏、private-by-default 和治理 API | Backend/API owner | DTO allowlist 评审 | 禁止字段测试、OpenAPI、未授权 smoke |
+| PR-2 | Showcase V2 展示、筛选、空态和回放入口 | Frontend public-surface owner | PR-1 | 320–1440px、双语、主题、键盘、axe |
+| PR-3 | Replay V2 manifest/detail、缓存、深链和结果呈现 | Frontend replay owner | PR-1 | 首结果、步骤切换、竞态取消、响应式 |
+| PR-4 | 匿名 telemetry 接收、聚合查询和基线面板 | Backend observability owner + Settings UI owner | PR-1、事件白名单评审 | 不含 ID/内容、p50/p75、认证保护、失败恢复 |
+| PR-5 | 自动化矩阵、视觉审查、性能和无障碍验收 | QA/Design owner | PR-2、PR-3、PR-4 | 合成门禁全绿；真实案例证据齐全 |
+| PR-6 | 灰度、观察、回滚和生产部署 | DevOps/release owner | PR-5、owner 授权、文案签字 | health、ETag、告警、回滚演练 |
 
 ---
 

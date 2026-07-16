@@ -156,7 +156,8 @@ API_PORT=8000
 或原始错误。若目标环境已有 host adapter，可设置 `VITE_TELEMETRY_ENDPOINT` 覆盖接收地址；
 显式设为空值可关闭本地构建埋点。已认证控制台可通过
 `GET /api/public/admin/telemetry/summary?days=7` 获取按事件/设备/模式聚合的数量、p50/p75
-耗时，供监控面板接入；该接口不返回原始事件。
+耗时，供 Settings → 公开页体验监控面板接入；该接口不返回原始事件。面板仅在认证后的
+Settings 页面显示，接口请求支持取消、周期切换和失败重试。
 
 发布前可运行公共页自动化验收（需要 Chromium 和前端的 `@axe-core/playwright` 依赖）：
 
@@ -170,6 +171,18 @@ python scripts/acceptance/public_ux_audit.py \
 脚本会检查真实空态的 private-by-default，并用无敏感 fixture 覆盖 Showcase/Replay 的
 320–1440px、中文/英文、明暗主题、正常/减弱动画、横向溢出、阶段键盘导航和 axe
 serious/critical；fixture 结果不能替代真实公开案例的 owner 授权、Lighthouse 或慢网采样。
+需要做受限网络抽样时，可在小规模代表性组合上显式启用 Slow 4G 和 Save-Data：
+
+```bash
+python scripts/acceptance/public_ux_audit.py \
+  --base-url http://127.0.0.1:8889 \
+  --network-profile slow-4g \
+  --save-data \
+  --max-combinations 4 \
+  --output /tmp/public-ux-audit-slow-4g.json
+```
+
+`--network-profile` 默认是 `online`；受限网络命令用于采样证据，不改变默认全矩阵的发布门槛。
 
 ## Docker 部署
 

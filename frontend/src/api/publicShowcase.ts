@@ -5,6 +5,7 @@ import type {
   PublicFinalSummaryResponse,
   PublicReplayManifestResponse,
   PublicReplayStep,
+  PublicTelemetrySummaryResponse,
 } from '@/types/publicShowcase'
 
 type RequestOptions = { suppressToast?: boolean; signal?: AbortSignal }
@@ -73,4 +74,14 @@ export async function getPublicFinalSummary(
   options?: RequestOptions,
 ): Promise<PublicFinalSummaryResponse> {
   return client.get(`/public/replays/${encodeURIComponent(publicId)}/final-summary`, options) as unknown as PublicFinalSummaryResponse
+}
+
+export async function getPublicTelemetrySummary(
+  days = 7,
+  options?: RequestOptions,
+): Promise<PublicTelemetrySummaryResponse> {
+  return client.get('/public/admin/telemetry/summary', {
+    params: { days },
+    ...options,
+  }) as unknown as PublicTelemetrySummaryResponse
 }

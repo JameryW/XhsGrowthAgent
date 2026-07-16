@@ -113,3 +113,23 @@ export interface PublicFinalSummaryResponse {
   result: PublicResult
   stable: boolean
 }
+
+export interface PublicTelemetrySummaryRow {
+  event_name: string
+  viewport: string | null
+  source: string | null
+  status: string | null
+  mode: string | null
+  phase: string | null
+  error_type: string | null
+  view_mode: string | null
+  event_count: number
+  measured_count: number
+  p50_duration_ms: number | null
+  p75_duration_ms: number | null
+}
+
+export interface PublicTelemetrySummaryResponse {
+  days: number
+  events: PublicTelemetrySummaryRow[]
+}
