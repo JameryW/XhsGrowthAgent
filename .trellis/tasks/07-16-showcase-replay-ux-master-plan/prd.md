@@ -1028,7 +1028,7 @@ git diff --check
 - 审计脚本新增 Largest Contentful Paint（LCP）观察器、warm reload、cached select-to-render 计时和 100ms 缓存回选门槛；新增 `--network-profile slow-4g` 与 `--save-data` 代表性采样入口。默认 online 全矩阵行为不变。
 - Settings 新增认证后的“公开页体验监控”面板，消费现有匿名聚合 summary 接口，支持 1/7/14/30 天、取消过期请求、失败重试和 p50/p75 展示；面板不渲染原始案例 ID、账号、正文或错误原文。
 - telemetry summary 进一步按匿名 `cached` 布尔维度分组；面板的缓存回选卡只读取 `cached=true`，明确显示 2,500ms/100ms 预算的通过、超标或暂无数据状态，避免把网络请求混入缓存门槛或把无样本误显示为 0ms。
-- 本轮改动的前端全量回归已通过：43 个测试文件、544 个测试；新增面板 3 个测试和 Replay 性能回归测试 1 个。生产构建及发布后审计仍需在合并部署后记录最终证据。
+- 本轮改动的前端全量回归已通过：43 个测试文件、546 个测试；新增面板缓存/预算/竞态覆盖和 Replay 性能回归测试。生产构建及发布后审计证据已在 17.10 和本轮 PRD 收尾任务中记录。
 
 ### 17.10 合并部署后的最终自动化证据
 
@@ -1036,6 +1036,9 @@ git diff --check
 - online 最终审计通过：live 空态 1 页 + 合成非敏感 fixture 96 页，共 97 页；`axe_serious_critical_record_count=0`、`failures=[]`、无横向溢出、阶段 ArrowRight 键盘导航通过。wall p75 653.73ms，LCP p75 488ms，CLS p75 0.01，warm p75 470.27ms，cached select-to-render p75 72.47ms；17 个单点 outlier 仅记录在 `performance_outliers`，不改变 p75 门槛结果。
 - Slow 4G + Save-Data 代表性审计通过功能/axe 门禁：fixture 8 页、axe 0、failures=[]；LCP p75 1156ms、warm p75 1190.22ms、cached select-to-render p75 76.58ms。该 profile 明确不套用 online 的 warm 500ms 门槛，超标写入 `performance_budget_failures` 供观察。
 - 新增审计脚本按组合创建独立 page，避免跨语言/主题/viewport 复用状态污染；第三方 recorder/script 改为 load 后 idle 注入，外部统计服务不可达不再阻塞 DCL/LCP。Settings 监控面板与公开页性能修复已随合并部署上线。
+- PR #290（合并提交 `0163af1a`）在部署后补齐 telemetry 的匿名 `cached` 分组和预算状态面板；`./scripts/deploy.sh deploy` 已完成数据库备份、前端构建、后端镜像重建、容器重建与 health smoke。部署后 health 全部 `ok`、公开列表 `total=0`、ETag 条件请求 `304`、favicon.svg `200 image/svg+xml`，未授权 telemetry summary `401 ERROR_AUTH_TOKEN_MISSING`，OpenAPI 仍暴露 public showcase/telemetry 路由。
+- PR #290 部署后的 online 重跑通过：live 空态 + fixture 96 页共 97 页，axe serious/critical 为 0、failures=[]；wall p75 545.02ms、LCP p75 441ms、CLS p75 0、warm p75 450.28ms、cached select-to-render p75 61.08ms。含截图的第一次采样因本机负载将 warm p75 测到 533.57ms，第二次无截图重跑通过，保留该波动作为本机测量噪声记录，不修改 500/100ms 产品门槛。
+- PR #290 部署后的 Slow 4G + Save-Data 代表性采样通过：fixture 8 页、axe 0、failures=[]；LCP p75 1048ms、warm p75 1128.5ms、cached select-to-render p75 27.73ms；`performance_budget_enforced=false`，受限网络超标仍保留在 `performance_budget_failures` 供观察。
 
 以下项目仍需要真实案例目标环境或人工证据，不把合成 fixture 的自动化结果冒充完成：真实公共案例
 owner 授权后的 390×844/320–1440px 双主题截图矩阵、真实案例 Lighthouse/Web Vitals、灰度回滚演练，

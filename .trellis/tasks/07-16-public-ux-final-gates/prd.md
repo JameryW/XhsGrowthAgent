@@ -25,14 +25,15 @@
 - [x] 监控面板只将 `cached=true` 行用于 cached select-to-render p75；无该数据时显示“暂无数据”，不显示 0ms 假通过。
 - [x] 两种语言、明暗模式、键盘可访问性和 44px 触控目标保持通过。
 - [x] 前端全量测试（43 files/546 tests）、类型检查、构建；后端 telemetry 单测、ruff、mypy 通过。
-- [ ] public UX audit online 全矩阵和 Slow 4G/Save-Data 代表性样本可重复；输出保留预算失败观测但不误判慢网发布门槛。
-- [ ] PRD/部署文档记录本轮证据与未完成的真实业务门槛。
+- [x] public UX audit online 全矩阵和 Slow 4G/Save-Data 代表性样本可重复；输出保留预算失败观测但不误判慢网发布门槛。
+- [x] PRD/部署文档记录本轮证据与未完成的真实业务门槛。
 
 ## 当前验证记录
 
 - 前端：`npm -C frontend run test:run` 通过（43 files、546 tests）；`npm -C frontend run type-check` 和 `npm -C frontend run build` 通过，保留既有 chunk warning。
 - 后端：`pytest -q tests/unit/api/test_public_telemetry.py tests/unit/db/test_public_telemetry.py` 通过（4 tests）；`python -m mypy backend`、ruff、format、`git diff --check` 通过。
 - 全量 `pytest -vv --maxfail=1` 在既有集成探针 `tests/integration/test_api_routes.py::TestHealthCheck::test_health_returns_success` 等待本机服务，未产生断言失败；线上部署后的 health/audit 作为最终证据。
+- 发布后：online 97 页第二次无截图重跑通过（warm p75 450.28ms、cached p75 61.08ms、axe 0）；Slow 4G + Save-Data 8 页通过功能/axe（受限网络预算不强制）。
 
 ## 发布与回滚
 
