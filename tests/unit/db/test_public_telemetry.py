@@ -60,3 +60,26 @@ async def test_summary_keeps_cached_as_an_anonymous_dimension():
     sql = cursor.execute.await_args.args[0]
     assert "cached," in sql
     assert "view_mode, cached" in sql
+
+
+@pytest.mark.asyncio
+async def test_ensure_tables_backfills_cached_column_for_old_deploys():
+    """Old deploys created the table before `cached` existed; CREATE TABLE IF
+    NOT EXISTS skips. ensure_tables must ADD COLUMN IF NOT EXISTS so summarize_events
+    doesn't UndefinedColumn."""
+    from backend.db.public_telemetry import _ADD_COLUMN_SQL, ensure_tables
+
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+
+    with (
+        patch("backend.db.public_telemetry.is_pool_ready", return_value=True),
+        patch("backend.db.public_telemetry.get_pool", return_value=_mock_pool(conn)),
+    ):
+        await ensure_tables()
+
+    executed = [call.args[0] for call in conn.execute.await_args_list]
+    add_column_sqls = [sql for sql in executed if "ADD COLUMN IF NOT EXISTS" in sql]
+    # every column listed in _ADD_COLUMN_SQL ran
+    assert len(add_column_sqls) == len(_ADD_COLUMN_SQL)
+    assert any("ADD COLUMN IF NOT EXISTS cached BOOLEAN" in sql for sql in add_column_sqls)
