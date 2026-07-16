@@ -36,7 +36,7 @@ function hasResult(): boolean {
         {{ t(`replay.publicErrorCategory.${result.error_category}`) }}
       </div>
       <div v-if="result.title || result.topic" class="space-y-1">
-        <p v-if="result.topic" class="text-xs font-medium uppercase tracking-[0.12em] text-teal-600 dark:text-teal-300">{{ result.topic }}</p>
+        <p v-if="result.topic" class="text-xs font-medium uppercase tracking-[0.12em] text-teal-700 dark:text-teal-300">{{ result.topic }}</p>
         <h2 v-if="result.title" class="text-xl font-bold leading-tight text-slate-900 dark:text-slate-50">{{ result.title }}</h2>
       </div>
 

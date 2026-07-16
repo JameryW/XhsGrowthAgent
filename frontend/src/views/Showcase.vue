@@ -333,7 +333,7 @@ onUnmounted(() => {
       <section id="cases" class="mt-12 scroll-mt-20" aria-labelledby="cases-heading">
         <div class="flex flex-col justify-between gap-4 md:flex-row md:items-end">
           <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-teal-600 dark:text-teal-300">{{ t('showcase.sectionTitle') }}</p>
+            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-teal-700 dark:text-teal-300">{{ t('showcase.sectionTitle') }}</p>
             <h2 id="cases-heading" class="mt-2 text-2xl font-bold tracking-tight md:text-3xl">{{ t('showcase.evidenceTitle') }}</h2>
             <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">{{ t('showcase.caseCount', { count: resultCount }) }}</p>
           </div>
@@ -382,9 +382,9 @@ onUnmounted(() => {
       </section>
 
       <section class="mt-14 rounded-3xl border border-slate-200/80 bg-white/70 p-6 dark:border-slate-800 dark:bg-slate-900/60 md:p-8" aria-labelledby="how-heading">
-        <div class="max-w-xl"><p class="text-xs font-semibold uppercase tracking-[0.14em] text-teal-600 dark:text-teal-300">{{ t('showcase.howItWorks') }}</p><h2 id="how-heading" class="mt-2 text-2xl font-bold">{{ t('showcase.evidenceTitle') }}</h2></div>
+        <div class="max-w-xl"><p class="text-xs font-semibold uppercase tracking-[0.14em] text-teal-700 dark:text-teal-300">{{ t('showcase.howItWorks') }}</p><h2 id="how-heading" class="mt-2 text-2xl font-bold">{{ t('showcase.evidenceTitle') }}</h2></div>
         <div class="mt-6 grid gap-4 md:grid-cols-3">
-          <div v-for="(step, index) in ['scouting', 'creating', 'analyzing']" :key="step" class="rounded-2xl border border-slate-200/70 p-4 dark:border-slate-800"><span class="text-sm font-semibold text-teal-600 dark:text-teal-300">0{{ index + 1 }}</span><h3 class="mt-3 text-base font-semibold">{{ t(`showcase.phase.${step}`) }}</h3><p class="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{{ t(`showcase.steps.${step}`) }}</p></div>
+          <div v-for="(step, index) in ['scouting', 'creating', 'analyzing']" :key="step" class="rounded-2xl border border-slate-200/70 p-4 dark:border-slate-800"><span class="text-sm font-semibold text-teal-700 dark:text-teal-300">0{{ index + 1 }}</span><h3 class="mt-3 text-base font-semibold">{{ t(`showcase.phase.${step}`) }}</h3><p class="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{{ t(`showcase.steps.${step}`) }}</p></div>
         </div>
       </section>
     </main>

@@ -34,6 +34,7 @@ LOCALES = ("zh-CN", "en")
 THEMES = ("light", "dark")
 MOTIONS = ("normal", "reduced")
 CASE_ID = "case-demo"
+NAVIGATION_TIMEOUT_MS = 20_000
 
 CASE: dict[str, Any] = {
     "public_id": CASE_ID,
@@ -234,7 +235,7 @@ def audit_page(
     screenshot: Path | None = None,
 ) -> dict[str, Any]:
     started_at = time.perf_counter()
-    page.goto(url, wait_until="domcontentloaded")
+    page.goto(url, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
     wait_for_page(page, ready_selector)
     wall_ms = round((time.perf_counter() - started_at) * 1000, 2)
     overflow = assert_no_horizontal_overflow(page)
@@ -320,7 +321,7 @@ def run_audit(
         live_context = browser.new_context(viewport={"width": 390, "height": 844})
         live_page = live_context.new_page()
         live_page.set_default_timeout(8000)
-        live_page.goto(f"{base_url}/", wait_until="domcontentloaded")
+        live_page.goto(f"{base_url}/", wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
         live_page.locator("#cases h3").first.wait_for(state="visible")
         if live_page.locator(".case-card").count() != 0:
             raise AssertionError("live public list is not private-by-default")
