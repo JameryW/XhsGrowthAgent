@@ -271,15 +271,18 @@ def wait_for_heading(page: Page, text: str) -> None:
     )
 
 
-def measure_cached_select_to_render(page: Page) -> float:
+def measure_cached_select_to_render(page: Page) -> tuple[float, float, float]:
     """Warm the step cache, then measure returning to the first result."""
 
     page.locator('[data-step-id="step-create"]').click()
     wait_for_heading(page, "内容产出")
     started_at = time.perf_counter()
     page.locator('[data-step-id="step-scout"]').click()
+    click_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    ready_started_at = time.perf_counter()
     wait_for_heading(page, "趋势洞察")
-    return round((time.perf_counter() - started_at) * 1000, 2)
+    total_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    return total_ms, click_ms, round((time.perf_counter() - ready_started_at) * 1000, 2)
 
 
 def audit_page(
@@ -491,9 +494,15 @@ def run_audit(
                         page.evaluate(f"window.name = {json.dumps(f'{locale}::{theme}::keep')}")
                         warm_started_at = time.perf_counter()
                         page.reload(wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
+                        warm_reload_ms = round((time.perf_counter() - warm_started_at) * 1000, 2)
+                        warm_ready_started_at = time.perf_counter()
                         wait_for_page(page, "#featured-heading")
                         showcase_record["warm_wall_ms"] = round(
                             (time.perf_counter() - warm_started_at) * 1000, 2
+                        )
+                        showcase_record["warm_reload_ms"] = warm_reload_ms
+                        showcase_record["warm_ready_wait_ms"] = round(
+                            (time.perf_counter() - warm_ready_started_at) * 1000, 2
                         )
                         records.append(showcase_record)
                         if showcase_record["warm_wall_ms"] > WARM_NAVIGATION_BUDGET_MS:
@@ -530,9 +539,11 @@ def run_audit(
                             raise AssertionError(
                                 f"phase keyboard navigation failed: {active_phase}"
                             )
-                        replay_record["cached_select_to_render_ms"] = (
-                            measure_cached_select_to_render(page)
-                        )
+                        (
+                            replay_record["cached_select_to_render_ms"],
+                            replay_record["cached_select_click_ms"],
+                            replay_record["cached_select_ready_wait_ms"],
+                        ) = measure_cached_select_to_render(page)
                         records.append(replay_record)
                         if replay_record["cached_select_to_render_ms"] > CACHED_SELECT_BUDGET_MS:
                             failures.append(
