@@ -5,134 +5,106 @@ import Showcase from '@/views/Showcase.vue'
 const routerMock = vi.hoisted(() => ({
   replace: vi.fn(() => Promise.resolve()),
   push: vi.fn(() => Promise.resolve()),
-  resolve: vi.fn((to: { name?: string; params?: { threadId?: string } }) => ({ href: `/replay/${to.params?.threadId || ''}` })),
 }))
 const routeMock = vi.hoisted(() => ({ query: {} as Record<string, string> }))
-const listWorkflowsMock = vi.hoisted(() => vi.fn())
-const getWorkflowStatusMock = vi.hoisted(() => vi.fn())
+const listPublicCasesMock = vi.hoisted(() => vi.fn())
+const getPublicCaseMock = vi.hoisted(() => vi.fn())
 
 vi.mock('vue-router', () => ({
   useRouter: () => routerMock,
   useRoute: () => routeMock,
 }))
-vi.mock('@/api/workflow', () => ({
-  listWorkflows: listWorkflowsMock,
-  getWorkflowStatus: getWorkflowStatusMock,
+vi.mock('@/api/publicShowcase', () => ({
+  listPublicCases: listPublicCasesMock,
+  getPublicCase: getPublicCaseMock,
+}))
+vi.mock('@/stores', () => ({
+  useAuthStore: () => ({ isAuthenticated: false, isInitialized: true, initialize: vi.fn() }),
 }))
 
-function workflow(thread_id: string, status: 'running' | 'completed', updated_at: string) {
+function publicCase(public_id: string, title: string, featured = false) {
   return {
-    thread_id,
-    account_id: 'public',
-    phase: status === 'completed' ? 'completed' : 'creating',
-    status,
-    dry_run: false,
-    auto_publish: false,
-    progress_percent: status === 'completed' ? 100 : 50,
-    workflow_mode: 'trend',
-    label: thread_id,
-    created_at: updated_at,
-    updated_at,
-    error: null,
+    public_id,
+    title,
+    summary: `${title} summary`,
+    status: 'completed' as const,
+    phase: 'completed',
+    workflow_mode: 'trend' as const,
+    created_at: '2026-07-16T10:00:00Z',
+    updated_at: '2026-07-16T10:00:00Z',
+    featured,
+    replay_available: true,
+    result_preview: { title, topic: '测试主题' },
   }
 }
 
-describe('Showcase P0 interaction contract', () => {
+function mountShowcase() {
+  return mount(Showcase, {
+    global: {
+      stubs: {
+        AppIcon: { template: '<span />' },
+        PublicReplayResult: { template: '<div class="public-result-stub" />' },
+      },
+    },
+  })
+}
+
+describe('Showcase public UX contract', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     sessionStorage.clear()
     routeMock.query = {}
-    listWorkflowsMock.mockResolvedValue({
-      workflows: [workflow('featured-thread', 'completed', '2026-07-16T10:00:00Z'), workflow('other-thread', 'running', '2026-07-15T10:00:00Z')],
+    const featured = publicCase('case-featured', '真实案例标题', true)
+    const other = publicCase('case-other', '第二个案例')
+    listPublicCasesMock.mockResolvedValue({
+      cases: [featured, other],
       total: 2,
-      limit: 50,
+      limit: 100,
       offset: 0,
+      featured_public_id: featured.public_id,
     })
-    getWorkflowStatusMock.mockResolvedValue({
-      thread_id: 'featured-thread',
-      phase: 'completed',
-      status: 'completed',
-      next_steps: [],
-      progress_percent: 100,
-      agent_timeline: [],
-      content_plan: { selected_topic: '真实案例主题' },
-      copy_content: { selected_title: '真实产出标题', hashtags: [] },
-    })
+    getPublicCaseMock.mockImplementation(async (publicId: string) => ({
+      ...(publicId === featured.public_id ? featured : other),
+      result: { title: publicId === featured.public_id ? featured.title : other.title, topic: '测试主题' },
+    }))
   })
 
-  afterEach(() => {
-    sessionStorage.clear()
-  })
+  afterEach(() => sessionStorage.clear())
 
-  it('renders the featured case once and leaves a semantic replay link for the list card', async () => {
-    const wrapper = mount(Showcase, {
-      global: {
-        stubs: {
-          RouterLink: {
-            props: ['to'],
-            template: '<a :href="typeof to === \'string\' ? to : `/replay/${to.params?.threadId}`"><slot /></a>',
-          },
-          AnimatedCounter: { template: '<span>0</span>' },
-        },
-      },
-    })
-
+  it('renders one featured case and keeps public replay navigation', async () => {
+    const wrapper = mountShowcase()
     await flushPromises()
-    expect(wrapper.findAll('.showcase-featured').length).toBe(1)
-    expect(wrapper.findAll('.showcase-card').length).toBe(1)
-    expect(wrapper.find('.showcase-card a').attributes('href')).toContain('/replay/other-thread')
-    expect(wrapper.find('.showcase-featured-link').exists()).toBe(true)
+
+    expect(wrapper.find('#featured-heading').text()).toContain('真实案例标题')
+    expect(wrapper.findAll('.case-card')).toHaveLength(1)
+    await wrapper.find('.case-card button').trigger('click')
+    expect(routerMock.push).toHaveBeenCalledWith({ name: 'replay', params: { publicId: 'case-other' }, query: { from: '/' } })
   })
 
   it('normalizes URL filters and keeps them synchronized', async () => {
-    routeMock.query = { status: 'invalid', mode: 'brief', sort: 'progress' }
-    const wrapper = mount(Showcase, {
-      global: {
-        stubs: {
-          RouterLink: { template: '<a><slot /></a>' },
-          AnimatedCounter: { template: '<span>0</span>' },
-        },
-      },
-    })
+    routeMock.query = { status: 'invalid', mode: 'brief', sort: 'title' }
+    const wrapper = mountShowcase()
     await flushPromises()
 
-    expect(routerMock.replace).toHaveBeenCalledWith({ query: { status: 'all', mode: 'brief', sort: 'progress' } })
-    await wrapper.find('select').setValue('created')
-    expect(routerMock.replace).toHaveBeenLastCalledWith({ query: { status: 'all', mode: 'brief', sort: 'created' } })
+    expect(routerMock.replace).toHaveBeenCalledWith({ query: { mode: 'brief', sort: 'title' } })
+    const selects = wrapper.findAll('select')
+    await selects[0].setValue('attention')
+    expect(routerMock.replace).toHaveBeenLastCalledWith({ query: { status: 'attention', mode: 'brief', sort: 'title' } })
   })
 
-  it('renders a fresh session cache before the background refresh resolves', async () => {
+  it('hydrates public session cache before the refresh resolves', async () => {
     let resolveRefresh!: (value: unknown) => void
-    listWorkflowsMock.mockImplementationOnce(() => new Promise((resolve) => {
-      resolveRefresh = resolve
-    }))
-    sessionStorage.setItem('showcase:workflow-cache:v1', JSON.stringify({
-      version: 1,
-      savedAt: Date.now(),
-      workflows: [workflow('cached-thread', 'completed', '2026-07-16T10:00:00Z'), workflow('cached-other', 'running', '2026-07-15T10:00:00Z')],
-      details: [],
-    }))
+    listPublicCasesMock.mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
+    const cached = publicCase('cached-case', '缓存案例', true)
+    sessionStorage.setItem('showcase:public-cases:v2', JSON.stringify({ version: 2, savedAt: Date.now(), cases: [cached] }))
+    getPublicCaseMock.mockResolvedValue({ ...cached, result: { title: cached.title, topic: '缓存主题' } })
 
-    const wrapper = mount(Showcase, {
-      global: {
-        stubs: {
-          RouterLink: { template: '<a><slot /></a>' },
-          AnimatedCounter: { template: '<span>0</span>' },
-        },
-      },
-    })
-
+    const wrapper = mountShowcase()
     await flushPromises()
-    expect(wrapper.find('.showcase-workspace-shell').exists()).toBe(true)
-    expect(wrapper.findAll('.showcase-card').length).toBe(1)
-    expect(listWorkflowsMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('#featured-heading').text()).toContain('缓存案例')
+    expect(listPublicCasesMock).toHaveBeenCalledTimes(1)
 
-    resolveRefresh({
-      workflows: [workflow('cached-thread', 'completed', '2026-07-16T10:00:00Z')],
-      total: 1,
-      limit: 50,
-      offset: 0,
-    })
+    resolveRefresh({ cases: [cached], total: 1, limit: 100, offset: 0, featured_public_id: cached.public_id })
     await flushPromises()
     wrapper.unmount()
   })

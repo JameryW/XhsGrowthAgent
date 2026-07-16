@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"执行 Showcase/Replay 组件拆分、路由语义、双语、响应式、触控和可访问性约定。"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"保留公开缓存、live/replay 状态分离、深链和异步状态边界。"}
+{"file":".trellis/spec/frontend/animation-patterns.md","reason":"限制持续动效并正确处理 reduced-motion、延迟入场和移动端降级。"}
+{"file":".trellis/tasks/07-16-showcase-replay-ux-master-plan/research/current-ux-audit.md","reason":"以当前部署截图、代码规模、真实 payload 和体验问题作为实施基线。"}

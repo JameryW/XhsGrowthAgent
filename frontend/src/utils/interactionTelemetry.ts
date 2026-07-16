@@ -8,11 +8,23 @@
  */
 export type InteractionEventName =
   | 'showcase_view'
+  | 'showcase_cases_loaded'
+  | 'showcase_first_case_visible'
+  | 'showcase_cases_error'
+  | 'showcase_filters_clear'
+  | 'showcase_case_open'
   | 'showcase_filter_change'
   | 'showcase_workflow_open'
   | 'showcase_detail_retry'
   | 'showcase_primary_cta_click'
   | 'replay_view'
+  | 'replay_first_result_visible'
+  | 'replay_select_to_render'
+  | 'replay_step_select'
+  | 'replay_view_mode_change'
+  | 'replay_step_link_copy'
+  | 'replay_case_link_copy'
+  | 'replay_share_error'
   | 'replay_checkpoint_select'
   | 'replay_phase_select'
   | 'replay_checkpoint_link_copy'
@@ -32,6 +44,15 @@ const allowedKeys = new Set([
   'step',
   'restored',
   'error_type',
+  'count',
+  'cached',
+  'view',
+  'has_steps',
+  'has_result',
+  'authenticated',
+  'has_public_id',
+  'has_step',
+  'duration_ms',
 ])
 
 function viewportCategory(): 'mobile' | 'desktop' {

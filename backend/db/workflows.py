@@ -23,6 +23,9 @@ class WorkflowRow:
     progress_percent: int = 0
     label: str = ""
     workflow_mode: str = "trend"
+    showcase_visibility: str = "private"
+    public_id: str | None = None
+    showcase_featured: bool = False
     dry_run: bool = False
     auto_publish: bool = False
     error: str | None = None
@@ -41,6 +44,9 @@ class WorkflowRow:
             "progress_percent": self.progress_percent,
             "label": self.label,
             "workflow_mode": self.workflow_mode,
+            "showcase_visibility": self.showcase_visibility,
+            "public_id": self.public_id,
+            "showcase_featured": self.showcase_featured,
             "dry_run": self.dry_run,
             "auto_publish": self.auto_publish,
             "error": self.error,
@@ -60,6 +66,9 @@ CREATE TABLE IF NOT EXISTS workflows (
     progress_percent INTEGER NOT NULL DEFAULT 0,
     label           TEXT NOT NULL DEFAULT '',
     workflow_mode   TEXT NOT NULL DEFAULT 'trend',
+    showcase_visibility TEXT NOT NULL DEFAULT 'private',
+    public_id       TEXT UNIQUE,
+    showcase_featured BOOLEAN NOT NULL DEFAULT FALSE,
     dry_run         BOOLEAN NOT NULL DEFAULT FALSE,
     auto_publish    BOOLEAN NOT NULL DEFAULT FALSE,
     error           TEXT DEFAULT NULL,
@@ -82,7 +91,22 @@ async def ensure_table() -> None:
     pool = get_pool()
     async with pool.connection() as conn:
         await conn.execute(_CREATE_TABLE_SQL)
+        # Additive migration for databases created before the public Showcase
+        # contract.  Public visibility is intentionally private by default.
+        await conn.execute(
+            "ALTER TABLE workflows ADD COLUMN IF NOT EXISTS showcase_visibility "
+            "TEXT NOT NULL DEFAULT 'private'"
+        )
+        await conn.execute("ALTER TABLE workflows ADD COLUMN IF NOT EXISTS public_id TEXT")
+        await conn.execute(
+            "ALTER TABLE workflows ADD COLUMN IF NOT EXISTS showcase_featured "
+            "BOOLEAN NOT NULL DEFAULT FALSE"
+        )
         await conn.execute(_CREATE_INDEX_SQL)
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_workflows_public_id "
+            "ON workflows (public_id) WHERE public_id IS NOT NULL"
+        )
     logger.info("workflows table ensured")
 
 
@@ -102,9 +126,9 @@ async def create_workflow(row: WorkflowRow) -> WorkflowRow:
             """
             INSERT INTO workflows
                 (thread_id, account_id, status, phase, progress_percent,
-                 label, workflow_mode, dry_run, auto_publish, error, task_error, task_done_at,
-                 created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 label, workflow_mode, showcase_visibility, public_id, showcase_featured,
+                 dry_run, auto_publish, error, task_error, task_done_at, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (thread_id) DO UPDATE SET
                 account_id      = EXCLUDED.account_id,
                 status          = EXCLUDED.status,
@@ -112,6 +136,9 @@ async def create_workflow(row: WorkflowRow) -> WorkflowRow:
                 progress_percent = EXCLUDED.progress_percent,
                 label           = EXCLUDED.label,
                 workflow_mode   = EXCLUDED.workflow_mode,
+                showcase_visibility = EXCLUDED.showcase_visibility,
+                public_id       = COALESCE(EXCLUDED.public_id, workflows.public_id),
+                showcase_featured = EXCLUDED.showcase_featured,
                 dry_run         = EXCLUDED.dry_run,
                 auto_publish    = EXCLUDED.auto_publish,
                 error           = EXCLUDED.error,
@@ -125,6 +152,9 @@ async def create_workflow(row: WorkflowRow) -> WorkflowRow:
                 row.progress_percent,
                 row.label,
                 row.workflow_mode,
+                row.showcase_visibility,
+                row.public_id,
+                row.showcase_featured,
                 row.dry_run,
                 row.auto_publish,
                 row.error,
@@ -144,6 +174,20 @@ async def get_workflow(thread_id: str) -> WorkflowRow | None:
 
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute("SELECT * FROM workflows WHERE thread_id = %s", (thread_id,))
+            row = await cur.fetchone()
+    if row is None:
+        return None
+    return _row_from_dict(row)
+
+
+async def get_workflow_by_public_id(public_id: str) -> WorkflowRow | None:
+    """Look up a workflow by its opaque public identifier."""
+    pool = get_pool()
+    async with pool.connection() as conn:
+        from psycopg.rows import dict_row
+
+        async with conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute("SELECT * FROM workflows WHERE public_id = %s", (public_id,))
             row = await cur.fetchone()
     if row is None:
         return None
@@ -230,6 +274,9 @@ def _row_from_dict(d: dict[str, Any]) -> WorkflowRow:
         progress_percent=d.get("progress_percent", 0),
         label=d.get("label", ""),
         workflow_mode=d.get("workflow_mode", "trend"),
+        showcase_visibility=d.get("showcase_visibility", "private"),
+        public_id=d.get("public_id"),
+        showcase_featured=bool(d.get("showcase_featured", False)),
         dry_run=d.get("dry_run", False),
         auto_publish=d.get("auto_publish", False),
         error=d.get("error"),
