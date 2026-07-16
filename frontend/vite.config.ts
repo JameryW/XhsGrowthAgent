@@ -3,6 +3,12 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
+// Keep the default compatible with the documented local backend while allowing
+// deployed/dev environments (for example the :8889 container port) to smoke
+// test the same frontend without editing this file.
+const backendProxyTarget = process.env.VITE_BACKEND_PROXY_TARGET || 'http://localhost:8000'
+const websocketProxyTarget = backendProxyTarget.replace(/^http/, 'ws')
+
 export default defineConfig({
   plugins: [
     vue(),
@@ -43,11 +49,11 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: backendProxyTarget,
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:8000',
+        target: websocketProxyTarget,
         ws: true,
         changeOrigin: true,
         rewrite: (path) => path,

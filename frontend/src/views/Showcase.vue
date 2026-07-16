@@ -750,14 +750,14 @@ const evolutionTreeData = computed(() => {
 
     <main class="w-full min-w-0 max-w-[1200px] mx-auto px-3 md:px-6 py-4 md:py-6 relative z-10">
       <!-- Public entry orientation: explain the value before the live workflow data. -->
-      <section class="showcase-intro liquid-glass-liquid mb-5 flex flex-col gap-5 rounded-2xl p-4 shadow-sm md:mb-6 md:flex-row md:items-center md:justify-between md:rounded-3xl md:p-6" aria-labelledby="showcase-intro-title">
+      <section class="showcase-intro liquid-glass-liquid mb-5 flex min-w-0 flex-col gap-5 rounded-2xl p-4 shadow-sm md:mb-6 md:flex-row md:items-center md:justify-between md:rounded-3xl md:p-6" aria-labelledby="showcase-intro-title">
         <div class="showcase-intro-orbit" aria-hidden="true">
           <span class="showcase-orbit-ring showcase-orbit-ring-a" />
           <span class="showcase-orbit-ring showcase-orbit-ring-b" />
           <span class="showcase-orbit-dot showcase-orbit-dot-a" />
           <span class="showcase-orbit-dot showcase-orbit-dot-b" />
         </div>
-        <div class="max-w-2xl">
+        <div class="min-w-0 flex-1 md:max-w-2xl">
           <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-500">{{ t('showcase.heroTagline') }}</p>
           <h2 id="showcase-intro-title" class="mt-2 text-2xl font-bold tracking-tight text-slate-800 md:text-4xl">{{ t('showcase.sectionTitle') }}</h2>
           <p class="mt-2 text-sm leading-6 text-slate-500">{{ t('showcase.heroDesc') }}</p>
@@ -765,7 +765,7 @@ const evolutionTreeData = computed(() => {
         <div class="flex w-full shrink-0 flex-col gap-3 sm:flex-row md:w-auto md:flex-col md:items-stretch">
           <div class="showcase-intro-signal rounded-2xl border border-white/80 bg-white/65 px-4 py-3 shadow-sm" aria-hidden="true">
             <div class="flex items-center justify-between gap-4">
-              <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{{ t('showcase.closedLoop') }}</span>
+              <span class="min-w-0 truncate text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{{ t('showcase.closedLoop') }}</span>
               <span class="showcase-signal-dot h-2 w-2 rounded-full bg-teal-400" />
             </div>
             <div class="showcase-signal-steps mt-3 flex gap-1.5">
