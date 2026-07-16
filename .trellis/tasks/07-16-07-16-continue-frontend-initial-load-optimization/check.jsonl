@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Check async result panel loading and accessibility states."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Check replay mode cleanup and parallel request state consistency."}

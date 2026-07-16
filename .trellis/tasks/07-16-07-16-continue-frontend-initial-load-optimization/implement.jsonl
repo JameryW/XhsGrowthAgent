@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Follow async component, loading/error state, and public replay workspace conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Preserve replay store state transitions while parallelizing status and checkpoint loads."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify the parallel requests preserve API contracts and 404/error semantics."}
