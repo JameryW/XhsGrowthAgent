@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- ponytail: 字体改为非阻塞加载——media=print + onload 切回 all，避免首屏渲染等待 Google Fonts 网络往返。 -->
@@ -12,6 +13,20 @@
     <meta name="description" content="AI驱动的自动化小红书内容创作平台">
     <meta name="theme-color" content="#f43f5e">
     <title>小红书增长引擎</title>
+    <script>
+      (() => {
+        try {
+          const stored = window.localStorage.getItem('xhs-theme-mode')
+          const dark = stored === 'dark' || (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.classList.toggle('dark', dark)
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+          document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0b1120' : '#f43f5e')
+        } catch (_) {
+          // Ignore storage and media-query restrictions; Vue applies the default theme.
+        }
+      })()
+    </script>
     <script defer src="https://stats.jameryw.dev/recorder.js" data-website-id="b1c83d57-4dbd-4854-9206-227e7a3f8f1d" data-sample-rate="0.15" data-mask-level="moderate" data-max-duration="300000"></script>
     <script defer src="https://stats.jameryw.dev/script.js" data-website-id="b1c83d57-4dbd-4854-9206-227e7a3f8f1d"></script>
   </head>

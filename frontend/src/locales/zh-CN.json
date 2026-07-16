@@ -23,6 +23,10 @@
     "retriedTimes": "已重试 {count} 次",
     "pageLoadError": "页面加载出现问题"
   },
+  "theme": {
+    "switchToLight": "切换到浅色模式",
+    "switchToDark": "切换到暗黑模式"
+  },
   "health": {
     "title": "系统健康检查",
     "ready": "就绪",

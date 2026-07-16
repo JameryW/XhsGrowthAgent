@@ -11,6 +11,7 @@
 | `useWorkflowStore` | `stores/workflow.ts` | Workflow lifecycle, phase, status, progress |
 | `useRealtimeStore` | `stores/realtime.ts` | WebSocket connection, event recovery |
 | `useToastStore` | `stores/toast.ts` | Success/error/warning/info notifications |
+| `useThemeStore` | `stores/theme.ts` | Browser-local light/dark/system preference and root theme application |
 
 ---
 
@@ -96,6 +97,15 @@ export const useToastStore = defineStore('toast', () => {
   return { toasts, success, error, warning }
 })
 ```
+
+## Theme Store Pattern
+
+`useThemeStore` owns only browser-local presentation state. It reads a validated
+`light` / `dark` / `system` preference from `localStorage`, applies the
+`dark` class and `color-scheme` metadata to `document.documentElement`, and
+subscribes to `prefers-color-scheme` while in `system` mode. Call `init()` from
+the application shell and call `dispose()` when that shell is unmounted so the
+media-query listener cannot leak across test mounts or embedded shells.
 
 ---
 

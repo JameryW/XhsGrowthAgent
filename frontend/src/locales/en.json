@@ -23,6 +23,10 @@
     "retriedTimes": "Retried {count} times",
     "pageLoadError": "Page failed to load"
   },
+  "theme": {
+    "switchToLight": "Switch to light mode",
+    "switchToDark": "Switch to dark mode"
+  },
   "health": {
     "title": "System Health Check",
     "ready": "Ready",

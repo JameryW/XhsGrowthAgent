@@ -987,3 +987,186 @@
     transform: none !important;
   }
 }
+
+/* Dark theme ------------------------------------------------------------- */
+/*
+ * The product uses Tailwind utility classes extensively. These selectors
+ * provide a small compatibility layer for existing light-only surfaces while
+ * new components can opt into the same palette through the CSS variables.
+ */
+:root {
+  --theme-bg: #f8fafc;
+  --theme-surface: rgba(255, 255, 255, 0.72);
+  --theme-surface-strong: rgba(255, 255, 255, 0.88);
+  --theme-border: rgba(148, 163, 184, 0.28);
+  --theme-ink: #1e293b;
+  --theme-muted: #64748b;
+}
+
+html.dark {
+  --theme-bg: #0b1120;
+  --theme-surface: rgba(15, 23, 42, 0.78);
+  --theme-surface-strong: rgba(15, 23, 42, 0.92);
+  --theme-border: rgba(100, 116, 139, 0.42);
+  --theme-ink: #e2e8f0;
+  --theme-muted: #94a3b8;
+  color-scheme: dark;
+}
+
+html.dark,
+html.dark body,
+html.dark #app {
+  background: var(--theme-bg);
+  color: var(--theme-ink);
+}
+
+html.dark .liquid-mesh-bg {
+  background:
+    linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(135deg, #0b1120 0%, #111827 100%);
+}
+
+html.dark .glass,
+html.dark .glass-glow,
+html.dark .glass-border,
+html.dark .liquid-glass,
+html.dark .liquid-glass-elevated,
+html.dark .liquid-glass-deep,
+html.dark .liquid-glass-liquid,
+html.dark .liquid-glass-inset,
+html.dark .liquid-glass-nav {
+  background:
+    linear-gradient(135deg, rgba(30, 41, 59, 0.82), rgba(15, 23, 42, 0.68)),
+    var(--theme-surface);
+  border-color: var(--theme-border);
+  box-shadow:
+    0 1px 2px rgba(2, 6, 23, 0.35),
+    0 12px 32px rgba(2, 6, 23, 0.24),
+    inset 0 1px 0 rgba(148, 163, 184, 0.12);
+}
+
+html.dark .liquid-glass-rose {
+  background: linear-gradient(135deg, rgba(76, 5, 25, 0.52), rgba(30, 41, 59, 0.72));
+  border-color: rgba(251, 113, 133, 0.35);
+}
+
+html.dark .liquid-glass-teal {
+  background: linear-gradient(135deg, rgba(4, 47, 46, 0.55), rgba(15, 23, 42, 0.72));
+  border-color: rgba(45, 212, 191, 0.34);
+}
+
+html.dark .liquid-glass-violet {
+  background: linear-gradient(135deg, rgba(46, 16, 101, 0.5), rgba(15, 23, 42, 0.72));
+  border-color: rgba(167, 139, 250, 0.35);
+}
+
+html.dark .liquid-glass-amber {
+  background: linear-gradient(135deg, rgba(69, 26, 3, 0.5), rgba(15, 23, 42, 0.72));
+  border-color: rgba(245, 158, 11, 0.34);
+}
+
+/* Existing utility surfaces used by showcase, replay, and workspace cards. */
+html.dark [class*="bg-white"] {
+  background-color: rgba(15, 23, 42, 0.72) !important;
+}
+
+html.dark [class*="bg-slate-50"],
+html.dark [class*="bg-slate-100"],
+html.dark [class*="bg-slate-200"],
+html.dark [class*="bg-slate-300"] {
+  background-color: rgba(30, 41, 59, 0.76) !important;
+}
+
+html.dark [class*="text-slate-800"],
+html.dark [class*="text-slate-700"],
+html.dark [class*="text-slate-600"] {
+  color: #e2e8f0 !important;
+}
+
+html.dark [class*="text-slate-500"] {
+  color: #cbd5e1 !important;
+}
+
+html.dark [class*="text-slate-400"] {
+  color: #94a3b8 !important;
+}
+
+html.dark [class*="text-slate-300"] {
+  color: #cbd5e1 !important;
+}
+
+html.dark [class*="border-slate-100"],
+html.dark [class*="border-slate-200"],
+html.dark [class*="border-slate-300"] {
+  border-color: rgba(100, 116, 139, 0.48) !important;
+}
+
+html.dark [class*="border-white"] {
+  border-color: rgba(100, 116, 139, 0.42) !important;
+}
+
+html.dark [class*="bg-rose-50"],
+html.dark [class*="bg-rose-100"] {
+  background-color: rgba(136, 19, 55, 0.3) !important;
+}
+
+html.dark [class*="bg-teal-50"],
+html.dark [class*="bg-cyan-50"],
+html.dark [class*="bg-emerald-50"] {
+  background-color: rgba(15, 118, 110, 0.24) !important;
+}
+
+html.dark [class*="bg-violet-50"] {
+  background-color: rgba(109, 40, 217, 0.25) !important;
+}
+
+html.dark input,
+html.dark textarea,
+html.dark select,
+html.dark option {
+  color: #e2e8f0;
+  background-color: #0f172a;
+  border-color: rgba(100, 116, 139, 0.55);
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #94a3b8;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.28);
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.45);
+}
+
+/* Public evidence pages have their own canvas styles, so keep the primary
+ * result surface dark even when their scoped styles are loaded later. */
+html.dark body .showcase-page,
+html.dark body .replay-page {
+  color: #e2e8f0 !important;
+  --replay-ink: #e2e8f0;
+  --replay-muted: #94a3b8;
+  background:
+    linear-gradient(135deg, rgba(127, 29, 29, 0.26), transparent 34%),
+    linear-gradient(225deg, rgba(19, 78, 74, 0.28), transparent 38%),
+    linear-gradient(180deg, #0b1120 0%, #111827 100%) !important;
+}
+
+html.dark body .showcase-card-head,
+html.dark body .showcase-card-body,
+html.dark body .showcase-filter-toolbar,
+html.dark body .replay-page .liquid-glass-inset {
+  background: rgba(15, 23, 42, 0.68) !important;
+}
+
+html.dark .replay-status-running { color: #99f6e4 !important; background: rgba(15, 118, 110, 0.35) !important; border-color: rgba(45, 212, 191, 0.44) !important; }
+html.dark .replay-status-completed { color: #a7f3d0 !important; background: rgba(4, 120, 87, 0.34) !important; border-color: rgba(52, 211, 153, 0.42) !important; }
+html.dark .replay-status-error { color: #fecdd3 !important; background: rgba(159, 18, 57, 0.34) !important; border-color: rgba(251, 113, 133, 0.44) !important; }
+html.dark .replay-status-paused,
+html.dark .replay-status-stale { color: #fde68a !important; background: rgba(146, 64, 14, 0.34) !important; border-color: rgba(251, 191, 36, 0.42) !important; }
+html.dark .replay-status-idle,
+html.dark .replay-status-cancelled { color: #cbd5e1 !important; background: rgba(51, 65, 85, 0.62) !important; border-color: rgba(100, 116, 139, 0.46) !important; }

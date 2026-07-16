@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/state-management.md","reason":"检查主题 store 是否遵循 Composition API、computed 派生状态、持久化及媒体查询清理规则。"}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"检查主题按钮的 i18n、键盘访问、触控尺寸及展示/回放页适配是否符合前端规范。"}

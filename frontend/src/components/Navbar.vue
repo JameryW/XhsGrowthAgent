@@ -7,6 +7,7 @@ import { useBreakpoints } from '@/composables/useBreakpoints'
 import AppIcon from '@/components/AppIcon.vue'
 import HelpCenter from '@/components/HelpCenter.vue'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
+import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const { t } = useI18n()
 
@@ -318,7 +319,7 @@ onMounted(() => {
           <AppIcon name="Settings" size="sm" variant="cyan" class="opacity-60 transition-opacity group-hover:opacity-100" aria-hidden="true" />
         </button>
 
-        <!-- Utilities row: realtime + language + shortcuts -->
+        <!-- Utilities row: realtime + language + theme -->
         <div class="mb-2 flex items-center justify-between gap-2 rounded-xl bg-slate-50/70 px-2.5 py-2">
           <div class="flex min-w-0 items-center gap-2">
             <span class="h-2 w-2 shrink-0 rounded-full" :class="statusDotClass" aria-hidden="true" />
@@ -331,7 +332,10 @@ onMounted(() => {
               {{ t('nav.ws.reconnect') }}
             </button>
           </div>
-          <LanguageSwitcher />
+          <div class="flex shrink-0 items-center gap-1">
+            <LanguageSwitcher />
+            <ThemeToggle />
+          </div>
         </div>
 
         <!-- Actions: Help + Settings + Logout -->
@@ -388,6 +392,8 @@ onMounted(() => {
           >
             <AppIcon name="Settings" size="sm" variant="cyan" />
           </button>
+          <!-- Theme -->
+          <ThemeToggle />
           <!-- Logout -->
           <button
             v-if="authStore.isAuthenticated"
