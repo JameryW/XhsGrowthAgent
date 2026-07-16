@@ -1790,7 +1790,41 @@
       "xhsAccounts": "小红书账号",
       "xhsAccountsDesc": "运营的小红书号与浏览器登录态",
       "systemConfig": "系统配置",
-      "systemConfigDesc": "LLM、Ripple、向量等全局密钥"
+      "systemConfigDesc": "LLM、Ripple、向量等全局密钥",
+      "publicUxTelemetry": "公开页体验监控",
+      "publicUxTelemetryDesc": "Showcase 与 Replay 的匿名聚合指标"
+    },
+    "publicTelemetry": {
+      "title": "公开页体验监控",
+      "subtitle": "仅展示匿名聚合事件和有界耗时，不包含案例 ID、账号或正文。",
+      "period": "统计周期",
+      "days": "{count} 天",
+      "refresh": "刷新监控数据",
+      "totalEvents": "事件总量",
+      "measured": "含耗时数据 {count} 条",
+      "firstResultP75": "首个结果 p75",
+      "cachedSelectP75": "缓存回选 p75",
+      "upperBound": "按当前筛选周期的最大分组值",
+      "breakdown": "事件分组",
+      "event": "事件",
+      "dimensions": "维度",
+      "count": "次数",
+      "empty": "当前周期暂无公开页埋点",
+      "moreRows": "还有 {count} 个分组未展示",
+      "allDimensions": "未分类",
+      "loadFailed": "监控数据暂时无法加载，请重试。",
+      "events": {
+        "showcase_view": "Showcase 浏览",
+        "showcase_first_case_visible": "Showcase 首个案例可见",
+        "showcase_cases_loaded": "Showcase 列表加载",
+        "showcase_cases_error": "Showcase 列表错误",
+        "showcase_case_open": "打开公开案例",
+        "replay_view": "Replay 浏览",
+        "replay_first_result_visible": "Replay 首个结果可见",
+        "replay_select_to_render": "Replay 选择到渲染",
+        "replay_load_error": "Replay 加载错误",
+        "replay_load_more_error": "Replay 加载更多错误"
+      }
     },
     "consoleUsers": {
       "title": "管控台用户",

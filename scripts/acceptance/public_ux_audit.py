@@ -10,6 +10,8 @@ Examples:
     python scripts/acceptance/public_ux_audit.py
     python scripts/acceptance/public_ux_audit.py --base-url https://staging.example
     python scripts/acceptance/public_ux_audit.py --screenshot-dir /tmp/public-ux
+    python scripts/acceptance/public_ux_audit.py --network-profile slow-4g \
+        --save-data --max-combinations 4
 """
 
 from __future__ import annotations
@@ -35,6 +37,43 @@ THEMES = ("light", "dark")
 MOTIONS = ("normal", "reduced")
 CASE_ID = "case-demo"
 NAVIGATION_TIMEOUT_MS = 20_000
+WARM_NAVIGATION_BUDGET_MS = 500
+CACHED_SELECT_BUDGET_MS = 100
+NETWORK_PROFILES: dict[str, dict[str, int | str]] = {
+    "online": {},
+    "slow-4g": {
+        "latency": 150,
+        "downloadThroughput": 1_600_000,
+        "uploadThroughput": 750_000,
+        "connectionType": "cellular4g",
+    },
+}
+
+PERFORMANCE_INIT_SCRIPT = """(() => {
+  const state = { lcp_ms: null, cls: 0 };
+  window.__publicUxVitals = state;
+  try {
+    new PerformanceObserver((list) => {
+      const entries = list.getEntries();
+      if (entries.length) state.lcp_ms = entries[entries.length - 1].startTime;
+    }).observe({ type: 'largest-contentful-paint', buffered: true });
+  } catch {}
+  try {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (!entry.hadRecentInput) state.cls += entry.value;
+      }
+    }).observe({ type: 'layout-shift', buffered: true });
+  } catch {}
+})();"""
+
+SAVE_DATA_INIT_SCRIPT = """(() => {
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (!connection) return;
+  try {
+    Object.defineProperty(connection, 'saveData', { configurable: true, get: () => true });
+  } catch {}
+})();"""
 
 CASE: dict[str, Any] = {
     "public_id": CASE_ID,
@@ -177,8 +216,9 @@ def collect_web_vitals(page: Page) -> dict[str, float | None]:
             response_end_ms: navigation ? navigation.responseEnd : null,
             dom_content_loaded_ms: navigation ? navigation.domContentLoadedEventEnd : null,
             load_event_ms: navigation ? navigation.loadEventEnd : null,
-            lcp_ms: lcpEntries.length ? lcpEntries[lcpEntries.length - 1].startTime : null,
-            cls,
+            lcp_ms: window.__publicUxVitals?.lcp_ms
+              ?? (lcpEntries.length ? lcpEntries[lcpEntries.length - 1].startTime : null),
+            cls: window.__publicUxVitals?.cls ?? cls,
           };
         }"""
     )
@@ -221,6 +261,25 @@ def wait_for_page(page: Page, selector: str) -> None:
     # would make the audit depend on telemetry/auth requests that intentionally
     # remain background work on public pages.
     page.wait_for_timeout(80)
+
+
+def wait_for_heading(page: Page, text: str) -> None:
+    page.wait_for_function(
+        """expected =>
+          document.querySelector('#step-detail-heading')?.textContent?.includes(expected)""",
+        arg=text,
+    )
+
+
+def measure_cached_select_to_render(page: Page) -> float:
+    """Warm the step cache, then measure returning to the first result."""
+
+    page.locator('[data-step-id="step-create"]').click()
+    wait_for_heading(page, "内容产出")
+    started_at = time.perf_counter()
+    page.locator('[data-step-id="step-scout"]').click()
+    wait_for_heading(page, "趋势洞察")
+    return round((time.perf_counter() - started_at) * 1000, 2)
 
 
 def audit_page(
@@ -281,12 +340,17 @@ def summarize_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
         "load_event_ms",
         "lcp_ms",
         "cls",
+        "warm_wall_ms",
+        "cached_select_to_render_ms",
     )
     summary: dict[str, Any] = {}
     for field in fields:
         values: list[float] = []
         for record in records:
-            value = record["web_vitals"].get(field) if field != "wall_ms" else record.get(field)
+            if field in {"wall_ms", "warm_wall_ms", "cached_select_to_render_ms"}:
+                value = record.get(field)
+            else:
+                value = record["web_vitals"].get(field)
             if isinstance(value, (int, float)):
                 values.append(float(value))
         summary[field] = {
@@ -298,8 +362,21 @@ def summarize_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
     return summary
 
 
+def apply_network_profile(page: Page, network_profile: str) -> None:
+    settings = NETWORK_PROFILES[network_profile]
+    if not settings:
+        return
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("Network.enable")
+    cdp.send("Network.emulateNetworkConditions", {"offline": False, **settings})
+
+
 def run_audit(
-    base_url: str, screenshot_dir: Path | None, max_combinations: int | None = None
+    base_url: str,
+    screenshot_dir: Path | None,
+    max_combinations: int | None = None,
+    network_profile: str = "online",
+    save_data: bool = False,
 ) -> dict[str, Any]:
     browser_path = shutil.which("chromium-browser") or shutil.which("chromium")
     if not browser_path:
@@ -319,8 +396,12 @@ def run_audit(
         )
 
         live_context = browser.new_context(viewport={"width": 390, "height": 844})
+        live_context.add_init_script(PERFORMANCE_INIT_SCRIPT)
+        if save_data:
+            live_context.add_init_script(SAVE_DATA_INIT_SCRIPT)
         live_page = live_context.new_page()
         live_page.set_default_timeout(8000)
+        apply_network_profile(live_page, network_profile)
         live_page.goto(f"{base_url}/", wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
         live_page.locator("#cases h3").first.wait_for(state="visible")
         if live_page.locator(".case-card").count() != 0:
@@ -360,21 +441,27 @@ def run_audit(
             )
             page = context.new_page()
             page.set_default_timeout(8000)
+            page.add_init_script(PERFORMANCE_INIT_SCRIPT)
+            if save_data:
+                page.add_init_script(SAVE_DATA_INIT_SCRIPT)
             page.add_init_script(
                 """(() => {
-                  const [locale, theme] = window.name.split('::');
-                  localStorage.clear();
-                  sessionStorage.clear();
+                  const [locale, theme, storageMode] = window.name.split('::');
+                  if (storageMode !== 'keep') {
+                    localStorage.clear();
+                    sessionStorage.clear();
+                  }
                   if (locale) localStorage.setItem('language', locale);
                   if (theme) localStorage.setItem('xhs-theme-mode', theme);
                 })();"""
             )
             install_mock_api(page)
+            apply_network_profile(page, network_profile)
             try:
                 for width, locale, theme, _motion in motion_combinations:
                     label = f"fixture/{width}/{locale}/{theme}/{motion}"
                     page.set_viewport_size({"width": width, "height": 844})
-                    page.evaluate(f"window.name = {json.dumps(f'{locale}::{theme}')}")
+                    page.evaluate(f"window.name = {json.dumps(f'{locale}::{theme}::reset')}")
                     try:
                         showcase_screenshot = None
                         replay_screenshot = None
@@ -391,18 +478,34 @@ def run_audit(
                             replay_screenshot = (
                                 screenshot_dir / f"replay-{width}-{locale}-{theme}-{motion}.png"
                             )
-                        records.append(
-                            audit_page(
-                                page,
-                                name=f"{label}/showcase",
-                                url=f"{base_url}/",
-                                ready_selector="#featured-heading",
-                                expected_theme=theme,
-                                expected_locale=locale,
-                                axe_script=AXE_SCRIPT,
-                                screenshot=showcase_screenshot,
-                            )
+                        showcase_record = audit_page(
+                            page,
+                            name=f"{label}/showcase",
+                            url=f"{base_url}/",
+                            ready_selector="#featured-heading",
+                            expected_theme=theme,
+                            expected_locale=locale,
+                            axe_script=AXE_SCRIPT,
+                            screenshot=showcase_screenshot,
                         )
+                        page.evaluate(f"window.name = {json.dumps(f'{locale}::{theme}::keep')}")
+                        warm_started_at = time.perf_counter()
+                        page.reload(wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS)
+                        wait_for_page(page, "#featured-heading")
+                        showcase_record["warm_wall_ms"] = round(
+                            (time.perf_counter() - warm_started_at) * 1000, 2
+                        )
+                        records.append(showcase_record)
+                        if showcase_record["warm_wall_ms"] > WARM_NAVIGATION_BUDGET_MS:
+                            failures.append(
+                                {
+                                    "name": f"{label}/showcase-warm",
+                                    "error": (
+                                        f"warm navigation exceeded {WARM_NAVIGATION_BUDGET_MS}ms: "
+                                        f"{showcase_record['warm_wall_ms']}ms"
+                                    ),
+                                }
+                            )
                         if page.locator('a[href*="/replay/case-demo"]').count() < 1:
                             raise AssertionError("fixture showcase has no replay link")
                         replay_record = audit_page(
@@ -427,7 +530,20 @@ def run_audit(
                             raise AssertionError(
                                 f"phase keyboard navigation failed: {active_phase}"
                             )
+                        replay_record["cached_select_to_render_ms"] = (
+                            measure_cached_select_to_render(page)
+                        )
                         records.append(replay_record)
+                        if replay_record["cached_select_to_render_ms"] > CACHED_SELECT_BUDGET_MS:
+                            failures.append(
+                                {
+                                    "name": f"{label}/replay-cached-select",
+                                    "error": (
+                                        f"cached select exceeded {CACHED_SELECT_BUDGET_MS}ms: "
+                                        f"{replay_record['cached_select_to_render_ms']}ms"
+                                    ),
+                                }
+                            )
                     except (AssertionError, PlaywrightTimeoutError) as error:
                         failures.append({"name": label, "error": str(error)})
             finally:
@@ -438,6 +554,8 @@ def run_audit(
     axe_records = [record for record in records if record["axe_serious_critical"]]
     return {
         "base_url": base_url,
+        "network_profile": network_profile,
+        "save_data": save_data,
         "fixture": "synthetic-non-sensitive-case-demo",
         "viewports": list(VIEWPORTS),
         "locales": list(LOCALES),
@@ -474,15 +592,34 @@ def main() -> int:
         type=int,
         help="limit fixture combinations for a quick local smoke; the default runs the full matrix",
     )
+    parser.add_argument(
+        "--network-profile",
+        choices=tuple(NETWORK_PROFILES),
+        default="online",
+        help="browser network profile; use slow-4g for constrained-network evidence",
+    )
+    parser.add_argument(
+        "--save-data",
+        action="store_true",
+        help="expose navigator.connection.saveData=true during the audit",
+    )
     args = parser.parse_args()
 
-    result = run_audit(args.base_url.rstrip("/"), args.screenshot_dir, args.max_combinations)
+    result = run_audit(
+        args.base_url.rstrip("/"),
+        args.screenshot_dir,
+        args.max_combinations,
+        args.network_profile,
+        args.save_data,
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
     print(
         json.dumps(
             {
                 "passed": result["passed"],
+                "network_profile": result["network_profile"],
+                "save_data": result["save_data"],
                 "matrix_page_count": result["matrix_page_count"],
                 "axe_serious_critical_record_count": result["axe_serious_critical_record_count"],
                 "metrics": result["metrics"],

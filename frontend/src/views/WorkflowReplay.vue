@@ -318,9 +318,10 @@ async function retryReplay() {
 async function selectStep(step: PublicReplayStep) {
   if (step.public_id === selectedStepId.value && selectedStep.value) return
   selectedStepId.value = step.public_id
-  await router.replace({ query: { ...route.query, step: step.public_id } })
+  const routeUpdate = router.replace({ query: { ...route.query, step: step.public_id } })
   trackInteraction('replay_step_select', { view: viewMode.value, has_result: step.has_result })
   await loadStep(step.public_id)
+  await routeUpdate
 }
 
 async function selectAdjacent(direction: -1 | 1) {

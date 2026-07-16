@@ -7,17 +7,19 @@ import PageHeader from '@/components/PageHeader.vue'
 import ConsoleUsersPanel from '@/components/settings/ConsoleUsersPanel.vue'
 import XhsAccountsPanel from '@/components/settings/XhsAccountsPanel.vue'
 import SystemConfigPanel from '@/components/settings/SystemConfigPanel.vue'
+import PublicUxTelemetryPanel from '@/components/settings/PublicUxTelemetryPanel.vue'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
-type TabId = 'console-users' | 'xhs-accounts' | 'system-config'
+type TabId = 'console-users' | 'xhs-accounts' | 'system-config' | 'public-ux-telemetry'
 
 const TABS: { id: TabId; labelKey: string; icon: string; descKey: string }[] = [
   { id: 'console-users', labelKey: 'settings.nav.consoleUsers', icon: 'User', descKey: 'settings.nav.consoleUsersDesc' },
   { id: 'xhs-accounts', labelKey: 'settings.nav.xhsAccounts', icon: 'Users', descKey: 'settings.nav.xhsAccountsDesc' },
   { id: 'system-config', labelKey: 'settings.nav.systemConfig', icon: 'Settings', descKey: 'settings.nav.systemConfigDesc' },
+  { id: 'public-ux-telemetry', labelKey: 'settings.nav.publicUxTelemetry', icon: 'BarChart3', descKey: 'settings.nav.publicUxTelemetryDesc' },
 ]
 
 const activeTab = ref<TabId>('xhs-accounts')
@@ -89,6 +91,7 @@ const currentTab = computed(() => TABS.find(t => t.id === activeTab.value)!)
         <ConsoleUsersPanel v-if="currentTab.id === 'console-users'" />
         <XhsAccountsPanel v-else-if="currentTab.id === 'xhs-accounts'" />
         <SystemConfigPanel v-else-if="currentTab.id === 'system-config'" />
+        <PublicUxTelemetryPanel v-else />
       </main>
     </div>
   </div>

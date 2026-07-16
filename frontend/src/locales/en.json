@@ -1790,7 +1790,41 @@
       "xhsAccounts": "XHS Accounts",
       "xhsAccountsDesc": "Xiaohongshu accounts and browser login state",
       "systemConfig": "System Config",
-      "systemConfigDesc": "LLM, Ripple, embedding global keys"
+      "systemConfigDesc": "LLM, Ripple, embedding global keys",
+      "publicUxTelemetry": "Public UX telemetry",
+      "publicUxTelemetryDesc": "Anonymous aggregate metrics for Showcase and Replay"
+    },
+    "publicTelemetry": {
+      "title": "Public UX telemetry",
+      "subtitle": "Anonymous aggregate events and bounded timings only; no case IDs, accounts, or content.",
+      "period": "Reporting period",
+      "days": "{count} days",
+      "refresh": "Refresh telemetry",
+      "totalEvents": "Total events",
+      "measured": "{count} events with timing",
+      "firstResultP75": "First result p75",
+      "cachedSelectP75": "Cached select p75",
+      "upperBound": "Maximum grouped value for the selected period",
+      "breakdown": "Event breakdown",
+      "event": "Event",
+      "dimensions": "Dimensions",
+      "count": "Count",
+      "empty": "No public UX events in this period",
+      "moreRows": "{count} more groups not shown",
+      "allDimensions": "Unclassified",
+      "loadFailed": "Telemetry could not be loaded. Try again.",
+      "events": {
+        "showcase_view": "Showcase views",
+        "showcase_first_case_visible": "Showcase first case visible",
+        "showcase_cases_loaded": "Showcase list loaded",
+        "showcase_cases_error": "Showcase list error",
+        "showcase_case_open": "Public case opened",
+        "replay_view": "Replay views",
+        "replay_first_result_visible": "Replay first result visible",
+        "replay_select_to_render": "Replay select to render",
+        "replay_load_error": "Replay load error",
+        "replay_load_more_error": "Replay load-more error"
+      }
     },
     "consoleUsers": {
       "title": "Console Users",

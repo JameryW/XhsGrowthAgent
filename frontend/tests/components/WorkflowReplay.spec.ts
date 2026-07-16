@@ -108,6 +108,30 @@ describe('WorkflowReplay public UX contract', () => {
     expect(getCheckpointMock).toHaveBeenLastCalledWith('case-1', 'step-2', false, expect.objectContaining({ suppressToast: true, signal: expect.any(AbortSignal) }))
   })
 
+  it('renders the selected result before a slow URL update completes', async () => {
+    let resolveRoute!: () => void
+    const routeUpdate = new Promise<void>(resolve => { resolveRoute = resolve })
+    routerMock.replace.mockReturnValueOnce(routeUpdate)
+    const wrapper = mount(WorkflowReplay, {
+      global: {
+        stubs: {
+          AppIcon: { template: '<span />' },
+          PublicReplayResult: { template: '<div />' },
+          ThemeToggle: { template: '<button aria-label="theme" />' },
+        },
+      },
+    })
+    await flushPromises()
+
+    const next = wrapper.findAll('button').find(button => button.text().includes('下一步'))
+    const selection = next!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('#step-detail-heading').text()).toContain('内容产出')
+    resolveRoute()
+    await selection
+  })
+
   it('paginates replay steps and keeps the first page visible while loading more', async () => {
     const firstPage = {
       public_id: 'case-1',
