@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, computed, watch, nextTick, ref, defineAsyncComp
 import { useRoute } from "vue-router"
 import { useI18n } from "vue-i18n"
 import Toast from "@/components/Toast.vue"
+import ThemeToggle from "@/components/ThemeToggle.vue"
 import ErrorBoundary from "@/components/ErrorBoundary.vue"
 import PageTransition from "@/components/PageTransition.vue"
 // ponytail: 以下组件仅在 showChrome（已登录、非 showcase 页）块内渲染，首屏（Showcase/Login）不渲染。
@@ -13,7 +14,11 @@ const KeyboardShortcutsHelp = defineAsyncComponent(() => import("@/components/Ke
 const Navbar = defineAsyncComponent(() => import("@/components/Navbar.vue"))
 const MobileTabBar = defineAsyncComponent(() => import("@/components/MobileTabBar.vue"))
 const OnboardingTour = defineAsyncComponent(() => import("@/components/OnboardingTour.vue"))
-import { useRealtimeStore, useOnboardingStore, useShortcutsStore, useAuthStore } from "@/stores"
+import { useRealtimeStore } from "@/stores/realtime"
+import { useOnboardingStore } from "@/stores/onboarding"
+import { useShortcutsStore } from "@/stores/shortcuts"
+import { useAuthStore } from "@/stores/auth"
+import { useThemeStore } from "@/stores/theme"
 import { useOnboarding } from "@/composables/useOnboarding"
 import { useShortcuts } from "@/composables/useShortcuts"
 import { useBreakpoints } from "@/composables/useBreakpoints"
@@ -23,6 +28,7 @@ const realtimeStore = useRealtimeStore()
 const onboardingStore = useOnboardingStore()
 const shortcutsStore = useShortcutsStore()
 const authStore = useAuthStore()
+const themeStore = useThemeStore()
 const route = useRoute()
 const { isMobile, isTablet } = useBreakpoints()
 
@@ -75,6 +81,7 @@ const handleGlobalKeyDown = (e: KeyboardEvent) => {
 }
 
 onMounted(async () => {
+  themeStore.init()
   // Auth is already initialized by router guard on first navigation
   // Add global keyboard listener
   window.addEventListener("keydown", handleGlobalKeyDown)
@@ -95,11 +102,13 @@ watch(() => route.path, async () => {
   document.getElementById('main-content')?.focus({ preventScroll: true })
 })
 
-// Connect/disconnect WebSocket when auth state changes
+// Public immersive pages do not render authenticated chrome and do not need a
+// realtime workflow socket. Connect only while an authenticated user is on a
+// workspace route, and release the socket when entering showcase/replay.
 watch(
-  () => authStore.isAuthenticated,
-  (authenticated) => {
-    if (authenticated) {
+  [() => authStore.isAuthenticated, () => isImmersivePage.value],
+  ([authenticated, immersive]) => {
+    if (authenticated && !immersive) {
       realtimeStore.connect()
     } else {
       realtimeStore.disconnect()
@@ -113,6 +122,7 @@ onUnmounted(() => {
   realtimeStore.disconnect()
   // Remove keyboard listener
   window.removeEventListener("keydown", handleGlobalKeyDown)
+  themeStore.dispose()
 })
 
 const handleCloseShortcutsHelp = () => {
@@ -160,6 +170,7 @@ const handleErrorBoundaryRefresh = () => {
 
     <!-- Status indicators (always visible) -->
     <Toast />
+    <ThemeToggle v-if="!showChrome || isMobile" class="fixed right-3 top-3 z-[80]" />
 
     <!-- Authenticated chrome -->
     <template v-if="showChrome">

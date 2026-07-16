@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Verify public route shell and async component behavior."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Verify direct store imports preserve lifecycle and reactive state."}

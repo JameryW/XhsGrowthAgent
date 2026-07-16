@@ -1,16 +1,9 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed, ref, watch } from 'vue'
+import { onMounted, onUnmounted, computed, ref, watch, defineAsyncComponent, defineComponent, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import CheckpointRail from '@/components/replay/CheckpointRail.vue'
-import AgentResultTrend from '@/components/replay/AgentResultTrend.vue'
-import AgentResultPlan from '@/components/replay/AgentResultPlan.vue'
-import AgentResultCreative from '@/components/replay/AgentResultCreative.vue'
-import AgentResultVisual from '@/components/replay/AgentResultVisual.vue'
-import AgentResultPublish from '@/components/replay/AgentResultPublish.vue'
-import AgentResultAnalytics from '@/components/replay/AgentResultAnalytics.vue'
-import AgentResultRipple from '@/components/replay/AgentResultRipple.vue'
 import { useWorkflowStore, useAuthStore, useToastStore } from '@/stores'
 import { getWorkflowStatus } from '@/api/workflow'
 import { useWorkflowReplay } from '@/composables/useWorkflowReplay'
@@ -22,6 +15,56 @@ const route = useRoute()
 const workflowStore = useWorkflowStore()
 const authStore = useAuthStore()
 const toastStore = useToastStore()
+
+const ReplayResultLoading = defineComponent({
+  name: 'ReplayResultLoading',
+  setup() {
+    return () => h('div', {
+      class: 'replay-result-loading liquid-glass rounded-xl p-4 space-y-3',
+      role: 'status',
+      'aria-busy': 'true',
+    }, [
+      h('div', { class: 'h-3 w-32 rounded bg-slate-200/80 animate-pulse' }),
+      h('div', { class: 'h-16 w-full rounded-lg bg-slate-200/60 animate-pulse' }),
+    ])
+  },
+})
+
+const AgentResultTrend = defineAsyncComponent({
+  loader: () => import('@/components/replay/AgentResultTrend.vue'),
+  loadingComponent: ReplayResultLoading,
+  delay: 80,
+})
+const AgentResultPlan = defineAsyncComponent({
+  loader: () => import('@/components/replay/AgentResultPlan.vue'),
+  loadingComponent: ReplayResultLoading,
+  delay: 80,
+})
+const AgentResultCreative = defineAsyncComponent({
+  loader: () => import('@/components/replay/AgentResultCreative.vue'),
+  loadingComponent: ReplayResultLoading,
+  delay: 80,
+})
+const AgentResultVisual = defineAsyncComponent({
+  loader: () => import('@/components/replay/AgentResultVisual.vue'),
+  loadingComponent: ReplayResultLoading,
+  delay: 80,
+})
+const AgentResultPublish = defineAsyncComponent({
+  loader: () => import('@/components/replay/AgentResultPublish.vue'),
+  loadingComponent: ReplayResultLoading,
+  delay: 80,
+})
+const AgentResultAnalytics = defineAsyncComponent({
+  loader: () => import('@/components/replay/AgentResultAnalytics.vue'),
+  loadingComponent: ReplayResultLoading,
+  delay: 80,
+})
+const AgentResultRipple = defineAsyncComponent({
+  loader: () => import('@/components/replay/AgentResultRipple.vue'),
+  loadingComponent: ReplayResultLoading,
+  delay: 80,
+})
 
 const threadId = route.params.threadId as string
 const isAuthenticated = computed(() => authStore.isAuthenticated)
@@ -225,19 +268,28 @@ async function loadReplay() {
   workflowLoadError.value = null
   threadNotFound.value = false
   workflowStore.setThreadId(threadId)
-  try {
-    const state = await getWorkflowStatus(threadId, { suppressToast: true })
-    workflowStore.workflowStates.set(threadId, state)
-  } catch (error: any) {
-    workflowLoadError.value = error?.message || t('replay.workflowLoadFailed')
-    threadNotFound.value = isNotFoundError(error)
-    trackInteraction('replay_load_error', { error_type: threadNotFound.value ? 'thread_not_found' : 'workflow_status' })
-  } finally {
-    isWorkflowLoading.value = false
-  }
-  if (!threadNotFound.value) {
-    await workflowStore.enterReplayMode(requestedCheckpointId.value)
-  } else {
+  const cachedReplay = workflowStore.hydrateReplayCache(threadId, requestedCheckpointId.value)
+  if (cachedReplay?.state) isWorkflowLoading.value = false
+  // Start both public requests together. A status failure must not prevent
+  // the history request: historical replay remains useful when live state is
+  // temporarily unavailable, while a 404 still renders the dedicated state.
+  const statusTask = (async () => {
+    try {
+      const state = await getWorkflowStatus(threadId, { suppressToast: true })
+      workflowStore.workflowStates.set(threadId, state)
+      workflowStore.saveReplayLiveState(threadId, state)
+    } catch (error: any) {
+      workflowLoadError.value = error?.message || t('replay.workflowLoadFailed')
+      threadNotFound.value = isNotFoundError(error)
+      trackInteraction('replay_load_error', { error_type: threadNotFound.value ? 'thread_not_found' : 'workflow_status' })
+    } finally {
+      isWorkflowLoading.value = false
+    }
+  })()
+  const checkpointTask = workflowStore.enterReplayMode(requestedCheckpointId.value)
+  await Promise.all([statusTask, checkpointTask])
+  if (threadNotFound.value) {
+    workflowStore.clearReplaySnapshot(threadId)
     workflowStore.exitReplayMode()
   }
 }

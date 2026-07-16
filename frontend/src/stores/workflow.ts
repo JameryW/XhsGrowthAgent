@@ -27,6 +27,69 @@ const { t } = i18n.global
 const LS_ACTIVE_THREAD = 'activeThreadId'
 const LS_OPEN_TABS = 'openTabIds'
 const LS_TAB_LABELS = 'tabLabels'
+const REPLAY_CACHE_VERSION = 1
+const REPLAY_CACHE_TTL_MS = 30_000
+const REPLAY_CACHE_PREFIX = 'replay:snapshot:v1:'
+
+type ReplayCacheSnapshot = {
+  version: number
+  savedAt: number
+  threadId: string
+  state?: WorkflowStateResponse
+  checkpoints: CheckpointSnapshot[]
+  hasMore: boolean
+}
+
+function replayCacheKey(threadId: string): string {
+  return `${REPLAY_CACHE_PREFIX}${encodeURIComponent(threadId)}`
+}
+
+function readReplayCache(threadId: string): ReplayCacheSnapshot | null {
+  try {
+    const raw = sessionStorage.getItem(replayCacheKey(threadId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<ReplayCacheSnapshot>
+    const age = Date.now() - Number(parsed.savedAt)
+    if (
+      parsed.version !== REPLAY_CACHE_VERSION
+      || parsed.threadId !== threadId
+      || !Number.isFinite(parsed.savedAt)
+      || age < 0
+      || age > REPLAY_CACHE_TTL_MS
+      || !Array.isArray(parsed.checkpoints)
+      || typeof parsed.hasMore !== 'boolean'
+    ) {
+      sessionStorage.removeItem(replayCacheKey(threadId))
+      return null
+    }
+    return {
+      version: REPLAY_CACHE_VERSION,
+      savedAt: parsed.savedAt as number,
+      threadId,
+      state: parsed.state as WorkflowStateResponse | undefined,
+      checkpoints: parsed.checkpoints as CheckpointSnapshot[],
+      hasMore: parsed.hasMore as boolean,
+    }
+  } catch {
+    return null
+  }
+}
+
+function writeReplayCache(snapshot: ReplayCacheSnapshot): void {
+  try {
+    sessionStorage.setItem(replayCacheKey(snapshot.threadId), JSON.stringify(snapshot))
+  } catch {
+    // Storage can be unavailable or full; the live request path remains valid.
+  }
+}
+
+function clearReplayCache(threadId: string): void {
+  try {
+    sessionStorage.removeItem(replayCacheKey(threadId))
+  } catch {
+    // Ignore unavailable storage; there is no live state to invalidate.
+  }
+}
 
 function loadOpenTabs(): string[] {
   try {
@@ -1028,14 +1091,18 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   async function enterReplayMode(preferredCheckpointId?: string) {
     if (!activeThreadId.value) return
+    const threadId = activeThreadId.value
     isReplayMode.value = true
-    replayCheckpoints.value = []
-    activeCheckpointId.value = null
-    hasMoreCheckpoints.value = false
     replayCheckpointsError.value = null
     isLoadingCheckpoints.value = true
+    const cached = hydrateReplayCache(threadId, preferredCheckpointId)
+    if (!cached) {
+      replayCheckpoints.value = []
+      activeCheckpointId.value = null
+      hasMoreCheckpoints.value = false
+    }
     try {
-      const result = await workflowApi.getCheckpointHistory(activeThreadId.value, { limit: 20 }, { suppressToast: true })
+      const result = await workflowApi.getCheckpointHistory(threadId, { limit: 20 }, { suppressToast: true })
       const deduplicated = deduplicateCheckpoints(result.checkpoints)
       // A shared link may target an older checkpoint for the same agent. Keep
       // that explicitly requested snapshot available even though the rail
@@ -1056,11 +1123,57 @@ export const useWorkflowStore = defineStore('workflow', () => {
         : undefined
       const meaningful = replayCheckpoints.value.find(checkpointHasBusinessData)
       activeCheckpointId.value = (preferred || meaningful || replayCheckpoints.value[0])?.checkpoint_id || null
+      writeReplayCache({
+        version: REPLAY_CACHE_VERSION,
+        savedAt: Date.now(),
+        threadId,
+        state: workflowStates.value.get(threadId),
+        checkpoints: replayCheckpoints.value,
+        hasMore: hasMoreCheckpoints.value,
+      })
     } catch (e: any) {
       replayCheckpointsError.value = e?.message || t('workflow.replayLoadFailed')
     } finally {
       isLoadingCheckpoints.value = false
     }
+  }
+
+  function hydrateReplayCache(threadId: string, preferredCheckpointId?: string): ReplayCacheSnapshot | null {
+    const cached = readReplayCache(threadId)
+    if (!cached) return null
+    if (cached.state) workflowStates.value.set(threadId, cached.state)
+    isReplayMode.value = true
+    const deduplicated = deduplicateCheckpoints(cached.checkpoints)
+    const linkedCheckpoint = preferredCheckpointId
+      ? cached.checkpoints.find(cp => cp.checkpoint_id === preferredCheckpointId)
+      : undefined
+    if (linkedCheckpoint && !deduplicated.some(cp => cp.checkpoint_id === linkedCheckpoint.checkpoint_id)) {
+      deduplicated.unshift(linkedCheckpoint)
+    }
+    replayCheckpoints.value = deduplicated
+    hasMoreCheckpoints.value = cached.hasMore
+    const preferred = preferredCheckpointId
+      ? replayCheckpoints.value.find(cp => cp.checkpoint_id === preferredCheckpointId)
+      : undefined
+    const meaningful = replayCheckpoints.value.find(checkpointHasBusinessData)
+    activeCheckpointId.value = (preferred || meaningful || replayCheckpoints.value[0])?.checkpoint_id || null
+    return cached
+  }
+
+  function saveReplayLiveState(threadId: string, state: WorkflowStateResponse): void {
+    const cached = readReplayCache(threadId)
+    writeReplayCache({
+      version: REPLAY_CACHE_VERSION,
+      savedAt: Date.now(),
+      threadId,
+      state,
+      checkpoints: cached?.checkpoints || replayCheckpoints.value,
+      hasMore: cached?.hasMore ?? hasMoreCheckpoints.value,
+    })
+  }
+
+  function clearReplaySnapshot(threadId: string): void {
+    clearReplayCache(threadId)
   }
 
   function exitReplayMode() {
@@ -1078,12 +1191,13 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   async function loadMoreCheckpoints() {
     if (!activeThreadId.value || !hasMoreCheckpoints.value || isLoadingCheckpoints.value) return
+    const threadId = activeThreadId.value
     isLoadingCheckpoints.value = true
     replayCheckpointsError.value = null
     try {
       // Use oldest checkpoint as cursor
       const oldest = replayCheckpoints.value[replayCheckpoints.value.length - 1]
-      const result = await workflowApi.getCheckpointHistory(activeThreadId.value, {
+      const result = await workflowApi.getCheckpointHistory(threadId, {
         limit: 20,
         before: oldest?.checkpoint_id,
       }, { suppressToast: true })
@@ -1091,6 +1205,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
       const merged = [...replayCheckpoints.value, ...result.checkpoints]
       replayCheckpoints.value = deduplicateCheckpoints(merged)
       hasMoreCheckpoints.value = result.has_more
+      writeReplayCache({
+        version: REPLAY_CACHE_VERSION,
+        savedAt: Date.now(),
+        threadId,
+        state: workflowStates.value.get(threadId),
+        checkpoints: replayCheckpoints.value,
+        hasMore: hasMoreCheckpoints.value,
+      })
     } catch (e: any) {
       replayCheckpointsError.value = e?.message || t('workflow.replayLoadFailed')
     } finally {
@@ -1176,6 +1298,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
     replayState,
     effectiveState,
     enterReplayMode,
+    hydrateReplayCache,
+    saveReplayLiveState,
+    clearReplaySnapshot,
     exitReplayMode,
     selectCheckpoint,
     loadMoreCheckpoints,

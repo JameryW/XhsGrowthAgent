@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Keep the public Showcase loading and error states consistent with existing Vue component patterns."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Follow the project's guidance for session-scoped cached state and reactive updates."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Validate that the perceived loading optimization does not change backend/API contracts."}

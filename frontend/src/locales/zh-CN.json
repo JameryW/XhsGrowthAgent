@@ -23,6 +23,10 @@
     "retriedTimes": "已重试 {count} 次",
     "pageLoadError": "页面加载出现问题"
   },
+  "theme": {
+    "switchToLight": "切换到浅色模式",
+    "switchToDark": "切换到暗黑模式"
+  },
   "health": {
     "title": "系统健康检查",
     "ready": "就绪",
@@ -1429,6 +1433,7 @@
     "empty": "暂无工作流",
     "emptyDesc": "工作流启动后将在此展示",
     "detailUnavailable": "详细产出暂时不可用，可进入回放查看",
+    "refreshUnavailable": "最新列表暂时不可用，正在显示最近缓存",
     "featuredReason": "高进度 · 最近更新",
     "featuredOnly": "推荐案例已展示在上方",
     "resetFilters": "清除筛选",

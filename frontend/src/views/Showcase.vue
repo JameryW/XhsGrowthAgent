@@ -25,6 +25,18 @@ const restoringContext = ref(true)
 const focusRecordsAfterRestore = ref(false)
 const shouldFocusRecords = ref(false)
 const restoreScrollY = ref<number | null>(null)
+const backgroundError = ref<string | null>(null)
+
+const SHOWCASE_CACHE_VERSION = 1
+const SHOWCASE_CACHE_TTL_MS = 30_000
+const SHOWCASE_CACHE_KEY = `showcase:workflow-cache:v${SHOWCASE_CACHE_VERSION}`
+type ShowcaseCachePayload = {
+  version: number
+  savedAt: number
+  workflows: WorkflowListItem[]
+  details: Array<[string, WorkflowStateResponse]>
+}
+const cacheSavedAt = ref<number | null>(null)
 
 // Filter & sort state
 type StatusFilter = 'all' | 'running' | 'completed' | 'needs_attention'
@@ -56,6 +68,7 @@ let activeDetailLoads = 0
 let detailPumpTimer: number | null = null
 let deferredDetailTimer: number | null = null
 let ambientTimer: number | null = null
+let cacheRefreshTimer: number | null = null
 
 function isRunningStatus(status: WorkflowStatus): boolean {
   return RUNNING_STATUSES.includes(status)
@@ -197,14 +210,92 @@ function restoreShowcaseContext() {
   syncQueryState()
 }
 
-// Fetch list first (fast), then lazy-load details for visible cards
-async function fetchWorkflows() {
-  error.value = null
+function readShowcaseCache(): ShowcaseCachePayload | null {
+  try {
+    const raw = sessionStorage.getItem(SHOWCASE_CACHE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<ShowcaseCachePayload>
+    if (parsed.version !== SHOWCASE_CACHE_VERSION || !Number.isFinite(parsed.savedAt) || !Array.isArray(parsed.workflows) || !Array.isArray(parsed.details)) {
+      sessionStorage.removeItem(SHOWCASE_CACHE_KEY)
+      return null
+    }
+    if (Date.now() - (parsed.savedAt as number) > SHOWCASE_CACHE_TTL_MS) {
+      sessionStorage.removeItem(SHOWCASE_CACHE_KEY)
+      return null
+    }
+    return {
+      version: SHOWCASE_CACHE_VERSION,
+      savedAt: parsed.savedAt as number,
+      workflows: parsed.workflows as WorkflowListItem[],
+      details: parsed.details as Array<[string, WorkflowStateResponse]>,
+    }
+  } catch {
+    try { sessionStorage.removeItem(SHOWCASE_CACHE_KEY) } catch { /* storage unavailable */ }
+    return null
+  }
+}
+
+function writeShowcaseCache(savedAt = cacheSavedAt.value || Date.now()) {
+  try {
+    const ids = new Set(workflows.value.map(workflow => workflow.thread_id))
+    const details = Array.from(workflowDetails.value.entries()).filter(([threadId]) => ids.has(threadId))
+    sessionStorage.setItem(SHOWCASE_CACHE_KEY, JSON.stringify({
+      version: SHOWCASE_CACHE_VERSION,
+      savedAt,
+      workflows: workflows.value,
+      details,
+    } satisfies ShowcaseCachePayload))
+    cacheSavedAt.value = savedAt
+  } catch {
+    // Quota/security errors must not block the live request path.
+  }
+}
+
+function scheduleCacheRefresh(savedAt: number | null = cacheSavedAt.value) {
+  if (cacheRefreshTimer !== null) window.clearTimeout(cacheRefreshTimer)
+  if (savedAt === null) return
+  const delay = Math.max(250, savedAt + SHOWCASE_CACHE_TTL_MS - Date.now())
+  cacheRefreshTimer = window.setTimeout(() => {
+    cacheRefreshTimer = null
+    void fetchWorkflows({ background: true })
+  }, delay)
+}
+
+function hydrateShowcaseCache(): boolean {
+  const cached = readShowcaseCache()
+  if (!cached) return false
+  const ids = new Set(cached.workflows.map(workflow => workflow.thread_id))
+  workflows.value = cached.workflows
+  workflowDetails.value = new Map(cached.details.filter(([threadId]) => ids.has(threadId)))
+  cacheSavedAt.value = cached.savedAt
+  listLoaded.value = true
+  statsReady.value = true
+  scheduleCacheRefresh(cached.savedAt)
+  return true
+}
+
+// Fetch list first (fast), then lazy-load details for visible cards. A fresh
+// session cache is rendered immediately while this request refreshes in the
+// background; a failed background refresh leaves the cached list usable.
+async function fetchWorkflows(options: { background?: boolean } = {}) {
+  const background = options.background === true
+  if (!background) error.value = null
+  if (background) backgroundError.value = null
   failedDetailIds.value = new Set()
   try {
     const result = await listWorkflows({ limit: 50 }, { suppressToast: true })
+    const ids = new Set(result.workflows.map(workflow => workflow.thread_id))
     workflows.value = result.workflows
+    workflowDetails.value = new Map(Array.from(workflowDetails.value.entries()).filter(([threadId]) => ids.has(threadId)))
+    for (const threadId of Array.from(pendingDetailIds)) {
+      if (!ids.has(threadId)) pendingDetailIds.delete(threadId)
+    }
     listLoaded.value = true
+    const refreshedAt = Date.now()
+    writeShowcaseCache(refreshedAt)
+    // Schedule from the response time even if storage is unavailable or
+    // quota-limited and the write above could not update cacheSavedAt.
+    scheduleCacheRefresh(refreshedAt)
     await nextTick()
     statsReady.value = true
     if (restoreScrollY.value !== null) {
@@ -219,7 +310,14 @@ async function fetchWorkflows() {
       }, 0)
     }
   } catch (e: any) {
-    error.value = e.message
+    if (background && listLoaded.value) {
+      backgroundError.value = e.message
+      // The cached timestamp is already expired when this path runs. Use a
+      // fresh retry window instead of scheduling a tight 250ms retry loop.
+      scheduleCacheRefresh(Date.now())
+    } else {
+      error.value = e.message
+    }
   }
 }
 
@@ -255,6 +353,7 @@ function pumpDetailQueue() {
     getWorkflowStatus(threadId, { suppressToast: true })
       .then((state) => {
         workflowDetails.value.set(threadId, state)
+        writeShowcaseCache()
       })
       .catch(() => {
         failedDetailIds.value.add(threadId)
@@ -300,7 +399,8 @@ function loadVisibleDetails() {
 onMounted(() => {
   trackInteraction('showcase_view', { restored: route.query.status !== undefined })
   restoreShowcaseContext()
-  void fetchWorkflows()
+  const hasFreshCache = hydrateShowcaseCache()
+  void fetchWorkflows({ background: hasFreshCache })
 })
 
 watch([statusFilter, modeFilter, sortKey], () => {
@@ -529,6 +629,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (cacheRefreshTimer !== null) window.clearTimeout(cacheRefreshTimer)
   if (detailPumpTimer !== null) window.clearTimeout(detailPumpTimer)
   if (deferredDetailTimer !== null) window.clearTimeout(deferredDetailTimer)
   if (ambientTimer !== null) window.clearTimeout(ambientTimer)
@@ -790,7 +891,7 @@ const evolutionTreeData = computed(() => {
         </div>
         <p class="text-sm text-rose-700 font-medium">{{ t('common.apiError') }}</p>
         <p class="text-xs text-rose-500/70 mt-2">{{ error }}</p>
-        <button type="button" @click="fetchWorkflows" class="mt-4 min-h-11 rounded-xl bg-rose-600 px-5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-rose-700">{{ t('common.retry') }}</button>
+        <button type="button" @click="() => { void fetchWorkflows() }" class="mt-4 min-h-11 rounded-xl bg-rose-600 px-5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-rose-700">{{ t('common.retry') }}</button>
       </div>
 
       <!-- Loading keeps the public entry stable while the workflow list arrives. -->
@@ -813,6 +914,10 @@ const evolutionTreeData = computed(() => {
             <h2 class="mt-1 text-lg font-bold tracking-tight text-slate-800">{{ t('showcase.workspaceOverview') }}</h2>
           </div>
           <p class="max-w-md text-xs leading-5 text-slate-400 sm:text-right">{{ t('showcase.liveWorkspaceDesc') }}</p>
+        </div>
+        <div v-if="backgroundError" class="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-800" role="status" aria-live="polite">
+          <span>{{ t('showcase.refreshUnavailable') }}</span>
+          <button type="button" class="min-h-11 rounded-lg border border-amber-300 bg-white/80 px-3 text-[10px] font-semibold text-amber-800 hover:bg-white" @click="() => { void fetchWorkflows({ background: true }) }">{{ t('common.retry') }}</button>
         </div>
 
         <!-- Empty data is a valid public state: keep the product explanation visible,

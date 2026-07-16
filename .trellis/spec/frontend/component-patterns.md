@@ -98,6 +98,13 @@ request fails and expose a local retry action. A responsive layout must keep
 touch targets at least 44px high and avoid page-level horizontal overflow at
 320px and above.
 
+Replay pages should start independent live-status and checkpoint-history reads
+concurrently after the thread is known; a live-status failure must not hide
+usable historical data. Result panels that are selected by checkpoint/agent
+may be `defineAsyncComponent` chunks, but they must share a compact local
+loading fallback with `aria-busy` so the detail shell remains stable while the
+panel chunk arrives.
+
 ---
 
 ## Composables

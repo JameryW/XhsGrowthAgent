@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Review loading, error, retry, and accessibility expectations for the public page."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Check cache invalidation and reactive state verification."}

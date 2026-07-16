@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import Showcase from '@/views/Showcase.vue'
 
@@ -40,6 +40,7 @@ function workflow(thread_id: string, status: 'running' | 'completed', updated_at
 describe('Showcase P0 interaction contract', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    sessionStorage.clear()
     routeMock.query = {}
     listWorkflowsMock.mockResolvedValue({
       workflows: [workflow('featured-thread', 'completed', '2026-07-16T10:00:00Z'), workflow('other-thread', 'running', '2026-07-15T10:00:00Z')],
@@ -57,6 +58,10 @@ describe('Showcase P0 interaction contract', () => {
       content_plan: { selected_topic: '真实案例主题' },
       copy_content: { selected_title: '真实产出标题', hashtags: [] },
     })
+  })
+
+  afterEach(() => {
+    sessionStorage.clear()
   })
 
   it('renders the featured case once and leaves a semantic replay link for the list card', async () => {
@@ -94,5 +99,41 @@ describe('Showcase P0 interaction contract', () => {
     expect(routerMock.replace).toHaveBeenCalledWith({ query: { status: 'all', mode: 'brief', sort: 'progress' } })
     await wrapper.find('select').setValue('created')
     expect(routerMock.replace).toHaveBeenLastCalledWith({ query: { status: 'all', mode: 'brief', sort: 'created' } })
+  })
+
+  it('renders a fresh session cache before the background refresh resolves', async () => {
+    let resolveRefresh!: (value: unknown) => void
+    listWorkflowsMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRefresh = resolve
+    }))
+    sessionStorage.setItem('showcase:workflow-cache:v1', JSON.stringify({
+      version: 1,
+      savedAt: Date.now(),
+      workflows: [workflow('cached-thread', 'completed', '2026-07-16T10:00:00Z'), workflow('cached-other', 'running', '2026-07-15T10:00:00Z')],
+      details: [],
+    }))
+
+    const wrapper = mount(Showcase, {
+      global: {
+        stubs: {
+          RouterLink: { template: '<a><slot /></a>' },
+          AnimatedCounter: { template: '<span>0</span>' },
+        },
+      },
+    })
+
+    await flushPromises()
+    expect(wrapper.find('.showcase-workspace-shell').exists()).toBe(true)
+    expect(wrapper.findAll('.showcase-card').length).toBe(1)
+    expect(listWorkflowsMock).toHaveBeenCalledTimes(1)
+
+    resolveRefresh({
+      workflows: [workflow('cached-thread', 'completed', '2026-07-16T10:00:00Z')],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    })
+    await flushPromises()
+    wrapper.unmount()
   })
 })

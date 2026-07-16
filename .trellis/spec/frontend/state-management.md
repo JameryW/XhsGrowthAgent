@@ -11,6 +11,7 @@
 | `useWorkflowStore` | `stores/workflow.ts` | Workflow lifecycle, phase, status, progress |
 | `useRealtimeStore` | `stores/realtime.ts` | WebSocket connection, event recovery |
 | `useToastStore` | `stores/toast.ts` | Success/error/warning/info notifications |
+| `useThemeStore` | `stores/theme.ts` | Browser-local light/dark/system preference and root theme application |
 
 ---
 
@@ -97,6 +98,15 @@ export const useToastStore = defineStore('toast', () => {
 })
 ```
 
+## Theme Store Pattern
+
+`useThemeStore` owns only browser-local presentation state. It reads a validated
+`light` / `dark` / `system` preference from `localStorage`, applies the
+`dark` class and `color-scheme` metadata to `document.documentElement`, and
+subscribes to `prefers-color-scheme` while in `system` mode. Call `init()` from
+the application shell and call `dispose()` when that shell is unmounted so the
+media-query listener cannot leak across test mounts or embedded shells.
+
 ---
 
 ## State ↔ Backend Sync
@@ -109,6 +119,23 @@ Frontend state mirrors backend `XHSGrowthState`. The sync flow:
 4. Components react to store computed properties
 
 No polling — all updates are push-based via WebSocket/SSE.
+
+### Public evidence-page cache
+
+Public showcase/replay pages may use a versioned `sessionStorage` snapshot to
+avoid a blank first view when the network is slow. Keep this cache short-lived
+(30 seconds or less), validate its version and shape before hydrating reactive
+state, and always issue a background refresh after a cache hit. If the refresh
+fails, retain the usable snapshot, expose a retry action, and back off retries
+so an expired cache cannot create a tight request loop. Cache only the JSON
+display data; never move authenticated or mutation state into storage, and
+clear refresh timers when the page unmounts.
+
+Replay snapshots should be keyed by `threadId` and owned by the workflow store
+so status and checkpoint state hydrate together. A history refresh must replace
+the cached snapshot, while `loadMoreCheckpoints` merges and rewrites the same
+thread's entry; exiting replay clears reactive state but does not delete the
+short-lived session snapshot needed for a quick return.
 
 ### Live State vs Replay Selection
 
@@ -148,3 +175,8 @@ side-effectful mutation of a Pinia store.
 - **Don't** forget to clean up WebSocket connections on unmount
 - **Don't** use `watch` for things that can be `computed`
 - **Don't** call `useXStore()` from router guards or other module-level code without an explicit shared Pinia instance. Export one `pinia` instance and pass it to the store (`useAuthStore(pinia)`) so navigation never depends on an active component context.
+
+Public route shells should import only the store modules they use (for example,
+`stores/auth` and `stores/realtime`) instead of importing the aggregate
+`stores/index` barrel. The barrel is convenient inside authenticated feature
+code, but it can pull unrelated workspace stores into the public entry chunk.

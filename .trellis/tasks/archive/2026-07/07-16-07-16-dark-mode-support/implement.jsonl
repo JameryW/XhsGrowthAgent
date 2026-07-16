@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/state-management.md","reason":"主题偏好属于跨页面 UI 状态，需要遵循 Pinia setup store、持久化和生命周期清理约定。"}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"主题切换入口涉及共享组件、无障碍触控区域和中英文 i18n 约定。"}
