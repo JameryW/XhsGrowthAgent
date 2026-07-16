@@ -1015,6 +1015,8 @@ git diff --check
 - Manifest 增加 key/all 计数、offset/limit/has_more、ETag/Last-Modified；Replay 增加 30 秒详情缓存、stale guard、阶段 roving tabindex、深链分页和加载更多失败重试。
 - Showcase 回放入口改为可复制/新标签使用的真实链接，公开页改为直接引入 auth store，避免公共入口加载无关 store barrel。
 - 当前分支 OpenAPI 已包含上述五个只读路由及两个认证治理路由；公开案例仍为 0，未在无 owner 授权时发布真实案例。
+- 部署后浏览器 smoke 已覆盖真实空态接口与脱敏 mock 案例：320/390/768/1024/1280/1440px × light/dark 共 12 组合；检查无页面级横向滚动、主题 class、390px reduced-motion、Showcase/Replay 首屏、真实回放链接和阶段 ArrowRight 键盘导航均通过。390px dark 截图复核确认主题按钮不再遮挡主 CTA。
+- 线上 smoke：`/api/system/health` 正常，Postgres/Ripple 正常；公开列表返回 `total=0` 且无私有案例泄露；列表 ETag 条件请求返回 `304`；OpenAPI 暴露五个只读路由和两个认证治理路由。
 
 以下项目需要部署到目标环境后完成，不把本地自动化结果冒充线上证据：390/320–1440px 双主题截图矩阵、
 axe serious/critical、Lighthouse/Web Vitals、慢 4G/Save-Data、真实公共案例 owner 授权和灰度回滚演练。

@@ -170,7 +170,7 @@ const handleErrorBoundaryRefresh = () => {
 
     <!-- Status indicators (always visible) -->
     <Toast />
-    <ThemeToggle v-if="!showChrome || isMobile" class="fixed right-3 top-3 z-[80]" />
+    <ThemeToggle v-if="!isImmersivePage && (!showChrome || isMobile)" class="fixed right-3 top-3 z-[80]" />
 
     <!-- Authenticated chrome -->
     <template v-if="showChrome">
