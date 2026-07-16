@@ -21,6 +21,9 @@ vi.mock('@/api/publicShowcase', () => ({
 vi.mock('@/stores', () => ({
   useAuthStore: () => ({ isAuthenticated: false, isInitialized: true, initialize: vi.fn() }),
 }))
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ isAuthenticated: false, isInitialized: true, initialize: vi.fn() }),
+}))
 
 function publicCase(public_id: string, title: string, featured = false) {
   return {
@@ -77,7 +80,7 @@ describe('Showcase public UX contract', () => {
 
     expect(wrapper.find('#featured-heading').text()).toContain('真实案例标题')
     expect(wrapper.findAll('.case-card')).toHaveLength(1)
-    await wrapper.find('.case-card button').trigger('click')
+    await wrapper.find('.case-card a').trigger('click')
     expect(routerMock.push).toHaveBeenCalledWith({ name: 'replay', params: { publicId: 'case-other' }, query: { from: '/' } })
   })
 

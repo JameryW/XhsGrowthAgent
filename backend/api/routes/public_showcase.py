@@ -10,13 +10,19 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
+import re
 from collections.abc import Iterable
-from typing import Any, cast
+from datetime import UTC, datetime
+from email.utils import format_datetime
+from typing import Any, Literal, cast
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
+from pydantic import BaseModel, Field
 
-from backend.api.deps import get_optional_user
+from backend.api.deps import get_current_user, get_optional_user
 from backend.api.errors import WorkflowNotFoundError
 from backend.api.responses import ApiResponse, success
 from backend.db.pool import is_pool_ready
@@ -29,8 +35,22 @@ from backend.db.workflows import (
 from backend.db.workflows import (
     list_workflows as db_list,
 )
+from backend.db.workflows import (
+    update_workflow as db_update,
+)
 
 router = APIRouter()
+
+
+class ShowcaseVisibilityUpdate(BaseModel):
+    """Authenticated operator payload for approving or revoking a case."""
+
+    visibility: Literal["private", "unlisted", "public"]
+    public_title: str | None = Field(default=None, max_length=120)
+    public_summary: str | None = Field(default=None, max_length=360)
+    featured: bool = False
+    featured_rank: int | None = Field(default=None, ge=0, le=1000)
+
 
 _PUBLIC_VISIBILITIES = {"public", "unlisted"}
 _PUBLIC_STATUS_VALUES = {"completed", "in_progress", "attention"}
@@ -46,6 +66,36 @@ _KNOWN_PHASES = {
     "completed",
 }
 _SYSTEM_AGENTS = {"", "orchestrator", "__start__", "__end__"}
+_EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b")
+_PHONE_RE = re.compile(r"(?<!\d)(?:\+?86[- ]?)?1[3-9]\d{9}(?!\d)")
+_UUID_RE = re.compile(
+    r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
+    re.IGNORECASE,
+)
+_COLOR_RE = re.compile(
+    r"^(?:#[0-9a-f]{3,8}|(?:rgb|rgba|hsl|hsla)\([0-9a-z%.,\s()/+-]{1,64}\))$",
+    re.IGNORECASE,
+)
+_SAFE_COLOR_NAMES = {
+    "amber",
+    "black",
+    "blue",
+    "cyan",
+    "gray",
+    "green",
+    "indigo",
+    "orange",
+    "pink",
+    "purple",
+    "red",
+    "rose",
+    "slate",
+    "teal",
+    "violet",
+    "white",
+    "yellow",
+}
+_DEFAULT_PUBLIC_HOSTS = {"xiaohongshu.com", "www.xiaohongshu.com", "xhslink.com"}
 
 
 def _allowlist() -> set[str]:
@@ -92,6 +142,9 @@ def _safe_text(value: Any, limit: int = 240) -> str | None:
     text = " ".join(value.split()).strip()
     if not text:
         return None
+    text = _EMAIL_RE.sub("[已脱敏邮箱]", text)
+    text = _PHONE_RE.sub("[已脱敏电话]", text)
+    text = _UUID_RE.sub("[已脱敏标识]", text)
     return text[:limit] + ("…" if len(text) > limit else "")
 
 
@@ -99,8 +152,62 @@ def _safe_url(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
     url = value.strip()
-    if url.startswith(("https://", "http://")):
-        return url[:500]
+    parsed = urlparse(url)
+    if parsed.scheme not in {"https", "http"} or not parsed.hostname:
+        return None
+    configured_hosts = {
+        host.strip().lower()
+        for host in os.environ.get("XHS_PUBLIC_URL_HOSTS", "").split(",")
+        if host.strip()
+    }
+    allowed_hosts = configured_hosts or _DEFAULT_PUBLIC_HOSTS
+    hostname = parsed.hostname.lower()
+    if not any(hostname == host or hostname.endswith(f".{host}") for host in allowed_hosts):
+        return None
+    return url[:500]
+
+
+def _public_error_category(value: Any) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    lowered = value.casefold()
+    if any(token in lowered for token in ("auth", "token", "credential", "permission")):
+        return "authorization"
+    if any(token in lowered for token in ("timeout", "timed out", "deadline")):
+        return "timeout"
+    if any(token in lowered for token in ("rate", "limit", "quota")):
+        return "rate_limited"
+    if any(token in lowered for token in ("network", "connection", "unavailable")):
+        return "service_unavailable"
+    return "processing"
+
+
+def _cache_headers(
+    payload: dict[str, Any],
+    request: Request | None,
+    response: Response | None,
+    *,
+    last_modified: str | None = None,
+) -> Response | None:
+    """Apply short public caching and honor conditional GETs."""
+
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode()
+    etag = f'"{hashlib.sha256(encoded).hexdigest()[:24]}"'
+    headers = {
+        "ETag": etag,
+        "Cache-Control": "public, max-age=30, stale-while-revalidate=60",
+        "Vary": "Accept-Encoding",
+    }
+    if last_modified:
+        try:
+            parsed = datetime.fromisoformat(last_modified.replace("Z", "+00:00"))
+            headers["Last-Modified"] = format_datetime(parsed.astimezone(UTC), usegmt=True)
+        except ValueError:
+            pass
+    if response is not None:
+        response.headers.update(headers)
+    if request is not None and request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
     return None
 
 
@@ -112,6 +219,24 @@ def _safe_list(value: Any, limit: int = 6) -> list[str]:
         text = _safe_text(item, 80)
         if text:
             result.append(text)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _safe_colors(value: Any, limit: int = 5) -> list[str]:
+    """Keep palette values safe for the frontend's CSS color binding."""
+
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        color = item.strip()
+        if color.casefold() not in _SAFE_COLOR_NAMES and not _COLOR_RE.fullmatch(color):
+            continue
+        result.append(color)
         if len(result) >= limit:
             break
     return result
@@ -218,7 +343,7 @@ def _public_result(source: dict[str, Any]) -> dict[str, Any]:
     visual_result: dict[str, Any] = {}
     layout = _safe_text(visual.get("layout_style"), 80)
     image_count = _number(visual.get("image_count"))
-    palette = _safe_list(visual.get("color_palette"), 5)
+    palette = _safe_colors(visual.get("color_palette"), 5)
     if layout:
         visual_result["layout"] = layout
     if image_count is not None:
@@ -279,6 +404,9 @@ def _public_result(source: dict[str, Any]) -> dict[str, Any]:
         prediction_result["verdict"] = verdict
     if prediction_result:
         result["prediction"] = prediction_result
+    error_category = _public_error_category(source.get("error"))
+    if error_category:
+        result["error_category"] = error_category
     return result
 
 
@@ -293,9 +421,18 @@ def _checkpoint_dict(checkpoint: Any) -> dict[str, Any]:
 def _is_meaningful_checkpoint(checkpoint: dict[str, Any]) -> bool:
     if checkpoint.get("current_agent") in _SYSTEM_AGENTS:
         return False
+    phase = _phase(checkpoint.get("phase"))
     return bool(
         _public_result(checkpoint)
-        or checkpoint.get("phase") in {"completed", "reviewing", "publishing", "analyzing"}
+        or checkpoint.get("decision")
+        or phase in {"reviewing", "publishing", "analyzing", "completed"}
+    )
+
+
+def _is_decision_checkpoint(checkpoint: dict[str, Any]) -> bool:
+    return bool(
+        checkpoint.get("decision")
+        or _phase(checkpoint.get("phase")) in {"reviewing", "publishing", "completed"}
     )
 
 
@@ -315,6 +452,9 @@ def _public_step(thread_id: str, checkpoint: dict[str, Any]) -> dict[str, Any]:
         "summary": summary,
         "created_at": checkpoint.get("created_at"),
         "has_result": bool(result),
+        "has_business_data": bool(result),
+        "is_decision": _is_decision_checkpoint(checkpoint),
+        "error_category": _public_error_category(checkpoint.get("error")),
         "result_kind": phase,
     }
 
@@ -359,6 +499,20 @@ async def _resolve_case(public_id: str) -> WorkflowRow:
     raise WorkflowNotFoundError(public_id)
 
 
+async def _resolve_any_case(public_id: str) -> WorkflowRow:
+    """Resolve a case for the authenticated visibility-management endpoint."""
+
+    if not is_pool_ready():
+        raise WorkflowNotFoundError(public_id)
+    direct = await db_get_by_public_id(public_id)
+    if direct and _public_id(direct) == public_id:
+        return direct
+    for row in await _all_rows():
+        if _public_id(row) == public_id:
+            return row
+    raise WorkflowNotFoundError(public_id)
+
+
 async def _load_state(request: Request, thread_id: str) -> dict[str, Any] | None:
     from backend.api.routes.workflow import get_workflow_status
 
@@ -392,10 +546,19 @@ def _case_payload(
     result = _public_result(state)
     status = _public_status(state.get("status", row.status), state.get("phase", row.phase))
     title = (
-        result.get("title") or result.get("topic") or _safe_text(row.label, 120) or "内容创作案例"
+        _safe_text(row.public_title, 120)
+        or result.get("title")
+        or result.get("topic")
+        or _safe_text(row.label, 120)
+        or "内容创作案例"
     )
-    summary = result.get("summary") or result.get("topic") or "从洞察到产出的完整创作过程"
-    return {
+    summary = (
+        _safe_text(row.public_summary, 360)
+        or result.get("summary")
+        or result.get("topic")
+        or "从洞察到产出的完整创作过程"
+    )
+    payload: dict[str, Any] = {
         "public_id": _public_id(row),
         "title": title,
         "summary": summary,
@@ -412,17 +575,25 @@ def _case_payload(
             if key in result
         },
     }
+    if state:
+        payload["has_final_summary"] = bool(result)
+        payload["has_publish_result"] = bool(result.get("publish"))
+    if row.featured_rank is not None:
+        payload["featured_rank"] = row.featured_rank
+    return payload
 
 
-@router.get("/showcase/cases")
+@router.get("/showcase/cases", response_model=None)
 async def list_public_cases(
+    request: Request,
+    response: Response,
     limit: int = Query(24, ge=1, le=100),
     offset: int = Query(0, ge=0),
     q: str | None = Query(None, max_length=80),
     mode: str | None = Query(None),
     status: str | None = Query(None),
     sort: str = Query("recent"),
-) -> ApiResponse[Any]:
+) -> ApiResponse[Any] | Response:
     """List explicitly public cases without exposing internal workflow IDs."""
 
     rows = [row for row in await _all_rows() if _visibility(row) == "public"]
@@ -432,13 +603,35 @@ async def list_public_cases(
     if status in _PUBLIC_STATUS_VALUES:
         rows = [row for row in rows if _public_status(row.status, row.phase) == status]
     if search:
-        rows = [row for row in rows if search in (row.label or "").casefold()]
+        rows = [
+            row
+            for row in rows
+            if search
+            in " ".join(
+                value.casefold()
+                for value in (row.public_title, row.public_summary, row.label)
+                if value
+            )
+        ]
     if sort == "title":
-        rows.sort(key=lambda row: (row.label or "内容创作案例").casefold())
+        rows.sort(
+            key=lambda row: (
+                row.public_title or row.public_summary or row.label or "内容创作案例"
+            ).casefold()
+        )
     else:
         rows.sort(key=lambda row: row.updated_at or row.created_at, reverse=True)
 
-    featured_row = next((row for row in rows if row.showcase_featured), None)
+    featured_row = next(
+        (
+            row
+            for row in sorted(
+                (item for item in rows if item.showcase_featured or item.featured_rank is not None),
+                key=lambda item: item.featured_rank if item.featured_rank is not None else 10**9,
+            )
+        ),
+        None,
+    )
     if featured_row is None:
         featured_row = next(
             (row for row in rows if row.status == "completed"),
@@ -446,50 +639,136 @@ async def list_public_cases(
         )
     page = rows[offset : offset + limit]
     cases = [_case_payload(row, featured=row is featured_row) for row in page]
+    data = {
+        "cases": cases,
+        "total": len(rows),
+        "limit": limit,
+        "offset": offset,
+        "featured_public_id": _public_id(featured_row) if featured_row else None,
+    }
+    not_modified = _cache_headers(
+        data,
+        request,
+        response,
+        last_modified=max((row.updated_at for row in rows), default=None),
+    )
+    return not_modified or success(data=data)
+
+
+@router.put("/admin/showcase/cases/{public_id}")
+async def update_showcase_visibility(
+    public_id: str,
+    payload: ShowcaseVisibilityUpdate,
+    current: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Approve, edit, or revoke a public case from the authenticated console."""
+
+    row = await _resolve_any_case(public_id)
+    is_public = payload.visibility in _PUBLIC_VISIBILITIES
+    approved_at = datetime.now(UTC).isoformat() if is_public else None
+    approved_by = (current.get("username") or current.get("id")) if is_public else None
+    featured = bool(payload.featured and payload.visibility == "public")
+    updated = await db_update(
+        row.thread_id,
+        showcase_visibility=payload.visibility,
+        public_id=_public_id(row),
+        showcase_featured=featured,
+        featured_rank=payload.featured_rank if featured else None,
+        public_title=_safe_text(payload.public_title, 120),
+        public_summary=_safe_text(payload.public_summary, 360),
+        approved_at=approved_at,
+        approved_by=approved_by,
+        redaction_version="v1",
+    )
+    if updated is None:
+        raise WorkflowNotFoundError(public_id)
     return success(
         data={
-            "cases": cases,
-            "total": len(rows),
-            "limit": limit,
-            "offset": offset,
-            "featured_public_id": _public_id(featured_row) if featured_row else None,
+            "public_id": _public_id(updated),
+            "visibility": payload.visibility,
+            "approved_at": approved_at,
+            "approved_by": approved_by,
+            "case": _case_payload(updated, featured=featured),
         }
     )
 
 
-@router.get("/showcase/cases/{public_id}")
-async def get_public_case(public_id: str, request: Request) -> ApiResponse[Any]:
+@router.delete("/admin/showcase/cases/{public_id}")
+async def revoke_showcase_visibility(
+    public_id: str,
+    current: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Revoke public visibility without exposing the internal workflow ID."""
+
+    row = await _resolve_any_case(public_id)
+    updated = await db_update(
+        row.thread_id,
+        showcase_visibility="private",
+        public_id=_public_id(row),
+        showcase_featured=False,
+        featured_rank=None,
+        approved_at=None,
+        approved_by=None,
+        updated_at=datetime.now(UTC).isoformat(),
+    )
+    if updated is None:
+        raise WorkflowNotFoundError(public_id)
+    return success(
+        data={
+            "public_id": _public_id(updated),
+            "visibility": "private",
+            "revoked_by": current.get("username") or current.get("id"),
+        }
+    )
+
+
+@router.get("/showcase/cases/{public_id}", response_model=None)
+async def get_public_case(
+    public_id: str,
+    request: Request,
+    response: Response,
+) -> ApiResponse[Any] | Response:
     row = await _resolve_case(public_id)
     state = await _load_state(request, row.thread_id)
     payload = _case_payload(row, state, featured=row.showcase_featured)
     payload["result"] = _public_result(state or {})
-    return success(data=payload)
+    not_modified = _cache_headers(payload, request, response, last_modified=row.updated_at)
+    return not_modified or success(data=payload)
 
 
-@router.get("/replays/{public_id}/manifest")
+@router.get("/replays/{public_id}/manifest", response_model=None)
 async def get_public_replay_manifest(
     public_id: str,
     request: Request,
+    response: Response,
     include_technical: bool = Query(False),
     user: dict[str, Any] | None = Depends(get_optional_user),
-) -> ApiResponse[Any]:
+    limit: int = 20,
+    offset: int = 0,
+) -> ApiResponse[Any] | Response:
     row = await _resolve_case(public_id)
+    limit = max(1, min(int(limit), 20))
+    offset = max(0, int(offset))
     checkpoints = await _load_checkpoints(request, row.thread_id)
     allow_technical = bool(user) and include_technical
-    visible = checkpoints if allow_technical else _key_checkpoints(checkpoints)
-    steps = [_public_step(row.thread_id, checkpoint) for checkpoint in visible]
-    return success(
-        data={
-            "public_id": public_id,
-            "view": "all" if allow_technical else "key",
-            "steps": steps,
-            "has_more": False,
-            "technical_steps_available": bool(
-                user and len(checkpoints) > len(_key_checkpoints(checkpoints))
-            ),
-            "workflow": _case_payload(row),
-        }
-    )
+    key_checkpoints = _key_checkpoints(checkpoints)
+    visible = checkpoints if allow_technical else key_checkpoints
+    page = visible[offset : offset + limit]
+    data = {
+        "public_id": public_id,
+        "view": "all" if allow_technical else "key",
+        "steps": [_public_step(row.thread_id, checkpoint) for checkpoint in page],
+        "offset": offset,
+        "limit": limit,
+        "total_steps": len(visible),
+        "key_step_count": len(key_checkpoints),
+        "technical_step_count": len(checkpoints),
+        "has_more": offset + limit < len(visible),
+        "technical_steps_available": bool(user and len(checkpoints) > len(key_checkpoints)),
+        "workflow": _case_payload(row),
+    }
+    not_modified = _cache_headers(data, request, response, last_modified=row.updated_at)
+    return not_modified or success(data=data)
 
 
 async def _resolve_checkpoint(
@@ -525,14 +804,15 @@ async def _resolve_checkpoint(
     raise WorkflowNotFoundError(checkpoint_public_id)
 
 
-@router.get("/replays/{public_id}/checkpoints/{checkpoint_public_id}")
+@router.get("/replays/{public_id}/checkpoints/{checkpoint_public_id}", response_model=None)
 async def get_public_checkpoint_detail(
     public_id: str,
     checkpoint_public_id: str,
     request: Request,
+    response: Response,
     include_technical: bool = Query(False),
     user: dict[str, Any] | None = Depends(get_optional_user),
-) -> ApiResponse[Any]:
+) -> ApiResponse[Any] | Response:
     row, checkpoint = await _resolve_checkpoint(
         public_id, checkpoint_public_id, request, user, include_technical
     )
@@ -546,11 +826,16 @@ async def get_public_checkpoint_detail(
             "step": step["step"],
             "has_next": bool(checkpoint.get("next_nodes")),
         }
-    return success(data=step)
+    not_modified = _cache_headers(step, request, response, last_modified=step.get("created_at"))
+    return not_modified or success(data=step)
 
 
-@router.get("/replays/{public_id}/final-summary")
-async def get_public_final_summary(public_id: str, request: Request) -> ApiResponse[Any]:
+@router.get("/replays/{public_id}/final-summary", response_model=None)
+async def get_public_final_summary(
+    public_id: str,
+    request: Request,
+    response: Response,
+) -> ApiResponse[Any] | Response:
     row = await _resolve_case(public_id)
     state = await _load_state(request, row.thread_id)
     final_source = state or {}
@@ -559,13 +844,13 @@ async def get_public_final_summary(public_id: str, request: Request) -> ApiRespo
         if checkpoints:
             final_source = max(checkpoints, key=lambda item: item.get("step", 0))
     result = _public_result(final_source)
-    return success(
-        data={
-            "public_id": public_id,
-            "status": _public_status(
-                (state or {}).get("status", row.status), (state or {}).get("phase", row.phase)
-            ),
-            "result": result,
-            "stable": True,
-        }
-    )
+    data = {
+        "public_id": public_id,
+        "status": _public_status(
+            (state or {}).get("status", row.status), (state or {}).get("phase", row.phase)
+        ),
+        "result": result,
+        "stable": True,
+    }
+    not_modified = _cache_headers(data, request, response, last_modified=row.updated_at)
+    return not_modified or success(data=data)

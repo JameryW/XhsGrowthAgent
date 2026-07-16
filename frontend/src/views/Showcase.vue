@@ -6,7 +6,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import PublicReplayResult from '@/components/replay/PublicReplayResult.vue'
 import { getPublicCase, listPublicCases } from '@/api/publicShowcase'
 import type { PublicCase, PublicCaseStatus, PublicWorkflowMode } from '@/types/publicShowcase'
-import { useAuthStore } from '@/stores'
+import { useAuthStore } from '@/stores/auth'
 import { trackInteraction } from '@/utils/interactionTelemetry'
 
 const { t, locale } = useI18n()
@@ -30,6 +30,7 @@ const sortKey = ref<SortKey>('recent')
 const detailState = ref<Record<string, 'idle' | 'loading' | 'ready' | 'error'>>({})
 const detailCache = ref<Map<string, PublicCase>>(new Map())
 const firstCaseTracked = ref(false)
+const totalCases = ref(0)
 
 const CACHE_VERSION = 2
 const CACHE_KEY = `showcase:public-cases:v${CACHE_VERSION}`
@@ -57,7 +58,7 @@ const filteredCases = computed(() => {
   })
 })
 
-const resultCount = computed(() => cases.value.length)
+const resultCount = computed(() => totalCases.value || cases.value.length)
 
 function trackFirstCaseVisible(cached: boolean, startedAt: number) {
   if (firstCaseTracked.value || !cases.value.length) return
@@ -118,6 +119,7 @@ function writeCache(nextCases: PublicCase[]) {
 
 function hydrate(nextCases: PublicCase[]) {
   cases.value = nextCases
+  totalCases.value = nextCases.length
   loaded.value = true
   if (nextCases[0]) void loadCaseDetail(nextCases[0].public_id)
   if (featuredCase.value) void loadCaseDetail(featuredCase.value.public_id)
@@ -150,6 +152,7 @@ async function loadCases(useCache = true) {
   try {
     const response = await listPublicCases({ limit: 100, sort: 'recent' }, { suppressToast: true })
     cases.value = response.cases || []
+    totalCases.value = response.total ?? cases.value.length
     loaded.value = true
     writeCache(cases.value)
     trackFirstCaseVisible(false, startedAt)
@@ -194,6 +197,10 @@ function openReplay(publicId: string) {
   void router.push({ name: 'replay', params: { publicId }, query: { from: '/' } })
 }
 
+function replayHref(publicId: string): string {
+  return `/replay/${encodeURIComponent(publicId)}?from=%2F`
+}
+
 function formatDate(value: string): string {
   if (!value) return ''
   return new Intl.DateTimeFormat(locale.value || undefined, { month: 'short', day: 'numeric' }).format(new Date(value))
@@ -223,6 +230,7 @@ onMounted(async () => {
 <template>
   <div class="showcase-v2 min-h-screen overflow-x-clip bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50">
     <div class="showcase-v2-ambient" aria-hidden="true" />
+    <a href="#cases" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-slate-900 focus:px-4 focus:py-3 focus:text-sm focus:font-semibold focus:text-white">{{ t('common.skipToContent') }}</a>
     <nav class="relative z-10 border-b border-slate-200/70 bg-white/80 backdrop-blur-xl dark:border-slate-800/70 dark:bg-slate-950/80">
       <div class="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-4 px-4 md:px-8">
         <button type="button" class="flex min-h-11 items-center gap-3 rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500" @click="router.push({ name: 'showcase' })">
@@ -283,7 +291,7 @@ onMounted(async () => {
                 <span class="rounded-full bg-white/15 px-2.5 py-1">{{ modeLabel(featuredCase.workflow_mode) }}</span>
                 <span>{{ t('showcase.caseUpdated', { date: formatDate(featuredCase.updated_at) }) }}</span>
               </div>
-              <button type="button" class="mt-7 inline-flex min-h-12 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-rose-700 shadow-lg hover:bg-rose-50" @click="openReplay(featuredCase.public_id)">{{ t('showcase.caseReplay') }}<AppIcon name="ArrowRight" size="sm" aria-hidden="true" /></button>
+              <a :href="replayHref(featuredCase.public_id)" class="mt-7 inline-flex min-h-12 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-rose-700 shadow-lg hover:bg-rose-50" @click.prevent="openReplay(featuredCase.public_id)">{{ t('showcase.caseReplay') }}<AppIcon name="ArrowRight" size="sm" aria-hidden="true" /></a>
             </div>
             <div class="p-6 md:p-8">
               <div v-if="detailState[featuredCase.public_id] === 'loading'" class="space-y-4" aria-busy="true"><div class="h-5 w-2/3 animate-pulse rounded bg-slate-200 dark:bg-slate-800" /><div class="h-20 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" /></div>
@@ -339,7 +347,7 @@ onMounted(async () => {
             </div>
             <p class="mt-3 line-clamp-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{{ caseDetail(item).summary }}</p>
             <div v-if="caseDetail(item).result_preview.topic" class="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800/70 dark:text-slate-300"><span class="font-medium text-slate-800 dark:text-slate-100">{{ t('showcase.detail.topic') }}：</span>{{ caseDetail(item).result_preview.topic }}</div>
-            <div class="mt-5 flex items-center justify-between gap-3"><span class="text-xs text-slate-500 dark:text-slate-400">{{ t('showcase.caseUpdated', { date: formatDate(item.updated_at) }) }}</span><button type="button" class="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-400/10" @click="openReplay(item.public_id)">{{ t('showcase.caseReplay') }}<AppIcon name="ArrowRight" size="xs" aria-hidden="true" /></button></div>
+            <div class="mt-5 flex items-center justify-between gap-3"><span class="text-xs text-slate-500 dark:text-slate-400">{{ t('showcase.caseUpdated', { date: formatDate(item.updated_at) }) }}</span><a :href="replayHref(item.public_id)" class="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-400/10" @click.prevent="openReplay(item.public_id)">{{ t('showcase.caseReplay') }}<AppIcon name="ArrowRight" size="xs" aria-hidden="true" /></a></div>
           </article>
         </div>
       </section>

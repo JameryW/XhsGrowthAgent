@@ -1708,14 +1708,21 @@
     "publicWorkspace": "Open workspace",
     "publicKeySteps": "Key steps",
     "publicAllSteps": "All steps",
+    "publicStepsLabel": "Replay steps",
+    "publicPhaseNavigation": "Workflow phases",
+    "publicStepCount": "{key} key steps · {total} total",
+    "publicLoadMore": "Load more steps",
+    "publicLoadMoreFailed": "More steps could not be loaded.",
     "publicAdvanced": "Technical details",
     "publicAdvancedHint": "Sign in to inspect more execution steps",
     "publicStep": "Step {step}",
     "publicStepOf": "Step {current} of {total}",
+    "publicSelectedStep": "Selected step {step}: {title}",
     "publicPrevious": "Previous",
     "publicNext": "Next",
     "publicFirstResult": "First result",
     "publicNoResult": "No business output is available for this step yet",
+    "publicResultLabel": "Public workflow result",
     "publicNoSteps": "No replay steps available",
     "publicFinalSummary": "Final result",
     "publicFinalStable": "The final summary stays stable while you browse steps",
@@ -1737,6 +1744,13 @@
     "publicShared": "Link copied",
     "publicShareFailed": "Could not copy the link",
     "publicLoginForAdvanced": "Sign in to view all technical steps"
+    ,"publicErrorCategory": {
+      "authorization": "Publishing authorization needs attention",
+      "timeout": "This step timed out",
+      "rate_limited": "The service is temporarily rate limited",
+      "service_unavailable": "The service is temporarily unavailable",
+      "processing": "This step needs attention"
+    }
   },
   "settings": {
     "title": "Account & API Key Management",

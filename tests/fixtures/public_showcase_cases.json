@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "success",
+      "visibility": "public",
+      "state": {
+        "status": "completed",
+        "phase": "completed",
+        "copy_content": {
+          "selected_title": "春日通勤的轻量仪式感",
+          "body_text": "联系 owner@example.com 获取完整资料，电话 13812345678。",
+          "hashtags": ["春日", "通勤"]
+        },
+        "publish_result": {
+          "status": "published",
+          "post_url": "https://www.xiaohongshu.com/explore/demo"
+        },
+        "analytics": {"views": 1234, "likes": 98}
+      }
+    },
+    {
+      "name": "in_progress",
+      "visibility": "public",
+      "state": {
+        "status": "running",
+        "phase": "creating",
+        "content_plan": {
+          "selected_topic": "低成本内容实验",
+          "content_angle": "先验证再扩展"
+        }
+      }
+    },
+    {
+      "name": "publish_failed",
+      "visibility": "public",
+      "state": {
+        "status": "error",
+        "phase": "publishing",
+        "error": "auth_failed: provider token expired",
+        "publish_result": {"status": "draft"}
+      }
+    },
+    {
+      "name": "partial",
+      "visibility": "public",
+      "state": {
+        "status": "running",
+        "phase": "reviewing",
+        "copy_content": {"selected_title": "部分产出标题"},
+        "decision": {"verdict": "需要补充素材"}
+      }
+    },
+    {
+      "name": "no_checkpoint",
+      "visibility": "public",
+      "state": {"status": "running", "phase": "scouting"}
+    },
+    {
+      "name": "offline",
+      "visibility": "public",
+      "state": {
+        "status": "error",
+        "phase": "analyzing",
+        "error": "network unavailable"
+      }
+    },
+    {
+      "name": "revoked",
+      "visibility": "private",
+      "state": {
+        "status": "completed",
+        "phase": "completed",
+        "copy_content": {"selected_title": "已下线案例"}
+      }
+    }
+  ]
+}

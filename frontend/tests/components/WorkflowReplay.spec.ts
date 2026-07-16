@@ -24,6 +24,9 @@ vi.mock('@/api/publicShowcase', () => ({
 vi.mock('@/stores', () => ({
   useAuthStore: () => ({ isAuthenticated: false, isInitialized: true, initialize: vi.fn() }),
 }))
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ isAuthenticated: false, isInitialized: true, initialize: vi.fn() }),
+}))
 
 const steps = [
   { public_id: 'step-1', step: 1, phase: 'scouting', title: '趋势洞察', summary: '找到方向', created_at: null, has_result: true, result_kind: 'scouting', result: { topic: '测试主题' } },
@@ -33,12 +36,18 @@ const steps = [
 describe('WorkflowReplay public UX contract', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    sessionStorage.clear()
     routeMock.params = { publicId: 'case-1' }
     routeMock.query = {}
     getManifestMock.mockResolvedValue({
       public_id: 'case-1',
       view: 'key',
       steps,
+      offset: 0,
+      limit: 20,
+      total_steps: steps.length,
+      key_step_count: steps.length,
+      technical_step_count: steps.length,
       has_more: false,
       technical_steps_available: false,
       workflow: {
@@ -70,10 +79,13 @@ describe('WorkflowReplay public UX contract', () => {
     })
 
     await flushPromises()
-    expect(getManifestMock).toHaveBeenCalledWith('case-1', false, { suppressToast: true })
+    expect(getManifestMock).toHaveBeenCalledWith('case-1', false, { suppressToast: true, limit: 20, offset: 0 })
     expect(getCheckpointMock).toHaveBeenCalledWith('case-1', 'step-1', false, { suppressToast: true })
     expect(wrapper.find('#replay-steps-heading').exists()).toBe(true)
-    expect(wrapper.findAll('[aria-current="step"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-step-id][aria-current="step"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-phase-index]')).toHaveLength(2)
+    expect(wrapper.find('[data-phase-index="0"]').attributes('tabindex')).toBe('0')
+    expect(wrapper.find('[data-phase-index="1"]').attributes('tabindex')).toBe('-1')
   })
 
   it('moves to the next key step and updates the deep link', async () => {
@@ -92,5 +104,55 @@ describe('WorkflowReplay public UX contract', () => {
     await flushPromises()
     expect(routerMock.replace).toHaveBeenCalledWith({ query: { step: 'step-2' } })
     expect(getCheckpointMock).toHaveBeenLastCalledWith('case-1', 'step-2', false, { suppressToast: true })
+  })
+
+  it('paginates replay steps and keeps the first page visible while loading more', async () => {
+    const firstPage = {
+      public_id: 'case-1',
+      view: 'key' as const,
+      steps: [steps[0]],
+      offset: 0,
+      limit: 1,
+      total_steps: 2,
+      key_step_count: 2,
+      technical_step_count: 2,
+      has_more: true,
+      technical_steps_available: false,
+      workflow: {
+        public_id: 'case-1',
+        title: '公开案例',
+        summary: '案例摘要',
+        status: 'completed' as const,
+        phase: 'completed',
+        workflow_mode: 'trend' as const,
+        created_at: '2026-07-16T10:00:00Z',
+        updated_at: '2026-07-16T10:00:00Z',
+        featured: true,
+        replay_available: true,
+        result_preview: { title: '测试标题' },
+      },
+    }
+    const secondPage = { ...firstPage, steps: [steps[1]], offset: 1, has_more: false }
+    getManifestMock.mockImplementation(async (_publicId: string, _technical: boolean, options: { offset?: number }) => options.offset ? secondPage : firstPage)
+
+    const wrapper = mount(WorkflowReplay, {
+      global: {
+        stubs: {
+          AppIcon: { template: '<span />' },
+          PublicReplayResult: { template: '<div />' },
+        },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.findAll('[data-step-id]')).toHaveLength(1)
+
+    const loadMore = wrapper.findAll('button').find(button => button.text().includes('加载更多'))
+    await loadMore?.trigger('click')
+    await flushPromises()
+
+    expect(getManifestMock).toHaveBeenLastCalledWith('case-1', false, { suppressToast: true, limit: 20, offset: 1 })
+    expect(wrapper.findAll('[data-step-id]')).toHaveLength(2)
+    expect(wrapper.find('[data-step-id="step-1"]').exists()).toBe(true)
+    expect(wrapper.find('[data-step-id="step-2"]').exists()).toBe(true)
   })
 })

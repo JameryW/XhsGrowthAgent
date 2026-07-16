@@ -1708,14 +1708,21 @@
     "publicWorkspace": "进入工作台",
     "publicKeySteps": "关键步骤",
     "publicAllSteps": "全部步骤",
+    "publicStepsLabel": "回放步骤",
+    "publicPhaseNavigation": "工作流阶段",
+    "publicStepCount": "{key} 个关键步骤 · 共 {total} 步",
+    "publicLoadMore": "加载更多步骤",
+    "publicLoadMoreFailed": "更多步骤加载失败，请重试。",
     "publicAdvanced": "技术详情",
     "publicAdvancedHint": "已登录后可查看更多执行步骤",
     "publicStep": "第 {step} 步",
     "publicStepOf": "第 {current} / {total} 步",
+    "publicSelectedStep": "已选择第 {step} 步：{title}",
     "publicPrevious": "上一步",
     "publicNext": "下一步",
     "publicFirstResult": "第一个结果",
     "publicNoResult": "这一步暂无可展示的业务产出",
+    "publicResultLabel": "公开工作流结果",
     "publicNoSteps": "暂无可回放步骤",
     "publicFinalSummary": "最终结果",
     "publicFinalStable": "最终摘要不会随步骤选择变化",
@@ -1737,6 +1744,13 @@
     "publicShared": "链接已复制",
     "publicShareFailed": "复制失败，请手动复制地址",
     "publicLoginForAdvanced": "登录后查看全部技术步骤"
+    ,"publicErrorCategory": {
+      "authorization": "发布授权需要处理",
+      "timeout": "这一步执行超时",
+      "rate_limited": "服务暂时达到调用限制",
+      "service_unavailable": "服务暂时不可用",
+      "processing": "这一步需要进一步处理"
+    }
   },
   "settings": {
     "title": "账号与密钥管理",
