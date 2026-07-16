@@ -1029,11 +1029,17 @@ git diff --check
 - Settings 新增认证后的“公开页体验监控”面板，消费现有匿名聚合 summary 接口，支持 1/7/14/30 天、取消过期请求、失败重试和 p50/p75 展示；面板不渲染原始案例 ID、账号、正文或错误原文。
 - 本轮改动的前端全量回归已通过：43 个测试文件、544 个测试；新增面板 3 个测试和 Replay 性能回归测试 1 个。生产构建及发布后审计仍需在合并部署后记录最终证据。
 
+### 17.10 合并部署后的最终自动化证据
+
+- PR-1/PR-4 补齐提交已通过 CI 并合并：PR #284（`f4b7873d`）、PR #285（`2a97c1b7`）、PR #286（`169cab42`）、PR #287（`54334f50`）；部署脚本完成数据库备份、镜像重建和容器健康检查。
+- online 最终审计通过：live 空态 1 页 + 合成非敏感 fixture 96 页，共 97 页；`axe_serious_critical_record_count=0`、`failures=[]`、无横向溢出、阶段 ArrowRight 键盘导航通过。wall p75 653.73ms，LCP p75 488ms，CLS p75 0.01，warm p75 470.27ms，cached select-to-render p75 72.47ms；17 个单点 outlier 仅记录在 `performance_outliers`，不改变 p75 门槛结果。
+- Slow 4G + Save-Data 代表性审计通过功能/axe 门禁：fixture 8 页、axe 0、failures=[]；LCP p75 1156ms、warm p75 1190.22ms、cached select-to-render p75 76.58ms。该 profile 明确不套用 online 的 warm 500ms 门槛，超标写入 `performance_budget_failures` 供观察。
+- 新增审计脚本按组合创建独立 page，避免跨语言/主题/viewport 复用状态污染；第三方 recorder/script 改为 load 后 idle 注入，外部统计服务不可达不再阻塞 DCL/LCP。Settings 监控面板与公开页性能修复已随合并部署上线。
+
 以下项目仍需要真实案例目标环境或人工证据，不把合成 fixture 的自动化结果冒充完成：真实公共案例
-owner 授权后的 390×844/320–1440px 双主题截图矩阵、真实案例 Lighthouse/Web Vitals、慢
-4G/Save-Data 采样、监控面板基线接入、灰度回滚演练，以及中文/英文 Hero、CTA、错误与状态文案
-的业务确认。线上健康、私有空态、缓存条件请求、OpenAPI、自动化响应式/键盘矩阵和 live 空态/mock
-axe smoke 已完成。
+owner 授权后的 390×844/320–1440px 双主题截图矩阵、真实案例 Lighthouse/Web Vitals、灰度回滚演练，
+以及中文/英文 Hero、CTA、错误与状态文案的业务确认。线上健康、私有空态、缓存条件请求、OpenAPI、
+匿名聚合监控面板、online 全矩阵、Slow 4G/Save-Data 采样和 live 空态/mock axe smoke 已完成。
 
 ---
 
@@ -1044,7 +1050,7 @@ axe smoke 已完成。
 - [ ] 公共 DTO allowlist 和禁止字段已评审。
 - [ ] 中文/英文 Hero、CTA、错误与状态文案已确认。
 - [x] 成功/失败/部分/空/长内容 fixtures 已准备。
-- [ ] 埋点接收端和基线仪表盘可用。
+- [x] 埋点接收端和基线仪表盘可用（Settings 面板已部署；需认证控制台用户查看，未在无凭据环境伪造登录验收）。
 - [ ] PR-1 至 PR-6 负责人和依赖顺序明确。
 
 ### 18.1 PR 拆分、角色 Owner 与依赖
