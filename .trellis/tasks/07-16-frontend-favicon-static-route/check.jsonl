@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"检查新增后端路由的格式、类型和测试要求。"}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"确认 API 静态资源路由和后端测试文件的归属位置。"}

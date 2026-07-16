@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"遵循后端 Python 类型标注、测试组织和 Ruff/mypy 校验约定。"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"确认静态资源缺失时采用明确 404 响应，不将错误资源请求吞入 SPA fallback。"}
