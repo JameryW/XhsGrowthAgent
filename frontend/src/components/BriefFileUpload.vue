@@ -114,7 +114,7 @@ function clear() {
           'transition-all duration-300 ease-out',
           isDragging
             ? 'border-neon-pink/50 bg-gradient-to-br from-neon-pink/10 to-neon-peach/5'
-            : 'border-slate-100 bg-slate-50/50 hover:border-neon-pink/30 hover:bg-neon-pink/[0.02] hover:shadow-sm'
+            : 'border-slate-100 bg-slate-50/50 hover:border-neon-pink/30 hover:bg-neon-pink/[0.02] hover:shadow-sm dark:border-slate-700/55 dark:bg-slate-900/70 dark:hover:border-neon-pink/40'
         ]"
       >
         <input
@@ -139,7 +139,7 @@ function clear() {
         </div>
 
         <!-- Loading spinner -->
-        <div v-if="isUploading" class="absolute inset-0 flex items-center justify-center bg-white/80 rounded-xl">
+        <div v-if="isUploading" class="absolute inset-0 flex items-center justify-center bg-white/80 rounded-xl dark:bg-slate-950/80">
           <div class="flex items-center gap-2 text-neon-pink">
             <div class="w-5 h-5 border-2 border-neon-pink border-t-transparent rounded-full animate-spin" />
             <span class="text-sm font-medium">{{ t('brief.extracting') }}</span>
@@ -204,9 +204,9 @@ function clear() {
         <textarea
           v-model="editableText"
           rows="8"
-          class="w-full pl-4 pr-4 py-3 rounded-xl border-2 border-slate-100 bg-slate-50/50 text-sm text-slate-700 font-medium
+          class="w-full pl-4 pr-4 py-3 rounded-xl border-2 border-slate-100 bg-slate-50/50 text-sm text-slate-700 font-medium dark:border-slate-700/55 dark:bg-slate-900/70 dark:text-slate-200
                  transition-all duration-300 ease-out resize-y
-                 focus:outline-none focus:border-neon-pink/40 focus:bg-white focus:shadow-neon-pink-sm
+                 focus:outline-none focus:border-neon-pink/40 focus:bg-white focus:shadow-neon-pink-sm dark:focus:bg-slate-900
                  placeholder:text-slate-300 placeholder:font-normal"
           :placeholder="t('brief.previewPlaceholder')"
         />

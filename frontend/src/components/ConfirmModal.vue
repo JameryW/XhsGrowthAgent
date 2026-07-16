@@ -155,7 +155,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
             <button
               ref="cancelButtonRef"
               type="button"
-              class="min-h-11 px-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 transition-all"
+              class="min-h-11 px-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 transition-all dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
               @click="handleCancel"
             >
               {{ displayCancelLabel }}

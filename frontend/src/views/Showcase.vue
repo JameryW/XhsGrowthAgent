@@ -988,9 +988,9 @@ const evolutionTreeData = computed(() => {
           </RouterLink>
           <WorkflowCardBody v-if="featuredDetailState === 'ready' && featuredDetail" :detail="featuredDetail" />
           <div v-else-if="featuredDetailState === 'loading'" class="showcase-featured-loading space-y-3 px-4 py-5 md:px-5" aria-live="polite">
-            <div class="h-3 w-1/4 animate-pulse rounded bg-white/70" />
-            <div class="h-4 w-3/4 animate-pulse rounded bg-white/70" />
-            <div class="h-3 w-1/2 animate-pulse rounded bg-white/60" />
+            <div class="h-3 w-1/4 animate-pulse rounded bg-white/70 dark:bg-slate-700/70" />
+            <div class="h-4 w-3/4 animate-pulse rounded bg-white/70 dark:bg-slate-700/70" />
+            <div class="h-3 w-1/2 animate-pulse rounded bg-white/60 dark:bg-slate-700/60" />
           </div>
           <div v-else-if="featuredDetailState === 'error'" class="showcase-featured-unavailable flex items-center justify-between gap-3 px-4 py-4 md:px-5" aria-live="polite">
             <div class="min-w-0">
@@ -998,7 +998,7 @@ const evolutionTreeData = computed(() => {
               <p class="mt-1 text-[10px] text-slate-400">{{ t('showcase.detailUnavailable') }}</p>
             </div>
             <div class="flex shrink-0 items-center gap-2">
-              <button type="button" class="min-h-11 rounded-lg border border-rose-200 bg-white/70 px-3 text-[10px] font-semibold text-rose-600 hover:bg-white" @click.stop="retryDetail(featuredWorkflow.thread_id)">{{ t('common.retry') }}</button>
+              <button type="button" class="min-h-11 rounded-lg border border-rose-200 bg-white/70 px-3 text-[10px] font-semibold text-rose-600 hover:bg-white dark:border-rose-500/35 dark:bg-slate-900/80 dark:text-rose-300 dark:hover:bg-slate-800" @click.stop="retryDetail(featuredWorkflow.thread_id)">{{ t('common.retry') }}</button>
               <RouterLink :to="replayRoute(featuredWorkflow.thread_id)" @click="openReplay(featuredWorkflow.thread_id)" class="inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-[10px] font-semibold text-slate-500 hover:text-slate-700">{{ t('showcase.viewDetail') }} <AppIcon name="ArrowRight" size="xs" variant="cyan" aria-hidden="true" /></RouterLink>
             </div>
           </div>
@@ -1109,7 +1109,7 @@ const evolutionTreeData = computed(() => {
                   <p class="text-xs font-medium text-slate-600">{{ card.phaseText }}</p>
                   <p class="mt-1 text-[10px] text-slate-400">{{ t('showcase.detailUnavailable') }}</p>
                 </div>
-                <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 bg-white/70 px-3 text-[10px] font-semibold text-rose-600 hover:bg-white" @click.stop="retryDetail(card.wf.thread_id)">{{ t('common.retry') }}</button>
+                <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 bg-white/70 px-3 text-[10px] font-semibold text-rose-600 hover:bg-white dark:border-rose-500/35 dark:bg-slate-900/80 dark:text-rose-300 dark:hover:bg-slate-800" @click.stop="retryDetail(card.wf.thread_id)">{{ t('common.retry') }}</button>
               </div>
               <div v-else class="px-4 py-3 text-xs text-slate-400">{{ card.phaseText }}</div>
             </div>
@@ -1140,11 +1140,11 @@ const evolutionTreeData = computed(() => {
         </div>
 
         <!-- No results after filter -->
-        <div v-if="listLoaded && filteredWorkflows.length === 0 && workflows.length > 0" class="rounded-2xl border border-slate-200/60 bg-white/60 py-12 text-center">
+        <div v-if="listLoaded && filteredWorkflows.length === 0 && workflows.length > 0" class="rounded-2xl border border-slate-200/60 bg-white/60 py-12 dark:border-slate-700/50 dark:bg-slate-900/70 text-center">
           <AppIcon name="SearchX" size="lg" variant="cyan" aria-hidden="true" />
             <p class="mt-3 text-sm text-slate-400">{{ t('showcase.noResults') }}</p>
             <p class="mt-1 text-[11px] text-slate-400">{{ t('showcase.noResultsWithFilters', { status: statusFilter === 'all' ? t('showcase.filter.all') : statusFilter === 'running' ? t('showcase.stats.running') : statusFilter === 'completed' ? t('showcase.stats.completed') : t('showcase.stats.needsAttention'), mode: modeFilter === 'all' ? t('showcase.filter.allMode') : t(`showcase.filter.${modeFilter}`) }) }}</p>
-          <button type="button" @click="clearFilters" class="mt-4 min-h-11 rounded-xl border border-slate-200 bg-white/70 px-4 text-xs font-medium text-slate-600 transition hover:bg-white">
+          <button type="button" @click="clearFilters" class="mt-4 min-h-11 rounded-xl border border-slate-200 bg-white/70 px-4 text-xs font-medium text-slate-600 dark:border-slate-600 dark:bg-slate-900/80 dark:text-slate-300 transition hover:bg-white">
             {{ t('showcase.resetFilters') }}
           </button>
         </div>
@@ -1156,7 +1156,7 @@ const evolutionTreeData = computed(() => {
         </section>
         <!-- Decorative workflow explanation follows the real records. It is
              intentionally compact so the evidence remains the primary path. -->
-        <section class="showcase-loop-section mb-4 w-full min-w-0 rounded-3xl border border-white/75 bg-white/35 p-3 shadow-sm backdrop-blur-sm md:mb-6 md:p-5" aria-labelledby="showcase-loop-title">
+        <section class="showcase-loop-section mb-4 w-full min-w-0 rounded-3xl border border-white/75 bg-white/35 p-3 shadow-sm backdrop-blur-sm dark:border-slate-700/50 dark:bg-slate-900/40 md:mb-6 md:p-5" aria-labelledby="showcase-loop-title">
           <div class="mb-3 flex items-end justify-between gap-3 px-1 md:px-3">
             <div>
               <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{{ t('showcase.howItWorks') }}</p>
@@ -1165,8 +1165,8 @@ const evolutionTreeData = computed(() => {
             <span class="hidden max-w-[220px] text-right text-[11px] leading-4 text-slate-400 sm:block">{{ t('showcase.closedLoopDesc') }}</span>
           </div>
           <div class="grid grid-cols-3 gap-2 md:grid-cols-6 md:gap-3">
-            <div v-for="(step, i) in howItWorksSteps" :key="`compact-${step.key}`" class="flex min-w-0 flex-col items-center rounded-2xl border border-white/70 bg-white/50 px-2 py-3 text-center" :class="nodeGlowClass(step)">
-              <div class="relative flex h-11 w-11 items-center justify-center rounded-full border-2 bg-white/90 shadow-sm" :class="[step.borderColor, step.iconColor]">
+            <div v-for="(step, i) in howItWorksSteps" :key="`compact-${step.key}`" class="flex min-w-0 flex-col items-center rounded-2xl border border-white/70 dark:border-slate-700/50 dark:bg-slate-900/70 bg-white/50 px-2 py-3 text-center" :class="nodeGlowClass(step)">
+              <div class="relative flex h-11 w-11 items-center justify-center rounded-full border-2 bg-white/90 shadow-sm dark:bg-slate-800" :class="[step.borderColor, step.iconColor]">
                 <span class="node-sweep node-sweep-sm" :style="{ animationDelay: `${i * 0.9}s` }" />
                 <AppIcon :name="step.icon" size="md" :variant="step.iconVariant" />
               </div>

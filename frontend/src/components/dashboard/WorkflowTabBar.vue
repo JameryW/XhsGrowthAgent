@@ -176,11 +176,11 @@ function toggleOverflow() {
 
     <Teleport to="body">
       <div v-if="confirmCloseTabId" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" @click.self="cancelClose">
-        <div class="bg-white rounded-xl p-5 shadow-2xl max-w-sm w-full border border-slate-200">
+        <div class="bg-white rounded-xl p-5 shadow-2xl max-w-sm w-full border border-slate-200 dark:bg-slate-900 dark:border-slate-700">
           <h3 class="text-slate-800 font-medium mb-2">{{ t('workflow.closeTabConfirm') }}</h3>
           <p class="text-slate-500 text-sm mb-4">{{ t('workflow.closeTabHint') }}</p>
           <div class="flex gap-3 justify-end">
-            <button class="px-3 py-1.5 text-sm rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200" @click="cancelClose">
+            <button class="px-3 py-1.5 text-sm rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" @click="cancelClose">
               {{ t('common.cancel') }}
             </button>
             <button class="px-3 py-1.5 text-sm rounded-lg bg-rose-500 text-white hover:bg-rose-600" @click="confirmClose">

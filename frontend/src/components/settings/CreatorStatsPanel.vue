@@ -359,7 +359,7 @@ function pointValue(point: CreatorAggregatePoint): string {
     </div>
 
     <!-- Niche bind -->
-    <div class="rounded-lg border border-slate-100 bg-slate-50/60 p-3 space-y-2.5">
+    <div class="rounded-lg border border-slate-100 bg-slate-50/60 p-3 space-y-2.5 dark:border-slate-700/50 dark:bg-slate-800/60">
       <div class="flex items-center justify-between gap-2">
         <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
           {{ t('creatorStats.nicheSection') }}
@@ -378,7 +378,7 @@ function pointValue(point: CreatorAggregatePoint): string {
       <div class="flex flex-wrap items-center gap-2">
         <select
           v-model="manualNiche"
-          class="px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 outline-none min-w-[7rem]"
+          class="px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 outline-none min-w-[7rem] dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
         >
           <option value="">{{ t('creatorStats.nichePlaceholder') }}</option>
           <option v-for="n in KNOWN_NICHES" :key="n" :value="n">{{ n }}</option>
@@ -387,7 +387,7 @@ function pointValue(point: CreatorAggregatePoint): string {
           v-model="manualNiche"
           type="text"
           :placeholder="t('creatorStats.nicheCustomPlaceholder')"
-          class="px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 outline-none flex-1 min-w-[6rem]"
+          class="px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 outline-none flex-1 min-w-[6rem] dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
         />
         <NeonButton
           variant="purple"
@@ -413,7 +413,7 @@ function pointValue(point: CreatorAggregatePoint): string {
     </div>
 
     <!-- Import / sync -->
-    <div class="rounded-lg border border-slate-100 bg-slate-50/60 p-3 space-y-2.5">
+    <div class="rounded-lg border border-slate-100 bg-slate-50/60 p-3 space-y-2.5 dark:border-slate-700/50 dark:bg-slate-800/60">
       <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
         {{ t('creatorStats.importSection') }}
       </div>
@@ -435,7 +435,7 @@ function pointValue(point: CreatorAggregatePoint): string {
         </label>
         <select
           v-model="period"
-          class="px-2 py-1 text-xs rounded-lg border border-slate-200 bg-white outline-none"
+          class="px-2 py-1 text-xs rounded-lg border border-slate-200 bg-white outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
         >
           <option value="7d">{{ t('creatorStats.period.last7Days') }}</option>
           <option value="30d">{{ t('creatorStats.period.last30Days') }}</option>
@@ -474,7 +474,7 @@ function pointValue(point: CreatorAggregatePoint): string {
       </div>
       <div
         v-if="accountStats && hasCreatorProfile"
-        class="rounded-lg border border-slate-100 bg-slate-50/70 p-3"
+        class="rounded-lg border border-slate-100 bg-slate-50/70 p-3 dark:border-slate-700/50 dark:bg-slate-800/60"
       >
         <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
           {{ t('creatorStats.profile.title') }}
@@ -484,7 +484,7 @@ function pointValue(point: CreatorAggregatePoint): string {
             v-if="accountStats.avatar_url"
             :src="accountStats.avatar_url"
             :alt="t('creatorStats.profile.avatarAlt', { name: profileDisplayName })"
-            class="h-11 w-11 shrink-0 rounded-full object-cover border border-slate-200 bg-white"
+            class="h-11 w-11 shrink-0 rounded-full object-cover border border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-800"
           />
           <div
             v-else
@@ -526,21 +526,21 @@ function pointValue(point: CreatorAggregatePoint): string {
         </div>
       </div>
       <div v-if="accountStats" class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <div class="rounded-lg bg-slate-50 border border-slate-100 p-2 text-center">
+        <div class="rounded-lg bg-slate-50 border border-slate-100 p-2 text-center dark:bg-slate-800/70 dark:border-slate-700/50">
           <div class="text-[10px] text-slate-400">{{ t('creatorStats.metrics.notes') }}</div>
           <div class="text-sm font-semibold text-slate-700">
             {{ formatNum(notesTotal || accountStats.note_count || notes.length) }}
           </div>
         </div>
-        <div class="rounded-lg bg-slate-50 border border-slate-100 p-2 text-center">
+        <div class="rounded-lg bg-slate-50 border border-slate-100 p-2 text-center dark:bg-slate-800/70 dark:border-slate-700/50">
           <div class="text-[10px] text-slate-400">{{ t('creatorStats.metrics.views') }}</div>
           <div class="text-sm font-semibold text-slate-700">{{ formatNum(accountStats.views) }}</div>
         </div>
-        <div class="rounded-lg bg-slate-50 border border-slate-100 p-2 text-center">
+        <div class="rounded-lg bg-slate-50 border border-slate-100 p-2 text-center dark:bg-slate-800/70 dark:border-slate-700/50">
           <div class="text-[10px] text-slate-400">{{ t('creatorStats.metrics.likes') }}</div>
           <div class="text-sm font-semibold text-slate-700">{{ formatNum(accountStats.likes) }}</div>
         </div>
-        <div class="rounded-lg bg-slate-50 border border-slate-100 p-2 text-center">
+        <div class="rounded-lg bg-slate-50 border border-slate-100 p-2 text-center dark:bg-slate-800/70 dark:border-slate-700/50">
           <div class="text-[10px] text-slate-400">{{ t('creatorStats.metrics.fans') }}</div>
           <div class="text-sm font-semibold text-slate-700">{{ formatNum(accountStats.fans) }}</div>
         </div>
@@ -605,7 +605,7 @@ function pointValue(point: CreatorAggregatePoint): string {
 
       <div v-if="notes.length" class="overflow-x-auto rounded-lg border border-slate-100">
         <table class="w-full text-xs">
-          <thead class="bg-slate-50 text-slate-500">
+          <thead class="bg-slate-50 text-slate-500 dark:bg-slate-800/80 dark:text-slate-400">
             <tr>
               <th class="text-left px-2 py-1.5 font-medium">{{ t('creatorStats.table.title') }}</th>
               <th class="text-right px-2 py-1.5 font-medium">{{ t('creatorStats.table.views') }}</th>
@@ -619,7 +619,7 @@ function pointValue(point: CreatorAggregatePoint): string {
             <tr
               v-for="n in notes.slice(0, compact ? 8 : 20)"
               :key="n.note_id"
-              class="border-t border-slate-50 hover:bg-slate-50/80"
+              class="border-t border-slate-50 hover:bg-slate-50/80 dark:border-slate-800 dark:hover:bg-slate-800/50"
             >
               <td class="px-2 py-1.5 text-slate-700 max-w-[14rem] truncate" :title="n.title">
                 {{ n.title || n.note_id }}

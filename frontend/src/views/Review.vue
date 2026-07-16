@@ -778,7 +778,7 @@ const handleCancelConfirm = () => {
                         :value="getET(wf.thread_id)"
                         @input="setET(wf.thread_id, ($event.target as HTMLInputElement).value)"
                         :placeholder="t('review.editCopy.titlePlaceholder')"
-                        class="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-rose-500 font-bold text-sm focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all"
+                        class="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-rose-500 font-bold text-sm focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-rose-300"
                       />
                     </div>
                     <!-- Body textarea -->
@@ -789,7 +789,7 @@ const handleCancelConfirm = () => {
                         @input="setEB(wf.thread_id, ($event.target as HTMLTextAreaElement).value)"
                         :placeholder="t('review.editCopy.bodyPlaceholder')"
                         rows="6"
-                        class="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 text-xs leading-relaxed resize-y focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all"
+                        class="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 text-xs leading-relaxed resize-y focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                       />
                     </div>
                     <!-- Tags input -->
@@ -799,7 +799,7 @@ const handleCancelConfirm = () => {
                         :value="getETG(wf.thread_id)"
                         @input="setETG(wf.thread_id, ($event.target as HTMLInputElement).value)"
                         :placeholder="t('review.editCopy.tagsPlaceholder')"
-                        class="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-600 text-xs focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all"
+                        class="w-full px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-slate-600 text-xs focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300"
                       />
                       <p class="text-[9px] text-slate-400 mt-0.5">{{ t('review.editCopy.tagsHint') }}</p>
                     </div>
@@ -1003,7 +1003,7 @@ const handleCancelConfirm = () => {
                   :value="getMC(wf.thread_id)"
                   @input="setMC(wf.thread_id, ($event.target as HTMLTextAreaElement).value)"
                   :aria-label="t('review.feedbackAriaLabel')"
-                  class="w-full bg-white rounded-md p-2.5 border border-slate-200 text-slate-700 text-xs resize-none focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 placeholder:text-slate-400 transition-all"
+                  class="w-full bg-white rounded-md p-2.5 border border-slate-200 text-slate-700 text-xs resize-none focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-200 placeholder:text-slate-400 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:placeholder:text-slate-500"
                   rows="2"
                   :placeholder="t('review.feedbackPlaceholder')"
                 />
@@ -1026,37 +1026,37 @@ const handleCancelConfirm = () => {
                       :value="getMRR(wf.thread_id)"
                       @input="setMRR(wf.thread_id, ($event.target as HTMLInputElement).value)"
                       :placeholder="t('review.revisionReason')"
-                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all"
+                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                     />
                     <input
                       :value="getMRJR(wf.thread_id)"
                       @input="setMRJR(wf.thread_id, ($event.target as HTMLInputElement).value)"
                       :placeholder="t('review.rejectReason')"
-                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all"
+                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                     />
                     <input
                       :value="getMTI(wf.thread_id)"
                       @input="setMTI(wf.thread_id, ($event.target as HTMLInputElement).value)"
                       :placeholder="t('review.titleIssue')"
-                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all"
+                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                     />
                     <input
                       :value="getMBI(wf.thread_id)"
                       @input="setMBI(wf.thread_id, ($event.target as HTMLInputElement).value)"
                       :placeholder="t('review.bodyIssue')"
-                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all"
+                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                     />
                     <input
                       :value="getMTGI(wf.thread_id)"
                       @input="setMTGI(wf.thread_id, ($event.target as HTMLInputElement).value)"
                       :placeholder="t('review.tagsIssue')"
-                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all"
+                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                     />
                     <input
                       :value="getMVI(wf.thread_id)"
                       @input="setMVI(wf.thread_id, ($event.target as HTMLInputElement).value)"
                       :placeholder="t('review.visualIssue')"
-                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all"
+                      class="px-2.5 py-1.5 rounded-md border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:border-violet-300 transition-all dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                     />
                   </div>
                 </div>
@@ -1157,7 +1157,7 @@ const handleCancelConfirm = () => {
               </div>
               <select
                 v-model="publishAccountId"
-                class="w-full px-2 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 outline-none"
+                class="w-full px-2 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
               >
                 <option v-for="acc in accountsStore.accounts" :key="acc.id" :value="acc.id">
                   {{ acc.name }}{{ acc.is_active ? ` · ${t('review.publishConfirm.activeSuffix')}` : '' }}

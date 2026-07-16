@@ -113,7 +113,7 @@ const exportPlan = () => {
     <!-- Body copy -->
     <div v-if="shootingPlan.body_copy" class="mb-4">
       <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">{{ t('shootingPlan.bodyCopy') }}</h4>
-      <div class="p-3 rounded-xl bg-slate-50 border border-slate-100 text-sm text-slate-600 whitespace-pre-wrap">{{ shootingPlan.body_copy }}</div>
+      <div class="p-3 rounded-xl bg-slate-50 border border-slate-100 text-sm text-slate-600 whitespace-pre-wrap dark:bg-slate-800/70 dark:border-slate-700/50 dark:text-slate-300">{{ shootingPlan.body_copy }}</div>
     </div>
 
     <!-- Hashtags -->
@@ -129,7 +129,7 @@ const exportPlan = () => {
           #{{ tag }}
         </span>
         <span v-for="tag in (shootingPlan.optional_hashtags || [])" :key="'o-'+tag"
-          class="text-xs px-2 py-1 rounded-full bg-slate-50 text-slate-500 border border-slate-200">
+          class="text-xs px-2 py-1 rounded-full bg-slate-50 text-slate-500 border border-slate-200 dark:bg-slate-800/70 dark:border-slate-600 dark:text-slate-400">
           #{{ tag }}
         </span>
       </div>
@@ -158,15 +158,15 @@ const exportPlan = () => {
 
     <!-- Creator info -->
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-      <div v-if="shootingPlan.creator_nickname" class="p-3 rounded-xl bg-slate-50 border border-slate-100">
+      <div v-if="shootingPlan.creator_nickname" class="p-3 rounded-xl bg-slate-50 border border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50">
         <span class="text-xs text-slate-400 uppercase tracking-wide">{{ t('shootingPlan.creator') }}</span>
         <p class="text-sm font-medium text-slate-700 mt-1">{{ shootingPlan.creator_nickname }}</p>
       </div>
-      <div v-if="shootingPlan.content_type_label" class="p-3 rounded-xl bg-slate-50 border border-slate-100">
+      <div v-if="shootingPlan.content_type_label" class="p-3 rounded-xl bg-slate-50 border border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50">
         <span class="text-xs text-slate-400 uppercase tracking-wide">{{ t('shootingPlan.type') }}</span>
         <p class="text-sm font-medium text-slate-700 mt-1">{{ shootingPlan.content_type_label }}</p>
       </div>
-      <div v-if="shootingPlan.planned_publish_date" class="p-3 rounded-xl bg-slate-50 border border-slate-100">
+      <div v-if="shootingPlan.planned_publish_date" class="p-3 rounded-xl bg-slate-50 border border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50">
         <span class="text-xs text-slate-400 uppercase tracking-wide">{{ t('shootingPlan.date') }}</span>
         <p class="text-sm font-medium text-slate-700 mt-1">{{ shootingPlan.planned_publish_date }}</p>
       </div>
@@ -204,7 +204,7 @@ const exportPlan = () => {
       <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">{{ t('shootingPlan.shootingAngles') }}</h4>
       <div class="space-y-2">
         <div v-for="(angle, idx) in shootingAngles" :key="idx"
-          class="p-3 rounded-xl bg-slate-50 border border-slate-100">
+          class="p-3 rounded-xl bg-slate-50 border border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50">
           <div class="flex items-center gap-2 mb-1">
             <AppIcon name="Camera" size="sm" variant="cyan" />
             <span class="text-sm font-medium text-slate-700">{{ angle.angle }}</span>
