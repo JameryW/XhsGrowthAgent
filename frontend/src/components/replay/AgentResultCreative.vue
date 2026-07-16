@@ -238,13 +238,13 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
             <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" :class="ver.version_type === 'A' ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-300' : ver.version_type === 'B' ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'">{{ t('review.versionLabel', { n: ver.version_type || (i + 1) }) }}</span>
             <span class="text-xs font-semibold text-slate-800">{{ ver.title }}</span>
           </div>
-          <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{{ ver.predicted_score }}{{ t('versionCompare.scoreUnit') }}</span>
+          <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ ver.predicted_score }}{{ t('versionCompare.scoreUnit') }}</span>
         </div>
         <div v-if="ver.body" class="text-xs text-slate-600 whitespace-pre-line line-clamp-3 mb-1">{{ ver.body }}</div>
         <div v-if="ver.changes_summary" class="text-[10px] text-slate-400 mb-1">&#8635; {{ ver.changes_summary }}</div>
         <div class="flex flex-wrap gap-1">
           <span v-for="tag in ver.hashtags" :key="tag" class="text-[10px] px-1 py-0.5 rounded bg-teal-50 text-teal-600 dark:bg-teal-950/50 dark:text-teal-300">#{{ tag }}</span>
-          <span v-if="ver.style_suggestion" class="text-[10px] px-1 py-0.5 rounded bg-slate-100 text-slate-500">{{ ver.style_suggestion }}</span>
+          <span v-if="ver.style_suggestion" class="text-[10px] px-1 py-0.5 rounded bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ ver.style_suggestion }}</span>
         </div>
       </div>
     </div>

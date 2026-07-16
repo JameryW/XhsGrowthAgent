@@ -163,13 +163,13 @@ async function handleTriggerAnalytics() {
         <div class="w-10 h-10 rounded-xl bg-slate-200 animate-pulse" />
         <div class="flex-1 space-y-2">
           <div class="h-4 w-24 rounded bg-slate-200 animate-pulse" />
-          <div class="h-3 w-16 rounded bg-slate-100 animate-pulse" />
+          <div class="h-3 w-16 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
         </div>
       </div>
       <div class="space-y-2.5">
-        <div class="h-3 w-full rounded bg-slate-100 animate-pulse" />
-        <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse" />
-        <div class="h-3 w-5/6 rounded bg-slate-100 animate-pulse" />
+        <div class="h-3 w-full rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
+        <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
+        <div class="h-3 w-5/6 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
       </div>
     </div>
   </div>
@@ -457,7 +457,7 @@ async function handleTriggerAnalytics() {
                 <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" :class="ver.version_type === 'A' ? 'bg-rose-200 text-rose-700' : ver.version_type === 'B' ? 'bg-blue-200 text-blue-700' : 'bg-emerald-200 text-emerald-700'">{{ t('review.versionLabel', { n: ver.version_type || (i + 1) }) }}</span>
                 <span class="text-xs font-semibold" :class="ver.version_type === 'A' ? 'text-rose-700' : ver.version_type === 'B' ? 'text-blue-700' : 'text-emerald-700'">{{ ver.title }}</span>
               </div>
-              <span v-if="ver.predicted_score" class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{{ ver.predicted_score }}{{ t('versionCompare.scoreUnit') }}</span>
+              <span v-if="ver.predicted_score" class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ ver.predicted_score }}{{ t('versionCompare.scoreUnit') }}</span>
             </div>
             <div v-if="ver.body" class="text-xs text-slate-600 whitespace-pre-line line-clamp-4 mb-1">{{ ver.body }}</div>
             <div v-if="ver.changes_summary" class="text-[11px] text-slate-400 mb-1">↻ {{ ver.changes_summary }}</div>

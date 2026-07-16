@@ -311,7 +311,7 @@ onUnmounted(() => {
             </div>
             <button
               type="button"
-              class="min-h-11 min-w-11 p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+              class="min-h-11 min-w-11 p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors dark:hover:bg-slate-800 dark:hover:text-slate-200"
               :aria-label="t('common.cancel')"
               @click="handleClose"
             >

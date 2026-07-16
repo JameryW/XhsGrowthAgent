@@ -53,7 +53,7 @@ defineProps<{ cp: CheckpointSnapshot }>()
 
     <!-- Brand elements -->
     <div v-if="cp.visual_plan.brand_elements?.length" class="flex flex-wrap gap-1.5 mt-3">
-      <span v-for="el in cp.visual_plan.brand_elements" :key="el" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{{ el }}</span>
+      <span v-for="el in cp.visual_plan.brand_elements" :key="el" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ el }}</span>
     </div>
   </div>
 </template>

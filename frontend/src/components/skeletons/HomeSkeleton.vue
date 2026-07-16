@@ -6,7 +6,7 @@
     <!-- Animated gradient mesh skeleton -->
     <div class="absolute inset-0 pointer-events-none overflow-hidden">
       <div class="absolute top-1/4 left-1/4 w-[400px] h-[400px] rounded-full opacity-60 bg-slate-200 animate-pulse" />
-      <div class="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] rounded-full opacity-50 bg-slate-100 animate-pulse" />
+      <div class="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] rounded-full opacity-50 bg-slate-100 animate-pulse dark:bg-slate-800" />
     </div>
 
     <!-- Main card skeleton -->
@@ -23,7 +23,7 @@
       <!-- Buttons skeleton -->
       <div class="space-y-4">
         <div class="h-12 w-full rounded-lg bg-slate-200 animate-pulse" />
-        <div class="h-10 w-full rounded-lg bg-slate-100 animate-pulse" />
+        <div class="h-10 w-full rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
       </div>
 
       <!-- Status bar skeleton -->

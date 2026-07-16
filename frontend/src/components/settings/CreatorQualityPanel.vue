@@ -154,7 +154,7 @@ function dimensionLabel(key: string): string {
       aria-live="polite"
       :aria-label="t('creatorQuality.loading')"
     >
-      <div class="h-20 animate-pulse rounded-lg bg-slate-100" />
+      <div class="h-20 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
       <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <div v-for="index in 4" :key="index" class="h-24 animate-pulse rounded-lg bg-slate-50 dark:bg-slate-800" />
       </div>

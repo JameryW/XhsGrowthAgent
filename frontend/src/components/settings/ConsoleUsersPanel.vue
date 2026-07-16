@@ -177,7 +177,7 @@ function formatDate(iso: string | null): string {
             <AppIcon name="Check" size="xs" variant="white" />
           </NeonButton>
           <button type="button" @click="cancelChangePassword"
-            class="min-h-11 min-w-11 p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+            class="min-h-11 min-w-11 p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors dark:hover:bg-slate-800 dark:hover:text-slate-200"
           >
             <AppIcon name="X" size="xs" variant="pink" />
           </button>

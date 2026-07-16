@@ -1963,6 +1963,23 @@ html.dark .workflow-tab-bar .overflow-item.active {
   color: #e2e8f0 !important;
 }
 
+
+/* Soften default elevation on plain cards (skip neon-* utility shadows). */
+html.dark .shadow-sm:not([class*="shadow-neon"]),
+html.dark .shadow:not([class*="shadow-neon"]),
+html.dark .shadow-md:not([class*="shadow-neon"]) {
+  --tw-shadow-color: rgba(2, 6, 23, 0.45);
+  --tw-shadow: 0 1px 3px 0 rgba(2, 6, 23, 0.45), 0 4px 14px -2px rgba(2, 6, 23, 0.35);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
+/* Hover slate remaps when only hover:bg-slate-* is present (no base bg class). */
+html.dark [class*="hover:bg-slate-100"]:hover,
+html.dark [class*="hover:bg-slate-50"]:hover,
+html.dark [class*="hover:bg-slate-200"]:hover {
+  background-color: rgba(30, 41, 59, 0.9) !important;
+}
+
 /* Navbar section chips still used translucent white glass. */
 html.dark .app-nav-section {
   border-color: rgba(100, 116, 139, 0.4) !important;

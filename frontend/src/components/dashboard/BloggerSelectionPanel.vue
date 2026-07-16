@@ -85,7 +85,7 @@ async function handleSkip() {
       >
         <div class="flex items-start gap-3">
           <!-- Avatar -->
-          <div class="w-10 h-10 rounded-full bg-slate-100 flex-shrink-0 overflow-hidden">
+          <div class="w-10 h-10 rounded-full bg-slate-100 flex-shrink-0 overflow-hidden dark:bg-slate-800">
             <img
               v-if="candidate.avatar_url"
               :src="candidate.avatar_url"

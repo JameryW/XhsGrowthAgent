@@ -247,4 +247,21 @@ function toggleOverflow() {
 .overflow-item.active {
   @apply bg-slate-50/80 text-slate-800;
 }
+
+:global(html.dark) .tab-item {
+  background: rgba(30, 41, 59, 0.75);
+  color: #94a3b8;
+}
+:global(html.dark) .tab-item:hover {
+  background: rgba(51, 65, 85, 0.85);
+  color: #e2e8f0;
+}
+:global(html.dark) .tab-item.active {
+  background: rgba(15, 23, 42, 0.95);
+  color: #f1f5f9;
+}
+:global(html.dark) .overflow-item:hover {
+  background: rgba(30, 41, 59, 0.9);
+  color: #e2e8f0;
+}
 </style>

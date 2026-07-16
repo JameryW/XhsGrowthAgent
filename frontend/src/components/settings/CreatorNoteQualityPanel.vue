@@ -287,7 +287,7 @@ function rqgmDimLabel(dim: string): string {
     </div>
 
     <div v-if="isLoadingNotes" class="mt-4 space-y-3" aria-live="polite">
-      <div class="h-12 animate-pulse rounded-lg bg-slate-100" />
+      <div class="h-12 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
       <div class="h-32 animate-pulse rounded-lg bg-slate-50 dark:bg-slate-800" />
       <p class="text-center text-xs text-slate-400">{{ t('creatorNoteQuality.loading') }}</p>
     </div>
@@ -339,7 +339,7 @@ function rqgmDimLabel(dim: string): string {
 
       <div class="min-w-0">
         <div v-if="isLoadingDetail" class="space-y-3" aria-live="polite">
-          <div class="h-24 animate-pulse rounded-xl bg-slate-100" />
+          <div class="h-24 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />
           <div class="h-32 animate-pulse rounded-xl bg-slate-50 dark:bg-slate-800" />
           <p class="text-center text-xs text-slate-400">{{ t('creatorNoteQuality.loadingDetail') }}</p>
         </div>
