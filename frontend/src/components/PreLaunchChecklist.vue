@@ -190,7 +190,7 @@ defineExpose({ readiness })
       <div
         v-for="(item, idx) in checklistItems"
         :key="item.id"
-        class="px-3 py-2 md:px-4 md:py-2.5 hover:bg-slate-50/50 transition-colors"
+        class="px-3 py-2 md:px-4 md:py-2.5 hover:bg-slate-50/50 transition-colors dark:bg-slate-800/70 dark:border-slate-700/50"
         :class="{
           'border-r border-slate-100': idx % 2 === 0,
           'border-b border-slate-100': idx < checklistItems.length - 2

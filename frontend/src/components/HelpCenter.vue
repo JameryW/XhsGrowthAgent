@@ -95,7 +95,7 @@ onUnmounted(() => {
     <Transition name="dropdown">
       <div
         v-if="isOpen"
-        class="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-200/50 py-2 z-40"
+        class="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-200/50 py-2 z-40 dark:bg-slate-900/85 dark:border-slate-700/50"
         role="menu"
         :aria-label="t('help.menu')"
       >

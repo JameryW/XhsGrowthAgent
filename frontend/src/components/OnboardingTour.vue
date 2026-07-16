@@ -228,7 +228,7 @@ const isLastStep = computed(() => props.currentStep === 3)
           <!-- Action buttons -->
           <div class="flex items-center justify-between">
             <button
-              class="px-3 py-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors text-sm font-medium"
+              class="px-3 py-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors text-sm font-medium dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800"
               @click="handleSkip"
               :aria-label="t('onboarding.skip')"
             >

@@ -96,7 +96,7 @@ function getCardClass(version: ContentVersion): string[] {
   } else if (isBest) {
     classes.push('border-amber-300 bg-amber-50/50 hover:border-amber-400 hover:bg-amber-50/80', 'hover:scale-[1.01]', 'ring-1 ring-amber-300/20')
   } else {
-    classes.push('border-slate-100 hover:border-slate-200 hover:bg-slate-50/50', 'hover:scale-[1.01]')
+    classes.push('border-slate-100 hover:border-slate-200 hover:bg-slate-50/50 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800/50', 'hover:scale-[1.01]')
   }
 
   return classes

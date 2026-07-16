@@ -156,7 +156,7 @@ function dimensionLabel(key: string): string {
     >
       <div class="h-20 animate-pulse rounded-lg bg-slate-100" />
       <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <div v-for="index in 4" :key="index" class="h-24 animate-pulse rounded-lg bg-slate-50" />
+        <div v-for="index in 4" :key="index" class="h-24 animate-pulse rounded-lg bg-slate-50 dark:bg-slate-800" />
       </div>
       <p class="text-center text-xs text-slate-400">{{ t('creatorQuality.loading') }}</p>
     </div>
@@ -196,7 +196,7 @@ function dimensionLabel(key: string): string {
             <div class="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-500" :style="{ width: scoreProgress }" />
           </div>
         </div>
-        <div class="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-4">
+        <div class="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-700/50 dark:bg-slate-800/60">
           <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
             {{ t('creatorQuality.gradeLabel') }}
           </div>
@@ -204,7 +204,7 @@ function dimensionLabel(key: string): string {
             {{ translateEnum('grade', report.grade) }}
           </div>
         </div>
-        <div class="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-4">
+        <div class="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-700/50 dark:bg-slate-800/60">
           <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
             {{ t('creatorQuality.confidenceLabel') }}
           </div>
@@ -214,7 +214,7 @@ function dimensionLabel(key: string): string {
         </div>
       </div>
 
-      <div class="rounded-xl border border-slate-100 bg-slate-50/60 p-4">
+      <div class="rounded-xl border border-slate-100 bg-slate-50/60 p-4 dark:border-slate-700/50 dark:bg-slate-800/55">
         <div class="flex flex-wrap items-center justify-between gap-1.5">
           <div class="text-xs font-semibold text-slate-600">{{ t('creatorQuality.summary') }}</div>
           <span class="text-[10px] text-slate-400">{{ sampleValue }}</span>
@@ -331,7 +331,7 @@ function dimensionLabel(key: string): string {
       </p>
     </div>
 
-    <div v-else class="mt-4 rounded-lg border border-slate-100 bg-slate-50/60 p-3 text-center text-xs text-slate-400">
+    <div v-else class="mt-4 rounded-lg border border-slate-100 bg-slate-50/60 p-3 text-center text-xs text-slate-400 dark:border-slate-700/50 dark:bg-slate-800/55">
       {{ t('creatorQuality.empty.description') }}
     </div>
   </section>

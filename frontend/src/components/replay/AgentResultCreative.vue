@@ -85,7 +85,7 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
         </div>
         <div v-if="shootingPlan.required_hashtags?.length || shootingPlan.optional_hashtags?.length" class="flex flex-wrap gap-1.5">
           <span v-for="tag in (shootingPlan.required_hashtags || [])" :key="'r-'+tag" class="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-600">#{{ tag }}</span>
-          <span v-for="tag in (shootingPlan.optional_hashtags || [])" :key="'o-'+tag" class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-500">#{{ tag }}</span>
+          <span v-for="tag in (shootingPlan.optional_hashtags || [])" :key="'o-'+tag" class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-500 dark:bg-slate-800 dark:text-slate-400">#{{ tag }}</span>
         </div>
         <details v-if="shootingPlan.outfits && Object.keys(shootingPlan.outfits).length > 0" class="text-xs">
           <summary class="text-[10px] text-slate-400 font-medium cursor-pointer hover:text-slate-600">{{ t('shootingPlan.outfits') }}</summary>
