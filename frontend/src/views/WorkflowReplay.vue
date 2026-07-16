@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '@/components/AppIcon.vue'
 import PublicReplayResult from '@/components/replay/PublicReplayResult.vue'
+import ThemeToggle from '@/components/ThemeToggle.vue'
 import {
   getPublicFinalSummary,
   getPublicReplayCheckpoint,
@@ -369,6 +370,7 @@ onMounted(() => {
         <div class="flex shrink-0 items-center gap-2">
           <button type="button" class="hidden min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-600 hover:bg-slate-50 sm:inline-flex dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" @click="copyLink(false)"><AppIcon name="Copy" size="xs" class="mr-1.5" aria-hidden="true" />{{ shareState === 'success' ? t('replay.publicShared') : shareState === 'error' ? t('replay.publicShareFailed') : t('replay.publicShareCase') }}</button>
           <button type="button" class="min-h-11 rounded-xl bg-rose-500 px-3 text-sm font-semibold text-white shadow-lg shadow-rose-500/20 hover:bg-rose-600" @click="isAuthenticated ? goWorkspace() : goCreate">{{ isAuthenticated ? t('replay.publicWorkspace') : t('replay.publicStart') }}</button>
+          <ThemeToggle class="shrink-0" />
         </div>
       </div>
     </nav>

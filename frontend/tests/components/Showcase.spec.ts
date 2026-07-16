@@ -47,6 +47,7 @@ function mountShowcase() {
       stubs: {
         AppIcon: { template: '<span />' },
         PublicReplayResult: { template: '<div class="public-result-stub" />' },
+        ThemeToggle: { template: '<button aria-label="theme" />' },
       },
     },
   })
