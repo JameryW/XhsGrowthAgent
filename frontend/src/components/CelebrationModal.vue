@@ -106,7 +106,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
         </div>
 
         <!-- Celebration Card -->
-        <div class="relative w-full max-w-md p-8 rounded-2xl bg-white/98 shadow-2xl border border-teal-200/50 text-center">
+        <div class="relative w-full max-w-md p-8 rounded-2xl bg-white/98 shadow-2xl border border-teal-200/50 text-center dark:bg-slate-900/95 dark:border-teal-500/30 dark:shadow-slate-950/50">
           <!-- Success Icon with animation -->
           <div class="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-lg animate-bounce-slow">
             <AppIcon name="CheckCircle" size="xl" variant="white" />
@@ -122,15 +122,15 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
           <!-- Stats Preview -->
           <div class="grid grid-cols-3 gap-3 mb-6">
-            <div class="p-3 rounded-lg bg-rose-50 border border-rose-100">
+            <div class="p-3 rounded-lg bg-rose-50 border border-rose-100 dark:bg-rose-950/40 dark:border-rose-500/30">
               <div class="text-rose-500 font-bold text-lg">✓</div>
               <div class="text-xs text-slate-500">{{ t('celebration.contentPublished') }}</div>
             </div>
-            <div class="p-3 rounded-lg bg-teal-50 border border-teal-100">
+            <div class="p-3 rounded-lg bg-teal-50 border border-teal-100 dark:bg-teal-950/40 dark:border-teal-500/30">
               <div class="text-teal-500 font-bold text-lg">100%</div>
               <div class="text-xs text-slate-500">{{ t('celebration.progressComplete') }}</div>
             </div>
-            <div class="p-3 rounded-lg bg-violet-50 border border-violet-100">
+            <div class="p-3 rounded-lg bg-violet-50 border border-violet-100 dark:bg-violet-950/40 dark:border-violet-500/30">
               <div class="text-violet-500 font-bold text-lg">🎉</div>
               <div class="text-xs text-slate-500">{{ t('celebration.workflowEnd') }}</div>
             </div>

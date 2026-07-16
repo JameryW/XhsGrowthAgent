@@ -112,7 +112,7 @@ const handleLogout = async () => {
         class="app-mobile-more-menu absolute bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-2 w-64 overflow-hidden rounded-2xl border border-white/70 bg-white/95 shadow-xl shadow-slate-900/10 backdrop-blur-md"
         role="menu"
       >
-        <div class="border-b border-slate-100 bg-gradient-to-r from-cyan-50/80 to-white px-4 py-3" role="status" :aria-label="t('nav.activeAccount')">
+        <div class="border-b border-slate-100 bg-gradient-to-r from-cyan-50/80 to-white px-4 py-3 dark:border-slate-700/60 dark:from-cyan-950/40 dark:to-slate-900/90" role="status" :aria-label="t('nav.activeAccount')">
           <div class="flex items-center gap-3">
             <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-emerald-400 text-xs font-bold text-white" aria-hidden="true">{{ accountInitial }}</span>
             <div class="min-w-0 flex-1">

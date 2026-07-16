@@ -915,7 +915,7 @@ const evolutionTreeData = computed(() => {
           </div>
           <p class="max-w-md text-xs leading-5 text-slate-400 sm:text-right">{{ t('showcase.liveWorkspaceDesc') }}</p>
         </div>
-        <div v-if="backgroundError" class="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-800" role="status" aria-live="polite">
+        <div v-if="backgroundError" class="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-800 dark:border-amber-500/35 dark:bg-amber-950/40 dark:text-amber-200" role="status" aria-live="polite">
           <span>{{ t('showcase.refreshUnavailable') }}</span>
           <button type="button" class="min-h-11 rounded-lg border border-amber-300 bg-white/80 px-3 text-[10px] font-semibold text-amber-800 hover:bg-white" @click="() => { void fetchWorkflows({ background: true }) }">{{ t('common.retry') }}</button>
         </div>
@@ -1023,7 +1023,7 @@ const evolutionTreeData = computed(() => {
             <div class="flex flex-col items-stretch gap-2 sm:items-end">
               <span class="showcase-record-count text-[10px] font-medium text-slate-400">{{ recordWorkflows.length }} {{ t('showcase.workflowCount') }}</span>
               <div class="showcase-filter-toolbar flex flex-wrap items-center gap-2">
-          <div class="flex items-center gap-1 rounded-xl border border-white/80 bg-white/65 p-1 shadow-sm">
+          <div class="flex items-center gap-1 rounded-xl border border-white/80 bg-white/65 p-1 shadow-sm dark:border-slate-600/60 dark:bg-slate-900/55">
             <button
               type="button"
               v-for="f in ([
@@ -1036,10 +1036,10 @@ const evolutionTreeData = computed(() => {
               @click="statusFilter = f.key"
               :aria-pressed="statusFilter === f.key"
               class="min-h-11 rounded-lg px-2.5 text-[11px] font-medium transition-colors"
-              :class="statusFilter === f.key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
+              :class="statusFilter === f.key ? 'bg-white text-slate-800 shadow-sm dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'"
             >{{ f.label }}</button>
           </div>
-          <div class="flex items-center gap-1 rounded-xl border border-white/80 bg-white/65 p-1 shadow-sm">
+          <div class="flex items-center gap-1 rounded-xl border border-white/80 bg-white/65 p-1 shadow-sm dark:border-slate-600/60 dark:bg-slate-900/55">
             <button
               type="button"
               v-for="m in ([
@@ -1051,10 +1051,10 @@ const evolutionTreeData = computed(() => {
               @click="modeFilter = m.key"
               :aria-pressed="modeFilter === m.key"
               class="min-h-11 rounded-lg px-2.5 text-[11px] font-medium transition-colors"
-              :class="modeFilter === m.key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
+              :class="modeFilter === m.key ? 'bg-white text-slate-800 shadow-sm dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'"
             >{{ m.label }}</button>
           </div>
-          <select v-model="sortKey" class="min-h-11 rounded-xl border-0 bg-slate-100/80 px-3 text-[11px] font-medium text-slate-600 outline-none cursor-pointer focus:ring-2 focus:ring-rose-400/30">
+          <select v-model="sortKey" class="min-h-11 rounded-xl border-0 bg-slate-100/80 px-3 text-[11px] font-medium text-slate-600 outline-none cursor-pointer focus:ring-2 focus:ring-rose-400/30 dark:bg-slate-800/90 dark:text-slate-200">
             <option value="updated">{{ t('showcase.sort.updated') }}</option>
             <option value="progress">{{ t('showcase.sort.progress') }}</option>
             <option value="created">{{ t('showcase.sort.created') }}</option>

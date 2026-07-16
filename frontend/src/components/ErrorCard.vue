@@ -11,24 +11,24 @@ const { t } = useI18n()
  * Tailwind class mapping for error types
  */
 const ERROR_BG_CLASSES: Record<ErrorType, string> = {
-  api: 'bg-rose-50/80 border-rose-200/50',
-  timeout: 'bg-amber-50/80 border-amber-200/50',
-  unknown: 'bg-violet-50/80 border-violet-200/50',
-  retry_success: 'bg-green-50/80 border-green-200/50'
+  api: 'bg-rose-50/80 border-rose-200/50 dark:bg-rose-950/40 dark:border-rose-500/30',
+  timeout: 'bg-amber-50/80 border-amber-200/50 dark:bg-amber-950/40 dark:border-amber-500/30',
+  unknown: 'bg-violet-50/80 border-violet-200/50 dark:bg-violet-950/40 dark:border-violet-500/30',
+  retry_success: 'bg-green-50/80 border-green-200/50 dark:bg-emerald-950/40 dark:border-emerald-500/30',
 }
 
 const ERROR_ICON_BG_CLASSES: Record<ErrorType, string> = {
-  api: 'bg-rose-100',
-  timeout: 'bg-amber-100',
-  unknown: 'bg-violet-100',
-  retry_success: 'bg-green-100'
+  api: 'bg-rose-100 dark:bg-rose-900/50',
+  timeout: 'bg-amber-100 dark:bg-amber-900/50',
+  unknown: 'bg-violet-100 dark:bg-violet-900/50',
+  retry_success: 'bg-green-100 dark:bg-emerald-900/50',
 }
 
 const ERROR_TEXT_CLASSES: Record<ErrorType, { title: string; message: string }> = {
-  api: { title: 'text-rose-700', message: 'text-rose-600' },
-  timeout: { title: 'text-amber-700', message: 'text-amber-600' },
-  unknown: { title: 'text-violet-700', message: 'text-violet-600' },
-  retry_success: { title: 'text-green-700', message: 'text-green-600' }
+  api: { title: 'text-rose-700 dark:text-rose-300', message: 'text-rose-600 dark:text-rose-300' },
+  timeout: { title: 'text-amber-700 dark:text-amber-300', message: 'text-amber-600 dark:text-amber-300' },
+  unknown: { title: 'text-violet-700 dark:text-violet-300', message: 'text-violet-600 dark:text-violet-300' },
+  retry_success: { title: 'text-green-700 dark:text-emerald-300', message: 'text-green-600 dark:text-emerald-300' },
 }
 
 // Props

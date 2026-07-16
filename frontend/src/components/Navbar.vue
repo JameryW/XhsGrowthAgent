@@ -419,6 +419,13 @@ onMounted(() => {
     inset -1px 0 rgba(255, 255, 255, 0.52);
 }
 
+:global(html.dark) .app-sidebar {
+  box-shadow:
+    1px 0 2px rgba(2, 6, 23, 0.35),
+    8px 0 24px rgba(2, 6, 23, 0.28),
+    inset -1px 0 rgba(148, 163, 184, 0.1);
+}
+
 .app-nav-scroll {
   scrollbar-gutter: stable;
 }
@@ -428,6 +435,11 @@ onMounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.34);
   border-radius: 1.25rem;
   background: rgba(255, 255, 255, 0.16);
+}
+
+:global(html.dark) .app-nav-section {
+  border-color: rgba(100, 116, 139, 0.35);
+  background: rgba(15, 23, 42, 0.45);
 }
 
 .app-nav-section-title {
@@ -442,6 +454,12 @@ onMounted(() => {
   box-shadow:
     0 5px 14px rgba(15, 23, 42, 0.065),
     inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+:global(html.dark) .app-nav-item[aria-current='page'] {
+  box-shadow:
+    0 5px 14px rgba(2, 6, 23, 0.35),
+    inset 0 1px 0 rgba(148, 163, 184, 0.12);
 }
 
 .app-nav-item:not([aria-current='page']):hover {

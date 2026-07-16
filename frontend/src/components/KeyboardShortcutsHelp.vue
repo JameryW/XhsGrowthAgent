@@ -78,7 +78,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
         <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="handleClose" aria-hidden="true" />
 
         <!-- Modal -->
-        <div class="relative w-full max-w-md p-6 rounded-2xl bg-white/98 shadow-xl border border-slate-200/50">
+        <div class="relative w-full max-w-md p-6 rounded-2xl bg-white/98 shadow-xl border border-slate-200/50 dark:bg-slate-900/95 dark:border-slate-600/60 dark:shadow-slate-950/50">
           <!-- Header -->
           <div class="flex items-center gap-3 mb-4">
             <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm" aria-hidden="true">
@@ -97,21 +97,21 @@ const handleKeyDown = (e: KeyboardEvent) => {
             <div
               v-for="shortcut in shortcuts"
               :key="shortcut.key"
-              class="flex items-center justify-between p-2 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors"
+              class="flex items-center justify-between p-2 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors dark:bg-slate-800/70 dark:hover:bg-slate-800"
               role="listitem"
             >
               <span class="text-sm text-slate-600">{{ shortcut.description }}</span>
-              <kbd class="px-2 py-1 rounded bg-slate-200 text-slate-700 text-xs font-mono border border-slate-300 shadow-sm">
+              <kbd class="px-2 py-1 rounded bg-slate-200 text-slate-700 text-xs font-mono border border-slate-300 shadow-sm dark:bg-slate-700 dark:text-slate-200 dark:border-slate-500">
                 {{ shortcut.key }}
               </kbd>
             </div>
           </div>
 
           <!-- Footer -->
-          <div class="mt-4 pt-4 border-t border-slate-200 flex justify-center">
+          <div class="mt-4 pt-4 border-t border-slate-200 flex justify-center dark:border-slate-700">
             <button
               ref="closeButtonRef"
-              class="px-4 py-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium"
+              class="px-4 py-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors text-sm font-medium dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
               @click="handleClose"
             >
               {{ t('common.close') }}
