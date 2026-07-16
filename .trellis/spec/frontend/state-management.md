@@ -110,6 +110,17 @@ Frontend state mirrors backend `XHSGrowthState`. The sync flow:
 
 No polling — all updates are push-based via WebSocket/SSE.
 
+### Public evidence-page cache
+
+Public showcase/replay pages may use a versioned `sessionStorage` snapshot to
+avoid a blank first view when the network is slow. Keep this cache short-lived
+(30 seconds or less), validate its version and shape before hydrating reactive
+state, and always issue a background refresh after a cache hit. If the refresh
+fails, retain the usable snapshot, expose a retry action, and back off retries
+so an expired cache cannot create a tight request loop. Cache only the JSON
+display data; never move authenticated or mutation state into storage, and
+clear refresh timers when the page unmounts.
+
 ### Live State vs Replay Selection
 
 Replay-aware screens keep the live workflow snapshot separate from the

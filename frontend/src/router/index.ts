@@ -96,8 +96,11 @@ const router = createRouter({
 router.beforeEach(async (to, _from, next) => {
   const authStore = useAuthStore(pinia)
 
-  // Wait for auth initialization on first navigation
-  if (!authStore.isInitialized) {
+  // Public immersive pages render independently of authentication. Avoid a
+  // token validation round-trip delaying their first paint; protected routes
+  // and the login redirect still initialize auth before continuing.
+  const skipInitialAuthValidation = to.name === 'showcase' || to.name === 'replay'
+  if (!skipInitialAuthValidation && !authStore.isInitialized) {
     await authStore.initialize()
   }
 

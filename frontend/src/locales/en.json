@@ -1429,6 +1429,7 @@
     "empty": "No workflows yet",
     "emptyDesc": "Workflows will appear here once started",
     "detailUnavailable": "Detailed output is unavailable; open replay to inspect it",
+    "refreshUnavailable": "The latest list is unavailable; showing the recent cache",
     "featuredReason": "High progress · Recently updated",
     "featuredOnly": "The recommended case is shown above",
     "resetFilters": "Clear filters",

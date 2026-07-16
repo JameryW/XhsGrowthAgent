@@ -95,11 +95,13 @@ watch(() => route.path, async () => {
   document.getElementById('main-content')?.focus({ preventScroll: true })
 })
 
-// Connect/disconnect WebSocket when auth state changes
+// Public immersive pages do not render authenticated chrome and do not need a
+// realtime workflow socket. Connect only while an authenticated user is on a
+// workspace route, and release the socket when entering showcase/replay.
 watch(
-  () => authStore.isAuthenticated,
-  (authenticated) => {
-    if (authenticated) {
+  [() => authStore.isAuthenticated, () => isImmersivePage.value],
+  ([authenticated, immersive]) => {
+    if (authenticated && !immersive) {
       realtimeStore.connect()
     } else {
       realtimeStore.disconnect()
