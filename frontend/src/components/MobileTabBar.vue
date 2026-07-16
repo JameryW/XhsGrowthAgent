@@ -109,7 +109,7 @@ const handleLogout = async () => {
 
       <div
         v-if="showMore"
-        class="app-mobile-more-menu absolute bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-2 w-64 overflow-hidden rounded-2xl border border-white/70 bg-white/95 shadow-xl shadow-slate-900/10 backdrop-blur-md"
+        class="app-mobile-more-menu absolute bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-2 w-64 overflow-hidden rounded-2xl border border-white/70 bg-white/95 shadow-xl shadow-slate-900/10 backdrop-blur-md dark:border-slate-700/60 dark:bg-slate-900/95"
         role="menu"
       >
         <div class="border-b border-slate-100 bg-gradient-to-r from-cyan-50/80 to-white px-4 py-3 dark:border-slate-700/60 dark:from-cyan-950/40 dark:to-slate-900/90" role="status" :aria-label="t('nav.activeAccount')">
@@ -126,7 +126,7 @@ const handleLogout = async () => {
           </div>
         </div>
         <button
-          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
           role="menuitem"
           @click="navigate('/analytics')"
         >
@@ -134,7 +134,7 @@ const handleLogout = async () => {
           <span>{{ t('nav.analytics') }}</span>
         </button>
         <button
-          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
           role="menuitem"
           @click="navigate('/evaluation')"
         >
@@ -142,7 +142,7 @@ const handleLogout = async () => {
           <span>{{ t('nav.evaluation') }}</span>
         </button>
         <button
-          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
           role="menuitem"
           @click="navigate('/history')"
         >
@@ -150,7 +150,7 @@ const handleLogout = async () => {
           <span>{{ t('nav.history') }}</span>
         </button>
         <button
-          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
           role="menuitem"
           @click="openSettings"
         >

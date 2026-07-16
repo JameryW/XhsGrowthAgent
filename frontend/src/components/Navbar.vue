@@ -212,7 +212,7 @@ onMounted(() => {
           <div class="mt-0.5 text-lg font-bold tracking-tight text-slate-800">{{ t('nav.appName') }}</div>
         </div>
       </div>
-      <div v-if="!isTablet" class="mt-4 rounded-2xl border border-white/70 bg-white/60 p-3 shadow-sm backdrop-blur-sm" role="status" aria-live="polite" :aria-label="t('nav.workspaceStatus')">
+      <div v-if="!isTablet" class="mt-4 rounded-2xl border border-white/70 bg-white/60 p-3 shadow-sm backdrop-blur-sm dark:border-slate-700/55 dark:bg-slate-900/75" role="status" aria-live="polite" :aria-label="t('nav.workspaceStatus')">
         <div class="flex items-center gap-2">
           <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900/90" aria-hidden="true">
             <AppIcon :name="workspaceStatus.icon" size="sm" variant="white" />
@@ -267,8 +267,8 @@ onMounted(() => {
               'app-nav-item group relative flex min-h-12 w-full items-center rounded-2xl border text-left transition-all duration-200',
               isTablet ? 'justify-center px-2' : 'gap-3 px-3',
               isItemActive(item.path)
-                ? 'border-white/80 bg-white/85 shadow-md shadow-slate-900/5 ring-1 ring-slate-200/60'
-                : 'border-transparent hover:border-white/70 hover:bg-white/55 hover:shadow-sm'
+                ? 'border-white/80 bg-white/85 shadow-md shadow-slate-900/5 ring-1 ring-slate-200/60 dark:border-slate-600/70 dark:bg-slate-800/90 dark:ring-slate-600/50'
+                : 'border-transparent hover:border-white/70 hover:bg-white/55 hover:shadow-sm dark:hover:border-slate-600/50 dark:hover:bg-slate-800/60'
             ]"
             :aria-current="isItemActive(item.path) ? 'page' : undefined"
             :aria-label="item.hint ? `${item.label}: ${item.hint}` : item.label"
@@ -282,7 +282,7 @@ onMounted(() => {
             />
             <span
               class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 transition-all duration-200"
-              :class="isItemActive(item.path) ? navColorClasses[item.color].activeIcon : 'bg-slate-100/80 ring-slate-200/60 group-hover:bg-white'"
+              :class="isItemActive(item.path) ? navColorClasses[item.color].activeIcon : 'bg-slate-100/80 ring-slate-200/60 group-hover:bg-white dark:bg-slate-800/80 dark:ring-slate-600/50 dark:group-hover:bg-slate-700'"
               aria-hidden="true"
             >
               <AppIcon :name="item.icon" size="md" :variant="isItemActive(item.path) ? 'white' : 'cyan'" :class="!isItemActive(item.path) ? navColorClasses[item.color].icon : ''" />
@@ -305,7 +305,7 @@ onMounted(() => {
       <!-- Desktop: compact bottom section -->
       <template v-if="!isTablet">
         <button
-          class="group mb-3 flex min-h-14 w-full items-center gap-3 rounded-2xl border border-white/75 bg-white/65 px-3 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-200/70 hover:bg-cyan-50/70"
+          class="group mb-3 flex min-h-14 w-full items-center gap-3 rounded-2xl border border-white/75 bg-white/65 px-3 text-left shadow-sm dark:border-slate-700/55 dark:bg-slate-900/80 transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-200/70 hover:bg-cyan-50/70"
           :aria-label="t('nav.account')"
           :title="t('nav.accountManage')"
           @click="handleAccountClick"
@@ -320,7 +320,7 @@ onMounted(() => {
         </button>
 
         <!-- Utilities row: realtime + language + theme -->
-        <div class="mb-2 flex items-center justify-between gap-2 rounded-xl bg-slate-50/70 px-2.5 py-2">
+        <div class="mb-2 flex items-center justify-between gap-2 rounded-xl bg-slate-50/70 px-2.5 py-2 dark:bg-slate-800/70">
           <div class="flex min-w-0 items-center gap-2">
             <span class="h-2 w-2 shrink-0 rounded-full" :class="statusDotClass" aria-hidden="true" />
             <span class="truncate text-[10px] font-medium text-slate-500">{{ connectionLabel }}</span>

@@ -329,7 +329,7 @@ onUnmounted(() => {
 
             <!-- QR image -->
             <template v-else-if="showQrImage">
-              <div class="p-3 bg-white rounded-xl shadow-sm border border-slate-100">
+              <div class="p-3 bg-white rounded-xl shadow-sm border border-slate-100 dark:bg-slate-900 dark:border-slate-700">
                 <img v-if="qrImgSrc" :src="qrImgSrc" alt="QR Code" class="w-60 h-60" />
                 <div v-else class="w-60 h-60 flex items-center justify-center text-slate-300">
                   <AppIcon name="Scan" size="xl" variant="pink" />
@@ -384,7 +384,7 @@ onUnmounted(() => {
                 autocomplete="one-time-code"
                 maxlength="8"
                 :placeholder="t('settings.xhsAccounts.verificationCodePlaceholder')"
-                class="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 outline-none"
+                class="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
                 @keydown.enter.prevent="submitVerificationCode"
               />
               <NeonButton

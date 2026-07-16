@@ -39,7 +39,7 @@ function getStyleColor(version: ContentVersion): string {
     case 'style_a': return 'border-violet-200 bg-violet-50 text-violet-600'
     case 'style_b': return 'border-amber-200 bg-amber-50 text-amber-600'
     case 'style_c': return 'border-emerald-200 bg-emerald-50 text-emerald-600'
-    default: return 'border-slate-200 bg-slate-50 text-slate-600'
+    default: return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-600 dark:bg-slate-800/70 dark:text-slate-300'
   }
 }
 
@@ -49,7 +49,7 @@ function getCardClass(version: ContentVersion): string[] {
   if (isSelected) {
     classes.push('border-teal-400 bg-teal-50/80 scale-[1.02]', 'shadow-lg shadow-teal-500/20', 'ring-2 ring-teal-400/30')
   } else {
-    classes.push('border-slate-100 hover:border-slate-200 hover:bg-slate-50/50', 'hover:scale-[1.01]')
+    classes.push('border-slate-100 hover:border-slate-200 hover:bg-slate-50/50 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800/50', 'hover:scale-[1.01]')
   }
   return classes
 }
@@ -72,7 +72,7 @@ function handleConfirm() {
 </script>
 
 <template>
-  <div class="rounded-xl p-5 bg-white/98 backdrop-blur-sm border border-violet-200/50">
+  <div class="rounded-xl p-5 bg-white/98 backdrop-blur-sm border border-violet-200/50 dark:bg-slate-900/90 dark:border-violet-500/25">
     <div class="flex items-center gap-3 mb-4">
       <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
         <AppIcon name="Palette" size="md" variant="white" :aria-label="t('styleCompare.chooseStyle')" />

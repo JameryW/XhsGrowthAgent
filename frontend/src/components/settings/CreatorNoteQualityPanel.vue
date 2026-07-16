@@ -288,7 +288,7 @@ function rqgmDimLabel(dim: string): string {
 
     <div v-if="isLoadingNotes" class="mt-4 space-y-3" aria-live="polite">
       <div class="h-12 animate-pulse rounded-lg bg-slate-100" />
-      <div class="h-32 animate-pulse rounded-lg bg-slate-50" />
+      <div class="h-32 animate-pulse rounded-lg bg-slate-50 dark:bg-slate-800" />
       <p class="text-center text-xs text-slate-400">{{ t('creatorNoteQuality.loading') }}</p>
     </div>
 
@@ -306,14 +306,14 @@ function rqgmDimLabel(dim: string): string {
       </NeonButton>
     </div>
 
-    <div v-else-if="!notes.length" class="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-5 text-center">
+    <div v-else-if="!notes.length" class="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-5 text-center dark:border-slate-600 dark:bg-slate-800/50">
       <AppIcon name="Database" size="md" variant="purple" />
       <p class="mt-2 text-xs font-medium text-slate-600">{{ t('creatorNoteQuality.empty.title') }}</p>
       <p class="mt-1 text-[11px] leading-relaxed text-slate-400">{{ t('creatorNoteQuality.empty.description') }}</p>
     </div>
 
     <div v-else class="mt-4 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(11rem,0.8fr)_minmax(0,2fr)]">
-      <div class="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-2">
+      <div class="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-2 dark:border-slate-700/50 dark:bg-slate-800/60">
         <div class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
           {{ t('creatorNoteQuality.listTitle') }}
         </div>
@@ -325,7 +325,7 @@ function rqgmDimLabel(dim: string): string {
             class="block min-h-11 w-full min-w-0 rounded-lg px-2.5 py-2 text-left transition"
             :class="selectedNoteId === note.note_id
               ? 'bg-violet-100 text-violet-800'
-              : 'text-slate-600 hover:bg-white'"
+              : 'text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-800'"
             :aria-pressed="selectedNoteId === note.note_id"
             @click="selectNote(note.note_id)"
           >
@@ -340,7 +340,7 @@ function rqgmDimLabel(dim: string): string {
       <div class="min-w-0">
         <div v-if="isLoadingDetail" class="space-y-3" aria-live="polite">
           <div class="h-24 animate-pulse rounded-xl bg-slate-100" />
-          <div class="h-32 animate-pulse rounded-xl bg-slate-50" />
+          <div class="h-32 animate-pulse rounded-xl bg-slate-50 dark:bg-slate-800" />
           <p class="text-center text-xs text-slate-400">{{ t('creatorNoteQuality.loadingDetail') }}</p>
         </div>
 
@@ -378,7 +378,7 @@ function rqgmDimLabel(dim: string): string {
           </article>
 
           <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <div v-for="metric in metricCards" :key="metric.key" class="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 text-center">
+            <div v-for="metric in metricCards" :key="metric.key" class="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 text-center dark:border-slate-700/50 dark:bg-slate-800/60">
               <div class="truncate text-[10px] text-slate-400">{{ metric.label }}</div>
               <div class="mt-1 truncate text-sm font-semibold text-slate-700">{{ metric.value }}</div>
             </div>
@@ -428,12 +428,12 @@ function rqgmDimLabel(dim: string): string {
               </div>
             </div>
             <div class="mt-2 flex flex-wrap gap-2 text-[10px] text-slate-500">
-              <span class="rounded-full bg-white px-2 py-1">{{ translateQualityEnum('grade', quality.grade) }}</span>
-              <span class="rounded-full bg-white px-2 py-1">{{ translateQualityEnum('confidence', quality.confidence) }}</span>
-              <span class="rounded-full bg-white px-2 py-1">{{ translateQualityEnum('scope', quality.scope) }}</span>
+              <span class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ translateQualityEnum('grade', quality.grade) }}</span>
+              <span class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ translateQualityEnum('confidence', quality.confidence) }}</span>
+              <span class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ translateQualityEnum('scope', quality.scope) }}</span>
             </div>
             <div class="mt-3 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-              <div v-for="dimension in quality.dimensions" :key="dimension.key" class="min-w-0 rounded-lg border border-white/80 bg-white/80 p-2.5">
+              <div v-for="dimension in quality.dimensions" :key="dimension.key" class="min-w-0 rounded-lg border border-white/80 bg-white/80 p-2.5 dark:border-slate-700/50 dark:bg-slate-900/75">
                 <div class="flex min-w-0 items-center justify-between gap-2">
                   <span class="truncate text-[11px] font-semibold text-slate-700">{{ dimensionLabel(dimension.key) }}</span>
                   <span v-if="dimension.available !== false && !quality.insufficient_data" class="shrink-0 text-xs font-bold text-cyan-700">{{ Math.round(dimension.score ?? 0) }}</span>
@@ -445,7 +445,7 @@ function rqgmDimLabel(dim: string): string {
             <div v-if="visibleRecommendations.length" class="mt-3">
               <div class="text-[10px] font-semibold uppercase tracking-wider text-violet-700">{{ t('creatorQuality.recommendations') }}</div>
               <ol class="mt-1.5 space-y-1.5">
-                <li v-for="recommendation in visibleRecommendations" :key="recommendation.priority + '-' + recommendation.dimension" class="flex min-w-0 gap-2 rounded-lg bg-white/80 p-2.5">
+                <li v-for="recommendation in visibleRecommendations" :key="recommendation.priority + '-' + recommendation.dimension" class="flex min-w-0 gap-2 rounded-lg bg-white/80 p-2.5 dark:bg-slate-900/75">
                   <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-100 text-[10px] font-semibold text-violet-700">{{ recommendation.priority }}</span>
                   <div class="min-w-0">
                     <div class="break-words text-[11px] font-semibold text-slate-700">{{ recommendation.title }}</div>
@@ -505,7 +505,7 @@ function rqgmDimLabel(dim: string): string {
               <div>
                 <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('creatorNoteQuality.rqgm.dimensionsTitle') }}</div>
                 <div class="mt-1.5 space-y-1.5">
-                  <div v-for="d in rqgmResult.dimensions || []" :key="d.dimension" class="rounded-lg bg-white/80 p-2.5">
+                  <div v-for="d in rqgmResult.dimensions || []" :key="d.dimension" class="rounded-lg bg-white/80 p-2.5 dark:bg-slate-900/75">
                     <div class="flex min-w-0 items-center justify-between gap-2">
                       <span class="truncate text-[11px] font-semibold text-slate-700">
                         {{ rqgmDimLabel(d.dimension) }}
@@ -531,7 +531,7 @@ function rqgmDimLabel(dim: string): string {
           </section>
         </div>
 
-        <div v-else-if="selectedSummary" class="rounded-xl border border-slate-100 bg-slate-50/70 p-5 text-center text-xs text-slate-400">
+        <div v-else-if="selectedSummary" class="rounded-xl border border-slate-100 bg-slate-50/70 p-5 text-center text-xs text-slate-400 dark:border-slate-700/50 dark:bg-slate-800/60">
           {{ t('creatorNoteQuality.loadingDetail') }}
         </div>
       </div>

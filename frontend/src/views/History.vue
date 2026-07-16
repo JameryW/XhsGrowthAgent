@@ -168,7 +168,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
 
     <!-- Empty State -->
     <div v-else-if="isEmpty" class="rounded-xl md:rounded-2xl p-6 md:p-10 liquid-glass text-center">
-      <div class="w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-3 md:mb-4">
+      <div class="w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-3 md:mb-4 dark:bg-slate-800">
         <AppIcon name="Inbox" size="lg" variant="cyan" class="md:hidden" />
         <AppIcon name="Inbox" size="xl" variant="cyan" class="hidden md:block" />
       </div>

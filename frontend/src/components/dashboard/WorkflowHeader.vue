@@ -155,22 +155,22 @@ const timeRemainingDisplay = computed(() => {
           workflowStore.isRunning
             ? 'bg-gradient-to-r from-teal-500 to-teal-400 border-teal-200 text-white shadow-sm'
             : isStale
-              ? 'bg-amber-50 border-amber-300 text-amber-700'
+              ? 'bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-950/40 dark:border-amber-500/35 dark:text-amber-200'
               : workflowStore.currentPhase === 'completed'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-500/35 dark:text-emerald-200'
                 : workflowStore.currentPhase === 'error'
-                  ? 'bg-rose-50 border-rose-200 text-rose-700'
+                  ? 'bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/40 dark:border-rose-500/35 dark:text-rose-200'
                   : workflowStore.currentStatus === 'paused'
-                    ? 'bg-slate-50 border-slate-300 text-slate-600'
+                    ? 'bg-slate-50 border-slate-300 text-slate-600 dark:bg-slate-800/70 dark:border-slate-600 dark:text-slate-300'
                     : workflowStore.currentStatus === 'cancelled'
-                      ? 'bg-slate-50 border-slate-300 text-slate-500'
+                      ? 'bg-slate-50 border-slate-300 text-slate-500 dark:bg-slate-800/70 dark:border-slate-600 dark:text-slate-400'
                       : workflowStore.isAwaitingRippleDecision
-                        ? 'bg-violet-50 border-violet-200 text-violet-700'
+                        ? 'bg-violet-50 border-violet-200 text-violet-700 dark:bg-violet-950/40 dark:border-violet-500/35 dark:text-violet-200'
                         : workflowStore.isAwaitingBloggerSelection
-                          ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                          ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-500/35 dark:text-indigo-200'
                           : isWaitingForUser
-                            ? 'bg-amber-50 border-amber-200 text-amber-700'
-                            : 'bg-slate-50 border-slate-200 text-slate-500'
+                            ? 'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-500/35 dark:text-amber-200'
+                            : 'bg-slate-50 border-slate-200 text-slate-500 dark:bg-slate-800/70 dark:border-slate-600 dark:text-slate-400'
         ]"
         role="status"
         aria-live="polite"
