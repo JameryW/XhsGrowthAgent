@@ -654,7 +654,7 @@ function cardBadgeClass(wf: WorkflowListItem): string {
   if (isRunningStatus(wf.status)) return 'bg-teal-100 text-teal-700'
   if (wf.status === 'completed') return 'bg-emerald-100 text-emerald-700'
   if (wf.status === 'error') return 'bg-rose-100 text-rose-700'
-  return 'bg-slate-100 text-slate-600'
+  return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
 }
 
 function cardProgressClass(wf: WorkflowListItem): string {
@@ -899,8 +899,8 @@ const evolutionTreeData = computed(() => {
         <div v-for="i in 2" :key="i" class="rounded-2xl border border-white/70 bg-white/60 p-5 shadow-sm dark:border-slate-700/50 dark:bg-slate-900/75">
           <div class="h-3 w-1/3 animate-pulse rounded bg-slate-200" />
           <div class="mt-5 h-4 w-4/5 animate-pulse rounded bg-slate-200" />
-          <div class="mt-3 h-3 w-2/3 animate-pulse rounded bg-slate-100" />
-          <div class="mt-6 h-2 w-full animate-pulse rounded bg-slate-100" />
+          <div class="mt-3 h-3 w-2/3 animate-pulse rounded bg-slate-100 dark:bg-slate-700" />
+          <div class="mt-6 h-2 w-full animate-pulse rounded bg-slate-100 dark:bg-slate-700" />
         </div>
         <p class="col-span-full text-center text-xs text-slate-400">{{ t('common.loading') }}</p>
       </div>
@@ -1085,7 +1085,7 @@ const evolutionTreeData = computed(() => {
                 <span v-if="card.wf.workflow_mode" class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 shrink-0">{{ card.wf.workflow_mode }}</span>
                 <!-- Inline progress bar + percent -->
                 <div class="flex items-center gap-1.5 ml-1">
-                  <div class="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
+                  <div class="w-16 h-1 bg-slate-100 rounded-full overflow-hidden dark:bg-slate-700">
                     <div class="h-full rounded-full transition-all duration-500" :class="card.progressClass" :style="{ width: `${card.wf.progress_percent}%` }" />
                   </div>
                   <span class="text-[10px] text-slate-400 tabular-nums shrink-0">{{ card.wf.progress_percent }}%</span>
@@ -1100,9 +1100,9 @@ const evolutionTreeData = computed(() => {
             <div class="showcase-card-body relative min-h-[60px]">
               <WorkflowCardBody v-if="card.detail" :detail="card.detail" />
               <div v-else-if="card.isLoading" class="px-4 py-4 space-y-2">
-                <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse" />
-                <div class="h-3 w-1/2 rounded bg-slate-100 animate-pulse" />
-                <div class="h-3 w-2/3 rounded bg-slate-100 animate-pulse" />
+                <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
+                <div class="h-3 w-1/2 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
+                <div class="h-3 w-2/3 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
               </div>
               <div v-else-if="card.detailFailed" class="flex min-h-[60px] items-center justify-between gap-3 px-4 py-3" aria-live="polite">
                 <div class="min-w-0">

@@ -363,7 +363,7 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
               'w-full pl-4 pr-4 py-3 rounded-xl border-2 text-sm text-slate-700 font-medium',
               'transition-all duration-300 ease-out resize-y',
               hasPdfUpload
-                ? 'border-slate-100 bg-slate-100/50 text-slate-400 cursor-not-allowed'
+                ? 'border-slate-100 bg-slate-100/50 text-slate-400 cursor-not-allowed dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-500'
                 : 'bg-slate-50/50 border-slate-100 focus:outline-none focus:border-neon-pink/40 focus:bg-white focus:shadow-neon-pink-sm placeholder:text-slate-300 placeholder:font-normal dark:bg-slate-900/70 dark:border-slate-700/55 dark:focus:bg-slate-900 dark:placeholder:text-slate-500'
             ]"
             :placeholder="hasPdfUpload ? t('brief.textDisabledByPdf') : t('home.form.briefTextPlaceholder')"
@@ -501,7 +501,7 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
         <div class="flex items-center justify-between p-3 rounded-xl border-2 border-slate-100 bg-white
                       hover:border-slate-200 hover:shadow-sm transition-all duration-300 group/opt dark:border-slate-700/55 dark:bg-slate-900/80 dark:hover:border-slate-600">
           <div class="flex items-center gap-2 min-w-0">
-            <div class="flex items-center justify-center w-7 h-7 rounded-lg bg-teal-50 group-hover/opt:bg-teal-100 transition-colors shrink-0">
+            <div class="flex items-center justify-center w-7 h-7 rounded-lg bg-teal-50 group-hover/opt:bg-teal-100 transition-colors shrink-0 dark:bg-teal-950/50 dark:group-hover/opt:bg-teal-900/50">
               <AppIcon name="FlaskConical" size="sm" variant="cyan" />
             </div>
             <span class="text-xs font-semibold text-slate-700 truncate">{{ t('home.form.dryRun') }}</span>
@@ -530,7 +530,7 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
         <div class="flex items-center justify-between p-3 rounded-xl border-2 border-slate-100 bg-white
                       hover:border-slate-200 hover:shadow-sm transition-all duration-300 group/opt dark:border-slate-700/55 dark:bg-slate-900/80 dark:hover:border-slate-600">
           <div class="flex items-center gap-2 min-w-0">
-            <div class="flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 group-hover/opt:bg-rose-100 transition-colors shrink-0">
+            <div class="flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 group-hover/opt:bg-rose-100 transition-colors shrink-0 dark:bg-rose-950/50 dark:group-hover/opt:bg-rose-900/50">
               <AppIcon name="Upload" size="sm" variant="pink" />
             </div>
             <span class="text-xs font-semibold text-slate-700 truncate">{{ t('home.form.autoPublish') }}</span>

@@ -360,7 +360,7 @@ function startWithTopic(topic: string, niche?: string) {
         />
         <template #fallback>
           <div class="rounded-xl md:rounded-2xl p-3 md:p-6 liquid-glass">
-            <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse" />
+            <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
           </div>
         </template>
       </Suspense>
@@ -373,7 +373,7 @@ function startWithTopic(topic: string, niche?: string) {
         />
         <template #fallback>
           <div class="rounded-xl md:rounded-2xl p-3 md:p-6 liquid-glass">
-            <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse" />
+            <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
           </div>
         </template>
       </Suspense>
@@ -413,7 +413,7 @@ function startWithTopic(topic: string, niche?: string) {
           <span>{{ t('analytics.cost.budgetUsed') }}</span>
           <span>{{ budgetUsedPercent }}%</span>
         </div>
-        <div class="h-2 rounded-full bg-slate-100 overflow-hidden">
+        <div class="h-2 rounded-full bg-slate-100 overflow-hidden dark:bg-slate-800">
           <div
             class="h-full rounded-full transition-all duration-500"
             :class="budgetUsedPercent > 90 ? 'bg-rose-500' : budgetUsedPercent > 70 ? 'bg-amber-500' : 'bg-emerald-500'"
@@ -435,7 +435,7 @@ function startWithTopic(topic: string, niche?: string) {
               <span class="text-xs md:text-sm text-slate-700 font-medium truncate">{{ item.model }}</span>
               <span class="text-xs md:text-sm text-slate-600 tabular-nums">${{ item.cost.toFixed(2) }}</span>
             </div>
-            <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+            <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden dark:bg-slate-800">
               <div
                 class="h-full rounded-full bg-gradient-to-r from-rose-400 to-rose-500 transition-all duration-500 group-hover:from-rose-500 group-hover:to-rose-600"
                 :style="{ width: `${item.percent}%` }"
@@ -468,10 +468,10 @@ function startWithTopic(topic: string, niche?: string) {
           :class="insightBg(insight.type)"
         >
           <div class="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 mt-0.5" :class="{
-            'bg-teal-100': insight.type === 'trend',
-            'bg-violet-100': insight.type === 'opportunity',
-            'bg-amber-100': insight.type === 'warning',
-            'bg-slate-100': insight.type === 'info',
+            'bg-teal-100 dark:bg-teal-950/50': insight.type === 'trend',
+            'bg-violet-100 dark:bg-violet-950/50': insight.type === 'opportunity',
+            'bg-amber-100 dark:bg-amber-950/50': insight.type === 'warning',
+            'bg-slate-100 dark:bg-slate-800': insight.type === 'info',
           }">
             <AppIcon :name="insightIcon(insight.type)" size="sm" :variant="insightVariant(insight.type) as any" />
           </div>

@@ -379,7 +379,7 @@ const finalSummary = computed(() => {
         <!-- Top row: back + title + actions -->
         <div class="h-12 flex items-center justify-between">
           <div class="flex items-center gap-2.5">
-            <button type="button" @click="goBack" class="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 transition-colors hover:bg-slate-200" :aria-label="t('replay.back')">
+            <button type="button" @click="goBack" class="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200" :aria-label="t('replay.back')">
               <AppIcon name="ArrowLeft" size="sm" variant="cyan" />
             </button>
             <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-rose-500 to-amber-400 shadow-sm shadow-rose-500/20">
@@ -555,7 +555,7 @@ const finalSummary = computed(() => {
             <div class="replay-detail-header flex items-center gap-2 mb-3">
               <span class="replay-detail-pulse h-2 w-2 rounded-full bg-teal-400" />
               <div class="min-w-0 text-sm font-semibold text-slate-800 truncate">{{ selectedAgentLabel }}</div>
-              <span class="replay-step-badge text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{{ t('replay.step') }} {{ selectedCheckpoint.step }}</span>
+              <span class="replay-step-badge text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ t('replay.step') }} {{ selectedCheckpoint.step }}</span>
               <span v-if="selectedCheckpoint.created_at" class="ml-auto shrink-0 text-[10px] text-slate-400">{{ formatDate(selectedCheckpoint.created_at) }}</span>
             </div>
 
@@ -610,7 +610,7 @@ const finalSummary = computed(() => {
             <button type="button" class="mt-4 min-h-11 rounded-xl bg-slate-800 px-4 text-xs font-medium text-white" :disabled="isRetrying" @click="retryReplay">{{ isRetrying ? t('common.loadingState') : t('common.retry') }}</button>
           </div>
           <div v-else class="replay-empty-state rounded-xl liquid-glass p-8 text-center">
-            <div class="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+            <div class="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mx-auto mb-4 dark:bg-slate-800">
               <AppIcon name="MousePointerClick" size="lg" variant="cyan" />
             </div>
             <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-teal-600">{{ t('replay.inspectLabel') }}</p>
@@ -637,7 +637,7 @@ const finalSummary = computed(() => {
 
             <div v-else class="replay-demo-banner replay-no-workflow-banner rounded-xl liquid-glass-inset p-3">
               <div class="flex items-start gap-2">
-                <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-100">
+                <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800">
                   <AppIcon name="Info" size="xs" variant="cyan" />
                 </div>
                 <div class="min-w-0">

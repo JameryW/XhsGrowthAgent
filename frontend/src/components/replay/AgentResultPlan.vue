@@ -45,7 +45,7 @@ defineProps<{ cp: CheckpointSnapshot }>()
 
     <!-- Hashtags -->
     <div v-if="cp.content_plan.hashtags?.length" class="flex flex-wrap gap-1.5 mt-3">
-      <span v-for="tag in cp.content_plan.hashtags" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-600">#{{ tag }}</span>
+      <span v-for="tag in cp.content_plan.hashtags" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 dark:bg-teal-950/50 dark:text-teal-300">#{{ tag }}</span>
     </div>
   </div>
 </template>

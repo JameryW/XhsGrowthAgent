@@ -40,16 +40,16 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
         <div v-if="cp.brief_content.selling_points?.length" class="flex items-start gap-2">
           <span class="text-[10px] text-slate-400 min-w-[60px]">{{ t('brief.sellingPoints') }}</span>
           <div class="flex flex-wrap gap-1">
-            <span v-for="sp in cp.brief_content.selling_points.slice(0, 3)" :key="sp" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{{ sp }}</span>
+            <span v-for="sp in cp.brief_content.selling_points.slice(0, 3)" :key="sp" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ sp }}</span>
           </div>
         </div>
         <div v-if="cp.brief_content.required_hashtags?.length" class="flex items-start gap-2">
           <span class="text-[10px] text-slate-400 min-w-[60px]">{{ t('brief.hashtags') }}</span>
           <div class="flex flex-wrap gap-1">
-            <span v-for="tag in cp.brief_content.required_hashtags" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-600">#{{ tag }}</span>
+            <span v-for="tag in cp.brief_content.required_hashtags" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 dark:bg-teal-950/50 dark:text-teal-300">#{{ tag }}</span>
           </div>
         </div>
-        <span v-if="cp.brief_content.confidence != null" class="text-[10px] px-1.5 py-0.5 rounded-full" :class="(cp.brief_content.confidence ?? 0) >= 0.6 ? 'bg-teal-50 text-teal-600' : 'bg-amber-50 text-amber-600'">
+        <span v-if="cp.brief_content.confidence != null" class="text-[10px] px-1.5 py-0.5 rounded-full" :class="(cp.brief_content.confidence ?? 0) >= 0.6 ? 'bg-teal-50 text-teal-600 dark:bg-teal-950/50 dark:text-teal-300' : 'bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-300'">
           {{ Math.round((cp.brief_content.confidence ?? 0) * 100) }}%
         </span>
       </div>
@@ -84,7 +84,7 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
           <p class="text-xs text-slate-600 whitespace-pre-line line-clamp-6">{{ shootingPlan.body_copy }}</p>
         </div>
         <div v-if="shootingPlan.required_hashtags?.length || shootingPlan.optional_hashtags?.length" class="flex flex-wrap gap-1.5">
-          <span v-for="tag in (shootingPlan.required_hashtags || [])" :key="'r-'+tag" class="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-600">#{{ tag }}</span>
+          <span v-for="tag in (shootingPlan.required_hashtags || [])" :key="'r-'+tag" class="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-600 dark:bg-teal-950/50 dark:text-teal-300">#{{ tag }}</span>
           <span v-for="tag in (shootingPlan.optional_hashtags || [])" :key="'o-'+tag" class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-500 dark:bg-slate-800 dark:text-slate-400">#{{ tag }}</span>
         </div>
         <details v-if="shootingPlan.outfits && Object.keys(shootingPlan.outfits).length > 0" class="text-xs">
@@ -141,7 +141,7 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
 
       <!-- Hashtags -->
       <div v-if="cp.copy_content.hashtags?.length" class="flex flex-wrap gap-1.5">
-        <span v-for="tag in cp.copy_content.hashtags" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-600">#{{ tag }}</span>
+        <span v-for="tag in cp.copy_content.hashtags" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 dark:bg-teal-950/50 dark:text-teal-300">#{{ tag }}</span>
       </div>
 
       <!-- CTA / Tone / Emoji — compact row -->
@@ -175,7 +175,7 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
         <p class="text-xs text-slate-600 whitespace-pre-line line-clamp-6">{{ cp.draft_content.text }}</p>
       </div>
       <div v-if="cp.draft_content.hashtags?.length" class="flex flex-wrap gap-1">
-        <span v-for="tag in cp.draft_content.hashtags" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">#{{ tag }}</span>
+        <span v-for="tag in cp.draft_content.hashtags" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">#{{ tag }}</span>
       </div>
     </div>
   </details>
@@ -193,7 +193,7 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
         <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('replay.gapAnalysis') }}</div>
         <div class="space-y-1">
           <div v-for="(gap, i) in cp.optimization_analysis.gaps" :key="i" class="flex items-start gap-2 p-2 rounded-lg liquid-glass-inset">
-            <span class="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium" :class="gap.severity === 'high' ? 'bg-red-50 text-red-600' : gap.severity === 'medium' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'">{{ gap.severity }}</span>
+            <span class="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium" :class="gap.severity === 'high' ? 'bg-red-50 text-red-600 dark:bg-red-950/50 dark:text-red-300' : gap.severity === 'medium' ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-300' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-300'">{{ gap.severity }}</span>
             <div class="min-w-0">
               <div class="text-xs font-medium text-slate-700">{{ gap.dimension }}</div>
               <div class="text-[11px] text-slate-500">{{ gap.description }}</div>
@@ -206,7 +206,7 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
         <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('replay.suggestions') }}</div>
         <div class="space-y-1">
           <div v-for="(sug, i) in cp.optimization_analysis.suggestions" :key="i" class="flex items-start gap-2 p-2 rounded-lg liquid-glass-inset">
-            <span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">P{{ sug.priority }}</span>
+            <span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 font-medium">P{{ sug.priority }}</span>
             <div class="min-w-0">
               <div class="text-xs text-slate-700">{{ sug.action }}</div>
               <div class="text-[11px] text-slate-500">{{ sug.reasoning }}</div>
@@ -218,7 +218,7 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
       <div v-if="cp.optimization_analysis.viral_patterns?.length">
         <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('replay.viralPatterns') }}</div>
         <div class="flex flex-wrap gap-1">
-          <span v-for="p in cp.optimization_analysis.viral_patterns" :key="p" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{{ p }}</span>
+          <span v-for="p in cp.optimization_analysis.viral_patterns" :key="p" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ p }}</span>
         </div>
       </div>
     </div>
@@ -235,7 +235,7 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
       <div v-for="(ver, i) in cp.content_versions" :key="ver.version_id || i" class="p-2.5 rounded-lg liquid-glass-inset">
         <div class="flex items-center justify-between mb-1">
           <div class="flex items-center gap-1.5">
-            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" :class="ver.version_type === 'A' ? 'bg-rose-50 text-rose-600' : ver.version_type === 'B' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-600'">{{ t('review.versionLabel', { n: ver.version_type || (i + 1) }) }}</span>
+            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" :class="ver.version_type === 'A' ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-300' : ver.version_type === 'B' ? 'bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'">{{ t('review.versionLabel', { n: ver.version_type || (i + 1) }) }}</span>
             <span class="text-xs font-semibold text-slate-800">{{ ver.title }}</span>
           </div>
           <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{{ ver.predicted_score }}{{ t('versionCompare.scoreUnit') }}</span>
@@ -243,7 +243,7 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
         <div v-if="ver.body" class="text-xs text-slate-600 whitespace-pre-line line-clamp-3 mb-1">{{ ver.body }}</div>
         <div v-if="ver.changes_summary" class="text-[10px] text-slate-400 mb-1">&#8635; {{ ver.changes_summary }}</div>
         <div class="flex flex-wrap gap-1">
-          <span v-for="tag in ver.hashtags" :key="tag" class="text-[10px] px-1 py-0.5 rounded bg-teal-50 text-teal-600">#{{ tag }}</span>
+          <span v-for="tag in ver.hashtags" :key="tag" class="text-[10px] px-1 py-0.5 rounded bg-teal-50 text-teal-600 dark:bg-teal-950/50 dark:text-teal-300">#{{ tag }}</span>
           <span v-if="ver.style_suggestion" class="text-[10px] px-1 py-0.5 rounded bg-slate-100 text-slate-500">{{ ver.style_suggestion }}</span>
         </div>
       </div>
