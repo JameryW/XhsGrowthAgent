@@ -841,7 +841,7 @@ const handleCancelConfirm = () => {
                     </div>
                     <span class="text-xs font-semibold text-slate-800">{{ t('review.visualPlan') }}</span>
                   </div>
-                  <div class="rounded-md p-2.5 md:p-3 bg-white/60 border-l-2 border-teal-400">
+                  <div class="rounded-md p-2.5 md:p-3 bg-white/60 border-l-2 border-teal-400 dark:bg-slate-900/70">
                     <div v-if="reviewStore.getQueueVisualPlan(wf.thread_id)?.layout_style" class="text-teal-500 font-bold text-sm mb-1">
                       {{ reviewStore.getQueueVisualPlan(wf.thread_id)!.layout_style }}
                     </div>
@@ -871,7 +871,7 @@ const handleCancelConfirm = () => {
                   <!-- Preview grid -->
                   <div v-if="getUploadedImages(wf.thread_id).length > 0" class="grid grid-cols-3 gap-2 mb-2">
                     <div v-for="(url, idx) in getUploadedImages(wf.thread_id)" :key="idx"
-                      class="relative aspect-square rounded-md overflow-hidden border border-slate-200 bg-slate-50"
+                      class="relative aspect-square rounded-md overflow-hidden border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/80"
                     >
                       <img :src="url" class="w-full h-full object-cover" alt="" />
                       <button @click="removeImage(wf.thread_id, idx)"
@@ -920,7 +920,7 @@ const handleCancelConfirm = () => {
                     <!-- Overview + radar -->
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <!-- Overall score + decision -->
-                      <div class="rounded-md p-3 bg-white/60 border-l-2 border-rose-400 flex flex-col gap-2">
+                      <div class="rounded-md p-3 bg-white/60 border-l-2 border-rose-400 flex flex-col gap-2 dark:bg-slate-900/70">
                         <div class="flex items-baseline gap-1.5">
                           <span class="text-[10px] text-slate-500">{{ t('review.evaluation.overall') }}</span>
                           <span class="text-2xl font-extrabold leading-none" :class="scoreClass(getEvaluation(wf.thread_id)!.overall_score)">
@@ -938,7 +938,7 @@ const handleCancelConfirm = () => {
                         </p>
                       </div>
                       <!-- Radar chart -->
-                      <div class="rounded-md p-2 bg-white/40">
+                      <div class="rounded-md p-2 bg-white/40 dark:bg-slate-900/55">
                         <EvaluationRadar :dimensions="getEvaluation(wf.thread_id)!.dimensions || []" :height="220" />
                       </div>
                     </div>
@@ -953,7 +953,7 @@ const handleCancelConfirm = () => {
                     </div>
 
                     <!-- Dimension details -->
-                    <div class="rounded-md p-2.5 bg-white/40">
+                    <div class="rounded-md p-2.5 bg-white/40 dark:bg-slate-900/55">
                       <div class="text-[10px] font-semibold text-slate-700 mb-1.5">{{ t('review.evaluation.dimensionsTitle') }}</div>
                       <div v-for="d in getEvaluation(wf.thread_id)!.dimensions || []" :key="d.dimension" class="py-1.5 border-b border-slate-100 last:border-0">
                         <div class="flex items-center justify-between gap-2">
@@ -1175,7 +1175,7 @@ const handleCancelConfirm = () => {
                 <button
                   type="button"
                   @click="publishMode = 'dry'"
-                  :class="['p-3 rounded-lg border text-left transition-all duration-200', publishMode === 'dry' ? 'border-teal-400 bg-teal-50 ring-1 ring-teal-300' : 'border-slate-200 bg-white hover:border-slate-300']"
+                  :class="['p-3 rounded-lg border text-left transition-all duration-200', publishMode === 'dry' ? 'border-teal-400 bg-teal-50 ring-1 ring-teal-300 dark:bg-teal-950/40 dark:ring-teal-500/40' : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/80 dark:hover:border-slate-600']"
                 >
                   <div class="flex items-center gap-1.5 mb-1">
                     <AppIcon name="FlaskConical" size="sm" variant="cyan" />
@@ -1186,7 +1186,7 @@ const handleCancelConfirm = () => {
                 <button
                   type="button"
                   @click="publishMode = 'live'"
-                  :class="['p-3 rounded-lg border text-left transition-all duration-200', publishMode === 'live' ? 'border-rose-400 bg-rose-50 ring-1 ring-rose-300' : 'border-slate-200 bg-white hover:border-slate-300']"
+                  :class="['p-3 rounded-lg border text-left transition-all duration-200', publishMode === 'live' ? 'border-rose-400 bg-rose-50 ring-1 ring-rose-300 dark:bg-rose-950/40 dark:ring-rose-500/40' : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/80 dark:hover:border-slate-600']"
                 >
                   <div class="flex items-center gap-1.5 mb-1">
                     <AppIcon name="Send" size="sm" variant="pink" />

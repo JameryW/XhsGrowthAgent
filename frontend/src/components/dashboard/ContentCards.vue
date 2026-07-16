@@ -219,7 +219,7 @@ async function handleTriggerAnalytics() {
         </div>
         <div v-if="briefContent.required_hashtags?.length || briefContent.optional_hashtags?.length" class="flex flex-wrap gap-1.5 mt-2">
           <span v-for="tag in (briefContent.required_hashtags || [])" :key="'r-'+tag" class="px-2 py-1 rounded-md bg-rose-50 text-rose-600 text-xs border border-rose-200 font-medium">#{{ tag }}</span>
-          <span v-for="tag in (briefContent.optional_hashtags || [])" :key="'o-'+tag" class="px-2 py-1 rounded-md bg-slate-50 text-slate-500 text-xs border border-slate-200">#{{ tag }}</span>
+          <span v-for="tag in (briefContent.optional_hashtags || [])" :key="'o-'+tag" class="px-2 py-1 rounded-md bg-slate-50 text-slate-500 text-xs border border-slate-200 dark:bg-slate-800/70 dark:border-slate-600 dark:text-slate-400">#{{ tag }}</span>
         </div>
       </div>
     </div>
@@ -240,7 +240,7 @@ async function handleTriggerAnalytics() {
       <div v-if="trendData.hot_topics && trendData.hot_topics.length > 0" class="mb-4">
         <div class="text-xs text-slate-500 uppercase tracking-wide font-medium mb-2">{{ t('dashboard.scouting.hotTopics') }}</div>
         <div class="space-y-2">
-          <div v-for="(topic, idx) in trendData.hot_topics.slice(0, 5)" :key="idx" class="flex items-center gap-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+          <div v-for="(topic, idx) in trendData.hot_topics.slice(0, 5)" :key="idx" class="flex items-center gap-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50">
             <span class="text-sm font-medium text-slate-700 flex-1 truncate">{{ topic.topic }}</span>
             <div class="flex items-center gap-2">
               <div :class="['px-2 py-0.5 rounded text-xs font-medium', heatBg(topic.heat_score), heatColor(topic.heat_score)]">
@@ -391,7 +391,7 @@ async function handleTriggerAnalytics() {
       </div>
 
       <!-- Body preview -->
-      <div v-if="copyContent.body_text" class="p-3 rounded-lg bg-slate-50 border border-slate-100 mb-3">
+      <div v-if="copyContent.body_text" class="p-3 rounded-lg bg-slate-50 border border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50 mb-3">
         <p class="text-xs text-slate-600 line-clamp-4 whitespace-pre-line">{{ copyContent.body_text }}</p>
       </div>
 
@@ -511,7 +511,7 @@ async function handleTriggerAnalytics() {
         </div>
 
         <!-- Body copy -->
-        <div v-if="shootingPlan.body_copy" class="p-3 rounded-lg bg-slate-50 border border-slate-100">
+        <div v-if="shootingPlan.body_copy" class="p-3 rounded-lg bg-slate-50 border border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50">
           <p class="text-xs text-slate-600 line-clamp-4 whitespace-pre-line">{{ shootingPlan.body_copy }}</p>
         </div>
 
@@ -519,7 +519,7 @@ async function handleTriggerAnalytics() {
         <div v-if="shootingPlan.required_hashtags?.length || shootingPlan.optional_hashtags?.length || shootingPlan.suggested_hashtags?.length" class="flex flex-wrap gap-1.5">
           <span v-for="tag in (shootingPlan.required_hashtags || [])" :key="'r-'+tag" class="px-2 py-1 rounded-md bg-rose-50 text-rose-600 text-xs border border-rose-200 font-medium">#{{ tag }}</span>
           <span v-for="tag in (shootingPlan.suggested_hashtags || [])" :key="'s-'+tag" class="px-2 py-1 rounded-md bg-amber-50 text-amber-600 text-xs border border-amber-100">#{{ tag }}</span>
-          <span v-for="tag in (shootingPlan.optional_hashtags || [])" :key="'o-'+tag" class="px-2 py-1 rounded-md bg-slate-50 text-slate-500 text-xs border border-slate-200">#{{ tag }}</span>
+          <span v-for="tag in (shootingPlan.optional_hashtags || [])" :key="'o-'+tag" class="px-2 py-1 rounded-md bg-slate-50 text-slate-500 text-xs border border-slate-200 dark:bg-slate-800/70 dark:border-slate-600 dark:text-slate-400">#{{ tag }}</span>
         </div>
 
         <!-- Outfits -->

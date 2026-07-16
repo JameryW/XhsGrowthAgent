@@ -864,7 +864,7 @@ const evolutionTreeData = computed(() => {
           <p class="mt-2 text-sm leading-6 text-slate-500">{{ t('showcase.heroDesc') }}</p>
         </div>
         <div class="flex w-full shrink-0 flex-col gap-3 sm:flex-row md:w-auto md:flex-col md:items-stretch">
-          <div class="showcase-intro-signal rounded-2xl border border-white/80 bg-white/65 px-4 py-3 shadow-sm" aria-hidden="true">
+          <div class="showcase-intro-signal rounded-2xl border border-white/80 bg-white/65 px-4 py-3 shadow-sm dark:border-slate-700/55 dark:bg-slate-900/80" aria-hidden="true">
             <div class="flex items-center justify-between gap-4">
               <span class="min-w-0 truncate text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{{ t('showcase.closedLoop') }}</span>
               <span class="showcase-signal-dot h-2 w-2 rounded-full bg-teal-400" />
@@ -896,7 +896,7 @@ const evolutionTreeData = computed(() => {
 
       <!-- Loading keeps the public entry stable while the workflow list arrives. -->
       <div v-else-if="!listLoaded" class="showcase-loading-shell grid grid-cols-1 gap-4 md:grid-cols-2" aria-live="polite">
-        <div v-for="i in 2" :key="i" class="rounded-2xl border border-white/70 bg-white/60 p-5 shadow-sm">
+        <div v-for="i in 2" :key="i" class="rounded-2xl border border-white/70 bg-white/60 p-5 shadow-sm dark:border-slate-700/50 dark:bg-slate-900/75">
           <div class="h-3 w-1/3 animate-pulse rounded bg-slate-200" />
           <div class="mt-5 h-4 w-4/5 animate-pulse rounded bg-slate-200" />
           <div class="mt-3 h-3 w-2/3 animate-pulse rounded bg-slate-100" />
@@ -917,13 +917,13 @@ const evolutionTreeData = computed(() => {
         </div>
         <div v-if="backgroundError" class="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-800 dark:border-amber-500/35 dark:bg-amber-950/40 dark:text-amber-200" role="status" aria-live="polite">
           <span>{{ t('showcase.refreshUnavailable') }}</span>
-          <button type="button" class="min-h-11 rounded-lg border border-amber-300 bg-white/80 px-3 text-[10px] font-semibold text-amber-800 hover:bg-white" @click="() => { void fetchWorkflows({ background: true }) }">{{ t('common.retry') }}</button>
+          <button type="button" class="min-h-11 rounded-lg border border-amber-300 bg-white/80 px-3 text-[10px] font-semibold text-amber-800 hover:bg-white dark:border-amber-500/40 dark:bg-slate-900/80 dark:text-amber-200 dark:hover:bg-slate-800" @click="() => { void fetchWorkflows({ background: true }) }">{{ t('common.retry') }}</button>
         </div>
 
         <!-- Empty data is a valid public state: keep the product explanation visible,
              then give the user one clear next action. -->
         <div v-if="isEmpty" class="showcase-empty-state liquid-glass-inset mb-5 rounded-2xl px-5 py-8 text-center md:mb-6 md:py-10">
-          <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white/75 shadow-sm ring-1 ring-white/80">
+          <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white/75 shadow-sm ring-1 ring-white/80 dark:bg-slate-800 dark:ring-slate-600">
             <AppIcon name="Inbox" size="lg" variant="cyan" />
           </div>
           <p class="mt-4 text-sm font-semibold text-slate-700">{{ t('showcase.empty') }}</p>
@@ -937,30 +937,30 @@ const evolutionTreeData = computed(() => {
         <!-- ══════════════════════════════════════════════════════════════
              Layer 2: Stats — compact horizontal strip
              ══════════════════════════════════════════════════════════════ -->
-        <div v-if="!isEmpty" class="showcase-stats mb-5 grid grid-cols-2 gap-2 rounded-2xl border border-white/80 bg-white/45 px-2 py-2.5 shadow-sm backdrop-blur-sm sm:flex sm:items-center sm:justify-center sm:gap-5 sm:px-3 md:mb-6 md:gap-8">
-          <div class="showcase-stat-item showcase-stat-total flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 shadow-sm sm:min-h-0 sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 sm:shadow-none">
+        <div v-if="!isEmpty" class="showcase-stats mb-5 grid grid-cols-2 gap-2 rounded-2xl border border-white/80 bg-white/45 px-2 py-2.5 shadow-sm dark:border-slate-700/50 dark:bg-slate-900/55 backdrop-blur-sm sm:flex sm:items-center sm:justify-center sm:gap-5 sm:px-3 md:mb-6 md:gap-8">
+          <div class="showcase-stat-item showcase-stat-total flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 shadow-sm dark:border-slate-700/50 dark:bg-slate-900/70 sm:min-h-0 sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 sm:shadow-none">
             <div class="text-lg md:text-xl font-bold text-slate-700"><AnimatedCounter :value="statsReady ? stats.total : 0" :duration="800" /></div>
             <div class="text-[10px] text-slate-400 leading-tight">{{ t('showcase.stats.total') }}</div>
           </div>
           <div class="hidden h-5 w-px bg-slate-200/60 sm:block" />
-          <div class="showcase-stat-item showcase-stat-running flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 shadow-sm sm:min-h-0 sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 sm:shadow-none">
+          <div class="showcase-stat-item showcase-stat-running flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 shadow-sm dark:border-slate-700/50 dark:bg-slate-900/70 sm:min-h-0 sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 sm:shadow-none">
             <div class="text-lg md:text-xl font-bold text-teal-600"><AnimatedCounter :value="statsReady ? stats.running : 0" :duration="800" /></div>
             <div class="text-[10px] text-slate-400 leading-tight">{{ t('showcase.stats.running') }}</div>
           </div>
           <div class="hidden h-5 w-px bg-slate-200/60 sm:block" />
-          <div class="showcase-stat-item showcase-stat-completed flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 shadow-sm sm:min-h-0 sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 sm:shadow-none">
+          <div class="showcase-stat-item showcase-stat-completed flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 shadow-sm dark:border-slate-700/50 dark:bg-slate-900/70 sm:min-h-0 sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 sm:shadow-none">
             <div class="text-lg md:text-xl font-bold text-emerald-600"><AnimatedCounter :value="statsReady ? stats.completed : 0" :duration="800" /></div>
             <div class="text-[10px] text-slate-400 leading-tight">{{ t('showcase.stats.completed') }}</div>
           </div>
           <template v-if="stats.needsAttention > 0">
             <div class="hidden h-5 w-px bg-slate-200/60 sm:block" />
-            <div class="showcase-stat-item showcase-stat-attention flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 shadow-sm sm:min-h-0 sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 sm:shadow-none">
+            <div class="showcase-stat-item showcase-stat-attention flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 shadow-sm dark:border-slate-700/50 dark:bg-slate-900/70 sm:min-h-0 sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 sm:shadow-none">
               <div class="text-lg md:text-xl font-bold text-rose-600"><AnimatedCounter :value="statsReady ? stats.needsAttention : 0" :duration="800" /></div>
               <div class="text-[10px] text-slate-400 leading-tight">{{ t('showcase.stats.needsAttention') }}</div>
             </div>
           </template>
           <div class="hidden h-5 w-px bg-slate-200/60 sm:block" />
-          <div class="showcase-stat-item showcase-stat-progress flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 shadow-sm sm:min-h-0 sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 sm:shadow-none">
+          <div class="showcase-stat-item showcase-stat-progress flex min-h-14 items-center justify-center gap-2 rounded-xl border border-white/70 bg-white/60 px-3 shadow-sm dark:border-slate-700/50 dark:bg-slate-900/70 sm:min-h-0 sm:justify-start sm:border-0 sm:bg-transparent sm:px-0 sm:shadow-none">
             <div class="text-lg md:text-xl font-bold text-violet-600"><AnimatedCounter :value="statsReady ? stats.avgProgress : 0" :duration="800" />%</div>
             <div class="text-[10px] text-slate-400 leading-tight">{{ t('showcase.stats.avgProgress') }}</div>
           </div>

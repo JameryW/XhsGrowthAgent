@@ -123,8 +123,8 @@ const statusBg = (status: string) => {
     case 'ok': return 'bg-emerald-50 border-emerald-100'
     case 'warning': return 'bg-amber-50 border-amber-100'
     case 'error': return 'bg-rose-50 border-rose-100'
-    case 'disabled': return 'bg-slate-50 border-slate-100'
-    default: return 'bg-slate-50 border-slate-100'
+    case 'disabled': return 'bg-slate-50 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50'
+    default: return 'bg-slate-50 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50'
   }
 }
 

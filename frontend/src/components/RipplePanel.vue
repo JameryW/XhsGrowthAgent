@@ -230,7 +230,7 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
 
 <template>
   <!-- Progress state — shown when sim is running but no results yet -->
-  <div v-if="showProgress" class="rounded-xl bg-gradient-to-r from-violet-50/80 to-indigo-50/80 border border-violet-200/50 overflow-hidden">
+  <div v-if="showProgress" class="rounded-xl bg-gradient-to-r from-violet-50/80 to-indigo-50/80 border border-violet-200/50 overflow-hidden dark:from-violet-950/50 dark:to-indigo-950/40 dark:border-violet-500/25">
     <!-- Header -->
     <div class="px-5 py-3 flex items-center gap-2.5 border-b border-violet-100/50">
       <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center animate-pulse">
@@ -267,7 +267,7 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
   </div>
 
   <!-- Results state -->
-  <div v-else-if="hasAnyData" class="rounded-xl bg-gradient-to-r from-violet-50/80 to-indigo-50/80 border border-violet-200/50 overflow-hidden">
+  <div v-else-if="hasAnyData" class="rounded-xl bg-gradient-to-r from-violet-50/80 to-indigo-50/80 border border-violet-200/50 overflow-hidden dark:from-violet-950/50 dark:to-indigo-950/40 dark:border-violet-500/25">
     <!-- Header -->
     <div class="px-5 py-3 flex items-center justify-between border-b border-violet-100/50">
       <div class="flex items-center gap-2.5">
@@ -292,7 +292,7 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
     <!-- Fallback notice -->
     <div v-if="isFallback" :class="[
       'mx-5 mt-3 p-2.5 rounded-lg flex items-center justify-between',
-      isDisabled ? 'bg-slate-50 border border-slate-200' : 'bg-amber-50 border border-amber-200'
+      isDisabled ? 'bg-slate-50 border border-slate-200 dark:bg-slate-800/70 dark:border-slate-600' : 'bg-amber-50 border border-amber-200 dark:bg-amber-950/40 dark:border-amber-500/30'
     ]">
       <div class="flex items-center gap-2">
         <AppIcon :name="isDisabled ? 'ZapOff' : 'AlertTriangle'" size="sm" :variant="isDisabled ? 'cyan' : 'peach'" />
@@ -306,7 +306,7 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
     </div>
 
     <!-- Decision panel — shown when awaiting user choice after suboptimal Ripple results -->
-    <div v-if="awaitingDecision && hasAnyData" class="mx-5 mt-3 p-3 rounded-lg bg-violet-50 border border-violet-200">
+    <div v-if="awaitingDecision && hasAnyData" class="mx-5 mt-3 p-3 rounded-lg bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:border-violet-500/30">
       <div class="text-xs text-violet-700 font-medium mb-2">{{ t('dashboard.ripple.decisionPrompt') }}</div>
       <div class="text-xs text-violet-500 mb-3">
         {{ t('dashboard.ripple.reselectInfo', { count: reselectCount, max: maxReselect }) }}
@@ -422,7 +422,7 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
       <div v-if="hasPrediction" class="space-y-3">
         <h4 class="text-xs font-semibold text-violet-700 uppercase tracking-wide">{{ t('dashboard.ripple.spreadPrediction') }}</h4>
 
-        <div v-if="prediction.prediction_summary" class="p-3 rounded-lg bg-white/60 border border-violet-100">
+        <div v-if="prediction.prediction_summary" class="p-3 rounded-lg bg-white/60 border border-violet-100 dark:bg-slate-900/70 dark:border-violet-500/25">
           <div class="text-xs text-violet-700 font-medium mb-1">{{ t('dashboard.ripple.summary') }}</div>
           <p class="text-xs text-slate-600 leading-relaxed">{{ prediction.prediction_summary }}</p>
         </div>
@@ -433,7 +433,7 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
         </div>
 
         <!-- Confidence gate detail -->
-        <div v-if="prediction.confidence_gate" class="p-3 rounded-lg bg-white/60 border border-amber-100">
+        <div v-if="prediction.confidence_gate" class="p-3 rounded-lg bg-white/60 border border-amber-100 dark:bg-slate-900/70 dark:border-amber-500/25">
           <div class="text-xs text-amber-700 font-medium mb-1">{{ t('dashboard.ripple.confidenceGate') }}</div>
           <div class="flex items-center gap-2 text-xs">
             <span class="text-slate-500">{{ prediction.confidence_gate.original_confidence }}</span>
@@ -475,7 +475,7 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
       <div v-if="hasPmf" class="space-y-3">
         <h4 class="text-xs font-semibold text-teal-700 uppercase tracking-wide">{{ t('dashboard.ripple.pmfValidation') }}</h4>
 
-        <div v-if="pmf.prediction_summary" class="p-3 rounded-lg bg-white/60 border border-teal-100">
+        <div v-if="pmf.prediction_summary" class="p-3 rounded-lg bg-white/60 border border-teal-100 dark:bg-slate-900/70 dark:border-teal-500/25">
           <div class="text-xs text-teal-700 font-medium mb-1">{{ t('dashboard.ripple.summary') }}</div>
           <p class="text-xs text-slate-600 leading-relaxed">{{ pmf.prediction_summary }}</p>
         </div>
@@ -533,7 +533,7 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
   </div>
 
   <!-- Timeout/unavailable state -->
-  <div v-if="isUnavailable" class="rounded-xl p-4 bg-amber-50 border border-amber-200 text-center">
+  <div v-if="isUnavailable" class="rounded-xl p-4 bg-amber-50 border border-amber-200 text-center dark:bg-amber-950/40 dark:border-amber-500/30">
     <AppIcon name="AlertTriangle" size="md" variant="peach" class="mb-2 mx-auto" />
     <p class="text-xs text-amber-700 font-medium">Ripple 模拟不可用</p>
     <p class="text-xs text-amber-500 mt-1">服务响应超时，传播预测已跳过</p>
@@ -546,7 +546,7 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
   </div>
 
   <!-- Loading state — shown when agent is running but no progress/results yet -->
-  <div v-if="props.loading && !showProgress && !hasAnyData" class="rounded-xl bg-gradient-to-r from-violet-50/80 to-indigo-50/80 border border-violet-200/50 overflow-hidden">
+  <div v-if="props.loading && !showProgress && !hasAnyData" class="rounded-xl bg-gradient-to-r from-violet-50/80 to-indigo-50/80 border border-violet-200/50 overflow-hidden dark:from-violet-950/50 dark:to-indigo-950/40 dark:border-violet-500/25">
     <div class="px-5 py-3 flex items-center gap-2.5 border-b border-violet-100/50">
       <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center animate-pulse">
         <AppIcon name="Zap" size="sm" variant="white" />
@@ -565,7 +565,7 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
   </div>
 
   <!-- Empty state -->
-  <div v-else-if="!hasAnyData && !showProgress" class="rounded-xl p-4 bg-slate-50 border border-slate-200 text-center">
+  <div v-else-if="!hasAnyData && !showProgress" class="rounded-xl p-4 bg-slate-50 border border-slate-200 text-center dark:bg-slate-900/80 dark:border-slate-700/55">
     <AppIcon name="Zap" size="md" variant="purple" class="mb-2 mx-auto opacity-40" />
     <p class="text-xs text-slate-400">{{ t('dashboard.ripple.noData') }}</p>
   </div>
