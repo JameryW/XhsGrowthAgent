@@ -27,8 +27,30 @@
         }
       })()
     </script>
-    <script defer src="https://stats.jameryw.dev/recorder.js" data-website-id="b1c83d57-4dbd-4854-9206-227e7a3f8f1d" data-sample-rate="0.15" data-mask-level="moderate" data-max-duration="300000"></script>
-    <script defer src="https://stats.jameryw.dev/script.js" data-website-id="b1c83d57-4dbd-4854-9206-227e7a3f8f1d"></script>
+    <!-- Optional analytics load after the first paint; third-party availability must not gate DCL/LCP. -->
+    <script>
+      (() => {
+        const scripts = [
+          {
+            src: 'https://stats.jameryw.dev/recorder.js',
+            attrs: { 'data-sample-rate': '0.15', 'data-mask-level': 'moderate', 'data-max-duration': '300000' },
+          },
+          { src: 'https://stats.jameryw.dev/script.js', attrs: {} },
+        ]
+        const loadAnalytics = () => scripts.forEach(({ src, attrs }) => {
+          const script = document.createElement('script')
+          script.src = src
+          script.async = true
+          script.dataset.websiteId = 'b1c83d57-4dbd-4854-9206-227e7a3f8f1d'
+          Object.entries(attrs).forEach(([key, value]) => script.setAttribute(key, value))
+          document.head.appendChild(script)
+        })
+        const schedule = window.requestIdleCallback
+          ? (callback) => window.requestIdleCallback(callback, { timeout: 2000 })
+          : (callback) => window.setTimeout(callback, 0)
+        window.addEventListener('load', () => schedule(loadAnalytics), { once: true })
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>
