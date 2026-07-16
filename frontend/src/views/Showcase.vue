@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '@/components/AppIcon.vue'
@@ -37,6 +37,9 @@ const CACHE_VERSION = 2
 const CACHE_KEY = `showcase:public-cases:v${CACHE_VERSION}`
 const CACHE_TTL = 30_000
 let queryReady = false
+let listRequestToken = 0
+let listAbortController: AbortController | null = null
+const detailAbortControllers = new Map<string, AbortController>()
 
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const featuredCase = computed(() => {
@@ -128,17 +131,27 @@ function hydrate(nextCases: PublicCase[]) {
 
 async function loadCaseDetail(publicId: string) {
   if (detailCache.value.has(publicId) || detailState.value[publicId] === 'loading') return
+  const abortController = new AbortController()
+  detailAbortControllers.get(publicId)?.abort()
+  detailAbortControllers.set(publicId, abortController)
   detailState.value = { ...detailState.value, [publicId]: 'loading' }
   try {
-    const detail = await getPublicCase(publicId, { suppressToast: true })
+    const detail = await getPublicCase(publicId, { suppressToast: true, signal: abortController.signal })
+    if (abortController.signal.aborted) return
     detailCache.value.set(publicId, detail)
     detailState.value = { ...detailState.value, [publicId]: 'ready' }
   } catch {
-    detailState.value = { ...detailState.value, [publicId]: 'error' }
+    if (!abortController.signal.aborted) detailState.value = { ...detailState.value, [publicId]: 'error' }
+  } finally {
+    if (detailAbortControllers.get(publicId) === abortController) detailAbortControllers.delete(publicId)
   }
 }
 
 async function loadCases(useCache = true) {
+  listAbortController?.abort()
+  const abortController = new AbortController()
+  listAbortController = abortController
+  const requestToken = ++listRequestToken
   const startedAt = typeof performance !== 'undefined' ? performance.now() : 0
   loading.value = true
   loadError.value = null
@@ -151,7 +164,11 @@ async function loadCases(useCache = true) {
     }
   }
   try {
-    const response = await listPublicCases({ limit: 100, sort: 'recent' }, { suppressToast: true })
+    const response = await listPublicCases(
+      { limit: 100, sort: 'recent' },
+      { suppressToast: true, signal: abortController.signal },
+    )
+    if (abortController.signal.aborted || requestToken !== listRequestToken) return
     cases.value = response.cases || []
     totalCases.value = response.total ?? cases.value.length
     loaded.value = true
@@ -160,10 +177,14 @@ async function loadCases(useCache = true) {
     if (featuredCase.value) void loadCaseDetail(featuredCase.value.public_id)
     trackInteraction('showcase_cases_loaded', { count: cases.value.length, cached: false })
   } catch (error: any) {
+    if (abortController.signal.aborted || requestToken !== listRequestToken) return
     if (!loaded.value) loadError.value = error?.message || t('showcase.casesLoadFailed')
     trackInteraction('showcase_cases_error', { error_type: 'public_cases' })
   } finally {
-    loading.value = false
+    if (listAbortController === abortController) {
+      listAbortController = null
+      loading.value = false
+    }
   }
 }
 
@@ -225,6 +246,12 @@ onMounted(async () => {
   queryReady = true
   trackInteraction('showcase_view')
   await loadCases()
+})
+
+onUnmounted(() => {
+  listAbortController?.abort()
+  detailAbortControllers.forEach(controller => controller.abort())
+  detailAbortControllers.clear()
 })
 </script>
 

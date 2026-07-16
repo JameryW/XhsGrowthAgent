@@ -1017,9 +1017,12 @@ git diff --check
 - 当前分支 OpenAPI 已包含上述五个只读路由及两个认证治理路由；公开案例仍为 0，未在无 owner 授权时发布真实案例。
 - 部署后浏览器 smoke 已覆盖真实空态接口与脱敏 mock 案例：320/390/768/1024/1280/1440px × light/dark 共 12 组合；检查无页面级横向滚动、主题 class、390px reduced-motion、Showcase/Replay 首屏、真实回放链接和阶段 ArrowRight 键盘导航均通过。390px dark 截图复核确认主题按钮不再遮挡主 CTA。
 - 线上 smoke：`/api/system/health` 正常，Postgres/Ripple 正常；公开列表返回 `total=0` 且无私有案例泄露；列表 ETag 条件请求返回 `304`；OpenAPI 暴露五个只读路由和两个认证治理路由。
+- 埋点接收：`POST /api/public/telemetry` 已接入同源默认地址，服务端执行事件/分类白名单、120 次/分钟来源限流、30 天保留和匿名降级；`GET /api/public/admin/telemetry/summary` 只返回聚合数量与 p50/p75 耗时，供目标监控面板接入。
 
-以下项目需要部署到目标环境后完成，不把本地自动化结果冒充线上证据：390/320–1440px 双主题截图矩阵、
-axe serious/critical、Lighthouse/Web Vitals、慢 4G/Save-Data、真实公共案例 owner 授权和灰度回滚演练。
+以下项目仍需要目标环境或人工证据，不把本地自动化结果冒充完成：真实公共案例 owner 授权后的
+390×844/320–1440px 双主题截图矩阵、axe serious/critical、Lighthouse/Web Vitals、慢 4G/Save-Data
+采样、监控面板基线接入和灰度回滚演练。线上健康、私有空态、缓存条件请求、OpenAPI 与浏览器
+空态/mock smoke 已完成。
 
 ---
 
@@ -1066,7 +1069,7 @@ axe serious/critical、Lighthouse/Web Vitals、慢 4G/Save-Data、真实公共�
 - [ ] 主要交互键盘可完成；axe serious/critical = 0（需目标环境 axe）。
 - [x] 所有新文案双语，日期/数字/百分比 locale 化。
 - [x] 埋点形成完整漏斗且不上传 ID、内容或错误原文。
-- [ ] 自动化、构建、类型、lint、diff 和真实后端 smoke 全部通过（本地自动化已通过，部署 smoke 待执行）。
+- [x] 自动化、构建、类型、lint、diff 和真实后端 smoke 全部通过（目标环境的视觉/性能/axe 证据仍按上方门槛补齐）。
 - [x] spec、API 文档、任务和回滚说明已更新。
 
 ---

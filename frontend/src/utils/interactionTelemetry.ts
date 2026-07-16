@@ -54,6 +54,7 @@ const allowedKeys = new Set([
   'has_public_id',
   'has_step',
   'duration_ms',
+  'event_version',
 ])
 
 function viewportCategory(): 'mobile' | 'desktop' {
@@ -71,13 +72,22 @@ export function trackInteraction(name: InteractionEventName, properties: Interac
   if (typeof window === 'undefined') return
   const detail = {
     event: name,
+    event_version: 1,
     viewport: viewportCategory(),
     ...safeProperties(properties),
   }
   window.dispatchEvent(new CustomEvent('xhs:interaction', { detail }))
 
-  const endpoint = import.meta.env.VITE_TELEMETRY_ENDPOINT
+  // Same-origin collection is the production default. An explicitly empty
+  // value disables collection for local/offline builds.
+  const configuredEndpoint = import.meta.env.VITE_TELEMETRY_ENDPOINT
+  const endpoint = import.meta.env.MODE === 'test'
+    ? ''
+    : configuredEndpoint === undefined
+      ? '/api/public/telemetry'
+      : configuredEndpoint
   if (endpoint && navigator.sendBeacon) {
-    navigator.sendBeacon(endpoint, JSON.stringify(detail))
+    const body = new Blob([JSON.stringify(detail)], { type: 'application/json' })
+    navigator.sendBeacon(endpoint, body)
   }
 }
