@@ -276,13 +276,26 @@ def measure_cached_select_to_render(page: Page) -> tuple[float, float, float]:
 
     page.locator('[data-step-id="step-create"]').click()
     wait_for_heading(page, "内容产出")
-    started_at = time.perf_counter()
-    page.locator('[data-step-id="step-scout"]').click()
-    click_ms = round((time.perf_counter() - started_at) * 1000, 2)
-    ready_started_at = time.perf_counter()
+    dispatch_ms = page.evaluate(
+        """selector => {
+          const target = document.querySelector(selector);
+          if (!target) throw new Error(`missing selector: ${selector}`);
+          const startedAt = performance.now();
+          window.__publicUxCachedSelectStartedAt = startedAt;
+          target.click();
+          return performance.now() - startedAt;
+        }""",
+        '[data-step-id="step-scout"]',
+    )
     wait_for_heading(page, "趋势洞察")
-    total_ms = round((time.perf_counter() - started_at) * 1000, 2)
-    return total_ms, click_ms, round((time.perf_counter() - ready_started_at) * 1000, 2)
+    total_ms = page.evaluate(
+        """() => performance.now() - (
+          window.__publicUxCachedSelectStartedAt || performance.now()
+        )"""
+    )
+    total_ms = round(float(total_ms), 2)
+    dispatch_ms = round(float(dispatch_ms), 2)
+    return total_ms, dispatch_ms, round(max(total_ms - dispatch_ms, 0), 2)
 
 
 def audit_page(
