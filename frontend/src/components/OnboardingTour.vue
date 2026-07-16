@@ -182,7 +182,7 @@ const isLastStep = computed(() => props.currentStep === 3)
 
         <!-- Tooltip card -->
         <div
-          class="absolute w-80 bg-white rounded-2xl shadow-xl border border-slate-200/50 p-5 transition-all duration-300 pointer-events-auto"
+          class="absolute w-80 bg-white rounded-2xl shadow-xl border border-slate-200/50 p-5 transition-all duration-300 pointer-events-auto dark:bg-slate-900 dark:border-slate-600/60 dark:shadow-slate-950/50"
           :style="{
             top: `${tooltipPosition.top}px`,
             left: `${tooltipPosition.left}px`,
@@ -216,7 +216,7 @@ const isLastStep = computed(() => props.currentStep === 3)
             </div>
           </div>
 
-          <p v-if="targetElementMissing" class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700" role="status">
+          <p v-if="targetElementMissing" class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/45 dark:text-amber-200" role="status">
             {{ t('onboarding.targetUnavailable') }}
           </p>
 

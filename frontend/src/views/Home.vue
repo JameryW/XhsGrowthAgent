@@ -138,7 +138,7 @@ const confirmStart = async () => {
   <div class="home-page min-h-[80vh] flex flex-col justify-center">
     <div class="w-full space-y-4 md:space-y-6">
       <!-- First-screen orientation: explain the job before asking for configuration. -->
-      <section class="relative overflow-hidden rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white via-rose-50/70 to-cyan-50/70 p-5 shadow-sm md:rounded-3xl md:p-8" aria-labelledby="home-welcome-title">
+      <section class="relative overflow-hidden rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white via-rose-50/70 to-cyan-50/70 p-5 shadow-sm md:rounded-3xl md:p-8 dark:border-slate-700/60 dark:from-slate-900/95 dark:via-slate-900/90 dark:to-slate-950/95" aria-labelledby="home-welcome-title">
         <div class="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-neon-pink/10 blur-3xl" aria-hidden="true" />
         <div class="pointer-events-none absolute -bottom-24 right-1/3 h-48 w-48 rounded-full bg-neon-cyan/10 blur-3xl" aria-hidden="true" />
         <div class="relative grid gap-5 md:grid-cols-[1fr_auto] md:items-end">
@@ -148,7 +148,7 @@ const confirmStart = async () => {
             <p class="mt-2 max-w-xl text-sm leading-6 text-slate-500 md:text-base">{{ t('home.welcomeSubtitle') }}</p>
           </div>
 
-          <div class="flex min-w-0 items-center gap-3 rounded-2xl border border-white/80 bg-white/80 p-3 shadow-sm backdrop-blur-sm md:min-w-[250px]">
+          <div class="flex min-w-0 items-center gap-3 rounded-2xl border border-white/80 bg-white/80 p-3 shadow-sm backdrop-blur-sm md:min-w-[250px] dark:border-slate-700/70 dark:bg-slate-900/70">
             <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-neon-cyan to-neon-green shadow-neon-cyan-sm">
               <AppIcon name="UserCheck" size="md" variant="white" aria-hidden="true" />
             </div>
@@ -165,9 +165,9 @@ const confirmStart = async () => {
 
         <div class="relative mt-6 flex max-w-md items-center gap-2" role="list" :aria-label="t('home.welcomeSubtitle')">
           <div v-for="(step, index) in [t('home.stepConfigure'), t('home.stepReview'), t('home.stepCreate')]" :key="step" class="flex min-w-0 flex-1 items-center gap-2" role="listitem">
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-neon-pinkDark ring-1 ring-rose-100">{{ index + 1 }}</span>
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-neon-pinkDark ring-1 ring-rose-100 dark:bg-slate-800 dark:ring-rose-500/30">{{ index + 1 }}</span>
             <span class="truncate text-xs font-semibold text-slate-600">{{ step }}</span>
-            <span v-if="index < 2" class="h-px min-w-3 flex-1 bg-slate-200" aria-hidden="true" />
+            <span v-if="index < 2" class="h-px min-w-3 flex-1 bg-slate-200 dark:bg-slate-600" aria-hidden="true" />
           </div>
         </div>
       </section>
@@ -209,9 +209,9 @@ const confirmStart = async () => {
         />
       </section>
 
-      <aside class="rounded-xl border border-slate-200/70 bg-white/80 p-4 shadow-sm md:rounded-2xl md:p-5" aria-labelledby="home-shortcuts-title">
+      <aside class="rounded-xl border border-slate-200/70 bg-white/80 p-4 shadow-sm md:rounded-2xl md:p-5 dark:border-slate-700/60 dark:bg-slate-900/70" aria-labelledby="home-shortcuts-title">
         <div class="mb-3 flex items-center gap-2">
-          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50">
+          <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50 dark:bg-cyan-950/50">
             <AppIcon name="Sparkles" size="sm" variant="cyan" aria-hidden="true" />
           </div>
           <div>
@@ -220,12 +220,12 @@ const confirmStart = async () => {
           </div>
         </div>
         <div class="space-y-2">
-          <button type="button" class="flex min-h-11 w-full items-center gap-3 rounded-xl border border-cyan-100 bg-cyan-50/60 px-3 text-left transition hover:border-cyan-200 hover:bg-cyan-50" @click="goToDashboard" :disabled="isStarting">
+          <button type="button" class="flex min-h-11 w-full items-center gap-3 rounded-xl border border-cyan-100 bg-cyan-50/60 px-3 text-left transition hover:border-cyan-200 hover:bg-cyan-50 dark:border-cyan-500/25 dark:bg-cyan-950/30 dark:hover:border-cyan-400/40 dark:hover:bg-cyan-950/45" @click="goToDashboard" :disabled="isStarting">
             <AppIcon name="BarChart3" size="sm" variant="cyan" aria-hidden="true" />
             <span class="min-w-0 flex-1 truncate text-xs font-semibold text-slate-700">{{ t('home.viewDashboard') }}</span>
             <AppIcon name="ArrowRight" size="sm" variant="cyan" aria-hidden="true" />
           </button>
-          <button type="button" class="flex min-h-11 w-full items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-left transition hover:border-slate-300 hover:bg-white" @click="goToHistory" :disabled="isStarting">
+          <button type="button" class="flex min-h-11 w-full items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-left transition hover:border-slate-300 hover:bg-white dark:border-slate-600/50 dark:bg-slate-800/60 dark:hover:border-slate-500 dark:hover:bg-slate-800" @click="goToHistory" :disabled="isStarting">
             <AppIcon name="History" size="sm" variant="cyan" aria-hidden="true" />
             <span class="min-w-0 flex-1 truncate text-xs font-semibold text-slate-700">{{ t('home.history') }}</span>
             <AppIcon name="ArrowRight" size="sm" variant="cyan" aria-hidden="true" />

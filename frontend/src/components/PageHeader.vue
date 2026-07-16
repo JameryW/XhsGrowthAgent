@@ -25,29 +25,29 @@ const slots = useSlots()
 
 const toneClasses: Record<HeaderTone, { shell: string; icon: string; glow: string }> = {
   pink: {
-    shell: 'from-rose-50/90 via-white to-amber-50/70 border-rose-100/70',
+    shell: 'from-rose-50/90 via-white to-amber-50/70 border-rose-100/70 dark:from-slate-900/90 dark:via-slate-900/80 dark:to-rose-950/40 dark:border-rose-500/25',
     icon: 'from-rose-500 to-amber-400 shadow-rose-500/20',
-    glow: 'bg-rose-300/20',
+    glow: 'bg-rose-300/20 dark:bg-rose-500/15',
   },
   cyan: {
-    shell: 'from-cyan-50/90 via-white to-emerald-50/70 border-cyan-100/70',
+    shell: 'from-cyan-50/90 via-white to-emerald-50/70 border-cyan-100/70 dark:from-slate-900/90 dark:via-slate-900/80 dark:to-cyan-950/40 dark:border-cyan-500/25',
     icon: 'from-cyan-500 to-emerald-400 shadow-cyan-500/20',
-    glow: 'bg-cyan-300/20',
+    glow: 'bg-cyan-300/20 dark:bg-cyan-500/15',
   },
   purple: {
-    shell: 'from-violet-50/90 via-white to-fuchsia-50/70 border-violet-100/70',
+    shell: 'from-violet-50/90 via-white to-fuchsia-50/70 border-violet-100/70 dark:from-slate-900/90 dark:via-slate-900/80 dark:to-violet-950/40 dark:border-violet-500/25',
     icon: 'from-violet-500 to-fuchsia-500 shadow-violet-500/20',
-    glow: 'bg-violet-300/20',
+    glow: 'bg-violet-300/20 dark:bg-violet-500/15',
   },
   peach: {
-    shell: 'from-amber-50/90 via-white to-rose-50/70 border-amber-100/70',
+    shell: 'from-amber-50/90 via-white to-rose-50/70 border-amber-100/70 dark:from-slate-900/90 dark:via-slate-900/80 dark:to-amber-950/40 dark:border-amber-500/25',
     icon: 'from-amber-500 to-rose-400 shadow-amber-500/20',
-    glow: 'bg-amber-300/20',
+    glow: 'bg-amber-300/20 dark:bg-amber-500/15',
   },
   slate: {
-    shell: 'from-slate-100/90 via-white to-cyan-50/60 border-slate-200/70',
-    icon: 'from-slate-700 to-slate-500 shadow-slate-500/20',
-    glow: 'bg-slate-300/25',
+    shell: 'from-slate-100/90 via-white to-cyan-50/60 border-slate-200/70 dark:from-slate-900/90 dark:via-slate-900/80 dark:to-slate-800/70 dark:border-slate-600/50',
+    icon: 'from-slate-700 to-slate-500 shadow-slate-500/20 dark:from-slate-500 dark:to-slate-400',
+    glow: 'bg-slate-300/25 dark:bg-slate-500/20',
   },
 }
 

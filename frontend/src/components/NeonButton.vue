@@ -60,7 +60,7 @@ const variantClasses = computed(() => {
     cyan: 'bg-gradient-to-r from-neon-cyan via-neon-cyanLight to-neon-green border-transparent shadow-neon-cyan-sm hover:shadow-neon-cyan hover:brightness-110 hover:scale-[1.03]',
     purple: 'bg-gradient-to-r from-neon-purple via-neon-purpleLight to-neon-blue border-transparent shadow-neon-purple-sm hover:shadow-neon-purple hover:brightness-110 hover:scale-[1.03]',
     peach: 'bg-gradient-to-r from-neon-peach via-neon-peachLight to-neon-yellow border-transparent shadow-neon-peach hover:shadow-neon-peach hover:brightness-110 hover:scale-[1.03]',
-    ghost: 'bg-white/80 border-gray-200 hover:bg-white hover:border-gray-300 hover:scale-[1.02]',
+    ghost: 'bg-white/80 border-gray-200 text-slate-700 hover:bg-white hover:border-gray-300 hover:scale-[1.02] dark:bg-slate-900/70 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:border-slate-500',
   }
   return variants[props.variant]
 })

@@ -1066,39 +1066,152 @@ html.dark .liquid-glass-amber {
   border-color: rgba(245, 158, 11, 0.34);
 }
 
+html.dark .liquid-glass-emerald {
+  background: linear-gradient(135deg, rgba(6, 78, 59, 0.5), rgba(15, 23, 42, 0.72));
+  border-color: rgba(52, 211, 153, 0.34);
+}
+
+html.dark .scrollbar-thin {
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+}
+
+html.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+}
+
+html.dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.48);
+}
+
 /* Existing utility surfaces used by showcase, replay, and workspace cards. */
 html.dark [class*="bg-white"] {
   background-color: rgba(15, 23, 42, 0.72) !important;
 }
 
-html.dark [class*="bg-slate-50"],
-html.dark [class*="bg-slate-100"],
-html.dark [class*="bg-slate-200"],
-html.dark [class*="bg-slate-300"] {
+/* Pastel/neutral surfaces. Use end/space/slash forms so bg-*-50 does not
+ * accidentally match solid bg-*-500 (substring false positive). */
+html.dark [class*="bg-slate-50/"],
+html.dark [class*="bg-slate-50 "],
+html.dark [class$="bg-slate-50"],
+html.dark [class*="bg-slate-100/"],
+html.dark [class*="bg-slate-100 "],
+html.dark [class$="bg-slate-100"],
+html.dark [class*="bg-slate-200/"],
+html.dark [class*="bg-slate-200 "],
+html.dark [class$="bg-slate-200"],
+html.dark [class*="bg-slate-300/"],
+html.dark [class*="bg-slate-300 "],
+html.dark [class$="bg-slate-300"],
+html.dark [class*="bg-gray-50/"],
+html.dark [class*="bg-gray-50 "],
+html.dark [class$="bg-gray-50"],
+html.dark [class*="bg-gray-100/"],
+html.dark [class*="bg-gray-100 "],
+html.dark [class$="bg-gray-100"],
+html.dark [class*="bg-gray-200/"],
+html.dark [class*="bg-gray-200 "],
+html.dark [class$="bg-gray-200"],
+html.dark [class*="bg-light-bg"],
+html.dark [class*="bg-light-bgAlt"],
+html.dark [class*="bg-light-panel"],
+html.dark [class*="bg-light-card"] {
   background-color: rgba(30, 41, 59, 0.76) !important;
+}
+
+/* Keep pure black/near-black text readable on dark surfaces. */
+html.dark [class*="text-slate-900"],
+html.dark [class*="text-gray-900"],
+html.dark [class*="text-text-primary"] {
+  color: #f1f5f9 !important;
 }
 
 html.dark [class*="text-slate-800"],
 html.dark [class*="text-slate-700"],
-html.dark [class*="text-slate-600"] {
+html.dark [class*="text-slate-600"],
+html.dark [class*="text-gray-800"],
+html.dark [class*="text-gray-700"],
+html.dark [class*="text-gray-600"],
+html.dark [class*="text-text-secondary"] {
   color: #e2e8f0 !important;
 }
 
-html.dark [class*="text-slate-500"] {
+html.dark [class*="text-slate-500"],
+html.dark [class*="text-gray-500"],
+html.dark [class*="text-text-tertiary"] {
   color: #cbd5e1 !important;
 }
 
-html.dark [class*="text-slate-400"] {
+html.dark [class*="text-slate-400"],
+html.dark [class*="text-gray-400"],
+html.dark [class*="text-text-muted"] {
   color: #94a3b8 !important;
 }
 
-html.dark [class*="text-slate-300"] {
+html.dark [class*="text-slate-300"],
+html.dark [class*="text-gray-300"] {
   color: #cbd5e1 !important;
+}
+
+/* Soft tint text on pastel badges — brighten for dark tinted backgrounds. */
+html.dark [class*="text-rose-700"],
+html.dark [class*="text-rose-600"],
+html.dark [class*="text-pink-700"],
+html.dark [class*="text-pink-600"] {
+  color: #fda4af !important;
+}
+
+html.dark [class*="text-amber-800"],
+html.dark [class*="text-amber-700"],
+html.dark [class*="text-amber-600"] {
+  color: #fcd34d !important;
+}
+
+html.dark [class*="text-orange-700"],
+html.dark [class*="text-orange-600"] {
+  color: #fdba74 !important;
+}
+
+html.dark [class*="text-teal-700"],
+html.dark [class*="text-teal-600"],
+html.dark [class*="text-cyan-700"],
+html.dark [class*="text-cyan-600"],
+html.dark [class*="text-emerald-700"],
+html.dark [class*="text-emerald-600"] {
+  color: #5eead4 !important;
+}
+
+html.dark [class*="text-blue-700"],
+html.dark [class*="text-blue-600"],
+html.dark [class*="text-sky-700"],
+html.dark [class*="text-sky-600"] {
+  color: #7dd3fc !important;
+}
+
+html.dark [class*="text-violet-700"],
+html.dark [class*="text-violet-600"],
+html.dark [class*="text-purple-700"],
+html.dark [class*="text-purple-600"],
+html.dark [class*="text-fuchsia-700"],
+html.dark [class*="text-fuchsia-600"] {
+  color: #c4b5fd !important;
+}
+
+html.dark [class*="text-red-700"],
+html.dark [class*="text-red-600"] {
+  color: #fca5a5 !important;
+}
+
+/* Do not remap neon brand text — keep accent identity. */
+html.dark [class*="text-neon-pinkDark"] {
+  color: #fb7185 !important;
 }
 
 html.dark [class*="border-slate-100"],
 html.dark [class*="border-slate-200"],
-html.dark [class*="border-slate-300"] {
+html.dark [class*="border-slate-300"],
+html.dark [class*="border-gray-100"],
+html.dark [class*="border-gray-200"],
+html.dark [class*="border-gray-300"] {
   border-color: rgba(100, 116, 139, 0.48) !important;
 }
 
@@ -1106,19 +1219,255 @@ html.dark [class*="border-white"] {
   border-color: rgba(100, 116, 139, 0.42) !important;
 }
 
-html.dark [class*="bg-rose-50"],
-html.dark [class*="bg-rose-100"] {
+html.dark [class*="border-rose-100"],
+html.dark [class*="border-rose-200"],
+html.dark [class*="border-rose-300"],
+html.dark [class*="border-pink-100"],
+html.dark [class*="border-pink-200"] {
+  border-color: rgba(251, 113, 133, 0.38) !important;
+}
+
+html.dark [class*="border-amber-100"],
+html.dark [class*="border-amber-200"],
+html.dark [class*="border-amber-300"],
+html.dark [class*="border-orange-100"],
+html.dark [class*="border-orange-200"] {
+  border-color: rgba(251, 191, 36, 0.38) !important;
+}
+
+html.dark [class*="border-teal-100"],
+html.dark [class*="border-teal-200"],
+html.dark [class*="border-cyan-100"],
+html.dark [class*="border-cyan-200"],
+html.dark [class*="border-emerald-100"],
+html.dark [class*="border-emerald-200"] {
+  border-color: rgba(45, 212, 191, 0.36) !important;
+}
+
+html.dark [class*="border-violet-100"],
+html.dark [class*="border-violet-200"],
+html.dark [class*="border-purple-100"],
+html.dark [class*="border-fuchsia-100"] {
+  border-color: rgba(167, 139, 250, 0.36) !important;
+}
+
+html.dark [class*="border-blue-100"],
+html.dark [class*="border-blue-200"],
+html.dark [class*="border-sky-100"],
+html.dark [class*="border-sky-200"] {
+  border-color: rgba(56, 189, 248, 0.36) !important;
+}
+
+html.dark [class*="border-red-100"],
+html.dark [class*="border-red-200"] {
+  border-color: rgba(248, 113, 113, 0.38) !important;
+}
+
+html.dark [class*="bg-rose-50/"],
+html.dark [class*="bg-rose-50 "],
+html.dark [class$="bg-rose-50"],
+html.dark [class*="bg-rose-100/"],
+html.dark [class*="bg-rose-100 "],
+html.dark [class$="bg-rose-100"],
+html.dark [class*="bg-pink-50/"],
+html.dark [class*="bg-pink-50 "],
+html.dark [class$="bg-pink-50"],
+html.dark [class*="bg-pink-100/"],
+html.dark [class*="bg-pink-100 "],
+html.dark [class$="bg-pink-100"] {
   background-color: rgba(136, 19, 55, 0.3) !important;
 }
 
-html.dark [class*="bg-teal-50"],
-html.dark [class*="bg-cyan-50"],
-html.dark [class*="bg-emerald-50"] {
+html.dark [class*="bg-teal-50/"],
+html.dark [class*="bg-teal-50 "],
+html.dark [class$="bg-teal-50"],
+html.dark [class*="bg-cyan-50/"],
+html.dark [class*="bg-cyan-50 "],
+html.dark [class$="bg-cyan-50"],
+html.dark [class*="bg-emerald-50/"],
+html.dark [class*="bg-emerald-50 "],
+html.dark [class$="bg-emerald-50"],
+html.dark [class*="bg-teal-100/"],
+html.dark [class*="bg-teal-100 "],
+html.dark [class$="bg-teal-100"],
+html.dark [class*="bg-cyan-100/"],
+html.dark [class*="bg-cyan-100 "],
+html.dark [class$="bg-cyan-100"],
+html.dark [class*="bg-emerald-100/"],
+html.dark [class*="bg-emerald-100 "],
+html.dark [class$="bg-emerald-100"] {
   background-color: rgba(15, 118, 110, 0.24) !important;
 }
 
-html.dark [class*="bg-violet-50"] {
+html.dark [class*="bg-violet-50/"],
+html.dark [class*="bg-violet-50 "],
+html.dark [class$="bg-violet-50"],
+html.dark [class*="bg-violet-100/"],
+html.dark [class*="bg-violet-100 "],
+html.dark [class$="bg-violet-100"],
+html.dark [class*="bg-purple-50/"],
+html.dark [class*="bg-purple-50 "],
+html.dark [class$="bg-purple-50"],
+html.dark [class*="bg-fuchsia-50/"],
+html.dark [class*="bg-fuchsia-50 "],
+html.dark [class$="bg-fuchsia-50"] {
   background-color: rgba(109, 40, 217, 0.25) !important;
+}
+
+html.dark [class*="bg-amber-50/"],
+html.dark [class*="bg-amber-50 "],
+html.dark [class$="bg-amber-50"],
+html.dark [class*="bg-amber-100/"],
+html.dark [class*="bg-amber-100 "],
+html.dark [class$="bg-amber-100"],
+html.dark [class*="bg-orange-50/"],
+html.dark [class*="bg-orange-50 "],
+html.dark [class$="bg-orange-50"],
+html.dark [class*="bg-yellow-50/"],
+html.dark [class*="bg-yellow-50 "],
+html.dark [class$="bg-yellow-50"] {
+  background-color: rgba(146, 64, 14, 0.32) !important;
+}
+
+html.dark [class*="bg-blue-50/"],
+html.dark [class*="bg-blue-50 "],
+html.dark [class$="bg-blue-50"],
+html.dark [class*="bg-blue-100/"],
+html.dark [class*="bg-blue-100 "],
+html.dark [class$="bg-blue-100"],
+html.dark [class*="bg-sky-50/"],
+html.dark [class*="bg-sky-50 "],
+html.dark [class$="bg-sky-50"],
+html.dark [class*="bg-sky-100/"],
+html.dark [class*="bg-sky-100 "],
+html.dark [class$="bg-sky-100"] {
+  background-color: rgba(30, 64, 175, 0.28) !important;
+}
+
+html.dark [class*="bg-red-50/"],
+html.dark [class*="bg-red-50 "],
+html.dark [class$="bg-red-50"],
+html.dark [class*="bg-red-100/"],
+html.dark [class*="bg-red-100 "],
+html.dark [class$="bg-red-100"] {
+  background-color: rgba(127, 29, 29, 0.34) !important;
+}
+
+html.dark [class*="bg-green-50/"],
+html.dark [class*="bg-green-50 "],
+html.dark [class$="bg-green-50"],
+html.dark [class*="bg-green-100/"],
+html.dark [class*="bg-green-100 "],
+html.dark [class$="bg-green-100"] {
+  background-color: rgba(20, 83, 45, 0.34) !important;
+}
+
+html.dark [class*="text-green-700"],
+html.dark [class*="text-green-600"] {
+  color: #86efac !important;
+}
+
+html.dark [class*="border-green-100"],
+html.dark [class*="border-green-200"] {
+  border-color: rgba(74, 222, 128, 0.36) !important;
+}
+
+/* Fallback for page headers that still rely on light pastel gradient utilities.
+ * Prefer explicit dark: Tailwind stops where available (PageHeader). */
+html.dark .page-header-shell:not([class*="dark:from-"]) {
+  background-image: linear-gradient(
+    135deg,
+    rgba(30, 41, 59, 0.92) 0%,
+    rgba(15, 23, 42, 0.88) 48%,
+    rgba(17, 24, 39, 0.9) 100%
+  ) !important;
+  border-color: rgba(100, 116, 139, 0.42) !important;
+}
+
+/* Base card system from cards.css (not liquid-glass). */
+html.dark .card,
+html.dark .card-hover,
+html.dark .card-compact {
+  background:
+    linear-gradient(135deg, rgba(30, 41, 59, 0.82), rgba(15, 23, 42, 0.68)),
+    rgba(15, 23, 42, 0.78) !important;
+  border-color: rgba(100, 116, 139, 0.42) !important;
+  box-shadow:
+    0 1px 2px rgba(2, 6, 23, 0.35),
+    0 12px 32px rgba(2, 6, 23, 0.24),
+    inset 0 1px 0 rgba(148, 163, 184, 0.12) !important;
+}
+
+html.dark .card-warning {
+  background: rgba(146, 64, 14, 0.28) !important;
+  border-color: rgba(251, 191, 36, 0.28) !important;
+}
+
+html.dark .card-error {
+  background: rgba(136, 19, 55, 0.28) !important;
+  border-color: rgba(251, 113, 133, 0.28) !important;
+}
+
+html.dark .card-info {
+  background: rgba(76, 29, 149, 0.28) !important;
+  border-color: rgba(167, 139, 250, 0.28) !important;
+}
+
+/* Focus ring offset must not flash light slate in dark mode. */
+html.dark {
+  --tw-ring-offset-color: #0b1120;
+}
+
+html.dark .gradient-border,
+html.dark .gradient-border-animate {
+  background: rgba(15, 23, 42, 0.92) !important;
+}
+
+/* Metric / content cards rely on white panels; keep elevation readable. */
+html.dark .metric-card-surface,
+html.dark .content-card-surface {
+  background-color: rgba(15, 23, 42, 0.78) !important;
+  border-color: rgba(100, 116, 139, 0.45) !important;
+}
+
+html.dark .form-input,
+html.dark .form-select,
+html.dark .form-textarea {
+  color: #e2e8f0 !important;
+  background: rgba(15, 23, 42, 0.88) !important;
+  border-color: rgba(100, 116, 139, 0.55) !important;
+  box-shadow: inset 0 1px 2px rgba(2, 6, 23, 0.35) !important;
+}
+
+html.dark .form-input:hover,
+html.dark .form-select:hover,
+html.dark .form-textarea:hover {
+  background: rgba(30, 41, 59, 0.92) !important;
+  border-color: rgba(251, 113, 133, 0.35) !important;
+}
+
+html.dark .form-input:focus,
+html.dark .form-select:focus,
+html.dark .form-textarea:focus {
+  background: rgba(15, 23, 42, 0.98) !important;
+  border-color: rgba(251, 113, 133, 0.55) !important;
+  box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.18), inset 0 1px 2px rgba(2, 6, 23, 0.35) !important;
+}
+
+html.dark .form-input:disabled,
+html.dark .form-select:disabled,
+html.dark .form-textarea:disabled {
+  background: rgba(30, 41, 59, 0.55) !important;
+}
+
+html.dark .table-container {
+  background: rgba(15, 23, 42, 0.55) !important;
+  border-color: rgba(100, 116, 139, 0.42) !important;
+  box-shadow: 0 10px 26px rgba(2, 6, 23, 0.28), inset 0 1px 0 rgba(148, 163, 184, 0.08) !important;
+}
+
+html.dark .table tbody tr:hover {
+  background: rgba(15, 118, 110, 0.12) !important;
 }
 
 html.dark input,
@@ -1135,12 +1484,21 @@ html.dark textarea::placeholder {
   color: #94a3b8;
 }
 
+html.dark ::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+}
+
 html.dark ::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 184, 0.28);
 }
 
 html.dark ::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.45);
+}
+
+html.dark ::selection {
+  background: rgba(244, 63, 94, 0.35);
+  color: #ffe4e6;
 }
 
 /* Public evidence pages have their own canvas styles, so keep the primary
@@ -1163,6 +1521,12 @@ html.dark body .replay-page .liquid-glass-inset {
   background: rgba(15, 23, 42, 0.68) !important;
 }
 
+html.dark body .showcase-stat-total { color: #94a3b8 !important; }
+html.dark body .showcase-stat-running { color: #5eead4 !important; }
+html.dark body .showcase-stat-completed { color: #6ee7b7 !important; }
+html.dark body .showcase-stat-attention { color: #fb7185 !important; }
+html.dark body .showcase-stat-progress { color: #c4b5fd !important; }
+
 html.dark .replay-status-running { color: #99f6e4 !important; background: rgba(15, 118, 110, 0.35) !important; border-color: rgba(45, 212, 191, 0.44) !important; }
 html.dark .replay-status-completed { color: #a7f3d0 !important; background: rgba(4, 120, 87, 0.34) !important; border-color: rgba(52, 211, 153, 0.42) !important; }
 html.dark .replay-status-error { color: #fecdd3 !important; background: rgba(159, 18, 57, 0.34) !important; border-color: rgba(251, 113, 133, 0.44) !important; }
@@ -1170,3 +1534,255 @@ html.dark .replay-status-paused,
 html.dark .replay-status-stale { color: #fde68a !important; background: rgba(146, 64, 14, 0.34) !important; border-color: rgba(251, 191, 36, 0.42) !important; }
 html.dark .replay-status-idle,
 html.dark .replay-status-cancelled { color: #cbd5e1 !important; background: rgba(51, 65, 85, 0.62) !important; border-color: rgba(100, 116, 139, 0.46) !important; }
+
+/* Evaluation page (scoped light styles remapped via higher-specificity html.dark). */
+html.dark .evaluation-tabs {
+  border-color: rgba(100, 116, 139, 0.45) !important;
+  background: rgba(15, 23, 42, 0.88) !important;
+}
+
+html.dark .evaluation-tab {
+  color: #94a3b8 !important;
+}
+
+html.dark .evaluation-tab:hover {
+  background: rgba(30, 41, 59, 0.9) !important;
+  color: #e2e8f0 !important;
+}
+
+html.dark .evaluation-tab-active {
+  color: #fff !important;
+}
+
+html.dark .back-btn,
+html.dark .load-more-btn,
+html.dark .thread-input,
+html.dark .eval-item,
+html.dark .overview-card,
+html.dark .radar-card,
+html.dark .dims-card,
+html.dark .hints-card,
+html.dark .trend-card {
+  background: rgba(15, 23, 42, 0.82) !important;
+  border-color: rgba(100, 116, 139, 0.45) !important;
+  color: #e2e8f0 !important;
+}
+
+html.dark .back-btn:hover,
+html.dark .load-more-btn:hover:not(:disabled) {
+  background: rgba(30, 41, 59, 0.95) !important;
+}
+
+html.dark .item-title,
+html.dark .card-title,
+html.dark .dim-name,
+html.dark .hints-list li {
+  color: #e2e8f0 !important;
+}
+
+html.dark .item-meta,
+html.dark .score-label,
+html.dark .dim-rationale,
+html.dark .dim-avg-label,
+html.dark .result-count,
+html.dark .empty-state,
+html.dark .no-more,
+html.dark .trend-loading,
+html.dark .trend-empty {
+  color: #94a3b8 !important;
+}
+
+html.dark .meta-tag,
+html.dark .summary,
+html.dark .dim-issues li,
+html.dark .empty-title {
+  color: #cbd5e1 !important;
+}
+
+html.dark .meta-sep {
+  color: #64748b !important;
+}
+
+html.dark .eval-item:hover {
+  border-color: rgba(251, 113, 133, 0.45) !important;
+  box-shadow: 0 1px 4px rgba(244, 63, 94, 0.16) !important;
+}
+
+html.dark .error-card {
+  background: rgba(127, 29, 29, 0.35) !important;
+  border-color: rgba(248, 113, 113, 0.4) !important;
+  color: #fecaca !important;
+}
+
+html.dark .decision-approved,
+html.dark .dim-avg-chip.score-pass {
+  background: rgba(4, 120, 87, 0.35) !important;
+  color: #6ee7b7 !important;
+}
+
+html.dark .decision-revision,
+html.dark .dim-avg-chip.score-warn {
+  background: rgba(146, 64, 14, 0.38) !important;
+  color: #fcd34d !important;
+}
+
+html.dark .decision-rejected,
+html.dark .dim-avg-chip.score-fail,
+html.dark .blocking-tag {
+  background: rgba(153, 27, 27, 0.4) !important;
+  color: #fca5a5 !important;
+}
+
+html.dark .bias-card {
+  border-color: rgba(251, 191, 36, 0.4) !important;
+  background: rgba(69, 26, 3, 0.42) !important;
+}
+
+html.dark .bias-header {
+  color: #fcd34d !important;
+}
+
+html.dark .bias-text {
+  color: #fde68a !important;
+}
+
+html.dark .dim-row {
+  border-bottom-color: rgba(51, 65, 85, 0.85) !important;
+}
+
+html.dark .dim-avg-chip {
+  background: rgba(51, 65, 85, 0.75) !important;
+  color: #e2e8f0 !important;
+}
+
+/* Review decision badges sharing the same class names. */
+html.dark .decision-approved {
+  background: rgba(4, 120, 87, 0.35) !important;
+  color: #6ee7b7 !important;
+}
+
+html.dark .decision-revision {
+  background: rgba(146, 64, 14, 0.38) !important;
+  color: #fcd34d !important;
+}
+
+html.dark .decision-rejected {
+  background: rgba(153, 27, 27, 0.4) !important;
+  color: #fca5a5 !important;
+}
+
+/* WorkflowReplay state banners (scoped light styles). */
+html.dark .replay-state-card {
+  border-color: rgba(100, 116, 139, 0.42) !important;
+  box-shadow: 0 10px 26px rgba(2, 6, 23, 0.28), inset 0 1px 0 rgba(148, 163, 184, 0.1) !important;
+}
+
+html.dark .replay-state-warning {
+  border-color: rgba(245, 158, 11, 0.38) !important;
+  background: rgba(146, 64, 14, 0.32) !important;
+}
+
+html.dark .replay-state-error {
+  border-color: rgba(244, 63, 94, 0.36) !important;
+  background: rgba(136, 19, 55, 0.32) !important;
+}
+
+html.dark .replay-bg-grid {
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px) !important;
+}
+
+html.dark .replay-orbit-node-label {
+  border-color: rgba(100, 116, 139, 0.45) !important;
+  background: rgba(15, 23, 42, 0.72) !important;
+  color: #e2e8f0 !important;
+  box-shadow: 0 0.3rem 0.8rem rgba(2, 6, 23, 0.28) !important;
+}
+
+html.dark .replay-orbit-node-active .replay-orbit-node-label {
+  color: #5eead4 !important;
+  border-color: rgba(45, 212, 191, 0.4) !important;
+  background: rgba(15, 118, 110, 0.28) !important;
+}
+
+html.dark .replay-rail-panel,
+html.dark .replay-mobile-rail {
+  border-color: rgba(100, 116, 139, 0.4) !important;
+  background: rgba(15, 23, 42, 0.55) !important;
+  box-shadow:
+    0 1px 2px rgba(2, 6, 23, 0.3),
+    0 12px 28px rgba(2, 6, 23, 0.22),
+    inset 0 1px 0 rgba(148, 163, 184, 0.1) !important;
+}
+
+html.dark .replay-detail-header {
+  border-color: rgba(100, 116, 139, 0.4) !important;
+  background: linear-gradient(105deg, rgba(15, 23, 42, 0.82), rgba(15, 118, 110, 0.18)) !important;
+  box-shadow:
+    0 1px 2px rgba(2, 6, 23, 0.3),
+    0 8px 20px rgba(2, 6, 23, 0.22),
+    inset 0 1px 0 rgba(148, 163, 184, 0.1) !important;
+}
+
+html.dark .replay-empty-state,
+html.dark .replay-no-data {
+  border-color: rgba(100, 116, 139, 0.4) !important;
+  background: rgba(15, 23, 42, 0.5) !important;
+}
+
+html.dark .replay-step-badge {
+  border-color: rgba(100, 116, 139, 0.45) !important;
+}
+
+/* Showcase scoped light canvases not fully covered by utility remaps. */
+html.dark body .showcase-empty-state {
+  border-color: rgba(100, 116, 139, 0.4) !important;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(30, 41, 59, 0.55), transparent 66%),
+    rgba(15, 23, 42, 0.55) !important;
+}
+
+html.dark body .showcase-featured-unavailable {
+  background: rgba(15, 23, 42, 0.45) !important;
+}
+
+html.dark body .showcase-workspace-shell {
+  box-shadow:
+    0 2px 4px rgba(2, 6, 23, 0.35),
+    0 20px 48px rgba(2, 6, 23, 0.28),
+    inset 0 1px 0 rgba(148, 163, 184, 0.1) !important;
+}
+
+html.dark body .showcase-workspace-shell::before {
+  background:
+    linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+    radial-gradient(ellipse at 50% 0%, rgba(30, 41, 59, 0.5), transparent 62%) !important;
+}
+
+html.dark body .showcase-nav {
+  box-shadow:
+    0 0 1px rgba(2, 6, 23, 0.4),
+    0 4px 16px rgba(2, 6, 23, 0.28),
+    inset 0 -1px 0 rgba(148, 163, 184, 0.08) !important;
+}
+
+/* Page header sheen stays subtle on dark surfaces. */
+html.dark .page-header-shell {
+  box-shadow:
+    0 1px 2px rgba(2, 6, 23, 0.35),
+    0 14px 32px rgba(2, 6, 23, 0.24),
+    inset 0 1px 0 rgba(148, 163, 184, 0.1) !important;
+}
+
+html.dark .page-header-shell::after {
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.18), transparent) !important;
+}
+
+html.dark .page-header-shell:hover {
+  box-shadow:
+    0 4px 8px rgba(2, 6, 23, 0.35),
+    0 20px 40px rgba(2, 6, 23, 0.3),
+    inset 0 1px 0 rgba(148, 163, 184, 0.14) !important;
+}

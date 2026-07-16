@@ -53,7 +53,7 @@ const handleDismissError = () => {
 
 <template>
   <main class="flex min-h-[80vh] items-center justify-center px-4 py-8 md:py-12" aria-labelledby="login-title">
-    <div class="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-white/80 bg-white/75 shadow-xl shadow-slate-200/60 backdrop-blur-xl lg:grid-cols-[0.9fr_1.1fr]">
+    <div class="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-white/80 bg-white/75 shadow-xl shadow-slate-200/60 backdrop-blur-xl dark:border-slate-700/70 dark:bg-slate-900/80 dark:shadow-slate-950/50 lg:grid-cols-[0.9fr_1.1fr]">
       <aside class="relative hidden overflow-hidden bg-gradient-to-br from-rose-500 via-fuchsia-500 to-violet-600 p-8 text-white lg:flex lg:flex-col lg:justify-between xl:p-10">
         <div class="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/20 blur-3xl" aria-hidden="true" />
         <div class="relative">

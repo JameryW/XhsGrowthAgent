@@ -115,7 +115,7 @@ const timeRemainingDisplay = computed(() => {
 
 <template>
   <div
-    class="rounded-xl p-3 md:p-6 md:rounded-2xl relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm"
+    class="rounded-xl p-3 md:p-6 md:rounded-2xl relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm dark:bg-slate-900/80 dark:border-slate-700/50"
     role="region"
     :aria-label="t('dashboard.header.status')"
   >

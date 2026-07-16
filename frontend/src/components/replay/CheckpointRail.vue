@@ -104,16 +104,16 @@ const groupedCheckpoints = computed(() => {
         type="button"
         @click="selectCp(item.id)"
         class="replay-checkpoint-item w-full flex items-center gap-2 py-1.5 px-2 rounded-lg transition-colors text-left"
-        :class="item.isActive ? 'bg-slate-800 text-white' : 'hover:bg-slate-50 text-slate-600'"
+        :class="item.isActive ? 'bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900' : 'hover:bg-slate-50 text-slate-600 dark:hover:bg-slate-800/80 dark:text-slate-300'"
         :aria-pressed="item.isActive"
         :aria-current="item.isActive ? 'step' : undefined"
         role="listitem"
       >
-        <span class="text-[10px] font-mono shrink-0" :class="item.isActive ? 'text-slate-300' : 'text-slate-400'">{{ item.step }}</span>
-        <span class="text-xs font-medium truncate" :class="item.isActive ? 'text-white' : 'text-slate-700'">{{ item.label }}</span>
+        <span class="text-[10px] font-mono shrink-0" :class="item.isActive ? 'text-slate-300 dark:text-slate-600' : 'text-slate-400'">{{ item.step }}</span>
+        <span class="text-xs font-medium truncate" :class="item.isActive ? 'text-white dark:text-slate-900' : 'text-slate-700'">{{ item.label }}</span>
         <span class="ml-auto flex shrink-0 items-center gap-1">
-          <span class="h-1.5 w-1.5 rounded-full" :class="item.hasData ? 'bg-emerald-400' : 'bg-slate-300'" :aria-label="item.hasData ? t('replay.dataAvailable') : t('replay.noData')" />
-          <span v-if="item.date" class="text-[10px]" :class="item.isActive ? 'text-slate-300' : 'text-slate-400'">{{ item.date }}</span>
+          <span class="h-1.5 w-1.5 rounded-full" :class="item.hasData ? 'bg-emerald-400' : 'bg-slate-300 dark:bg-slate-600'" :aria-label="item.hasData ? t('replay.dataAvailable') : t('replay.noData')" />
+          <span v-if="item.date" class="text-[10px]" :class="item.isActive ? 'text-slate-300 dark:text-slate-600' : 'text-slate-400'">{{ item.date }}</span>
         </span>
       </button>
     </section>
@@ -121,7 +121,7 @@ const groupedCheckpoints = computed(() => {
       v-if="hasMore"
       @click="loadMore"
       :disabled="isLoading"
-      class="replay-checkpoint-load-more w-full min-h-11 py-1.5 text-[10px] text-slate-500 hover:text-slate-700 font-medium transition-colors disabled:opacity-50"
+      class="replay-checkpoint-load-more w-full min-h-11 py-1.5 text-[10px] text-slate-500 hover:text-slate-700 font-medium transition-colors disabled:opacity-50 dark:hover:text-slate-300"
     >
       {{ isLoading ? t('common.loadingState') : t('replay.loadMore') }}
     </button>

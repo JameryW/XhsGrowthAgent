@@ -220,22 +220,22 @@ onUnmounted(() => {
 
       <!-- State-aware hero: the visual hierarchy starts with the current state. -->
       <section
-        class="relative overflow-hidden rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-cyan-50/70 p-4 shadow-sm md:rounded-3xl md:p-6"
+        class="relative overflow-hidden rounded-2xl border border-slate-200/70 bg-gradient-to-br from-white via-slate-50 to-cyan-50/70 p-4 shadow-sm md:rounded-3xl md:p-6 dark:border-slate-700/60 dark:from-slate-900/95 dark:via-slate-900/90 dark:to-slate-950/95"
         :class="{
-          'from-emerald-50/80 via-white to-cyan-50/60': dashboardHero.tone === 'emerald',
-          'from-rose-50/80 via-white to-amber-50/60': dashboardHero.tone === 'rose',
-          'from-violet-50/80 via-white to-cyan-50/60': dashboardHero.tone === 'violet',
-          'from-amber-50/80 via-white to-rose-50/60': dashboardHero.tone === 'amber',
-          'from-cyan-50/80 via-white to-emerald-50/60': dashboardHero.tone === 'cyan',
-          'from-fuchsia-50/80 via-white to-amber-50/60': dashboardHero.tone === 'pink',
+          'from-emerald-50/80 via-white to-cyan-50/60 dark:from-emerald-950/40 dark:via-slate-900/90 dark:to-cyan-950/30': dashboardHero.tone === 'emerald',
+          'from-rose-50/80 via-white to-amber-50/60 dark:from-rose-950/40 dark:via-slate-900/90 dark:to-amber-950/30': dashboardHero.tone === 'rose',
+          'from-violet-50/80 via-white to-cyan-50/60 dark:from-violet-950/40 dark:via-slate-900/90 dark:to-cyan-950/30': dashboardHero.tone === 'violet',
+          'from-amber-50/80 via-white to-rose-50/60 dark:from-amber-950/40 dark:via-slate-900/90 dark:to-rose-950/30': dashboardHero.tone === 'amber',
+          'from-cyan-50/80 via-white to-emerald-50/60 dark:from-cyan-950/40 dark:via-slate-900/90 dark:to-emerald-950/30': dashboardHero.tone === 'cyan',
+          'from-fuchsia-50/80 via-white to-amber-50/60 dark:from-fuchsia-950/40 dark:via-slate-900/90 dark:to-amber-950/30': dashboardHero.tone === 'pink',
         }"
         aria-live="polite"
         :aria-label="t('dashboard.hero.eyebrow')"
       >
-        <div class="pointer-events-none absolute -right-14 -top-16 h-40 w-40 rounded-full bg-white/70 blur-2xl" aria-hidden="true" />
+        <div class="pointer-events-none absolute -right-14 -top-16 h-40 w-40 rounded-full bg-white/70 blur-2xl dark:bg-slate-700/30" aria-hidden="true" />
         <div class="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div class="flex min-w-0 items-start gap-3 md:gap-4">
-            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70 md:h-14 md:w-14">
+            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70 md:h-14 md:w-14 dark:bg-slate-800 dark:ring-slate-600/60">
               <AppIcon :name="dashboardHero.icon" size="lg" :variant="dashboardHero.tone === 'rose' ? 'pink' : dashboardHero.tone === 'violet' ? 'purple' : dashboardHero.tone === 'amber' ? 'peach' : 'cyan'" aria-hidden="true" />
             </div>
             <div class="min-w-0">
@@ -245,11 +245,11 @@ onUnmounted(() => {
             </div>
           </div>
           <div class="flex shrink-0 items-center gap-3 sm:flex-col sm:items-end sm:gap-1">
-            <span class="rounded-full border border-white/90 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 shadow-sm">{{ dashboardHero.status }}</span>
+            <span class="rounded-full border border-white/90 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 shadow-sm dark:border-slate-600/70 dark:bg-slate-800/80">{{ dashboardHero.status }}</span>
             <span class="text-xs font-semibold text-slate-400">{{ t('dashboard.hero.progressLabel', { percent: dashboardHero.progress }) }}</span>
           </div>
         </div>
-        <div class="relative mt-4 h-2 overflow-hidden rounded-full bg-white/80 ring-1 ring-slate-200/60" role="progressbar" :aria-valuenow="dashboardHero.progress" aria-valuemin="0" aria-valuemax="100" :aria-label="t('dashboard.header.progress')">
+        <div class="relative mt-4 h-2 overflow-hidden rounded-full bg-white/80 ring-1 ring-slate-200/60 dark:bg-slate-800/80 dark:ring-slate-600/50" role="progressbar" :aria-valuenow="dashboardHero.progress" aria-valuemin="0" aria-valuemax="100" :aria-label="t('dashboard.header.progress')">
           <div class="h-full rounded-full bg-gradient-to-r from-neon-pink via-neon-peach to-neon-cyan motion-safe:transition-[width] motion-safe:duration-500" :style="{ width: `${dashboardHero.progress}%` }" />
         </div>
         <div v-if="workflowStore.currentPhase === 'completed'" class="relative mt-4 flex justify-end">
@@ -260,8 +260,8 @@ onUnmounted(() => {
       </section>
 
       <!-- One prominent next step prevents users from scanning the full timeline. -->
-      <div v-if="nextAction" class="flex flex-col items-stretch gap-3 rounded-xl border border-cyan-200/70 bg-gradient-to-r from-cyan-50/90 to-white p-3 md:flex-row md:items-center md:p-4">
-        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-100">
+      <div v-if="nextAction" class="flex flex-col items-stretch gap-3 rounded-xl border border-cyan-200/70 bg-gradient-to-r from-cyan-50/90 to-white p-3 md:flex-row md:items-center md:p-4 dark:border-cyan-500/30 dark:from-cyan-950/40 dark:to-slate-900/80">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-100 dark:bg-cyan-900/50">
           <AppIcon :name="nextAction.icon" size="md" variant="cyan" aria-hidden="true" />
         </div>
         <div class="min-w-0 flex-1">

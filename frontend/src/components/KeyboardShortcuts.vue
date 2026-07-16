@@ -112,11 +112,11 @@ onUnmounted(() => {
 
         <!-- Panel -->
         <div
-          class="relative w-full max-w-lg bg-white/98 rounded-2xl shadow-2xl border border-slate-200/50 overflow-hidden"
+          class="relative w-full max-w-lg bg-white/98 rounded-2xl shadow-2xl border border-slate-200/50 overflow-hidden dark:bg-slate-900/95 dark:border-slate-600/60 dark:shadow-slate-950/50"
           @click.stop
         >
           <!-- Header -->
-          <div class="px-6 py-4 bg-gradient-to-r from-violet-50 to-purple-50 border-b border-slate-200">
+          <div class="px-6 py-4 bg-gradient-to-r from-violet-50 to-purple-50 border-b border-slate-200 dark:from-violet-950/50 dark:to-slate-900 dark:border-slate-700">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-3">
                 <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-sm">
@@ -128,7 +128,7 @@ onUnmounted(() => {
               </div>
               <button
                 ref="closeButtonRef"
-                class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50"
+                class="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/50 dark:hover:bg-slate-800"
                 :aria-label="t('keyboard.close')"
                 @click="handleClose"
               >
@@ -168,7 +168,7 @@ onUnmounted(() => {
                 <div
                   v-for="shortcut in shortcuts"
                   :key="shortcut.action"
-                  class="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors group"
+                  class="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors group dark:bg-slate-800/70 dark:hover:bg-slate-800"
                 >
                   <div class="flex-1 min-w-0">
                     <span class="text-sm text-slate-700 block truncate">
@@ -179,7 +179,7 @@ onUnmounted(() => {
                     </span>
                   </div>
                   <kbd
-                    class="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-slate-200 to-slate-300 text-slate-700 text-xs font-mono border border-slate-400/30 shadow-sm min-w-[60px] text-center"
+                    class="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-slate-200 to-slate-300 text-slate-700 text-xs font-mono border border-slate-400/30 shadow-sm min-w-[60px] text-center dark:from-slate-700 dark:to-slate-600 dark:text-slate-200 dark:border-slate-500/40"
                   >
                     {{ formatKey(shortcut) }}
                   </kbd>
@@ -189,7 +189,7 @@ onUnmounted(() => {
           </div>
 
           <!-- Footer hint -->
-          <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 text-center">
+          <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 text-center dark:bg-slate-900/80 dark:border-slate-700">
             <p class="text-xs text-slate-500">
               {{ t('keyboard.escHint') }}
             </p>

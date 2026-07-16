@@ -54,14 +54,14 @@ onMounted(() => {
 <template>
   <section class="space-y-4 md:space-y-6" :aria-label="t('creatorQuality.title')">
     <header
-      class="relative overflow-hidden rounded-2xl border border-cyan-100/80 bg-gradient-to-br from-cyan-50 via-white to-violet-50 p-4 shadow-sm md:p-6"
+      class="relative overflow-hidden rounded-2xl border border-cyan-100/80 bg-gradient-to-br from-cyan-50 via-white to-violet-50 p-4 shadow-sm md:p-6 dark:border-cyan-500/25 dark:from-slate-900/95 dark:via-slate-900/90 dark:to-violet-950/40"
     >
-      <div class="pointer-events-none absolute -right-14 -top-16 h-48 w-48 rounded-full bg-cyan-200/35 blur-3xl" />
-      <div class="pointer-events-none absolute -bottom-20 left-1/3 h-40 w-40 rounded-full bg-violet-200/30 blur-3xl" />
+      <div class="pointer-events-none absolute -right-14 -top-16 h-48 w-48 rounded-full bg-cyan-200/35 blur-3xl dark:bg-cyan-500/15" />
+      <div class="pointer-events-none absolute -bottom-20 left-1/3 h-40 w-40 rounded-full bg-violet-200/30 blur-3xl dark:bg-violet-500/15" />
 
       <div class="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div class="min-w-0 max-w-2xl">
-          <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">
+          <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-300">
             <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm">
               <AppIcon name="Brain" size="sm" variant="white" />
             </span>
@@ -83,7 +83,7 @@ onMounted(() => {
             <span class="relative block">
               <select
                 v-model="selectedAccountId"
-                class="w-full appearance-none rounded-xl border border-slate-200 bg-white/90 py-2.5 pl-3 pr-9 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-100"
+                class="w-full appearance-none rounded-xl border border-slate-200 bg-white/90 py-2.5 pl-3 pr-9 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-100 dark:border-slate-600/60 dark:bg-slate-900/80 dark:text-slate-200 dark:focus:border-cyan-400/50 dark:focus:ring-cyan-900/40"
                 :aria-label="t('creatorQuality.page.accountLabel')"
                 @change="hasUserSelectedAccount = true"
               >
@@ -101,7 +101,7 @@ onMounted(() => {
           </label>
           <button
             type="button"
-            class="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-60 sm:self-end"
+            class="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-60 sm:self-end dark:border-slate-600/60 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-violet-400/40 dark:hover:bg-violet-950/35 dark:hover:text-violet-200"
             :disabled="accountsStore.isLoading"
             :aria-label="t('creatorQuality.page.refreshAccounts')"
             :title="t('creatorQuality.page.refreshAccounts')"
@@ -130,9 +130,9 @@ onMounted(() => {
 
     <section
       v-else
-      class="rounded-2xl border border-dashed border-slate-300 bg-white/70 px-5 py-10 text-center shadow-sm md:px-8"
+      class="rounded-2xl border border-dashed border-slate-300 bg-white/70 px-5 py-10 text-center shadow-sm md:px-8 dark:border-slate-600 dark:bg-slate-900/60"
     >
-      <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
+      <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
         <AppIcon name="Database" size="lg" variant="cyan" />
       </div>
       <h3 class="mt-4 text-base font-semibold text-slate-700">

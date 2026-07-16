@@ -54,13 +54,13 @@ const currentStyle = computed(() => statusStyles.value[realtimeStore.connectionS
 <template>
   <div
     v-if="realtimeStore.connectionStatus === 'connecting' || realtimeStore.connectionStatus === 'reconnecting'"
-    class="fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl flex items-center gap-3 backdrop-blur-sm bg-white/98 border border-slate-200/50 shadow-sm transition-all duration-200"
+    class="fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl flex items-center gap-3 backdrop-blur-sm bg-white/98 border border-slate-200/50 shadow-sm transition-all duration-200 dark:bg-slate-900/90 dark:border-slate-600/50"
     :class="[currentStyle.borderClass]"
     role="status"
     aria-live="polite"
     :aria-label="currentStyle.text"
   >
-    <div class="w-6 h-6 rounded-lg flex items-center justify-center bg-slate-50" aria-hidden="true">
+    <div class="w-6 h-6 rounded-lg flex items-center justify-center bg-slate-50 dark:bg-slate-800" aria-hidden="true">
       <AppIcon
         :name="currentStyle.icon"
         size="sm"

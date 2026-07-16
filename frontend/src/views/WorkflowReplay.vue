@@ -516,11 +516,11 @@ const finalSummary = computed(() => {
         <!-- Mobile: checkpoint chips -->
         <div class="replay-mobile-rail lg:hidden">
           <div v-if="mobileCheckpointChips.length" class="space-y-2">
-            <button type="button" class="replay-mobile-checkpoint-toggle flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/70 px-3 text-left" :aria-expanded="mobileCheckpointOpen" @click="mobileCheckpointOpen = !mobileCheckpointOpen">
+            <button type="button" class="replay-mobile-checkpoint-toggle flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/70 px-3 text-left dark:border-slate-600/60 dark:bg-slate-900/70" :aria-expanded="mobileCheckpointOpen" @click="mobileCheckpointOpen = !mobileCheckpointOpen">
               <span class="min-w-0 truncate text-xs font-medium text-slate-700">
                 {{ selectedCheckpoint ? `${t('replay.step')} ${selectedCheckpoint.step} · ${selectedAgentLabel}` : t('replay.checkpoints') }}
               </span>
-              <span class="shrink-0 text-[10px] font-medium text-teal-700">{{ mobileCheckpointOpen ? t('replay.closeCheckpoints') : t('replay.openCheckpoints') }}</span>
+              <span class="shrink-0 text-[10px] font-medium text-teal-700 dark:text-teal-300">{{ mobileCheckpointOpen ? t('replay.closeCheckpoints') : t('replay.openCheckpoints') }}</span>
             </button>
             <div v-if="mobileCheckpointOpen" class="replay-mobile-checkpoint-list grid max-h-56 grid-cols-1 gap-1 overflow-y-auto pr-1">
               <button
@@ -529,12 +529,12 @@ const finalSummary = computed(() => {
                 type="button"
                 @click="selectCheckpoint(chip.id)"
                 class="replay-mobile-chip flex min-h-11 items-center justify-between rounded-xl border px-3 text-left text-[10px] font-medium transition-colors"
-                :class="chip.active ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'"
+                :class="chip.active ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50 dark:bg-slate-800/80 dark:text-slate-300 dark:border-slate-600 dark:hover:bg-slate-700'"
                 :aria-pressed="chip.active"
               >
                 <span>{{ chip.label }}</span><span class="font-mono opacity-70">{{ replayCheckpoints.find(cp => cp.checkpoint_id === chip.id)?.step }}</span>
               </button>
-              <button v-if="workflowStore.hasMoreCheckpoints" type="button" :disabled="isCheckpointLoading" @click="workflowStore.loadMoreCheckpoints()" class="min-h-11 rounded-xl border border-slate-200 px-3 text-[10px] text-slate-400 hover:bg-slate-50">+{{ t('replay.loadMore') }}</button>
+              <button v-if="workflowStore.hasMoreCheckpoints" type="button" :disabled="isCheckpointLoading" @click="workflowStore.loadMoreCheckpoints()" class="min-h-11 rounded-xl border border-slate-200 px-3 text-[10px] text-slate-400 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800">+{{ t('replay.loadMore') }}</button>
             </div>
           </div>
           <div v-else class="flex items-center gap-2 px-1 py-1 text-[11px] text-slate-400">
