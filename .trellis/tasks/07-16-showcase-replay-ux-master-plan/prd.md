@@ -1018,11 +1018,15 @@ git diff --check
 - 部署后浏览器 smoke 已覆盖真实空态接口与脱敏 mock 案例：320/390/768/1024/1280/1440px × light/dark 共 12 组合；检查无页面级横向滚动、主题 class、390px reduced-motion、Showcase/Replay 首屏、真实回放链接和阶段 ArrowRight 键盘导航均通过。390px dark 截图复核确认主题按钮不再遮挡主 CTA。
 - 线上 smoke：`/api/system/health` 正常，Postgres/Ripple 正常；公开列表返回 `total=0` 且无私有案例泄露；列表 ETag 条件请求返回 `304`；OpenAPI 暴露五个只读路由和两个认证治理路由。
 - 埋点接收：`POST /api/public/telemetry` 已接入同源默认地址，服务端执行事件/分类白名单、120 次/分钟来源限流、30 天保留和匿名降级；`GET /api/public/admin/telemetry/summary` 只返回聚合数量与 p50/p75 耗时，供目标监控面板接入。
+- 目标部署 `main@aed6414b` 已执行 `python scripts/acceptance/public_ux_audit.py --base-url http://127.0.0.1:8889 --output /tmp/public-ux-audit-final.json`：真实空态 Showcase 1 页 + 合成无敏感数据 fixture 的 Showcase/Replay 96 页，共 97 页记录；无失败、无页面级横向溢出、阶段 ArrowRight 键盘导航通过，axe serious/critical violations 为 0。
+- 同次审计覆盖 320/390/768/1024/1280/1440px、zh-CN/en、light/dark、normal/reduced-motion；wall-clock p50/p75/p95 为 631.55/885.34/1327.74ms，CLS p50/p75/p95 均为 0。该耗时只代表当前部署 + 合成 fixture 的导航到首个结果可见，不替代真实公开案例的 cold/warm、慢 4G、Save-Data 或 Lighthouse 证据。
+- 新增可重复审计入口 `scripts/acceptance/public_ux_audit.py` 与 `@axe-core/playwright` 依赖；脚本默认保留 live private-by-default 检查和 96 页矩阵，支持 `--base-url`、`--output`、`--screenshot-dir` 和快速 smoke 的 `--max-combinations`。
 
-以下项目仍需要目标环境或人工证据，不把本地自动化结果冒充完成：真实公共案例 owner 授权后的
-390×844/320–1440px 双主题截图矩阵、axe serious/critical、Lighthouse/Web Vitals、慢 4G/Save-Data
-采样、监控面板基线接入和灰度回滚演练。线上健康、私有空态、缓存条件请求、OpenAPI 与浏览器
-空态/mock smoke 已完成。
+以下项目仍需要真实案例目标环境或人工证据，不把合成 fixture 的自动化结果冒充完成：真实公共案例
+owner 授权后的 390×844/320–1440px 双主题截图矩阵、真实案例 Lighthouse/Web Vitals、慢
+4G/Save-Data 采样、监控面板基线接入、灰度回滚演练，以及中文/英文 Hero、CTA、错误与状态文案
+的业务确认。线上健康、私有空态、缓存条件请求、OpenAPI、自动化响应式/键盘矩阵和 live 空态/mock
+axe smoke 已完成。
 
 ---
 
@@ -1043,12 +1047,12 @@ git diff --check
 ### 19.1 Showcase
 
 - [x] 页面默认只展示明确公开的案例，不再暴露全部内部工作流。
-- [ ] 390×844 前 620px 出现真实案例标题和回放入口（需目标环境真实公开案例截图验收）。
+- [ ] 390×844 前 620px 出现真实案例标题和回放入口（合成 fixture 自动检查通过，仍需目标环境真实公开案例截图验收）。
 - [x] Hero 只有一个主 CTA；登录/已登录分流正确。
 - [x] 案例卡无 `trend`、`P1`、`viral`、硬编码 views/likes 等未解释内部表达。
 - [x] 筛选、搜索、排序、URL、返回滚动与焦点恢复可用。
 - [x] 加载、cache refresh、列表失败、无公开案例、筛选空、预览失败可区分和恢复。
-- [ ] 首个案例 cold p75 ≤2.5s，warm ≤500ms，CLS ≤0.1。
+- [ ] 首个案例 cold p75 ≤2.5s，warm ≤500ms，CLS ≤0.1（合成 fixture wall-clock p75 885.34ms、CLS p75 0；真实案例 cold/warm 仍待采样）。
 
 ### 19.2 Replay
 
@@ -1059,17 +1063,17 @@ git diff --check
 - [x] 每个结果回答“做了什么、产出、为什么重要”，技术详情默认折叠。
 - [x] 最终摘要不随历史选择变化；预测与实际明确区分。
 - [x] 未登录和已登录用户均有正确主 CTA。
-- [ ] 390×844 首屏可见结果标题；无页面级横向滚动（需目标环境截图验收）。
-- [ ] first-result cold p75 ≤2.5s，warm ≤500ms，cached select-to-render ≤100ms。
+- [ ] 390×844 首屏可见结果标题；无页面级横向滚动（合成 fixture 自动检查通过，仍需目标环境真实公开案例截图验收）。
+- [ ] first-result cold p75 ≤2.5s，warm ≤500ms，cached select-to-render ≤100ms（合成 fixture wall-clock p75 885.34ms；真实案例与缓存选择采样仍待补齐）。
 
 ### 19.3 全局质量
 
 - [x] 用户可见正文 ≥14px、元信息 ≥12px；9/10px 信息文本归零（新 V2 页面）。
-- [ ] light/dark、zh/en、normal/reduced-motion、320–1440px 通过视觉验收（需截图矩阵）。
-- [ ] 主要交互键盘可完成；axe serious/critical = 0（需目标环境 axe）。
+- [ ] light/dark、zh/en、normal/reduced-motion、320–1440px 通过视觉验收（96 页自动矩阵、无溢出和代表性截图已完成；真实案例完整截图矩阵仍待签字）。
+- [ ] 主要交互键盘可完成；axe serious/critical = 0（live 空态 + 96 页合成 fixture 目标审计为 0；真实公开案例目标审计仍待补齐）。
 - [x] 所有新文案双语，日期/数字/百分比 locale 化。
 - [x] 埋点形成完整漏斗且不上传 ID、内容或错误原文。
-- [x] 自动化、构建、类型、lint、diff 和真实后端 smoke 全部通过（目标环境的视觉/性能/axe 证据仍按上方门槛补齐）。
+- [x] 自动化、构建、类型、lint、diff、真实后端 smoke 以及 live 空态/mock 的响应式、键盘、axe 目标审计全部通过（真实案例视觉/性能与业务授权门槛仍按上方保留）。
 - [x] spec、API 文档、任务和回滚说明已更新。
 
 ---

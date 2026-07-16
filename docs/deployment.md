@@ -158,6 +158,19 @@ API_PORT=8000
 `GET /api/public/admin/telemetry/summary?days=7` 获取按事件/设备/模式聚合的数量、p50/p75
 耗时，供监控面板接入；该接口不返回原始事件。
 
+发布前可运行公共页自动化验收（需要 Chromium 和前端的 `@axe-core/playwright` 依赖）：
+
+```bash
+python scripts/acceptance/public_ux_audit.py \
+  --base-url http://127.0.0.1:8889 \
+  --output /tmp/public-ux-audit.json \
+  --screenshot-dir /tmp/public-ux-audit-screenshots
+```
+
+脚本会检查真实空态的 private-by-default，并用无敏感 fixture 覆盖 Showcase/Replay 的
+320–1440px、中文/英文、明暗主题、正常/减弱动画、横向溢出、阶段键盘导航和 axe
+serious/critical；fixture 结果不能替代真实公开案例的 owner 授权、Lighthouse 或慢网采样。
+
 ## Docker 部署
 
 ### docker-compose.yml
