@@ -47,6 +47,23 @@ CREATE INDEX IF NOT EXISTS idx_public_ux_events_event_name
     ON public_ux_events (event_name, received_at);
 """
 
+# ponytail: ADD COLUMN IF NOT EXISTS per column added after launch.
+# CREATE TABLE IF NOT EXISTS won't backfill columns onto pre-existing tables,
+# so summarize_events (which SELECTs these) would UndefinedColumn on old deploys.
+# Append here when a new categorical dimension is added to _CREATE_TABLE_SQL.
+_ADD_COLUMN_SQL = (
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS view_mode TEXT",
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS step_number INTEGER",
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS count_value INTEGER",
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS restored BOOLEAN",
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS cached BOOLEAN",
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS has_steps BOOLEAN",
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS has_result BOOLEAN",
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS authenticated BOOLEAN",
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS has_public_id BOOLEAN",
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS has_step BOOLEAN",
+)
+
 
 async def ensure_tables() -> None:
     """Create the telemetry table and indexes during the normal DB bootstrap."""
@@ -55,6 +72,8 @@ async def ensure_tables() -> None:
     async with pool.connection() as conn:
         await conn.execute(_CREATE_TABLE_SQL)
         await conn.execute(_CREATE_INDEX_SQL)
+        for sql in _ADD_COLUMN_SQL:
+            await conn.execute(sql)
 
 
 async def record_event(event: Mapping[str, Any]) -> bool:
