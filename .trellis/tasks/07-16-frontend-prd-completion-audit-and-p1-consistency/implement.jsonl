@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/archive/2026-07/07-16-frontend-interaction-ux-optimization/prd.md", "reason": "原始 PRD 的全站 P1/P2 页面矩阵与最终验收标准"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "组件语义、焦点、触控尺寸、i18n 与响应式约定"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "页面状态、错误恢复和回放数据来源约定"}
+{"file": ".trellis/spec/frontend/animation-patterns.md", "reason": "reduced-motion 与动效性能约定"}

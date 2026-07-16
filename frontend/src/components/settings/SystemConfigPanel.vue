@@ -5,6 +5,7 @@ import { useSystemConfigStore } from '@/stores/system_config'
 import { useToastStore } from '@/stores/toast'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import ConfirmModal from '@/components/ConfirmModal.vue'
 
 const { t } = useI18n()
 const store = useSystemConfigStore()
@@ -12,6 +13,8 @@ const toast = useToastStore()
 
 const edits = ref<Record<string, string>>({})
 const isSaving = ref(false)
+const showDeleteModal = ref(false)
+const deleteTarget = ref<string | null>(null)
 
 const groupLabels: Record<string, string> = {
   llm_providers: 'settings.groups.llmProviders',
@@ -66,11 +69,19 @@ async function save() {
   }
 }
 
-async function deleteKey(keyName: string) {
-  if (!confirm(t('settings.confirm.deleteKey', { key: keyName }))) return
+function requestDeleteKey(keyName: string) {
+  deleteTarget.value = keyName
+  showDeleteModal.value = true
+}
+
+async function confirmDeleteKey() {
+  if (!deleteTarget.value) return
+  const keyName = deleteTarget.value
   try {
     await store.saveConfig({ [keyName]: '' })
     toast.success(t('settings.toasts.credDeleted', { key: keyName }))
+    showDeleteModal.value = false
+    deleteTarget.value = null
   } catch (e: any) {
     toast.error(e.message)
   }
@@ -129,21 +140,21 @@ async function deleteKey(keyName: string) {
 
           <div class="flex items-center gap-1 shrink-0">
             <template v-if="edits[keyName] !== undefined">
-              <button @click="cancelEdit(keyName)"
-                class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+              <button type="button" @click="cancelEdit(keyName)"
+                class="min-h-11 min-w-11 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
               >
                 <AppIcon name="X" size="xs" variant="pink" />
               </button>
             </template>
             <template v-else>
-              <button @click="startEdit(keyName)"
-                class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+              <button type="button" @click="startEdit(keyName)"
+                class="min-h-11 min-w-11 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
                 :title="t('settings.edit')"
               >
                 <AppIcon name="Pencil" size="xs" variant="cyan" />
               </button>
-              <button v-if="isSet(keyName)" @click="deleteKey(keyName)"
-                class="p-1 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors"
+              <button type="button" v-if="isSet(keyName)" @click="requestDeleteKey(keyName)"
+                class="min-h-11 min-w-11 p-1 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors"
                 :title="t('settings.delete')"
               >
                 <AppIcon name="Trash2" size="xs" variant="pink" />
@@ -153,5 +164,14 @@ async function deleteKey(keyName: string) {
         </div>
       </div>
     </div>
+
+    <ConfirmModal
+      :is-open="showDeleteModal"
+      :title="t('settings.delete')"
+      :message="deleteTarget ? t('settings.confirm.deleteKey', { key: deleteTarget }) : ''"
+      variant="danger"
+      @confirm="confirmDeleteKey"
+      @cancel="showDeleteModal = false; deleteTarget = null"
+    />
   </div>
 </template>

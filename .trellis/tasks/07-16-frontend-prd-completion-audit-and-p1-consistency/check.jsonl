@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/archive/2026-07/07-16-frontend-interaction-ux-optimization/prd.md", "reason": "逐项核对 P0/P1/P2 验收标准与真实数据验收阻塞"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "检查键盘语义、触控尺寸、双语和横向溢出"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "检查页面 loading/error/empty 与回放生命周期"}
+{"file": ".trellis/spec/frontend/animation-patterns.md", "reason": "检查页面动效及 reduced-motion 降级"}

@@ -119,6 +119,11 @@ toastStore.error(t('workflow.error'))
 
 Never use `alert()` or `confirm()`.
 
+Destructive actions in settings and other route-level management surfaces use
+`ConfirmModal` with a localized title/message and explicit cancel/confirm
+events. The trigger must remain keyboard reachable, expose an accessible name
+for icon-only actions, and preserve the 44px minimum touch target.
+
 ---
 
 ## API Call Rules

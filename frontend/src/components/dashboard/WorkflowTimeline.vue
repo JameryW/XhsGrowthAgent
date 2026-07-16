@@ -5,7 +5,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import { useWorkflowStore } from '@/stores'
 import { useI18n } from 'vue-i18n'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const workflowStore = useWorkflowStore()
 
 // Replay mode
@@ -308,7 +308,7 @@ function formatDuration(seconds: number): string {
 function formatTime(iso: string): string {
   if (!iso) return '—'
   try {
-    return new Date(iso).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    return new Date(iso).toLocaleTimeString(locale.value || undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   } catch {
     return '—'
   }

@@ -15,7 +15,7 @@ import type {
   EvaluationTrendResponse,
 } from '@/types/evaluation'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
@@ -58,6 +58,7 @@ async function loadList(reset = false) {
       undefined,
       listLimit,
       listOffset.value,
+      { suppressToast: true },
     )
     if (reset) {
       listItems.value = res.workflows
@@ -149,7 +150,7 @@ function formatDateTime(iso: string): string {
   if (!iso) return '—'
   const d = new Date(iso)
   if (isNaN(d.getTime())) return iso
-  return d.toLocaleString('zh-CN', {
+  return d.toLocaleString(locale.value || undefined, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -181,7 +182,7 @@ const hasTrend = computed(() => !!trend.value && trend.value.points.length > 0)
 async function loadTrend() {
   trendLoading.value = true
   try {
-    trend.value = await getEvaluationTrend(undefined, 100)
+    trend.value = await getEvaluationTrend(undefined, 100, { suppressToast: true })
   } catch {
     trend.value = { db_ready: false, points: [], dim_averages: {} }
   } finally {
@@ -204,12 +205,16 @@ async function loadDetail(threadId: string) {
   detailError.value = null
   result.value = null
   try {
-    result.value = await getEvaluationResult(threadId)
+    result.value = await getEvaluationResult(threadId, { suppressToast: true })
   } catch (e) {
     detailError.value = (e as Error).message || t('evaluation.error.fetch')
   } finally {
     detailLoading.value = false
   }
+}
+
+function retryDetail() {
+  if (detailThreadId.value) void loadDetail(detailThreadId.value)
 }
 
 // 进入详情页 / thread_id 变化时加载
@@ -335,15 +340,17 @@ onMounted(() => {
         <input
           v-model="searchQuery"
           class="thread-input"
+          :aria-label="t('evaluation.list.searchPlaceholder')"
           :placeholder="t('evaluation.list.searchPlaceholder')"
         />
         <span class="result-count">{{ filteredItems.length }} / {{ listTotal }}</span>
       </section>
 
       <!-- 加载错误 -->
-      <div v-if="listError" class="error-card">
+      <div v-if="listError" class="error-card" role="alert">
         <AppIcon name="AlertCircle" />
         <span>{{ listError }}</span>
+        <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 px-3 text-xs font-medium hover:bg-rose-100" @click="loadList(true)">{{ t('evaluation.error.retry') }}</button>
       </div>
 
       <!-- 加载中（首次） -->
@@ -362,10 +369,12 @@ onMounted(() => {
 
       <!-- 列表 -->
       <div v-else class="eval-list">
-        <div
+        <button
           v-for="w in filteredItems"
           :key="w.thread_id"
+          type="button"
           class="eval-item"
+          :aria-label="`${w.selected_title || t('evaluation.empty.title')} · ${decisionLabel(w.decision)}`"
           @click="openDetail(w.thread_id)"
         >
           <div class="item-main">
@@ -386,12 +395,12 @@ onMounted(() => {
               {{ decisionLabel(w.decision) }}
             </span>
           </div>
-        </div>
+        </button>
       </div>
 
       <!-- 加载更多 -->
       <div v-if="hasMore" class="load-more">
-        <button class="load-more-btn" :disabled="listLoading" @click="loadMore">
+          <button class="load-more-btn min-h-11" type="button" :disabled="listLoading" @click="loadMore">
           <AppIcon v-if="listLoading" name="Loader2" class="spin" />
           <span>{{ t('evaluation.list.loadMore') }}</span>
         </button>
@@ -410,7 +419,7 @@ onMounted(() => {
         title-id="evaluation-detail-title"
       >
         <template #actions>
-          <button class="back-btn min-h-11" @click="backToList">
+          <button type="button" class="back-btn min-h-11" @click="backToList">
             <AppIcon name="ArrowLeft" />
             <span>{{ t('evaluation.list.back') }}</span>
           </button>
@@ -421,9 +430,10 @@ onMounted(() => {
       <div v-if="detailLoading" class="trend-loading">{{ t('evaluation.searching') }}</div>
 
       <!-- 错误 -->
-      <div v-else-if="detailError" class="error-card">
+      <div v-else-if="detailError" class="error-card" role="alert">
         <AppIcon name="AlertCircle" />
         <span>{{ detailError }}</span>
+        <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 px-3 text-xs font-medium hover:bg-rose-100" @click="retryDetail">{{ t('evaluation.error.retry') }}</button>
       </div>
 
       <!-- 空状态：无评估结果 -->
@@ -561,6 +571,7 @@ onMounted(() => {
 .eval-item {
   display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
   background: #fff; border: 1px solid #e2e8f0; border-radius: 0.625rem;
+  width: 100%; text-align: left; color: inherit; font: inherit;
   padding: 0.75rem 1rem; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
 }
 .eval-item:hover { border-color: #fda4af; box-shadow: 0 1px 4px rgba(244,63,94,0.08); }

@@ -95,7 +95,7 @@ const handleClick = (e: MouseEvent) => {
     :aria-busy="loading"
     :title="title || undefined"
     :class="[
-      'relative rounded-xl border font-semibold overflow-hidden',
+      'relative min-h-11 rounded-xl border font-semibold overflow-hidden',
       'transition-all duration-200 ease-out',
       'transform hover:scale-[1.02] active:scale-[0.98]',
       'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100',

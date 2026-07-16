@@ -11,6 +11,7 @@ import {
 } from '@/api/accounts'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import ConfirmModal from '@/components/ConfirmModal.vue'
 import QrLoginModal from './QrLoginModal.vue'
 import CreatorStatsPanel from './CreatorStatsPanel.vue'
 
@@ -21,6 +22,8 @@ const toast = useToastStore()
 const newAccountName = ref('')
 const isCreating = ref(false)
 const editingAccountId = ref<string | null>(null)
+const showDeleteModal = ref(false)
+const deleteTarget = ref<{ id: string; name: string } | null>(null)
 
 type LoginStatusValue = AccountLoginStatusValue | 'checking'
 type LoginStatusView = AccountLoginStatus | {
@@ -76,12 +79,20 @@ async function activateAccount(accountId: string) {
   }
 }
 
-async function removeAccount(accountId: string, name: string) {
-  if (!confirm(t('settings.confirm.delete', { name }))) return
+function requestRemoveAccount(accountId: string, name: string) {
+  deleteTarget.value = { id: accountId, name }
+  showDeleteModal.value = true
+}
+
+async function confirmRemoveAccount() {
+  if (!deleteTarget.value) return
+  const { id: accountId, name } = deleteTarget.value
   try {
     await store.removeAccount(accountId)
     if (editingAccountId.value === accountId) editingAccountId.value = null
     toast.success(t('settings.toasts.accountDeleted', { name }))
+    showDeleteModal.value = false
+    deleteTarget.value = null
   } catch (e: any) {
     toast.error(e.message)
   }
@@ -228,7 +239,7 @@ function onQrConfirmed() {
           <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">{{ t('settings.accounts') }}</h3>
           <button
             type="button"
-            class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+            class="min-h-11 min-w-11 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
             :title="t('settings.xhsAccounts.refreshLoginStatus')"
             @click="refreshAllLoginStatuses"
           >
@@ -296,8 +307,8 @@ function onQrConfirmed() {
           {{ t('settings.active') }}
         </span>
         <div class="flex items-center gap-1" @click.stop>
-          <button @click="openQrLogin(account)"
-            class="text-xs px-2 py-1 rounded transition-colors flex items-center gap-1"
+          <button type="button" @click="openQrLogin(account)"
+            class="min-h-11 px-2 py-1 rounded transition-colors flex items-center gap-1"
             :class="canScanLogin(account)
               ? 'text-rose-500 hover:text-rose-600 hover:bg-rose-50'
               : 'text-slate-300 cursor-not-allowed'"
@@ -311,13 +322,14 @@ function onQrConfirmed() {
             <AppIcon name="LogIn" size="xs" variant="pink" />
             <span>{{ t('settings.xhsAccounts.qrLogin') }}</span>
           </button>
-          <button v-if="!account.is_active" @click="activateAccount(account.id)"
-            class="text-xs text-teal-600 hover:text-teal-700 px-2 py-1 rounded hover:bg-teal-50 transition-colors"
+          <button type="button" v-if="!account.is_active" @click="activateAccount(account.id)"
+            class="min-h-11 text-xs text-teal-600 hover:text-teal-700 px-2 py-1 rounded hover:bg-teal-50 transition-colors"
           >
             {{ t('settings.activate') }}
           </button>
-          <button @click="removeAccount(account.id, account.name)"
-            class="text-xs text-rose-400 hover:text-rose-500 px-1 py-1 rounded hover:bg-rose-50 transition-colors"
+          <button type="button" @click="requestRemoveAccount(account.id, account.name)"
+            class="min-h-11 min-w-11 text-xs text-rose-400 hover:text-rose-500 px-1 py-1 rounded hover:bg-rose-50 transition-colors"
+            :aria-label="t('settings.delete')"
           >
             <AppIcon name="Trash2" size="xs" variant="pink" />
           </button>
@@ -341,6 +353,15 @@ function onQrConfirmed() {
       :is-open="qrLoginOpen"
       @close="closeQrLogin"
       @confirmed="onQrConfirmed"
+    />
+
+    <ConfirmModal
+      :is-open="showDeleteModal"
+      :title="t('settings.delete')"
+      :message="deleteTarget ? t('settings.confirm.delete', { name: deleteTarget.name }) : ''"
+      variant="danger"
+      @confirm="confirmRemoveAccount"
+      @cancel="showDeleteModal = false; deleteTarget = null"
     />
   </div>
 </template>

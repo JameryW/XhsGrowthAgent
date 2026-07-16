@@ -18,7 +18,7 @@ import type { ContentStatus } from '@/types'
 import type { WorkflowListItem, WorkflowStateResponse } from '@/types/workflow'
 import type { EvaluationResult } from '@/types/evaluation'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const reviewStore = useReviewStore()
@@ -60,7 +60,7 @@ function pumpDetailQueue() {
     const tid = pendingDetailIds.values().next().value as string
     pendingDetailIds.delete(tid)
     activeDetailLoads += 1
-    getWorkflowStatus(tid)
+    getWorkflowStatus(tid, { suppressToast: true })
       .then((state) => { if (!destroyed.value) workflowDetails.value.set(tid, state) })
       .catch(() => {})
       .finally(() => {
@@ -150,7 +150,7 @@ async function ensureWorkflowInQueue(threadId: string) {
   let state = workflowDetails.value.get(threadId)
   try {
     if (!state) {
-      state = await getWorkflowStatus(threadId)
+      state = await getWorkflowStatus(threadId, { suppressToast: true })
       if (destroyed.value) return
       workflowDetails.value.set(threadId, state)
     }
@@ -168,7 +168,7 @@ async function ensureWorkflowInQueue(threadId: string) {
 async function fetchReviewQueue() {
   error.value = null
   try {
-    const result = await listWorkflows({ status: 'awaiting_review', limit: 50 })
+    const result = await listWorkflows({ status: 'awaiting_review', limit: 50 }, { suppressToast: true })
     if (destroyed.value) return
     workflows.value = result.workflows
     listLoaded.value = true
@@ -293,7 +293,7 @@ async function loadEvaluation(tid: string) {
   if (cardEvaluation.value.has(tid) || cardEvaluationLoading.value.has(tid)) return
   cardEvaluationLoading.value.add(tid)
   try {
-    const resp = await getEvaluationResult(tid)
+    const resp = await getEvaluationResult(tid, { suppressToast: true })
     cardEvaluation.value.set(tid, resp.has_evaluation ? resp.evaluation_result : null)
     cardEvaluation.value = new Map(cardEvaluation.value)
   } catch {
@@ -498,7 +498,7 @@ const isEmpty = computed(() => listLoaded.value && workflows.value.length === 0)
 function formatDate(iso: string) {
   if (!iso) return '—'
   const d = new Date(iso)
-  return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleString(locale.value || undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
 function goDashboard() { router.push('/dashboard') }
@@ -697,7 +697,7 @@ const handleCancelConfirm = () => {
     <!-- Error -->
     <div v-if="error" class="rounded-xl p-4 liquid-glass-rose text-center">
       <p class="text-sm text-rose-700 font-medium">{{ error }}</p>
-      <button @click="fetchReviewQueue" class="mt-2 px-4 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-medium hover:bg-rose-700 transition-colors">{{ t('common.retry') }}</button>
+      <button type="button" @click="fetchReviewQueue" class="mt-2 min-h-11 px-4 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-medium hover:bg-rose-700 transition-colors">{{ t('common.retry') }}</button>
     </div>
 
     <!-- Card list -->
@@ -710,8 +710,14 @@ const handleCancelConfirm = () => {
       >
         <!-- Card header: click to expand/collapse -->
         <div
-          class="px-4 md:px-5 py-3 flex items-center justify-between cursor-pointer liquid-glass-inset border-b border-white/10"
+          class="px-4 md:px-5 py-3 flex min-h-11 items-center justify-between cursor-pointer liquid-glass-inset border-b border-white/10"
           @click="toggleExpand(wf.thread_id)"
+          role="button"
+          tabindex="0"
+          :aria-expanded="expandedThreadId === wf.thread_id"
+          :aria-controls="`review-panel-${wf.thread_id}`"
+          @keydown.enter.prevent="toggleExpand(wf.thread_id)"
+          @keydown.space.prevent="toggleExpand(wf.thread_id)"
         >
           <div class="flex items-center gap-2 min-w-0 flex-1">
             <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
@@ -730,7 +736,7 @@ const handleCancelConfirm = () => {
         </div>
 
         <!-- Collapsed: workflow body summary (clickable to expand) -->
-        <div v-if="expandedThreadId !== wf.thread_id" class="relative min-h-[40px] cursor-pointer" @click="toggleExpand(wf.thread_id)">
+        <div v-if="expandedThreadId !== wf.thread_id" class="relative min-h-[40px]">
           <WorkflowCardBody
             v-if="workflowDetails.has(wf.thread_id)"
             :detail="workflowDetails.get(wf.thread_id)"
@@ -742,7 +748,7 @@ const handleCancelConfirm = () => {
         </div>
 
         <!-- Expanded: full review panel -->
-        <div v-else class="border-t border-white/5">
+        <div v-else :id="`review-panel-${wf.thread_id}`" class="border-t border-white/5">
           <!-- Review content loading -->
           <div v-if="reviewStore.isQueueItemLoading(wf.thread_id) && !reviewStore.pendingReviews.has(wf.thread_id)" class="px-4 py-4 space-y-2">
             <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse" />

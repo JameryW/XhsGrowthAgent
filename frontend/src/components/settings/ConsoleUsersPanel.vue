@@ -6,8 +6,9 @@ import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import ConfirmModal from '@/components/ConfirmModal.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const store = useConsoleUsersStore()
 const authStore = useAuthStore()
 const toast = useToastStore()
@@ -19,6 +20,8 @@ const isCreating = ref(false)
 const editingPasswordFor = ref<string | null>(null)
 const newPasswordValue = ref('')
 const isChangingPwd = ref(false)
+const showDeleteModal = ref(false)
+const deleteTarget = ref<{ id: string; username: string } | null>(null)
 
 onMounted(async () => {
   await store.fetchUsers()
@@ -44,11 +47,19 @@ async function createUser() {
   }
 }
 
-async function deleteUser(userId: string, username: string) {
-  if (!confirm(t('settings.consoleUsers.confirmDelete', { name: username }))) return
+function requestDeleteUser(userId: string, username: string) {
+  deleteTarget.value = { id: userId, username }
+  showDeleteModal.value = true
+}
+
+async function confirmDeleteUser() {
+  if (!deleteTarget.value) return
+  const { id: userId, username } = deleteTarget.value
   try {
     await store.removeUser(userId)
     toast.success(t('settings.consoleUsers.toastDeleted', { name: username }))
+    showDeleteModal.value = false
+    deleteTarget.value = null
   } catch (e: any) {
     toast.error(e.message)
   }
@@ -84,7 +95,7 @@ async function submitChangePassword() {
 
 function formatDate(iso: string | null): string {
   if (!iso) return t('settings.consoleUsers.never')
-  return new Date(iso).toLocaleString('zh-CN', {
+  return new Date(iso).toLocaleString(locale.value || undefined, {
     year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
   })
 }
@@ -165,27 +176,38 @@ function formatDate(iso: string | null): string {
           <NeonButton variant="cyan" size="sm" :loading="isChangingPwd" @click="submitChangePassword">
             <AppIcon name="Check" size="xs" variant="white" />
           </NeonButton>
-          <button @click="cancelChangePassword"
-            class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+          <button type="button" @click="cancelChangePassword"
+            class="min-h-11 min-w-11 p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
           >
             <AppIcon name="X" size="xs" variant="pink" />
           </button>
         </template>
         <template v-else>
-          <button @click="startChangePassword(user.id)"
-            class="text-xs text-teal-600 hover:text-teal-700 px-2 py-1 rounded hover:bg-teal-50 transition-colors"
+          <button type="button" @click="startChangePassword(user.id)"
+            class="min-h-11 text-xs text-teal-600 hover:text-teal-700 px-2 py-1 rounded hover:bg-teal-50 transition-colors"
           >
             {{ t('settings.consoleUsers.changePassword') }}
           </button>
           <button
+            type="button"
             v-if="user.id !== authStore.user?.id"
-            @click="deleteUser(user.id, user.username)"
-            class="text-xs text-rose-400 hover:text-rose-500 px-1 py-1 rounded hover:bg-rose-50 transition-colors"
+            @click="requestDeleteUser(user.id, user.username)"
+            class="min-h-11 min-w-11 text-xs text-rose-400 hover:text-rose-500 px-1 py-1 rounded hover:bg-rose-50 transition-colors"
+            :aria-label="t('settings.delete')"
           >
             <AppIcon name="Trash2" size="xs" variant="pink" />
           </button>
         </template>
       </div>
     </div>
+
+    <ConfirmModal
+      :is-open="showDeleteModal"
+      :title="t('settings.delete')"
+      :message="deleteTarget ? t('settings.consoleUsers.confirmDelete', { name: deleteTarget.username }) : ''"
+      variant="danger"
+      @confirm="confirmDeleteUser"
+      @cancel="showDeleteModal = false; deleteTarget = null"
+    />
   </div>
 </template>
