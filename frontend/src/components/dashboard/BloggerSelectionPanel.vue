@@ -73,7 +73,7 @@ async function handleSkip() {
       {{ error }}
     </div>
 
-    <div v-if="candidates.length === 0" class="p-3 rounded-lg bg-slate-50 text-slate-400 text-sm text-center">
+    <div v-if="candidates.length === 0" class="p-3 rounded-lg bg-slate-50 text-slate-400 text-sm text-center dark:bg-slate-800/70 dark:text-slate-400">
       {{ t('blogger.noCandidates') }}
     </div>
 
@@ -81,7 +81,7 @@ async function handleSkip() {
       <div
         v-for="candidate in candidates"
         :key="candidate.user_id"
-        class="p-3 rounded-lg bg-white border border-slate-200 hover:border-violet-300 hover:shadow-sm transition-all"
+        class="p-3 rounded-lg bg-white border border-slate-200 hover:border-violet-300 hover:shadow-sm transition-all dark:bg-slate-900/85 dark:border-slate-700/55 dark:hover:border-violet-400/40"
       >
         <div class="flex items-start gap-3">
           <!-- Avatar -->

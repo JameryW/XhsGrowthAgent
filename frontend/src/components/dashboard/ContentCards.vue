@@ -149,7 +149,7 @@ async function handleTriggerAnalytics() {
 <template>
   <!-- Empty state -->
   <div v-if="isIdle" class="text-center py-12" role="status">
-    <div class="w-16 h-16 mx-auto rounded-full bg-slate-100 flex items-center justify-center mb-4">
+    <div class="w-16 h-16 mx-auto rounded-full bg-slate-100 flex items-center justify-center mb-4 dark:bg-slate-800">
       <AppIcon name="Rocket" size="lg" variant="cyan" />
     </div>
     <p class="text-slate-500 text-lg mb-2">{{ t('dashboard.header.idle') }}</p>
@@ -158,7 +158,7 @@ async function handleTriggerAnalytics() {
 
   <!-- Loading state with skeleton -->
   <div v-else-if="!hasAnyContent" class="grid grid-cols-1 lg:grid-cols-3 gap-4" role="status">
-    <div v-for="i in 3" :key="i" class="rounded-xl p-3 md:p-5 bg-white/98 border border-slate-200/50">
+    <div v-for="i in 3" :key="i" class="rounded-xl p-3 md:p-5 bg-white/98 border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-slate-200 animate-pulse" />
         <div class="flex-1 space-y-2">
@@ -178,7 +178,7 @@ async function handleTriggerAnalytics() {
   <TransitionGroup v-else name="phase-card" tag="div" class="space-y-4">
 
     <!-- ═══ BRIEF MODE: Brief Content ═══ -->
-    <div v-if="hasBriefContent && isBriefMode" class="rounded-xl p-3 md:p-5 bg-white/98 border border-pink-100/50">
+    <div v-if="hasBriefContent && isBriefMode" class="rounded-xl p-3 md:p-5 bg-white/98 border border-pink-100/50 dark:bg-slate-900/90 dark:border-rose-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-400 to-rose-400 flex items-center justify-center">
           <AppIcon name="FileText" size="md" variant="white" />
@@ -225,7 +225,7 @@ async function handleTriggerAnalytics() {
     </div>
 
     <!-- ═══ SCOUTING: Trend Data ═══ -->
-    <div v-if="hasTrendData && showForPhase('scouting')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-pink-100/50">
+    <div v-if="hasTrendData && showForPhase('scouting')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-pink-100/50 dark:bg-slate-900/90 dark:border-rose-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-400 to-rose-400 flex items-center justify-center">
           <AppIcon name="Search" size="md" variant="white" />
@@ -280,7 +280,7 @@ async function handleTriggerAnalytics() {
     </div>
 
     <!-- ═══ PLANNING: Ripple Progress (shown while simulating, before content_plan arrives) ═══ -->
-    <div v-if="isStrategyRunning && !hasContentPlan" class="rounded-xl p-3 md:p-5 bg-white/98 border border-cyan-100/50">
+    <div v-if="isStrategyRunning && !hasContentPlan" class="rounded-xl p-3 md:p-5 bg-white/98 border border-cyan-100/50 dark:bg-slate-900/90 dark:border-cyan-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-teal-400 flex items-center justify-center">
           <AppIcon name="ClipboardList" size="md" variant="white" />
@@ -301,7 +301,7 @@ async function handleTriggerAnalytics() {
     </div>
 
     <!-- ═══ PLANNING: Content Plan + Ripple ═══ -->
-    <div v-if="hasContentPlan && showForPhase('planning')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-cyan-100/50">
+    <div v-if="hasContentPlan && showForPhase('planning')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-cyan-100/50 dark:bg-slate-900/90 dark:border-cyan-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-teal-400 flex items-center justify-center">
           <AppIcon name="ClipboardList" size="md" variant="white" />
@@ -364,7 +364,7 @@ async function handleTriggerAnalytics() {
     </div>
 
     <!-- ═══ COPYWRITING ═══ -->
-    <div v-if="hasCopyContent && showForPhase('creating')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-violet-100/50">
+    <div v-if="hasCopyContent && showForPhase('creating')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-violet-100/50 dark:bg-slate-900/90 dark:border-violet-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-purple-400 flex items-center justify-center">
           <AppIcon name="Pencil" size="md" variant="white" />
@@ -471,7 +471,7 @@ async function handleTriggerAnalytics() {
     </div>
 
     <!-- ═══ SHOOTING PLAN ═══ -->
-    <div v-if="hasShootingPlan && showForPhase('creating')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-amber-100/50">
+    <div v-if="hasShootingPlan && showForPhase('creating')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-amber-100/50 dark:bg-slate-900/90 dark:border-amber-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-rose-400 flex items-center justify-center">
           <AppIcon name="Camera" size="md" variant="white" />
@@ -561,7 +561,7 @@ async function handleTriggerAnalytics() {
     </div>
 
     <!-- ═══ PUBLISHING: Publish Result ═══ -->
-    <div v-if="hasPublishResult && showForPhase('publishing')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-emerald-100/50">
+    <div v-if="hasPublishResult && showForPhase('publishing')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-emerald-100/50 dark:bg-slate-900/90 dark:border-emerald-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-400 flex items-center justify-center">
           <AppIcon name="Upload" size="md" variant="white" />
@@ -624,7 +624,7 @@ async function handleTriggerAnalytics() {
     </div>
 
     <!-- ═══ ANALYTICS summary (if no comparison but has analytics) ═══ -->
-    <div v-else-if="hasAnalytics && showForPhase('analyzing')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-teal-100/50">
+    <div v-else-if="hasAnalytics && showForPhase('analyzing')" class="rounded-xl p-3 md:p-5 bg-white/98 border border-teal-100/50 dark:bg-slate-900/90 dark:border-teal-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-400 to-emerald-400 flex items-center justify-center">
           <AppIcon name="BarChart3" size="md" variant="white" />
@@ -654,7 +654,7 @@ async function handleTriggerAnalytics() {
     </div>
 
     <!-- ═══ Ripple Retry Progress (shown at any phase when retry is running) ═══ -->
-    <div v-if="rippleProgress && !isStrategyRunning && !(hasContentPlan && (hasRipplePrediction || hasRipplePmf || rippleProgress))" class="rounded-xl p-3 md:p-5 bg-white/98 border border-violet-100/50">
+    <div v-if="rippleProgress && !isStrategyRunning && !(hasContentPlan && (hasRipplePrediction || hasRipplePmf || rippleProgress))" class="rounded-xl p-3 md:p-5 bg-white/98 border border-violet-100/50 dark:bg-slate-900/90 dark:border-violet-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-indigo-400 flex items-center justify-center">
           <AppIcon name="Zap" size="md" variant="white" />

@@ -350,7 +350,7 @@ const substepSectionLabels = computed<Record<string, string>>(() => ({
 
 <template>
   <div
-    class="bg-white/98 backdrop-blur-sm rounded-xl p-3 md:p-6 md:rounded-2xl border border-slate-200/50 shadow-sm"
+    class="bg-white/98 backdrop-blur-sm rounded-xl p-3 md:p-6 md:rounded-2xl border border-slate-200/50 shadow-sm dark:bg-slate-900/90 dark:border-slate-700/55 dark:shadow-slate-950/40"
     role="region"
     :aria-label="t('dashboard.timeline.title')"
     @keydown="handleKeyDown"

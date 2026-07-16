@@ -1083,9 +1083,11 @@ html.dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.48);
 }
 
-/* Existing utility surfaces used by showcase, replay, and workspace cards. */
+/* Existing utility surfaces used by showcase, replay, and workspace cards.
+ * Prefer full `background` so translucent white gradients cannot bleed through. */
 html.dark [class*="bg-white"] {
-  background-color: rgba(15, 23, 42, 0.72) !important;
+  background: rgba(15, 23, 42, 0.88) !important;
+  background-color: rgba(15, 23, 42, 0.88) !important;
 }
 
 /* Pastel/neutral surfaces. Use end/space/slash forms so bg-*-50 does not
@@ -1398,6 +1400,11 @@ html.dark .card-compact {
     inset 0 1px 0 rgba(148, 163, 184, 0.12) !important;
 }
 
+html.dark .card-success {
+  background: rgba(6, 78, 59, 0.32) !important;
+  border-color: rgba(52, 211, 153, 0.28) !important;
+}
+
 html.dark .card-warning {
   background: rgba(146, 64, 14, 0.28) !important;
   border-color: rgba(251, 191, 36, 0.28) !important;
@@ -1413,6 +1420,26 @@ html.dark .card-info {
   border-color: rgba(167, 139, 250, 0.28) !important;
 }
 
+/* Indigo pastel chips (workflow header status, etc.) */
+html.dark [class*="bg-indigo-50/"],
+html.dark [class*="bg-indigo-50 "],
+html.dark [class$="bg-indigo-50"],
+html.dark [class*="bg-indigo-100/"],
+html.dark [class*="bg-indigo-100 "],
+html.dark [class$="bg-indigo-100"] {
+  background-color: rgba(49, 46, 129, 0.38) !important;
+}
+
+html.dark [class*="border-indigo-100"],
+html.dark [class*="border-indigo-200"] {
+  border-color: rgba(129, 140, 248, 0.36) !important;
+}
+
+html.dark [class*="text-indigo-700"],
+html.dark [class*="text-indigo-600"] {
+  color: #a5b4fc !important;
+}
+
 /* Focus ring offset must not flash light slate in dark mode. */
 html.dark {
   --tw-ring-offset-color: #0b1120;
@@ -1426,8 +1453,9 @@ html.dark .gradient-border-animate {
 /* Metric / content cards rely on white panels; keep elevation readable. */
 html.dark .metric-card-surface,
 html.dark .content-card-surface {
-  background-color: rgba(15, 23, 42, 0.78) !important;
-  border-color: rgba(100, 116, 139, 0.45) !important;
+  background: rgba(15, 23, 42, 0.9) !important;
+  background-color: rgba(15, 23, 42, 0.9) !important;
+  border-color: rgba(100, 116, 139, 0.5) !important;
 }
 
 html.dark .form-input,
@@ -1745,6 +1773,67 @@ html.dark body .showcase-empty-state {
 
 html.dark body .showcase-featured-unavailable {
   background: rgba(15, 23, 42, 0.45) !important;
+}
+
+/* Intro signal + growth-loop panels still used pure white glass gradients. */
+html.dark body .showcase-intro-signal {
+  background:
+    linear-gradient(135deg, rgba(30, 41, 59, 0.88), rgba(15, 23, 42, 0.72)),
+    rgba(15, 23, 42, 0.78) !important;
+  border-color: rgba(100, 116, 139, 0.42) !important;
+  box-shadow:
+    0 1px 2px rgba(2, 6, 23, 0.35),
+    0 12px 28px rgba(2, 6, 23, 0.22),
+    inset 0 1px 0 rgba(148, 163, 184, 0.1) !important;
+}
+
+html.dark body .showcase-intro-signal::before {
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.22), transparent) !important;
+}
+
+html.dark body .showcase-loop-section {
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.72), rgba(15, 118, 110, 0.12)),
+    rgba(15, 23, 42, 0.62) !important;
+  box-shadow:
+    0 1px 2px rgba(2, 6, 23, 0.3),
+    0 18px 42px rgba(2, 6, 23, 0.24),
+    inset 0 1px 0 rgba(148, 163, 184, 0.1) !important;
+}
+
+html.dark body .showcase-loop-section::before {
+  background:
+    radial-gradient(ellipse at center, rgba(30, 41, 59, 0.55), transparent 58%),
+    repeating-linear-gradient(0deg, transparent 0 30px, rgba(45, 212, 191, 0.04) 31px 32px) !important;
+}
+
+html.dark body .node-center-glass {
+  background:
+    linear-gradient(135deg, rgba(30, 41, 59, 0.86), rgba(15, 23, 42, 0.7)),
+    rgba(15, 23, 42, 0.78) !important;
+  border-color: rgba(100, 116, 139, 0.45) !important;
+  box-shadow:
+    0 1px 2px rgba(2, 6, 23, 0.35),
+    0 10px 28px rgba(2, 6, 23, 0.24),
+    inset 0 1px 0 rgba(148, 163, 184, 0.12) !important;
+}
+
+html.dark body .showcase-card-head {
+  background: linear-gradient(90deg, rgba(30, 41, 59, 0.55), rgba(15, 23, 42, 0.28)) !important;
+}
+
+html.dark body .showcase-card-body {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.35), transparent 42%) !important;
+}
+
+html.dark body .showcase-filter-toolbar {
+  background: rgba(15, 23, 42, 0.55) !important;
+}
+
+html.dark body .showcase-stats,
+html.dark body .showcase-stat-item {
+  background: rgba(15, 23, 42, 0.55) !important;
+  border-color: rgba(100, 116, 139, 0.4) !important;
 }
 
 html.dark body .showcase-workspace-shell {

@@ -4,7 +4,7 @@
 <template>
   <div class="relative space-y-5 md:space-y-5">
     <!-- Review status bar skeleton -->
-    <div class="rounded-2xl p-4 md:p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+    <div class="rounded-2xl p-4 md:p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm dark:bg-slate-900/90 dark:border-slate-700/55">
       <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
         <div class="w-14 h-14 rounded-xl bg-slate-200 animate-pulse" />
         <div class="flex-1 space-y-2">
@@ -18,7 +18,7 @@
     <!-- Content preview skeleton -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <!-- Copy content skeleton -->
-      <div class="rounded-xl p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm">
+      <div class="rounded-xl p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm dark:bg-slate-900/90 dark:border-slate-700/55">
         <div class="flex items-center gap-3 mb-4">
           <div class="w-10 h-10 rounded-xl bg-slate-200 animate-pulse" />
           <div class="flex-1 space-y-1">
@@ -42,7 +42,7 @@
       </div>
 
       <!-- Visual plan skeleton -->
-      <div class="rounded-xl p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm">
+      <div class="rounded-xl p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm dark:bg-slate-900/90 dark:border-slate-700/55">
         <div class="flex items-center gap-3 mb-4">
           <div class="w-10 h-10 rounded-xl bg-slate-200 animate-pulse" />
           <div class="flex-1 space-y-1">
@@ -67,7 +67,7 @@
     </div>
 
     <!-- Action buttons skeleton -->
-    <div class="rounded-2xl p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm shadow-sm">
+    <div class="rounded-2xl p-5 border border-slate-200/50 bg-white/98 backdrop-blur-sm shadow-sm dark:bg-slate-900/90 dark:border-slate-700/55">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-10 h-10 rounded-lg bg-slate-200 animate-pulse" />
         <div class="space-y-1">

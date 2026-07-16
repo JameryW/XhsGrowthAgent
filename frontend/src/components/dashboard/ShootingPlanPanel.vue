@@ -87,7 +87,7 @@ const exportPlan = () => {
 
 <template>
   <!-- ═══ BRIEF MODE: Copywriting from shooting plan ═══ -->
-  <div v-if="hasCopyInPlan" class="rounded-xl p-3 md:p-5 md:rounded-2xl bg-white border border-violet-100/50 shadow-sm">
+  <div v-if="hasCopyInPlan" class="rounded-xl p-3 md:p-5 md:rounded-2xl bg-white border border-violet-100/50 shadow-sm dark:bg-slate-900/90 dark:border-violet-500/25">
     <div class="flex items-center gap-3 mb-4">
       <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-purple-400 flex items-center justify-center shadow-sm">
         <AppIcon name="Pencil" size="md" variant="white" />
@@ -103,7 +103,7 @@ const exportPlan = () => {
       <h4 class="text-xs text-slate-400 uppercase tracking-wide mb-2">{{ t('shootingPlan.titleCandidates') }}</h4>
       <div class="space-y-1.5">
         <div v-for="(title, idx) in shootingPlan.title_candidates" :key="idx"
-          class="flex items-center gap-2 p-2 rounded-lg bg-white border border-slate-100 hover:border-slate-200 transition-colors">
+          class="flex items-center gap-2 p-2 rounded-lg bg-white border border-slate-100 hover:border-slate-200 transition-colors dark:bg-slate-900/80 dark:border-slate-700/50 dark:hover:border-slate-600">
           <span class="text-xs font-bold text-violet-500 w-5">{{ idx + 1 }}</span>
           <span class="text-sm text-slate-700">{{ title }}</span>
         </div>
@@ -137,7 +137,7 @@ const exportPlan = () => {
   </div>
 
   <!-- ═══ BRIEF MODE: Shooting plan (logistics) ═══ -->
-  <div v-if="hasShootingData" class="rounded-xl p-3 md:p-5 md:rounded-2xl bg-white border border-slate-200/50 shadow-sm">
+  <div v-if="hasShootingData" class="rounded-xl p-3 md:p-5 md:rounded-2xl bg-white border border-slate-200/50 shadow-sm dark:bg-slate-900/90 dark:border-slate-700/55">
     <div class="flex items-center justify-between mb-4">
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-400 flex items-center justify-center shadow-sm">

@@ -256,7 +256,7 @@ function rqgmDimLabel(dim: string): string {
 
 <template>
   <section
-    class="min-w-0 rounded-2xl border border-violet-200/70 bg-white/95 p-4 shadow-sm backdrop-blur-sm md:p-6"
+    class="min-w-0 rounded-2xl border border-violet-200/70 bg-white/95 p-4 shadow-sm backdrop-blur-sm md:p-6 dark:bg-slate-900/90 dark:border-violet-500/30"
     :aria-label="t('creatorNoteQuality.title')"
   >
     <div class="flex min-w-0 flex-col gap-2 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -345,7 +345,7 @@ function rqgmDimLabel(dim: string): string {
         </div>
 
         <div v-else-if="selectedNote" class="min-w-0 space-y-4">
-          <article class="min-w-0 rounded-xl border border-slate-100 bg-white p-4">
+          <article class="min-w-0 rounded-xl border border-slate-100 bg-white p-4 dark:bg-slate-900/80 dark:border-slate-700/50">
             <div class="flex min-w-0 flex-col gap-3 sm:flex-row">
               <img
                 v-if="selectedNote.cover_url"
@@ -385,7 +385,7 @@ function rqgmDimLabel(dim: string): string {
           </div>
 
           <div class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
-            <div class="min-w-0 rounded-xl border border-slate-100 bg-white p-3">
+            <div class="min-w-0 rounded-xl border border-slate-100 bg-white p-3 dark:bg-slate-900/80 dark:border-slate-700/50">
               <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('creatorNoteQuality.viewSources') }}</div>
               <div v-if="selectedNote.view_sources?.length" class="mt-2 space-y-1">
                 <div v-for="point in selectedNote.view_sources.slice(0, 5)" :key="pointLabel(point)" class="flex min-w-0 justify-between gap-2 text-[11px]">
@@ -395,7 +395,7 @@ function rqgmDimLabel(dim: string): string {
               </div>
               <p v-else class="mt-2 text-[11px] text-slate-400">{{ t('creatorNoteQuality.unavailable') }}</p>
             </div>
-            <div class="min-w-0 rounded-xl border border-slate-100 bg-white p-3">
+            <div class="min-w-0 rounded-xl border border-slate-100 bg-white p-3 dark:bg-slate-900/80 dark:border-slate-700/50">
               <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('creatorNoteQuality.audienceProfile') }}</div>
               <div v-if="selectedNote.audience_profile?.length" class="mt-2 flex flex-wrap gap-1">
                 <span v-for="point in selectedNote.audience_profile.slice(0, 8)" :key="pointLabel(point)" class="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
@@ -404,7 +404,7 @@ function rqgmDimLabel(dim: string): string {
               </div>
               <p v-else class="mt-2 text-[11px] text-slate-400">{{ t('creatorNoteQuality.unavailable') }}</p>
             </div>
-            <div class="min-w-0 rounded-xl border border-slate-100 bg-white p-3">
+            <div class="min-w-0 rounded-xl border border-slate-100 bg-white p-3 dark:bg-slate-900/80 dark:border-slate-700/50">
               <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('creatorNoteQuality.audienceTrend') }}</div>
               <div v-if="selectedNote.audience_trend?.length" class="mt-2 space-y-1">
                 <div v-for="point in selectedNote.audience_trend.slice(0, 5)" :key="pointLabel(point)" class="flex min-w-0 justify-between gap-2 text-[11px]">
