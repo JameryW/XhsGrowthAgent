@@ -996,7 +996,7 @@ git diff --check
 
 ### 17.8 本次实现验收证据
 
-以下命令已在 `feat/showcase-replay-ux-v2` 运行并通过：
+以下命令已在基线分支 `feat/showcase-replay-ux-v2` 运行并通过：
 
 - `python -m pytest -q`：1657 passed，2 个既有 warning。
 - `python -m mypy backend`：169 source files 无问题。
@@ -1005,6 +1005,16 @@ git diff --check
 - `npm -C frontend run type-check`、`npm -C frontend run build`：通过；仅保留既有 chunk/dynamic-import warning。
 - OpenAPI 已包含 `/api/public/showcase/cases`、详情、manifest、checkpoint detail、final summary 五个只读路由。
 - `tests/unit/api/test_public_showcase.py` 覆盖 allowlist 脱敏、关键步骤去重、private 排除、manifest 和详情安全投影。
+
+本次验收延伸 `feat/showcase-replay-acceptance` 已补齐并通过：
+
+- `python -m pytest -q`：1664 passed，3 个既有 warning；`python -m mypy backend`、`ruff check backend tests`、`ruff format --check` 和 `git diff --check` 通过。
+- `npm -C frontend run test:run`：42 files、540 tests passed；`npm -C frontend run type-check` 和 `npm -C frontend run build` 通过。
+- 增加认证治理接口：公开审批/精选/展示文案更新、撤销及 `approved_at/approved_by/redaction_version` 持久化；默认仍为 private。
+- 增加脱敏状态 fixture：成功、进行中、发布失败、部分产出、无 checkpoint、离线、下线；覆盖 PII、URL 和 CSS palette 白名单。
+- Manifest 增加 key/all 计数、offset/limit/has_more、ETag/Last-Modified；Replay 增加 30 秒详情缓存、stale guard、阶段 roving tabindex、深链分页和加载更多失败重试。
+- Showcase 回放入口改为可复制/新标签使用的真实链接，公开页改为直接引入 auth store，避免公共入口加载无关 store barrel。
+- 当前分支 OpenAPI 已包含上述五个只读路由及两个认证治理路由；公开案例仍为 0，未在无 owner 授权时发布真实案例。
 
 以下项目需要部署到目标环境后完成，不把本地自动化结果冒充线上证据：390/320–1440px 双主题截图矩阵、
 axe serious/critical、Lighthouse/Web Vitals、慢 4G/Save-Data、真实公共案例 owner 授权和灰度回滚演练。
@@ -1017,7 +1027,7 @@ axe serious/critical、Lighthouse/Web Vitals、慢 4G/Save-Data、真实公共�
 - [ ] 首批公开案例 owner、授权和下线流程已确认。
 - [ ] 公共 DTO allowlist 和禁止字段已评审。
 - [ ] 中文/英文 Hero、CTA、错误与状态文案已确认。
-- [ ] 成功/失败/部分/空/长内容 fixtures 已准备。
+- [x] 成功/失败/部分/空/长内容 fixtures 已准备。
 - [ ] 埋点接收端和基线仪表盘可用。
 - [ ] PR-1 至 PR-6 负责人和依赖顺序明确。
 

@@ -135,6 +135,22 @@ API_HOST=0.0.0.0
 API_PORT=8000
 ```
 
+## Public Showcase 发布治理
+
+公开案例默认保持 `private`。只有明确设置为 `public` 的工作流才会出现在
+`GET /api/public/showcase/cases`；`unlisted` 仅允许已知链接访问。生产环境应设置稳定的
+`XHS_PUBLIC_ID_SECRET`，不要在部署间变更，否则会使已分享的案例链接失效。
+
+可选配置：
+
+- `XHS_SHOWCASE_PUBLIC_IDS`：逗号分隔的 legacy allowlist，仅用于迁移已审核案例。
+- `XHS_PUBLIC_URL_HOSTS`：公开发布链接允许的 host，默认仅允许小红书官方域名。
+
+发布/撤销接口位于 `/api/public/admin/showcase/cases/{public_id}`，需要已认证的控制台用户：
+`PUT` 用于设置 `private`、`unlisted` 或 `public`、展示标题/摘要和精选排序，`DELETE` 用于
+撤销公开。服务端会记录批准/撤销操作者，并在返回前执行文本、URL、标识和颜色白名单脱敏。
+详细只读 DTO、manifest 分页和 checkpoint detail 以 `/openapi.json` 为准。
+
 ## Docker 部署
 
 ### docker-compose.yml

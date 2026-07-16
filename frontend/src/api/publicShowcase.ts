@@ -7,7 +7,12 @@ import type {
   PublicReplayStep,
 } from '@/types/publicShowcase'
 
-type RequestOptions = { suppressToast?: boolean }
+type RequestOptions = { suppressToast?: boolean; signal?: AbortSignal }
+
+export type PublicReplayManifestOptions = RequestOptions & {
+  limit?: number
+  offset?: number
+}
 
 export interface PublicCaseQuery {
   limit?: number
@@ -35,11 +40,16 @@ export async function getPublicCase(
 export async function getPublicReplayManifest(
   publicId: string,
   includeTechnical = false,
-  options?: RequestOptions,
+  options?: PublicReplayManifestOptions,
 ): Promise<PublicReplayManifestResponse> {
+  const { limit, offset, ...requestOptions } = options || {}
   return client.get(`/public/replays/${encodeURIComponent(publicId)}/manifest`, {
-    params: { include_technical: includeTechnical },
-    ...options,
+    params: {
+      include_technical: includeTechnical,
+      ...(limit === undefined ? {} : { limit }),
+      ...(offset === undefined ? {} : { offset }),
+    },
+    ...requestOptions,
   }) as unknown as PublicReplayManifestResponse
 }
 

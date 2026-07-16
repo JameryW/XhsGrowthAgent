@@ -26,12 +26,15 @@ function hasResult(): boolean {
 </script>
 
 <template>
-  <section class="public-result space-y-4" :class="compact ? 'public-result-compact' : ''" aria-label="workflow-output">
+  <section class="public-result space-y-4" :class="compact ? 'public-result-compact' : ''" :aria-label="t('replay.publicResultLabel')">
     <div v-if="!hasResult()" class="rounded-2xl border border-dashed border-slate-300/70 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
       {{ t('replay.publicNoResult') }}
     </div>
 
     <template v-else>
+      <div v-if="result.error_category" class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100" role="status">
+        {{ t(`replay.publicErrorCategory.${result.error_category}`) }}
+      </div>
       <div v-if="result.title || result.topic" class="space-y-1">
         <p v-if="result.topic" class="text-xs font-medium uppercase tracking-[0.12em] text-teal-600 dark:text-teal-300">{{ result.topic }}</p>
         <h2 v-if="result.title" class="text-xl font-bold leading-tight text-slate-900 dark:text-slate-50">{{ result.title }}</h2>

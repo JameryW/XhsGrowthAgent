@@ -31,6 +31,7 @@ export type InteractionEventName =
   | 'replay_back'
   | 'replay_primary_cta_click'
   | 'replay_load_error'
+  | 'replay_load_more_error'
 
 type InteractionValue = string | number | boolean
 type InteractionProperties = Record<string, InteractionValue | undefined>

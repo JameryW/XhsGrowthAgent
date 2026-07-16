@@ -26,6 +26,12 @@ class WorkflowRow:
     showcase_visibility: str = "private"
     public_id: str | None = None
     showcase_featured: bool = False
+    featured_rank: int | None = None
+    public_title: str | None = None
+    public_summary: str | None = None
+    approved_at: str | None = None
+    approved_by: str | None = None
+    redaction_version: str = "v1"
     dry_run: bool = False
     auto_publish: bool = False
     error: str | None = None
@@ -47,6 +53,12 @@ class WorkflowRow:
             "showcase_visibility": self.showcase_visibility,
             "public_id": self.public_id,
             "showcase_featured": self.showcase_featured,
+            "featured_rank": self.featured_rank,
+            "public_title": self.public_title,
+            "public_summary": self.public_summary,
+            "approved_at": self.approved_at,
+            "approved_by": self.approved_by,
+            "redaction_version": self.redaction_version,
             "dry_run": self.dry_run,
             "auto_publish": self.auto_publish,
             "error": self.error,
@@ -69,6 +81,12 @@ CREATE TABLE IF NOT EXISTS workflows (
     showcase_visibility TEXT NOT NULL DEFAULT 'private',
     public_id       TEXT UNIQUE,
     showcase_featured BOOLEAN NOT NULL DEFAULT FALSE,
+    featured_rank   INTEGER DEFAULT NULL,
+    public_title    TEXT DEFAULT NULL,
+    public_summary  TEXT DEFAULT NULL,
+    approved_at     TEXT DEFAULT NULL,
+    approved_by     TEXT DEFAULT NULL,
+    redaction_version TEXT NOT NULL DEFAULT 'v1',
     dry_run         BOOLEAN NOT NULL DEFAULT FALSE,
     auto_publish    BOOLEAN NOT NULL DEFAULT FALSE,
     error           TEXT DEFAULT NULL,
@@ -101,6 +119,15 @@ async def ensure_table() -> None:
         await conn.execute(
             "ALTER TABLE workflows ADD COLUMN IF NOT EXISTS showcase_featured "
             "BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+        await conn.execute("ALTER TABLE workflows ADD COLUMN IF NOT EXISTS featured_rank INTEGER")
+        await conn.execute("ALTER TABLE workflows ADD COLUMN IF NOT EXISTS public_title TEXT")
+        await conn.execute("ALTER TABLE workflows ADD COLUMN IF NOT EXISTS public_summary TEXT")
+        await conn.execute("ALTER TABLE workflows ADD COLUMN IF NOT EXISTS approved_at TEXT")
+        await conn.execute("ALTER TABLE workflows ADD COLUMN IF NOT EXISTS approved_by TEXT")
+        await conn.execute(
+            "ALTER TABLE workflows ADD COLUMN IF NOT EXISTS redaction_version "
+            "TEXT NOT NULL DEFAULT 'v1'"
         )
         await conn.execute(_CREATE_INDEX_SQL)
         await conn.execute(
@@ -277,6 +304,12 @@ def _row_from_dict(d: dict[str, Any]) -> WorkflowRow:
         showcase_visibility=d.get("showcase_visibility", "private"),
         public_id=d.get("public_id"),
         showcase_featured=bool(d.get("showcase_featured", False)),
+        featured_rank=d.get("featured_rank"),
+        public_title=d.get("public_title"),
+        public_summary=d.get("public_summary"),
+        approved_at=d.get("approved_at"),
+        approved_by=d.get("approved_by"),
+        redaction_version=d.get("redaction_version", "v1"),
         dry_run=d.get("dry_run", False),
         auto_publish=d.get("auto_publish", False),
         error=d.get("error"),
