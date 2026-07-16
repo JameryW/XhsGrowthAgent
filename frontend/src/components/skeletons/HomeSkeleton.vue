@@ -10,7 +10,7 @@
     </div>
 
     <!-- Main card skeleton -->
-    <div class="rounded-2xl p-10 max-w-lg w-full relative overflow-hidden bg-white/85 backdrop-blur-xl border border-white/50 shadow-xl">
+    <div class="rounded-2xl p-10 max-w-lg w-full relative overflow-hidden bg-white/85 backdrop-blur-xl border border-white/50 shadow-xl dark:bg-slate-900/90 dark:border-slate-700/50">
       <!-- Logo skeleton -->
       <div class="text-center mb-10">
         <div class="relative inline-block mb-6">

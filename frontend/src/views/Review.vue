@@ -1063,7 +1063,7 @@ const handleCancelConfirm = () => {
               </div>
 
               <!-- Action buttons -->
-              <div class="sticky bottom-0 z-10 -mx-1 flex flex-wrap gap-2 border-t border-slate-200/70 bg-white/90 px-1 py-3 pt-3 backdrop-blur-sm">
+              <div class="sticky bottom-0 z-10 -mx-1 flex flex-wrap gap-2 border-t border-slate-200/70 bg-white/90 px-1 py-3 pt-3 backdrop-blur-sm dark:bg-slate-950/90 dark:border-slate-700/60">
                 <NeonButton
                   variant="cyan"
                   size="sm"

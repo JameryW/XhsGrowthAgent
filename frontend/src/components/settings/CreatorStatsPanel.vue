@@ -326,7 +326,7 @@ function pointValue(point: CreatorAggregatePoint): string {
 
 <template>
   <div
-    class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-4"
+    class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-4 dark:bg-slate-900/90 dark:border-slate-700/55"
     :class="compact ? 'space-y-3' : ''"
   >
     <!-- Header -->
@@ -549,7 +549,7 @@ function pointValue(point: CreatorAggregatePoint): string {
       <!-- Audience enrichment is aggregate Creator Center data; an empty
            dimension means the signed endpoint was unavailable, not zero. -->
       <div v-if="audience" class="grid gap-2 lg:grid-cols-3">
-        <div class="rounded-lg border border-slate-100 bg-white p-3">
+        <div class="rounded-lg border border-slate-100 bg-white p-3 dark:bg-slate-900/80 dark:border-slate-700/50">
           <div class="flex items-center justify-between gap-2">
             <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
               {{ t('creatorStats.audience.sources') }}
@@ -565,7 +565,7 @@ function pointValue(point: CreatorAggregatePoint): string {
             </div>
           </div>
         </div>
-        <div class="rounded-lg border border-slate-100 bg-white p-3">
+        <div class="rounded-lg border border-slate-100 bg-white p-3 dark:bg-slate-900/80 dark:border-slate-700/50">
           <div class="flex items-center justify-between gap-2">
             <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
               {{ t('creatorStats.audience.periods') }}
@@ -581,7 +581,7 @@ function pointValue(point: CreatorAggregatePoint): string {
             </div>
           </div>
         </div>
-        <div class="rounded-lg border border-slate-100 bg-white p-3">
+        <div class="rounded-lg border border-slate-100 bg-white p-3 dark:bg-slate-900/80 dark:border-slate-700/50">
           <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
             {{ t('creatorStats.audience.profile') }}
           </div>
@@ -664,7 +664,7 @@ function pointValue(point: CreatorAggregatePoint): string {
         <li
           v-for="(s, i) in suggestions.slice(0, compact ? 3 : 6)"
           :key="`${s.category}-${i}`"
-          class="rounded-lg border border-slate-100 bg-white px-3 py-2"
+          class="rounded-lg border border-slate-100 bg-white px-3 py-2 dark:bg-slate-900/80 dark:border-slate-700/50"
         >
           <div class="flex items-center gap-1.5">
             <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{{ s.category }}</span>

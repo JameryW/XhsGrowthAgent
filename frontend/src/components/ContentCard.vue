@@ -98,7 +98,7 @@ const styles = {
     </div>
 
     <!-- Content -->
-    <div v-if="hasContent" :class="['bg-slate-50 rounded-lg p-4 border-l-2', styles[props.variant].accent]" role="status" aria-live="polite">
+    <div v-if="hasContent" :class="['bg-slate-50 rounded-lg p-4 border-l-2 dark:bg-slate-800/70', styles[props.variant].accent]" role="status" aria-live="polite">
       <div class="text-xs text-slate-600 space-y-2">
         <template v-for="(value, key) in props.content" :key="key">
           <!-- Simple values (string, number, boolean) -->
@@ -125,7 +125,7 @@ const styles = {
               <span class="text-slate-300 text-[11px]">({{ value.length }})</span>
             </div>
             <div class="ml-4 space-y-1">
-              <div v-for="(item, i) in value.slice(0, 5)" :key="i" class="bg-white rounded-md px-3 py-2 border border-slate-100">
+              <div v-for="(item, i) in value.slice(0, 5)" :key="i" class="bg-white rounded-md px-3 py-2 border border-slate-100 dark:bg-slate-900/80 dark:border-slate-700/50">
                 <div class="flex flex-wrap gap-x-3 gap-y-0.5">
                   <span v-for="(v, k) in item" :key="k" class="text-[11px]">
                     <span class="text-slate-400">{{ formatKey(String(k)) }}:</span>
@@ -155,7 +155,7 @@ const styles = {
     </div>
 
     <!-- Loading state -->
-    <div v-else class="bg-slate-50 rounded-lg p-4 border-l-2 border-slate-200" role="status" aria-live="polite" :aria-label="t('common.loadingState')">
+    <div v-else class="bg-slate-50 rounded-lg p-4 border-l-2 border-slate-200 dark:bg-slate-800/70 dark:border-slate-600" role="status" aria-live="polite" :aria-label="t('common.loadingState')">
       <div class="h-4 w-full rounded bg-slate-200 animate-pulse" />
     </div>
   </div>

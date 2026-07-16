@@ -233,7 +233,7 @@ function onQrConfirmed() {
     </div>
 
     <!-- Account list + creation -->
-    <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-3">
+    <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-3 dark:bg-slate-900/90 dark:border-slate-700/55">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">{{ t('settings.accounts') }}</h3>

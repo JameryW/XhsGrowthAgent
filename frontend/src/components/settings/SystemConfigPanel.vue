@@ -108,7 +108,7 @@ async function confirmDeleteKey() {
     </div>
 
     <div v-for="group in store.groups" :key="group.id"
-      class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-3"
+      class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-3 dark:bg-slate-900/90 dark:border-slate-700/55"
     >
       <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
         {{ t(groupLabels[group.id] || group.id) }}

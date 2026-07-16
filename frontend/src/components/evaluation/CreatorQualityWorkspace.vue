@@ -151,7 +151,7 @@ onMounted(() => {
       </button>
     </section>
 
-    <div class="flex flex-col gap-3 rounded-xl border border-violet-100 bg-violet-50/60 p-3 text-xs text-violet-800 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+    <div class="flex flex-col gap-3 rounded-xl border border-violet-100 bg-violet-50/60 p-3 text-xs text-violet-800 sm:flex-row sm:items-center sm:justify-between sm:p-4 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-200">
       <div class="flex min-w-0 items-start gap-2">
         <AppIcon name="HelpCircle" size="sm" variant="purple" class="mt-0.5 shrink-0" />
         <p class="leading-5">{{ t('creatorQuality.page.importHint') }}</p>

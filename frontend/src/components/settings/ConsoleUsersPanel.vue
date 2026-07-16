@@ -109,7 +109,7 @@ function formatDate(iso: string | null): string {
     </div>
 
     <!-- Create user -->
-    <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4">
+    <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 dark:bg-slate-900/90 dark:border-slate-700/55">
       <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
         {{ t('settings.consoleUsers.addUser') }}
       </h3>
@@ -134,7 +134,7 @@ function formatDate(iso: string | null): string {
     </div>
 
     <!-- User list -->
-    <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm">
+    <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm dark:bg-slate-900/90 dark:border-slate-700/55">
       <div class="px-4 py-3 border-b border-slate-100">
         <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
           {{ t('settings.consoleUsers.allUsers') }} ({{ store.users.length }})
