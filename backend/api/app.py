@@ -364,6 +364,20 @@ async def health() -> ApiResponse[Any]:
 # 托管前端静态文件（生产环境）
 frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
 
+
+@app.get("/favicon.svg", include_in_schema=False)
+async def serve_favicon() -> Response:
+    """Serve the browser favicon instead of falling through to the SPA shell."""
+    favicon_path = frontend_dist / "favicon.svg"
+    if not favicon_path.is_file():
+        return Response(status_code=404)
+    return FileResponse(
+        str(favicon_path),
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
 if frontend_dist.exists():
     assets_dir = frontend_dist / "assets"
 
