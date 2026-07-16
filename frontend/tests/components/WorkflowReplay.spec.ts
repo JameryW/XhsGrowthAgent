@@ -124,10 +124,12 @@ describe('WorkflowReplay public UX contract', () => {
     await flushPromises()
 
     const next = wrapper.findAll('button').find(button => button.text().includes('下一步'))
-    const selection = next!.trigger('click')
+    let selectionSettled = false
+    const selection = next!.trigger('click').then(() => { selectionSettled = true })
     await flushPromises()
 
     expect(wrapper.find('#step-detail-heading').text()).toContain('内容产出')
+    expect(selectionSettled).toBe(true)
     resolveRoute()
     await selection
   })
