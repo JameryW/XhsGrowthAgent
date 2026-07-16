@@ -147,6 +147,7 @@ async def summarize_events(days: int = 7, event_name: str | None = None) -> list
                     phase,
                     error_type,
                     view_mode,
+                    cached,
                     COUNT(*)::INTEGER AS event_count,
                     COUNT(duration_ms)::INTEGER AS measured_count,
                     percentile_cont(0.50) WITHIN GROUP (ORDER BY duration_ms)
@@ -156,7 +157,7 @@ async def summarize_events(days: int = 7, event_name: str | None = None) -> list
                 FROM public_ux_events
                 WHERE {" AND ".join(conditions)}
                 GROUP BY event_name, viewport, source, status, mode, phase,
-                         error_type, view_mode
+                         error_type, view_mode, cached
                 ORDER BY event_count DESC, event_name ASC
                 """,
             params,

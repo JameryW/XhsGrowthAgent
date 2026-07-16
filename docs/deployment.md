@@ -156,8 +156,9 @@ API_PORT=8000
 或原始错误。若目标环境已有 host adapter，可设置 `VITE_TELEMETRY_ENDPOINT` 覆盖接收地址；
 显式设为空值可关闭本地构建埋点。已认证控制台可通过
 `GET /api/public/admin/telemetry/summary?days=7` 获取按事件/设备/模式聚合的数量、p50/p75
-耗时，供 Settings → 公开页体验监控面板接入；该接口不返回原始事件。面板仅在认证后的
-Settings 页面显示，接口请求支持取消、周期切换和失败重试。
+耗时，并按 `cached` 布尔维度区分缓存命中与网络请求，供 Settings → 公开页体验监控面板接入；
+该接口不返回原始事件。面板仅在认证后的 Settings 页面显示，接口请求支持取消、周期切换和失败
+重试；缓存回选 p75 只使用 `cached=true` 的聚合行，没有样本时显示暂无数据而不是 0ms。
 
 发布前可运行公共页自动化验收（需要 Chromium 和前端的 `@axe-core/playwright` 依赖）：
 

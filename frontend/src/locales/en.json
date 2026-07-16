@@ -1804,7 +1804,15 @@
       "measured": "{count} events with timing",
       "firstResultP75": "First result p75",
       "cachedSelectP75": "Cached select p75",
-      "upperBound": "Maximum grouped value for the selected period",
+      "budget": "Target ≤ {value}",
+      "cachedBudget": "Cached hits only; target ≤ {value}",
+      "cached": "Cached hit",
+      "network": "Network request",
+      "status": {
+        "passing": "Passing",
+        "overBudget": "Over target",
+        "noData": "No data"
+      },
       "breakdown": "Event breakdown",
       "event": "Event",
       "dimensions": "Dimensions",
