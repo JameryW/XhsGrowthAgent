@@ -270,7 +270,7 @@ onUnmounted(() => {
         </button>
         <div class="flex items-center gap-2">
           <button v-if="!isAuthenticated" type="button" class="hidden min-h-11 rounded-xl px-3 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 sm:inline-flex" @click="router.push({ name: 'login', query: { redirect: '/' } })">{{ t('showcase.signIn') }}</button>
-          <button type="button" class="min-h-11 rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white shadow-lg shadow-rose-500/20 hover:bg-rose-600" @click="goCreate">{{ t('showcase.startCreating') }}</button>
+          <button type="button" class="min-h-11 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white shadow-lg shadow-rose-600/20 hover:bg-rose-700" @click="goCreate">{{ t('showcase.startCreating') }}</button>
           <ThemeToggle class="shrink-0" />
         </div>
       </div>
@@ -308,8 +308,8 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <section class="mt-10" aria-labelledby="featured-heading">
-        <div v-if="featuredCase" class="overflow-hidden rounded-3xl border border-rose-200/70 bg-white shadow-xl shadow-rose-900/5 dark:border-rose-400/20 dark:bg-slate-900">
+      <section v-if="featuredCase" class="mt-10" aria-labelledby="featured-heading">
+        <div class="overflow-hidden rounded-3xl border border-rose-200/70 bg-white shadow-xl shadow-rose-900/5 dark:border-rose-400/20 dark:bg-slate-900">
           <div class="grid lg:grid-cols-[.82fr_1.18fr]">
             <div class="bg-gradient-to-br from-rose-500 via-orange-400 to-amber-300 p-6 text-white md:p-8">
               <p class="text-xs font-semibold uppercase tracking-[0.14em] text-white/75">{{ t('showcase.featuredLabel') }}</p>
@@ -361,7 +361,7 @@ onUnmounted(() => {
           <AppIcon name="Layers" size="lg" variant="cyan" aria-hidden="true" />
           <h3 class="mt-3 text-base font-semibold">{{ t('showcase.noPublicCases') }}</h3>
           <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400">{{ t('showcase.noPublicCasesDesc') }}</p>
-          <button type="button" class="mt-5 min-h-11 rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white" @click="goCreate">{{ t('showcase.startCreating') }}</button>
+          <button type="button" class="mt-5 min-h-11 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700" @click="goCreate">{{ t('showcase.startCreating') }}</button>
         </div>
         <div v-else-if="loaded && !filteredCases.length" class="mt-5 rounded-2xl border border-dashed border-slate-300 bg-white/70 p-8 text-center dark:border-slate-700 dark:bg-slate-900/70">
           <AppIcon name="SearchX" size="lg" variant="cyan" aria-hidden="true" />
