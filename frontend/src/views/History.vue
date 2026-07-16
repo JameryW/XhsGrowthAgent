@@ -10,7 +10,7 @@ import { listWorkflows, deleteWorkflow } from '@/api/workflow'
 import type { WorkflowListItem } from '@/types/workflow'
 import { useWorkflowStore, useToastStore } from '@/stores'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const workflowStore = useWorkflowStore()
 const toastStore = useToastStore()
@@ -76,7 +76,7 @@ const phaseLabel = (phase: string) => {
 function formatDate(iso: string) {
   if (!iso) return '—'
   const d = new Date(iso)
-  return d.toLocaleString('zh-CN', {
+  return d.toLocaleString(locale.value, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -186,11 +186,11 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
 
     <!-- Workflow List -->
     <div v-else class="space-y-2 md:space-y-3">
-      <div
+      <article
         v-for="wf in workflows"
         :key="wf.thread_id"
-        class="rounded-xl p-3 md:p-4 liquid-glass liquid-glass-hover hover:border-slate-300 transition-all duration-200 cursor-pointer"
-        @click="viewWorkflow(wf.thread_id)"
+        class="rounded-xl p-3 md:p-4 liquid-glass liquid-glass-hover hover:border-slate-300 transition-all duration-200"
+        :aria-labelledby="`history-workflow-${wf.thread_id}`"
       >
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-2">
           <div class="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
@@ -200,7 +200,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
             <!-- Info -->
             <div class="flex-1 min-w-0 overflow-hidden">
               <div class="flex items-center gap-1.5 md:gap-2 flex-wrap min-w-0">
-                <span class="text-xs md:text-sm font-medium text-slate-700 truncate">{{ wf.label || wf.thread_id.slice(-8) }}</span>
+                <span :id="`history-workflow-${wf.thread_id}`" class="text-xs md:text-sm font-medium text-slate-700 truncate">{{ wf.label || wf.thread_id.slice(-8) }}</span>
                 <span class="text-[10px] md:text-xs font-mono text-slate-400 hidden sm:inline truncate">{{ wf.thread_id }}</span>
                 <span v-if="wf.dry_run" class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100">
                   {{ t('history.dryRun') }}
@@ -236,34 +236,37 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
 
             <!-- Action buttons -->
             <div class="flex items-center gap-1.5 md:gap-2">
-              <NeonButton
-                v-if="wf.status === 'running'"
-                variant="cyan"
-                size="sm"
-                @click.stop="resumeWorkflow(wf.thread_id)"
+                <NeonButton
+                  v-if="wf.status === 'running'"
+                  variant="cyan"
+                  size="sm"
+                  class="min-h-11"
+                  @click.stop="resumeWorkflow(wf.thread_id)"
               >
                 {{ t('history.resume') }}
               </NeonButton>
               <NeonButton
                 v-else
-                variant="ghost"
-                size="sm"
-                @click.stop="viewWorkflow(wf.thread_id)"
+                  variant="ghost"
+                  size="sm"
+                  class="min-h-11"
+                  @click.stop="viewWorkflow(wf.thread_id)"
               >
                 {{ t('history.view') }}
               </NeonButton>
               <NeonButton
-                v-if="wf.status !== 'running'"
-                variant="cyan"
-                size="sm"
-                @click.stop="replayWorkflow(wf.thread_id)"
+                  v-if="wf.status !== 'running'"
+                  variant="cyan"
+                  size="sm"
+                  class="min-h-11"
+                  @click.stop="replayWorkflow(wf.thread_id)"
               >
                 {{ t('history.replay') }}
               </NeonButton>
               <button
                 v-if="wf.status !== 'running'"
                 @click.stop="requestDelete(wf.thread_id)"
-                class="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                class="min-h-11 min-w-11 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-colors"
                 :aria-label="t('history.delete')"
               >
                 <AppIcon name="Trash2" size="sm" variant="pink" />
@@ -276,7 +279,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
         <div v-if="wf.error" class="mt-1.5 md:mt-2 p-1.5 md:p-2 rounded liquid-glass-rose text-[10px] md:text-xs text-rose-600">
           {{ wf.error }}
         </div>
-      </div>
+      </article>
     </div>
 
     <!-- Delete Confirmation Modal -->

@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import AnimatedCounter from '@/components/AnimatedCounter.vue'
 import WorkflowCardBody from '@/components/WorkflowCardBody.vue'
 import { listWorkflows, getWorkflowStatus } from '@/api/workflow'
 import type { WorkflowListItem, WorkflowPhase, WorkflowStatus, WorkflowStateResponse } from '@/types/workflow'
+import { trackInteraction } from '@/utils/interactionTelemetry'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
+const route = useRoute()
 
 const workflows = ref<WorkflowListItem[]>([])
 const workflowDetails = ref<Map<string, WorkflowStateResponse>>(new Map())
@@ -19,6 +21,10 @@ const listLoaded = ref(false)
 const error = ref<string | null>(null)
 const statsReady = ref(false)
 const ambientReady = ref(false)
+const restoringContext = ref(true)
+const focusRecordsAfterRestore = ref(false)
+const shouldFocusRecords = ref(false)
+const restoreScrollY = ref<number | null>(null)
 
 // Filter & sort state
 type StatusFilter = 'all' | 'running' | 'completed' | 'needs_attention'
@@ -107,9 +113,6 @@ const filteredWorkflows = computed(() => {
   return result
 })
 
-const visibleWorkflows = computed(() => filteredWorkflows.value.slice(0, visibleCount.value))
-const hasMore = computed(() => visibleCount.value < filteredWorkflows.value.length)
-
 function loadMore() {
   visibleCount.value += ITEMS_PER_PAGE
 }
@@ -121,16 +124,100 @@ function clearFilters() {
   visibleCount.value = ITEMS_PER_PAGE
 }
 
+const validStatusFilters: StatusFilter[] = ['all', 'running', 'completed', 'needs_attention']
+const validModeFilters: ModeFilter[] = ['all', 'trend', 'brief']
+const validSortKeys: SortKey[] = ['updated', 'progress', 'created']
+
+function queryValue(value: unknown): string | undefined {
+  if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : undefined
+  return typeof value === 'string' ? value : undefined
+}
+
+function restoreQueryState() {
+  const status = queryValue(route.query.status)
+  const mode = queryValue(route.query.mode)
+  const sort = queryValue(route.query.sort)
+  statusFilter.value = validStatusFilters.includes(status as StatusFilter) ? status as StatusFilter : 'all'
+  modeFilter.value = validModeFilters.includes(mode as ModeFilter) ? mode as ModeFilter : 'all'
+  sortKey.value = validSortKeys.includes(sort as SortKey) ? sort as SortKey : 'updated'
+}
+
+function syncQueryState() {
+  if (restoringContext.value) return
+  void router.replace({
+    query: {
+      status: statusFilter.value,
+      mode: modeFilter.value,
+      sort: sortKey.value,
+    },
+  })
+}
+
+function saveShowcaseContext() {
+  try {
+    sessionStorage.setItem('showcase:return-context', JSON.stringify({
+      status: statusFilter.value,
+      mode: modeFilter.value,
+      sort: sortKey.value,
+      visibleCount: visibleCount.value,
+      scrollY: window.scrollY,
+      focusRecords: true,
+    }))
+  } catch {
+    // Storage can be unavailable in private browsing; URL state still survives.
+  }
+}
+
+function restoreShowcaseContext() {
+  restoreQueryState()
+  try {
+    const raw = sessionStorage.getItem('showcase:return-context')
+    if (raw) {
+      const context = JSON.parse(raw) as Partial<{
+        status: StatusFilter
+        mode: ModeFilter
+        sort: SortKey
+        visibleCount: number
+        scrollY: number
+        focusRecords: boolean
+      }>
+      if (context.status && validStatusFilters.includes(context.status)) statusFilter.value = context.status
+      if (context.mode && validModeFilters.includes(context.mode)) modeFilter.value = context.mode
+      if (context.sort && validSortKeys.includes(context.sort)) sortKey.value = context.sort
+      if (Number.isFinite(context.visibleCount) && (context.visibleCount as number) > 0) visibleCount.value = context.visibleCount as number
+      focusRecordsAfterRestore.value = context.focusRecords === true
+      shouldFocusRecords.value = context.focusRecords === true
+      sessionStorage.removeItem('showcase:return-context')
+      if (Number.isFinite(context.scrollY)) restoreScrollY.value = context.scrollY as number
+    }
+  } catch {
+    // Ignore malformed or unavailable session state and use query defaults.
+  }
+  restoringContext.value = false
+  syncQueryState()
+}
+
 // Fetch list first (fast), then lazy-load details for visible cards
 async function fetchWorkflows() {
   error.value = null
   failedDetailIds.value = new Set()
   try {
-    const result = await listWorkflows({ limit: 50 })
+    const result = await listWorkflows({ limit: 50 }, { suppressToast: true })
     workflows.value = result.workflows
     listLoaded.value = true
     await nextTick()
     statsReady.value = true
+    if (restoreScrollY.value !== null) {
+      const scrollY = restoreScrollY.value
+      restoreScrollY.value = null
+      window.setTimeout(() => {
+        window.scrollTo({ top: scrollY, behavior: 'auto' })
+        if (shouldFocusRecords.value) {
+          document.getElementById('showcase-records')?.focus({ preventScroll: true })
+          shouldFocusRecords.value = false
+        }
+      }, 0)
+    }
   } catch (e: any) {
     error.value = e.message
   }
@@ -141,6 +228,14 @@ function queueDetail(threadId: string) {
   pendingDetailIds.add(threadId)
   loadingDetailIds.value.add(threadId)
   scheduleDetailPump()
+}
+
+function retryDetail(threadId: string) {
+  const workflow = workflows.value.find(item => item.thread_id === threadId)
+  trackInteraction('showcase_detail_retry', { status: workflow?.status, mode: workflow?.workflow_mode })
+  failedDetailIds.value.delete(threadId)
+  workflowDetails.value.delete(threadId)
+  queueDetail(threadId)
 }
 
 function scheduleDetailPump() {
@@ -157,7 +252,7 @@ function pumpDetailQueue() {
     pendingDetailIds.delete(threadId)
     activeDetailLoads += 1
 
-    getWorkflowStatus(threadId)
+    getWorkflowStatus(threadId, { suppressToast: true })
       .then((state) => {
         workflowDetails.value.set(threadId, state)
       })
@@ -202,7 +297,21 @@ function loadVisibleDetails() {
   }
 }
 
-onMounted(fetchWorkflows)
+onMounted(() => {
+  trackInteraction('showcase_view', { restored: route.query.status !== undefined })
+  restoreShowcaseContext()
+  void fetchWorkflows()
+})
+
+watch([statusFilter, modeFilter, sortKey], () => {
+  if (focusRecordsAfterRestore.value) {
+    focusRecordsAfterRestore.value = false
+  } else {
+    visibleCount.value = ITEMS_PER_PAGE
+  }
+  syncQueryState()
+  trackInteraction('showcase_filter_change', { status: statusFilter.value, mode: modeFilter.value })
+})
 
 function statusLabel(status: WorkflowStatus): string {
   const map: Record<string, string> = {
@@ -221,6 +330,16 @@ function statusLabel(status: WorkflowStatus): string {
     idle: t('showcase.status.idle'),
   }
   return map[status] || status
+}
+
+function statusDescription(status: WorkflowStatus): string {
+  const map: Record<string, string> = {
+    error: t('showcase.statusDescription.error'),
+    stale: t('showcase.statusDescription.stale'),
+    paused: t('showcase.statusDescription.paused'),
+    cancelled: t('showcase.statusDescription.cancelled'),
+  }
+  return map[status] || statusLabel(status)
 }
 
 function phaseLabel(phase: WorkflowPhase): string {
@@ -259,11 +378,31 @@ function pipelineProgress(phase: WorkflowPhase): number {
 function formatDate(iso: string) {
   if (!iso) return '—'
   const d = new Date(iso)
-  return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleString(locale.value || undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-function goDashboard() { router.push({ path: '/login', query: { redirect: '/start' } }) }
-function goReplay(threadId: string) { router.push({ name: 'replay', params: { threadId } }) }
+function goDashboard() {
+  trackInteraction('showcase_primary_cta_click', { source: 'showcase' })
+  router.push({ path: '/login', query: { redirect: '/start' } })
+}
+
+function openReplay(threadId: string) {
+  const workflow = workflows.value.find(item => item.thread_id === threadId)
+  trackInteraction('showcase_workflow_open', { status: workflow?.status, mode: workflow?.workflow_mode })
+  saveShowcaseContext()
+}
+function replayRoute(threadId: string) {
+  return {
+    name: 'replay' as const,
+    params: { threadId },
+    query: {
+      from: 'showcase',
+      status: statusFilter.value,
+      mode: modeFilter.value,
+      sort: sortKey.value,
+    },
+  }
+}
 
 const isEmpty = computed(() => listLoaded.value && workflows.value.length === 0)
 
@@ -324,11 +463,22 @@ const featuredDetail = computed<WorkflowStateResponse | undefined>(() => {
   return workflowDetails.value.get(featuredWorkflow.value.thread_id)
 })
 
-const featuredDetailState = computed<'loading' | 'ready' | 'unavailable'>(() => {
+const featuredDetailState = computed<'loading' | 'ready' | 'error' | 'unavailable'>(() => {
   const threadId = featuredWorkflow.value?.thread_id
   if (!threadId || featuredDetail.value) return featuredDetail.value ? 'ready' : 'unavailable'
-  return failedDetailIds.value.has(threadId) ? 'unavailable' : 'loading'
+  return failedDetailIds.value.has(threadId) ? 'error' : 'loading'
 })
+
+// The featured workflow is a focal presentation of the same result set. Keep it
+// out of the secondary grid so a recommended case is never shown twice.
+const recordWorkflows = computed(() => {
+  const featuredId = featuredWorkflow.value?.thread_id
+  return featuredId
+    ? filteredWorkflows.value.filter(wf => wf.thread_id !== featuredId)
+    : filteredWorkflows.value
+})
+const visibleWorkflows = computed(() => recordWorkflows.value.slice(0, visibleCount.value))
+const hasMore = computed(() => visibleCount.value < recordWorkflows.value.length)
 
 // Watch visible list and load details on change
 watch([visibleWorkflows, featuredWorkflow], () => {
@@ -366,60 +516,22 @@ function nodeGlowClass(step: { color: string }): string {
   return map[step.color] || ''
 }
 
-// Ellipse parameters for desktop loop layout
-const LOOP_HEIGHT = 300
-const ellipseRxPct = 36
-const ellipseRyPct = 28
-const nodeSize = 82
-const containerW = ref(1200)
-const loopContainer = ref<HTMLElement | null>(null)
-const stepsVisible = ref(false)
-
-function stepStyle(i: number, containerWidth: number): Record<string, string> {
-  const rx = containerWidth * ellipseRxPct / 100
-  const ry = LOOP_HEIGHT * ellipseRyPct / 100
-  const angleDeg = i * 60 - 90
-  const angleRad = angleDeg * Math.PI / 180
-  const x = rx * Math.cos(angleRad)
-  const y = ry * Math.sin(angleRad)
-  return {
-    transitionDelay: `${i * 100}ms`,
-    left: `calc(50% + ${x}px - ${nodeSize / 2}px)`,
-    top: `calc(50% + ${y}px - ${nodeSize / 2}px)`,
-  }
-}
-
-const updateLoopWidth = () => {
-  if (loopContainer.value) containerW.value = loopContainer.value.clientWidth
-}
-
 onMounted(() => {
-  updateLoopWidth()
-  window.addEventListener('resize', updateLoopWidth)
-  window.setTimeout(() => { stepsVisible.value = true }, 200)
-  ambientTimer = window.setTimeout(() => {
-    ambientTimer = null
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  if (reducedMotion) {
     ambientReady.value = true
-  }, 260)
+  } else {
+    ambientTimer = window.setTimeout(() => {
+      ambientTimer = null
+      ambientReady.value = true
+    }, 260)
+  }
 })
 
 onUnmounted(() => {
-  window.removeEventListener('resize', updateLoopWidth)
   if (detailPumpTimer !== null) window.clearTimeout(detailPumpTimer)
   if (deferredDetailTimer !== null) window.clearTimeout(deferredDetailTimer)
   if (ambientTimer !== null) window.clearTimeout(ambientTimer)
-})
-
-const svgCx = computed(() => containerW.value / 2)
-const svgCy = LOOP_HEIGHT / 2
-const svgRx = computed(() => containerW.value * ellipseRxPct / 100)
-const svgRy = computed(() => LOOP_HEIGHT * ellipseRyPct / 100)
-
-const loopMotionPath = computed(() => {
-  const cx = svgCx.value
-  const topY = svgCy - svgRy.value
-  const bottomY = svgCy + svgRy.value
-  return `M${cx},${topY} A${svgRx.value},${svgRy.value} 0 1,1 ${cx},${bottomY} A${svgRx.value},${svgRy.value} 0 1,1 ${cx},${topY}`
 })
 
 function cardStatusColor(wf: WorkflowListItem): string {
@@ -455,6 +567,7 @@ const visibleCards = computed(() =>
     wf,
     detail: workflowDetails.value.get(wf.thread_id),
     isLoading: loadingDetailIds.value.has(wf.thread_id),
+    detailFailed: failedDetailIds.value.has(wf.thread_id),
     statusClass: cardStatusColor(wf),
     dotClass: cardDotClass(wf),
     badgeClass: cardBadgeClass(wf),
@@ -464,6 +577,7 @@ const visibleCards = computed(() =>
     updatedLabel: formatDate(wf.updated_at || wf.created_at),
     phaseText: phaseLabel(wf.phase),
     statusText: statusLabel(wf.status),
+    statusDescription: statusDescription(wf.status),
   }))
 )
 
@@ -701,147 +815,6 @@ const evolutionTreeData = computed(() => {
           <p class="max-w-md text-xs leading-5 text-slate-400 sm:text-right">{{ t('showcase.liveWorkspaceDesc') }}</p>
         </div>
 
-        <!-- ══════════════════════════════════════════════════════════════
-             Layer 1: Closed-loop pipeline — elliptical loop animation
-             ══════════════════════════════════════════════════════════════ -->
-        <section class="showcase-loop-section mb-4 w-full min-w-0 rounded-3xl border border-white/75 bg-white/35 p-3 shadow-sm backdrop-blur-sm md:mb-6 md:p-5" aria-labelledby="showcase-loop-title">
-          <div class="mb-2 flex items-end justify-between gap-3 px-1 md:mb-0 md:px-3">
-            <div>
-              <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{{ t('showcase.howItWorks') }}</p>
-              <h2 id="showcase-loop-title" class="mt-1 text-base font-bold text-slate-700 md:text-lg">{{ t('showcase.closedLoop') }}</h2>
-            </div>
-            <span class="hidden max-w-[220px] text-right text-[11px] leading-4 text-slate-400 sm:block">{{ t('showcase.closedLoopDesc') }}</span>
-          </div>
-          <!-- Desktop: elliptical loop with SVG path + circular nodes -->
-          <div ref="loopContainer" class="relative hidden md:block" :style="{ height: `${LOOP_HEIGHT}px` }">
-            <svg class="pointer-events-none absolute inset-0 h-full w-full" :viewBox="`0 0 ${containerW} ${LOOP_HEIGHT}`" preserveAspectRatio="xMidYMid meet" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <linearGradient id="loop-grad" x1="0" :y1="svgCy" :x2="containerW" :y2="svgCy" gradientUnits="userSpaceOnUse">
-                  <stop stop-color="#f43f5e" />
-                  <stop offset="0.2" stop-color="#f59e0b" />
-                  <stop offset="0.4" stop-color="#10b981" />
-                  <stop offset="0.6" stop-color="#0ea5e9" />
-                  <stop offset="0.8" stop-color="#8b5cf6" />
-                  <stop offset="1" stop-color="#f43f5e" />
-                </linearGradient>
-                <linearGradient id="comet-grad" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" stop-color="#fff" stop-opacity="1" />
-                  <stop offset="18%" stop-color="#f43f5e" stop-opacity="0.82" />
-                  <stop offset="55%" stop-color="#8b5cf6" stop-opacity="0.24" />
-                  <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0" />
-                </linearGradient>
-                <filter id="comet-glow" x="-160%" y="-160%" width="420%" height="420%">
-                  <feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="b" />
-                  <feMerge>
-                    <feMergeNode in="b" />
-                    <feMergeNode in="SourceGraphic" />
-                  </feMerge>
-                </filter>
-                <filter id="arc-glow" x="-16%" y="-16%" width="132%" height="132%">
-                  <feGaussianBlur in="SourceGraphic" stdDeviation="1.6" result="b" />
-                  <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-                </filter>
-              </defs>
-
-              <!-- Layer 1: soft glow path -->
-              <ellipse :cx="svgCx" :cy="svgCy" :rx="svgRx" :ry="svgRy" stroke="url(#loop-grad)" stroke-width="10" fill="none" opacity="0.055" filter="url(#arc-glow)">
-                <animate attributeName="opacity" values="0.035;0.07;0.035" dur="7s" repeatCount="indefinite" />
-              </ellipse>
-
-              <!-- Layer 2: fine dashed flow -->
-              <ellipse :cx="svgCx" :cy="svgCy" :rx="svgRx" :ry="svgRy" stroke="url(#loop-grad)" stroke-width="1.5" stroke-dasharray="16 8" stroke-linecap="round" fill="none" opacity="0.22">
-                <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="6.5s" repeatCount="indefinite" />
-              </ellipse>
-
-              <!-- Comet -->
-              <line x1="-56" y1="0" x2="0" y2="0" stroke="url(#comet-grad)" stroke-width="2.5" stroke-linecap="round" opacity="0.5" filter="url(#comet-glow)">
-                <animateMotion dur="10s" repeatCount="indefinite" rotate="auto"><mpath href="#loop-motion-path" /></animateMotion>
-              </line>
-              <circle r="3.5" fill="#fff" opacity="0.8" filter="url(#comet-glow)">
-                <animateMotion dur="10s" repeatCount="indefinite"><mpath href="#loop-motion-path" /></animateMotion>
-              </circle>
-
-              <path id="loop-motion-path" :d="loopMotionPath" fill="none" stroke="none" />
-            </svg>
-
-            <!-- Center label: glass highlight, not big card -->
-            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div class="text-center px-5 py-3 rounded-2xl node-center-glass">
-                <div class="text-sm font-bold text-slate-500">&#x27F3; {{ t('showcase.closedLoop') }}</div>
-                <div class="text-[10px] text-slate-400 mt-0.5">{{ t('showcase.closedLoopDesc') }}</div>
-              </div>
-            </div>
-
-            <!-- Loop nodes: with hover glow, breathing ring, completed sweep -->
-            <div
-              v-for="(step, i) in howItWorksSteps"
-              :key="step.key"
-              class="absolute transition-all duration-700 ease-out group"
-              :class="[stepsVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-50', nodeGlowClass(step)]"
-              :style="stepStyle(i, containerW)"
-            >
-              <!-- Hover: outer glow -->
-              <div class="absolute inset-[-8px] rounded-full opacity-0 group-hover:opacity-40 transition-opacity duration-300 blur-sm" :class="step.color" />
-              <!-- Node circle -->
-              <div class="relative z-10 flex h-[82px] w-[82px] items-center justify-center rounded-full border-2 bg-white/90 shadow-md transition-all duration-300 group-hover:scale-105 group-hover:shadow-lg" :class="[step.borderColor, step.iconColor]">
-                <span class="node-sweep" :style="{ animationDelay: `${i * 0.9}s` }" />
-                <AppIcon :name="step.icon" size="lg" :variant="step.iconVariant" />
-              </div>
-              <div class="text-center mt-2">
-                <div class="text-xs font-semibold text-slate-700 whitespace-nowrap">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Mobile: 2x3 grid with compact circular nodes + glow -->
-          <div class="md:hidden">
-            <div class="showcase-mobile-grid grid w-full min-w-0 grid-cols-[repeat(3,minmax(0,1fr))] gap-2 mb-3 sm:gap-3">
-              <div
-                v-for="(step, i) in howItWorksSteps"
-                :key="step.key"
-                class="group flex min-w-0 flex-col items-center text-center transition-all duration-500 ease-out"
-                :class="stepsVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-80'"
-                :style="{ transitionDelay: `${i * 80}ms` }"
-              >
-                <!-- Mobile node glow -->
-                <div class="relative">
-                  <div class="absolute inset-[-6px] rounded-full opacity-10 group-hover:opacity-28 transition-opacity duration-300 blur-sm" :class="step.color" />
-                  <div class="w-[48px] h-[48px] rounded-full flex items-center justify-center bg-white/90 border-2 shadow-sm group-hover:shadow-md transition-all duration-300 group-hover:scale-105" :class="[step.borderColor, step.iconColor]">
-                    <span class="node-sweep node-sweep-sm" :style="{ animationDelay: `${i * 0.9}s` }" />
-                    <AppIcon :name="step.icon" size="md" :variant="step.iconVariant" />
-                  </div>
-                </div>
-                <div class="mt-1 min-w-0 max-w-full break-words text-[11px] font-bold text-slate-600">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
-                <div class="mt-0.5 min-w-0 max-w-full break-words text-[9px] leading-3 text-slate-400 line-clamp-2">{{ t(`showcase.steps.${step.key}`) }}</div>
-              </div>
-            </div>
-            <!-- Mobile connecting lines: lightweight animated SVG -->
-            <div class="flex items-center justify-center gap-2 py-1">
-              <svg width="160" height="18" viewBox="0 0 160 18" fill="none" class="mobile-loop-svg">
-                <defs>
-                  <linearGradient id="mobile-loop-grad" x1="0" y1="9" x2="160" y2="9" gradientUnits="userSpaceOnUse">
-                    <stop stop-color="#f43f5e" />
-                    <stop offset="0.3" stop-color="#14b8a6" />
-                    <stop offset="0.6" stop-color="#8b5cf6" />
-                    <stop offset="1" stop-color="#f43f5e" />
-                  </linearGradient>
-                </defs>
-                <path d="M6 9h148m0 0l-4-4m4 4l-4 4" stroke="url(#mobile-loop-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.5" />
-                <!-- Animated traveling dot -->
-                <circle r="2.5" fill="#14b8a6" opacity="0.7">
-                  <animateMotion dur="5.5s" repeatCount="indefinite" path="M6 9 L154 9" />
-                  <animate attributeName="opacity" values="0.5;0.85;0.5" dur="2.4s" repeatCount="indefinite" />
-                </circle>
-                <circle r="2" fill="#8b5cf6" opacity="0.5">
-                  <animateMotion dur="5.5s" repeatCount="indefinite" begin="2.75s" path="M6 9 L154 9" />
-                  <animate attributeName="opacity" values="0.3;0.65;0.3" dur="2.4s" repeatCount="indefinite" />
-                </circle>
-              </svg>
-              <span class="text-[10px] text-slate-400 font-medium">&#x27F3; {{ t('showcase.closedLoop') }}</span>
-            </div>
-          </div>
-        </section>
-
         <!-- Empty data is a valid public state: keep the product explanation visible,
              then give the user one clear next action. -->
         <div v-if="isEmpty" class="showcase-empty-state liquid-glass-inset mb-5 rounded-2xl px-5 py-8 text-center md:mb-6 md:py-10">
@@ -891,48 +864,59 @@ const evolutionTreeData = computed(() => {
         <!-- ══════════════════════════════════════════════════════════════
              Layer 3: Featured workflow
              ══════════════════════════════════════════════════════════════ -->
-        <div v-if="!isEmpty && featuredWorkflow" role="button" tabindex="0" :aria-label="t('showcase.viewDetail')" @keydown.enter="goReplay(featuredWorkflow.thread_id)" class="showcase-featured mb-5 cursor-pointer overflow-hidden rounded-2xl transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/70 md:mb-6"
-             :class="[featuredMode === 'needs_attention' ? 'liquid-glass-rose liquid-glass-hover' : 'liquid-glass-emerald liquid-glass-hover']"
-             @click="goReplay(featuredWorkflow.thread_id)">
+        <article v-if="!isEmpty && featuredWorkflow" class="showcase-featured mb-5 overflow-hidden rounded-2xl transition-shadow hover:shadow-md md:mb-6"
+             :class="[featuredMode === 'needs_attention' ? 'liquid-glass-rose liquid-glass-hover' : 'liquid-glass-emerald liquid-glass-hover']">
+          <RouterLink :to="replayRoute(featuredWorkflow.thread_id)" @click="openReplay(featuredWorkflow.thread_id)" class="showcase-featured-link block rounded-t-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/70">
           <div class="px-4 md:px-5 py-3 flex items-center justify-between border-b border-white/10 liquid-glass-inset">
             <div class="flex items-center gap-2">
               <span v-if="featuredMode === 'needs_attention'" class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
               <span v-else class="w-2.5 h-2.5 rounded-full bg-emerald-500" />
               <span class="text-sm font-semibold text-slate-800">{{ featuredMode === 'needs_attention' ? t('showcase.featuredAttention') : t('showcase.featured') }}</span>
               <span v-if="featuredMode === 'needs_attention'" class="text-xs px-2 py-0.5 rounded-full bg-rose-100 text-rose-600">⚠</span>
-              <span v-else class="text-xs px-2 py-0.5 rounded-full bg-rose-50 text-rose-600">{{ t('showcase.featuredLive') }}</span>
+              <span v-else class="text-xs px-2 py-0.5 rounded-full bg-rose-50 text-rose-600">{{ t('showcase.featuredReason') }}</span>
             </div>
             <div class="flex items-center gap-3">
               <span class="text-xs text-slate-400">{{ formatDate(featuredWorkflow.updated_at || featuredWorkflow.created_at) }}</span>
               <AppIcon name="ArrowRight" size="sm" variant="cyan" class="text-slate-400" />
             </div>
           </div>
+          </RouterLink>
           <WorkflowCardBody v-if="featuredDetailState === 'ready' && featuredDetail" :detail="featuredDetail" />
           <div v-else-if="featuredDetailState === 'loading'" class="showcase-featured-loading space-y-3 px-4 py-5 md:px-5" aria-live="polite">
             <div class="h-3 w-1/4 animate-pulse rounded bg-white/70" />
             <div class="h-4 w-3/4 animate-pulse rounded bg-white/70" />
             <div class="h-3 w-1/2 animate-pulse rounded bg-white/60" />
           </div>
+          <div v-else-if="featuredDetailState === 'error'" class="showcase-featured-unavailable flex items-center justify-between gap-3 px-4 py-4 md:px-5" aria-live="polite">
+            <div class="min-w-0">
+              <p class="text-xs font-medium text-slate-600">{{ phaseLabel(featuredWorkflow.phase) }}</p>
+              <p class="mt-1 text-[10px] text-slate-400">{{ t('showcase.detailUnavailable') }}</p>
+            </div>
+            <div class="flex shrink-0 items-center gap-2">
+              <button type="button" class="min-h-11 rounded-lg border border-rose-200 bg-white/70 px-3 text-[10px] font-semibold text-rose-600 hover:bg-white" @click.stop="retryDetail(featuredWorkflow.thread_id)">{{ t('common.retry') }}</button>
+              <RouterLink :to="replayRoute(featuredWorkflow.thread_id)" @click="openReplay(featuredWorkflow.thread_id)" class="inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-[10px] font-semibold text-slate-500 hover:text-slate-700">{{ t('showcase.viewDetail') }} <AppIcon name="ArrowRight" size="xs" variant="cyan" aria-hidden="true" /></RouterLink>
+            </div>
+          </div>
           <div v-else class="showcase-featured-unavailable flex items-center justify-between gap-3 px-4 py-4 md:px-5" aria-live="polite">
             <div class="min-w-0">
               <p class="text-xs font-medium text-slate-600">{{ phaseLabel(featuredWorkflow.phase) }}</p>
               <p class="mt-1 text-[10px] text-slate-400">{{ t('showcase.detailUnavailable') }}</p>
             </div>
-            <AppIcon name="ArrowRight" size="sm" variant="cyan" aria-hidden="true" />
+            <RouterLink :to="replayRoute(featuredWorkflow.thread_id)" @click="openReplay(featuredWorkflow.thread_id)" class="inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-[10px] font-semibold text-slate-500 hover:text-slate-700">{{ t('showcase.viewDetail') }} <AppIcon name="ArrowRight" size="xs" variant="cyan" aria-hidden="true" /></RouterLink>
           </div>
-        </div>
+        </article>
 
         <!-- ══════════════════════════════════════════════════════════════
              Layer 4: Filter bar
              ══════════════════════════════════════════════════════════════ -->
-        <section v-if="!isEmpty" id="showcase-records" class="showcase-workflows-section" aria-labelledby="showcase-workflows-title">
+        <section v-if="!isEmpty" id="showcase-records" tabindex="-1" class="showcase-workflows-section" aria-labelledby="showcase-workflows-title">
           <div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{{ t('showcase.liveWorkspace') }}</p>
               <h2 id="showcase-workflows-title" class="mt-1 text-lg font-bold tracking-tight text-slate-800">{{ t('showcase.workflowRecords') }}</h2>
             </div>
             <div class="flex flex-col items-stretch gap-2 sm:items-end">
-              <span class="showcase-record-count text-[10px] font-medium text-slate-400">{{ filteredWorkflows.length }} {{ t('showcase.workflowCount') }}</span>
+              <span class="showcase-record-count text-[10px] font-medium text-slate-400">{{ recordWorkflows.length }} {{ t('showcase.workflowCount') }}</span>
               <div class="showcase-filter-toolbar flex flex-wrap items-center gap-2">
           <div class="flex items-center gap-1 rounded-xl border border-white/80 bg-white/65 p-1 shadow-sm">
             <button
@@ -978,25 +962,21 @@ const evolutionTreeData = computed(() => {
              Layer 5: Card grid
              ══════════════════════════════════════════════════════════════ -->
         <div class="showcase-card-grid grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div
+          <article
             v-for="(card, idx) in visibleCards"
             :key="card.wf.thread_id"
-            v-memo="[card.wf.thread_id, card.wf.status, card.wf.progress_percent, card.detail, card.isLoading]"
-            role="button"
-            tabindex="0"
-            :aria-label="`${card.title} · ${card.statusText}`"
-            @keydown.enter="goReplay(card.wf.thread_id)"
-            class="showcase-card cursor-pointer overflow-hidden rounded-2xl transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/70"
+            v-memo="[card.wf.thread_id, card.wf.status, card.wf.progress_percent, card.detail, card.isLoading, card.detailFailed]"
+            :aria-label="`${card.title} · ${card.statusText} · ${card.statusDescription}`"
+            class="showcase-card overflow-hidden rounded-2xl transition-shadow hover:shadow-md"
             :class="[card.statusClass]"
             :style="{ animationDelay: `${(idx % ITEMS_PER_PAGE) * 60}ms` }"
-            @click="goReplay(card.wf.thread_id)"
           >
             <!-- Card header with integrated progress -->
             <div class="showcase-card-head px-4 md:px-5 py-2.5 flex items-center justify-between border-b border-white/10 liquid-glass-inset">
               <div class="flex items-center gap-1.5 min-w-0 flex-1">
                 <span class="w-2 h-2 rounded-full shrink-0" :class="card.dotClass" />
                 <span class="text-xs font-semibold text-slate-800 truncate">{{ card.title }}</span>
-                <span class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0" :class="card.badgeClass">{{ card.statusText }}</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded-full shrink-0" :class="card.badgeClass" :title="card.statusDescription">{{ card.statusText }}</span>
                 <span v-if="card.wf.workflow_mode" class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 shrink-0">{{ card.wf.workflow_mode }}</span>
                 <!-- Inline progress bar + percent -->
                 <div class="flex items-center gap-1.5 ml-1">
@@ -1008,6 +988,9 @@ const evolutionTreeData = computed(() => {
               </div>
               <span class="text-[10px] text-slate-400 shrink-0 ml-2">{{ card.updatedLabel }}</span>
             </div>
+            <div v-if="card.wf.status === 'stale' || card.wf.status === 'paused' || card.wf.status === 'cancelled'" class="px-4 pt-2">
+              <p class="text-[10px] leading-4 text-slate-500">{{ card.statusDescription }}</p>
+            </div>
             <!-- Card body -->
             <div class="showcase-card-body relative min-h-[60px]">
               <WorkflowCardBody v-if="card.detail" :detail="card.detail" />
@@ -1015,6 +998,13 @@ const evolutionTreeData = computed(() => {
                 <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse" />
                 <div class="h-3 w-1/2 rounded bg-slate-100 animate-pulse" />
                 <div class="h-3 w-2/3 rounded bg-slate-100 animate-pulse" />
+              </div>
+              <div v-else-if="card.detailFailed" class="flex min-h-[60px] items-center justify-between gap-3 px-4 py-3" aria-live="polite">
+                <div class="min-w-0">
+                  <p class="text-xs font-medium text-slate-600">{{ card.phaseText }}</p>
+                  <p class="mt-1 text-[10px] text-slate-400">{{ t('showcase.detailUnavailable') }}</p>
+                </div>
+                <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 bg-white/70 px-3 text-[10px] font-semibold text-rose-600 hover:bg-white" @click.stop="retryDetail(card.wf.thread_id)">{{ t('common.retry') }}</button>
               </div>
               <div v-else class="px-4 py-3 text-xs text-slate-400">{{ card.phaseText }}</div>
             </div>
@@ -1029,25 +1019,26 @@ const evolutionTreeData = computed(() => {
                   <div class="w-3 h-1 rounded-full transition-colors" :class="i < card.pipelineProgress ? (card.wf.status === 'completed' ? 'bg-emerald-400' : 'bg-teal-400') : 'bg-slate-200'" />
                 </template>
               </div>
-              <span class="text-[10px] text-rose-500 font-medium ml-auto flex items-center gap-0.5 hover:text-rose-600">
+              <RouterLink :to="replayRoute(card.wf.thread_id)" @click="openReplay(card.wf.thread_id)" class="ml-auto inline-flex min-h-11 items-center gap-0.5 rounded-lg px-2 text-[10px] font-medium text-rose-500 hover:text-rose-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/70">
                 {{ t('showcase.viewDetail') }}
                 <AppIcon name="ArrowRight" size="xs" variant="pink" />
-              </span>
+              </RouterLink>
             </div>
-          </div>
+          </article>
         </div>
 
         <!-- Load more -->
         <div v-if="hasMore" class="mt-6 text-center">
           <button type="button" @click="loadMore" class="min-h-11 rounded-xl px-6 liquid-glass text-xs font-medium text-slate-600 transition-shadow hover:shadow-md">
-            {{ t('showcase.loadMore') }} ({{ filteredWorkflows.length - visibleCount }})
+            {{ t('showcase.loadMore') }} ({{ recordWorkflows.length - visibleCount }})
           </button>
         </div>
 
         <!-- No results after filter -->
         <div v-if="listLoaded && filteredWorkflows.length === 0 && workflows.length > 0" class="rounded-2xl border border-slate-200/60 bg-white/60 py-12 text-center">
           <AppIcon name="SearchX" size="lg" variant="cyan" aria-hidden="true" />
-          <p class="mt-3 text-sm text-slate-400">{{ t('showcase.noResults') }}</p>
+            <p class="mt-3 text-sm text-slate-400">{{ t('showcase.noResults') }}</p>
+            <p class="mt-1 text-[11px] text-slate-400">{{ t('showcase.noResultsWithFilters', { status: statusFilter === 'all' ? t('showcase.filter.all') : statusFilter === 'running' ? t('showcase.stats.running') : statusFilter === 'completed' ? t('showcase.stats.completed') : t('showcase.stats.needsAttention'), mode: modeFilter === 'all' ? t('showcase.filter.allMode') : t(`showcase.filter.${modeFilter}`) }) }}</p>
           <button type="button" @click="clearFilters" class="mt-4 min-h-11 rounded-xl border border-slate-200 bg-white/70 px-4 text-xs font-medium text-slate-600 transition hover:bg-white">
             {{ t('showcase.resetFilters') }}
           </button>
@@ -1057,6 +1048,27 @@ const evolutionTreeData = computed(() => {
         <div class="mt-10 border-t border-slate-200/60 py-4 text-center text-xs text-slate-400">
           {{ t('showcase.footer') }}
         </div>
+        </section>
+        <!-- Decorative workflow explanation follows the real records. It is
+             intentionally compact so the evidence remains the primary path. -->
+        <section class="showcase-loop-section mb-4 w-full min-w-0 rounded-3xl border border-white/75 bg-white/35 p-3 shadow-sm backdrop-blur-sm md:mb-6 md:p-5" aria-labelledby="showcase-loop-title">
+          <div class="mb-3 flex items-end justify-between gap-3 px-1 md:px-3">
+            <div>
+              <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{{ t('showcase.howItWorks') }}</p>
+              <h2 id="showcase-loop-title" class="mt-1 text-base font-bold text-slate-700 md:text-lg">{{ t('showcase.closedLoop') }}</h2>
+            </div>
+            <span class="hidden max-w-[220px] text-right text-[11px] leading-4 text-slate-400 sm:block">{{ t('showcase.closedLoopDesc') }}</span>
+          </div>
+          <div class="grid grid-cols-3 gap-2 md:grid-cols-6 md:gap-3">
+            <div v-for="(step, i) in howItWorksSteps" :key="`compact-${step.key}`" class="flex min-w-0 flex-col items-center rounded-2xl border border-white/70 bg-white/50 px-2 py-3 text-center" :class="nodeGlowClass(step)">
+              <div class="relative flex h-11 w-11 items-center justify-center rounded-full border-2 bg-white/90 shadow-sm" :class="[step.borderColor, step.iconColor]">
+                <span class="node-sweep node-sweep-sm" :style="{ animationDelay: `${i * 0.9}s` }" />
+                <AppIcon :name="step.icon" size="md" :variant="step.iconVariant" />
+              </div>
+              <div class="mt-2 min-w-0 max-w-full break-words text-[11px] font-bold text-slate-600">{{ phaseLabel(step.key as WorkflowPhase) }}</div>
+              <div class="mt-0.5 min-w-0 max-w-full break-words text-[9px] leading-3 text-slate-400 line-clamp-2">{{ t(`showcase.steps.${step.key}`) }}</div>
+            </div>
+          </div>
         </section>
         </div>
       </template>
@@ -1318,6 +1330,8 @@ const evolutionTreeData = computed(() => {
   position: relative;
   isolation: isolate;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
   padding: 0.7rem;
   border-radius: 1.75rem;
   box-shadow:
@@ -1344,6 +1358,16 @@ const evolutionTreeData = computed(() => {
   position: relative;
   z-index: 1;
 }
+
+/* Evidence leads; the closed-loop visual explains the system after the
+   workflow list. Keeping this order in one place also makes the mobile
+   reading sequence match the desktop sequence. */
+.showcase-live-heading { order: 1; }
+.showcase-empty-state,
+.showcase-stats { order: 2; }
+.showcase-featured { order: 3; }
+.showcase-workflows-section { order: 4; }
+.showcase-loop-section { order: 5; }
 
 .showcase-live-heading {
   position: relative;
@@ -1650,6 +1674,11 @@ const evolutionTreeData = computed(() => {
 /* Featured card — subtle animated gradient border to mark the focal card */
 .showcase-featured {
   position: relative;
+}
+
+.showcase-featured-link {
+  position: relative;
+  z-index: 2;
 }
 
 .showcase-featured::before {

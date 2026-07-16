@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed } from 'vue'
+import { onMounted, onUnmounted, computed, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
@@ -11,15 +11,17 @@ import AgentResultVisual from '@/components/replay/AgentResultVisual.vue'
 import AgentResultPublish from '@/components/replay/AgentResultPublish.vue'
 import AgentResultAnalytics from '@/components/replay/AgentResultAnalytics.vue'
 import AgentResultRipple from '@/components/replay/AgentResultRipple.vue'
-import { useWorkflowStore, useAuthStore } from '@/stores'
+import { useWorkflowStore, useAuthStore, useToastStore } from '@/stores'
 import { getWorkflowStatus } from '@/api/workflow'
 import { useWorkflowReplay } from '@/composables/useWorkflowReplay'
+import { trackInteraction } from '@/utils/interactionTelemetry'
 
 const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const workflowStore = useWorkflowStore()
 const authStore = useAuthStore()
+const toastStore = useToastStore()
 
 const threadId = route.params.threadId as string
 const isAuthenticated = computed(() => authStore.isAuthenticated)
@@ -27,21 +29,35 @@ const isAuthenticated = computed(() => authStore.isAuthenticated)
 const {
   activeCheckpointId,
   replayCheckpoints,
-  effectiveState,
+  liveWorkflowState,
   workflowLabel,
   workflowMode,
   pipelineSteps,
-  phaseAgentMap,
   selectedCheckpoint,
   selectedAgent,
   resolvedShootingPlan,
   getNodeStatus,
-  handleNodeClick,
+  handleNodeClick: selectReplayPhase,
   isNodeSelected,
   hasDataForAgent,
   hasMeaningfulData,
   formatDate,
+  workflowStatus,
+  workflowProgress,
+  hasCheckpointForPhase,
 } = useWorkflowReplay()
+
+const isWorkflowLoading = ref(true)
+const workflowLoadError = ref<string | null>(null)
+const threadNotFound = ref(false)
+const isRetrying = ref(false)
+const mobileCheckpointOpen = ref(false)
+const checkpointLoadError = computed(() => workflowStore.replayCheckpointsError)
+const isCheckpointLoading = computed(() => workflowStore.isLoadingCheckpoints)
+const requestedCheckpointId = computed(() => {
+  const value = route.query.checkpoint
+  return typeof value === 'string' && value ? value : undefined
+})
 
 const phaseLabels = computed<Record<string, string>>(() => ({
   scouting: t('showcase.phase.scouting'),
@@ -63,27 +79,38 @@ const phaseIcons = computed<Record<string, string>>(() => ({
   analyzing: 'BarChart3',
 }))
 
-const agentLabels: Record<string, string> = {
-  trend_scout: t('showcase.phase.scouting'),
-  content_strategist: t('showcase.phase.planning'),
-  copywriter: t('showcase.phase.creating'),
-  draft_gate: t('dashboard.timeline.short.draft'),
-  brief_analyzer: t('dashboard.timeline.short.briefAnalyze'),
-  brief_gate: t('dashboard.timeline.short.briefGate'),
-  viral_matcher: t('dashboard.timeline.short.viralMatch'),
-  blogger_scout: t('dashboard.timeline.short.bloggerScout'),
-  blogger_gate: t('dashboard.timeline.short.bloggerGate'),
-  shooting_planner: t('dashboard.timeline.short.shootingPlan'),
-  visual_designer: t('dashboard.timeline.short.visual'),
-  content_analyzer: t('dashboard.timeline.short.contentAnalysis'),
-  version_generator: t('dashboard.timeline.short.versionGen'),
-  choice_gate: t('dashboard.timeline.short.choiceGate'),
-  review_gate: t('showcase.phase.reviewing'),
-  revise_content: t('dashboard.timeline.short.reviseContent'),
-  publisher: t('showcase.phase.publishing'),
-  engagement: t('dashboard.timeline.short.engagement'),
-  analyst: t('showcase.phase.analyzing'),
-  orchestrator: t('dashboard.timeline.orchestrator'),
+const workflowStatusLabel = computed(() => {
+  const key = `replay.workflowStatus.${workflowStatus.value}`
+  const translated = t(key)
+  return translated === key ? workflowStatus.value : translated
+})
+
+const agentLabelKeys: Record<string, string> = {
+  trend_scout: 'showcase.phase.scouting',
+  content_strategist: 'showcase.phase.planning',
+  copywriter: 'showcase.phase.creating',
+  draft_gate: 'dashboard.timeline.short.draft',
+  brief_analyzer: 'dashboard.timeline.short.briefAnalyze',
+  brief_gate: 'dashboard.timeline.short.briefGate',
+  viral_matcher: 'dashboard.timeline.short.viralMatch',
+  blogger_scout: 'dashboard.timeline.short.bloggerScout',
+  blogger_gate: 'dashboard.timeline.short.bloggerGate',
+  shooting_planner: 'dashboard.timeline.short.shootingPlan',
+  visual_designer: 'dashboard.timeline.short.visual',
+  content_analyzer: 'dashboard.timeline.short.contentAnalysis',
+  version_generator: 'dashboard.timeline.short.versionGen',
+  choice_gate: 'dashboard.timeline.short.choiceGate',
+  review_gate: 'showcase.phase.reviewing',
+  revise_content: 'dashboard.timeline.short.reviseContent',
+  publisher: 'showcase.phase.publishing',
+  engagement: 'dashboard.timeline.short.engagement',
+  analyst: 'showcase.phase.analyzing',
+  orchestrator: 'dashboard.timeline.orchestrator',
+}
+
+function agentLabel(agent: string): string {
+  const key = agentLabelKeys[agent]
+  return key ? t(key) : agent
 }
 
 const creativeAgents = new Set([
@@ -106,46 +133,13 @@ function hasObjectData(value: unknown): boolean {
   return !!value && typeof value === 'object' && Object.keys(value as Record<string, unknown>).length > 0
 }
 
-const hasReplayData = computed(() => Boolean(effectiveState.value) || replayCheckpoints.value.length > 0)
-
-const activePipelineIndex = computed(() => {
-  if (!hasReplayData.value || pipelineSteps.value.length === 0) return -1
-
-  const phase = selectedCheckpoint.value?.phase || effectiveState.value?.phase
-  if (phase === 'completed' || effectiveState.value?.status === 'completed') {
-    return pipelineSteps.value.length - 1
-  }
-
-  const normalizedPhase = phase === 'engaging' ? 'publishing' : phase
-  const directIndex = normalizedPhase ? pipelineSteps.value.indexOf(normalizedPhase) : -1
-  if (directIndex >= 0) return directIndex
-
-  const agent = selectedCheckpoint.value?.current_agent || effectiveState.value?.current_agent
-  const mappedPhase = agent
-    ? Object.entries(phaseAgentMap.value).find(([, mappedAgent]) => mappedAgent === agent)?.[0]
-    : undefined
-  return mappedPhase ? pipelineSteps.value.indexOf(mappedPhase) : -1
-})
-
-const activePipelinePosition = computed(() => {
-  const index = activePipelineIndex.value
-  if (index < 0) return 0
-  if (pipelineSteps.value.length <= 1) return 100
-  return Math.round((index / (pipelineSteps.value.length - 1)) * 100)
-})
-
-const replayProgress = computed(() => {
-  if (!hasReplayData.value) return 0
-  if (!selectedCheckpoint.value && effectiveState.value?.progress_percent != null) {
-    return Math.max(0, Math.min(100, effectiveState.value.progress_percent))
-  }
-  if (activePipelineIndex.value < 0 || pipelineSteps.value.length === 0) return 0
-  if (activePipelineIndex.value === pipelineSteps.value.length - 1) return 100
-  return Math.round(((activePipelineIndex.value + 0.72) / pipelineSteps.value.length) * 100)
-})
+// A live status can exist without any historical snapshots. Keep this flag
+// scoped to replay data so the empty-checkpoint state is not presented as an
+// actionable step picker.
+const hasReplayData = computed(() => replayCheckpoints.value.length > 0)
 
 const activePhaseLabel = computed(() => {
-  const phase = selectedCheckpoint.value?.phase || effectiveState.value?.phase
+  const phase = selectedCheckpoint.value?.phase || liveWorkflowState.value?.phase
   if (selectedCheckpoint.value) return selectedAgentLabel.value
   return phase ? (phaseLabels.value[phase] || phase) : t('replay.clickHint')
 })
@@ -163,12 +157,12 @@ const pipelineNodes = computed(() => hasReplayData.value
 const mobileCheckpointChips = computed(() =>
   workflowStore.replayCheckpoints.map((cp) => ({
     id: cp.checkpoint_id,
-    label: agentLabels[cp.current_agent] || cp.current_agent,
+    label: agentLabel(cp.current_agent),
     active: cp.checkpoint_id === activeCheckpointId.value,
   }))
 )
 
-const selectedAgentLabel = computed(() => agentLabels[selectedAgent.value] || selectedAgent.value)
+const selectedAgentLabel = computed(() => agentLabel(selectedAgent.value))
 const isCreativeAgent = computed(() => creativeAgents.has(selectedAgent.value))
 const isReviewAgent = computed(() => reviewAgents.has(selectedAgent.value))
 const isPublishAgent = computed(() => publishAgents.has(selectedAgent.value))
@@ -193,18 +187,96 @@ function artNodeStyle(index: number): Record<string, string> {
   }
 }
 
-function goBack() { router.push('/') }
-function goDashboard() { router.push('/dashboard') }
+const returnPath = computed(() => {
+  const raw = route.query.from || route.query.returnTo
+  if (typeof raw === 'string' && raw.startsWith('/') && !raw.startsWith('//')) return raw
+  return '/'
+})
 
-onMounted(async () => {
+function goBack() {
+  trackInteraction('replay_back', { source: typeof route.query.from === 'string' ? route.query.from : 'direct' })
+  router.push(returnPath.value)
+}
+
+function goDashboard() {
+  trackInteraction('replay_primary_cta_click', { source: 'replay', status: workflowStatus.value, mode: workflowMode.value })
+  router.push({ name: 'dashboard', params: { threadId } })
+}
+
+async function copyCheckpointLink() {
+  if (!activeCheckpointId.value) return
+  const resolved = router.resolve({ name: 'replay', params: { threadId }, query: { ...route.query, checkpoint: activeCheckpointId.value } })
+  const href = typeof window !== 'undefined' ? new URL(resolved.href, window.location.origin).toString() : resolved.href
   try {
-    const state = await getWorkflowStatus(threadId)
-    workflowStore.workflowStates.set(threadId, state)
-    workflowStore.setThreadId(threadId)
+    await navigator.clipboard.writeText(href)
+    trackInteraction('replay_checkpoint_link_copy', { step: selectedCheckpoint.value?.step })
+    toastStore.success(t('replay.linkCopied'))
   } catch {
-    // Continue — replay works with checkpoints alone
+    toastStore.error(t('replay.linkCopyFailed'))
   }
-  workflowStore.enterReplayMode()
+}
+
+function isNotFoundError(error: any): boolean {
+  return error?.response?.status === 404 || error?.status === 404 || error?.code === 'ERROR_WORKFLOW_NOT_FOUND' || /not found|不存在/i.test(error?.message || '')
+}
+
+async function loadReplay() {
+  isWorkflowLoading.value = true
+  workflowLoadError.value = null
+  threadNotFound.value = false
+  workflowStore.setThreadId(threadId)
+  try {
+    const state = await getWorkflowStatus(threadId, { suppressToast: true })
+    workflowStore.workflowStates.set(threadId, state)
+  } catch (error: any) {
+    workflowLoadError.value = error?.message || t('replay.workflowLoadFailed')
+    threadNotFound.value = isNotFoundError(error)
+    trackInteraction('replay_load_error', { error_type: threadNotFound.value ? 'thread_not_found' : 'workflow_status' })
+  } finally {
+    isWorkflowLoading.value = false
+  }
+  if (!threadNotFound.value) {
+    await workflowStore.enterReplayMode(requestedCheckpointId.value)
+  } else {
+    workflowStore.exitReplayMode()
+  }
+}
+
+async function retryReplay() {
+  isRetrying.value = true
+  try {
+    await loadReplay()
+  } finally {
+    isRetrying.value = false
+  }
+}
+
+function selectCheckpoint(id: string) {
+  const checkpoint = replayCheckpoints.value.find(item => item.checkpoint_id === id)
+  trackInteraction('replay_checkpoint_select', { step: checkpoint?.step, phase: checkpoint?.phase, mode: workflowMode.value })
+  workflowStore.selectCheckpoint(id)
+}
+
+function selectPhase(phase: string) {
+  trackInteraction('replay_phase_select', { phase, mode: workflowMode.value })
+  selectReplayPhase(phase)
+}
+
+watch(activeCheckpointId, (id) => {
+  if (!id || id === route.query.checkpoint) return
+  void router.replace({ query: { ...route.query, checkpoint: id } })
+})
+
+watch(requestedCheckpointId, (id) => {
+  if (!id || id === activeCheckpointId.value) return
+  if (replayCheckpoints.value.some(checkpoint => checkpoint.checkpoint_id === id)) {
+    workflowStore.selectCheckpoint(id)
+  }
+})
+
+onMounted(() => {
+  trackInteraction('replay_view', { source: typeof route.query.from === 'string' ? route.query.from : 'direct' })
+  void loadReplay()
 })
 
 onUnmounted(() => {
@@ -212,28 +284,40 @@ onUnmounted(() => {
 })
 
 // Right sidebar: final output summary — only L1 key facts
+const latestFinalCheckpoint = computed(() => [...replayCheckpoints.value]
+  .filter((cp) => cp.phase === 'completed' || Object.keys(cp.publish_result || {}).length > 0 || Object.keys(cp.analytics || {}).length > 0)
+  .sort((a, b) => b.step - a.step)[0])
+
 const finalSummary = computed(() => {
-  const cp = selectedCheckpoint.value
-  if (!cp) return null
+  const live = liveWorkflowState.value
+  const liveIsFinal = live?.status === 'completed' || live?.phase === 'completed'
+  const liveHasResult = Boolean(
+    live?.copy_content?.selected_title ||
+    live?.content_plan?.selected_topic ||
+    Object.keys(live?.publish_result || {}).length ||
+    Object.keys(live?.analytics || {}).length,
+  )
+  const state = liveIsFinal && liveHasResult ? live : latestFinalCheckpoint.value || live
+  if (!state) return null
   return {
-    title: cp.copy_content?.selected_title,
-    topic: cp.content_plan?.selected_topic,
-    brand: (cp as any).brief_content?.brand_name,
-    product: (cp as any).brief_content?.product_name,
-    hashtags: cp.copy_content?.hashtags,
-    publishUrl: (cp.publish_result as any)?.post_url,
-    publishStatus: (cp.publish_result as any)?.status,
-    views: (cp.analytics as any)?.views,
-    likes: (cp.analytics as any)?.likes,
-    engagementRate: (cp.analytics as any)?.engagement_rate,
-    viralProb: cp.ripple_prediction?.viral_probability,
-    pmfScore: cp.ripple_pmf?.pmf_score,
+    title: state.copy_content?.selected_title,
+    topic: state.content_plan?.selected_topic,
+    brand: (state as any).brief_content?.brand_name,
+    product: (state as any).brief_content?.product_name,
+    hashtags: state.copy_content?.hashtags,
+    publishUrl: (state.publish_result as any)?.post_url,
+    publishStatus: (state.publish_result as any)?.status,
+    views: (state.analytics as any)?.views,
+    likes: (state.analytics as any)?.likes,
+    engagementRate: (state.analytics as any)?.engagement_rate,
+    viralProb: state.ripple_prediction?.viral_probability,
+    pmfScore: state.ripple_pmf?.pmf_score,
   }
 })
 </script>
 
 <template>
-  <div class="replay-page min-h-screen text-slate-800 relative overflow-hidden">
+  <div class="replay-page min-h-screen text-slate-800 relative">
     <div class="replay-bg-grid" aria-hidden="true" />
     <div class="replay-bg-orb replay-bg-orb-a" aria-hidden="true" />
     <div class="replay-bg-orb replay-bg-orb-b" aria-hidden="true" />
@@ -255,10 +339,18 @@ const finalSummary = computed(() => {
                 <span v-if="workflowLabel" class="text-[10px] text-slate-500 font-medium truncate max-w-[100px]">{{ workflowLabel }}</span>
                 <span class="text-[10px] text-slate-400 font-mono">{{ threadId.slice(-8) }}</span>
                 <span v-if="workflowMode" class="replay-mode-badge text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600">{{ workflowMode }}</span>
+                <span class="replay-status-badge text-[10px] px-1.5 py-0.5 rounded-full" :class="`replay-status-${workflowStatus}`">{{ workflowStatusLabel }}</span>
               </div>
+              <p v-if="selectedCheckpoint" class="mt-1 text-[10px] text-slate-500 truncate max-w-[300px]">
+                {{ t('replay.viewingCheckpoint', { step: selectedCheckpoint.step, agent: selectedAgentLabel, time: formatDate(selectedCheckpoint.created_at) }) }}
+              </p>
             </div>
           </div>
           <div class="flex items-center gap-2">
+            <button v-if="selectedCheckpoint" type="button" @click="copyCheckpointLink" class="min-h-11 rounded-xl border border-slate-200 bg-white/70 px-3 text-[11px] font-medium text-slate-600 transition-colors hover:bg-white" :aria-label="t('replay.copyLink')">
+              <AppIcon name="Link" size="xs" variant="cyan" />
+              <span class="hidden sm:inline">{{ t('replay.copyLink') }}</span>
+            </button>
             <button v-if="isAuthenticated" type="button" @click="goDashboard" class="min-h-11 rounded-xl bg-rose-500 px-3 text-[11px] font-medium text-white shadow-sm shadow-rose-500/20 transition-colors hover:bg-rose-600">
               {{ t('replay.goDashboard') }}
             </button>
@@ -269,41 +361,52 @@ const finalSummary = computed(() => {
     </nav>
 
     <main class="replay-main relative z-10 mx-auto max-w-[1400px] px-4 py-5 md:px-8 md:py-7">
+      <section v-if="isWorkflowLoading && !hasReplayData" class="replay-state-card liquid-glass p-5 mb-4" aria-busy="true">
+        <div class="h-3 w-36 rounded bg-slate-200/80 animate-pulse" />
+        <div class="mt-3 h-5 w-2/3 rounded bg-slate-200/70 animate-pulse" />
+        <div class="mt-4 h-2 w-full rounded bg-slate-200/60 animate-pulse" />
+        <p class="mt-3 text-xs text-slate-500">{{ t('replay.loadingWorkflow') }}</p>
+      </section>
+      <section v-if="threadNotFound" class="replay-state-card liquid-glass p-6 mb-4 text-center" role="alert">
+        <AppIcon name="FileQuestion" size="lg" variant="cyan" aria-hidden="true" />
+        <h2 class="mt-3 text-base font-semibold text-slate-800">{{ t('replay.threadNotFound') }}</h2>
+        <p class="mt-1 text-xs text-slate-500">{{ t('replay.threadNotFoundDesc') }}</p>
+        <button type="button" class="mt-4 min-h-11 rounded-xl bg-slate-800 px-4 text-xs font-medium text-white" @click="goBack">{{ t('replay.backToCases') }}</button>
+      </section>
+      <section v-else-if="workflowLoadError" class="replay-state-card replay-state-warning rounded-xl p-3 mb-4" role="status">
+        <div class="flex items-start gap-2">
+          <AppIcon name="AlertTriangle" size="sm" variant="peach" aria-hidden="true" />
+          <div class="min-w-0 flex-1">
+            <p class="text-xs font-semibold text-amber-800">{{ t('replay.liveStateUnavailable') }}</p>
+            <p class="mt-1 text-[11px] text-amber-700">{{ t('replay.liveStateUnavailableDesc') }}</p>
+          </div>
+          <button type="button" class="min-h-11 shrink-0 rounded-lg px-3 text-[11px] font-medium text-amber-800 hover:bg-amber-100/60" :disabled="isRetrying" @click="retryReplay">{{ isRetrying ? t('common.loadingState') : t('common.retry') }}</button>
+        </div>
+      </section>
+      <section v-if="checkpointLoadError" class="replay-state-card replay-state-error rounded-xl p-3 mb-4" role="alert">
+        <div class="flex items-start gap-2">
+          <AppIcon name="RefreshCw" size="sm" variant="pink" aria-hidden="true" />
+          <div class="min-w-0 flex-1">
+            <p class="text-xs font-semibold text-rose-800">{{ t('replay.checkpointLoadFailed') }}</p>
+            <p class="mt-1 text-[11px] text-rose-700">{{ t('replay.checkpointLoadFailedDesc') }}</p>
+          </div>
+          <button type="button" class="min-h-11 shrink-0 rounded-lg px-3 text-[11px] font-medium text-rose-800 hover:bg-rose-100/60" :disabled="isRetrying" @click="retryReplay">{{ isRetrying ? t('common.loadingState') : t('common.retry') }}</button>
+        </div>
+      </section>
       <!-- Pipeline state is a workspace control, not a navigation decoration. -->
-      <section class="replay-pipeline-panel liquid-glass-liquid mb-4 md:mb-5" :aria-label="t('replay.pipeline')">
+      <section v-if="!threadNotFound" class="replay-pipeline-panel liquid-glass-liquid mb-4 md:mb-5" :aria-label="t('replay.pipeline')">
         <div class="replay-pipeline-panel-head flex items-center justify-between gap-3">
           <div class="min-w-0">
             <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{{ t('replay.pipeline') }}</p>
             <p class="mt-1 truncate text-sm font-semibold text-slate-700">
-              {{ selectedCheckpoint ? selectedAgentLabel : effectiveState ? (phaseLabels[effectiveState.phase] || effectiveState.phase) : hasReplayData ? t('replay.clickHint') : t('replay.noWorkflow') }}
+              {{ selectedCheckpoint ? selectedAgentLabel : liveWorkflowState ? (phaseLabels[liveWorkflowState.phase] || liveWorkflowState.phase) : hasReplayData ? t('replay.clickHint') : t('replay.noWorkflow') }}
             </p>
           </div>
-          <div v-if="effectiveState" class="replay-panel-progress flex shrink-0 items-center gap-2">
+          <div v-if="liveWorkflowState" class="replay-panel-progress flex shrink-0 items-center gap-2">
             <div class="h-1.5 w-20 overflow-hidden rounded-full bg-slate-200/80 sm:w-28">
-              <span class="block h-full rounded-full bg-gradient-to-r from-teal-400 to-sky-400" :style="{ width: `${effectiveState.progress_percent}%` }" />
+              <span class="block h-full rounded-full bg-gradient-to-r from-teal-400 to-sky-400" :style="{ width: `${workflowProgress}%` }" />
             </div>
-            <span class="text-[11px] font-mono text-slate-500">{{ effectiveState.progress_percent }}%</span>
-          </div>
-        </div>
-        <div
-          v-if="hasReplayData"
-          class="replay-progress-strip mt-3"
-          :style="{ '--replay-progress': `${replayProgress}%`, '--replay-position': `${activePipelinePosition}%` }"
-        >
-          <div
-            class="replay-progress-track"
-            role="progressbar"
-            :aria-label="t('replay.pipelineProgress')"
-            :aria-valuenow="replayProgress"
-            aria-valuemin="0"
-            aria-valuemax="100"
-          >
-            <span class="replay-progress-fill" />
-            <span class="replay-progress-signal" aria-hidden="true" />
-          </div>
-          <div class="mt-1.5 flex items-center justify-between gap-3 text-[10px]">
-            <span class="font-mono font-semibold text-slate-500">{{ t('replay.progressStep', { current: Math.max(1, activePipelineIndex + 1), total: pipelineSteps.length }) }}</span>
-            <span class="truncate text-slate-400">{{ activePhaseLabel }}</span>
+            <span class="text-[11px] font-mono text-slate-500">{{ workflowProgress }}%</span>
           </div>
         </div>
         <div v-if="hasReplayData" class="replay-pipeline flex items-center gap-1 overflow-x-auto scrollbar-thin pt-3">
@@ -315,7 +418,8 @@ const finalSummary = computed(() => {
           >
             <button
               type="button"
-              @click="handleNodeClick(node.phase)"
+              @click="selectPhase(node.phase)"
+              :disabled="!hasCheckpointForPhase(node.phase)"
               class="replay-pipeline-node flex min-h-11 items-center gap-1.5 rounded-xl px-2.5 text-[11px] font-medium transition-colors"
               :class="[
                 node.selected
@@ -331,6 +435,8 @@ const finalSummary = computed(() => {
               ]"
               :aria-pressed="node.selected"
               :aria-current="node.selected ? 'step' : undefined"
+              :aria-disabled="!hasCheckpointForPhase(node.phase)"
+              :title="!hasCheckpointForPhase(node.phase) ? t('replay.phaseUnavailable') : undefined"
             >
               <AppIcon :name="node.icon" size="xs" :variant="node.selected ? 'white' : 'cyan'" />
               {{ node.label }}
@@ -342,42 +448,8 @@ const finalSummary = computed(() => {
           {{ t('replay.noWorkflowDesc') }}
         </div>
       </section>
-      <section
-        v-if="hasReplayData"
-        class="replay-creation-art liquid-glass-liquid mb-4 md:mb-5"
-        :aria-label="t('replay.creationProcess')"
-      >
-        <div class="replay-creation-art-copy">
-          <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-teal-600">{{ t('replay.creationProcess') }}</p>
-          <h2 class="mt-2 text-xl font-bold tracking-tight text-slate-800">{{ activePhaseLabel }}</h2>
-          <p class="mt-2 max-w-sm text-xs leading-5 text-slate-500">{{ t('replay.creationProcessDesc') }}</p>
-          <div class="mt-4 inline-flex items-center gap-2 rounded-full border border-teal-200/70 bg-white/60 px-2.5 py-1.5 text-[10px] font-medium text-teal-700">
-            <span class="replay-creation-signal h-1.5 w-1.5 rounded-full bg-teal-400" aria-hidden="true" />
-            {{ t('replay.signalMoving') }}
-          </div>
-        </div>
-        <div class="replay-creation-art-visual" aria-hidden="true">
-          <div class="replay-art-ring replay-art-ring-outer" />
-          <div class="replay-art-ring replay-art-ring-inner" />
-          <div class="replay-art-core">
-            <span class="replay-art-core-glow" />
-            <span class="relative text-[9px] font-bold uppercase tracking-[0.18em] text-white">AI</span>
-          </div>
-          <span class="replay-art-signal" />
-          <span
-            v-for="(node, index) in pipelineNodes"
-            :key="`art-${node.phase}`"
-            class="replay-orbit-node"
-            :class="{ 'replay-orbit-node-active': node.selected || node.status === 'running', 'replay-orbit-node-completed': node.status === 'completed' }"
-            :style="artNodeStyle(index)"
-          >
-            <span class="replay-orbit-node-dot" />
-            <span class="replay-orbit-node-label">{{ node.label }}</span>
-          </span>
-        </div>
-      </section>
       <!-- Two-column layout: rail | detail + summary -->
-      <div class="replay-layout grid grid-cols-1 gap-4 lg:grid-cols-[minmax(170px,220px)_minmax(0,1fr)_minmax(220px,280px)] md:gap-5">
+      <div v-if="!threadNotFound" class="replay-layout grid grid-cols-1 gap-4 lg:grid-cols-[minmax(170px,220px)_minmax(0,1fr)_minmax(220px,280px)] md:gap-5">
         <!-- Left: checkpoint rail -->
         <div class="replay-checkpoint-column hidden lg:block">
           <div v-if="hasReplayData" class="replay-rail-panel sticky top-20 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1">
@@ -391,29 +463,27 @@ const finalSummary = computed(() => {
 
         <!-- Mobile: checkpoint chips -->
         <div class="replay-mobile-rail lg:hidden">
-          <div v-if="mobileCheckpointChips.length" class="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-thin">
-            <div class="text-[10px] text-slate-400 font-medium uppercase tracking-widest shrink-0 mr-1">{{ t('replay.checkpoints') }}</div>
-            <button
-              v-for="chip in mobileCheckpointChips"
-              :key="chip.id"
-              v-memo="[chip.active, chip.label]"
-              type="button"
-              @click="workflowStore.selectCheckpoint(chip.id)"
-              class="replay-mobile-chip min-h-11 shrink-0 whitespace-nowrap rounded-xl border px-3 text-[10px] font-medium transition-colors"
-              :class="chip.active
-                ? 'bg-slate-800 text-white border-slate-800'
-                : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'"
-              :aria-pressed="chip.active"
-            >
-              {{ chip.label }}
+          <div v-if="mobileCheckpointChips.length" class="space-y-2">
+            <button type="button" class="replay-mobile-checkpoint-toggle flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/70 px-3 text-left" :aria-expanded="mobileCheckpointOpen" @click="mobileCheckpointOpen = !mobileCheckpointOpen">
+              <span class="min-w-0 truncate text-xs font-medium text-slate-700">
+                {{ selectedCheckpoint ? `${t('replay.step')} ${selectedCheckpoint.step} · ${selectedAgentLabel}` : t('replay.checkpoints') }}
+              </span>
+              <span class="shrink-0 text-[10px] font-medium text-teal-700">{{ mobileCheckpointOpen ? t('replay.closeCheckpoints') : t('replay.openCheckpoints') }}</span>
             </button>
-            <button
-              v-if="workflowStore.hasMoreCheckpoints"
-              @click="workflowStore.loadMoreCheckpoints()"
-              class="min-h-11 shrink-0 rounded-xl border border-slate-200 px-3 text-[10px] text-slate-400 hover:bg-slate-50"
-            >
-              +{{ t('replay.loadMore') }}
-            </button>
+            <div v-if="mobileCheckpointOpen" class="replay-mobile-checkpoint-list grid max-h-56 grid-cols-1 gap-1 overflow-y-auto pr-1">
+              <button
+                v-for="chip in mobileCheckpointChips"
+                :key="chip.id"
+                type="button"
+                @click="selectCheckpoint(chip.id)"
+                class="replay-mobile-chip flex min-h-11 items-center justify-between rounded-xl border px-3 text-left text-[10px] font-medium transition-colors"
+                :class="chip.active ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'"
+                :aria-pressed="chip.active"
+              >
+                <span>{{ chip.label }}</span><span class="font-mono opacity-70">{{ replayCheckpoints.find(cp => cp.checkpoint_id === chip.id)?.step }}</span>
+              </button>
+              <button v-if="workflowStore.hasMoreCheckpoints" type="button" :disabled="isCheckpointLoading" @click="workflowStore.loadMoreCheckpoints()" class="min-h-11 rounded-xl border border-slate-200 px-3 text-[10px] text-slate-400 hover:bg-slate-50">+{{ t('replay.loadMore') }}</button>
+            </div>
           </div>
           <div v-else class="flex items-center gap-2 px-1 py-1 text-[11px] text-slate-400">
             <AppIcon name="Clock" size="xs" variant="cyan" aria-hidden="true" />
@@ -423,7 +493,12 @@ const finalSummary = computed(() => {
 
         <!-- Center: selected checkpoint detail -->
         <div class="replay-detail-column">
-          <div v-if="selectedCheckpoint" class="space-y-0">
+          <div v-if="isCheckpointLoading && !selectedCheckpoint" class="replay-state-card liquid-glass p-6" aria-busy="true">
+            <div class="h-4 w-40 rounded bg-slate-200/80 animate-pulse" />
+            <div class="mt-4 h-20 rounded-xl bg-slate-200/60 animate-pulse" />
+            <p class="mt-3 text-xs text-slate-500">{{ t('replay.loadingCheckpoints') }}</p>
+          </div>
+          <div v-else-if="selectedCheckpoint" class="space-y-0">
             <!-- Checkpoint header — compact -->
             <div class="replay-detail-header flex items-center gap-2 mb-3">
               <span class="replay-detail-pulse h-2 w-2 rounded-full bg-teal-400" />
@@ -477,12 +552,17 @@ const finalSummary = computed(() => {
           </div>
 
           <!-- No checkpoint selected -->
+          <div v-else-if="checkpointLoadError" class="replay-empty-state rounded-xl liquid-glass p-8 text-center" role="alert">
+            <AppIcon name="RefreshCw" size="lg" variant="pink" />
+            <p class="mt-3 text-sm font-semibold text-slate-700">{{ t('replay.checkpointLoadFailed') }}</p>
+            <button type="button" class="mt-4 min-h-11 rounded-xl bg-slate-800 px-4 text-xs font-medium text-white" :disabled="isRetrying" @click="retryReplay">{{ isRetrying ? t('common.loadingState') : t('common.retry') }}</button>
+          </div>
           <div v-else class="replay-empty-state rounded-xl liquid-glass p-8 text-center">
             <div class="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
               <AppIcon name="MousePointerClick" size="lg" variant="cyan" />
             </div>
             <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-teal-600">{{ t('replay.inspectLabel') }}</p>
-            <p class="mt-2 text-sm font-semibold text-slate-700">{{ hasReplayData ? t('replay.clickHint') : t('replay.noWorkflow') }}</p>
+            <p class="mt-2 text-sm font-semibold text-slate-700">{{ hasReplayData ? t('replay.clickHint') : liveWorkflowState ? t('replay.checkpointsEmpty') : t('replay.noWorkflow') }}</p>
             <p class="mt-1.5 text-xs leading-5 text-slate-400">{{ hasReplayData ? t('replay.clickHintDesc') : t('replay.noWorkflowDesc') }}</p>
           </div>
         </div>
@@ -516,14 +596,15 @@ const finalSummary = computed(() => {
             </div>
 
             <!-- Final output — only L1 key facts -->
-            <div v-if="finalSummary && (finalSummary.title || finalSummary.topic || finalSummary.brand)" class="replay-summary-card replay-output-summary rounded-xl liquid-glass p-3 space-y-1.5">
+            <div v-if="hasReplayData" class="replay-summary-card replay-output-summary rounded-xl liquid-glass p-3 space-y-1.5">
               <div class="text-[10px] text-slate-400 font-medium uppercase tracking-widest">{{ t('replay.outputSummary') }}</div>
-              <div v-if="finalSummary.title" class="text-base font-bold text-slate-800 leading-snug">{{ finalSummary.title }}</div>
-              <div v-if="finalSummary.topic" class="text-xs text-slate-600">{{ finalSummary.topic }}</div>
-              <div v-if="finalSummary.brand" class="text-xs text-slate-500">{{ finalSummary.brand }}<span v-if="finalSummary.product"> / {{ finalSummary.product }}</span></div>
-              <div v-if="finalSummary.hashtags?.length" class="flex flex-wrap gap-1">
-                <span v-for="tag in finalSummary.hashtags" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-600">#{{ tag }}</span>
+              <div v-if="finalSummary?.title" class="text-base font-bold text-slate-800 leading-snug">{{ finalSummary.title }}</div>
+              <div v-if="finalSummary?.topic" class="text-xs text-slate-600">{{ finalSummary.topic }}</div>
+              <div v-if="finalSummary?.brand" class="text-xs text-slate-500">{{ finalSummary.brand }}<span v-if="finalSummary.product"> / {{ finalSummary.product }}</span></div>
+              <div v-if="finalSummary?.hashtags?.length" class="flex flex-wrap gap-1">
+                <span v-for="tag in finalSummary?.hashtags || []" :key="tag" class="text-[10px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-600">#{{ tag }}</span>
               </div>
+              <p v-if="!finalSummary || (!finalSummary.title && !finalSummary.topic && !finalSummary.brand)" class="text-xs leading-5 text-slate-500">{{ t('replay.notGenerated') }}</p>
             </div>
 
             <!-- Key metrics — only if not already in analytics panel -->
@@ -552,6 +633,40 @@ const finalSummary = computed(() => {
           </div>
         </div>
       </div>
+      <section
+        v-if="hasReplayData"
+        class="replay-creation-art liquid-glass-liquid mt-4 md:mt-5"
+        :aria-label="t('replay.creationProcess')"
+      >
+        <div class="replay-creation-art-copy">
+          <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-teal-600">{{ t('replay.creationProcess') }}</p>
+          <h2 class="mt-2 text-xl font-bold tracking-tight text-slate-800">{{ activePhaseLabel }}</h2>
+          <p class="mt-2 max-w-sm text-xs leading-5 text-slate-500">{{ t('replay.creationProcessDesc') }}</p>
+          <div class="mt-4 inline-flex items-center gap-2 rounded-full border border-teal-200/70 bg-white/60 px-2.5 py-1.5 text-[10px] font-medium text-teal-700">
+            <span class="replay-creation-signal h-1.5 w-1.5 rounded-full bg-teal-400" aria-hidden="true" />
+            {{ t('replay.signalMoving') }}
+          </div>
+        </div>
+        <div class="replay-creation-art-visual" aria-hidden="true">
+          <div class="replay-art-ring replay-art-ring-outer" />
+          <div class="replay-art-ring replay-art-ring-inner" />
+          <div class="replay-art-core">
+            <span class="replay-art-core-glow" />
+            <span class="relative text-[9px] font-bold uppercase tracking-[0.18em] text-white">AI</span>
+          </div>
+          <span class="replay-art-signal" />
+          <span
+            v-for="(node, index) in pipelineNodes"
+            :key="`art-${node.phase}`"
+            class="replay-orbit-node"
+            :class="{ 'replay-orbit-node-active': node.selected || node.status === 'running', 'replay-orbit-node-completed': node.status === 'completed' }"
+            :style="artNodeStyle(index)"
+          >
+            <span class="replay-orbit-node-dot" />
+            <span class="replay-orbit-node-label">{{ node.label }}</span>
+          </span>
+        </div>
+      </section>
     </main>
   </div>
 </template>
@@ -559,6 +674,7 @@ const finalSummary = computed(() => {
 <style scoped>
 .replay-page {
   isolation: isolate;
+  overflow-x: clip;
   --replay-ink: #1e293b;
   --replay-muted: #64748b;
   background:
@@ -566,6 +682,28 @@ const finalSummary = computed(() => {
     linear-gradient(225deg, rgba(240, 253, 250, 0.5), transparent 36%),
     linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
 }
+
+.replay-state-card {
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.replay-state-warning {
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  background: rgba(255, 251, 235, 0.82);
+}
+
+.replay-state-error {
+  border: 1px solid rgba(244, 63, 94, 0.24);
+  background: rgba(255, 241, 242, 0.82);
+}
+
+.replay-status-badge { border: 1px solid transparent; }
+.replay-status-running { color: #0f766e; background: #ccfbf1; border-color: #99f6e4; }
+.replay-status-completed { color: #047857; background: #d1fae5; border-color: #a7f3d0; }
+.replay-status-error { color: #be123c; background: #ffe4e6; border-color: #fecdd3; }
+.replay-status-paused, .replay-status-stale { color: #a16207; background: #fef3c7; border-color: #fde68a; }
+.replay-status-idle, .replay-status-cancelled { color: #475569; background: #f1f5f9; border-color: #e2e8f0; }
 
 .replay-bg-grid {
   position: absolute;

@@ -110,6 +110,18 @@ Frontend state mirrors backend `XHSGrowthState`. The sync flow:
 
 No polling — all updates are push-based via WebSocket/SSE.
 
+### Live State vs Replay Selection
+
+Replay-aware screens keep the live workflow snapshot separate from the
+currently selected historical checkpoint. `workflowStore.liveWorkflowState`
+answers “where is the workflow now?”, while `effectiveState` remains the
+backwards-compatible display source for panels whose content should follow
+the selected checkpoint. Checkpoint loading errors are stored independently
+from the live status so a temporary history failure does not hide a healthy
+current workflow. Deep-linked checkpoint selection must prefer the requested
+ID, then the latest checkpoint containing business data, then the newest
+checkpoint.
+
 ---
 
 ## Account-Bound Form Defaults

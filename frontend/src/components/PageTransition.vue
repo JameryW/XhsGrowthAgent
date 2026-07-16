@@ -64,4 +64,11 @@ const transitionStyle = {
     transform: translateX(-20px);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-slide-enter-active,
+  .fade-slide-leave-active {
+    animation: none;
+  }
+}
 </style>
