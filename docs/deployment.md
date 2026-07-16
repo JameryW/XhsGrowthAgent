@@ -170,7 +170,8 @@ python scripts/acceptance/public_ux_audit.py \
 
 脚本会检查真实空态的 private-by-default，并用无敏感 fixture 覆盖 Showcase/Replay 的
 320–1440px、中文/英文、明暗主题、正常/减弱动画、横向溢出、阶段键盘导航和 axe
-serious/critical；fixture 结果不能替代真实公开案例的 owner 授权、Lighthouse 或慢网采样。
+serious/critical；默认 online 只以完整矩阵的 p75 性能门槛判定结果，fixture 结果不能替代真实公开案例的
+owner 授权、Lighthouse 或人工视觉验收。
 需要做受限网络抽样时，可在小规模代表性组合上显式启用 Slow 4G 和 Save-Data：
 
 ```bash
@@ -182,7 +183,9 @@ python scripts/acceptance/public_ux_audit.py \
   --output /tmp/public-ux-audit-slow-4g.json
 ```
 
-`--network-profile` 默认是 `online`；受限网络命令用于采样证据，不改变默认全矩阵的发布门槛。
+`--network-profile` 默认是 `online`；受限网络命令用于采样证据。受限网络结果会保留
+`performance_budget_failures` 观测值，但不会把 online 的 500/100ms 发布门槛套用到慢网样本；默认
+online 全矩阵仍会按 p75 门槛失败。
 
 ## Docker 部署
 

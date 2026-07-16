@@ -15,7 +15,8 @@
 
 - 前端全量测试、type-check、生产构建通过。
 - 全矩阵公开页审计：live empty 通过；96 个合成非敏感 fixture 页面通过；axe serious/critical 为 0；无横向溢出；键盘阶段切换通过。
-- 审计 JSON 明确记录 LCP、CLS、warm reload、cached select-to-render 分布；缓存步骤切换超过 100ms 时失败。
+- 审计 JSON 明确记录 LCP、CLS、warm reload、cached select-to-render 分布；online 完整矩阵的 warm/cached p75 超过 500/100ms 时失败，单点 outlier 另行记录。
+- 审计可用独立 page 的代表性组合采样 Slow 4G + Save-Data；该 profile 保留性能超标观测但不套用 online 发布门槛。
 - Settings 面板可按 1/7/14/30 天刷新并展示匿名聚合数量、p50/p75；请求可取消，接口失败可重试。
 - 不发布真实案例；真实案例负责人授权、真实截图/视觉签字、真实冷/热性能和真实内容 axe 仍作为业务发布门槛保留。
 

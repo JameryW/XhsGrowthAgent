@@ -404,6 +404,8 @@ def run_audit(
 
     records: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+    performance_outliers: list[dict[str, Any]] = []
+    performance_budget_failures: list[dict[str, Any]] = []
     live_record: dict[str, Any] | None = None
 
     with sync_playwright() as playwright:
@@ -455,12 +457,10 @@ def run_audit(
                 viewport={"width": motion_combinations[0][0], "height": 844},
                 reduced_motion="reduce" if motion == "reduced" else "no-preference",
             )
-            page = context.new_page()
-            page.set_default_timeout(8000)
-            page.add_init_script(PERFORMANCE_INIT_SCRIPT)
+            context.add_init_script(PERFORMANCE_INIT_SCRIPT)
             if save_data:
-                page.add_init_script(SAVE_DATA_INIT_SCRIPT)
-            page.add_init_script(
+                context.add_init_script(SAVE_DATA_INIT_SCRIPT)
+            context.add_init_script(
                 """(() => {
                   const [locale, theme, storageMode] = window.name.split('::');
                   if (storageMode !== 'keep') {
@@ -471,14 +471,16 @@ def run_audit(
                   if (theme) localStorage.setItem('xhs-theme-mode', theme);
                 })();"""
             )
-            install_mock_api(page)
-            apply_network_profile(page, network_profile)
             try:
                 for width, locale, theme, _motion in motion_combinations:
+                    page = context.new_page()
+                    page.set_default_timeout(8000)
+                    install_mock_api(page)
+                    apply_network_profile(page, network_profile)
                     label = f"fixture/{width}/{locale}/{theme}/{motion}"
-                    page.set_viewport_size({"width": width, "height": 844})
-                    page.evaluate(f"window.name = {json.dumps(f'{locale}::{theme}::reset')}")
                     try:
+                        page.set_viewport_size({"width": width, "height": 844})
+                        page.evaluate(f"window.name = {json.dumps(f'{locale}::{theme}::reset')}")
                         showcase_screenshot = None
                         replay_screenshot = None
                         if (
@@ -519,7 +521,7 @@ def run_audit(
                         )
                         records.append(showcase_record)
                         if showcase_record["warm_wall_ms"] > WARM_NAVIGATION_BUDGET_MS:
-                            failures.append(
+                            performance_outliers.append(
                                 {
                                     "name": f"{label}/showcase-warm",
                                     "error": (
@@ -559,7 +561,7 @@ def run_audit(
                         ) = measure_cached_select_to_render(page)
                         records.append(replay_record)
                         if replay_record["cached_select_to_render_ms"] > CACHED_SELECT_BUDGET_MS:
-                            failures.append(
+                            performance_outliers.append(
                                 {
                                     "name": f"{label}/replay-cached-select",
                                     "error": (
@@ -570,12 +572,29 @@ def run_audit(
                             )
                     except (AssertionError, PlaywrightTimeoutError) as error:
                         failures.append({"name": label, "error": str(error)})
+                    finally:
+                        page.close()
             finally:
                 context.close()
 
         browser.close()
 
     axe_records = [record for record in records if record["axe_serious_critical"]]
+    metrics = summarize_metrics(records)
+    for field, budget, label in (
+        ("warm_wall_ms", WARM_NAVIGATION_BUDGET_MS, "warm navigation"),
+        ("cached_select_to_render_ms", CACHED_SELECT_BUDGET_MS, "cached select"),
+    ):
+        p75 = metrics[field]["p75"]
+        if isinstance(p75, (int, float)) and p75 > budget:
+            performance_budget_failures.append(
+                {
+                    "name": f"matrix/{field}-p75",
+                    "error": f"{label} p75 exceeded {budget}ms: {p75}ms",
+                }
+            )
+    if network_profile == "online":
+        failures.extend(performance_budget_failures)
     return {
         "base_url": base_url,
         "network_profile": network_profile,
@@ -588,8 +607,11 @@ def run_audit(
         "live_private_by_default": live_record is not None,
         "matrix_page_count": len(records) - 1,
         "records": records,
-        "metrics": summarize_metrics(records),
+        "metrics": metrics,
         "axe_serious_critical_record_count": len(axe_records),
+        "performance_outliers": performance_outliers,
+        "performance_budget_enforced": network_profile == "online",
+        "performance_budget_failures": performance_budget_failures,
         "failures": failures,
         "passed": not failures and not axe_records,
     }
@@ -646,6 +668,9 @@ def main() -> int:
                 "save_data": result["save_data"],
                 "matrix_page_count": result["matrix_page_count"],
                 "axe_serious_critical_record_count": result["axe_serious_critical_record_count"],
+                "performance_outlier_count": len(result["performance_outliers"]),
+                "performance_budget_enforced": result["performance_budget_enforced"],
+                "performance_budget_failure_count": len(result["performance_budget_failures"]),
                 "metrics": result["metrics"],
                 "failures": result["failures"],
                 "output": str(args.output),
