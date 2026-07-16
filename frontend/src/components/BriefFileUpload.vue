@@ -182,7 +182,7 @@ function clear() {
         <div class="flex items-center gap-2">
           <AppIcon name="FileText" size="sm" variant="pink" />
           <span class="text-sm font-semibold text-neon-pinkDark">{{ fileName }}</span>
-          <span class="text-xs text-slate-400 px-1.5 py-0.5 bg-slate-100 rounded-full">
+          <span class="text-xs text-slate-400 px-1.5 py-0.5 bg-slate-100 rounded-full dark:bg-slate-800 dark:text-slate-400">
             {{ sourceType === 'pdf' ? t('brief.sourcePdf') : t('brief.sourceText') }}
           </span>
         </div>

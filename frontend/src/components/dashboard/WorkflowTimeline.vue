@@ -444,7 +444,7 @@ const substepSectionLabels = computed<Record<string, string>>(() => ({
                     :class="{
                       'bg-gradient-to-br from-rose-400 to-amber-400 shadow-sm': getStatus(step.agent) === 'completed',
                       'bg-gradient-to-br from-amber-300 to-amber-400 shadow-sm animate-pulse': getStatus(step.agent) === 'running',
-                      'bg-slate-100 border border-slate-200': getStatus(step.agent) === 'pending',
+                      'bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:border-slate-600': getStatus(step.agent) === 'pending',
                       'bg-gradient-to-br from-rose-400 to-rose-500 shadow-sm': getStatus(step.agent) === 'error',
                     }"
                   >

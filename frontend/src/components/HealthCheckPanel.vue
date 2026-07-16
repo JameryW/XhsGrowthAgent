@@ -106,7 +106,7 @@ const issueCount = computed(() => {
         <button
           v-if="!isLoading"
           @click.stop="fetchHealth"
-          class="p-1 rounded hover:bg-slate-100 transition-colors"
+          class="p-1 rounded hover:bg-slate-100 transition-colors dark:hover:bg-slate-800"
           :aria-label="t('health.refresh')"
         >
           <AppIcon name="RefreshCw" size="sm" variant="cyan" />
@@ -122,7 +122,7 @@ const issueCount = computed(() => {
     <!-- Expanded details -->
     <div v-if="isExpanded" class="border-t border-slate-100">
       <div v-if="isLoading" class="p-4 space-y-3">
-        <div v-for="i in 4" :key="i" class="h-8 rounded bg-slate-100 animate-pulse" />
+        <div v-for="i in 4" :key="i" class="h-8 rounded bg-slate-100 animate-pulse dark:bg-slate-800" />
       </div>
 
       <div v-else-if="error" class="p-4">
@@ -175,7 +175,7 @@ const issueCount = computed(() => {
             <div class="flex items-center gap-2">
               <AppIcon name="Zap" size="sm" variant="cyan" />
               <span class="text-sm font-medium text-slate-700">Ripple CAS</span>
-              <span class="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">{{ t('health.optional') }}</span>
+              <span class="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium dark:bg-slate-800 dark:text-slate-400">{{ t('health.optional') }}</span>
             </div>
             <div class="flex items-center gap-2">
               <span :class="[statusColor(health.checks.ripple_cas.status), 'w-2 h-2 rounded-full']" />

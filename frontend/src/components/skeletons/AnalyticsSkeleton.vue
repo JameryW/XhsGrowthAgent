@@ -34,14 +34,14 @@ import DataTableSkeleton from './DataTableSkeleton.vue'
           <div class="w-10 h-10 rounded-lg bg-slate-200 animate-pulse" />
           <div class="h-5 w-20 rounded bg-slate-200 animate-pulse" />
         </div>
-        <div class="h-[280px] rounded-lg bg-slate-100 animate-pulse" />
+        <div class="h-[280px] rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
       </div>
       <div class="rounded-2xl p-5 bg-white/98 border border-slate-200/50 shadow-sm dark:bg-slate-900/90 dark:border-slate-700/55">
         <div class="flex items-center gap-3 mb-4">
           <div class="w-10 h-10 rounded-lg bg-slate-200 animate-pulse" />
           <div class="h-5 w-20 rounded bg-slate-200 animate-pulse" />
         </div>
-        <div class="h-[280px] rounded-lg bg-slate-100 animate-pulse" />
+        <div class="h-[280px] rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
       </div>
     </div>
 

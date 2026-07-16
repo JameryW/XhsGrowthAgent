@@ -349,7 +349,7 @@ function pointValue(point: CreatorAggregatePoint): string {
       </div>
       <button
         type="button"
-        class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+        class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors dark:hover:bg-slate-800 dark:hover:text-slate-200"
         :title="t('creatorStats.refresh')"
         :disabled="isLoadingStats"
         @click="loadImported"
@@ -519,7 +519,7 @@ function pointValue(point: CreatorAggregatePoint): string {
           </span>
           <span
             v-if="accountStats.zone"
-            class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600"
+            class="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
           >
             {{ t('creatorStats.profile.zone') }}: {{ accountStats.zone }}
           </span>
@@ -653,7 +653,7 @@ function pointValue(point: CreatorAggregatePoint): string {
             class="text-[10px] px-2 py-0.5 rounded-full transition-colors"
             :class="suggestionMode === m
               ? 'bg-violet-100 text-violet-700 font-medium'
-              : 'text-slate-400 hover:bg-slate-100'"
+              : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200'"
             @click="changeSuggestionMode(m)"
           >
             {{ t(`creatorStats.mode.${m}`) }}
@@ -667,7 +667,7 @@ function pointValue(point: CreatorAggregatePoint): string {
           class="rounded-lg border border-slate-100 bg-white px-3 py-2 dark:bg-slate-900/80 dark:border-slate-700/50"
         >
           <div class="flex items-center gap-1.5">
-            <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{{ s.category }}</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ s.category }}</span>
             <span class="text-xs font-medium text-slate-700 truncate">{{ s.title }}</span>
           </div>
           <p class="text-[11px] text-slate-500 mt-1 leading-relaxed">{{ s.advice }}</p>

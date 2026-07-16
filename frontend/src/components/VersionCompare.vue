@@ -253,7 +253,7 @@ function getCardClass(version: ContentVersion): string[] {
             <span
               v-for="tag in version.hashtags.slice(0, 4)"
               :key="tag"
-              class="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-xs"
+              class="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-xs dark:bg-slate-800 dark:text-slate-400"
             >
               #{{ tag }}
             </span>
