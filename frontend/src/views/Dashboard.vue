@@ -402,7 +402,7 @@ onUnmounted(() => {
           </div>
           <details v-if="workflowStore.effectiveState?.brief_content?.raw_text" class="mt-2">
             <summary class="text-xs text-slate-400 cursor-pointer hover:text-slate-600">{{ t('brief.viewRaw') }}</summary>
-            <pre class="mt-1.5 p-2.5 rounded-lg bg-slate-50 text-xs text-slate-600 whitespace-pre-wrap max-h-40 overflow-y-auto">{{ workflowStore.effectiveState.brief_content.raw_text }}</pre>
+            <pre class="mt-1.5 p-2.5 rounded-lg bg-slate-50 text-xs text-slate-600 whitespace-pre-wrap max-h-40 overflow-y-auto dark:bg-slate-800/70 dark:text-slate-300">{{ workflowStore.effectiveState.brief_content.raw_text }}</pre>
           </details>
         </div>
       </div>

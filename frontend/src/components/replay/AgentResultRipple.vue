@@ -14,7 +14,7 @@ function formatNum(n?: number): string {
 </script>
 
 <template>
-  <div class="replay-section" style="border-radius: 0.75rem; background: rgba(248, 250, 252, 0.66); border: 1px solid rgba(226, 232, 240, 0.72); padding: 0.75rem 1rem; box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);">
+  <div class="replay-section">
     <!-- Core metrics row — always visible -->
     <div class="flex items-center gap-3 flex-wrap">
       <!-- Viral probability -->

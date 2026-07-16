@@ -222,11 +222,11 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
 <template>
   <div class="space-y-6">
     <!-- A compact progress cue keeps the form oriented on both desktop and mobile. -->
-    <div class="flex items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5" role="list" :aria-label="t('home.formIntro')">
+    <div class="flex items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 dark:border-slate-700/60 dark:bg-slate-900/70" role="list" :aria-label="t('home.formIntro')">
       <div v-for="(step, index) in [t('home.stepConfigure'), t('home.stepReview'), t('home.stepCreate')]" :key="step" class="flex min-w-0 flex-1 items-center gap-2" role="listitem">
         <span :class="[
           'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold',
-          index === 0 ? 'bg-neon-pink text-white shadow-neon-pink-sm' : 'bg-white text-slate-400 ring-1 ring-slate-200'
+          index === 0 ? 'bg-neon-pink text-white shadow-neon-pink-sm' : 'bg-white text-slate-400 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-600'
         ]">{{ index + 1 }}</span>
         <span :class="['truncate text-[11px] font-semibold', index === 0 ? 'text-slate-700' : 'text-slate-400']">{{ step }}</span>
         <span v-if="index < 2" class="h-px min-w-2 flex-1 bg-slate-200" aria-hidden="true" />
@@ -252,7 +252,7 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
             'transition-all duration-300 ease-out cursor-pointer select-none',
             workflowMode === m.value
               ? 'border-neon-pink/50 bg-gradient-to-br from-neon-pink/10 to-neon-peach/5 shadow-neon-pink-sm'
-              : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50 hover:shadow-sm'
+              : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50 hover:shadow-sm dark:border-slate-700/55 dark:bg-slate-900/80 dark:hover:border-slate-600 dark:hover:bg-slate-800/80'
           ]"
         >
           <span v-if="m.value === 'trend'" class="absolute right-2 top-2 rounded-full bg-rose-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-neon-pinkDark">
@@ -290,8 +290,8 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
         <select
           v-model="accountId"
           class="w-full pl-4 pr-10 py-3 rounded-xl border-2 border-slate-100 bg-slate-50/50 text-sm text-slate-700 font-medium
-                 transition-all duration-300 ease-out appearance-none
-                 focus:outline-none focus:border-neon-pink/40 focus:bg-white focus:shadow-neon-pink-sm"
+                 transition-all duration-300 ease-out appearance-none dark:border-slate-700/55 dark:bg-slate-900/70 dark:text-slate-200
+                 focus:outline-none focus:border-neon-pink/40 focus:bg-white focus:shadow-neon-pink-sm dark:focus:bg-slate-900"
         >
           <option value="" disabled>{{ t('home.form.accountIdPlaceholder') }}</option>
           <option v-for="acc in accountsStore.accountOptions" :key="acc.id" :value="acc.id">
@@ -318,9 +318,9 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
           v-model="topic"
           type="text"
           class="w-full pl-4 pr-4 py-3 rounded-xl border-2 border-slate-100 bg-slate-50/50 text-sm text-slate-700 font-medium
-                 transition-all duration-300 ease-out
-                 focus:outline-none focus:border-neon-purple/40 focus:bg-white focus:shadow-neon-purple-sm
-                 placeholder:text-slate-300 placeholder:font-normal"
+                 transition-all duration-300 ease-out dark:border-slate-700/55 dark:bg-slate-900/70 dark:text-slate-200
+                 focus:outline-none focus:border-neon-purple/40 focus:bg-white focus:shadow-neon-purple-sm dark:focus:bg-slate-900
+                 placeholder:text-slate-300 placeholder:font-normal dark:placeholder:text-slate-500"
           :placeholder="t('home.form.topicPlaceholder')"
         />
       </div>
@@ -364,7 +364,7 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
               'transition-all duration-300 ease-out resize-y',
               hasPdfUpload
                 ? 'border-slate-100 bg-slate-100/50 text-slate-400 cursor-not-allowed'
-                : 'bg-slate-50/50 border-slate-100 focus:outline-none focus:border-neon-pink/40 focus:bg-white focus:shadow-neon-pink-sm placeholder:text-slate-300 placeholder:font-normal'
+                : 'bg-slate-50/50 border-slate-100 focus:outline-none focus:border-neon-pink/40 focus:bg-white focus:shadow-neon-pink-sm placeholder:text-slate-300 placeholder:font-normal dark:bg-slate-900/70 dark:border-slate-700/55 dark:focus:bg-slate-900 dark:placeholder:text-slate-500'
             ]"
             :placeholder="hasPdfUpload ? t('brief.textDisabledByPdf') : t('home.form.briefTextPlaceholder')"
           />
@@ -394,7 +394,7 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
             'transition-all duration-300 ease-out cursor-pointer select-none',
             niche === n.value
               ? 'border-neon-pink/50 bg-gradient-to-r from-neon-pink/10 to-neon-peach/10 text-neon-pinkDark shadow-neon-pink-sm scale-[1.02]'
-              : 'border-slate-100 bg-white text-slate-500 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-700 hover:shadow-sm hover:-translate-y-0.5'
+              : 'border-slate-100 bg-white text-slate-500 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-700 hover:shadow-sm hover:-translate-y-0.5 dark:border-slate-700/55 dark:bg-slate-900/80 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200'
           ]"
         >
           <AppIcon
@@ -421,7 +421,7 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
     <button
       v-if="workflowMode !== 'free'"
       type="button"
-      class="flex min-h-11 w-full items-center justify-between rounded-xl border border-slate-200/70 bg-slate-50/60 px-4 text-left text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:bg-white"
+      class="flex min-h-11 w-full items-center justify-between rounded-xl border border-slate-200/70 bg-slate-50/60 px-4 text-left text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:bg-white dark:border-slate-700/55 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800"
       :aria-expanded="showAdvancedOptions"
       @click="showAdvancedOptions = !showAdvancedOptions"
     >
@@ -453,7 +453,7 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
             'transition-all duration-300 ease-out cursor-pointer select-none',
             phase === p.value
               ? 'border-neon-pink/50 bg-gradient-to-br from-neon-pink/10 to-neon-peach/5 shadow-neon-pink-sm'
-              : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50 hover:shadow-sm'
+              : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50 hover:shadow-sm dark:border-slate-700/55 dark:bg-slate-900/80 dark:hover:border-slate-600 dark:hover:bg-slate-800/80'
           ]"
         >
           <div :class="[
@@ -461,7 +461,7 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
             'transition-all duration-300',
             phase === p.value
               ? 'border-neon-pink bg-neon-pink'
-              : 'border-slate-200 bg-white'
+              : 'border-slate-200 bg-white dark:border-slate-600 dark:bg-slate-800'
           ]">
             <AppIcon
               v-if="phase === p.value"
@@ -499,7 +499,7 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
       <div class="grid grid-cols-2 gap-2.5">
         <!-- Dry Run toggle -->
         <div class="flex items-center justify-between p-3 rounded-xl border-2 border-slate-100 bg-white
-                      hover:border-slate-200 hover:shadow-sm transition-all duration-300 group/opt">
+                      hover:border-slate-200 hover:shadow-sm transition-all duration-300 group/opt dark:border-slate-700/55 dark:bg-slate-900/80 dark:hover:border-slate-600">
           <div class="flex items-center gap-2 min-w-0">
             <div class="flex items-center justify-center w-7 h-7 rounded-lg bg-teal-50 group-hover/opt:bg-teal-100 transition-colors shrink-0">
               <AppIcon name="FlaskConical" size="sm" variant="cyan" />
@@ -528,7 +528,7 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
 
         <!-- Auto Publish toggle -->
         <div class="flex items-center justify-between p-3 rounded-xl border-2 border-slate-100 bg-white
-                      hover:border-slate-200 hover:shadow-sm transition-all duration-300 group/opt">
+                      hover:border-slate-200 hover:shadow-sm transition-all duration-300 group/opt dark:border-slate-700/55 dark:bg-slate-900/80 dark:hover:border-slate-600">
           <div class="flex items-center gap-2 min-w-0">
             <div class="flex items-center justify-center w-7 h-7 rounded-lg bg-rose-50 group-hover/opt:bg-rose-100 transition-colors shrink-0">
               <AppIcon name="Upload" size="sm" variant="pink" />

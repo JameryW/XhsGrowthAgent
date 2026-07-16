@@ -48,10 +48,10 @@ const statusBg = (status: string) => {
     case 'ok': return 'bg-emerald-50 border-emerald-100'
     case 'warning': return 'bg-amber-50 border-amber-100'
     case 'degraded': return 'bg-amber-50 border-amber-100'
-    case 'disabled': return 'bg-slate-50 border-slate-100'
+    case 'disabled': return 'bg-slate-50 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50'
     case 'missing': return 'bg-rose-50 border-rose-100'
     case 'error': return 'bg-rose-50 border-rose-100'
-    default: return 'bg-slate-50 border-slate-100'
+    default: return 'bg-slate-50 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50'
   }
 }
 
@@ -78,10 +78,10 @@ const issueCount = computed(() => {
 </script>
 
 <template>
-  <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm overflow-hidden">
+  <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm overflow-hidden dark:bg-slate-900/90 dark:border-slate-700/55">
     <!-- Header - always visible -->
     <button
-      class="w-full flex items-center justify-between p-4 hover:bg-slate-50/50 transition-colors"
+      class="w-full flex items-center justify-between p-4 hover:bg-slate-50/50 transition-colors dark:hover:bg-slate-800/50"
       @click="isExpanded = !isExpanded"
       :aria-expanded="isExpanded"
       :aria-label="t('health.title')"

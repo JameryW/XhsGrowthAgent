@@ -90,7 +90,7 @@ const handleDismissError = () => {
             v-model="username"
             type="text"
             autocomplete="username"
-            class="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-800 outline-none transition-all duration-200 placeholder:text-slate-400 focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20"
+            class="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-800 outline-none transition-all duration-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20"
             :placeholder="t('login.usernamePlaceholder')"
           />
         </div>
@@ -103,7 +103,7 @@ const handleDismissError = () => {
             v-model="password"
             type="password"
             autocomplete="current-password"
-            class="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-800 outline-none transition-all duration-200 placeholder:text-slate-400 focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20"
+            class="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-800 outline-none transition-all duration-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20"
             :placeholder="t('login.passwordPlaceholder')"
           />
         </div>

@@ -399,7 +399,7 @@ const finalSummary = computed(() => {
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <button v-if="selectedCheckpoint" type="button" @click="copyCheckpointLink" class="min-h-11 rounded-xl border border-slate-200 bg-white/70 px-3 text-[11px] font-medium text-slate-600 transition-colors hover:bg-white" :aria-label="t('replay.copyLink')">
+            <button v-if="selectedCheckpoint" type="button" @click="copyCheckpointLink" class="min-h-11 rounded-xl border border-slate-200 bg-white/70 px-3 text-[11px] font-medium text-slate-600 transition-colors hover:bg-white dark:border-slate-600 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:bg-slate-800" :aria-label="t('replay.copyLink')">
               <AppIcon name="Link" size="xs" variant="cyan" />
               <span class="hidden sm:inline">{{ t('replay.copyLink') }}</span>
             </button>
@@ -482,7 +482,7 @@ const finalSummary = computed(() => {
                       ? 'bg-amber-50 text-amber-700'
                       : node.status === 'error'
                         ? 'bg-red-50 text-red-700'
-                        : 'bg-slate-50 text-slate-500 hover:bg-slate-100',
+                        : 'bg-slate-50 text-slate-500 hover:bg-slate-100 dark:bg-slate-800/70 dark:text-slate-400 dark:hover:bg-slate-700/70',
                 { 'replay-pipeline-node-active': node.selected || node.status === 'running' },
               ]"
               :aria-pressed="node.selected"
@@ -694,7 +694,7 @@ const finalSummary = computed(() => {
           <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-teal-600">{{ t('replay.creationProcess') }}</p>
           <h2 class="mt-2 text-xl font-bold tracking-tight text-slate-800">{{ activePhaseLabel }}</h2>
           <p class="mt-2 max-w-sm text-xs leading-5 text-slate-500">{{ t('replay.creationProcessDesc') }}</p>
-          <div class="mt-4 inline-flex items-center gap-2 rounded-full border border-teal-200/70 bg-white/60 px-2.5 py-1.5 text-[10px] font-medium text-teal-700">
+          <div class="mt-4 inline-flex items-center gap-2 rounded-full border border-teal-200/70 bg-white/60 px-2.5 py-1.5 text-[10px] font-medium text-teal-700 dark:border-teal-500/30 dark:bg-slate-900/70 dark:text-teal-300">
             <span class="replay-creation-signal h-1.5 w-1.5 rounded-full bg-teal-400" aria-hidden="true" />
             {{ t('replay.signalMoving') }}
           </div>

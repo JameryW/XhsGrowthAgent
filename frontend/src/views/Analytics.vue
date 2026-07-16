@@ -194,7 +194,7 @@ const insightBg = (type: string) => {
     case 'trend': return 'bg-teal-50 border-teal-100'
     case 'opportunity': return 'bg-violet-50 border-violet-100'
     case 'warning': return 'bg-amber-50 border-amber-100'
-    default: return 'bg-slate-50 border-slate-100'
+    default: return 'bg-slate-50 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50'
   }
 }
 

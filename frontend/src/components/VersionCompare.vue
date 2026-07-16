@@ -53,7 +53,7 @@ const gapSeverityClass = (severity: string): string => {
 const suggestionPriorityClass = (priority: number): string => {
   if (priority >= 8) return 'bg-rose-50 border-rose-300'
   if (priority >= 5) return 'bg-amber-50 border-amber-200'
-  return 'bg-slate-50 border-slate-200'
+  return 'bg-slate-50 border-slate-200 dark:bg-slate-800/70 dark:border-slate-600/50'
 }
 
 // Actions
@@ -81,7 +81,7 @@ function getVersionTypeColor(type: string): string {
     case 'style_a': return 'border-violet-200 bg-violet-50 text-violet-600'
     case 'style_b': return 'border-amber-200 bg-amber-50 text-amber-600'
     case 'style_c': return 'border-emerald-200 bg-emerald-50 text-emerald-600'
-    default: return 'border-slate-200 bg-slate-50 text-slate-600'
+    default: return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-600/50 dark:bg-slate-800/70 dark:text-slate-300'
   }
 }
 
@@ -106,7 +106,7 @@ function getCardClass(version: ContentVersion): string[] {
 <template>
   <div class="space-y-6">
     <!-- Optimization Analysis Summary -->
-    <div v-if="props.analysis" class="rounded-xl p-5 bg-white/98 backdrop-blur-sm border border-violet-200/50">
+    <div v-if="props.analysis" class="rounded-xl p-5 bg-white/98 backdrop-blur-sm border border-violet-200/50 dark:bg-slate-900/90 dark:border-violet-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
           <AppIcon name="Scan" size="md" variant="white" :aria-label="t('versionCompare.analysisReport')" />
@@ -172,7 +172,7 @@ function getCardClass(version: ContentVersion): string[] {
     </div>
 
     <!-- Version Comparison -->
-    <div class="rounded-xl p-5 bg-white/98 backdrop-blur-sm border border-teal-200/50">
+    <div class="rounded-xl p-5 bg-white/98 backdrop-blur-sm border border-teal-200/50 dark:bg-slate-900/90 dark:border-teal-500/25">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm">
           <AppIcon name="GitBranch" size="md" variant="white" :aria-label="t('versionCompare.versionComparison')" />
