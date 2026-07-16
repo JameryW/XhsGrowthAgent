@@ -165,3 +165,8 @@ side-effectful mutation of a Pinia store.
 - **Don't** forget to clean up WebSocket connections on unmount
 - **Don't** use `watch` for things that can be `computed`
 - **Don't** call `useXStore()` from router guards or other module-level code without an explicit shared Pinia instance. Export one `pinia` instance and pass it to the store (`useAuthStore(pinia)`) so navigation never depends on an active component context.
+
+Public route shells should import only the store modules they use (for example,
+`stores/auth` and `stores/realtime`) instead of importing the aggregate
+`stores/index` barrel. The barrel is convenient inside authenticated feature
+code, but it can pull unrelated workspace stores into the public entry chunk.

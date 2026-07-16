@@ -13,7 +13,10 @@ const KeyboardShortcutsHelp = defineAsyncComponent(() => import("@/components/Ke
 const Navbar = defineAsyncComponent(() => import("@/components/Navbar.vue"))
 const MobileTabBar = defineAsyncComponent(() => import("@/components/MobileTabBar.vue"))
 const OnboardingTour = defineAsyncComponent(() => import("@/components/OnboardingTour.vue"))
-import { useRealtimeStore, useOnboardingStore, useShortcutsStore, useAuthStore } from "@/stores"
+import { useRealtimeStore } from "@/stores/realtime"
+import { useOnboardingStore } from "@/stores/onboarding"
+import { useShortcutsStore } from "@/stores/shortcuts"
+import { useAuthStore } from "@/stores/auth"
 import { useOnboarding } from "@/composables/useOnboarding"
 import { useShortcuts } from "@/composables/useShortcuts"
 import { useBreakpoints } from "@/composables/useBreakpoints"
