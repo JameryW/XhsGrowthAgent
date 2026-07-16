@@ -17,25 +17,25 @@ const toastStyles: Record<ToastType, {
 }> = {
   info: {
     borderClass: "border-neon-cyan/20",
-    bgClass: "bg-white",
+    bgClass: "bg-white dark:bg-slate-900",
     iconVariant: 'cyan',
     icon: "Info",
   },
   success: {
     borderClass: "border-neon-green/20",
-    bgClass: "bg-white",
+    bgClass: "bg-white dark:bg-slate-900",
     iconVariant: 'cyan',
     icon: "CheckCircle",
   },
   warning: {
     borderClass: "border-neon-peach/20",
-    bgClass: "bg-white",
+    bgClass: "bg-white dark:bg-slate-900",
     iconVariant: 'peach',
     icon: "AlertTriangle",
   },
   error: {
     borderClass: "border-neon-pink/20",
-    bgClass: "bg-white",
+    bgClass: "bg-white dark:bg-slate-900",
     iconVariant: 'pink',
     icon: "XCircle",
   },

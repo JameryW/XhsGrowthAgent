@@ -372,7 +372,7 @@ const substepSectionLabels = computed<Record<string, string>>(() => ({
 
     <!-- Progress line -->
     <div class="relative py-4" role="progressbar" :aria-valuenow="workflowProgress" aria-valuemin="0" aria-valuemax="100" :aria-label="`${t('dashboard.timeline.progress')} ${workflowProgress}%`">
-      <div class="absolute top-1/2 left-0 right-0 h-1 bg-slate-100 rounded-full" aria-hidden="true" />
+      <div class="absolute top-1/2 left-0 right-0 h-1 bg-slate-100 rounded-full dark:bg-slate-700/70" aria-hidden="true" />
       <div
         class="absolute top-1/2 left-0 h-1 rounded-full transition-all duration-500"
         :class="hasError ? 'bg-rose-400' : 'bg-gradient-to-r from-rose-400 to-teal-400'"
@@ -412,7 +412,7 @@ const substepSectionLabels = computed<Record<string, string>>(() => ({
         >
           <div
             v-if="shouldExpandSubSteps(phase)"
-            class="mt-2 mx-1 md:mx-6 p-2.5 md:p-3 rounded-xl bg-slate-50/80 border border-slate-100"
+            class="mt-2 mx-1 md:mx-6 p-2.5 md:p-3 rounded-xl bg-slate-50/80 border border-slate-100 dark:bg-slate-800/60 dark:border-slate-700/50"
           >
             <div class="flex items-center gap-1.5 mb-2">
               <AppIcon name="Layers" size="sm" variant="cyan" />
@@ -496,7 +496,7 @@ const substepSectionLabels = computed<Record<string, string>>(() => ({
           v-for="entry in agentTimeline"
           :key="`${entry.agent}-${entry.started_at}`"
           class="flex items-center gap-3 p-2.5 rounded-lg border transition-colors"
-          :class="entry.status === 'error' ? 'bg-rose-50/50 border-rose-100' : 'bg-slate-50/50 border-slate-100'"
+          :class="entry.status === 'error' ? 'bg-rose-50/50 border-rose-100 dark:bg-rose-950/35 dark:border-rose-500/30' : 'bg-slate-50/50 border-slate-100 dark:bg-slate-800/50 dark:border-slate-700/50'"
         >
           <span
             class="w-2 h-2 rounded-full flex-shrink-0"

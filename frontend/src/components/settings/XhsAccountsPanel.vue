@@ -251,7 +251,7 @@ function onQrConfirmed() {
             v-model="newAccountName"
             type="text"
             :placeholder="t('settings.accountNamePlaceholder')"
-            class="px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none w-40"
+            class="px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none w-40 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
           />
           <NeonButton variant="pink" size="sm" :loading="isCreating" type="submit">
             <AppIcon name="Plus" size="xs" variant="white" />
@@ -268,7 +268,7 @@ function onQrConfirmed() {
         class="rounded-lg border p-3 flex items-center gap-3 transition-all cursor-pointer"
         :class="editingAccountId === account.id
           ? 'border-rose-200 bg-rose-50/50 shadow-sm'
-          : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50/50'"
+          : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50/50 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800/50'"
         @click="editingAccountId = account.id"
       >
         <div class="w-2 h-2 rounded-full shrink-0" :class="account.is_active ? 'bg-emerald-500' : 'bg-slate-300'" />

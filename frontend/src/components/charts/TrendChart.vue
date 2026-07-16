@@ -123,7 +123,7 @@ const chartOption = computed(() => {
 
 <template>
   <div
-    class="rounded-xl p-6 transition-all duration-200 hover:shadow-lg bg-white/98 backdrop-blur-sm border border-slate-200/50"
+    class="rounded-xl p-6 transition-all duration-200 hover:shadow-lg bg-white/98 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55"
     :class="`border-${props.variant === 'pink' ? 'rose' : props.variant === 'cyan' ? 'teal' : 'violet'}-200/30`"
     role="figure"
     :aria-label="chartDescription"

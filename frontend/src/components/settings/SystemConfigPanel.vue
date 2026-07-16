@@ -115,8 +115,8 @@ async function confirmDeleteKey() {
       </h3>
       <div class="space-y-1">
         <div v-for="keyName in group.keys" :key="keyName"
-          class="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-slate-50/80 transition-colors"
-          :class="isParam(keyName) ? 'bg-slate-50/40' : ''"
+          class="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-slate-50/80 transition-colors dark:hover:bg-slate-800/50"
+          :class="isParam(keyName) ? 'bg-slate-50/40 dark:bg-slate-800/40' : ''"
         >
           <span class="text-xs font-mono w-44 shrink-0" :class="isParam(keyName) ? 'text-teal-600' : 'text-slate-500'">{{ keyName }}</span>
 
@@ -127,7 +127,7 @@ async function confirmDeleteKey() {
               v-model="edits[keyName]"
               :type="isParam(keyName) ? 'text' : 'password'"
               :placeholder="isParam(keyName) ? keyName : t('settings.enterValue')"
-              class="w-full px-2 py-1 text-sm rounded border bg-white focus:border-rose-400 outline-none"
+              class="w-full px-2 py-1 text-sm rounded border bg-white focus:border-rose-400 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
               :class="isParam(keyName) ? 'border-teal-200' : 'border-rose-200'"
               @keydown.escape="cancelEdit(keyName)"
             />

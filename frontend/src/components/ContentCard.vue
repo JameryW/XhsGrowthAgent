@@ -113,7 +113,7 @@ const styles = {
             <span :class="styles[props.variant].text" aria-hidden="true">▸</span>
             <span class="text-slate-400 shrink-0">{{ formatKey(String(key)) }}:</span>
             <div class="flex flex-wrap gap-1">
-              <span v-for="(item, i) in value" :key="i" :class="['px-1.5 py-0.5 rounded bg-white border text-[11px]', styles[props.variant].border, styles[props.variant].textLight]">{{ item }}</span>
+              <span v-for="(item, i) in value" :key="i" :class="['px-1.5 py-0.5 rounded bg-white border text-[11px] dark:bg-slate-900/80', styles[props.variant].border, styles[props.variant].textLight]">{{ item }}</span>
             </div>
           </div>
 

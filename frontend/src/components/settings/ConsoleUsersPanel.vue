@@ -118,13 +118,13 @@ function formatDate(iso: string | null): string {
           v-model="newUsername"
           type="text"
           :placeholder="t('settings.consoleUsers.usernamePlaceholder')"
-          class="flex-1 px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none"
+          class="flex-1 px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
         />
         <input
           v-model="newPassword"
           type="password"
           :placeholder="t('settings.consoleUsers.passwordPlaceholder')"
-          class="flex-1 px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none"
+          class="flex-1 px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
         />
         <NeonButton variant="pink" size="sm" :loading="isCreating" type="submit">
           <AppIcon name="Plus" size="xs" variant="white" />
@@ -170,7 +170,7 @@ function formatDate(iso: string | null): string {
             v-model="newPasswordValue"
             type="password"
             :placeholder="t('settings.consoleUsers.newPasswordPlaceholder')"
-            class="w-44 px-2 py-1 text-sm rounded border border-rose-200 bg-white focus:border-rose-400 outline-none"
+            class="w-44 px-2 py-1 text-sm rounded border border-rose-200 bg-white focus:border-rose-400 outline-none dark:border-rose-500/40 dark:bg-slate-900 dark:text-slate-200"
             @keydown.escape="cancelChangePassword"
           />
           <NeonButton variant="cyan" size="sm" :loading="isChangingPwd" @click="submitChangePassword">

@@ -369,7 +369,7 @@ onUnmounted(() => {
             class="mb-3 p-3 rounded-lg border"
             :class="verificationRequired
               ? 'bg-cyan-50/80 border-cyan-100'
-              : 'bg-slate-50/80 border-slate-100'"
+              : 'bg-slate-50/80 border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50'"
           >
             <label class="block text-xs font-medium text-slate-500 mb-2">
               {{ verificationRequired

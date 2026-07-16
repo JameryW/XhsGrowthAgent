@@ -311,7 +311,7 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
       <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
         <AppIcon name="Sparkles" size="sm" variant="purple" />
         {{ t('home.form.topic') }}
-        <span class="text-[10px] font-normal tracking-normal normal-case text-slate-300 bg-slate-100 px-1.5 py-0.5 rounded-full">{{ t('common.optional') }}</span>
+        <span class="text-[10px] font-normal tracking-normal normal-case text-slate-300 bg-slate-100 px-1.5 py-0.5 rounded-full dark:bg-slate-800 dark:text-slate-400">{{ t('common.optional') }}</span>
       </label>
       <div class="relative">
         <input

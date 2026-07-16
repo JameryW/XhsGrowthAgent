@@ -75,7 +75,7 @@ const goBackAction = () => {
         <p class="text-red-500/70 text-xs mb-3">{{ t('errorState.currentPhase', { phase: currentPhase }) }}</p>
 
         <!-- Recovery suggestions -->
-        <div class="mt-3 p-3 rounded-lg bg-white/80 border border-red-100">
+        <div class="mt-3 p-3 rounded-lg bg-white/80 border border-red-100 dark:bg-slate-900/85 dark:border-slate-700/50">
           <p class="text-xs text-red-600 font-medium mb-2">{{ t('errorState.suggestions') }}</p>
           <ul class="space-y-1">
             <li v-for="suggestion in recoverySuggestions" :key="suggestion" class="flex items-center gap-2 text-xs text-red-500">

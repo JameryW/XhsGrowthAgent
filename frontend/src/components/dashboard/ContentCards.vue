@@ -131,7 +131,7 @@ function heatBg(score?: number): string {
   if (score === undefined) return 'bg-slate-100'
   if (score >= 80) return 'bg-rose-50'
   if (score >= 60) return 'bg-amber-50'
-  return 'bg-slate-50'
+  return 'bg-slate-50 dark:bg-slate-800/70'
 }
 
 // Trigger analyst node manually after publish
@@ -487,7 +487,7 @@ async function handleTriggerAnalytics() {
         <div v-if="shootingPlan.creator_nickname || shootingPlan.content_type_label || shootingPlan.planned_publish_date" class="flex flex-wrap gap-2 text-xs">
           <span v-if="shootingPlan.creator_nickname" class="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-100">{{ shootingPlan.creator_nickname }}</span>
           <span v-if="shootingPlan.content_type_label" class="px-2 py-0.5 rounded-md bg-rose-50 text-rose-600 border border-rose-100">{{ shootingPlan.content_type_label }}</span>
-          <span v-if="shootingPlan.planned_publish_date" class="px-2 py-0.5 rounded-md bg-slate-50 text-slate-500 border border-slate-100">{{ shootingPlan.planned_publish_date }}</span>
+          <span v-if="shootingPlan.planned_publish_date" class="px-2 py-0.5 rounded-md bg-slate-50 text-slate-500 border border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50 dark:text-slate-400">{{ shootingPlan.planned_publish_date }}</span>
         </div>
 
         <!-- Product spec -->
@@ -536,7 +536,7 @@ async function handleTriggerAnalytics() {
         <!-- Shooting angles -->
         <div v-if="shootingPlan.shooting_angles?.length" class="space-y-1.5">
           <div class="text-xs text-slate-500 uppercase tracking-wide font-medium">{{ t('shootingPlan.shootingAngles') }}</div>
-          <div v-for="(angle, idx) in shootingPlan.shooting_angles" :key="idx" class="p-2 rounded-lg bg-slate-50 border border-slate-100">
+          <div v-for="(angle, idx) in shootingPlan.shooting_angles" :key="idx" class="p-2 rounded-lg bg-slate-50 border border-slate-100 dark:bg-slate-800/70 dark:border-slate-700/50">
             <div class="text-xs font-semibold text-slate-700">{{ angle.angle }}</div>
             <div class="text-[11px] text-slate-500">{{ angle.description }}</div>
             <div v-if="angle.tips" class="text-[11px] text-amber-500 mt-0.5">{{ t('shootingPlan.tip') }}: {{ angle.tips }}</div>
@@ -634,7 +634,7 @@ async function handleTriggerAnalytics() {
         </div>
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div v-if="analytics.views !== undefined" class="rounded-lg p-3 bg-slate-50 border border-slate-100 text-center">
+        <div v-if="analytics.views !== undefined" class="rounded-lg p-3 bg-slate-50 border border-slate-100 text-center dark:bg-slate-800/70 dark:border-slate-700/50">
           <div class="text-[10px] text-slate-400 uppercase tracking-wide">{{ t('dashboard.contentCards.views') }}</div>
           <div class="text-lg font-bold text-slate-700">{{ formatNum(analytics.views) }}</div>
         </div>

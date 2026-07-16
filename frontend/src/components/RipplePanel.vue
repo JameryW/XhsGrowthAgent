@@ -362,7 +362,7 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
           <div :class="['text-2xl font-bold', viralColor(prediction.viral_probability)]">
             {{ (prediction.viral_probability * 100).toFixed(0) }}%
           </div>
-          <div class="mt-1.5 h-1.5 rounded-full bg-white/60 overflow-hidden">
+          <div class="mt-1.5 h-1.5 rounded-full bg-white/60 overflow-hidden dark:bg-slate-950/50">
             <div :class="['h-full rounded-full transition-all duration-500', prediction.viral_probability >= 0.7 ? 'bg-emerald-400' : prediction.viral_probability >= 0.4 ? 'bg-amber-400' : 'bg-rose-400']" :style="{ width: progressWidth(prediction.viral_probability) }" />
           </div>
         </div>
@@ -381,7 +381,7 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
           <div :class="['text-2xl font-bold', pmfColor(pmf.pmf_score)]">
             {{ (pmf.pmf_score * 100).toFixed(0) }}%
           </div>
-          <div class="mt-1.5 h-1.5 rounded-full bg-white/60 overflow-hidden">
+          <div class="mt-1.5 h-1.5 rounded-full bg-white/60 overflow-hidden dark:bg-slate-950/50">
             <div :class="['h-full rounded-full transition-all duration-500', pmf.pmf_score >= 0.7 ? 'bg-teal-400' : pmf.pmf_score >= 0.4 ? 'bg-amber-400' : 'bg-rose-400']" :style="{ width: progressWidth(pmf.pmf_score) }" />
           </div>
         </div>
@@ -403,7 +403,7 @@ async function handleRippleDecision(action: 'accept' | 'reangle' | 'retopic') {
         </div>
 
         <!-- Confidence -->
-        <div v-if="hasPrediction && prediction.confidence !== undefined" class="rounded-lg p-3 bg-slate-50 border border-slate-200">
+        <div v-if="hasPrediction && prediction.confidence !== undefined" class="rounded-lg p-3 bg-slate-50 border border-slate-200 dark:bg-slate-800/70 dark:border-slate-600">
           <div class="text-xs text-slate-500 mb-1">{{ t('dashboard.ripple.confidence') }}</div>
           <div class="text-lg font-bold text-slate-700">
             {{ (prediction.confidence * 100).toFixed(0) }}%
