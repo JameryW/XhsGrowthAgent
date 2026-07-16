@@ -154,7 +154,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
 
     <!-- Loading -->
     <div v-if="isLoading" class="space-y-3">
-      <div v-for="i in 5" :key="i" class="h-20 rounded-xl bg-slate-100 animate-pulse" />
+      <div v-for="i in 5" :key="i" class="h-20 rounded-xl bg-slate-100 animate-pulse dark:bg-slate-800" />
     </div>
 
     <!-- Error -->
@@ -202,10 +202,10 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
               <div class="flex items-center gap-1.5 md:gap-2 flex-wrap min-w-0">
                 <span :id="`history-workflow-${wf.thread_id}`" class="text-xs md:text-sm font-medium text-slate-700 truncate">{{ wf.label || wf.thread_id.slice(-8) }}</span>
                 <span class="text-[10px] md:text-xs font-mono text-slate-400 hidden sm:inline truncate">{{ wf.thread_id }}</span>
-                <span v-if="wf.dry_run" class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100">
+                <span v-if="wf.dry_run" class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded bg-teal-50 text-teal-600 border border-teal-100 dark:bg-teal-950/45 dark:text-teal-300 dark:border-teal-500/30">
                   {{ t('history.dryRun') }}
                 </span>
-                <span v-else class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100">
+                <span v-else class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-100 dark:bg-rose-950/45 dark:text-rose-300 dark:border-rose-500/30">
                   {{ t('history.live') }}
                 </span>
                 <span v-if="wf.workflow_mode" class="text-[10px] md:text-xs px-1 md:px-1.5 py-0.5 rounded border"
@@ -225,7 +225,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
           <div class="flex items-center gap-2 md:gap-3 flex-shrink-0 flex-wrap">
             <!-- Progress bar -->
             <div class="w-16 md:w-20 hidden sm:block">
-              <div class="h-1 md:h-1.5 rounded-full bg-slate-100 overflow-hidden">
+              <div class="h-1 md:h-1.5 rounded-full bg-slate-100 overflow-hidden dark:bg-slate-800">
                 <div
                   class="h-full rounded-full bg-gradient-to-r from-rose-400 to-teal-400 transition-all"
                   :style="{ width: `${wf.progress_percent}%` }"

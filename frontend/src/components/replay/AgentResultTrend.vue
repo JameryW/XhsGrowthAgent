@@ -22,7 +22,7 @@ function formatNum(n?: number): string {
         <div v-for="ht in cp.trend_data.hot_topics" :key="ht.topic" class="flex items-center justify-between p-2 rounded-lg liquid-glass-inset">
           <span class="text-xs font-medium text-slate-700">{{ ht.topic }}</span>
           <div class="flex items-center gap-2">
-            <span class="text-[10px] px-1.5 py-0.5 rounded" :class="ht.heat_score >= 80 ? 'bg-rose-50 text-rose-600' : ht.heat_score >= 60 ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'">{{ ht.heat_score }}</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded" :class="ht.heat_score >= 80 ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-300' : ht.heat_score >= 60 ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'">{{ ht.heat_score }}</span>
             <span v-if="ht.growth_rate != null" class="text-[10px]" :class="ht.growth_rate > 0 ? 'text-emerald-500' : 'text-rose-500'">{{ ht.growth_rate > 0 ? '+' : '' }}{{ (ht.growth_rate * 100).toFixed(0) }}%</span>
           </div>
         </div>
@@ -33,7 +33,7 @@ function formatNum(n?: number): string {
     <div v-if="cp.trend_data.trending_keywords?.length" class="mt-3">
       <div class="text-[10px] text-slate-400 font-medium mb-1.5 uppercase tracking-wide">{{ t('replay.trendingKeywords') }}</div>
       <div class="flex flex-wrap gap-1">
-        <span v-for="kw in cp.trend_data.trending_keywords" :key="kw" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{{ kw }}</span>
+        <span v-for="kw in cp.trend_data.trending_keywords" :key="kw" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ kw }}</span>
       </div>
     </div>
 

@@ -167,7 +167,7 @@ defineExpose({ readiness })
 
     <!-- Loading state -->
     <div v-if="isLoading" class="p-4 space-y-3">
-      <div v-for="i in 4" :key="i" class="h-12 rounded-lg bg-slate-100 animate-pulse" />
+      <div v-for="i in 4" :key="i" class="h-12 rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
     </div>
 
     <!-- Error state -->
@@ -218,7 +218,7 @@ defineExpose({ readiness })
               </span>
               <span
                 v-else
-                class="px-1 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 shrink-0"
+                class="px-1 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 shrink-0 dark:bg-slate-800 dark:text-slate-400"
               >
                 {{ t('checklist.optional') }}
               </span>

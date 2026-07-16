@@ -128,7 +128,7 @@ function heatColor(score?: number): string {
 
 // Heat score bg
 function heatBg(score?: number): string {
-  if (score === undefined) return 'bg-slate-100'
+  if (score === undefined) return 'bg-slate-100 dark:bg-slate-800'
   if (score >= 80) return 'bg-rose-50'
   if (score >= 60) return 'bg-amber-50'
   return 'bg-slate-50 dark:bg-slate-800/70'

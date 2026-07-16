@@ -742,8 +742,8 @@ const handleCancelConfirm = () => {
             :detail="workflowDetails.get(wf.thread_id)"
           />
           <div v-else-if="loadingDetailIds.has(wf.thread_id)" class="px-4 py-3 space-y-2">
-            <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse" />
-            <div class="h-3 w-1/2 rounded bg-slate-100 animate-pulse" />
+            <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
+            <div class="h-3 w-1/2 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
           </div>
         </div>
 
@@ -751,9 +751,9 @@ const handleCancelConfirm = () => {
         <div v-else :id="`review-panel-${wf.thread_id}`" class="border-t border-white/5">
           <!-- Review content loading -->
           <div v-if="reviewStore.isQueueItemLoading(wf.thread_id) && !reviewStore.pendingReviews.has(wf.thread_id)" class="px-4 py-4 space-y-2">
-            <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse" />
-            <div class="h-3 w-full rounded bg-slate-100 animate-pulse" />
-            <div class="h-3 w-2/3 rounded bg-slate-100 animate-pulse" />
+            <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
+            <div class="h-3 w-full rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
+            <div class="h-3 w-2/3 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
           </div>
 
           <!-- Review content loaded -->

@@ -27,7 +27,7 @@
       </div>
 
       <!-- Status bar skeleton -->
-      <div class="mt-8 bg-gradient-to-r from-slate-50/80 to-white rounded-xl p-4 border border-slate-100">
+      <div class="mt-8 bg-gradient-to-r from-slate-50/80 to-white rounded-xl p-4 border border-slate-100 dark:from-slate-800 dark:to-slate-900 dark:border-slate-700">
         <div class="flex items-center justify-center gap-6">
           <div class="flex items-center gap-2">
             <div class="w-2 h-2 rounded-full bg-slate-200 animate-pulse" />

@@ -176,7 +176,7 @@ function viralColor(prob?: number): string {
 }
 
 function viralBg(prob?: number): string {
-  if (prob === undefined) return 'bg-slate-100'
+  if (prob === undefined) return 'bg-slate-100 dark:bg-slate-800'
   if (prob >= 0.7) return 'bg-emerald-50'
   if (prob >= 0.4) return 'bg-amber-50'
   return 'bg-rose-50'

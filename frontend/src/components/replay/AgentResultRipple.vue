@@ -112,7 +112,7 @@ function formatNum(n?: number): string {
           <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('replay.spreadPhases') }}</div>
           <div class="space-y-0.5">
             <div v-for="(sp, i) in cp.ripple_prediction.spread_path" :key="i" class="text-xs text-slate-600 flex gap-1.5">
-              <span class="w-4 h-4 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center text-[10px] font-medium shrink-0">{{ i + 1 }}</span>
+              <span class="w-4 h-4 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 flex items-center justify-center text-[10px] font-medium shrink-0">{{ i + 1 }}</span>
               <span>{{ typeof sp === 'object' ? (sp.phase || sp.name || JSON.stringify(sp)) : String(sp) }}</span>
             </div>
           </div>
@@ -121,7 +121,7 @@ function formatNum(n?: number): string {
         <div v-if="cp.ripple_prediction.key_influencers?.length">
           <div class="text-[10px] text-slate-400 font-medium mb-1">{{ t('replay.keyInfluencers') }}</div>
           <div class="flex flex-wrap gap-1">
-            <span v-for="(inf, i) in cp.ripple_prediction.key_influencers" :key="i" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+            <span v-for="(inf, i) in cp.ripple_prediction.key_influencers" :key="i" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
               {{ typeof inf === 'object' ? (inf.name || inf.handle || JSON.stringify(inf)) : String(inf) }}
             </span>
           </div>

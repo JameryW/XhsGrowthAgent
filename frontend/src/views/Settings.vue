@@ -68,7 +68,7 @@ const currentTab = computed(() => TABS.find(t => t.id === activeTab.value)!)
               class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors"
               :class="activeTab === tab.id
                 ? 'bg-gradient-to-br from-rose-400 to-pink-400'
-                : 'bg-slate-100 group-hover:bg-slate-200'"
+                : 'bg-slate-100 group-hover:bg-slate-200 dark:bg-slate-800 dark:group-hover:bg-slate-700'"
             >
               <AppIcon :name="tab.icon" size="xs" :variant="activeTab === tab.id ? 'white' : 'pink'" />
             </div>

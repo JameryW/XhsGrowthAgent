@@ -145,7 +145,7 @@ function toggleViralLinks() {
         <div class="flex items-center justify-between mt-2">
           <!-- Progress bar -->
           <div class="flex items-center gap-2 flex-1">
-            <div class="w-24 h-2 rounded-full bg-slate-100 overflow-hidden">
+            <div class="w-24 h-2 rounded-full bg-slate-100 overflow-hidden dark:bg-slate-800">
               <div
                 :class="[
                   'h-full rounded-full transition-all duration-300',
