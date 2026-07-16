@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/state-management.md","reason":"验证主题状态持久化、system 监听和 dispose 行为不回归。"}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"验证 ThemeToggle 的组件结构、触摸目标和可访问性。"}

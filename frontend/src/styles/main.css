@@ -1013,6 +1013,15 @@ html.dark {
   color-scheme: dark;
 }
 
+/* Theme changes should snap to the new palette. Keeping normal component
+ * transitions enabled is useful during interaction, but applying them to
+ * every surface during a root theme-class change makes the toggle feel slow. */
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition: none !important;
+}
+
 html.dark,
 html.dark body,
 html.dark #app {
@@ -1084,338 +1093,357 @@ html.dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
 }
 
 /* Existing utility surfaces used by showcase, replay, and workspace cards.
- * Prefer full `background` so translucent white gradients cannot bleed through. */
-html.dark [class*="bg-white"] {
+ * Use exact class-token matching here. Substring attribute selectors force the
+ * browser to inspect every class attribute whenever html.dark changes. */
+html.dark :is(
+  .bg-white,
+  [class~="bg-white/10"],
+  [class~="bg-white/20"],
+  [class~="bg-white/35"],
+  [class~="bg-white/40"],
+  [class~="bg-white/45"],
+  [class~="bg-white/50"],
+  [class~="bg-white/55"],
+  [class~="bg-white/60"],
+  [class~="bg-white/65"],
+  [class~="bg-white/70"],
+  [class~="bg-white/75"],
+  [class~="bg-white/80"],
+  [class~="bg-white/85"],
+  [class~="bg-white/90"],
+  [class~="bg-white/95"],
+  [class~="bg-white/98"]
+) {
   background: rgba(15, 23, 42, 0.94) !important;
   background-color: rgba(15, 23, 42, 0.94) !important;
 }
 
-/* Pastel/neutral surfaces. Use end/space/slash forms so bg-*-50 does not
- * accidentally match solid bg-*-500 (substring false positive).
- * Full `background` + higher opacity: translucent tints over light parents
- * previously still read as bright cards. */
-html.dark [class*="bg-slate-50/"],
-html.dark [class*="bg-slate-50 "],
-html.dark [class$="bg-slate-50"],
-html.dark [class*="bg-slate-100/"],
-html.dark [class*="bg-slate-100 "],
-html.dark [class$="bg-slate-100"],
-html.dark [class*="bg-slate-200/"],
-html.dark [class*="bg-slate-200 "],
-html.dark [class$="bg-slate-200"],
-html.dark [class*="bg-slate-300/"],
-html.dark [class*="bg-slate-300 "],
-html.dark [class$="bg-slate-300"],
-html.dark [class*="bg-gray-50/"],
-html.dark [class*="bg-gray-50 "],
-html.dark [class$="bg-gray-50"],
-html.dark [class*="bg-gray-100/"],
-html.dark [class*="bg-gray-100 "],
-html.dark [class$="bg-gray-100"],
-html.dark [class*="bg-gray-200/"],
-html.dark [class*="bg-gray-200 "],
-html.dark [class$="bg-gray-200"],
-html.dark [class*="bg-light-bg"],
-html.dark [class*="bg-light-bgAlt"],
-html.dark [class*="bg-light-panel"],
-html.dark [class*="bg-light-card"],
-html.dark [class*="bg-light-panelAlt"],
-html.dark [class*="bg-light-cardHover"] {
+/* Pastel/neutral surfaces. Full background + higher opacity keeps translucent
+ * light tints from bleeding through dark parents. */
+html.dark :is(
+  .bg-slate-50,
+  [class~="bg-slate-50/40"],
+  [class~="bg-slate-50/50"],
+  [class~="bg-slate-50/60"],
+  [class~="bg-slate-50/70"],
+  [class~="bg-slate-50/80"],
+  .bg-slate-100,
+  [class~="bg-slate-100/50"],
+  [class~="bg-slate-100/80"],
+  .bg-slate-200,
+  [class~="bg-slate-200/60"],
+  [class~="bg-slate-200/70"],
+  [class~="bg-slate-200/80"],
+  .bg-slate-300,
+  [class~="bg-slate-300/25"],
+  .bg-gray-50,
+  .bg-gray-100,
+  .bg-gray-200,
+  .bg-light-bg,
+  .bg-light-bgAlt,
+  .bg-light-panel,
+  .bg-light-card,
+  .bg-light-panelAlt,
+  .bg-light-cardHover
+) {
   background: rgba(30, 41, 59, 0.92) !important;
   background-color: rgba(30, 41, 59, 0.92) !important;
 }
 
 /* Keep pure black/near-black text readable on dark surfaces. */
-html.dark [class*="text-slate-900"],
-html.dark [class*="text-gray-900"],
-html.dark [class*="text-text-primary"] {
+html.dark :is(.text-slate-900, .text-gray-900, .text-text-primary) {
   color: #f1f5f9 !important;
 }
 
-html.dark [class*="text-slate-800"],
-html.dark [class*="text-slate-700"],
-html.dark [class*="text-slate-600"],
-html.dark [class*="text-gray-800"],
-html.dark [class*="text-gray-700"],
-html.dark [class*="text-gray-600"],
-html.dark [class*="text-text-secondary"] {
+html.dark :is(
+  .text-slate-800,
+  .text-slate-700,
+  .text-slate-600,
+  .text-gray-800,
+  .text-gray-700,
+  .text-gray-600,
+  .text-text-secondary
+) {
   color: #e2e8f0 !important;
 }
 
-html.dark [class*="text-slate-500"],
-html.dark [class*="text-gray-500"],
-html.dark [class*="text-text-tertiary"] {
+html.dark :is(.text-slate-500, .text-gray-500, .text-text-tertiary) {
   color: #cbd5e1 !important;
 }
 
-html.dark [class*="text-slate-400"],
-html.dark [class*="text-gray-400"],
-html.dark [class*="text-text-muted"] {
+html.dark :is(.text-slate-400, .text-gray-400, .text-text-muted) {
   color: #94a3b8 !important;
 }
 
-html.dark [class*="text-slate-300"],
-html.dark [class*="text-gray-300"] {
+html.dark :is(.text-slate-300, .text-gray-300) {
   color: #cbd5e1 !important;
 }
 
 /* Soft tint text on pastel badges — brighten for dark tinted backgrounds. */
-html.dark [class*="text-rose-700"],
-html.dark [class*="text-rose-600"],
-html.dark [class*="text-pink-700"],
-html.dark [class*="text-pink-600"] {
+html.dark :is(.text-rose-700, .text-rose-600, .text-pink-700, .text-pink-600) {
   color: #fda4af !important;
 }
 
-html.dark [class*="text-amber-800"],
-html.dark [class*="text-amber-700"],
-html.dark [class*="text-amber-600"] {
+html.dark :is(.text-amber-800, .text-amber-700, .text-amber-600) {
   color: #fcd34d !important;
 }
 
-html.dark [class*="text-orange-700"],
-html.dark [class*="text-orange-600"] {
+html.dark :is(.text-orange-700, .text-orange-600) {
   color: #fdba74 !important;
 }
 
-html.dark [class*="text-teal-700"],
-html.dark [class*="text-teal-600"],
-html.dark [class*="text-cyan-700"],
-html.dark [class*="text-cyan-600"],
-html.dark [class*="text-emerald-700"],
-html.dark [class*="text-emerald-600"] {
+html.dark :is(
+  .text-teal-700,
+  .text-teal-600,
+  .text-cyan-700,
+  .text-cyan-600,
+  .text-emerald-700,
+  .text-emerald-600
+) {
   color: #5eead4 !important;
 }
 
-html.dark [class*="text-blue-700"],
-html.dark [class*="text-blue-600"],
-html.dark [class*="text-sky-700"],
-html.dark [class*="text-sky-600"] {
+html.dark :is(.text-blue-700, .text-blue-600, .text-sky-700, .text-sky-600) {
   color: #7dd3fc !important;
 }
 
-html.dark [class*="text-violet-700"],
-html.dark [class*="text-violet-600"],
-html.dark [class*="text-purple-700"],
-html.dark [class*="text-purple-600"],
-html.dark [class*="text-fuchsia-700"],
-html.dark [class*="text-fuchsia-600"] {
+html.dark :is(
+  .text-violet-700,
+  .text-violet-600,
+  .text-purple-700,
+  .text-purple-600,
+  .text-fuchsia-700,
+  .text-fuchsia-600
+) {
   color: #c4b5fd !important;
 }
 
-html.dark [class*="text-red-700"],
-html.dark [class*="text-red-600"] {
+html.dark :is(.text-red-700, .text-red-600) {
   color: #fca5a5 !important;
 }
 
 /* Do not remap neon brand text — keep accent identity. */
-html.dark [class*="text-neon-pinkDark"] {
+html.dark .text-neon-pinkDark {
   color: #fb7185 !important;
 }
 
-html.dark [class*="border-slate-100"],
-html.dark [class*="border-slate-200"],
-html.dark [class*="border-slate-300"],
-html.dark [class*="border-gray-100"],
-html.dark [class*="border-gray-200"],
-html.dark [class*="border-gray-300"] {
+html.dark :is(
+  .border-slate-100,
+  [class~="border-slate-100/40"],
+  .border-slate-200,
+  [class~="border-slate-200/50"],
+  [class~="border-slate-200/60"],
+  [class~="border-slate-200/70"],
+  [class~="border-slate-200/80"],
+  .border-slate-300,
+  .border-gray-100,
+  .border-gray-200,
+  [class~="border-gray-200/80"],
+  .border-gray-300
+) {
   border-color: rgba(100, 116, 139, 0.48) !important;
 }
 
-html.dark [class*="border-white"] {
+html.dark :is(
+  .border-white,
+  [class~="border-white/5"],
+  [class~="border-white/10"],
+  [class~="border-white/15"],
+  [class~="border-white/20"],
+  [class~="border-white/30"],
+  [class~="border-white/50"],
+  [class~="border-white/70"],
+  [class~="border-white/75"],
+  [class~="border-white/80"],
+  [class~="border-white/90"]
+) {
   border-color: rgba(100, 116, 139, 0.42) !important;
 }
 
-html.dark [class*="border-rose-100"],
-html.dark [class*="border-rose-200"],
-html.dark [class*="border-rose-300"],
-html.dark [class*="border-pink-100"],
-html.dark [class*="border-pink-200"] {
+html.dark :is(
+  .border-rose-100,
+  [class~="border-rose-100/50"],
+  [class~="border-rose-100/70"],
+  .border-rose-200,
+  [class~="border-rose-200/50"],
+  [class~="border-rose-200/60"],
+  .border-rose-300,
+  .border-pink-100,
+  [class~="border-pink-100/50"],
+  .border-pink-200
+) {
   border-color: rgba(251, 113, 133, 0.38) !important;
 }
 
-html.dark [class*="border-amber-100"],
-html.dark [class*="border-amber-200"],
-html.dark [class*="border-amber-300"],
-html.dark [class*="border-orange-100"],
-html.dark [class*="border-orange-200"] {
+html.dark :is(
+  .border-amber-100,
+  [class~="border-amber-100/50"],
+  [class~="border-amber-100/70"],
+  .border-amber-200,
+  [class~="border-amber-200/50"],
+  [class~="border-amber-200/60"],
+  [class~="border-amber-200/80"],
+  .border-amber-300,
+  .border-orange-100,
+  .border-orange-200
+) {
   border-color: rgba(251, 191, 36, 0.38) !important;
 }
 
-html.dark [class*="border-teal-100"],
-html.dark [class*="border-teal-200"],
-html.dark [class*="border-cyan-100"],
-html.dark [class*="border-cyan-200"],
-html.dark [class*="border-emerald-100"],
-html.dark [class*="border-emerald-200"] {
+html.dark :is(
+  .border-teal-100,
+  [class~="border-teal-100/50"],
+  .border-teal-200,
+  [class~="border-teal-200/50"],
+  [class~="border-teal-200/70"],
+  .border-cyan-100,
+  [class~="border-cyan-100/50"],
+  [class~="border-cyan-100/70"],
+  [class~="border-cyan-100/80"],
+  .border-cyan-200,
+  .border-emerald-100,
+  [class~="border-emerald-100/50"],
+  .border-emerald-200
+) {
   border-color: rgba(45, 212, 191, 0.36) !important;
 }
 
-html.dark [class*="border-violet-100"],
-html.dark [class*="border-violet-200"],
-html.dark [class*="border-purple-100"],
-html.dark [class*="border-fuchsia-100"] {
+html.dark :is(
+  .border-violet-100,
+  [class~="border-violet-100/50"],
+  [class~="border-violet-100/70"],
+  .border-violet-200,
+  [class~="border-violet-200/50"],
+  [class~="border-violet-200/70"],
+  .border-purple-100,
+  .border-fuchsia-100
+) {
   border-color: rgba(167, 139, 250, 0.36) !important;
 }
 
-html.dark [class*="border-blue-100"],
-html.dark [class*="border-blue-200"],
-html.dark [class*="border-sky-100"],
-html.dark [class*="border-sky-200"] {
+html.dark :is(
+  .border-blue-100,
+  .border-blue-200,
+  .border-sky-100,
+  .border-sky-200
+) {
   border-color: rgba(56, 189, 248, 0.36) !important;
 }
 
-html.dark [class*="border-red-100"],
-html.dark [class*="border-red-200"] {
+html.dark :is(.border-red-100, [class~="border-red-200/50"], .border-red-200) {
   border-color: rgba(248, 113, 113, 0.38) !important;
 }
 
-html.dark [class*="bg-rose-50/"],
-html.dark [class*="bg-rose-50 "],
-html.dark [class$="bg-rose-50"],
-html.dark [class*="bg-rose-100/"],
-html.dark [class*="bg-rose-100 "],
-html.dark [class$="bg-rose-100"],
-html.dark [class*="bg-pink-50/"],
-html.dark [class*="bg-pink-50 "],
-html.dark [class$="bg-pink-50"],
-html.dark [class*="bg-pink-100/"],
-html.dark [class*="bg-pink-100 "],
-html.dark [class$="bg-pink-100"] {
+html.dark :is(
+  .bg-rose-50,
+  [class~="bg-rose-50/30"],
+  [class~="bg-rose-50/50"],
+  [class~="bg-rose-50/60"],
+  [class~="bg-rose-50/70"],
+  [class~="bg-rose-50/80"],
+  .bg-rose-100,
+  [class~="bg-rose-100/60"],
+  .bg-pink-50,
+  .bg-pink-100
+) {
   background: rgba(136, 19, 55, 0.55) !important;
   background-color: rgba(136, 19, 55, 0.55) !important;
 }
 
-html.dark [class*="bg-teal-50/"],
-html.dark [class*="bg-teal-50 "],
-html.dark [class$="bg-teal-50"],
-html.dark [class*="bg-cyan-50/"],
-html.dark [class*="bg-cyan-50 "],
-html.dark [class$="bg-cyan-50"],
-html.dark [class*="bg-emerald-50/"],
-html.dark [class*="bg-emerald-50 "],
-html.dark [class$="bg-emerald-50"],
-html.dark [class*="bg-teal-100/"],
-html.dark [class*="bg-teal-100 "],
-html.dark [class$="bg-teal-100"],
-html.dark [class*="bg-cyan-100/"],
-html.dark [class*="bg-cyan-100 "],
-html.dark [class$="bg-cyan-100"],
-html.dark [class*="bg-emerald-100/"],
-html.dark [class*="bg-emerald-100 "],
-html.dark [class$="bg-emerald-100"] {
+html.dark :is(
+  .bg-teal-50,
+  [class~="bg-teal-50/80"],
+  .bg-cyan-50,
+  [class~="bg-cyan-50/40"],
+  [class~="bg-cyan-50/60"],
+  [class~="bg-cyan-50/70"],
+  [class~="bg-cyan-50/80"],
+  .bg-emerald-50,
+  [class~="bg-emerald-50/50"],
+  .bg-teal-100,
+  .bg-cyan-100,
+  .bg-emerald-100
+) {
   background: rgba(15, 118, 110, 0.48) !important;
   background-color: rgba(15, 118, 110, 0.48) !important;
 }
 
-html.dark [class*="bg-violet-50/"],
-html.dark [class*="bg-violet-50 "],
-html.dark [class$="bg-violet-50"],
-html.dark [class*="bg-violet-100/"],
-html.dark [class*="bg-violet-100 "],
-html.dark [class$="bg-violet-100"],
-html.dark [class*="bg-purple-50/"],
-html.dark [class*="bg-purple-50 "],
-html.dark [class$="bg-purple-50"],
-html.dark [class*="bg-fuchsia-50/"],
-html.dark [class*="bg-fuchsia-50 "],
-html.dark [class$="bg-fuchsia-50"] {
+html.dark :is(
+  .bg-violet-50,
+  [class~="bg-violet-50/50"],
+  [class~="bg-violet-50/60"],
+  [class~="bg-violet-50/70"],
+  [class~="bg-violet-50/80"],
+  .bg-violet-100,
+  .bg-purple-50,
+  .bg-fuchsia-50
+) {
   background: rgba(76, 29, 149, 0.5) !important;
   background-color: rgba(76, 29, 149, 0.5) !important;
 }
 
-html.dark [class*="bg-amber-50/"],
-html.dark [class*="bg-amber-50 "],
-html.dark [class$="bg-amber-50"],
-html.dark [class*="bg-amber-100/"],
-html.dark [class*="bg-amber-100 "],
-html.dark [class$="bg-amber-100"],
-html.dark [class*="bg-orange-50/"],
-html.dark [class*="bg-orange-50 "],
-html.dark [class$="bg-orange-50"],
-html.dark [class*="bg-yellow-50/"],
-html.dark [class*="bg-yellow-50 "],
-html.dark [class$="bg-yellow-50"] {
+html.dark :is(
+  .bg-amber-50,
+  [class~="bg-amber-50/30"],
+  [class~="bg-amber-50/50"],
+  [class~="bg-amber-50/60"],
+  [class~="bg-amber-50/70"],
+  [class~="bg-amber-50/80"],
+  .bg-amber-100,
+  [class~="bg-amber-100/60"],
+  .bg-orange-50,
+  .bg-yellow-50
+) {
   background: rgba(146, 64, 14, 0.52) !important;
   background-color: rgba(146, 64, 14, 0.52) !important;
 }
 
-html.dark [class*="bg-blue-50/"],
-html.dark [class*="bg-blue-50 "],
-html.dark [class$="bg-blue-50"],
-html.dark [class*="bg-blue-100/"],
-html.dark [class*="bg-blue-100 "],
-html.dark [class$="bg-blue-100"],
-html.dark [class*="bg-sky-50/"],
-html.dark [class*="bg-sky-50 "],
-html.dark [class$="bg-sky-50"],
-html.dark [class*="bg-sky-100/"],
-html.dark [class*="bg-sky-100 "],
-html.dark [class$="bg-sky-100"] {
+html.dark :is(
+  .bg-blue-50,
+  .bg-blue-100,
+  .bg-sky-50,
+  .bg-sky-100
+) {
   background: rgba(30, 64, 175, 0.5) !important;
   background-color: rgba(30, 64, 175, 0.5) !important;
 }
 
-html.dark [class*="bg-red-50/"],
-html.dark [class*="bg-red-50 "],
-html.dark [class$="bg-red-50"],
-html.dark [class*="bg-red-100/"],
-html.dark [class*="bg-red-100 "],
-html.dark [class$="bg-red-100"] {
+html.dark :is(.bg-red-50, [class~="bg-red-50/80"], .bg-red-100) {
   background: rgba(127, 29, 29, 0.55) !important;
   background-color: rgba(127, 29, 29, 0.55) !important;
 }
 
-html.dark [class*="bg-green-50/"],
-html.dark [class*="bg-green-50 "],
-html.dark [class$="bg-green-50"],
-html.dark [class*="bg-green-100/"],
-html.dark [class*="bg-green-100 "],
-html.dark [class$="bg-green-100"] {
+html.dark :is(.bg-green-50, [class~="bg-green-50/80"], .bg-green-100) {
   background: rgba(20, 83, 45, 0.52) !important;
   background-color: rgba(20, 83, 45, 0.52) !important;
 }
 
 /* Gradient light stops still used on card shells (from-white / via-slate-50). */
-html.dark [class*="from-white"],
-html.dark [class*="via-white"],
-html.dark [class*="to-white"] {
+html.dark :is(.from-white, .via-white, .to-white) {
   --tw-gradient-from: rgba(15, 23, 42, 0.95) var(--tw-gradient-from-position) !important;
   --tw-gradient-to: rgba(15, 23, 42, 0.55) var(--tw-gradient-to-position) !important;
   --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
 }
 
-html.dark [class*="from-slate-50"],
-html.dark [class*="via-slate-50"],
-html.dark [class*="to-slate-50"],
-html.dark [class*="from-slate-100"],
-html.dark [class*="via-slate-100"],
-html.dark [class*="to-slate-100"] {
+html.dark :is(
+  .from-slate-50,
+  .via-slate-50,
+  .to-slate-50,
+  .from-slate-100,
+  .via-slate-100,
+  .to-slate-100
+) {
   --tw-gradient-from: rgba(30, 41, 59, 0.95) var(--tw-gradient-from-position) !important;
   --tw-gradient-to: rgba(15, 23, 42, 0.7) var(--tw-gradient-to-position) !important;
   --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
 }
 
-html.dark [class*="text-green-700"],
-html.dark [class*="text-green-600"] {
+html.dark :is(.text-green-700, .text-green-600) {
   color: #86efac !important;
 }
 
-html.dark [class*="border-green-100"],
-html.dark [class*="border-green-200"] {
+html.dark :is(.border-green-100, .border-green-200) {
   border-color: rgba(74, 222, 128, 0.36) !important;
-}
-
-/* Fallback for page headers that still rely on light pastel gradient utilities.
- * Prefer explicit dark: Tailwind stops where available (PageHeader). */
-html.dark .page-header-shell:not([class*="dark:from-"]) {
-  background-image: linear-gradient(
-    135deg,
-    rgba(30, 41, 59, 0.92) 0%,
-    rgba(15, 23, 42, 0.88) 48%,
-    rgba(17, 24, 39, 0.9) 100%
-  ) !important;
-  border-color: rgba(100, 116, 139, 0.42) !important;
 }
 
 /* Base card system from cards.css (not liquid-glass). */
@@ -1453,23 +1481,16 @@ html.dark .card-info {
 }
 
 /* Indigo pastel chips (workflow header status, etc.) */
-html.dark [class*="bg-indigo-50/"],
-html.dark [class*="bg-indigo-50 "],
-html.dark [class$="bg-indigo-50"],
-html.dark [class*="bg-indigo-100/"],
-html.dark [class*="bg-indigo-100 "],
-html.dark [class$="bg-indigo-100"] {
+html.dark :is(.bg-indigo-50, .bg-indigo-100) {
   background: rgba(49, 46, 129, 0.55) !important;
   background-color: rgba(49, 46, 129, 0.55) !important;
 }
 
-html.dark [class*="border-indigo-100"],
-html.dark [class*="border-indigo-200"] {
+html.dark :is(.border-indigo-100, .border-indigo-200) {
   border-color: rgba(129, 140, 248, 0.36) !important;
 }
 
-html.dark [class*="text-indigo-700"],
-html.dark [class*="text-indigo-600"] {
+html.dark :is(.text-indigo-700, .text-indigo-600) {
   color: #a5b4fc !important;
 }
 
@@ -1964,19 +1985,25 @@ html.dark .workflow-tab-bar .overflow-item.active {
 }
 
 
-/* Soften default elevation on plain cards (skip neon-* utility shadows). */
-html.dark .shadow-sm:not([class*="shadow-neon"]),
-html.dark .shadow:not([class*="shadow-neon"]),
-html.dark .shadow-md:not([class*="shadow-neon"]) {
+/* Soften default elevation on plain cards (skip known neon utility shadows). */
+html.dark :is(.shadow-sm, .shadow, .shadow-md):not(
+  .shadow-neon-pink,
+  .shadow-neon-pink-sm,
+  .shadow-neon-purple,
+  .shadow-neon-purple-sm,
+  .shadow-neon-cyan,
+  .shadow-neon-cyan-sm,
+  .shadow-neon-peach
+) {
   --tw-shadow-color: rgba(2, 6, 23, 0.45);
   --tw-shadow: 0 1px 3px 0 rgba(2, 6, 23, 0.45), 0 4px 14px -2px rgba(2, 6, 23, 0.35);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
 /* Hover slate remaps when only hover:bg-slate-* is present (no base bg class). */
-html.dark [class*="hover:bg-slate-100"]:hover,
-html.dark [class*="hover:bg-slate-50"]:hover,
-html.dark [class*="hover:bg-slate-200"]:hover {
+html.dark .hover\:bg-slate-100:hover,
+html.dark .hover\:bg-slate-50:hover,
+html.dark .hover\:bg-slate-200:hover {
   background-color: rgba(30, 41, 59, 0.9) !important;
 }
 
