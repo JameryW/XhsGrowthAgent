@@ -268,6 +268,8 @@ async function loadReplay() {
   workflowLoadError.value = null
   threadNotFound.value = false
   workflowStore.setThreadId(threadId)
+  const cachedReplay = workflowStore.hydrateReplayCache(threadId, requestedCheckpointId.value)
+  if (cachedReplay?.state) isWorkflowLoading.value = false
   // Start both public requests together. A status failure must not prevent
   // the history request: historical replay remains useful when live state is
   // temporarily unavailable, while a 404 still renders the dedicated state.
@@ -275,6 +277,7 @@ async function loadReplay() {
     try {
       const state = await getWorkflowStatus(threadId, { suppressToast: true })
       workflowStore.workflowStates.set(threadId, state)
+      workflowStore.saveReplayLiveState(threadId, state)
     } catch (error: any) {
       workflowLoadError.value = error?.message || t('replay.workflowLoadFailed')
       threadNotFound.value = isNotFoundError(error)
@@ -285,7 +288,10 @@ async function loadReplay() {
   })()
   const checkpointTask = workflowStore.enterReplayMode(requestedCheckpointId.value)
   await Promise.all([statusTask, checkpointTask])
-  if (threadNotFound.value) workflowStore.exitReplayMode()
+  if (threadNotFound.value) {
+    workflowStore.clearReplaySnapshot(threadId)
+    workflowStore.exitReplayMode()
+  }
 }
 
 async function retryReplay() {

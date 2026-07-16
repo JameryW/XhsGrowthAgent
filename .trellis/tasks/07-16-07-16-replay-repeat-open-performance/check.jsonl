@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Check cached replay loading, refresh failure, and accessibility behavior."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Check TTL, invalidation, and replay mode cleanup semantics."}

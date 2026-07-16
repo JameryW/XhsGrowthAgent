@@ -17,6 +17,9 @@ const workflowStoreMock = vi.hoisted(() => ({
   hasMoreCheckpoints: false,
   workflowStates: new Map<string, unknown>(),
   setThreadId: vi.fn(),
+  hydrateReplayCache: vi.fn(() => null),
+  saveReplayLiveState: vi.fn(),
+  clearReplaySnapshot: vi.fn(),
   enterReplayMode: vi.fn(),
   exitReplayMode: vi.fn(),
   selectCheckpoint: vi.fn(),
@@ -88,6 +91,7 @@ describe('WorkflowReplay initial loading', () => {
     resolveStatus({ thread_id: 'thread-1', status: 'completed', phase: 'completed', progress_percent: 100 })
     resolveHistory()
     await flushPromises()
+    expect(workflowStoreMock.saveReplayLiveState).toHaveBeenCalledWith('thread-1', expect.objectContaining({ status: 'completed' }))
     expect(workflowStoreMock.exitReplayMode).not.toHaveBeenCalled()
     wrapper.unmount()
   })

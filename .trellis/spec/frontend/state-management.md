@@ -121,6 +121,12 @@ so an expired cache cannot create a tight request loop. Cache only the JSON
 display data; never move authenticated or mutation state into storage, and
 clear refresh timers when the page unmounts.
 
+Replay snapshots should be keyed by `threadId` and owned by the workflow store
+so status and checkpoint state hydrate together. A history refresh must replace
+the cached snapshot, while `loadMoreCheckpoints` merges and rewrites the same
+thread's entry; exiting replay clears reactive state but does not delete the
+short-lived session snapshot needed for a quick return.
+
 ### Live State vs Replay Selection
 
 Replay-aware screens keep the live workflow snapshot separate from the

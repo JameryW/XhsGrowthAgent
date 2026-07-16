@@ -74,6 +74,8 @@ describe('workflow store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+    sessionStorage.clear()
+    vi.mocked(getCheckpointHistory).mockReset()
   })
 
   describe('initial state', () => {
@@ -207,6 +209,33 @@ describe('workflow store', () => {
       await store.enterReplayMode('cp-old')
 
       expect(store.activeCheckpointId).toBe('cp-old')
+    })
+
+    it('hydrates a same-thread replay snapshot before the history refresh resolves', async () => {
+      const checkpoint = {
+        checkpoint_id: 'cp-cache', step: 2, source: 'test', phase: 'planning', current_agent: 'content_strategist', created_at: null,
+        next_nodes: [], workflow_mode: 'trend', content_plan: { selected_topic: 'cached topic' },
+      }
+      vi.mocked(getCheckpointHistory).mockResolvedValueOnce({
+        thread_id: 'thread-cache', checkpoints: [checkpoint] as any, has_more: false,
+      })
+      const firstStore = useWorkflowStore()
+      firstStore.setThreadId('thread-cache')
+      await firstStore.enterReplayMode()
+
+      setActivePinia(createPinia())
+      const secondStore = useWorkflowStore()
+      secondStore.setThreadId('thread-cache')
+      let resolveRefresh!: (value: unknown) => void
+      vi.mocked(getCheckpointHistory).mockReturnValueOnce(new Promise((resolve) => { resolveRefresh = resolve }))
+
+      const refresh = secondStore.enterReplayMode()
+      expect(secondStore.activeCheckpointId).toBe('cp-cache')
+      expect(secondStore.replayCheckpoints).toHaveLength(1)
+      expect(secondStore.isLoadingCheckpoints).toBe(true)
+
+      resolveRefresh({ thread_id: 'thread-cache', checkpoints: [checkpoint], has_more: false })
+      await refresh
     })
   })
 })
