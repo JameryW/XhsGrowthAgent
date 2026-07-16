@@ -407,7 +407,7 @@ onMounted(() => {
         </div>
         <div class="flex shrink-0 items-center gap-2">
           <button type="button" class="hidden min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-600 hover:bg-slate-50 sm:inline-flex dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" @click="copyLink(false)"><AppIcon name="Copy" size="xs" class="mr-1.5" aria-hidden="true" />{{ shareState === 'success' ? t('replay.publicShared') : shareState === 'error' ? t('replay.publicShareFailed') : t('replay.publicShareCase') }}</button>
-          <button type="button" class="min-h-11 rounded-xl bg-rose-500 px-3 text-sm font-semibold text-white shadow-lg shadow-rose-500/20 hover:bg-rose-600" @click="isAuthenticated ? goWorkspace() : goCreate">{{ isAuthenticated ? t('replay.publicWorkspace') : t('replay.publicStart') }}</button>
+          <button type="button" class="min-h-11 rounded-xl bg-rose-600 px-3 text-sm font-semibold text-white shadow-lg shadow-rose-600/20 hover:bg-rose-700" @click="isAuthenticated ? goWorkspace() : goCreate">{{ isAuthenticated ? t('replay.publicWorkspace') : t('replay.publicStart') }}</button>
           <ThemeToggle class="shrink-0" />
         </div>
       </div>
@@ -453,7 +453,7 @@ onMounted(() => {
             <p class="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{{ t('replay.publicFinalStable') }}</p>
             <PublicReplayResult v-if="finalSummary" class="mt-5" :result="finalSummary.result" compact />
             <div v-else class="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-500 dark:bg-slate-800/70 dark:text-slate-400">{{ t('replay.notGenerated') }}</div>
-            <button type="button" class="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white shadow-lg shadow-rose-500/20 hover:bg-rose-600" @click="goCreate">{{ t('replay.publicStart') }}<AppIcon name="ArrowRight" size="sm" aria-hidden="true" /></button>
+            <button type="button" class="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white shadow-lg shadow-rose-600/20 hover:bg-rose-700" @click="goCreate">{{ t('replay.publicStart') }}<AppIcon name="ArrowRight" size="sm" aria-hidden="true" /></button>
           </aside>
         </div>
       </template>
