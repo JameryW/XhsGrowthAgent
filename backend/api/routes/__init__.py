@@ -4,6 +4,7 @@ from backend.api.routes.analytics import router as analytics_router
 from backend.api.routes.blogger import router as blogger_router
 from backend.api.routes.evaluation import router as evaluation_router
 from backend.api.routes.free import router as free_router
+from backend.api.routes.public_showcase import router as public_showcase_router
 from backend.api.routes.review import router as review_router
 from backend.api.routes.workflow import router as workflow_router
 
@@ -14,4 +15,5 @@ __all__ = [
     "blogger_router",
     "evaluation_router",
     "free_router",
+    "public_showcase_router",
 ]

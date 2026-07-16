@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"核对语义化交互、i18n、路由根节点、移动布局和触控目标。"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"核对缓存、错误、选择、深链、返回上下文和请求竞态不回退。"}
+{"file":".trellis/spec/frontend/animation-patterns.md","reason":"核对动效预算、合成友好属性和 reduced-motion 完整降级。"}
+{"file":".trellis/tasks/07-16-showcase-replay-ux-master-plan/research/current-ux-audit.md","reason":"对照客观基线验证字号、首屏内容、公开字段、payload 和任务治理目标。"}

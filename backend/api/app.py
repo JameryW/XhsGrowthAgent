@@ -302,6 +302,7 @@ from backend.api.routes import (  # noqa: E402
     free,
     inbox,
     optimization,
+    public_showcase,
     realtime,
     review,
     workflow,
@@ -316,6 +317,7 @@ app.include_router(accounts.router, prefix="/api/accounts", tags=["accounts"])
 app.include_router(console_users_router, prefix="/api/console-users", tags=["console-users"])
 app.include_router(system_config_router, prefix="/api/system-config", tags=["system-config"])
 app.include_router(workflow.router, prefix="/api/workflow", tags=["workflow"])
+app.include_router(public_showcase.router, prefix="/api/public", tags=["public-showcase"])
 app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(evaluation.router, prefix="/api/evaluation", tags=["evaluation"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
