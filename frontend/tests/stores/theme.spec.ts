@@ -64,6 +64,49 @@ describe('useThemeStore', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(false)
   })
 
+  it('guards the first painted frames so a theme change does not animate every surface', () => {
+    const callbacks: Array<(time: number) => void> = []
+    const originalRequestAnimationFrame = window.requestAnimationFrame
+    const originalCancelAnimationFrame = window.cancelAnimationFrame
+    const requestAnimationFrame = vi.fn((callback: (time: number) => void) => {
+      callbacks.push(callback)
+      return callbacks.length
+    })
+
+    Object.defineProperty(window, 'requestAnimationFrame', {
+      configurable: true,
+      value: requestAnimationFrame,
+    })
+    Object.defineProperty(window, 'cancelAnimationFrame', {
+      configurable: true,
+      value: vi.fn(),
+    })
+
+    try {
+      const store = useThemeStore()
+      store.setMode('dark')
+
+      expect(document.documentElement.classList.contains('theme-switching')).toBe(true)
+      expect(requestAnimationFrame).toHaveBeenCalledTimes(1)
+
+      callbacks.shift()?.(0)
+      expect(document.documentElement.classList.contains('theme-switching')).toBe(true)
+      expect(requestAnimationFrame).toHaveBeenCalledTimes(2)
+
+      callbacks.shift()?.(0)
+      expect(document.documentElement.classList.contains('theme-switching')).toBe(false)
+    } finally {
+      Object.defineProperty(window, 'requestAnimationFrame', {
+        configurable: true,
+        value: originalRequestAnimationFrame,
+      })
+      Object.defineProperty(window, 'cancelAnimationFrame', {
+        configurable: true,
+        value: originalCancelAnimationFrame,
+      })
+    }
+  })
+
   it('responds to system theme changes while in system mode', () => {
     const store = useThemeStore()
     store.init()

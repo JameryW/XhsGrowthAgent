@@ -29,11 +29,48 @@ export const useThemeStore = defineStore('theme', () => {
   const systemPrefersDark = ref(prefersDark())
   let mediaQuery: MediaQueryList | null = null
   let initialized = false
+  let themeSwitchFrame: number | null = null
 
   const isDark = computed(() => mode.value === 'dark' || (mode.value === 'system' && systemPrefersDark.value))
 
-  function applyTheme() {
+  function releaseThemeSwitchGuard() {
+    if (typeof document !== 'undefined') {
+      document.documentElement.classList.remove('theme-switching')
+    }
+    themeSwitchFrame = null
+  }
+
+  function startThemeSwitchGuard() {
     if (typeof document === 'undefined') return
+
+    const root = document.documentElement
+    root.classList.add('theme-switching')
+
+    if (typeof window === 'undefined') {
+      releaseThemeSwitchGuard()
+      return
+    }
+
+    if (typeof window.requestAnimationFrame !== 'function') {
+      window.setTimeout(releaseThemeSwitchGuard, 32)
+      return
+    }
+
+    if (themeSwitchFrame !== null && typeof window.cancelAnimationFrame === 'function') {
+      window.cancelAnimationFrame(themeSwitchFrame)
+    }
+
+    // Keep the guard through one painted frame so the new palette is applied
+    // immediately, without animating every card's color/border transition.
+    themeSwitchFrame = window.requestAnimationFrame(() => {
+      themeSwitchFrame = window.requestAnimationFrame(releaseThemeSwitchGuard)
+    })
+  }
+
+  function applyTheme(withSwitchGuard = false) {
+    if (typeof document === 'undefined') return
+
+    if (withSwitchGuard) startThemeSwitchGuard()
 
     const root = document.documentElement
     root.classList.toggle('dark', isDark.value)
@@ -63,6 +100,15 @@ export const useThemeStore = defineStore('theme', () => {
   }
 
   function dispose() {
+    if (
+      themeSwitchFrame !== null
+      && typeof window !== 'undefined'
+      && typeof window.cancelAnimationFrame === 'function'
+    ) {
+      window.cancelAnimationFrame(themeSwitchFrame)
+    }
+    releaseThemeSwitchGuard()
+
     if (!mediaQuery) return
     if (typeof mediaQuery.removeEventListener === 'function') {
       mediaQuery.removeEventListener('change', handleSystemThemeChange)
@@ -80,7 +126,7 @@ export const useThemeStore = defineStore('theme', () => {
     } catch {
       // Keep the in-memory preference when persistent storage is unavailable.
     }
-    applyTheme()
+    applyTheme(true)
   }
 
   function toggle() {

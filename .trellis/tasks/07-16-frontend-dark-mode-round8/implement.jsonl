@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/state-management.md","reason":"主题 store 的职责、初始化、监听和清理约定。"}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Vue 组件和可访问交互的实现约定。"}

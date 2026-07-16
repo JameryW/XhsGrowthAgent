@@ -107,6 +107,13 @@ subscribes to `prefers-color-scheme` while in `system` mode. Call `init()` from
 the application shell and call `dispose()` when that shell is unmounted so the
 media-query listener cannot leak across test mounts or embedded shells.
 
+Theme switching must feel immediate. Explicit mode changes should apply the
+root theme synchronously, temporarily add a `theme-switching` guard for the
+first painted frames, and disable surface transitions during that guard. Dark
+compatibility CSS should use exact utility class selectors (or component-scoped
+selectors); avoid broad [class*="..."] rules because changing the root theme
+class forces those selectors to re-match the whole document.
+
 ---
 
 ## State ↔ Backend Sync
