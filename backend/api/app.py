@@ -143,6 +143,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             from backend.db.evaluator_config import (
                 ensure_tables as ensure_evaluator_config,
             )
+            from backend.db.public_telemetry import ensure_tables as ensure_public_telemetry
             from backend.db.system_config import (
                 bootstrap_from_environ,
                 migrate_from_accounts,
@@ -163,6 +164,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 ensure_evaluator_config(),
                 ensure_creator_stats(),
                 ensure_creative_memory(),
+                ensure_public_telemetry(),
             ]
             graph_task = compile_graph_prod(db_uri)
             results = await asyncio.gather(*ensure_coros, graph_task)
@@ -303,6 +305,7 @@ from backend.api.routes import (  # noqa: E402
     inbox,
     optimization,
     public_showcase,
+    public_telemetry,
     realtime,
     review,
     workflow,
@@ -318,6 +321,7 @@ app.include_router(console_users_router, prefix="/api/console-users", tags=["con
 app.include_router(system_config_router, prefix="/api/system-config", tags=["system-config"])
 app.include_router(workflow.router, prefix="/api/workflow", tags=["workflow"])
 app.include_router(public_showcase.router, prefix="/api/public", tags=["public-showcase"])
+app.include_router(public_telemetry.router, prefix="/api/public", tags=["public-telemetry"])
 app.include_router(review.router, prefix="/api/review", tags=["review"])
 app.include_router(evaluation.router, prefix="/api/evaluation", tags=["evaluation"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])

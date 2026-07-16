@@ -151,6 +151,13 @@ API_PORT=8000
 撤销公开。服务端会记录批准/撤销操作者，并在返回前执行文本、URL、标识和颜色白名单脱敏。
 详细只读 DTO、manifest 分页和 checkpoint detail 以 `/openapi.json` 为准。
 
+公共页埋点默认发送到同源的 `/api/public/telemetry`；接收端只保留事件白名单、视口/状态等
+分类字段和有界耗时，匿名请求按来源限流，数据保留 30 天且不保存 publicId、账号、正文、URL
+或原始错误。若目标环境已有 host adapter，可设置 `VITE_TELEMETRY_ENDPOINT` 覆盖接收地址；
+显式设为空值可关闭本地构建埋点。已认证控制台可通过
+`GET /api/public/admin/telemetry/summary?days=7` 获取按事件/设备/模式聚合的数量、p50/p75
+耗时，供监控面板接入；该接口不返回原始事件。
+
 ## Docker 部署
 
 ### docker-compose.yml

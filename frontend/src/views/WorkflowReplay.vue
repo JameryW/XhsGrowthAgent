@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '@/components/AppIcon.vue'
@@ -48,6 +48,9 @@ const REPLAY_CACHE_KEY = 'replay:public-step-cache:v1'
 const REPLAY_PAGE_SIZE = 20
 let manifestRequestToken = 0
 let detailRequestToken = 0
+let manifestAbortController: AbortController | null = null
+let loadMoreAbortController: AbortController | null = null
+let detailAbortController: AbortController | null = null
 
 const steps = computed(() => [...(manifest.value?.steps || [])].sort((a, b) => a.step - b.step))
 const currentIndex = computed(() => steps.value.findIndex(step => step.public_id === selectedStepId.value))
@@ -139,6 +142,9 @@ function mergeManifest(next: PublicReplayManifestResponse) {
 
 async function loadMoreSteps(): Promise<boolean> {
   if (!manifest.value || !manifest.value.has_more || loadingMore.value) return false
+  loadMoreAbortController?.abort()
+  const abortController = new AbortController()
+  loadMoreAbortController = abortController
   loadingMore.value = true
   loadMoreError.value = false
   const requestToken = manifestRequestToken
@@ -147,19 +153,22 @@ async function loadMoreSteps(): Promise<boolean> {
     const next = await getPublicReplayManifest(
       publicId.value,
       viewMode.value === 'all' && isAuthenticated.value,
-      { suppressToast: true, limit: REPLAY_PAGE_SIZE, offset: steps.value.length },
+      { suppressToast: true, limit: REPLAY_PAGE_SIZE, offset: steps.value.length, signal: abortController.signal },
     )
     if (requestToken !== manifestRequestToken || !publicId.value) return false
     mergeManifest(next)
     return steps.value.length > previousCount || !manifest.value?.has_more
   } catch {
-    if (requestToken === manifestRequestToken) {
+    if (!abortController.signal.aborted && requestToken === manifestRequestToken) {
       loadMoreError.value = true
       trackInteraction('replay_load_more_error', { view: viewMode.value })
     }
     return false
   } finally {
-    loadingMore.value = false
+    if (loadMoreAbortController === abortController) {
+      loadMoreAbortController = null
+      loadingMore.value = false
+    }
   }
 }
 
@@ -206,6 +215,9 @@ async function loadStep(stepId: string | null) {
   selectedStepId.value = stepId
   detailLoading.value = true
   detailError.value = false
+  detailAbortController?.abort()
+  const abortController = new AbortController()
+  detailAbortController = abortController
   const requestToken = ++detailRequestToken
   const technical = viewMode.value === 'all' && isAuthenticated.value
   const cached = readCachedStep(stepId, technical)
@@ -222,7 +234,10 @@ async function loadStep(stepId: string | null) {
   }
   const startedAt = typeof performance !== 'undefined' ? performance.now() : 0
   try {
-    const nextStep = await getPublicReplayCheckpoint(publicId.value, stepId, technical, { suppressToast: true })
+    const nextStep = await getPublicReplayCheckpoint(publicId.value, stepId, technical, {
+      suppressToast: true,
+      signal: abortController.signal,
+    })
     if (requestToken !== detailRequestToken) return
     selectedStep.value = nextStep
     writeCachedStep(stepId, technical, nextStep)
@@ -233,15 +248,23 @@ async function loadStep(stepId: string | null) {
     })
     firstResultTracked.value = true
   } catch (error: any) {
-    if (requestToken !== detailRequestToken) return
+    if (abortController.signal.aborted || requestToken !== detailRequestToken) return
     detailError.value = true
     if (isNotFoundError(error)) notFound.value = true
   } finally {
-    if (requestToken === detailRequestToken) detailLoading.value = false
+    if (detailAbortController === abortController) {
+      detailAbortController = null
+      if (requestToken === detailRequestToken) detailLoading.value = false
+    }
   }
 }
 
 async function loadReplay() {
+  manifestAbortController?.abort()
+  loadMoreAbortController?.abort()
+  detailAbortController?.abort()
+  const abortController = new AbortController()
+  manifestAbortController = abortController
   const requestToken = ++manifestRequestToken
   detailRequestToken += 1
   loading.value = true
@@ -253,8 +276,13 @@ async function loadReplay() {
   try {
     const technical = viewMode.value === 'all' && isAuthenticated.value
     const [nextManifest, nextSummary] = await Promise.all([
-      getPublicReplayManifest(publicId.value, technical, { suppressToast: true, limit: REPLAY_PAGE_SIZE, offset: 0 }),
-      getPublicFinalSummary(publicId.value, { suppressToast: true }).catch(() => null),
+      getPublicReplayManifest(publicId.value, technical, {
+        suppressToast: true,
+        limit: REPLAY_PAGE_SIZE,
+        offset: 0,
+        signal: abortController.signal,
+      }),
+      getPublicFinalSummary(publicId.value, { suppressToast: true, signal: abortController.signal }).catch(() => null),
     ])
     if (requestToken !== manifestRequestToken) return
     mergeManifest(nextManifest)
@@ -266,11 +294,15 @@ async function loadReplay() {
     if (first) await loadStep(first.public_id)
     trackInteraction('replay_view', { view: viewMode.value, has_steps: Boolean(first) })
   } catch (error: any) {
+    if (abortController.signal.aborted || requestToken !== manifestRequestToken) return
     manifestError.value = true
     notFound.value = isNotFoundError(error)
     trackInteraction('replay_load_error', { error_type: notFound.value ? 'not_found' : 'manifest' })
   } finally {
-    loading.value = false
+    if (manifestAbortController === abortController) {
+      manifestAbortController = null
+      loading.value = false
+    }
   }
 }
 
@@ -349,6 +381,12 @@ watch(() => route.query.step, (value) => {
 
 watch(publicId, (next, previous) => {
   if (next && next !== previous) void loadReplay()
+})
+
+onUnmounted(() => {
+  manifestAbortController?.abort()
+  loadMoreAbortController?.abort()
+  detailAbortController?.abort()
 })
 
 onMounted(() => {

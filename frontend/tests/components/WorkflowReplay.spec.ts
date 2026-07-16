@@ -80,8 +80,8 @@ describe('WorkflowReplay public UX contract', () => {
     })
 
     await flushPromises()
-    expect(getManifestMock).toHaveBeenCalledWith('case-1', false, { suppressToast: true, limit: 20, offset: 0 })
-    expect(getCheckpointMock).toHaveBeenCalledWith('case-1', 'step-1', false, { suppressToast: true })
+    expect(getManifestMock).toHaveBeenCalledWith('case-1', false, expect.objectContaining({ suppressToast: true, limit: 20, offset: 0, signal: expect.any(AbortSignal) }))
+    expect(getCheckpointMock).toHaveBeenCalledWith('case-1', 'step-1', false, expect.objectContaining({ suppressToast: true, signal: expect.any(AbortSignal) }))
     expect(wrapper.find('#replay-steps-heading').exists()).toBe(true)
     expect(wrapper.findAll('[data-step-id][aria-current="step"]')).toHaveLength(1)
     expect(wrapper.findAll('[data-phase-index]')).toHaveLength(2)
@@ -105,7 +105,7 @@ describe('WorkflowReplay public UX contract', () => {
     await next?.trigger('click')
     await flushPromises()
     expect(routerMock.replace).toHaveBeenCalledWith({ query: { step: 'step-2' } })
-    expect(getCheckpointMock).toHaveBeenLastCalledWith('case-1', 'step-2', false, { suppressToast: true })
+    expect(getCheckpointMock).toHaveBeenLastCalledWith('case-1', 'step-2', false, expect.objectContaining({ suppressToast: true, signal: expect.any(AbortSignal) }))
   })
 
   it('paginates replay steps and keeps the first page visible while loading more', async () => {
@@ -153,7 +153,7 @@ describe('WorkflowReplay public UX contract', () => {
     await loadMore?.trigger('click')
     await flushPromises()
 
-    expect(getManifestMock).toHaveBeenLastCalledWith('case-1', false, { suppressToast: true, limit: 20, offset: 1 })
+    expect(getManifestMock).toHaveBeenLastCalledWith('case-1', false, expect.objectContaining({ suppressToast: true, limit: 20, offset: 1, signal: expect.any(AbortSignal) }))
     expect(wrapper.findAll('[data-step-id]')).toHaveLength(2)
     expect(wrapper.find('[data-step-id="step-1"]').exists()).toBe(true)
     expect(wrapper.find('[data-step-id="step-2"]').exists()).toBe(true)
