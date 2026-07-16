@@ -20,7 +20,7 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
 </script>
 
 <template>
-  <div v-if="detail" class="px-4 md:px-5 py-3 space-y-1.5">
+  <div v-if="detail" class="min-h-[92px] px-4 py-3 space-y-1.5 md:px-5" aria-label="workflow-output">
     <!-- ═══ Level 1: Primary title — largest, boldest ═══ -->
 
     <!-- Brief mode: brand name (L1) -->

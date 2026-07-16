@@ -154,15 +154,17 @@ const handleKeyDown = (e: KeyboardEvent) => {
           <div class="flex gap-3 justify-end">
             <button
               ref="cancelButtonRef"
-              class="px-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 transition-all"
+              type="button"
+              class="min-h-11 px-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 transition-all"
               @click="handleCancel"
             >
               {{ displayCancelLabel }}
             </button>
             <button
               ref="confirmButtonRef"
+              type="button"
               :class="[
-                'px-4 py-2.5 rounded-lg border font-medium flex items-center gap-2 transition-all',
+                'min-h-11 px-4 py-2.5 rounded-lg border font-medium flex items-center gap-2 transition-all',
                 confirmButtonClass
               ]"
               @click="handleConfirm"

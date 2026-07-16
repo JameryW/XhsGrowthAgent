@@ -14,7 +14,7 @@ import { useAnalyticsStore, useAccountsStore } from '@/stores'
 const TrendChart = defineAsyncComponent(() => import('@/components/charts/TrendChart.vue'))
 const EngagementChart = defineAsyncComponent(() => import('@/components/charts/EngagementChart.vue'))
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const analyticsStore = useAnalyticsStore()
 const accountsStore = useAccountsStore()
@@ -102,7 +102,7 @@ const engagementData = computed(() => {
 const formatDate = (isoDate: string | null | undefined) => {
   if (!isoDate) return '—'
   const d = new Date(isoDate)
-  const month = d.toLocaleDateString('en', { month: 'short' })
+  const month = d.toLocaleDateString(locale.value || undefined, { month: 'short' })
   const day = d.getDate()
   return `${month} ${day}`
 }
@@ -220,7 +220,7 @@ function startWithTopic(topic: string, niche?: string) {
         </span>
         <span>{{ t('analytics.period') }}: {{ analyticsStore.period }}</span>
         <span v-if="lastUpdatedAt" role="status">
-          {{ t('analytics.lastUpdated', { time: lastUpdatedAt.toLocaleTimeString() }) }}
+          {{ t('analytics.lastUpdated', { time: lastUpdatedAt.toLocaleTimeString(locale || undefined) }) }}
         </span>
       </template>
       <template #actions>
@@ -269,9 +269,10 @@ function startWithTopic(topic: string, niche?: string) {
         <div class="text-base md:text-lg font-semibold text-slate-800">{{ t('analytics.error.title') }}</div>
         <div class="text-xs md:text-sm text-slate-500 text-center max-w-md">{{ t('analytics.error.description') }}</div>
         <button
+          type="button"
           @click="refreshData"
           :disabled="analyticsStore.isLoading"
-          class="px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600 transition-all duration-200 flex items-center gap-2 disabled:opacity-50"
+          class="min-h-11 px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-medium hover:bg-rose-600 transition-all duration-200 flex items-center gap-2 disabled:opacity-50"
         >
           <AppIcon name="RefreshCw" size="sm" variant="white" />
           {{ analyticsStore.isLoading ? t('analytics.refreshing') : t('analytics.error.retry') }}
@@ -300,8 +301,9 @@ function startWithTopic(topic: string, niche?: string) {
         <div class="text-xs md:text-sm text-slate-500 text-center max-w-md">{{ t('analytics.empty.description') }}</div>
         <div class="flex flex-wrap items-center justify-center gap-2">
           <button
+            type="button"
             @click="goHome"
-            class="px-4 py-2 rounded-lg bg-teal-500 text-white text-sm font-medium hover:bg-teal-600 transition-all duration-200 flex items-center gap-2"
+            class="min-h-11 px-4 py-2 rounded-lg bg-teal-500 text-white text-sm font-medium hover:bg-teal-600 transition-all duration-200 flex items-center gap-2"
           >
             <AppIcon name="Plus" size="sm" variant="white" />
             {{ t('analytics.empty.startWorkflow') }}
@@ -486,8 +488,9 @@ function startWithTopic(topic: string, niche?: string) {
           <button
             v-for="topic in trendTopics"
             :key="topic"
+            type="button"
             @click="startWithTopic(topic)"
-            class="px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-100 text-teal-700 text-xs font-medium hover:bg-teal-100 hover:border-teal-200 transition-all duration-200 flex items-center gap-1.5"
+            class="min-h-11 px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-100 text-teal-700 text-xs font-medium hover:bg-teal-100 hover:border-teal-200 transition-all duration-200 flex items-center gap-1.5"
           >
             <AppIcon name="Sparkles" size="sm" variant="cyan" />
             {{ topic }}

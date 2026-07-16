@@ -7,7 +7,7 @@ import RipplePanel from '@/components/RipplePanel.vue'
 import { useWorkflowStore } from '@/stores'
 import { triggerAnalytics } from '@/api/workflow'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const workflowStore = useWorkflowStore()
 
 // Phase order for status lookup
@@ -585,7 +585,7 @@ async function handleTriggerAnalytics() {
         </div>
         <div v-if="publishResult.published_at" class="flex items-center justify-between text-sm">
           <span class="text-slate-500">{{ t('dashboard.publishResult.publishedAt') }}</span>
-          <span class="text-xs text-slate-600">{{ new Date(publishResult.published_at).toLocaleString() }}</span>
+          <span class="text-xs text-slate-600">{{ new Date(publishResult.published_at).toLocaleString(locale || undefined) }}</span>
         </div>
         <div v-if="publishResult.post_url" class="mt-3">
           <a :href="publishResult.post_url" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 text-xs font-medium hover:bg-emerald-100 transition-colors border border-emerald-100">

@@ -203,7 +203,7 @@ function formatDate(value: string | undefined): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime())
     ? value
-    : date.toLocaleString(locale.value === 'en' ? 'en' : 'zh-CN')
+    : date.toLocaleString(locale.value || undefined)
 }
 
 function pointLabel(point: Record<string, unknown>): string {
@@ -322,7 +322,7 @@ function rqgmDimLabel(dim: string): string {
             v-for="note in notes"
             :key="note.note_id"
             type="button"
-            class="block w-full min-w-0 rounded-lg px-2.5 py-2 text-left transition"
+            class="block min-h-11 w-full min-w-0 rounded-lg px-2.5 py-2 text-left transition"
             :class="selectedNoteId === note.note_id
               ? 'bg-violet-100 text-violet-800'
               : 'text-slate-600 hover:bg-white'"

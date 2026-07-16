@@ -179,8 +179,13 @@ const confirmStart = async () => {
           <span class="text-[10px] md:text-xs text-teal-500 font-medium">{{ t('home.recommendedTopic') }}</span>
           <p class="text-xs md:text-sm text-teal-700 font-semibold truncate">{{ prefilledTopic }}</p>
         </div>
-        <button @click="prefilledTopic = null" class="text-teal-400 hover:text-teal-600 transition-colors flex-shrink-0">
-          <AppIcon name="X" size="sm" variant="cyan" />
+        <button
+          type="button"
+          @click="prefilledTopic = null"
+          class="min-h-11 min-w-11 text-teal-400 hover:text-teal-600 transition-colors flex-shrink-0 inline-flex items-center justify-center"
+          :aria-label="t('common.close')"
+        >
+          <AppIcon name="X" size="sm" variant="cyan" aria-hidden="true" />
         </button>
       </div>
 

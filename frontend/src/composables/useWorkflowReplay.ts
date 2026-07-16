@@ -1,4 +1,5 @@
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useWorkflowStore } from '@/stores'
 import type { CheckpointSnapshot } from '@/types/workflow'
 
@@ -6,13 +7,21 @@ type NodeStatus = 'completed' | 'running' | 'pending' | 'error'
 
 export function useWorkflowReplay() {
   const store = useWorkflowStore()
+  const { locale } = useI18n()
 
   const threadId = computed(() => store.activeThreadId)
   const activeCheckpointId = computed(() => store.activeCheckpointId)
   const replayCheckpoints = computed(() => store.replayCheckpoints)
+  const liveWorkflowState = computed(() => store.liveWorkflowState)
   const effectiveState = computed(() => store.effectiveState)
-  const workflowLabel = computed(() => store.workflowState?.label || '')
-  const workflowMode = computed<'trend' | 'brief'>(() => effectiveState.value?.workflow_mode || 'trend')
+  const workflowLabel = computed(() => liveWorkflowState.value?.label || '')
+  const workflowMode = computed<'trend' | 'brief'>(() =>
+    liveWorkflowState.value?.workflow_mode || selectedCheckpoint.value?.workflow_mode || 'trend'
+  )
+  const workflowStatus = computed(() => liveWorkflowState.value?.status || 'idle')
+  const workflowPhase = computed(() => liveWorkflowState.value?.phase || 'idle')
+  const workflowProgress = computed(() => liveWorkflowState.value?.progress_percent ?? 0)
+  const workflowUpdatedAt = computed(() => liveWorkflowState.value?.updated_at || liveWorkflowState.value?.created_at || null)
 
   const pipelineSteps = computed<string[]>(() => {
     const isBrief = workflowMode.value === 'brief'
@@ -58,6 +67,15 @@ export function useWorkflowReplay() {
       if (cpPhase === 'completed') return 'completed'
       const idx = phaseToIndex(phase)
       const cpIdx = phaseToIndex(cpPhase)
+      if (cpPhase === 'error') {
+        const cpAgentPhase = Object.entries(phaseAgentMap.value).find(([, agent]) => agent === cp.current_agent)?.[0]
+        const errorIdx = cpAgentPhase ? phaseToIndex(cpAgentPhase) : -1
+        if (idx >= 0 && errorIdx >= 0) {
+          if (idx < errorIdx) return 'completed'
+          if (idx === errorIdx) return 'error'
+        }
+        return 'pending'
+      }
       if (cpIdx < 0) {
         const cpAgent = cp.current_agent
         const agentPhase = Object.entries(phaseAgentMap.value).find(([_, agent]) => agent === cpAgent)
@@ -68,11 +86,6 @@ export function useWorkflowReplay() {
           if (idx === resolvedIdx) return 'running'
           return 'pending'
         }
-        return 'pending'
-      }
-      if (cpPhase === 'error') {
-        if (idx < cpIdx) return 'completed'
-        if (idx === cpIdx) return 'error'
         return 'pending'
       }
       if (idx < cpIdx) return 'completed'
@@ -108,22 +121,28 @@ export function useWorkflowReplay() {
     return cp ? cp.checkpoint_id : null
   }
 
-  function handleNodeClick(phase: string) {
-    const agent = phaseAgentMap.value[phase] || phase
-    let cpId = findCheckpointForAgent(agent)
-    if (!cpId) {
-      // Order matches backend graph: brief = viral_matcher → blogger_scout → blogger_gate → copywriter → draft_gate → shooting_planner → content_analyzer → version_generator → choice_gate → visual_designer
-      const phaseAgents: Record<string, string[]> = {
-        creating: ['viral_matcher', 'blogger_scout', 'blogger_gate', 'copywriter', 'draft_gate', 'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer'],
-        reviewing: ['review_gate', 'revise_content', 'visual_designer', 'copywriter'],
-        publishing: ['publisher', 'engagement'],
-        briefing: ['brief_analyzer', 'brief_gate'],
-      }
-      for (const fallback of phaseAgents[phase] || []) {
-        cpId = findCheckpointForAgent(fallback)
-        if (cpId) break
-      }
+  function checkpointAgentsForPhase(phase: string): string[] {
+    const primary = phaseAgentMap.value[phase]
+    const phaseAgents: Record<string, string[]> = {
+      creating: ['viral_matcher', 'blogger_scout', 'blogger_gate', 'copywriter', 'draft_gate', 'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer'],
+      reviewing: ['review_gate', 'revise_content', 'visual_designer', 'copywriter'],
+      publishing: ['publisher', 'engagement'],
+      briefing: ['brief_analyzer', 'brief_gate'],
     }
+    return primary ? [primary, ...(phaseAgents[phase] || [])] : (phaseAgents[phase] || [phase])
+  }
+
+  function findCheckpointForPhase(phase: string): string | null {
+    const agents = checkpointAgentsForPhase(phase)
+    return replayCheckpoints.value.find(cp => agents.includes(cp.current_agent))?.checkpoint_id || null
+  }
+
+  function hasCheckpointForPhase(phase: string): boolean {
+    return Boolean(findCheckpointForPhase(phase))
+  }
+
+  function handleNodeClick(phase: string) {
+    const cpId = findCheckpointForPhase(phase)
     if (cpId) store.selectCheckpoint(cpId)
   }
 
@@ -223,7 +242,7 @@ export function useWorkflowReplay() {
   function formatDate(iso: string | null) {
     if (!iso) return '—'
     const d = new Date(iso)
-    return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    return d.toLocaleString(locale.value || undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   }
 
   function formatNum(n?: number): string {
@@ -237,9 +256,14 @@ export function useWorkflowReplay() {
     threadId,
     activeCheckpointId,
     replayCheckpoints,
+    liveWorkflowState,
     effectiveState,
     workflowLabel,
     workflowMode,
+    workflowStatus,
+    workflowPhase,
+    workflowProgress,
+    workflowUpdatedAt,
     pipelineSteps,
     selectedCheckpoint,
     selectedAgent,
@@ -253,5 +277,7 @@ export function useWorkflowReplay() {
     formatDate,
     formatNum,
     findCheckpointForAgent,
+    findCheckpointForPhase,
+    hasCheckpointForPhase,
   }
 }

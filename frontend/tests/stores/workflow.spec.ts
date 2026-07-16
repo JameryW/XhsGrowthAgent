@@ -68,6 +68,7 @@ vi.mock('@/locales', () => ({
 }))
 
 import { useWorkflowStore } from '@/stores/workflow'
+import { getCheckpointHistory } from '@/api/workflow'
 
 describe('workflow store', () => {
   beforeEach(() => {
@@ -160,6 +161,52 @@ describe('workflow store', () => {
     it('isAwaitingReview when status is awaiting_review', () => {
       const store = useWorkflowStore()
       expect(store.isAwaitingReview).toBe(false)
+    })
+  })
+
+  describe('replay state separation', () => {
+    it('keeps live status independent from the selected checkpoint and chooses a meaningful default', async () => {
+      const store = useWorkflowStore()
+      const emptyCheckpoint = {
+        checkpoint_id: 'cp-empty', step: 3, source: 'test', phase: 'creating', current_agent: 'copywriter', created_at: null,
+        next_nodes: [], workflow_mode: 'trend',
+      }
+      const meaningfulCheckpoint = {
+        checkpoint_id: 'cp-result', step: 2, source: 'test', phase: 'planning', current_agent: 'content_strategist', created_at: null,
+        next_nodes: [], workflow_mode: 'trend', content_plan: { selected_topic: 'topic' },
+      }
+      store.workflowStates.set('thread-1', {
+        thread_id: 'thread-1', phase: 'completed', status: 'completed', progress_percent: 100, next_steps: [], agent_timeline: [], workflow_mode: 'trend',
+      })
+      store.setThreadId('thread-1')
+      vi.mocked(getCheckpointHistory).mockResolvedValueOnce({
+        thread_id: 'thread-1', checkpoints: [emptyCheckpoint, meaningfulCheckpoint] as any, has_more: false,
+      })
+
+      await store.enterReplayMode()
+
+      expect(store.activeCheckpointId).toBe('cp-result')
+      expect(store.liveWorkflowState?.status).toBe('completed')
+      expect(store.effectiveState?.phase).toBe('planning')
+      expect(store.effectiveState?.status).toBe('completed')
+    })
+
+    it('honours a valid checkpoint deep link over the meaningful default', async () => {
+      const store = useWorkflowStore()
+      store.workflowStates.set('thread-1', {
+        thread_id: 'thread-1', phase: 'completed', status: 'completed', progress_percent: 100, next_steps: [], agent_timeline: [], workflow_mode: 'trend',
+      })
+      store.setThreadId('thread-1')
+      vi.mocked(getCheckpointHistory).mockResolvedValueOnce({
+        thread_id: 'thread-1', checkpoints: [
+          { checkpoint_id: 'cp-new', step: 3, source: 'test', phase: 'creating', current_agent: 'copywriter', created_at: null, next_nodes: [], workflow_mode: 'trend', copy_content: { selected_title: 'new' } },
+          { checkpoint_id: 'cp-old', step: 2, source: 'test', phase: 'planning', current_agent: 'content_strategist', created_at: null, next_nodes: [], workflow_mode: 'trend', content_plan: { selected_topic: 'old' } },
+        ] as any, has_more: false,
+      })
+
+      await store.enterReplayMode('cp-old')
+
+      expect(store.activeCheckpointId).toBe('cp-old')
     })
   })
 })

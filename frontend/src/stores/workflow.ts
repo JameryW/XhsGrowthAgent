@@ -85,6 +85,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const activeCheckpointId = ref<string | null>(null)
   const hasMoreCheckpoints = ref(false)
   const isLoadingCheckpoints = ref(false)
+  const replayCheckpointsError = ref<string | null>(null)
   const notifiedCheckpointLost = ref<Set<string>>(new Set())
 
   // Replay state: selected checkpoint's data, or null when not in replay
@@ -129,6 +130,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const workflowState = computed<WorkflowStateResponse | null>(() =>
     activeThreadId.value ? workflowStates.value.get(activeThreadId.value) ?? null : null
   )
+
+  // Replay deliberately exposes the live state separately from the selected
+  // checkpoint.  Consumers that render workflow status (rather than the
+  // historical result being inspected) must use this source.
+  const liveWorkflowState = computed<WorkflowStateResponse | null>(() => workflowState.value)
 
   const currentThreadId = computed<string | null>(() => activeThreadId.value)
 
@@ -995,23 +1001,63 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   // ── Replay mode actions ──
 
-  async function enterReplayMode() {
+  function checkpointHasBusinessData(cp: CheckpointSnapshot): boolean {
+    const values = [
+      cp.trend_data,
+      cp.content_plan,
+      cp.copy_content,
+      cp.draft_content,
+      cp.optimization_analysis,
+      cp.content_versions,
+      cp.visual_plan,
+      cp.publish_result,
+      cp.analytics,
+      cp.ripple_prediction,
+      cp.ripple_pmf,
+      cp.ripple_comparison,
+      cp.brief_content,
+      cp.shooting_plan,
+    ]
+    return values.some((value) => {
+      if (!value) return false
+      if (Array.isArray(value)) return value.length > 0
+      if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0
+      return true
+    })
+  }
+
+  async function enterReplayMode(preferredCheckpointId?: string) {
     if (!activeThreadId.value) return
     isReplayMode.value = true
     replayCheckpoints.value = []
     activeCheckpointId.value = null
     hasMoreCheckpoints.value = false
+    replayCheckpointsError.value = null
     isLoadingCheckpoints.value = true
     try {
-      const result = await workflowApi.getCheckpointHistory(activeThreadId.value, { limit: 20 })
-      replayCheckpoints.value = deduplicateCheckpoints(result.checkpoints)
-      hasMoreCheckpoints.value = result.has_more
-      // Auto-select latest checkpoint
-      if (result.checkpoints.length > 0) {
-        activeCheckpointId.value = result.checkpoints[0].checkpoint_id
+      const result = await workflowApi.getCheckpointHistory(activeThreadId.value, { limit: 20 }, { suppressToast: true })
+      const deduplicated = deduplicateCheckpoints(result.checkpoints)
+      // A shared link may target an older checkpoint for the same agent. Keep
+      // that explicitly requested snapshot available even though the rail
+      // normally collapses duplicate-agent history.
+      const linkedCheckpoint = preferredCheckpointId
+        ? result.checkpoints.find(cp => cp.checkpoint_id === preferredCheckpointId)
+        : undefined
+      if (linkedCheckpoint && !deduplicated.some(cp => cp.checkpoint_id === linkedCheckpoint.checkpoint_id)) {
+        deduplicated.unshift(linkedCheckpoint)
       }
+      replayCheckpoints.value = deduplicated
+      hasMoreCheckpoints.value = result.has_more
+      // A shared link wins when it points at a loaded checkpoint. Otherwise
+      // prefer the most recent checkpoint with a real business result, then
+      // fall back to the most recent checkpoint (the API is newest-first).
+      const preferred = preferredCheckpointId
+        ? replayCheckpoints.value.find(cp => cp.checkpoint_id === preferredCheckpointId)
+        : undefined
+      const meaningful = replayCheckpoints.value.find(checkpointHasBusinessData)
+      activeCheckpointId.value = (preferred || meaningful || replayCheckpoints.value[0])?.checkpoint_id || null
     } catch (e: any) {
-      toastStore.error(t('workflow.replayLoadFailed'), e.message)
+      replayCheckpointsError.value = e?.message || t('workflow.replayLoadFailed')
     } finally {
       isLoadingCheckpoints.value = false
     }
@@ -1022,6 +1068,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     activeCheckpointId.value = null
     replayCheckpoints.value = []
     hasMoreCheckpoints.value = false
+    replayCheckpointsError.value = null
   }
 
   function selectCheckpoint(checkpointId: string) {
@@ -1032,19 +1079,20 @@ export const useWorkflowStore = defineStore('workflow', () => {
   async function loadMoreCheckpoints() {
     if (!activeThreadId.value || !hasMoreCheckpoints.value || isLoadingCheckpoints.value) return
     isLoadingCheckpoints.value = true
+    replayCheckpointsError.value = null
     try {
       // Use oldest checkpoint as cursor
       const oldest = replayCheckpoints.value[replayCheckpoints.value.length - 1]
       const result = await workflowApi.getCheckpointHistory(activeThreadId.value, {
         limit: 20,
         before: oldest?.checkpoint_id,
-      })
+      }, { suppressToast: true })
       // Append older checkpoints, then deduplicate
       const merged = [...replayCheckpoints.value, ...result.checkpoints]
       replayCheckpoints.value = deduplicateCheckpoints(merged)
       hasMoreCheckpoints.value = result.has_more
     } catch (e: any) {
-      toastStore.error(t('workflow.replayLoadFailed'), e.message)
+      replayCheckpointsError.value = e?.message || t('workflow.replayLoadFailed')
     } finally {
       isLoadingCheckpoints.value = false
     }
@@ -1070,6 +1118,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
     // Single-workflow state (backward compatible)
     workflowState,
+    liveWorkflowState,
     isLoading,
     error,
     progressPercent,
@@ -1123,6 +1172,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     activeCheckpointId,
     hasMoreCheckpoints,
     isLoadingCheckpoints,
+    replayCheckpointsError,
     replayState,
     effectiveState,
     enterReplayMode,

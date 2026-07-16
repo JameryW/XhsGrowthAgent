@@ -2,6 +2,8 @@ import client from './client'
 import type { WorkflowStartRequest, WorkflowResponse, WorkflowStateResponse, WorkflowListResponse, CheckpointHistoryResponse } from '@/types/workflow'
 import { useRetry } from '@/composables/useRetry'
 
+type RequestOptions = { suppressToast?: boolean }
+
 // Brief upload result from backend
 export interface BriefUploadResult {
   thread_id: string
@@ -15,8 +17,8 @@ export async function listWorkflows(params?: {
   status?: string
   limit?: number
   offset?: number
-}): Promise<WorkflowListResponse> {
-  return client.get('/workflow/list', { params }) as unknown as WorkflowListResponse
+}, options?: RequestOptions): Promise<WorkflowListResponse> {
+  return client.get('/workflow/list', { params, ...options }) as unknown as WorkflowListResponse
 }
 
 // 启动固定工作流（简单模式）
@@ -33,8 +35,8 @@ export async function startWorkflow(req: WorkflowStartRequest): Promise<Workflow
 }
 
 // 获取工作流状态（不重试，404 是正常场景）
-export async function getWorkflowStatus(threadId: string): Promise<WorkflowStateResponse> {
-  return client.get(`/workflow/status/${threadId}`) as unknown as WorkflowStateResponse
+export async function getWorkflowStatus(threadId: string, options?: RequestOptions): Promise<WorkflowStateResponse> {
+  return client.get(`/workflow/status/${threadId}`, options) as unknown as WorkflowStateResponse
 }
 
 // 暂停工作流
@@ -165,8 +167,8 @@ export async function uploadBriefFile(threadId: string, file: File): Promise<Bri
 export async function getCheckpointHistory(threadId: string, params?: {
   limit?: number
   before?: string
-}): Promise<CheckpointHistoryResponse> {
-  return client.get(`/workflow/history/${threadId}`, { params }) as unknown as CheckpointHistoryResponse
+}, options?: RequestOptions): Promise<CheckpointHistoryResponse> {
+  return client.get(`/workflow/history/${threadId}`, { params, ...options }) as unknown as CheckpointHistoryResponse
 }
 
 // Select a blogger from candidates — resume blogger_gate

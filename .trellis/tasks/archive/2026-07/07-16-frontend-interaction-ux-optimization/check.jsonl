@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/07-16-frontend-interaction-ux-optimization/prd.md", "reason": "逐项核对 P0/P1 验收标准、性能预算与状态矩阵"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "检查组件语义、双语、焦点、触控尺寸、路由与响应式约定"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "检查 Pinia 数据来源、回放生命周期、独立 loading/error 与恢复行为"}
+{"file": ".trellis/spec/frontend/animation-patterns.md", "reason": "检查动效成本及 reduced-motion 下内容立即可见"}

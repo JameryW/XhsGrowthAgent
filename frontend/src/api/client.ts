@@ -1,5 +1,12 @@
 import axios, { AxiosInstance, AxiosError, AxiosResponse } from 'axios'
 
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    /** Let a page-level error/empty state own the recovery message. */
+    suppressToast?: boolean
+  }
+}
+
 // ApiResponse envelope type from backend
 export interface ApiResponse<T = unknown> {
   success: boolean
@@ -115,7 +122,7 @@ client.interceptors.response.use(
       'ERROR_REVIEW_NOT_PENDING',
       'ERROR_WORKFLOW_NOT_FOUND',
     ])
-    if (!silentCodes.has(apiError.code)) {
+    if (!silentCodes.has(apiError.code) && !error.config?.suppressToast) {
       try {
         const { useToastStore } = await import('@/stores/toast')
         const toastStore = useToastStore()

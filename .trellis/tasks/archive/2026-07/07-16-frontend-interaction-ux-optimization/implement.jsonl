@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/07-16-frontend-interaction-ux-optimization/prd.md", "reason": "P0 展示页/回放页需求、状态模型、实施阶段与验收标准"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "Vue 组件、路由交互、i18n、移动端溢出与可访问性约定"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "回放 live state/selected checkpoint 分离、Pinia 派生状态与错误反馈约定"}
+{"file": ".trellis/spec/frontend/animation-patterns.md", "reason": "Showcase/Replay 动效性能与 prefers-reduced-motion 约定"}

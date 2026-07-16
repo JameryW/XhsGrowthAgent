@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useWorkflowStore } from '@/stores'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const store = useWorkflowStore()
 
 const checkpoints = computed(() => store.replayCheckpoints)
@@ -49,7 +49,7 @@ function agentLabel(agent: string): string {
 function formatDate(iso: string | null) {
   if (!iso) return ''
   const d = new Date(iso)
-  return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleString(locale.value || undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
 const checkpointItems = computed(() =>
@@ -59,30 +59,64 @@ const checkpointItems = computed(() =>
     step: cp.step,
     date: formatDate(cp.created_at),
     isActive: cp.checkpoint_id === activeId.value,
+    phase: cp.phase,
+    hasData: [cp.trend_data, cp.content_plan, cp.copy_content, cp.visual_plan, cp.publish_result, cp.analytics, cp.ripple_prediction, cp.ripple_pmf].some((value) => {
+      if (!value) return false
+      if (Array.isArray(value)) return value.length > 0
+      return typeof value === 'object' ? Object.keys(value as Record<string, unknown>).length > 0 : true
+    }),
   }))
 )
+
+const phaseLabelKeys: Record<string, string> = {
+  scouting: 'showcase.phase.scouting',
+  planning: 'showcase.phase.planning',
+  briefing: 'dashboard.timeline.briefing',
+  creating: 'showcase.phase.creating',
+  reviewing: 'showcase.phase.reviewing',
+  publishing: 'showcase.phase.publishing',
+  analyzing: 'showcase.phase.analyzing',
+}
+
+const groupedCheckpoints = computed(() => {
+  const groups: Array<{ phase: string; label: string; items: typeof checkpointItems.value }> = []
+  for (const item of checkpointItems.value) {
+    let group = groups.find(entry => entry.phase === item.phase)
+    if (!group) {
+      group = { phase: item.phase, label: phaseLabelKeys[item.phase] ? t(phaseLabelKeys[item.phase]) : item.phase, items: [] }
+      groups.push(group)
+    }
+    group.items.push(item)
+  }
+  return groups
+})
 </script>
 
 <template>
-  <div class="replay-checkpoint-rail space-y-0.5">
+  <div class="replay-checkpoint-rail space-y-2" role="list" :aria-label="t('replay.checkpoints')">
     <div class="replay-checkpoint-heading text-[10px] text-slate-400 font-medium uppercase tracking-widest mb-2">{{ t('replay.checkpoints') }}</div>
-    <button
-      v-for="item in checkpointItems"
-      :key="item.id"
-      v-memo="[item.isActive, item.label]"
-      @click="selectCp(item.id)"
-      class="replay-checkpoint-item w-full flex items-center gap-2 py-1.5 px-2 rounded-lg transition-colors text-left"
-      :class="item.isActive
-        ? 'bg-slate-800 text-white'
-        : 'hover:bg-slate-50 text-slate-600'"
-    >
-      <!-- Step number -->
-      <span class="text-[10px] font-mono shrink-0" :class="item.isActive ? 'text-slate-300' : 'text-slate-400'">{{ item.step }}</span>
-      <!-- Agent label -->
-      <span class="text-xs font-medium truncate" :class="item.isActive ? 'text-white' : 'text-slate-700'">{{ item.label }}</span>
-      <!-- Date (only on active or hover) -->
-      <span v-if="item.date" class="text-[10px] ml-auto shrink-0" :class="item.isActive ? 'text-slate-300' : 'text-slate-400'">{{ item.date }}</span>
-    </button>
+    <section v-for="group in groupedCheckpoints" :key="group.phase" class="space-y-0.5" role="group" :aria-label="group.label">
+      <h3 class="px-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ group.label }}</h3>
+      <button
+        v-for="item in group.items"
+        :key="item.id"
+        v-memo="[item.isActive, item.label, item.hasData]"
+        type="button"
+        @click="selectCp(item.id)"
+        class="replay-checkpoint-item w-full flex items-center gap-2 py-1.5 px-2 rounded-lg transition-colors text-left"
+        :class="item.isActive ? 'bg-slate-800 text-white' : 'hover:bg-slate-50 text-slate-600'"
+        :aria-pressed="item.isActive"
+        :aria-current="item.isActive ? 'step' : undefined"
+        role="listitem"
+      >
+        <span class="text-[10px] font-mono shrink-0" :class="item.isActive ? 'text-slate-300' : 'text-slate-400'">{{ item.step }}</span>
+        <span class="text-xs font-medium truncate" :class="item.isActive ? 'text-white' : 'text-slate-700'">{{ item.label }}</span>
+        <span class="ml-auto flex shrink-0 items-center gap-1">
+          <span class="h-1.5 w-1.5 rounded-full" :class="item.hasData ? 'bg-emerald-400' : 'bg-slate-300'" :aria-label="item.hasData ? t('replay.dataAvailable') : t('replay.noData')" />
+          <span v-if="item.date" class="text-[10px]" :class="item.isActive ? 'text-slate-300' : 'text-slate-400'">{{ item.date }}</span>
+        </span>
+      </button>
+    </section>
     <button
       v-if="hasMore"
       @click="loadMore"

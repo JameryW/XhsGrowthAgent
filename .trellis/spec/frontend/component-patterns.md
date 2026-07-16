@@ -78,6 +78,26 @@ horizontal overflow.
 
 Route components rendered through `PageTransition` must have a single element root. Vue cannot animate fragment roots inside `<Transition mode="out-in">`, and warnings during route changes can obscure real navigation failures. Keep modals/teleports inside the route's root wrapper.
 
+## Evidence-First Public Workspaces
+
+Public showcase and replay routes are evidence-led workspaces, not marketing
+canvas pages. Keep the DOM reading order aligned with the user's decision
+path: compact context/filters, real workflow or checkpoint result, then
+decorative process explanation. Decorative animation must be secondary and
+must not push the primary evidence below the first mobile viewport.
+
+Use semantic `RouterLink` elements for workflow entry actions so keyboard
+users and browser new-tab behavior work without custom click handlers. When a
+route is opened from a filtered list, pass a safe return path plus a short
+session context; restore that context on return rather than relying on a
+component-local scroll position.
+
+For async cards and replay panels, render distinct loading, unavailable/empty,
+and error states. Preserve the stable identity/status shell while a detail
+request fails and expose a local retry action. A responsive layout must keep
+touch targets at least 44px high and avoid page-level horizontal overflow at
+320px and above.
+
 ---
 
 ## Composables
@@ -98,6 +118,11 @@ toastStore.error(t('workflow.error'))
 ```
 
 Never use `alert()` or `confirm()`.
+
+Destructive actions in settings and other route-level management surfaces use
+`ConfirmModal` with a localized title/message and explicit cancel/confirm
+events. The trigger must remain keyboard reachable, expose an accessible name
+for icon-only actions, and preserve the 44px minimum touch target.
 
 ---
 

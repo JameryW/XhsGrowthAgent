@@ -85,6 +85,16 @@ watch(() => route.name, (name) => {
   void initializeContextualOnboarding(name)
 })
 
+// Return keyboard focus to the page shell after navigation.  This keeps route
+// changes usable for keyboard and screen-reader users without moving scroll
+// position or stealing focus while they are typing in a control.
+watch(() => route.path, async () => {
+  await nextTick()
+  const active = document.activeElement as HTMLElement | null
+  if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return
+  document.getElementById('main-content')?.focus({ preventScroll: true })
+})
+
 // Connect/disconnect WebSocket when auth state changes
 watch(
   () => authStore.isAuthenticated,

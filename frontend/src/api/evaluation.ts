@@ -5,23 +5,26 @@ import type {
   EvaluationTrendResponse,
 } from '@/types/evaluation'
 
+type RequestOptions = { suppressToast?: boolean }
+
 // 列出有评估结果的工作流 — 含标题 + 评估摘要（专用端点，不污染通用 /workflow/list）
 export async function getEvaluationList(
   accountId?: string,
   limit = 20,
   offset = 0,
+  options?: RequestOptions,
 ): Promise<EvaluationListResponse> {
   const params = new URLSearchParams({
     limit: String(limit),
     offset: String(offset),
   })
   if (accountId) params.set('account_id', accountId)
-  return client.get(`/evaluation/list?${params.toString()}`) as unknown as EvaluationListResponse
+  return client.get(`/evaluation/list?${params.toString()}`, options) as unknown as EvaluationListResponse
 }
 
 // 获取指定工作流的创作质量评估结果（RQGM agent-as-a-judge）
-export async function getEvaluationResult(threadId: string): Promise<EvaluationResultResponse> {
-  return client.get(`/evaluation/result/${threadId}`) as unknown as EvaluationResultResponse
+export async function getEvaluationResult(threadId: string, options?: RequestOptions): Promise<EvaluationResultResponse> {
+  return client.get(`/evaluation/result/${threadId}`, options) as unknown as EvaluationResultResponse
 }
 
 // 对已导入历史笔记手动触发 RQGM 评估（thread-less，不写 checkpoint）
@@ -36,8 +39,9 @@ export async function evaluateNote(
 export async function getEvaluationTrend(
   accountId?: string,
   limit = 100,
+  options?: RequestOptions,
 ): Promise<EvaluationTrendResponse> {
   const params = new URLSearchParams({ limit: String(limit) })
   if (accountId) params.set('account_id', accountId)
-  return client.get(`/evaluation/trend?${params.toString()}`) as unknown as EvaluationTrendResponse
+  return client.get(`/evaluation/trend?${params.toString()}`, options) as unknown as EvaluationTrendResponse
 }

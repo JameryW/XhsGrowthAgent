@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import type { CheckpointSnapshot } from '@/types/workflow'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 defineProps<{ cp: CheckpointSnapshot }>()
 </script>
 
@@ -22,7 +22,7 @@ defineProps<{ cp: CheckpointSnapshot }>()
       </div>
       <div v-if="(cp.publish_result as any).published_at" class="p-2 rounded-lg liquid-glass-inset">
         <div class="text-[10px] text-slate-400">{{ t('replay.publishedAt') }}</div>
-        <div class="text-xs text-slate-700">{{ new Date((cp.publish_result as any).published_at).toLocaleString() }}</div>
+        <div class="text-xs text-slate-700">{{ new Date((cp.publish_result as any).published_at).toLocaleString(locale || undefined) }}</div>
       </div>
     </div>
     <div v-if="(cp.publish_result as any).post_url" class="mt-2">

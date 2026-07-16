@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
@@ -33,6 +33,21 @@ const connectionLabel = computed(() => {
 
 onMounted(() => {
   if (!accountsStore.activeAccount) void accountsStore.fetchAccounts()
+  document.addEventListener('keydown', handleMenuKeydown)
+})
+
+function handleMenuKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && showMore.value) {
+    showMore.value = false
+  }
+}
+
+watch(() => route.path, () => {
+  showMore.value = false
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleMenuKeydown)
 })
 
 const navigate = (path: string) => {
