@@ -2,9 +2,9 @@
 
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from backend.api.routes.public_telemetry import (
     _rate_buckets,
@@ -21,13 +21,14 @@ def clear_rate_buckets():
 
 
 @pytest.fixture
-def client() -> TestClient:
+def app() -> FastAPI:
     app = FastAPI()
     app.include_router(router, prefix="/api/public")
-    return TestClient(app)
+    return app
 
 
-def test_receiver_accepts_only_allowlisted_categories_and_drops_unknown_fields(client):
+@pytest.mark.asyncio
+async def test_receiver_accepts_only_allowlisted_categories_and_drops_unknown_fields(app):
     with (
         patch("backend.api.routes.public_telemetry.is_pool_ready", return_value=True),
         patch(
@@ -35,27 +36,32 @@ def test_receiver_accepts_only_allowlisted_categories_and_drops_unknown_fields(c
             new_callable=AsyncMock,
         ) as record,
     ):
-        response = client.post(
-            "/api/public/telemetry",
-            json={
-                "event": "showcase_view",
-                "viewport": "mobile",
-                "source": "private-page",
-                "duration_ms": 42,
-                "thread_id": "must-not-be-retained",
-            },
-        )
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/public/telemetry",
+                json={
+                    "event": "showcase_view",
+                    "viewport": "mobile",
+                    "source": "private-page",
+                    "cached": True,
+                    "duration_ms": 42,
+                    "thread_id": "must-not-be-retained",
+                },
+            )
 
     assert response.status_code == 204
     assert record.await_args.args[0] == {
         "event": "showcase_view",
         "event_version": 1,
         "viewport": "mobile",
+        "cached": True,
         "duration_ms": 42,
     }
 
 
-def test_receiver_does_not_write_unknown_event(client):
+@pytest.mark.asyncio
+async def test_receiver_does_not_write_unknown_event(app):
     with (
         patch("backend.api.routes.public_telemetry.is_pool_ready", return_value=True),
         patch(
@@ -63,10 +69,12 @@ def test_receiver_does_not_write_unknown_event(client):
             new_callable=AsyncMock,
         ) as record,
     ):
-        response = client.post(
-            "/api/public/telemetry",
-            json={"event": "user_email_and_internal_id"},
-        )
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/public/telemetry",
+                json={"event": "user_email_and_internal_id"},
+            )
 
     assert response.status_code == 204
     record.assert_not_awaited()

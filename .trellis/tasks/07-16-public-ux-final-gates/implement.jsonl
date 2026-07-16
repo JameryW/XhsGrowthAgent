@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Telemetry panel structure, i18n, accessible states, API usage, and public evidence-page conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Cancellation, stale-response guards, and public telemetry/cache boundaries."}
+{"file":".trellis/spec/frontend/animation-patterns.md","reason":"Keep loading/status transitions compatible with reduced motion and fast theme switching."}
+{"file":".trellis/tasks/07-16-showcase-replay-ux-master-plan/prd.md","reason":"Authoritative Showcase/Replay acceptance, performance, privacy, and release gates."}

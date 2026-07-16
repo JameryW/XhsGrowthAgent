@@ -17,17 +17,37 @@ let abortController: AbortController | null = null
 const totalEvents = computed(() => rows.value.reduce((sum, row) => sum + row.event_count, 0))
 const measuredEvents = computed(() => rows.value.reduce((sum, row) => sum + row.measured_count, 0))
 const visibleRows = computed(() => rows.value.slice(0, 24))
+const FIRST_RESULT_BUDGET_MS = 2500
+const CACHED_SELECT_BUDGET_MS = 100
 
-function metricForEvent(eventName: string, field: 'p50_duration_ms' | 'p75_duration_ms'): number | null {
+type MetricStatus = 'passing' | 'overBudget' | 'noData'
+
+function metricForEvent(
+  eventName: string,
+  field: 'p50_duration_ms' | 'p75_duration_ms',
+  matches: (row: PublicTelemetrySummaryRow) => boolean = () => true,
+): number | null {
   const values = rows.value
-    .filter(row => row.event_name === eventName)
+    .filter(row => row.event_name === eventName && matches(row))
     .map(row => row[field])
     .filter((value): value is number => typeof value === 'number')
   return values.length ? Math.max(...values) : null
 }
 
 const firstResultP75 = computed(() => metricForEvent('replay_first_result_visible', 'p75_duration_ms'))
-const cachedSelectP75 = computed(() => metricForEvent('replay_select_to_render', 'p75_duration_ms'))
+const cachedSelectP75 = computed(() => metricForEvent(
+  'replay_select_to_render',
+  'p75_duration_ms',
+  row => row.cached === true,
+))
+
+function metricStatus(value: number | null, budget: number): MetricStatus {
+  if (value === null) return 'noData'
+  return value <= budget ? 'passing' : 'overBudget'
+}
+
+const firstResultStatus = computed(() => metricStatus(firstResultP75.value, FIRST_RESULT_BUDGET_MS))
+const cachedSelectStatus = computed(() => metricStatus(cachedSelectP75.value, CACHED_SELECT_BUDGET_MS))
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat(locale.value || undefined).format(value)
@@ -38,6 +58,16 @@ function formatDuration(value: number | null): string {
   return formatNumber(Math.round(value)) + ' ms'
 }
 
+function statusLabel(status: MetricStatus): string {
+  return t('settings.publicTelemetry.status.' + status)
+}
+
+function statusClasses(status: MetricStatus): string {
+  if (status === 'passing') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-200'
+  if (status === 'overBudget') return 'bg-amber-100 text-amber-800 dark:bg-amber-400/15 dark:text-amber-200'
+  return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+}
+
 function eventLabel(eventName: string): string {
   const key = 'settings.publicTelemetry.events.' + eventName
   const translated = t(key)
@@ -46,6 +76,7 @@ function eventLabel(eventName: string): string {
 
 function dimensions(row: PublicTelemetrySummaryRow): string {
   return [
+    row.cached === true ? t('settings.publicTelemetry.cached') : row.cached === false ? t('settings.publicTelemetry.network') : null,
     row.viewport,
     row.source,
     row.status,
@@ -120,15 +151,21 @@ onUnmounted(() => abortController?.abort())
           <p class="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-50">{{ formatNumber(totalEvents) }}</p>
           <p class="mt-1 text-xs text-slate-400">{{ t('settings.publicTelemetry.measured', { count: formatNumber(measuredEvents) }) }}</p>
         </div>
-        <div class="rounded-xl border border-teal-200/70 bg-teal-50/70 p-4 dark:border-teal-400/20 dark:bg-teal-400/10">
-          <p class="text-xs font-medium text-teal-800 dark:text-teal-200">{{ t('settings.publicTelemetry.firstResultP75') }}</p>
+        <div data-testid="first-result-budget-card" class="rounded-xl border border-teal-200/70 bg-teal-50/70 p-4 dark:border-teal-400/20 dark:bg-teal-400/10">
+          <div class="flex items-start justify-between gap-2">
+            <p class="text-xs font-medium text-teal-800 dark:text-teal-200">{{ t('settings.publicTelemetry.firstResultP75') }}</p>
+            <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="statusClasses(firstResultStatus)" role="status">{{ statusLabel(firstResultStatus) }}</span>
+          </div>
           <p class="mt-2 text-2xl font-bold text-teal-900 dark:text-teal-50">{{ formatDuration(firstResultP75) }}</p>
-          <p class="mt-1 text-xs text-teal-700/70 dark:text-teal-200/70">{{ t('settings.publicTelemetry.upperBound') }}</p>
+          <p class="mt-1 text-xs text-teal-700/70 dark:text-teal-200/70">{{ t('settings.publicTelemetry.budget', { value: formatDuration(FIRST_RESULT_BUDGET_MS) }) }}</p>
         </div>
-        <div class="rounded-xl border border-violet-200/70 bg-violet-50/70 p-4 dark:border-violet-400/20 dark:bg-violet-400/10">
-          <p class="text-xs font-medium text-violet-800 dark:text-violet-200">{{ t('settings.publicTelemetry.cachedSelectP75') }}</p>
+        <div data-testid="cached-select-budget-card" class="rounded-xl border border-violet-200/70 bg-violet-50/70 p-4 dark:border-violet-400/20 dark:bg-violet-400/10">
+          <div class="flex items-start justify-between gap-2">
+            <p class="text-xs font-medium text-violet-800 dark:text-violet-200">{{ t('settings.publicTelemetry.cachedSelectP75') }}</p>
+            <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="statusClasses(cachedSelectStatus)" role="status">{{ statusLabel(cachedSelectStatus) }}</span>
+          </div>
           <p class="mt-2 text-2xl font-bold text-violet-900 dark:text-violet-50">{{ formatDuration(cachedSelectP75) }}</p>
-          <p class="mt-1 text-xs text-violet-700/70 dark:text-violet-200/70">{{ t('settings.publicTelemetry.upperBound') }}</p>
+          <p class="mt-1 text-xs text-violet-700/70 dark:text-violet-200/70">{{ t('settings.publicTelemetry.cachedBudget', { value: formatDuration(CACHED_SELECT_BUDGET_MS) }) }}</p>
         </div>
       </div>
 

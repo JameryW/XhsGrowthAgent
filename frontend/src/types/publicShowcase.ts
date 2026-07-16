@@ -123,6 +123,7 @@ export interface PublicTelemetrySummaryRow {
   phase: string | null
   error_type: string | null
   view_mode: string | null
+  cached: boolean | null
   event_count: number
   measured_count: number
   p50_duration_ms: number | null

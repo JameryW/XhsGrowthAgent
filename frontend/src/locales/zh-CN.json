@@ -1804,7 +1804,15 @@
       "measured": "含耗时数据 {count} 条",
       "firstResultP75": "首个结果 p75",
       "cachedSelectP75": "缓存回选 p75",
-      "upperBound": "按当前筛选周期的最大分组值",
+      "budget": "目标 ≤ {value}",
+      "cachedBudget": "仅统计缓存命中；目标 ≤ {value}",
+      "cached": "缓存命中",
+      "network": "网络请求",
+      "status": {
+        "passing": "通过",
+        "overBudget": "超出目标",
+        "noData": "暂无数据"
+      },
       "breakdown": "事件分组",
       "event": "事件",
       "dimensions": "维度",

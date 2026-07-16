@@ -1027,6 +1027,7 @@ git diff --check
 - Replay 步骤选择先更新结果状态并开始 checkpoint 读取，再等待 URL deep-link 同步；这样慢路由更新不会阻塞用户先看到已返回的结果。新增回归测试覆盖“URL 更新未完成时结果已渲染”。
 - 审计脚本新增 Largest Contentful Paint（LCP）观察器、warm reload、cached select-to-render 计时和 100ms 缓存回选门槛；新增 `--network-profile slow-4g` 与 `--save-data` 代表性采样入口。默认 online 全矩阵行为不变。
 - Settings 新增认证后的“公开页体验监控”面板，消费现有匿名聚合 summary 接口，支持 1/7/14/30 天、取消过期请求、失败重试和 p50/p75 展示；面板不渲染原始案例 ID、账号、正文或错误原文。
+- telemetry summary 进一步按匿名 `cached` 布尔维度分组；面板的缓存回选卡只读取 `cached=true`，明确显示 2,500ms/100ms 预算的通过、超标或暂无数据状态，避免把网络请求混入缓存门槛或把无样本误显示为 0ms。
 - 本轮改动的前端全量回归已通过：43 个测试文件、544 个测试；新增面板 3 个测试和 Replay 性能回归测试 1 个。生产构建及发布后审计仍需在合并部署后记录最终证据。
 
 ### 17.10 合并部署后的最终自动化证据
