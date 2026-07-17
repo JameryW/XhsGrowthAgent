@@ -6,11 +6,13 @@ import { use } from 'echarts/core'
 import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
+import { useChartTheme } from '@/composables/useChartTheme'
 
 // Register ECharts modules
 use([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 const { t } = useI18n()
+const { theme } = useChartTheme()
 
 interface DataItem {
   category: string
@@ -52,7 +54,9 @@ const chartDescription = computed(() => {
   return `Total: ${total}, top: ${maxCategory.category} ${maxCategory.value}`
 })
 
-const chartOption = computed(() => ({
+const chartOption = computed(() => {
+  const th = theme.value
+  return {
   grid: {
     left: '3%',
     right: '4%',
@@ -64,10 +68,10 @@ const chartOption = computed(() => ({
     type: 'category',
     data: props.data.map(d => d.category),
     axisLine: {
-      lineStyle: { color: 'rgba(0,0,0,0.1)' },
+      lineStyle: { color: th.axisLine },
     },
     axisLabel: {
-      color: '#64748B',
+      color: th.axisLabel,
       fontSize: 10,
     },
   },
@@ -77,21 +81,21 @@ const chartOption = computed(() => ({
       show: false,
     },
     splitLine: {
-      lineStyle: { color: 'rgba(0,0,0,0.05)' },
+      lineStyle: { color: th.splitLine },
     },
     axisLabel: {
-      color: '#64748B',
+      color: th.axisLabel,
       fontSize: 10,
     },
   },
   tooltip: {
     trigger: 'axis',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: th.tooltipBg,
     borderColor: neonColors[props.variant],
     borderWidth: 1,
-    textStyle: { color: '#1E293B' },
+    textStyle: { color: th.tooltipText },
     shadowBlur: 8,
-    shadowColor: 'rgba(0,0,0,0.1)',
+    shadowColor: th.tooltipShadow,
   },
   series: [
     {
@@ -111,7 +115,8 @@ const chartOption = computed(() => ({
       },
     },
   ],
-}))
+  }
+})
 </script>
 
 <template>

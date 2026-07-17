@@ -13,6 +13,7 @@ import { useAnalyticsStore, useAccountsStore } from '@/stores'
 
 const TrendChart = defineAsyncComponent(() => import('@/components/charts/TrendChart.vue'))
 const EngagementChart = defineAsyncComponent(() => import('@/components/charts/EngagementChart.vue'))
+import { formatNumber, formatPercent, formatShortDate } from '@/utils/format'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -47,45 +48,43 @@ const totalViews = computed(() => analyticsStore.posts.reduce((sum, p) => sum + 
 
 const metrics = computed(() => [
   { icon: 'Upload', title: t('analytics.postsPublished'), value: analyticsStore.posts.length, subtitle: periodLabel.value, variant: 'pink' as const },
-  { icon: 'Eye', title: t('analytics.totalViews'), value: totalViews.value.toLocaleString(), subtitle: periodLabel.value, variant: 'cyan' as const },
-  { icon: 'MessageCircle', title: t('analytics.totalEngagement'), value: analyticsStore.totalEngagement.toLocaleString(), subtitle: `${analyticsStore.posts.length} ` + t('analytics.postsPublished'), variant: 'purple' as const },
-  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: `${analyticsStore.avgEngagementRate.toFixed(1)}%`, subtitle: analyticsStore.posts.length > 0 ? `${analyticsStore.posts.length} ` + t('analytics.postsPublished') : periodLabel.value, variant: 'peach' as const },
+  { icon: 'Eye', title: t('analytics.totalViews'), value: formatNumber(totalViews.value, locale.value), subtitle: periodLabel.value, variant: 'cyan' as const },
+  { icon: 'MessageCircle', title: t('analytics.totalEngagement'), value: formatNumber(analyticsStore.totalEngagement, locale.value), subtitle: `${analyticsStore.posts.length} ` + t('analytics.postsPublished'), variant: 'purple' as const },
+  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: formatPercent(analyticsStore.avgEngagementRate, locale.value), subtitle: analyticsStore.posts.length > 0 ? `${analyticsStore.posts.length} ` + t('analytics.postsPublished') : periodLabel.value, variant: 'peach' as const },
   { icon: 'DollarSign', title: t('analytics.aiCost'), value: `$${analyticsStore.costData?.today_cost_usd?.toFixed(2) || '0.00'}`, subtitle: t('analytics.cost.today'), variant: 'pink' as const },
 ])
 
+// AN-01: true daily time series from published_at (was weekday-bucketed avg
+// with 0s on empty days). No-data days are omitted (connectNulls:false) so
+// the chart never implies zero engagement on a day with no posts.
 const trendData = computed(() => {
   const posts = analyticsStore.posts
   if (!posts.length) return []
 
-  const hasPublishedPosts = posts.some(p => p.published_at)
-  if (!hasPublishedPosts) return []
+  const published = posts
+    .filter(p => p.published_at)
+    .map(p => ({ date: new Date(p.published_at), value: (p.likes || 0) + (p.comments || 0) + (p.collects || 0) }))
+    .filter(d => !Number.isNaN(d.date.getTime()))
+  if (!published.length) return []
 
-  const dayNames = [
-    t('analytics.weekdays.sun'),
-    t('analytics.weekdays.mon'),
-    t('analytics.weekdays.tue'),
-    t('analytics.weekdays.wed'),
-    t('analytics.weekdays.thu'),
-    t('analytics.weekdays.fri'),
-    t('analytics.weekdays.sat'),
-  ]
-  const dayTotals = new Array(7).fill(0)
-  const dayCounts = new Array(7).fill(0)
+  published.sort((a, b) => a.date.getTime() - b.date.getTime())
 
-  posts.forEach(post => {
-    if (post.published_at) {
-      const d = new Date(post.published_at)
-      const day = d.getDay()
-      dayTotals[day] += post.likes + post.comments + post.collects
-      dayCounts[day]++
-    }
+  // Bucket by calendar day; sum engagement per day.
+  const byDay = new Map<string, number>()
+  for (const point of published) {
+    const key = trendDateKey(point.date)
+    byDay.set(key, (byDay.get(key) || 0) + point.value)
+  }
+
+  return Array.from(byDay.entries()).map(([key, value]) => {
+    const [y, m, d] = key.split('-').map(Number)
+    return { date: formatShortDate(new Date(y, m - 1, d).toISOString(), locale.value), value }
   })
-
-  return [1, 2, 3, 4, 5, 6, 0].map(day => ({
-    date: dayNames[day],
-    value: dayCounts[day] > 0 ? Math.round(dayTotals[day] / dayCounts[day]) : 0,
-  }))
 })
+
+function trendDateKey(d: Date): string {
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+}
 
 const engagementData = computed(() => {
   const posts = analyticsStore.posts
@@ -109,19 +108,13 @@ const engagementData = computed(() => {
   ]
 })
 
-const formatDate = (isoDate: string | null | undefined) => {
-  if (!isoDate) return '—'
-  const d = new Date(isoDate)
-  const month = d.toLocaleDateString(locale.value || undefined, { month: 'short' })
-  const day = d.getDate()
-  return `${month} ${day}`
-}
+const formatDate = (isoDate: string | null | undefined) => formatShortDate(isoDate, locale.value)
 
 const bestPostTitle = computed(() => analyticsStore.growthReport?.metrics?.best_post_title || '')
 
 const tableColumns = computed(() => [
   { key: 'title', label: t('analytics.table.title'), align: 'left' as const },
-  { key: 'views_display', label: t('analytics.table.views'), align: 'center' as const, sortable: true },
+  { key: 'views_display', label: t('analytics.table.views'), align: 'center' as const, sortable: true, sortKey: 'views' },
   { key: 'likes', label: t('analytics.table.likes'), align: 'center' as const, sortable: true },
   { key: 'comments', label: t('analytics.table.comments'), align: 'center' as const, sortable: true },
   { key: 'collects', label: t('analytics.table.collects'), align: 'center' as const, sortable: true },
@@ -130,6 +123,7 @@ const tableColumns = computed(() => [
     label: t('analytics.table.engagementRate'),
     align: 'center' as const,
     sortable: true,
+    sortKey: 'engagement_rate',
     // ponytail: color-code rate inline — strong ≥5% green, 1–5% amber, <1% muted.
     cellClass: (row: Record<string, any>) => {
       const rate = Number(row.engagement_rate)
@@ -144,8 +138,8 @@ const tableColumns = computed(() => [
 
 const tableData = computed(() => analyticsStore.posts.slice(0, 10).map(post => ({
   ...post,
-  views_display: (post.views || 0).toLocaleString(),
-  engagement_rate_display: `${post.engagement_rate.toFixed(1)}%`,
+  views_display: formatNumber(post.views || 0, locale.value),
+  engagement_rate_display: formatPercent(post.engagement_rate, locale.value),
   published_at_display: formatDate(post.published_at),
 })))
 
@@ -377,7 +371,7 @@ function startWithTopic(topic: string, niche?: string) {
       <Suspense>
         <TrendChart
           :data="trendData"
-          :title="t('analytics.interactionTrend')"
+          :title="t('analytics.recentPerformanceTrend')"
           variant="cyan"
           :height="220"
         />

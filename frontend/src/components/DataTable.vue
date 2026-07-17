@@ -10,6 +10,10 @@ interface Column {
   label: string
   align?: 'left' | 'center' | 'right'
   sortable?: boolean
+  // AN-03: optional field to sort by instead of the display key. Points at the
+  // raw numeric/value field so formatted strings ("1,234", "10.0%") sort by
+  // their underlying number, not lexicographically.
+  sortKey?: string
   // ponytail: optional per-cell class hook (e.g. color-code engagement rate).
   // Receives the row; returns extra classes merged onto the cell.
   cellClass?: (row: Record<string, any>) => string
@@ -48,9 +52,12 @@ const sortedData = computed(() => {
   if (!sortKey.value) return props.data
   const key = sortKey.value
   const order = sortOrder.value === 'asc' ? 1 : -1
+  // AN-03: resolve the raw-value field if the column declared a sortKey.
+  const col = props.columns.find(c => c.key === key)
+  const valueKey = col?.sortKey ?? key
   return [...props.data].sort((a, b) => {
-    const va = a[key]
-    const vb = b[key]
+    const va = a[valueKey]
+    const vb = b[valueKey]
     if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * order
     return String(va).localeCompare(String(vb)) * order
   })
