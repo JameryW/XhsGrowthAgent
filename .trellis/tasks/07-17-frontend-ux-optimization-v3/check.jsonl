@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "核查五页组件改造是否符合组件规范"}
+{"file": ".trellis/spec/frontend/animation-patterns.md", "reason": "核查动效与 reduced-motion 降级是否符合约定"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "核查 Dashboard 状态来源与 store 改动是否符合约定"}
+{"file": "docs/frontend-ux-optimization.md", "reason": "交互原则红线核查：状态来源唯一、空态区分、触控、i18n、动效降级"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/research/showcase-replay-audit.md", "reason": "核对 PR-1/PR-2 是否覆盖审计发现的 P0/P1 项且无回归"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/research/dashboard-audit.md", "reason": "核对 PR-3 是否修复两个 P0 bug 且遵守 Dashboard 既有约定"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/research/analytics-audit.md", "reason": "核对 PR-4/PR-5 是否清零四项误导性 UI"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/research/evaluation-audit.md", "reason": "核对 PR-6/PR-7 是否修复上下文/行动出口/分数语义"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/research/shared-infra-audit.md", "reason": "核对 INF 系列是否真正统一错误态/骨架/图表主题/格式化"}

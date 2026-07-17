@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '@/components/AppIcon.vue'
@@ -32,6 +32,8 @@ const detailState = ref<Record<string, 'idle' | 'loading' | 'ready' | 'error'>>(
 const detailCache = ref<Map<string, PublicCase>>(new Map())
 const firstCaseTracked = ref(false)
 const totalCases = ref(0)
+const impressionTracker = new Set<string>()
+let impressionObserver: IntersectionObserver | null = null
 
 const CACHE_VERSION = 2
 const CACHE_KEY = `showcase:public-cases:v${CACHE_VERSION}`
@@ -43,8 +45,8 @@ const detailAbortControllers = new Map<string, AbortController>()
 
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const featuredCase = computed(() => {
-  const explicit = cases.value.find(item => item.featured)
-  return explicit || cases.value.find(item => item.status === 'completed') || cases.value[0] || null
+  const explicit = cases.value.find(item => item.featured && item.status !== 'attention')
+  return explicit || cases.value.find(item => item.status === 'completed') || cases.value.find(item => item.status !== 'attention') || null
 })
 
 const filteredCases = computed(() => {
@@ -62,7 +64,7 @@ const filteredCases = computed(() => {
   })
 })
 
-const resultCount = computed(() => totalCases.value || cases.value.length)
+const resultCount = computed(() => filteredCases.value.length)
 
 function trackFirstCaseVisible(cached: boolean, startedAt: number) {
   if (firstCaseTracked.value || !cases.value.length) return
@@ -101,6 +103,7 @@ function queryState() {
 watch([statusFilter, modeFilter, sortKey, search], () => {
   if (!queryReady) return
   void router.replace({ query: queryState() })
+  trackInteraction('showcase_filter_change', { status: statusFilter.value, mode: modeFilter.value })
 })
 
 function readCache(): PublicCase[] | null {
@@ -205,22 +208,30 @@ function clearFilters() {
   trackInteraction('showcase_filters_clear')
 }
 
-function goCreate() {
-  trackInteraction('showcase_primary_cta_click', { authenticated: isAuthenticated.value })
+function goCreate(position: 'nav' | 'hero' | 'empty' = 'hero') {
+  trackInteraction('showcase_cta_click', { auth_state: isAuthenticated.value ? 'authenticated' : 'guest', position })
   if (isAuthenticated.value) {
-    void router.push({ name: 'home' })
+    void router.push({ name: 'home', query: { source: 'showcase' } })
   } else {
-    void router.push({ name: 'login', query: { redirect: '/start' } })
+    void router.push({ name: 'login', query: { redirect: '/start?source=showcase' } })
   }
 }
 
 function openReplay(publicId: string) {
-  trackInteraction('showcase_case_open', { has_public_id: true })
-  void router.push({ name: 'replay', params: { publicId }, query: { from: '/' } })
+  const caseItem = cases.value.find(item => item.public_id === publicId)
+  trackInteraction('showcase_case_open', { has_public_id: true, mode: caseItem?.workflow_mode || 'trend', status: caseItem?.status || 'completed' })
+  const from = route.fullPath || '/'
+  void router.push({ name: 'replay', params: { publicId }, query: { from } })
 }
 
 function replayHref(publicId: string): string {
-  return `/replay/${encodeURIComponent(publicId)}?from=%2F`
+  const from = encodeURIComponent(route.fullPath || '/')
+  return `/replay/${encodeURIComponent(publicId)}?from=${from}`
+}
+
+function openFeaturedReplay(publicId: string) {
+  trackInteraction('showcase_featured_open', { has_public_id: true })
+  void openReplay(publicId)
 }
 
 function formatDate(value: string): string {
@@ -240,18 +251,45 @@ function modeLabel(mode: PublicWorkflowMode): string {
   return t(`showcase.mode.${mode}`)
 }
 
+function observeCaseCards() {
+  if (typeof IntersectionObserver === 'undefined') return
+  if (!impressionObserver) {
+    impressionObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        const publicId = (entry.target as HTMLElement).dataset.casePublicId
+        if (!publicId || impressionTracker.has(publicId)) continue
+        impressionTracker.add(publicId)
+        trackInteraction('showcase_case_impression', {})
+      }
+    }, { threshold: 0.5 })
+  }
+  const cards = document.querySelectorAll<HTMLElement>('.case-card[data-case-public-id]')
+  cards.forEach(card => impressionObserver!.observe(card))
+}
+
 onMounted(async () => {
   if (!authStore.isInitialized) void authStore.initialize()
   restoreQuery()
   queryReady = true
   trackInteraction('showcase_view')
   await loadCases()
+  await nextTick()
+  observeCaseCards()
 })
 
 onUnmounted(() => {
   listAbortController?.abort()
   detailAbortControllers.forEach(controller => controller.abort())
   detailAbortControllers.clear()
+  impressionObserver?.disconnect()
+  impressionObserver = null
+  impressionTracker.clear()
+})
+
+watch(filteredCases, async () => {
+  await nextTick()
+  observeCaseCards()
 })
 </script>
 
@@ -270,7 +308,7 @@ onUnmounted(() => {
         </button>
         <div class="flex items-center gap-2">
           <button v-if="!isAuthenticated" type="button" class="hidden min-h-11 rounded-xl px-3 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 sm:inline-flex" @click="router.push({ name: 'login', query: { redirect: '/' } })">{{ t('showcase.signIn') }}</button>
-          <button type="button" class="min-h-11 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white shadow-lg shadow-rose-600/20 hover:bg-rose-700" @click="goCreate">{{ t('showcase.startCreating') }}</button>
+          <button type="button" class="min-h-11 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white shadow-lg shadow-rose-600/20 hover:bg-rose-700" @click="goCreate('nav')">{{ t('showcase.startCreating') }}</button>
           <ThemeToggle class="shrink-0" />
         </div>
       </div>
@@ -283,28 +321,27 @@ onUnmounted(() => {
           <h1 id="showcase-title" class="mt-5 max-w-2xl text-3xl font-bold leading-tight tracking-tight sm:text-4xl lg:text-5xl">{{ t('showcase.heroTitle') }}</h1>
           <p class="mt-5 max-w-xl text-base leading-7 text-slate-600 dark:text-slate-300">{{ t('showcase.heroDesc') }}</p>
           <div class="mt-6 flex flex-wrap items-center gap-3">
-            <button type="button" class="inline-flex min-h-12 items-center gap-2 rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white shadow-lg shadow-slate-900/15 hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200" @click="goCreate">{{ t('showcase.startCreating') }}<AppIcon name="ArrowRight" size="sm" aria-hidden="true" /></button>
+            <button type="button" class="inline-flex min-h-12 items-center gap-2 rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white shadow-lg shadow-slate-900/15 hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200" @click="goCreate('hero')">{{ t('showcase.startCreating') }}<AppIcon name="ArrowRight" size="sm" aria-hidden="true" /></button>
             <a href="#cases" class="inline-flex min-h-12 items-center rounded-xl px-4 text-sm font-medium text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-900">{{ t('showcase.browseCases') }}</a>
           </div>
           <p class="mt-4 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400"><AppIcon name="CheckCircle" size="xs" variant="cyan" aria-hidden="true" />{{ t('showcase.heroProof') }}</p>
         </div>
 
-        <div class="rounded-3xl border border-slate-200/80 bg-white/80 p-5 shadow-xl shadow-slate-900/5 dark:border-slate-800 dark:bg-slate-900/80 md:p-6">
+        <div v-if="featuredCase" class="rounded-3xl border border-slate-200/80 bg-white/80 p-5 shadow-xl shadow-slate-900/5 dark:border-slate-800 dark:bg-slate-900/80 md:p-6" data-case-public-id="hero-featured">
           <div class="flex items-center justify-between gap-4">
             <div>
-              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{{ t('showcase.resultEvidence') }}</p>
-              <p class="mt-2 text-xl font-semibold">{{ t('showcase.evidenceTitle') }}</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{{ t('showcase.featuredCaseBadge') }}</p>
+              <p class="mt-2 text-xl font-semibold line-clamp-2">{{ caseDetail(featuredCase).title }}</p>
             </div>
             <AppIcon name="Sparkles" size="lg" variant="cyan" aria-hidden="true" />
           </div>
-          <div class="mt-6 space-y-3">
-            <div v-for="(step, index) in ['scouting', 'planning', 'creating', 'publishing']" :key="step" class="flex items-center gap-3 rounded-xl border border-slate-200/70 p-3 dark:border-slate-800">
-              <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-sm font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ index + 1 }}</span>
-              <span class="text-sm font-medium">{{ t(`showcase.phase.${step}`) }}</span>
-              <AppIcon name="Check" size="xs" variant="cyan" class="ml-auto" aria-hidden="true" />
-            </div>
+          <div class="mt-4 flex flex-wrap items-center gap-2 text-xs">
+            <span class="rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ modeLabel(featuredCase.workflow_mode) }}</span>
+            <span class="rounded-full px-2.5 py-1 font-medium" :class="featuredCase.status === 'completed' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200' : featuredCase.status === 'attention' ? 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-200' : 'bg-sky-50 text-sky-700 dark:bg-sky-400/10 dark:text-sky-200'">{{ statusLabel(featuredCase.status) }}</span>
+            <span class="text-slate-500 dark:text-slate-400">{{ t('showcase.caseUpdated', { date: formatDate(featuredCase.updated_at) }) }}</span>
           </div>
-          <p class="mt-5 text-sm leading-6 text-slate-500 dark:text-slate-400">{{ t('showcase.evidenceDesc') }}</p>
+          <p v-if="caseDetail(featuredCase).result_preview.topic" class="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-600 dark:bg-slate-800/70 dark:text-slate-300"><span class="font-medium text-slate-800 dark:text-slate-100">{{ t('showcase.detail.topic') }}：</span>{{ caseDetail(featuredCase).result_preview.topic }}</p>
+          <a :href="replayHref(featuredCase.public_id)" class="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white shadow-lg shadow-rose-600/20 hover:bg-rose-700" @click.prevent="openFeaturedReplay(featuredCase.public_id)">{{ t('showcase.featuredOpenReplay') }}<AppIcon name="ArrowRight" size="sm" aria-hidden="true" /></a>
         </div>
       </section>
 
@@ -320,7 +357,7 @@ onUnmounted(() => {
                 <span class="rounded-full bg-white/15 px-2.5 py-1">{{ modeLabel(featuredCase.workflow_mode) }}</span>
                 <span>{{ t('showcase.caseUpdated', { date: formatDate(featuredCase.updated_at) }) }}</span>
               </div>
-              <a :href="replayHref(featuredCase.public_id)" class="mt-7 inline-flex min-h-12 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-rose-700 shadow-lg hover:bg-rose-50" @click.prevent="openReplay(featuredCase.public_id)">{{ t('showcase.caseReplay') }}<AppIcon name="ArrowRight" size="sm" aria-hidden="true" /></a>
+              <a :href="replayHref(featuredCase.public_id)" class="mt-7 inline-flex min-h-12 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-rose-700 shadow-lg hover:bg-rose-50" @click.prevent="openFeaturedReplay(featuredCase.public_id)">{{ t('showcase.caseReplay') }}<AppIcon name="ArrowRight" size="sm" aria-hidden="true" /></a>
             </div>
             <div class="p-6 md:p-8">
               <div v-if="detailState[featuredCase.public_id] === 'loading'" class="space-y-4" aria-busy="true"><div class="h-5 w-2/3 animate-pulse rounded bg-slate-200 dark:bg-slate-800" /><div class="h-20 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" /></div>
@@ -361,7 +398,7 @@ onUnmounted(() => {
           <AppIcon name="Layers" size="lg" variant="cyan" aria-hidden="true" />
           <h3 class="mt-3 text-base font-semibold">{{ t('showcase.noPublicCases') }}</h3>
           <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400">{{ t('showcase.noPublicCasesDesc') }}</p>
-          <button type="button" class="mt-5 min-h-11 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700" @click="goCreate">{{ t('showcase.startCreating') }}</button>
+          <button type="button" class="mt-5 min-h-11 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700" @click="goCreate('empty')">{{ t('showcase.startCreating') }}</button>
         </div>
         <div v-else-if="loaded && !filteredCases.length" class="mt-5 rounded-2xl border border-dashed border-slate-300 bg-white/70 p-8 text-center dark:border-slate-700 dark:bg-slate-900/70">
           <AppIcon name="SearchX" size="lg" variant="cyan" aria-hidden="true" />
@@ -369,7 +406,7 @@ onUnmounted(() => {
           <button type="button" class="mt-4 min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-medium dark:border-slate-700" @click="clearFilters">{{ t('showcase.resetFilters') }}</button>
         </div>
         <div v-else class="mt-5 grid gap-4 md:grid-cols-2">
-          <article v-for="item in filteredCases" :key="item.public_id" class="case-card group rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900/80">
+          <article v-for="item in filteredCases" :key="item.public_id" class="case-card group rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900/80" :data-case-public-id="item.public_id">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0"><span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ modeLabel(item.workflow_mode) }}</span><h3 class="mt-3 line-clamp-2 text-lg font-semibold leading-snug">{{ caseDetail(item).title }}</h3></div>
               <span class="shrink-0 rounded-full px-2.5 py-1 text-xs font-medium" :class="item.status === 'completed' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200' : item.status === 'attention' ? 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-200' : 'bg-sky-50 text-sky-700 dark:bg-sky-400/10 dark:text-sky-200'">{{ statusLabel(item.status) }}</span>

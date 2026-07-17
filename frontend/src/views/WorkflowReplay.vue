@@ -17,12 +17,14 @@ import type {
   PublicReplayStep,
 } from '@/types/publicShowcase'
 import { useAuthStore } from '@/stores/auth'
+import { useToastStore } from '@/stores/toast'
 import { trackInteraction } from '@/utils/interactionTelemetry'
 
 const { t, locale } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const toastStore = useToastStore()
 
 const publicId = computed(() => String(route.params.publicId || route.params.threadId || ''))
 const isAuthenticated = computed(() => authStore.isAuthenticated)
@@ -41,6 +43,8 @@ const shareState = ref<'idle' | 'success' | 'error'>('idle')
 const firstResultTracked = ref(false)
 const loadingMore = ref(false)
 const loadMoreError = ref(false)
+const stepsExpanded = ref(false)
+const stepNotFoundShown = ref<string | null>(null)
 
 const REPLAY_CACHE_VERSION = 1
 const REPLAY_CACHE_TTL = 30_000
@@ -56,6 +60,7 @@ const steps = computed(() => [...(manifest.value?.steps || [])].sort((a, b) => a
 const currentIndex = computed(() => steps.value.findIndex(step => step.public_id === selectedStepId.value))
 const currentStepNumber = computed(() => Math.max(currentIndex.value + 1, 1))
 const caseStatus = computed<PublicCaseStatus>(() => manifest.value?.workflow.status || 'in_progress')
+const caseMode = computed(() => manifest.value?.workflow.workflow_mode || 'trend')
 const caseStatusLabel = computed(() => t(`showcase.caseStatus.${caseStatus.value}`))
 const selectedPhase = computed(() => selectedStep.value?.phase || steps.value.find(step => step.public_id === selectedStepId.value)?.phase || '')
 const phaseGroups = computed(() => {
@@ -289,7 +294,12 @@ async function loadReplay() {
     finalSummary.value = nextSummary
     await ensureRequestedStep()
     if (requestToken !== manifestRequestToken) return
+    const requested = queryStep()
     const first = preferredStep(steps.value)
+    if (requested && stepNotFoundShown.value !== requested && first?.public_id !== requested) {
+      stepNotFoundShown.value = requested
+      toastStore.warning(t('replay.stepNotFoundToast'))
+    }
     selectedStepId.value = first?.public_id || null
     if (first) await loadStep(first.public_id)
     trackInteraction('replay_view', { view: viewMode.value, has_steps: Boolean(first) })
@@ -347,12 +357,16 @@ function goBack() {
 }
 
 function goCreate() {
-  trackInteraction('replay_primary_cta_click', { authenticated: isAuthenticated.value })
-  if (isAuthenticated.value) void router.push({ name: 'home' })
-  else void router.push({ name: 'login', query: { redirect: '/start' } })
+  trackInteraction('replay_cta_click', { auth_state: isAuthenticated.value ? 'authenticated' : 'guest', position: 'hero' })
+  if (isAuthenticated.value) void router.push({ path: '/start', query: { source: 'replay', mode: caseMode.value } })
+  else void router.push({ name: 'login', query: { redirect: `/start?source=replay&mode=${caseMode.value}` } })
 }
 
+// Secondary entry: authenticated visitors may still want their existing
+// workspace rather than starting a new creation. Kept distinct from the main
+// /start CTA so the "回到工作台" label never points at /start (PRD D2).
 function goWorkspace() {
+  trackInteraction('replay_cta_click', { auth_state: isAuthenticated.value ? 'authenticated' : 'guest', position: 'nav' })
   if (isAuthenticated.value) void router.push({ name: 'dashboard' })
   else void router.push({ name: 'login', query: { redirect: '/dashboard' } })
 }
@@ -366,6 +380,7 @@ async function copyLink(step = false) {
     await navigator.clipboard.writeText(href)
     shareState.value = 'success'
     trackInteraction(step ? 'replay_step_link_copy' : 'replay_case_link_copy', { has_step: step })
+    trackInteraction('replay_share', { has_step: step })
   } catch {
     shareState.value = 'error'
     trackInteraction('replay_share_error', { has_step: step })
@@ -374,6 +389,7 @@ async function copyLink(step = false) {
 
 watch(() => route.query.step, (value) => {
   if (typeof value === 'string' && value !== selectedStepId.value) {
+    if (stepNotFoundShown.value !== value) stepNotFoundShown.value = null
     void ensureRequestedStep().then(() => {
       if (steps.value.some(step => step.public_id === value)) void loadStep(value)
     })
@@ -427,6 +443,8 @@ onMounted(() => {
 
         <section class="mt-7 rounded-3xl border border-slate-200/80 bg-white/85 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80 md:p-5" aria-labelledby="replay-steps-heading">
           <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><h2 id="replay-steps-heading" class="text-base font-semibold">{{ t('replay.publicKeySteps') }}</h2><p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ t('replay.publicStepCount', { key: manifest.key_step_count, total: viewMode === 'all' ? manifest.total_steps : manifest.key_step_count }) }}</p></div><div class="flex items-center gap-2"><button type="button" class="min-h-11 rounded-xl px-3 text-sm font-medium" :class="viewMode === 'key' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'" :aria-pressed="viewMode === 'key'" @click="toggleView('key')">{{ t('replay.publicKeySteps') }}</button><button type="button" class="min-h-11 rounded-xl px-3 text-sm font-medium" :class="viewMode === 'all' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'" :aria-pressed="viewMode === 'all'" @click="toggleView('all')">{{ t('replay.publicAllSteps') }}</button></div></div>
+          <button type="button" class="mt-3 flex min-h-11 w-full items-center justify-between rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 md:hidden dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800" :aria-expanded="stepsExpanded" aria-controls="replay-steps-content" @click="stepsExpanded = !stepsExpanded"><span>{{ t('replay.publicStepsToggle', { current: currentStepNumber, total: steps.length }) }}</span><AppIcon :name="stepsExpanded ? 'ChevronUp' : 'ChevronDown'" size="sm" aria-hidden="true" /></button>
+          <div id="replay-steps-content" :class="stepsExpanded ? 'block' : 'hidden'" class="md:block">
           <p v-if="viewMode === 'key' && manifest.technical_steps_available && !isAuthenticated" class="mt-2 text-xs text-slate-500 dark:text-slate-400">{{ t('replay.publicLoginForAdvanced') }}</p>
           <nav v-if="phaseGroups.length > 1" class="mt-5 overflow-x-auto border-y border-slate-200/70 py-3 dark:border-slate-800" :aria-label="t('replay.publicPhaseNavigation')"><ol class="flex min-w-max items-center gap-2"><li v-for="(phase, index) in phaseGroups" :key="phase.phase"><button type="button" :data-phase-index="index" :tabindex="selectedPhase === phase.phase ? 0 : -1" class="min-h-11 rounded-xl px-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500" :class="selectedPhase === phase.phase ? 'bg-teal-50 text-teal-700 dark:bg-teal-400/10 dark:text-teal-200' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'" :aria-current="selectedPhase === phase.phase ? 'step' : undefined" @click="selectPhase(phase)" @keydown="handlePhaseKeydown($event, index)">{{ phaseLabel(phase.phase) }}</button></li></ol></nav>
           <ol v-if="steps.length" class="mt-5 grid gap-3 md:grid-cols-2 lg:grid-cols-3" :aria-label="t('replay.publicStepsLabel')">
@@ -435,6 +453,7 @@ onMounted(() => {
           <button v-if="canLoadMore" type="button" class="mt-4 min-h-11 w-full rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" :disabled="loadingMore" @click="loadMoreSteps">{{ loadingMore ? t('common.loadingState') : t('replay.publicLoadMore') }}</button>
           <div v-if="loadMoreError" class="mt-3 flex flex-col items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 sm:flex-row dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-100" role="alert"><span>{{ t('replay.publicLoadMoreFailed') }}</span><button type="button" class="min-h-11 rounded-lg bg-rose-600 px-3 text-sm font-semibold text-white hover:bg-rose-700" @click="loadMoreSteps">{{ t('common.retry') }}</button></div>
           <div v-if="!steps.length && !canLoadMore" class="mt-5 rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">{{ t('replay.publicNoSteps') }}</div>
+          </div>
         </section>
 
         <div id="replay-results" class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_19rem]" tabindex="-1">

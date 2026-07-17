@@ -9,6 +9,7 @@ const routerMock = vi.hoisted(() => ({
 const routeMock = vi.hoisted(() => ({ query: {} as Record<string, string> }))
 const listPublicCasesMock = vi.hoisted(() => vi.fn())
 const getPublicCaseMock = vi.hoisted(() => vi.fn())
+const authState = vi.hoisted(() => ({ isAuthenticated: false, isInitialized: true }))
 
 vi.mock('vue-router', () => ({
   useRouter: () => routerMock,
@@ -19,10 +20,10 @@ vi.mock('@/api/publicShowcase', () => ({
   getPublicCase: getPublicCaseMock,
 }))
 vi.mock('@/stores', () => ({
-  useAuthStore: () => ({ isAuthenticated: false, isInitialized: true, initialize: vi.fn() }),
+  useAuthStore: () => ({ get isAuthenticated() { return authState.isAuthenticated }, get isInitialized() { return authState.isInitialized }, initialize: vi.fn() }),
 }))
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ isAuthenticated: false, isInitialized: true, initialize: vi.fn() }),
+  useAuthStore: () => ({ get isAuthenticated() { return authState.isAuthenticated }, get isInitialized() { return authState.isInitialized }, initialize: vi.fn() }),
 }))
 
 function publicCase(public_id: string, title: string, featured = false) {
@@ -58,6 +59,8 @@ describe('Showcase public UX contract', () => {
     vi.clearAllMocks()
     sessionStorage.clear()
     routeMock.query = {}
+    authState.isAuthenticated = false
+    authState.isInitialized = true
     const featured = publicCase('case-featured', '真实案例标题', true)
     const other = publicCase('case-other', '第二个案例')
     listPublicCasesMock.mockResolvedValue({
@@ -110,6 +113,29 @@ describe('Showcase public UX contract', () => {
 
     resolveRefresh({ cases: [cached], total: 1, limit: 100, offset: 0, featured_public_id: cached.public_id })
     await flushPromises()
+    wrapper.unmount()
+  })
+
+  it('redirects unauthenticated start-creating CTA to /start with source attribution', async () => {
+    const wrapper = mountShowcase()
+    await flushPromises()
+
+    const startButtons = wrapper.findAll('button').filter(button => button.text().includes('开始创作'))
+    expect(startButtons.length).toBeGreaterThan(0)
+    await startButtons[0].trigger('click')
+    expect(routerMock.push).toHaveBeenCalledWith({ name: 'login', query: { redirect: '/start?source=showcase' } })
+    wrapper.unmount()
+  })
+
+  it('sends authenticated start-creating CTA to /start with source attribution', async () => {
+    authState.isAuthenticated = true
+    const wrapper = mountShowcase()
+    await flushPromises()
+
+    const startButtons = wrapper.findAll('button').filter(button => button.text().includes('开始创作'))
+    expect(startButtons.length).toBeGreaterThan(0)
+    await startButtons[0].trigger('click')
+    expect(routerMock.push).toHaveBeenCalledWith({ name: 'home', query: { source: 'showcase' } })
     wrapper.unmount()
   })
 })

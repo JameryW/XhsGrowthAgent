@@ -45,12 +45,21 @@ _EVENT_NAMES = {
     "replay_primary_cta_click",
     "replay_load_error",
     "replay_load_more_error",
+    # PR-1: public-page conversion funnel additions (showcase/replay).
+    "showcase_case_impression",
+    "showcase_featured_open",
+    "showcase_cta_click",
+    "replay_step_navigate",
+    "replay_result_expand",
+    "replay_result_copy",
+    "replay_share",
+    "replay_cta_click",
 }
 
 _CATEGORY_ALLOWLISTS = {
-    "source": {"showcase", "direct"},
-    "status": {"completed", "in_progress", "attention"},
-    "mode": {"trend", "brief", "key", "all"},
+    "source": {"showcase", "replay", "direct"},
+    "status": {"all", "completed", "in_progress", "attention"},
+    "mode": {"all", "trend", "brief", "key"},
     "phase": {
         "scouting",
         "planning",
@@ -69,6 +78,9 @@ _CATEGORY_ALLOWLISTS = {
         "share",
     },
     "view": {"key", "all"},
+    "auth_state": {"authenticated", "guest"},
+    "position": {"nav", "hero", "empty", "aside", "detail", "footer"},
+    "method": {"click", "keys", "prev", "next"},
 }
 
 _RATE_LIMIT = 120
@@ -101,6 +113,9 @@ class PublicTelemetryEvent(BaseModel):
     has_public_id: bool | None = None
     has_step: bool | None = None
     duration_ms: int | None = Field(default=None, ge=0, le=120_000)
+    auth_state: str | None = Field(default=None, max_length=16)
+    position: str | None = Field(default=None, max_length=16)
+    method: str | None = Field(default=None, max_length=16)
 
 
 def _client_key(request: Request) -> str:
