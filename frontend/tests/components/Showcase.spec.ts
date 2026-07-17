@@ -94,9 +94,11 @@ describe('Showcase public UX contract', () => {
     await flushPromises()
 
     expect(routerMock.replace).toHaveBeenCalledWith({ query: { mode: 'brief', sort: 'title' } })
-    const selects = wrapper.findAll('select')
-    await selects[0].setValue('attention')
-    expect(routerMock.replace).toHaveBeenLastCalledWith({ query: { status: 'attention', mode: 'brief', sort: 'title' } })
+    // SH-04: status is a chip row now (not a select); click the "completed" chip.
+    const statusButtons = wrapper.findAll('[aria-pressed]')
+    const completedChip = statusButtons.find(btn => btn.text().includes('已完成')) || statusButtons[1]
+    await completedChip.trigger('click')
+    expect(routerMock.replace).toHaveBeenLastCalledWith({ query: { status: 'completed', mode: 'brief', sort: 'title' } })
   })
 
   it('hydrates public session cache before the refresh resolves', async () => {

@@ -45,6 +45,8 @@ const loadingMore = ref(false)
 const loadMoreError = ref(false)
 const stepsExpanded = ref(false)
 const stepNotFoundShown = ref<string | null>(null)
+const resultExpanded = ref(false)
+const copyState = ref<'idle' | 'success' | 'error'>('idle')
 
 const REPLAY_CACHE_VERSION = 1
 const REPLAY_CACHE_TTL = 30_000
@@ -64,14 +66,32 @@ const caseMode = computed(() => manifest.value?.workflow.workflow_mode || 'trend
 const caseStatusLabel = computed(() => t(`showcase.caseStatus.${caseStatus.value}`))
 const selectedPhase = computed(() => selectedStep.value?.phase || steps.value.find(step => step.public_id === selectedStepId.value)?.phase || '')
 const phaseGroups = computed(() => {
+  // RP-05: pick the most recent step with business data (has_result) per phase;
+  // fall back to the last step of the phase if none has data.
+  const byPhase = new Map<string, PublicReplayStep>()
+  for (const step of steps.value) {
+    const current = byPhase.get(step.phase)
+    if (!current) {
+      byPhase.set(step.phase, step)
+      continue
+    }
+    const currentHasData = current.has_result || current.has_business_data
+    const stepHasData = step.has_result || step.has_business_data
+    if (stepHasData && !currentHasData) byPhase.set(step.phase, step)
+    else if (stepHasData === currentHasData && step.step > current.step) byPhase.set(step.phase, step)
+  }
+  return [...byPhase.values()]
+})
+const phasesWithoutData = computed(() => {
   const seen = new Set<string>()
-  return steps.value.reduce<PublicReplayStep[]>((groups, step) => {
+  const empty = new Set<string>()
+  for (const step of steps.value) {
     if (!seen.has(step.phase)) {
       seen.add(step.phase)
-      groups.push(step)
+      if (!step.has_result && !step.has_business_data) empty.add(step.phase)
     }
-    return groups
-  }, [])
+  }
+  return empty
 })
 const canLoadMore = computed(() => Boolean(manifest.value?.has_more))
 const returnPath = computed(() => {
@@ -206,6 +226,17 @@ function handlePhaseKeydown(event: KeyboardEvent, index: number) {
   }
 }
 
+function handleStepKeydown(event: KeyboardEvent) {
+  if (!steps.value.length) return
+  if (event.key === 'Home') {
+    event.preventDefault()
+    void selectStep(steps.value[0], 'keys')
+  } else if (event.key === 'End') {
+    event.preventDefault()
+    void selectStep(steps.value[steps.value.length - 1], 'keys')
+  }
+}
+
 async function selectPhase(step: PublicReplayStep) {
   await selectStep(step)
 }
@@ -325,19 +356,22 @@ async function retryReplay() {
   }
 }
 
-async function selectStep(step: PublicReplayStep) {
+async function selectStep(step: PublicReplayStep, method: 'click' | 'keys' | 'prev' | 'next' = 'click') {
   if (step.public_id === selectedStepId.value && selectedStep.value) return
   selectedStepId.value = step.public_id
   trackInteraction('replay_step_select', { view: viewMode.value, has_result: step.has_result })
+  trackInteraction('replay_step_navigate', { method, has_result: step.has_result })
   await loadStep(step.public_id)
   await nextTick()
+  // RP-06: move focus to the result title so keyboard users hear/see the update.
+  document.getElementById('step-detail-heading')?.focus()
   void router.replace({ query: { ...route.query, step: step.public_id } }).catch(() => undefined)
 }
 
 async function selectAdjacent(direction: -1 | 1) {
   const nextIndex = currentIndex.value + direction
   const step = steps.value[nextIndex]
-  if (step) await selectStep(step)
+  if (step) await selectStep(step, direction > 0 ? 'next' : 'prev')
 }
 
 async function toggleView(mode: 'key' | 'all') {
@@ -387,6 +421,32 @@ async function copyLink(step = false) {
   }
 }
 
+// RP-03: narrative layer helpers.
+function phaseImportance(phase: string | undefined): string {
+  if (!phase) return ''
+  const key = `replay.phaseImportance.${phase}`
+  const translated = t(key)
+  return translated === key ? '' : translated
+}
+
+function toggleResultExpanded() {
+  resultExpanded.value = !resultExpanded.value
+  trackInteraction('replay_result_expand', { has_result: Boolean(selectedStep.value?.has_result) })
+}
+
+async function copyResult() {
+  const result = selectedStep.value?.result
+  if (!result) return
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(result, null, 2))
+    copyState.value = 'success'
+    trackInteraction('replay_result_copy', { has_result: true })
+    setTimeout(() => { copyState.value = 'idle' }, 2000)
+  } catch {
+    copyState.value = 'error'
+  }
+}
+
 watch(() => route.query.step, (value) => {
   if (typeof value === 'string' && value !== selectedStepId.value) {
     if (stepNotFoundShown.value !== value) stepNotFoundShown.value = null
@@ -420,7 +480,7 @@ onMounted(() => {
       <div class="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-3 px-4 md:px-8">
         <div class="flex min-w-0 items-center gap-3">
           <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 dark:text-slate-300 dark:hover:bg-slate-800" :aria-label="t('replay.publicBack')" @click="goBack"><AppIcon name="ArrowLeft" size="sm" aria-hidden="true" /></button>
-          <div class="min-w-0"><p class="truncate text-sm font-bold">{{ manifest?.workflow.title || t('replay.title') }}</p><div class="mt-0.5 flex items-center gap-2"><span class="text-xs text-slate-500 dark:text-slate-400">{{ t('replay.title') }}</span><span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="caseStatus === 'completed' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200' : 'bg-sky-50 text-sky-700 dark:bg-sky-400/10 dark:text-sky-200'">{{ caseStatusLabel }}</span></div></div>
+          <div class="min-w-0"><p class="truncate text-sm font-bold">{{ manifest?.workflow.title || t('replay.title') }}</p><div class="mt-0.5 flex items-center gap-2"><span class="text-xs text-slate-500 dark:text-slate-400">{{ t('replay.title') }}</span><span v-if="!manifest?.workflow.replay_available" class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-400/10 dark:text-amber-200">{{ t('replay.noFullReplay') }}</span><span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="caseStatus === 'completed' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200' : 'bg-sky-50 text-sky-700 dark:bg-sky-400/10 dark:text-sky-200'">{{ caseStatusLabel }}</span></div></div>
         </div>
         <div class="flex shrink-0 items-center gap-2">
           <button type="button" class="hidden min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-600 hover:bg-slate-50 sm:inline-flex dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" @click="copyLink(false)"><AppIcon name="Copy" size="xs" class="mr-1.5" aria-hidden="true" />{{ shareState === 'success' ? t('replay.publicShared') : shareState === 'error' ? t('replay.publicShareFailed') : t('replay.publicShareCase') }}</button>
@@ -446,9 +506,9 @@ onMounted(() => {
           <button type="button" class="mt-3 flex min-h-11 w-full items-center justify-between rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 md:hidden dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800" :aria-expanded="stepsExpanded" aria-controls="replay-steps-content" @click="stepsExpanded = !stepsExpanded"><span>{{ t('replay.publicStepsToggle', { current: currentStepNumber, total: steps.length }) }}</span><AppIcon :name="stepsExpanded ? 'ChevronUp' : 'ChevronDown'" size="sm" aria-hidden="true" /></button>
           <div id="replay-steps-content" :class="stepsExpanded ? 'block' : 'hidden'" class="md:block">
           <p v-if="viewMode === 'key' && manifest.technical_steps_available && !isAuthenticated" class="mt-2 text-xs text-slate-500 dark:text-slate-400">{{ t('replay.publicLoginForAdvanced') }}</p>
-          <nav v-if="phaseGroups.length > 1" class="mt-5 overflow-x-auto border-y border-slate-200/70 py-3 dark:border-slate-800" :aria-label="t('replay.publicPhaseNavigation')"><ol class="flex min-w-max items-center gap-2"><li v-for="(phase, index) in phaseGroups" :key="phase.phase"><button type="button" :data-phase-index="index" :tabindex="selectedPhase === phase.phase ? 0 : -1" class="min-h-11 rounded-xl px-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500" :class="selectedPhase === phase.phase ? 'bg-teal-50 text-teal-700 dark:bg-teal-400/10 dark:text-teal-200' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'" :aria-current="selectedPhase === phase.phase ? 'step' : undefined" @click="selectPhase(phase)" @keydown="handlePhaseKeydown($event, index)">{{ phaseLabel(phase.phase) }}</button></li></ol></nav>
+          <nav v-if="phaseGroups.length > 1" class="phase-nav-fade mt-5 overflow-x-auto border-y border-slate-200/70 py-3 dark:border-slate-800" :aria-label="t('replay.publicPhaseNavigation')"><ol class="flex min-w-max items-center gap-2"><li v-for="(phase, index) in phaseGroups" :key="phase.phase"><button type="button" :data-phase-index="index" :tabindex="selectedPhase === phase.phase ? 0 : -1" :disabled="phasesWithoutData.has(phase.phase)" :title="phasesWithoutData.has(phase.phase) ? t('replay.phaseNoData') : undefined" class="min-h-11 rounded-xl px-3 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:cursor-not-allowed disabled:opacity-40" :class="selectedPhase === phase.phase ? 'bg-teal-50 text-teal-700 dark:bg-teal-400/10 dark:text-teal-200' : phasesWithoutData.has(phase.phase) ? 'text-slate-400 dark:text-slate-600' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'" :aria-current="selectedPhase === phase.phase ? 'step' : undefined" :aria-disabled="phasesWithoutData.has(phase.phase)" @click="selectPhase(phase)" @keydown="handlePhaseKeydown($event, index)">{{ phaseLabel(phase.phase) }}</button></li></ol></nav>
           <ol v-if="steps.length" class="mt-5 grid gap-3 md:grid-cols-2 lg:grid-cols-3" :aria-label="t('replay.publicStepsLabel')">
-            <li v-for="(step, index) in steps" :key="step.public_id"><button type="button" :data-step-id="step.public_id" class="w-full rounded-2xl border p-4 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500" :class="step.public_id === selectedStepId ? 'border-teal-500 bg-teal-50/80 shadow-sm dark:border-teal-300 dark:bg-teal-400/10' : 'border-slate-200/80 hover:border-teal-300 hover:bg-slate-50 dark:border-slate-800 dark:hover:border-teal-500/50 dark:hover:bg-slate-800/80'" :aria-current="step.public_id === selectedStepId ? 'step' : undefined" @click="selectStep(step)"><div class="flex items-center gap-3"><span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-sm font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ index + 1 }}</span><span class="text-xs font-medium text-teal-700 dark:text-teal-200">{{ phaseLabel(step.phase) }}</span></div><p class="mt-3 line-clamp-2 text-sm font-semibold text-slate-900 dark:text-slate-50">{{ step.title || t('replay.publicStep', { step: step.step }) }}</p><p class="mt-2 line-clamp-2 text-sm leading-5 text-slate-500 dark:text-slate-400">{{ step.summary }}</p></button></li>
+            <li v-for="(step, index) in steps" :key="step.public_id"><button type="button" :data-step-id="step.public_id" class="w-full rounded-2xl border p-4 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500" :class="step.public_id === selectedStepId ? 'border-teal-500 bg-teal-50/80 shadow-sm dark:border-teal-300 dark:bg-teal-400/10' : 'border-slate-200/80 hover:border-teal-300 hover:bg-slate-50 dark:border-slate-800 dark:hover:border-teal-500/50 dark:hover:bg-slate-800/80'" :aria-current="step.public_id === selectedStepId ? 'step' : undefined" @click="selectStep(step)" @keydown="handleStepKeydown($event)"><div class="flex items-center gap-3"><span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-sm font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ index + 1 }}</span><span class="text-xs font-medium text-teal-700 dark:text-teal-200">{{ phaseLabel(step.phase) }}</span></div><p class="mt-3 line-clamp-2 text-sm font-semibold text-slate-900 dark:text-slate-50">{{ step.title || t('replay.publicStep', { step: step.step }) }}</p><p class="mt-2 line-clamp-2 text-sm leading-5 text-slate-500 dark:text-slate-400">{{ step.summary }}</p></button></li>
           </ol>
           <button v-if="canLoadMore" type="button" class="mt-4 min-h-11 w-full rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" :disabled="loadingMore" @click="loadMoreSteps">{{ loadingMore ? t('common.loadingState') : t('replay.publicLoadMore') }}</button>
           <div v-if="loadMoreError" class="mt-3 flex flex-col items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 sm:flex-row dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-100" role="alert"><span>{{ t('replay.publicLoadMoreFailed') }}</span><button type="button" class="min-h-11 rounded-lg bg-rose-600 px-3 text-sm font-semibold text-white hover:bg-rose-700" @click="loadMoreSteps">{{ t('common.retry') }}</button></div>
@@ -458,13 +518,16 @@ onMounted(() => {
 
         <div id="replay-results" class="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_19rem]" tabindex="-1">
           <section class="min-w-0 rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/80 md:p-7" aria-labelledby="step-detail-heading">
-            <div v-if="selectedStep" class="flex flex-col justify-between gap-3 border-b border-slate-200/70 pb-5 sm:flex-row sm:items-start dark:border-slate-800"><div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-teal-700 dark:text-teal-300">{{ phaseLabel(selectedStep.phase) }}</p><h2 id="step-detail-heading" class="mt-2 text-xl font-bold md:text-2xl">{{ selectedStep.title || t('replay.publicStep', { step: selectedStep.step }) }}</h2><p class="mt-2 text-sm text-slate-500 dark:text-slate-400">{{ t('replay.publicStepOf', { current: currentStepNumber, total: steps.length }) }}<span v-if="selectedStep.created_at"> · {{ formatDate(selectedStep.created_at) }}</span></p></div><span class="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ selectedStep.has_result ? t('showcase.resultEvidence') : t('replay.publicNoResult') }}</span></div>
+            <div v-if="selectedStep" class="flex flex-col justify-between gap-3 border-b border-slate-200/70 pb-5 sm:flex-row sm:items-start dark:border-slate-800"><div class="min-w-0"><p class="text-xs font-semibold uppercase tracking-[0.14em] text-teal-700 dark:text-teal-300">{{ phaseLabel(selectedStep.phase) }}</p><h2 id="step-detail-heading" class="mt-2 text-xl font-bold md:text-2xl" tabindex="-1">{{ selectedStep.title || t('replay.publicStep', { step: selectedStep.step }) }}</h2><p class="mt-2 text-sm text-slate-500 dark:text-slate-400">{{ t('replay.publicStepOf', { current: currentStepNumber, total: steps.length }) }}<span v-if="selectedStep.created_at"> · {{ formatDate(selectedStep.created_at) }}</span></p></div><span class="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ selectedStep.has_result ? t('showcase.resultEvidence') : t('replay.publicNoResult') }}</span></div>
+            <p v-if="selectedStep?.summary" class="mt-4 text-sm leading-6 text-slate-600 dark:text-slate-300">{{ selectedStep.summary }}</p>
+            <p v-if="phaseImportance(selectedStep?.phase)" class="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{{ phaseImportance(selectedStep?.phase) }}</p>
+            <div v-if="selectedStep?.result" class="mt-3 flex items-center gap-2"><button type="button" class="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" @click="toggleResultExpanded"><AppIcon :name="resultExpanded ? 'ChevronUp' : 'ChevronDown'" size="xs" aria-hidden="true" />{{ resultExpanded ? t('replay.resultCollapse') : t('replay.resultExpand') }}</button><button type="button" class="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" @click="copyResult">{{ copyState === 'success' ? t('replay.copied') : t('replay.copyResult') }}</button></div>
             <div v-if="detailLoading" class="mt-6 space-y-3" aria-busy="true"><div class="h-6 w-1/2 animate-pulse rounded bg-slate-200 dark:bg-slate-800" /><div class="h-24 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" /></div>
             <div v-else-if="detailError" class="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center dark:border-rose-400/20 dark:bg-rose-400/10" role="alert"><p class="text-sm font-medium">{{ t('replay.publicDetailFailed') }}</p><button type="button" class="mt-4 min-h-11 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white dark:bg-white dark:text-slate-900" @click="loadStep(selectedStepId)">{{ t('common.retry') }}</button></div>
             <PublicReplayResult v-else-if="selectedStep" class="mt-6" :result="selectedStep.result || {}" />
             <div v-else class="mt-6 rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">{{ t('replay.publicNoSteps') }}</div>
             <div v-if="selectedStep?.technical" class="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600 dark:bg-slate-800/70 dark:text-slate-300"><p class="font-medium">{{ t('replay.publicAdvanced') }}</p><p class="mt-2">{{ t('replay.publicStep', { step: selectedStep.technical.step }) }} · {{ phaseLabel(selectedStep.technical.phase) }}</p></div>
-            <div class="mt-7 flex flex-col justify-between gap-3 border-t border-slate-200/70 pt-5 sm:flex-row sm:items-center dark:border-slate-800"><button type="button" class="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300" :disabled="currentIndex <= 0" @click="selectAdjacent(-1)"><AppIcon name="ArrowLeft" size="xs" class="mr-1.5" aria-hidden="true" />{{ t('replay.publicPrevious') }}</button><button type="button" class="min-h-11 rounded-xl bg-teal-700 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 hover:bg-teal-800" :disabled="currentIndex < 0 || currentIndex >= steps.length - 1" @click="selectAdjacent(1)">{{ t('replay.publicNext') }}<AppIcon name="ArrowRight" size="xs" class="ml-1.5" aria-hidden="true" /></button></div>
+            <div class="mt-7 flex flex-col justify-between gap-3 border-t border-slate-200/70 pt-5 sm:flex-row sm:items-center dark:border-slate-800"><button type="button" class="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300" :disabled="currentIndex <= 0" :title="currentIndex <= 0 ? t('replay.boundaryStart') : undefined" :aria-disabled="currentIndex <= 0" @click="selectAdjacent(-1)"><AppIcon name="ArrowLeft" size="xs" class="mr-1.5" aria-hidden="true" />{{ t('replay.publicPrevious') }}</button><button type="button" class="min-h-11 rounded-xl bg-teal-700 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 hover:bg-teal-800" :disabled="currentIndex < 0 || currentIndex >= steps.length - 1" :title="currentIndex >= steps.length - 1 ? t('replay.boundaryEnd') : undefined" :aria-disabled="currentIndex < 0 || currentIndex >= steps.length - 1" @click="selectAdjacent(1)">{{ t('replay.publicNext') }}<AppIcon name="ArrowRight" size="xs" class="ml-1.5" aria-hidden="true" /></button></div>
           </section>
 
           <aside class="h-fit rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/80 lg:sticky lg:top-6">
@@ -494,6 +557,12 @@ onMounted(() => {
   background:
     radial-gradient(circle at 10% 4%, rgba(20, 184, 166, 0.1), transparent 28%),
     radial-gradient(circle at 90% 15%, rgba(244, 63, 94, 0.1), transparent 28%);
+}
+
+/* RP-06: edge fade on horizontally-scrollable phase nav so off-screen items read as scrollable. */
+.phase-nav-fade {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 1.5rem, #000 calc(100% - 1.5rem), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 1.5rem, #000 calc(100% - 1.5rem), transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -55,16 +55,43 @@ const filteredCases = computed(() => {
     if (item.public_id === featuredCase.value?.public_id) return false
     if (statusFilter.value !== 'all' && item.status !== statusFilter.value) return false
     if (modeFilter.value !== 'all' && item.workflow_mode !== modeFilter.value) return false
-    if (normalizedSearch && !`${item.title} ${item.summary}`.toLocaleLowerCase(locale.value).includes(normalizedSearch)) return false
+    if (normalizedSearch) {
+      const haystack = `${item.title} ${item.summary} ${item.workflow_mode} ${item.result_preview?.topic || ''} ${(item.result_preview?.hashtags || []).join(' ')}`.toLocaleLowerCase(locale.value)
+      if (!haystack.includes(normalizedSearch)) return false
+    }
     return true
   })
   return result.sort((a, b) => {
     if (sortKey.value === 'title') return a.title.localeCompare(b.title, locale.value)
+    // ponytail: featured_rank first when present (recommended sort), else recency.
+    const ra = a.featured_rank ?? Number.MAX_SAFE_INTEGER
+    const rb = b.featured_rank ?? Number.MAX_SAFE_INTEGER
+    if (ra !== rb) return ra - rb
     return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
   })
 })
 
 const resultCount = computed(() => filteredCases.value.length)
+const showSearch = computed(() => cases.value.length >= 8)
+
+const statusChips = computed(() => [
+  { value: 'all' as StatusFilter, label: t('showcase.filterAll') },
+  { value: 'completed' as StatusFilter, label: t('showcase.filterCompleted') },
+  { value: 'in_progress' as StatusFilter, label: t('showcase.filterInProgress') },
+])
+
+function setStatusFilter(value: StatusFilter) {
+  statusFilter.value = value
+}
+
+let searchDebounce: ReturnType<typeof setTimeout> | null = null
+const searchInput = ref('')
+watch(searchInput, (value) => {
+  if (searchDebounce) clearTimeout(searchDebounce)
+  searchDebounce = setTimeout(() => {
+    search.value = value
+  }, 300)
+})
 
 function trackFirstCaseVisible(cached: boolean, startedAt: number) {
   if (firstCaseTracked.value || !cases.value.length) return
@@ -220,6 +247,7 @@ function goCreate(position: 'nav' | 'hero' | 'empty' = 'hero') {
 function openReplay(publicId: string) {
   const caseItem = cases.value.find(item => item.public_id === publicId)
   trackInteraction('showcase_case_open', { has_public_id: true, mode: caseItem?.workflow_mode || 'trend', status: caseItem?.status || 'completed' })
+  try { sessionStorage.setItem('showcase:last-card', publicId) } catch { /* public page must not block */ }
   const from = route.fullPath || '/'
   void router.push({ name: 'replay', params: { publicId }, query: { from } })
 }
@@ -232,6 +260,15 @@ function replayHref(publicId: string): string {
 function openFeaturedReplay(publicId: string) {
   trackInteraction('showcase_featured_open', { has_public_id: true })
   void openReplay(publicId)
+}
+
+function retryFeaturedDetail() {
+  const publicId = featuredCase.value?.public_id
+  if (!publicId) return
+  detailState.value = { ...detailState.value, [publicId]: 'idle' }
+  detailCache.value.delete(publicId)
+  trackInteraction('showcase_detail_retry', { has_public_id: true })
+  void loadCaseDetail(publicId)
 }
 
 function formatDate(value: string): string {
@@ -276,6 +313,13 @@ onMounted(async () => {
   await loadCases()
   await nextTick()
   observeCaseCards()
+  // SH-06: restore focus to the last-clicked case card when returning from replay.
+  const lastCardId = sessionStorage.getItem('showcase:last-card')
+  if (lastCardId) {
+    sessionStorage.removeItem('showcase:last-card')
+    const card = document.querySelector<HTMLElement>(`.case-card[data-case-public-id="${CSS.escape(lastCardId)}"] a`)
+    card?.focus()
+  }
 })
 
 onUnmounted(() => {
@@ -349,10 +393,10 @@ watch(filteredCases, async () => {
         <div class="overflow-hidden rounded-3xl border border-rose-200/70 bg-white shadow-xl shadow-rose-900/5 dark:border-rose-400/20 dark:bg-slate-900">
           <div class="grid lg:grid-cols-[.82fr_1.18fr]">
             <div class="bg-gradient-to-br from-rose-500 via-orange-400 to-amber-300 p-6 text-white md:p-8">
-              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-white/75">{{ t('showcase.featuredLabel') }}</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.14em] text-white/90">{{ t('showcase.featuredLabel') }}</p>
               <h2 id="featured-heading" class="mt-4 text-2xl font-bold leading-tight md:text-3xl">{{ caseDetail(featuredCase).title }}</h2>
-              <p class="mt-3 text-sm leading-6 text-white/85">{{ caseDetail(featuredCase).summary }}</p>
-              <div class="mt-6 flex flex-wrap items-center gap-2 text-xs text-white/80">
+              <p class="mt-3 text-sm leading-6 text-white/95">{{ caseDetail(featuredCase).summary }}</p>
+              <div class="mt-6 flex flex-wrap items-center gap-2 text-xs text-white/90">
                 <span class="rounded-full bg-white/15 px-2.5 py-1">{{ statusLabel(featuredCase.status) }}</span>
                 <span class="rounded-full bg-white/15 px-2.5 py-1">{{ modeLabel(featuredCase.workflow_mode) }}</span>
                 <span>{{ t('showcase.caseUpdated', { date: formatDate(featuredCase.updated_at) }) }}</span>
@@ -361,6 +405,7 @@ watch(filteredCases, async () => {
             </div>
             <div class="p-6 md:p-8">
               <div v-if="detailState[featuredCase.public_id] === 'loading'" class="space-y-4" aria-busy="true"><div class="h-5 w-2/3 animate-pulse rounded bg-slate-200 dark:bg-slate-800" /><div class="h-20 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" /></div>
+              <div v-else-if="detailState[featuredCase.public_id] === 'error'" class="flex flex-col items-center gap-3 rounded-xl bg-rose-50 p-6 text-center dark:bg-rose-400/10" role="alert"><p class="text-sm font-medium text-rose-700 dark:text-rose-200">{{ t('replay.publicDetailFailed') }}</p><button type="button" class="inline-flex min-h-11 items-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white dark:bg-white dark:text-slate-900" @click="retryFeaturedDetail">{{ t('replay.detailRetry') }}</button></div>
               <PublicReplayResult v-else :result="caseDetail(featuredCase).result || caseDetail(featuredCase).result_preview" compact />
             </div>
           </div>
@@ -377,11 +422,17 @@ watch(filteredCases, async () => {
         </div>
 
         <div class="mt-6 rounded-2xl border border-slate-200/80 bg-white/80 p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/70 md:p-4">
-          <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
-            <label class="relative block"><span class="sr-only">{{ t('showcase.searchPlaceholder') }}</span><AppIcon name="Search" size="sm" variant="cyan" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" /><input v-model="search" type="search" class="min-h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm text-slate-800 outline-none ring-0 placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100" :placeholder="t('showcase.searchPlaceholder')" /></label>
-            <label><span class="sr-only">{{ t('showcase.filterStatus') }}</span><select v-model="statusFilter" class="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"><option value="all">{{ t('showcase.filterAll') }}</option><option value="completed">{{ t('showcase.filterCompleted') }}</option><option value="in_progress">{{ t('showcase.filterInProgress') }}</option><option value="attention">{{ t('showcase.filterAttention') }}</option></select></label>
-            <label><span class="sr-only">{{ t('showcase.filterMode') }}</span><select v-model="modeFilter" class="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"><option value="all">{{ t('showcase.filterAll') }}</option><option value="trend">{{ t('showcase.filterTrend') }}</option><option value="brief">{{ t('showcase.filterBrief') }}</option></select></label>
-            <label><span class="sr-only">{{ t('showcase.sortRecent') }}</span><select v-model="sortKey" class="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"><option value="recent">{{ t('showcase.sortRecent') }}</option><option value="title">{{ t('showcase.sortTitle') }}</option></select></label>
+          <div class="flex flex-col gap-3">
+            <label v-if="showSearch" class="relative block"><span class="sr-only">{{ t('showcase.searchPlaceholder') }}</span><AppIcon name="Search" size="sm" variant="cyan" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" /><input v-model="searchInput" type="search" class="min-h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm text-slate-800 outline-none ring-0 placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100" :placeholder="t('showcase.searchPlaceholder')" /></label>
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="button" v-for="chip in statusChips" :key="chip.value" class="min-h-11 rounded-full px-4 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500" :class="statusFilter === chip.value ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'border border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'" :aria-pressed="statusFilter === chip.value" @click="setStatusFilter(chip.value)">{{ chip.label }}</button>
+              <span class="ml-auto flex items-center gap-2">
+                <label class="sr-only" for="showcase-mode-filter">{{ t('showcase.filterMode') }}</label>
+                <select id="showcase-mode-filter" v-model="modeFilter" class="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"><option value="all">{{ t('showcase.filterAll') }}</option><option value="trend">{{ t('showcase.filterTrend') }}</option><option value="brief">{{ t('showcase.filterBrief') }}</option></select>
+                <label class="sr-only" for="showcase-sort">{{ t('showcase.sortRecent') }}</label>
+                <select id="showcase-sort" v-model="sortKey" class="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"><option value="recent">{{ t('showcase.sortRecent') }}</option><option value="title">{{ t('showcase.sortTitle') }}</option></select>
+              </span>
+            </div>
           </div>
         </div>
 

@@ -1748,8 +1748,25 @@
     "publicShareStep": "复制当前步骤链接",
     "publicShared": "链接已复制",
     "publicShareFailed": "复制失败，请手动复制地址",
-    "publicLoginForAdvanced": "登录后查看全部技术步骤"
-    ,"publicErrorCategory": {
+    "publicLoginForAdvanced": "登录后查看全部技术步骤",
+    "noFullReplay": "无完整回放",
+    "phaseNoData": "该阶段暂无可展示的业务数据",
+    "boundaryStart": "已到起点",
+    "boundaryEnd": "已到终点",
+    "resultExpand": "展开全文",
+    "resultCollapse": "收起",
+    "copyResult": "复制结果",
+    "copied": "已复制",
+    "phaseImportance": {
+      "scouting": "这一步定位选题方向与目标受众，决定后续创作的基础。",
+      "planning": "这一步确定内容策略与角度，是文案与视觉的依据。",
+      "briefing": "这一步解析 Brief 要求，把需求转化为可执行的创作方向。",
+      "creating": "这一步生成标题、正文与视觉方案，是案例的核心产出。",
+      "reviewing": "这一步经人工审核确认内容质量与合规，是发布前的最后一关。",
+      "publishing": "这一步把内容发布到小红书，标志创作进入投放阶段。",
+      "analyzing": "这一步追踪内容表现，为下一轮创作积累数据。"
+    },
+    "publicErrorCategory": {
       "authorization": "发布授权需要处理",
       "timeout": "这一步执行超时",
       "rate_limited": "服务暂时达到调用限制",

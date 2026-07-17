@@ -1748,8 +1748,26 @@
     "publicShareStep": "Copy current step link",
     "publicShared": "Link copied",
     "publicShareFailed": "Could not copy the link",
-    "publicLoginForAdvanced": "Sign in to view all technical steps"
-    ,"publicErrorCategory": {
+    "publicLoginForAdvanced": "Sign in to view all technical steps",
+    "detailRetry": "Retry detail load",
+    "noFullReplay": "No full replay",
+    "phaseNoData": "This phase has no business data to show yet",
+    "boundaryStart": "Reached the start",
+    "boundaryEnd": "Reached the end",
+    "resultExpand": "Expand",
+    "resultCollapse": "Collapse",
+    "copyResult": "Copy result",
+    "copied": "Copied",
+    "phaseImportance": {
+      "scouting": "This step sets the topic direction and target audience, the foundation for everything after.",
+      "planning": "This step fixes the content strategy and angle, the basis for copy and visuals.",
+      "briefing": "This step parses the brief, turning requirements into an actionable creative direction.",
+      "creating": "This step produces the title, body, and visual plan — the core deliverable of the case.",
+      "reviewing": "This step runs human review for quality and compliance, the last gate before publishing.",
+      "publishing": "This step publishes the content to Xiaohongshu, marking the move into distribution.",
+      "analyzing": "This step tracks performance, feeding data into the next round of creation."
+    },
+    "publicErrorCategory": {
       "authorization": "Publishing authorization needs attention",
       "timeout": "This step timed out",
       "rate_limited": "The service is temporarily rate limited",
