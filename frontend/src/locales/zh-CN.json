@@ -723,6 +723,11 @@
     "engagementBreakdown": "互动构成",
     "recentPosts": "最近帖子表现",
     "top10": "TOP 10",
+    "vsPrevPeriod": "vs 上一周期",
+    "fans": "粉丝数",
+    "bestPostLegend": "最佳表现笔记",
+    "showAll": "查看全部 {count} 篇",
+    "showLess": "收起",
     "cost": {
       "title": "成本明细",
       "subtitle": "LLM 调用成本统计",
@@ -746,6 +751,10 @@
       "collects": "收藏",
       "engagementRate": "互动率",
       "publishedAt": "发布时间"
+    },
+    "detail": {
+      "title": "笔记详情",
+      "untitled": "无标题笔记"
     },
     "weekdays": {
       "mon": "周一",
@@ -780,7 +789,8 @@
       "title": "数据加载失败",
       "description": "无法获取分析数据，请检查网络连接后重试。",
       "retry": "重试"
-    }
+    },
+    "staleNotice": "数据刷新失败，当前展示的是上次成功获取的数据。"
   },
   "creatorStats": {
     "title": "创作者中心数据",
@@ -808,6 +818,7 @@
     "importedSection": "已导入概览",
     "noImported": "尚未导入真实笔记数据，请先点击上方浏览器导入。",
     "period": {
+      "creatorCenterLabel": "创作者中心数据周期",
       "last7Days": "近 7 天",
       "last30Days": "近 30 天",
       "last90Days": "近 90 天"

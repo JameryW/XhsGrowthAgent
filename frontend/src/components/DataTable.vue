@@ -25,11 +25,19 @@ interface Props {
   rowKey?: string
   highlightRowKey?: string
   highlightKeyValue?: string
+  // AN-08: make rows clickable for drill-down; emits 'row-click'.
+  rowClickable?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   rowKey: 'title',
+  rowClickable: false,
 })
+
+const emit = defineEmits<{
+  // AN-08: row click for drill-down (e.g. open a single-post detail drawer).
+  (e: 'row-click', row: Record<string, any>): void
+}>()
 
 const sortKey = ref('')
 const sortOrder = ref<'asc' | 'desc'>('desc')
@@ -71,6 +79,12 @@ function toggleSort(key: string) {
     sortOrder.value = 'desc'
   }
 }
+
+// AN-11: expose aria-sort on sorted column headers.
+function ariaSortFor(key: string): 'ascending' | 'descending' | 'none' {
+  if (sortKey.value !== key) return 'none'
+  return sortOrder.value === 'asc' ? 'ascending' : 'descending'
+}
 </script>
 
 <template>
@@ -86,6 +100,7 @@ function toggleSort(key: string) {
         :key="col.key"
         :class="[alignClasses[col.key]]"
         role="columnheader"
+        :aria-sort="col.sortable ? ariaSortFor(col.key) : undefined"
       >
         <button
           v-if="col.sortable"
@@ -116,7 +131,10 @@ function toggleSort(key: string) {
       v-for="(row, idx) in sortedData"
       :key="getRowKey(row, idx)"
       class="grid gap-2 md:gap-4 px-3 md:px-4 py-2 md:py-3 border-b border-slate-50 text-[10px] md:text-xs hover:bg-slate-50/50 transition-colors duration-150 min-w-[500px] dark:border-slate-800 dark:hover:bg-slate-800/40"
-      :class="{ 'bg-rose-50/50': highlightRowKey && highlightKeyValue && row[highlightRowKey] === highlightKeyValue }"
+      :class="{ 'bg-rose-50/50': highlightRowKey && highlightKeyValue && row[highlightRowKey] === highlightKeyValue, 'cursor-pointer': props.rowClickable }"
+      :tabindex="props.rowClickable ? 0 : undefined"
+      @click="props.rowClickable ? emit('row-click', row) : undefined"
+      @keydown.enter="props.rowClickable ? emit('row-click', row) : undefined"
       :style="{ gridTemplateColumns: `repeat(${props.columns.length}, 1fr)` }"
       role="row"
     >

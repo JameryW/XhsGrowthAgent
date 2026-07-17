@@ -18,9 +18,13 @@ const props = withDefaults(defineProps<{
   accountId: string
   accountName?: string
   refreshToken?: number
+  // AN-08: preselect a specific note for drill-down. When set, overrides the
+  // default "first note" selection after notes load.
+  noteId?: string
 }>(), {
   accountName: '',
   refreshToken: 0,
+  noteId: '',
 })
 
 const { t, locale } = useI18n()
@@ -138,7 +142,10 @@ async function loadNotes(accountId = props.accountId) {
     const stats = await getCreatorStats(accountId, 200)
     if (generation !== requestGeneration) return
     notes.value = (stats.notes || []).filter(note => Boolean(note.note_id))
-    selectedNoteId.value = notes.value[0]?.note_id || ''
+    const preselect = props.noteId && notes.value.some(n => n.note_id === props.noteId)
+      ? props.noteId
+      : (notes.value[0]?.note_id || '')
+    selectedNoteId.value = preselect
     if (selectedNoteId.value) {
       await loadSelectedNote(generation)
     }

@@ -433,14 +433,21 @@ function pointValue(point: CreatorAggregatePoint): string {
           />
           <span>{{ t('creatorStats.analyze') }}</span>
         </label>
-        <select
-          v-model="period"
-          class="px-2 py-1 text-xs rounded-lg border border-slate-200 bg-white outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
-        >
-          <option value="7d">{{ t('creatorStats.period.last7Days') }}</option>
-          <option value="30d">{{ t('creatorStats.period.last30Days') }}</option>
-          <option value="90d">{{ t('creatorStats.period.last90Days') }}</option>
-        </select>
+        <!-- AN-10: this selector controls Creator Center data only (7d/30d/90d),
+             independent of the page-level period. Label it so the two ranges
+             are not mistaken for the same control. -->
+        <label class="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+          <span>{{ t('creatorStats.period.creatorCenterLabel') }}</span>
+          <select
+            v-model="period"
+            class="px-2 py-1 text-xs rounded-lg border border-slate-200 bg-white outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
+            :aria-label="t('creatorStats.period.creatorCenterLabel')"
+          >
+            <option value="7d">{{ t('creatorStats.period.last7Days') }}</option>
+            <option value="30d">{{ t('creatorStats.period.last30Days') }}</option>
+            <option value="90d">{{ t('creatorStats.period.last90Days') }}</option>
+          </select>
+        </label>
       </div>
 
       <div class="flex items-center gap-2">
