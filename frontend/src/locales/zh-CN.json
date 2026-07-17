@@ -264,7 +264,11 @@
       "replayTitle": "正在查看历史快照",
       "replayDescription": "当前是工作流的历史节点；退出回放模式即可返回实时工作流。",
       "replayStatus": "历史快照",
-      "completedCta": "查看历史记录"
+      "completedCta": "查看历史记录",
+      "todoLabel": "待办",
+      "todoBrief": "填写需求",
+      "todoAction": "去决策",
+      "todoReview": "去审核"
     },
     "nextAction": {
       "reviewTitle": "内容已准备好，等待审核",
@@ -275,7 +279,8 @@
       "continueCta": "继续处理",
       "startTitle": "准备好创作第一篇笔记了吗？",
       "startDesc": "选择创作模式和账号，开始一次引导式创作。",
-      "startCta": "开始创作"
+      "startCta": "开始创作",
+      "retryCta": "重试"
     },
     "header": {
       "status": "工作流状态",
@@ -1020,6 +1025,7 @@
     "connecting": "连接中...",
     "reconnecting": "重连中...",
     "disconnected": "已断开",
+    "reconnect": "重新连接",
     "seqNumber": "消息序列号",
     "recoveryTitle": "已恢复实时同步",
     "recoveryMessage": "已补齐 {count} 条丢失事件（seq: {seq}）"

@@ -80,6 +80,16 @@ export class WebSocketService {
     return this.status
   }
 
+  /**
+   * Manual reconnect — resets the backoff counter so a user-initiated retry
+   * after auto-reconnect exhaustion always starts fresh (DB-09).
+   */
+  manualReconnect(): void {
+    this.reconnectAttempts = 0
+    this.clearReconnectTimer()
+    this.connect()
+  }
+
   /** Update status and notify callbacks */
   private notifyStatusChange(newStatus: WsStatus): void {
     this.status = newStatus

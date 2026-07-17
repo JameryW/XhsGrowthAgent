@@ -264,7 +264,11 @@
       "replayTitle": "Viewing a saved checkpoint",
       "replayDescription": "This is a historical snapshot. Exit replay mode to return to the live workflow.",
       "replayStatus": "History snapshot",
-      "completedCta": "View history"
+      "completedCta": "View history",
+      "todoLabel": "To-do",
+      "todoBrief": "Brief input",
+      "todoAction": "Decision",
+      "todoReview": "Review"
     },
     "nextAction": {
       "reviewTitle": "Your content is ready for review",
@@ -275,7 +279,8 @@
       "continueCta": "Continue",
       "startTitle": "Ready to create your first note?",
       "startDesc": "Choose a mode and account to start a guided creation workflow.",
-      "startCta": "Start creating"
+      "startCta": "Start creating",
+      "retryCta": "Retry"
     },
     "header": {
       "status": "Workflow Status",
@@ -1020,6 +1025,7 @@
     "connecting": "Connecting...",
     "reconnecting": "Reconnecting...",
     "disconnected": "Disconnected",
+    "reconnect": "Reconnect",
     "seqNumber": "Message sequence number",
     "recoveryTitle": "Real-time Sync Restored",
     "recoveryMessage": "Recovered {count} missed events (seq: {seq})"
