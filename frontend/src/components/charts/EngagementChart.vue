@@ -38,6 +38,12 @@ const neonColors = {
   peach: '#F59E0B',
 }
 
+// ponytail: per-category palette so the 4 engagement types are visually
+// distinct, not a single monochrome bar set. Anchored to the metric palette.
+const CATEGORY_COLORS = ['#F43F5E', '#8B5CF6', '#14B8A6', '#F59E0B']
+
+const totalValue = computed(() => props.data.reduce((sum, d) => sum + d.value, 0))
+
 // Accessibility: compute chart description for screen readers
 const chartDescription = computed(() => {
   if (props.data.length === 0) return t('charts.noData')
@@ -90,16 +96,17 @@ const chartOption = computed(() => ({
   series: [
     {
       type: 'bar',
-      data: props.data.map(d => d.value),
+      data: props.data.map((d, i) => ({
+        value: d.value,
+        itemStyle: {
+          color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+          borderRadius: [4, 4, 0, 0],
+        },
+      })),
       barWidth: '40%',
-      itemStyle: {
-        color: neonColors[props.variant],
-        borderRadius: [4, 4, 0, 0],
-      },
       emphasis: {
         itemStyle: {
           shadowBlur: 15,
-          shadowColor: neonColors[props.variant] + '40',
         },
       },
     },
@@ -115,9 +122,12 @@ const chartOption = computed(() => ({
     :aria-label="chartDescription"
   >
     <!-- Title bar (matches TrendChart style) -->
-    <div v-if="props.title" class="text-xs text-slate-500 mb-4 flex items-center gap-2 font-medium uppercase tracking-wide">
-      <div class="w-2 h-2 rounded-full" :style="{ background: neonColors[props.variant] }" aria-hidden="true" />
-      {{ props.title }}
+    <div v-if="props.title" class="text-xs text-slate-500 mb-4 flex items-center justify-between gap-2 font-medium uppercase tracking-wide">
+      <div class="flex items-center gap-2">
+        <div class="w-2 h-2 rounded-full" :style="{ background: neonColors[props.variant] }" aria-hidden="true" />
+        {{ props.title }}
+      </div>
+      <span v-if="totalValue > 0" class="text-slate-400 normal-case tracking-normal font-semibold tabular-nums">{{ totalValue.toLocaleString() }}</span>
     </div>
 
     <!-- Chart for visual users -->

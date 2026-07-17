@@ -10,6 +10,9 @@ interface Column {
   label: string
   align?: 'left' | 'center' | 'right'
   sortable?: boolean
+  // ponytail: optional per-cell class hook (e.g. color-code engagement rate).
+  // Receives the row; returns extra classes merged onto the cell.
+  cellClass?: (row: Record<string, any>) => string
 }
 
 interface Props {
@@ -113,7 +116,7 @@ function toggleSort(key: string) {
       <div
         v-for="col in props.columns"
         :key="col.key"
-        :class="[alignClasses[col.key], col.key === 'title' ? 'text-rose-500 font-medium truncate' : 'text-slate-600']"
+        :class="[alignClasses[col.key], col.cellClass ? col.cellClass(row) : '', col.key === 'title' ? 'text-rose-500 font-medium truncate' : 'text-slate-600']"
         role="cell"
       >
         {{ row[col.key] }}

@@ -33,13 +33,23 @@ const isLoading = computed(() => analyticsStore.isLoading && !analyticsStore.pos
 const hasError = computed(() => !!analyticsStore.error && !analyticsStore.posts.length)
 const isEmpty = computed(() => !analyticsStore.isLoading && !analyticsStore.error && !analyticsStore.posts.length)
 
+// ponytail: backend period cutoff — daily=24h, weekly=7d, monthly=30d.
+// Map the selected period to its i18n label so cards/buttons reflect the
+// actual data window (was hardcoded "thisWeek" for all three).
+const periodLabel = computed(() => periodLabelFor(analyticsStore.period))
+function periodLabelFor(p: 'daily' | 'weekly' | 'monthly') {
+  if (p === 'daily') return t('analytics.today')
+  if (p === 'monthly') return t('analytics.thisMonth')
+  return t('analytics.thisWeek')
+}
+
 const totalViews = computed(() => analyticsStore.posts.reduce((sum, p) => sum + (p.views || 0), 0))
 
 const metrics = computed(() => [
-  { icon: 'Upload', title: t('analytics.postsPublished'), value: analyticsStore.posts.length, subtitle: t('analytics.thisWeek'), variant: 'pink' as const },
-  { icon: 'Eye', title: t('analytics.totalViews'), value: totalViews.value.toLocaleString(), subtitle: t('analytics.thisWeek'), variant: 'cyan' as const },
+  { icon: 'Upload', title: t('analytics.postsPublished'), value: analyticsStore.posts.length, subtitle: periodLabel.value, variant: 'pink' as const },
+  { icon: 'Eye', title: t('analytics.totalViews'), value: totalViews.value.toLocaleString(), subtitle: periodLabel.value, variant: 'cyan' as const },
   { icon: 'MessageCircle', title: t('analytics.totalEngagement'), value: analyticsStore.totalEngagement.toLocaleString(), subtitle: `${analyticsStore.posts.length} ` + t('analytics.postsPublished'), variant: 'purple' as const },
-  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: `${analyticsStore.avgEngagementRate.toFixed(1)}%`, subtitle: analyticsStore.posts.length > 0 ? `${analyticsStore.posts.length} ` + t('analytics.postsPublished') : t('analytics.thisWeek'), variant: 'peach' as const },
+  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: `${analyticsStore.avgEngagementRate.toFixed(1)}%`, subtitle: analyticsStore.posts.length > 0 ? `${analyticsStore.posts.length} ` + t('analytics.postsPublished') : periodLabel.value, variant: 'peach' as const },
   { icon: 'DollarSign', title: t('analytics.aiCost'), value: `$${analyticsStore.costData?.today_cost_usd?.toFixed(2) || '0.00'}`, subtitle: t('analytics.cost.today'), variant: 'pink' as const },
 ])
 
@@ -115,7 +125,20 @@ const tableColumns = computed(() => [
   { key: 'likes', label: t('analytics.table.likes'), align: 'center' as const, sortable: true },
   { key: 'comments', label: t('analytics.table.comments'), align: 'center' as const, sortable: true },
   { key: 'collects', label: t('analytics.table.collects'), align: 'center' as const, sortable: true },
-  { key: 'engagement_rate_display', label: t('analytics.table.engagementRate'), align: 'center' as const, sortable: true },
+  {
+    key: 'engagement_rate_display',
+    label: t('analytics.table.engagementRate'),
+    align: 'center' as const,
+    sortable: true,
+    // ponytail: color-code rate inline — strong ≥5% green, 1–5% amber, <1% muted.
+    cellClass: (row: Record<string, any>) => {
+      const rate = Number(row.engagement_rate)
+      if (!Number.isFinite(rate)) return 'font-semibold'
+      if (rate >= 5) return 'font-semibold text-emerald-600 dark:text-emerald-400'
+      if (rate >= 1) return 'font-semibold text-amber-600 dark:text-amber-400'
+      return 'font-semibold text-slate-400'
+    },
+  },
   { key: 'published_at_display', label: t('analytics.table.publishedAt'), align: 'center' as const },
 ])
 
@@ -245,11 +268,11 @@ function startWithTopic(topic: string, niche?: string) {
             class="min-h-11 min-w-0 justify-center px-2 sm:px-3"
             @click="setPeriod(p as any)"
             :aria-pressed="analyticsStore.period === p"
-            :aria-label="`${p === 'daily' ? t('analytics.thisWeek') : p === 'weekly' ? t('analytics.thisMonth') : t('analytics.thisYear')}`"
+            :aria-label="periodLabelFor(p as any)"
           >
             <span class="inline-flex items-center justify-center gap-1 whitespace-nowrap">
               <AppIcon name="Calendar" size="sm" :variant="analyticsStore.period === p ? 'white' : 'cyan'" />
-              {{ p === 'daily' ? t('analytics.thisWeek') : p === 'weekly' ? t('analytics.thisMonth') : t('analytics.thisYear') }}
+              {{ periodLabelFor(p as any) }}
             </span>
           </NeonButton>
         </div>
