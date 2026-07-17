@@ -115,7 +115,20 @@ const tableColumns = computed(() => [
   { key: 'likes', label: t('analytics.table.likes'), align: 'center' as const, sortable: true },
   { key: 'comments', label: t('analytics.table.comments'), align: 'center' as const, sortable: true },
   { key: 'collects', label: t('analytics.table.collects'), align: 'center' as const, sortable: true },
-  { key: 'engagement_rate_display', label: t('analytics.table.engagementRate'), align: 'center' as const, sortable: true },
+  {
+    key: 'engagement_rate_display',
+    label: t('analytics.table.engagementRate'),
+    align: 'center' as const,
+    sortable: true,
+    // ponytail: color-code rate inline — strong ≥5% green, 1–5% amber, <1% muted.
+    cellClass: (row: Record<string, any>) => {
+      const rate = Number(row.engagement_rate)
+      if (!Number.isFinite(rate)) return 'font-semibold'
+      if (rate >= 5) return 'font-semibold text-emerald-600 dark:text-emerald-400'
+      if (rate >= 1) return 'font-semibold text-amber-600 dark:text-amber-400'
+      return 'font-semibold text-slate-400'
+    },
+  },
   { key: 'published_at_display', label: t('analytics.table.publishedAt'), align: 'center' as const },
 ])
 
