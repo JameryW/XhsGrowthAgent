@@ -189,6 +189,15 @@ export const useWorkflowStore = defineStore('workflow', () => {
     replayState.value || workflowState.value
   )
 
+  // DB-03: unified display progress. Replay shows the inspected checkpoint's
+  // progress; live workflow uses the high-water mark (progressPercent) so a
+  // phase regression (reangle/retopic) never animates the bar backward.
+  const displayProgress = computed(() =>
+    isReplayMode.value && replayState.value
+      ? replayState.value.progress_percent ?? 0
+      : progressPercent.value
+  )
+
   // ── Backward-compatible single-workflow computed ──
   const workflowState = computed<WorkflowStateResponse | null>(() =>
     activeThreadId.value ? workflowStates.value.get(activeThreadId.value) ?? null : null
@@ -1297,6 +1306,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     replayCheckpointsError,
     replayState,
     effectiveState,
+    displayProgress,
     enterReplayMode,
     hydrateReplayCache,
     saveReplayLiveState,

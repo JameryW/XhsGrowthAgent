@@ -27,11 +27,9 @@ const phaseTimeEstimates: Record<string, number> = {
   error: 0,
 }
 
-// Use effectiveState progress (replay-aware) instead of global progressPercent
-const workflowProgress = computed(() => {
-  const es = workflowStore.effectiveState
-  return es?.progress_percent ?? workflowStore.progressPercent
-})
+// DB-03: unified displayProgress — replay shows inspected checkpoint,
+// live uses the high-water mark so a phase regression never animates backward.
+const workflowProgress = computed(() => workflowStore.displayProgress)
 const isWaitingForUser = computed(() =>
   workflowStore.isAwaitingDraft ||
   workflowStore.isAwaitingChoice ||

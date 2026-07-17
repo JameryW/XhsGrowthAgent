@@ -22,15 +22,10 @@ import { useRealtimeStore } from '@/stores/realtime'
 
 const { t } = useI18n()
 const router = useRouter()
+const route = router.currentRoute
 const workflowStore = useWorkflowStore()
 const toastStore = useToastStore()
 const errorStore = useErrorStore()
-
-// Auto-enter replay mode from URL query
-const route = router.currentRoute
-if (route.value.query.replay === 'true' && workflowStore.activeThreadId) {
-  workflowStore.enterReplayMode()
-}
 
 const showOptimization = computed(() =>
   workflowStore.currentPhase === 'creating' ||
@@ -102,7 +97,7 @@ const dashboardHero = computed(() => {
   return getDashboardHero({
     phase: workflowStore.currentPhase,
     status: workflowStore.currentStatus,
-    progress: workflowStore.effectiveState?.progress_percent ?? workflowStore.progressPercent,
+    progress: workflowStore.displayProgress,
     isReplay: workflowStore.isReplayMode,
   }, t)
 })
@@ -111,10 +106,12 @@ const dashboardHero = computed(() => {
 const showCelebration = ref(false)
 const hasShownCelebration = ref(false)
 
-// Watch for workflow completion
+// Watch for workflow completion — replay snapshots must never trigger the
+// "completed" celebration (DB-02/D4: isReplay guards all completed semantics).
 watch(
   () => workflowStore.currentPhase,
   (newPhase, oldPhase) => {
+    if (workflowStore.isReplayMode) return
     if (newPhase === 'completed' && oldPhase !== 'completed' && !hasShownCelebration.value) {
       showCelebration.value = true
       hasShownCelebration.value = true
@@ -161,6 +158,12 @@ onMounted(async () => {
   const threadId = route.value.params.threadId
   if (typeof threadId === 'string' && threadId && threadId !== workflowStore.activeThreadId) {
     workflowStore.setThreadId(threadId)
+  }
+  // DB-01: enter replay mode AFTER setThreadId resolves the route param, so a
+  // fresh session opening /dashboard/X?replay=true loads the correct thread
+  // snapshot instead of silently no-op'ing on an unset activeThreadId.
+  if (route.value.query.replay === 'true' && workflowStore.activeThreadId) {
+    workflowStore.enterReplayMode()
   }
   const realtimeStore = useRealtimeStore()
   realtimeStore.connect()
