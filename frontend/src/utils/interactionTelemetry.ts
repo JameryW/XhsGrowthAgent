@@ -40,6 +40,17 @@ export type InteractionEventName =
   | 'replay_result_copy'
   | 'replay_share'
   | 'replay_cta_click'
+  // INF-08: authenticated-domain telemetry (Dashboard/Analytics/Evaluation).
+  // IDs/counts only — no content text (per telemetry red-line).
+  | 'dashboard_cta_click'
+  | 'dashboard_replay_enter'
+  | 'dashboard_tab_switch'
+  | 'analytics_period_change'
+  | 'analytics_note_drilldown'
+  | 'analytics_topic_click'
+  | 'evaluation_decision_cta'
+  | 'evaluation_drilldown'
+  | 'evaluation_filter_change'
 
 type InteractionValue = string | number | boolean
 type InteractionProperties = Record<string, InteractionValue | undefined>
@@ -66,6 +77,10 @@ const allowedKeys = new Set([
   'auth_state',
   'position',
   'method',
+  'decision',
+  'period',
+  'old_period',
+  'topic',
 ])
 
 function viewportCategory(): 'mobile' | 'desktop' {

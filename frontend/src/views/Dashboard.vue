@@ -19,6 +19,7 @@ import NeonButton from '@/components/NeonButton.vue'
 import { getDashboardHero } from '@/composables/dashboardHero'
 import { useWorkflowStore, useToastStore, useErrorStore } from '@/stores'
 import { useRealtimeStore } from '@/stores/realtime'
+import { trackInteraction } from '@/utils/interactionTelemetry'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -189,6 +190,7 @@ function scrollToPanel(anchor: string) {
 }
 
 function handleNextAction(action: { action: string; path?: string; anchor?: string }) {
+  trackInteraction('dashboard_cta_click', { method: action.action })
   if (action.action === 'scroll' && action.anchor) {
     scrollToPanel(action.anchor)
   } else if (action.action === 'resume') {
@@ -201,6 +203,7 @@ function handleNextAction(action: { action: string; path?: string; anchor?: stri
 // DB-08: switching tabs must sync the URL so a refresh stays on the active
 // thread instead of snapping back to the old route param.
 function handleSwitchTab(threadId: string) {
+  trackInteraction('dashboard_tab_switch', { method: 'click' })
   workflowStore.switchTab(threadId)
   if (route.value.params.threadId !== threadId) {
     void router.replace({ name: 'dashboard', params: { threadId } })
@@ -232,6 +235,7 @@ onMounted(async () => {
   // fresh session opening /dashboard/X?replay=true loads the correct thread
   // snapshot instead of silently no-op'ing on an unset activeThreadId.
   if (route.value.query.replay === 'true' && workflowStore.activeThreadId) {
+    trackInteraction('dashboard_replay_enter', { method: 'deep_link' })
     workflowStore.enterReplayMode()
   }
   const realtimeStore = useRealtimeStore()

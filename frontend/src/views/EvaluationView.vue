@@ -9,6 +9,7 @@ import TrendChart from '@/components/charts/TrendChart.vue'
 import CreatorQualityWorkspace from '@/components/evaluation/CreatorQualityWorkspace.vue'
 import { getEvaluationList, getEvaluationResult, getEvaluationTrend } from '@/api/evaluation'
 import { EvaluationSkeleton } from '@/components/skeletons'
+import { trackInteraction } from '@/utils/interactionTelemetry'
 import type {
   EvaluationListItem,
   EvaluationListResponse,
@@ -98,7 +99,19 @@ const filteredItems = computed(() => {
 })
 
 function openDetail(threadId: string) {
+  trackInteraction('evaluation_drilldown', { method: 'click' })
   router.push({ name: 'evaluation-detail', params: { threadId }, query: { tab: 'workflow' } })
+}
+
+function setDecisionFilter(opt: string) {
+  decisionFilter.value = opt
+  trackInteraction('evaluation_filter_change', { decision: opt })
+}
+
+function evaluationActionCta(target: 'review' | 'dashboard') {
+  trackInteraction('evaluation_decision_cta', { decision: ev.value?.decision ?? '', method: target })
+  if (target === 'review' && detailThreadId.value) router.push(`/review/${detailThreadId.value}`)
+  else if (detailThreadId.value) router.push(`/dashboard/${detailThreadId.value}`)
 }
 
 function backToList() {
@@ -376,7 +389,7 @@ onMounted(() => {
           class="filter-chip min-h-[36px]"
           :class="{ 'filter-chip--active': decisionFilter === opt }"
           :aria-pressed="decisionFilter === opt"
-          @click="decisionFilter = opt"
+          @click="setDecisionFilter(opt)"
         >
           {{ opt === 'all' ? t('evaluation.list.filterAll') : decisionLabel(opt) }}
         </button>
@@ -565,7 +578,7 @@ onMounted(() => {
             v-if="ev.decision === 'needs_revision' || ev.decision === 'rejected'"
             type="button"
             class="action-cta"
-            @click="router.push(`/review/${detailThreadId}`)"
+            @click="evaluationActionCta('review')"
           >
             <AppIcon name="Pencil" size="sm" />
             {{ t('evaluation.action.revise') }}
@@ -574,7 +587,7 @@ onMounted(() => {
             v-else-if="ev.decision === 'approved'"
             type="button"
             class="action-cta"
-            @click="router.push(`/dashboard/${detailThreadId}`)"
+            @click="evaluationActionCta('dashboard')"
           >
             <AppIcon name="Workflow" size="sm" />
             {{ t('evaluation.action.viewWorkflow') }}

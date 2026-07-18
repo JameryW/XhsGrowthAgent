@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, computed, ref, defineAsyncComponent } from 'vue'
+import { onMounted, computed, ref, defineAsyncComponent, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import MetricCard from '@/components/MetricCard.vue'
@@ -16,6 +16,8 @@ import { getCreatorStats, type CreatorAccountStats } from '@/api/analytics'
 const TrendChart = defineAsyncComponent(() => import('@/components/charts/TrendChart.vue'))
 const EngagementChart = defineAsyncComponent(() => import('@/components/charts/EngagementChart.vue'))
 import { formatNumber, formatPercent, formatShortDate } from '@/utils/format'
+import { trackInteraction } from '@/utils/interactionTelemetry'
+import { useFocusTrap } from '@/composables/useFocusTrap'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -226,6 +228,7 @@ const modelCostData = computed(() => {
 })
 
 const setPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
+  trackInteraction('analytics_period_change', { period, old_period: analyticsStore.period })
   analyticsStore.setPeriod(period)
 }
 
@@ -267,11 +270,24 @@ const detailNoteId = computed(() => {
 const detailAccountId = computed(() => accountsStore.activeAccountId || analyticsStore.accountId || '')
 
 function openPostDetail(row: Record<string, any>) {
+  trackInteraction('analytics_note_drilldown', { method: 'click' })
   selectedPost.value = row
 }
 function closePostDetail() {
   selectedPost.value = null
 }
+
+// INF-06: trap focus inside the drill-down drawer and restore on close.
+const focusTrap = useFocusTrap()
+const drawerRef = ref<HTMLElement | null>(null)
+watch(selectedPost, async (post) => {
+  if (post) {
+    await nextTick()
+    focusTrap.activate(drawerRef.value)
+  } else {
+    focusTrap.deactivate()
+  }
+})
 
 const budgetUsedPercent = computed(() => {
   const total = analyticsStore.costData?.total_cost_usd || 0
@@ -312,6 +328,7 @@ const insightBg = (type: string) => {
 }
 
 function startWithTopic(topic: string, niche?: string) {
+  trackInteraction('analytics_topic_click', { topic })
   const query: Record<string, string> = { topic }
   if (niche) query.niche = niche
   router.push({ path: '/start', query })
@@ -683,6 +700,7 @@ function startWithTopic(topic: string, niche?: string) {
   <Teleport to="body">
     <div
       v-if="selectedPost"
+      ref="drawerRef"
       class="fixed inset-0 z-50 flex justify-end"
       role="dialog"
       aria-modal="true"

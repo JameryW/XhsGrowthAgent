@@ -1769,6 +1769,7 @@
     "publicShared": "链接已复制",
     "publicShareFailed": "复制失败，请手动复制地址",
     "publicLoginForAdvanced": "登录后查看全部技术步骤",
+    "detailRetry": "重试加载详情",
     "noFullReplay": "无完整回放",
     "phaseNoData": "该阶段暂无可展示的业务数据",
     "boundaryStart": "已到起点",
