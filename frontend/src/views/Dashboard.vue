@@ -143,6 +143,9 @@ const dashboardHero = computed(() => {
 // Celebration state
 const showCelebration = ref(false)
 const hasShownCelebration = ref(false)
+// DB-10: real artifact counts for the celebration modal.
+const celebrationCopyCount = computed(() => workflowStore.effectiveState?.content_versions?.length || 0)
+const celebrationImageCount = computed(() => workflowStore.effectiveState?.visual_plan?.image_prompts?.length || 0)
 
 // Watch for workflow completion — replay snapshots must never trigger the
 // "completed" celebration (DB-02/D4: isReplay guards all completed semantics).
@@ -534,6 +537,8 @@ onUnmounted(() => {
     <!-- Celebration Modal -->
     <CelebrationModal
       :show="showCelebration"
+      :copy-count="celebrationCopyCount"
+      :image-count="celebrationImageCount"
       @close="handleCloseCelebration"
     />
   </div>

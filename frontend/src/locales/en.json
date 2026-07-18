@@ -1266,6 +1266,8 @@
     "title": "Congratulations! Workflow Completed",
     "message": "Content published successfully",
     "contentPublished": "Published",
+    "copyCount": "Copy versions",
+    "imageCount": "Images",
     "progressComplete": "Progress Complete",
     "workflowEnd": "Workflow Done",
     "backToDashboard": "Back to Dashboard"
