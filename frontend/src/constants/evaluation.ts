@@ -6,17 +6,25 @@
 // ponytail: plain constants, no class. If per-account override lands, the
 // result payload carries the values and callers skip these defaults.
 
-export const SCORE_THRESHOLDS = {
+export const SCORE_THRESHOLDS: ScoreThresholds = {
   pass: 70,
   warn: 50,
-} as const
+}
 
 export type ScoreTier = 'pass' | 'warn' | 'fail' | 'none'
 
-export function scoreTier(score: number | null | undefined): ScoreTier {
+export interface ScoreThresholds {
+  pass: number
+  warn: number
+}
+
+export function scoreTier(
+  score: number | null | undefined,
+  thresholds: ScoreThresholds = SCORE_THRESHOLDS,
+): ScoreTier {
   if (score === null || score === undefined || !Number.isFinite(score)) return 'none'
-  if (score >= SCORE_THRESHOLDS.pass) return 'pass'
-  if (score >= SCORE_THRESHOLDS.warn) return 'warn'
+  if (score >= thresholds.pass) return 'pass'
+  if (score >= thresholds.warn) return 'warn'
   return 'fail'
 }
 

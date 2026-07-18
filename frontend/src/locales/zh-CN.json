@@ -948,6 +948,7 @@
     "audienceProfile": "观众画像",
     "audienceTrend": "观众趋势",
     "unavailable": "暂无数据",
+    "unavailableSpecific": "这篇帖子没有可用的历史笔记质量数据",
     "unknown": "未知",
     "unnamed": "未命名",
     "untitled": "未命名历史笔记",
@@ -1267,7 +1268,7 @@
     "message": "内容已成功发布",
     "contentPublished": "内容发布",
     "copyCount": "文案版本",
-    "imageCount": "配图",
+    "imageCount": "已生成图片",
     "progressComplete": "进度完成",
     "workflowEnd": "工作流结束",
     "backToDashboard": "返回仪表盘"

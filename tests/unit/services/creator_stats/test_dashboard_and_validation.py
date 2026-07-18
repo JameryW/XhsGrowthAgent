@@ -49,6 +49,49 @@ async def _seed_recent(account_id: str, note_id: str = "dash_note_1") -> None:
     )
 
 
+def test_period_summary_uses_complete_current_and_previous_windows() -> None:
+    """Period aggregates must not depend on the visible post-page limit."""
+    now = datetime(2026, 7, 18, 12, tzinfo=UTC)
+    posts = [
+        {
+            "published_at": "2026-07-18T10:00:00+00:00",
+            "views": 100,
+            "likes": 10,
+            "comments": 2,
+            "collects": 3,
+            "shares": 1,
+            "engagement_rate": 16,
+        },
+        {
+            "published_at": "2026-07-17T10:00:00+00:00",
+            "views": 200,
+            "likes": 20,
+            "comments": 4,
+            "collects": 6,
+            "shares": 2,
+            "engagement_rate": 15,
+        },
+        {
+            "published_at": "2026-07-10T10:00:00+00:00",
+            "views": 900,
+            "likes": 90,
+            "comments": 9,
+            "collects": 9,
+            "shares": 3,
+            "engagement_rate": 12,
+        },
+    ]
+
+    summary = analytics_routes._build_period_summary(posts, "weekly", now=now)
+
+    assert summary["current"]["posts"] == 2
+    assert summary["current"]["views"] == 300
+    assert summary["current"]["engagement"] == 45
+    assert summary["current"]["shares"] == 3
+    assert summary["previous"]["posts"] == 1
+    assert summary["previous"]["views"] == 900
+
+
 def _app() -> FastAPI:
     app = FastAPI()
     app.include_router(analytics_routes.router, prefix="/api/analytics")
@@ -82,6 +125,7 @@ async def test_dashboard_includes_imported_notes_for_frontend_path():
     assert note["likes"] == 400
     assert report["metrics"]["total_posts"] >= 1
     assert report["metrics"]["total_engagement"] >= 400
+    assert body["period_summary"]["current"]["posts"] >= 1
     # Insight mentions creator-center import path
     messages = " ".join(i["message"] for i in report["insights"])
     assert "创作者中心" in messages or report["metrics"]["total_posts"] > 0

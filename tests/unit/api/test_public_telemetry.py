@@ -174,6 +174,36 @@ async def test_pr1_new_categorical_fields_are_persisted_when_allowlisted(app):
 
 
 @pytest.mark.asyncio
+async def test_authenticated_period_dimensions_are_persisted_without_raw_topic(app):
+    """Analytics dimensions are categorical and raw topic text is rejected."""
+    with (
+        patch("backend.api.routes.public_telemetry.is_pool_ready", return_value=True),
+        patch(
+            "backend.api.routes.public_telemetry.record_event",
+            new_callable=AsyncMock,
+        ) as record,
+    ):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/public/telemetry",
+                json={
+                    "event": "analytics_period_change",
+                    "viewport": "desktop",
+                    "period": "weekly",
+                    "old_period": "daily",
+                    "topic": "这是一段不应进入遥测的原始内容",
+                },
+            )
+
+    assert response.status_code == 204
+    payload = record.await_args.args[0]
+    assert payload["period"] == "weekly"
+    assert payload["old_period"] == "daily"
+    assert "topic" not in payload
+
+
+@pytest.mark.asyncio
 async def test_pr1_categorical_fields_outside_allowlist_are_dropped_but_event_kept(app):
     """A bad auth_state/position/method is stripped; the event still records."""
     with (

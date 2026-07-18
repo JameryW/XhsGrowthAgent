@@ -62,34 +62,25 @@ function periodLabelFor(p: 'daily' | 'weekly' | 'monthly') {
   return t('analytics.thisWeek')
 }
 
-const totalViews = computed(() => analyticsStore.posts.reduce((sum, p) => sum + (p.views || 0), 0))
+const currentPeriod = computed(() => analyticsStore.periodSummary?.current ?? null)
+const totalViews = computed(() => currentPeriod.value?.views ?? 0)
 
-// AN-07: period-over-period delta. Bucket posts by published_at into the
-// current window and the prior window; compare totals. daily=24h, weekly=7d,
-// monthly=30d. Insufficient prior samples → '—'.
-const periodWindowMs = computed(() => {
-  if (analyticsStore.period === 'daily') return 24 * 3600_000
-  if (analyticsStore.period === 'monthly') return 30 * 24 * 3600_000
-  return 7 * 24 * 3600_000
-})
-
+// AN-07: period-over-period deltas come from the server-owned aggregate
+// contract. The visible post table is intentionally limited to 20 rows and
+// must never be used to infer a complete period or its previous window.
 const periodBuckets = computed(() => {
-  const now = Date.now()
-  const win = periodWindowMs.value
-  const curStart = now - win
-  const prevStart = now - 2 * win
-  let curViews = 0, prevViews = 0
-  let curEng = 0, prevEng = 0
-  let curPosts = 0, prevPosts = 0
-  for (const p of analyticsStore.posts) {
-    if (!p.published_at) continue
-    const ts = new Date(p.published_at).getTime()
-    if (!Number.isFinite(ts)) continue
-    const eng = (p.likes || 0) + (p.comments || 0) + (p.collects || 0)
-    if (ts >= curStart) { curViews += p.views || 0; curEng += eng; curPosts++ }
-    else if (ts >= prevStart) { prevViews += p.views || 0; prevEng += eng; prevPosts++ }
+  const summary = analyticsStore.periodSummary
+  if (!summary) {
+    return { curViews: 0, prevViews: 0, curEng: 0, prevEng: 0, curPosts: 0, prevPosts: 0 }
   }
-  return { curViews, prevViews, curEng, prevEng, curPosts, prevPosts }
+  return {
+    curViews: summary.current.views,
+    prevViews: summary.previous.views,
+    curEng: summary.current.engagement,
+    prevEng: summary.previous.engagement,
+    curPosts: summary.current.posts,
+    prevPosts: summary.previous.posts,
+  }
 })
 
 function deltaLabel(cur: number, prev: number): string {
@@ -105,10 +96,10 @@ const engDelta = computed(() => deltaLabel(periodBuckets.value.curEng, periodBuc
 const postsDelta = computed(() => deltaLabel(periodBuckets.value.curPosts, periodBuckets.value.prevPosts))
 
 const metrics = computed(() => [
-  { icon: 'Upload', title: t('analytics.postsPublished'), value: analyticsStore.posts.length, subtitle: periodLabel.value, variant: 'pink' as const, delta: postsDelta.value },
+  { icon: 'Upload', title: t('analytics.postsPublished'), value: currentPeriod.value?.posts ?? 0, subtitle: periodLabel.value, variant: 'pink' as const, delta: postsDelta.value },
   { icon: 'Eye', title: t('analytics.totalViews'), value: formatNumber(totalViews.value, locale.value), subtitle: periodLabel.value, variant: 'cyan' as const, delta: viewsDelta.value },
-  { icon: 'MessageCircle', title: t('analytics.totalEngagement'), value: formatNumber(analyticsStore.totalEngagement, locale.value), subtitle: `${analyticsStore.posts.length} ` + t('analytics.postsPublished'), variant: 'purple' as const, delta: engDelta.value },
-  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: formatPercent(analyticsStore.avgEngagementRate, locale.value), subtitle: analyticsStore.posts.length > 0 ? `${analyticsStore.posts.length} ` + t('analytics.postsPublished') : periodLabel.value, variant: 'peach' as const },
+  { icon: 'MessageCircle', title: t('analytics.totalEngagement'), value: formatNumber(currentPeriod.value?.engagement ?? 0, locale.value), subtitle: `${currentPeriod.value?.posts ?? 0} ` + t('analytics.postsPublished'), variant: 'purple' as const, delta: engDelta.value },
+  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: formatPercent(currentPeriod.value?.avg_engagement_rate ?? 0, locale.value), subtitle: (currentPeriod.value?.posts ?? 0) > 0 ? `${currentPeriod.value?.posts ?? 0} ` + t('analytics.postsPublished') : periodLabel.value, variant: 'peach' as const },
   // AN-05: fans card on the first screen (was buried in CreatorStatsPanel);
   // AI cost moved out to the demoted cost section.
   { icon: 'Users', title: t('analytics.fans'), value: fansDisplay.value, subtitle: periodLabel.value, variant: 'cyan' as const, delta: '—' },
@@ -150,15 +141,15 @@ const engagementData = computed(() => {
   const posts = analyticsStore.posts
   if (!posts.length) return []
 
-  const totals = posts.reduce(
-    (acc, post) => ({
-      likes: acc.likes + post.likes,
-      comments: acc.comments + post.comments,
-      collects: acc.collects + post.collects,
-      shares: acc.shares + (post.shares || 0),
-    }),
-    { likes: 0, comments: 0, collects: 0, shares: 0 }
-  )
+  const summary = currentPeriod.value
+  const totals = summary
+    ? {
+      likes: summary.likes,
+      comments: summary.comments,
+      collects: summary.collects,
+      shares: summary.shares,
+    }
+    : { likes: 0, comments: 0, collects: 0, shares: 0 }
 
   return [
     { category: t('analytics.categories.likes'), value: totals.likes },
@@ -261,11 +252,10 @@ function goHome() {
 // reuses the existing getCreatorNote/getCreatorNoteQuality APIs).
 const selectedPost = ref<Record<string, any> | null>(null)
 const detailNoteId = computed(() => {
-  // PostPerformance has no note_id; the panel loads notes by account and we
-  // preselect by matching title. Falls back to '' (panel picks first note).
-  const title = selectedPost.value?.title
-  if (!title) return ''
-  return title
+  // The backend's id is the imported note_id when available. Never use title
+  // matching: titles are not stable identifiers and a missing match must not
+  // silently select another note in the quality panel.
+  return typeof selectedPost.value?.id === 'string' ? selectedPost.value.id : ''
 })
 const detailAccountId = computed(() => accountsStore.activeAccountId || analyticsStore.accountId || '')
 
@@ -328,7 +318,10 @@ const insightBg = (type: string) => {
 }
 
 function startWithTopic(topic: string, niche?: string) {
-  trackInteraction('analytics_topic_click', { topic })
+  // Topic text is user content; keep it in the navigation query only and send
+  // a categorical telemetry event so browser listeners/beacons never receive
+  // raw content.
+  trackInteraction('analytics_topic_click', { method: 'click', source: 'direct' })
   const query: Record<string, string> = { topic }
   if (niche) query.niche = niche
   router.push({ path: '/start', query })

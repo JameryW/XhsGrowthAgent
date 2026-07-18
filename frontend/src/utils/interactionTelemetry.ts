@@ -80,7 +80,6 @@ const allowedKeys = new Set([
   'decision',
   'period',
   'old_period',
-  'topic',
 ])
 
 function viewportCategory(): 'mobile' | 'desktop' {

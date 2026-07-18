@@ -145,7 +145,20 @@ const showCelebration = ref(false)
 const hasShownCelebration = ref(false)
 // DB-10: real artifact counts for the celebration modal.
 const celebrationCopyCount = computed(() => workflowStore.effectiveState?.content_versions?.length || 0)
-const celebrationImageCount = computed(() => workflowStore.effectiveState?.visual_plan?.image_prompts?.length || 0)
+const celebrationImageCount = computed(() => {
+  const visualPlan = workflowStore.effectiveState?.visual_plan as {
+    image_paths?: string[]
+    generated_images?: string[]
+    image_urls?: string[]
+  } | undefined
+  // image_prompts/image_count describe a plan, not generated artifacts. Use
+  // persisted paths/URLs from the publish pipeline only; an absent list is
+  // shown as unavailable by CelebrationModal rather than inventing a count.
+  return visualPlan?.image_paths?.length
+    ?? visualPlan?.generated_images?.length
+    ?? visualPlan?.image_urls?.length
+    ?? 0
+})
 
 // Watch for workflow completion — replay snapshots must never trigger the
 // "completed" celebration (DB-02/D4: isReplay guards all completed semantics).

@@ -57,6 +57,37 @@ def _extract_eval_summary(values: dict[str, Any]) -> tuple[float | None, str | N
     return score_val, decision_val
 
 
+async def _score_thresholds(account_id: str | None = None) -> dict[str, float]:
+    """Resolve the effective evaluator thresholds for API/UI consumers.
+
+    Evaluator decisions can use per-account overrides. Returning the resolved
+    thresholds with score payloads keeps the UI's colour tiers aligned with
+    the decision that was actually produced. Database failures deliberately
+    fall back to the evaluator defaults.
+    """
+    from backend.db.evaluator_config import (
+        DEFAULT_PASS_THRESHOLD,
+        DEFAULT_REJECT_THRESHOLD,
+        load_weights,
+    )
+
+    defaults = {
+        "pass": float(DEFAULT_PASS_THRESHOLD),
+        "warn": float(DEFAULT_REJECT_THRESHOLD),
+    }
+    if not is_pool_ready():
+        return defaults
+    try:
+        weights = await load_weights(account_id)
+    except Exception:
+        logger.exception("failed to resolve evaluator thresholds for account=%s", account_id)
+        return defaults
+    return {
+        "pass": float(weights.pass_threshold),
+        "warn": float(weights.reject_threshold),
+    }
+
+
 @router.get("/list")
 async def list_evaluated_workflows(
     request: Request,
@@ -71,24 +102,37 @@ async def list_evaluated_workflows(
     装载 selected_title / overall_score / decision → 切片分页。
 
     分页注意：has_evaluation 过滤在 checkpoint 读取后进行，DB 端的 limit/offset
-    无法精确对应过滤后页码。为此从 DB 多取 (limit+offset) 条作为缓冲，
-    再对过滤后结果做 limit/offset 切片。绝大多数账号工作流总量小，缓冲足够。
+    无法精确对应过滤后页码，因此先分页读取完整 DB 来源，再对过滤结果切片。
     """
     if not is_pool_ready():
         return success(data={"workflows": [], "total": 0, "limit": limit, "offset": offset})
 
     graph = request.app.state.graph
 
-    # Over-fetch from DB to compensate for post-filter shrinkage.
-    # limit+offset is the worst case (every DB row has an evaluation).
-    db_limit = limit + offset
-    rows, _db_total = await db_list(
-        account_id=account_id,
-        limit=db_limit,
-        offset=0,
-    )
+    # Evaluation presence is discovered from checkpoints after the DB query,
+    # so a single ``limit + offset`` fetch can under-fill a page when many
+    # workflows have no evaluation. Read DB pages until the filtered source is
+    # exhausted (or the adapter stops making progress), then apply the
+    # requested offset/limit to the enriched list.
+    db_page_size = 100
+    rows: list[Any] = []
+    db_offset = 0
+    db_total = 0
+    while True:
+        batch, db_total = await db_list(
+            account_id=account_id,
+            limit=db_page_size,
+            offset=db_offset,
+        )
+        if not batch:
+            break
+        rows.extend(batch)
+        db_offset += len(batch)
+        if db_offset >= db_total or len(batch) < db_page_size:
+            break
 
     enriched: list[dict[str, Any]] = []
+    threshold_cache: dict[str, dict[str, float]] = {}
     for row in rows:
         config = {"configurable": {"thread_id": row.thread_id}}
         try:
@@ -109,6 +153,10 @@ async def list_evaluated_workflows(
         if not isinstance(copy_content, dict):
             copy_content = {}
         selected_title = copy_content.get("selected_title") or ""
+        account_key = (row.account_id or "").strip()
+        if account_key not in threshold_cache:
+            threshold_cache[account_key] = await _score_thresholds(account_key)
+        thresholds = threshold_cache[account_key]
 
         enriched.append(
             {
@@ -123,6 +171,8 @@ async def list_evaluated_workflows(
                 "selected_title": selected_title,
                 "overall_score": overall_score,
                 "decision": decision,
+                "pass_threshold": thresholds["pass"],
+                "warn_threshold": thresholds["warn"],
             }
         )
 
@@ -153,11 +203,13 @@ async def get_evaluation_result(thread_id: str, request: Request) -> ApiResponse
         raise WorkflowNotFoundError(thread_id)
 
     evaluation = values.get("evaluation_result") or {}
+    thresholds = await _score_thresholds(str(values.get("account_id") or ""))
     return success(
         data={
             "thread_id": thread_id,
             "has_evaluation": bool(evaluation),
             "evaluation_result": evaluation,
+            "thresholds": thresholds,
         }
     )
 
@@ -191,6 +243,7 @@ async def run_evaluation(thread_id: str, request: Request) -> ApiResponse[Any]:
     result = await _evaluator(eval_state, store=store)  # type: ignore[arg-type]
 
     evaluation = result.get("evaluation_result") or {}
+    thresholds = await _score_thresholds(str(values.get("account_id") or ""))
 
     # Persist evaluation_result to state (does not advance the graph)
     await graph.aupdate_state(
@@ -203,6 +256,7 @@ async def run_evaluation(thread_id: str, request: Request) -> ApiResponse[Any]:
             "thread_id": thread_id,
             "status": "evaluated",
             "evaluation_result": evaluation,
+            "thresholds": thresholds,
         }
     )
 
@@ -283,6 +337,7 @@ async def run_note_evaluation(ref: NoteEvaluationRequest, request: Request) -> A
     # tolerates None (skips memory recall), same as free.py:evaluate_draft.
     result = await _evaluator(eval_state, store=store)  # type: ignore[arg-type]
     evaluation = result.get("evaluation_result") or {}
+    thresholds = await _score_thresholds(account_id)
 
     logger.info(
         "note evaluated: account=%s note=%s overall=%s decision=%s",
@@ -296,6 +351,7 @@ async def run_note_evaluation(ref: NoteEvaluationRequest, request: Request) -> A
             "account_id": account_id,
             "note_id": note_id,
             "evaluation_result": evaluation,
+            "thresholds": thresholds,
         }
     )
 

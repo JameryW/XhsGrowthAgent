@@ -60,6 +60,7 @@ async def test_summary_keeps_cached_as_an_anonymous_dimension():
     sql = cursor.execute.await_args.args[0]
     assert "cached," in sql
     assert "view_mode, cached" in sql
+    assert "decision, period, old_period" in sql
 
 
 @pytest.mark.asyncio
@@ -83,3 +84,5 @@ async def test_ensure_tables_backfills_cached_column_for_old_deploys():
     # every column listed in _ADD_COLUMN_SQL ran
     assert len(add_column_sqls) == len(_ADD_COLUMN_SQL)
     assert any("ADD COLUMN IF NOT EXISTS cached BOOLEAN" in sql for sql in add_column_sqls)
+    assert any("ADD COLUMN IF NOT EXISTS decision TEXT" in sql for sql in add_column_sqls)
+    assert any("ADD COLUMN IF NOT EXISTS old_period TEXT" in sql for sql in add_column_sqls)

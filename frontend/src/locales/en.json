@@ -948,6 +948,7 @@
     "audienceProfile": "Audience profile",
     "audienceTrend": "Audience trend",
     "unavailable": "Unavailable",
+    "unavailableSpecific": "No historical note-quality data is available for this post",
     "unknown": "Unknown",
     "unnamed": "Unnamed",
     "untitled": "Untitled historical note",
@@ -1267,7 +1268,7 @@
     "message": "Content published successfully",
     "contentPublished": "Published",
     "copyCount": "Copy versions",
-    "imageCount": "Images",
+    "imageCount": "Generated images",
     "progressComplete": "Progress Complete",
     "workflowEnd": "Workflow Done",
     "backToDashboard": "Back to Dashboard"

@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS public_ux_events (
     auth_state      TEXT,
     position        TEXT,
     method          TEXT,
+    decision        TEXT,
+    period          TEXT,
+    old_period      TEXT,
     received_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 """
@@ -68,6 +71,9 @@ _ADD_COLUMN_SQL = (
     "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS auth_state TEXT",
     "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS position TEXT",
     "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS method TEXT",
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS decision TEXT",
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS period TEXT",
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS old_period TEXT",
 )
 
 
@@ -102,11 +108,11 @@ async def record_event(event: Mapping[str, Any]) -> bool:
                 phase, error_type, view_mode, step_number, count_value,
                 restored, cached, has_steps, has_result, authenticated,
                 has_public_id, has_step, duration_ms,
-                auth_state, position, method
+                auth_state, position, method, decision, period, old_period
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s
+                %s, %s, %s, %s, %s, %s
             )
             """,
             (
@@ -132,6 +138,9 @@ async def record_event(event: Mapping[str, Any]) -> bool:
                 event.get("auth_state"),
                 event.get("position"),
                 event.get("method"),
+                event.get("decision"),
+                event.get("period"),
+                event.get("old_period"),
             ),
         )
         # Keep the receiver bounded without retaining a visitor identifier.
@@ -178,6 +187,9 @@ async def summarize_events(days: int = 7, event_name: str | None = None) -> list
                     error_type,
                     view_mode,
                     cached,
+                    decision,
+                    period,
+                    old_period,
                     COUNT(*)::INTEGER AS event_count,
                     COUNT(duration_ms)::INTEGER AS measured_count,
                     percentile_cont(0.50) WITHIN GROUP (ORDER BY duration_ms)
@@ -187,7 +199,7 @@ async def summarize_events(days: int = 7, event_name: str | None = None) -> list
                 FROM public_ux_events
                 WHERE {" AND ".join(conditions)}
                 GROUP BY event_name, viewport, source, status, mode, phase,
-                         error_type, view_mode, cached
+                         error_type, view_mode, cached, decision, period, old_period
                 ORDER BY event_count DESC, event_name ASC
                 """,
             params,

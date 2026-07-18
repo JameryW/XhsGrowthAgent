@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from fastapi import APIRouter, Query, Request
@@ -78,17 +78,24 @@ async def _get_completed_workflows(
     if is_pool_ready():
         # Include completed and analyzing workflows (both have publish_result)
         for status_filter in ("completed", "analyzing"):
-            rows, _ = await db_list(status=status_filter, limit=100)
-            for row in rows:
-                if account_id and row.account_id != account_id:
-                    continue
-                try:
-                    config = {"configurable": {"thread_id": row.thread_id}}
-                    state = await graph.aget_state(config)
-                    if state.values:
-                        results.append({**row.to_dict(), "_state": state.values})
-                except Exception:
-                    continue
+            offset = 0
+            while True:
+                rows, total = await db_list(status=status_filter, limit=100, offset=offset)
+                if not rows:
+                    break
+                for row in rows:
+                    if account_id and row.account_id != account_id:
+                        continue
+                    try:
+                        config = {"configurable": {"thread_id": row.thread_id}}
+                        state = await graph.aget_state(config)
+                        if state.values:
+                            results.append({**row.to_dict(), "_state": state.values})
+                    except Exception:
+                        continue
+                offset += len(rows)
+                if offset >= total or len(rows) < 100:
+                    break
 
     _set_cached(cache_key, results)
     return results
@@ -104,28 +111,90 @@ def _period_cutoff_hours(period: str) -> int:
         return 30 * 24
 
 
+def _period_window(period: str) -> timedelta:
+    """Return the duration used by the current and previous analytics windows."""
+    return timedelta(hours=_period_cutoff_hours(period))
+
+
+def _parse_published_at(value: Any) -> datetime | None:
+    """Parse a post timestamp into an aware UTC datetime."""
+    if value is None or value == "":
+        return None
+    try:
+        published = datetime.fromisoformat(str(value).replace(" ", "T"))
+    except (ValueError, AttributeError, TypeError):
+        return None
+    if published.tzinfo is None:
+        published = published.replace(tzinfo=UTC)
+    return published.astimezone(UTC)
+
+
+def _split_period_posts(
+    posts: list[dict[str, Any]], period: str, *, now: datetime | None = None
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split posts into complete current and previous windows.
+
+    The split is deliberately performed before response pagination.  This
+    keeps period-over-period aggregates correct even when the visible post
+    table is limited to the newest 20 rows.
+    """
+    end = (now or datetime.now(UTC)).astimezone(UTC)
+    window = _period_window(period)
+    current_start = end - window
+    previous_start = current_start - window
+    current: list[dict[str, Any]] = []
+    previous: list[dict[str, Any]] = []
+    for post in posts:
+        published = _parse_published_at(post.get("published_at"))
+        if published is None:
+            continue
+        if current_start <= published <= end:
+            current.append(post)
+        elif previous_start <= published < current_start:
+            previous.append(post)
+    return current, previous
+
+
 def _filter_by_period(posts: list[dict[str, Any]], period: str) -> list[dict[str, Any]]:
     """Filter posts by time period.
 
     Posts without a parseable ``published_at`` are excluded (period-scoped
     analytics must not treat undated rows as always-in-range).
     """
-    now = datetime.now(UTC)
-    cutoff_hours = _period_cutoff_hours(period)
-    filtered = []
-    for p in posts:
-        published = p.get("published_at")
-        if published is None or published == "":
-            continue
-        try:
-            pub = datetime.fromisoformat(str(published).replace(" ", "T"))
-            if pub.tzinfo is None:
-                pub = pub.replace(tzinfo=UTC)
-            if (now - pub).total_seconds() / 3600 <= cutoff_hours:
-                filtered.append(p)
-        except (ValueError, AttributeError, TypeError):
-            continue
-    return filtered
+    current, _previous = _split_period_posts(posts, period)
+    return current
+
+
+def _period_metrics(posts: list[dict[str, Any]]) -> dict[str, float | int]:
+    """Aggregate a complete period without applying the visible table limit."""
+    likes = sum(int(p.get("likes") or 0) for p in posts)
+    comments = sum(int(p.get("comments") or 0) for p in posts)
+    collects = sum(int(p.get("collects") or 0) for p in posts)
+    shares = sum(int(p.get("shares") or 0) for p in posts)
+    engagement = likes + comments + collects
+    rates = [float(p.get("engagement_rate") or 0.0) for p in posts]
+    return {
+        "posts": len(posts),
+        "views": sum(int(p.get("views") or 0) for p in posts),
+        "likes": likes,
+        "comments": comments,
+        "collects": collects,
+        "shares": shares,
+        "engagement": engagement,
+        "avg_engagement_rate": round(sum(rates) / len(rates), 1) if rates else 0.0,
+    }
+
+
+def _build_period_summary(
+    posts: list[dict[str, Any]], period: str, *, now: datetime | None = None
+) -> dict[str, Any]:
+    """Build the server-owned current/previous aggregate contract."""
+    current, previous = _split_period_posts(posts, period, now=now)
+    return {
+        "period": period,
+        "current": _period_metrics(current),
+        "previous": _period_metrics(previous),
+    }
 
 
 def _as_percent_engagement_rate(value: Any) -> float:
@@ -469,11 +538,14 @@ async def get_dashboard(
         if topic:
             topics[topic] = topics.get(topic, 0) + 1
 
-    # Merge imported creator-center stats (same as /performance)
-    posts = await _merge_imported_posts(account_id, posts, limit=max(limit, 50))
+    # Merge the full imported snapshot before computing period aggregates. The
+    # visible table remains paginated below, but current/previous totals must
+    # not depend on its ``limit``.
+    posts = await _merge_imported_posts(account_id, posts, limit=500)
     for t, c in _topics_from_imported(posts).items():
         topics[t] = topics.get(t, 0) + c
 
+    period_summary = _build_period_summary(posts, period)
     filtered_posts = _filter_by_period(posts, period)
     report = _build_growth_report(account_id, period, filtered_posts, topics)
 
@@ -485,7 +557,7 @@ async def get_dashboard(
         "account_id": account_id,
         "period": period,
         "posts": sorted_posts,
-        "total": len(sorted_posts),
+        "total": len(filtered_posts),
         "fetched_at": datetime.now().isoformat(),
     }
 
@@ -535,7 +607,15 @@ async def get_dashboard(
         "updated_at": datetime.now().isoformat(),
     }
 
-    return success(data={"report": report, "performance": performance, "costs": costs})
+    return success(
+        data={
+            "report": report,
+            "performance": performance,
+            "costs": costs,
+            # Server-owned aggregate contract for period-over-period cards.
+            "period_summary": period_summary,
+        }
+    )
 
 
 # ── Creator-center stats import + creative suggestions ──────────────────────

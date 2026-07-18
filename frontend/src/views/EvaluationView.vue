@@ -16,7 +16,12 @@ import type {
   EvaluationResultResponse,
   EvaluationTrendResponse,
 } from '@/types/evaluation'
-import { scoreTier as scoreTierOf, RADAR_EXCLUDED_DIMENSIONS, DIMENSION_LABEL_KEYS } from '@/constants/evaluation'
+import {
+  SCORE_THRESHOLDS,
+  scoreTier as scoreTierOf,
+  RADAR_EXCLUDED_DIMENSIONS,
+  DIMENSION_LABEL_KEYS,
+} from '@/constants/evaluation'
 import { formatShortDate } from '@/utils/format'
 
 const { t, locale } = useI18n()
@@ -77,7 +82,9 @@ async function loadList(reset = false) {
   }
 }
 
-const hasMore = computed(() => listOffset.value + listItems.value.length < listTotal.value)
+// listItems already contains every page loaded so far; adding the current
+// offset double-counts after the first load and can hide remaining pages.
+const hasMore = computed(() => listItems.value.length < listTotal.value)
 
 function loadMore() {
   listOffset.value += listLimit
@@ -170,8 +177,11 @@ function decisionLabel(decision: string): string {
 
 // EV-04: thresholds live in constants/evaluation.ts; map the tier to the
 // CSS class used by list rows and the detail badge.
-function scoreTierClass(score: number | null | undefined): string {
-  switch (scoreTierOf(score)) {
+function scoreTierClass(
+  score: number | null | undefined,
+  thresholds = SCORE_THRESHOLDS,
+): string {
+  switch (scoreTierOf(score, thresholds)) {
     case 'pass': return 'score-pass'
     case 'warn': return 'score-warn'
     case 'fail': return 'score-fail'
@@ -207,14 +217,16 @@ const trendLoading = ref(false)
 const trendError = ref<string | null>(null)
 
 const trendData = computed(() =>
-  (trend.value?.points || []).map((p) => ({
-    // EV-13: localized date instead of raw slice(5,16).
-    date: formatShortDate(p.created_at, locale.value),
-    value: p.overall_score,
-  })),
+  (trend.value?.points || [])
+    .filter((p) => p.overall_score != null)
+    .map((p) => ({
+      // EV-13: localized date instead of raw slice(5,16).
+      date: formatShortDate(p.created_at, locale.value),
+      value: p.overall_score as number,
+    })),
 )
 
-const hasTrend = computed(() => !!trend.value && trend.value.points.length > 0)
+const hasTrend = computed(() => trendData.value.length > 0)
 
 async function loadTrend() {
   trendLoading.value = true
@@ -238,6 +250,7 @@ const detailError = ref<string | null>(null)
 
 const ev = computed(() => result.value?.evaluation_result)
 const hasResult = computed(() => !!result.value && result.value.has_evaluation && !!ev.value)
+const scoreThresholds = computed(() => result.value?.thresholds ?? SCORE_THRESHOLDS)
 
 async function loadDetail(threadId: string) {
   detailLoading.value = true
@@ -265,7 +278,7 @@ watch(
   { immediate: true },
 )
 
-const scoreClass = computed(() => scoreTierClass(ev.value?.overall_score))
+const scoreClass = computed(() => scoreTierClass(ev.value?.overall_score, scoreThresholds.value))
 // EV-07: dimension count is data-driven, not hardcoded "9-Dimension".
 const radarDimensionCount = computed(() =>
   (ev.value?.dimensions || []).filter((d) => !RADAR_EXCLUDED_DIMENSIONS.includes(d.dimension)).length,
@@ -279,8 +292,10 @@ const biasSeverity = computed(() => {
 const biasCardClass = computed(() => {
   const sev = biasSeverity.value
   if (sev == null || !Number.isFinite(sev)) return ''
-  if (sev >= 0.7) return 'bias-card--high'
-  if (sev >= 0.4) return 'bias-card--med'
+  // bias_severity is a 0–100 score (higher means worse), matching the
+  // evaluator prompt/state contract.
+  if (sev >= 70) return 'bias-card--high'
+  if (sev >= 40) return 'bias-card--med'
   return ''
 })
 
@@ -446,7 +461,10 @@ onMounted(() => {
             </div>
           </div>
           <div class="item-right">
-            <span class="item-score" :class="scoreTierClass(w.overall_score)">
+            <span
+              class="item-score"
+              :class="scoreTierClass(w.overall_score, { pass: w.pass_threshold ?? SCORE_THRESHOLDS.pass, warn: w.warn_threshold ?? SCORE_THRESHOLDS.warn })"
+            >
               {{ w.overall_score == null ? '—' : w.overall_score.toFixed(1) }}
             </span>
             <span class="decision-badge" :class="decisionBadgeClass(w.decision)">
@@ -550,10 +568,7 @@ onMounted(() => {
                 {{ dimLabel(d.dimension) }}
                 <span v-if="d.is_blocking" class="blocking-tag">{{ t('evaluation.blocking') }}</span>
               </span>
-              <span
-                class="dim-score"
-                :class="d.score >= 70 ? 'score-pass' : d.score >= 50 ? 'score-warn' : 'score-fail'"
-              >
+              <span class="dim-score" :class="scoreTierClass(d.score, scoreThresholds)">
                 {{ d.score?.toFixed(1) }}
               </span>
             </div>

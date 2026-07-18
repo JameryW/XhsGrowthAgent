@@ -93,6 +93,7 @@ _CATEGORY_ALLOWLISTS = {
     "method": {"click", "keys", "prev", "next"},
     "decision": {"approved", "needs_revision", "rejected", "all"},
     "period": {"daily", "weekly", "monthly"},
+    "old_period": {"daily", "weekly", "monthly"},
 }
 
 _RATE_LIMIT = 120
@@ -128,6 +129,11 @@ class PublicTelemetryEvent(BaseModel):
     auth_state: str | None = Field(default=None, max_length=16)
     position: str | None = Field(default=None, max_length=16)
     method: str | None = Field(default=None, max_length=16)
+    # Authenticated-domain dimensions.  Keep these categorical; raw content
+    # (including topic/title text) is intentionally not part of the DTO.
+    decision: str | None = Field(default=None, max_length=32)
+    period: str | None = Field(default=None, max_length=16)
+    old_period: str | None = Field(default=None, max_length=16)
 
 
 def _client_key(request: Request) -> str:

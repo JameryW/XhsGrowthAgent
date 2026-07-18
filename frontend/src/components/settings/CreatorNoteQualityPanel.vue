@@ -125,6 +125,37 @@ watch(
   { immediate: true }
 )
 
+// A drill-down supplies a stable note id. When that id changes while the
+// drawer stays mounted, select the corresponding note or show an unavailable
+// state; never retain or fall back to the first note from the account.
+watch(
+  () => props.noteId,
+  (noteId) => {
+    if (!notes.value.length) return
+    const requested = noteId.trim()
+    if (!requested) {
+      if (!selectedNoteId.value) {
+        const first = notes.value[0]?.note_id || ''
+        if (first) void selectNote(first)
+      }
+      return
+    }
+    if (!notes.value.some(note => note.note_id === requested)) {
+      requestGeneration += 1
+      selectedNoteId.value = ''
+      selectedNote.value = null
+      quality.value = null
+      isLoadingDetail.value = false
+      errorMessage.value = ''
+      rqgmGeneration += 1
+      rqgmResult.value = null
+      rqgmError.value = ''
+      return
+    }
+    if (requested !== selectedNoteId.value) void selectNote(requested)
+  },
+)
+
 async function loadNotes(accountId = props.accountId) {
   const generation = ++requestGeneration
   notes.value = []
@@ -142,8 +173,9 @@ async function loadNotes(accountId = props.accountId) {
     const stats = await getCreatorStats(accountId, 200)
     if (generation !== requestGeneration) return
     notes.value = (stats.notes || []).filter(note => Boolean(note.note_id))
-    const preselect = props.noteId && notes.value.some(n => n.note_id === props.noteId)
-      ? props.noteId
+    const requested = props.noteId.trim()
+    const preselect = requested
+      ? (notes.value.some(n => n.note_id === requested) ? requested : '')
       : (notes.value[0]?.note_id || '')
     selectedNoteId.value = preselect
     if (selectedNoteId.value) {
@@ -529,6 +561,9 @@ function rqgmDimLabel(dim: string): string {
           </section>
         </div>
 
+        <div v-else-if="props.noteId" class="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-5 text-center text-xs text-slate-400 dark:border-slate-700/50 dark:bg-slate-800/60">
+          {{ t('creatorNoteQuality.unavailableSpecific') }}
+        </div>
         <div v-else-if="selectedSummary" class="rounded-xl border border-slate-100 bg-slate-50/70 p-5 text-center text-xs text-slate-400 dark:border-slate-700/50 dark:bg-slate-800/60">
           {{ t('creatorNoteQuality.loadingDetail') }}
         </div>

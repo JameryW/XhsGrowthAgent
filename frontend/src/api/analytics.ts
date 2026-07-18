@@ -1,5 +1,10 @@
 import client from './client'
-import type { GrowthReport, PerformanceData, CostData } from '@/types/analytics'
+import type {
+  GrowthReport,
+  PerformanceData,
+  CostData,
+  AnalyticsPeriodSummary,
+} from '@/types/analytics'
 import type { NicheResolution } from './accounts'
 
 // 获取增长报告
@@ -29,7 +34,12 @@ export async function getDashboard(
   accountId: string,
   period: string = 'weekly',
   limit: number = 20
-): Promise<{ report: GrowthReport; performance: PerformanceData; costs: CostData }> {
+): Promise<{
+  report: GrowthReport
+  performance: PerformanceData
+  costs: CostData
+  period_summary: AnalyticsPeriodSummary
+}> {
   return client.get(`/analytics/dashboard/${accountId}`, { params: { period, limit } })
 }
 

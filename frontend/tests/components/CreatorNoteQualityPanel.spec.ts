@@ -125,4 +125,40 @@ describe('CreatorNoteQualityPanel', () => {
     expect(mockedGetCreatorNote).toHaveBeenLastCalledWith('account-1', 'n2')
     expect(mockedGetCreatorNoteQuality).toHaveBeenLastCalledWith('account-1', 'n2', 'zh-CN')
   })
+
+  it('does not silently fall back to the first note for an unmatched drill-down id', async () => {
+    const wrapper = mount(CreatorNoteQualityPanel, {
+      props: { accountId: 'account-1', noteId: 'workflow-post-without-import' },
+      global: {
+        stubs: {
+          AppIcon: true,
+          NeonButton: { template: '<button><slot /></button>' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(mockedGetCreatorNote).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('这篇帖子没有可用的历史笔记质量数据')
+    expect(wrapper.text()).not.toContain('第一篇正文')
+  })
+
+  it('reacts to a changed note id while the drawer remains mounted', async () => {
+    const wrapper = mount(CreatorNoteQualityPanel, {
+      props: { accountId: 'account-1', noteId: 'n1' },
+      global: {
+        stubs: {
+          AppIcon: true,
+          NeonButton: { template: '<button><slot /></button>' },
+        },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('第一篇正文')
+
+    await wrapper.setProps({ noteId: 'n2' })
+    await flushPromises()
+    expect(wrapper.text()).toContain('第二篇正文')
+    expect(mockedGetCreatorNote).toHaveBeenLastCalledWith('account-1', 'n2')
+  })
 })

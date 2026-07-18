@@ -19,6 +19,8 @@ export interface GrowthReport {
 
 // 帖子表现
 export interface PostPerformance {
+  /** Workflow publish id or imported creator-center note id. */
+  id?: string
   title: string
   likes: number
   comments: number
@@ -27,12 +29,33 @@ export interface PostPerformance {
   views: number
   engagement_rate: number
   published_at: string
+  /** Source of the row; imported rows are eligible for note-quality drill-down. */
+  source?: string
 }
 
 // 性能数据
 export interface PerformanceData {
   account_id: string
   posts: PostPerformance[]
+  /** Number of all posts in the selected period, independent of page limit. */
+  total?: number
+}
+
+export interface AnalyticsPeriodMetrics {
+  posts: number
+  views: number
+  likes: number
+  comments: number
+  collects: number
+  shares: number
+  engagement: number
+  avg_engagement_rate: number
+}
+
+export interface AnalyticsPeriodSummary {
+  period: 'daily' | 'weekly' | 'monthly'
+  current: AnalyticsPeriodMetrics
+  previous: AnalyticsPeriodMetrics
 }
 
 // 成本数据

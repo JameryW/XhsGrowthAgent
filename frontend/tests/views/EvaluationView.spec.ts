@@ -103,4 +103,48 @@ describe('EvaluationView', () => {
     expect(wrapper.text()).toContain(tt('evaluation.trend.failed'))
     expect(wrapper.text()).toContain(tt('evaluation.trend.retry'))
   })
+
+  it('uses effective per-account thresholds for score tiers', async () => {
+    const { getEvaluationResult, getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
+    const result = JSON.parse(JSON.stringify(baseResult))
+    result.evaluation_result.overall_score = 72
+    result.thresholds = { pass: 80, warn: 60 }
+    ;(getEvaluationResult as any).mockResolvedValue(result)
+    ;(getEvaluationList as any).mockResolvedValue({ workflows: [], total: 0 })
+    ;(getEvaluationTrend as any).mockResolvedValue({ db_ready: true, points: [], dim_averages: {} })
+
+    const wrapper = await mountEval({ threadId: 't-thresholds' })
+    const score = wrapper.find('.score-value')
+    expect(score.classes()).toContain('score-warn')
+    expect(score.classes()).not.toContain('score-pass')
+  })
+
+  it('keeps loading more while the accumulated list is below total', async () => {
+    const { getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
+    const firstPage = Array.from({ length: 20 }, (_, i) => ({
+      thread_id: `t-${i}`,
+      account_id: 'a',
+      status: 'completed',
+      phase: 'reviewing',
+      label: '',
+      workflow_mode: 'trend',
+      updated_at: '2026-07-01T00:00:00Z',
+      selected_title: `标题${i}`,
+      overall_score: 70,
+      decision: 'approved',
+    }))
+    const secondPage = firstPage.map((item, i) => ({ ...item, thread_id: `t-${i + 20}`, selected_title: `标题${i + 20}` }))
+    ;(getEvaluationList as any)
+      .mockResolvedValueOnce({ workflows: firstPage, total: 40 })
+      .mockResolvedValueOnce({ workflows: secondPage, total: 40 })
+    ;(getEvaluationTrend as any).mockResolvedValue({ db_ready: true, points: [], dim_averages: {} })
+
+    const wrapper = await mountEval({}, { tab: 'workflow' })
+    const loadMore = () => wrapper.find('.load-more-btn')
+    expect(loadMore().exists()).toBe(true)
+    await loadMore().trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.load-more-btn').exists()).toBe(false)
+    expect(wrapper.text()).toContain('标题39')
+  })
 })
