@@ -329,17 +329,7 @@ function scoreClass(s: number): string {
 }
 
 // Dimension i18n label keys (mirror EvaluationView)
-const DIMENSION_LABEL_KEYS: Record<string, string> = {
-  copywriting: 'evaluation.dim.copywriting',
-  visual: 'evaluation.dim.visual',
-  compliance: 'evaluation.dim.compliance',
-  reach: 'evaluation.dim.reach',
-  audience: 'evaluation.dim.audience',
-  ai_taste: 'evaluation.dim.ai_taste',
-  image_quality: 'evaluation.dim.image_quality',
-  commercial_tone: 'evaluation.dim.commercial_tone',
-  bias_check: 'evaluation.dim.bias_check',
-}
+import { DIMENSION_LABEL_KEYS } from '@/constants/evaluation'
 
 function dimLabel(dim: string): string {
   return t(DIMENSION_LABEL_KEYS[dim] ?? 'evaluation.dim.unknown', { dim })

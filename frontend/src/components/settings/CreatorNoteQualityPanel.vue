@@ -243,18 +243,7 @@ function dimensionLabel(key: string): string {
   return translated === translationKey ? key : translated
 }
 
-const RQGM_DIM_KEYS: Record<string, string> = {
-  copywriting: 'evaluation.dim.copywriting',
-  visual: 'evaluation.dim.visual',
-  compliance: 'evaluation.dim.compliance',
-  reach: 'evaluation.dim.reach',
-  audience: 'evaluation.dim.audience',
-  ai_taste: 'evaluation.dim.ai_taste',
-  image_quality: 'evaluation.dim.image_quality',
-  commercial_tone: 'evaluation.dim.commercial_tone',
-  altruism: 'evaluation.dim.altruism',
-  bias_check: 'evaluation.dim.bias_check',
-}
+import { DIMENSION_LABEL_KEYS as RQGM_DIM_KEYS } from '@/constants/evaluation'
 
 function rqgmDimLabel(dim: string): string {
   return t(RQGM_DIM_KEYS[dim] ?? 'evaluation.dim.unknown', { dim })

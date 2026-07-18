@@ -2108,9 +2108,15 @@
     "initialHint": "输入工作流 ID 查看其创作质量评估结果",
     "overall": "综合分",
     "radarTitle": "9 维评分雷达",
+    "radarTitleDynamic": "{count} 维评分雷达",
     "radarSeries": "质量评分",
     "dimensionsTitle": "维度详情",
     "hintsTitle": "修订建议",
+    "action": {
+      "revise": "去审核页改稿",
+      "viewWorkflow": "查看工作流",
+      "copyId": "复制线程 ID"
+    },
     "blocking": "硬性失败",
     "error": {
       "emptyId": "请输入工作流 thread_id",
@@ -2140,12 +2146,15 @@
       "unknown": "{dim}"
     },
     "bias": {
-      "title": "对抗偏倚检测"
+      "title": "对抗偏倚检测",
+      "severity": "严重度"
     },
     "trend": {
       "title": "评估历史趋势",
       "loading": "加载趋势中…",
       "empty": "暂无历史评估数据",
+      "failed": "趋势加载失败",
+      "retry": "重试",
       "dimAverages": "维度均值："
     }
   }

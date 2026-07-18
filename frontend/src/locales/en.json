@@ -2109,9 +2109,15 @@
     "initialHint": "Enter a workflow ID to view its creation-quality evaluation",
     "overall": "Overall",
     "radarTitle": "9-Dimension Radar",
+    "radarTitleDynamic": "{count}-Dimension Radar",
     "radarSeries": "Quality Score",
     "dimensionsTitle": "Dimension Details",
     "hintsTitle": "Revision Hints",
+    "action": {
+      "revise": "Revise on review page",
+      "viewWorkflow": "View workflow",
+      "copyId": "Copy thread id"
+    },
     "blocking": "BLOCKING",
     "error": {
       "emptyId": "Please enter a workflow thread_id",
@@ -2141,12 +2147,15 @@
       "unknown": "{dim}"
     },
     "bias": {
-      "title": "Adversarial Bias Check"
+      "title": "Adversarial Bias Check",
+      "severity": "Severity"
     },
     "trend": {
       "title": "Evaluation Trend",
       "loading": "Loading trend…",
       "empty": "No historical evaluation data yet",
+      "failed": "Trend failed to load",
+      "retry": "Retry",
       "dimAverages": "Dimension averages:"
     }
   }
