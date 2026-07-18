@@ -1,5 +1,6 @@
 // frontend/src/composables/useAnimation.ts
 import { ref, onUnmounted } from 'vue'
+import { prefersReducedMotion } from './useReducedMotion'
 
 /**
  * Composable for animation utilities
@@ -63,6 +64,15 @@ export function useAnimation() {
 
       // Handle zero duration case
       if (duration === 0) {
+        onUpdate(end)
+        isAnimating.value = false
+        resolve()
+        return
+      }
+
+      // INF-05: respect prefers-reduced-motion — jump to the final value
+      // instead of animating.
+      if (prefersReducedMotion.value) {
         onUpdate(end)
         isAnimating.value = false
         resolve()

@@ -43,6 +43,11 @@ export const useRealtimeStore = defineStore("realtime", () => {
     wsService.disconnect()
   }
 
+  /** Manual reconnect after auto-reconnect exhaustion (DB-09). */
+  function reconnect(): void {
+    wsService.manualReconnect()
+  }
+
   /**
    * 订阅工作流
    */
@@ -69,6 +74,7 @@ export const useRealtimeStore = defineStore("realtime", () => {
     lastRecoveredSeq,
     connect,
     disconnect,
+    reconnect,
     subscribeWorkflow,
     unsubscribeWorkflow,
     getLastSeq,

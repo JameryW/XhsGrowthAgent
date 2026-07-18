@@ -264,7 +264,11 @@
       "replayTitle": "正在查看历史快照",
       "replayDescription": "当前是工作流的历史节点；退出回放模式即可返回实时工作流。",
       "replayStatus": "历史快照",
-      "completedCta": "查看历史记录"
+      "completedCta": "查看历史记录",
+      "todoLabel": "待办",
+      "todoBrief": "填写需求",
+      "todoAction": "去决策",
+      "todoReview": "去审核"
     },
     "nextAction": {
       "reviewTitle": "内容已准备好，等待审核",
@@ -275,7 +279,8 @@
       "continueCta": "继续处理",
       "startTitle": "准备好创作第一篇笔记了吗？",
       "startDesc": "选择创作模式和账号，开始一次引导式创作。",
-      "startCta": "开始创作"
+      "startCta": "开始创作",
+      "retryCta": "重试"
     },
     "header": {
       "status": "工作流状态",
@@ -709,14 +714,20 @@
     "totalEngagement": "总互动量",
     "avgEngagementRate": "平均互动率",
     "aiCost": "AI 费用 (USD)",
-    "today": "今日",
-    "thisWeek": "本周",
-    "thisMonth": "本月",
+    "today": "近 24 小时",
+    "thisWeek": "近 7 天",
+    "thisMonth": "近 30 天",
     "thisYear": "全年",
     "interactionTrend": "互动趋势",
+    "recentPerformanceTrend": "近期表现趋势",
     "engagementBreakdown": "互动构成",
     "recentPosts": "最近帖子表现",
     "top10": "TOP 10",
+    "vsPrevPeriod": "vs 上一周期",
+    "fans": "粉丝数",
+    "bestPostLegend": "最佳表现笔记",
+    "showAll": "查看全部 {count} 篇",
+    "showLess": "收起",
     "cost": {
       "title": "成本明细",
       "subtitle": "LLM 调用成本统计",
@@ -740,6 +751,10 @@
       "collects": "收藏",
       "engagementRate": "互动率",
       "publishedAt": "发布时间"
+    },
+    "detail": {
+      "title": "笔记详情",
+      "untitled": "无标题笔记"
     },
     "weekdays": {
       "mon": "周一",
@@ -774,7 +789,8 @@
       "title": "数据加载失败",
       "description": "无法获取分析数据，请检查网络连接后重试。",
       "retry": "重试"
-    }
+    },
+    "staleNotice": "数据刷新失败，当前展示的是上次成功获取的数据。"
   },
   "creatorStats": {
     "title": "创作者中心数据",
@@ -802,6 +818,7 @@
     "importedSection": "已导入概览",
     "noImported": "尚未导入真实笔记数据，请先点击上方浏览器导入。",
     "period": {
+      "creatorCenterLabel": "创作者中心数据周期",
       "last7Days": "近 7 天",
       "last30Days": "近 30 天",
       "last90Days": "近 90 天"
@@ -931,6 +948,7 @@
     "audienceProfile": "观众画像",
     "audienceTrend": "观众趋势",
     "unavailable": "暂无数据",
+    "unavailableSpecific": "这篇帖子没有可用的历史笔记质量数据",
     "unknown": "未知",
     "unnamed": "未命名",
     "untitled": "未命名历史笔记",
@@ -958,6 +976,7 @@
       "sectionHint": "RQGM 评审面板对笔记内容打分；历史笔记缺生成侧元数据，视觉维度为参考分",
       "run": "RQGM 评估",
       "running": "评估中…",
+      "costHint": "约需 10–30 秒，会产生 LLM 费用",
       "overall": "综合分",
       "radarTitle": "维度雷达",
       "dimensionsTitle": "维度详情",
@@ -975,6 +994,7 @@
     }
   },
   "versionCompare": {
+    "predictedScore": "预测评分",
     "analysisReport": "优化分析报告",
     "gapAnalysis": "差距分析",
     "gapsFound": "发现差距",
@@ -1020,6 +1040,7 @@
     "connecting": "连接中...",
     "reconnecting": "重连中...",
     "disconnected": "已断开",
+    "reconnect": "重新连接",
     "seqNumber": "消息序列号",
     "recoveryTitle": "已恢复实时同步",
     "recoveryMessage": "已补齐 {count} 条丢失事件（seq: {seq}）"
@@ -1246,6 +1267,8 @@
     "title": "恭喜！工作流完成",
     "message": "内容已成功发布",
     "contentPublished": "内容发布",
+    "copyCount": "文案版本",
+    "imageCount": "已生成图片",
     "progressComplete": "进度完成",
     "workflowEnd": "工作流结束",
     "backToDashboard": "返回仪表盘"
@@ -1748,8 +1771,26 @@
     "publicShareStep": "复制当前步骤链接",
     "publicShared": "链接已复制",
     "publicShareFailed": "复制失败，请手动复制地址",
-    "publicLoginForAdvanced": "登录后查看全部技术步骤"
-    ,"publicErrorCategory": {
+    "publicLoginForAdvanced": "登录后查看全部技术步骤",
+    "detailRetry": "重试加载详情",
+    "noFullReplay": "无完整回放",
+    "phaseNoData": "该阶段暂无可展示的业务数据",
+    "boundaryStart": "已到起点",
+    "boundaryEnd": "已到终点",
+    "resultExpand": "展开全文",
+    "resultCollapse": "收起",
+    "copyResult": "复制结果",
+    "copied": "已复制",
+    "phaseImportance": {
+      "scouting": "这一步定位选题方向与目标受众，决定后续创作的基础。",
+      "planning": "这一步确定内容策略与角度，是文案与视觉的依据。",
+      "briefing": "这一步解析 Brief 要求，把需求转化为可执行的创作方向。",
+      "creating": "这一步生成标题、正文与视觉方案，是案例的核心产出。",
+      "reviewing": "这一步经人工审核确认内容质量与合规，是发布前的最后一关。",
+      "publishing": "这一步把内容发布到小红书，标志创作进入投放阶段。",
+      "analyzing": "这一步追踪内容表现，为下一轮创作积累数据。"
+    },
+    "publicErrorCategory": {
       "authorization": "发布授权需要处理",
       "timeout": "这一步执行超时",
       "rate_limited": "服务暂时达到调用限制",
@@ -2059,6 +2100,8 @@
     "list": {
       "subtitle": "查看有评估结果的工作流，点击进入详情",
       "searchPlaceholder": "搜索标题 / thread_id / 账号",
+      "filterLabel": "按决策筛选",
+      "filterAll": "全部",
       "loading": "加载列表中…",
       "loadError": "加载列表失败",
       "empty": "暂无有评估结果的工作流",
@@ -2073,9 +2116,15 @@
     "initialHint": "输入工作流 ID 查看其创作质量评估结果",
     "overall": "综合分",
     "radarTitle": "9 维评分雷达",
+    "radarTitleDynamic": "{count} 维评分雷达",
     "radarSeries": "质量评分",
     "dimensionsTitle": "维度详情",
     "hintsTitle": "修订建议",
+    "action": {
+      "revise": "去审核页改稿",
+      "viewWorkflow": "查看工作流",
+      "copyId": "复制线程 ID"
+    },
     "blocking": "硬性失败",
     "error": {
       "emptyId": "请输入工作流 thread_id",
@@ -2105,12 +2154,15 @@
       "unknown": "{dim}"
     },
     "bias": {
-      "title": "对抗偏倚检测"
+      "title": "对抗偏倚检测",
+      "severity": "严重度"
     },
     "trend": {
       "title": "评估历史趋势",
       "loading": "加载趋势中…",
       "empty": "暂无历史评估数据",
+      "failed": "趋势加载失败",
+      "retry": "重试",
       "dimAverages": "维度均值："
     }
   }

@@ -4,6 +4,11 @@ import { pinia } from '@/stores/pinia'
 
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior(_to, _from, savedPosition) {
+    // SH-06: restore scroll position on back/forward (e.g. list -> replay -> back).
+    if (savedPosition) return savedPosition
+    return { top: 0 }
+  },
   routes: [
     {
       path: '/',

@@ -18,9 +18,13 @@ const props = withDefaults(defineProps<{
   accountId: string
   accountName?: string
   refreshToken?: number
+  // AN-08: preselect a specific note for drill-down. When set, overrides the
+  // default "first note" selection after notes load.
+  noteId?: string
 }>(), {
   accountName: '',
   refreshToken: 0,
+  noteId: '',
 })
 
 const { t, locale } = useI18n()
@@ -121,6 +125,37 @@ watch(
   { immediate: true }
 )
 
+// A drill-down supplies a stable note id. When that id changes while the
+// drawer stays mounted, select the corresponding note or show an unavailable
+// state; never retain or fall back to the first note from the account.
+watch(
+  () => props.noteId,
+  (noteId) => {
+    if (!notes.value.length) return
+    const requested = noteId.trim()
+    if (!requested) {
+      if (!selectedNoteId.value) {
+        const first = notes.value[0]?.note_id || ''
+        if (first) void selectNote(first)
+      }
+      return
+    }
+    if (!notes.value.some(note => note.note_id === requested)) {
+      requestGeneration += 1
+      selectedNoteId.value = ''
+      selectedNote.value = null
+      quality.value = null
+      isLoadingDetail.value = false
+      errorMessage.value = ''
+      rqgmGeneration += 1
+      rqgmResult.value = null
+      rqgmError.value = ''
+      return
+    }
+    if (requested !== selectedNoteId.value) void selectNote(requested)
+  },
+)
+
 async function loadNotes(accountId = props.accountId) {
   const generation = ++requestGeneration
   notes.value = []
@@ -138,7 +173,11 @@ async function loadNotes(accountId = props.accountId) {
     const stats = await getCreatorStats(accountId, 200)
     if (generation !== requestGeneration) return
     notes.value = (stats.notes || []).filter(note => Boolean(note.note_id))
-    selectedNoteId.value = notes.value[0]?.note_id || ''
+    const requested = props.noteId.trim()
+    const preselect = requested
+      ? (notes.value.some(n => n.note_id === requested) ? requested : '')
+      : (notes.value[0]?.note_id || '')
+    selectedNoteId.value = preselect
     if (selectedNoteId.value) {
       await loadSelectedNote(generation)
     }
@@ -236,18 +275,7 @@ function dimensionLabel(key: string): string {
   return translated === translationKey ? key : translated
 }
 
-const RQGM_DIM_KEYS: Record<string, string> = {
-  copywriting: 'evaluation.dim.copywriting',
-  visual: 'evaluation.dim.visual',
-  compliance: 'evaluation.dim.compliance',
-  reach: 'evaluation.dim.reach',
-  audience: 'evaluation.dim.audience',
-  ai_taste: 'evaluation.dim.ai_taste',
-  image_quality: 'evaluation.dim.image_quality',
-  commercial_tone: 'evaluation.dim.commercial_tone',
-  altruism: 'evaluation.dim.altruism',
-  bias_check: 'evaluation.dim.bias_check',
-}
+import { DIMENSION_LABEL_KEYS as RQGM_DIM_KEYS } from '@/constants/evaluation'
 
 function rqgmDimLabel(dim: string): string {
   return t(RQGM_DIM_KEYS[dim] ?? 'evaluation.dim.unknown', { dim })
@@ -474,6 +502,8 @@ function rqgmDimLabel(dim: string): string {
                 <AppIcon name="Sparkles" size="xs" variant="cyan" />
                 <span>{{ rqgmRunning ? t('creatorNoteQuality.rqgm.running') : t('creatorNoteQuality.rqgm.run') }}</span>
               </NeonButton>
+              <!-- EV-15: set expectations for manual RQGM (runtime + LLM cost). -->
+              <p class="text-[11px] text-slate-400 dark:text-slate-500">{{ t('creatorNoteQuality.rqgm.costHint') }}</p>
             </div>
 
             <p v-if="rqgmError" class="mt-3 break-words text-[11px] leading-4 text-rose-600">{{ rqgmError }}</p>
@@ -531,6 +561,9 @@ function rqgmDimLabel(dim: string): string {
           </section>
         </div>
 
+        <div v-else-if="props.noteId" class="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-5 text-center text-xs text-slate-400 dark:border-slate-700/50 dark:bg-slate-800/60">
+          {{ t('creatorNoteQuality.unavailableSpecific') }}
+        </div>
         <div v-else-if="selectedSummary" class="rounded-xl border border-slate-100 bg-slate-50/70 p-5 text-center text-xs text-slate-400 dark:border-slate-700/50 dark:bg-slate-800/60">
           {{ t('creatorNoteQuality.loadingDetail') }}
         </div>

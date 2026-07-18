@@ -141,11 +141,8 @@ const workflowPhases = computed<PhaseNode[]>(() => {
   return phases
 })
 
-// Progress tracking (replay-aware)
-const workflowProgress = computed(() => {
-  const es = workflowStore.effectiveState
-  return es?.progress_percent ?? workflowStore.progressPercent
-})
+// Progress tracking — DB-03 unified displayProgress
+const workflowProgress = computed(() => workflowStore.displayProgress)
 
 const currentAgent = computed(() => {
   const status = workflowStore.currentStatus

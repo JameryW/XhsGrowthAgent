@@ -1,7 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import * as analyticsApi from '@/api/analytics'
-import type { GrowthReport, PerformanceData, CostData, PostPerformance } from '@/types/analytics'
+import type {
+  GrowthReport,
+  PerformanceData,
+  CostData,
+  PostPerformance,
+  AnalyticsPeriodSummary,
+} from '@/types/analytics'
 import { useRealtimeStore } from './realtime'
 import { useToastStore } from './toast'
 import { useAccountsStore } from './accounts'
@@ -16,6 +22,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   const growthReport = ref<GrowthReport | null>(null)
   const performanceData = ref<PerformanceData | null>(null)
   const costData = ref<CostData | null>(null)
+  const periodSummary = ref<AnalyticsPeriodSummary | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
 
@@ -79,12 +86,13 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     isLoading.value = true
     error.value = null
     try {
-      const { report, performance, costs } = await analyticsApi.getDashboard(
+      const { report, performance, costs, period_summary } = await analyticsApi.getDashboard(
         accountId.value, period.value, 20
       )
       growthReport.value = report
       performanceData.value = performance
       costData.value = costs
+      periodSummary.value = period_summary ?? null
     } catch (e: any) {
       error.value = e.message
     } finally {
@@ -136,6 +144,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     growthReport,
     performanceData,
     costData,
+    periodSummary,
     isLoading,
     error,
     posts,

@@ -41,6 +41,9 @@ export default defineConfig({
         manualChunks: {
           'vue-vendor': ['vue', 'vue-router', 'pinia'],
           'axios': ['axios'],
+          // INF-10: split echarts into its own chunk so Analytics/Evaluation
+          // route chunks don't each bundle the full chart lib.
+          echarts: ['echarts', 'vue-echarts'],
         },
       },
     },

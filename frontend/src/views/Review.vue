@@ -17,6 +17,7 @@ import { getEvaluationResult } from '@/api/evaluation'
 import type { ContentStatus } from '@/types'
 import type { WorkflowListItem, WorkflowStateResponse } from '@/types/workflow'
 import type { EvaluationResult } from '@/types/evaluation'
+import { SCORE_THRESHOLDS, scoreTier, type ScoreThresholds, DIMENSION_LABEL_KEYS } from '@/constants/evaluation'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -257,6 +258,7 @@ const cardRegenerating = ref(new Set<string>())
 
 // ── Per-card evaluation result state ──
 const cardEvaluation = ref(new Map<string, EvaluationResult | null>())
+const cardEvaluationThresholds = ref(new Map<string, ScoreThresholds>())
 const cardEvaluationLoading = ref(new Set<string>())
 
 function getET(tid: string): string { return cardEditTitle.value.get(tid) ?? '' }
@@ -296,10 +298,14 @@ async function loadEvaluation(tid: string) {
     const resp = await getEvaluationResult(tid, { suppressToast: true })
     cardEvaluation.value.set(tid, resp.has_evaluation ? resp.evaluation_result : null)
     cardEvaluation.value = new Map(cardEvaluation.value)
+    cardEvaluationThresholds.value.set(tid, resp.thresholds ?? SCORE_THRESHOLDS)
+    cardEvaluationThresholds.value = new Map(cardEvaluationThresholds.value)
   } catch {
     // Silently skip — evaluation may not exist yet
     cardEvaluation.value.set(tid, null)
     cardEvaluation.value = new Map(cardEvaluation.value)
+    cardEvaluationThresholds.value.set(tid, SCORE_THRESHOLDS)
+    cardEvaluationThresholds.value = new Map(cardEvaluationThresholds.value)
   } finally {
     cardEvaluationLoading.value.delete(tid)
   }
@@ -307,6 +313,10 @@ async function loadEvaluation(tid: string) {
 
 function getEvaluation(tid: string): EvaluationResult | null {
   return cardEvaluation.value.get(tid) ?? null
+}
+
+function getEvaluationThresholds(tid: string): ScoreThresholds {
+  return cardEvaluationThresholds.value.get(tid) ?? SCORE_THRESHOLDS
 }
 
 // Decision badge color tier
@@ -322,25 +332,11 @@ function decisionClass(d: string): string {
   return 'decision-rejected'
 }
 
-function scoreClass(s: number): string {
-  if (s >= 70) return 'score-pass'
-  if (s >= 50) return 'score-warn'
-  return 'score-fail'
+function scoreClass(s: number | null | undefined, thresholds: ScoreThresholds = SCORE_THRESHOLDS): string {
+  return `score-${scoreTier(s, thresholds)}`
 }
 
 // Dimension i18n label keys (mirror EvaluationView)
-const DIMENSION_LABEL_KEYS: Record<string, string> = {
-  copywriting: 'evaluation.dim.copywriting',
-  visual: 'evaluation.dim.visual',
-  compliance: 'evaluation.dim.compliance',
-  reach: 'evaluation.dim.reach',
-  audience: 'evaluation.dim.audience',
-  ai_taste: 'evaluation.dim.ai_taste',
-  image_quality: 'evaluation.dim.image_quality',
-  commercial_tone: 'evaluation.dim.commercial_tone',
-  bias_check: 'evaluation.dim.bias_check',
-}
-
 function dimLabel(dim: string): string {
   return t(DIMENSION_LABEL_KEYS[dim] ?? 'evaluation.dim.unknown', { dim })
 }
@@ -407,6 +403,8 @@ async function handleRegenerate(tid: string) {
     cardEditInitialized.value.delete(tid)
     cardEvaluation.value.delete(tid)
     cardEvaluation.value = new Map(cardEvaluation.value)
+    cardEvaluationThresholds.value.delete(tid)
+    cardEvaluationThresholds.value = new Map(cardEvaluationThresholds.value)
   } catch (e: any) {
     toastStore.error(t('review.editCopy.regenerateFailed'), e.message)
   } finally {
@@ -923,7 +921,7 @@ const handleCancelConfirm = () => {
                       <div class="rounded-md p-3 bg-white/60 border-l-2 border-rose-400 flex flex-col gap-2 dark:bg-slate-900/70">
                         <div class="flex items-baseline gap-1.5">
                           <span class="text-[10px] text-slate-500">{{ t('review.evaluation.overall') }}</span>
-                          <span class="text-2xl font-extrabold leading-none" :class="scoreClass(getEvaluation(wf.thread_id)!.overall_score)">
+                          <span class="text-2xl font-extrabold leading-none" :class="scoreClass(getEvaluation(wf.thread_id)!.overall_score, getEvaluationThresholds(wf.thread_id))">
                             {{ getEvaluation(wf.thread_id)!.overall_score?.toFixed(1) }}
                           </span>
                         </div>
@@ -961,7 +959,7 @@ const handleCancelConfirm = () => {
                             {{ dimLabel(d.dimension) }}
                             <span v-if="d.is_blocking" class="text-[8px] px-1 py-0.5 rounded bg-rose-100 text-rose-600 font-bold">{{ t('review.evaluation.blocking') }}</span>
                           </span>
-                          <span class="text-xs font-bold" :class="scoreClass(d.score)">{{ d.score?.toFixed(1) }}</span>
+                          <span class="text-xs font-bold" :class="scoreClass(d.score, getEvaluationThresholds(wf.thread_id))">{{ d.score?.toFixed(1) }}</span>
                         </div>
                         <p v-if="d.rationale" class="text-[10px] text-slate-500 mt-0.5 leading-relaxed">{{ d.rationale }}</p>
                         <ul v-if="d.issues?.length" class="mt-0.5 pl-3 space-y-0.5">

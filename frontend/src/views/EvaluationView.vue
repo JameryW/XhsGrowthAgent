@@ -8,12 +8,21 @@ import EvaluationRadar from '@/components/charts/EvaluationRadar.vue'
 import TrendChart from '@/components/charts/TrendChart.vue'
 import CreatorQualityWorkspace from '@/components/evaluation/CreatorQualityWorkspace.vue'
 import { getEvaluationList, getEvaluationResult, getEvaluationTrend } from '@/api/evaluation'
+import { EvaluationSkeleton } from '@/components/skeletons'
+import { trackInteraction } from '@/utils/interactionTelemetry'
 import type {
   EvaluationListItem,
   EvaluationListResponse,
   EvaluationResultResponse,
   EvaluationTrendResponse,
 } from '@/types/evaluation'
+import {
+  SCORE_THRESHOLDS,
+  scoreTier as scoreTierOf,
+  RADAR_EXCLUDED_DIMENSIONS,
+  DIMENSION_LABEL_KEYS,
+} from '@/constants/evaluation'
+import { formatShortDate } from '@/utils/format'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -73,18 +82,22 @@ async function loadList(reset = false) {
   }
 }
 
-const hasMore = computed(() => listOffset.value + listItems.value.length < listTotal.value)
+// listItems already contains every page loaded so far; adding the current
+// offset double-counts after the first load and can hide remaining pages.
+const hasMore = computed(() => listItems.value.length < listTotal.value)
 
 function loadMore() {
   listOffset.value += listLimit
   loadList(false)
 }
 
-// 前端过滤：标题 + thread_id + account_id
+// 前端过滤：标题 + thread_id + account_id + decision (EV-09)
+const decisionFilter = ref<string>('all')
 const filteredItems = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return listItems.value
   return listItems.value.filter((w) => {
+    if (decisionFilter.value !== 'all' && w.decision !== decisionFilter.value) return false
+    if (!q) return true
     const title = (w.selected_title || '').toLowerCase()
     const tid = (w.thread_id || '').toLowerCase()
     const acc = (w.account_id || '').toLowerCase()
@@ -93,11 +106,33 @@ const filteredItems = computed(() => {
 })
 
 function openDetail(threadId: string) {
+  trackInteraction('evaluation_drilldown', { method: 'click' })
   router.push({ name: 'evaluation-detail', params: { threadId }, query: { tab: 'workflow' } })
+}
+
+function setDecisionFilter(opt: string) {
+  decisionFilter.value = opt
+  trackInteraction('evaluation_filter_change', { decision: opt })
+}
+
+function evaluationActionCta(target: 'review' | 'dashboard') {
+  trackInteraction('evaluation_decision_cta', { decision: ev.value?.decision ?? '', method: target })
+  if (target === 'review' && detailThreadId.value) router.push(`/review/${detailThreadId.value}`)
+  else if (detailThreadId.value) router.push(`/dashboard/${detailThreadId.value}`)
 }
 
 function backToList() {
   router.push({ name: 'evaluation', query: { tab: 'workflow' } })
+}
+
+// EV-01: copy the evaluated thread id for support/handoff.
+async function copyThreadId() {
+  if (!detailThreadId.value) return
+  try {
+    await navigator.clipboard.writeText(detailThreadId.value)
+  } catch {
+    // clipboard may be unavailable; silent — the id is still visible.
+  }
 }
 
 // 列表页首次挂载加载
@@ -140,10 +175,18 @@ function decisionLabel(decision: string): string {
   return t(DECISION_KEYS[decision] ?? 'evaluation.decision.unknown')
 }
 
-function scoreTier(score: number): string {
-  if (score >= 70) return 'score-pass'
-  if (score >= 50) return 'score-warn'
-  return 'score-fail'
+// EV-04: thresholds live in constants/evaluation.ts; map the tier to the
+// CSS class used by list rows and the detail badge.
+function scoreTierClass(
+  score: number | null | undefined,
+  thresholds = SCORE_THRESHOLDS,
+): string {
+  switch (scoreTierOf(score, thresholds)) {
+    case 'pass': return 'score-pass'
+    case 'warn': return 'score-warn'
+    case 'fail': return 'score-fail'
+    default: return 'score-none'
+  }
 }
 
 function formatDateTime(iso: string): string {
@@ -169,22 +212,30 @@ function phaseLabel(phase: string): string {
 // ════════════════════════════════════════════════════════════
 const trend = ref<EvaluationTrendResponse | null>(null)
 const trendLoading = ref(false)
+// EV-02: distinguish trend fetch failure from genuine no-data, instead of
+// folding both into "no historical data".
+const trendError = ref<string | null>(null)
 
 const trendData = computed(() =>
-  (trend.value?.points || []).map((p) => ({
-    date: (p.created_at || '').slice(5, 16).replace('T', ' '),
-    value: p.overall_score,
-  })),
+  (trend.value?.points || [])
+    .filter((p) => p.overall_score != null)
+    .map((p) => ({
+      // EV-13: localized date instead of raw slice(5,16).
+      date: formatShortDate(p.created_at, locale.value),
+      value: p.overall_score as number,
+    })),
 )
 
-const hasTrend = computed(() => !!trend.value && trend.value.points.length > 0)
+const hasTrend = computed(() => trendData.value.length > 0)
 
 async function loadTrend() {
   trendLoading.value = true
+  trendError.value = null
   try {
     trend.value = await getEvaluationTrend(undefined, 100, { suppressToast: true })
-  } catch {
-    trend.value = { db_ready: false, points: [], dim_averages: {} }
+  } catch (e: any) {
+    // Keep any previously-loaded trend visible; surface the failure separately.
+    trendError.value = e?.message ?? 'error'
   } finally {
     trendLoading.value = false
   }
@@ -199,6 +250,7 @@ const detailError = ref<string | null>(null)
 
 const ev = computed(() => result.value?.evaluation_result)
 const hasResult = computed(() => !!result.value && result.value.has_evaluation && !!ev.value)
+const scoreThresholds = computed(() => result.value?.thresholds ?? SCORE_THRESHOLDS)
 
 async function loadDetail(threadId: string) {
   detailLoading.value = true
@@ -226,9 +278,25 @@ watch(
   { immediate: true },
 )
 
-const scoreClass = computed(() => {
-  const s = ev.value?.overall_score ?? 0
-  return scoreTier(s)
+const scoreClass = computed(() => scoreTierClass(ev.value?.overall_score, scoreThresholds.value))
+// EV-07: dimension count is data-driven, not hardcoded "9-Dimension".
+const radarDimensionCount = computed(() =>
+  (ev.value?.dimensions || []).filter((d) => !RADAR_EXCLUDED_DIMENSIONS.includes(d.dimension)).length,
+)
+// EV-06: bias severity lives on the bias_check dimension, not the top-level
+// result. Escalate the alert visually when severity is high.
+const biasSeverity = computed(() => {
+  const dim = (ev.value?.dimensions || []).find((d) => d.dimension === 'bias_check')
+  return dim?.bias_severity ?? null
+})
+const biasCardClass = computed(() => {
+  const sev = biasSeverity.value
+  if (sev == null || !Number.isFinite(sev)) return ''
+  // bias_severity is a 0–100 score (higher means worse), matching the
+  // evaluator prompt/state contract.
+  if (sev >= 70) return 'bias-card--high'
+  if (sev >= 40) return 'bias-card--med'
+  return ''
 })
 
 const detailDecisionClass = computed(() => {
@@ -242,19 +310,6 @@ const DETAIL_DECISION_KEYS: Record<string, string> = {
   approved: 'evaluation.decision.approved',
   needs_revision: 'evaluation.decision.needs_revision',
   rejected: 'evaluation.decision.rejected',
-}
-
-const DIMENSION_LABEL_KEYS: Record<string, string> = {
-  copywriting: 'evaluation.dim.copywriting',
-  visual: 'evaluation.dim.visual',
-  compliance: 'evaluation.dim.compliance',
-  reach: 'evaluation.dim.reach',
-  audience: 'evaluation.dim.audience',
-  ai_taste: 'evaluation.dim.ai_taste',
-  image_quality: 'evaluation.dim.image_quality',
-  commercial_tone: 'evaluation.dim.commercial_tone',
-  altruism: 'evaluation.dim.altruism',
-  bias_check: 'evaluation.dim.bias_check',
 }
 
 function dimLabel(dim: string): string {
@@ -326,13 +381,33 @@ onMounted(() => {
               v-for="(v, k) in trend.dim_averages"
               :key="k"
               class="dim-avg-chip"
-              :class="scoreTier(v)"
+              :class="scoreTierClass(v)"
             >
               {{ k }}: {{ v.toFixed(1) }}
             </span>
           </div>
         </template>
+        <!-- EV-02: fetch failure is its own state with a retry, not "no data". -->
+        <div v-else-if="trendError" class="trend-error">
+          <span>{{ t('evaluation.trend.failed') }}</span>
+          <button type="button" class="retry-btn min-h-[36px]" @click="loadTrend">{{ t('evaluation.trend.retry') }}</button>
+        </div>
         <div v-else class="trend-empty">{{ t('evaluation.trend.empty') }}</div>
+      </section>
+
+      <!-- EV-09: decision filter chips -->
+      <section class="filter-chips" role="group" :aria-label="t('evaluation.list.filterLabel')">
+        <button
+          v-for="opt in ['all', 'approved', 'needs_revision', 'rejected']"
+          :key="opt"
+          type="button"
+          class="filter-chip min-h-[36px]"
+          :class="{ 'filter-chip--active': decisionFilter === opt }"
+          :aria-pressed="decisionFilter === opt"
+          @click="setDecisionFilter(opt)"
+        >
+          {{ opt === 'all' ? t('evaluation.list.filterAll') : decisionLabel(opt) }}
+        </button>
       </section>
 
       <!-- 搜索框 -->
@@ -353,10 +428,8 @@ onMounted(() => {
         <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 px-3 text-xs font-medium hover:bg-rose-100" @click="loadList(true)">{{ t('evaluation.error.retry') }}</button>
       </div>
 
-      <!-- 加载中（首次） -->
-      <div v-if="listLoading && listItems.length === 0" class="trend-loading">
-        {{ t('evaluation.list.loading') }}
-      </div>
+      <!-- 加载中（首次） — EV-11/INF-02: structured skeleton -->
+      <EvaluationSkeleton v-if="listLoading && listItems.length === 0" />
 
       <!-- 空列表 -->
       <div
@@ -388,8 +461,11 @@ onMounted(() => {
             </div>
           </div>
           <div class="item-right">
-            <span class="item-score" :class="scoreTier(w.overall_score ?? 0)">
-              {{ (w.overall_score ?? 0).toFixed(1) }}
+            <span
+              class="item-score"
+              :class="scoreTierClass(w.overall_score, { pass: w.pass_threshold ?? SCORE_THRESHOLDS.pass, warn: w.warn_threshold ?? SCORE_THRESHOLDS.warn })"
+            >
+              {{ w.overall_score == null ? '—' : w.overall_score.toFixed(1) }}
             </span>
             <span class="decision-badge" :class="decisionBadgeClass(w.decision)">
               {{ decisionLabel(w.decision) }}
@@ -418,6 +494,16 @@ onMounted(() => {
         tone="purple"
         title-id="evaluation-detail-title"
       >
+        <!-- EV-01: deep-link context — show the evaluated thread + decision so a
+             user arriving at /evaluation/:threadId knows what was judged. -->
+        <template v-if="detailThreadId" #meta>
+          <span class="font-mono">{{ detailThreadId.slice(-8) }}</span>
+          <span v-if="ev" class="decision-badge" :class="detailDecisionClass">{{ t(DETAIL_DECISION_KEYS[ev.decision] ?? 'evaluation.decision.unknown') }}</span>
+          <button type="button" class="copy-thread min-h-[36px] px-2 text-xs rounded-md border border-slate-200 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800" @click="copyThreadId">
+            <AppIcon name="Copy" size="sm" />
+            {{ t('evaluation.action.copyId') }}
+          </button>
+        </template>
         <template #actions>
           <button type="button" class="back-btn min-h-11" @click="backToList">
             <AppIcon name="ArrowLeft" />
@@ -427,7 +513,7 @@ onMounted(() => {
       </PageHeader>
 
       <!-- 加载中 -->
-      <div v-if="detailLoading" class="trend-loading">{{ t('evaluation.searching') }}</div>
+      <EvaluationSkeleton v-if="detailLoading" />
 
       <!-- 错误 -->
       <div v-else-if="detailError" class="error-card" role="alert">
@@ -449,7 +535,7 @@ onMounted(() => {
         <section class="overview-card">
           <div class="score-block">
             <span class="score-label">{{ t('evaluation.overall') }}</span>
-            <span class="score-value" :class="scoreClass">{{ ev.overall_score?.toFixed(1) }}</span>
+            <span class="score-value" :class="scoreClass">{{ ev.overall_score == null ? '—' : ev.overall_score.toFixed(1) }}</span>
           </div>
           <div class="decision-badge" :class="detailDecisionClass">
             {{ t(DETAIL_DECISION_KEYS[ev.decision] ?? 'evaluation.decision.unknown') }}
@@ -459,15 +545,16 @@ onMounted(() => {
 
         <!-- 雷达图 -->
         <section class="radar-card">
-          <h3 class="card-title">{{ t('evaluation.radarTitle') }}</h3>
+          <h3 class="card-title">{{ t('evaluation.radarTitleDynamic', { count: radarDimensionCount }) }}</h3>
           <EvaluationRadar :dimensions="ev.dimensions || []" />
         </section>
 
         <!-- 偏倚告警 -->
-        <section v-if="ev.bias_warning" class="bias-card">
+        <section v-if="ev.bias_warning" class="bias-card" :class="biasCardClass">
           <div class="bias-header">
             <AppIcon name="AlertTriangle" />
             <span>{{ t('evaluation.bias.title') }}</span>
+            <span v-if="biasSeverity != null" class="bias-severity">{{ t('evaluation.bias.severity') }}: {{ biasSeverity.toFixed(1) }}</span>
           </div>
           <p class="bias-text">{{ ev.bias_warning }}</p>
         </section>
@@ -481,10 +568,7 @@ onMounted(() => {
                 {{ dimLabel(d.dimension) }}
                 <span v-if="d.is_blocking" class="blocking-tag">{{ t('evaluation.blocking') }}</span>
               </span>
-              <span
-                class="dim-score"
-                :class="d.score >= 70 ? 'score-pass' : d.score >= 50 ? 'score-warn' : 'score-fail'"
-              >
+              <span class="dim-score" :class="scoreTierClass(d.score, scoreThresholds)">
                 {{ d.score?.toFixed(1) }}
               </span>
             </div>
@@ -501,6 +585,28 @@ onMounted(() => {
           <ul class="hints-list">
             <li v-for="(h, i) in ev.revision_hints" :key="i">{{ h }}</li>
           </ul>
+        </section>
+
+        <!-- EV-03: action outlet — route to revise/approve by decision -->
+        <section v-if="detailThreadId" class="action-card">
+          <button
+            v-if="ev.decision === 'needs_revision' || ev.decision === 'rejected'"
+            type="button"
+            class="action-cta"
+            @click="evaluationActionCta('review')"
+          >
+            <AppIcon name="Pencil" size="sm" />
+            {{ t('evaluation.action.revise') }}
+          </button>
+          <button
+            v-else-if="ev.decision === 'approved'"
+            type="button"
+            class="action-cta"
+            @click="evaluationActionCta('dashboard')"
+          >
+            <AppIcon name="Workflow" size="sm" />
+            {{ t('evaluation.action.viewWorkflow') }}
+          </button>
         </section>
       </div>
     </template>
@@ -558,6 +664,12 @@ onMounted(() => {
 
 /* ── 列表页搜索栏 ── */
 .search-bar { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+.filter-chips { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.filter-chip { padding: 0.25rem 0.875rem; border-radius: 9999px; border: 1px solid #e2e8f0; background: #fff; color: #475569; font-size: 0.75rem; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+.filter-chip:hover { background: #f8fafc; }
+.filter-chip--active { background: #0d9488; border-color: #0d9488; color: #fff; }
+:global(.dark) .filter-chip { background: #1e293b; border-color: #334155; color: #cbd5e1; }
+:global(.dark) .filter-chip--active { background: #0d9488; border-color: #0d9488; color: #fff; }
 .thread-input {
   flex: 1; min-width: 240px; padding: 0.625rem 0.875rem;
   border: 1px solid #e2e8f0; border-radius: 0.5rem; font-size: 0.875rem;
@@ -616,7 +728,7 @@ onMounted(() => {
 /* ── 详情结果（复用原样式）── */
 .result-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; }
 @media (min-width: 768px) { .result-grid { grid-template-columns: 1fr 1fr; } }
-.overview-card, .radar-card, .bias-card, .dims-card, .hints-card {
+.overview-card, .radar-card, .bias-card, .dims-card, .hints-card, .action-card {
   background: #fff; border: 1px solid #e2e8f0; border-radius: 0.75rem; padding: 1.25rem;
 }
 .overview-card { display: flex; flex-direction: column; gap: 0.75rem; align-items: flex-start; }
@@ -634,8 +746,14 @@ onMounted(() => {
 
 .card-title { font-size: 0.9rem; font-weight: 600; color: #1e293b; margin: 0 0 0.75rem; }
 .bias-card { border-color: #fde68a; background: #fffbeb; }
+.bias-card--med { border-color: #fdba74; background: #fff7ed; }
+.bias-card--high { border-color: #f87171; background: #fef2f2; box-shadow: 0 0 0 1px #f87171 inset; }
 .bias-header { display: flex; align-items: center; gap: 0.5rem; color: #b45309; font-weight: 600; font-size: 0.875rem; margin-bottom: 0.5rem; }
+.bias-card--high .bias-header { color: #b91c1c; }
+.bias-severity { margin-left: auto; font-size: 0.75rem; font-weight: 700; padding: 0.125rem 0.5rem; border-radius: 0.375rem; background: rgba(0,0,0,0.06); }
+.bias-card--high .bias-severity { background: #dc2626; color: #fff; }
 .bias-text { font-size: 0.8125rem; color: #92400e; margin: 0; }
+.bias-card--high .bias-text { color: #991b1b; }
 
 .dim-row { padding: 0.625rem 0; border-bottom: 1px solid #f1f5f9; }
 .dim-row:last-child { border-bottom: none; }
@@ -649,12 +767,18 @@ onMounted(() => {
 
 .hints-list { margin: 0; padding-left: 1.1rem; }
 .hints-list li { font-size: 0.8125rem; color: #334155; margin-bottom: 0.4rem; line-height: 1.5; }
+.action-card { display: flex; gap: 0.75rem; }
+.action-cta { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 44px; padding: 0.5rem 1.25rem; border-radius: 0.625rem; background: #0d9488; color: #fff; font-weight: 600; font-size: 0.875rem; border: 0; cursor: pointer; transition: background 0.15s; }
+.action-cta:hover { background: #0f766e; }
 
 .radar-card { grid-column: 1 / -1; }
 @media (min-width: 768px) { .radar-card { grid-column: auto; } }
 
 .trend-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 1rem; }
 .trend-loading, .trend-empty { font-size: 0.8125rem; color: #94a3b8; padding: 1.5rem 0; text-align: center; }
+.trend-error { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 1.5rem 0; font-size: 0.8125rem; color: #b91c1c; }
+.retry-btn { padding: 0.25rem 1rem; border-radius: 0.5rem; background: #0d9488; color: #fff; font-size: 0.75rem; font-weight: 600; border: 0; cursor: pointer; }
+.retry-btn:hover { background: #0f766e; }
 .dim-averages { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
 .dim-avg-label { font-size: 0.75rem; color: #64748b; }
 .dim-avg-chip { font-size: 0.7rem; padding: 0.2rem 0.55rem; border-radius: 999px; font-weight: 600; background: #f1f5f9; color: #334155; }

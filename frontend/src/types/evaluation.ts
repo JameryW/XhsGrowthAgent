@@ -1,4 +1,5 @@
 /** RQGM agent-as-a-judge creation-quality evaluation result types. */
+import type { ScoreThresholds } from '@/constants/evaluation'
 
 /** 单维度 judge 评分（agent-as-a-judge 面板的一维）. */
 export interface DimensionScore {
@@ -22,7 +23,7 @@ export interface DimensionScore {
 /** 创作质量评估结果 — RQGM agent-as-a-judge 面板输出. */
 export interface EvaluationResult {
   /** 0-100 加权综合 */
-  overall_score: number
+  overall_score: number | null
   dimensions: DimensionScore[]
   /** approved / needs_revision / rejected */
   decision: string
@@ -38,12 +39,15 @@ export interface EvaluationResultResponse {
   thread_id: string
   has_evaluation: boolean
   evaluation_result: EvaluationResult
+  /** Effective per-account score bands used by the evaluator. */
+  thresholds?: ScoreThresholds
 }
+
 
 /** 一个趋势数据点（按时序）. */
 export interface TrendPoint {
   created_at: string
-  overall_score: number
+  overall_score: number | null
   decision: string
   dim_scores: Record<string, number>
 }
@@ -61,9 +65,11 @@ export interface EvaluationListItem {
   /** state.copy_content.selected_title — 列表标题展示用 */
   selected_title: string
   /** 0-100 综合分预览 */
-  overall_score: number
+  overall_score: number | null
   /** approved / needs_revision / rejected */
   decision: string
+  pass_threshold?: number
+  warn_threshold?: number
 }
 
 /** GET /evaluation/list 响应. */

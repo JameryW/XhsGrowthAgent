@@ -10,6 +10,10 @@ interface Column {
   label: string
   align?: 'left' | 'center' | 'right'
   sortable?: boolean
+  // AN-03: optional field to sort by instead of the display key. Points at the
+  // raw numeric/value field so formatted strings ("1,234", "10.0%") sort by
+  // their underlying number, not lexicographically.
+  sortKey?: string
   // ponytail: optional per-cell class hook (e.g. color-code engagement rate).
   // Receives the row; returns extra classes merged onto the cell.
   cellClass?: (row: Record<string, any>) => string
@@ -21,11 +25,19 @@ interface Props {
   rowKey?: string
   highlightRowKey?: string
   highlightKeyValue?: string
+  // AN-08: make rows clickable for drill-down; emits 'row-click'.
+  rowClickable?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   rowKey: 'title',
+  rowClickable: false,
 })
+
+const emit = defineEmits<{
+  // AN-08: row click for drill-down (e.g. open a single-post detail drawer).
+  (e: 'row-click', row: Record<string, any>): void
+}>()
 
 const sortKey = ref('')
 const sortOrder = ref<'asc' | 'desc'>('desc')
@@ -48,9 +60,12 @@ const sortedData = computed(() => {
   if (!sortKey.value) return props.data
   const key = sortKey.value
   const order = sortOrder.value === 'asc' ? 1 : -1
+  // AN-03: resolve the raw-value field if the column declared a sortKey.
+  const col = props.columns.find(c => c.key === key)
+  const valueKey = col?.sortKey ?? key
   return [...props.data].sort((a, b) => {
-    const va = a[key]
-    const vb = b[key]
+    const va = a[valueKey]
+    const vb = b[valueKey]
     if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * order
     return String(va).localeCompare(String(vb)) * order
   })
@@ -63,6 +78,12 @@ function toggleSort(key: string) {
     sortKey.value = key
     sortOrder.value = 'desc'
   }
+}
+
+// AN-11: expose aria-sort on sorted column headers.
+function ariaSortFor(key: string): 'ascending' | 'descending' | 'none' {
+  if (sortKey.value !== key) return 'none'
+  return sortOrder.value === 'asc' ? 'ascending' : 'descending'
 }
 </script>
 
@@ -79,6 +100,7 @@ function toggleSort(key: string) {
         :key="col.key"
         :class="[alignClasses[col.key]]"
         role="columnheader"
+        :aria-sort="col.sortable ? ariaSortFor(col.key) : undefined"
       >
         <button
           v-if="col.sortable"
@@ -109,7 +131,10 @@ function toggleSort(key: string) {
       v-for="(row, idx) in sortedData"
       :key="getRowKey(row, idx)"
       class="grid gap-2 md:gap-4 px-3 md:px-4 py-2 md:py-3 border-b border-slate-50 text-[10px] md:text-xs hover:bg-slate-50/50 transition-colors duration-150 min-w-[500px] dark:border-slate-800 dark:hover:bg-slate-800/40"
-      :class="{ 'bg-rose-50/50': highlightRowKey && highlightKeyValue && row[highlightRowKey] === highlightKeyValue }"
+      :class="{ 'bg-rose-50/50': highlightRowKey && highlightKeyValue && row[highlightRowKey] === highlightKeyValue, 'cursor-pointer': props.rowClickable }"
+      :tabindex="props.rowClickable ? 0 : undefined"
+      @click="props.rowClickable ? emit('row-click', row) : undefined"
+      @keydown.enter="props.rowClickable ? emit('row-click', row) : undefined"
       :style="{ gridTemplateColumns: `repeat(${props.columns.length}, 1fr)` }"
       role="row"
     >

@@ -226,7 +226,8 @@ function toggleOverflow() {
 }
 
 .tab-close {
-  @apply shrink-0 p-0.5 rounded hover:bg-slate-200/80 text-slate-400 hover:text-slate-600 transition-colors;
+  /* DB-12: tap target ≥44px (icon stays small via inner span). */
+  @apply shrink-0 p-0.5 rounded hover:bg-slate-200/80 text-slate-400 hover:text-slate-600 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center;
 }
 
 .tab-overflow-trigger {

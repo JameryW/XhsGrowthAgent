@@ -1,6 +1,7 @@
 <!-- frontend/src/components/CelebrationEffect.vue -->
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { prefersReducedMotion } from '@/composables/useReducedMotion'
 
 /**
  * CelebrationEffect component
@@ -244,6 +245,9 @@ function animate(timestamp: number) {
 // Start animation
 function startAnimation() {
   if (!canvasRef.value) return
+  // INF-05: skip the canvas animation entirely under reduced-motion; the
+  // surrounding modal still conveys completion textually.
+  if (prefersReducedMotion.value) return
 
   const width = canvasRef.value.width
   const height = canvasRef.value.height

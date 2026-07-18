@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, computed, ref, defineAsyncComponent } from 'vue'
+import { onMounted, computed, ref, defineAsyncComponent, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import MetricCard from '@/components/MetricCard.vue'
@@ -8,30 +8,49 @@ import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import CreatorStatsPanel from '@/components/settings/CreatorStatsPanel.vue'
+import CreatorNoteQualityPanel from '@/components/settings/CreatorNoteQualityPanel.vue'
 import { AnalyticsSkeleton } from '@/components/skeletons'
 import { useAnalyticsStore, useAccountsStore } from '@/stores'
+import { getCreatorStats, type CreatorAccountStats } from '@/api/analytics'
 
 const TrendChart = defineAsyncComponent(() => import('@/components/charts/TrendChart.vue'))
 const EngagementChart = defineAsyncComponent(() => import('@/components/charts/EngagementChart.vue'))
+import { formatNumber, formatPercent, formatShortDate } from '@/utils/format'
+import { trackInteraction } from '@/utils/interactionTelemetry'
+import { useFocusTrap } from '@/composables/useFocusTrap'
 
 const { t, locale } = useI18n()
 const router = useRouter()
 const analyticsStore = useAnalyticsStore()
 const accountsStore = useAccountsStore()
 const lastUpdatedAt = ref<Date | null>(null)
+// AN-05: creator fans for the first-screen metric card. Single snapshot only —
+// the payload has no historical fans array, so the period growth delta falls
+// back to '—' until a second snapshot exists.
+const creatorAccount = ref<CreatorAccountStats | null>(null)
+const fansValue = computed(() => creatorAccount.value?.fans ?? null)
+const fansDisplay = computed(() => fansValue.value !== null ? formatNumber(fansValue.value, locale.value) : '—')
 
 onMounted(async () => {
   // Refresh the shared account labels so a name imported from Creator Center
   // is visible even when this route stayed mounted across the import.
   await accountsStore.fetchAccounts()
-  if (!analyticsStore.posts.length && !analyticsStore.isLoading && !analyticsStore.error) {
+  // AN-12: auto-retry once if the previous session ended in an error, instead
+  // of leaving the error state showing on re-entry.
+  if (analyticsStore.error || (!analyticsStore.posts.length && !analyticsStore.isLoading)) {
     await refreshData()
   }
 })
 
 const isLoading = computed(() => analyticsStore.isLoading && !analyticsStore.posts.length)
+// AN-12: switching period keeps old data visible under a busy overlay rather
+// than blanking to a skeleton.
+const isRefreshing = computed(() => analyticsStore.isLoading && analyticsStore.posts.length > 0)
 const hasError = computed(() => !!analyticsStore.error && !analyticsStore.posts.length)
 const isEmpty = computed(() => !analyticsStore.isLoading && !analyticsStore.error && !analyticsStore.posts.length)
+// AN-09: refresh failure with cached data must not be silent — surface an
+// inline notice that the shown data is stale, with a retry.
+const hasStaleError = computed(() => !!analyticsStore.error && analyticsStore.posts.length > 0)
 
 // ponytail: backend period cutoff — daily=24h, weekly=7d, monthly=30d.
 // Map the selected period to its i18n label so cards/buttons reflect the
@@ -43,63 +62,94 @@ function periodLabelFor(p: 'daily' | 'weekly' | 'monthly') {
   return t('analytics.thisWeek')
 }
 
-const totalViews = computed(() => analyticsStore.posts.reduce((sum, p) => sum + (p.views || 0), 0))
+const currentPeriod = computed(() => analyticsStore.periodSummary?.current ?? null)
+const totalViews = computed(() => currentPeriod.value?.views ?? 0)
+
+// AN-07: period-over-period deltas come from the server-owned aggregate
+// contract. The visible post table is intentionally limited to 20 rows and
+// must never be used to infer a complete period or its previous window.
+const periodBuckets = computed(() => {
+  const summary = analyticsStore.periodSummary
+  if (!summary) {
+    return { curViews: 0, prevViews: 0, curEng: 0, prevEng: 0, curPosts: 0, prevPosts: 0 }
+  }
+  return {
+    curViews: summary.current.views,
+    prevViews: summary.previous.views,
+    curEng: summary.current.engagement,
+    prevEng: summary.previous.engagement,
+    curPosts: summary.current.posts,
+    prevPosts: summary.previous.posts,
+  }
+})
+
+function deltaLabel(cur: number, prev: number): string {
+  if (prev === 0) return '—'
+  const pct = Math.round(((cur - prev) / prev) * 100)
+  if (!Number.isFinite(pct)) return '—'
+  const arrow = pct > 0 ? '↑' : pct < 0 ? '↓' : '→'
+  return `${arrow} ${Math.abs(pct)}% ${t('analytics.vsPrevPeriod')}`
+}
+
+const viewsDelta = computed(() => deltaLabel(periodBuckets.value.curViews, periodBuckets.value.prevViews))
+const engDelta = computed(() => deltaLabel(periodBuckets.value.curEng, periodBuckets.value.prevEng))
+const postsDelta = computed(() => deltaLabel(periodBuckets.value.curPosts, periodBuckets.value.prevPosts))
 
 const metrics = computed(() => [
-  { icon: 'Upload', title: t('analytics.postsPublished'), value: analyticsStore.posts.length, subtitle: periodLabel.value, variant: 'pink' as const },
-  { icon: 'Eye', title: t('analytics.totalViews'), value: totalViews.value.toLocaleString(), subtitle: periodLabel.value, variant: 'cyan' as const },
-  { icon: 'MessageCircle', title: t('analytics.totalEngagement'), value: analyticsStore.totalEngagement.toLocaleString(), subtitle: `${analyticsStore.posts.length} ` + t('analytics.postsPublished'), variant: 'purple' as const },
-  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: `${analyticsStore.avgEngagementRate.toFixed(1)}%`, subtitle: analyticsStore.posts.length > 0 ? `${analyticsStore.posts.length} ` + t('analytics.postsPublished') : periodLabel.value, variant: 'peach' as const },
-  { icon: 'DollarSign', title: t('analytics.aiCost'), value: `$${analyticsStore.costData?.today_cost_usd?.toFixed(2) || '0.00'}`, subtitle: t('analytics.cost.today'), variant: 'pink' as const },
+  { icon: 'Upload', title: t('analytics.postsPublished'), value: currentPeriod.value?.posts ?? 0, subtitle: periodLabel.value, variant: 'pink' as const, delta: postsDelta.value },
+  { icon: 'Eye', title: t('analytics.totalViews'), value: formatNumber(totalViews.value, locale.value), subtitle: periodLabel.value, variant: 'cyan' as const, delta: viewsDelta.value },
+  { icon: 'MessageCircle', title: t('analytics.totalEngagement'), value: formatNumber(currentPeriod.value?.engagement ?? 0, locale.value), subtitle: `${currentPeriod.value?.posts ?? 0} ` + t('analytics.postsPublished'), variant: 'purple' as const, delta: engDelta.value },
+  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: formatPercent(currentPeriod.value?.avg_engagement_rate ?? 0, locale.value), subtitle: (currentPeriod.value?.posts ?? 0) > 0 ? `${currentPeriod.value?.posts ?? 0} ` + t('analytics.postsPublished') : periodLabel.value, variant: 'peach' as const },
+  // AN-05: fans card on the first screen (was buried in CreatorStatsPanel);
+  // AI cost moved out to the demoted cost section.
+  { icon: 'Users', title: t('analytics.fans'), value: fansDisplay.value, subtitle: periodLabel.value, variant: 'cyan' as const, delta: '—' },
 ])
 
+// AN-01: true daily time series from published_at (was weekday-bucketed avg
+// with 0s on empty days). No-data days are omitted (connectNulls:false) so
+// the chart never implies zero engagement on a day with no posts.
 const trendData = computed(() => {
   const posts = analyticsStore.posts
   if (!posts.length) return []
 
-  const hasPublishedPosts = posts.some(p => p.published_at)
-  if (!hasPublishedPosts) return []
+  const published = posts
+    .filter(p => p.published_at)
+    .map(p => ({ date: new Date(p.published_at), value: (p.likes || 0) + (p.comments || 0) + (p.collects || 0) }))
+    .filter(d => !Number.isNaN(d.date.getTime()))
+  if (!published.length) return []
 
-  const dayNames = [
-    t('analytics.weekdays.sun'),
-    t('analytics.weekdays.mon'),
-    t('analytics.weekdays.tue'),
-    t('analytics.weekdays.wed'),
-    t('analytics.weekdays.thu'),
-    t('analytics.weekdays.fri'),
-    t('analytics.weekdays.sat'),
-  ]
-  const dayTotals = new Array(7).fill(0)
-  const dayCounts = new Array(7).fill(0)
+  published.sort((a, b) => a.date.getTime() - b.date.getTime())
 
-  posts.forEach(post => {
-    if (post.published_at) {
-      const d = new Date(post.published_at)
-      const day = d.getDay()
-      dayTotals[day] += post.likes + post.comments + post.collects
-      dayCounts[day]++
-    }
+  // Bucket by calendar day; sum engagement per day.
+  const byDay = new Map<string, number>()
+  for (const point of published) {
+    const key = trendDateKey(point.date)
+    byDay.set(key, (byDay.get(key) || 0) + point.value)
+  }
+
+  return Array.from(byDay.entries()).map(([key, value]) => {
+    const [y, m, d] = key.split('-').map(Number)
+    return { date: formatShortDate(new Date(y, m - 1, d).toISOString(), locale.value), value }
   })
-
-  return [1, 2, 3, 4, 5, 6, 0].map(day => ({
-    date: dayNames[day],
-    value: dayCounts[day] > 0 ? Math.round(dayTotals[day] / dayCounts[day]) : 0,
-  }))
 })
+
+function trendDateKey(d: Date): string {
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+}
 
 const engagementData = computed(() => {
   const posts = analyticsStore.posts
   if (!posts.length) return []
 
-  const totals = posts.reduce(
-    (acc, post) => ({
-      likes: acc.likes + post.likes,
-      comments: acc.comments + post.comments,
-      collects: acc.collects + post.collects,
-      shares: acc.shares + (post.shares || 0),
-    }),
-    { likes: 0, comments: 0, collects: 0, shares: 0 }
-  )
+  const summary = currentPeriod.value
+  const totals = summary
+    ? {
+      likes: summary.likes,
+      comments: summary.comments,
+      collects: summary.collects,
+      shares: summary.shares,
+    }
+    : { likes: 0, comments: 0, collects: 0, shares: 0 }
 
   return [
     { category: t('analytics.categories.likes'), value: totals.likes },
@@ -109,19 +159,13 @@ const engagementData = computed(() => {
   ]
 })
 
-const formatDate = (isoDate: string | null | undefined) => {
-  if (!isoDate) return '—'
-  const d = new Date(isoDate)
-  const month = d.toLocaleDateString(locale.value || undefined, { month: 'short' })
-  const day = d.getDate()
-  return `${month} ${day}`
-}
+const formatDate = (isoDate: string | null | undefined) => formatShortDate(isoDate, locale.value)
 
 const bestPostTitle = computed(() => analyticsStore.growthReport?.metrics?.best_post_title || '')
 
 const tableColumns = computed(() => [
   { key: 'title', label: t('analytics.table.title'), align: 'left' as const },
-  { key: 'views_display', label: t('analytics.table.views'), align: 'center' as const, sortable: true },
+  { key: 'views_display', label: t('analytics.table.views'), align: 'center' as const, sortable: true, sortKey: 'views' },
   { key: 'likes', label: t('analytics.table.likes'), align: 'center' as const, sortable: true },
   { key: 'comments', label: t('analytics.table.comments'), align: 'center' as const, sortable: true },
   { key: 'collects', label: t('analytics.table.collects'), align: 'center' as const, sortable: true },
@@ -130,6 +174,7 @@ const tableColumns = computed(() => [
     label: t('analytics.table.engagementRate'),
     align: 'center' as const,
     sortable: true,
+    sortKey: 'engagement_rate',
     // ponytail: color-code rate inline — strong ≥5% green, 1–5% amber, <1% muted.
     cellClass: (row: Record<string, any>) => {
       const rate = Number(row.engagement_rate)
@@ -142,12 +187,19 @@ const tableColumns = computed(() => [
   { key: 'published_at_display', label: t('analytics.table.publishedAt'), align: 'center' as const },
 ])
 
-const tableData = computed(() => analyticsStore.posts.slice(0, 10).map(post => ({
+// AN-11: show 10 by default, expand to all (max 20 from backend) on demand.
+const showAllPosts = ref(false)
+const visibleTableData = computed(() => {
+  const posts = analyticsStore.posts
+  const sliced = showAllPosts.value ? posts : posts.slice(0, 10)
+  return sliced.map(post => ({
   ...post,
-  views_display: (post.views || 0).toLocaleString(),
-  engagement_rate_display: `${post.engagement_rate.toFixed(1)}%`,
+  views_display: formatNumber(post.views || 0, locale.value),
+  engagement_rate_display: formatPercent(post.engagement_rate, locale.value),
   published_at_display: formatDate(post.published_at),
-})))
+}))
+})
+const tableData = visibleTableData
 
 // Model cost bar data
 const modelCostData = computed(() => {
@@ -167,12 +219,24 @@ const modelCostData = computed(() => {
 })
 
 const setPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
+  trackInteraction('analytics_period_change', { period, old_period: analyticsStore.period })
   analyticsStore.setPeriod(period)
 }
 
 async function refreshData() {
   await analyticsStore.fetchAllData()
   if (!analyticsStore.error) lastUpdatedAt.value = new Date()
+  // AN-05: best-effort fetch of creator fans for the first-screen card; do not
+  // block on failure (the rest of the page still renders).
+  const accountId = accountsStore.activeAccountId || analyticsStore.accountId
+  if (accountId) {
+    try {
+      const payload = await getCreatorStats(accountId, 1)
+      creatorAccount.value = payload.account
+    } catch {
+      // Fans card falls back to '—'; not a page-level failure.
+    }
+  }
 }
 
 function handleCreatorStatsUpdated() {
@@ -182,6 +246,38 @@ function handleCreatorStatsUpdated() {
 function goHome() {
   router.push('/start')
 }
+
+// AN-08: single-post drill-down. The table row emits its data; we open a
+// drawer with the post's metrics and the creator-note quality panel (which
+// reuses the existing getCreatorNote/getCreatorNoteQuality APIs).
+const selectedPost = ref<Record<string, any> | null>(null)
+const detailNoteId = computed(() => {
+  // The backend's id is the imported note_id when available. Never use title
+  // matching: titles are not stable identifiers and a missing match must not
+  // silently select another note in the quality panel.
+  return typeof selectedPost.value?.id === 'string' ? selectedPost.value.id : ''
+})
+const detailAccountId = computed(() => accountsStore.activeAccountId || analyticsStore.accountId || '')
+
+function openPostDetail(row: Record<string, any>) {
+  trackInteraction('analytics_note_drilldown', { method: 'click' })
+  selectedPost.value = row
+}
+function closePostDetail() {
+  selectedPost.value = null
+}
+
+// INF-06: trap focus inside the drill-down drawer and restore on close.
+const focusTrap = useFocusTrap()
+const drawerRef = ref<HTMLElement | null>(null)
+watch(selectedPost, async (post) => {
+  if (post) {
+    await nextTick()
+    focusTrap.activate(drawerRef.value)
+  } else {
+    focusTrap.deactivate()
+  }
+})
 
 const budgetUsedPercent = computed(() => {
   const total = analyticsStore.costData?.total_cost_usd || 0
@@ -222,6 +318,10 @@ const insightBg = (type: string) => {
 }
 
 function startWithTopic(topic: string, niche?: string) {
+  // Topic text is user content; keep it in the navigation query only and send
+  // a categorical telemetry event so browser listeners/beacons never receive
+  // raw content.
+  trackInteraction('analytics_topic_click', { method: 'click', source: 'direct' })
   const query: Record<string, string> = { topic }
   if (niche) query.niche = niche
   router.push({ path: '/start', query })
@@ -349,6 +449,32 @@ function startWithTopic(topic: string, niche?: string) {
 
   <!-- Data view -->
   <div v-else class="relative space-y-4 md:space-y-6">
+    <!-- AN-12: busy overlay while switching period — keeps the old data visible. -->
+    <div
+      v-if="isRefreshing"
+      class="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-white/50 backdrop-blur-[1px] dark:bg-slate-900/50"
+      role="status"
+      aria-live="polite"
+    >
+      <AppIcon name="Loader2" size="md" variant="cyan" animate />
+    </div>
+    <!-- AN-09: refresh failed but cached data still shown — surface a stale
+         notice so the failure isn't silent. -->
+    <div
+      v-if="hasStaleError"
+      class="flex items-center gap-3 rounded-xl border border-amber-200/70 bg-amber-50/90 px-3 py-2 text-xs md:text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-200"
+      role="alert"
+    >
+      <AppIcon name="AlertTriangle" size="sm" variant="peach" aria-hidden="true" />
+      <span class="flex-1">{{ t('analytics.staleNotice') }}</span>
+      <button
+        type="button"
+        class="rounded-lg px-2.5 py-1 text-xs font-medium bg-amber-600 text-white hover:bg-amber-700 active:scale-95 transition min-h-[36px]"
+        @click="refreshData"
+      >
+        {{ t('analytics.error.retry') }}
+      </button>
+    </div>
     <!-- Creator-center import / niche bind for active account -->
     <section
       v-if="accountsStore.activeAccountId || analyticsStore.accountId"
@@ -372,104 +498,7 @@ function startWithTopic(topic: string, niche?: string) {
       />
     </div>
 
-    <!-- Charts -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-5">
-      <Suspense>
-        <TrendChart
-          :data="trendData"
-          :title="t('analytics.interactionTrend')"
-          variant="cyan"
-          :height="220"
-        />
-        <template #fallback>
-          <div class="rounded-xl md:rounded-2xl p-3 md:p-6 liquid-glass">
-            <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
-          </div>
-        </template>
-      </Suspense>
-      <Suspense>
-        <EngagementChart
-          :data="engagementData"
-          :title="t('analytics.engagementBreakdown')"
-          variant="pink"
-          :height="220"
-        />
-        <template #fallback>
-          <div class="rounded-xl md:rounded-2xl p-3 md:p-6 liquid-glass">
-            <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
-          </div>
-        </template>
-      </Suspense>
-    </div>
-
-    <!-- Cost breakdown -->
-    <div v-if="analyticsStore.costData" class="card">
-      <div class="flex items-center gap-2 md:gap-3 mb-3 md:mb-5">
-        <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm">
-          <AppIcon name="DollarSign" size="sm" variant="white" class="md:hidden" :aria-label="t('analytics.cost.title')" />
-          <AppIcon name="DollarSign" size="md" variant="white" class="hidden md:block" :aria-label="t('analytics.cost.title')" />
-        </div>
-        <div class="flex-1">
-          <div class="text-rose-500 font-semibold text-xs md:text-sm">{{ t('analytics.cost.title') }}</div>
-          <div class="text-[10px] md:text-xs text-slate-400">{{ t('analytics.cost.subtitle') }}</div>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-3 gap-2 md:gap-4 mb-3 md:mb-5">
-        <div class="rounded-lg p-2 md:p-4 liquid-glass-rose liquid-glass-hover">
-          <div class="text-[10px] md:text-xs text-rose-500 font-medium">{{ t('analytics.cost.total') }}</div>
-          <div class="text-base md:text-xl font-bold text-rose-700">${{ analyticsStore.costData.total_cost_usd?.toFixed(2) || '0.00' }}</div>
-        </div>
-        <div class="rounded-lg p-2 md:p-4 liquid-glass-amber liquid-glass-hover">
-          <div class="text-[10px] md:text-xs text-amber-500 font-medium">{{ t('analytics.cost.today') }}</div>
-          <div class="text-base md:text-xl font-bold text-amber-700">${{ analyticsStore.costData.today_cost_usd?.toFixed(2) || '0.00' }}</div>
-        </div>
-        <div class="rounded-lg p-2 md:p-4 liquid-glass-teal liquid-glass-hover">
-          <div class="text-[10px] md:text-xs text-emerald-500 font-medium">{{ t('analytics.cost.remaining') }}</div>
-          <div class="text-base md:text-xl font-bold text-emerald-700">${{ analyticsStore.costData.budget_remaining_usd?.toFixed(2) || '0.00' }}</div>
-        </div>
-      </div>
-
-      <!-- Budget progress bar -->
-      <div v-if="analyticsStore.costData.total_cost_usd" class="mb-3 md:mb-5">
-        <div class="flex items-center justify-between text-[10px] md:text-xs text-slate-500 mb-1.5 md:mb-2">
-          <span>{{ t('analytics.cost.budgetUsed') }}</span>
-          <span>{{ budgetUsedPercent }}%</span>
-        </div>
-        <div class="h-2 rounded-full bg-slate-100 overflow-hidden dark:bg-slate-800">
-          <div
-            class="h-full rounded-full transition-all duration-500"
-            :class="budgetUsedPercent > 90 ? 'bg-rose-500' : budgetUsedPercent > 70 ? 'bg-amber-500' : 'bg-emerald-500'"
-            :style="{ width: `${Math.min(budgetUsedPercent, 100)}%` }"
-          />
-        </div>
-      </div>
-
-      <!-- By model breakdown (visual bars) -->
-      <div v-if="modelCostData.length > 0">
-        <div class="text-[10px] md:text-xs text-slate-500 uppercase tracking-wide font-medium mb-2 md:mb-3">{{ t('analytics.cost.byModel') }}</div>
-        <div class="space-y-2 md:space-y-3">
-          <div
-            v-for="item in modelCostData"
-            :key="item.model"
-            class="group"
-          >
-            <div class="flex items-center justify-between mb-1">
-              <span class="text-xs md:text-sm text-slate-700 font-medium truncate">{{ item.model }}</span>
-              <span class="text-xs md:text-sm text-slate-600 tabular-nums">${{ item.cost.toFixed(2) }}</span>
-            </div>
-            <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden dark:bg-slate-800">
-              <div
-                class="h-full rounded-full bg-gradient-to-r from-rose-400 to-rose-500 transition-all duration-500 group-hover:from-rose-500 group-hover:to-rose-600"
-                :style="{ width: `${item.percent}%` }"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Growth insights -->
+    <!-- Growth insights (AN-06: conclusion-first — insights before charts) -->
     <div v-if="insights.length > 0 || trendTopics.length > 0" class="card">
       <div class="flex items-center gap-2 md:gap-3 mb-3 md:mb-5">
         <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center shadow-sm">
@@ -523,6 +552,36 @@ function startWithTopic(topic: string, niche?: string) {
       </div>
     </div>
 
+    <!-- Charts -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-5">
+      <Suspense>
+        <TrendChart
+          :data="trendData"
+          :title="t('analytics.recentPerformanceTrend')"
+          variant="cyan"
+          :height="220"
+        />
+        <template #fallback>
+          <div class="rounded-xl md:rounded-2xl p-3 md:p-6 liquid-glass">
+            <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
+          </div>
+        </template>
+      </Suspense>
+      <Suspense>
+        <EngagementChart
+          :data="engagementData"
+          :title="t('analytics.engagementBreakdown')"
+          variant="pink"
+          :height="220"
+        />
+        <template #fallback>
+          <div class="rounded-xl md:rounded-2xl p-3 md:p-6 liquid-glass">
+            <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
+          </div>
+        </template>
+      </Suspense>
+    </div>
+
     <!-- Post performance table -->
     <div class="card">
       <div class="flex items-center gap-2 md:gap-3 mb-3 md:mb-5">
@@ -541,8 +600,138 @@ function startWithTopic(topic: string, niche?: string) {
         :data="tableData"
         highlight-row-key="title"
         :highlight-key-value="bestPostTitle"
+        row-clickable
+        @row-click="openPostDetail"
       />
+      <!-- AN-11: legend explaining the best-post highlight, and an expand
+           control so all 20 posts are reachable (was hard-capped at 10). -->
+      <div v-if="bestPostTitle" class="mt-2 flex items-center gap-1.5 text-[11px] text-slate-500">
+        <span class="inline-block w-2.5 h-2.5 rounded-sm bg-rose-200" aria-hidden="true" />
+        <span>{{ t('analytics.bestPostLegend') }}</span>
+      </div>
+      <div v-if="analyticsStore.posts.length > 10" class="mt-3 flex justify-center">
+        <button
+          type="button"
+          class="min-h-[44px] px-4 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+          @click="showAllPosts = !showAllPosts"
+        >
+          {{ showAllPosts ? t('analytics.showLess') : t('analytics.showAll', { count: analyticsStore.posts.length }) }}
+        </button>
+      </div>
     </div>
+
+    <!-- Cost breakdown (AN-06: demoted to secondary, after the post table) -->
+    <details v-if="analyticsStore.costData" class="card">
+      <summary class="flex cursor-pointer items-center gap-2 md:gap-3 list-none">
+        <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-to-br from-rose-400 to-rose-500 flex items-center justify-center shadow-sm">
+          <AppIcon name="DollarSign" size="sm" variant="white" class="md:hidden" :aria-label="t('analytics.cost.title')" />
+          <AppIcon name="DollarSign" size="md" variant="white" class="hidden md:block" :aria-label="t('analytics.cost.title')" />
+        </div>
+        <div class="flex-1">
+          <div class="text-rose-500 font-semibold text-xs md:text-sm">{{ t('analytics.cost.title') }}</div>
+          <div class="text-[10px] md:text-xs text-slate-400">{{ t('analytics.cost.subtitle') }}</div>
+        </div>
+      </summary>
+
+      <div class="grid grid-cols-3 gap-2 md:gap-4 mb-3 md:mb-5 mt-3 md:mt-5">
+        <div class="rounded-lg p-2 md:p-4 liquid-glass-rose liquid-glass-hover">
+          <div class="text-[10px] md:text-xs text-rose-500 font-medium">{{ t('analytics.cost.total') }}</div>
+          <div class="text-base md:text-xl font-bold text-rose-700">${{ analyticsStore.costData.total_cost_usd?.toFixed(2) || '0.00' }}</div>
+        </div>
+        <div class="rounded-lg p-2 md:p-4 liquid-glass-amber liquid-glass-hover">
+          <div class="text-[10px] md:text-xs text-amber-500 font-medium">{{ t('analytics.cost.today') }}</div>
+          <div class="text-base md:text-xl font-bold text-amber-700">${{ analyticsStore.costData.today_cost_usd?.toFixed(2) || '0.00' }}</div>
+        </div>
+        <div class="rounded-lg p-2 md:p-4 liquid-glass-teal liquid-glass-hover">
+          <div class="text-[10px] md:text-xs text-emerald-500 font-medium">{{ t('analytics.cost.remaining') }}</div>
+          <div class="text-base md:text-xl font-bold text-emerald-700">${{ analyticsStore.costData.budget_remaining_usd?.toFixed(2) || '0.00' }}</div>
+        </div>
+      </div>
+
+      <!-- Budget progress bar -->
+      <div v-if="analyticsStore.costData.total_cost_usd" class="mb-3 md:mb-5">
+        <div class="flex items-center justify-between text-[10px] md:text-xs text-slate-500 mb-1.5 md:mb-2">
+          <span>{{ t('analytics.cost.budgetUsed') }}</span>
+          <span>{{ budgetUsedPercent }}%</span>
+        </div>
+        <div class="h-2 rounded-full bg-slate-100 overflow-hidden dark:bg-slate-800">
+          <div
+            class="h-full rounded-full transition-all duration-500"
+            :class="budgetUsedPercent > 90 ? 'bg-rose-500' : budgetUsedPercent > 70 ? 'bg-amber-500' : 'bg-emerald-500'"
+            :style="{ width: `${Math.min(budgetUsedPercent, 100)}%` }"
+          />
+        </div>
+      </div>
+
+      <!-- By model breakdown (visual bars) -->
+      <div v-if="modelCostData.length > 0">
+        <div class="text-[10px] md:text-xs text-slate-500 uppercase tracking-wide font-medium mb-2 md:mb-3">{{ t('analytics.cost.byModel') }}</div>
+        <div class="space-y-2 md:space-y-3">
+          <div
+            v-for="item in modelCostData"
+            :key="item.model"
+            class="group"
+          >
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs md:text-sm text-slate-700 font-medium truncate">{{ item.model }}</span>
+              <span class="text-xs md:text-sm text-slate-600 tabular-nums">${{ item.cost.toFixed(2) }}</span>
+            </div>
+            <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden dark:bg-slate-800">
+              <div
+                class="h-full rounded-full bg-gradient-to-r from-rose-400 to-rose-500 transition-all duration-500 group-hover:from-rose-500 group-hover:to-rose-600"
+                :style="{ width: `${item.percent}%` }"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
   </div>
   </div>
+
+  <!-- AN-08: single-post drill-down drawer -->
+  <Teleport to="body">
+    <div
+      v-if="selectedPost"
+      ref="drawerRef"
+      class="fixed inset-0 z-50 flex justify-end"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="t('analytics.detail.title')"
+    >
+      <div class="absolute inset-0 bg-black/40" @click="closePostDetail" />
+      <div class="relative w-full max-w-md h-full overflow-y-auto bg-white dark:bg-slate-900 shadow-xl p-4 md:p-6 space-y-4">
+        <div class="flex items-start justify-between gap-3">
+          <h2 class="text-base md:text-lg font-semibold text-slate-800 dark:text-slate-100 truncate">{{ selectedPost.title || t('analytics.detail.untitled') }}</h2>
+          <button type="button" class="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 min-h-[44px] min-w-[44px]" :aria-label="t('common.close')" @click="closePostDetail">
+            <AppIcon name="X" size="sm" />
+          </button>
+        </div>
+        <dl class="grid grid-cols-2 gap-3 text-sm">
+          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+            <dt class="text-xs text-slate-500">{{ t('analytics.table.views') }}</dt>
+            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.views_display }}</dd>
+          </div>
+          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+            <dt class="text-xs text-slate-500">{{ t('analytics.table.engagementRate') }}</dt>
+            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.engagement_rate_display }}</dd>
+          </div>
+          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+            <dt class="text-xs text-slate-500">{{ t('analytics.table.likes') }}</dt>
+            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.likes }}</dd>
+          </div>
+          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+            <dt class="text-xs text-slate-500">{{ t('analytics.table.publishedAt') }}</dt>
+            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.published_at_display }}</dd>
+          </div>
+        </dl>
+        <CreatorNoteQualityPanel
+          v-if="detailAccountId"
+          :account-id="detailAccountId"
+          :note-id="detailNoteId"
+          compact
+        />
+      </div>
+    </div>
+  </Teleport>
 </template>

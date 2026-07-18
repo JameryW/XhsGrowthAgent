@@ -19,18 +19,14 @@ import NeonButton from '@/components/NeonButton.vue'
 import { getDashboardHero } from '@/composables/dashboardHero'
 import { useWorkflowStore, useToastStore, useErrorStore } from '@/stores'
 import { useRealtimeStore } from '@/stores/realtime'
+import { trackInteraction } from '@/utils/interactionTelemetry'
 
 const { t } = useI18n()
 const router = useRouter()
+const route = router.currentRoute
 const workflowStore = useWorkflowStore()
 const toastStore = useToastStore()
 const errorStore = useErrorStore()
-
-// Auto-enter replay mode from URL query
-const route = router.currentRoute
-if (route.value.query.replay === 'true' && workflowStore.activeThreadId) {
-  workflowStore.enterReplayMode()
-}
 
 const showOptimization = computed(() =>
   workflowStore.currentPhase === 'creating' ||
@@ -52,6 +48,26 @@ const showBriefContent = computed(() => {
 const isLoading = computed(() => workflowStore.isLoading && !workflowStore.workflowState)
 const hasError = computed(() => workflowStore.error !== null)
 
+// DB-06: chips that jump straight to the decision/input panel.
+const todoChips = computed(() => {
+  const chips: { anchor: string; label: string }[] = []
+  if (workflowStore.isAwaitingBrief) {
+    chips.push({ anchor: 'panel-brief', label: t('dashboard.hero.todoBrief') })
+  }
+  if (
+    workflowStore.isAwaitingDraft ||
+    workflowStore.isAwaitingChoice ||
+    workflowStore.isAwaitingRippleDecision ||
+    workflowStore.isAwaitingBloggerSelection
+  ) {
+    chips.push({ anchor: 'panel-action', label: t('dashboard.hero.todoAction') })
+  }
+  if (workflowStore.isAwaitingReview) {
+    chips.push({ anchor: 'panel-action', label: t('dashboard.hero.todoReview') })
+  }
+  return chips
+})
+
 const nextAction = computed(() => {
   if (workflowStore.isAwaitingReview) {
     return {
@@ -60,10 +76,23 @@ const nextAction = computed(() => {
       description: t('dashboard.nextAction.reviewDesc'),
       label: t('dashboard.nextAction.reviewCta'),
       path: workflowStore.activeThreadId ? `/review/${workflowStore.activeThreadId}` : '/review',
+      action: 'navigate' as const,
+    }
+  }
+  // DB-04: awaiting_* CTAs jump to the relevant panel (anchor + focus) instead
+  // of being a no-op path:'/dashboard'. Brief → brief panel; everything else
+  // (draft/choice/ripple/blogger) → ActionButtons zone.
+  if (workflowStore.isAwaitingBrief) {
+    return {
+      icon: 'Pencil',
+      title: t('dashboard.nextAction.continueTitle'),
+      description: t('dashboard.nextAction.continueDesc'),
+      label: t('dashboard.nextAction.continueCta'),
+      anchor: 'panel-brief',
+      action: 'scroll' as const,
     }
   }
   if (
-    workflowStore.isAwaitingBrief ||
     workflowStore.isAwaitingDraft ||
     workflowStore.isAwaitingChoice ||
     workflowStore.isAwaitingRippleDecision ||
@@ -74,7 +103,8 @@ const nextAction = computed(() => {
       title: t('dashboard.nextAction.continueTitle'),
       description: t('dashboard.nextAction.continueDesc'),
       label: t('dashboard.nextAction.continueCta'),
-      path: '/dashboard',
+      anchor: 'panel-action',
+      action: 'scroll' as const,
     }
   }
   if (workflowStore.currentPhase === 'idle' && workflowStore.currentStatus === 'idle') {
@@ -84,15 +114,18 @@ const nextAction = computed(() => {
       description: t('dashboard.nextAction.startDesc'),
       label: t('dashboard.nextAction.startCta'),
       path: '/start',
+      action: 'navigate' as const,
     }
   }
+  // DB-05: error recovery is a single source — retry resumes the current
+  // thread (mirrors ErrorState "retry=resume"), not a fresh /start.
   if (workflowStore.currentPhase === 'error') {
     return {
       icon: 'RefreshCw',
       title: t('dashboard.hero.errorTitle'),
       description: t('dashboard.hero.errorDescription'),
-      label: t('dashboard.nextAction.startCta'),
-      path: '/start',
+      label: t('dashboard.nextAction.retryCta'),
+      action: 'resume' as const,
     }
   }
   return null
@@ -102,7 +135,7 @@ const dashboardHero = computed(() => {
   return getDashboardHero({
     phase: workflowStore.currentPhase,
     status: workflowStore.currentStatus,
-    progress: workflowStore.effectiveState?.progress_percent ?? workflowStore.progressPercent,
+    progress: workflowStore.displayProgress,
     isReplay: workflowStore.isReplayMode,
   }, t)
 })
@@ -110,11 +143,29 @@ const dashboardHero = computed(() => {
 // Celebration state
 const showCelebration = ref(false)
 const hasShownCelebration = ref(false)
+// DB-10: real artifact counts for the celebration modal.
+const celebrationCopyCount = computed(() => workflowStore.effectiveState?.content_versions?.length || 0)
+const celebrationImageCount = computed(() => {
+  const visualPlan = workflowStore.effectiveState?.visual_plan as {
+    image_paths?: string[]
+    generated_images?: string[]
+    image_urls?: string[]
+  } | undefined
+  // image_prompts/image_count describe a plan, not generated artifacts. Use
+  // persisted paths/URLs from the publish pipeline only; an absent list is
+  // shown as unavailable by CelebrationModal rather than inventing a count.
+  return visualPlan?.image_paths?.length
+    ?? visualPlan?.generated_images?.length
+    ?? visualPlan?.image_urls?.length
+    ?? 0
+})
 
-// Watch for workflow completion
+// Watch for workflow completion — replay snapshots must never trigger the
+// "completed" celebration (DB-02/D4: isReplay guards all completed semantics).
 watch(
   () => workflowStore.currentPhase,
   (newPhase, oldPhase) => {
+    if (workflowStore.isReplayMode) return
     if (newPhase === 'completed' && oldPhase !== 'completed' && !hasShownCelebration.value) {
       showCelebration.value = true
       hasShownCelebration.value = true
@@ -141,6 +192,40 @@ const handleErrorDismiss = () => {
   errorStore.clearError()
 }
 
+// DB-04: scroll to the awaiting panel and focus the first interactive control.
+// Respects prefers-reduced-motion (instant jump) per D11.
+function scrollToPanel(anchor: string) {
+  const el = document.getElementById(anchor)
+  if (!el) return
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' })
+  const focusable = el.querySelector<HTMLElement>(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+  )
+  focusable?.focus()
+}
+
+function handleNextAction(action: { action: string; path?: string; anchor?: string }) {
+  trackInteraction('dashboard_cta_click', { method: action.action })
+  if (action.action === 'scroll' && action.anchor) {
+    scrollToPanel(action.anchor)
+  } else if (action.action === 'resume') {
+    void workflowStore.resumeWorkflow()
+  } else if (action.path) {
+    router.push(action.path)
+  }
+}
+
+// DB-08: switching tabs must sync the URL so a refresh stays on the active
+// thread instead of snapping back to the old route param.
+function handleSwitchTab(threadId: string) {
+  trackInteraction('dashboard_tab_switch', { method: 'click' })
+  workflowStore.switchTab(threadId)
+  if (route.value.params.threadId !== threadId) {
+    void router.replace({ name: 'dashboard', params: { threadId } })
+  }
+}
+
 async function handleBriefConfirm(_text: string) {
   // Upload already updated state; resume workflow to proceed with brief_analyzer
   await workflowStore.resumeWorkflow()
@@ -161,6 +246,13 @@ onMounted(async () => {
   const threadId = route.value.params.threadId
   if (typeof threadId === 'string' && threadId && threadId !== workflowStore.activeThreadId) {
     workflowStore.setThreadId(threadId)
+  }
+  // DB-01: enter replay mode AFTER setThreadId resolves the route param, so a
+  // fresh session opening /dashboard/X?replay=true loads the correct thread
+  // snapshot instead of silently no-op'ing on an unset activeThreadId.
+  if (route.value.query.replay === 'true' && workflowStore.activeThreadId) {
+    trackInteraction('dashboard_replay_enter', { method: 'deep_link' })
+    workflowStore.enterReplayMode()
   }
   const realtimeStore = useRealtimeStore()
   realtimeStore.connect()
@@ -198,7 +290,7 @@ onUnmounted(() => {
         :active-thread-id="workflowStore.activeThreadId"
         :has-overflow="workflowStore.hasOverflow"
         :overflow-tabs="workflowStore.overflowTabs"
-        @switch="workflowStore.switchTab($event)"
+        @switch="handleSwitchTab"
         @close="workflowStore.closeTab($event)"
         @rename="(id, label) => workflowStore.renameTab(id, label)"
       />
@@ -259,6 +351,26 @@ onUnmounted(() => {
         </div>
       </section>
 
+      <!-- DB-06: quick "待办" chips under the hero to reach the decision panel
+           without scrolling a long page. Reuses DB-04 anchors. -->
+      <div
+        v-if="todoChips.length"
+        class="flex flex-wrap items-center gap-2"
+        role="navigation"
+        :aria-label="t('dashboard.hero.todoLabel')"
+      >
+        <span class="text-xs font-medium text-slate-500">{{ t('dashboard.hero.todoLabel') }}</span>
+        <button
+          v-for="chip in todoChips"
+          :key="chip.anchor"
+          type="button"
+          class="rounded-full border border-cyan-200/70 bg-cyan-50/80 px-3 py-1.5 text-xs font-medium text-cyan-700 transition hover:bg-cyan-100 active:scale-95 min-h-[36px] dark:border-cyan-500/30 dark:bg-cyan-950/40 dark:text-cyan-200"
+          @click="scrollToPanel(chip.anchor)"
+        >
+          {{ chip.label }}
+        </button>
+      </div>
+
       <!-- One prominent next step prevents users from scanning the full timeline. -->
       <div v-if="nextAction" class="flex flex-col items-stretch gap-3 rounded-xl border border-cyan-200/70 bg-gradient-to-r from-cyan-50/90 to-white p-3 md:flex-row md:items-center md:p-4 dark:border-cyan-500/30 dark:from-cyan-950/40 dark:to-slate-900/80">
         <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-100 dark:bg-cyan-900/50">
@@ -268,7 +380,7 @@ onUnmounted(() => {
           <div class="text-sm font-semibold text-slate-700">{{ nextAction.title }}</div>
           <p class="mt-0.5 text-xs text-slate-500">{{ nextAction.description }}</p>
         </div>
-        <NeonButton variant="cyan" size="sm" class="min-h-11 shrink-0" @click="router.push(nextAction.path)">
+        <NeonButton variant="cyan" size="sm" class="min-h-11 shrink-0" @click="handleNextAction(nextAction)">
           {{ nextAction.label }}
         </NeonButton>
       </div>
@@ -408,7 +520,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Brief PDF Upload (shown when awaiting brief input) -->
-      <div v-if="showBriefUpload" class="rounded-xl p-3 md:p-4 bg-gradient-to-br from-neon-pink/5 to-neon-peach/5 border border-neon-pink/20">
+      <div v-if="showBriefUpload" id="panel-brief" class="rounded-xl p-3 md:p-4 bg-gradient-to-br from-neon-pink/5 to-neon-peach/5 border border-neon-pink/20">
         <BriefFileUpload
           :is-uploading="workflowStore.isBriefUploading"
           :uploaded-text="workflowStore.briefUploadedText"
@@ -430,12 +542,16 @@ onUnmounted(() => {
       <ContentCards />
       <BloggerSelectionPanel v-if="showBloggerSelection" />
       <OptimizationPanel v-if="showOptimization" />
-      <ActionButtons />
+      <div id="panel-action">
+        <ActionButtons />
+      </div>
     </div>
 
     <!-- Celebration Modal -->
     <CelebrationModal
       :show="showCelebration"
+      :copy-count="celebrationCopyCount"
+      :image-count="celebrationImageCount"
       @close="handleCloseCelebration"
     />
   </div>

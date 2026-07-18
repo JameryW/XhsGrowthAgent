@@ -10,10 +10,14 @@ interface Props {
   value: string | number
   subtitle?: string
   variant?: 'pink' | 'cyan' | 'purple' | 'peach'
+  // AN-07: period-over-period delta label, e.g. "↑ 12% vs 前 7 天". Empty
+  // string hides it; "—" signals insufficient prior-period samples.
+  delta?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   variant: 'pink',
+  delta: '',
 })
 
 const colors = {
@@ -62,6 +66,9 @@ const colors = {
     </div>
     <div :class="['text-xl md:text-3xl font-bold tabular-nums transition-all duration-300 group-hover:translate-x-1', colors[props.variant].text]" aria-live="polite">
       {{ props.value }}
+    </div>
+    <div v-if="props.delta" class="mt-0.5 text-[11px] md:text-xs font-medium text-slate-500">
+      {{ props.delta }}
     </div>
     <div v-if="props.subtitle" class="mt-1.5 md:mt-3 flex items-center gap-1.5 md:gap-2 group/sub">
       <AppIcon name="TrendingUp" size="sm" :variant="props.variant" class="transition-transform duration-200 group-hover/sub:scale-110" aria-hidden="true" />

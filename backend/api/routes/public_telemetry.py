@@ -54,6 +54,16 @@ _EVENT_NAMES = {
     "replay_result_copy",
     "replay_share",
     "replay_cta_click",
+    # INF-08: authenticated-domain telemetry (Dashboard/Analytics/Evaluation).
+    "dashboard_cta_click",
+    "dashboard_replay_enter",
+    "dashboard_tab_switch",
+    "analytics_period_change",
+    "analytics_note_drilldown",
+    "analytics_topic_click",
+    "evaluation_decision_cta",
+    "evaluation_drilldown",
+    "evaluation_filter_change",
 }
 
 _CATEGORY_ALLOWLISTS = {
@@ -81,6 +91,9 @@ _CATEGORY_ALLOWLISTS = {
     "auth_state": {"authenticated", "guest"},
     "position": {"nav", "hero", "empty", "aside", "detail", "footer"},
     "method": {"click", "keys", "prev", "next"},
+    "decision": {"approved", "needs_revision", "rejected", "all"},
+    "period": {"daily", "weekly", "monthly"},
+    "old_period": {"daily", "weekly", "monthly"},
 }
 
 _RATE_LIMIT = 120
@@ -116,6 +129,11 @@ class PublicTelemetryEvent(BaseModel):
     auth_state: str | None = Field(default=None, max_length=16)
     position: str | None = Field(default=None, max_length=16)
     method: str | None = Field(default=None, max_length=16)
+    # Authenticated-domain dimensions.  Keep these categorical; raw content
+    # (including topic/title text) is intentionally not part of the DTO.
+    decision: str | None = Field(default=None, max_length=32)
+    period: str | None = Field(default=None, max_length=16)
+    old_period: str | None = Field(default=None, max_length=16)
 
 
 def _client_key(request: Request) -> str:

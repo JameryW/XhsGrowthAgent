@@ -9,11 +9,16 @@ interface Props {
   show: boolean
   title?: string
   message?: string
+  // DB-10: real artifact counts to show instead of ✓/🎉 decoration.
+  copyCount?: number
+  imageCount?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
   title: '',
   message: '',
+  copyCount: 0,
+  imageCount: 0,
 })
 
 const displayTitle = computed(() => props.title || t('celebration.title'))
@@ -120,19 +125,19 @@ const handleKeyDown = (e: KeyboardEvent) => {
           <!-- Message -->
           <p id="celebration-message" class="text-slate-600 mb-6">{{ displayMessage }}</p>
 
-          <!-- Stats Preview -->
+          <!-- Stats Preview — DB-10: real artifact counts -->
           <div class="grid grid-cols-3 gap-3 mb-6">
             <div class="p-3 rounded-lg bg-rose-50 border border-rose-100 dark:bg-rose-950/40 dark:border-rose-500/30">
-              <div class="text-rose-500 font-bold text-lg">✓</div>
-              <div class="text-xs text-slate-500">{{ t('celebration.contentPublished') }}</div>
+              <div class="text-rose-500 font-bold text-lg">{{ props.copyCount || '—' }}</div>
+              <div class="text-xs text-slate-500">{{ t('celebration.copyCount') }}</div>
             </div>
             <div class="p-3 rounded-lg bg-teal-50 border border-teal-100 dark:bg-teal-950/40 dark:border-teal-500/30">
-              <div class="text-teal-500 font-bold text-lg">100%</div>
-              <div class="text-xs text-slate-500">{{ t('celebration.progressComplete') }}</div>
+              <div class="text-teal-500 font-bold text-lg">{{ props.imageCount || '—' }}</div>
+              <div class="text-xs text-slate-500">{{ t('celebration.imageCount') }}</div>
             </div>
             <div class="p-3 rounded-lg bg-violet-50 border border-violet-100 dark:bg-violet-950/40 dark:border-violet-500/30">
-              <div class="text-violet-500 font-bold text-lg">🎉</div>
-              <div class="text-xs text-slate-500">{{ t('celebration.workflowEnd') }}</div>
+              <div class="text-violet-500 font-bold text-lg">100%</div>
+              <div class="text-xs text-slate-500">{{ t('celebration.progressComplete') }}</div>
             </div>
           </div>
 

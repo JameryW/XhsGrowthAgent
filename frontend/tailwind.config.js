@@ -92,6 +92,14 @@ export default {
         'card': '0 2px 8px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06)',
         'card-hover': '0 4px 12px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.1)',
       },
+      // INF-07: semantic z-index layers — prefer these over z-[N] magic values.
+      zIndex: {
+        base: '0',
+        sticky: '10',
+        overlay: '20',
+        modal: '50',
+        toast: '60',
+      },
       animation: {
         // Enhanced animations for cool UI
         'pulse-glow': 'pulse-glow 3s ease-in-out infinite',
