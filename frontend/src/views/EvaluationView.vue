@@ -8,6 +8,7 @@ import EvaluationRadar from '@/components/charts/EvaluationRadar.vue'
 import TrendChart from '@/components/charts/TrendChart.vue'
 import CreatorQualityWorkspace from '@/components/evaluation/CreatorQualityWorkspace.vue'
 import { getEvaluationList, getEvaluationResult, getEvaluationTrend } from '@/api/evaluation'
+import { EvaluationSkeleton } from '@/components/skeletons'
 import type {
   EvaluationListItem,
   EvaluationListResponse,
@@ -15,6 +16,7 @@ import type {
   EvaluationTrendResponse,
 } from '@/types/evaluation'
 import { scoreTier as scoreTierOf, RADAR_EXCLUDED_DIMENSIONS, DIMENSION_LABEL_KEYS } from '@/constants/evaluation'
+import { formatShortDate } from '@/utils/format'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -81,11 +83,13 @@ function loadMore() {
   loadList(false)
 }
 
-// 前端过滤：标题 + thread_id + account_id
+// 前端过滤：标题 + thread_id + account_id + decision (EV-09)
+const decisionFilter = ref<string>('all')
 const filteredItems = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return listItems.value
   return listItems.value.filter((w) => {
+    if (decisionFilter.value !== 'all' && w.decision !== decisionFilter.value) return false
+    if (!q) return true
     const title = (w.selected_title || '').toLowerCase()
     const tid = (w.thread_id || '').toLowerCase()
     const acc = (w.account_id || '').toLowerCase()
@@ -191,7 +195,8 @@ const trendError = ref<string | null>(null)
 
 const trendData = computed(() =>
   (trend.value?.points || []).map((p) => ({
-    date: (p.created_at || '').slice(5, 16).replace('T', ' '),
+    // EV-13: localized date instead of raw slice(5,16).
+    date: formatShortDate(p.created_at, locale.value),
     value: p.overall_score,
   })),
 )
@@ -362,6 +367,21 @@ onMounted(() => {
         <div v-else class="trend-empty">{{ t('evaluation.trend.empty') }}</div>
       </section>
 
+      <!-- EV-09: decision filter chips -->
+      <section class="filter-chips" role="group" :aria-label="t('evaluation.list.filterLabel')">
+        <button
+          v-for="opt in ['all', 'approved', 'needs_revision', 'rejected']"
+          :key="opt"
+          type="button"
+          class="filter-chip min-h-[36px]"
+          :class="{ 'filter-chip--active': decisionFilter === opt }"
+          :aria-pressed="decisionFilter === opt"
+          @click="decisionFilter = opt"
+        >
+          {{ opt === 'all' ? t('evaluation.list.filterAll') : decisionLabel(opt) }}
+        </button>
+      </section>
+
       <!-- 搜索框 -->
       <section class="search-bar">
         <input
@@ -380,10 +400,8 @@ onMounted(() => {
         <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 px-3 text-xs font-medium hover:bg-rose-100" @click="loadList(true)">{{ t('evaluation.error.retry') }}</button>
       </div>
 
-      <!-- 加载中（首次） -->
-      <div v-if="listLoading && listItems.length === 0" class="trend-loading">
-        {{ t('evaluation.list.loading') }}
-      </div>
+      <!-- 加载中（首次） — EV-11/INF-02: structured skeleton -->
+      <EvaluationSkeleton v-if="listLoading && listItems.length === 0" />
 
       <!-- 空列表 -->
       <div
@@ -464,7 +482,7 @@ onMounted(() => {
       </PageHeader>
 
       <!-- 加载中 -->
-      <div v-if="detailLoading" class="trend-loading">{{ t('evaluation.searching') }}</div>
+      <EvaluationSkeleton v-if="detailLoading" />
 
       <!-- 错误 -->
       <div v-else-if="detailError" class="error-card" role="alert">
@@ -618,6 +636,12 @@ onMounted(() => {
 
 /* ── 列表页搜索栏 ── */
 .search-bar { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+.filter-chips { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.filter-chip { padding: 0.25rem 0.875rem; border-radius: 9999px; border: 1px solid #e2e8f0; background: #fff; color: #475569; font-size: 0.75rem; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+.filter-chip:hover { background: #f8fafc; }
+.filter-chip--active { background: #0d9488; border-color: #0d9488; color: #fff; }
+:global(.dark) .filter-chip { background: #1e293b; border-color: #334155; color: #cbd5e1; }
+:global(.dark) .filter-chip--active { background: #0d9488; border-color: #0d9488; color: #fff; }
 .thread-input {
   flex: 1; min-width: 240px; padding: 0.625rem 0.875rem;
   border: 1px solid #e2e8f0; border-radius: 0.5rem; font-size: 0.875rem;

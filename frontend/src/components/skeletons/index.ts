@@ -6,6 +6,7 @@ export { default as DashboardSkeleton } from './DashboardSkeleton.vue'
 export { default as AnalyticsSkeletonComponent } from './AnalyticsSkeleton.vue'
 export { default as ReviewSkeletonComponent } from './ReviewSkeleton.vue'
 export { default as HomeSkeleton } from './HomeSkeleton.vue'
+export { default as EvaluationSkeleton } from './EvaluationSkeleton.vue'
 
 // Convenience wrapper components (using proper Vue SFC instead of string templates)
 export { default as ReviewSkeleton } from './ReviewSkeletonWrapper.vue'

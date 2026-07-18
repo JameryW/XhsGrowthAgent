@@ -470,6 +470,8 @@ function rqgmDimLabel(dim: string): string {
                 <AppIcon name="Sparkles" size="xs" variant="cyan" />
                 <span>{{ rqgmRunning ? t('creatorNoteQuality.rqgm.running') : t('creatorNoteQuality.rqgm.run') }}</span>
               </NeonButton>
+              <!-- EV-15: set expectations for manual RQGM (runtime + LLM cost). -->
+              <p class="text-[11px] text-slate-400 dark:text-slate-500">{{ t('creatorNoteQuality.rqgm.costHint') }}</p>
             </div>
 
             <p v-if="rqgmError" class="mt-3 break-words text-[11px] leading-4 text-rose-600">{{ rqgmError }}</p>

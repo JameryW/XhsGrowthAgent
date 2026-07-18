@@ -8,10 +8,12 @@ import { TooltipComponent, LegendComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import type { DimensionScore } from '@/types/evaluation'
 import { RADAR_EXCLUDED_DIMENSIONS, DIMENSION_LABEL_KEYS } from '@/constants/evaluation'
+import { useChartTheme } from '@/composables/useChartTheme'
 
 use([RadarChart, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const { t } = useI18n()
+const { theme } = useChartTheme()
 
 interface Props {
   dimensions: DimensionScore[]
@@ -39,19 +41,25 @@ const indicators = computed(() =>
 
 const values = computed(() => radarDimensions.value.map((d) => d.score))
 
-const chartOption = computed(() => ({
-  tooltip: {},
+const chartOption = computed(() => {
+  const th = theme.value
+  return ({
+  tooltip: {
+    backgroundColor: th.tooltipBg,
+    borderColor: '#F43F5E',
+    textStyle: { color: th.tooltipText },
+  },
   radar: {
     indicator: indicators.value,
     radius: '65%',
-    axisName: { color: '#94a3b8', fontSize: 12 },
+    axisName: { color: th.axisLabel, fontSize: 12 },
     splitArea: {
       areaStyle: {
         color: ['rgba(244,63,94,0.04)', 'rgba(244,63,94,0.08)'],
       },
     },
-    splitLine: { lineStyle: { color: 'rgba(148,163,184,0.2)' } },
-    axisLine: { lineStyle: { color: 'rgba(148,163,184,0.3)' } },
+    splitLine: { lineStyle: { color: th.splitLine } },
+    axisLine: { lineStyle: { color: th.axisLine } },
   },
   series: [
     {
@@ -67,7 +75,8 @@ const chartOption = computed(() => ({
       ],
     },
   ],
-}))
+  })
+})
 </script>
 
 <template>

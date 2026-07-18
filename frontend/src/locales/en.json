@@ -975,6 +975,7 @@
       "sectionHint": "RQGM judge panel scores the note content; historical notes lack generation-side metadata, so visual dimensions are reference-only",
       "run": "RQGM Evaluation",
       "running": "Evaluating…",
+      "costHint": "Takes ~10–30s and incurs an LLM cost",
       "overall": "Overall",
       "radarTitle": "Dimension Radar",
       "dimensionsTitle": "Dimension Details",
@@ -992,6 +993,7 @@
     }
   },
   "versionCompare": {
+    "predictedScore": "Predicted score",
     "analysisReport": "Optimization Analysis Report",
     "gapAnalysis": "Gap Analysis",
     "gapsFound": "Gaps Found",
@@ -2095,6 +2097,8 @@
     "list": {
       "subtitle": "Workflows with evaluation results — click to view detail",
       "searchPlaceholder": "Search title / thread_id / account",
+      "filterLabel": "Filter by decision",
+      "filterAll": "All",
       "loading": "Loading list…",
       "loadError": "Failed to load list",
       "empty": "No workflows with evaluation results",

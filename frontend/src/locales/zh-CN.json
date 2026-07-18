@@ -975,6 +975,7 @@
       "sectionHint": "RQGM 评审面板对笔记内容打分；历史笔记缺生成侧元数据，视觉维度为参考分",
       "run": "RQGM 评估",
       "running": "评估中…",
+      "costHint": "约需 10–30 秒，会产生 LLM 费用",
       "overall": "综合分",
       "radarTitle": "维度雷达",
       "dimensionsTitle": "维度详情",
@@ -992,6 +993,7 @@
     }
   },
   "versionCompare": {
+    "predictedScore": "预测评分",
     "analysisReport": "优化分析报告",
     "gapAnalysis": "差距分析",
     "gapsFound": "发现差距",
@@ -2094,6 +2096,8 @@
     "list": {
       "subtitle": "查看有评估结果的工作流，点击进入详情",
       "searchPlaceholder": "搜索标题 / thread_id / 账号",
+      "filterLabel": "按决策筛选",
+      "filterAll": "全部",
       "loading": "加载列表中…",
       "loadError": "加载列表失败",
       "empty": "暂无有评估结果的工作流",

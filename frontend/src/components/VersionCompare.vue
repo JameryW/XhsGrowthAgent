@@ -234,7 +234,7 @@ function getCardClass(version: ContentVersion): string[] {
           <MiniProgress
             :value="version.predicted_score ?? 0"
             :max="100"
-            :label="t('analytics.avgEngagementRate')"
+            :label="t('versionCompare.predictedScore')"
             :color="version.version_type === 'C' ? 'pink' : version.version_type === 'B' ? 'cyan' : 'teal'"
           />
 
