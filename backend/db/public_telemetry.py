@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS public_ux_events (
     has_public_id   BOOLEAN,
     has_step        BOOLEAN,
     duration_ms     INTEGER,
+    auth_state      TEXT,
+    position        TEXT,
+    method          TEXT,
     received_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 """
@@ -62,6 +65,9 @@ _ADD_COLUMN_SQL = (
     "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS authenticated BOOLEAN",
     "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS has_public_id BOOLEAN",
     "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS has_step BOOLEAN",
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS auth_state TEXT",
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS position TEXT",
+    "ALTER TABLE public_ux_events ADD COLUMN IF NOT EXISTS method TEXT",
 )
 
 
@@ -95,10 +101,12 @@ async def record_event(event: Mapping[str, Any]) -> bool:
                 event_name, event_version, viewport, source, status, mode,
                 phase, error_type, view_mode, step_number, count_value,
                 restored, cached, has_steps, has_result, authenticated,
-                has_public_id, has_step, duration_ms
+                has_public_id, has_step, duration_ms,
+                auth_state, position, method
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s
             )
             """,
             (
@@ -121,6 +129,9 @@ async def record_event(event: Mapping[str, Any]) -> bool:
                 event.get("has_public_id"),
                 event.get("has_step"),
                 event.get("duration_ms"),
+                event.get("auth_state"),
+                event.get("position"),
+                event.get("method"),
             ),
         )
         # Keep the receiver bounded without retaining a visitor identifier.

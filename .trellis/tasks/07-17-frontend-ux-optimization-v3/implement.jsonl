@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "前端组件规范，五页组件改造与共享组件（ErrorState/DataTable/MetricCard）必须遵守"}
+{"file": ".trellis/spec/frontend/animation-patterns.md", "reason": "动效约定，reduced-motion 降级与庆祝/过渡动画改造的依据"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Pinia 状态约定，Dashboard effectiveState/进度高水位/回放状态改造必须遵守"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "前后端契约联动（评估阈值、分析周期语义、遥测白名单）时的跨层思考指南"}
+{"file": "docs/frontend-ux-optimization.md", "reason": "项目交互原则红线（状态来源唯一、空态区分、触控 44px、i18n、动效降级），所有条目的约束基线"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/research/showcase-replay-audit.md", "reason": "Showcase/Replay 现状审计与证据（PR-1/PR-2 实施依据）"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/research/dashboard-audit.md", "reason": "Dashboard 现状审计与证据（PR-3 实施依据）"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/research/analytics-audit.md", "reason": "Analytics 现状审计与证据（PR-4/PR-5 实施依据）"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/research/evaluation-audit.md", "reason": "Evaluation 现状审计与证据（PR-6/PR-7 实施依据）"}
+{"file": ".trellis/tasks/07-17-frontend-ux-optimization-v3/research/shared-infra-audit.md", "reason": "共享基础设施审计（INF 系列与通用要求实施依据）"}

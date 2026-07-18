@@ -11,6 +11,8 @@ const routeMock = vi.hoisted(() => ({ params: { publicId: 'case-1' }, query: {} 
 const getManifestMock = vi.hoisted(() => vi.fn())
 const getCheckpointMock = vi.hoisted(() => vi.fn())
 const getSummaryMock = vi.hoisted(() => vi.fn())
+const authState = vi.hoisted(() => ({ isAuthenticated: false, isInitialized: true }))
+const toastMock = vi.hoisted(() => ({ warning: vi.fn(), info: vi.fn(), success: vi.fn(), error: vi.fn(), addToast: vi.fn(), removeToast: vi.fn(), clearAll: vi.fn() }))
 
 vi.mock('vue-router', () => ({
   useRouter: () => routerMock,
@@ -22,10 +24,13 @@ vi.mock('@/api/publicShowcase', () => ({
   getPublicFinalSummary: getSummaryMock,
 }))
 vi.mock('@/stores', () => ({
-  useAuthStore: () => ({ isAuthenticated: false, isInitialized: true, initialize: vi.fn() }),
+  useAuthStore: () => ({ get isAuthenticated() { return authState.isAuthenticated }, get isInitialized() { return authState.isInitialized }, initialize: vi.fn() }),
 }))
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ isAuthenticated: false, isInitialized: true, initialize: vi.fn() }),
+  useAuthStore: () => ({ get isAuthenticated() { return authState.isAuthenticated }, get isInitialized() { return authState.isInitialized }, initialize: vi.fn() }),
+}))
+vi.mock('@/stores/toast', () => ({
+  useToastStore: () => toastMock,
 }))
 
 const steps = [
@@ -39,6 +44,8 @@ describe('WorkflowReplay public UX contract', () => {
     sessionStorage.clear()
     routeMock.params = { publicId: 'case-1' }
     routeMock.query = {}
+    authState.isAuthenticated = false
+    authState.isInitialized = true
     getManifestMock.mockResolvedValue({
       public_id: 'case-1',
       view: 'key',

@@ -17,6 +17,9 @@ export type InteractionEventName =
   | 'showcase_workflow_open'
   | 'showcase_detail_retry'
   | 'showcase_primary_cta_click'
+  | 'showcase_case_impression'
+  | 'showcase_featured_open'
+  | 'showcase_cta_click'
   | 'replay_view'
   | 'replay_first_result_visible'
   | 'replay_select_to_render'
@@ -32,6 +35,11 @@ export type InteractionEventName =
   | 'replay_primary_cta_click'
   | 'replay_load_error'
   | 'replay_load_more_error'
+  | 'replay_step_navigate'
+  | 'replay_result_expand'
+  | 'replay_result_copy'
+  | 'replay_share'
+  | 'replay_cta_click'
 
 type InteractionValue = string | number | boolean
 type InteractionProperties = Record<string, InteractionValue | undefined>
@@ -55,6 +63,9 @@ const allowedKeys = new Set([
   'has_step',
   'duration_ms',
   'event_version',
+  'auth_state',
+  'position',
+  'method',
 ])
 
 function viewportCategory(): 'mobile' | 'desktop' {
