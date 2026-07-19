@@ -24,6 +24,21 @@ export interface PublicCaseQuery {
   sort?: 'recent' | 'title'
 }
 
+export interface ShowcaseVisibilityUpdate {
+  visibility: 'private' | 'unlisted' | 'public'
+  public_title?: string | null
+  public_summary?: string | null
+  featured?: boolean
+  featured_rank?: number | null
+}
+
+export interface ShowcaseVisibilityUpdateResponse {
+  public_id: string
+  visibility: 'private' | 'unlisted' | 'public'
+  approved_at?: string | null
+  approved_by?: string | null
+}
+
 export async function listPublicCases(
   params?: PublicCaseQuery,
   options?: RequestOptions,
@@ -36,6 +51,17 @@ export async function getPublicCase(
   options?: RequestOptions,
 ): Promise<PublicCase> {
   return client.get(`/public/showcase/cases/${encodeURIComponent(publicId)}`, options) as unknown as PublicCase
+}
+
+export async function updateShowcaseVisibility(
+  publicId: string,
+  payload: ShowcaseVisibilityUpdate,
+): Promise<ShowcaseVisibilityUpdateResponse> {
+  return client.put(`/public/admin/showcase/cases/${encodeURIComponent(publicId)}`, payload) as unknown as ShowcaseVisibilityUpdateResponse
+}
+
+export async function revokeShowcaseVisibility(publicId: string): Promise<ShowcaseVisibilityUpdateResponse> {
+  return client.delete(`/public/admin/showcase/cases/${encodeURIComponent(publicId)}`) as unknown as ShowcaseVisibilityUpdateResponse
 }
 
 export async function getPublicReplayManifest(
