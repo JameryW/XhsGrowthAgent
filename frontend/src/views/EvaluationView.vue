@@ -9,6 +9,7 @@ import EvaluationOverview from '@/components/evaluation/EvaluationOverview.vue'
 import CreatorQualityPanel from '@/components/settings/CreatorQualityPanel.vue'
 import CreatorNoteQualityPanel from '@/components/settings/CreatorNoteQualityPanel.vue'
 import { getEvaluationList, getEvaluationResult } from '@/api/evaluation'
+import { getCreatorStats, type CreatorNoteStats } from '@/api/analytics'
 import { useAccountsStore } from '@/stores/accounts'
 import { EvaluationSkeleton } from '@/components/skeletons'
 import { trackInteraction } from '@/utils/interactionTelemetry'
@@ -32,15 +33,7 @@ const router = useRouter()
 const detailThreadId = computed(() => (route.params.threadId as string | undefined) ?? null)
 const isDetailView = computed(() => !!detailThreadId.value)
 
-// 单篇区块的分段控件（?tab= 兼容旧链接：workflow / notes）
-type ContentSegment = 'workflow' | 'notes'
-const contentSegment = ref<ContentSegment>(route.query.tab === 'notes' ? 'notes' : 'workflow')
-
-function setSegment(segment: ContentSegment) {
-  contentSegment.value = segment
-}
-
-// ── 账号选择（自 CreatorQualityWorkspace 上移，供总览/诊断/历史笔记共用）──
+// ── 账号选择（供总览/诊断/单篇流共用）──
 const accountsStore = useAccountsStore()
 const selectedAccountId = ref('')
 const hasUserSelectedAccount = ref(false)
@@ -81,6 +74,36 @@ watch(
   selectDefaultAccount,
   { immediate: true }
 )
+
+// ── 历史笔记（单篇流的第二数据源；账号切换时重载）──
+const notesItems = ref<CreatorNoteStats[]>([])
+const notesLoading = ref(false)
+const notesError = ref(false)
+let notesRequest = 0
+
+async function loadNotes(accountId: string) {
+  const request = ++notesRequest
+  notesItems.value = []
+  notesError.value = false
+  if (!accountId) {
+    notesLoading.value = false
+    return
+  }
+  notesLoading.value = true
+  try {
+    const stats = await getCreatorStats(accountId, 200)
+    if (request !== notesRequest) return
+    notesItems.value = (stats.notes || []).filter((note) => Boolean(note.note_id))
+  } catch {
+    if (request === notesRequest) notesError.value = true
+  } finally {
+    if (request === notesRequest) notesLoading.value = false
+  }
+}
+
+watch(selectedAccountId, (accountId) => {
+  if (!isDetailView.value) void loadNotes(accountId)
+}, { immediate: true })
 
 // ════════════════════════════════════════════════════════════
 // 列表页状态
@@ -177,23 +200,61 @@ async function copyThreadId() {
 onMounted(() => {
   if (isDetailView.value) return
   void refreshAccounts()
-  if (contentSegment.value === 'workflow') {
-    loadList(true)
-  }
+  void loadList(true)
 })
 
 // 路由切换到列表页时按需加载（从详情返回且列表为空）
 watch(isDetailView, (detail) => {
-  if (!detail && contentSegment.value === 'workflow' && listItems.value.length === 0 && !listLoading.value) {
-    loadList(true)
-  }
-})
-
-watch(contentSegment, (segment) => {
-  if (segment === 'workflow' && listItems.value.length === 0 && !listLoading.value) {
+  if (!detail && listItems.value.length === 0 && !listLoading.value) {
     void loadList(true)
   }
 })
+
+// ── 单篇质量流：工作流评估 × 历史笔记按时间混排 ──
+type StreamRow =
+  | { kind: 'workflow'; time: number; payload: EvaluationListItem }
+  | { kind: 'note'; time: number; payload: CreatorNoteStats }
+
+function noteTime(note: CreatorNoteStats): number {
+  const time = new Date(note.published_at || note.synced_at || '').getTime()
+  return Number.isNaN(time) ? 0 : time
+}
+
+const streamRows = computed<StreamRow[]>(() => {
+  const rows: StreamRow[] = filteredItems.value.map((item) => ({
+    kind: 'workflow' as const,
+    time: new Date(item.updated_at).getTime() || 0,
+    payload: item,
+  }))
+  // 决策筛选只适用于工作流评估；筛选激活时隐藏历史笔记行。
+  if (decisionFilter.value === 'all') {
+    const q = searchQuery.value.trim().toLowerCase()
+    for (const note of notesItems.value) {
+      if (q && !(note.title || '').toLowerCase().includes(q)) continue
+      rows.push({ kind: 'note', time: noteTime(note), payload: note })
+    }
+  }
+  return rows.sort((a, b) => b.time - a.time)
+})
+
+// ── 历史笔记下钻抽屉 ──
+const drawerNoteId = ref('')
+const drawerNoteTitle = ref('')
+
+function openNoteDrawer(note: CreatorNoteStats) {
+  drawerNoteId.value = note.note_id
+  drawerNoteTitle.value = note.title
+  trackInteraction('evaluation_note_drilldown', { method: 'click' })
+}
+
+function closeNoteDrawer() {
+  drawerNoteId.value = ''
+}
+
+function formatCompact(value: number | undefined): string {
+  if (value == null) return '0'
+  return new Intl.NumberFormat(locale.value || undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(value)
+}
 
 // 列表项的 decision 徽章 class
 function decisionBadgeClass(decision: string): string {
@@ -372,40 +433,13 @@ function dimDescription(dim: string): string {
         <CreatorQualityPanel :account-id="selectedAccount.id" :account-name="selectedAccount.name" class="shadow-sm" />
       </section>
 
-      <!-- 单篇区块：工作流评估 / 历史笔记 -->
+      <!-- 单篇区块：工作流评估 × 历史笔记，统一时间流 -->
       <section class="eval-section" :aria-label="t('evaluation.section.content')">
-        <div class="section-head section-head-row">
-          <div>
-            <p class="section-eyebrow">{{ t('evaluation.section.content') }}</p>
-            <h2 class="section-title">{{ contentSegment === 'workflow' ? t('creatorQuality.page.workflowTab') : t('creatorNoteQuality.title') }}</h2>
-          </div>
-          <div class="evaluation-tabs" role="tablist" :aria-label="t('evaluation.section.content')">
-            <button
-              type="button"
-              class="evaluation-tab"
-              :class="{ 'evaluation-tab-active': contentSegment === 'workflow' }"
-              role="tab"
-              :aria-selected="contentSegment === 'workflow'"
-              @click="setSegment('workflow')"
-            >
-              <AppIcon name="CheckSquare" size="sm" :variant="contentSegment === 'workflow' ? 'white' : 'cyan'" />
-              {{ t('creatorQuality.page.workflowTab') }}
-            </button>
-            <button
-              type="button"
-              class="evaluation-tab"
-              :class="{ 'evaluation-tab-active': contentSegment === 'notes' }"
-              role="tab"
-              :aria-selected="contentSegment === 'notes'"
-              @click="setSegment('notes')"
-            >
-              <AppIcon name="Brain" size="sm" :variant="contentSegment === 'notes' ? 'white' : 'cyan'" />
-              {{ t('creatorNoteQuality.title') }}
-            </button>
-          </div>
+        <div class="section-head">
+          <p class="section-eyebrow">{{ t('evaluation.section.content') }}</p>
+          <h2 class="section-title">{{ t('evaluation.stream.title') }}</h2>
         </div>
 
-        <template v-if="contentSegment === 'workflow'">
       <!-- EV-09: decision filter chips -->
       <section class="filter-chips" role="group" :aria-label="t('evaluation.list.filterLabel')">
         <button
@@ -429,7 +463,7 @@ function dimDescription(dim: string): string {
           :aria-label="t('evaluation.list.searchPlaceholder')"
           :placeholder="t('evaluation.list.searchPlaceholder')"
         />
-        <span class="result-count">{{ filteredItems.length }} / {{ listTotal }}</span>
+        <span class="result-count">{{ streamRows.length }}</span>
       </section>
 
       <!-- 加载错误 -->
@@ -444,45 +478,68 @@ function dimDescription(dim: string): string {
 
       <!-- 空列表 -->
       <div
-        v-else-if="!listError && filteredItems.length === 0"
+        v-else-if="!listError && streamRows.length === 0 && !notesLoading"
         class="empty-state"
       >
         <AppIcon name="HelpCircle" size="xl" />
-        <div class="empty-title">{{ listItems.length ? t('evaluation.list.noMatch') : t('evaluation.list.empty') }}</div>
+        <div class="empty-title">{{ (listItems.length || notesItems.length) ? t('evaluation.list.noMatch') : t('evaluation.list.empty') }}</div>
       </div>
 
-      <!-- 列表 -->
+      <!-- 统一单篇时间流 -->
       <div v-else class="eval-list">
-        <button
-          v-for="w in filteredItems"
-          :key="w.thread_id"
-          type="button"
-          class="eval-item"
-          :aria-label="`${w.selected_title || t('evaluation.empty.title')} · ${decisionLabel(w.decision)}`"
-          @click="openDetail(w.thread_id)"
-        >
-          <div class="item-main">
-            <div class="item-title">{{ w.selected_title || t('evaluation.empty.title') }}</div>
-            <div class="item-meta">
-              <span class="meta-tag">{{ phaseLabel(w.phase) }}</span>
-              <span class="meta-sep">·</span>
-              <span class="meta-account">{{ w.account_id }}</span>
-              <span class="meta-sep">·</span>
-              <span class="meta-time">{{ formatDateTime(w.updated_at) }}</span>
+        <div v-if="notesLoading" class="notes-hint" aria-busy="true">{{ t('creatorNoteQuality.loading') }}</div>
+        <div v-if="notesError" class="notes-hint" role="status">{{ t('evaluation.stream.notesUnavailable') }}</div>
+        <template v-for="row in streamRows" :key="row.kind === 'workflow' ? row.payload.thread_id : row.payload.note_id">
+          <button
+            v-if="row.kind === 'workflow'"
+            type="button"
+            class="eval-item"
+            :aria-label="`${row.payload.selected_title || t('evaluation.empty.title')} · ${decisionLabel(row.payload.decision)}`"
+            @click="openDetail(row.payload.thread_id)"
+          >
+            <div class="item-main">
+              <div class="item-title">{{ row.payload.selected_title || t('evaluation.empty.title') }}</div>
+              <div class="item-meta">
+                <span class="source-badge source-workflow">{{ t('evaluation.stream.sourceWorkflow') }}</span>
+                <span class="meta-tag">{{ phaseLabel(row.payload.phase) }}</span>
+                <span class="meta-sep">·</span>
+                <span class="meta-account">{{ row.payload.account_id }}</span>
+                <span class="meta-sep">·</span>
+                <span class="meta-time">{{ formatDateTime(row.payload.updated_at) }}</span>
+              </div>
             </div>
-          </div>
-          <div class="item-right">
-            <span
-              class="item-score"
-              :class="scoreTierClass(w.overall_score, { pass: w.pass_threshold ?? SCORE_THRESHOLDS.pass, warn: w.warn_threshold ?? SCORE_THRESHOLDS.warn })"
-            >
-              {{ w.overall_score == null ? '—' : w.overall_score.toFixed(1) }}
-            </span>
-            <span class="decision-badge" :class="decisionBadgeClass(w.decision)">
-              {{ decisionLabel(w.decision) }}
-            </span>
-          </div>
-        </button>
+            <div class="item-right">
+              <span
+                class="item-score"
+                :class="scoreTierClass(row.payload.overall_score, { pass: row.payload.pass_threshold ?? SCORE_THRESHOLDS.pass, warn: row.payload.warn_threshold ?? SCORE_THRESHOLDS.warn })"
+              >
+                {{ row.payload.overall_score == null ? '—' : row.payload.overall_score.toFixed(1) }}
+              </span>
+              <span class="decision-badge" :class="decisionBadgeClass(row.payload.decision)">
+                {{ decisionLabel(row.payload.decision) }}
+              </span>
+            </div>
+          </button>
+          <button
+            v-else
+            type="button"
+            class="eval-item"
+            :aria-label="`${row.payload.title || t('creatorNoteQuality.untitled')} · ${t('evaluation.stream.sourceImported')}`"
+            @click="openNoteDrawer(row.payload)"
+          >
+            <div class="item-main">
+              <div class="item-title">{{ row.payload.title || t('creatorNoteQuality.untitled') }}</div>
+              <div class="item-meta">
+                <span class="source-badge source-imported">{{ t('evaluation.stream.sourceImported') }}</span>
+                <span class="meta-time">{{ formatDateTime(row.payload.published_at) }}</span>
+              </div>
+            </div>
+            <div class="item-right item-right-note">
+              <span class="note-metric">{{ t('creatorNoteQuality.metrics.views') }} {{ formatCompact(row.payload.views) }}</span>
+              <span class="note-metric">{{ t('creatorNoteQuality.metrics.likes') }} {{ formatCompact(row.payload.likes) }}</span>
+            </div>
+          </button>
+        </template>
       </div>
 
       <!-- 加载更多 -->
@@ -493,13 +550,6 @@ function dimDescription(dim: string): string {
         </button>
       </div>
       <div v-else-if="listItems.length > 0" class="no-more">{{ t('evaluation.list.noMore') }}</div>
-        </template>
-        <CreatorNoteQualityPanel
-          v-else-if="selectedAccount"
-          :account-id="selectedAccount.id"
-          :account-name="selectedAccount.name"
-          class="shadow-sm"
-        />
       </section>
     </template>
 
@@ -630,6 +680,28 @@ function dimDescription(dim: string): string {
         </section>
       </div>
     </template>
+
+    <!-- 历史笔记下钻抽屉：单篇质量 + RQGM 评估（复用 AN-08 抽屉模式） -->
+    <Teleport to="body">
+      <div
+        v-if="drawerNoteId && selectedAccountId"
+        class="fixed inset-0 z-50 flex justify-end"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="t('creatorNoteQuality.title')"
+      >
+        <div class="absolute inset-0 bg-black/40" @click="closeNoteDrawer" />
+        <div class="relative h-full w-full max-w-md space-y-4 overflow-y-auto bg-white p-4 shadow-xl md:p-6 dark:bg-slate-900">
+          <div class="flex items-start justify-between gap-3">
+            <h2 class="truncate text-base font-semibold text-slate-800 md:text-lg dark:text-slate-100">{{ drawerNoteTitle || t('creatorNoteQuality.untitled') }}</h2>
+            <button type="button" class="min-h-[44px] min-w-[44px] shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" :aria-label="t('common.close')" @click="closeNoteDrawer">
+              <AppIcon name="X" size="sm" />
+            </button>
+          </div>
+          <CreatorNoteQualityPanel :account-id="selectedAccountId" :note-id="drawerNoteId" />
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -668,40 +740,26 @@ function dimDescription(dim: string): string {
 }
 :global(.dark) .section-title { color: #f1f5f9; }
 
-.evaluation-tabs {
-  display: inline-flex;
+/* ── 单篇时间流：来源徽章与笔记指标 ── */
+.source-badge {
   flex-shrink: 0;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.875rem;
-  background: rgba(248, 250, 252, 0.92);
+  border-radius: 999px;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
-.evaluation-tab {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  min-height: 2.75rem;
-  padding: 0.45rem 0.7rem;
-  border: 0;
-  border-radius: 0.625rem;
-  background: transparent;
-  color: #64748b;
+.source-workflow { background: #ccfbf1; color: #0f766e; }
+:global(.dark) .source-workflow { background: rgba(20,184,166,0.16); color: #5eead4; }
+.source-imported { background: #ede9fe; color: #6d28d9; }
+:global(.dark) .source-imported { background: rgba(139,92,246,0.18); color: #c4b5fd; }
+.item-right-note { flex-direction: row; align-items: center; gap: 0.5rem; }
+.note-metric { font-size: 0.75rem; color: #64748b; white-space: nowrap; font-variant-numeric: tabular-nums; }
+:global(.dark) .note-metric { color: #94a3b8; }
+.notes-hint {
+  padding: 0.5rem 0.875rem;
   font-size: 0.75rem;
-  font-weight: 650;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
-}
-.evaluation-tab:hover { background: #fff; color: #334155; }
-.evaluation-tab-active {
-  background: linear-gradient(135deg, #f43f5e, #8b5cf6);
-  color: #fff;
-  box-shadow: 0 3px 8px rgba(139, 92, 246, 0.22);
-}
-@media (max-width: 640px) {
-  .evaluation-tabs { width: 100%; }
-  .evaluation-tab { flex: 1; padding-inline: 0.4rem; }
+  color: #94a3b8;
 }
 
 /* ── 详情页返回操作 ── */

@@ -2150,6 +2150,12 @@
       "diagnosis": "Account diagnosis",
       "content": "Content review"
     },
+    "stream": {
+      "title": "Content quality stream",
+      "sourceWorkflow": "Workflow",
+      "sourceImported": "Imported",
+      "notesUnavailable": "Imported notes unavailable"
+    },
     "list": {
       "subtitle": "Workflows with evaluation results — click to view detail",
       "searchPlaceholder": "Search title / thread_id / account",

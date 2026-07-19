@@ -51,6 +51,7 @@ export type InteractionEventName =
   | 'evaluation_decision_cta'
   | 'evaluation_drilldown'
   | 'evaluation_filter_change'
+  | 'evaluation_note_drilldown'
 
 type InteractionValue = string | number | boolean
 type InteractionProperties = Record<string, InteractionValue | undefined>
