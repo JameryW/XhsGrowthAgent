@@ -23,6 +23,12 @@ async function freshRevealDirective(): Promise<Directive<HTMLElement, number | s
   return mod.vReveal
 }
 
+async function freshSpotlightDirective(): Promise<Directive<HTMLElement>> {
+  vi.resetModules()
+  const mod = await import('@/directives/spotlight')
+  return mod.vSpotlight
+}
+
 describe('AuroraBackground', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -57,6 +63,51 @@ describe('AuroraBackground', () => {
     const el = wrapper.element as HTMLElement
     expect(el.style.getPropertyValue('--mx')).toBe('')
     expect(el.style.getPropertyValue('--my')).toBe('')
+    wrapper.unmount()
+  })
+})
+
+describe('v-spotlight directive', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('activates on pointer enter and tracks the cursor position', async () => {
+    stubMatchMedia({ reduced: false, coarse: false })
+    const vSpotlight = await freshSpotlightDirective()
+    const Comp = defineComponent({
+      directives: { spotlight: vSpotlight },
+      template: '<div v-spotlight data-test="target" />',
+    })
+    const wrapper = mount(Comp)
+    const el = wrapper.find('[data-test="target"]').element as HTMLElement
+    expect(el.classList.contains('spotlight-card')).toBe(true)
+
+    el.dispatchEvent(new MouseEvent('pointerenter'))
+    expect(el.classList.contains('spotlight-active')).toBe(true)
+
+    el.dispatchEvent(new MouseEvent('pointermove', { clientX: 30, clientY: 20 }))
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    expect(el.style.getPropertyValue('--sx')).toBe('30px')
+    expect(el.style.getPropertyValue('--sy')).toBe('20px')
+
+    el.dispatchEvent(new MouseEvent('pointerleave'))
+    expect(el.classList.contains('spotlight-active')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('stays inert under reduced motion or coarse pointers', async () => {
+    stubMatchMedia({ reduced: true, coarse: true })
+    const vSpotlight = await freshSpotlightDirective()
+    const Comp = defineComponent({
+      directives: { spotlight: vSpotlight },
+      template: '<div v-spotlight data-test="target" />',
+    })
+    const wrapper = mount(Comp)
+    const el = wrapper.find('[data-test="target"]').element as HTMLElement
+    expect(el.classList.contains('spotlight-card')).toBe(false)
+    el.dispatchEvent(new MouseEvent('pointerenter'))
+    expect(el.classList.contains('spotlight-active')).toBe(false)
     wrapper.unmount()
   })
 })

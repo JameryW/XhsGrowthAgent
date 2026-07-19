@@ -7,6 +7,7 @@ import AuroraBackground from '@/components/showcase/AuroraBackground.vue'
 import PublicReplayResult from '@/components/replay/PublicReplayResult.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import { vReveal } from '@/directives/reveal'
+import { vSpotlight } from '@/directives/spotlight'
 import {
   getPublicFinalSummary,
   getPublicReplayCheckpoint,
@@ -566,14 +567,13 @@ watch(locale, () => {
           <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><h2 id="replay-steps-heading" class="text-base font-semibold">{{ t('replay.publicKeySteps') }}</h2><p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ t('replay.publicStepCount', { key: manifest.key_step_count, total: viewMode === 'all' ? manifest.total_steps : manifest.key_step_count }) }}</p></div><div class="flex items-center gap-2"><button type="button" class="min-h-11 rounded-xl px-3 text-sm font-medium transition" :class="viewMode === 'key' ? 'bg-slate-900 text-white shadow-md shadow-slate-900/20 dark:bg-white dark:text-slate-900' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'" :aria-pressed="viewMode === 'key'" @click="toggleView('key')">{{ t('replay.publicKeySteps') }}</button><button type="button" class="min-h-11 rounded-xl px-3 text-sm font-medium transition" :class="viewMode === 'all' ? 'bg-slate-900 text-white shadow-md shadow-slate-900/20 dark:bg-white dark:text-slate-900' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'" :aria-pressed="viewMode === 'all'" @click="toggleView('all')">{{ t('replay.publicAllSteps') }}</button></div></div>
           <div class="mt-4">
             <p class="sr-only">{{ t('replay.progressLabel') }}: {{ progressPercent }}%</p>
-            <div class="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" aria-hidden="true"><div class="replay-progress-bar h-full rounded-full bg-gradient-to-r from-teal-500 via-cyan-400 to-emerald-300" :style="{ width: `${progressPercent}%` }" /></div>
-          </div>
+            <div class="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" aria-hidden="true"><div class="replay-progress-bar h-full rounded-full bg-gradient-to-r from-teal-500 via-cyan-400 to-emerald-300" :style="{ width: `${progressPercent}%` }" /></div>          </div>
           <button type="button" class="mt-3 flex min-h-11 w-full items-center justify-between rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 md:hidden dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800" :aria-expanded="stepsExpanded" aria-controls="replay-steps-content" @click="stepsExpanded = !stepsExpanded"><span>{{ t('replay.publicStepsToggle', { current: currentStepNumber, total: steps.length }) }}</span><AppIcon :name="stepsExpanded ? 'ChevronUp' : 'ChevronDown'" size="sm" aria-hidden="true" /></button>
           <div id="replay-steps-content" :class="stepsExpanded ? 'block' : 'hidden'" class="md:block">
           <p v-if="viewMode === 'key' && manifest.technical_steps_available && !isAuthenticated" class="mt-2 text-xs text-slate-500 dark:text-slate-400">{{ t('replay.publicLoginForAdvanced') }}</p>
-          <nav v-if="phaseGroups.length > 1" class="phase-nav-fade mt-5 overflow-x-auto border-y border-slate-200/70 py-3 dark:border-slate-800" :aria-label="t('replay.publicPhaseNavigation')"><ol class="flex min-w-max items-center gap-2"><li v-for="(phase, index) in phaseGroups" :key="phase.phase" class="phase-item"><button type="button" :data-phase-index="index" :tabindex="selectedPhase === phase.phase ? 0 : -1" :disabled="phasesWithoutData.has(phase.phase)" :title="phasesWithoutData.has(phase.phase) ? t('replay.phaseNoData') : undefined" class="min-h-11 rounded-xl px-3 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:cursor-not-allowed disabled:opacity-40" :class="selectedPhase === phase.phase ? 'bg-teal-50 text-teal-700 shadow-sm shadow-teal-500/20 ring-1 ring-teal-400/40 dark:bg-teal-400/10 dark:text-teal-200' : phasesWithoutData.has(phase.phase) ? 'text-slate-400 dark:text-slate-600' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'" :aria-current="selectedPhase === phase.phase ? 'step' : undefined" :aria-disabled="phasesWithoutData.has(phase.phase)" @click="selectPhase(phase)" @keydown="handlePhaseKeydown($event, index)">{{ phaseLabel(phase.phase) }}</button></li></ol></nav>
+          <nav v-if="phaseGroups.length > 1" class="phase-nav-fade mt-5 overflow-x-auto border-y border-slate-200/70 py-3 dark:border-slate-800" :aria-label="t('replay.publicPhaseNavigation')"><ol class="flex min-w-max items-center gap-2"><li v-for="(phase, index) in phaseGroups" :key="phase.phase" class="phase-item"><button type="button" :data-phase-index="index" :tabindex="selectedPhase === phase.phase ? 0 : -1" :disabled="phasesWithoutData.has(phase.phase)" :title="phasesWithoutData.has(phase.phase) ? t('replay.phaseNoData') : undefined" class="min-h-11 rounded-xl px-3 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:cursor-not-allowed disabled:opacity-40" :class="selectedPhase === phase.phase ? 'bg-gradient-to-r from-teal-600 to-cyan-500 text-white shadow-md shadow-teal-500/40 dark:from-teal-500 dark:to-cyan-400 dark:text-slate-950' : phasesWithoutData.has(phase.phase) ? 'text-slate-400 dark:text-slate-600' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'" :aria-current="selectedPhase === phase.phase ? 'step' : undefined" :aria-disabled="phasesWithoutData.has(phase.phase)" @click="selectPhase(phase)" @keydown="handlePhaseKeydown($event, index)">{{ phaseLabel(phase.phase) }}</button></li></ol></nav>
           <ol v-if="steps.length" class="mt-5 grid gap-3 md:grid-cols-2 lg:grid-cols-3" :aria-label="t('replay.publicStepsLabel')">
-            <li v-for="(step, index) in steps" :key="step.public_id" v-reveal="(index % 6) * 50"><button type="button" :data-step-id="step.public_id" class="w-full rounded-2xl border p-4 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500" :class="step.public_id === selectedStepId ? 'border-teal-500 bg-teal-50/80 shadow-md shadow-teal-500/15 ring-1 ring-teal-400/40 dark:border-teal-300 dark:bg-teal-400/10' : 'border-slate-200/80 hover:-translate-y-0.5 hover:border-teal-300 hover:bg-slate-50 hover:shadow-md dark:border-slate-800 dark:hover:border-teal-500/50 dark:hover:bg-slate-800/80'" :aria-current="step.public_id === selectedStepId ? 'step' : undefined" @click="selectStep(step)" @keydown="handleStepKeydown($event)"><div class="flex items-center gap-3"><span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold transition" :class="step.public_id === selectedStepId ? 'bg-gradient-to-br from-teal-500 to-cyan-400 text-white shadow-md shadow-teal-500/30' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'">{{ index + 1 }}</span><span class="text-xs font-medium text-teal-700 dark:text-teal-200">{{ phaseLabel(step.phase) }}</span></div><p class="mt-3 line-clamp-2 text-sm font-semibold text-slate-900 dark:text-slate-50">{{ step.title || t('replay.publicStep', { step: step.step }) }}</p><p class="mt-2 line-clamp-2 text-sm leading-5 text-slate-500 dark:text-slate-400">{{ step.summary }}</p></button></li>
+            <li v-for="(step, index) in steps" :key="step.public_id" v-reveal="(index % 6) * 50"><button v-spotlight type="button" :data-step-id="step.public_id" class="w-full rounded-2xl border p-4 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500" :class="step.public_id === selectedStepId ? 'border-teal-500 bg-teal-50/80 shadow-lg shadow-teal-500/25 ring-1 ring-teal-400/50 dark:border-teal-300 dark:bg-teal-400/10' : 'border-slate-200/80 hover:-translate-y-0.5 hover:border-teal-300 hover:bg-slate-50 hover:shadow-md dark:border-slate-800 dark:hover:border-teal-500/50 dark:hover:bg-slate-800/80'" :aria-current="step.public_id === selectedStepId ? 'step' : undefined" @click="selectStep(step)" @keydown="handleStepKeydown($event)"><div class="flex items-center gap-3"><span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold transition" :class="step.public_id === selectedStepId ? 'bg-gradient-to-br from-teal-500 to-cyan-400 text-white shadow-md shadow-teal-500/30' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'">{{ index + 1 }}</span><span class="text-xs font-medium text-teal-700 dark:text-teal-200">{{ phaseLabel(step.phase) }}</span></div><p class="mt-3 line-clamp-2 text-sm font-semibold text-slate-900 dark:text-slate-50">{{ step.title || t('replay.publicStep', { step: step.step }) }}</p><p class="mt-2 line-clamp-2 text-sm leading-5 text-slate-500 dark:text-slate-400">{{ step.summary }}</p></button></li>
           </ol>
           <button v-if="canLoadMore" type="button" class="mt-4 min-h-11 w-full rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" :disabled="loadingMore" @click="loadMoreSteps">{{ loadingMore ? t('common.loadingState') : t('replay.publicLoadMore') }}</button>
           <div v-if="loadMoreError" class="mt-3 flex flex-col items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 sm:flex-row dark:border-rose-400/20 dark:bg-rose-400/10 dark:text-rose-100" role="alert"><span>{{ t('replay.publicLoadMoreFailed') }}</span><button type="button" class="min-h-11 rounded-lg bg-rose-600 px-3 text-sm font-semibold text-white hover:bg-rose-700" @click="loadMoreSteps">{{ t('common.retry') }}</button></div>
@@ -593,19 +593,19 @@ watch(locale, () => {
               <PublicReplayResult v-else-if="selectedStep" class="mt-6" :result="selectedStep.result || {}" />
               <div v-else class="mt-6 rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">{{ t('replay.publicNoSteps') }}</div>
               <div v-if="selectedStep?.technical" class="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600 dark:bg-slate-800/70 dark:text-slate-300"><p class="font-medium">{{ t('replay.publicAdvanced') }}</p><p class="mt-2">{{ t('replay.publicStep', { step: selectedStep.technical.step }) }} · {{ phaseLabel(selectedStep.technical.phase) }}</p></div>
-              <div class="mt-7 flex flex-col justify-between gap-3 border-t border-slate-200/70 pt-5 sm:flex-row sm:items-center dark:border-slate-800"><button type="button" class="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300" :disabled="currentIndex <= 0" :title="currentIndex <= 0 ? t('replay.boundaryStart') : undefined" :aria-disabled="currentIndex <= 0" @click="selectAdjacent(-1)"><AppIcon name="ArrowLeft" size="xs" class="mr-1.5" aria-hidden="true" />{{ t('replay.publicPrevious') }}</button><button type="button" class="min-h-11 rounded-xl bg-teal-700 px-4 text-sm font-semibold text-white shadow-lg shadow-teal-700/25 transition hover:-translate-y-0.5 hover:bg-teal-800 hover:shadow-xl hover:shadow-teal-700/30 disabled:cursor-not-allowed disabled:opacity-40" :disabled="currentIndex < 0 || currentIndex >= steps.length - 1" :title="currentIndex >= steps.length - 1 ? t('replay.boundaryEnd') : undefined" :aria-disabled="currentIndex < 0 || currentIndex >= steps.length - 1" @click="selectAdjacent(1)">{{ t('replay.publicNext') }}<AppIcon name="ArrowRight" size="xs" class="ml-1.5" aria-hidden="true" /></button></div>
+              <div class="mt-7 flex flex-col justify-between gap-3 border-t border-slate-200/70 pt-5 sm:flex-row sm:items-center dark:border-slate-800"><button type="button" class="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300" :disabled="currentIndex <= 0" :title="currentIndex <= 0 ? t('replay.boundaryStart') : undefined" :aria-disabled="currentIndex <= 0" @click="selectAdjacent(-1)"><AppIcon name="ArrowLeft" size="xs" class="mr-1.5" aria-hidden="true" />{{ t('replay.publicPrevious') }}</button><button type="button" class="min-h-11 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 px-4 text-sm font-semibold text-white shadow-lg shadow-teal-600/40 transition hover:-translate-y-0.5 hover:shadow-xl hover:shadow-teal-600/50 disabled:cursor-not-allowed disabled:opacity-40" :disabled="currentIndex < 0 || currentIndex >= steps.length - 1" :title="currentIndex >= steps.length - 1 ? t('replay.boundaryEnd') : undefined" :aria-disabled="currentIndex < 0 || currentIndex >= steps.length - 1" @click="selectAdjacent(1)">{{ t('replay.publicNext') }}<AppIcon name="ArrowRight" size="xs" class="ml-1.5" aria-hidden="true" /></button></div>
             </div>
           </section>
 
           <aside class="h-fit lg:sticky lg:top-6">
-            <div class="flow-frame rounded-3xl shadow-lg shadow-slate-900/5">
+            <div class="border-beam rounded-3xl shadow-lg shadow-slate-900/5">
               <div class="glass-panel rounded-3xl p-5">
                 <p class="text-xs font-semibold uppercase tracking-[0.14em] text-rose-600 dark:text-rose-300">{{ t('replay.publicFinalSummary') }}</p>
                 <h2 class="mt-2 text-lg font-bold">{{ finalSummary?.result.title || manifest.workflow.title }}</h2>
                 <p class="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{{ t('replay.publicFinalStable') }}</p>
                 <PublicReplayResult v-if="finalSummary" class="mt-5" :result="finalSummary.result" compact />
                 <div v-else class="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-500 dark:bg-slate-800/70 dark:text-slate-400">{{ t('replay.notGenerated') }}</div>
-                <button type="button" class="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white shadow-lg shadow-rose-600/30 transition hover:-translate-y-0.5 hover:bg-rose-700 hover:shadow-xl hover:shadow-rose-600/40" @click="goCreate">{{ t('replay.publicStart') }}<AppIcon name="ArrowRight" size="sm" aria-hidden="true" /></button>
+                <button type="button" class="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-rose-600 via-rose-500 to-orange-500 bg-[length:180%_180%] px-4 text-sm font-semibold text-white shadow-lg shadow-rose-600/40 transition hover:-translate-y-0.5 hover:shadow-xl hover:shadow-rose-600/50 animate-gradient-flow" @click="goCreate">{{ t('replay.publicStart') }}<AppIcon name="ArrowRight" size="sm" aria-hidden="true" /></button>
               </div>
             </div>
           </aside>
@@ -655,7 +655,19 @@ watch(locale, () => {
 }
 
 .replay-progress-bar {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 12px rgb(20 184 166 / 0.5);
   transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.replay-progress-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 25%, rgb(255 255 255 / 0.55) 50%, transparent 75%);
+  background-size: 200% 100%;
+  animation: public-shimmer 1.6s linear infinite;
 }
 
 /* Pipeline connectors between the phase pills. */
@@ -688,8 +700,10 @@ watch(locale, () => {
     animation: none;
   }
 
-  .replay-progress-bar {
+  .replay-progress-bar,
+  .replay-progress-bar::after {
     transition: none;
+    animation: none;
   }
 
   .replay-v2 .animate-pulse {
