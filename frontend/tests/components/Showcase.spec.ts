@@ -118,6 +118,39 @@ describe('Showcase public UX contract', () => {
     wrapper.unmount()
   })
 
+  it('loads public cases in pages and appends the next page', async () => {
+    const firstPage = [publicCase('case-featured', '真实案例标题', true), publicCase('case-other', '第二个案例')]
+    const nextPage = [publicCase('case-next', '下一页案例')]
+    listPublicCasesMock
+      .mockResolvedValueOnce({ cases: firstPage, total: 3, limit: 20, offset: 0, featured_public_id: 'case-featured' })
+      .mockResolvedValueOnce({ cases: nextPage, total: 3, limit: 20, offset: 2, featured_public_id: 'case-featured' })
+
+    const wrapper = mountShowcase()
+    await flushPromises()
+    const loadMore = wrapper.findAll('button').find(button => button.text().includes('加载更多'))
+    expect(loadMore?.exists()).toBe(true)
+
+    await loadMore?.trigger('click')
+    await flushPromises()
+
+    expect(listPublicCasesMock).toHaveBeenLastCalledWith(
+      { limit: 20, offset: 2, sort: 'recent' },
+      expect.objectContaining({ suppressToast: true, signal: expect.any(AbortSignal) }),
+    )
+    expect(wrapper.findAll('.case-card')).toHaveLength(2)
+    expect(wrapper.text()).toContain('下一页案例')
+    wrapper.unmount()
+  })
+
+  it('sets localized public page metadata', async () => {
+    const wrapper = mountShowcase()
+    await flushPromises()
+
+    expect(document.title).toContain('真实案例')
+    expect(document.head.querySelector('meta[property="og:title"]')?.getAttribute('content')).toContain('真实案例')
+    wrapper.unmount()
+  })
+
   it('redirects unauthenticated start-creating CTA to /start with source attribution', async () => {
     const wrapper = mountShowcase()
     await flushPromises()

@@ -12,6 +12,7 @@ import CreatorNoteQualityPanel from '@/components/settings/CreatorNoteQualityPan
 import { AnalyticsSkeleton } from '@/components/skeletons'
 import { useAnalyticsStore, useAccountsStore } from '@/stores'
 import { getCreatorStats, type CreatorAccountStats } from '@/api/analytics'
+import type { PostPerformance } from '@/types/analytics'
 
 const TrendChart = defineAsyncComponent(() => import('@/components/charts/TrendChart.vue'))
 const EngagementChart = defineAsyncComponent(() => import('@/components/charts/EngagementChart.vue'))
@@ -169,6 +170,7 @@ const tableColumns = computed(() => [
   { key: 'likes', label: t('analytics.table.likes'), align: 'center' as const, sortable: true },
   { key: 'comments', label: t('analytics.table.comments'), align: 'center' as const, sortable: true },
   { key: 'collects', label: t('analytics.table.collects'), align: 'center' as const, sortable: true },
+  { key: 'shares', label: t('analytics.table.shares'), align: 'center' as const, sortable: true },
   {
     key: 'engagement_rate_display',
     label: t('analytics.table.engagementRate'),
@@ -176,7 +178,7 @@ const tableColumns = computed(() => [
     sortable: true,
     sortKey: 'engagement_rate',
     // ponytail: color-code rate inline — strong ≥5% green, 1–5% amber, <1% muted.
-    cellClass: (row: Record<string, any>) => {
+    cellClass: (row: Record<string, unknown>) => {
       const rate = Number(row.engagement_rate)
       if (!Number.isFinite(rate)) return 'font-semibold'
       if (rate >= 5) return 'font-semibold text-emerald-600 dark:text-emerald-400'
@@ -189,7 +191,13 @@ const tableColumns = computed(() => [
 
 // AN-11: show 10 by default, expand to all (max 20 from backend) on demand.
 const showAllPosts = ref(false)
-const visibleTableData = computed(() => {
+type AnalyticsTableRow = Record<string, unknown> & PostPerformance & {
+  views_display: string
+  engagement_rate_display: string
+  published_at_display: string
+}
+
+const visibleTableData = computed<AnalyticsTableRow[]>(() => {
   const posts = analyticsStore.posts
   const sliced = showAllPosts.value ? posts : posts.slice(0, 10)
   return sliced.map(post => ({
@@ -200,6 +208,42 @@ const visibleTableData = computed(() => {
 }))
 })
 const tableData = visibleTableData
+
+function csvCell(value: unknown): string {
+  const text = value === null || value === undefined ? '' : String(value)
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+function exportPostsCsv() {
+  const headers = [
+    t('analytics.table.title'),
+    t('analytics.table.views'),
+    t('analytics.table.likes'),
+    t('analytics.table.comments'),
+    t('analytics.table.collects'),
+    t('analytics.table.shares'),
+    t('analytics.table.engagementRate'),
+    t('analytics.table.publishedAt'),
+  ]
+  const rows = analyticsStore.posts.map(post => [
+    post.title,
+    post.views,
+    post.likes,
+    post.comments,
+    post.collects,
+    post.shares,
+    post.engagement_rate,
+    post.published_at,
+  ])
+  const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n')
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `analytics-${analyticsStore.period}.csv`
+  link.click()
+  URL.revokeObjectURL(url)
+}
 
 // Model cost bar data
 const modelCostData = computed(() => {
@@ -250,7 +294,7 @@ function goHome() {
 // AN-08: single-post drill-down. The table row emits its data; we open a
 // drawer with the post's metrics and the creator-note quality panel (which
 // reuses the existing getCreatorNote/getCreatorNoteQuality APIs).
-const selectedPost = ref<Record<string, any> | null>(null)
+const selectedPost = ref<Record<string, unknown> | null>(null)
 const detailNoteId = computed(() => {
   // The backend's id is the imported note_id when available. Never use title
   // matching: titles are not stable identifiers and a missing match must not
@@ -259,7 +303,7 @@ const detailNoteId = computed(() => {
 })
 const detailAccountId = computed(() => accountsStore.activeAccountId || analyticsStore.accountId || '')
 
-function openPostDetail(row: Record<string, any>) {
+function openPostDetail(row: Record<string, unknown>) {
   trackInteraction('analytics_note_drilldown', { method: 'click' })
   selectedPost.value = row
 }
@@ -589,10 +633,18 @@ function startWithTopic(topic: string, niche?: string) {
           <AppIcon name="FileText" size="sm" variant="white" class="md:hidden" :aria-label="t('analytics.recentPosts')" />
           <AppIcon name="FileText" size="md" variant="white" class="hidden md:block" :aria-label="t('analytics.recentPosts')" />
         </div>
-        <div>
+        <div class="flex-1">
           <div class="text-violet-600 font-semibold text-xs md:text-sm">{{ t('analytics.recentPosts') }}</div>
           <div class="text-[10px] md:text-xs text-slate-400">{{ t('analytics.top10') }}</div>
         </div>
+        <button
+          type="button"
+          class="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          @click="exportPostsCsv"
+        >
+          <AppIcon name="Download" size="sm" variant="cyan" aria-hidden="true" />
+          {{ t('analytics.exportCsv') }}
+        </button>
       </div>
 
       <DataTable

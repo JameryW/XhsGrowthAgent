@@ -4,12 +4,12 @@ import { useI18n } from 'vue-i18n'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+import { GridComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { useChartTheme } from '@/composables/useChartTheme'
 
 // Register ECharts modules
-use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
+use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 const { t } = useI18n()
 const { theme } = useChartTheme()
@@ -100,7 +100,10 @@ const chartOption = computed(() => {
         type: 'line',
         data: props.data.map(d => d.value),
         smooth: true,
-        symbol: 'none',
+        showSymbol: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        connectNulls: false,
         lineStyle: {
           color: colors.main,
           width: 2,

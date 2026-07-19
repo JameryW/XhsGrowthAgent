@@ -319,9 +319,9 @@ export interface WorkflowState {
 export interface AgentTimelineEntry {
   agent: string
   started_at: string
-  completed_at: string
-  duration_seconds: number
-  status: 'success' | 'error'
+  completed_at?: string | null
+  duration_seconds?: number | null
+  status: 'running' | 'success' | 'error'
   error?: string | null
 }
 

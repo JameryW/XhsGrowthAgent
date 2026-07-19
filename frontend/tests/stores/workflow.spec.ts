@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import { EventType } from '@/realtime/events'
+
+const realtimeOnEvent = vi.hoisted(() => vi.fn())
 
 // Mock dependencies before importing the store
 vi.mock('@/api/workflow', () => ({
@@ -26,7 +29,7 @@ vi.mock('@/api/workflow', () => ({
 
 vi.mock('@/stores/realtime', () => ({
   useRealtimeStore: () => ({
-    wsService: { onEvent: vi.fn(), emit: vi.fn() },
+    wsService: { onEvent: realtimeOnEvent, emit: vi.fn() },
     connect: vi.fn(),
     disconnect: vi.fn(),
     subscribeWorkflow: vi.fn(),
@@ -73,6 +76,7 @@ import { getCheckpointHistory } from '@/api/workflow'
 describe('workflow store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    realtimeOnEvent.mockClear()
     localStorage.clear()
     sessionStorage.clear()
     vi.mocked(getCheckpointHistory).mockReset()
@@ -163,6 +167,38 @@ describe('workflow store', () => {
     it('isAwaitingReview when status is awaiting_review', () => {
       const store = useWorkflowStore()
       expect(store.isAwaitingReview).toBe(false)
+    })
+  })
+
+  describe('ripple progress updates', () => {
+    it('coalesces rapid updates per job into a 200ms trailing commit', () => {
+      vi.useFakeTimers()
+      const store = useWorkflowStore()
+      store.workflowStates.set('ripple-thread', {
+        thread_id: 'ripple-thread', phase: 'planning', status: 'running', progress_percent: 20,
+        next_steps: [], agent_timeline: [],
+      })
+      store.activeThreadId = 'ripple-thread'
+
+      const rippleHandler = realtimeOnEvent.mock.calls.find(([eventType]) => eventType === EventType.RIPPLE_PROGRESS)?.[1]
+      expect(rippleHandler).toBeTypeOf('function')
+
+      rippleHandler({ thread_id: 'ripple-thread', payload: {
+        job_id: 'job-1', current_wave: 1, total_waves: 4, progress: 0.25,
+        elapsed_seconds: 1, status: 'running',
+      } })
+      rippleHandler({ thread_id: 'ripple-thread', payload: {
+        job_id: 'job-1', current_wave: 2, total_waves: 4, progress: 0.5,
+        elapsed_seconds: 2, status: 'running',
+      } })
+
+      expect(store.rippleProgress).toBeNull()
+      vi.advanceTimersByTime(199)
+      expect(store.rippleProgress).toBeNull()
+      vi.advanceTimersByTime(1)
+      expect(store.rippleProgress?.overall_progress).toBe(0.5)
+      expect(store.rippleProgress?.jobs['job-1'].current_wave).toBe(2)
+      vi.useRealTimers()
     })
   })
 

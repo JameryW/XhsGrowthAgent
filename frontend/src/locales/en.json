@@ -293,7 +293,12 @@
       "statusSource": "Status Source",
       "realtime": "Real-time",
       "polling": "Polling",
-      "snapshot": "Snapshot"
+      "snapshot": "Snapshot",
+      "agentElapsed": "{agent} running for {duration}",
+      "elapsedSeconds": "{seconds}s",
+      "elapsedMinutes": "{minutes}m {seconds}s",
+      "etaSeconds": "About {seconds}s remaining",
+      "etaMinutes": "About {minutes}m remaining"
     },
     "contentCards": {
       "loading": "Workflow data loading state",
@@ -405,6 +410,9 @@
       "engaging": "Engagement",
       "engagingDesc": "Audience interaction",
       "agentDetails": "Agent Execution Details",
+      "durationMilliseconds": "{milliseconds}ms",
+      "durationSeconds": "{seconds}s",
+      "durationMinutes": "{minutes}m {seconds}s",
       "substepSections": {
         "briefing": "Brief Parsing Steps",
         "planning": "Strategy Steps",
@@ -749,9 +757,11 @@
       "likes": "Likes",
       "comments": "Comments",
       "collects": "Collects",
+      "shares": "Shares",
       "engagementRate": "Engagement Rate",
       "publishedAt": "Published At"
     },
+    "exportCsv": "Export CSV",
     "detail": {
       "title": "Post detail",
       "untitled": "Untitled post"
@@ -1020,6 +1030,8 @@
   },
   "charts": {
     "engagementTable": "Engagement Data Table",
+    "engagementSummary": "Total {total}; top category: {category} ({value})",
+    "noEngagementData": "No engagement data for this period",
     "trendTable": "Chart Data Table",
     "trendData": "Trend Data",
     "noData": "No Data",
@@ -1432,6 +1444,10 @@
   "showcase": {
     "title": "XHS Growth Engine",
     "subtitle": "AI-powered automated content creation platform",
+    "seo": {
+      "title": "Real Cases | XHS Growth Engine",
+      "description": "Browse approved real cases and follow the key decisions from trend insight to finished content."
+    },
     "heroTagline": "Real cases · An explainable creative process",
     "heroTitle": "See how AI turns one brief into a finished piece",
     "heroDesc": "Browse approved cases and follow the key decisions from insight and strategy to the final output.",
@@ -1579,6 +1595,7 @@
     "showMore": "See more cases",
     "featuredAttention": "Workflow needing attention",
     "loadMore": "Load More",
+    "loadMoreFailed": "More cases could not be loaded.",
     "noResults": "No matching workflows",
     "noResultsWithFilters": "Current filters: {status} · {mode}",
     "viewDetail": "View Detail",
@@ -1605,6 +1622,10 @@
   },
   "replay": {
     "title": "Workflow Replay",
+    "seo": {
+      "title": "Workflow Replay | XHS Growth Engine",
+      "description": "Follow the key steps, results, and decisions behind a real content workflow case."
+    },
     "workflowStatus": {
       "idle": "Not started",
       "running": "In progress",
@@ -2105,6 +2126,7 @@
       "loading": "Loading list…",
       "loadError": "Failed to load list",
       "empty": "No workflows with evaluation results",
+      "noMatch": "No evaluations match the current search or filter",
       "loadMore": "Load more",
       "noMore": "All loaded",
       "back": "Back to list",
@@ -2119,6 +2141,9 @@
     "radarTitleDynamic": "{count}-Dimension Radar",
     "radarSeries": "Quality Score",
     "dimensionsTitle": "Dimension Details",
+    "weightedScoreHint": "Overall score is weighted across the dimensions below.",
+    "radarScore": "Score",
+    "radarRationale": "Why",
     "hintsTitle": "Revision Hints",
     "action": {
       "revise": "Revise on review page",
@@ -2152,6 +2177,19 @@
       "altruism": "Reader Value",
       "bias_check": "Bias Check",
       "unknown": "{dim}"
+    },
+    "dimHelp": {
+      "copywriting": "Clarity, structure, and persuasiveness of the copy.",
+      "visual": "Whether the visual plan supports the content promise.",
+      "compliance": "Safety, platform compliance, and risk control.",
+      "reach": "Potential to attract attention and drive distribution.",
+      "audience": "Fit between the content and the intended audience.",
+      "ai_taste": "Naturalness, originality, and reduction of generic AI patterns.",
+      "image_quality": "Usefulness and quality of the proposed imagery.",
+      "commercial_tone": "Balance between brand needs and authentic expression.",
+      "altruism": "Practical value delivered to the reader.",
+      "bias_check": "Signals of framing or preference bias in the evaluation.",
+      "unknown": "No explanation is available for this dimension."
     },
     "bias": {
       "title": "Adversarial Bias Check",
