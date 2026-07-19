@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import WorkflowNode from '@/components/WorkflowNode.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { useWorkflowStore } from '@/stores'
 import { useI18n } from 'vue-i18n'
+import type { AgentTimelineEntry } from '@/types/workflow'
 
 const { t, locale } = useI18n()
 const workflowStore = useWorkflowStore()
@@ -36,6 +37,8 @@ function isNodeSelected(agent: string): boolean {
 // Keyboard navigation state
 const focusedIndex = ref(-1)
 const showTimelineDetails = ref(false)
+const now = ref(Date.now())
+let clockTimer: ReturnType<typeof setInterval> | null = null
 
 // ── Phase + sub-step structure ──
 
@@ -294,12 +297,27 @@ function shouldExpandSubSteps(phase: PhaseNode): boolean {
   return false
 }
 
-function formatDuration(seconds: number): string {
-  if (seconds < 1) return `${Math.round(seconds * 1000)}ms`
-  if (seconds < 60) return `${seconds.toFixed(1)}s`
+function entryDuration(entry: AgentTimelineEntry): number | null {
+  if (typeof entry.duration_seconds === 'number' && entry.duration_seconds >= 0) return entry.duration_seconds
+  if (entry.completed_at) {
+    const startedAt = Date.parse(entry.started_at)
+    const completedAt = Date.parse(entry.completed_at)
+    if (Number.isFinite(startedAt) && Number.isFinite(completedAt)) {
+      return Math.max(0, (completedAt - startedAt) / 1000)
+    }
+  }
+  const startedAt = Date.parse(entry.started_at)
+  if (!Number.isFinite(startedAt) || entry.completed_at) return null
+  return Math.max(0, (now.value - startedAt) / 1000)
+}
+
+function formatDuration(seconds: number | null): string {
+  if (seconds === null) return '—'
+  if (seconds < 1) return t('dashboard.timeline.durationMilliseconds', { milliseconds: Math.round(seconds * 1000) })
+  if (seconds < 60) return t('dashboard.timeline.durationSeconds', { seconds: seconds.toFixed(1) })
   const m = Math.floor(seconds / 60)
   const s = Math.round(seconds % 60)
-  return `${m}m ${s}s`
+  return t('dashboard.timeline.durationMinutes', { minutes: m, seconds: s })
 }
 
 function formatTime(iso: string): string {
@@ -343,6 +361,17 @@ const substepSectionLabels = computed<Record<string, string>>(() => ({
   reviewing: t('dashboard.timeline.substepSections.reviewing'),
   publishing: t('dashboard.timeline.substepSections.publishing'),
 }))
+
+onMounted(() => {
+  clockTimer = setInterval(() => {
+    now.value = Date.now()
+  }, 1000)
+})
+
+onUnmounted(() => {
+  if (clockTimer) clearInterval(clockTimer)
+  clockTimer = null
+})
 </script>
 
 <template>
@@ -497,19 +526,19 @@ const substepSectionLabels = computed<Record<string, string>>(() => ({
         >
           <span
             class="w-2 h-2 rounded-full flex-shrink-0"
-            :class="entry.status === 'error' ? 'bg-rose-500' : 'bg-emerald-500'"
+            :class="entry.status === 'error' ? 'bg-rose-500' : !entry.completed_at ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'"
           />
           <span class="text-sm font-medium text-slate-700 w-32 truncate">{{ entry.agent }}</span>
           <div class="flex-1 flex items-center gap-4 text-xs text-slate-500">
             <span>{{ formatTime(entry.started_at) }}</span>
             <span class="text-slate-300">→</span>
-            <span>{{ formatTime(entry.completed_at) }}</span>
+            <span>{{ formatTime(entry.completed_at || '') }}</span>
           </div>
           <span
             class="text-xs font-medium px-2 py-0.5 rounded"
-            :class="entry.duration_seconds > 30 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'"
+            :class="(entryDuration(entry) || 0) > 30 ? 'bg-amber-50 text-amber-600' : !entry.completed_at ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'"
           >
-            {{ formatDuration(entry.duration_seconds) }}
+            {{ formatDuration(entryDuration(entry)) }}
           </span>
           <span v-if="entry.error" class="text-xs text-rose-500 truncate max-w-[150px]" :title="entry.error">
             {{ entry.error }}

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import WorkflowReplay from '@/views/WorkflowReplay.vue'
 
@@ -75,6 +75,10 @@ describe('WorkflowReplay public UX contract', () => {
     getSummaryMock.mockResolvedValue({ public_id: 'case-1', status: 'completed', result: { title: '最终标题' }, stable: true })
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('loads the public manifest and first result together', async () => {
     const wrapper = mount(WorkflowReplay, {
       global: {
@@ -94,6 +98,30 @@ describe('WorkflowReplay public UX contract', () => {
     expect(wrapper.findAll('[data-phase-index]')).toHaveLength(2)
     expect(wrapper.find('[data-phase-index="0"]').attributes('tabindex')).toBe('0')
     expect(wrapper.find('[data-phase-index="1"]').attributes('tabindex')).toBe('-1')
+  })
+
+  it('prefetches the next step during idle time', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(WorkflowReplay, {
+      global: {
+        stubs: {
+          AppIcon: { template: '<span />' },
+          PublicReplayResult: { template: '<div />' },
+          ThemeToggle: { template: '<button aria-label="theme" />' },
+        },
+      },
+    })
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(150)
+    await flushPromises()
+
+    expect(getCheckpointMock).toHaveBeenLastCalledWith(
+      'case-1',
+      'step-2',
+      false,
+      expect.objectContaining({ suppressToast: true, signal: expect.any(AbortSignal) }),
+    )
+    wrapper.unmount()
   })
 
   it('moves to the next key step and updates the deep link', async () => {

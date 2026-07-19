@@ -318,3 +318,29 @@
 4. 公开页漏斗事件在真实环境验证上报齐全且带归因。
 5. 无任何 P0【误导】/【断链】条目遗留；P1 遗留项须明示并排期。
 6. `docs/frontend-ux-optimization.md` 同步更新（信息架构/状态约定/新增共享组件与 util 的约定）。
+
+## 18. 实施审计（2026-07-19）
+
+### 本轮已完成并有代码/测试证据的条目
+
+- Showcase：SH-01~08 已在 PR-1/PR-2 基线完成；SH-09 列表分页、SH-10 无引用 replay 死代码清理、SH-11 路由级 SEO 元信息已完成。
+- Replay：RP-01~08 已在 PR-1/PR-2 基线完成；RP-09 下一步空闲预取、RP-10 reduced-motion 精细降级已完成。
+- Dashboard：DB-01~06、DB-08、DB-09、DB-15 已有实现/视图 spec；DB-07 已增加运行中 agent 时长、样本不足时隐藏 ETA；DB-14 已实现按 job 的 200ms trailing throttle。
+- Analytics：AN-01~12 已有实现/视图 spec；AN-13 图表摘要与可见空态、AN-14 趋势点与无用 Legend 注册清理、AN-16 CSV 导出、AN-17 shares 列与 DataTable `unknown` 行类型已完成。
+- Evaluation：EV-01~07、EV-10~11 已有实现/视图 spec；EV-13 无匹配空态、EV-14 雷达固定顺序/rationale tooltip/窄屏高度已完成。
+- 基建：INF-03~06、INF-08、INF-10 已有代码证据；i18n 双语检查脚本通过；新增公开页 meta util、Dashboard 计时和图表文案均已双语同步。
+
+### 仍需发布前处理的条目/证据
+
+- INF-01/INF-02：Showcase、Replay、Analytics、Evaluation 的错误态和公开页 skeleton 尚未全部收敛到同一泛化组件；当前各页的局部恢复语义仍需保留后再统一。
+- INF-09：当前已有 Dashboard/Analytics/Evaluation view spec，但公开页 axe 0-critical 检查尚未接入 Vitest/CI；需要在发布环境补跑无障碍扫描。
+- INF-11/EV-08：Evaluation 维度说明目前以可聚焦 title/aria 入口呈现，TooltipHelper 尚未正式接入；若要求统一浮层组件，需补一次组件 API 适配。
+- DB-10~13、AN-15、EV-12、EV-15~16 仍为 P2 打磨项；不阻塞 P0/P1 代码合并，但必须在发布说明中明确延期。
+
+### 验证结果
+
+- `cd frontend && npm run type-check`：通过。
+- `cd frontend && npm run i18n:check`：通过（1861 keys，双语一致）。
+- `cd frontend && npm run test:run`：通过，47 个文件 / 573 个测试。
+- `cd frontend && npm run build`：通过；存在既有 AgentTUI、ECharts 大 chunk warning，无新增构建失败。
+- 未完成：390/768/1440 三档明暗主题人工走查、公开页 axe 扫描、部署后真实埋点与健康检查证据。因此本任务保持 `in_progress`，不能把 G1~G6 全部标记为发布完成。

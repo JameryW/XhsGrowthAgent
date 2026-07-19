@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import i18n from '@/locales'
@@ -107,5 +107,30 @@ describe('WorkflowTimeline', () => {
     expect(statuses[2]).toBe('running')
     expect(statuses[3]).toBe('pending')
     expect(subStepStatus(wrapper, 'visual_designer')).toBe('running')
+  })
+
+  it('shows a live duration for the active agent timeline entry', async () => {
+    vi.useFakeTimers()
+    try {
+      const startedAt = new Date(Date.now() - 5200).toISOString()
+      const wrapper = mountTimeline(baseState({
+        agent_timeline: [{
+          agent: 'copywriter',
+          started_at: startedAt,
+          completed_at: undefined,
+          duration_seconds: undefined,
+          status: 'running',
+        }],
+      }))
+
+      await wrapper.find('button').trigger('click')
+      expect(wrapper.text()).toContain(i18n.global.t('dashboard.timeline.durationSeconds', { seconds: '5.2' }))
+      vi.advanceTimersByTime(1000)
+      await wrapper.vm.$nextTick()
+      expect(wrapper.text()).toContain(i18n.global.t('dashboard.timeline.durationSeconds', { seconds: '6.2' }))
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

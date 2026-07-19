@@ -9,6 +9,7 @@ import { getPublicCase, listPublicCases } from '@/api/publicShowcase'
 import type { PublicCase, PublicCaseStatus, PublicWorkflowMode } from '@/types/publicShowcase'
 import { useAuthStore } from '@/stores/auth'
 import { trackInteraction } from '@/utils/interactionTelemetry'
+import { setPublicPageMeta } from '@/utils/publicMeta'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -32,6 +33,8 @@ const detailState = ref<Record<string, 'idle' | 'loading' | 'ready' | 'error'>>(
 const detailCache = ref<Map<string, PublicCase>>(new Map())
 const firstCaseTracked = ref(false)
 const totalCases = ref(0)
+const loadingMore = ref(false)
+const loadMoreError = ref(false)
 const impressionTracker = new Set<string>()
 let impressionObserver: IntersectionObserver | null = null
 
@@ -41,7 +44,9 @@ const CACHE_TTL = 30_000
 let queryReady = false
 let listRequestToken = 0
 let listAbortController: AbortController | null = null
+let loadMoreAbortController: AbortController | null = null
 const detailAbortControllers = new Map<string, AbortController>()
+const SHOWCASE_PAGE_SIZE = 20
 
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const featuredCase = computed(() => {
@@ -73,6 +78,7 @@ const filteredCases = computed(() => {
 
 const resultCount = computed(() => filteredCases.value.length)
 const showSearch = computed(() => cases.value.length >= 8)
+const hasMoreCases = computed(() => cases.value.length < totalCases.value)
 
 const statusChips = computed(() => [
   { value: 'all' as StatusFilter, label: t('showcase.filterAll') },
@@ -112,7 +118,8 @@ function restoreQuery() {
   const mode = queryValue(route.query.mode) as ModeFilter | undefined
   const sort = queryValue(route.query.sort) as SortKey | undefined
   const q = queryValue(route.query.q)
-  statusFilter.value = ['all', 'completed', 'in_progress', 'attention'].includes(status || '') ? status || 'all' : 'all'
+  // `attention` is an internal/public-status value, not a user-facing filter.
+  statusFilter.value = ['all', 'completed', 'in_progress'].includes(status || '') ? status || 'all' : 'all'
   modeFilter.value = ['all', 'trend', 'brief'].includes(mode || '') ? mode || 'all' : 'all'
   sortKey.value = ['recent', 'title'].includes(sort || '') ? sort || 'recent' : 'recent'
   search.value = q || ''
@@ -133,29 +140,29 @@ watch([statusFilter, modeFilter, sortKey, search], () => {
   trackInteraction('showcase_filter_change', { status: statusFilter.value, mode: modeFilter.value })
 })
 
-function readCache(): PublicCase[] | null {
+function readCache(): { cases: PublicCase[]; total: number } | null {
   try {
-    const parsed = JSON.parse(sessionStorage.getItem(CACHE_KEY) || '') as { version?: number; savedAt?: number; cases?: PublicCase[] }
+    const parsed = JSON.parse(sessionStorage.getItem(CACHE_KEY) || '') as { version?: number; savedAt?: number; cases?: PublicCase[]; total?: number }
     if (parsed.version !== CACHE_VERSION || !parsed.savedAt || Date.now() - parsed.savedAt > CACHE_TTL || !Array.isArray(parsed.cases)) return null
-    return parsed.cases
+    return { cases: parsed.cases, total: typeof parsed.total === 'number' ? parsed.total : parsed.cases.length }
   } catch {
     return null
   }
 }
 
-function writeCache(nextCases: PublicCase[]) {
+function writeCache(nextCases: PublicCase[], total = nextCases.length) {
   try {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ version: CACHE_VERSION, savedAt: Date.now(), cases: nextCases }))
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ version: CACHE_VERSION, savedAt: Date.now(), cases: nextCases, total }))
   } catch {
     // A full/private session store must not block the public page.
   }
 }
 
-function hydrate(nextCases: PublicCase[]) {
-  cases.value = nextCases
-  totalCases.value = nextCases.length
+function hydrate(cached: { cases: PublicCase[]; total: number }) {
+  cases.value = cached.cases
+  totalCases.value = cached.total
   loaded.value = true
-  if (nextCases[0]) void loadCaseDetail(nextCases[0].public_id)
+  if (cached.cases[0]) void loadCaseDetail(cached.cases[0].public_id)
   if (featuredCase.value) void loadCaseDetail(featuredCase.value.public_id)
 }
 
@@ -195,14 +202,14 @@ async function loadCases(useCache = true) {
   }
   try {
     const response = await listPublicCases(
-      { limit: 100, sort: 'recent' },
+      { limit: SHOWCASE_PAGE_SIZE, offset: 0, sort: 'recent' },
       { suppressToast: true, signal: abortController.signal },
     )
     if (abortController.signal.aborted || requestToken !== listRequestToken) return
     cases.value = response.cases || []
     totalCases.value = response.total ?? cases.value.length
     loaded.value = true
-    writeCache(cases.value)
+    writeCache(cases.value, totalCases.value)
     trackFirstCaseVisible(false, startedAt)
     if (featuredCase.value) void loadCaseDetail(featuredCase.value.public_id)
     trackInteraction('showcase_cases_loaded', { count: cases.value.length, cached: false })
@@ -214,6 +221,38 @@ async function loadCases(useCache = true) {
     if (listAbortController === abortController) {
       listAbortController = null
       loading.value = false
+    }
+  }
+}
+
+async function loadMoreCases() {
+  if (!hasMoreCases.value || loadingMore.value) return
+  loadMoreAbortController?.abort()
+  const abortController = new AbortController()
+  loadMoreAbortController = abortController
+  const requestToken = listRequestToken
+  loadingMore.value = true
+  loadMoreError.value = false
+  try {
+    const response = await listPublicCases(
+      { limit: SHOWCASE_PAGE_SIZE, offset: cases.value.length, sort: 'recent' },
+      { suppressToast: true, signal: abortController.signal },
+    )
+    if (abortController.signal.aborted || requestToken !== listRequestToken) return
+    const existing = new Set(cases.value.map(item => item.public_id))
+    cases.value = [...cases.value, ...(response.cases || []).filter(item => !existing.has(item.public_id))]
+    totalCases.value = response.total ?? totalCases.value
+    writeCache(cases.value, totalCases.value)
+    await nextTick()
+    observeCaseCards()
+  } catch {
+    if (!abortController.signal.aborted && requestToken === listRequestToken) {
+      loadMoreError.value = true
+    }
+  } finally {
+    if (loadMoreAbortController === abortController) {
+      loadMoreAbortController = null
+      loadingMore.value = false
     }
   }
 }
@@ -309,6 +348,7 @@ onMounted(async () => {
   if (!authStore.isInitialized) void authStore.initialize()
   restoreQuery()
   queryReady = true
+  setPublicPageMeta({ title: t('showcase.seo.title'), description: t('showcase.seo.description') })
   trackInteraction('showcase_view')
   await loadCases()
   await nextTick()
@@ -324,11 +364,16 @@ onMounted(async () => {
 
 onUnmounted(() => {
   listAbortController?.abort()
+  loadMoreAbortController?.abort()
   detailAbortControllers.forEach(controller => controller.abort())
   detailAbortControllers.clear()
   impressionObserver?.disconnect()
   impressionObserver = null
   impressionTracker.clear()
+})
+
+watch(locale, () => {
+  setPublicPageMeta({ title: t('showcase.seo.title'), description: t('showcase.seo.description') })
 })
 
 watch(filteredCases, async () => {
@@ -467,6 +512,15 @@ watch(filteredCases, async () => {
             <div class="mt-5 flex items-center justify-between gap-3"><span class="text-xs text-slate-500 dark:text-slate-400">{{ t('showcase.caseUpdated', { date: formatDate(item.updated_at) }) }}</span><a :href="replayHref(item.public_id)" class="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-400/10" @click.prevent="openReplay(item.public_id)">{{ t('showcase.caseReplay') }}<AppIcon name="ArrowRight" size="xs" aria-hidden="true" /></a></div>
           </article>
         </div>
+        <div v-if="hasMoreCases" class="mt-5 flex flex-col items-center gap-3">
+          <button type="button" class="min-h-11 rounded-xl border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800" :disabled="loadingMore" @click="loadMoreCases">
+            {{ loadingMore ? t('common.loadingState') : t('showcase.loadMore') }}
+          </button>
+          <p v-if="loadMoreError" class="flex items-center gap-2 text-xs text-rose-600 dark:text-rose-300" role="alert">
+            <span>{{ t('showcase.loadMoreFailed') }}</span>
+            <button type="button" class="min-h-11 rounded-lg px-3 font-semibold underline" @click="loadMoreCases">{{ t('common.retry') }}</button>
+          </p>
+        </div>
       </section>
 
       <section class="mt-14 rounded-3xl border border-slate-200/80 bg-white/70 p-6 dark:border-slate-800 dark:bg-slate-900/60 md:p-8" aria-labelledby="how-heading">
@@ -497,10 +551,14 @@ watch(filteredCases, async () => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .showcase-v2 :deep(*) {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  .showcase-v2-ambient,
+  .showcase-v2 .animate-pulse {
+    animation: none !important;
+  }
+
+  .showcase-v2 button,
+  .showcase-v2 a {
+    transition-duration: 100ms !important;
   }
 }
 </style>

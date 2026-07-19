@@ -316,6 +316,11 @@ function dimLabel(dim: string): string {
   return t(DIMENSION_LABEL_KEYS[dim] ?? 'evaluation.dim.unknown', { dim })
 }
 
+function dimDescription(dim: string): string {
+  const key = `evaluation.dimHelp.${dim}`
+  return t(key) === key ? t('evaluation.dimHelp.unknown') : t(key)
+}
+
 // 趋势图：列表页挂载时加载一次（详情页不重复加载）
 onMounted(() => {
   if (!isDetailView.value && activeTab.value === 'workflow') {
@@ -437,7 +442,7 @@ onMounted(() => {
         class="empty-state"
       >
         <AppIcon name="HelpCircle" size="xl" />
-        <div class="empty-title">{{ t('evaluation.list.empty') }}</div>
+        <div class="empty-title">{{ listItems.length ? t('evaluation.list.noMatch') : t('evaluation.list.empty') }}</div>
       </div>
 
       <!-- 列表 -->
@@ -540,6 +545,7 @@ onMounted(() => {
           <div class="decision-badge" :class="detailDecisionClass">
             {{ t(DETAIL_DECISION_KEYS[ev.decision] ?? 'evaluation.decision.unknown') }}
           </div>
+          <p class="text-xs text-slate-400">{{ t('evaluation.weightedScoreHint') }}</p>
           <p v-if="ev.summary" class="summary">{{ ev.summary }}</p>
         </section>
 
@@ -566,6 +572,7 @@ onMounted(() => {
             <div class="dim-head">
               <span class="dim-name">
                 {{ dimLabel(d.dimension) }}
+                <span class="dim-help" tabindex="0" :title="dimDescription(d.dimension)" :aria-label="dimDescription(d.dimension)">?</span>
                 <span v-if="d.is_blocking" class="blocking-tag">{{ t('evaluation.blocking') }}</span>
               </span>
               <span class="dim-score" :class="scoreTierClass(d.score, scoreThresholds)">
@@ -758,6 +765,8 @@ onMounted(() => {
 .dim-row { padding: 0.625rem 0; border-bottom: 1px solid #f1f5f9; }
 .dim-row:last-child { border-bottom: none; }
 .dim-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.dim-help { display: inline-flex; align-items: center; justify-content: center; width: 2.75rem; height: 2.75rem; margin: -0.75rem -0.75rem -0.75rem 0.1rem; border-radius: 999px; color: #0d9488; font-size: 0.7rem; font-weight: 700; cursor: help; }
+.dim-help:focus-visible { outline: 2px solid #0d9488; outline-offset: 2px; }
 .dim-name { font-size: 0.8125rem; font-weight: 600; color: #334155; display: inline-flex; align-items: center; gap: 0.5rem; }
 .blocking-tag { font-size: 0.625rem; padding: 0.1rem 0.4rem; background: #fee2e2; color: #b91c1c; border-radius: 4px; font-weight: 700; }
 .dim-score { font-size: 0.9rem; font-weight: 700; }

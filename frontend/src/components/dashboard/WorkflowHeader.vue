@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CircularProgress from '@/components/CircularProgress.vue'
 import AppIcon from '@/components/AppIcon.vue'
@@ -8,6 +8,8 @@ import { useWorkflowStore } from '@/stores'
 
 const { t } = useI18n()
 const workflowStore = useWorkflowStore()
+const now = ref(Date.now())
+let clockTimer: ReturnType<typeof setInterval> | null = null
 
 // Memoized phase order for performance
 const phaseOrder = ['briefing', 'scouting', 'planning', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging', 'completed'] as const
@@ -70,10 +72,45 @@ const currentStageLabel = computed(() => {
   return translated !== key ? translated : workflowStore.currentPhase
 })
 
+const runningAgent = computed(() => {
+  if (workflowStore.isReplayMode || !workflowStore.isRunning) return null
+  return workflowStore.agentTimeline.find(entry => !entry.completed_at) || null
+})
+
+function formatElapsed(seconds: number): string {
+  if (seconds < 60) return t('dashboard.header.elapsedSeconds', { seconds: Math.max(0, Math.floor(seconds)) })
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = Math.floor(seconds % 60)
+  return t('dashboard.header.elapsedMinutes', { minutes, seconds: remainingSeconds })
+}
+
+const runningAgentElapsed = computed(() => {
+  const entry = runningAgent.value
+  if (!entry) return null
+  const startedAt = Date.parse(entry.started_at)
+  if (!Number.isFinite(startedAt)) return null
+  return Math.max(0, (now.value - startedAt) / 1000)
+})
+
+const runningAgentElapsedDisplay = computed(() => {
+  const seconds = runningAgentElapsed.value
+  if (seconds === null || !runningAgent.value) return ''
+  return t('dashboard.header.agentElapsed', {
+    agent: runningAgent.value.agent,
+    duration: formatElapsed(seconds),
+  })
+})
+
+const hasEtaSample = computed(() =>
+  !workflowStore.isReplayMode && workflowStore.agentTimeline.some(entry =>
+    !!entry.completed_at && typeof entry.duration_seconds === 'number' && entry.duration_seconds > 0,
+  ),
+)
+
 // Estimated time remaining calculation
 const estimatedTimeRemaining = computed(() => {
   const phase = workflowStore.currentPhase
-  if (isWaitingForUser.value || phase === 'completed' || phase === 'error' || phase === 'idle' || phase === 'reviewing') {
+  if (!hasEtaSample.value || isWaitingForUser.value || phase === 'completed' || phase === 'error' || phase === 'idle' || phase === 'reviewing') {
     return null
   }
 
@@ -104,10 +141,21 @@ const timeRemainingDisplay = computed(() => {
   if (seconds === null) return ''
 
   if (seconds < 60) {
-    return `~${seconds}s`
+    return t('dashboard.header.etaSeconds', { seconds })
   }
   const minutes = Math.round(seconds / 60)
-  return `~${minutes}m`
+  return t('dashboard.header.etaMinutes', { minutes })
+})
+
+onMounted(() => {
+  clockTimer = setInterval(() => {
+    now.value = Date.now()
+  }, 1000)
+})
+
+onUnmounted(() => {
+  if (clockTimer) clearInterval(clockTimer)
+  clockTimer = null
 })
 </script>
 
@@ -137,6 +185,10 @@ const timeRemainingDisplay = computed(() => {
         </div>
         <div class="text-lg md:text-xl font-semibold text-slate-800">
           {{ currentStageLabel }}
+        </div>
+        <div v-if="runningAgentElapsedDisplay" class="flex items-center gap-2 text-sm text-slate-500" aria-live="polite">
+          <AppIcon name="Clock" size="sm" variant="cyan" aria-hidden="true" />
+          <span>{{ runningAgentElapsedDisplay }}</span>
         </div>
         <!-- Estimated time remaining -->
         <div v-if="timeRemainingDisplay" class="flex items-center gap-2 text-sm text-slate-500">

@@ -19,6 +19,7 @@ import type {
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
 import { trackInteraction } from '@/utils/interactionTelemetry'
+import { setPublicPageMeta } from '@/utils/publicMeta'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -57,6 +58,8 @@ let detailRequestToken = 0
 let manifestAbortController: AbortController | null = null
 let loadMoreAbortController: AbortController | null = null
 let detailAbortController: AbortController | null = null
+let prefetchTimer: number | ReturnType<typeof setTimeout> | null = null
+const prefetchAbortControllers = new Map<string, AbortController>()
 
 const steps = computed(() => [...(manifest.value?.steps || [])].sort((a, b) => a.step - b.step))
 const currentIndex = computed(() => steps.value.findIndex(step => step.public_id === selectedStepId.value))
@@ -144,6 +147,49 @@ function writeCachedStep(stepId: string, technical: boolean, step: PublicReplayS
   } catch {
     // A full/private session store must not block replay navigation.
   }
+}
+
+function cancelPrefetch() {
+  if (prefetchTimer !== null && typeof window !== 'undefined') {
+    const idleWindow = window as Window & { cancelIdleCallback?: (id: number) => void }
+    if (typeof prefetchTimer === 'number' && idleWindow.cancelIdleCallback) idleWindow.cancelIdleCallback(prefetchTimer)
+    else window.clearTimeout(prefetchTimer)
+  }
+  prefetchTimer = null
+  prefetchAbortControllers.forEach(controller => controller.abort())
+  prefetchAbortControllers.clear()
+}
+
+async function prefetchStep(stepId: string) {
+  if (!manifest.value || !publicId.value) return
+  const technical = viewMode.value === 'all' && isAuthenticated.value
+  if (readCachedStep(stepId, technical) || prefetchAbortControllers.has(stepId)) return
+  const controller = new AbortController()
+  prefetchAbortControllers.set(stepId, controller)
+  try {
+    const step = await getPublicReplayCheckpoint(publicId.value, stepId, technical, {
+      suppressToast: true,
+      signal: controller.signal,
+    })
+    if (!controller.signal.aborted) writeCachedStep(stepId, technical, step)
+  } catch {
+    // Prefetch is opportunistic; navigation still owns visible error handling.
+  } finally {
+    if (prefetchAbortControllers.get(stepId) === controller) prefetchAbortControllers.delete(stepId)
+  }
+}
+
+function scheduleNextStepPrefetch() {
+  cancelPrefetch()
+  const next = steps.value[currentIndex.value + 1]
+  if (!next || typeof window === 'undefined') return
+  const run = () => {
+    prefetchTimer = null
+    void prefetchStep(next.public_id)
+  }
+  const idleWindow = window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number }
+  if (idleWindow.requestIdleCallback) prefetchTimer = idleWindow.requestIdleCallback(run, { timeout: 700 })
+  else prefetchTimer = window.setTimeout(run, 120)
 }
 
 function preferredStep(available: PublicReplayStep[]): PublicReplayStep | null {
@@ -266,6 +312,7 @@ async function loadStep(stepId: string | null) {
       duration_ms: 0,
     })
     firstResultTracked.value = true
+    scheduleNextStepPrefetch()
     return
   }
   const startedAt = typeof performance !== 'undefined' ? performance.now() : 0
@@ -283,6 +330,7 @@ async function loadStep(stepId: string | null) {
       duration_ms: duration,
     })
     firstResultTracked.value = true
+    scheduleNextStepPrefetch()
   } catch (error: any) {
     if (abortController.signal.aborted || requestToken !== detailRequestToken) return
     detailError.value = true
@@ -299,6 +347,7 @@ async function loadReplay() {
   manifestAbortController?.abort()
   loadMoreAbortController?.abort()
   detailAbortController?.abort()
+  cancelPrefetch()
   const abortController = new AbortController()
   manifestAbortController = abortController
   const requestToken = ++manifestRequestToken
@@ -464,11 +513,17 @@ onUnmounted(() => {
   manifestAbortController?.abort()
   loadMoreAbortController?.abort()
   detailAbortController?.abort()
+  cancelPrefetch()
 })
 
 onMounted(() => {
   if (!authStore.isInitialized) void authStore.initialize()
+  setPublicPageMeta({ title: t('replay.seo.title'), description: t('replay.seo.description'), type: 'article' })
   void loadReplay()
+})
+
+watch(locale, () => {
+  setPublicPageMeta({ title: t('replay.seo.title'), description: t('replay.seo.description'), type: 'article' })
 })
 </script>
 
@@ -566,10 +621,14 @@ onMounted(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .replay-v2 :deep(*) {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  .replay-v2-ambient,
+  .replay-v2 .animate-pulse {
+    animation: none !important;
+  }
+
+  .replay-v2 button,
+  .replay-v2 a {
+    transition-duration: 100ms !important;
   }
 }
 </style>

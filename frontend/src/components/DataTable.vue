@@ -16,12 +16,12 @@ interface Column {
   sortKey?: string
   // ponytail: optional per-cell class hook (e.g. color-code engagement rate).
   // Receives the row; returns extra classes merged onto the cell.
-  cellClass?: (row: Record<string, any>) => string
+  cellClass?: (row: Record<string, unknown>) => string
 }
 
 interface Props {
   columns: Column[]
-  data: Record<string, any>[]
+  data: Record<string, unknown>[]
   rowKey?: string
   highlightRowKey?: string
   highlightKeyValue?: string
@@ -36,7 +36,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   // AN-08: row click for drill-down (e.g. open a single-post detail drawer).
-  (e: 'row-click', row: Record<string, any>): void
+  (e: 'row-click', row: Record<string, unknown>): void
 }>()
 
 const sortKey = ref('')
@@ -50,8 +50,9 @@ const alignClasses = computed(() => {
   return classes
 })
 
-const getRowKey = (row: Record<string, any>, idx: number) => {
-  return props.rowKey && row[props.rowKey] ? row[props.rowKey] : `row-${idx}`
+const getRowKey = (row: Record<string, unknown>, idx: number) => {
+  const value = props.rowKey ? row[props.rowKey] : undefined
+  return typeof value === 'string' || typeof value === 'number' ? value : `row-${idx}`
 }
 
 const hasData = computed(() => props.data.length > 0)

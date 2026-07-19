@@ -293,7 +293,12 @@
       "statusSource": "状态来源",
       "realtime": "实时同步",
       "polling": "轮询刷新",
-      "snapshot": "历史快照"
+      "snapshot": "历史快照",
+      "agentElapsed": "{agent} 已运行 {duration}",
+      "elapsedSeconds": "{seconds} 秒",
+      "elapsedMinutes": "{minutes} 分 {seconds} 秒",
+      "etaSeconds": "预计还需约 {seconds} 秒",
+      "etaMinutes": "预计还需约 {minutes} 分钟"
     },
     "contentCards": {
       "loading": "工作流数据加载状态",
@@ -405,6 +410,9 @@
       "engaging": "互动管理",
       "engagingDesc": "受众互动管理",
       "agentDetails": "Agent 执行详情",
+      "durationMilliseconds": "{milliseconds} 毫秒",
+      "durationSeconds": "{seconds} 秒",
+      "durationMinutes": "{minutes} 分 {seconds} 秒",
       "substepSections": {
         "briefing": "商单解析步骤",
         "planning": "策略规划步骤",
@@ -749,9 +757,11 @@
       "likes": "点赞",
       "comments": "评论",
       "collects": "收藏",
+      "shares": "分享",
       "engagementRate": "互动率",
       "publishedAt": "发布时间"
     },
+    "exportCsv": "导出 CSV",
     "detail": {
       "title": "笔记详情",
       "untitled": "无标题笔记"
@@ -1020,6 +1030,8 @@
   },
   "charts": {
     "engagementTable": "互动数据表",
+    "engagementSummary": "总计 {total}；最高类别：{category}（{value}）",
+    "noEngagementData": "当前周期暂无互动数据",
     "trendTable": "图表数据表",
     "trendData": "趋势数据",
     "noData": "无数据",
@@ -1432,6 +1444,10 @@
   "showcase": {
     "title": "小红书增长引擎",
     "subtitle": "AI 驱动的自动化内容创作平台",
+    "seo": {
+      "title": "真实案例｜小红书增长引擎",
+      "description": "浏览经过授权的真实案例，查看从趋势洞察到内容产出的关键决策和完整回放。"
+    },
     "heroTagline": "真实案例 · 可解释的创作过程",
     "heroTitle": "从一个真实案例，看懂 AI 如何完成创作",
     "heroDesc": "浏览经过授权的案例，查看从洞察、策略到成稿的关键决策和最终产出。",
@@ -1579,6 +1595,7 @@
     "showMore": "查看更多案例",
     "featuredAttention": "需关注的工作流",
     "loadMore": "加载更多",
+    "loadMoreFailed": "更多案例加载失败，请重试。",
     "noResults": "没有匹配的工作流",
     "noResultsWithFilters": "当前筛选：{status} · {mode}",
     "viewDetail": "查看详情",
@@ -1605,6 +1622,10 @@
   },
   "replay": {
     "title": "工作流回放",
+    "seo": {
+      "title": "工作流回放｜小红书增长引擎",
+      "description": "查看真实案例从洞察、策略到内容产出的关键步骤、结果和决策依据。"
+    },
     "workflowStatus": {
       "idle": "未开始",
       "running": "进行中",
@@ -2105,6 +2126,7 @@
       "loading": "加载列表中…",
       "loadError": "加载列表失败",
       "empty": "暂无有评估结果的工作流",
+      "noMatch": "没有符合当前搜索或筛选条件的评估",
       "loadMore": "加载更多",
       "noMore": "已全部加载",
       "back": "返回列表",
@@ -2119,6 +2141,9 @@
     "radarTitleDynamic": "{count} 维评分雷达",
     "radarSeries": "质量评分",
     "dimensionsTitle": "维度详情",
+    "weightedScoreHint": "综合分由下方各维度加权计算得出。",
+    "radarScore": "评分",
+    "radarRationale": "依据",
     "hintsTitle": "修订建议",
     "action": {
       "revise": "去审核页改稿",
@@ -2152,6 +2177,19 @@
       "altruism": "利他性",
       "bias_check": "偏倚检测",
       "unknown": "{dim}"
+    },
+    "dimHelp": {
+      "copywriting": "评估文案的清晰度、结构和说服力。",
+      "visual": "评估视觉方案是否支撑内容承诺。",
+      "compliance": "评估安全性、平台合规性和风险控制。",
+      "reach": "评估吸引注意力并获得传播的潜力。",
+      "audience": "评估内容与目标受众的匹配程度。",
+      "ai_taste": "评估自然度、原创性以及 AI 套话痕迹。",
+      "image_quality": "评估图片方案的质量与实际可用性。",
+      "commercial_tone": "评估品牌诉求与真实表达之间的平衡。",
+      "altruism": "评估内容为读者提供的实际价值。",
+      "bias_check": "评估结果中可能存在的框架或偏好偏倚信号。",
+      "unknown": "暂无该维度的解释。"
     },
     "bias": {
       "title": "对抗偏倚检测",

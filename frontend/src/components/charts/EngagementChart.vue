@@ -7,11 +7,12 @@ import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { useChartTheme } from '@/composables/useChartTheme'
+import { formatNumber } from '@/utils/format'
 
 // Register ECharts modules
 use([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { theme } = useChartTheme()
 
 interface DataItem {
@@ -51,7 +52,11 @@ const chartDescription = computed(() => {
   if (props.data.length === 0) return t('charts.noData')
   const total = props.data.reduce((sum, d) => sum + d.value, 0)
   const maxCategory = props.data.reduce((max, d) => d.value > max.value ? d : max, props.data[0])
-  return `Total: ${total}, top: ${maxCategory.category} ${maxCategory.value}`
+  return t('charts.engagementSummary', {
+    total: formatNumber(total, locale.value),
+    category: maxCategory.category,
+    value: formatNumber(maxCategory.value, locale.value),
+  })
 })
 
 const chartOption = computed(() => {
@@ -132,11 +137,16 @@ const chartOption = computed(() => {
         <div class="w-2 h-2 rounded-full" :style="{ background: neonColors[props.variant] }" aria-hidden="true" />
         {{ props.title }}
       </div>
-      <span v-if="totalValue > 0" class="text-slate-400 normal-case tracking-normal font-semibold tabular-nums">{{ totalValue.toLocaleString() }}</span>
+      <span v-if="totalValue > 0" class="text-slate-400 normal-case tracking-normal font-semibold tabular-nums">{{ formatNumber(totalValue, locale) }}</span>
+    </div>
+
+    <div v-if="props.data.length === 0" class="flex h-[220px] items-center justify-center rounded-lg border border-dashed border-slate-200 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500" role="status">
+      {{ t('charts.noEngagementData') }}
     </div>
 
     <!-- Chart for visual users -->
     <VChart
+      v-else
       :option="chartOption"
       :style="{ height: `${props.height}px` }"
       autoresize

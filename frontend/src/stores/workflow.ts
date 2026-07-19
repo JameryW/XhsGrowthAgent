@@ -141,6 +141,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const openTabIds = ref<string[]>(loadOpenTabs())
   const tabLabels = ref<Record<string, string>>(loadTabLabels())
   const rippleProgressMap = ref<Map<string, Record<string, RippleProgress>>>(new Map())
+  const pendingRippleProgress = new Map<string, Record<string, RippleProgress>>()
+  const rippleProgressTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const RIPPLE_PROGRESS_THROTTLE_MS = 200
 
   // ── Replay mode state ──
   const isReplayMode = ref(false)
@@ -307,6 +310,50 @@ export const useWorkflowStore = defineStore('workflow', () => {
     Object.keys(rippleComparison.value).length > 0
   )
 
+  function applyRippleProgress(threadId: string, progress: RippleProgress): void {
+    const current = { ...(rippleProgressMap.value.get(threadId) || {}) }
+    // When a new job starts (low progress) after reangle/retopic,
+    // clear completed old jobs to prevent progress regression
+    if (progress.progress <= 0.05 && progress.status === 'running') {
+      const otherKeys = Object.keys(current).filter(k => k !== progress.job_id)
+      const hasCompleted = otherKeys.some(k =>
+        current[k].status === 'completed' || current[k].status === 'done' || current[k].status === 'finished'
+      )
+      if (hasCompleted) {
+        for (const k of otherKeys) {
+          if (current[k].status === 'completed' || current[k].status === 'done' || current[k].status === 'finished') {
+            delete current[k]
+          }
+        }
+      }
+    }
+    current[progress.job_id] = progress
+    rippleProgressMap.value.set(threadId, { ...current })
+  }
+
+  function flushRippleProgress(threadId: string): void {
+    rippleProgressTimers.delete(threadId)
+    const pending = pendingRippleProgress.get(threadId)
+    pendingRippleProgress.delete(threadId)
+    if (!pending) return
+    Object.values(pending).forEach(progress => applyRippleProgress(threadId, progress))
+  }
+
+  function queueRippleProgress(threadId: string, progress: RippleProgress): void {
+    const pending = pendingRippleProgress.get(threadId) || {}
+    pending[progress.job_id] = progress
+    pendingRippleProgress.set(threadId, pending)
+    if (rippleProgressTimers.has(threadId)) return
+    rippleProgressTimers.set(threadId, setTimeout(() => flushRippleProgress(threadId), RIPPLE_PROGRESS_THROTTLE_MS))
+  }
+
+  function clearRippleProgressQueue(threadId: string): void {
+    const timer = rippleProgressTimers.get(threadId)
+    if (timer) clearTimeout(timer)
+    rippleProgressTimers.delete(threadId)
+    pendingRippleProgress.delete(threadId)
+  }
+
   // ── Tab management ──
 
   const TAB_FOLD_LIMIT = 8
@@ -364,6 +411,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     openTabIds.value.splice(idx, 1)
     workflowStates.value.delete(threadId)
     rippleProgressMap.value.delete(threadId)
+    clearRippleProgressQueue(threadId)
     delete tabLabels.value[threadId]
 
     saveOpenTabs(openTabIds.value)
@@ -558,25 +606,9 @@ export const useWorkflowStore = defineStore('workflow', () => {
   realtimeStore.wsService.onEvent(EventType.RIPPLE_PROGRESS, (msg) => {
     if (!msg.thread_id) return
     const progress = msg.payload as RippleProgress
-    const current = rippleProgressMap.value.get(msg.thread_id) || {}
-    // When a new job starts (low progress) after reangle/retopic,
-    // clear completed old jobs to prevent progress regression
-    if (progress.progress <= 0.05 && progress.status === 'running') {
-      const otherKeys = Object.keys(current).filter(k => k !== progress.job_id)
-      const hasCompleted = otherKeys.some(k =>
-        current[k].status === 'completed' || current[k].status === 'done' || current[k].status === 'finished'
-      )
-      if (hasCompleted) {
-        // Remove old completed jobs — new simulation starting
-        for (const k of otherKeys) {
-          if (current[k].status === 'completed' || current[k].status === 'done' || current[k].status === 'finished') {
-            delete current[k]
-          }
-        }
-      }
-    }
-    current[progress.job_id] = progress
-    rippleProgressMap.value.set(msg.thread_id, { ...current })
+    // Ripple emits progress much faster than the dashboard can render. Keep
+    // the latest update per job and commit one reactive map update every 200ms.
+    queueRippleProgress(msg.thread_id, progress)
   })
 
   watch(() => workflowState.value?.ripple_prediction, (val, oldVal) => {
@@ -585,6 +617,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     const wasCleared = oldVal && Object.keys(oldVal).length > 0 && (!val || Object.keys(val).length === 0)
     if (wasCleared) {
       rippleProgressMap.value.delete(activeThreadId.value)
+      clearRippleProgressQueue(activeThreadId.value)
       return
     }
     if (val && Object.keys(val).length > 0) {
@@ -596,6 +629,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         )
         if (!hasActive) {
           rippleProgressMap.value.delete(activeThreadId.value)
+          clearRippleProgressQueue(activeThreadId.value)
         }
       }
     }
