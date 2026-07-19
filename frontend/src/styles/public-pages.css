@@ -1,0 +1,165 @@
+/* Shared visual effects for the public pages (showcase + workflow replay).
+   Dual-theme (light/dark via .dark on <html>) with reduced-motion fallbacks. */
+
+/* Animated gradient brand text */
+.text-gradient-brand {
+  background-image: linear-gradient(100deg, #e11d48 0%, #f43f5e 30%, #fb923c 65%, #f59e0b 100%);
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradient-flow 8s ease infinite;
+}
+
+.dark .text-gradient-brand {
+  background-image: linear-gradient(100deg, #fb7185 0%, #fda4af 30%, #fdba74 65%, #fcd34d 100%);
+}
+
+/* Frosted glass panel */
+.glass-panel {
+  background-color: rgb(255 255 255 / 0.72);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgb(15 23 42 / 0.07);
+}
+
+.dark .glass-panel {
+  background-color: rgb(15 23 42 / 0.66);
+  border-color: rgb(148 163 184 / 0.14);
+}
+
+/* Hover glow frame — gradient hairline drawn with a masked pseudo-element. */
+.glow-border {
+  position: relative;
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease;
+}
+
+.glow-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: linear-gradient(135deg, rgb(244 63 94 / 0.6), rgb(20 184 166 / 0.5), rgb(139 92 246 / 0.45));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+}
+
+.glow-border:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 34px -12px rgb(244 63 94 / 0.22), 0 10px 26px -10px rgb(20 184 166 / 0.16);
+}
+
+.glow-border:hover::before,
+.glow-border:focus-within::before {
+  opacity: 1;
+}
+
+/* Scroll reveal (driven by the v-reveal directive) */
+.reveal-base {
+  opacity: 0;
+  transform: translateY(22px);
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+  will-change: opacity, transform;
+}
+
+.reveal-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Fine grid texture layered under the aurora background */
+.bg-grid-pattern {
+  background-image:
+    linear-gradient(to right, rgb(100 116 139 / 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(100 116 139 / 0.08) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+.dark .bg-grid-pattern {
+  background-image:
+    linear-gradient(to right, rgb(148 163 184 / 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(148 163 184 / 0.07) 1px, transparent 1px);
+}
+
+/* Animated conic hairline for spotlight panels (featured case, final summary) */
+.flow-frame {
+  position: relative;
+  isolation: isolate;
+}
+
+.flow-frame::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(120deg, rgb(244 63 94 / 0.65), rgb(251 146 60 / 0.55), rgb(20 184 166 / 0.5), rgb(244 63 94 / 0.65));
+  background-size: 300% 300%;
+  animation: gradient-flow 7s ease infinite;
+  opacity: 0.5;
+}
+
+.dark .flow-frame::before {
+  opacity: 0.42;
+}
+
+/* Shimmer sweep for skeleton surfaces */
+.shimmer-surface {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer-surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 0.55) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: public-shimmer 1.8s linear infinite;
+}
+
+.dark .shimmer-surface::after {
+  background: linear-gradient(100deg, transparent 30%, rgb(148 163 184 / 0.14) 50%, transparent 70%);
+  background-size: 200% 100%;
+}
+
+@keyframes public-shimmer {
+  0% {
+    background-position: 180% 0;
+  }
+  100% {
+    background-position: -80% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-gradient-brand,
+  .flow-frame::before,
+  .shimmer-surface::after {
+    animation: none;
+  }
+
+  .reveal-base {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .glow-border,
+  .glow-border::before {
+    transition-duration: 100ms;
+  }
+
+  .glow-border:hover {
+    transform: none;
+  }
+}
