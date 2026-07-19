@@ -13,6 +13,7 @@
 
 .dark .text-gradient-brand {
   background-image: linear-gradient(100deg, #fb7185 0%, #fda4af 30%, #fdba74 65%, #fcd34d 100%);
+  filter: drop-shadow(0 0 22px rgb(244 63 94 / 0.35)) drop-shadow(0 0 46px rgb(251 146 60 / 0.18));
 }
 
 /* Frosted glass panel */
@@ -40,7 +41,7 @@
   inset: 0;
   border-radius: inherit;
   padding: 1.5px;
-  background: linear-gradient(135deg, rgb(244 63 94 / 0.6), rgb(20 184 166 / 0.5), rgb(139 92 246 / 0.45));
+  background: linear-gradient(135deg, rgb(244 63 94 / 0.85), rgb(20 184 166 / 0.7), rgb(139 92 246 / 0.65));
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -51,13 +52,95 @@
 }
 
 .glow-border:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 14px 34px -12px rgb(244 63 94 / 0.22), 0 10px 26px -10px rgb(20 184 166 / 0.16);
+  transform: translateY(-4px);
+  box-shadow: 0 18px 42px -12px rgb(244 63 94 / 0.35), 0 12px 30px -10px rgb(20 184 166 / 0.25);
 }
 
 .glow-border:hover::before,
 .glow-border:focus-within::before {
   opacity: 1;
+}
+
+/* Border beam — a bright comet travelling around the frame (Chromium/Safari/Firefox
+   animate the registered custom property; elsewhere it degrades to a static arc). */
+@property --beam-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.border-beam {
+  position: relative;
+  isolation: isolate;
+}
+
+.border-beam::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(
+    from var(--beam-angle),
+    transparent 0%,
+    rgb(244 63 94 / 0.95) 8%,
+    rgb(251 146 60 / 0.95) 14%,
+    transparent 26%,
+    transparent 52%,
+    rgb(20 184 166 / 0.85) 62%,
+    rgb(94 234 212 / 0.85) 66%,
+    transparent 78%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: beam-rotate 4.5s linear infinite;
+  pointer-events: none;
+}
+
+.border-beam::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(120deg, rgb(244 63 94 / 0.35), rgb(251 146 60 / 0.28), rgb(20 184 166 / 0.28), rgb(244 63 94 / 0.35));
+  background-size: 300% 300%;
+  animation: gradient-flow 7s ease infinite;
+  opacity: 0.35;
+  filter: blur(6px);
+  pointer-events: none;
+}
+
+@keyframes beam-rotate {
+  to {
+    --beam-angle: 360deg;
+  }
+}
+
+/* Mouse-tracking card highlight (driven by the v-spotlight directive) */
+.spotlight-card {
+  position: relative;
+}
+
+.spotlight-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(20rem circle at var(--sx, 50%) var(--sy, 50%), rgb(244 63 94 / 0.1), rgb(20 184 166 / 0.06) 42%, transparent 68%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+
+.spotlight-card.spotlight-active::after {
+  opacity: 1;
+}
+
+.dark .spotlight-card::after {
+  background: radial-gradient(20rem circle at var(--sx, 50%) var(--sy, 50%), rgb(244 63 94 / 0.16), rgb(20 184 166 / 0.1) 42%, transparent 68%);
 }
 
 /* Scroll reveal (driven by the v-reveal directive) */
@@ -90,26 +173,27 @@
     linear-gradient(to bottom, rgb(148 163 184 / 0.07) 1px, transparent 1px);
 }
 
-/* Animated conic hairline for spotlight panels (featured case, final summary) */
-.flow-frame {
-  position: relative;
-  isolation: isolate;
+/* Capability marquee — duplicated track scrolling seamlessly. */
+.marquee {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
 }
 
-.flow-frame::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  z-index: -1;
-  border-radius: inherit;
-  background: linear-gradient(120deg, rgb(244 63 94 / 0.65), rgb(251 146 60 / 0.55), rgb(20 184 166 / 0.5), rgb(244 63 94 / 0.65));
-  background-size: 300% 300%;
-  animation: gradient-flow 7s ease infinite;
-  opacity: 0.5;
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee-scroll 28s linear infinite;
 }
 
-.dark .flow-frame::before {
-  opacity: 0.42;
+.marquee:hover .marquee-track {
+  animation-play-state: paused;
+}
+
+@keyframes marquee-scroll {
+  to {
+    transform: translateX(-50%);
+  }
 }
 
 /* Shimmer sweep for skeleton surfaces */
@@ -143,7 +227,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .text-gradient-brand,
-  .flow-frame::before,
+  .border-beam::before,
+  .border-beam::after,
+  .marquee-track,
   .shimmer-surface::after {
     animation: none;
   }

@@ -8,6 +8,7 @@ import AuroraBackground from '@/components/showcase/AuroraBackground.vue'
 import PublicReplayResult from '@/components/replay/PublicReplayResult.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import { vReveal } from '@/directives/reveal'
+import { vSpotlight } from '@/directives/spotlight'
 import { getPublicCase, listPublicCases } from '@/api/publicShowcase'
 import type { PublicCase, PublicCaseStatus, PublicWorkflowMode } from '@/types/publicShowcase'
 import { useAuthStore } from '@/stores/auth'
@@ -50,6 +51,7 @@ let listAbortController: AbortController | null = null
 let loadMoreAbortController: AbortController | null = null
 const detailAbortControllers = new Map<string, AbortController>()
 const SHOWCASE_PAGE_SIZE = 20
+const marqueeBadges = ['badgeTrend', 'badgeStrategy', 'badgeCopy', 'badgeShooting', 'badgeVisual', 'badgePublish', 'badgeAnalytics'] as const
 
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const featuredCase = computed(() => {
@@ -415,7 +417,7 @@ watch(filteredCases, async () => {
           <h1 id="showcase-title" class="hero-enter mt-5 max-w-2xl text-3xl font-bold leading-tight tracking-tight sm:text-4xl lg:text-5xl" style="--enter-delay: 90ms"><span class="text-gradient-brand">{{ t('showcase.heroTitle') }}</span></h1>
           <p class="hero-enter mt-5 max-w-xl text-base leading-7 text-slate-600 dark:text-slate-300" style="--enter-delay: 180ms">{{ t('showcase.heroDesc') }}</p>
           <div class="hero-enter mt-6 flex flex-wrap items-center gap-3" style="--enter-delay: 270ms">
-            <button type="button" class="inline-flex min-h-12 items-center gap-2 rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white shadow-lg shadow-slate-900/15 transition hover:-translate-y-0.5 hover:bg-slate-700 hover:shadow-xl dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200" @click="goCreate('hero')">{{ t('showcase.startCreating') }}<AppIcon name="ArrowRight" size="sm" aria-hidden="true" /></button>
+            <button type="button" class="inline-flex min-h-12 animate-gradient-flow items-center gap-2 rounded-xl bg-gradient-to-r from-rose-600 via-rose-500 to-orange-500 bg-[length:180%_180%] px-5 text-sm font-semibold text-white shadow-lg shadow-rose-600/40 transition hover:-translate-y-0.5 hover:shadow-xl hover:shadow-rose-600/50" @click="goCreate('hero')">{{ t('showcase.startCreating') }}<AppIcon name="ArrowRight" size="sm" aria-hidden="true" /></button>
             <a href="#cases" class="inline-flex min-h-12 items-center rounded-xl px-4 text-sm font-medium text-slate-600 transition hover:bg-white dark:text-slate-300 dark:hover:bg-slate-900">{{ t('showcase.browseCases') }}</a>
           </div>
           <p class="hero-enter mt-4 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400" style="--enter-delay: 360ms"><AppIcon name="CheckCircle" size="xs" variant="cyan" aria-hidden="true" />{{ t('showcase.heroProof') }}</p>
@@ -423,7 +425,7 @@ watch(filteredCases, async () => {
 
         <div v-if="featuredCase" class="hero-enter" style="--enter-delay: 220ms">
           <div class="animate-float-slow">
-            <div class="glow-border rounded-3xl border border-slate-200/80 bg-white/85 p-5 shadow-xl shadow-slate-900/5 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/85 md:p-6" data-case-public-id="hero-featured">
+            <div v-spotlight class="glow-border rounded-3xl border border-slate-200/80 bg-white/85 p-5 shadow-xl shadow-slate-900/5 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/85 md:p-6" data-case-public-id="hero-featured">
               <div class="flex items-center justify-between gap-4">
                 <div>
                   <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{{ t('showcase.featuredCaseBadge') }}</p>
@@ -443,8 +445,16 @@ watch(filteredCases, async () => {
         </div>
       </section>
 
-      <section v-if="featuredCase" v-reveal class="mt-14" aria-labelledby="featured-heading">
-        <div class="flow-frame rounded-3xl shadow-xl shadow-rose-900/10">
+      <div v-reveal class="marquee mt-12" aria-hidden="true">
+        <div class="marquee-track">
+          <div v-for="half in 2" :key="half" class="flex shrink-0 items-center gap-3 pr-3">
+            <span v-for="badge in marqueeBadges" :key="`${half}-${badge}`" class="flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/75 px-4 py-2 text-xs font-semibold text-slate-500 shadow-sm backdrop-blur-sm dark:border-slate-700/70 dark:bg-slate-900/60 dark:text-slate-300"><span class="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-rose-500 to-orange-400" />{{ t(`replay.${badge}`) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <section v-if="featuredCase" v-reveal class="mt-10" aria-labelledby="featured-heading">
+        <div class="border-beam rounded-3xl shadow-xl shadow-rose-900/10">
           <div class="overflow-hidden rounded-3xl bg-white dark:bg-slate-900">
             <div class="grid lg:grid-cols-[.82fr_1.18fr]">
               <div class="featured-shine relative overflow-hidden bg-gradient-to-br from-rose-500 via-orange-400 to-amber-300 p-6 text-white md:p-8">
@@ -515,7 +525,7 @@ watch(filteredCases, async () => {
           <button type="button" class="mt-4 min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-medium dark:border-slate-700" @click="clearFilters">{{ t('showcase.resetFilters') }}</button>
         </div>
         <div v-else class="mt-5 grid gap-4 md:grid-cols-2">
-          <article v-for="(item, index) in filteredCases" :key="item.public_id" v-reveal="(index % 4) * 70" class="case-card glow-border group rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/80" :data-case-public-id="item.public_id">
+          <article v-for="(item, index) in filteredCases" :key="item.public_id" v-reveal="(index % 4) * 70" v-spotlight class="case-card glow-border group rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/80" :data-case-public-id="item.public_id">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0"><span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ modeLabel(item.workflow_mode) }}</span><h3 class="mt-3 line-clamp-2 text-lg font-semibold leading-snug">{{ caseDetail(item).title }}</h3></div>
               <span class="shrink-0 rounded-full px-2.5 py-1 text-xs font-medium" :class="item.status === 'completed' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200' : item.status === 'attention' ? 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-200' : 'bg-sky-50 text-sky-700 dark:bg-sky-400/10 dark:text-sky-200'">{{ statusLabel(item.status) }}</span>
