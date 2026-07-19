@@ -5,16 +5,17 @@ import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import EvaluationRadar from '@/components/charts/EvaluationRadar.vue'
-import TrendChart from '@/components/charts/TrendChart.vue'
-import CreatorQualityWorkspace from '@/components/evaluation/CreatorQualityWorkspace.vue'
-import { getEvaluationList, getEvaluationResult, getEvaluationTrend } from '@/api/evaluation'
+import EvaluationOverview from '@/components/evaluation/EvaluationOverview.vue'
+import CreatorQualityPanel from '@/components/settings/CreatorQualityPanel.vue'
+import CreatorNoteQualityPanel from '@/components/settings/CreatorNoteQualityPanel.vue'
+import { getEvaluationList, getEvaluationResult } from '@/api/evaluation'
+import { useAccountsStore } from '@/stores/accounts'
 import { EvaluationSkeleton } from '@/components/skeletons'
 import { trackInteraction } from '@/utils/interactionTelemetry'
 import type {
   EvaluationListItem,
   EvaluationListResponse,
   EvaluationResultResponse,
-  EvaluationTrendResponse,
 } from '@/types/evaluation'
 import {
   SCORE_THRESHOLDS,
@@ -22,7 +23,6 @@ import {
   RADAR_EXCLUDED_DIMENSIONS,
   DIMENSION_LABEL_KEYS,
 } from '@/constants/evaluation'
-import { formatShortDate } from '@/utils/format'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -31,18 +31,56 @@ const router = useRouter()
 // ── 视图模式：列表 vs 详情（由路由 param 决定）──
 const detailThreadId = computed(() => (route.params.threadId as string | undefined) ?? null)
 const isDetailView = computed(() => !!detailThreadId.value)
-const activeTab = computed<'creator' | 'workflow'>(() =>
-  route.query.tab === 'workflow' ? 'workflow' : 'creator'
-)
-const isCreatorQualityView = computed(() => activeTab.value === 'creator')
 
-function selectTab(tab: 'creator' | 'workflow') {
-  if (tab === activeTab.value) return
-  void router.replace({
-    name: 'evaluation',
-    query: tab === 'workflow' ? { tab: 'workflow' } : {},
-  })
+// 单篇区块的分段控件（?tab= 兼容旧链接：workflow / notes）
+type ContentSegment = 'workflow' | 'notes'
+const contentSegment = ref<ContentSegment>(route.query.tab === 'notes' ? 'notes' : 'workflow')
+
+function setSegment(segment: ContentSegment) {
+  contentSegment.value = segment
 }
+
+// ── 账号选择（自 CreatorQualityWorkspace 上移，供总览/诊断/历史笔记共用）──
+const accountsStore = useAccountsStore()
+const selectedAccountId = ref('')
+const hasUserSelectedAccount = ref(false)
+const selectedAccount = computed(() =>
+  accountsStore.accounts.find((account) => account.id === selectedAccountId.value)
+)
+const hasAccounts = computed(() => accountsStore.accounts.length > 0)
+
+function selectDefaultAccount() {
+  const selectedStillExists = accountsStore.accounts.some(
+    (account) => account.id === selectedAccountId.value
+  )
+  if (hasUserSelectedAccount.value && selectedStillExists) return
+  const activeAccountExists = accountsStore.accounts.some(
+    (account) => account.id === accountsStore.activeAccountId
+  )
+  selectedAccountId.value = activeAccountExists
+    ? accountsStore.activeAccountId!
+    : accountsStore.accounts[0]?.id || ''
+}
+
+async function refreshAccounts() {
+  await accountsStore.fetchAccounts()
+  selectDefaultAccount()
+}
+
+function onAccountSelected(accountId: string) {
+  selectedAccountId.value = accountId
+  hasUserSelectedAccount.value = true
+}
+
+function openSettings() {
+  void router.push('/settings')
+}
+
+watch(
+  () => [accountsStore.activeAccountId, accountsStore.accounts] as const,
+  selectDefaultAccount,
+  { immediate: true }
+)
 
 // ════════════════════════════════════════════════════════════
 // 列表页状态
@@ -137,24 +175,23 @@ async function copyThreadId() {
 
 // 列表页首次挂载加载
 onMounted(() => {
-  if (!isDetailView.value && activeTab.value === 'workflow') {
+  if (isDetailView.value) return
+  void refreshAccounts()
+  if (contentSegment.value === 'workflow') {
     loadList(true)
   }
 })
 
 // 路由切换到列表页时按需加载（从详情返回且列表为空）
 watch(isDetailView, (detail) => {
-  if (!detail && activeTab.value === 'workflow' && listItems.value.length === 0 && !listLoading.value) {
+  if (!detail && contentSegment.value === 'workflow' && listItems.value.length === 0 && !listLoading.value) {
     loadList(true)
   }
 })
 
-watch(activeTab, (tab) => {
-  if (tab === 'workflow' && listItems.value.length === 0 && !listLoading.value) {
+watch(contentSegment, (segment) => {
+  if (segment === 'workflow' && listItems.value.length === 0 && !listLoading.value) {
     void loadList(true)
-  }
-  if (tab === 'workflow' && !trend.value && !trendLoading.value) {
-    void loadTrend()
   }
 })
 
@@ -205,40 +242,6 @@ function phaseLabel(phase: string): string {
   const key = `dashboard.timeline.${phase}`
   // 兜底：未知 phase 原样返回
   return t(key) === key ? phase : t(key)
-}
-
-// ════════════════════════════════════════════════════════════
-// 趋势图状态（列表页顶部展示）
-// ════════════════════════════════════════════════════════════
-const trend = ref<EvaluationTrendResponse | null>(null)
-const trendLoading = ref(false)
-// EV-02: distinguish trend fetch failure from genuine no-data, instead of
-// folding both into "no historical data".
-const trendError = ref<string | null>(null)
-
-const trendData = computed(() =>
-  (trend.value?.points || [])
-    .filter((p) => p.overall_score != null)
-    .map((p) => ({
-      // EV-13: localized date instead of raw slice(5,16).
-      date: formatShortDate(p.created_at, locale.value),
-      value: p.overall_score as number,
-    })),
-)
-
-const hasTrend = computed(() => trendData.value.length > 0)
-
-async function loadTrend() {
-  trendLoading.value = true
-  trendError.value = null
-  try {
-    trend.value = await getEvaluationTrend(undefined, 100, { suppressToast: true })
-  } catch (e: any) {
-    // Keep any previously-loaded trend visible; surface the failure separately.
-    trendError.value = e?.message ?? 'error'
-  } finally {
-    trendLoading.value = false
-  }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -320,13 +323,6 @@ function dimDescription(dim: string): string {
   const key = `evaluation.dimHelp.${dim}`
   return t(key) === key ? t('evaluation.dimHelp.unknown') : t(key)
 }
-
-// 趋势图：列表页挂载时加载一次（详情页不重复加载）
-onMounted(() => {
-  if (!isDetailView.value && activeTab.value === 'workflow') {
-    loadTrend()
-  }
-})
 </script>
 
 <template>
@@ -340,66 +336,76 @@ onMounted(() => {
         icon="ClipboardCheck"
         tone="purple"
         title-id="evaluation-title"
-      >
-        <template #actions>
-          <div class="evaluation-tabs" role="tablist" :aria-label="t('evaluation.title')">
-            <button
-              type="button"
-              class="evaluation-tab"
-              :class="{ 'evaluation-tab-active': isCreatorQualityView }"
-              role="tab"
-              :aria-selected="isCreatorQualityView"
-              @click="selectTab('creator')"
-            >
-              <AppIcon name="Brain" size="sm" :variant="isCreatorQualityView ? 'white' : 'cyan'" />
-              {{ t('creatorQuality.page.tab') }}
-            </button>
-            <button
-              type="button"
-              class="evaluation-tab"
-              :class="{ 'evaluation-tab-active': !isCreatorQualityView }"
-              role="tab"
-              :aria-selected="!isCreatorQualityView"
-              @click="selectTab('workflow')"
-            >
-              <AppIcon name="CheckSquare" size="sm" :variant="!isCreatorQualityView ? 'white' : 'cyan'" />
-              {{ t('creatorQuality.page.workflowTab') }}
-            </button>
-          </div>
-        </template>
-      </PageHeader>
+      />
 
-      <CreatorQualityWorkspace v-if="isCreatorQualityView" />
-      <template v-else>
-      <!-- 评估历史趋势 -->
-      <section class="trend-card">
-        <h3 class="card-title">{{ t('evaluation.trend.title') }}</h3>
-        <div v-if="trendLoading" class="trend-loading">{{ t('evaluation.trend.loading') }}</div>
-        <template v-else-if="hasTrend">
-          <TrendChart :data="trendData" :height="260" />
-          <div
-            v-if="trend?.dim_averages && Object.keys(trend.dim_averages).length"
-            class="dim-averages"
-          >
-            <span class="dim-avg-label">{{ t('evaluation.trend.dimAverages') }}</span>
-            <span
-              v-for="(v, k) in trend.dim_averages"
-              :key="k"
-              class="dim-avg-chip"
-              :class="scoreTierClass(v)"
-            >
-              {{ k }}: {{ v.toFixed(1) }}
-            </span>
-          </div>
-        </template>
-        <!-- EV-02: fetch failure is its own state with a retry, not "no data". -->
-        <div v-else-if="trendError" class="trend-error">
-          <span>{{ t('evaluation.trend.failed') }}</span>
-          <button type="button" class="retry-btn min-h-[36px]" @click="loadTrend">{{ t('evaluation.trend.retry') }}</button>
+      <!-- 融合总览：历史账户分 × 单篇评估趋势 -->
+      <EvaluationOverview
+        class="eval-section"
+        :account-id="selectedAccountId"
+        :accounts="accountsStore.accounts"
+        :active-account-id="accountsStore.activeAccountId"
+        :accounts-loading="accountsStore.isLoading"
+        :evaluated-total="listTotal"
+        @update:account-id="onAccountSelected"
+        @refresh-accounts="refreshAccounts"
+      />
+
+      <!-- 无账号：引导前往设置页导入数据 -->
+      <section v-if="!hasAccounts" class="eval-section rounded-2xl border border-dashed border-slate-300 bg-white/70 px-5 py-10 text-center dark:border-slate-600 dark:bg-slate-900/60">
+        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
+          <AppIcon name="Database" size="lg" variant="cyan" />
         </div>
-        <div v-else class="trend-empty">{{ t('evaluation.trend.empty') }}</div>
+        <h3 class="mt-4 text-base font-semibold text-slate-700 dark:text-slate-200">{{ t('creatorQuality.page.noAccountTitle') }}</h3>
+        <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400">{{ t('creatorQuality.page.noAccountDescription') }}</p>
+        <button type="button" class="mt-5 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-md" @click="openSettings">
+          <AppIcon name="Settings" size="sm" variant="white" />
+          {{ t('creatorQuality.page.manageAccounts') }}
+        </button>
       </section>
 
+      <!-- 诊断区块：历史创作质量（账户级报告） -->
+      <section v-if="selectedAccount" class="eval-section" :aria-label="t('creatorQuality.title')">
+        <div class="section-head">
+          <p class="section-eyebrow">{{ t('evaluation.section.diagnosis') }}</p>
+          <h2 class="section-title">{{ t('creatorQuality.title') }}</h2>
+        </div>
+        <CreatorQualityPanel :account-id="selectedAccount.id" :account-name="selectedAccount.name" class="shadow-sm" />
+      </section>
+
+      <!-- 单篇区块：工作流评估 / 历史笔记 -->
+      <section class="eval-section" :aria-label="t('evaluation.section.content')">
+        <div class="section-head section-head-row">
+          <div>
+            <p class="section-eyebrow">{{ t('evaluation.section.content') }}</p>
+            <h2 class="section-title">{{ contentSegment === 'workflow' ? t('creatorQuality.page.workflowTab') : t('creatorNoteQuality.title') }}</h2>
+          </div>
+          <div class="evaluation-tabs" role="tablist" :aria-label="t('evaluation.section.content')">
+            <button
+              type="button"
+              class="evaluation-tab"
+              :class="{ 'evaluation-tab-active': contentSegment === 'workflow' }"
+              role="tab"
+              :aria-selected="contentSegment === 'workflow'"
+              @click="setSegment('workflow')"
+            >
+              <AppIcon name="CheckSquare" size="sm" :variant="contentSegment === 'workflow' ? 'white' : 'cyan'" />
+              {{ t('creatorQuality.page.workflowTab') }}
+            </button>
+            <button
+              type="button"
+              class="evaluation-tab"
+              :class="{ 'evaluation-tab-active': contentSegment === 'notes' }"
+              role="tab"
+              :aria-selected="contentSegment === 'notes'"
+              @click="setSegment('notes')"
+            >
+              <AppIcon name="Brain" size="sm" :variant="contentSegment === 'notes' ? 'white' : 'cyan'" />
+              {{ t('creatorNoteQuality.title') }}
+            </button>
+          </div>
+        </div>
+
+        <template v-if="contentSegment === 'workflow'">
       <!-- EV-09: decision filter chips -->
       <section class="filter-chips" role="group" :aria-label="t('evaluation.list.filterLabel')">
         <button
@@ -487,7 +493,14 @@ onMounted(() => {
         </button>
       </div>
       <div v-else-if="listItems.length > 0" class="no-more">{{ t('evaluation.list.noMore') }}</div>
-      </template>
+        </template>
+        <CreatorNoteQualityPanel
+          v-else-if="selectedAccount"
+          :account-id="selectedAccount.id"
+          :account-name="selectedAccount.name"
+          class="shadow-sm"
+        />
+      </section>
     </template>
 
     <!-- ════════ 详情视图 ════════ -->
@@ -624,6 +637,37 @@ onMounted(() => {
 /* ponytail: 宽度/内边距交由 <main> 的 p-6，与 Analytics/Dashboard 同构——
    不自定义 max-width，避免评估页两侧留白与其它页不一致 */
 .evaluation-view { }
+
+/* ── 故事线区块：总览 → 诊断 → 单篇 ── */
+.eval-section { margin-top: 1rem; }
+@media (min-width: 768px) {
+  .eval-section { margin-top: 1.25rem; }
+}
+.section-head { margin-bottom: 0.75rem; }
+.section-head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.section-eyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7c3aed;
+}
+:global(.dark) .section-eyebrow { color: #c4b5fd; }
+.section-title {
+  margin-top: 0.25rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #1e293b;
+}
+:global(.dark) .section-title { color: #f1f5f9; }
+
 .evaluation-tabs {
   display: inline-flex;
   flex-shrink: 0;
@@ -782,16 +826,4 @@ onMounted(() => {
 
 .radar-card { grid-column: 1 / -1; }
 @media (min-width: 768px) { .radar-card { grid-column: auto; } }
-
-.trend-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 1rem; }
-.trend-loading, .trend-empty { font-size: 0.8125rem; color: #94a3b8; padding: 1.5rem 0; text-align: center; }
-.trend-error { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 1.5rem 0; font-size: 0.8125rem; color: #b91c1c; }
-.retry-btn { padding: 0.25rem 1rem; border-radius: 0.5rem; background: #0d9488; color: #fff; font-size: 0.75rem; font-weight: 600; border: 0; cursor: pointer; }
-.retry-btn:hover { background: #0f766e; }
-.dim-averages { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
-.dim-avg-label { font-size: 0.75rem; color: #64748b; }
-.dim-avg-chip { font-size: 0.7rem; padding: 0.2rem 0.55rem; border-radius: 999px; font-weight: 600; background: #f1f5f9; color: #334155; }
-.dim-avg-chip.score-pass { background: #dcfce7; color: #15803d; }
-.dim-avg-chip.score-warn { background: #fef3c7; color: #b45309; }
-.dim-avg-chip.score-fail { background: #fee2e2; color: #b91c1c; }
 </style>

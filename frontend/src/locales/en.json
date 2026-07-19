@@ -2138,6 +2138,18 @@
   "evaluation": {
     "title": "Creation Quality Evaluation",
     "subtitle": "RQGM agent-as-a-judge panel · 9-dimension scoring & revision hints",
+    "overview": {
+      "eyebrow": "Quality overview",
+      "title": "History and per-piece quality in one view",
+      "accountScore": "Account score",
+      "evaluated": "Evaluated workflows",
+      "samples": "Notes analyzed",
+      "noAccount": "No account selected — showing workflow evaluations only"
+    },
+    "section": {
+      "diagnosis": "Account diagnosis",
+      "content": "Content review"
+    },
     "list": {
       "subtitle": "Workflows with evaluation results — click to view detail",
       "searchPlaceholder": "Search title / thread_id / account",
