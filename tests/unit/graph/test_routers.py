@@ -185,6 +185,27 @@ class TestReviewOutcome:
         result = review_outcome(state)
         assert result == "__end__"
 
+    def test_routes_to_revise_for_needs_revision_string(self):
+        """Raw string decision (JSON resume value) → revise_content."""
+        state = {"human_feedback": {"decision": "needs_revision"}}
+        result = review_outcome(state)
+        assert result == "revise_content"
+
+    def test_routes_to_end_for_rejected_string(self):
+        """Raw string rejected → __end__."""
+        state = {"human_feedback": {"decision": "rejected"}}
+        result = review_outcome(state)
+        assert result == "__end__"
+
+    def test_terminal_phase_overrides_approved(self):
+        """phase=CANCELLED wins over an approved decision → __end__."""
+        state = {
+            "phase": WorkflowPhase.CANCELLED,
+            "human_feedback": {"decision": ContentStatus.APPROVED},
+        }
+        result = review_outcome(state)
+        assert result == "__end__"
+
 
 class TestEvaluatorOutcome:
     """Tests for evaluator_outcome conditional edge (RQGM agent-as-a-judge)."""
