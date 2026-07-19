@@ -47,7 +47,8 @@ const sampleValue = computed(() => report.value
 
 const visibleRecommendations = computed<CreatorQualityRecommendation[]>(() => {
   if (!report.value) return []
-  return [...report.value.recommendations]
+  // The backend may omit list fields (null) when nothing was analyzed yet.
+  return [...(report.value.recommendations ?? [])]
     .sort((a, b) => a.priority - b.priority)
     .slice(0, 3)
 })
@@ -277,8 +278,8 @@ function dimensionLabel(key: string): string {
               <AppIcon name="Star" size="xs" variant="cyan" />
               <h4 class="text-xs font-semibold text-emerald-700">{{ t('creatorQuality.strengths') }}</h4>
             </div>
-            <ul v-if="report.strengths.length" class="mt-2 space-y-2">
-              <li v-for="strength in report.strengths" :key="`${strength.dimension}-${strength.title}`" class="min-w-0">
+            <ul v-if="(report.strengths ?? []).length" class="mt-2 space-y-2">
+              <li v-for="strength in report.strengths ?? []" :key="`${strength.dimension}-${strength.title}`" class="min-w-0">
                 <div class="break-words text-xs font-medium text-slate-700">{{ strength.title }}</div>
                 <p class="mt-0.5 break-words text-xs leading-5 text-slate-500">{{ strength.evidence }}</p>
               </li>
@@ -291,8 +292,8 @@ function dimensionLabel(key: string): string {
               <AppIcon name="AlertTriangle" size="xs" variant="pink" />
               <h4 class="text-xs font-semibold text-rose-700">{{ t('creatorQuality.weaknesses') }}</h4>
             </div>
-            <ul v-if="report.weaknesses.length" class="mt-2 space-y-2">
-              <li v-for="weakness in report.weaknesses" :key="`${weakness.dimension}-${weakness.title}`" class="min-w-0">
+            <ul v-if="(report.weaknesses ?? []).length" class="mt-2 space-y-2">
+              <li v-for="weakness in report.weaknesses ?? []" :key="`${weakness.dimension}-${weakness.title}`" class="min-w-0">
                 <div class="break-words text-xs font-medium text-slate-700">{{ weakness.title }}</div>
                 <p class="mt-0.5 break-words text-xs leading-5 text-slate-500">{{ weakness.evidence }}</p>
               </li>

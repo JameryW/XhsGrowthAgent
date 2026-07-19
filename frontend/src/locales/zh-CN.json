@@ -2138,6 +2138,18 @@
   "evaluation": {
     "title": "创作质量评估",
     "subtitle": "RQGM agent-as-a-judge 面板 · 9 维质量评分与修订建议",
+    "overview": {
+      "eyebrow": "质量总览",
+      "title": "从历史到单篇，一屏掌握",
+      "accountScore": "账户综合分",
+      "evaluated": "已评估工作流",
+      "samples": "样本笔记",
+      "noAccount": "未选择账号，仅显示工作流评估数据"
+    },
+    "section": {
+      "diagnosis": "账户诊断",
+      "content": "单篇排查"
+    },
     "list": {
       "subtitle": "查看有评估结果的工作流，点击进入详情",
       "searchPlaceholder": "搜索标题 / thread_id / 账号",

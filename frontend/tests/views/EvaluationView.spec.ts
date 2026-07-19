@@ -46,6 +46,13 @@ vi.mock('@/api/accounts', () => ({
   getQrLoginStatus: vi.fn(),
 }))
 
+// The overview band fetches the creator-quality report for the selected account;
+// keep the call inside the mock graph so no real HTTP fires mid-test.
+vi.mock('@/api/analytics', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/analytics')>()
+  return { ...actual, getCreatorQuality: vi.fn().mockResolvedValue(null) }
+})
+
 async function mountEval(params: Record<string, string> = {}, query: Record<string, string> = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -58,7 +65,15 @@ async function mountEval(params: Record<string, string> = {}, query: Record<stri
   else router.push({ name: 'evaluation', query })
   await router.isReady()
   const wrapper = mount(EvaluationView, {
-    global: { plugins: [router], stubs: { TrendChart: { template: '<div />' }, EvaluationRadar: { template: '<div />' }, CreatorQualityWorkspace: { template: '<div />' } } },
+    global: {
+      plugins: [router],
+      stubs: {
+        TrendChart: { template: '<div />' },
+        EvaluationRadar: { template: '<div />' },
+        CreatorQualityPanel: { template: '<div data-testid="quality-panel" />' },
+        CreatorNoteQualityPanel: { template: '<div data-testid="note-quality-panel" />' },
+      },
+    },
   })
   await flushPromises()
   await flushPromises()
@@ -146,5 +161,46 @@ describe('EvaluationView', () => {
     await flushPromises()
     expect(wrapper.find('.load-more-btn').exists()).toBe(false)
     expect(wrapper.text()).toContain('标题39')
+  })
+
+  it('renders the fused overview band and no-account hint on the list view', async () => {
+    const { getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
+    ;(getEvaluationList as any).mockResolvedValue({ workflows: [], total: 0 })
+    ;(getEvaluationTrend as any).mockResolvedValue({ db_ready: true, points: [], dim_averages: {} })
+    const wrapper = await mountEval()
+    expect(wrapper.text()).toContain(tt('evaluation.overview.title'))
+    expect(wrapper.text()).toContain(tt('creatorQuality.page.noAccountTitle'))
+    // No account → diagnosis section hidden, workflow segment still available.
+    expect(wrapper.find('[data-testid="quality-panel"]').exists()).toBe(false)
+  })
+
+  it('shows the diagnosis panel for the default account and switches segments', async () => {
+    const { getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
+    const { listAccounts } = await import('@/api/accounts')
+    ;(getEvaluationList as any).mockResolvedValue({ workflows: [], total: 0 })
+    ;(getEvaluationTrend as any).mockResolvedValue({ db_ready: true, points: [], dim_averages: {} })
+    ;(listAccounts as any).mockResolvedValue([{ id: 'acc-1', name: '测试账号', is_active: true }])
+    const wrapper = await mountEval()
+    // Default segment is the workflow list; the diagnosis panel follows the default account.
+    expect(wrapper.find('[data-testid="quality-panel"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="note-quality-panel"]').exists()).toBe(false)
+
+    const tabs = wrapper.findAll('.evaluation-tab')
+    expect(tabs).toHaveLength(2)
+    await tabs[1].trigger('click')
+    expect(wrapper.find('[data-testid="note-quality-panel"]').exists()).toBe(true)
+
+    await tabs[0].trigger('click')
+    expect(wrapper.find('[data-testid="note-quality-panel"]').exists()).toBe(false)
+  })
+
+  it('starts on the notes segment when linked with ?tab=notes', async () => {
+    const { getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
+    const { listAccounts } = await import('@/api/accounts')
+    ;(getEvaluationList as any).mockResolvedValue({ workflows: [], total: 0 })
+    ;(getEvaluationTrend as any).mockResolvedValue({ db_ready: true, points: [], dim_averages: {} })
+    ;(listAccounts as any).mockResolvedValue([{ id: 'acc-1', name: '测试账号', is_active: true }])
+    const wrapper = await mountEval({}, { tab: 'notes' })
+    expect(wrapper.find('[data-testid="note-quality-panel"]').exists()).toBe(true)
   })
 })
