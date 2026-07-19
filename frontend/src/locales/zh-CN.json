@@ -2150,6 +2150,12 @@
       "diagnosis": "账户诊断",
       "content": "单篇排查"
     },
+    "stream": {
+      "title": "单篇质量流",
+      "sourceWorkflow": "工作流",
+      "sourceImported": "历史笔记",
+      "notesUnavailable": "历史笔记暂时不可用"
+    },
     "list": {
       "subtitle": "查看有评估结果的工作流，点击进入详情",
       "searchPlaceholder": "搜索标题 / thread_id / 账号",

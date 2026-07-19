@@ -50,7 +50,11 @@ vi.mock('@/api/accounts', () => ({
 // keep the call inside the mock graph so no real HTTP fires mid-test.
 vi.mock('@/api/analytics', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/analytics')>()
-  return { ...actual, getCreatorQuality: vi.fn().mockResolvedValue(null) }
+  return {
+    ...actual,
+    getCreatorQuality: vi.fn().mockResolvedValue(null),
+    getCreatorStats: vi.fn().mockResolvedValue({ notes: [] }),
+  }
 })
 
 async function mountEval(params: Record<string, string> = {}, query: Record<string, string> = {}) {
@@ -174,33 +178,65 @@ describe('EvaluationView', () => {
     expect(wrapper.find('[data-testid="quality-panel"]').exists()).toBe(false)
   })
 
-  it('shows the diagnosis panel for the default account and switches segments', async () => {
+  it('shows the diagnosis panel for the default account', async () => {
     const { getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
     const { listAccounts } = await import('@/api/accounts')
     ;(getEvaluationList as any).mockResolvedValue({ workflows: [], total: 0 })
     ;(getEvaluationTrend as any).mockResolvedValue({ db_ready: true, points: [], dim_averages: {} })
     ;(listAccounts as any).mockResolvedValue([{ id: 'acc-1', name: '测试账号', is_active: true }])
     const wrapper = await mountEval()
-    // Default segment is the workflow list; the diagnosis panel follows the default account.
     expect(wrapper.find('[data-testid="quality-panel"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="note-quality-panel"]').exists()).toBe(false)
-
-    const tabs = wrapper.findAll('.evaluation-tab')
-    expect(tabs).toHaveLength(2)
-    await tabs[1].trigger('click')
-    expect(wrapper.find('[data-testid="note-quality-panel"]').exists()).toBe(true)
-
-    await tabs[0].trigger('click')
-    expect(wrapper.find('[data-testid="note-quality-panel"]').exists()).toBe(false)
   })
 
-  it('starts on the notes segment when linked with ?tab=notes', async () => {
+  const workflowRow = {
+    thread_id: 't-1', account_id: 'acc-1', status: 'completed', phase: 'reviewing', label: '',
+    workflow_mode: 'trend', updated_at: '2026-07-10T00:00:00Z',
+    selected_title: '工作流笔记', overall_score: 80, decision: 'approved',
+  }
+  const noteRow = {
+    note_id: 'n-1', account_id: 'acc-1', title: '历史笔记', views: 1200, likes: 88,
+    comments: 6, collects: 20, shares: 1, published_at: '2026-07-12T00:00:00Z',
+    content_type: 'normal', tags: [], cover_url: '', engagement_rate: 0.08, synced_at: '', source: 'import',
+  }
+
+  it('merges workflow evaluations and imported notes into one time-ordered stream', async () => {
     const { getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
     const { listAccounts } = await import('@/api/accounts')
-    ;(getEvaluationList as any).mockResolvedValue({ workflows: [], total: 0 })
+    const { getCreatorStats } = await import('@/api/analytics')
+    ;(getEvaluationList as any).mockResolvedValue({ workflows: [workflowRow], total: 1 })
     ;(getEvaluationTrend as any).mockResolvedValue({ db_ready: true, points: [], dim_averages: {} })
     ;(listAccounts as any).mockResolvedValue([{ id: 'acc-1', name: '测试账号', is_active: true }])
-    const wrapper = await mountEval({}, { tab: 'notes' })
-    expect(wrapper.find('[data-testid="note-quality-panel"]').exists()).toBe(true)
+    ;(getCreatorStats as any).mockResolvedValue({ notes: [noteRow] })
+
+    const wrapper = await mountEval()
+    // The note (07-12) sorts above the workflow evaluation (07-10).
+    const titles = wrapper.findAll('.item-title').map((el) => el.text())
+    expect(titles.slice(0, 2)).toEqual(['历史笔记', '工作流笔记'])
+    expect(wrapper.text()).toContain(tt('evaluation.stream.sourceWorkflow'))
+    expect(wrapper.text()).toContain(tt('evaluation.stream.sourceImported'))
+
+    // Clicking a note row opens the drill-down drawer with the quality panel.
+    const note = wrapper.findAll('.eval-item').find((el) => el.text().includes('历史笔记'))
+    expect(note).toBeTruthy()
+    await note!.trigger('click')
+    expect(document.body.querySelector('[data-testid="note-quality-panel"]')).toBeTruthy()
+  })
+
+  it('hides imported notes while a decision filter is active', async () => {
+    const { getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
+    const { listAccounts } = await import('@/api/accounts')
+    const { getCreatorStats } = await import('@/api/analytics')
+    ;(getEvaluationList as any).mockResolvedValue({ workflows: [workflowRow], total: 1 })
+    ;(getEvaluationTrend as any).mockResolvedValue({ db_ready: true, points: [], dim_averages: {} })
+    ;(listAccounts as any).mockResolvedValue([{ id: 'acc-1', name: '测试账号', is_active: true }])
+    ;(getCreatorStats as any).mockResolvedValue({ notes: [noteRow] })
+
+    const wrapper = await mountEval()
+    expect(wrapper.findAll('.item-title').map((el) => el.text())).toContain('历史笔记')
+    const approvedChip = wrapper.findAll('.filter-chip').find((el) => el.text().includes(tt('evaluation.decision.approved')))
+    await approvedChip!.trigger('click')
+    const titles = wrapper.findAll('.item-title').map((el) => el.text())
+    expect(titles).not.toContain('历史笔记')
+    expect(titles).toContain('工作流笔记')
   })
 })
