@@ -62,7 +62,9 @@ const featuredCase = computed(() => {
 const filteredCases = computed(() => {
   const normalizedSearch = search.value.trim().toLocaleLowerCase(locale.value)
   const result = cases.value.filter((item) => {
-    if (item.public_id === featuredCase.value?.public_id) return false
+    // When the featured case is the only public one, keep it in the grid —
+    // excluding it would leave the section showing "0 cases" plus an empty state.
+    if (cases.value.length > 1 && item.public_id === featuredCase.value?.public_id) return false
     if (statusFilter.value !== 'all' && item.status !== statusFilter.value) return false
     if (modeFilter.value !== 'all' && item.workflow_mode !== modeFilter.value) return false
     if (normalizedSearch) {
@@ -423,8 +425,10 @@ watch(filteredCases, async () => {
           <p class="hero-enter mt-4 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400" style="--enter-delay: 360ms"><AppIcon name="CheckCircle" size="xs" variant="cyan" aria-hidden="true" />{{ t('showcase.heroProof') }}</p>
         </div>
 
-        <div v-if="featuredCase" class="hero-enter" style="--enter-delay: 220ms">
-          <div class="animate-float-slow">
+        <div v-if="featuredCase" class="hero-enter relative" style="--enter-delay: 220ms">
+          <div class="hero-ghost hero-ghost-a rounded-3xl border border-rose-200/70 bg-white/70 dark:border-rose-400/15 dark:bg-slate-900/70" aria-hidden="true" />
+          <div class="hero-ghost hero-ghost-b rounded-3xl border border-teal-200/70 bg-white/80 dark:border-teal-400/15 dark:bg-slate-900/80" aria-hidden="true" />
+          <div class="animate-float-slow relative">
             <div v-spotlight class="glow-border rounded-3xl border border-slate-200/80 bg-white/85 p-5 shadow-xl shadow-slate-900/5 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/85 md:p-6" data-case-public-id="hero-featured">
               <div class="flex items-center justify-between gap-4">
                 <div>
@@ -479,7 +483,8 @@ watch(filteredCases, async () => {
       </section>
 
       <section id="cases" class="mt-16 scroll-mt-20" aria-labelledby="cases-heading">
-        <div v-reveal class="flex flex-col justify-between gap-4 md:flex-row md:items-end">
+        <div v-reveal class="relative flex flex-col justify-between gap-4 md:flex-row md:items-end">
+          <span class="ghost-index ghost-index-rose" aria-hidden="true">01</span>
           <div>
             <p class="text-xs font-semibold uppercase tracking-[0.14em] text-teal-700 dark:text-teal-300">{{ t('showcase.sectionTitle') }}</p>
             <h2 id="cases-heading" class="mt-2 text-2xl font-bold tracking-tight md:text-3xl">{{ t('showcase.evidenceTitle') }}</h2>
@@ -524,8 +529,8 @@ watch(filteredCases, async () => {
           <h3 class="mt-3 text-base font-semibold">{{ t('showcase.noResults') }}</h3>
           <button type="button" class="mt-4 min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-medium dark:border-slate-700" @click="clearFilters">{{ t('showcase.resetFilters') }}</button>
         </div>
-        <div v-else class="mt-5 grid gap-4 md:grid-cols-2">
-          <article v-for="(item, index) in filteredCases" :key="item.public_id" v-reveal="(index % 4) * 70" v-spotlight class="case-card glow-border group rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/80" :data-case-public-id="item.public_id">
+        <div v-else class="mt-5 grid gap-4 md:grid-cols-3">
+          <article v-for="(item, index) in filteredCases" :key="item.public_id" v-reveal="(index % 4) * 70" v-spotlight class="case-card glow-border group rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/80" :class="index % 5 === 0 ? 'md:col-span-2' : ''" :data-case-public-id="item.public_id">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0"><span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ modeLabel(item.workflow_mode) }}</span><h3 class="mt-3 line-clamp-2 text-lg font-semibold leading-snug">{{ caseDetail(item).title }}</h3></div>
               <span class="shrink-0 rounded-full px-2.5 py-1 text-xs font-medium" :class="item.status === 'completed' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200' : item.status === 'attention' ? 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-200' : 'bg-sky-50 text-sky-700 dark:bg-sky-400/10 dark:text-sky-200'">{{ statusLabel(item.status) }}</span>
@@ -546,13 +551,16 @@ watch(filteredCases, async () => {
         </div>
       </section>
 
-      <section v-reveal class="glass-panel mt-16 rounded-3xl p-6 md:p-8" aria-labelledby="how-heading">
+      <section v-reveal class="glass-panel relative mt-16 overflow-hidden rounded-3xl p-6 md:p-8" aria-labelledby="how-heading">
+        <span class="ghost-index ghost-index-teal" aria-hidden="true">02</span>
         <div class="max-w-xl"><p class="text-xs font-semibold uppercase tracking-[0.14em] text-teal-700 dark:text-teal-300">{{ t('showcase.howItWorks') }}</p><h2 id="how-heading" class="mt-2 text-2xl font-bold">{{ t('showcase.evidenceTitle') }}</h2></div>
-        <div class="mt-8 grid gap-5 md:grid-cols-3">
-          <div v-for="(step, index) in ['scouting', 'creating', 'analyzing']" :key="step" v-reveal="index * 110" class="how-step relative rounded-2xl border border-slate-200/70 bg-white/60 p-5 dark:border-slate-800 dark:bg-slate-900/50">
-            <span class="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-cyan-400 text-sm font-bold text-white shadow-md shadow-teal-500/25">0{{ index + 1 }}</span>
-            <h3 class="mt-4 text-base font-semibold">{{ t(`showcase.phase.${step}`) }}</h3>
-            <p class="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{{ t(`showcase.steps.${step}`) }}</p>
+        <div class="mt-8 grid gap-5 md:grid-cols-3 md:pb-10">
+          <div v-for="(step, index) in ['scouting', 'creating', 'analyzing']" :key="step" v-reveal="index * 110">
+            <div class="how-step relative rounded-2xl border border-slate-200/70 bg-white/60 p-5 transition hover:-translate-y-1 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900/50" :class="index === 1 ? 'md:translate-y-5' : index === 2 ? 'md:translate-y-10' : ''">
+              <span class="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-cyan-400 text-sm font-bold text-white shadow-md shadow-teal-500/25">0{{ index + 1 }}</span>
+              <h3 class="mt-4 text-base font-semibold">{{ t(`showcase.phase.${step}`) }}</h3>
+              <p class="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{{ t(`showcase.steps.${step}`) }}</p>
+            </div>
           </div>
         </div>
       </section>
@@ -605,17 +613,48 @@ watch(filteredCases, async () => {
   }
 }
 
-/* Gradient connectors between the how-it-works steps (md and up). */
-@media (min-width: 768px) {
-  .how-step:not(:last-child)::after {
-    content: '';
-    position: absolute;
-    top: 2.15rem;
-    right: -1.25rem;
-    width: 1.25rem;
-    height: 2px;
-    background: linear-gradient(to right, rgb(20 184 166 / 0.55), rgb(244 63 94 / 0.45));
-  }
+/* Card deck behind the hero featured card — two offset ghost sheets. */
+.hero-ghost {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hero-ghost-a {
+  transform: rotate(-3.5deg) translate(-0.85rem, 0.6rem);
+}
+
+.hero-ghost-b {
+  transform: rotate(2.2deg) translate(0.85rem, -0.3rem);
+}
+
+/* Giant outlined section indices (editorial rhythm). */
+.ghost-index {
+  position: absolute;
+  top: -2.5rem;
+  right: 0;
+  font-size: 5.5rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: transparent;
+  -webkit-text-stroke: 1.5px rgb(244 63 94 / 0.2);
+  pointer-events: none;
+  user-select: none;
+}
+
+.ghost-index-teal {
+  top: 0.5rem;
+  right: 1rem;
+  -webkit-text-stroke-color: rgb(20 184 166 / 0.22);
+}
+
+.dark .ghost-index-rose {
+  -webkit-text-stroke-color: rgb(251 113 133 / 0.3);
+}
+
+.dark .ghost-index-teal {
+  -webkit-text-stroke-color: rgb(45 212 191 / 0.3);
 }
 
 @media (prefers-reduced-motion: reduce) {
