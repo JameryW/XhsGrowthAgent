@@ -207,6 +207,28 @@ class TestDeriveStatus:
         )
         assert derive_status(snapshot) == WorkflowStatus.AWAITING_BRIEF
 
+    def test_dynamic_interrupt_review_gate(self):
+        """Interrupt-value fallback for gate=review (next_nodes empty)."""
+        interrupt_mock = MagicMock()
+        interrupt_mock.value = {"gate": "review"}
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.REVIEWING},
+            next=[],
+            interrupts=[interrupt_mock],
+        )
+        assert derive_status(snapshot) == WorkflowStatus.AWAITING_REVIEW
+
+    def test_dynamic_interrupt_choice_gate(self):
+        """Interrupt-value fallback for gate=choice (next_nodes empty)."""
+        interrupt_mock = MagicMock()
+        interrupt_mock.value = {"gate": "choice"}
+        snapshot = make_snapshot(
+            values={"phase": WorkflowPhase.CREATING},
+            next=[],
+            interrupts=[interrupt_mock],
+        )
+        assert derive_status(snapshot) == WorkflowStatus.AWAITING_CHOICE
+
 
 class TestDeriveStatusStale:
     """Test STALE status detection with has_active_task parameter."""
