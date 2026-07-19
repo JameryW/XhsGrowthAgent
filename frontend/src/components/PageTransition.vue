@@ -3,7 +3,10 @@
 /**
  * PageTransition component
  * Vue transition wrapper with fade + slide animation
- * Uses mode="out-in" for smooth page transitions
+ * Route components are lazy loaded, so keep them inside Suspense. The
+ * transition intentionally does not use out-in: Vue Router resolves lazy
+ * route components asynchronously and out-in can remove the old page before
+ * the new component has a renderable vnode, leaving a blank RouterView.
  */
 
 interface Props {
@@ -25,10 +28,16 @@ const transitionStyle = {
   <RouterView v-slot="{ Component, route }">
     <Transition
       name="fade-slide"
-      mode="out-in"
       :style="transitionStyle"
     >
-      <component :is="Component" :key="route.path" />
+      <Suspense timeout="0">
+        <component :is="Component" :key="route.fullPath" />
+        <template #fallback>
+          <div class="page-transition-loading" role="status" aria-busy="true" aria-label="Loading page">
+            <span class="h-8 w-8 rounded-full border-2 border-slate-200 border-t-teal-500 animate-spin dark:border-slate-700 dark:border-t-teal-400" aria-hidden="true" />
+          </div>
+        </template>
+      </Suspense>
     </Transition>
   </RouterView>
 </template>
@@ -41,6 +50,13 @@ const transitionStyle = {
 
 .fade-slide-leave-active {
   animation: fade-slide-out var(--transition-duration, 200ms) ease-out;
+}
+
+.page-transition-loading {
+  display: flex;
+  min-height: 12rem;
+  align-items: center;
+  justify-content: center;
 }
 
 @keyframes fade-slide-in {

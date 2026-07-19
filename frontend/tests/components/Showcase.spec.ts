@@ -84,6 +84,7 @@ describe('Showcase public UX contract', () => {
 
     expect(wrapper.find('#featured-heading').text()).toContain('真实案例标题')
     expect(wrapper.findAll('.case-card')).toHaveLength(1)
+    expect(wrapper.findAll('button').some(button => button.text().includes('登录'))).toBe(false)
     await wrapper.find('.case-card a').trigger('click')
     expect(routerMock.push).toHaveBeenCalledWith({ name: 'replay', params: { publicId: 'case-other' }, query: { from: '/' } })
   })

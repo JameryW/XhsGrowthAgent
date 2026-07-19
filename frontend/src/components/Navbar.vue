@@ -199,7 +199,6 @@ onMounted(() => {
   >
     <div class="pointer-events-none absolute -left-20 -top-20 h-56 w-56 rounded-full bg-neon-pink/10 blur-3xl" aria-hidden="true" />
     <div class="pointer-events-none absolute -bottom-24 -right-20 h-64 w-64 rounded-full bg-neon-cyan/10 blur-3xl" aria-hidden="true" />
-    <div class="pointer-events-none absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-rose-300/45 to-transparent" aria-hidden="true" />
 
     <!-- Logo -->
     <div class="relative mb-5">
@@ -285,7 +284,7 @@ onMounted(() => {
               :class="isItemActive(item.path) ? navColorClasses[item.color].activeIcon : 'bg-slate-100/80 ring-slate-200/60 group-hover:bg-white dark:bg-slate-800/80 dark:ring-slate-600/50 dark:group-hover:bg-slate-700'"
               aria-hidden="true"
             >
-              <AppIcon :name="item.icon" size="md" :variant="isItemActive(item.path) ? 'white' : 'cyan'" :class="!isItemActive(item.path) ? navColorClasses[item.color].icon : ''" />
+              <AppIcon :name="item.icon" size="md" :variant="isItemActive(item.path) ? item.color : 'cyan'" :class="!isItemActive(item.path) ? navColorClasses[item.color].icon : ''" />
             </span>
             <span v-if="!isTablet" class="min-w-0 flex-1">
               <span :class="['block truncate text-sm font-bold', isItemActive(item.path) ? 'text-slate-800' : 'text-slate-600 group-hover:text-slate-800']">{{ item.label }}</span>
