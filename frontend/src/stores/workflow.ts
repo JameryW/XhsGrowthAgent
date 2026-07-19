@@ -805,9 +805,12 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   async function refreshStatus() {
     if (!activeThreadId.value) return
+    // Capture once — the user may switch tabs while the status request is in
+    // flight; all post-await reads must target the tab we actually fetched.
+    const threadId = activeThreadId.value
     if (!offlineStore.isOnline) {
       offlineStore.queueAction(
-        `refresh-${activeThreadId.value}`,
+        `refresh-${threadId}`,
         async () => { await refreshStatus() },
         t('workflow.statusRefreshFailed')
       )
@@ -817,33 +820,39 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isLoading.value = true
     error.value = null
     try {
-      const state = await workflowApi.getWorkflowStatus(activeThreadId.value)
-      workflowStates.value.set(activeThreadId.value, state)
+      const state = await workflowApi.getWorkflowStatus(threadId)
+      workflowStates.value.set(threadId, state)
       // Sync backend label to tab label (only if no user rename)
-      if (state.label && !tabLabels.value[activeThreadId.value]) {
-        tabLabels.value[activeThreadId.value] = state.label
+      if (state.label && !tabLabels.value[threadId]) {
+        tabLabels.value[threadId] = state.label
         saveTabLabels(tabLabels.value)
       }
       // Sync Ripple progress from status API (fills gap when WebSocket events missed)
       if (state.ripple_progress && Object.keys(state.ripple_progress).length > 0) {
         const rp = state.ripple_progress as { jobs?: Record<string, RippleProgress> }
         if (rp.jobs) {
-          const existing = rippleProgressMap.value.get(activeThreadId.value) || {}
-          rippleProgressMap.value.set(activeThreadId.value, { ...existing, ...rp.jobs })
+          const existing = rippleProgressMap.value.get(threadId) || {}
+          rippleProgressMap.value.set(threadId, { ...existing, ...rp.jobs })
         }
       }
       const status = state?.status || 'running'
       const phase = state?.phase || 'idle'
       const backendProgress = state?.progress_percent
-      updateProgressFromPhase(phase as WorkflowPhase, backendProgress)
+      // Global progress/error refs belong to the active tab — only update
+      // them when the fetched tab is still the one being displayed.
+      const stillActive = threadId === activeThreadId.value
+      if (stillActive) {
+        updateProgressFromPhase(phase as WorkflowPhase, backendProgress)
+      }
       if (status === 'error') {
-        error.value = state?.error || t('workflow.error')
+        if (stillActive) {
+          error.value = state?.error || t('workflow.error')
+        }
         return
       }
       if (state?.checkpoint_lost) {
-        const tid = activeThreadId.value
-        if (tid && !notifiedCheckpointLost.value.has(tid)) {
-          notifiedCheckpointLost.value.add(tid)
+        if (!notifiedCheckpointLost.value.has(threadId)) {
+          notifiedCheckpointLost.value.add(threadId)
           toastStore.warning(t('workflow.checkpointLostTitle'), t('workflow.checkpointLost'))
         }
       }
@@ -852,7 +861,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
       }
     } catch (e: any) {
       if (e.code === 'ERROR_WORKFLOW_NOT_FOUND' || e.message?.includes('not found')) {
-        closeTab(activeThreadId.value!)
+        closeTab(threadId)
       } else {
         error.value = e.message
         toastStore.warning(t('workflow.statusRefreshFailed'), e.message)
