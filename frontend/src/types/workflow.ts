@@ -69,6 +69,12 @@ export interface WorkflowListItem {
   progress_percent: number
   workflow_mode: 'trend' | 'brief'
   label: string
+  showcase_visibility?: 'private' | 'unlisted' | 'public'
+  showcase_public_id?: string
+  showcase_featured?: boolean
+  featured_rank?: number | null
+  public_title?: string | null
+  public_summary?: string | null
   created_at: string
   updated_at: string
   error: string | null

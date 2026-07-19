@@ -1636,6 +1636,13 @@ async def list_workflows_endpoint(
         workflows: list[dict[str, Any]] = []
         for r in rows:
             item = r.to_dict()
+            # The public Showcase uses a stable derived ID for legacy rows that
+            # do not yet have an explicitly persisted public_id. Expose that
+            # effective ID to the authenticated history UI so it can manage
+            # visibility without duplicating the server-side secret logic.
+            from backend.api.routes.public_showcase import _public_id
+
+            item["showcase_public_id"] = _public_id(r)
             orphan = _is_orphan_running(r.thread_id, r.status)
             if orphan:
                 # Restart orphan: DB running but no live task. Reuse STALE
