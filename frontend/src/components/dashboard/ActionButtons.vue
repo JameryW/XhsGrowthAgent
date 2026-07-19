@@ -90,7 +90,7 @@ const resumeWorkflow = () => {
 
 const openPostUrl = () => {
   if (publishResult.value?.post_url) {
-    window.open(publishResult.value.post_url, '_blank')
+    window.open(publishResult.value.post_url, '_blank', 'noopener,noreferrer')
   }
 }
 </script>
