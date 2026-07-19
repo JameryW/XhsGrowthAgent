@@ -396,7 +396,6 @@ watch(filteredCases, async () => {
           </span>
         </button>
         <div class="flex items-center gap-2">
-          <button v-if="!isAuthenticated" type="button" class="hidden min-h-11 rounded-xl px-3 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 sm:inline-flex" @click="router.push({ name: 'login', query: { redirect: '/' } })">{{ t('showcase.signIn') }}</button>
           <button type="button" class="min-h-11 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white shadow-lg shadow-rose-600/20 hover:bg-rose-700" @click="goCreate('nav')">{{ t('showcase.startCreating') }}</button>
           <ThemeToggle class="shrink-0" />
         </div>
