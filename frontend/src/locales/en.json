@@ -1783,6 +1783,7 @@
     "publicAdvancedHint": "Sign in to inspect more execution steps",
     "publicStep": "Step {step}",
     "publicStepOf": "Step {current} of {total}",
+    "progressLabel": "Replay progress",
     "publicStepsToggle": "Step {current} of {total} · Select step",
     "stepNotFoundToast": "The requested step was not found; located the latest key step for you.",
     "publicSelectedStep": "Selected step {step}: {title}",

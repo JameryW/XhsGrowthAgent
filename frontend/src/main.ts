@@ -6,6 +6,7 @@ import i18n from './locales'
 import { pinia } from './stores/pinia'
 import './styles/main.css'
 import './styles/cards.css'
+import './styles/public-pages.css'
 
 const app = createApp(App)
 

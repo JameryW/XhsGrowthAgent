@@ -1783,6 +1783,7 @@
     "publicAdvancedHint": "已登录后可查看更多执行步骤",
     "publicStep": "第 {step} 步",
     "publicStepOf": "第 {current} / {total} 步",
+    "progressLabel": "回放进度",
     "publicStepsToggle": "第 {current} / 共 {total} 步 · 选择步骤",
     "stepNotFoundToast": "指定步骤不存在，已为你定位到最新关键步骤",
     "publicSelectedStep": "已选择第 {step} 步：{title}",
