@@ -62,7 +62,9 @@ const featuredCase = computed(() => {
 const filteredCases = computed(() => {
   const normalizedSearch = search.value.trim().toLocaleLowerCase(locale.value)
   const result = cases.value.filter((item) => {
-    if (item.public_id === featuredCase.value?.public_id) return false
+    // When the featured case is the only public one, keep it in the grid —
+    // excluding it would leave the section showing "0 cases" plus an empty state.
+    if (cases.value.length > 1 && item.public_id === featuredCase.value?.public_id) return false
     if (statusFilter.value !== 'all' && item.status !== statusFilter.value) return false
     if (modeFilter.value !== 'all' && item.workflow_mode !== modeFilter.value) return false
     if (normalizedSearch) {
