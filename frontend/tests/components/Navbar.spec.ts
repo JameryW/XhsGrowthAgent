@@ -63,6 +63,7 @@ describe('Navbar workspace navigation', () => {
     expect(wrapper.text()).toContain('美妆账号')
     expect(wrapper.find('button[aria-current="page"]').text()).toContain('工作流仪表盘')
     expect(wrapper.find('button[aria-label="账户"]').exists()).toBe(true)
+    expect(wrapper.find('button[aria-current="page"] svg').classes()).toContain('text-neon-pink')
   })
 
   it('keeps account management and start actions as real navigation targets', async () => {

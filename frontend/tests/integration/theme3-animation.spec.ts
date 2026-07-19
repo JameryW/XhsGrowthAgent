@@ -129,7 +129,7 @@ describe('Theme 3 Acceptance Tests', () => {
       expect(transition.attributes('style')).toContain('300ms')
     })
 
-    it('PageTransition uses out-in mode for smooth transitions', async () => {
+    it('PageTransition does not use out-in mode so lazy routes can enter', async () => {
       const router = createRouter({
         history: createWebHistory(),
         routes: [
@@ -146,7 +146,7 @@ describe('Theme 3 Acceptance Tests', () => {
       })
 
       const transition = wrapper.findComponent({ name: 'Transition' })
-      expect(transition.props('mode')).toBe('out-in')
+      expect(transition.props('mode')).toBeUndefined()
     })
 
     it('Router meta.transition configured for all routes', async () => {

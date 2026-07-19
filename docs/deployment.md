@@ -303,10 +303,11 @@ scripts/chrome-profiles.sh start
 scripts/chrome-profiles.sh status
 # 停止所有（按 pidfile SIGTERM，超时 SIGKILL）
 scripts/chrome-profiles.sh stop
-# headed 启动（默认；扫码登录态需 headed）
+# 有可用 X11 时 headed 启动（扫码登录态需 headed）；无 X11 时自动切换 headless
 scripts/chrome-profiles.sh start
-# headless 启动（已登录后省内存）
+# 已登录账号也可显式使用 headless
 scripts/chrome-profiles.sh start --headless
+# 强制策略：XHS_CHROME_HEADLESS=0|1；默认 auto（无 DISPLAY 自动 headless）
 ```
 
 launcher 逻辑（`backend/services/chrome_launcher.py`，可单测）：

@@ -62,7 +62,7 @@ describe('PageTransition', () => {
     expect(transition.props('name')).toBe('fade-slide')
   })
 
-  it('uses out-in mode for smooth transitions', async () => {
+  it('does not use out-in mode so lazy routes can enter', async () => {
     const router = createRouter({
       history: createWebHistory(),
       routes: [
@@ -81,7 +81,7 @@ describe('PageTransition', () => {
     })
 
     const transition = wrapper.findComponent({ name: 'Transition' })
-    expect(transition.props('mode')).toBe('out-in')
+    expect(transition.props('mode')).toBeUndefined()
   })
 
   it('accepts duration prop for customization', async () => {
@@ -153,6 +153,30 @@ describe('PageTransition', () => {
     // Should render TestComponentA
     expect(wrapper.find('.page-a').exists()).toBe(true)
     expect(wrapper.text()).toContain('Page A')
+  })
+
+  it('renders lazy route content after navigation', async () => {
+    const router = createRouter({
+      history: createWebHistory(),
+      routes: [
+        { path: '/', component: TestComponentA },
+        { path: '/lazy', component: () => Promise.resolve(TestComponentB) },
+      ],
+    })
+
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(PageTransition, {
+      global: {
+        plugins: [router],
+      },
+    })
+
+    await router.push('/lazy')
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(wrapper.find('.page-b').exists()).toBe(true)
   })
 
   it('has scoped CSS with transition keyframes', async () => {
