@@ -14,11 +14,14 @@ _agent = ShootingPlannerAgent()
 
 
 async def shooting_planner_node(state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
-    """Generate shooting plan from parsed brief + viral references."""
+    """Generate shooting plan from parsed brief + viral references.
+
+    Routes through BaseAgent.__call__ (not execute directly) so a failure
+    returns the error state for stateful retry and gains the perf-log entry,
+    matching every other node.
+    """
     _check_cancelled(state)
-    result = await _agent.execute(state, store)
-    result["current_agent"] = "shooting_planner"
-    return result
+    return await _agent(state, store=store)
 
 
 __all__ = ["shooting_planner_node"]
