@@ -403,3 +403,47 @@ async def test_authenticated_operator_can_approve_and_revoke_case_visibility():
         "visibility": "private",
         "revoked_by": "reviewer",
     }
+
+
+class TestLoadCheckpointsDirectCall:
+    """_load_checkpoints calls the get_checkpoint_history route as a plain function.
+
+    FastAPI does not resolve Query() defaults on direct calls, so the cursor
+    must be passed explicitly — otherwise `before` stays a truthy FieldInfo,
+    a broken cursor config raises inside aget_state_history, and the swallowed
+    exception silently empties the replay manifest (0 steps for every case).
+    """
+
+    @pytest.mark.asyncio
+    async def test_passes_explicit_none_cursor_and_returns_checkpoints(self):
+        from backend.api.routes.public_showcase import _load_checkpoints
+
+        response = MagicMock()
+        response.data = {
+            "checkpoints": [
+                {
+                    "checkpoint_id": "cp-1",
+                    "step": 3,
+                    "phase": "creating",
+                    "current_agent": "copywriter",
+                },
+            ],
+            "has_more": False,
+        }
+        history = AsyncMock(return_value=response)
+        with patch("backend.api.routes.workflow.get_checkpoint_history", history):
+            result = await _load_checkpoints(MagicMock(), "thread-1")
+
+        assert history.await_args.kwargs["before"] is None
+        assert history.await_args.kwargs["limit"] == 100
+        assert [cp["checkpoint_id"] for cp in result] == ["cp-1"]
+
+    @pytest.mark.asyncio
+    async def test_swallowed_failure_returns_empty_list(self):
+        from backend.api.routes.public_showcase import _load_checkpoints
+
+        history = AsyncMock(side_effect=RuntimeError("checkpointer gone"))
+        with patch("backend.api.routes.workflow.get_checkpoint_history", history):
+            result = await _load_checkpoints(MagicMock(), "thread-1")
+
+        assert result == []

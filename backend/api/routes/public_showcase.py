@@ -525,14 +525,22 @@ async def _load_state(request: Request, thread_id: str) -> dict[str, Any] | None
 
 
 async def _load_checkpoints(request: Request, thread_id: str) -> list[dict[str, Any]]:
+    import logging
+
     from backend.api.routes.workflow import get_checkpoint_history
 
     try:
-        response = await get_checkpoint_history(thread_id, request, limit=100)
+        # before=None must be passed explicitly: get_checkpoint_history is a
+        # FastAPI route, and calling it directly leaves `before` at its raw
+        # Query(None) default — a truthy FieldInfo — which builds a broken
+        # cursor config, raises inside aget_state_history, and (via the except
+        # below) silently empties the replay manifest.
+        response = await get_checkpoint_history(thread_id, request, limit=100, before=None)
         data = getattr(response, "data", None)
         checkpoints = data.get("checkpoints", []) if isinstance(data, dict) else []
         return [_checkpoint_dict(item) for item in checkpoints]
     except Exception:
+        logging.getLogger(__name__).warning("Failed to load checkpoints for replay", exc_info=True)
         return []
 
 
