@@ -1520,7 +1520,10 @@ async def stream_workflow_progress(thread_id: str, request: Request) -> Streamin
                 if event.thread_id != thread_id:
                     continue
                 event_data = json.dumps(event.payload, ensure_ascii=False)
-                yield f"event: {event.event_type.value}\ndata: {event_data}\n\n"
+                # Include id: so EventSource advances its Last-Event-ID cursor
+                # over replayed events — without it a second reconnect would
+                # re-deliver this whole replay window.
+                yield f"event: {event.event_type.value}\nid: {event.seq}\ndata: {event_data}\n\n"
                 if event.event_type in (
                     EventType.WORKFLOW_COMPLETED,
                     EventType.WORKFLOW_ERROR,
