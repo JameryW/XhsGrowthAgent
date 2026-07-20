@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { EventType } from '@/realtime/events'
 
@@ -71,7 +71,7 @@ vi.mock('@/locales', () => ({
 }))
 
 import { useWorkflowStore } from '@/stores/workflow'
-import { getCheckpointHistory } from '@/api/workflow'
+import { getCheckpointHistory, getWorkflowStatus } from '@/api/workflow'
 
 describe('workflow store', () => {
   beforeEach(() => {
@@ -272,6 +272,62 @@ describe('workflow store', () => {
 
       resolveRefresh({ thread_id: 'thread-cache', checkpoints: [checkpoint], has_more: false })
       await refresh
+    })
+  })
+
+  // Regression lock for PR #306: refreshStatus must capture the thread id at
+  // entry — a tab switch during the status-fetch await must not redirect the
+  // response (or a 404 close) onto the newly active tab.
+  describe('refreshStatus tab-switch race (PR #306)', () => {
+    const stateA = { thread_id: 'A', phase: 'scouting', status: 'running', progress_percent: 10, next_steps: [], agent_timeline: [] }
+    const stateB = { thread_id: 'B', phase: 'planning', status: 'running', progress_percent: 20, next_steps: [], agent_timeline: [] }
+
+    function seedTwoTabs() {
+      const store = useWorkflowStore()
+      store.workflowStates.set('A', { ...stateA } as any)
+      store.workflowStates.set('B', { ...stateB } as any)
+      store.openTabIds.push('A', 'B')
+      store.activeThreadId = 'A'
+      return store
+    }
+
+    afterEach(() => {
+      vi.mocked(getWorkflowStatus).mockReset()
+      vi.mocked(getWorkflowStatus).mockResolvedValue({ ...stateA } as any)
+    })
+
+    it('writes the response under the fetched thread after a mid-flight tab switch', async () => {
+      const store = seedTwoTabs()
+      let resolveStatus!: (value: unknown) => void
+      vi.mocked(getWorkflowStatus).mockReturnValueOnce(
+        new Promise((resolve) => { resolveStatus = resolve }) as any,
+      )
+
+      const refresh = store.refreshStatus()
+      store.activeThreadId = 'B' // user switches tab while request is in flight
+      resolveStatus({ ...stateA, phase: 'publishing', progress_percent: 80 })
+      await refresh
+
+      expect(store.workflowStates.get('A')?.phase).toBe('publishing')
+      expect(store.workflowStates.get('B')?.phase).toBe('planning') // untouched
+    })
+
+    it('closes the fetched tab on 404, not the tab switched to mid-flight', async () => {
+      const store = seedTwoTabs()
+      let rejectStatus!: (reason: unknown) => void
+      vi.mocked(getWorkflowStatus).mockReturnValueOnce(
+        new Promise((_, reject) => { rejectStatus = reject }) as any,
+      )
+
+      const refresh = store.refreshStatus()
+      store.activeThreadId = 'B' // user switches tab while request is in flight
+      const err = Object.assign(new Error('workflow not found'), { code: 'ERROR_WORKFLOW_NOT_FOUND' })
+      rejectStatus(err)
+      await refresh
+
+      expect(store.openTabIds).toEqual(['B']) // A closed, B survives
+      expect(store.workflowStates.has('A')).toBe(false)
+      expect(store.workflowStates.has('B')).toBe(true)
     })
   })
 })
