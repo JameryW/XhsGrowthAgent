@@ -21,7 +21,8 @@
     "retrySuccess": "Retry Successful",
     "retryCount": "Retry ({count})",
     "retriedTimes": "Retried {count} times",
-    "pageLoadError": "Page failed to load"
+    "pageLoadError": "Page failed to load",
+    "run": "Run"
   },
   "theme": {
     "switchToLight": "Switch to light mode",
@@ -315,7 +316,9 @@
       "views": "Views",
       "likes": "Likes",
       "collects": "Collects",
-      "engagement": "Engagement"
+      "engagement": "Engagement",
+      "runAnalytics": "Analyze performance",
+      "runAnalyticsDesc": "Use Ripple to compare predicted vs actual spread"
     },
     "actionButtons": {
       "ariaLabel": "Workflow action buttons",
@@ -1206,7 +1209,10 @@
     "tabPaused": "Paused",
     "overflowMore": "More",
     "checkpointLost": "Workflow content data was lost after a container restart. Please restart the workflow.",
-    "checkpointLostTitle": "Data Lost"
+    "checkpointLostTitle": "Data Lost",
+    "retryPublishSkipped": "Retry skipped",
+    "retryPublishStarted": "Republishing",
+    "retryPublishFailed": "Retry publish failed"
   },
   "history": {
     "title": "Workflow History",
@@ -1439,7 +1445,8 @@
     "sourcePdf": "PDF",
     "sourceText": "Text",
     "queued": "Queued",
-    "queuedHint": "PDF will be uploaded and text extracted when the workflow starts"
+    "queuedHint": "PDF will be uploaded and text extracted when the workflow starts",
+    "confirmed": "Brief confirmed"
   },
   "shootingPlan": {
     "title": "Shooting Plan",
@@ -2191,7 +2198,8 @@
     "blocking": "BLOCKING",
     "error": {
       "emptyId": "Please enter a workflow thread_id",
-      "fetch": "Failed to fetch evaluation result"
+      "fetch": "Failed to fetch evaluation result",
+      "retry": "Retry"
     },
     "empty": {
       "title": "No evaluation yet",
