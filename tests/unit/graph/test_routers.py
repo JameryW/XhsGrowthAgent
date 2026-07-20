@@ -11,6 +11,7 @@ from backend.graph.routers import (
     evaluator_outcome,
     orchestrator_router,
     review_outcome,
+    ripple_finalize_router,
     ripple_gate_router,
     shooting_planner_router,
     should_continue,
@@ -525,6 +526,36 @@ class TestRippleGateRouter:
         """CANCELLED → __end__."""
         state = {"phase": WorkflowPhase.CANCELLED}
         assert ripple_gate_router(state) == "__end__"
+
+
+class TestRippleFinalizeRouter:
+    """Tests for ripple_finalize_router — mirrors ripple_gate_router (background mode)."""
+
+    def test_accept_routes_to_copywriter(self):
+        state = {"ripple_decision": {"action": "accept"}}
+        assert ripple_finalize_router(state) == "copywriter"
+
+    def test_reangle_trend_routes_to_strategist(self):
+        state = {"ripple_decision": {"action": "reangle"}, "workflow_mode": "trend"}
+        assert ripple_finalize_router(state) == "content_strategist"
+
+    def test_reangle_brief_routes_to_brief_analyzer(self):
+        """Finalize-specific branch: brief-mode reangle re-parses the brief."""
+        state = {"ripple_decision": {"action": "reangle"}, "workflow_mode": "brief"}
+        assert ripple_finalize_router(state) == "brief_analyzer"
+
+    def test_retopic_routes_to_trend_scout(self):
+        state = {"ripple_decision": {"action": "retopic"}}
+        assert ripple_finalize_router(state) == "trend_scout"
+
+    def test_default_accept(self):
+        """No decision (background result accepted silently) → copywriter."""
+        state = {}
+        assert ripple_finalize_router(state) == "copywriter"
+
+    def test_cancelled_routes_to_end(self):
+        state = {"phase": WorkflowPhase.CANCELLED}
+        assert ripple_finalize_router(state) == "__end__"
 
 
 class TestBloggerGateRouter:
