@@ -19,10 +19,11 @@ async def brief_analyzer_node(state: XHSGrowthState, store: BaseStore) -> dict[s
     Sets brief_clarification if brief is too vague (confidence < 0.6),
     which will trigger brief_gate interrupt for user clarification.
     """
+    # Routes through BaseAgent.__call__ (not execute directly) so a failure
+    # returns the error state for stateful retry and gains the perf-log entry,
+    # matching every other node.
     _check_cancelled(state)
-    result = await _agent.execute(state, store)
-    result["current_agent"] = "brief_analyzer"
-    return result
+    return await _agent(state, store=store)
 
 
 __all__ = ["brief_analyzer_node"]
