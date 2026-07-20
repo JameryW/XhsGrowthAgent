@@ -334,6 +334,15 @@ function modeLabel(mode: PublicWorkflowMode): string {
   return t(`showcase.mode.${mode}`)
 }
 
+function caseCardSpanClass(index: number, total: number): string {
+  // A lone card stretches the full row so its edges line up with the
+  // featured panel above instead of sitting in one grid column.
+  if (total === 1) return 'md:col-span-3'
+  // The double-width editorial accent only works when a sibling card fills
+  // the rest of its row; otherwise it leaves a dead column on the right.
+  return index % 5 === 0 && index + 1 < total ? 'md:col-span-2' : ''
+}
+
 function observeCaseCards() {
   if (typeof IntersectionObserver === 'undefined') return
   if (!impressionObserver) {
@@ -530,7 +539,7 @@ watch(filteredCases, async () => {
           <button type="button" class="mt-4 min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-medium dark:border-slate-700" @click="clearFilters">{{ t('showcase.resetFilters') }}</button>
         </div>
         <div v-else class="mt-5 grid gap-4 md:grid-cols-3">
-          <article v-for="(item, index) in filteredCases" :key="item.public_id" v-reveal="(index % 4) * 70" v-spotlight class="case-card glow-border group flex flex-col rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/80" :class="index % 5 === 0 ? 'md:col-span-2' : ''" :data-case-public-id="item.public_id">
+          <article v-for="(item, index) in filteredCases" :key="item.public_id" v-reveal="(index % 4) * 70" v-spotlight class="case-card glow-border group flex flex-col rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/80" :class="caseCardSpanClass(index, filteredCases.length)" :data-case-public-id="item.public_id">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0"><span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ modeLabel(item.workflow_mode) }}</span><h3 class="mt-3 line-clamp-2 text-lg font-semibold leading-snug">{{ caseDetail(item).title }}</h3></div>
               <span class="shrink-0 rounded-full px-2.5 py-1 text-xs font-medium" :class="item.status === 'completed' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200' : item.status === 'attention' ? 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-200' : 'bg-sky-50 text-sky-700 dark:bg-sky-400/10 dark:text-sky-200'">{{ statusLabel(item.status) }}</span>
