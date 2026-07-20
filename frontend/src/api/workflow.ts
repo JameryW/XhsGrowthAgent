@@ -23,15 +23,9 @@ export async function listWorkflows(params?: {
 
 // 启动固定工作流（简单模式）
 export async function startWorkflow(req: WorkflowStartRequest): Promise<WorkflowResponse> {
-  const { retryWithBackoff } = useRetry()
-  return retryWithBackoff(async () => {
-    try {
-      const result = await client.post('/workflow/start', req) as WorkflowResponse
-      return result
-    } catch (error) {
-      throw error
-    }
-  })
+  // No retry: POST /start is create-once. Retrying after a lost response would
+  // spawn a duplicate workflow (in auto_publish mode, publish twice).
+  return client.post('/workflow/start', req) as unknown as WorkflowResponse
 }
 
 // 获取工作流状态（不重试，404 是正常场景）
