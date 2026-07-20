@@ -265,6 +265,19 @@ class TestEvaluatorOutcome:
         }
         assert evaluator_outcome(state) == "publisher"
 
+    def test_needs_revision_string_routes_to_revise(self):
+        """Raw string decision (JSON-deserialized result) → revise_content."""
+        state = {"evaluation_result": {"decision": "needs_revision"}}
+        assert evaluator_outcome(state) == "revise_content"
+
+    def test_rejected_string_force_approves_at_limit(self):
+        """Raw string rejected at revision limit → publisher (cap applies to strings too)."""
+        state = {
+            "evaluation_result": {"decision": "rejected"},
+            "revision_count": 2,
+        }
+        assert evaluator_outcome(state) == "publisher"
+
 
 class TestShouldContinue:
     """Tests for should_continue conditional edge."""
