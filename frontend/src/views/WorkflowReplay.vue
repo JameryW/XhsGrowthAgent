@@ -43,7 +43,10 @@ const manifestError = ref(false)
 const detailError = ref(false)
 const notFound = ref(false)
 const retrying = ref(false)
-const shareState = ref<'idle' | 'success' | 'error'>('idle')
+// Per-button share state: the case-link and step-link copy buttons must not
+// share one flag, or copying one flips the other's label to "copied" too.
+const caseShareState = ref<'idle' | 'success' | 'error'>('idle')
+const stepShareState = ref<'idle' | 'success' | 'error'>('idle')
 const firstResultTracked = ref(false)
 const loadingMore = ref(false)
 const loadMoreError = ref(false)
@@ -462,19 +465,21 @@ function goWorkspace() {
 }
 
 async function copyLink(step = false) {
-  shareState.value = 'idle'
+  const state = step ? stepShareState : caseShareState
+  state.value = 'idle'
   const query = step && selectedStepId.value ? { ...route.query, step: selectedStepId.value } : { from: '/' }
   const resolved = router.resolve({ name: 'replay', params: { publicId: publicId.value }, query })
   const href = typeof window !== 'undefined' ? new URL(resolved.href, window.location.origin).toString() : resolved.href
   try {
     await navigator.clipboard.writeText(href)
-    shareState.value = 'success'
+    state.value = 'success'
     trackInteraction(step ? 'replay_step_link_copy' : 'replay_case_link_copy', { has_step: step })
     trackInteraction('replay_share', { has_step: step })
   } catch {
-    shareState.value = 'error'
+    state.value = 'error'
     trackInteraction('replay_share_error', { has_step: step })
   }
+  setTimeout(() => { state.value = 'idle' }, 2000)
 }
 
 // RP-03: narrative layer helpers.
@@ -545,7 +550,7 @@ watch(locale, () => {
           <div class="min-w-0"><p class="truncate text-sm font-bold">{{ manifest?.workflow.title || t('replay.title') }}</p><div class="mt-0.5 flex items-center gap-2"><span class="text-xs text-slate-500 dark:text-slate-400">{{ t('replay.title') }}</span><span v-if="!manifest?.workflow.replay_available" class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-400/10 dark:text-amber-200">{{ t('replay.noFullReplay') }}</span><span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="caseStatus === 'completed' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200' : 'bg-sky-50 text-sky-700 dark:bg-sky-400/10 dark:text-sky-200'">{{ caseStatusLabel }}</span></div></div>
         </div>
         <div class="flex shrink-0 items-center gap-2">
-          <button type="button" class="hidden min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 sm:inline-flex dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" @click="copyLink(false)"><AppIcon name="Copy" size="xs" class="mr-1.5" aria-hidden="true" />{{ shareState === 'success' ? t('replay.publicShared') : shareState === 'error' ? t('replay.publicShareFailed') : t('replay.publicShareCase') }}</button>
+          <button type="button" class="hidden min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 sm:inline-flex dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" @click="copyLink(false)"><AppIcon name="Copy" size="xs" class="mr-1.5" aria-hidden="true" />{{ caseShareState === 'success' ? t('replay.publicShared') : caseShareState === 'error' ? t('replay.publicShareFailed') : t('replay.publicShareCase') }}</button>
           <button type="button" class="min-h-11 rounded-xl bg-rose-600 px-3 text-sm font-semibold text-white shadow-lg shadow-rose-600/25 transition hover:-translate-y-0.5 hover:bg-rose-700 hover:shadow-xl hover:shadow-rose-600/30" @click="isAuthenticated ? goWorkspace() : goCreate">{{ isAuthenticated ? t('replay.publicWorkspace') : t('replay.publicStart') }}</button>
           <ThemeToggle class="shrink-0" />
         </div>
@@ -559,7 +564,7 @@ watch(locale, () => {
       <template v-else-if="manifest">
         <header class="replay-enter flex flex-col justify-between gap-5 md:flex-row md:items-end" style="--enter-delay: 0ms">
           <div class="min-w-0"><p class="text-xs font-semibold uppercase tracking-[0.14em] text-teal-700 dark:text-teal-300">{{ t('replay.publicKeySteps') }}</p><h1 class="mt-2 max-w-3xl text-2xl font-bold leading-tight md:text-4xl">{{ manifest.workflow.title }}</h1><p class="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">{{ manifest.workflow.summary }}</p></div>
-          <div class="flex shrink-0 items-center gap-2"><button type="button" class="min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-600 transition hover:bg-white dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900" @click="copyLink(true)"><AppIcon name="Copy" size="xs" class="mr-1.5" aria-hidden="true" />{{ shareState === 'success' ? t('replay.publicShared') : shareState === 'error' ? t('replay.publicShareFailed') : t('replay.publicShareStep') }}</button><span class="rounded-full bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ caseStatusLabel }}</span></div>
+          <div class="flex shrink-0 items-center gap-2"><button type="button" class="min-h-11 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-600 transition hover:bg-white dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900" @click="copyLink(true)"><AppIcon name="Copy" size="xs" class="mr-1.5" aria-hidden="true" />{{ stepShareState === 'success' ? t('replay.publicShared') : stepShareState === 'error' ? t('replay.publicShareFailed') : t('replay.publicShareStep') }}</button><span class="rounded-full bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{{ caseStatusLabel }}</span></div>
         </header>
         <p class="sr-only" aria-live="polite">{{ selectedStep ? t('replay.publicSelectedStep', { step: selectedStep.step, title: selectedStep.title || t('replay.publicStep', { step: selectedStep.step }) }) : '' }}</p>
 
