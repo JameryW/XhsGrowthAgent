@@ -21,7 +21,8 @@
     "retrySuccess": "重试成功",
     "retryCount": "重试 ({count})",
     "retriedTimes": "已重试 {count} 次",
-    "pageLoadError": "页面加载出现问题"
+    "pageLoadError": "页面加载出现问题",
+    "run": "运行"
   },
   "theme": {
     "switchToLight": "切换到浅色模式",
@@ -315,7 +316,9 @@
       "views": "浏览量",
       "likes": "点赞",
       "collects": "收藏",
-      "engagement": "互动率"
+      "engagement": "互动率",
+      "runAnalytics": "分析传播效果",
+      "runAnalyticsDesc": "使用 Ripple 分析预测与实际数据对比"
     },
     "actionButtons": {
       "ariaLabel": "工作流操作按钮",
@@ -1206,7 +1209,10 @@
     "tabPaused": "已暂停",
     "overflowMore": "更多",
     "checkpointLost": "工作流内容数据因容器重启而丢失，请重新启动工作流。",
-    "checkpointLostTitle": "数据丢失"
+    "checkpointLostTitle": "数据丢失",
+    "retryPublishSkipped": "重试已跳过",
+    "retryPublishStarted": "正在重新发布",
+    "retryPublishFailed": "重试发布失败"
   },
   "history": {
     "title": "工作流历史",
@@ -1439,7 +1445,8 @@
     "sourcePdf": "PDF",
     "sourceText": "文本",
     "queued": "待上传",
-    "queuedHint": "PDF 将在工作流启动后自动上传并提取文本"
+    "queuedHint": "PDF 将在工作流启动后自动上传并提取文本",
+    "confirmed": "Brief 已确认"
   },
   "shootingPlan": {
     "title": "拍摄方案",
@@ -2191,7 +2198,8 @@
     "blocking": "硬性失败",
     "error": {
       "emptyId": "请输入工作流 thread_id",
-      "fetch": "获取评估结果失败"
+      "fetch": "获取评估结果失败",
+      "retry": "重试"
     },
     "empty": {
       "title": "暂无评估结果",
