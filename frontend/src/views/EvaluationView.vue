@@ -691,7 +691,7 @@ function dimDescription(dim: string): string {
         :aria-label="t('creatorNoteQuality.title')"
       >
         <div class="absolute inset-0 bg-black/40" @click="closeNoteDrawer" />
-        <div class="relative h-full w-full max-w-md space-y-4 overflow-y-auto bg-white p-4 shadow-xl md:p-6 dark:bg-slate-900">
+        <div class="relative h-full w-full max-w-md space-y-4 overflow-y-auto bg-white p-4 shadow-xl md:max-w-3xl md:p-6 dark:bg-slate-900">
           <div class="flex items-start justify-between gap-3">
             <h2 class="truncate text-base font-semibold text-slate-800 md:text-lg dark:text-slate-100">{{ drawerNoteTitle || t('creatorNoteQuality.untitled') }}</h2>
             <button type="button" class="min-h-[44px] min-w-[44px] shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" :aria-label="t('common.close')" @click="closeNoteDrawer">
