@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "TUI slash command contracts + first-entry banner / /help / mode dispatch conventions; /mode + /drafts behavior specs live here"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "AgentTUI.vue is a frontend component — i18n key + render conventions to follow"}
