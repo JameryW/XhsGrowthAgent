@@ -71,18 +71,34 @@ class ContentStrategistAgent(BaseAgent):
 
         trend_data: dict[str, Any] = cast(dict[str, Any], state.get("trend_data", {}))
 
+        # User-provided topic override. Stored in state["topic"] by /workflow/start
+        # but previously dead data — no agent read it, and the drift-guard below
+        # actively pulled the LLM back to the trend candidate set. When set, the
+        # user's topic becomes the selection core; trend data degrades to a
+        # "borrow momentum / angle reference" and the candidate-set guard is skipped.
+        user_topic = str(state.get("topic") or "").strip()
+
         # ponytail: 对候选话题打分（topic_scorer 已注册但此前从未调用——死代码）
         # 评分结果拼入 extra_context，让 LLM 基于热度/增长/竞争度选话题。
         # topic_scorer 内部已处理实时数据不可用降级（返回 heat_score=50），此处只透传。
         topic_scores_ctx = await self._score_trend_topics(trend_data, niche)
         if topic_scores_ctx:
             memory_context += f"\n{topic_scores_ctx}"
-            system_prompt = self._build_system_prompt(state, extra_context=memory_context)
-            system_prompt = system_prompt.replace("{ripple_context}", "")
+        # When the user pinned a topic, inject the user-topic branch so the
+        # hard constraint (select from trend candidates) is lifted for this turn.
+        if user_topic:
+            memory_context = (
+                f"\n【用户指定主题】{user_topic}"
+                "\n用户已明确指定选题主题。selected_topic 必须围绕该用户主题为核心，"
+                "趋势数据仅作为借势角度与热点参考，不得用候选话题替换用户主题。" + memory_context
+            )
+        system_prompt = self._build_system_prompt(state, extra_context=memory_context)
+        system_prompt = system_prompt.replace("{ripple_context}", "")
 
         user_msg = f"""趋势数据：{trend_data}
 账号定位：{account_id}
 垂类赛道：{niche}
+用户指定主题：{user_topic or "（未指定，从趋势候选中选取）"}
 历史表现洞察：{memory_context}"""
 
         response = await self.model.ainvoke(
@@ -99,8 +115,13 @@ class ContentStrategistAgent(BaseAgent):
 
         # ponytail: 主题漂移防护——selected_topic 必须落在候选集内
         # 偏离则带 hint 重生成一次。候选为空时跳过（prompt 已指示输出空）。
+        # 用户指定主题时跳过纠偏：用户主题是 selected_topic 核心，不在候选集是预期而非漂移。
         candidates = self._extract_candidate_topics(trend_data)
-        if candidates and content_plan.get("selected_topic") not in candidates:
+        if user_topic:
+            logger.info(
+                f"user topic override active: '{user_topic}' — skipping candidate-set drift guard"
+            )
+        elif candidates and content_plan.get("selected_topic") not in candidates:
             chosen = content_plan.get("selected_topic", "")
             logger.info(f"selected_topic '{chosen}' 不在候选集，触发重生成")
             retry_prompt = self._build_system_prompt(

@@ -21,7 +21,9 @@ class TrendScoutAgent(BaseAgent):
     agent_name = "trend_scout"
     prompt_file = "trend_scout.yaml"
 
-    async def _fetch_real_data(self, niche: str, account_id: str = "") -> dict[str, Any]:
+    async def _fetch_real_data(
+        self, niche: str, account_id: str = "", user_topic: str = ""
+    ) -> dict[str, Any]:
         """Fetch real data from XHS API via tools. Returns empty dict if unavailable."""
         from backend.tools.xhs.trending import competitor_analyzer, keyword_monitor, xhs_trending
 
@@ -38,8 +40,11 @@ class TrendScoutAgent(BaseAgent):
 
         # 2. Extract keywords from niche and monitor them
         try:
-            # Use niche as keyword seed
+            # Keyword seed: niche + user-provided topic (if any), so trend /
+            # keyword monitoring revolves around the user's topic, not just niche.
             keywords = [niche]
+            if user_topic and user_topic not in keywords:
+                keywords.insert(0, user_topic)
             if trending:
                 # Add top trending topic titles as keywords
                 for t in trending[:3]:
@@ -74,6 +79,10 @@ class TrendScoutAgent(BaseAgent):
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
         account_id = state.get("account_id", "default")
         niche = state.get("niche", "母婴")
+        # User-provided topic override: include it in the keyword seed so trend
+        # scouting / keyword monitoring revolve around the user's topic, not just
+        # the niche. Previously dead data — trend_scout only seeded niche.
+        user_topic = str(state.get("topic") or "").strip()
 
         # 召回历史洞察
         insights = await self._recall_memory(
@@ -86,7 +95,7 @@ class TrendScoutAgent(BaseAgent):
                 memory_context += f"- {i.get('insight', '')}\n"
 
         # Fetch real data from XHS API
-        real_data = await self._fetch_real_data(niche, account_id=account_id)
+        real_data = await self._fetch_real_data(niche, account_id=account_id, user_topic=user_topic)
 
         # Build data context for the LLM
         data_context = ""
