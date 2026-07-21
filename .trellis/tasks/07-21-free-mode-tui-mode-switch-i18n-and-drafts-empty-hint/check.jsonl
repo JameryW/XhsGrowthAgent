@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "verify /mode + /drafts command contracts preserved; no behavior change, i18n-only"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "verify i18n key conventions + no render regression"}

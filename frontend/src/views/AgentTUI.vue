@@ -866,7 +866,7 @@ async function processAgentCommand(text: string) {
         break
       case '/mode':
         mode.value = 'command'
-        writeLineColored('Switched to command mode', ANSI.YELLOW)
+        writeLineColored(t('tui.modeSwitchedToCommand'), ANSI.YELLOW)
         isProcessing.value = false; writePrompt()
         break
       case '/help':
@@ -996,7 +996,7 @@ async function processSlashCommand(cmd: string) {
       mode.value = 'agent'
       reconnectAttempts = 0
       connectAgentWs()
-      writeLineColored('Switching to agent mode...', ANSI.YELLOW)
+      writeLineColored(t('tui.modeSwitchingToAgent'), ANSI.YELLOW)
       break
     case '/help': showHelp(); break
     case '/clear': term?.clear(); writePrompt(); break
@@ -1605,7 +1605,7 @@ function showHelp() {
     writeLine(`  ${G}/status${R}        Get agent status`)
     writeLine(`  ${G}/new${R}           Start new session`)
     writeLine(`  ${G}/abort${R}         Abort current turn`)
-    writeLine(`  ${G}/mode${R}          Switch to command mode`)
+    writeLine(`  ${G}/mode${R}          ${t('tui.helpSwitchToCommand')}`)
     if (isFreeCreationEntry.value) {
       writeLine('')
       writeLine(`  ${Y}Free Draft Commands${R}`)
@@ -1631,7 +1631,7 @@ function showHelp() {
       writeLine(`  ${G}/analytics${R} ${D}<id>${R} Post-publish engagement`)
       writeLine(`  ${G}/evaluate${R} ${D}<id>${R}  Re-evaluate a draft`)
       writeLine(`  ${G}/suggest${R}       Creative suggestions (style/topic/format/timing)`)
-      writeLine(`  ${G}/mode${R}          Switch to agent mode`)
+      writeLine(`  ${G}/mode${R}          ${t('tui.helpSwitchToAgent')}`)
     } else {
       writeLine(`  ${G}/start${R} ${D}[topic]${R}  Start workflow`)
       writeLine(`  ${G}/status${R} ${D}[id]${R}    Check workflow status`)
@@ -1640,7 +1640,7 @@ function showHelp() {
       writeLine(`  ${G}/cancel${R} ${D}[id]${R}    Cancel workflow`)
       writeLine(`  ${G}/approve${R} ${D}[id]${R}   Approve content`)
       writeLine(`  ${G}/reject${R} ${D}<msg>${R}   Reject with feedback`)
-      writeLine(`  ${G}/mode${R}          Switch to agent mode`)
+      writeLine(`  ${G}/mode${R}          ${t('tui.helpSwitchToAgent')}`)
     }
   }
 
@@ -1660,7 +1660,7 @@ function showHelp() {
 
 // ── Status bar computed ────────────────────────────────────────────────
 
-const modeLabel = computed(() => mode.value === 'agent' ? 'AGENT' : 'CMD')
+const modeLabel = computed(() => mode.value === 'agent' ? t('tui.modeLabelAgent') : t('tui.modeLabelCmd'))
 // ponytail: modeIndicatorColor removed — mode badge uses :class binding directly
 const isFreeCreationEntry = computed(() => route.query.mode === 'free')
 const freeCreationTopic = computed(() => (
