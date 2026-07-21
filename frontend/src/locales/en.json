@@ -2052,6 +2052,7 @@
     "statusNone": "none",
     "draftsListTitle": "Free Drafts — {accountId} ({count}{filter}):",
     "draftsNone": "(none)",
+    "draftsNoneHint": "Type a creation goal directly, or /suggest for topic ideas — created drafts appear here.",
     "draftsTruncated": "showing first 100 — older drafts hidden (filter only applies to the most recent 100)",
     "draftsFilterSep": ", {filter}",
     "draftsFilterPublished": "published",

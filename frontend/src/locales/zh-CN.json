@@ -2052,6 +2052,7 @@
     "statusNone": "无",
     "draftsListTitle": "自由草稿 — {accountId}（{count} 篇{filter}）：",
     "draftsNone": "（无）",
+    "draftsNoneHint": "直接输入文字描述创作目标，或 /suggest 获取选题灵感——草稿创建后会出现在此列表。",
     "draftsTruncated": "仅显示最近 100 篇——更早的草稿已隐藏（筛选仅在最近 100 篇内生效）",
     "draftsFilterSep": "，{filter}",
     "draftsFilterPublished": "已发布",

@@ -1151,6 +1151,12 @@ async function handleDrafts(argStr = '') {
     }
     if (!data.drafts || data.drafts.length === 0) {
       writeLineColored(`  ${t('tui.draftsNone')}`, ANSI.DIM)
+      // Only nudge to create when the list is genuinely empty (no filter
+      // applied) — a filtered-empty (e.g. /drafts published) is expected, not
+      // a "create one" prompt, so don't clutter it with the hint.
+      if (status === 'all' && !query) {
+        writeLineColored(`  ${t('tui.draftsNoneHint')}`, ANSI.DIM)
+      }
     } else {
       for (const d of data.drafts) {
         const titlePart = d.title
