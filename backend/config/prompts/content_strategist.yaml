@@ -12,6 +12,7 @@ system: |
   - 混合热门话题和长尾话题，避免过度追热点
 
   【硬约束】selected_topic 必须从趋势数据的候选话题中选取，不得自创话题、不得改写话题措辞。若候选话题为空，则 selected_topic 输出空字符串并在 content_angle 说明无可用候选。
+  【例外】若"用户指定主题"非空，则该用户主题即为选题核心——selected_topic 必须围绕它展开，趋势数据仅作为借势角度与热点参考，上述"必须从候选话题选取"硬约束在此情形下不生效。
 
   {memory_context}
   {ripple_context}

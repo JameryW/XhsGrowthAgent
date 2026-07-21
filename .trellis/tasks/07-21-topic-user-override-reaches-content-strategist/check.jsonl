@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/workflow-state.md", "reason": "verify topic field contract + selected_topic downstream + no back-compat break (empty topic = unchanged)"}
+{"file": ".trellis/spec/backend/free-creation.md", "reason": "verify topic→initial_state path preserved; niche resolve not touched"}

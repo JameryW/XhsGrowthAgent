@@ -203,6 +203,92 @@ class TestContentStrategistAgent:
 
         assert result["content_plan"]["selected_topic"] == ""
 
+    @pytest.mark.asyncio
+    async def test_user_topic_skips_drift_guard(self, agent, mock_store):
+        """When state['topic'] is set, the user topic is the selection core and
+        the candidate-set drift guard is skipped (no retry regen). Previously
+        state['topic'] was dead data and the guard pulled the LLM back to the
+        trend candidate set."""
+        # topic NOT in trend candidates — under old guard this would regen.
+        state = {
+            "account_id": "test_account",
+            "phase": WorkflowPhase.SCOUTING,
+            "niche": "母婴",
+            "topic": "露营亲子日记",
+            "trend_data": {"trending_topics": ["辅食食谱", "早教游戏"]},
+        }
+        mock_response = MagicMock()
+        mock_response.content = '{"selected_topic": "露营亲子日记"}'
+
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = mock_model
+
+        scorer = AsyncMock()
+        scorer.ainvoke = AsyncMock(return_value={"heat_score": 50})
+
+        with (
+            patch(
+                "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
+            ) as mock_pred,
+            patch(
+                "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
+            ) as mock_pmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
+        ):
+            mock_pred.return_value = {"ripple_prediction": None}
+            mock_pmf.return_value = {"ripple_pmf": None}
+
+            result = await agent.execute(state, store=mock_store)
+
+        # user_topic set → guard skipped → model invoked exactly once (no retry).
+        assert mock_model.ainvoke.await_count == 1
+        # user_topic injected into the human prompt of that single call.
+        sent_user_msg = mock_model.ainvoke.await_args.args[0][1].content
+        assert "露营亲子日记" in sent_user_msg
+        # selected_topic honored the user topic, not forced into candidates.
+        assert result["content_plan"]["selected_topic"] == "露营亲子日记"
+        assert "topic_revised" not in result["content_plan"]
+
+    @pytest.mark.asyncio
+    async def test_no_user_topic_keeps_drift_guard(self, agent, mock_store):
+        """Without state['topic'], drift guard still fires on a candidate miss."""
+        state = {
+            "account_id": "test_account",
+            "phase": WorkflowPhase.SCOUTING,
+            "niche": "母婴",
+            "trend_data": {"trending_topics": ["辅食食谱"]},
+        }
+        first = MagicMock()
+        first.content = '{"selected_topic": "不在候选里的自创话题"}'
+        retry = MagicMock()
+        retry.content = '{"selected_topic": "辅食食谱"}'
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(side_effect=[first, retry])
+        agent._model = mock_model
+
+        scorer = AsyncMock()
+        scorer.ainvoke = AsyncMock(return_value={"heat_score": 50})
+
+        with (
+            patch(
+                "backend.tools.ripple.integration.predict_spread", new_callable=AsyncMock
+            ) as mock_pred,
+            patch(
+                "backend.tools.ripple.integration.validate_pmf", new_callable=AsyncMock
+            ) as mock_pmf,
+            patch("backend.tools.analysis.topic_scorer.topic_scorer", scorer),
+        ):
+            mock_pred.return_value = {"ripple_prediction": None}
+            mock_pmf.return_value = {"ripple_pmf": None}
+
+            result = await agent.execute(state, store=mock_store)
+
+        # no user topic + miss → retry regen fired (2 invocations).
+        assert mock_model.ainvoke.await_count == 2
+        assert result["content_plan"]["selected_topic"] == "辅食食谱"
+        assert result["content_plan"].get("topic_revised") is True
+
     def test_agent_attributes(self, agent):
         """Verify agent class attributes."""
         assert agent.agent_name == "content_strategist"

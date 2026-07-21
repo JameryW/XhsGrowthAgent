@@ -1,6 +1,6 @@
 """Unit tests for TrendScoutAgent."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -140,6 +140,57 @@ class TestTrendScoutAgent:
         result = await agent.execute(mock_state, store=None)
 
         assert "trend_data" in result
+
+    @pytest.mark.asyncio
+    async def test_user_topic_added_to_keyword_seed(self, agent, mock_store):
+        """state['topic'] is prepended to the keyword_monitor seed so trend
+        scouting revolves around the user's topic, not just the niche.
+        Previously trend_scout only seeded [niche]."""
+        captured: dict = {}
+
+        xhs_trending = MagicMock()
+        # no trending → keyword seed is niche + user_topic only
+        xhs_trending.ainvoke = AsyncMock(return_value=[])
+
+        keyword_monitor = MagicMock()
+        keyword_monitor.ainvoke = AsyncMock(return_value={})
+
+        async def _capture(*args, **kwargs):
+            # keyword_monitor.ainvoke is called with a single dict arg
+            # {"keywords": [...], "account_id": ...}
+            payload = args[0] if args else kwargs
+            captured["keywords"] = (payload or {}).get("keywords")
+            return {}
+
+        keyword_monitor.ainvoke = _capture
+
+        competitor = MagicMock()
+        competitor.ainvoke = AsyncMock(return_value={})
+
+        mock_response = MagicMock()
+        mock_response.content = '{"trending_topics": []}'
+        mock_model = MagicMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_response)
+        agent._model = mock_model
+
+        state = {
+            "account_id": "test_account",
+            "phase": WorkflowPhase.IDLE,
+            "niche": "母婴",
+            "topic": "露营亲子日记",
+        }
+
+        with (
+            patch("backend.tools.xhs.trending.xhs_trending", new=xhs_trending),
+            patch("backend.tools.xhs.trending.keyword_monitor", new=keyword_monitor),
+            patch("backend.tools.xhs.trending.competitor_analyzer", new=competitor),
+        ):
+            await agent.execute(state, store=mock_store)
+
+        assert captured.get("keywords"), "keyword_monitor was not invoked"
+        assert "露营亲子日记" in captured["keywords"]
+        # user_topic prepended (first) — it is the selection core.
+        assert captured["keywords"][0] == "露营亲子日记"
 
     def test_agent_attributes(self, agent):
         """Verify agent class attributes."""

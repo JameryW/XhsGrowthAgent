@@ -383,6 +383,43 @@ if not trend_data.get("hot_topics"):
 
 **Why normalization:** Without it, `{"trending_topics": [...]}` causes `should_plan` to return `__end__`, terminating the workflow after scouting even though trends were found.
 
+## User Topic Override (`state["topic"]`)
+
+`/workflow/start` accepts a `topic` param, stored as `initial_state["topic"]` (field declared `topic: str` in `XHSGrowthState`). It is an **optional user-provided topic override**. Two agents consume it:
+
+### `trend_scout`
+`_fetch_real_data(niche, account_id, user_topic)` builds the `keyword_monitor` seed as `[niche]` with `user_topic` **prepended** (first, when non-empty) so trend/keyword scouting revolves around the user's topic, not just the niche. `xhs_trending` still queries by `niche` (the trend category is niche-scoped; the topic seeds keyword monitoring).
+
+### `content_strategist` — selection core + drift-guard bypass
+`execute()` reads `user_topic = state.get("topic")`. Behavior branches on it:
+
+- **`user_topic` set (non-empty):** the user topic is the selection core.
+  - Injected into `user_msg` as `用户指定主题：{user_topic}`.
+  - A `【用户指定主题】` branch is prepended to `memory_context` (→ system prompt `extra_context`) instructing the LLM that `selected_topic` must revolve around the user topic, trend data is only a borrow-momentum/angle reference.
+  - The `content_strategist.yaml` hard constraint (select from trend candidates) has an explicit exception clause for this case.
+  - **The candidate-set drift guard is SKIPPED** — `if user_topic:` logs and returns; no retry regen. A user topic that is not in the trend candidate set is *expected*, not drift.
+- **`user_topic` empty/absent:** behavior unchanged. `selected_topic` must come from `_extract_candidate_topics(trend_data)`; if it misses the candidate set, a retry regen forces it back (sets `content_plan["topic_revised"] = True`).
+
+```python
+user_topic = str(state.get("topic") or "").strip()
+...
+if user_topic:
+    memory_context = (f"\n【用户指定主题】{user_topic}" + ...) + memory_context
+...
+candidates = self._extract_candidate_topics(trend_data)
+if user_topic:
+    logger.info(...)  # skip drift guard
+elif candidates and content_plan.get("selected_topic") not in candidates:
+    # retry regen with correction hint
+```
+
+**Why this exists:** before the fix, `state["topic"]` was dead data — no agent read it, and the dual drift guard (YAML hard constraint + code retry regen) actively pulled the LLM back to the trend candidate set, so a user-specified topic was silently ignored.
+
+**Tests** (`tests/unit/agents/test_content_strategist.py`, `test_trend_scout.py`):
+- `test_user_topic_skips_drift_guard`: topic not in candidates → `ainvoke.await_count == 1` (no retry), topic present in user_msg, `selected_topic` honored, `topic_revised` absent.
+- `test_no_user_topic_keeps_drift_guard`: no topic + miss → `await_count == 2`, `topic_revised is True`.
+- `test_user_topic_added_to_keyword_seed`: `keyword_monitor` invoked with `keywords[0] == user_topic`.
+
 ## Blogger Skip Routing
 
 ### Infinite loop prevention
