@@ -122,12 +122,19 @@ async def test_postgres_page_snapshot_reads_all_notes_without_account_row() -> N
     cursor.fetchone = AsyncMock(side_effect=[None, (600,), None])
     cursor.fetchall = AsyncMock(side_effect=[all_rows, selected_rows, all_rows])
     conn = MagicMock()
+    transactions: list[None] = []
 
     @asynccontextmanager
     async def cursor_context():
         yield cursor
 
+    @asynccontextmanager
+    async def transaction_context():
+        transactions.append(None)
+        yield
+
     conn.cursor = cursor_context
+    conn.transaction = transaction_context
     pool = MagicMock()
 
     @asynccontextmanager
@@ -145,6 +152,14 @@ async def test_postgres_page_snapshot_reads_all_notes_without_account_row() -> N
     assert snapshot["note_count"] == 600
     assert page.total == 600
     assert page.snapshot_id == snapshot["snapshot_id"]
+    assert len(transactions) == 2
+    assert (
+        sum(
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ" in str(call.args[0])
+            for call in cursor.execute.call_args_list
+        )
+        == 2
+    )
 
 
 def test_snapshot_id_changes_with_subject_version_but_not_order() -> None:

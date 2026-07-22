@@ -170,6 +170,27 @@ ON CONFLICT (account_id, note_id) DO UPDATE SET
     raw_json = EXCLUDED.raw_json
 """
 
+_ACCOUNT_STATS_SELECT_SQL = """
+SELECT account_id, creator_user_id, creator_name, red_id, avatar_url, bio,
+       creator_role, zone, views, likes, comments, collects, shares,
+       fans, note_count, period, synced_at, source, raw_json
+FROM creator_account_stats WHERE account_id = %s
+"""
+
+_NOTE_STATS_SELECT_SQL = """
+SELECT account_id, note_id, title, body_text, views, likes, comments, collects,
+       shares, published_at, content_type, tags_json, cover_url,
+       engagement_rate, synced_at, source, raw_json
+FROM creator_note_stats
+WHERE account_id = %s
+ORDER BY published_at ASC, note_id ASC
+"""
+
+# A transaction-level snapshot is required because READ COMMITTED would give
+# each SELECT its own statement snapshot even when the same connection is
+# reused.  Page rows and their complete-population metadata must be one fact.
+_REPEATABLE_READ_SQL = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"
+
 
 async def ensure_tables() -> None:
     """Create creator stats tables when Postgres is available."""
@@ -379,25 +400,7 @@ async def upsert_bundle(
     return imported, updated
 
 
-async def get_account_stats(account_id: str) -> AccountStatsOverview | None:
-    account_id = (account_id or "").strip()
-    if not account_id:
-        return None
-    if not is_pool_ready():
-        mem = _mem_accounts.get(account_id)
-        return AccountStatsOverview.from_dict(mem) if mem else None
-    pool = get_pool()
-    async with pool.connection() as conn, conn.cursor() as cur:
-        await cur.execute(
-            """
-            SELECT account_id, creator_user_id, creator_name, red_id, avatar_url, bio,
-                   creator_role, zone, views, likes, comments, collects, shares,
-                   fans, note_count, period, synced_at, source, raw_json
-            FROM creator_account_stats WHERE account_id = %s
-            """,
-            (account_id,),
-        )
-        row: Any = await cur.fetchone()
+def _account_from_row(row: Any) -> AccountStatsOverview | None:
     if not row:
         return None
     if isinstance(row, dict):
@@ -452,6 +455,26 @@ async def get_account_stats(account_id: str) -> AccountStatsOverview | None:
         audience_profile=raw_account.get("audience_profile") or [],
         detail_metrics=raw_account.get("detail_metrics") or {},
     )
+
+
+async def _fetch_account_stats(cur: Any, account_id: str) -> AccountStatsOverview | None:
+    """Fetch and parse one account row using a caller-owned cursor."""
+
+    await cur.execute(_ACCOUNT_STATS_SELECT_SQL, (account_id,))
+    row: Any = await cur.fetchone()
+    return _account_from_row(row)
+
+
+async def get_account_stats(account_id: str) -> AccountStatsOverview | None:
+    account_id = (account_id or "").strip()
+    if not account_id:
+        return None
+    if not is_pool_ready():
+        mem = _mem_accounts.get(account_id)
+        return AccountStatsOverview.from_dict(mem) if mem else None
+    pool = get_pool()
+    async with pool.connection() as conn, conn.cursor() as cur:
+        return await _fetch_account_stats(cur, account_id)
 
 
 def _note_from_row(row: Any) -> NoteStats:
@@ -565,19 +588,21 @@ async def list_all_note_stats(account_id: str) -> list[NoteStats]:
 
     pool = get_pool()
     async with pool.connection() as conn, conn.cursor() as cur:
-        await cur.execute(
-            """
-            SELECT account_id, note_id, title, body_text, views, likes, comments, collects,
-                   shares, published_at, content_type, tags_json, cover_url,
-                   engagement_rate, synced_at, source, raw_json
-            FROM creator_note_stats
-            WHERE account_id = %s
-            ORDER BY published_at ASC, note_id ASC
-            """,
-            (account_id,),
-        )
-        rows = await cur.fetchall()
+        return await _fetch_all_note_stats(cur, account_id)
+
+
+async def _fetch_all_note_stats(cur: Any, account_id: str) -> list[NoteStats]:
+    """Fetch the complete account note population using a caller-owned cursor."""
+
+    await cur.execute(_NOTE_STATS_SELECT_SQL, (account_id,))
+    rows = await cur.fetchall()
     return [_note_from_row(row) for row in rows]
+
+
+async def _set_repeatable_read(cur: Any) -> None:
+    """Pin all following reads in the explicit transaction to one DB snapshot."""
+
+    await cur.execute(_REPEATABLE_READ_SQL)
 
 
 async def get_creator_stats_snapshot(account_id: str) -> dict[str, Any]:
@@ -591,8 +616,15 @@ async def get_creator_stats_snapshot(account_id: str) -> dict[str, Any]:
             "snapshot_id": None,
             "note_count": 0,
         }
-    account = await get_account_stats(normalized_account_id)
-    notes = await list_all_note_stats(normalized_account_id)
+    if not is_pool_ready():
+        account = await get_account_stats(normalized_account_id)
+        notes = await list_all_note_stats(normalized_account_id)
+    else:
+        pool = get_pool()
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            await _set_repeatable_read(cur)
+            account = await _fetch_account_stats(cur, normalized_account_id)
+            notes = await _fetch_all_note_stats(cur, normalized_account_id)
     return {
         "account_id": normalized_account_id,
         **build_creator_stats_snapshot_metadata(account, notes),
@@ -873,7 +905,10 @@ async def list_note_stats_page(
         count_conditions = count_conditions[:-1]
         count_params = count_params[:-3]
     selected_rows: list[Any]
-    async with pool.connection() as conn, conn.cursor() as cur:
+    account: AccountStatsOverview | None
+    all_notes: list[NoteStats]
+    async with pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+        await _set_repeatable_read(cur)
         await cur.execute(
             f"SELECT COUNT(*) FROM creator_note_stats WHERE {' AND '.join(count_conditions)}",
             count_params,
@@ -893,10 +928,15 @@ async def list_note_stats_page(
             params + [page_limit + 1],
         )
         selected_rows = list(await cur.fetchall())
+        # Keep page facts and snapshot metadata in this same repeatable
+        # read transaction.  Calling the public snapshot reader here would
+        # release this connection and re-read a later import.
+        account = await _fetch_account_stats(cur, normalized_account_id)
+        all_notes = await _fetch_all_note_stats(cur, normalized_account_id)
     selected_notes = [_note_from_row(row) for row in selected_rows]
     has_next = len(selected_notes) > page_limit
     items = [_canonical_note(note) for note in selected_notes[:page_limit]]
-    snapshot = await get_creator_stats_snapshot(normalized_account_id)
+    snapshot = build_creator_stats_snapshot_metadata(account, all_notes)
     return NoteStatsPage(
         account_id=normalized_account_id,
         items=items,
