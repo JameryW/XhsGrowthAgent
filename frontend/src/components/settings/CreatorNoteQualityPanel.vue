@@ -128,8 +128,8 @@ async function runRqgmEvaluation() {
     rqgmResult.value = next
       ? {
           ...next,
-          overall_score: (resp.degraded || ['degraded', 'failed', 'unavailable'].includes(rqgmStatus.value)) ? null : next.overall_score,
-          decision: (resp.degraded || ['degraded', 'failed', 'unavailable'].includes(rqgmStatus.value)) ? null : next.decision,
+          overall_score: (resp.degraded || ['degraded', 'failed', 'running', 'unavailable'].includes(rqgmStatus.value)) ? null : next.overall_score,
+          decision: (resp.degraded || ['degraded', 'failed', 'running', 'unavailable'].includes(rqgmStatus.value)) ? null : next.decision,
         }
       : null
   } catch (e: unknown) {
@@ -331,7 +331,7 @@ async function restoreLatestEvaluation(generation: number, noteId: string) {
     rqgmDataAsOf.value = latest.data_as_of || latest.source?.data_as_of || latest.evaluated_at || null
     rqgmThresholds.value = latest.thresholds || SCORE_THRESHOLDS
     const latestResult = latest.evaluation_result
-    const unusable = Boolean(latest.degraded) || ['degraded', 'failed', 'unavailable'].includes(rqgmStatus.value)
+    const unusable = Boolean(latest.degraded) || ['degraded', 'failed', 'running', 'unavailable'].includes(rqgmStatus.value)
     rqgmResult.value = {
       ...latestResult,
       overall_score: unusable ? null : latestResult.overall_score,

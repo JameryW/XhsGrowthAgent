@@ -86,7 +86,7 @@ const trendError = ref<string | null>(null)
 
 const trendData = computed(() =>
   (trend.value?.points || [])
-    .filter((p) => p.overall_score != null && !p.degraded && !['degraded', 'failed', 'unavailable'].includes(p.status || 'ready'))
+    .filter((p) => p.overall_score != null && !p.degraded && !['degraded', 'failed', 'running', 'unavailable'].includes(p.status || 'ready'))
     .map((p) => ({
       date: formatShortDate(p.created_at, locale.value),
       value: p.overall_score as number,
