@@ -40,17 +40,22 @@ from backend.db.creative_memory import (
     upsert_style,
 )
 from backend.db.creator_stats import (
-    ensure_tables as ensure_creator_stats_tables,
-)
-from backend.db.creator_stats import (
+    canonicalize_note_stats,
+    decode_note_cursor,
+    encode_note_cursor,
     get_account_stats,
     get_note_stats,
     list_all_note_stats,
     list_note_stats,
+    list_note_stats_cursor,
+    list_note_stats_page,
     upsert_account_stats,
     upsert_bundle,
     upsert_note_stats,
     upsert_notes,
+)
+from backend.db.creator_stats import (
+    ensure_tables as ensure_creator_stats_tables,
 )
 from backend.db.evaluator_config import (
     BIAS_SEVERITY_LEVELS,
@@ -82,6 +87,30 @@ from backend.db.evaluator_config import (
     ensure_tables as ensure_evaluator_config_tables,
 )
 from backend.db.pool import close_pool, get_pool, init_pool, is_pool_ready
+from backend.db.quality_evaluations import (
+    QualityEvaluationRun,
+)
+from backend.db.quality_evaluations import (
+    create_run as create_quality_evaluation_run,
+)
+from backend.db.quality_evaluations import (
+    ensure_tables as ensure_quality_evaluation_tables,
+)
+from backend.db.quality_evaluations import (
+    get_cached as get_cached_quality_evaluation,
+)
+from backend.db.quality_evaluations import (
+    get_latest_for_subject as get_latest_quality_evaluation,
+)
+from backend.db.quality_evaluations import (
+    mark_subject_stale as mark_quality_evaluations_stale,
+)
+from backend.db.quality_evaluations import (
+    new_run as new_quality_evaluation_run,
+)
+from backend.db.quality_evaluations import (
+    update_run as update_quality_evaluation_run,
+)
 from backend.db.system_config import (
     SYSTEM_KEY_GROUPS,
     SYSTEM_KEYS,
@@ -178,10 +207,24 @@ __all__ = [
     "get_note_stats",
     "list_all_note_stats",
     "list_note_stats",
+    "list_note_stats_page",
+    "list_note_stats_cursor",
+    "encode_note_cursor",
+    "decode_note_cursor",
+    "canonicalize_note_stats",
     "upsert_account_stats",
     "upsert_bundle",
     "upsert_note_stats",
     "upsert_notes",
+    # Durable user-visible RQGM evaluation runs
+    "QualityEvaluationRun",
+    "create_quality_evaluation_run",
+    "ensure_quality_evaluation_tables",
+    "get_cached_quality_evaluation",
+    "get_latest_quality_evaluation",
+    "mark_quality_evaluations_stale",
+    "new_quality_evaluation_run",
+    "update_quality_evaluation_run",
     # Durable creative memory (style DNA / playbook / materials)
     "ensure_creative_memory_tables",
     "list_materials",

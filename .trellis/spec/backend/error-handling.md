@@ -249,3 +249,50 @@ See §3 Contracts — the Wrong/Correct pair is the string-vs-dict `recovery`.
 - `test_error_with_next_nodes_returns_running`: error + next non-empty + phase≠ERROR → RUNNING
 - `test_error_with_no_next_nodes_returns_error`: error + next empty → ERROR
 - `test_error_phase_returns_error`: phase=ERROR → ERROR
+
+## Scenario: Honest RQGM degraded and partial results
+
+### 1. Scope / Trigger
+- Trigger: evaluator timeout, model/JSON failure, missing dimensions, missing
+  niche context, or unavailable image input reaches an API/UI consumer.
+
+### 2. Signatures
+- `EvaluatorAgent.execute(state, store) -> dict[str, Any]`
+- `POST /api/evaluation/note`, `POST /api/evaluation/run/{thread_id}`
+- `GET /api/evaluation/list`, `GET /api/evaluation/trend`
+
+### 3. Contracts
+- `degraded|failed` means `overall_score=null`, `decision=null`,
+  `degraded=true`; include coverage and a retryable summary.
+- `partial` may carry a normalized score only when copywriting and compliance
+  are available and weighted coverage is at least `MIN_EVALUATION_COVERAGE`.
+- Missing dimensions use `available=false, score=null`; visual/image-quality
+  and no-niche audience/reach are explicitly unavailable for historical notes.
+- List/KPI/pass-rate/trend aggregation skips degraded, failed, running and
+  scoreless rows. Frontend treats `degraded=true` as scoreless even for legacy payloads.
+
+### 4. Validation & Error Matrix
+- LLM timeout (60s) → degraded/null, no publish-blocking approval.
+- Evaluator exception/no result → API boundary converts to degraded/null.
+- Missing required dimensions or coverage below threshold → partial/null.
+- Malformed/legacy score without usable coverage → excluded from aggregates.
+
+### 5. Good/Base/Bad Cases
+- Good: UI renders `—` and retry for degraded; trend omits it.
+- Base: sufficiently covered partial result shows score, coverage and threshold metadata.
+- Bad: any timeout path returns `100/approved`, or a missing dimension is filled with 70.
+
+### 6. Tests Required
+- Assert timeout/model errors have null score/decision and `status=degraded`.
+- Assert missing dimensions have `available=false`, no 70 fill, and coverage thresholding.
+- Assert list/trend/KPI exclude degraded/failed/scoreless rows.
+
+### 7. Wrong vs Correct
+```python
+# Wrong: this legacy fallback becomes a false pass in KPI/trend.
+{"overall_score": 100, "decision": "approved", "degraded": True}
+
+# Correct: degradation is explicit and non-consumable.
+{"overall_score": None, "decision": None, "status": "degraded",
+ "degraded": True, "coverage": {"weighted_ratio": 0.0}}
+```

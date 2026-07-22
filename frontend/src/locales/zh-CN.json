@@ -703,7 +703,7 @@
       "empty": "暂无评估结果，保存文案后将自动评估",
       "loading": "加载评估结果中…",
       "loadFailed": "评估结果加载失败",
-      "overall": "综合分",
+      "overall": "RQGM 内容评审分",
       "radarTitle": "9 维评分雷达",
       "dimensionsTitle": "维度详情",
       "hintsTitle": "修订建议",
@@ -734,6 +734,16 @@
     "engagementBreakdown": "互动构成",
     "recentPosts": "最近帖子表现",
     "top10": "TOP 10",
+    "history": {
+      "title": "历史笔记",
+      "loadedCount": "已加载 {loaded} / 共 {total}",
+      "showLoaded": "显示 {loaded} / 共 {total} · 查看全部",
+      "loadMore": "加载更多历史笔记",
+      "retry": "重试",
+      "dataAsOf": "历史数据截至 {time}",
+      "loadError": "历史笔记加载失败",
+      "snapshotMismatch": "加载期间历史笔记快照发生变化；请刷新，避免混合不同批次的数据。"
+    },
     "vsPrevPeriod": "vs 上一周期",
     "fans": "粉丝数",
     "bestPostLegend": "最佳表现笔记",
@@ -767,7 +777,8 @@
     "exportCsv": "导出 CSV",
     "detail": {
       "title": "笔记详情",
-      "untitled": "无标题笔记"
+      "untitled": "无标题笔记",
+      "noLinkedNote": "该工作流尚未与创作者中心笔记建立明确关联，已保留为独立记录。"
     },
     "weekdays": {
       "mon": "周一",
@@ -829,6 +840,7 @@
     "syncFailed": "同步失败",
     "lastSync": "上次导入：{source} · +{imported} / ~{updated}",
     "importedSection": "已导入概览",
+    "notesLoaded": "已加载 {loaded} / 共 {total} 条笔记",
     "noImported": "尚未导入真实笔记数据，请先点击上方浏览器导入。",
     "period": {
       "creatorCenterLabel": "创作者中心数据周期",
@@ -881,14 +893,14 @@
     }
   },
   "creatorQuality": {
-    "title": "历史笔记创作质量",
-    "subtitle": "基于已导入历史笔记的互动、收藏、标题和稳定性信号生成",
+    "title": "历史笔记发布后表现",
+    "subtitle": "基于已导入历史笔记的互动、收藏、标题和稳定性信号生成发布后表现",
     "page": {
       "eyebrow": "账号级创作诊断",
-      "hubSubtitle": "从历史创作质量到单篇内容审核，集中查看可执行的改进信号",
-      "tab": "历史创作质量",
+      "hubSubtitle": "从发布后表现到单篇内容评审，集中查看可执行的改进信号",
+      "tab": "发布后表现",
       "workflowTab": "单篇内容评估",
-      "description": "基于浏览器导入的真实创作者中心数据，查看账号整体创作表现、短板与下一步行动。",
+      "description": "基于浏览器导入的真实创作者中心数据，查看账号发布后表现、短板与下一步行动。",
       "accountLabel": "分析账号",
       "refreshAccounts": "刷新账号列表",
       "refresh": "刷新账号",
@@ -900,7 +912,7 @@
     },
     "refresh": "刷新质量报告",
     "loading": "正在分析已导入的历史笔记…",
-    "score": "综合质量分",
+    "score": "发布后表现分",
     "scoreOutOf": "/ 100",
     "gradeLabel": "质量等级",
     "confidenceLabel": "样本可信度",
@@ -927,7 +939,9 @@
     },
     "scope": {
       "all_imported_history": "全部已导入历史笔记",
-      "single_imported_note": "当前选中的单篇历史笔记"
+      "single_imported_note": "当前选中的单篇历史笔记",
+      "account_history": "账号历史",
+      "single_note": "当前单篇笔记"
     },
     "dimension": {
       "engagement": "互动信号",
@@ -937,7 +951,7 @@
     },
     "lowData": {
       "title": "样本量有限，暂不下绝对结论",
-      "description": "继续导入并积累更多历史笔记后，系统会给出更稳定的综合质量判断。"
+      "description": "继续导入并积累更多历史笔记后，系统会给出更稳定的发布后表现信号。"
     },
     "empty": {
       "title": "先导入历史笔记",
@@ -951,7 +965,8 @@
   },
   "creatorNoteQuality": {
     "title": "单篇历史笔记",
-    "subtitle": "打开已导入笔记，查看内容、观众信号和单篇质量分",
+    "subtitle": "打开已导入笔记，查看发布后表现与 RQGM 内容评审",
+    "comparisonHint": "发布后表现分衡量真实发布后的互动结果；RQGM 内容评审分衡量内容快照，两者不直接比较高低。",
     "refresh": "刷新笔记",
     "loading": "正在加载已导入笔记…",
     "loadingDetail": "正在加载笔记详情和质量评估…",
@@ -986,11 +1001,11 @@
     },
     "rqgm": {
       "sectionTitle": "创作质量评估",
-      "sectionHint": "RQGM 评审面板对笔记内容打分；历史笔记缺生成侧元数据，视觉维度为参考分",
+      "sectionHint": "RQGM 评审面板只对有证据的内容维度评分；历史笔记未读取真实图片时，视觉与图片质量不可用",
       "run": "RQGM 评估",
       "running": "评估中…",
       "costHint": "约需 10–30 秒，会产生 LLM 费用",
-      "overall": "综合分",
+      "overall": "RQGM 内容评审分",
       "radarTitle": "维度雷达",
       "dimensionsTitle": "维度详情",
       "hintsTitle": "修订建议",
@@ -998,6 +1013,9 @@
       "blocking": "硬性失败",
       "empty": "点击上方按钮对这篇笔记跑 RQGM 评估",
       "error": "RQGM 评估失败，请稍后重试",
+      "notReady": "评估未完成，暂无可消费的 RQGM 内容评审分。",
+      "partial": "评估部分完成，分数仅基于可用维度。",
+      "retry": "重试评估",
       "decision": {
         "approved": "通过",
         "needs_revision": "需修订",
@@ -2149,27 +2167,36 @@
     "resumingWorkflow": "恢复活跃工作流：{threadId}",
     "helpText": "可用命令：\n  /start [话题]  - 开始固定流程创作（可选话题）\n  /status [id]   - 查看工作流状态\n  /pause [id]    - 暂停工作流\n  /resume [id]   - 恢复工作流\n  /cancel [id]   - 取消工作流\n  /approve [id]  - 通过审核\n  /reject <意见> - 驳回并附修改意见\n  /help          - 显示帮助\n  /clear         - 清除终端\n\n或直接输入话题开始固定流程创作。"
   },
-  "evaluation": {
-    "title": "创作质量评估",
+    "evaluation": {
+      "title": "创作质量评估",
     "subtitle": "RQGM agent-as-a-judge 面板 · 9 维质量评分与修订建议",
-    "overview": {
-      "eyebrow": "质量总览",
-      "title": "从历史到单篇，一屏掌握",
-      "accountScore": "账户综合分",
+      "overview": {
+      "eyebrow": "发布表现与内容评审",
+      "title": "发布后表现与内容评审一屏掌握",
+      "accountScore": "发布后表现分",
       "evaluated": "已评估工作流",
       "samples": "样本笔记",
-      "noAccount": "未选择账号，仅显示工作流评估数据"
+      "noAccount": "未选择账号，仅显示工作流评估数据",
+      "allAccountsHint": "发布后表现必须按账号计算；“全部账号”范围不展示跨账号历史表现报告"
     },
     "section": {
       "diagnosis": "账户诊断",
       "content": "单篇排查"
     },
     "stream": {
-      "title": "单篇质量流",
+      "title": "内容来源评估",
       "sourceWorkflow": "工作流",
       "sourceImported": "历史笔记",
-      "notesUnavailable": "历史笔记暂时不可用"
+      "notesUnavailable": "历史笔记暂时不可用",
+      "separationHint": "已发布历史笔记展示发布后表现；工作流内容展示 RQGM 内容评审。两类分数不直接比较。",
+      "tabsLabel": "评估来源",
+      "historicalTab": "已发布历史笔记",
+      "workflowTab": "工作流内容评审",
+      "historicalEmpty": "暂无已导入的历史笔记"
     },
+    "allAccounts": "全部账号",
+    "allAccountsWorkflowOnly": "“全部账号”是显式聚合范围，仅展示工作流内容评审；发布后表现报告仍按单账号计算。",
+    "snapshotMismatch": "加载期间数据发生变化，页面未混合不同快照；请刷新后继续。",
     "list": {
       "subtitle": "查看有评估结果的工作流，点击进入详情",
       "searchPlaceholder": "搜索标题 / thread_id / 账号",
@@ -2181,6 +2208,7 @@
       "noMatch": "没有符合当前搜索或筛选条件的评估",
       "loadMore": "加载更多",
       "noMore": "已全部加载",
+      "loadedCount": "已加载 {loaded} / 共 {total}",
       "back": "返回列表",
       "detailTitle": "评估详情"
     },
@@ -2188,12 +2216,24 @@
     "search": "查询",
     "searching": "查询中…",
     "initialHint": "输入工作流 ID 查看其创作质量评估结果",
-    "overall": "综合分",
+    "overall": "RQGM 内容评审分",
+    "performanceScoreLabel": "发布后表现分",
+    "rqgmScoreLabel": "RQGM 内容评审分",
+    "rqgmTrendLabel": "RQGM 内容评审趋势",
+    "dataAsOf": "数据截至",
+    "evaluationId": "评估 ID",
+    "evaluatorFingerprint": "评估器版本",
+    "snapshotId": "数据快照",
+    "status": {
+      "degraded": "评估未完成",
+      "notReady": "评估暂不可用",
+      "degradedHint": "模型评估未完成，本次结果不会计入通过率或趋势。"
+    },
     "radarTitle": "9 维评分雷达",
     "radarTitleDynamic": "{count} 维评分雷达",
-    "radarSeries": "质量评分",
+    "radarSeries": "RQGM 内容评审分",
     "dimensionsTitle": "维度详情",
-    "weightedScoreHint": "综合分由下方各维度加权计算得出。",
+    "weightedScoreHint": "RQGM 内容评审分由下方可用维度加权计算；不可用维度显示为 —。",
     "radarScore": "评分",
     "radarRationale": "依据",
     "hintsTitle": "修订建议",

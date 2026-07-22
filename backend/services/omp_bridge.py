@@ -923,6 +923,17 @@ def _creator_percent(value: Any) -> str:
     return f"{rate:.2f}%"
 
 
+def _analytics_percent(value: Any, unit: Any = None) -> str:
+    """Render Analytics' explicit rate unit without guessing when declared."""
+
+    rate = _creator_number(value)
+    if unit == "fraction":
+        return f"{rate * 100:.2f}%"
+    if unit == "percent":
+        return f"{rate:.2f}%"
+    return _creator_percent(rate)
+
+
 async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Auto-execute a known XHS host tool by calling the backend API internally.
 
@@ -1196,10 +1207,14 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 report = data.get("report", {})
                 metrics = report.get("metrics", {})
                 if metrics:
+                    avg_rate = _analytics_percent(
+                        metrics.get("avg_engagement_rate", 0),
+                        data.get("engagement_rate_unit"),
+                    )
                     lines.append(
                         f"  Posts: {metrics.get('total_posts', 0)}, "
                         f"Engagement: {metrics.get('total_engagement', 0)}, "
-                        f"Avg Rate: {metrics.get('avg_engagement_rate', 0)}%"
+                        f"Avg Rate: {avg_rate}"
                     )
                     best = metrics.get("best_post_title", "")
                     if best:
@@ -1373,11 +1388,14 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 )
                 data = _unwrap_envelope(resp)
                 m = data.get("metrics", {})
+                avg_rate = _analytics_percent(
+                    m.get("avg_engagement_rate", 0), data.get("engagement_rate_unit")
+                )
                 lines = [
                     f"Growth Report — {account_id} ({period}):",
                     f"  Posts: {m.get('total_posts', 0)}",
                     f"  Engagement: {m.get('total_engagement', 0)}",
-                    f"  Avg Rate: {m.get('avg_engagement_rate', 0)}%",
+                    f"  Avg Rate: {avg_rate}",
                 ]
                 if m.get("best_post_title"):
                     lines.append(f"  Best: {m['best_post_title']}")
@@ -1403,12 +1421,15 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                     f"Performance — {account_id} ({data.get('total', 0)} posts):",
                 ]
                 for p in posts:
+                    rate = _analytics_percent(
+                        p.get("engagement_rate", 0), data.get("engagement_rate_unit")
+                    )
                     lines.append(
                         f"  {p.get('title', '?')} —"
                         f" ❤{p.get('likes', 0)}"
                         f" 💬{p.get('comments', 0)}"
                         f" ⭐{p.get('collects', 0)}"
-                        f" ({p.get('engagement_rate', 0)}%)"
+                        f" ({rate})"
                     )
                 return _make_text_result("\n".join(lines), data)
 

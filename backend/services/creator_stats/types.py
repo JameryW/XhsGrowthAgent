@@ -54,6 +54,9 @@ class AccountStatsOverview:
     audience_view_periods: list[dict[str, Any]] = field(default_factory=list)
     audience_profile: list[dict[str, Any]] = field(default_factory=list)
     detail_metrics: dict[str, Any] = field(default_factory=dict)
+    # Opaque identity of the atomic Creator Stats import. Older rows may not
+    # have it; the storage reader derives a compatible digest from all notes.
+    snapshot_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -78,6 +81,7 @@ class AccountStatsOverview:
             note_count=int(data.get("note_count") or 0),
             period=str(data.get("period") or "30d"),
             synced_at=str(data.get("synced_at") or ""),
+            snapshot_id=str(data.get("snapshot_id") or "") or None,
             source=str(data.get("source") or "creator_statistics"),
             audience_sources=_dict_list(data.get("audience_sources")),
             audience_view_periods=_dict_list(data.get("audience_view_periods")),
@@ -158,6 +162,70 @@ class NoteStats:
         total = self.likes + self.comments + self.collects + self.shares
         self.engagement_rate = round(total / self.views, 4)
         return self.engagement_rate
+
+
+@dataclass
+class NoteStatsPage:
+    """Canonical, cursor-paginated historical-note fact page.
+
+    ``engagement_rate`` in every item is a fraction in the inclusive 0--1
+    domain.  Presentation layers may format it as a percentage, but must not
+    change the API value or infer a second unit.
+    """
+
+    account_id: str
+    items: list[NoteStats] = field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    next_cursor: str | None = None
+    data_as_of: str = ""
+    snapshot_id: str | None = None
+    published_from: str | None = None
+    published_to: str | None = None
+    sort: str = "published_at_desc"
+
+    def to_dict(self) -> dict[str, Any]:
+        data_as_of = self.data_as_of or None
+        items = []
+        for item in self.items:
+            row = item.to_dict()
+            # Every row carries the same taxonomy and its own source timestamp
+            # so list consumers do not need to infer semantics from the URL.
+            row.update(
+                {
+                    "subject_type": "imported_note",
+                    "subject_id": item.note_id,
+                    "scope": "account_history",
+                    "assessment_type": "historical_performance",
+                    "status": "ready",
+                    "algorithm_version": "historical_quality.v1",
+                    "data_as_of": item.synced_at or data_as_of,
+                    "note_synced_at": item.synced_at or None,
+                    "snapshot_id": self.snapshot_id,
+                }
+            )
+            items.append(row)
+        return {
+            "account_id": self.account_id,
+            "items": items,
+            "total": self.total,
+            "limit": self.limit,
+            "next_cursor": self.next_cursor,
+            "data_as_of": data_as_of,
+            "snapshot_id": self.snapshot_id,
+            "query": {
+                "sort": self.sort,
+                "published_from": self.published_from,
+                "published_to": self.published_to,
+            },
+            "engagement_rate_unit": "fraction",
+            "scope": "account_history",
+            "subject_type": "imported_note",
+            "assessment_type": "historical_performance",
+            "algorithm_version": "historical_quality.v1",
+            "status": "ready" if items or self.total else "unavailable",
+            "contract_version": "quality_consistency.v2",
+        }
 
 
 @dataclass
@@ -304,7 +372,7 @@ class CreatorQualityReport:
     note_id: str = ""
     total_notes: int = 0
     notes_analyzed: int = 0
-    scope: str = "all_imported_history"
+    scope: str = "account_history"
     overall_score: float | None = None
     grade: QualityGrade = "insufficient_data"
     confidence: QualityConfidence = "low"

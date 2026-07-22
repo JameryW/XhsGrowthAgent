@@ -427,6 +427,26 @@ class TestAnalyticsTools:
             result = await _execute_xhs_host_tool("xhs_creator_stats", {"account_id": "acc1"})
         assert "No imported notes" in result["content"][0]["text"]
 
+    async def test_creator_stats_prefers_explicit_fraction_unit_at_one_percent_boundary(self):
+        client = _mock_client_get(
+            {
+                "account": None,
+                "notes": [
+                    {
+                        "note_id": "n1",
+                        "title": "Boundary",
+                        "views": 100,
+                        "engagement_rate": 1.0,
+                    }
+                ],
+                "total": 1,
+                "engagement_rate_unit": "fraction",
+            }
+        )
+        with patch("httpx.AsyncClient", return_value=_make_async_context_manager(client)):
+            result = await _execute_xhs_host_tool("xhs_creator_stats", {"account_id": "acc1"})
+        assert "100.00%" in result["content"][0]["text"]
+
     async def test_creator_analysis(self):
         data = {
             "analysis": {

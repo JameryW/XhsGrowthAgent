@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import TrendChart from '@/components/charts/TrendChart.vue'
@@ -9,6 +9,7 @@ import type { Account } from '@/api/accounts'
 import type { EvaluationTrendResponse } from '@/types/evaluation'
 import { SCORE_THRESHOLDS, scoreTier as scoreTierOf } from '@/constants/evaluation'
 import { formatShortDate } from '@/utils/format'
+import { ALL_ACCOUNTS_ID } from '@/constants/qualityConsistency'
 
 /**
  * EvaluationOverview — fused headline band for the quality hub.
@@ -34,6 +35,7 @@ const emit = defineEmits<{
 }>()
 
 const { t, locale } = useI18n()
+const isAllAccounts = computed(() => props.accountId === ALL_ACCOUNTS_ID)
 
 // ── 账户综合分（确定性历史报告，与下方诊断区块同源）──
 const report = ref<CreatorQualityReport | null>(null)
@@ -51,7 +53,7 @@ watch(
 async function loadReport(accountId: string, reportLocale: string) {
   const request = ++reportRequest
   report.value = null
-  if (!accountId) {
+  if (!accountId || accountId === ALL_ACCOUNTS_ID) {
     reportLoading.value = false
     return
   }
@@ -86,7 +88,7 @@ const trendError = ref<string | null>(null)
 
 const trendData = computed(() =>
   (trend.value?.points || [])
-    .filter((p) => p.overall_score != null)
+    .filter((p) => p.overall_score != null && !p.degraded && !['degraded', 'failed', 'running', 'unavailable'].includes(p.status || 'ready'))
     .map((p) => ({
       date: formatShortDate(p.created_at, locale.value),
       value: p.overall_score as number,
@@ -95,24 +97,45 @@ const trendData = computed(() =>
 
 const hasTrend = computed(() => trendData.value.length > 0)
 
-async function loadTrend() {
+async function loadTrend(accountId = props.accountId) {
+  const request = ++trendRequest
   trendLoading.value = true
   trendError.value = null
-  try {
-    trend.value = await getEvaluationTrend(undefined, 100, { suppressToast: true })
-  } catch (e: any) {
-    trendError.value = e?.message ?? 'error'
-  } finally {
+  trend.value = null
+  if (!accountId) {
     trendLoading.value = false
+    return
+  }
+  try {
+    const response = await getEvaluationTrend(
+      accountId === ALL_ACCOUNTS_ID ? undefined : accountId,
+      100,
+      { suppressToast: true },
+    )
+    if (request === trendRequest && accountId === props.accountId) trend.value = response
+  } catch (e: any) {
+    if (request === trendRequest) trendError.value = e?.message ?? 'error'
+  } finally {
+    if (request === trendRequest) trendLoading.value = false
   }
 }
 
-onMounted(() => {
-  void loadTrend()
-})
+function retryTrend() {
+  void loadTrend(props.accountId)
+}
+
+let trendRequest = 0
+watch(
+  () => [props.accountId, locale.value] as const,
+  ([accountId]) => { void loadTrend(accountId) },
+  { immediate: true },
+)
 
 function scoreTierClass(score: number | null | undefined): string {
-  switch (scoreTierOf(score, SCORE_THRESHOLDS)) {
+  const thresholds = trend.value?.pass_threshold != null && trend.value?.warn_threshold != null
+    ? { pass: trend.value.pass_threshold, warn: trend.value.warn_threshold }
+    : SCORE_THRESHOLDS
+  switch (scoreTierOf(score, thresholds)) {
     case 'pass': return 'score-pass'
     case 'warn': return 'score-warn'
     case 'fail': return 'score-fail'
@@ -152,6 +175,7 @@ function scoreTierClass(score: number | null | undefined): string {
                 :aria-label="t('creatorQuality.page.accountLabel')"
                 @change="emit('update:accountId', ($event.target as HTMLSelectElement).value)"
               >
+                <option :value="ALL_ACCOUNTS_ID">{{ t('evaluation.allAccounts') }}</option>
                 <option v-for="account in accounts" :key="account.id" :value="account.id">
                   {{ account.name }}{{ account.is_active ? ` (${t('settings.active')})` : '' }}
                 </option>
@@ -176,8 +200,10 @@ function scoreTierClass(score: number | null | undefined): string {
       <div class="mt-5 grid gap-3 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.45fr)_minmax(0,0.7fr)]">
         <!-- 账户综合分（历史视角） -->
         <div class="ov-card">
-          <p class="ov-label">{{ t('evaluation.overview.accountScore') }}</p>
-          <p v-if="!accountId" class="ov-hint">{{ t('evaluation.overview.noAccount') }}</p>
+          <p class="ov-label">{{ t('evaluation.performanceScoreLabel') }}</p>
+          <p v-if="!accountId || isAllAccounts" class="ov-hint">
+            {{ isAllAccounts ? t('evaluation.overview.allAccountsHint') : t('evaluation.overview.noAccount') }}
+          </p>
           <div v-else-if="reportLoading" class="mt-2 h-10 w-24 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" aria-busy="true" />
           <template v-else>
             <div class="mt-1 flex items-end gap-2">
@@ -192,7 +218,7 @@ function scoreTierClass(score: number | null | undefined): string {
 
         <!-- RQGM 评估趋势（单篇视角） -->
         <div class="ov-card">
-          <p class="ov-label">{{ t('evaluation.trend.title') }}</p>
+          <p class="ov-label">{{ t('evaluation.rqgmTrendLabel') }}</p>
           <p v-if="trendLoading" class="ov-hint">{{ t('evaluation.trend.loading') }}</p>
           <template v-else-if="hasTrend">
             <TrendChart :data="trendData" :height="110" />
@@ -213,9 +239,10 @@ function scoreTierClass(score: number | null | undefined): string {
           </template>
           <div v-else-if="trendError" class="trend-error">
             <span>{{ t('evaluation.trend.failed') }}</span>
-            <button type="button" class="retry-btn min-h-[36px]" @click="loadTrend">{{ t('evaluation.trend.retry') }}</button>
+            <button type="button" class="retry-btn min-h-[36px]" @click="retryTrend">{{ t('evaluation.trend.retry') }}</button>
           </div>
           <p v-else class="ov-hint">{{ t('evaluation.trend.empty') }}</p>
+          <p v-if="trend?.data_as_of" class="ov-meta">{{ t('evaluation.dataAsOf') }} {{ trend.data_as_of }}</p>
         </div>
 
         <!-- 融合 KPI -->
@@ -226,7 +253,7 @@ function scoreTierClass(score: number | null | undefined): string {
           </div>
           <div>
             <p class="ov-label">{{ t('evaluation.overview.samples') }}</p>
-            <p class="ov-kpi-value">{{ accountId ? (report?.notes_analyzed ?? '—') : '—' }}</p>
+            <p class="ov-kpi-value">{{ accountId && !isAllAccounts ? (report?.notes_analyzed ?? '—') : '—' }}</p>
           </div>
         </div>
       </div>

@@ -80,7 +80,7 @@ def test_quality_report_normalizes_percent_rates_and_does_not_mutate_notes():
     data = report.to_dict()
 
     assert data["account_id"] == "quality_acc"
-    assert data["scope"] == "all_imported_history"
+    assert data["scope"] == "account_history"
     assert data["total_notes"] == 3
     assert data["notes_analyzed"] == 3
     assert data["overall_score"] is not None
@@ -146,7 +146,7 @@ def test_single_note_quality_reuses_historical_dimensions_without_fake_consisten
 
     assert data["account_id"] == "quality_acc"
     assert data["note_id"] == "single"
-    assert data["scope"] == "single_imported_note"
+    assert data["scope"] == "single_note"
     assert data["total_notes"] == 1
     assert data["notes_analyzed"] == 1
     assert data["overall_score"] is not None
@@ -204,7 +204,7 @@ async def test_quality_endpoint_uses_all_history_over_display_limit_and_is_read_
     payload = response.json()
     assert payload["success"] is True
     data = payload["data"]
-    assert data["scope"] == "all_imported_history"
+    assert data["scope"] == "account_history"
     assert data["total_notes"] == 101
     assert data["notes_analyzed"] == data["total_notes"]
     assert data["overall_score"] is not None
@@ -221,6 +221,39 @@ async def test_quality_endpoint_uses_all_history_over_display_limit_and_is_read_
     assert "Based on all 101 imported historical notes" in english["summary"]
     assert "Across all 101 imported notes" in _dimension(english, "engagement")["evidence"]
     assert "全量" not in english["summary"]
+
+
+@pytest.mark.asyncio
+async def test_quality_endpoint_uses_one_snapshot_bundle_for_notes_and_metadata():
+    note = _note("bundle_note", engagement_rate=0.12, likes=120, collects=30)
+    bundle = {
+        "account_id": "quality_acc",
+        "account": None,
+        "notes": [note],
+        "note_count": 1,
+        "data_as_of": "2026-07-22T10:00:00Z",
+        "snapshot_id": "snapshot:bundle",
+    }
+    client = TestClient(_app())
+
+    with pytest.MonkeyPatch.context() as mp:
+
+        async def _bundle(_account_id: str) -> dict[str, object]:
+            return bundle
+
+        async def _unexpected_metadata(_account_id: str) -> dict[str, object]:
+            raise AssertionError("quality route must not read a second snapshot")
+
+        mp.setattr(analytics_routes, "_creator_snapshot_bundle", _bundle)
+        mp.setattr(analytics_routes, "_creator_snapshot_metadata", _unexpected_metadata)
+        response = client.get("/api/analytics/creator-stats/quality_acc/quality")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_notes"] == 1
+    assert data["notes_analyzed"] == 1
+    assert data["snapshot_id"] == "snapshot:bundle"
+    assert data["data_as_of"] == "2026-07-22T10:00:00Z"
 
 
 @pytest.mark.asyncio
@@ -248,7 +281,7 @@ async def test_single_note_detail_and_quality_endpoints_are_read_only():
     assert quality.status_code == 200
     quality_data = quality.json()["data"]
     assert quality_data["note_id"] == "detail_001"
-    assert quality_data["quality"]["scope"] == "single_imported_note"
+    assert quality_data["quality"]["scope"] == "single_note"
     assert quality_data["quality"]["overall_score"] is not None
     assert "single imported note" in quality_data["quality"]["summary"]
 

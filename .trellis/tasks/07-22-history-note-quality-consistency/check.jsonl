@@ -1,0 +1,8 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"检查新分页 reader、评估存储和迁移是否遵守池/事务/只读历史质量约束。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"检查 Ruff、mypy、pytest 与后端代码质量。"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"检查 degraded、failed、partial 与错误响应契约。"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"检查监控日志不泄露正文/快照内容且包含追踪字段。"}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"检查前端 API、i18n、加载/失败状态、分页和移动端实现。"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"检查账号切换、异步请求 stale guard 和状态归属。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"按跨层契约检查数据库、API、服务、类型和 UI 的闭环。"}
+{"file":".trellis/tasks/07-22-history-note-quality-consistency/research/data-lineage-audit.md","reason":"对照现状审计逐项复核 PRD 根因是否已被实现消除。"}

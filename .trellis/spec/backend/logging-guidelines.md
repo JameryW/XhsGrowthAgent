@@ -335,3 +335,55 @@ LLM-generated content that could be large or contain unexpected PII.
    reference is necessary.
 10. **Truncate large content**: When logging LLM responses or user content,
     truncate to a reasonable length (200 chars by convention).
+
+## Scenario: Safe consistency and evaluation observability
+
+### 1. Scope / Trigger
+- Trigger: canonical note reads, account-scope filtering, identity linking, or
+  a historical/workflow RQGM run emits an operational log or metric.
+
+### 2. Signatures
+- `logger.info/warning/exception(...)` in `backend/api/routes/{analytics,evaluation}.py`
+  and `backend/db/quality_evaluations.py`.
+- Metrics: `quality_note_set_mismatch_total`, `quality_cross_account_row_total`,
+  `quality_list_truncated_total`, `quality_evaluation_degraded_total`,
+  `quality_evaluation_cache_hit_total`, `quality_snapshot_lag_seconds`,
+  `workflow_note_link_rate`.
+
+### 3. Contracts
+- Safe evaluation logs include request ID when available, `account_id`,
+  subject type/ID, evaluation ID, status, and `data_as_of`; IDs may be hashed
+  according to existing account logging policy.
+- Log cache hit/stale/degraded transitions and counts, not note titles, body,
+  tags, account names, prompt bodies, or raw metrics snapshots.
+- Snapshot lag is computed from timestamps, never from user content.
+
+### 4. Validation & Error Matrix
+- Missing optional request ID → omit it, do not invent content-derived IDs.
+- Exception during cache/DB fallback → `logger.warning`/`logger.exception` with
+  identifiers and error type; return safe fallback.
+- Any attempted content/prompt/sensitive credential logging → treat as a review failure.
+
+### 5. Good/Base/Bad Cases
+- Good: `note evaluated: account=… note=… status=partial eval_id=…` with no body.
+- Base: debug logs explain a cache miss/fallback without increasing production noise.
+- Bad: logging a title/body, cookie, account nickname, or full LLM response to
+  diagnose a mismatch.
+
+### 6. Tests Required
+- Capture logs and assert required IDs/status are present while note content and
+  secrets are absent.
+- Assert degraded/cache-hit/truncation counters are emitted once per event.
+- Assert exception logs retain traceback at warning/error boundaries.
+
+### 7. Wrong vs Correct
+```python
+# Wrong: leaks user content and cannot be aggregated safely.
+logger.info("evaluated %s: %s", note.title, note.body_text)
+
+# Correct: record the auditable identity and state only.
+logger.info(
+    "note evaluated: account=%s note=%s status=%s eval_id=%s data_as_of=%s",
+    account_id, note_id, status, evaluation_id, data_as_of,
+)
+```

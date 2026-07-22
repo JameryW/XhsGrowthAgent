@@ -64,10 +64,20 @@ _EVENT_NAMES = {
     "evaluation_decision_cta",
     "evaluation_drilldown",
     "evaluation_filter_change",
+    # History/quality consistency rollout counters.  These are categorical
+    # privacy-safe events; account/note identifiers never enter the payload.
+    "quality_note_set_mismatch",
+    "quality_raw_metric_mismatch",
+    "quality_cross_account_row",
+    "quality_list_truncated",
+    "quality_evaluation_degraded",
+    "quality_evaluation_cache_hit",
+    "quality_snapshot_lag",
+    "workflow_note_link_rate",
 }
 
 _CATEGORY_ALLOWLISTS = {
-    "source": {"showcase", "replay", "direct"},
+    "source": {"showcase", "replay", "direct", "quality"},
     "status": {"all", "completed", "in_progress", "attention"},
     "mode": {"all", "trend", "brief", "key"},
     "phase": {

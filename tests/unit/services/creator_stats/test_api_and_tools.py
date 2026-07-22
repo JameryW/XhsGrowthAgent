@@ -209,6 +209,8 @@ async def test_get_creator_stats_total_ignores_limit():
     assert len(data["notes"]) == 2
     assert data["total"] == 5
     assert data["limit"] == 2
+    assert data["snapshot_id"].startswith("snapshot:")
+    assert data["engagement_rate_unit"] == "fraction"
 
 
 @pytest.mark.asyncio

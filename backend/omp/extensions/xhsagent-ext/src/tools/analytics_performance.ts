@@ -1,6 +1,7 @@
 /** xhs_analytics_performance — get recent post performance data. */
 import type { ExtensionAPI, ToolDefinition } from "@oh-my-pi/pi-coding-agent";
 import { get } from "../api_client.js";
+import { formatAnalyticsRate } from "../analytics_format.js";
 import { textResult } from "../types.js";
 
 interface PostData {
@@ -18,6 +19,7 @@ interface PerformanceResponse {
   posts: PostData[];
   total: number;
   fetched_at: string;
+  engagement_rate_unit?: "fraction" | "percent" | string;
 }
 
 export default function register(pi: ExtensionAPI) {
@@ -47,7 +49,7 @@ export default function register(pi: ExtensionAPI) {
           `Post Performance — ${params.account_id} (${params.period}, ${result.total} posts):`,
           "",
           ...result.posts.map((p, i) =>
-            `  ${i + 1}. ${p.title || "(untitled)"} — ❤️${p.likes} 💬${p.comments} ⭐${p.collects} (${p.engagement_rate}% engagement)`
+            `  ${i + 1}. ${p.title || "(untitled)"} — ❤️${p.likes} 💬${p.comments} ⭐${p.collects} (${formatAnalyticsRate(p.engagement_rate, result.engagement_rate_unit)} engagement)`
           ),
         ];
 

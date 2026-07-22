@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"质量评估持久化、Creator Stats bundle 与同一事务/快照身份契约。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"历史评估 stale/degraded/cache 生命周期、API 测试与质量门槛。"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Analytics 账号/周期切换、request generation 和迟到响应提交规则。"}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"前端异步 action 的 loading、错误和跨组件数据契约。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Storage→evaluation persistence→frontend 的 snapshot/version 闭环。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"复用 bundle、snapshot helper 和 stale guard，避免第五轮再出现平行实现。"}
+{"file":".trellis/tasks/07-22-history-quality-consistency-round5/research/round5-audit.md","reason":"第五轮代码图审计结论、方案取舍和回归场景。"}

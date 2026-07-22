@@ -187,3 +187,71 @@ Public route shells should import only the store modules they use (for example,
 `stores/auth` and `stores/realtime`) instead of importing the aggregate
 `stores/index` barrel. The barrel is convenient inside authenticated feature
 code, but it can pull unrelated workspace stores into the public entry chunk.
+
+## Scenario: Account-scoped paginated history with stale guards
+
+### 1. Scope / Trigger
+- Trigger: an account selector changes while Analytics/Evaluation requests a
+  canonical note page, workflow list, trend, report, or latest note evaluation.
+
+### 2. Signatures
+- `loadNotes(accountId, reset=true)` and `loadList(reset, accountId)` own local
+  request generations and cursors.
+- `analyticsStore.fetchDashboard(accountId, period, limit)` owns dashboard
+  generation; standalone `fetchReport`/`fetchPerformance` actions also capture
+  account, period and a local request generation before awaiting the API.
+  API clients receive the same account ID explicitly.
+
+### 3. Contracts
+- Account is the single query boundary. On change, clear/reset rows, totals,
+  cursors and data-as-of before loading the new scope.
+- A response may commit only if its generation and account ID still match the
+  active request. Late responses are discarded, never merged into the new account.
+- Standalone report/performance refreshes clear account-scoped rows and snapshot
+  metadata while loading, so a successful single-endpoint response cannot be
+  displayed beside facts from a different snapshot. Period changes invalidate
+  the same request owner even when the account is unchanged.
+- Store/component state exposes `loaded / total`, `next_cursor`, `data_as_of` and
+  stale/loading/error status; compact previews never imply completeness.
+- Analytics historical pages compare their canonical page `snapshot_id` with
+  the dashboard snapshot before appending; a mismatch stops pagination and
+  exposes retry rather than merging two imports.
+- If the canonical endpoint falls back to the bounded legacy overview, the
+  adapter must still carry `snapshot_id`, `data_as_of` and
+  `engagement_rate_unit` when the server provides it. If an old server omits
+  the unit, preserve `undefined` so the existing compatibility heuristic can
+  run; do not label an unknown percent-scale value as fraction. Missing
+  snapshot metadata must not silently disable the stale guard for a
+  compatibility response.
+
+### 4. Validation & Error Matrix
+- No active account → clear state and no request; do not use `default`.
+- Cursor exhausted → no more request; retain stable loaded/total metadata.
+- API error → keep the account shell, show local retry and do not resurrect rows
+  from a previous account.
+- Route unmount/account switch → invalidate generation; in-flight work may finish
+  but cannot mutate state.
+
+### 5. Good/Base/Bad Cases
+- Good: A→B switch immediately clears A, B response wins, A late response is ignored.
+- Base: old backend fallback returns one bounded page with an explicit total.
+- Bad: appending B rows to A, double-counting offset after load-more, or retaining
+  A's `data_as_of` while showing B.
+
+### 6. Tests Required
+- Assert account switch reset, stale response suppression, cursor traversal,
+  loaded/total display, and stale dashboard generation.
+- Assert the same selected account is passed to list/trend/report APIs.
+
+### 7. Wrong vs Correct
+```ts
+// Wrong: any late response overwrites the currently selected account.
+rows.value = await getCreatorNotes(accountId)
+
+// Correct: commit only the request that still owns the account scope.
+const generation = ++requestGeneration
+const page = await getCreatorNotes(accountId, query)
+if (generation === requestGeneration && accountId === selectedAccountId.value) {
+  rows.value = page.items
+}
+```

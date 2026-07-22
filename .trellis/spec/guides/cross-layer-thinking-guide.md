@@ -151,6 +151,39 @@ When a CLI auto-detects a mode by probing a remote resource (e.g., checking if `
 
 **Real-world example**: Agent-session update hints fetched npm `latest` metadata with `response.read(4096)` and then parsed it as complete JSON. The `@mindfoldhq/trellis` package metadata exceeded 4 KB, so the JSON was truncated, parse failed silently, and the first session injection showed no update hint. Fix: read the complete response before parsing, and add a regression where `version` is followed by an 8 KB metadata tail.
 
+## Checklist: Historical-note consistency changes
+
+Before changing Analytics/Evaluation history or quality scoring, trace the same
+contract through every layer:
+
+- [ ] Database reader: one account-scoped `(published_at, note_id)` cursor,
+  complete filtered total, fraction engagement rate and a stable account
+  snapshot digest based on the complete note population.
+- [ ] Any report/quality response that calculates from imported notes reads a
+  single account snapshot bundle; do not compute from one population and add
+  `snapshot_id` from a later independent read.
+- [ ] API: additive subject/scope/assessment/status/coverage/version metadata;
+  `/analytics/report`, `/analytics/performance`, and `/analytics/dashboard`
+  declare `engagement_rate_unit="fraction"` for raw rates and aggregates.
+  malformed cursor and empty account fail explicitly.
+- [ ] Service/evaluator: historical performance and RQGM content review remain
+  separate; missing context and degraded runs are scoreless and excluded from
+  aggregates.
+- [ ] Persistence: evaluation identity includes source/context/fingerprint and
+  the historical run records its Creator Stats bundle snapshot in
+  `result_json.source`; cache hits are idempotent, force runs retain versions,
+  and a changed bundle marks older runs stale but auditable.
+- [ ] Frontend: selected account is passed to every list/trend/report request,
+  cursor resets on switch, standalone report/performance actions own their
+  account+period generation, late responses are ignored, and loaded/total/
+  data-as-of are visible.
+- [ ] Frontend compatibility fallbacks preserve snapshot/unit metadata so the
+  same stale and fraction guards remain active on older servers.
+- [ ] Identity: workflow rows link imported notes only on explicit platform IDs;
+  synthetic IDs and duplicate claims remain unmatched/ambiguous.
+- [ ] Tests: prove two-account isolation, >500 traversal, raw metric equality,
+  null/degraded semantics, refresh restoration and threshold-aware rendering.
+
 ---
 
 ## When to Create Flow Documentation

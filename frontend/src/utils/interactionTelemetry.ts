@@ -52,6 +52,14 @@ export type InteractionEventName =
   | 'evaluation_drilldown'
   | 'evaluation_filter_change'
   | 'evaluation_note_drilldown'
+  | 'quality_note_set_mismatch'
+  | 'quality_raw_metric_mismatch'
+  | 'quality_cross_account_row'
+  | 'quality_list_truncated'
+  | 'quality_evaluation_degraded'
+  | 'quality_evaluation_cache_hit'
+  | 'quality_snapshot_lag'
+  | 'workflow_note_link_rate'
 
 type InteractionValue = string | number | boolean
 type InteractionProperties = Record<string, InteractionValue | undefined>

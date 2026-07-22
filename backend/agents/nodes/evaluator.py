@@ -37,20 +37,29 @@ async def evaluator_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str
     # error, retry_count) instead of raising (prd 07-07 stateful retry). The
     # evaluator is a non-blocking quality gate — a failure must not block
     # publishing. Detect the error state (no evaluation_result key) and
-    # replace with a synthetic pass-through result.
+    # replace with an explicit degraded result.  A failure must remain
+    # non-blocking for the workflow, but must never look like a successful
+    # 100/approved evaluation in analytics or KPI aggregates.
     if "evaluation_result" not in result:
         error = result.get("error", "unknown evaluator failure")
         logger.warning("Evaluator failed, degrading to pass-through: %s", error)
-        from backend.state.enums import ContentStatus
-
         result = {
             "evaluation_result": {
-                "overall_score": 100.0,
+                "overall_score": None,
                 "dimensions": [],
-                "decision": ContentStatus.APPROVED,
+                "decision": None,
+                "status": "degraded",
+                "degraded": True,
+                "coverage": {
+                    "weighted_ratio": 0.0,
+                    "available": [],
+                    "unavailable": [],
+                    "required": ["copywriting", "compliance"],
+                    "required_available": False,
+                },
                 "revision_hints": [],
                 "bias_warning": "",
-                "summary": f"评估器异常，降级放行: {error}",
+                "summary": f"评估器异常，评估未完成: {error}",
             }
         }
 
@@ -76,6 +85,18 @@ async def _collect_sample(
     """Persist one evaluator-judgment sample (label_source='evaluator')."""
     if not thread_id:
         return
+    status = str(evaluation.get("status") or "ready").lower()
+    score = evaluation.get("overall_score")
+    # Training samples also feed the legacy trend endpoint.  Persisting a
+    # degraded/scoreless result as ``0`` would turn an evaluator outage into a
+    # real low score and contaminate pass-rate/trend aggregates.
+    if status in {"degraded", "failed", "running", "unavailable"} or score is None:
+        logger.debug(
+            "skip evaluator sample for non-consumable result: thread=%s status=%s",
+            thread_id,
+            status,
+        )
+        return
     try:
         from backend.db.evaluator_config import EvaluatorSample, insert_sample
         from backend.db.pool import is_pool_ready
@@ -87,7 +108,7 @@ async def _collect_sample(
                 account_id=state.get("account_id"),
                 thread_id=thread_id,
                 dimensions=evaluation.get("dimensions") or [],
-                overall_score=float(evaluation.get("overall_score") or 0.0),
+                overall_score=float(score),
                 decision=str(evaluation.get("decision") or ""),
                 label_source="evaluator",
                 content_snapshot=_build_content_snapshot(state),

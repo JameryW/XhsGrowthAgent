@@ -67,6 +67,6 @@ describe('CreatorQualityWorkspace', () => {
 
     expect(wrapper.find('select').element.value).toBe('active')
     expect(wrapper.get('[data-testid="quality-panel"]').text()).toContain('已导入真实昵称')
-    expect(wrapper.text()).toContain('历史笔记创作质量')
+    expect(wrapper.text()).toContain('历史笔记发布后表现')
   })
 })

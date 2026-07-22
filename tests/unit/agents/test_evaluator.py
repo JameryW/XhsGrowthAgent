@@ -115,13 +115,10 @@ class TestEvaluatorAgent:
         # High altruism (default 80) → no forced 利他性 hints
         assert not any("利他性" in h for h in ev["revision_hints"])
 
-    async def test_execute_timeout_degrades_with_flag(self, agent, mock_state, mock_store):
-        """LLM timeout → pass-through fallback verdict with degraded=True.
-
-        The fallback's 100/approved is fake — the degraded flag lets callers
-        (free-mode evaluate_draft, agent render) surface it instead of trusting
-        the score.
-        """
+    async def test_execute_timeout_returns_unscored_degraded_result(
+        self, agent, mock_state, mock_store
+    ):
+        """LLM timeout → explicit degraded result without a fake pass score."""
         with patch.object(type(agent), "model", new_callable=PropertyMock) as m:
             model = MagicMock()
             model.ainvoke = AsyncMock(side_effect=TimeoutError("llm slow"))
@@ -129,10 +126,10 @@ class TestEvaluatorAgent:
             result = await agent.execute(mock_state, store=mock_store)
 
         ev = result["evaluation_result"]
-        assert ev["decision"] == ContentStatus.APPROVED
-        assert ev["overall_score"] == 100.0
+        assert ev["decision"] is None
+        assert ev["overall_score"] is None
         assert ev["degraded"] is True
-        assert "降级" in ev["summary"]
+        assert "未完成" in ev["summary"]
 
     @pytest.mark.asyncio
     async def test_low_score_needs_revision(self, agent, mock_state, mock_store):
@@ -229,8 +226,8 @@ class TestEvaluatorAgent:
         assert ev["overall_score"] == 100.0
 
     @pytest.mark.asyncio
-    async def test_missing_dimensions_filled_with_default(self, agent, mock_state, mock_store):
-        """LLM returning only some dimensions → missing ones filled with neutral default."""
+    async def test_missing_dimensions_are_unavailable(self, agent, mock_state, mock_store):
+        """LLM returning only some dimensions never receives a neutral 70."""
         mock_response = MagicMock()
         # Only return 2 dimensions
         mock_response.content = (
@@ -260,6 +257,12 @@ class TestEvaluatorAgent:
             "altruism",
             "bias_check",
         }
+        missing = {
+            d["dimension"]: d for d in dims if d["dimension"] not in {"copywriting", "visual"}
+        }
+        assert all(d["available"] is False and d["score"] is None for d in missing.values())
+        assert result["evaluation_result"]["status"] == "partial"
+        assert result["evaluation_result"]["overall_score"] is None
 
     @pytest.mark.asyncio
     async def test_decision_ignores_llm_self_reported_decision(self, agent, mock_state, mock_store):

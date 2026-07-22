@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"canonical 分页、完整 note snapshot 和 Postgres 事务边界的数据库契约。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"后端类型、Ruff、pytest、格式和兼容实现质量门槛。"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"一致性实现不记录正文、凭证或可逆快照内容。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"历史笔记从存储到 API、前端和质量评估的跨层一致性清单。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"复用 canonical reader、SQL 和 row parser，避免一致性逻辑分叉。"}
+{"file":".trellis/tasks/07-22-history-quality-consistency-round3/research/round3-audit.md","reason":"本轮发现的跨连接分页快照竞态与验证方案。"}

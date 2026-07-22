@@ -1,0 +1,11 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"检查 bundle 是否覆盖完整 notes/account/snapshot 且 Postgres 读取保持同事务。"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"检查 legacy fallback 的 snapshot mismatch、cursor 和账号切换保护。"}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"检查显式 engagement_rate_unit、错误回退和 API client 复用。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 quality/Analytics/frontend/OMP 的同批次与单位契约。"}
+{"file":".trellis/tasks/07-22-history-quality-consistency-round4/research/round4-audit.md","reason":"对照第四轮审计风险验证 bundle、fallback 和 OMP 边界测试。"}
+{"file":"tests/unit/api/test_quality_consistency_backend.py","reason":"回归 bundle 的 memory/Postgres 事务、legacy rows 和 snapshot metadata。"}
+{"file":"tests/unit/services/creator_stats/test_quality_report.py","reason":"回归 quality route 输入与响应 snapshot 来自同一 bundle。"}
+{"file":"tests/unit/services/creator_stats/test_dashboard_and_validation.py","reason":"回归 report/performance/dashboard 使用注入 imported notes 与同一 snapshot。"}
+{"file":"tests/unit/services/creator_stats/test_api_and_tools.py","reason":"回归 legacy overview fallback 的 total、snapshot_id 和显式 fraction 单位。"}
+{"file":"frontend/tests/api/analytics.spec.ts","reason":"回归 canonical reader 旧服务 fallback 保留 snapshot_id 和 engagement_rate_unit。"}
+{"file":"backend/omp/extensions/xhsagent-ext/src/tools/creator_stats.ts","reason":"回归 OMP 按显式 fraction/percent 单位格式化 Creator Stats。"}

@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"核验 canonical page 与 snapshot 是否同一可重复读事务、完整 total 和 legacy fallback。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"核验后端 lint、mypy、pytest、格式和 compileall。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核验 snapshot_id/data_as_of/total 在存储、API、前端和质量链路闭环。"}
+{"file":".trellis/tasks/07-22-history-quality-consistency-round3/research/round3-audit.md","reason":"对照审计发现验证事务边界与 600 条 legacy 分页回归。"}
+{"file":"tests/unit/api/test_quality_consistency_backend.py","reason":"覆盖同事务 page/snapshot 读取、600 条无账户 legacy rows 和快照版本变化。"}
+{"file":".trellis/tasks/07-22-history-quality-consistency-round3/prd.md","reason":"记录本轮目标、验收标准和最终验证证据。"}

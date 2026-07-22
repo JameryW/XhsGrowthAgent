@@ -6,12 +6,16 @@ in-memory store so dry-run/fixture paths work without a database.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import logging
 from typing import Any
 
 from backend.db.pool import get_pool, is_pool_ready
-from backend.services.creator_stats.types import AccountStatsOverview, NoteStats
+from backend.services.creator_stats.types import AccountStatsOverview, NoteStats, NoteStatsPage
+from backend.services.quality_consistency import snapshot_id as build_snapshot_id
+from backend.services.quality_consistency import version_digest
 
 logger = logging.getLogger("xhs_growth.db.creator_stats")
 
@@ -89,6 +93,8 @@ CREATE INDEX IF NOT EXISTS idx_creator_note_stats_account
     ON creator_note_stats (account_id);
 CREATE INDEX IF NOT EXISTS idx_creator_note_stats_engagement
     ON creator_note_stats (account_id, engagement_rate DESC);
+CREATE INDEX IF NOT EXISTS idx_creator_note_stats_published
+    ON creator_note_stats (account_id, published_at DESC, note_id DESC);
 """
 
 _ADD_BODY_TEXT_COL_SQL = (
@@ -163,6 +169,27 @@ ON CONFLICT (account_id, note_id) DO UPDATE SET
     source = EXCLUDED.source,
     raw_json = EXCLUDED.raw_json
 """
+
+_ACCOUNT_STATS_SELECT_SQL = """
+SELECT account_id, creator_user_id, creator_name, red_id, avatar_url, bio,
+       creator_role, zone, views, likes, comments, collects, shares,
+       fans, note_count, period, synced_at, source, raw_json
+FROM creator_account_stats WHERE account_id = %s
+"""
+
+_NOTE_STATS_SELECT_SQL = """
+SELECT account_id, note_id, title, body_text, views, likes, comments, collects,
+       shares, published_at, content_type, tags_json, cover_url,
+       engagement_rate, synced_at, source, raw_json
+FROM creator_note_stats
+WHERE account_id = %s
+ORDER BY published_at ASC, note_id ASC
+"""
+
+# A transaction-level snapshot is required because READ COMMITTED would give
+# each SELECT its own statement snapshot even when the same connection is
+# reused.  Page rows and their complete-population metadata must be one fact.
+_REPEATABLE_READ_SQL = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"
 
 
 async def ensure_tables() -> None:
@@ -348,6 +375,7 @@ async def upsert_bundle(
         logger.warning("upsert_bundle skipped: empty account_id")
         return 0, 0
     bundle_account.account_id = account_id
+    bundle_account.snapshot_id = build_creator_stats_snapshot_id(bundle_account, notes)
 
     if not is_pool_ready():
         await upsert_account_stats(bundle_account)
@@ -372,25 +400,7 @@ async def upsert_bundle(
     return imported, updated
 
 
-async def get_account_stats(account_id: str) -> AccountStatsOverview | None:
-    account_id = (account_id or "").strip()
-    if not account_id:
-        return None
-    if not is_pool_ready():
-        mem = _mem_accounts.get(account_id)
-        return AccountStatsOverview.from_dict(mem) if mem else None
-    pool = get_pool()
-    async with pool.connection() as conn, conn.cursor() as cur:
-        await cur.execute(
-            """
-            SELECT account_id, creator_user_id, creator_name, red_id, avatar_url, bio,
-                   creator_role, zone, views, likes, comments, collects, shares,
-                   fans, note_count, period, synced_at, source, raw_json
-            FROM creator_account_stats WHERE account_id = %s
-            """,
-            (account_id,),
-        )
-        row: Any = await cur.fetchone()
+def _account_from_row(row: Any) -> AccountStatsOverview | None:
     if not row:
         return None
     if isinstance(row, dict):
@@ -407,6 +417,7 @@ async def get_account_stats(account_id: str) -> AccountStatsOverview | None:
                 "audience_view_periods",
                 "audience_profile",
                 "detail_metrics",
+                "snapshot_id",
             ):
                 if not data.get(key) and raw_json_value.get(key) is not None:
                     data[key] = raw_json_value[key]
@@ -437,12 +448,33 @@ async def get_account_stats(account_id: str) -> AccountStatsOverview | None:
         note_count=row[14],
         period=row[15],
         synced_at=row[16],
+        snapshot_id=raw_account.get("snapshot_id"),
         source=row[17],
         audience_sources=raw_account.get("audience_sources") or [],
         audience_view_periods=raw_account.get("audience_view_periods") or [],
         audience_profile=raw_account.get("audience_profile") or [],
         detail_metrics=raw_account.get("detail_metrics") or {},
     )
+
+
+async def _fetch_account_stats(cur: Any, account_id: str) -> AccountStatsOverview | None:
+    """Fetch and parse one account row using a caller-owned cursor."""
+
+    await cur.execute(_ACCOUNT_STATS_SELECT_SQL, (account_id,))
+    row: Any = await cur.fetchone()
+    return _account_from_row(row)
+
+
+async def get_account_stats(account_id: str) -> AccountStatsOverview | None:
+    account_id = (account_id or "").strip()
+    if not account_id:
+        return None
+    if not is_pool_ready():
+        mem = _mem_accounts.get(account_id)
+        return AccountStatsOverview.from_dict(mem) if mem else None
+    pool = get_pool()
+    async with pool.connection() as conn, conn.cursor() as cur:
+        return await _fetch_account_stats(cur, account_id)
 
 
 def _note_from_row(row: Any) -> NoteStats:
@@ -556,19 +588,68 @@ async def list_all_note_stats(account_id: str) -> list[NoteStats]:
 
     pool = get_pool()
     async with pool.connection() as conn, conn.cursor() as cur:
-        await cur.execute(
-            """
-            SELECT account_id, note_id, title, body_text, views, likes, comments, collects,
-                   shares, published_at, content_type, tags_json, cover_url,
-                   engagement_rate, synced_at, source, raw_json
-            FROM creator_note_stats
-            WHERE account_id = %s
-            ORDER BY published_at ASC, note_id ASC
-            """,
-            (account_id,),
-        )
-        rows = await cur.fetchall()
+        return await _fetch_all_note_stats(cur, account_id)
+
+
+async def _fetch_all_note_stats(cur: Any, account_id: str) -> list[NoteStats]:
+    """Fetch the complete account note population using a caller-owned cursor."""
+
+    await cur.execute(_NOTE_STATS_SELECT_SQL, (account_id,))
+    rows = await cur.fetchall()
     return [_note_from_row(row) for row in rows]
+
+
+async def _set_repeatable_read(cur: Any) -> None:
+    """Pin all following reads in the explicit transaction to one DB snapshot."""
+
+    await cur.execute(_REPEATABLE_READ_SQL)
+
+
+async def get_creator_stats_snapshot_bundle(account_id: str) -> dict[str, Any]:
+    """Read account, complete notes and their snapshot in one read boundary.
+
+    Analytics and quality consumers must calculate from the same note
+    population that produced ``snapshot_id``.  The Postgres path therefore
+    keeps both row readers inside one repeatable-read transaction; the memory
+    fallback preserves the same response shape without opening a database.
+    """
+
+    normalized_account_id = (account_id or "").strip()
+    if not normalized_account_id:
+        return {
+            "account_id": "",
+            "account": None,
+            "notes": [],
+            "data_as_of": None,
+            "snapshot_id": None,
+            "note_count": 0,
+        }
+    if not is_pool_ready():
+        account = await get_account_stats(normalized_account_id)
+        notes = await list_all_note_stats(normalized_account_id)
+    else:
+        pool = get_pool()
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            await _set_repeatable_read(cur)
+            account = await _fetch_account_stats(cur, normalized_account_id)
+            notes = await _fetch_all_note_stats(cur, normalized_account_id)
+    return {
+        "account_id": normalized_account_id,
+        "account": account,
+        "notes": notes,
+        **build_creator_stats_snapshot_metadata(account, notes),
+    }
+
+
+async def get_creator_stats_snapshot(account_id: str) -> dict[str, Any]:
+    """Read the account-wide snapshot identity without triggering a sync."""
+
+    bundle = await get_creator_stats_snapshot_bundle(account_id)
+    return {
+        key: bundle[key]
+        for key in ("account_id", "data_as_of", "snapshot_id", "note_count", "stored_snapshot_id")
+        if key in bundle
+    }
 
 
 async def list_note_stats(
@@ -613,6 +694,291 @@ async def list_note_stats(
         )
         rows = await cur.fetchall()
     return [_note_from_row(r) for r in rows]
+
+
+def encode_note_cursor(published_at: str, note_id: str) -> str:
+    """Encode the canonical ``(published_at, note_id)`` sort key opaquely."""
+    payload = json.dumps(
+        {"v": 1, "published_at": str(published_at or ""), "note_id": str(note_id or "")},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def decode_note_cursor(cursor: str) -> tuple[str, str]:
+    """Decode and validate a canonical history cursor.
+
+    A malformed token is rejected by the API as a validation error instead of
+    silently starting from the first page, which makes stale/corrupt links
+    visible to callers.
+    """
+    token = (cursor or "").strip()
+    if not token:
+        raise ValueError("cursor cannot be empty")
+    try:
+        padded = token + "=" * (-len(token) % 4)
+        raw = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
+    except (ValueError, TypeError, UnicodeDecodeError, binascii.Error, json.JSONDecodeError) as exc:
+        raise ValueError("invalid note cursor") from exc
+    if not isinstance(raw, dict) or raw.get("v") != 1:
+        raise ValueError("unsupported note cursor")
+    published_at = raw.get("published_at")
+    note_id = raw.get("note_id")
+    if not isinstance(published_at, str) or not isinstance(note_id, str):
+        raise ValueError("invalid note cursor fields")
+    return published_at, note_id
+
+
+def _max_data_as_of(notes: list[NoteStats], account: AccountStatsOverview | None = None) -> str:
+    values = [str(note.synced_at or "") for note in notes if str(note.synced_at or "")]
+    if account is not None and str(account.synced_at or ""):
+        values.append(str(account.synced_at))
+    return max(values, default="")
+
+
+def _canonical_note(note: NoteStats) -> NoteStats:
+    """Return a detached note whose engagement rate is always a fraction."""
+    normalized = NoteStats.from_dict(note.to_dict())
+    try:
+        rate = float(normalized.engagement_rate or 0.0)
+    except (TypeError, ValueError):
+        rate = 0.0
+    if rate > 1.0:
+        rate /= 100.0
+    normalized.engagement_rate = min(max(rate, 0.0), 1.0)
+    return normalized
+
+
+def _creator_note_snapshot_version(note: NoteStats) -> str:
+    """Hash canonical note facts so equal timestamps cannot hide an overwrite."""
+
+    return version_digest(_canonical_note(note).to_dict())
+
+
+def build_creator_stats_snapshot_id(
+    account: AccountStatsOverview | None,
+    notes: list[NoteStats],
+) -> str | None:
+    """Build an account snapshot from the complete durable note population."""
+
+    account_id = (account.account_id if account else "").strip()
+    if not account_id:
+        account_id = next(
+            (
+                str(note.account_id or "").strip()
+                for note in notes
+                if str(note.account_id or "").strip()
+            ),
+            "",
+        )
+    if not account_id:
+        return None
+    account_notes = [
+        note
+        for note in notes
+        if str(note.account_id or "").strip() == account_id and str(note.note_id or "").strip()
+    ]
+    data_as_of = _max_data_as_of(account_notes, account)
+    subject_versions = [
+        (note.note_id, _creator_note_snapshot_version(note)) for note in account_notes
+    ]
+    return build_snapshot_id(
+        account_id,
+        data_as_of or None,
+        subject_versions=subject_versions,
+    )
+
+
+def build_creator_stats_snapshot_metadata(
+    account: AccountStatsOverview | None,
+    notes: list[NoteStats],
+) -> dict[str, Any]:
+    """Return one read-only snapshot contract for all Creator Stats consumers."""
+
+    data_as_of = _max_data_as_of(notes, account)
+    derived_snapshot = build_creator_stats_snapshot_id(account, notes)
+    # Persisted IDs identify the atomic import. Prefer them only when they
+    # still agree with the complete durable rows; otherwise the derived digest
+    # safely detects a legacy/manual overwrite without writing during a read.
+    stored_snapshot = getattr(account, "snapshot_id", None) if account else None
+    snapshot = (
+        stored_snapshot
+        if stored_snapshot and stored_snapshot == derived_snapshot
+        else derived_snapshot or stored_snapshot
+    )
+    return {
+        "data_as_of": data_as_of or None,
+        "snapshot_id": snapshot,
+        "note_count": len(notes),
+        "stored_snapshot_id": stored_snapshot,
+    }
+
+
+def canonicalize_note_stats(note: NoteStats) -> NoteStats:
+    """Return a detached note DTO using the canonical fraction rate unit.
+
+    Detail/compatibility readers use the same boundary normalizer as the
+    cursor reader so an older percent-scale import cannot disagree with the
+    shared historical fact stream.
+    """
+    return _canonical_note(note)
+
+
+async def list_note_stats_page(
+    account_id: str,
+    *,
+    cursor: str | None = None,
+    limit: int = 50,
+    published_from: str | None = None,
+    published_to: str | None = None,
+) -> NoteStatsPage:
+    """Read the canonical historical-note fact stream.
+
+    The reader is deliberately separate from ``list_note_stats``.  The latter
+    remains a bounded compatibility preview used by older UI surfaces, while
+    this endpoint has a complete filtered ``total`` and stable cursor ordering
+    by ``published_at DESC, note_id DESC``.  It never joins workflow rows and
+    therefore cannot leak another account's notes.
+    """
+    normalized_account_id = (account_id or "").strip()
+    try:
+        page_limit = int(limit)
+    except (TypeError, ValueError):
+        page_limit = 50
+    page_limit = max(1, min(page_limit, 500))
+    from_value = str(published_from or "").strip() or None
+    to_value = str(published_to or "").strip() or None
+    decoded_cursor = decode_note_cursor(cursor) if cursor else None
+
+    if not normalized_account_id:
+        return NoteStatsPage(
+            account_id="",
+            total=0,
+            limit=page_limit,
+            published_from=from_value,
+            published_to=to_value,
+        )
+
+    if not is_pool_ready():
+        bucket = _mem_notes.get(normalized_account_id, {})
+        notes = [NoteStats.from_dict(value) for value in bucket.values()]
+        if from_value:
+            notes = [note for note in notes if note.published_at >= from_value]
+        if to_value:
+            notes = [note for note in notes if note.published_at <= to_value]
+        notes.sort(key=lambda note: (str(note.published_at or ""), str(note.note_id)), reverse=True)
+        filtered_notes = notes
+        total = len(filtered_notes)
+        if decoded_cursor is not None:
+            cursor_published, cursor_note_id = decoded_cursor
+            notes = [
+                note
+                for note in notes
+                if (
+                    str(note.published_at or "") < cursor_published
+                    or (
+                        str(note.published_at or "") == cursor_published
+                        and str(note.note_id) < cursor_note_id
+                    )
+                )
+            ]
+        selected = notes[: page_limit + 1]
+        has_next = len(selected) > page_limit
+        items = [_canonical_note(note) for note in selected[:page_limit]]
+        next_cursor = (
+            encode_note_cursor(items[-1].published_at, items[-1].note_id)
+            if has_next and items
+            else None
+        )
+        snapshot = await get_creator_stats_snapshot(normalized_account_id)
+        return NoteStatsPage(
+            account_id=normalized_account_id,
+            items=items,
+            total=total,
+            limit=page_limit,
+            next_cursor=next_cursor,
+            data_as_of=snapshot["data_as_of"] or "",
+            snapshot_id=snapshot["snapshot_id"],
+            published_from=from_value,
+            published_to=to_value,
+        )
+
+    pool = get_pool()
+    conditions = ["account_id = %s"]
+    params: list[Any] = [normalized_account_id]
+    if from_value:
+        conditions.append("published_at >= %s")
+        params.append(from_value)
+    if to_value:
+        conditions.append("published_at <= %s")
+        params.append(to_value)
+    if decoded_cursor:
+        cursor_published, cursor_note_id = decoded_cursor
+        conditions.append("(published_at < %s OR (published_at = %s AND note_id < %s))")
+        params.extend([cursor_published, cursor_published, cursor_note_id])
+    where = " AND ".join(conditions)
+    count_conditions = conditions[:]
+    count_params = params[:]
+    if decoded_cursor:
+        # ``total`` describes the complete filtered stream, not the remainder
+        # after a cursor.  Remove the cursor predicate from the count query.
+        count_conditions = count_conditions[:-1]
+        count_params = count_params[:-3]
+    selected_rows: list[Any]
+    account: AccountStatsOverview | None
+    all_notes: list[NoteStats]
+    async with pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+        await _set_repeatable_read(cur)
+        await cur.execute(
+            f"SELECT COUNT(*) FROM creator_note_stats WHERE {' AND '.join(count_conditions)}",
+            count_params,
+        )
+        count_row = await cur.fetchone()
+        total = (
+            int(next(iter(count_row.values()), 0) or 0)
+            if isinstance(count_row, dict)
+            else int((count_row[0] if count_row else 0) or 0)
+        )
+        await cur.execute(
+            f"""SELECT account_id, note_id, title, body_text, views, likes, comments, collects,
+                   shares, published_at, content_type, tags_json, cover_url,
+                   engagement_rate, synced_at, source, raw_json
+            FROM creator_note_stats WHERE {where}
+            ORDER BY published_at DESC, note_id DESC LIMIT %s""",
+            params + [page_limit + 1],
+        )
+        selected_rows = list(await cur.fetchall())
+        # Keep page facts and snapshot metadata in this same repeatable
+        # read transaction.  Calling the public snapshot reader here would
+        # release this connection and re-read a later import.
+        account = await _fetch_account_stats(cur, normalized_account_id)
+        all_notes = await _fetch_all_note_stats(cur, normalized_account_id)
+    selected_notes = [_note_from_row(row) for row in selected_rows]
+    has_next = len(selected_notes) > page_limit
+    items = [_canonical_note(note) for note in selected_notes[:page_limit]]
+    snapshot = build_creator_stats_snapshot_metadata(account, all_notes)
+    return NoteStatsPage(
+        account_id=normalized_account_id,
+        items=items,
+        total=total,
+        limit=page_limit,
+        next_cursor=(
+            encode_note_cursor(items[-1].published_at, items[-1].note_id)
+            if has_next and items
+            else None
+        ),
+        data_as_of=snapshot["data_as_of"] or "",
+        snapshot_id=snapshot["snapshot_id"],
+        published_from=from_value,
+        published_to=to_value,
+    )
+
+
+# Explicit aliases make the canonical reader discoverable to service callers
+# while retaining one implementation and one ordering contract.
+list_note_stats_cursor = list_note_stats_page
+list_note_stats_paginated = list_note_stats_page
 
 
 async def get_note_stats(account_id: str, note_id: str) -> NoteStats | None:

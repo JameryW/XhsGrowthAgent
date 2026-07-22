@@ -16,7 +16,7 @@ from backend.services.creator_stats.suggestions import (
     get_suggestions_for_mode,
     suggestions_from_analysis,
 )
-from backend.services.creator_stats.types import AnalysisResult
+from backend.services.creator_stats.types import AnalysisResult, NoteStats
 
 
 @pytest.fixture(autouse=True)
@@ -123,12 +123,65 @@ async def test_dashboard_includes_imported_notes_for_frontend_path():
     note = next(p for p in perf["posts"] if p["id"] == "dash_note_1")
     assert note["views"] == 9000
     assert note["likes"] == 400
+    assert 0 <= note["engagement_rate"] <= 1
+    assert body["engagement_rate_unit"] == "fraction"
+    assert body["period_summary"]["engagement_rate_unit"] == "fraction"
     assert report["metrics"]["total_posts"] >= 1
     assert report["metrics"]["total_engagement"] >= 400
+    assert report["engagement_rate_unit"] == "fraction"
+    assert 0 <= report["metrics"]["avg_engagement_rate"] <= 1
+    assert all(0 <= post["engagement_rate"] <= 1 for post in perf["posts"])
     assert body["period_summary"]["current"]["posts"] >= 1
+    assert 0 <= body["period_summary"]["current"]["avg_engagement_rate"] <= 1
     # Insight mentions creator-center import path
     messages = " ".join(i["message"] for i in report["insights"])
     assert "创作者中心" in messages or report["metrics"]["total_posts"] > 0
+
+
+@pytest.mark.asyncio
+async def test_dashboard_uses_bundle_notes_and_snapshot_without_re_reading_metadata():
+    recent = (datetime.now(UTC) - timedelta(hours=12)).isoformat()
+    bundle_note = NoteStats(
+        note_id="bundle_dash_note",
+        account_id="bundle_dash",
+        title="同一批次",
+        views=1000,
+        likes=100,
+        published_at=recent,
+        synced_at="2026-07-22T10:00:00Z",
+        engagement_rate=0.1,
+    )
+    bundle = {
+        "account_id": "bundle_dash",
+        "account": None,
+        "notes": [bundle_note],
+        "note_count": 1,
+        "data_as_of": "2026-07-22T10:00:00Z",
+        "snapshot_id": "snapshot:bundle-dash",
+    }
+    client = TestClient(_app())
+
+    with pytest.MonkeyPatch.context() as mp:
+
+        async def _empty(*_a, **_k):
+            return []
+
+        async def _bundle(_account_id: str) -> dict[str, object]:
+            return bundle
+
+        async def _unexpected_metadata(_account_id: str) -> dict[str, object]:
+            raise AssertionError("dashboard must not read a second snapshot")
+
+        mp.setattr(analytics_routes, "_get_completed_workflows", _empty)
+        mp.setattr(analytics_routes, "_creator_snapshot_bundle", _bundle)
+        mp.setattr(analytics_routes, "_creator_snapshot_metadata", _unexpected_metadata)
+        response = client.get("/api/analytics/dashboard/bundle_dash?period=weekly&limit=20")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["snapshot_id"] == "snapshot:bundle-dash"
+    assert data["performance"]["posts"][0]["id"] == "bundle_dash_note"
+    assert data["report"]["metrics"]["total_posts"] == 1
 
 
 @pytest.mark.asyncio
@@ -145,6 +198,50 @@ async def test_growth_report_includes_imported_notes():
     data = resp.json()["data"]
     assert data["metrics"]["total_posts"] >= 1
     assert data["metrics"]["best_post_title"] == "仪表盘可见笔记"
+    assert data["engagement_rate_unit"] == "fraction"
+    assert 0 <= data["metrics"]["avg_engagement_rate"] <= 1
+
+
+@pytest.mark.asyncio
+async def test_canonical_note_endpoint_exposes_stable_scope_and_snapshot():
+    await _seed_recent("canonical_acc", "canonical_note_1")
+    client = TestClient(_app())
+
+    first = client.get("/api/analytics/creator-stats/canonical_acc/notes?limit=1")
+    assert first.status_code == 200
+    data = first.json()["data"]
+    assert data["account_id"] == "canonical_acc"
+    assert data["scope"] == "account_history"
+    assert data["subject_type"] == "imported_note"
+    assert data["assessment_type"] == "historical_performance"
+    assert data["engagement_rate_unit"] == "fraction"
+    assert data["snapshot_id"].startswith("snapshot:")
+    assert data["items"][0]["subject_id"] == "canonical_note_1"
+    assert data["items"][0]["note_synced_at"]
+
+    with pytest.MonkeyPatch.context() as mp:
+
+        async def _empty(*_a, **_k):
+            return []
+
+        mp.setattr(analytics_routes, "_get_completed_workflows", _empty)
+        dashboard = client.get("/api/analytics/dashboard/canonical_acc?period=weekly&limit=20")
+        report = client.get("/api/analytics/report/canonical_acc?period=weekly")
+        performance = client.get("/api/analytics/performance/canonical_acc?period=weekly&limit=20")
+    quality = client.get("/api/analytics/creator-stats/canonical_acc/quality")
+    detail = client.get("/api/analytics/creator-stats/canonical_acc/notes/canonical_note_1")
+
+    snapshot_ids = {
+        data["snapshot_id"],
+        dashboard.json()["data"]["snapshot_id"],
+        report.json()["data"]["snapshot_id"],
+        performance.json()["data"]["snapshot_id"],
+        quality.json()["data"]["snapshot_id"],
+        detail.json()["data"]["snapshot_id"],
+    }
+    assert len(snapshot_ids) == 1
+    assert report.json()["data"]["engagement_rate_unit"] == "fraction"
+    assert performance.json()["data"]["engagement_rate_unit"] == "fraction"
 
 
 @pytest.mark.asyncio
@@ -164,7 +261,10 @@ async def test_performance_and_dashboard_strip_account_id():
         # Use TestClient with account that we strip ourselves by patching Request
         resp = client.get("/api/analytics/performance/strip_dash?period=weekly&limit=10")
         assert resp.status_code == 200
-        ids = {p["id"] for p in resp.json()["data"]["posts"]}
+        performance = resp.json()["data"]
+        assert performance["engagement_rate_unit"] == "fraction"
+        assert all(0 <= p["engagement_rate"] <= 1 for p in performance["posts"])
+        ids = {p["id"] for p in performance["posts"]}
         assert "strip_n1" in ids
 
         # Internal strip: call list after strip logic via merge

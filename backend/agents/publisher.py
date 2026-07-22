@@ -26,6 +26,32 @@ def _as_str_list(value: Any) -> list[str]:
     return [item.strip() for item in value if isinstance(item, str) and item.strip()]
 
 
+def _with_publish_link_metadata(
+    publish_result: dict[str, Any], state: XHSGrowthState | dict[str, Any]
+) -> dict[str, Any]:
+    """Attach the durable workflow-to-platform identity to a publish result.
+
+    A workflow checkpoint is the first durable record available at publish
+    time.  We keep the platform id separate from the display/synthetic id so
+    analytics can only collapse an imported note after an explicit id match.
+    ``mock_*`` ids are intentionally not treated as platform identities.
+    """
+    thread_id = str(state.get("session_id") or state.get("thread_id") or "").strip()
+    raw_post_id = str(publish_result.get("post_id") or "").strip()
+    platform_post_id = "" if raw_post_id.startswith("mock_") else raw_post_id
+    result = dict(publish_result)
+    result.update(
+        {
+            "workflow_thread_id": thread_id,
+            "platform_post_id": platform_post_id,
+            # The imported-note linker upgrades this to ``linked`` only after
+            # Creator Center returns the same normalized platform id.
+            "link_status": "unmatched",
+        }
+    )
+    return result
+
+
 def _normalize_scheduled_time(value: Any) -> str:
     """Return a future schedule time formatted for XHS, or empty for immediate publish."""
 
@@ -107,14 +133,17 @@ class PublisherAgent(BaseAgent):
             # 返回模拟结果
             import datetime
 
-            publish_result = {
-                "post_id": f"mock_{state.get('session_id', '0')}",
-                "post_url": "https://www.xiaohongshu.com/explore/mock",
-                "published_at": datetime.datetime.now().isoformat(),
-                "ab_variant": None,
-                "status": "mock_published",
-                "account_id": publish_options.get("account_id") or state.get("account_id", ""),
-            }
+            publish_result = _with_publish_link_metadata(
+                {
+                    "post_id": f"mock_{state.get('session_id', '0')}",
+                    "post_url": "https://www.xiaohongshu.com/explore/mock",
+                    "published_at": datetime.datetime.now().isoformat(),
+                    "ab_variant": None,
+                    "status": "mock_published",
+                    "account_id": publish_options.get("account_id") or state.get("account_id", ""),
+                },
+                state,
+            )
             return {
                 "publish_result": publish_result,
                 "phase": WorkflowPhase.PUBLISHING,
@@ -164,7 +193,7 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
                 },
             }
             return {
-                "publish_result": publish_result,
+                "publish_result": _with_publish_link_metadata(publish_result, state),
                 "phase": WorkflowPhase.PUBLISHING,
             }
 
@@ -193,7 +222,7 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
                 },
             }
             return {
-                "publish_result": publish_result,
+                "publish_result": _with_publish_link_metadata(publish_result, state),
                 "phase": WorkflowPhase.PUBLISHING,
             }
         logger.info("按选中账号 %s 的 CDP profile 登录态发布", publish_account_id)
@@ -311,6 +340,6 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
             logger.warning(f"记录发布历史失败: {e}")
 
     return {
-        "publish_result": publish_result,
+        "publish_result": _with_publish_link_metadata(publish_result, state),
         "phase": WorkflowPhase.PUBLISHING,
     }

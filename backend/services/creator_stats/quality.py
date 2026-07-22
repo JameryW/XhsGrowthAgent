@@ -26,8 +26,12 @@ from backend.services.creator_stats.types import (
 )
 
 MIN_NOTES_FOR_OVERALL_SCORE = 3
-SCOPE_ALL_IMPORTED_HISTORY = "all_imported_history"
-SCOPE_SINGLE_IMPORTED_NOTE = "single_imported_note"
+# Stable API taxonomy shared by Analytics and Evaluation.  The old
+# ``all_imported_history``/``single_imported_note`` labels were implementation
+# details and made the deterministic report disagree with the route-level
+# ``account_history``/``single_note`` scope contract.
+SCOPE_ALL_IMPORTED_HISTORY = "account_history"
+SCOPE_SINGLE_IMPORTED_NOTE = "single_note"
 QualityReportLocale = Literal["zh-CN", "en"]
 
 # Product heuristics for a transparent 0--100 signal.  They are not platform

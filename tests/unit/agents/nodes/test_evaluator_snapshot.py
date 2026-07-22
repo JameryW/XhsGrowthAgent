@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from backend.agents.nodes.evaluator import _build_content_snapshot
+from unittest.mock import AsyncMock
+
+import pytest
+
+from backend.agents.nodes.evaluator import _build_content_snapshot, _collect_sample
 
 
 def test_build_content_snapshot_captures_copy_and_visual_fields() -> None:
@@ -56,3 +60,24 @@ def test_build_content_snapshot_handles_missing_fields() -> None:
     assert snap["hashtags"] == []
     assert snap["image_prompts"] == []
     assert snap["image_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_collect_sample_skips_degraded_or_scoreless_results(monkeypatch) -> None:
+    """Evaluator outages must not become 0-point training/trend samples."""
+    insert = AsyncMock()
+    monkeypatch.setattr("backend.db.pool.is_pool_ready", lambda: True)
+    monkeypatch.setattr("backend.db.evaluator_config.insert_sample", insert)
+
+    await _collect_sample(
+        {"account_id": "acct1"},
+        "thread-1",
+        {"status": "degraded", "degraded": True, "overall_score": None},
+    )
+    await _collect_sample(
+        {"account_id": "acct1"},
+        "thread-2",
+        {"status": "partial", "overall_score": None},
+    )
+
+    insert.assert_not_awaited()

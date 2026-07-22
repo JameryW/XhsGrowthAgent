@@ -23,11 +23,18 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   const performanceData = ref<PerformanceData | null>(null)
   const costData = ref<CostData | null>(null)
   const periodSummary = ref<AnalyticsPeriodSummary | null>(null)
+  const dataAsOf = ref<string | null>(null)
+  const snapshotId = ref<string | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
+  let requestGeneration = 0
+  let scopedRequestGeneration = 0
 
-  // ponytail: derive accountId from accountsStore instead of hardcoding 'default'
-  const accountId = computed(() => useAccountsStore().activeAccountId ?? 'default')
+  // Derive the scope from the selected account, or the first loaded account
+  // when no explicit active account exists. Never query a synthetic `default`
+  // account: an empty account scope is a real no-data state.
+  const accountsStore = useAccountsStore()
+  const accountId = computed(() => accountsStore.activeAccountId ?? accountsStore.accounts[0]?.id ?? '')
 
   // Computed
   const posts = computed<PostPerformance[]>(() =>
@@ -43,8 +50,9 @@ export const useAnalyticsStore = defineStore('analytics', () => {
 
   const avgEngagementRate = computed(() => {
     if (!posts.value.length) return 0
+    const unit = performanceData.value?.engagement_rate_unit
     return posts.value.reduce((sum, post) =>
-      sum + post.engagement_rate, 0
+      sum + engagementRatePercent(post.engagement_rate, unit), 0
     ) / posts.value.length
   })
 
@@ -82,43 +90,161 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   })
 
   // Actions
+  function clearAccountScopedData() {
+    growthReport.value = null
+    performanceData.value = null
+    periodSummary.value = null
+    dataAsOf.value = null
+    snapshotId.value = null
+  }
+
   async function fetchAllData() {
+    const generation = ++requestGeneration
+    const scopedGeneration = ++scopedRequestGeneration
+    const requestedAccountId = accountId.value
+    const requestedPeriod = period.value
+    if (!requestedAccountId) {
+      clearAccountScopedData()
+      costData.value = null
+      error.value = null
+      isLoading.value = false
+      return
+    }
     isLoading.value = true
     error.value = null
+    // A new account/period request must not be compared with the previous
+    // snapshot while its response is in flight.
+    dataAsOf.value = null
+    snapshotId.value = null
     try {
-      const { report, performance, costs, period_summary } = await analyticsApi.getDashboard(
-        accountId.value, period.value, 20
+      const dashboard = await analyticsApi.getDashboard(
+        requestedAccountId, requestedPeriod, 20
       )
+      const { report, performance, costs, period_summary } = dashboard
+      if (
+        generation !== requestGeneration
+        || scopedGeneration !== scopedRequestGeneration
+        || accountId.value !== requestedAccountId
+        || period.value !== requestedPeriod
+      ) return
       growthReport.value = report
       performanceData.value = performance
       costData.value = costs
       periodSummary.value = period_summary ?? null
+      dataAsOf.value = dashboard.data_as_of
+        ?? responseDataAsOf(report, performanceData.value, period_summary)
+      snapshotId.value = dashboard.snapshot_id
+        ?? responseSnapshotId(report, performanceData.value, period_summary)
     } catch (e: any) {
-      error.value = e.message
+      if (
+        generation === requestGeneration
+        && scopedGeneration === scopedRequestGeneration
+        && accountId.value === requestedAccountId
+        && period.value === requestedPeriod
+      ) {
+        error.value = e.message
+      }
     } finally {
-      isLoading.value = false
+      if (
+        generation === requestGeneration
+        && scopedGeneration === scopedRequestGeneration
+        && accountId.value === requestedAccountId
+        && period.value === requestedPeriod
+      ) {
+        isLoading.value = false
+      }
     }
   }
 
   async function fetchReport() {
+    const generation = ++scopedRequestGeneration
+    const dashboardGeneration = requestGeneration
+    const requestedAccountId = accountId.value
+    const requestedPeriod = period.value
+    if (!requestedAccountId) {
+      clearAccountScopedData()
+      error.value = null
+      isLoading.value = false
+      return
+    }
+    // A standalone report must not remain paired with posts/summary from a
+    // previous account or snapshot while it is loading.
+    clearAccountScopedData()
+    error.value = null
     isLoading.value = true
     try {
-      growthReport.value = await analyticsApi.getGrowthReport(accountId.value, period.value)
+      const report = await analyticsApi.getGrowthReport(requestedAccountId, requestedPeriod)
+      if (
+        generation !== scopedRequestGeneration
+        || dashboardGeneration !== requestGeneration
+        || accountId.value !== requestedAccountId
+        || period.value !== requestedPeriod
+      ) return
+      growthReport.value = report
+      dataAsOf.value = report.data_as_of ?? null
+      snapshotId.value = report.snapshot_id ?? null
     } catch (e: any) {
-      error.value = e.message
+      if (
+        generation === scopedRequestGeneration
+        && dashboardGeneration === requestGeneration
+        && accountId.value === requestedAccountId
+        && period.value === requestedPeriod
+      ) error.value = e.message
     } finally {
-      isLoading.value = false
+      if (
+        generation === scopedRequestGeneration
+        && dashboardGeneration === requestGeneration
+        && accountId.value === requestedAccountId
+        && period.value === requestedPeriod
+      ) isLoading.value = false
     }
   }
 
   async function fetchPerformance() {
+    const generation = ++scopedRequestGeneration
+    const dashboardGeneration = requestGeneration
+    const requestedAccountId = accountId.value
+    const requestedPeriod = period.value
+    if (!requestedAccountId) {
+      clearAccountScopedData()
+      error.value = null
+      isLoading.value = false
+      return
+    }
+    // Keep report/posts/period metadata from being displayed as a mixed
+    // snapshot when callers use this legacy single-endpoint action.
+    clearAccountScopedData()
+    error.value = null
     isLoading.value = true
     try {
-      performanceData.value = await analyticsApi.getPerformance(accountId.value, period.value, 20)
+      const performance = await analyticsApi.getPerformance(
+        requestedAccountId,
+        requestedPeriod,
+        20,
+      )
+      if (
+        generation !== scopedRequestGeneration
+        || dashboardGeneration !== requestGeneration
+        || accountId.value !== requestedAccountId
+        || period.value !== requestedPeriod
+      ) return
+      performanceData.value = performance
+      dataAsOf.value = performance.data_as_of ?? null
+      snapshotId.value = performance.snapshot_id ?? null
     } catch (e: any) {
-      error.value = e.message
+      if (
+        generation === scopedRequestGeneration
+        && dashboardGeneration === requestGeneration
+        && accountId.value === requestedAccountId
+        && period.value === requestedPeriod
+      ) error.value = e.message
     } finally {
-      isLoading.value = false
+      if (
+        generation === scopedRequestGeneration
+        && dashboardGeneration === requestGeneration
+        && accountId.value === requestedAccountId
+        && period.value === requestedPeriod
+      ) isLoading.value = false
     }
   }
 
@@ -145,6 +271,8 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     performanceData,
     costData,
     periodSummary,
+    dataAsOf,
+    snapshotId,
     isLoading,
     error,
     posts,
@@ -157,3 +285,26 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     setPeriod,
   }
 })
+
+function responseDataAsOf(
+  report: GrowthReport | null | undefined,
+  performance: PerformanceData | null | undefined,
+  summary: AnalyticsPeriodSummary | undefined,
+): string | null {
+  return report?.data_as_of ?? performance?.data_as_of ?? summary?.data_as_of ?? null
+}
+
+function responseSnapshotId(
+  report: GrowthReport | null | undefined,
+  performance: PerformanceData | null | undefined,
+  summary: AnalyticsPeriodSummary | undefined,
+): string | null {
+  return report?.snapshot_id ?? performance?.snapshot_id ?? summary?.snapshot_id ?? null
+}
+
+function engagementRatePercent(value: number, unit?: string): number {
+  if (unit === 'fraction') return value * 100
+  if (unit === 'percent') return value
+  // Compatibility for a legacy response that predates the explicit unit.
+  return value <= 1 ? value * 100 : value
+}
