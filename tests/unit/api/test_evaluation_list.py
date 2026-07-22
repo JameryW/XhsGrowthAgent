@@ -108,8 +108,12 @@ def test_returns_only_workflows_with_evaluation(app_and_client):
     assert wf["t1"]["selected_title"] == "爆款标题一"
     assert wf["t1"]["overall_score"] == 82.5
     assert wf["t1"]["decision"] == "approved"
+    assert wf["t1"]["subject_type"] == "workflow_draft"
+    assert wf["t1"]["subject_id"] == "t1"
     assert wf["t2"]["decision"] == "needs_revision"
     assert "t3" not in wf
+    assert data["scope"] == "all_accounts"
+    assert data["snapshot_id"].startswith("snapshot:")
 
 
 def test_decision_coerced_from_enum_to_string(app_and_client):

@@ -44,6 +44,8 @@ export interface EvaluationResult {
   evaluated_at?: string
   evaluation_id?: string
   evaluator_fingerprint?: string
+  snapshot_id?: string | null
+  contract_version?: string | null
 }
 
 export type EvaluationStatus =
@@ -71,6 +73,8 @@ export interface EvaluationResultResponse {
   thresholds?: ScoreThresholds
   account_id?: string
   scope?: string
+  subject_type?: 'workflow_draft' | string
+  subject_id?: string
   assessment_type?: 'rqgm_content_review' | string
   status?: EvaluationStatus
   degraded?: boolean
@@ -79,6 +83,8 @@ export interface EvaluationResultResponse {
   evaluated_at?: string | null
   evaluation_id?: string | null
   evaluator_fingerprint?: string | null
+  snapshot_id?: string | null
+  contract_version?: string | null
 }
 
 
@@ -93,6 +99,7 @@ export interface TrendPoint {
   account_id?: string
   assessment_type?: 'rqgm_content_review' | string
   evaluated_at?: string
+  snapshot_id?: string | null
 }
 
 /** GET /evaluation/list 单条 — 有评估结果的工作流摘要. */
@@ -114,6 +121,8 @@ export interface EvaluationListItem {
   pass_threshold?: number
   warn_threshold?: number
   scope?: string
+  subject_type?: 'workflow_draft' | string
+  subject_id?: string
   assessment_type?: 'rqgm_content_review' | string
   status_detail?: EvaluationStatus
   degraded?: boolean
@@ -121,6 +130,7 @@ export interface EvaluationListItem {
   evaluated_at?: string | null
   evaluation_id?: string | null
   evaluator_fingerprint?: string | null
+  snapshot_id?: string | null
 }
 
 /** GET /evaluation/list 响应. */
@@ -132,6 +142,8 @@ export interface EvaluationListResponse {
   account_id?: string | null
   scope?: string
   data_as_of?: string | null
+  snapshot_id?: string | null
+  contract_version?: string | null
 }
 
 /** GET /evaluation/trend 响应. */
@@ -143,6 +155,8 @@ export interface EvaluationTrendResponse {
   scope?: string
   assessment_type?: 'rqgm_content_review' | string
   data_as_of?: string | null
+  snapshot_id?: string | null
   pass_threshold?: number
   warn_threshold?: number
+  contract_version?: string | null
 }

@@ -25,6 +25,14 @@ from backend.db.creator_stats import get_note_stats
 from backend.db.pool import is_pool_ready
 from backend.db.workflows import list_workflows as db_list
 from backend.services.creator_stats.types import NoteStats
+from backend.services.quality_consistency import (
+    ALL_ACCOUNTS_SCOPE,
+    QUALITY_CONSISTENCY_CONTRACT,
+    quality_consistency_v2_enabled,
+)
+from backend.services.quality_consistency import (
+    snapshot_id as build_snapshot_id,
+)
 from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.api.evaluation")
@@ -141,6 +149,12 @@ async def list_evaluated_workflows(
                 "offset": offset,
                 "account_id": account_id,
                 "scope": "account_history" if account_id else "all_accounts",
+                "assessment_type": "rqgm_content_review",
+                "data_as_of": None,
+                "snapshot_id": None,
+                "contract_version": QUALITY_CONSISTENCY_CONTRACT
+                if quality_consistency_v2_enabled()
+                else "legacy_compatible",
             }
         )
 
@@ -216,6 +230,8 @@ async def list_evaluated_workflows(
                 "decision": decision,
                 "assessment_type": "rqgm_content_review",
                 "scope": "workflow_draft",
+                "subject_type": "workflow_draft",
+                "subject_id": row.thread_id,
                 "status_detail": status_detail,
                 "degraded": bool(evaluation.get("degraded"))
                 or status_detail in {"degraded", "failed"},
@@ -226,11 +242,19 @@ async def list_evaluated_workflows(
                 "warn_threshold": thresholds["warn"],
                 "evaluated_at": evaluation.get("evaluated_at") or row.updated_at,
                 "data_as_of": evaluation.get("data_as_of") or row.updated_at,
+                "snapshot_id": build_snapshot_id(
+                    str(row.account_id or ""),
+                    evaluation.get("data_as_of") or row.updated_at,
+                ),
             }
         )
 
     total = len(enriched)
     page = enriched[offset : offset + limit]
+    data_as_of = max(
+        (str(item.get("data_as_of") or "") for item in enriched),
+        default=None,
+    )
     return success(
         data={
             "workflows": page,
@@ -240,10 +264,11 @@ async def list_evaluated_workflows(
             "account_id": account_id,
             "scope": "account_history" if account_id else "all_accounts",
             "assessment_type": "rqgm_content_review",
-            "data_as_of": max(
-                (str(item.get("data_as_of") or "") for item in enriched),
-                default=None,
-            ),
+            "contract_version": QUALITY_CONSISTENCY_CONTRACT
+            if quality_consistency_v2_enabled()
+            else "legacy_compatible",
+            "data_as_of": data_as_of,
+            "snapshot_id": build_snapshot_id(account_id or ALL_ACCOUNTS_SCOPE, data_as_of),
         }
     )
 
@@ -282,6 +307,13 @@ async def get_evaluation_result(thread_id: str, request: Request) -> ApiResponse
             "evaluated_at": evaluation.get("evaluated_at") or values.get("updated_at") or None,
             "evaluation_id": evaluation.get("evaluation_id"),
             "evaluator_fingerprint": evaluation.get("evaluator_fingerprint"),
+            "snapshot_id": build_snapshot_id(
+                str(values.get("account_id") or ""),
+                evaluation.get("data_as_of") or values.get("updated_at"),
+            ),
+            "contract_version": QUALITY_CONSISTENCY_CONTRACT
+            if quality_consistency_v2_enabled()
+            else "legacy_compatible",
         }
     )
 
@@ -350,6 +382,13 @@ async def run_evaluation(thread_id: str, request: Request) -> ApiResponse[Any]:
             "coverage": evaluation.get("coverage") or {},
             "data_as_of": evaluation.get("data_as_of") or values.get("updated_at") or None,
             "evaluated_at": evaluation.get("evaluated_at") or values.get("updated_at") or None,
+            "snapshot_id": build_snapshot_id(
+                str(values.get("account_id") or ""),
+                evaluation.get("data_as_of") or values.get("updated_at"),
+            ),
+            "contract_version": QUALITY_CONSISTENCY_CONTRACT
+            if quality_consistency_v2_enabled()
+            else "legacy_compatible",
         }
     )
 
@@ -678,6 +717,7 @@ def _evaluation_run_data(run: Any, *, cache_hit: bool = False) -> dict[str, Any]
         "content_hash": run.source_content_hash,
         "data_as_of": run.source_data_as_of,
         "context_hash": run.context_hash,
+        "snapshot_id": build_snapshot_id(run.account_id, run.source_data_as_of),
     }
     if isinstance(result.get("source"), dict):
         source.update(result["source"])
@@ -697,6 +737,9 @@ def _evaluation_run_data(run: Any, *, cache_hit: bool = False) -> dict[str, Any]
         "evaluated_at": run.completed_at or run.created_at,
         "cache_hit": cache_hit,
         "error": run.error,
+        "contract_version": QUALITY_CONSISTENCY_CONTRACT
+        if quality_consistency_v2_enabled()
+        else "legacy_compatible",
     }
     payload.update(
         {
@@ -704,6 +747,7 @@ def _evaluation_run_data(run: Any, *, cache_hit: bool = False) -> dict[str, Any]
             "decision": result.get("decision"),
             "degraded": bool(result.get("degraded")) or run.status in {"degraded", "failed"},
             "data_as_of": run.source_data_as_of or None,
+            "snapshot_id": build_snapshot_id(run.account_id, run.source_data_as_of),
             "stale": bool(run.stale_at),
             "stale_at": run.stale_at,
         }
@@ -853,11 +897,16 @@ async def run_note_evaluation(
     coverage = evaluation.get("coverage") or {}
     evaluation["thresholds"] = thresholds
     evaluation["data_as_of"] = note.synced_at or None
+    evaluation["snapshot_id"] = build_snapshot_id(account_id, note.synced_at or None)
+    evaluation["contract_version"] = (
+        QUALITY_CONSISTENCY_CONTRACT if quality_consistency_v2_enabled() else "legacy_compatible"
+    )
     evaluation["evaluated_at"] = datetime.now(UTC).isoformat()
     evaluation["source"] = {
         "content_hash": source_hash,
         "data_as_of": note.synced_at or None,
         "context_hash": context_hash,
+        "snapshot_id": build_snapshot_id(account_id, note.synced_at or None),
         "niche": niche or None,
         "niche_source": niche_source or None,
         "note_synced_at": note.synced_at or None,
@@ -929,6 +978,10 @@ async def get_latest_note_evaluation(account_id: str, note_id: str) -> ApiRespon
                 },
                 "thresholds": await _score_thresholds(normalized_account_id),
                 "data_as_of": None,
+                "snapshot_id": None,
+                "contract_version": QUALITY_CONSISTENCY_CONTRACT
+                if quality_consistency_v2_enabled()
+                else "legacy_compatible",
                 "evaluated_at": None,
                 "persistence_status": "memory" if not is_pool_ready() else "ready",
             }
@@ -1064,6 +1117,10 @@ async def get_evaluator_trend(request: Request) -> ApiResponse[Any]:
                 "pass_threshold": thresholds["pass"],
                 "warn_threshold": thresholds["warn"],
                 "data_as_of": None,
+                "snapshot_id": None,
+                "contract_version": QUALITY_CONSISTENCY_CONTRACT
+                if quality_consistency_v2_enabled()
+                else "legacy_compatible",
             }
         )
     limit = int(request.query_params.get("limit", "100"))
@@ -1124,6 +1181,10 @@ async def get_evaluator_trend(request: Request) -> ApiResponse[Any]:
                 "account_id": r.get("account_id"),
                 "assessment_type": "rqgm_content_review",
                 "evaluated_at": r.get("created_at") or "",
+                "snapshot_id": build_snapshot_id(
+                    str(r.get("account_id") or account_id or ""),
+                    r.get("data_as_of") or r.get("created_at") or "",
+                ),
             }
         )
     dim_averages = {
@@ -1144,5 +1205,12 @@ async def get_evaluator_trend(request: Request) -> ApiResponse[Any]:
                 (str(point.get("created_at") or "") for point in points),
                 default=None,
             ),
+            "snapshot_id": build_snapshot_id(
+                account_id or ALL_ACCOUNTS_SCOPE,
+                max((str(point.get("created_at") or "") for point in points), default=None),
+            ),
+            "contract_version": QUALITY_CONSISTENCY_CONTRACT
+            if quality_consistency_v2_enabled()
+            else "legacy_compatible",
         }
     )

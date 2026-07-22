@@ -225,6 +225,7 @@ function dimensionLabel(key: string): string {
           {{ t('creatorQuality.scopeLabel') }}: {{ translateEnum('scope', report.scope) }}
           <span v-if="report.data_as_of"> · {{ t('evaluation.dataAsOf') }} {{ report.data_as_of }}</span>
           <span v-if="report.algorithm_version"> · {{ report.algorithm_version }}</span>
+          <span v-if="report.snapshot_id"> · {{ t('evaluation.snapshotId') }} {{ report.snapshot_id }}</span>
         </p>
       </div>
 

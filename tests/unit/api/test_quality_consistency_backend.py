@@ -7,6 +7,7 @@ import pytest
 from backend.api.routes.evaluation import _sanitize_historical_evaluation
 from backend.db import creator_stats, quality_evaluations
 from backend.services.creator_stats.types import NoteStats
+from backend.services.quality_consistency import snapshot_id
 
 
 @pytest.fixture(autouse=True)
@@ -50,7 +51,34 @@ async def test_canonical_history_cursor_walks_more_than_500_without_duplicates()
     assert len(seen) == 601
     assert len(set(seen)) == 601
     assert first_page.data_as_of == "2026-07-22T10:00:00Z"
+    assert first_page.snapshot_id is not None
+    # Cursor batches are one canonical snapshot, so a consumer can safely
+    # append pages without silently mixing two imports.
+    second_page = await creator_stats.list_note_stats_page(
+        "acc-a", cursor=first_page.next_cursor, limit=50
+    )
+    assert second_page.snapshot_id == first_page.snapshot_id
     assert all(0 <= item.engagement_rate <= 1 for item in first_page.items)
+
+
+def test_snapshot_id_changes_with_subject_version_but_not_order() -> None:
+    first = snapshot_id(
+        "acc-a",
+        "2026-07-22T10:00:00Z",
+        subject_versions=[("note-1", "2026-07-22T09:00:00Z"), ("note-2", "2026-07-22T08:00:00Z")],
+    )
+    reordered = snapshot_id(
+        "acc-a",
+        "2026-07-22T10:00:00Z",
+        subject_versions=[("note-2", "2026-07-22T08:00:00Z"), ("note-1", "2026-07-22T09:00:00Z")],
+    )
+    changed = snapshot_id(
+        "acc-a",
+        "2026-07-22T10:00:00Z",
+        subject_versions=[("note-1", "2026-07-22T09:30:00Z"), ("note-2", "2026-07-22T08:00:00Z")],
+    )
+    assert first == reordered
+    assert first != changed
 
 
 def test_historical_degraded_result_never_exposes_legacy_pass() -> None:

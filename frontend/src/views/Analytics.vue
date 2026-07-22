@@ -20,6 +20,7 @@ const EngagementChart = defineAsyncComponent(() => import('@/components/charts/E
 import { formatNumber, formatPercent, formatShortDate } from '@/utils/format'
 import { trackInteraction } from '@/utils/interactionTelemetry'
 import { useFocusTrap } from '@/composables/useFocusTrap'
+import { hasSnapshotMismatch } from '@/constants/qualityConsistency'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -40,6 +41,8 @@ const historicalNotes = ref<CreatorNoteStats[]>([])
 const historicalTotal = ref(0)
 const historicalCursor = ref<string | null>(null)
 const historicalDataAsOf = ref<string | null>(null)
+const historicalSnapshotId = ref<string | null>(null)
+const historicalSnapshotMismatch = ref(false)
 const historicalLoading = ref(false)
 const historicalError = ref<string | null>(null)
 const showAllHistorical = ref(false)
@@ -64,6 +67,7 @@ async function readHistoricalNotes(accountId: string, cursor: string | null = nu
     limit: legacy.limit ?? 50,
     next_cursor: null,
     data_as_of: legacy.data_as_of ?? legacy.fetched_at ?? null,
+    snapshot_id: legacy.snapshot_id ?? null,
   }
 }
 
@@ -74,6 +78,8 @@ async function loadHistoricalNotes(accountId: string, reset = true) {
     historicalTotal.value = 0
     historicalCursor.value = null
     historicalDataAsOf.value = null
+    historicalSnapshotId.value = null
+    historicalSnapshotMismatch.value = false
     showAllHistorical.value = false
   }
   historicalError.value = null
@@ -89,10 +95,19 @@ async function loadHistoricalNotes(accountId: string, reset = true) {
     // account resolver so a valid first-account response is not discarded.
     if (request !== historicalRequest || accountId !== selectedAnalyticsAccountId.value) return
     const items = (page.items || []).filter(note => Boolean(note.note_id))
+    const dashboardSnapshot = analyticsStore.snapshotId
+    if (hasSnapshotMismatch(dashboardSnapshot, page.snapshot_id)
+      || (!reset && hasSnapshotMismatch(historicalSnapshotId.value, page.snapshot_id))) {
+      historicalSnapshotMismatch.value = true
+      trackInteraction('quality_note_set_mismatch', { source: 'quality', count: 1 })
+      trackInteraction('quality_snapshot_lag', { source: 'quality', count: 1 })
+      return
+    }
     historicalNotes.value = reset ? items : [...historicalNotes.value, ...items]
     historicalTotal.value = Number.isFinite(page.total) ? page.total : historicalNotes.value.length
     historicalCursor.value = page.next_cursor ?? null
     historicalDataAsOf.value = page.data_as_of ?? null
+    historicalSnapshotId.value = page.snapshot_id ?? historicalSnapshotId.value ?? dashboardSnapshot
   } catch (error: unknown) {
     if (request === historicalRequest) historicalError.value = error instanceof Error ? error.message : t('analytics.history.loadError')
   } finally {
@@ -126,6 +141,40 @@ watch(selectedAnalyticsAccountId, (accountId, previous) => {
   void analyticsStore.fetchAllData()
   void loadHistoricalNotes(accountId)
 })
+
+watch(() => analyticsStore.snapshotId, (snapshot) => {
+  if (hasSnapshotMismatch(snapshot, historicalSnapshotId.value)) {
+    historicalSnapshotMismatch.value = true
+    trackInteraction('quality_note_set_mismatch', { source: 'quality', count: 1 })
+    trackInteraction('quality_snapshot_lag', { source: 'quality', count: 1 })
+  }
+})
+
+let rawMismatchSnapshot = ''
+watch([() => analyticsStore.posts, historicalNotes], () => {
+  if (!analyticsStore.posts.length || !historicalNotes.value.length) return
+  const facts = new Map(historicalNotes.value.map((note) => [note.note_id, note]))
+  let mismatches = 0
+  for (const post of analyticsStore.posts) {
+    const noteId = post.linked_note_id || (post.source === 'workflow' ? '' : post.id || '')
+    const note = noteId ? facts.get(noteId) : undefined
+    if (!note) continue
+    const postRate = engagementRatePercent(post.engagement_rate)
+    const noteRate = engagementRatePercent(note.engagement_rate)
+    const fieldsMatch = post.views === note.views
+      && post.likes === note.likes
+      && post.comments === note.comments
+      && post.collects === note.collects
+      && post.shares === note.shares
+      && Math.abs(postRate - noteRate) < 0.001
+    if (!fieldsMatch) mismatches += 1
+  }
+  const snapshotKey = analyticsStore.snapshotId || historicalSnapshotId.value || 'unknown'
+  if (mismatches > 0 && rawMismatchSnapshot !== snapshotKey) {
+    rawMismatchSnapshot = snapshotKey
+    trackInteraction('quality_raw_metric_mismatch', { source: 'quality', count: mismatches })
+  }
+}, { deep: true })
 
 const isLoading = computed(() => analyticsStore.isLoading && !analyticsStore.posts.length)
 // AN-12: switching period keeps old data visible under a busy overlay rather
@@ -379,6 +428,13 @@ const setPeriod = (period: 'daily' | 'weekly' | 'monthly') => {
 async function refreshData() {
   await analyticsStore.fetchAllData()
   if (!analyticsStore.error) lastUpdatedAt.value = new Date()
+  const linkStats = analyticsStore.performanceData?.link_stats
+  if (linkStats?.workflow_count) {
+    trackInteraction('workflow_note_link_rate', {
+      source: 'quality',
+      count: linkStats.linked_count ?? 0,
+    })
+  }
   // AN-05: best-effort fetch of creator fans for the first-screen card; do not
   // block on failure (the rest of the page still renders).
   const accountId = accountsStore.activeAccountId || analyticsStore.accountId
@@ -500,6 +556,9 @@ function startWithTopic(topic: string, niche?: string) {
         <span>{{ t('analytics.period') }}: {{ analyticsStore.period }}</span>
         <span v-if="lastUpdatedAt" role="status">
           {{ t('analytics.lastUpdated', { time: lastUpdatedAt.toLocaleTimeString(locale || undefined) }) }}
+        </span>
+        <span v-if="analyticsStore.dataAsOf" role="status">
+          {{ t('evaluation.dataAsOf') }} {{ formatDate(analyticsStore.dataAsOf) }}
         </span>
       </template>
       <template #actions>
@@ -765,6 +824,11 @@ function startWithTopic(topic: string, niche?: string) {
       <button type="button" class="min-h-[36px] rounded-md border border-amber-300 px-2 font-medium hover:bg-amber-100 dark:border-amber-400/40 dark:hover:bg-amber-900/40" @click="loadHistoricalNotes(selectedAnalyticsAccountId)">{{ t('analytics.history.retry') }}</button>
       </div>
       <div v-if="historicalDataAsOf" class="mb-2 text-[11px] text-slate-400" role="status">{{ t('analytics.history.dataAsOf', { time: formatDate(historicalDataAsOf) }) }}</div>
+      <div v-if="historicalSnapshotMismatch" class="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-700 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-200" role="alert">
+        <AppIcon name="AlertTriangle" size="sm" variant="peach" />
+        <span class="flex-1">{{ t('analytics.history.snapshotMismatch') }}</span>
+        <button type="button" class="min-h-9 rounded-md border border-amber-300 px-2 font-medium hover:bg-amber-100 dark:border-amber-400/40 dark:hover:bg-amber-900/40" @click="loadHistoricalNotes(selectedAnalyticsAccountId)">{{ t('analytics.history.retry') }}</button>
+      </div>
 
       <DataTable
         :columns="tableColumns"

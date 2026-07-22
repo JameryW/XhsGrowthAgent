@@ -14,6 +14,13 @@ from backend.api.errors import CreatorNoteNotFoundError, ValidationError
 from backend.api.responses import ApiResponse, success
 from backend.db.pool import is_pool_ready
 from backend.db.workflows import list_workflows as db_list
+from backend.services.quality_consistency import (
+    QUALITY_CONSISTENCY_CONTRACT,
+    quality_consistency_v2_enabled,
+)
+from backend.services.quality_consistency import (
+    snapshot_id as build_snapshot_id,
+)
 
 router = APIRouter()
 
@@ -51,6 +58,66 @@ class CreatorStatsSyncAllRequest(BaseModel):
 # Simple in-memory cache with TTL
 _cache: dict[str, tuple[float, Any]] = {}
 _CACHE_TTL = 30  # seconds
+
+
+async def _creator_snapshot_metadata(account_id: str) -> dict[str, Any]:
+    """Return shared imported-note snapshot metadata without triggering sync."""
+
+    normalized = (account_id or "").strip()
+    if not normalized:
+        return {"data_as_of": None, "snapshot_id": None}
+
+    try:
+        from backend.db import creator_stats as stats_db
+
+        account = await stats_db.get_account_stats(normalized)
+        notes = await stats_db.list_all_note_stats(normalized)
+        values = [
+            getattr(account, "synced_at", "") if account else "",
+            *(getattr(note, "synced_at", "") for note in notes),
+        ]
+        data_as_of = max((str(value) for value in values if str(value or "")), default=None)
+        return {
+            "data_as_of": data_as_of,
+            "snapshot_id": build_snapshot_id(normalized, data_as_of),
+        }
+    except Exception:
+        # The imported tables are optional in local/legacy deployments.  Do
+        # not invent a timestamp when they are unavailable.
+        return {"data_as_of": None, "snapshot_id": None}
+
+
+def _workflow_data_as_of(workflows: list[dict[str, Any]]) -> str | None:
+    """Use the latest workflow update as a fallback when no imported snapshot exists."""
+
+    values: list[str] = []
+    for workflow in workflows:
+        state = workflow.get("_state") or {}
+        values.extend(
+            str(value)
+            for value in (
+                workflow.get("updated_at"),
+                state.get("updated_at"),
+            )
+            if str(value or "").strip()
+        )
+    return max(values) if values else None
+
+
+def _complete_snapshot_metadata(
+    account_id: str, metadata: dict[str, Any], workflows: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Ensure every analytics response has a meaningful as-of when possible."""
+
+    if metadata.get("data_as_of"):
+        return metadata
+    fallback = _workflow_data_as_of(workflows)
+    if not fallback:
+        return metadata
+    return {
+        "data_as_of": fallback,
+        "snapshot_id": build_snapshot_id(account_id, fallback),
+    }
 
 
 def _get_cached(key: str) -> Any | None:
@@ -291,6 +358,11 @@ def _extract_post_data(
         "platform_post_id": platform_post_id,
         "link_status": "unmatched",
         "source": "workflow",
+        "subject_type": "workflow_draft",
+        "subject_id": workflow_thread_id,
+        "scope": "workflow_draft",
+        "assessment_type": "historical_performance",
+        "status": "ready",
         "title": title,
         "likes": analytics.get("likes", 0),
         "comments": analytics.get("comments", 0),
@@ -356,6 +428,18 @@ def _build_growth_report(
     }
 
 
+def _link_stats(posts: list[dict[str, Any]]) -> dict[str, Any]:
+    """Summarize explicit workflow/import identity resolution safely."""
+
+    workflow_rows = [post for post in posts if post.get("source") == "workflow"]
+    linked = sum(1 for post in workflow_rows if post.get("link_status") == "linked")
+    return {
+        "workflow_count": len(workflow_rows),
+        "linked_count": linked,
+        "link_rate": round(linked / len(workflow_rows), 4) if workflow_rows else None,
+    }
+
+
 @router.get("/report/{account_id}")
 async def get_growth_report(
     account_id: str,
@@ -384,7 +468,27 @@ async def get_growth_report(
     for t, c in _topics_from_imported(posts).items():
         topics[t] = topics.get(t, 0) + c
     filtered_posts = _filter_by_period(posts, period)
-    return success(data=_build_growth_report(account_id, period, filtered_posts, topics))
+    report = _build_growth_report(account_id, period, filtered_posts, topics)
+    snapshot = _complete_snapshot_metadata(
+        account_id,
+        await _creator_snapshot_metadata(account_id),
+        workflows,
+    )
+    report.update(
+        {
+            "scope": "account_history",
+            "subject_type": "imported_note",
+            "assessment_type": "historical_performance",
+            "status": "ready" if filtered_posts else "unavailable",
+            "data_as_of": snapshot["data_as_of"],
+            "snapshot_id": snapshot["snapshot_id"],
+            "contract_version": QUALITY_CONSISTENCY_CONTRACT
+            if quality_consistency_v2_enabled()
+            else "legacy_compatible",
+            "link_stats": _link_stats(posts),
+        }
+    )
+    return success(data=report)
 
 
 def _imported_notes_as_posts(notes: list[Any]) -> list[dict[str, Any]]:
@@ -413,8 +517,17 @@ def _imported_notes_as_posts(notes: list[Any]) -> list[dict[str, Any]]:
                 "views": int(d.get("views") or 0),
                 "engagement_rate": _as_percent_engagement_rate(d.get("engagement_rate")),
                 "published_at": d.get("published_at", ""),
+                "synced_at": d.get("synced_at", ""),
                 "dry_run": False,
                 "source": d.get("source") or "creator_statistics",
+                "subject_type": "imported_note",
+                "subject_id": d.get("note_id", ""),
+                "scope": "account_history",
+                "assessment_type": "historical_performance",
+                "status": "ready",
+                "algorithm_version": "historical_quality.v1",
+                "data_as_of": d.get("synced_at") or None,
+                "note_synced_at": d.get("synced_at") or None,
             }
         )
     return posts
@@ -468,8 +581,37 @@ async def _merge_imported_posts(
         if len(matches) == 1 and len(candidates) == 1:
             workflow = matches[0]
             imported_note = candidates[0]
+            # Creator Center is the authoritative post-publication fact
+            # source.  Keep workflow identity/title metadata, but replace the
+            # live checkpoint's potentially stale metrics with the imported
+            # snapshot so reports and the canonical history reader cannot
+            # disagree for a linked note.
+            for key in (
+                "title",
+                "likes",
+                "comments",
+                "collects",
+                "shares",
+                "views",
+                "engagement_rate",
+                "published_at",
+            ):
+                if imported_note.get(key) is not None:
+                    workflow[key] = imported_note.get(key)
             workflow["link_status"] = "linked"
             workflow["linked_note_id"] = imported_note.get("id")
+            workflow["note_synced_at"] = imported_note.get("synced_at")
+            workflow.update(
+                {
+                    "subject_type": "imported_note",
+                    "subject_id": imported_note.get("id"),
+                    "scope": "account_history",
+                    "assessment_type": "historical_performance",
+                    "status": "ready",
+                    "algorithm_version": "historical_quality.v1",
+                    "data_as_of": imported_note.get("synced_at") or None,
+                }
+            )
             imported_note["link_status"] = "linked"
             imported_note["workflow_thread_id"] = workflow.get("workflow_thread_id", "")
             continue
@@ -525,15 +667,34 @@ async def get_performance(
     posts = await _merge_imported_posts(account_id, posts, limit=max(limit, 50))
     posts = _filter_by_period(posts, period)
     posts.sort(key=lambda p: p.get("published_at", ""), reverse=True)
+    link_stats = _link_stats(posts)
+    total = len(posts)
     posts = posts[:limit]
 
+    snapshot = _complete_snapshot_metadata(
+        account_id,
+        await _creator_snapshot_metadata(account_id),
+        workflows,
+    )
+    for post in posts:
+        post["snapshot_id"] = snapshot["snapshot_id"]
     return success(
         data={
             "account_id": account_id,
             "period": period,
             "posts": posts,
-            "total": len(posts),
+            "total": total,
             "fetched_at": datetime.now().isoformat(),
+            "scope": "account_history",
+            "subject_type": "imported_note",
+            "assessment_type": "historical_performance",
+            "status": "ready" if posts else "unavailable",
+            "data_as_of": snapshot["data_as_of"],
+            "snapshot_id": snapshot["snapshot_id"],
+            "contract_version": QUALITY_CONSISTENCY_CONTRACT
+            if quality_consistency_v2_enabled()
+            else "legacy_compatible",
+            "link_stats": link_stats,
         }
     )
 
@@ -697,6 +858,47 @@ async def get_dashboard(
         "updated_at": datetime.now().isoformat(),
     }
 
+    snapshot = _complete_snapshot_metadata(
+        account_id,
+        await _creator_snapshot_metadata(account_id),
+        workflows,
+    )
+    contract_version = (
+        QUALITY_CONSISTENCY_CONTRACT if quality_consistency_v2_enabled() else "legacy_compatible"
+    )
+    for post in sorted_posts:
+        post["snapshot_id"] = snapshot["snapshot_id"]
+    report.update(
+        {
+            "scope": "account_history",
+            "subject_type": "imported_note",
+            "assessment_type": "historical_performance",
+            "status": "ready" if filtered_posts else "unavailable",
+            "data_as_of": snapshot["data_as_of"],
+            "snapshot_id": snapshot["snapshot_id"],
+            "contract_version": contract_version,
+            "link_stats": _link_stats(posts),
+        }
+    )
+    performance.update(
+        {
+            "data_as_of": snapshot["data_as_of"],
+            "snapshot_id": snapshot["snapshot_id"],
+            "scope": "account_history",
+            "subject_type": "imported_note",
+            "assessment_type": "historical_performance",
+            "status": "ready" if filtered_posts else "unavailable",
+            "contract_version": contract_version,
+            "link_stats": _link_stats(posts),
+        }
+    )
+    period_summary.update(
+        {
+            "data_as_of": snapshot["data_as_of"],
+            "snapshot_id": snapshot["snapshot_id"],
+        }
+    )
+
     return success(
         data={
             "report": report,
@@ -704,6 +906,10 @@ async def get_dashboard(
             "costs": costs,
             # Server-owned aggregate contract for period-over-period cards.
             "period_summary": period_summary,
+            "account_id": account_id,
+            "data_as_of": snapshot["data_as_of"],
+            "snapshot_id": snapshot["snapshot_id"],
+            "contract_version": contract_version,
         }
     )
 
@@ -804,35 +1010,59 @@ async def get_creator_stats(
     account = await stats_db.get_account_stats(account_id)
     notes = await stats_db.list_note_stats(account_id, limit=limit)
     canonical_notes = [stats_db.canonicalize_note_stats(note) for note in notes]
+    note_rows = []
+    for note in canonical_notes:
+        row = note.to_dict()
+        row.update(
+            {
+                "subject_type": "imported_note",
+                "subject_id": note.note_id,
+                "scope": "account_history",
+                "assessment_type": "historical_performance",
+                "status": "ready",
+                "algorithm_version": "historical_quality.v1",
+                "data_as_of": note.synced_at or None,
+                "note_synced_at": note.synced_at or None,
+            }
+        )
+        note_rows.append(row)
     # total = full count (not page size); note_count on account is a fallback
     total = await stats_db.count_note_stats(account_id)
     if total == 0 and account is not None:
         total = int(getattr(account, "note_count", 0) or 0)
+    data_as_of = max(
+        [
+            value
+            for value in [
+                account.synced_at if account else "",
+                *(note.synced_at for note in canonical_notes),
+            ]
+            if value
+        ],
+        default=None,
+    )
+    snapshot = build_snapshot_id(account_id, data_as_of)
+    for row in note_rows:
+        row["snapshot_id"] = snapshot
     return success(
         data={
             "account_id": account_id,
             "account": account.to_dict() if account else None,
-            "notes": [n.to_dict() for n in canonical_notes],
+            "notes": note_rows,
             "audience_analysis": summarize_audience(account, canonical_notes),
             "total": total,
             "limit": limit,
-            "data_as_of": max(
-                [
-                    value
-                    for value in [
-                        account.synced_at if account else "",
-                        *(note.synced_at for note in canonical_notes),
-                    ]
-                    if value
-                ],
-                default=None,
-            ),
+            "data_as_of": data_as_of,
+            "snapshot_id": snapshot,
             "scope": "account_history",
             "subject_type": "imported_note",
             "assessment_type": "historical_performance",
             "algorithm_version": "historical_quality.v1",
             "status": "ready" if canonical_notes or account else "unavailable",
             "engagement_rate_unit": "fraction",
+            "contract_version": QUALITY_CONSISTENCY_CONTRACT
+            if quality_consistency_v2_enabled()
+            else "legacy_compatible",
             "fetched_at": datetime.now(UTC).isoformat(),
         }
     )
@@ -870,7 +1100,13 @@ async def get_creator_stats_notes(
         )
     except ValueError as exc:
         raise ValidationError("cursor", str(exc)) from exc
-    return success(data=page.to_dict())
+    payload = page.to_dict()
+    if not quality_consistency_v2_enabled():
+        payload["contract_version"] = "legacy_compatible"
+        for item in payload.get("items", []):
+            if isinstance(item, dict):
+                item["contract_version"] = "legacy_compatible"
+    return success(data=payload)
 
 
 async def _get_imported_creator_note(account_id: str, note_id: str) -> tuple[str, Any]:
@@ -893,6 +1129,7 @@ async def _get_imported_creator_note(account_id: str, note_id: str) -> tuple[str
 async def get_creator_note_detail(account_id: str, note_id: str) -> ApiResponse[Any]:
     """Read one imported Creator Center note without starting a sync."""
     normalized_account_id, note = await _get_imported_creator_note(account_id, note_id)
+    snapshot = build_snapshot_id(normalized_account_id, note.synced_at or None)
     return success(
         data={
             "account_id": normalized_account_id,
@@ -901,6 +1138,10 @@ async def get_creator_note_detail(account_id: str, note_id: str) -> ApiResponse[
             "assessment_type": "historical_performance",
             "data_as_of": note.synced_at or None,
             "note_synced_at": note.synced_at or None,
+            "snapshot_id": snapshot,
+            "contract_version": QUALITY_CONSISTENCY_CONTRACT
+            if quality_consistency_v2_enabled()
+            else "legacy_compatible",
             "fetched_at": datetime.now(UTC).isoformat(),
         }
     )
@@ -916,6 +1157,7 @@ async def get_creator_note_quality(
     from backend.services.creator_stats.quality import analyze_note_quality
 
     normalized_account_id, note = await _get_imported_creator_note(account_id, note_id)
+    snapshot = build_snapshot_id(normalized_account_id, note.synced_at or None)
     report = analyze_note_quality(note, normalized_account_id, locale=locale)
     report_data = report.to_dict()
     report_data.update(
@@ -926,6 +1168,10 @@ async def get_creator_note_quality(
             "status": "ready" if report.overall_score is not None else "unavailable",
             "data_as_of": note.synced_at or None,
             "note_synced_at": note.synced_at or None,
+            "snapshot_id": snapshot,
+            "contract_version": QUALITY_CONSISTENCY_CONTRACT
+            if quality_consistency_v2_enabled()
+            else "legacy_compatible",
             "coverage": {
                 "available": [item.key for item in report.dimensions if item.available],
                 "unavailable": [item.key for item in report.dimensions if not item.available],
@@ -948,6 +1194,10 @@ async def get_creator_note_quality(
             "assessment_type": "historical_performance",
             "status": report_data["status"],
             "data_as_of": note.synced_at or None,
+            "snapshot_id": snapshot,
+            "contract_version": QUALITY_CONSISTENCY_CONTRACT
+            if quality_consistency_v2_enabled()
+            else "legacy_compatible",
             "quality": report_data,
             "analyzed_at": datetime.now(UTC).isoformat(),
         }
@@ -970,6 +1220,18 @@ async def get_creator_quality(
     notes = await stats_db.list_all_note_stats(normalized_account_id)
     report = analyze_historical_quality(notes, normalized_account_id, locale=locale)
     account = await stats_db.get_account_stats(normalized_account_id)
+    data_as_of = max(
+        [
+            value
+            for value in [
+                account.synced_at if account else "",
+                *(note.synced_at for note in notes),
+            ]
+            if value
+        ],
+        default=None,
+    )
+    snapshot = build_snapshot_id(normalized_account_id, data_as_of)
     data = report.to_dict()
     data.update(
         {
@@ -979,17 +1241,11 @@ async def get_creator_quality(
             "subject_type": "imported_note",
             "subject_id": normalized_account_id,
             "status": "ready" if report.overall_score is not None else "unavailable",
-            "data_as_of": max(
-                [
-                    value
-                    for value in [
-                        account.synced_at if account else "",
-                        *(note.synced_at for note in notes),
-                    ]
-                    if value
-                ],
-                default=None,
-            ),
+            "data_as_of": data_as_of,
+            "snapshot_id": snapshot,
+            "contract_version": QUALITY_CONSISTENCY_CONTRACT
+            if quality_consistency_v2_enabled()
+            else "legacy_compatible",
             "coverage": {
                 "available": [item.key for item in report.dimensions if item.available],
                 "unavailable": [item.key for item in report.dimensions if not item.available],

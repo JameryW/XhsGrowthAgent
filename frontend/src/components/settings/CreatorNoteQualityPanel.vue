@@ -10,6 +10,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import EvaluationRadar from '@/components/charts/EvaluationRadar.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import { SCORE_THRESHOLDS, scoreTier as scoreTierOf } from '@/constants/evaluation'
+import { trackInteraction } from '@/utils/interactionTelemetry'
 
 const props = withDefaults(defineProps<{
   accountId: string
@@ -41,6 +42,8 @@ const rqgmStatus = ref<EvaluationStatus>('unavailable')
 const rqgmCoverage = ref<EvaluationCoverage | null>(null)
 const rqgmEvaluationId = ref<string | null>(null)
 const rqgmDataAsOf = ref<string | null>(null)
+const rqgmEvaluatorFingerprint = ref<string | null>(null)
+const rqgmSnapshotId = ref<string | null>(null)
 const rqgmThresholds = ref(SCORE_THRESHOLDS)
 const rqgmRunning = ref(false)
 const rqgmError = ref('')
@@ -101,6 +104,7 @@ async function readNotesPage(accountId: string): Promise<CreatorNotesPayload> {
     limit: legacy.limit ?? 50,
     next_cursor: null,
     data_as_of: legacy.data_as_of ?? legacy.fetched_at ?? null,
+    snapshot_id: legacy.snapshot_id ?? null,
   }
 }
 
@@ -114,6 +118,8 @@ async function runRqgmEvaluation() {
   rqgmStatus.value = 'running'
   rqgmCoverage.value = null
   rqgmEvaluationId.value = null
+  rqgmEvaluatorFingerprint.value = null
+  rqgmSnapshotId.value = null
   try {
     const resp = await evaluationApi.evaluateNote(props.accountId, noteId, { suppressToast: true })
     if (gen !== rqgmGeneration) return
@@ -121,7 +127,15 @@ async function runRqgmEvaluation() {
     rqgmCoverage.value = resp.coverage || resp.evaluation_result?.coverage || null
     rqgmEvaluationId.value = resp.evaluation_id || null
     rqgmDataAsOf.value = resp.data_as_of || resp.source?.data_as_of || resp.evaluated_at || null
+    rqgmEvaluatorFingerprint.value = resp.evaluator_fingerprint || resp.evaluation_result?.evaluator_fingerprint || null
+    rqgmSnapshotId.value = resp.snapshot_id || resp.evaluation_result?.snapshot_id || resp.source?.snapshot_id || null
     rqgmThresholds.value = resp.thresholds || SCORE_THRESHOLDS
+    if (resp.cache_hit) {
+      trackInteraction('quality_evaluation_cache_hit', { source: 'quality', count: 1 })
+    }
+    if (['degraded', 'failed', 'unavailable'].includes(rqgmStatus.value) || resp.degraded) {
+      trackInteraction('quality_evaluation_degraded', { source: 'quality', count: 1 })
+    }
     const next = resp.evaluation_result || null
     // Compatibility guard for old timeout responses that incorrectly carry a
     // 100/approved fallback alongside degraded=true.
@@ -203,6 +217,8 @@ watch(
       rqgmStatus.value = 'unavailable'
       rqgmCoverage.value = null
       rqgmEvaluationId.value = null
+      rqgmEvaluatorFingerprint.value = null
+      rqgmSnapshotId.value = null
       return
     }
     if (requested !== selectedNoteId.value) void selectNote(requested)
@@ -222,6 +238,8 @@ async function loadNotes(accountId = props.accountId) {
   rqgmCoverage.value = null
   rqgmEvaluationId.value = null
   rqgmDataAsOf.value = null
+  rqgmEvaluatorFingerprint.value = null
+  rqgmSnapshotId.value = null
   errorMessage.value = ''
   if (!accountId) return
 
@@ -288,6 +306,8 @@ async function loadSelectedNote(generation = requestGeneration) {
   rqgmCoverage.value = null
   rqgmEvaluationId.value = null
   rqgmDataAsOf.value = null
+  rqgmEvaluatorFingerprint.value = null
+  rqgmSnapshotId.value = null
   try {
     const [detail, report] = await Promise.all([
       analyticsApi.getCreatorNote(props.accountId, noteId),
@@ -322,6 +342,8 @@ async function restoreLatestEvaluation(generation: number, noteId: string) {
       rqgmCoverage.value = null
       rqgmEvaluationId.value = latest.evaluation_id || null
       rqgmDataAsOf.value = latest.data_as_of || latest.source?.data_as_of || latest.evaluated_at || null
+      rqgmEvaluatorFingerprint.value = latest.evaluator_fingerprint || latest.evaluation_result?.evaluator_fingerprint || null
+      rqgmSnapshotId.value = latest.snapshot_id || latest.evaluation_result?.snapshot_id || latest.source?.snapshot_id || null
       rqgmThresholds.value = latest.thresholds || SCORE_THRESHOLDS
       return
     }
@@ -329,6 +351,8 @@ async function restoreLatestEvaluation(generation: number, noteId: string) {
     rqgmCoverage.value = latest.coverage || latest.evaluation_result.coverage || null
     rqgmEvaluationId.value = latest.evaluation_id || null
     rqgmDataAsOf.value = latest.data_as_of || latest.source?.data_as_of || latest.evaluated_at || null
+    rqgmEvaluatorFingerprint.value = latest.evaluator_fingerprint || latest.evaluation_result?.evaluator_fingerprint || null
+    rqgmSnapshotId.value = latest.snapshot_id || latest.evaluation_result?.snapshot_id || latest.source?.snapshot_id || null
     rqgmThresholds.value = latest.thresholds || SCORE_THRESHOLDS
     const latestResult = latest.evaluation_result
     const unusable = Boolean(latest.degraded) || ['degraded', 'failed', 'running', 'unavailable'].includes(rqgmStatus.value)
@@ -680,9 +704,11 @@ function rqgmDimLabel(dim: string): string {
                 </div>
               </div>
 
-              <div v-if="rqgmEvaluationId || rqgmDataAsOf" class="text-[10px] text-slate-400">
+              <div v-if="rqgmEvaluationId || rqgmDataAsOf || rqgmEvaluatorFingerprint || rqgmSnapshotId" class="text-[10px] text-slate-400">
                 <span v-if="rqgmEvaluationId">{{ t('evaluation.evaluationId') }}: {{ rqgmEvaluationId }}</span>
                 <span v-if="rqgmDataAsOf"> · {{ t('evaluation.dataAsOf') }} {{ rqgmDataAsOf }}</span>
+                <span v-if="rqgmEvaluatorFingerprint"> · {{ t('evaluation.evaluatorFingerprint') }} {{ rqgmEvaluatorFingerprint }}</span>
+                <span v-if="rqgmSnapshotId"> · {{ t('evaluation.snapshotId') }} {{ rqgmSnapshotId }}</span>
               </div>
 
               <div v-if="rqgmResult.revision_hints?.length">

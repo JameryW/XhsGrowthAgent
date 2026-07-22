@@ -14,6 +14,7 @@ from typing import Any
 
 from backend.db.pool import get_pool, is_pool_ready
 from backend.services.creator_stats.types import AccountStatsOverview, NoteStats, NoteStatsPage
+from backend.services.quality_consistency import snapshot_id as build_snapshot_id
 
 logger = logging.getLogger("xhs_growth.db.creator_stats")
 
@@ -751,13 +752,19 @@ async def list_note_stats_page(
         )
         account = _mem_accounts.get(normalized_account_id)
         account_obj = AccountStatsOverview.from_dict(account) if account else None
+        data_as_of = _max_data_as_of(filtered_notes, account_obj)
         return NoteStatsPage(
             account_id=normalized_account_id,
             items=items,
             total=total,
             limit=page_limit,
             next_cursor=next_cursor,
-            data_as_of=_max_data_as_of(filtered_notes, account_obj),
+            data_as_of=data_as_of,
+            # Keep the snapshot identity identical across the canonical reader,
+            # dashboard bundle, and quality endpoints.  The account's atomic
+            # sync timestamp is the MVP boundary; callers may still use the
+            # helper's optional subject-version mode for future import runs.
+            snapshot_id=build_snapshot_id(normalized_account_id, data_as_of),
             published_from=from_value,
             published_to=to_value,
         )
@@ -820,6 +827,7 @@ async def list_note_stats_page(
             else str(account_row[0] or "")
         )
     account_obj = AccountStatsOverview(normalized_account_id, synced_at=account_synced_at)
+    data_as_of = account_synced_at or _max_data_as_of(selected_notes, account_obj)
     return NoteStatsPage(
         account_id=normalized_account_id,
         items=items,
@@ -830,7 +838,8 @@ async def list_note_stats_page(
             if has_next and items
             else None
         ),
-        data_as_of=account_synced_at or _max_data_as_of(selected_notes, account_obj),
+        data_as_of=data_as_of,
+        snapshot_id=build_snapshot_id(normalized_account_id, data_as_of),
         published_from=from_value,
         published_to=to_value,
     )

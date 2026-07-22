@@ -741,7 +741,8 @@
       "loadMore": "Load more historical notes",
       "retry": "Retry",
       "dataAsOf": "Historical data as of {time}",
-      "loadError": "Failed to load historical notes"
+      "loadError": "Failed to load historical notes",
+      "snapshotMismatch": "The imported note snapshot changed while loading; refresh to avoid mixing data batches."
     },
     "vsPrevPeriod": "vs prev period",
     "fans": "Followers",
@@ -2175,7 +2176,8 @@
       "accountScore": "Published performance score",
       "evaluated": "Evaluated workflows",
       "samples": "Notes analyzed",
-      "noAccount": "No account selected — showing workflow evaluations only"
+      "noAccount": "No account selected — showing workflow evaluations only",
+      "allAccountsHint": "Published performance is account-scoped and is unavailable in the all-accounts view"
     },
     "section": {
       "diagnosis": "Account diagnosis",
@@ -2192,6 +2194,9 @@
       "workflowTab": "Workflow content review",
       "historicalEmpty": "No imported historical notes"
     },
+    "allAccounts": "All accounts",
+    "allAccountsWorkflowOnly": "All accounts is an explicit aggregate scope. Only workflow content reviews are shown; published-performance reports remain account-scoped.",
+    "snapshotMismatch": "The data changed while this page was loading. The list was not mixed across snapshots; refresh to continue.",
     "list": {
       "subtitle": "Workflows with evaluation results — click to view detail",
       "searchPlaceholder": "Search title / thread_id / account",
@@ -2217,6 +2222,8 @@
     "rqgmTrendLabel": "RQGM content review trend",
     "dataAsOf": "Data as of",
     "evaluationId": "Evaluation ID",
+    "evaluatorFingerprint": "Evaluator",
+    "snapshotId": "Snapshot",
     "status": {
       "degraded": "Evaluation incomplete",
       "notReady": "Evaluation unavailable",

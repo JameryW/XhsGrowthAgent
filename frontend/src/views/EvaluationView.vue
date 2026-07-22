@@ -25,6 +25,7 @@ import {
   RADAR_EXCLUDED_DIMENSIONS,
   DIMENSION_LABEL_KEYS,
 } from '@/constants/evaluation'
+import { ALL_ACCOUNTS_ID, hasSnapshotMismatch } from '@/constants/qualityConsistency'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -39,7 +40,9 @@ const accountsStore = useAccountsStore()
 const selectedAccountId = ref('')
 const hasUserSelectedAccount = ref(false)
 const selectedAccount = computed(() =>
-  accountsStore.accounts.find((account) => account.id === selectedAccountId.value)
+  selectedAccountId.value === ALL_ACCOUNTS_ID
+    ? undefined
+    : accountsStore.accounts.find((account) => account.id === selectedAccountId.value)
 )
 const hasAccounts = computed(() => accountsStore.accounts.length > 0)
 
@@ -81,6 +84,8 @@ const notesItems = ref<CreatorNoteStats[]>([])
 const notesTotal = ref(0)
 const notesCursor = ref<string | null>(null)
 const notesDataAsOf = ref<string | null>(null)
+const notesSnapshotId = ref<string | null>(null)
+const notesSnapshotMismatch = ref(false)
 const notesLoading = ref(false)
 const notesError = ref<string | null>(null)
 let notesRequest = 0
@@ -112,6 +117,7 @@ async function readNotesPage(accountId: string, cursor: string | null = null): P
     limit: legacy.limit ?? 50,
     next_cursor: null,
     data_as_of: legacy.data_as_of ?? legacy.fetched_at ?? null,
+    snapshot_id: legacy.snapshot_id ?? null,
     query: { sort: 'published_at_desc', published_from: null, published_to: null },
   }
 }
@@ -123,9 +129,11 @@ async function loadNotes(accountId: string, reset = true) {
     notesTotal.value = 0
     notesCursor.value = null
     notesDataAsOf.value = null
+    notesSnapshotId.value = null
+    notesSnapshotMismatch.value = false
   }
   notesError.value = null
-  if (!accountId) {
+  if (!accountId || accountId === ALL_ACCOUNTS_ID) {
     notesLoading.value = false
     return
   }
@@ -134,10 +142,17 @@ async function loadNotes(accountId: string, reset = true) {
     const stats = await readNotesPage(accountId, reset ? null : notesCursor.value)
     if (request !== notesRequest) return
     const incoming = (stats.items || []).filter((note) => Boolean(note.note_id))
+    if (!reset && hasSnapshotMismatch(notesSnapshotId.value, stats.snapshot_id)) {
+      notesSnapshotMismatch.value = true
+      trackInteraction('quality_note_set_mismatch', { source: 'quality', count: 1 })
+      trackInteraction('quality_snapshot_lag', { source: 'quality', count: 1 })
+      return
+    }
     notesItems.value = reset ? incoming : [...notesItems.value, ...incoming]
     notesTotal.value = Number.isFinite(stats.total) ? stats.total : notesItems.value.length
     notesCursor.value = stats.next_cursor ?? null
     notesDataAsOf.value = stats.data_as_of ?? null
+    notesSnapshotId.value = stats.snapshot_id ?? notesSnapshotId.value
   } catch (e) {
     if (request === notesRequest) notesError.value = (e as Error).message || t('evaluation.stream.notesUnavailable')
   } finally {
@@ -158,6 +173,9 @@ const listItems = ref<EvaluationListItem[]>([])
 const listTotal = ref(0)
 const listLimit = 20
 const listOffset = ref(0)
+const listSnapshotId = ref<string | null>(null)
+const listSnapshotMismatch = ref(false)
+const listDataAsOf = ref<string | null>(null)
 const listLoading = ref(false)
 const listError = ref<string | null>(null)
 const searchQuery = ref('')
@@ -184,21 +202,41 @@ async function loadList(reset = false, accountId = selectedAccountId.value) {
   if (reset) {
     listOffset.value = 0
     listItems.value = []
+    listSnapshotId.value = null
+    listSnapshotMismatch.value = false
+    listDataAsOf.value = null
   }
   try {
     const res: EvaluationListResponse = await getEvaluationList(
-      accountId,
+      accountId === ALL_ACCOUNTS_ID ? undefined : accountId,
       listLimit,
       listOffset.value,
       { suppressToast: true },
     )
     if (request !== listRequest || accountId !== selectedAccountId.value) return
+    const foreignRows = accountId !== ALL_ACCOUNTS_ID
+      ? res.workflows.filter((item) => item.account_id !== accountId).length
+      : 0
+    if (foreignRows > 0) {
+      trackInteraction('quality_cross_account_row', { source: 'quality', count: foreignRows })
+    }
+    if (res.total > res.workflows.length) {
+      trackInteraction('quality_list_truncated', { source: 'quality', count: res.total })
+    }
+    if (!reset && hasSnapshotMismatch(listSnapshotId.value, res.snapshot_id)) {
+      listSnapshotMismatch.value = true
+      trackInteraction('quality_note_set_mismatch', { source: 'quality', count: 1 })
+      trackInteraction('quality_snapshot_lag', { source: 'quality', count: 1 })
+      return
+    }
     if (reset) {
       listItems.value = res.workflows
     } else {
       listItems.value = [...listItems.value, ...res.workflows]
     }
     listTotal.value = res.total
+    listSnapshotId.value = res.snapshot_id ?? listSnapshotId.value
+    listDataAsOf.value = res.data_as_of ?? null
   } catch (e) {
     if (request !== listRequest || accountId !== selectedAccountId.value) return
     listError.value = (e as Error).message || t('evaluation.list.loadError')
@@ -237,7 +275,7 @@ const decisionFilter = ref<string>('all')
 const filteredItems = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   return listItems.value.filter((w) => {
-    if (selectedAccountId.value && w.account_id !== selectedAccountId.value) return false
+    if (selectedAccountId.value && selectedAccountId.value !== ALL_ACCOUNTS_ID && w.account_id !== selectedAccountId.value) return false
     if (decisionFilter.value !== 'all' && w.decision !== decisionFilter.value) return false
     if (!q) return true
     const title = (w.selected_title || '').toLowerCase()
@@ -296,6 +334,14 @@ watch(isDetailView, (detail) => {
 // ── 来源分离：已发布历史笔记与工作流内容评审 ──
 type SourceTab = 'historical' | 'workflow'
 const sourceTab = ref<SourceTab>(route.query.tab === 'workflow' ? 'workflow' : 'historical')
+const historicalAvailable = computed(() => selectedAccountId.value !== ALL_ACCOUNTS_ID)
+
+watch(selectedAccountId, (accountId) => {
+  if (accountId === ALL_ACCOUNTS_ID && sourceTab.value !== 'workflow') {
+    sourceTab.value = 'workflow'
+    void router.replace({ query: { ...route.query, tab: 'workflow' } })
+  }
+})
 
 const workflowRows = computed(() => filteredItems.value
   .slice()
@@ -304,7 +350,7 @@ const workflowRows = computed(() => filteredItems.value
 const historicalRows = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   return notesItems.value
-    .filter((note) => !selectedAccountId.value || note.account_id === selectedAccountId.value)
+    .filter((note) => !selectedAccountId.value || selectedAccountId.value === ALL_ACCOUNTS_ID || note.account_id === selectedAccountId.value)
     .filter((note) => !q || (note.title || '').toLowerCase().includes(q) || note.note_id.toLowerCase().includes(q))
     .slice()
     .sort((a, b) => {
@@ -532,7 +578,7 @@ function dimDescription(dim: string): string {
         </div>
 
         <div class="source-tabs" role="tablist" :aria-label="t('evaluation.stream.tabsLabel')">
-          <button type="button" role="tab" class="source-tab min-h-11" :class="{ 'source-tab--active': sourceTab === 'historical' }" :aria-selected="sourceTab === 'historical'" @click="setSourceTab('historical')">
+          <button v-if="historicalAvailable" type="button" role="tab" class="source-tab min-h-11" :class="{ 'source-tab--active': sourceTab === 'historical' }" :aria-selected="sourceTab === 'historical'" @click="setSourceTab('historical')">
             {{ t('evaluation.stream.historicalTab') }}
             <span class="source-tab-count">{{ notesItems.length }} / {{ notesTotal }}</span>
           </button>
@@ -540,6 +586,15 @@ function dimDescription(dim: string): string {
             {{ t('evaluation.stream.workflowTab') }}
             <span class="source-tab-count">{{ listItems.length }} / {{ listTotal }}</span>
           </button>
+        </div>
+
+        <div v-if="selectedAccountId === ALL_ACCOUNTS_ID" class="mt-3 rounded-lg border border-violet-200 bg-violet-50/70 px-3 py-2 text-xs leading-5 text-violet-700 dark:border-violet-400/30 dark:bg-violet-950/30 dark:text-violet-200" role="status">
+          {{ t('evaluation.allAccountsWorkflowOnly') }}
+        </div>
+        <div v-if="notesSnapshotMismatch || listSnapshotMismatch" class="mt-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs leading-5 text-amber-700 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-200" role="alert">
+          <AppIcon name="AlertTriangle" size="sm" variant="peach" />
+          <span class="flex-1">{{ t('evaluation.snapshotMismatch') }}</span>
+          <button type="button" class="min-h-9 rounded-md border border-amber-300 px-2 font-semibold hover:bg-amber-100 dark:border-amber-400/40 dark:hover:bg-amber-900/40" @click="sourceTab === 'historical' ? loadNotes(selectedAccountId, true) : loadList(true, selectedAccountId)">{{ t('evaluation.error.retry') }}</button>
         </div>
 
         <section v-if="sourceTab === 'workflow'" class="filter-chips" role="group" :aria-label="t('evaluation.list.filterLabel')">
@@ -595,6 +650,7 @@ function dimDescription(dim: string): string {
         <div v-if="sourceTab === 'historical' && notesHasMore" class="load-more"><button class="load-more-btn min-h-11" type="button" :disabled="notesLoading" @click="loadMoreNotes"><AppIcon v-if="notesLoading" name="Loader2" class="spin" /><span>{{ t('evaluation.list.loadMore') }}</span></button></div>
         <div v-if="(sourceTab === 'workflow' ? listItems.length : notesItems.length) > 0" class="data-as-of" role="status">
           <span>{{ t('evaluation.list.loadedCount', { loaded: sourceTab === 'workflow' ? listItems.length : notesItems.length, total: sourceTab === 'workflow' ? listTotal : notesTotal }) }}</span>
+          <span v-if="sourceTab === 'workflow' && listDataAsOf"> · {{ t('evaluation.dataAsOf') }} {{ formatDateTime(listDataAsOf) }}</span>
           <span v-if="sourceTab === 'historical' && notesDataAsOf"> · {{ t('evaluation.dataAsOf') }} {{ formatDateTime(notesDataAsOf) }}</span>
         </div>
       </section>
@@ -658,6 +714,11 @@ function dimDescription(dim: string): string {
           <p class="text-xs text-slate-400">{{ t('evaluation.weightedScoreHint') }}</p>
           <p v-if="detailUnavailable" class="status-notice" role="status">{{ t('evaluation.status.degradedHint') }} <button type="button" class="retry-btn min-h-[36px]" @click="retryDetail">{{ t('evaluation.error.retry') }}</button></p>
           <p v-if="result?.data_as_of || result?.evaluated_at" class="text-xs text-slate-400">{{ t('evaluation.dataAsOf') }} {{ formatDateTime(result?.data_as_of || result?.evaluated_at || '') }}</p>
+          <p v-if="result?.evaluation_id || result?.evaluator_fingerprint || result?.snapshot_id" class="text-xs text-slate-400">
+            <span v-if="result?.evaluation_id">{{ t('evaluation.evaluationId') }}: {{ result.evaluation_id }}</span>
+            <span v-if="result?.evaluator_fingerprint"> · {{ t('evaluation.evaluatorFingerprint') }} {{ result.evaluator_fingerprint }}</span>
+            <span v-if="result?.snapshot_id"> · {{ t('evaluation.snapshotId') }} {{ result.snapshot_id }}</span>
+          </p>
           <p v-if="ev.summary" class="summary">{{ ev.summary }}</p>
         </section>
 

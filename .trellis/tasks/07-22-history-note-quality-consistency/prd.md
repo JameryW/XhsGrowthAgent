@@ -424,7 +424,10 @@ GET /api/analytics/creator-stats/{account_id}/notes
 * Evaluator 对缺失维度、赛道、图片输入和超时统一诚实降级；不可消费结果不进入列表成功数、样本、通过率或趋势。
 * Analytics 与 Evaluation 共用历史笔记 reader，按来源页签分离，增加加载数/总数、数据时点、账号切换 stale guard 和双评分说明。
 * 已更新 9 份 Trellis backend/frontend/guides spec，补充 canonical reader、评估 taxonomy、降级语义和跨层验收场景。
-* 验证结果：`pytest -q tests/unit`（1439 passed）、前端 Vitest（48 files / 587 tests passed）、Ruff、Mypy、compileall、type-check、build、i18n check 均通过；仅保留既有测试环境 warning。
+* 本轮收口补充：新增 `quality_consistency.v2` 共享契约与 `QUALITY_CONSISTENCY_V2` 灰度开关；canonical reader、Analytics dashboard、Evaluation 列表/趋势/单篇结果统一返回可协调的 `data_as_of + snapshot_id`，并阻止跨快照 cursor 页拼接。全账号作为显式 `ALL_ACCOUNTS_ID` 范围，仅展示工作流内容评审，历史发布表现不做跨账号聚合。
+* 本轮收口补充：Analytics 的 workflow/imported note 关联只接受规范 platform ID；关联后 Creator Center 导入指标为发布后事实权威源，响应补充 `subject_type/subject_id/scope/assessment_type/status` 等主体元数据，并暴露 link rate。
+* 本轮收口补充：质量一致性埋点事件已加入前后端 allowlist（集合差异、原始指标差异、跨账号行、截断、降级/缓存、快照滞后、关联率），仅保留范围、状态和计数；前端历史评估详情展示 evaluation ID、evaluator fingerprint 与 snapshot ID。
+* 验证结果：`pytest -q tests/unit`（1443 passed）、前端 Vitest（48 files / 588 tests passed）、Ruff、Mypy、compileall、type-check、build、i18n check 均通过；仅保留既有测试环境 warning。浏览器双账号 E2E 仍因仓库没有可运行的浏览器 harness 保留为 `[~]`，需按第 10 节手工验收。
 
 ## 16. Technical Notes
 

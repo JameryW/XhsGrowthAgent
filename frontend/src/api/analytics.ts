@@ -6,6 +6,7 @@ import type {
   AnalyticsPeriodSummary,
 } from '@/types/analytics'
 import type { NicheResolution } from './accounts'
+import { QUALITY_CONSISTENCY_V2_ENABLED } from '@/constants/qualityConsistency'
 
 // 获取增长报告
 export async function getGrowthReport(
@@ -39,6 +40,10 @@ export async function getDashboard(
   performance: PerformanceData
   costs: CostData
   period_summary: AnalyticsPeriodSummary
+  account_id?: string
+  data_as_of?: string | null
+  snapshot_id?: string | null
+  contract_version?: string | null
 }> {
   return client.get(`/analytics/dashboard/${accountId}`, { params: { period, limit } })
 }
@@ -86,6 +91,8 @@ export interface CreatorNoteStats {
   scope?: 'account_history' | 'single_note' | string
   assessment_type?: 'historical_performance' | 'rqgm_content_review' | string
   algorithm_version?: string | null
+  snapshot_id?: string | null
+  contract_version?: string | null
 }
 
 export interface CreatorNotesQuery {
@@ -103,12 +110,15 @@ export interface CreatorNotesPayload {
   limit: number
   next_cursor?: string | null
   data_as_of?: string | null
+  snapshot_id?: string | null
   query?: {
     sort?: string
     published_from?: string | null
     published_to?: string | null
   }
   scope?: string
+  contract_version?: string | null
+  engagement_rate_unit?: 'fraction' | 'percent' | string
 }
 
 export interface CreatorAccountStats {
@@ -201,7 +211,14 @@ export interface CreatorStatsPayload {
   fetched_at: string
   audience_analysis?: CreatorAudienceAnalysis
   data_as_of?: string | null
+  snapshot_id?: string | null
   scope?: string
+  subject_type?: string
+  assessment_type?: string
+  algorithm_version?: string | null
+  status?: string
+  contract_version?: string | null
+  engagement_rate_unit?: string
 }
 
 export interface CreatorSuggestionsPayload {
@@ -269,6 +286,8 @@ export interface CreatorQualityReport {
   algorithm_version?: string | null
   status?: 'ready' | 'partial' | 'unavailable' | string
   coverage?: Record<string, unknown> | null
+  snapshot_id?: string | null
+  contract_version?: string | null
 }
 
 /** Import real Creator Center account/note stats through the account's bound browser. */
@@ -325,6 +344,23 @@ export async function getCreatorNotes(
   // boundary aligned with the API rather than inheriting the legacy overview
   // endpoint's 200-row cap; cursor pagination still remains the default path.
   const requestedLimit = Math.max(1, Math.min(query.limit ?? 50, 500))
+  if (!QUALITY_CONSISTENCY_V2_ENABLED) {
+    const legacy = await getCreatorStats(accountId, Math.min(requestedLimit, 200))
+    return {
+      account_id: accountId,
+      items: legacy.notes || [],
+      total: legacy.total ?? legacy.notes?.length ?? 0,
+      limit: legacy.limit ?? Math.min(requestedLimit, 200),
+      next_cursor: null,
+      data_as_of: legacy.data_as_of ?? legacy.fetched_at ?? null,
+      snapshot_id: legacy.snapshot_id ?? null,
+      query: {
+        sort: query.sort ?? 'published_at_desc',
+        published_from: query.published_from ?? null,
+        published_to: query.published_to ?? null,
+      },
+    }
+  }
   const params: Record<string, string> = {
     limit: String(requestedLimit),
     sort: query.sort ?? 'published_at_desc',
@@ -373,6 +409,8 @@ export interface CreatorNoteDetailPayload {
   data_as_of?: string | null
   note_synced_at?: string | null
   scope?: string
+  snapshot_id?: string | null
+  contract_version?: string | null
 }
 
 export interface CreatorNoteQualityPayload {
@@ -385,6 +423,8 @@ export interface CreatorNoteQualityPayload {
   status?: string
   coverage?: Record<string, unknown>
   algorithm_version?: string | null
+  snapshot_id?: string | null
+  contract_version?: string | null
 }
 
 /** Read one imported historical note without starting a browser sync. */

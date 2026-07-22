@@ -55,6 +55,20 @@ async def test_matching_platform_id_links_without_duplicate():
 
 
 @pytest.mark.asyncio
+async def test_linked_workflow_uses_creator_center_metrics_as_authoritative():
+    await creator_stats.upsert_notes([_note("note-1")])
+    workflow = _extract_post_data(_workflow("thread-1", post_id="note-1"), "acc-a")
+    assert workflow is not None
+    workflow.update({"views": 1, "likes": 0, "comments": 0, "collects": 0, "shares": 0})
+
+    merged = await _merge_imported_posts("acc-a", [workflow])
+
+    assert merged[0]["views"] == 100
+    assert merged[0]["likes"] == 20
+    assert merged[0]["note_synced_at"] == "2026-07-22T11:00:00Z"
+
+
+@pytest.mark.asyncio
 async def test_synthetic_workflow_id_never_links_imported_note():
     await creator_stats.upsert_notes([_note("thread-2")])
     workflow = _extract_post_data(_workflow("thread-2"), "acc-a")

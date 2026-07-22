@@ -175,6 +175,7 @@ class NoteStatsPage:
     limit: int = 50
     next_cursor: str | None = None
     data_as_of: str = ""
+    snapshot_id: str | None = None
     published_from: str | None = None
     published_to: str | None = None
     sort: str = "published_at_desc"
@@ -196,6 +197,7 @@ class NoteStatsPage:
                     "algorithm_version": "historical_quality.v1",
                     "data_as_of": item.synced_at or data_as_of,
                     "note_synced_at": item.synced_at or None,
+                    "snapshot_id": self.snapshot_id,
                 }
             )
             items.append(row)
@@ -206,6 +208,7 @@ class NoteStatsPage:
             "limit": self.limit,
             "next_cursor": self.next_cursor,
             "data_as_of": data_as_of,
+            "snapshot_id": self.snapshot_id,
             "query": {
                 "sort": self.sort,
                 "published_from": self.published_from,
@@ -217,6 +220,7 @@ class NoteStatsPage:
             "assessment_type": "historical_performance",
             "algorithm_version": "historical_quality.v1",
             "status": "ready" if items or self.total else "unavailable",
+            "contract_version": "quality_consistency.v2",
         }
 
 

@@ -8,6 +8,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import EvaluationView from '@/views/EvaluationView.vue'
 import i18n from '@/locales'
 import { listAccounts } from '@/api/accounts'
+import { ALL_ACCOUNTS_ID } from '@/constants/qualityConsistency'
 
 const tt = (key: string, params?: Record<string, any>) => i18n.global.t(key, params as any)
 
@@ -198,6 +199,45 @@ describe('EvaluationView', () => {
     ;(listAccounts as any).mockResolvedValue([{ id: 'acc-1', name: '测试账号', is_active: true }])
     const wrapper = await mountEval()
     expect(wrapper.find('[data-testid="quality-panel"]').exists()).toBe(true)
+  })
+
+  it('uses an explicit all-accounts workflow scope without loading history', async () => {
+    const { getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
+    const { listAccounts } = await import('@/api/accounts')
+    ;(getEvaluationList as any).mockResolvedValue({
+      workflows: [],
+      total: 0,
+      snapshot_id: 'snapshot:global',
+    })
+    ;(getEvaluationTrend as any).mockResolvedValue({
+      db_ready: true,
+      points: [],
+      dim_averages: {},
+      scope: 'all_accounts',
+    })
+    ;(listAccounts as any).mockResolvedValue([{ id: 'acc-1', name: '测试账号', is_active: true }])
+
+    const wrapper = await mountEval({}, { tab: 'workflow' })
+    const accountSelect = wrapper.find('select')
+    expect(accountSelect.find(`option[value="${ALL_ACCOUNTS_ID}"]`).exists()).toBe(true)
+
+    await accountSelect.setValue(ALL_ACCOUNTS_ID)
+    await flushPromises()
+    await flushPromises()
+
+    expect(getEvaluationList).toHaveBeenLastCalledWith(
+      undefined,
+      20,
+      0,
+      expect.objectContaining({ suppressToast: true }),
+    )
+    expect(getEvaluationTrend).toHaveBeenLastCalledWith(
+      undefined,
+      100,
+      expect.objectContaining({ suppressToast: true }),
+    )
+    expect(wrapper.text()).toContain(tt('evaluation.allAccountsWorkflowOnly'))
+    expect(wrapper.findAll('.source-tab')).toHaveLength(1)
   })
 
   const workflowRow = {

@@ -9,6 +9,7 @@ import type { Account } from '@/api/accounts'
 import type { EvaluationTrendResponse } from '@/types/evaluation'
 import { SCORE_THRESHOLDS, scoreTier as scoreTierOf } from '@/constants/evaluation'
 import { formatShortDate } from '@/utils/format'
+import { ALL_ACCOUNTS_ID } from '@/constants/qualityConsistency'
 
 /**
  * EvaluationOverview — fused headline band for the quality hub.
@@ -34,6 +35,7 @@ const emit = defineEmits<{
 }>()
 
 const { t, locale } = useI18n()
+const isAllAccounts = computed(() => props.accountId === ALL_ACCOUNTS_ID)
 
 // ── 账户综合分（确定性历史报告，与下方诊断区块同源）──
 const report = ref<CreatorQualityReport | null>(null)
@@ -51,7 +53,7 @@ watch(
 async function loadReport(accountId: string, reportLocale: string) {
   const request = ++reportRequest
   report.value = null
-  if (!accountId) {
+  if (!accountId || accountId === ALL_ACCOUNTS_ID) {
     reportLoading.value = false
     return
   }
@@ -105,7 +107,11 @@ async function loadTrend(accountId = props.accountId) {
     return
   }
   try {
-    const response = await getEvaluationTrend(accountId, 100, { suppressToast: true })
+    const response = await getEvaluationTrend(
+      accountId === ALL_ACCOUNTS_ID ? undefined : accountId,
+      100,
+      { suppressToast: true },
+    )
     if (request === trendRequest && accountId === props.accountId) trend.value = response
   } catch (e: any) {
     if (request === trendRequest) trendError.value = e?.message ?? 'error'
@@ -169,6 +175,7 @@ function scoreTierClass(score: number | null | undefined): string {
                 :aria-label="t('creatorQuality.page.accountLabel')"
                 @change="emit('update:accountId', ($event.target as HTMLSelectElement).value)"
               >
+                <option :value="ALL_ACCOUNTS_ID">{{ t('evaluation.allAccounts') }}</option>
                 <option v-for="account in accounts" :key="account.id" :value="account.id">
                   {{ account.name }}{{ account.is_active ? ` (${t('settings.active')})` : '' }}
                 </option>
@@ -194,7 +201,9 @@ function scoreTierClass(score: number | null | undefined): string {
         <!-- 账户综合分（历史视角） -->
         <div class="ov-card">
           <p class="ov-label">{{ t('evaluation.performanceScoreLabel') }}</p>
-          <p v-if="!accountId" class="ov-hint">{{ t('evaluation.overview.noAccount') }}</p>
+          <p v-if="!accountId || isAllAccounts" class="ov-hint">
+            {{ isAllAccounts ? t('evaluation.overview.allAccountsHint') : t('evaluation.overview.noAccount') }}
+          </p>
           <div v-else-if="reportLoading" class="mt-2 h-10 w-24 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" aria-busy="true" />
           <template v-else>
             <div class="mt-1 flex items-end gap-2">
@@ -244,7 +253,7 @@ function scoreTierClass(score: number | null | undefined): string {
           </div>
           <div>
             <p class="ov-label">{{ t('evaluation.overview.samples') }}</p>
-            <p class="ov-kpi-value">{{ accountId ? (report?.notes_analyzed ?? '—') : '—' }}</p>
+            <p class="ov-kpi-value">{{ accountId && !isAllAccounts ? (report?.notes_analyzed ?? '—') : '—' }}</p>
           </div>
         </div>
       </div>

@@ -741,7 +741,8 @@
       "loadMore": "加载更多历史笔记",
       "retry": "重试",
       "dataAsOf": "历史数据截至 {time}",
-      "loadError": "历史笔记加载失败"
+      "loadError": "历史笔记加载失败",
+      "snapshotMismatch": "加载期间历史笔记快照发生变化；请刷新，避免混合不同批次的数据。"
     },
     "vsPrevPeriod": "vs 上一周期",
     "fans": "粉丝数",
@@ -2175,7 +2176,8 @@
       "accountScore": "发布后表现分",
       "evaluated": "已评估工作流",
       "samples": "样本笔记",
-      "noAccount": "未选择账号，仅显示工作流评估数据"
+      "noAccount": "未选择账号，仅显示工作流评估数据",
+      "allAccountsHint": "发布后表现必须按账号计算；“全部账号”范围不展示跨账号历史表现报告"
     },
     "section": {
       "diagnosis": "账户诊断",
@@ -2192,6 +2194,9 @@
       "workflowTab": "工作流内容评审",
       "historicalEmpty": "暂无已导入的历史笔记"
     },
+    "allAccounts": "全部账号",
+    "allAccountsWorkflowOnly": "“全部账号”是显式聚合范围，仅展示工作流内容评审；发布后表现报告仍按单账号计算。",
+    "snapshotMismatch": "加载期间数据发生变化，页面未混合不同快照；请刷新后继续。",
     "list": {
       "subtitle": "查看有评估结果的工作流，点击进入详情",
       "searchPlaceholder": "搜索标题 / thread_id / 账号",
@@ -2217,6 +2222,8 @@
     "rqgmTrendLabel": "RQGM 内容评审趋势",
     "dataAsOf": "数据截至",
     "evaluationId": "评估 ID",
+    "evaluatorFingerprint": "评估器版本",
+    "snapshotId": "数据快照",
     "status": {
       "degraded": "评估未完成",
       "notReady": "评估暂不可用",

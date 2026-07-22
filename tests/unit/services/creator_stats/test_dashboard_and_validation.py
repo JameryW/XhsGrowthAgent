@@ -148,6 +148,33 @@ async def test_growth_report_includes_imported_notes():
 
 
 @pytest.mark.asyncio
+async def test_canonical_note_endpoint_exposes_stable_scope_and_snapshot():
+    await _seed_recent("canonical_acc", "canonical_note_1")
+    client = TestClient(_app())
+
+    first = client.get("/api/analytics/creator-stats/canonical_acc/notes?limit=1")
+    assert first.status_code == 200
+    data = first.json()["data"]
+    assert data["account_id"] == "canonical_acc"
+    assert data["scope"] == "account_history"
+    assert data["subject_type"] == "imported_note"
+    assert data["assessment_type"] == "historical_performance"
+    assert data["engagement_rate_unit"] == "fraction"
+    assert data["snapshot_id"].startswith("snapshot:")
+    assert data["items"][0]["subject_id"] == "canonical_note_1"
+    assert data["items"][0]["note_synced_at"]
+
+    with pytest.MonkeyPatch.context() as mp:
+
+        async def _empty(*_a, **_k):
+            return []
+
+        mp.setattr(analytics_routes, "_get_completed_workflows", _empty)
+        dashboard = client.get("/api/analytics/dashboard/canonical_acc?period=weekly&limit=20")
+    assert dashboard.json()["data"]["snapshot_id"] == data["snapshot_id"]
+
+
+@pytest.mark.asyncio
 async def test_performance_and_dashboard_strip_account_id():
     """Path account_id with spaces must still resolve imported notes."""
     await _seed_recent("strip_dash", "strip_n1")

@@ -4,6 +4,7 @@ import type {
   EvaluationResultResponse,
   EvaluationTrendResponse,
 } from '@/types/evaluation'
+import { ALL_ACCOUNTS_ID } from '@/constants/qualityConsistency'
 
 type RequestOptions = { suppressToast?: boolean }
 
@@ -14,6 +15,7 @@ interface EvaluationSourceMetadata {
   niche?: string | null
   niche_source?: string | null
   note_synced_at?: string | null
+  snapshot_id?: string | null
 }
 
 // 列出有评估结果的工作流 — 含标题 + 评估摘要（专用端点，不污染通用 /workflow/list）
@@ -27,7 +29,7 @@ export async function getEvaluationList(
     limit: String(limit),
     offset: String(offset),
   })
-  if (accountId) params.set('account_id', accountId)
+  if (accountId && accountId !== ALL_ACCOUNTS_ID) params.set('account_id', accountId)
   return client.get(`/evaluation/list?${params.toString()}`, options) as unknown as EvaluationListResponse
 }
 
@@ -56,6 +58,9 @@ export async function evaluateNote(
   evaluator_fingerprint?: string | null
   stale?: boolean
   stale_at?: string | null
+  cache_hit?: boolean
+  snapshot_id?: string | null
+  contract_version?: string | null
 }> {
   const body: Record<string, unknown> = { account_id: accountId, note_id: noteId }
   if (options?.force) body.force = true
@@ -74,6 +79,9 @@ export async function evaluateNote(
     evaluator_fingerprint?: string | null
     stale?: boolean
     stale_at?: string | null
+    cache_hit?: boolean
+    snapshot_id?: string | null
+    contract_version?: string | null
   }>
 }
 
@@ -97,6 +105,8 @@ export async function getLatestNoteEvaluation(
   evaluator_fingerprint?: string | null
   stale?: boolean
   stale_at?: string | null
+  snapshot_id?: string | null
+  contract_version?: string | null
 }> {
   return client.get(`/evaluation/note/${accountId}/${noteId}/latest`, options) as unknown as Promise<{
     account_id: string
@@ -113,6 +123,8 @@ export async function getLatestNoteEvaluation(
     evaluator_fingerprint?: string | null
     stale?: boolean
     stale_at?: string | null
+    snapshot_id?: string | null
+    contract_version?: string | null
   }>
 }
 

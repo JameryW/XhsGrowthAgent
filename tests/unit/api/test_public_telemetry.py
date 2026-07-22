@@ -204,6 +204,35 @@ async def test_authenticated_period_dimensions_are_persisted_without_raw_topic(a
 
 
 @pytest.mark.asyncio
+async def test_quality_consistency_events_are_allowlisted(app):
+    with (
+        patch("backend.api.routes.public_telemetry.is_pool_ready", return_value=True),
+        patch(
+            "backend.api.routes.public_telemetry.record_event",
+            new_callable=AsyncMock,
+        ) as record,
+    ):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/public/telemetry",
+                json={
+                    "event": "quality_raw_metric_mismatch",
+                    "viewport": "desktop",
+                    "source": "quality",
+                    "count": 2,
+                    "note_id": "must-not-be-retained",
+                },
+            )
+
+    assert response.status_code == 204
+    assert record.await_args.args[0]["event"] == "quality_raw_metric_mismatch"
+    assert record.await_args.args[0]["source"] == "quality"
+    assert record.await_args.args[0]["count"] == 2
+    assert "note_id" not in record.await_args.args[0]
+
+
+@pytest.mark.asyncio
 async def test_pr1_categorical_fields_outside_allowlist_are_dropped_but_event_kept(app):
     """A bad auth_state/position/method is stripped; the event still records."""
     with (

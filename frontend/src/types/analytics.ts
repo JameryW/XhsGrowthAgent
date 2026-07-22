@@ -15,6 +15,18 @@ export interface GrowthReport {
     message: string
   }>
   generated_at?: string
+  data_as_of?: string | null
+  snapshot_id?: string | null
+  scope?: string
+  subject_type?: string
+  assessment_type?: string
+  status?: string
+  contract_version?: string | null
+  link_stats?: {
+    workflow_count?: number
+    linked_count?: number
+    link_rate?: number | null
+  }
 }
 
 // 帖子表现
@@ -36,6 +48,16 @@ export interface PostPerformance {
   platform_post_id?: string
   link_status?: 'linked' | 'unmatched' | 'ambiguous' | string
   linked_note_id?: string
+  synced_at?: string
+  note_synced_at?: string | null
+  subject_type?: string
+  subject_id?: string
+  scope?: string
+  assessment_type?: string
+  status?: string
+  algorithm_version?: string | null
+  data_as_of?: string | null
+  snapshot_id?: string | null
 }
 
 // 性能数据
@@ -44,6 +66,14 @@ export interface PerformanceData {
   posts: PostPerformance[]
   /** Number of all posts in the selected period, independent of page limit. */
   total?: number
+  data_as_of?: string | null
+  snapshot_id?: string | null
+  scope?: string
+  subject_type?: string
+  assessment_type?: string
+  status?: string
+  contract_version?: string | null
+  link_stats?: GrowthReport['link_stats']
 }
 
 export interface AnalyticsPeriodMetrics {
@@ -61,6 +91,8 @@ export interface AnalyticsPeriodSummary {
   period: 'daily' | 'weekly' | 'monthly'
   current: AnalyticsPeriodMetrics
   previous: AnalyticsPeriodMetrics
+  data_as_of?: string | null
+  snapshot_id?: string | null
 }
 
 // 成本数据

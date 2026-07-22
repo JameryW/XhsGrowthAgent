@@ -23,6 +23,8 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   const performanceData = ref<PerformanceData | null>(null)
   const costData = ref<CostData | null>(null)
   const periodSummary = ref<AnalyticsPeriodSummary | null>(null)
+  const dataAsOf = ref<string | null>(null)
+  const snapshotId = ref<string | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   let requestGeneration = 0
@@ -94,21 +96,32 @@ export const useAnalyticsStore = defineStore('analytics', () => {
       performanceData.value = null
       costData.value = null
       periodSummary.value = null
+      dataAsOf.value = null
+      snapshotId.value = null
       error.value = null
       isLoading.value = false
       return
     }
     isLoading.value = true
     error.value = null
+    // A new account/period request must not be compared with the previous
+    // snapshot while its response is in flight.
+    dataAsOf.value = null
+    snapshotId.value = null
     try {
-      const { report, performance, costs, period_summary } = await analyticsApi.getDashboard(
+      const dashboard = await analyticsApi.getDashboard(
         requestedAccountId, period.value, 20
       )
+      const { report, performance, costs, period_summary } = dashboard
       if (generation !== requestGeneration || accountId.value !== requestedAccountId) return
       growthReport.value = report
       performanceData.value = performance
       costData.value = costs
       periodSummary.value = period_summary ?? null
+      dataAsOf.value = dashboard.data_as_of
+        ?? responseDataAsOf(report, performanceData.value, period_summary)
+      snapshotId.value = dashboard.snapshot_id
+        ?? responseSnapshotId(report, performanceData.value, period_summary)
     } catch (e: any) {
       if (generation === requestGeneration) error.value = e.message
     } finally {
@@ -161,6 +174,8 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     performanceData,
     costData,
     periodSummary,
+    dataAsOf,
+    snapshotId,
     isLoading,
     error,
     posts,
@@ -173,3 +188,19 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     setPeriod,
   }
 })
+
+function responseDataAsOf(
+  report: GrowthReport | null | undefined,
+  performance: PerformanceData | null | undefined,
+  summary: AnalyticsPeriodSummary | undefined,
+): string | null {
+  return report?.data_as_of ?? performance?.data_as_of ?? summary?.data_as_of ?? null
+}
+
+function responseSnapshotId(
+  report: GrowthReport | null | undefined,
+  performance: PerformanceData | null | undefined,
+  summary: AnalyticsPeriodSummary | undefined,
+): string | null {
+  return report?.snapshot_id ?? performance?.snapshot_id ?? summary?.snapshot_id ?? null
+}
