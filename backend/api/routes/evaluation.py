@@ -554,6 +554,15 @@ def _sanitize_historical_evaluation(
         if isinstance(raw_dimensions, list)
         else []
     )
+    # A legacy/mock evaluator can accidentally repeat a dimension.  Collapse
+    # duplicates before coverage and weighted aggregation so one dimension
+    # cannot contribute its weight more than once.
+    deduplicated: dict[str, dict[str, Any]] = {}
+    for item in dimensions:
+        name = str(item.get("dimension") or "").strip()
+        if name:
+            deduplicated[name] = item
+    dimensions = list(deduplicated.values())
 
     # Any explicit degraded marker is always sanitized to null score/decision.
     # ``running``/``unavailable`` are also non-consumable states: a legacy
@@ -598,18 +607,18 @@ def _sanitize_historical_evaluation(
     # Never treat historical visual dimensions as available: the current model
     # receives a URL as text and cannot inspect the actual image bytes.
     for name in ("visual", "image_quality"):
-        item = by_name.get(name)
-        if item is not None:
-            item["available"] = False
-            item["score"] = None
-            item["rationale"] = item.get("rationale") or "当前评估器未读取真实图片"
+        image_item = by_name.get(name)
+        if image_item is not None:
+            image_item["available"] = False
+            image_item["score"] = None
+            image_item["rationale"] = image_item.get("rationale") or "当前评估器未读取真实图片"
     if not niche_available:
         for name in ("audience", "reach"):
-            item = by_name.get(name)
-            if item is not None:
-                item["available"] = False
-                item["score"] = None
-                item["rationale"] = item.get("rationale") or "缺少账号赛道上下文"
+            context_item = by_name.get(name)
+            if context_item is not None:
+                context_item["available"] = False
+                context_item["score"] = None
+                context_item["rationale"] = context_item.get("rationale") or "缺少账号赛道上下文"
 
     for name in _HISTORICAL_DIMENSION_WEIGHTS:
         if name not in by_name:
