@@ -185,7 +185,10 @@ describe('EvaluationView', () => {
     ;(getEvaluationList as any).mockResolvedValue({ workflows: [], total: 0 })
     ;(getEvaluationTrend as any).mockResolvedValue({ db_ready: true, points: [], dim_averages: {} })
     const wrapper = await mountEval()
-    expect(wrapper.text()).toContain(tt('evaluation.overview.title'))
+    // The band no longer repeats the page title as visible text; assert its
+    // landmark and KPI strip instead.
+    expect(wrapper.find('.eval-overview').exists()).toBe(true)
+    expect(wrapper.text()).toContain(tt('evaluation.overview.evaluated'))
     expect(wrapper.text()).toContain(tt('creatorQuality.page.noAccountTitle'))
     // No account → diagnosis section hidden, workflow segment still available.
     expect(wrapper.find('[data-testid="quality-panel"]').exists()).toBe(false)

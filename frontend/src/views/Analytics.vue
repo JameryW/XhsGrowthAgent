@@ -117,6 +117,11 @@ async function loadHistoricalNotes(accountId: string, reset = true) {
 }
 
 const historicalHasMore = computed(() => Boolean(historicalCursor.value) && historicalNotes.value.length < historicalTotal.value)
+// The page header already shows the dashboard snapshot's data-as-of; only
+// surface the historical reader's own timestamp when it genuinely differs.
+const showHistoricalDataAsOf = computed(() =>
+  Boolean(historicalDataAsOf.value) && historicalDataAsOf.value !== analyticsStore.dataAsOf
+)
 const selectedAnalyticsAccountId = computed(() => accountsStore.activeAccountId || accountsStore.accounts[0]?.id || '')
 function loadMoreHistorical() {
   if (!historicalLoading.value && historicalHasMore.value) void loadHistoricalNotes(selectedAnalyticsAccountId.value, false)
@@ -188,9 +193,8 @@ const isEmpty = computed(() => !analyticsStore.isLoading && !analyticsStore.erro
 const hasStaleError = computed(() => !!analyticsStore.error && analyticsStore.posts.length > 0)
 
 // ponytail: backend period cutoff — daily=24h, weekly=7d, monthly=30d.
-// Map the selected period to its i18n label so cards/buttons reflect the
-// actual data window (was hardcoded "thisWeek" for all three).
-const periodLabel = computed(() => periodLabelFor(analyticsStore.period))
+// Map the selected period to its i18n label so the switcher buttons reflect
+// the actual data window (was hardcoded "thisWeek" for all three).
 function periodLabelFor(p: 'daily' | 'weekly' | 'monthly') {
   if (p === 'daily') return t('analytics.today')
   if (p === 'monthly') return t('analytics.thisMonth')
@@ -231,13 +235,16 @@ const engDelta = computed(() => deltaLabel(periodBuckets.value.curEng, periodBuc
 const postsDelta = computed(() => deltaLabel(periodBuckets.value.curPosts, periodBuckets.value.prevPosts))
 
 const metrics = computed(() => [
-  { icon: 'Upload', title: t('analytics.postsPublished'), value: currentPeriod.value?.posts ?? 0, subtitle: periodLabel.value, variant: 'pink' as const, delta: postsDelta.value },
-  { icon: 'Eye', title: t('analytics.totalViews'), value: formatNumber(totalViews.value, locale.value), subtitle: periodLabel.value, variant: 'cyan' as const, delta: viewsDelta.value },
-  { icon: 'MessageCircle', title: t('analytics.totalEngagement'), value: formatNumber(currentPeriod.value?.engagement ?? 0, locale.value), subtitle: `${currentPeriod.value?.posts ?? 0} ` + t('analytics.postsPublished'), variant: 'purple' as const, delta: engDelta.value },
-  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: formatPercent(engagementRatePercent(currentPeriod.value?.avg_engagement_rate, analyticsStore.periodSummary?.engagement_rate_unit), locale.value), subtitle: (currentPeriod.value?.posts ?? 0) > 0 ? `${currentPeriod.value?.posts ?? 0} ` + t('analytics.postsPublished') : periodLabel.value, variant: 'peach' as const },
+  // No per-card subtitles: the data window is shown once by the active range
+  // button above — repeating the same label on all five cards was noise.
+  { icon: 'Upload', title: t('analytics.postsPublished'), value: currentPeriod.value?.posts ?? 0, variant: 'pink' as const, delta: postsDelta.value },
+  { icon: 'Eye', title: t('analytics.totalViews'), value: formatNumber(totalViews.value, locale.value), variant: 'cyan' as const, delta: viewsDelta.value },
+  { icon: 'MessageCircle', title: t('analytics.totalEngagement'), value: formatNumber(currentPeriod.value?.engagement ?? 0, locale.value), variant: 'purple' as const, delta: engDelta.value },
+  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: formatPercent(engagementRatePercent(currentPeriod.value?.avg_engagement_rate, analyticsStore.periodSummary?.engagement_rate_unit), locale.value), variant: 'peach' as const },
   // AN-05: fans card on the first screen (was buried in CreatorStatsPanel);
-  // AI cost moved out to the demoted cost section.
-  { icon: 'Users', title: t('analytics.fans'), value: fansDisplay.value, subtitle: periodLabel.value, variant: 'cyan' as const, delta: '—' },
+  // AI cost moved out to the demoted cost section. No delta: the payload has
+  // no historical fans series, so a placeholder dash adds no information.
+  { icon: 'Users', title: t('analytics.fans'), value: fansDisplay.value, variant: 'cyan' as const },
 ])
 
 // AN-01: true daily time series from published_at (was weekday-bucketed avg
@@ -353,7 +360,7 @@ const visibleTableData = computed<AnalyticsTableRow[]>(() => {
       engagement_rate: engagementRatePercent(post.engagement_rate, analyticsStore.performanceData?.engagement_rate_unit),
     }))
   const sliced = canonical.length
-    ? (showAllHistorical.value ? posts : posts.slice(0, 8))
+    ? (showAllHistorical.value ? posts : posts.slice(0, 10))
     : (showAllPosts.value ? posts : posts.slice(0, 10))
   return sliced.map(post => ({
   ...post,
@@ -481,6 +488,10 @@ const detailNoteId = computed(() => {
   return typeof selectedPost.value?.id === 'string' ? selectedPost.value.id : ''
 })
 const detailAccountId = computed(() => accountsStore.activeAccountId || analyticsStore.accountId || '')
+// The row-metric grid is the fallback for posts with no linked creator note.
+// When the quality panel renders, its freshly fetched metric cards cover the
+// same numbers — showing the grid as well duplicated them.
+const showDetailMetrics = computed(() => !(detailAccountId.value && detailNoteId.value))
 
 function openPostDetail(row: Record<string, unknown>) {
   trackInteraction('analytics_note_drilldown', { method: 'click' })
@@ -555,8 +566,6 @@ function startWithTopic(topic: string, niche?: string) {
   <div class="app-page-content space-y-4 md:space-y-6">
     <PageHeader
       :title="t('analytics.title')"
-      :description="t('analytics.insights.subtitle')"
-      :eyebrow="t('analytics.analyticsLabel')"
       icon="BarChart3"
       tone="cyan"
     >
@@ -564,7 +573,8 @@ function startWithTopic(topic: string, niche?: string) {
         <span v-if="accountsStore.activeAccount?.name || analyticsStore.accountId">
           {{ t('analytics.account') }}: {{ accountsStore.activeAccount?.name || analyticsStore.accountId }}
         </span>
-        <span>{{ t('analytics.period') }}: {{ analyticsStore.period }}</span>
+        <!-- Period is already shown by the active range button below; the raw
+             enum value here was redundant and unlocalized. -->
         <span v-if="lastUpdatedAt" role="status">
           {{ t('analytics.lastUpdated', { time: lastUpdatedAt.toLocaleTimeString(locale || undefined) }) }}
         </span>
@@ -628,14 +638,6 @@ function startWithTopic(topic: string, niche?: string) {
         </button>
       </div>
     </div>
-    <!-- Import still available when dashboard fetch fails -->
-    <CreatorStatsPanel
-      v-if="accountsStore.activeAccountId || analyticsStore.accountId"
-      :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
-      :account-name="accountsStore.activeAccount?.name"
-      compact
-      @updated="handleCreatorStatsUpdated"
-    />
   </div>
 
   <!-- Empty state -->
@@ -658,19 +660,10 @@ function startWithTopic(topic: string, niche?: string) {
             {{ t('analytics.empty.startWorkflow') }}
           </button>
         </div>
-        <p class="text-[11px] text-slate-400 text-center max-w-md">
-          {{ t('analytics.empty.importHint') }}
-        </p>
+        <!-- No separate import hint here: the creator panel directly below
+             carries the import UI and its own instructions. -->
       </div>
     </div>
-    <!-- Still allow creator-center import when workflow posts are empty -->
-    <CreatorStatsPanel
-      v-if="accountsStore.activeAccountId || analyticsStore.accountId"
-      :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
-      :account-name="accountsStore.activeAccount?.name"
-      compact
-      @updated="handleCreatorStatsUpdated"
-    />
   </div>
 
   <!-- Data view -->
@@ -701,20 +694,6 @@ function startWithTopic(topic: string, niche?: string) {
         {{ t('analytics.error.retry') }}
       </button>
     </div>
-    <!-- Creator-center import / niche bind for active account -->
-    <section
-      v-if="accountsStore.activeAccountId || analyticsStore.accountId"
-      class="min-w-0"
-      :aria-label="t('creatorStats.title')"
-    >
-      <CreatorStatsPanel
-        :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
-        :account-name="accountsStore.activeAccount?.name"
-        compact
-        @updated="handleCreatorStatsUpdated"
-      />
-    </section>
-
     <!-- Metric cards (5 columns on xl) -->
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-5">
       <MetricCard
@@ -817,7 +796,10 @@ function startWithTopic(topic: string, niche?: string) {
         </div>
         <div class="flex-1">
           <div class="text-violet-600 font-semibold text-xs md:text-sm">{{ tableUsesCanonicalHistory ? t('analytics.history.title') : t('analytics.recentPosts') }}</div>
-          <div class="text-[10px] md:text-xs text-slate-400">{{ tableUsesCanonicalHistory ? t('analytics.history.loadedCount', { loaded: Math.min(tableData.length, tableLoadedCount), total: tableTotalCount }) : t('analytics.top10') }}</div>
+          <!-- Both modes are recency-sorted (backend sorts published_at desc),
+               so the subtitle reports loaded/total counts — the old "TOP 10"
+               label implied a performance ranking the data does not have. -->
+          <div class="text-[10px] md:text-xs text-slate-400">{{ t('analytics.history.loadedCount', { loaded: Math.min(tableData.length, tableLoadedCount), total: tableTotalCount }) }}</div>
         </div>
         <button
           type="button"
@@ -834,7 +816,7 @@ function startWithTopic(topic: string, niche?: string) {
         <span class="flex-1">{{ historicalError }}</span>
       <button type="button" class="min-h-[36px] rounded-md border border-amber-300 px-2 font-medium hover:bg-amber-100 dark:border-amber-400/40 dark:hover:bg-amber-900/40" @click="loadHistoricalNotes(selectedAnalyticsAccountId)">{{ t('analytics.history.retry') }}</button>
       </div>
-      <div v-if="historicalDataAsOf" class="mb-2 text-[11px] text-slate-400" role="status">{{ t('analytics.history.dataAsOf', { time: formatDate(historicalDataAsOf) }) }}</div>
+      <div v-if="showHistoricalDataAsOf" class="mb-2 text-[11px] text-slate-400" role="status">{{ t('analytics.history.dataAsOf', { time: formatDate(historicalDataAsOf) }) }}</div>
       <div v-if="historicalSnapshotMismatch" class="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-700 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-200" role="alert">
         <AppIcon name="AlertTriangle" size="sm" variant="peach" />
         <span class="flex-1">{{ t('analytics.history.snapshotMismatch') }}</span>
@@ -855,9 +837,11 @@ function startWithTopic(topic: string, niche?: string) {
         <span class="inline-block w-2.5 h-2.5 rounded-sm bg-rose-200" aria-hidden="true" />
         <span>{{ t('analytics.bestPostLegend') }}</span>
       </div>
-      <div v-if="tableUsesCanonicalHistory && historicalNotes.length > 8" class="mt-3 flex flex-wrap items-center justify-center gap-2">
+      <div v-if="tableUsesCanonicalHistory && historicalNotes.length > 10" class="mt-3 flex flex-wrap items-center justify-center gap-2">
         <button type="button" class="min-h-[44px] px-4 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" @click="showAllHistorical = !showAllHistorical">
-          {{ showAllHistorical ? t('analytics.showLess') : t('analytics.history.showLoaded', { loaded: Math.min(historicalNotes.length, 8), total: historicalTotal }) }}
+          <!-- Counts live in the section subtitle above; the button stays an
+               action label only. -->
+          {{ showAllHistorical ? t('analytics.showLess') : t('analytics.history.showAll') }}
         </button>
         <button v-if="historicalHasMore" type="button" class="min-h-[44px] px-4 py-1.5 rounded-lg border border-violet-200 bg-violet-50 text-xs font-medium text-violet-700 hover:bg-violet-100 transition dark:border-violet-500/40 dark:bg-violet-950/30 dark:text-violet-200" :disabled="historicalLoading" @click="loadMoreHistorical">
           {{ historicalLoading ? t('analytics.refreshing') : t('analytics.history.loadMore') }}
@@ -941,6 +925,22 @@ function startWithTopic(topic: string, niche?: string) {
       </div>
     </details>
   </div>
+
+  <!-- Creator-center import / niche bind. A single instance shared by the
+       error, empty and data states (was duplicated in each branch), demoted
+       below the analytics content so results come first and tools last. -->
+  <section
+    v-if="!isLoading && (accountsStore.activeAccountId || analyticsStore.accountId)"
+    class="min-w-0"
+    :aria-label="t('creatorStats.title')"
+  >
+    <CreatorStatsPanel
+      :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
+      :account-name="accountsStore.activeAccount?.name"
+      compact
+      @updated="handleCreatorStatsUpdated"
+    />
+  </section>
   </div>
 
   <!-- AN-08: single-post drill-down drawer -->
@@ -961,18 +961,30 @@ function startWithTopic(topic: string, niche?: string) {
             <AppIcon name="X" size="sm" />
           </button>
         </div>
-        <dl class="grid grid-cols-2 gap-3 text-sm">
+        <dl v-if="showDetailMetrics" class="grid grid-cols-2 gap-3 text-sm">
           <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
             <dt class="text-xs text-slate-500">{{ t('analytics.table.views') }}</dt>
             <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.views_display }}</dd>
           </div>
           <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
-            <dt class="text-xs text-slate-500">{{ t('analytics.table.engagementRate') }}</dt>
-            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.engagement_rate_display }}</dd>
-          </div>
-          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
             <dt class="text-xs text-slate-500">{{ t('analytics.table.likes') }}</dt>
             <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.likes }}</dd>
+          </div>
+          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+            <dt class="text-xs text-slate-500">{{ t('analytics.table.comments') }}</dt>
+            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.comments }}</dd>
+          </div>
+          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+            <dt class="text-xs text-slate-500">{{ t('analytics.table.collects') }}</dt>
+            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.collects }}</dd>
+          </div>
+          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+            <dt class="text-xs text-slate-500">{{ t('analytics.table.shares') }}</dt>
+            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.shares }}</dd>
+          </div>
+          <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
+            <dt class="text-xs text-slate-500">{{ t('analytics.table.engagementRate') }}</dt>
+            <dd class="font-semibold text-slate-800 dark:text-slate-100">{{ selectedPost.engagement_rate_display }}</dd>
           </div>
           <div class="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
             <dt class="text-xs text-slate-500">{{ t('analytics.table.publishedAt') }}</dt>

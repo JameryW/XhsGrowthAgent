@@ -19,10 +19,17 @@ const props = withDefaults(defineProps<{
   // AN-08: preselect a specific note for drill-down. When set, overrides the
   // default "first note" selection after notes load.
   noteId?: string
+  /** Drawer mode: hides the chrome a host drawer already provides — the
+      panel header, the account suffix, and the notes list sidebar (the host
+      fixes the note being viewed). Without this the drawer rendered the full
+      panel, duplicating the note title and cramming a two-column list into a
+      narrow overlay. */
+  compact?: boolean
 }>(), {
   accountName: '',
   refreshToken: 0,
   noteId: '',
+  compact: false,
 })
 
 const { t, locale } = useI18n()
@@ -402,6 +409,17 @@ function pointValue(point: Record<string, unknown>): string {
   return Number.isFinite(numeric) ? formatNum(numeric) : String(value)
 }
 
+// Audience-profile values are audience shares (0–1), not counts: render them
+// as percentages so "0.78" reads as "78%". Larger values pass through as-is.
+function pointShare(point: Record<string, unknown>): string {
+  const value = point.value ?? point.count ?? point.rate
+  const numeric = Number(value)
+  if (value != null && Number.isFinite(numeric) && numeric > 0 && numeric <= 1) {
+    return `${Math.round(numeric * 100)}%`
+  }
+  return pointValue(point)
+}
+
 function translateQualityEnum(group: 'grade' | 'confidence' | 'scope', value: string): string {
   const key = 'creatorQuality.' + group + '.' + value
   const translated = t(key)
@@ -426,7 +444,9 @@ function rqgmDimLabel(dim: string): string {
     class="min-w-0 rounded-2xl border border-violet-200/70 bg-white/95 p-4 shadow-sm backdrop-blur-sm md:p-6 dark:bg-slate-900/90 dark:border-violet-500/30"
     :aria-label="t('creatorNoteQuality.title')"
   >
-    <div class="flex min-w-0 flex-col gap-2 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between dark:border-slate-700/50">
+    <!-- Panel chrome (title/subtitle/refresh) is omitted in compact mode:
+         the host drawer supplies its own title and loading context. -->
+    <div v-if="!compact" class="flex min-w-0 flex-col gap-2 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between dark:border-slate-700/50">
       <div class="min-w-0">
         <div class="flex items-center gap-2">
           <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-400 to-fuchsia-500 shadow-sm">
@@ -482,8 +502,10 @@ function rqgmDimLabel(dim: string): string {
       <p class="mt-1 text-[11px] leading-relaxed text-slate-400">{{ t('creatorNoteQuality.empty.description') }}</p>
     </div>
 
-    <div v-else class="mt-4 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(11rem,0.8fr)_minmax(0,2fr)]">
-      <div class="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-2 dark:border-slate-700/50 dark:bg-slate-800/60">
+    <div v-else class="mt-4 grid min-w-0 grid-cols-1 gap-4" :class="compact ? '' : 'lg:grid-cols-[minmax(11rem,0.8fr)_minmax(0,2fr)]'">
+      <!-- Note picker: hidden in compact mode, where the host drawer pins
+           the note being viewed. -->
+      <div v-if="!compact" class="min-w-0 rounded-xl border border-slate-100 bg-slate-50/70 p-2 dark:border-slate-700/50 dark:bg-slate-800/60">
         <div class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
           {{ t('creatorNoteQuality.listTitle') }}
         </div>
@@ -524,7 +546,9 @@ function rqgmDimLabel(dim: string): string {
                 class="h-28 w-full shrink-0 rounded-lg object-cover sm:h-24 sm:w-24"
               />
               <div class="min-w-0 flex-1">
-                <h4 class="break-words text-sm font-semibold text-slate-800 dark:text-slate-100">
+                <!-- Title omitted in compact mode: the host drawer header
+                     already shows it. -->
+                <h4 v-if="!compact" class="break-words text-sm font-semibold text-slate-800 dark:text-slate-100">
                   {{ selectedNote.title || selectedNote.note_id }}
                 </h4>
                 <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-400">
@@ -570,7 +594,7 @@ function rqgmDimLabel(dim: string): string {
               <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('creatorNoteQuality.audienceProfile') }}</div>
               <div v-if="selectedNote.audience_profile?.length" class="mt-2 flex flex-wrap gap-1">
                 <span v-for="point in selectedNote.audience_profile.slice(0, 8)" :key="pointLabel(point)" class="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700 dark:bg-amber-400/15 dark:text-amber-200">
-                  {{ pointLabel(point) }}<span v-if="pointValue(point)"> · {{ pointValue(point) }}</span>
+                  {{ pointLabel(point) }}<span v-if="pointValue(point)"> · {{ pointShare(point) }}</span>
                 </span>
               </div>
               <p v-else class="mt-2 text-[11px] text-slate-400">{{ t('creatorNoteQuality.unavailable') }}</p>
@@ -603,7 +627,7 @@ function rqgmDimLabel(dim: string): string {
               <span class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ translateQualityEnum('confidence', quality.confidence) }}</span>
               <span class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ translateQualityEnum('scope', quality.scope) }}</span>
               <span v-if="quality.status" class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ quality.status }}</span>
-              <span v-if="quality.data_as_of" class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ t('evaluation.dataAsOf') }} {{ quality.data_as_of }}</span>
+              <span v-if="quality.data_as_of" class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ t('evaluation.dataAsOf') }} {{ formatDate(quality.data_as_of) }}</span>
             </div>
             <div class="mt-3 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
               <div v-for="dimension in quality.dimensions" :key="dimension.key" class="min-w-0 rounded-lg border border-white/80 bg-white/80 p-2.5 dark:border-slate-700/50 dark:bg-slate-900/75">
@@ -635,6 +659,10 @@ function rqgmDimLabel(dim: string): string {
               <div class="min-w-0">
                 <div class="text-[10px] font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-200">{{ t('evaluation.rqgmScoreLabel') }}</div>
                 <p class="mt-1 break-words text-[11px] leading-4 text-slate-500 dark:text-slate-400">{{ t('creatorNoteQuality.rqgm.sectionHint') }}</p>
+                <!-- EV-15: set expectations for manual RQGM (runtime + LLM
+                     cost). Kept inside the text block: as a third flex item
+                     it was squeezed into a vertical strip in narrow drawers. -->
+                <p class="mt-1 break-words text-[11px] leading-4 text-slate-400 dark:text-slate-500">{{ t('creatorNoteQuality.rqgm.costHint') }}</p>
               </div>
               <NeonButton
                 variant="ghost"
@@ -647,8 +675,6 @@ function rqgmDimLabel(dim: string): string {
                 <AppIcon name="Sparkles" size="xs" variant="cyan" />
                 <span>{{ rqgmRunning ? t('creatorNoteQuality.rqgm.running') : t('creatorNoteQuality.rqgm.run') }}</span>
               </NeonButton>
-              <!-- EV-15: set expectations for manual RQGM (runtime + LLM cost). -->
-              <p class="text-[11px] text-slate-400 dark:text-slate-500">{{ t('creatorNoteQuality.rqgm.costHint') }}</p>
             </div>
 
             <p v-if="rqgmError" class="mt-3 break-words text-[11px] leading-4 text-rose-600 dark:text-rose-300">{{ rqgmError }}</p>

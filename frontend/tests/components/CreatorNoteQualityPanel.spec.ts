@@ -161,4 +161,46 @@ describe('CreatorNoteQualityPanel', () => {
     expect(wrapper.text()).toContain('第二篇正文')
     expect(mockedGetCreatorNote).toHaveBeenLastCalledWith('account-1', 'n2')
   })
+
+  // Compact (drawer) mode: the host drawer supplies the note title and fixes
+  // the selection, so the panel hides its own chrome instead of duplicating
+  // it. Metric cards stay — they are the drawer's per-note numbers.
+  it('compact mode hides the panel chrome, note picker and duplicate article title', async () => {
+    const wrapper = mount(CreatorNoteQualityPanel, {
+      props: { accountId: 'account-1', noteId: 'n1', compact: true },
+      global: {
+        stubs: {
+          AppIcon: true,
+          NeonButton: { template: '<button><slot /></button>' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('第一篇正文')
+    expect(wrapper.text()).toContain('浏览')
+    // The panel header (h3 title) and note picker are hidden; the quality
+    // section copy legitimately mentions "单篇历史笔记", so assert on the
+    // structural elements rather than the raw strings.
+    expect(wrapper.find('h3').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('已导入笔记')
+    expect(wrapper.find('h4').exists()).toBe(false)
+  })
+
+  it('default mode keeps the panel chrome, note picker and article title', async () => {
+    const wrapper = mount(CreatorNoteQualityPanel, {
+      props: { accountId: 'account-1', noteId: 'n1' },
+      global: {
+        stubs: {
+          AppIcon: true,
+          NeonButton: { template: '<button><slot /></button>' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('h3').exists()).toBe(true)
+    expect(wrapper.text()).toContain('已导入笔记')
+    expect(wrapper.find('h4').exists()).toBe(true)
+  })
 })

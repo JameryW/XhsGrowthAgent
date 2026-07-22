@@ -8,15 +8,22 @@ import {
 } from '@/api/analytics'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import { formatShortDate } from '@/utils/format'
 
 const props = withDefaults(defineProps<{
   accountId: string
   accountName?: string
   /** Increment after a real import to reload this read-only report. */
   refreshToken?: number
+  /** Embedded mode for the evaluation hub: the overview band directly above
+      already shows this report's headline (score/grade/confidence/sample
+      count) and the account selector names the account, so the panel renders
+      its detail body only. */
+  compact?: boolean
 }>(), {
   accountName: '',
   refreshToken: 0,
+  compact: false,
 })
 
 const { t, locale } = useI18n()
@@ -111,6 +118,14 @@ function dimensionLabel(key: string): string {
   const translated = t(translationKey)
   return translated === translationKey ? key : translated
 }
+
+// Backend timestamps arrive as raw ISO; render like the other data-as-of
+// labels on the page, falling back to the raw string when unparseable.
+function formatDataAsOf(value: string | null | undefined): string {
+  if (!value) return ''
+  const formatted = formatShortDate(value, locale.value)
+  return formatted === '—' ? value : formatted
+}
 </script>
 
 <template>
@@ -118,8 +133,14 @@ function dimensionLabel(key: string): string {
     class="min-w-0 rounded-2xl border border-slate-200/70 bg-white/95 p-4 shadow-sm backdrop-blur-sm md:p-6 dark:bg-slate-900/90 dark:border-slate-700/55"
     :aria-label="t('creatorQuality.title')"
   >
-    <div class="flex min-w-0 flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between dark:border-slate-700/50">
-      <div class="min-w-0">
+    <!-- Compact mode: the page's section head above already renders this
+         title, so the panel skips its own header text and keeps only the
+         refresh action. -->
+    <div
+      class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start dark:border-slate-700/50"
+      :class="compact ? 'justify-end' : 'border-b border-slate-100 pb-4 sm:justify-between'"
+    >
+      <div v-if="!compact" class="min-w-0">
         <div class="flex items-center gap-2">
           <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 shadow-sm">
             <AppIcon name="Brain" size="sm" variant="white" />
@@ -181,7 +202,9 @@ function dimensionLabel(key: string): string {
     </div>
 
     <div v-else-if="report" class="mt-4 space-y-4">
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <!-- Headline row hidden in compact mode: the overview band above shows
+           this same score/grade/confidence from the same report. -->
+      <div v-if="!compact" class="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div class="min-w-0 rounded-xl border border-cyan-100 bg-gradient-to-br from-cyan-50 to-blue-50/70 p-4 sm:col-span-1 dark:border-cyan-400/25 dark:from-cyan-400/15 dark:to-blue-400/10">
           <div class="text-[10px] font-semibold uppercase tracking-wider text-cyan-600 dark:text-cyan-300">
             {{ t('creatorQuality.score') }}
@@ -218,12 +241,13 @@ function dimensionLabel(key: string): string {
       <div class="rounded-xl border border-slate-100 bg-slate-50/60 p-4 dark:border-slate-700/50 dark:bg-slate-800/55">
         <div class="flex flex-wrap items-center justify-between gap-1.5">
           <div class="text-xs font-semibold text-slate-600 dark:text-slate-200">{{ t('creatorQuality.summary') }}</div>
-          <span class="text-[10px] text-slate-400">{{ sampleValue }}</span>
+          <!-- Sample count lives on the band's KPI card in compact mode. -->
+          <span v-if="!compact" class="text-[10px] text-slate-400">{{ sampleValue }}</span>
         </div>
         <p class="mt-2 break-words text-sm leading-6 text-slate-600 dark:text-slate-300">{{ report.summary }}</p>
         <p class="mt-2 text-[10px] leading-relaxed text-slate-400">
           {{ t('creatorQuality.scopeLabel') }}: {{ translateEnum('scope', report.scope) }}
-          <span v-if="report.data_as_of"> · {{ t('evaluation.dataAsOf') }} {{ report.data_as_of }}</span>
+          <span v-if="report.data_as_of"> · {{ t('evaluation.dataAsOf') }} {{ formatDataAsOf(report.data_as_of) }}</span>
           <span v-if="report.algorithm_version"> · {{ report.algorithm_version }}</span>
           <span v-if="report.snapshot_id"> · {{ t('evaluation.snapshotId') }} {{ report.snapshot_id }}</span>
         </p>

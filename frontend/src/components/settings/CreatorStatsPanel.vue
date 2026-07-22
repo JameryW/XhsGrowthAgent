@@ -345,6 +345,17 @@ function pointValue(point: CreatorAggregatePoint): string {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? formatNum(numeric) : String(value)
 }
+
+// Audience-profile values are audience shares (0–1), not counts: render them
+// as percentages so "0.78" reads as "78%". Larger values pass through as-is.
+function pointShare(point: CreatorAggregatePoint): string {
+  const value = point.value ?? point.count
+  const numeric = Number(value)
+  if (value != null && Number.isFinite(numeric) && numeric > 0 && numeric <= 1) {
+    return `${Math.round(numeric * 100)}%`
+  }
+  return pointValue(point)
+}
 </script>
 
 <template>
@@ -365,7 +376,9 @@ function pointValue(point: CreatorAggregatePoint): string {
         </div>
         <p class="text-[11px] text-slate-400 mt-1 leading-relaxed">
           {{ t('creatorStats.subtitle') }}
-          <span v-if="accountName || accountId" class="text-slate-500">
+          <!-- Compact mode sits under the Analytics page header, which
+               already names the account. -->
+          <span v-if="(accountName || accountId) && !compact" class="text-slate-500">
             · {{ accountName || accountId }}
           </span>
         </p>
@@ -502,7 +515,10 @@ function pointValue(point: CreatorAggregatePoint): string {
       <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
         {{ t('creatorStats.importedSection') }}
       </div>
-      <div v-if="notesDataAsOf" class="text-[11px] text-slate-400" role="status">
+      <!-- In compact mode (Analytics page) the per-note list and its
+           data-as-of/loaded line are omitted: the page's main table renders
+           the same canonical notes with sorting, export and drill-down. -->
+      <div v-if="notesDataAsOf && !compact" class="text-[11px] text-slate-400" role="status">
         {{ t('evaluation.dataAsOf') }} {{ notesDataAsOf }} · {{ t('creatorStats.notesLoaded', { loaded: notes.length, total: notesTotal }) }}
       </div>
       <div
@@ -558,7 +574,10 @@ function pointValue(point: CreatorAggregatePoint): string {
           </span>
         </div>
       </div>
-      <div v-if="accountStats" class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <!-- Compact mode also omits the account totals grid: the Analytics page
+           already surfaces fans (metric card), note count (table total) and
+           period views/likes (metric cards), so these cells repeated them. -->
+      <div v-if="accountStats && !compact" class="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div class="rounded-lg bg-slate-50 border border-slate-100 p-2 text-center dark:bg-slate-800/70 dark:border-slate-700/50">
           <div class="text-[10px] text-slate-400">{{ t('creatorStats.metrics.notes') }}</div>
           <div class="text-sm font-semibold text-slate-700">
@@ -620,7 +639,7 @@ function pointValue(point: CreatorAggregatePoint): string {
           </div>
           <div v-if="audience.audience_profile.length" class="mt-2 flex flex-wrap gap-1.5">
             <span v-for="item in audience.audience_profile.slice(0, 8)" :key="pointLabel(item)" class="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
-              {{ pointLabel(item) }}<span v-if="item.value != null || item.count != null"> · {{ pointValue(item) }}</span>
+              {{ pointLabel(item) }}<span v-if="item.value != null || item.count != null"> · {{ pointShare(item) }}</span>
             </span>
           </div>
           <p v-else class="mt-2 text-[11px] leading-relaxed text-slate-400">
@@ -636,7 +655,7 @@ function pointValue(point: CreatorAggregatePoint): string {
         </ul>
       </div>
 
-      <div v-if="notes.length" class="overflow-x-auto rounded-lg border border-slate-100">
+      <div v-if="notes.length && !compact" class="overflow-x-auto rounded-lg border border-slate-100">
         <table class="w-full text-xs">
           <thead class="bg-slate-50 text-slate-500 dark:bg-slate-800/80 dark:text-slate-400">
             <tr>

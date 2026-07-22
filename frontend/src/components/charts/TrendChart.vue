@@ -139,8 +139,15 @@ const chartOption = computed(() => {
       {{ props.title }}
     </div>
 
+    <!-- Empty state: without it, a no-data series rendered as a blank axes
+         box (EngagementChart already shows a placeholder). -->
+    <div v-if="props.data.length === 0" class="flex h-[220px] items-center justify-center rounded-lg border border-dashed border-slate-200 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500" role="status">
+      {{ t('charts.noData') }}
+    </div>
+
     <!-- Chart for visual users -->
     <VChart
+      v-else
       :option="chartOption"
       :style="{ height: `${props.height}px` }"
       autoresize

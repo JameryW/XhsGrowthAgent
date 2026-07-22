@@ -655,12 +655,11 @@ const handleCancelConfirm = () => {
   <PageHeader
     :title="t('review.title')"
     :description="t('review.subtitle')"
-    :eyebrow="t('review.pendingApproval')"
     icon="Clock"
     tone="peach"
   >
     <template #meta>
-      <span>{{ workflows.length }} {{ t('review.emptyState.reason1') }}</span>
+      <span v-if="workflows.length">{{ t('review.pendingCount', { count: workflows.length }) }}</span>
     </template>
     <template #actions>
       <NeonButton variant="ghost" size="sm" class="min-h-11" @click="fetchReviewQueue" :aria-label="t('common.retry')">

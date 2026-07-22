@@ -530,7 +530,6 @@ function dimDescription(dim: string): string {
       <PageHeader
         :title="t('evaluation.title')"
         :description="t('creatorQuality.page.hubSubtitle')"
-        :eyebrow="t('creatorQuality.page.eyebrow')"
         icon="ClipboardCheck"
         tone="purple"
         title-id="evaluation-title"
@@ -567,7 +566,7 @@ function dimDescription(dim: string): string {
           <p class="section-eyebrow">{{ t('evaluation.section.diagnosis') }}</p>
           <h2 class="section-title">{{ t('creatorQuality.title') }}</h2>
         </div>
-        <CreatorQualityPanel :account-id="selectedAccount.id" :account-name="selectedAccount.name" class="shadow-sm" />
+        <CreatorQualityPanel :account-id="selectedAccount.id" :account-name="selectedAccount.name" compact class="shadow-sm" />
       </section>
 
       <!-- 单篇区块：来源分离，避免将发布后表现与内容评审混成一个分数 -->
@@ -606,7 +605,9 @@ function dimDescription(dim: string): string {
 
         <section class="search-bar">
           <input v-model="searchQuery" class="thread-input" :aria-label="t('evaluation.list.searchPlaceholder')" :placeholder="t('evaluation.list.searchPlaceholder')" />
-          <span class="result-count">{{ t('evaluation.list.loadedCount', { loaded: visibleRowsCount, total: visibleRowsTotal }) }}</span>
+          <!-- Loaded/total counts live on the source tabs; this count appears
+               only while filtering, as feedback on the active query. -->
+          <span v-if="searchQuery.trim()" class="result-count">{{ t('evaluation.list.loadedCount', { loaded: visibleRowsCount, total: visibleRowsTotal }) }}</span>
         </section>
 
         <div v-if="sourceTab === 'workflow' && listError" class="error-card" role="alert">
@@ -634,14 +635,14 @@ function dimDescription(dim: string): string {
             <button v-for="item in workflowRows" :key="item.thread_id" type="button" class="eval-item" :aria-label="`${item.selected_title || t('evaluation.empty.title')} · ${decisionLabel(item.decision || 'unknown')}`" @click="openDetail(item.thread_id)">
               <div class="item-main">
                 <div class="item-title">{{ item.selected_title || t('evaluation.empty.title') }}</div>
-                <div class="item-meta"><span class="source-badge source-workflow">{{ t('evaluation.stream.sourceWorkflow') }}</span><span class="meta-tag">{{ phaseLabel(item.phase) }}</span><span class="meta-sep">·</span><span class="meta-account">{{ item.account_id }}</span><span class="meta-sep">·</span><span class="meta-time">{{ formatDateTime(item.updated_at) }}</span></div>
+                <div class="item-meta"><span class="source-badge source-workflow">{{ t('evaluation.stream.sourceWorkflow') }}</span><span class="meta-tag">{{ phaseLabel(item.phase) }}</span><template v-if="selectedAccountId === ALL_ACCOUNTS_ID"><span class="meta-sep">·</span><span class="meta-account">{{ item.account_id }}</span></template><span class="meta-sep">·</span><span class="meta-time">{{ formatDateTime(item.updated_at) }}</span></div>
               </div>
               <div class="item-right"><span class="score-kind">{{ t('evaluation.rqgmScoreLabel') }}</span><span class="item-score" :class="scoreTierClass(item.overall_score, { pass: item.pass_threshold ?? SCORE_THRESHOLDS.pass, warn: item.warn_threshold ?? SCORE_THRESHOLDS.warn })">{{ item.overall_score == null || item.degraded || item.status_detail === 'degraded' || item.status_detail === 'failed' ? '—' : item.overall_score.toFixed(1) }}</span><span class="decision-badge" :class="decisionBadgeClass(item.decision || 'unknown')">{{ item.degraded ? t('evaluation.status.degraded') : decisionLabel(item.decision || 'unknown') }}</span></div>
             </button>
           </template>
           <template v-else>
             <button v-for="note in historicalRows" :key="note.note_id" type="button" class="eval-item" :aria-label="`${note.title || t('creatorNoteQuality.untitled')} · ${t('evaluation.stream.sourceImported')}`" @click="openNoteDrawer(note)">
-              <div class="item-main"><div class="item-title">{{ note.title || t('creatorNoteQuality.untitled') }}</div><div class="item-meta"><span class="source-badge source-imported">{{ t('evaluation.stream.sourceImported') }}</span><span class="meta-time">{{ formatDateTime(note.published_at) }}</span><span v-if="note.synced_at" class="meta-time">· {{ t('evaluation.dataAsOf') }} {{ formatDateTime(note.synced_at) }}</span></div></div>
+              <div class="item-main"><div class="item-title">{{ note.title || t('creatorNoteQuality.untitled') }}</div><div class="item-meta"><span class="source-badge source-imported">{{ t('evaluation.stream.sourceImported') }}</span><span class="meta-time">{{ formatDateTime(note.published_at) }}</span></div></div>
               <div class="item-right item-right-note"><span class="score-kind">{{ t('evaluation.performanceScoreLabel') }}</span><span class="note-metric">{{ t('creatorNoteQuality.metrics.views') }} {{ formatCompact(note.views) }}</span><span class="note-metric">{{ t('creatorNoteQuality.metrics.likes') }} {{ formatCompact(note.likes) }}</span></div>
             </button>
           </template>
@@ -649,10 +650,10 @@ function dimDescription(dim: string): string {
 
         <div v-if="sourceTab === 'workflow' && hasMore" class="load-more"><button class="load-more-btn min-h-11" type="button" :disabled="listLoading" @click="loadMore"><AppIcon v-if="listLoading" name="Loader2" class="spin" /><span>{{ t('evaluation.list.loadMore') }}</span></button></div>
         <div v-if="sourceTab === 'historical' && notesHasMore" class="load-more"><button class="load-more-btn min-h-11" type="button" :disabled="notesLoading" @click="loadMoreNotes"><AppIcon v-if="notesLoading" name="Loader2" class="spin" /><span>{{ t('evaluation.list.loadMore') }}</span></button></div>
-        <div v-if="(sourceTab === 'workflow' ? listItems.length : notesItems.length) > 0" class="data-as-of" role="status">
-          <span>{{ t('evaluation.list.loadedCount', { loaded: sourceTab === 'workflow' ? listItems.length : notesItems.length, total: sourceTab === 'workflow' ? listTotal : notesTotal }) }}</span>
-          <span v-if="sourceTab === 'workflow' && listDataAsOf"> · {{ t('evaluation.dataAsOf') }} {{ formatDateTime(listDataAsOf) }}</span>
-          <span v-if="sourceTab === 'historical' && notesDataAsOf"> · {{ t('evaluation.dataAsOf') }} {{ formatDateTime(notesDataAsOf) }}</span>
+        <div v-if="(sourceTab === 'workflow' ? listItems.length : notesItems.length) > 0 && (sourceTab === 'workflow' ? listDataAsOf : notesDataAsOf)" class="data-as-of" role="status">
+          <!-- Counts are on the source tabs; this line carries only the
+               snapshot timestamp. -->
+          <span>{{ t('evaluation.dataAsOf') }} {{ formatDateTime((sourceTab === 'workflow' ? listDataAsOf : notesDataAsOf)!) }}</span>
         </div>
       </section>
     </template>
@@ -666,11 +667,12 @@ function dimDescription(dim: string): string {
         tone="purple"
         title-id="evaluation-detail-title"
       >
-        <!-- EV-01: deep-link context — show the evaluated thread + decision so a
-             user arriving at /evaluation/:threadId knows what was judged. -->
+        <!-- EV-01: deep-link context — show which thread was judged so a user
+             arriving at /evaluation/:threadId can confirm and copy the id.
+             The decision badge lives in the overview card below; repeating it
+             here showed the same badge twice. -->
         <template v-if="detailThreadId" #meta>
           <span class="font-mono">{{ detailThreadId.slice(-8) }}</span>
-          <span v-if="ev" class="decision-badge" :class="detailDecisionClass">{{ detailUnavailable ? t('evaluation.status.notReady') : t(DETAIL_DECISION_KEYS[ev.decision || 'unknown'] ?? 'evaluation.decision.unknown') }}</span>
           <button type="button" class="copy-thread min-h-[36px] px-2 text-xs rounded-md border border-slate-200 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800" @click="copyThreadId">
             <AppIcon name="Copy" size="sm" />
             {{ t('evaluation.action.copyId') }}
@@ -809,7 +811,7 @@ function dimDescription(dim: string): string {
               <AppIcon name="X" size="sm" />
             </button>
           </div>
-          <CreatorNoteQualityPanel :account-id="selectedAccountId" :note-id="drawerNoteId" />
+          <CreatorNoteQualityPanel :account-id="selectedAccountId" :note-id="drawerNoteId" compact />
         </div>
       </div>
     </Teleport>

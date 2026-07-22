@@ -49,16 +49,18 @@ describe('Theme 1 Acceptance Tests', () => {
       // Verify skeleton structure matches Analytics view layout
       expect(wrapper.find('.relative.space-y-6').exists()).toBe(true)
 
-      // Header skeleton with period selector
+      // Header skeleton with refresh + 3 period buttons
       expect(wrapper.find('.w-14.h-14.rounded-xl.bg-slate-200.animate-pulse').exists()).toBe(true)
-      const periodButtons = wrapper.findAll('.h-8.w-16.rounded.bg-slate-200.animate-pulse')
-      expect(periodButtons.length).toBe(3)
+      const headerButtons = wrapper.findAll('.h-8.w-16.rounded.bg-slate-200.animate-pulse')
+      expect(headerButtons.length).toBe(4)
 
-      // Metrics grid (4 metric cards)
-      expect(wrapper.find('.grid.grid-cols-1.sm\\:grid-cols-2.lg\\:grid-cols-4.gap-4').exists()).toBe(true)
+      // Metrics grid (5 metric cards, same grid classes as the live view)
+      const metricsGrid = wrapper.find('.grid.grid-cols-2.sm\\:grid-cols-3.xl\\:grid-cols-5')
+      expect(metricsGrid.exists()).toBe(true)
+      expect(metricsGrid.findAll(':scope > div').length).toBe(5)
 
-      // Charts skeleton (2 charts)
-      const chartSkeletons = wrapper.findAll('.h-\\[280px\\].rounded-lg.bg-slate-100.animate-pulse')
+      // Charts skeleton (2 charts, same 220px height as the live charts)
+      const chartSkeletons = wrapper.findAll('.h-\\[220px\\].rounded-lg.bg-slate-100.animate-pulse')
       expect(chartSkeletons.length).toBe(2)
 
       // All skeleton elements use animate-pulse

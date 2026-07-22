@@ -546,7 +546,7 @@
   "review": {
     "title": "内容审核",
     "subtitle": "等待您的决定",
-    "pendingApproval": "待审核",
+    "pendingCount": "{count} 条待审核",
     "copyContent": "文案内容",
     "copyContentEn": "Copy Content",
     "visualPlan": "视觉方案",
@@ -719,7 +719,6 @@
   },
   "analytics": {
     "title": "数据分析中心",
-    "analyticsLabel": "Analytics",
     "postsPublished": "已发布帖子",
     "totalViews": "总浏览量",
     "totalEngagement": "总互动量",
@@ -733,11 +732,10 @@
     "recentPerformanceTrend": "近期表现趋势",
     "engagementBreakdown": "互动构成",
     "recentPosts": "最近帖子表现",
-    "top10": "TOP 10",
     "history": {
       "title": "历史笔记",
       "loadedCount": "已加载 {loaded} / 共 {total}",
-      "showLoaded": "显示 {loaded} / 共 {total} · 查看全部",
+      "showAll": "查看全部",
       "loadMore": "加载更多历史笔记",
       "retry": "重试",
       "dataAsOf": "历史数据截至 {time}",
@@ -799,15 +797,13 @@
     "month": "本月",
     "year": "全年",
     "account": "账号",
-    "period": "周期",
     "refresh": "刷新",
     "refreshing": "刷新中...",
     "lastUpdated": "更新于 {time}",
     "empty": {
       "title": "暂无分析数据",
       "description": "开始创作并发布内容后，即可在此查看表现数据分析。",
-      "startWorkflow": "开始创作",
-      "importHint": "也可先从创作者中心导入历史笔记，绑定赛道并获取创作建议。"
+      "startWorkflow": "开始创作"
     },
     "error": {
       "title": "数据加载失败",
@@ -896,7 +892,6 @@
     "title": "历史笔记发布后表现",
     "subtitle": "基于已导入历史笔记的互动、收藏、标题和稳定性信号生成发布后表现",
     "page": {
-      "eyebrow": "账号级创作诊断",
       "hubSubtitle": "从发布后表现到单篇内容评审，集中查看可执行的改进信号",
       "tab": "发布后表现",
       "workflowTab": "单篇内容评估",
@@ -1123,8 +1118,7 @@
   "dataTable": {
     "title": "数据表格",
     "noData": "暂无数据",
-    "noDataDesc": "等待数据加载或操作生成",
-    "records": "共 {count} 条记录"
+    "noDataDesc": "等待数据加载或操作生成"
   },
   "errorBoundary": {
     "componentError": "组件错误",
@@ -1224,7 +1218,6 @@
     "tabError": "出错",
     "tabCompleted": "已完成",
     "tabStale": "异常",
-    "tabPaused": "已暂停",
     "overflowMore": "更多",
     "checkpointLost": "工作流内容数据因容器重启而丢失，请重新启动工作流。",
     "checkpointLostTitle": "数据丢失",
@@ -1235,7 +1228,7 @@
   "history": {
     "title": "工作流历史",
     "subtitle": "查看和管理历史工作流",
-    "records": "条记录",
+    "records": "共 {count} 条记录",
     "refresh": "刷新历史",
     "empty": "暂无工作流记录",
     "emptyDesc": "开始第一次创作，进入内容增长之旅",
@@ -2169,9 +2162,7 @@
   },
     "evaluation": {
       "title": "创作质量评估",
-    "subtitle": "RQGM agent-as-a-judge 面板 · 9 维质量评分与修订建议",
       "overview": {
-      "eyebrow": "发布表现与内容评审",
       "title": "发布后表现与内容评审一屏掌握",
       "accountScore": "发布后表现分",
       "evaluated": "已评估工作流",
