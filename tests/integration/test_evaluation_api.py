@@ -84,8 +84,12 @@ class TestRunEvaluationRoute:
 
         assert r.status_code == 200
         data = r.json()["data"]
-        assert data["status"] == "evaluated"
-        assert data["evaluation_result"]["decision"] == "approved"
+        # Coverage below the historical safety threshold is explicitly
+        # scoreless; workflow evaluation uses the same honest contract rather
+        # than turning one returned dimension into a pass.
+        assert data["status"] == "partial"
+        assert data["evaluation_result"]["decision"] is None
+        assert data["evaluation_result"]["overall_score"] is None
         mock_graph.aupdate_state.assert_called_once()
 
     def test_run_no_content_raises(self, client, mock_graph):

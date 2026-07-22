@@ -5,7 +5,8 @@ Validates the pre-publish quality-gate chain:
 
 Covers:
 1. evaluator_node writes evaluation_result + emits event
-2. evaluator_node degrades to pass-through on agent failure (non-blocking)
+2. evaluator_node degrades to an explicit scoreless result on agent failure
+   (non-blocking)
 3. evaluator_outcome routing for approved / needs_revision / rejected / missing
 4. revise_content_node preserves evaluation_result.revision_hints into
    human_feedback.revisions for the copywriter
@@ -86,7 +87,7 @@ class TestEvaluatorNodeIntegration:
 
     @pytest.mark.asyncio
     async def test_node_degrades_to_pass_on_agent_failure(self, state, store):
-        """Agent throwing → node returns synthetic APPROVED (non-blocking)."""
+        """Agent throwing → node returns explicit degraded/scoreless output."""
         with patch.object(EvaluatorAgent, "model", new_callable=PropertyMock) as m:
             model = MagicMock()
             model.ainvoke = AsyncMock(side_effect=RuntimeError("LLM down"))
@@ -94,8 +95,11 @@ class TestEvaluatorNodeIntegration:
             result = await evaluator_node(state, store=store)
 
         ev = result["evaluation_result"]
-        assert ev["decision"] == ContentStatus.APPROVED
-        assert "降级" in ev["summary"]
+        assert ev["decision"] is None
+        assert ev["overall_score"] is None
+        assert ev["status"] == "degraded"
+        assert ev["degraded"] is True
+        assert "评估器异常" in ev["summary"]
 
     @pytest.mark.asyncio
     async def test_node_emits_data_updated_event(self, state, store):
