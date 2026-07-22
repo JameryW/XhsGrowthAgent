@@ -169,10 +169,14 @@ contract through every layer:
 - [ ] Service/evaluator: historical performance and RQGM content review remain
   separate; missing context and degraded runs are scoreless and excluded from
   aggregates.
-- [ ] Persistence: evaluation identity includes source/context/fingerprint;
-  cache hits are idempotent, force runs retain versions, stale runs remain auditable.
-- [ ] Frontend: selected account is passed to every list/trend request, cursor
-  resets on switch, late responses are ignored, and loaded/total/data-as-of are visible.
+- [ ] Persistence: evaluation identity includes source/context/fingerprint and
+  the historical run records its Creator Stats bundle snapshot in
+  `result_json.source`; cache hits are idempotent, force runs retain versions,
+  and a changed bundle marks older runs stale but auditable.
+- [ ] Frontend: selected account is passed to every list/trend/report request,
+  cursor resets on switch, standalone report/performance actions own their
+  account+period generation, late responses are ignored, and loaded/total/
+  data-as-of are visible.
 - [ ] Frontend compatibility fallbacks preserve snapshot/unit metadata so the
   same stale and fraction guards remain active on older servers.
 - [ ] Identity: workflow rows link imported notes only on explicit platform IDs;

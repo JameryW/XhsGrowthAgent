@@ -28,6 +28,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   let requestGeneration = 0
+  let scopedRequestGeneration = 0
 
   // Derive the scope from the selected account, or the first loaded account
   // when no explicit active account exists. Never query a synthetic `default`
@@ -89,16 +90,22 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   })
 
   // Actions
+  function clearAccountScopedData() {
+    growthReport.value = null
+    performanceData.value = null
+    periodSummary.value = null
+    dataAsOf.value = null
+    snapshotId.value = null
+  }
+
   async function fetchAllData() {
     const generation = ++requestGeneration
+    const scopedGeneration = ++scopedRequestGeneration
     const requestedAccountId = accountId.value
+    const requestedPeriod = period.value
     if (!requestedAccountId) {
-      growthReport.value = null
-      performanceData.value = null
+      clearAccountScopedData()
       costData.value = null
-      periodSummary.value = null
-      dataAsOf.value = null
-      snapshotId.value = null
       error.value = null
       isLoading.value = false
       return
@@ -111,10 +118,15 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     snapshotId.value = null
     try {
       const dashboard = await analyticsApi.getDashboard(
-        requestedAccountId, period.value, 20
+        requestedAccountId, requestedPeriod, 20
       )
       const { report, performance, costs, period_summary } = dashboard
-      if (generation !== requestGeneration || accountId.value !== requestedAccountId) return
+      if (
+        generation !== requestGeneration
+        || scopedGeneration !== scopedRequestGeneration
+        || accountId.value !== requestedAccountId
+        || period.value !== requestedPeriod
+      ) return
       growthReport.value = report
       performanceData.value = performance
       costData.value = costs
@@ -124,31 +136,115 @@ export const useAnalyticsStore = defineStore('analytics', () => {
       snapshotId.value = dashboard.snapshot_id
         ?? responseSnapshotId(report, performanceData.value, period_summary)
     } catch (e: any) {
-      if (generation === requestGeneration) error.value = e.message
+      if (
+        generation === requestGeneration
+        && scopedGeneration === scopedRequestGeneration
+        && accountId.value === requestedAccountId
+        && period.value === requestedPeriod
+      ) {
+        error.value = e.message
+      }
     } finally {
-      if (generation === requestGeneration) isLoading.value = false
+      if (
+        generation === requestGeneration
+        && scopedGeneration === scopedRequestGeneration
+        && accountId.value === requestedAccountId
+        && period.value === requestedPeriod
+      ) {
+        isLoading.value = false
+      }
     }
   }
 
   async function fetchReport() {
+    const generation = ++scopedRequestGeneration
+    const dashboardGeneration = requestGeneration
+    const requestedAccountId = accountId.value
+    const requestedPeriod = period.value
+    if (!requestedAccountId) {
+      clearAccountScopedData()
+      error.value = null
+      isLoading.value = false
+      return
+    }
+    // A standalone report must not remain paired with posts/summary from a
+    // previous account or snapshot while it is loading.
+    clearAccountScopedData()
+    error.value = null
     isLoading.value = true
     try {
-      growthReport.value = await analyticsApi.getGrowthReport(accountId.value, period.value)
+      const report = await analyticsApi.getGrowthReport(requestedAccountId, requestedPeriod)
+      if (
+        generation !== scopedRequestGeneration
+        || dashboardGeneration !== requestGeneration
+        || accountId.value !== requestedAccountId
+        || period.value !== requestedPeriod
+      ) return
+      growthReport.value = report
+      dataAsOf.value = report.data_as_of ?? null
+      snapshotId.value = report.snapshot_id ?? null
     } catch (e: any) {
-      error.value = e.message
+      if (
+        generation === scopedRequestGeneration
+        && dashboardGeneration === requestGeneration
+        && accountId.value === requestedAccountId
+        && period.value === requestedPeriod
+      ) error.value = e.message
     } finally {
-      isLoading.value = false
+      if (
+        generation === scopedRequestGeneration
+        && dashboardGeneration === requestGeneration
+        && accountId.value === requestedAccountId
+        && period.value === requestedPeriod
+      ) isLoading.value = false
     }
   }
 
   async function fetchPerformance() {
+    const generation = ++scopedRequestGeneration
+    const dashboardGeneration = requestGeneration
+    const requestedAccountId = accountId.value
+    const requestedPeriod = period.value
+    if (!requestedAccountId) {
+      clearAccountScopedData()
+      error.value = null
+      isLoading.value = false
+      return
+    }
+    // Keep report/posts/period metadata from being displayed as a mixed
+    // snapshot when callers use this legacy single-endpoint action.
+    clearAccountScopedData()
+    error.value = null
     isLoading.value = true
     try {
-      performanceData.value = await analyticsApi.getPerformance(accountId.value, period.value, 20)
+      const performance = await analyticsApi.getPerformance(
+        requestedAccountId,
+        requestedPeriod,
+        20,
+      )
+      if (
+        generation !== scopedRequestGeneration
+        || dashboardGeneration !== requestGeneration
+        || accountId.value !== requestedAccountId
+        || period.value !== requestedPeriod
+      ) return
+      performanceData.value = performance
+      dataAsOf.value = performance.data_as_of ?? null
+      snapshotId.value = performance.snapshot_id ?? null
     } catch (e: any) {
-      error.value = e.message
+      if (
+        generation === scopedRequestGeneration
+        && dashboardGeneration === requestGeneration
+        && accountId.value === requestedAccountId
+        && period.value === requestedPeriod
+      ) error.value = e.message
     } finally {
-      isLoading.value = false
+      if (
+        generation === scopedRequestGeneration
+        && dashboardGeneration === requestGeneration
+        && accountId.value === requestedAccountId
+        && period.value === requestedPeriod
+      ) isLoading.value = false
     }
   }
 

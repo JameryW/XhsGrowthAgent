@@ -16,7 +16,7 @@ from backend.db.accounts import AccountRow
 from backend.services.creator_stats.types import NoteStats
 
 _EXEC_PATCH = "backend.api.routes.evaluation._evaluator.execute"
-_GET_NOTE = "backend.api.routes.evaluation.get_note_stats"
+_GET_BUNDLE = "backend.api.routes.evaluation.get_creator_stats_snapshot_bundle"
 _GET_ACCOUNT = "backend.api.routes.evaluation.get_account"
 
 
@@ -48,6 +48,17 @@ def _account(niche: str = "fashion") -> AccountRow:
     return AccountRow(id="acct1", name="acct1", niche=niche, niche_source="manual")
 
 
+def _bundle(note: NoteStats, snapshot_id: str = "snapshot:test") -> dict:
+    return {
+        "account_id": note.account_id,
+        "account": None,
+        "notes": [note],
+        "data_as_of": note.synced_at or "2026-07-22T10:00:00Z",
+        "snapshot_id": snapshot_id,
+        "note_count": 1,
+    }
+
+
 def _patch_executor(result: dict | None = None):
     if result is None:
         result = {
@@ -65,7 +76,7 @@ class TestRunNoteEvaluation:
     def test_maps_note_fields_to_eval_state_and_runs_evaluator(self, client):
         note = _note()
         with (
-            patch(_GET_NOTE, AsyncMock(return_value=note)),
+            patch(_GET_BUNDLE, AsyncMock(return_value=_bundle(note))),
             patch(_GET_ACCOUNT, AsyncMock(return_value=_account())),
             _patch_executor() as mock_exec,
         ):
@@ -74,6 +85,8 @@ class TestRunNoteEvaluation:
         data = r.json()["data"]
         assert data["account_id"] == "acct1"
         assert data["note_id"] == "n1"
+        assert data["snapshot_id"] == "snapshot:test"
+        assert data["source"]["snapshot_id"] == "snapshot:test"
         # A mock result without the required copywriting/compliance dimensions
         # is intentionally downgraded to a partial, scoreless result instead
         # of trusting a caller-supplied approval verdict.
@@ -96,7 +109,7 @@ class TestRunNoteEvaluation:
     def test_cover_url_absent_yields_empty_image_urls(self, client):
         note = _note(cover_url="")
         with (
-            patch(_GET_NOTE, AsyncMock(return_value=note)),
+            patch(_GET_BUNDLE, AsyncMock(return_value=_bundle(note))),
             patch(_GET_ACCOUNT, AsyncMock(return_value=_account())),
             _patch_executor() as mock_exec,
         ):
@@ -111,7 +124,7 @@ class TestRunNoteEvaluation:
         # should remain unavailable rather than silently using a default.
         note = _note(title="随手记录", body_text="", tags=[])
         with (
-            patch(_GET_NOTE, AsyncMock(return_value=note)),
+            patch(_GET_BUNDLE, AsyncMock(return_value=_bundle(note))),
             patch(_GET_ACCOUNT, AsyncMock(return_value=None)),
             _patch_executor() as mock_exec,
         ):
@@ -123,7 +136,19 @@ class TestRunNoteEvaluation:
 
     def test_missing_note_returns_404(self, client):
         with (
-            patch(_GET_NOTE, AsyncMock(return_value=None)),
+            patch(
+                _GET_BUNDLE,
+                AsyncMock(
+                    return_value={
+                        "account_id": "acct1",
+                        "account": None,
+                        "notes": [],
+                        "data_as_of": None,
+                        "snapshot_id": None,
+                        "note_count": 0,
+                    }
+                ),
+            ),
             patch(_GET_ACCOUNT, AsyncMock(return_value=_account())),
             _patch_executor() as mock_exec,
         ):
@@ -145,10 +170,59 @@ class TestRunNoteEvaluation:
         note = _note()
         store = client.app.state.graph.store
         with (
-            patch(_GET_NOTE, AsyncMock(return_value=note)),
+            patch(_GET_BUNDLE, AsyncMock(return_value=_bundle(note))),
             patch(_GET_ACCOUNT, AsyncMock(return_value=_account())),
             _patch_executor() as mock_exec,
         ):
             client.post("/api/evaluation/note", json={"account_id": "acct1", "note_id": "n1"})
         # EvaluatorAgent.execute(state, store) — store is positional arg #2
         assert mock_exec.call_args.args[1] is store
+
+    def test_latest_marks_run_stale_when_creator_stats_snapshot_changes(self, client):
+        from backend.api.routes.evaluation import (
+            HISTORICAL_ASSESSMENT_TYPE,
+            HISTORICAL_SUBJECT_TYPE,
+        )
+        from backend.db import quality_evaluations
+
+        note = _note(synced_at="2026-07-22T10:00:00Z")
+        run = quality_evaluations.new_run(
+            account_id="acct1",
+            subject_type=HISTORICAL_SUBJECT_TYPE,
+            subject_id="n1",
+            assessment_type=HISTORICAL_ASSESSMENT_TYPE,
+            source_content_hash="sha256:content",
+            source_data_as_of=note.synced_at,
+            context_hash="sha256:context",
+            evaluator_fingerprint="rqgm:test",
+        )
+        run.status = "ready"
+        run.result_json = {
+            "status": "ready",
+            "source": {"snapshot_id": "snapshot:old"},
+            "overall_score": 80,
+        }
+        with (
+            patch(
+                "backend.db.quality_evaluations.get_latest_for_subject",
+                AsyncMock(return_value=run),
+            ),
+            patch(
+                _GET_BUNDLE,
+                AsyncMock(
+                    return_value={**_bundle(note, "snapshot:new"), "data_as_of": note.synced_at}
+                ),
+            ),
+            patch(_GET_ACCOUNT, AsyncMock(return_value=_account())),
+            patch(
+                "backend.db.quality_evaluations.mark_subject_stale",
+                AsyncMock(return_value=1),
+            ) as mark_stale,
+        ):
+            response = client.get("/api/evaluation/note/acct1/n1/latest")
+
+        assert response.status_code == 200, response.text
+        data = response.json()["data"]
+        assert data["stale"] is True
+        assert data["snapshot_id"] == "snapshot:old"
+        mark_stale.assert_awaited_once()

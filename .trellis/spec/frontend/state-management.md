@@ -198,13 +198,19 @@ code, but it can pull unrelated workspace stores into the public entry chunk.
 - `loadNotes(accountId, reset=true)` and `loadList(reset, accountId)` own local
   request generations and cursors.
 - `analyticsStore.fetchDashboard(accountId, period, limit)` owns dashboard
-  generation; API clients receive the same account ID explicitly.
+  generation; standalone `fetchReport`/`fetchPerformance` actions also capture
+  account, period and a local request generation before awaiting the API.
+  API clients receive the same account ID explicitly.
 
 ### 3. Contracts
 - Account is the single query boundary. On change, clear/reset rows, totals,
   cursors and data-as-of before loading the new scope.
 - A response may commit only if its generation and account ID still match the
   active request. Late responses are discarded, never merged into the new account.
+- Standalone report/performance refreshes clear account-scoped rows and snapshot
+  metadata while loading, so a successful single-endpoint response cannot be
+  displayed beside facts from a different snapshot. Period changes invalidate
+  the same request owner even when the account is unchanged.
 - Store/component state exposes `loaded / total`, `next_cursor`, `data_as_of` and
   stale/loading/error status; compact previews never imply completeness.
 - Analytics historical pages compare their canonical page `snapshot_id` with

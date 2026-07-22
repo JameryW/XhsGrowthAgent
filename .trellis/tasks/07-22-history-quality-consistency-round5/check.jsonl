@@ -1,0 +1,10 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"检查 evaluation source metadata 与 Creator Stats bundle 是否同批次。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"检查 cache/latest stale、旧 run fallback 和接口回归覆盖。"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"检查 report/performance 请求在账号/周期切换时的 generation guard。"}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"检查空账号、错误和迟到响应不会污染 Analytics store。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 canonical snapshot 是否贯穿 API、持久化和前端。"}
+{"file":".trellis/tasks/07-22-history-quality-consistency-round5/research/round5-audit.md","reason":"按第五轮审计场景进行实现后复核。"}
+{"file":"tests/unit/api/test_quality_consistency_backend.py","reason":"回归 canonical snapshot digest、持久化 cache/latest 与 stale 边界。"}
+{"file":"tests/unit/services/creator_stats/test_quality_report.py","reason":"确认历史质量报告仍从完整 bundle 输出同一 snapshot。"}
+{"file":"frontend/tests/api/analytics.spec.ts","reason":"保留 API fallback snapshot/unit 契约，并覆盖前端 action 所需响应字段。"}
+{"file":"frontend/tests/stores/analytics.spec.ts","reason":"覆盖 report/performance 账号与周期切换的迟到响应保护。"}

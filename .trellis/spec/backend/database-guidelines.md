@@ -378,7 +378,10 @@ ERROR_CREATOR_NOTE_NOT_FOUND 404 response.
   creates a new statement snapshot for every SELECT, even on one connection).
 - `quality_evaluation_runs` stores source/content/context hashes,
   evaluator fingerprint, status, result/coverage/threshold JSON and timestamps.
-  The in-memory fallback is test/dev only; Postgres startup calls `ensure_tables`.
+  Historical Creator Stats evaluations must persist the canonical bundle
+  identity in `result_json.source.snapshot_id`; this is additive JSON metadata,
+  so old rows remain readable through the timestamp-compatible fallback. The
+  in-memory fallback is test/dev only; Postgres startup calls `ensure_tables`.
 
 ### 4. Validation & Error Matrix
 - Blank account ID → structured validation error at the API boundary.
@@ -400,8 +403,9 @@ ERROR_CREATOR_NOTE_NOT_FOUND 404 response.
 - Assert stable cursor traversal, complete `total`, fraction normalization and
   `data_as_of` for >500 rows and tied timestamps.
 - Assert account isolation and read-only quality/detail routes.
-- Assert cached runs are idempotent, forced runs retain prior versions, and
-  latest lookup includes stale/degraded audit records.
+- Assert cached runs are idempotent, forced runs retain prior versions, latest
+  lookup includes stale/degraded audit records, and a changed Creator Stats
+  bundle marks an older evaluation stale.
 
 ### 7. Wrong vs Correct
 ```python

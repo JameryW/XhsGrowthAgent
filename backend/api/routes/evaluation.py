@@ -21,7 +21,10 @@ from backend.agents.evaluator import MIN_EVALUATION_COVERAGE, EvaluatorAgent
 from backend.api.errors import CreatorNoteNotFoundError, ValidationError, WorkflowNotFoundError
 from backend.api.responses import ApiResponse, success
 from backend.db.accounts import get_account
-from backend.db.creator_stats import get_note_stats
+from backend.db.creator_stats import (
+    canonicalize_note_stats,
+    get_creator_stats_snapshot_bundle,
+)
 from backend.db.pool import is_pool_ready
 from backend.db.workflows import list_workflows as db_list
 from backend.services.creator_stats.types import NoteStats
@@ -514,7 +517,7 @@ def _hash_payload(payload: Any) -> str:
 
 
 def _historical_source_hash(note: NoteStats) -> str:
-    """Hash content-bearing fields only; metrics changes do not rerun RQGM."""
+    """Hash content-bearing fields only; metrics freshness uses bundle identity."""
     return _hash_payload(
         {
             "title": note.title or "",
@@ -538,6 +541,46 @@ def _historical_context_hash(
             # Context fields that affect historical coverage and prompt input.
             "visual_input_available": False,
         }
+    )
+
+
+async def _get_historical_note_with_snapshot(
+    account_id: str, note_id: str
+) -> tuple[NoteStats | None, dict[str, Any]]:
+    """Read a historical note and its account snapshot from one bundle.
+
+    The evaluator needs the note DTO and the complete Creator Stats population
+    that versions the response.  Keeping the lookup here prevents the route
+    from pairing a single-note read with a later, unrelated snapshot query.
+    """
+
+    bundle = await get_creator_stats_snapshot_bundle(account_id)
+    normalized_note_id = (note_id or "").strip()
+    note = next(
+        (
+            item
+            for item in bundle.get("notes", [])
+            if str(getattr(item, "note_id", "") or "").strip() == normalized_note_id
+        ),
+        None,
+    )
+    if note is None:
+        return None, bundle
+    return canonicalize_note_stats(note), bundle
+
+
+def _run_snapshot_id(run: Any) -> str | None:
+    """Return a persisted canonical snapshot, with a legacy-safe fallback."""
+
+    result = getattr(run, "result_json", {}) or {}
+    source = result.get("source") if isinstance(result, dict) else None
+    if isinstance(source, dict):
+        snapshot = str(source.get("snapshot_id") or "").strip()
+        if snapshot:
+            return snapshot
+    snapshot = str(result.get("snapshot_id") or "").strip() if isinstance(result, dict) else ""
+    return snapshot or build_snapshot_id(
+        getattr(run, "account_id", ""), getattr(run, "source_data_as_of", "")
     )
 
 
@@ -713,11 +756,12 @@ def _evaluation_run_data(run: Any, *, cache_hit: bool = False) -> dict[str, Any]
     result.setdefault("coverage", run.coverage_json or {})
     result["evaluation_id"] = run.evaluation_id
     result["assessment_type"] = run.assessment_type
+    canonical_snapshot_id = _run_snapshot_id(run)
     source = {
         "content_hash": run.source_content_hash,
         "data_as_of": run.source_data_as_of,
         "context_hash": run.context_hash,
-        "snapshot_id": build_snapshot_id(run.account_id, run.source_data_as_of),
+        "snapshot_id": canonical_snapshot_id,
     }
     if isinstance(result.get("source"), dict):
         source.update(result["source"])
@@ -747,7 +791,7 @@ def _evaluation_run_data(run: Any, *, cache_hit: bool = False) -> dict[str, Any]
             "decision": result.get("decision"),
             "degraded": bool(result.get("degraded")) or run.status in {"degraded", "failed"},
             "data_as_of": run.source_data_as_of or None,
-            "snapshot_id": build_snapshot_id(run.account_id, run.source_data_as_of),
+            "snapshot_id": canonical_snapshot_id,
             "stale": bool(run.stale_at),
             "stale_at": run.stale_at,
         }
@@ -774,9 +818,12 @@ async def run_note_evaluation(
     if not note_id:
         raise ValidationError("note_id", "note_id cannot be empty")
 
-    note = await get_note_stats(account_id, note_id)
+    note, snapshot_bundle = await _get_historical_note_with_snapshot(account_id, note_id)
     if note is None:
         raise CreatorNoteNotFoundError(account_id, note_id)
+
+    source_data_as_of = str(snapshot_bundle.get("data_as_of") or note.synced_at or "")
+    source_snapshot_id = snapshot_bundle.get("snapshot_id")
 
     niche, niche_source, niche_available = await _historical_niche_context(account_id, note)
 
@@ -820,17 +867,25 @@ async def run_note_evaluation(
             evaluator_fingerprint=evaluator_fingerprint,
         )
         if cached is not None:
-            payload = _evaluation_run_data(cached, cache_hit=True)
-            payload["thresholds"] = cached.thresholds_json or thresholds
-            payload["persistence_status"] = "ready" if is_pool_ready() else "memory"
-            payload["source"].update(
-                {
-                    "niche": niche or None,
-                    "niche_source": niche_source or None,
-                    "note_synced_at": note.synced_at or None,
-                }
-            )
-            return success(data=payload)
+            if source_snapshot_id and _run_snapshot_id(cached) != source_snapshot_id:
+                await quality_db.mark_subject_stale(
+                    account_id,
+                    HISTORICAL_SUBJECT_TYPE,
+                    note_id,
+                    reason="creator_stats_snapshot_changed",
+                )
+            else:
+                payload = _evaluation_run_data(cached, cache_hit=True)
+                payload["thresholds"] = cached.thresholds_json or thresholds
+                payload["persistence_status"] = "ready" if is_pool_ready() else "memory"
+                payload["source"].update(
+                    {
+                        "niche": niche or None,
+                        "niche_source": niche_source or None,
+                        "note_synced_at": note.synced_at or None,
+                    }
+                )
+                return success(data=payload)
 
     # A new content/context fingerprint supersedes prior runs.  Keep them for
     # audit, but mark them stale so the cache cannot silently serve an old
@@ -848,7 +903,7 @@ async def run_note_evaluation(
         subject_id=note_id,
         assessment_type=HISTORICAL_ASSESSMENT_TYPE,
         source_content_hash=source_hash,
-        source_data_as_of=note.synced_at or "",
+        source_data_as_of=source_data_as_of,
         context_hash=context_hash,
         evaluator_fingerprint=evaluator_fingerprint,
     )
@@ -896,17 +951,17 @@ async def run_note_evaluation(
     evaluation["subject_id"] = note_id
     coverage = evaluation.get("coverage") or {}
     evaluation["thresholds"] = thresholds
-    evaluation["data_as_of"] = note.synced_at or None
-    evaluation["snapshot_id"] = build_snapshot_id(account_id, note.synced_at or None)
+    evaluation["data_as_of"] = source_data_as_of or None
+    evaluation["snapshot_id"] = source_snapshot_id
     evaluation["contract_version"] = (
         QUALITY_CONSISTENCY_CONTRACT if quality_consistency_v2_enabled() else "legacy_compatible"
     )
     evaluation["evaluated_at"] = datetime.now(UTC).isoformat()
     evaluation["source"] = {
         "content_hash": source_hash,
-        "data_as_of": note.synced_at or None,
+        "data_as_of": source_data_as_of or None,
         "context_hash": context_hash,
-        "snapshot_id": build_snapshot_id(account_id, note.synced_at or None),
+        "snapshot_id": source_snapshot_id,
         "niche": niche or None,
         "niche_source": niche_source or None,
         "note_synced_at": note.synced_at or None,
@@ -989,9 +1044,12 @@ async def get_latest_note_evaluation(account_id: str, note_id: str) -> ApiRespon
     # A latest lookup is also the first read after an import/content update.
     # Compare the current durable note/context fingerprints so a stale RQGM
     # answer cannot be presented as current until the user explicitly reruns
-    # it. Metrics-only changes intentionally do not affect this content hash.
+    # it. The complete Creator Stats snapshot is checked as well: metrics-only
+    # imports still create a new source version for cross-page consistency.
     if run is not None and not run.stale_at:
-        current_note = await get_note_stats(normalized_account_id, normalized_note_id)
+        current_note, current_bundle = await _get_historical_note_with_snapshot(
+            normalized_account_id, normalized_note_id
+        )
         if current_note is not None:
             niche, niche_source, niche_available = await _historical_niche_context(
                 normalized_account_id,
@@ -1003,15 +1061,19 @@ async def get_latest_note_evaluation(account_id: str, note_id: str) -> ApiRespon
                 niche_source=niche_source,
                 niche_available=niche_available,
             )
+            current_snapshot_id = current_bundle.get("snapshot_id")
             if (
                 run.source_content_hash != _historical_source_hash(current_note)
                 or run.context_hash != current_context_hash
+                or (current_snapshot_id and _run_snapshot_id(run) != current_snapshot_id)
             ):
                 await quality_db.mark_subject_stale(
                     normalized_account_id,
                     HISTORICAL_SUBJECT_TYPE,
                     normalized_note_id,
-                    reason="source_or_context_changed",
+                    reason="creator_stats_snapshot_changed"
+                    if current_snapshot_id and _run_snapshot_id(run) != current_snapshot_id
+                    else "source_or_context_changed",
                 )
                 run.stale_at = datetime.now(UTC).isoformat()
     payload = _evaluation_run_data(run)

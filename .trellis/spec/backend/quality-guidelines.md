@@ -718,6 +718,11 @@ Before merging any PR that touches `backend/`:
 - Additive response metadata must include account/subject/scope,
   assessment type, status, coverage, snapshot/evaluation timestamps and the
   deterministic algorithm or evaluator fingerprint.
+- Historical-note RQGM runs read the target note and the complete Creator Stats
+  snapshot bundle together. Persist `result_json.source.snapshot_id`; cache
+  hits and latest restore must not present a run as current when that canonical
+  snapshot has changed. Older runs may use the timestamp fallback and must be
+  treated as stale when compared with a current bundle.
 - Use one `MIN_EVALUATION_COVERAGE` constant; no missing dimension may be filled
   with 70 and no degraded result may become a pass.
 - Canonical history is stable cursor pagination with fraction engagement rates;
@@ -731,7 +736,8 @@ Before merging any PR that touches `backend/`:
 
 ### 5. Good/Base/Bad Cases
 - Good: focused tests prove >500 pagination, two-account isolation, idempotent
-  evaluation, force versioning and threshold-aware UI metadata.
+  evaluation, force versioning, canonical evaluation snapshots/stale restore,
+  and threshold-aware UI metadata.
 - Base: legacy workflow checkpoints remain readable through additive adapters.
 - Bad: broad exception swallowing, hidden list caps, or changing score semantics
   without updating API types/tests/i18n.
