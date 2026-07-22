@@ -80,7 +80,7 @@ def test_quality_report_normalizes_percent_rates_and_does_not_mutate_notes():
     data = report.to_dict()
 
     assert data["account_id"] == "quality_acc"
-    assert data["scope"] == "all_imported_history"
+    assert data["scope"] == "account_history"
     assert data["total_notes"] == 3
     assert data["notes_analyzed"] == 3
     assert data["overall_score"] is not None
@@ -146,7 +146,7 @@ def test_single_note_quality_reuses_historical_dimensions_without_fake_consisten
 
     assert data["account_id"] == "quality_acc"
     assert data["note_id"] == "single"
-    assert data["scope"] == "single_imported_note"
+    assert data["scope"] == "single_note"
     assert data["total_notes"] == 1
     assert data["notes_analyzed"] == 1
     assert data["overall_score"] is not None
@@ -204,7 +204,7 @@ async def test_quality_endpoint_uses_all_history_over_display_limit_and_is_read_
     payload = response.json()
     assert payload["success"] is True
     data = payload["data"]
-    assert data["scope"] == "all_imported_history"
+    assert data["scope"] == "account_history"
     assert data["total_notes"] == 101
     assert data["notes_analyzed"] == data["total_notes"]
     assert data["overall_score"] is not None
@@ -248,7 +248,7 @@ async def test_single_note_detail_and_quality_endpoints_are_read_only():
     assert quality.status_code == 200
     quality_data = quality.json()["data"]
     assert quality_data["note_id"] == "detail_001"
-    assert quality_data["quality"]["scope"] == "single_imported_note"
+    assert quality_data["quality"]["scope"] == "single_note"
     assert quality_data["quality"]["overall_score"] is not None
     assert "single imported note" in quality_data["quality"]["summary"]
 

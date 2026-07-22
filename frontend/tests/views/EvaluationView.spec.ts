@@ -7,6 +7,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import EvaluationView from '@/views/EvaluationView.vue'
 import i18n from '@/locales'
+import { listAccounts } from '@/api/accounts'
 
 const tt = (key: string, params?: Record<string, any>) => i18n.global.t(key, params as any)
 
@@ -54,6 +55,9 @@ vi.mock('@/api/analytics', async (importOriginal) => {
     ...actual,
     getCreatorQuality: vi.fn().mockResolvedValue(null),
     getCreatorStats: vi.fn().mockResolvedValue({ notes: [] }),
+    // Keep view tests on the legacy-compatible adapter path; the canonical
+    // endpoint is covered by API tests and should not attempt localhost I/O.
+    getCreatorNotes: vi.fn().mockRejectedValue(new Error('canonical reader unavailable')),
   }
 })
 
@@ -88,6 +92,10 @@ describe('EvaluationView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    // clearAllMocks preserves implementations. Reset the shared account
+    // fixture so a prior account-scoped test cannot leak into the no-account
+    // contract.
+    ;(listAccounts as any).mockResolvedValue([])
   })
 
   it('detail shows the decision CTA for an approved result (EV-03)', async () => {
@@ -114,8 +122,10 @@ describe('EvaluationView', () => {
 
   it('trend failure shows a retry, not "no data" (EV-02)', async () => {
     const { getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
+    const { listAccounts } = await import('@/api/accounts')
     ;(getEvaluationList as any).mockResolvedValue({ workflows: [], total: 0 })
     ;(getEvaluationTrend as any).mockRejectedValue(new Error('network'))
+    ;(listAccounts as any).mockResolvedValue([{ id: 'acc-1', name: '测试账号', is_active: true }])
     const wrapper = await mountEval({}, { tab: 'workflow' })
     // loadTrend fires from the activeTab watcher after mount; let it reject.
     for (let i = 0; i < 5; i++) await flushPromises()
@@ -140,9 +150,10 @@ describe('EvaluationView', () => {
 
   it('keeps loading more while the accumulated list is below total', async () => {
     const { getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
+    const { listAccounts } = await import('@/api/accounts')
     const firstPage = Array.from({ length: 20 }, (_, i) => ({
       thread_id: `t-${i}`,
-      account_id: 'a',
+      account_id: 'acc-1',
       status: 'completed',
       phase: 'reviewing',
       label: '',
@@ -157,6 +168,7 @@ describe('EvaluationView', () => {
       .mockResolvedValueOnce({ workflows: firstPage, total: 40 })
       .mockResolvedValueOnce({ workflows: secondPage, total: 40 })
     ;(getEvaluationTrend as any).mockResolvedValue({ db_ready: true, points: [], dim_averages: {} })
+    ;(listAccounts as any).mockResolvedValue([{ id: 'acc-1', name: '测试账号', is_active: true }])
 
     const wrapper = await mountEval({}, { tab: 'workflow' })
     const loadMore = () => wrapper.find('.load-more-btn')
@@ -199,7 +211,7 @@ describe('EvaluationView', () => {
     content_type: 'normal', tags: [], cover_url: '', engagement_rate: 0.08, synced_at: '', source: 'import',
   }
 
-  it('merges workflow evaluations and imported notes into one time-ordered stream', async () => {
+  it('keeps published history and workflow review in separate source tabs', async () => {
     const { getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
     const { listAccounts } = await import('@/api/accounts')
     const { getCreatorStats } = await import('@/api/analytics')
@@ -208,21 +220,28 @@ describe('EvaluationView', () => {
     ;(listAccounts as any).mockResolvedValue([{ id: 'acc-1', name: '测试账号', is_active: true }])
     ;(getCreatorStats as any).mockResolvedValue({ notes: [noteRow] })
 
-    const wrapper = await mountEval()
-    // The note (07-12) sorts above the workflow evaluation (07-10).
-    const titles = wrapper.findAll('.item-title').map((el) => el.text())
-    expect(titles.slice(0, 2)).toEqual(['历史笔记', '工作流笔记'])
-    expect(wrapper.text()).toContain(tt('evaluation.stream.sourceWorkflow'))
+    const wrapper = await mountEval({}, { tab: 'historical' })
+    let titles = wrapper.findAll('.item-title').map((el) => el.text())
+    expect(titles).toEqual(['历史笔记'])
+    expect(wrapper.text()).not.toContain('工作流笔记')
     expect(wrapper.text()).toContain(tt('evaluation.stream.sourceImported'))
 
+    const workflowTab = wrapper.findAll('.source-tab').find((el) => el.text().includes(tt('evaluation.stream.workflowTab')))
+    await workflowTab!.trigger('click')
+    titles = wrapper.findAll('.item-title').map((el) => el.text())
+    expect(titles).toEqual(['工作流笔记'])
+    expect(wrapper.text()).toContain(tt('evaluation.stream.sourceWorkflow'))
+
     // Clicking a note row opens the drill-down drawer with the quality panel.
+    const historicalTab = wrapper.findAll('.source-tab').find((el) => el.text().includes(tt('evaluation.stream.historicalTab')))
+    await historicalTab!.trigger('click')
     const note = wrapper.findAll('.eval-item').find((el) => el.text().includes('历史笔记'))
     expect(note).toBeTruthy()
     await note!.trigger('click')
     expect(document.body.querySelector('[data-testid="note-quality-panel"]')).toBeTruthy()
   })
 
-  it('hides imported notes while a decision filter is active', async () => {
+  it('applies decision filters only inside workflow review tab', async () => {
     const { getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
     const { listAccounts } = await import('@/api/accounts')
     const { getCreatorStats } = await import('@/api/analytics')
@@ -231,8 +250,8 @@ describe('EvaluationView', () => {
     ;(listAccounts as any).mockResolvedValue([{ id: 'acc-1', name: '测试账号', is_active: true }])
     ;(getCreatorStats as any).mockResolvedValue({ notes: [noteRow] })
 
-    const wrapper = await mountEval()
-    expect(wrapper.findAll('.item-title').map((el) => el.text())).toContain('历史笔记')
+    const wrapper = await mountEval({}, { tab: 'workflow' })
+    expect(wrapper.findAll('.item-title').map((el) => el.text())).not.toContain('历史笔记')
     const approvedChip = wrapper.findAll('.filter-chip').find((el) => el.text().includes(tt('evaluation.decision.approved')))
     await approvedChip!.trigger('click')
     const titles = wrapper.findAll('.item-title').map((el) => el.text())

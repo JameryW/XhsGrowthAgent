@@ -1,18 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  getCreatorNote,
-  getCreatorNoteQuality,
-  getCreatorStats,
-  type CreatorNoteStats,
-  type CreatorQualityReport,
-} from '@/api/analytics'
-import { evaluateNote } from '@/api/evaluation'
+import * as analyticsApi from '@/api/analytics'
+import type { CreatorNoteStats, CreatorQualityReport, CreatorNotesPayload } from '@/api/analytics'
+import * as evaluationApi from '@/api/evaluation'
 import type { EvaluationResult } from '@/types/evaluation'
+import type { EvaluationCoverage, EvaluationStatus } from '@/types/evaluation'
 import AppIcon from '@/components/AppIcon.vue'
 import EvaluationRadar from '@/components/charts/EvaluationRadar.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import { SCORE_THRESHOLDS, scoreTier as scoreTierOf } from '@/constants/evaluation'
 
 const props = withDefaults(defineProps<{
   accountId: string
@@ -40,6 +37,11 @@ let requestGeneration = 0
 
 // RQGM evaluation (thread-less, manual trigger — runs an LLM call per note)
 const rqgmResult = ref<EvaluationResult | null>(null)
+const rqgmStatus = ref<EvaluationStatus>('unavailable')
+const rqgmCoverage = ref<EvaluationCoverage | null>(null)
+const rqgmEvaluationId = ref<string | null>(null)
+const rqgmDataAsOf = ref<string | null>(null)
+const rqgmThresholds = ref(SCORE_THRESHOLDS)
 const rqgmRunning = ref(false)
 const rqgmError = ref('')
 let rqgmGeneration = 0
@@ -66,10 +68,40 @@ function rqgmDecisionLabel(decision: string): string {
   return t(RQGM_DECISION_KEYS[decision] ?? 'creatorNoteQuality.rqgm.decision.unknown')
 }
 
-function rqgmScoreTier(score: number): string {
-  if (score >= 70) return 'text-emerald-600'
-  if (score >= 50) return 'text-amber-600'
-  return 'text-rose-600'
+function rqgmScoreTier(score: number | null | undefined): string {
+  const tier = scoreTierOf(score, rqgmThresholds.value)
+  if (tier === 'pass') return 'text-emerald-600'
+  if (tier === 'warn') return 'text-amber-600'
+  if (tier === 'fail') return 'text-rose-600'
+  return 'text-slate-400'
+}
+
+const rqgmUnavailable = computed(() =>
+  ['unavailable', 'degraded', 'failed', 'running'].includes(rqgmStatus.value)
+  || Boolean(rqgmResult.value?.degraded)
+  || (rqgmStatus.value === 'partial' && rqgmResult.value?.overall_score == null)
+)
+
+async function readNotesPage(accountId: string): Promise<CreatorNotesPayload> {
+  let reader: typeof analyticsApi.getCreatorNotes | undefined
+  try { reader = analyticsApi.getCreatorNotes } catch { reader = undefined }
+  if (typeof reader === 'function') {
+    try {
+      return await reader(accountId, { limit: 50, sort: 'published_at_desc' }, { suppressToast: true })
+    } catch {
+      // Compatibility with older backends that only expose the bounded
+      // overview endpoint.
+    }
+  }
+  const legacy = await analyticsApi.getCreatorStats(accountId, 50)
+  return {
+    account_id: accountId,
+    items: legacy.notes || [],
+    total: legacy.total ?? legacy.notes?.length ?? 0,
+    limit: legacy.limit ?? 50,
+    next_cursor: null,
+    data_as_of: legacy.data_as_of ?? legacy.fetched_at ?? null,
+  }
 }
 
 async function runRqgmEvaluation() {
@@ -79,13 +111,31 @@ async function runRqgmEvaluation() {
   rqgmRunning.value = true
   rqgmError.value = ''
   rqgmResult.value = null
+  rqgmStatus.value = 'running'
+  rqgmCoverage.value = null
+  rqgmEvaluationId.value = null
   try {
-    const resp = await evaluateNote(props.accountId, noteId)
+    const resp = await evaluationApi.evaluateNote(props.accountId, noteId, { suppressToast: true })
     if (gen !== rqgmGeneration) return
-    rqgmResult.value = resp.evaluation_result || null
+    rqgmStatus.value = resp.status || resp.evaluation_result?.status || (resp.degraded ? 'degraded' : 'ready')
+    rqgmCoverage.value = resp.coverage || resp.evaluation_result?.coverage || null
+    rqgmEvaluationId.value = resp.evaluation_id || null
+    rqgmDataAsOf.value = resp.data_as_of || resp.source?.data_as_of || resp.evaluated_at || null
+    rqgmThresholds.value = resp.thresholds || SCORE_THRESHOLDS
+    const next = resp.evaluation_result || null
+    // Compatibility guard for old timeout responses that incorrectly carry a
+    // 100/approved fallback alongside degraded=true.
+    rqgmResult.value = next
+      ? {
+          ...next,
+          overall_score: (resp.degraded || ['degraded', 'failed', 'unavailable'].includes(rqgmStatus.value)) ? null : next.overall_score,
+          decision: (resp.degraded || ['degraded', 'failed', 'unavailable'].includes(rqgmStatus.value)) ? null : next.decision,
+        }
+      : null
   } catch (e: unknown) {
     if (gen !== rqgmGeneration) return
     rqgmError.value = e instanceof Error ? e.message : t('creatorNoteQuality.rqgm.error')
+    rqgmStatus.value = 'failed'
   } finally {
     if (gen === rqgmGeneration) rqgmRunning.value = false
   }
@@ -150,6 +200,9 @@ watch(
       rqgmGeneration += 1
       rqgmResult.value = null
       rqgmError.value = ''
+      rqgmStatus.value = 'unavailable'
+      rqgmCoverage.value = null
+      rqgmEvaluationId.value = null
       return
     }
     if (requested !== selectedNoteId.value) void selectNote(requested)
@@ -165,18 +218,40 @@ async function loadNotes(accountId = props.accountId) {
   rqgmGeneration += 1
   rqgmResult.value = null
   rqgmError.value = ''
+  rqgmStatus.value = 'unavailable'
+  rqgmCoverage.value = null
+  rqgmEvaluationId.value = null
+  rqgmDataAsOf.value = null
   errorMessage.value = ''
   if (!accountId) return
 
   isLoadingNotes.value = true
   try {
-    const stats = await getCreatorStats(accountId, 200)
+    const stats = await readNotesPage(accountId)
     if (generation !== requestGeneration) return
-    notes.value = (stats.notes || []).filter(note => Boolean(note.note_id))
+    notes.value = (stats.items || []).filter(note => Boolean(note.note_id))
     const requested = props.noteId.trim()
-    const preselect = requested
+    let preselect = requested
       ? (notes.value.some(n => n.note_id === requested) ? requested : '')
       : (notes.value[0]?.note_id || '')
+    // The canonical reader is cursor-paged.  A drill-down can therefore
+    // target a note beyond the first page; fetch that stable subject directly
+    // instead of silently showing the first note or an unrelated empty state.
+    const pageMayOmitRequested =
+      Boolean(stats.next_cursor) || Number(stats.total ?? 0) > notes.value.length
+    if (requested && !preselect && pageMayOmitRequested) {
+      try {
+        const detail = await analyticsApi.getCreatorNote(accountId, requested)
+        if (generation !== requestGeneration) return
+        if (detail?.note?.note_id === requested) {
+          notes.value = [detail.note, ...notes.value]
+          preselect = requested
+        }
+      } catch {
+        // The requested note may have been removed or an older backend may not
+        // expose direct detail reads; keep the explicit unavailable state.
+      }
+    }
     selectedNoteId.value = preselect
     if (selectedNoteId.value) {
       await loadSelectedNote(generation)
@@ -209,14 +284,21 @@ async function loadSelectedNote(generation = requestGeneration) {
   rqgmGeneration += 1
   rqgmResult.value = null
   rqgmError.value = ''
+  rqgmStatus.value = 'unavailable'
+  rqgmCoverage.value = null
+  rqgmEvaluationId.value = null
+  rqgmDataAsOf.value = null
   try {
     const [detail, report] = await Promise.all([
-      getCreatorNote(props.accountId, noteId),
-      getCreatorNoteQuality(props.accountId, noteId, locale.value),
+      analyticsApi.getCreatorNote(props.accountId, noteId),
+      analyticsApi.getCreatorNoteQuality(props.accountId, noteId, locale.value),
     ])
     if (generation !== requestGeneration) return
     selectedNote.value = detail.note
     quality.value = report.quality
+    // Restore persisted RQGM in the background so note facts/details are not
+    // blocked by an optional legacy endpoint.
+    void restoreLatestEvaluation(generation, noteId)
   } catch (error: unknown) {
     if (generation !== requestGeneration) return
     errorMessage.value = error instanceof Error
@@ -224,6 +306,39 @@ async function loadSelectedNote(generation = requestGeneration) {
       : t('creatorNoteQuality.error.description')
   } finally {
     if (generation === requestGeneration) isLoadingDetail.value = false
+  }
+}
+
+async function restoreLatestEvaluation(generation: number, noteId: string) {
+  let latestReader: typeof evaluationApi.getLatestNoteEvaluation | undefined
+  try { latestReader = evaluationApi.getLatestNoteEvaluation } catch { latestReader = undefined }
+  if (typeof latestReader !== 'function') return
+  try {
+    const latest = await latestReader(props.accountId, noteId, { suppressToast: true })
+    if (generation !== requestGeneration || !latest?.evaluation_result) return
+    if (latest.stale) {
+      rqgmStatus.value = 'unavailable'
+      rqgmResult.value = null
+      rqgmCoverage.value = null
+      rqgmEvaluationId.value = latest.evaluation_id || null
+      rqgmDataAsOf.value = latest.data_as_of || latest.source?.data_as_of || latest.evaluated_at || null
+      rqgmThresholds.value = latest.thresholds || SCORE_THRESHOLDS
+      return
+    }
+    rqgmStatus.value = latest.status || latest.evaluation_result.status || (latest.degraded ? 'degraded' : 'ready')
+    rqgmCoverage.value = latest.coverage || latest.evaluation_result.coverage || null
+    rqgmEvaluationId.value = latest.evaluation_id || null
+    rqgmDataAsOf.value = latest.data_as_of || latest.source?.data_as_of || latest.evaluated_at || null
+    rqgmThresholds.value = latest.thresholds || SCORE_THRESHOLDS
+    const latestResult = latest.evaluation_result
+    const unusable = Boolean(latest.degraded) || ['degraded', 'failed', 'unavailable'].includes(rqgmStatus.value)
+    rqgmResult.value = {
+      ...latestResult,
+      overall_score: unusable ? null : latestResult.overall_score,
+      decision: unusable ? null : latestResult.decision,
+    }
+  } catch {
+    // Legacy backend has no persisted run; keep the explicit empty state.
   }
 }
 
@@ -298,6 +413,9 @@ function rqgmDimLabel(dim: string): string {
         <p class="mt-1.5 break-words text-xs leading-relaxed text-slate-500 dark:text-slate-400">
           {{ t('creatorNoteQuality.subtitle') }}
           <span v-if="accountName || accountId" class="text-slate-500 dark:text-slate-400"> · {{ accountName || accountId }}</span>
+        </p>
+        <p class="mt-1 break-words text-[11px] leading-4 text-slate-400 dark:text-slate-500">
+          {{ t('creatorNoteQuality.comparisonHint') }}
         </p>
       </div>
       <NeonButton
@@ -389,6 +507,7 @@ function rqgmDimLabel(dim: string): string {
                   <span>{{ formatDate(selectedNote.published_at) }}</span>
                   <span>{{ selectedNote.content_type || t('creatorNoteQuality.noteType') }}</span>
                   <span>{{ selectedNote.note_id }}</span>
+                  <span v-if="selectedNote.synced_at">{{ t('evaluation.dataAsOf') }} {{ formatDate(selectedNote.synced_at) }}</span>
                 </div>
                 <div v-if="selectedNote.tags?.length" class="mt-2 flex flex-wrap gap-1">
                   <span v-for="tag in selectedNote.tags" :key="tag" class="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] text-violet-700 dark:bg-violet-400/15 dark:text-violet-200">
@@ -447,7 +566,7 @@ function rqgmDimLabel(dim: string): string {
           <section v-if="quality" class="min-w-0 rounded-xl border border-cyan-100 bg-cyan-50/40 p-4 dark:border-cyan-400/25 dark:bg-cyan-400/10">
             <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div class="min-w-0">
-                <div class="text-[10px] font-semibold uppercase tracking-wider text-cyan-700 dark:text-cyan-200">{{ t('creatorNoteQuality.qualityTitle') }}</div>
+                <div class="text-[10px] font-semibold uppercase tracking-wider text-cyan-700 dark:text-cyan-200">{{ t('evaluation.performanceScoreLabel') }}</div>
                 <p class="mt-1 break-words text-xs leading-5 text-slate-600 dark:text-slate-300">{{ quality.summary }}</p>
               </div>
               <div class="flex shrink-0 items-end gap-2">
@@ -459,12 +578,14 @@ function rqgmDimLabel(dim: string): string {
               <span class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ translateQualityEnum('grade', quality.grade) }}</span>
               <span class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ translateQualityEnum('confidence', quality.confidence) }}</span>
               <span class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ translateQualityEnum('scope', quality.scope) }}</span>
+              <span v-if="quality.status" class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ quality.status }}</span>
+              <span v-if="quality.data_as_of" class="rounded-full bg-white px-2 py-1 dark:bg-slate-900/80 dark:text-slate-200">{{ t('evaluation.dataAsOf') }} {{ quality.data_as_of }}</span>
             </div>
             <div class="mt-3 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
               <div v-for="dimension in quality.dimensions" :key="dimension.key" class="min-w-0 rounded-lg border border-white/80 bg-white/80 p-2.5 dark:border-slate-700/50 dark:bg-slate-900/75">
                 <div class="flex min-w-0 items-center justify-between gap-2">
                   <span class="truncate text-[11px] font-semibold text-slate-700 dark:text-slate-100">{{ dimensionLabel(dimension.key) }}</span>
-                  <span v-if="dimension.available !== false && !quality.insufficient_data" class="shrink-0 text-xs font-bold text-cyan-700 dark:text-cyan-300">{{ Math.round(dimension.score ?? 0) }}</span>
+                  <span v-if="dimension.available !== false && !quality.insufficient_data && dimension.score != null" class="shrink-0 text-xs font-bold text-cyan-700 dark:text-cyan-300">{{ Math.round(dimension.score) }}</span>
                   <span v-else class="shrink-0 text-[10px] text-slate-400">{{ t('creatorQuality.notScored') }}</span>
                 </div>
                 <p class="mt-1 break-words text-[10px] leading-4 text-slate-500 dark:text-slate-400">{{ dimension.evidence }}</p>
@@ -488,7 +609,7 @@ function rqgmDimLabel(dim: string): string {
           <section class="min-w-0 rounded-xl border border-rose-100 bg-rose-50/30 p-4 dark:border-rose-400/20 dark:bg-rose-400/10">
             <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div class="min-w-0">
-                <div class="text-[10px] font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-200">{{ t('creatorNoteQuality.rqgm.sectionTitle') }}</div>
+                <div class="text-[10px] font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-200">{{ t('evaluation.rqgmScoreLabel') }}</div>
                 <p class="mt-1 break-words text-[11px] leading-4 text-slate-500 dark:text-slate-400">{{ t('creatorNoteQuality.rqgm.sectionHint') }}</p>
               </div>
               <NeonButton
@@ -508,16 +629,24 @@ function rqgmDimLabel(dim: string): string {
 
             <p v-if="rqgmError" class="mt-3 break-words text-[11px] leading-4 text-rose-600 dark:text-rose-300">{{ rqgmError }}</p>
 
+            <div v-else-if="rqgmStatus === 'degraded' || rqgmStatus === 'failed' || rqgmStatus === 'unavailable' || rqgmStatus === 'running'" class="mt-3 rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-[11px] leading-4 text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-200" role="status">
+              {{ t('creatorNoteQuality.rqgm.notReady') }}
+              <button type="button" class="ml-2 min-h-[36px] rounded-md border border-amber-300 px-2 py-1 font-semibold hover:bg-amber-100 dark:border-amber-300/40 dark:hover:bg-amber-400/20" @click="runRqgmEvaluation">{{ t('creatorNoteQuality.rqgm.retry') }}</button>
+            </div>
+            <div v-else-if="rqgmStatus === 'partial'" class="mt-3 rounded-lg border border-sky-200 bg-sky-50/70 p-3 text-[11px] leading-4 text-sky-700 dark:border-sky-400/25 dark:bg-sky-400/10 dark:text-sky-200" role="status">
+              {{ t('creatorNoteQuality.rqgm.partial') }}<span v-if="rqgmCoverage?.weighted_ratio != null"> ({{ Math.round(rqgmCoverage.weighted_ratio * 100) }}%)</span>
+            </div>
+
             <div v-else-if="!rqgmResult && !rqgmRunning" class="mt-3 text-[11px] text-slate-400">
               {{ t('creatorNoteQuality.rqgm.empty') }}
             </div>
 
             <div v-if="rqgmResult" class="mt-3 space-y-3">
               <div class="flex min-w-0 flex-wrap items-end gap-2">
-                <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('creatorNoteQuality.rqgm.overall') }}</span>
-                <span class="text-2xl font-bold leading-none" :class="rqgmScoreTier(rqgmResult.overall_score ?? 0)">{{ rqgmScoreLabel }}</span>
-                <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold" :class="rqgmDecisionClass">
-                  {{ rqgmDecisionLabel(rqgmResult.decision) }}
+                <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('evaluation.rqgmScoreLabel') }}</span>
+                <span class="text-2xl font-bold leading-none" :class="rqgmScoreTier(rqgmResult.overall_score ?? null)">{{ rqgmUnavailable ? '—' : rqgmScoreLabel }}</span>
+                <span v-if="!rqgmUnavailable" class="rounded-full px-2 py-0.5 text-[10px] font-semibold" :class="rqgmDecisionClass">
+                  {{ rqgmDecisionLabel(rqgmResult.decision || 'unknown') }}
                 </span>
                 <p v-if="rqgmResult.summary" class="min-w-0 basis-full break-words text-[11px] leading-4 text-slate-500 dark:text-slate-400">{{ rqgmResult.summary }}</p>
               </div>
@@ -541,7 +670,7 @@ function rqgmDimLabel(dim: string): string {
                         {{ rqgmDimLabel(d.dimension) }}
                         <span v-if="d.is_blocking" class="ml-1 rounded bg-rose-100 px-1 text-[9px] font-bold text-rose-700 dark:bg-rose-400/20 dark:text-rose-200">{{ t('creatorNoteQuality.rqgm.blocking') }}</span>
                       </span>
-                      <span class="shrink-0 text-xs font-bold" :class="rqgmScoreTier(d.score ?? 0)">{{ (d.score ?? 0).toFixed(1) }}</span>
+                      <span class="shrink-0 text-xs font-bold" :class="rqgmScoreTier(d.score)" >{{ d.available === false || d.score == null ? '—' : d.score.toFixed(1) }}</span>
                     </div>
                     <p v-if="d.rationale" class="mt-1 break-words text-[10px] leading-4 text-slate-500 dark:text-slate-400">{{ d.rationale }}</p>
                     <ul v-if="d.issues?.length" class="mt-1 list-disc space-y-0.5 pl-4">
@@ -549,6 +678,11 @@ function rqgmDimLabel(dim: string): string {
                     </ul>
                   </div>
                 </div>
+              </div>
+
+              <div v-if="rqgmEvaluationId || rqgmDataAsOf" class="text-[10px] text-slate-400">
+                <span v-if="rqgmEvaluationId">{{ t('evaluation.evaluationId') }}: {{ rqgmEvaluationId }}</span>
+                <span v-if="rqgmDataAsOf"> · {{ t('evaluation.dataAsOf') }} {{ rqgmDataAsOf }}</span>
               </div>
 
               <div v-if="rqgmResult.revision_hints?.length">

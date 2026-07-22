@@ -310,3 +310,57 @@ Result lines are colored by **content pattern** (content-based, never by tool na
 | (all other lines) | — | `DIM` (baseline) |
 
 Indentation and surrounding punctuation/labels stay `DIM` so structure stays scannable while the verdict jumps out. Non-matching free-text lines (e.g. `xhs_free_guide` steps) get `DIM` per-line unchanged.
+
+## Scenario: Canonical historical notes and explicit score semantics
+
+### 1. Scope / Trigger
+- Trigger: Analytics, Evaluation, settings previews, or a note drawer renders
+  imported history or an RQGM result.
+
+### 2. Signatures
+- `analyticsApi.getCreatorNotes(accountId, query, options)` is the canonical
+  reader; compatibility fallback may call `getCreatorStats` only when the new
+  route is unavailable.
+- `CreatorNoteQualityPanel` consumes `evaluateNote` / `getLatestNoteEvaluation`;
+  `EvaluationView` keeps historical and workflow source tabs separate.
+
+### 3. Contracts
+- Canonical note rows are scoped by account and carry `total`, cursor,
+  `data_as_of`, `note_synced_at`, `assessment_type` and fraction engagement rate.
+- Label published performance as “发布后表现分” and RQGM as “RQGM 内容评审分”;
+  never render an unqualified “综合质量分”.
+- Null/degraded/failed scores render `—` and an unavailable/retry state; they
+  do not map to zero or a green/approved badge. Threshold colors use response
+  thresholds, falling back to one shared default constant only when absent.
+- All user-visible additions require both locale files; async panels retain a
+  stable shell, loading, empty/unavailable and retry states.
+
+### 4. Validation & Error Matrix
+- Missing account → clear empty/account-management state; never request a
+  `default` pseudo-account.
+- Malformed/late note response → local error/retry; stale response must not
+  overwrite a newly selected account/note.
+- Cursor exhaustion → show loaded/total counts and hide load-more; compact views
+  may show a bounded preview only when the total is visible.
+
+### 5. Good/Base/Bad Cases
+- Good: switching account resets cursor and rows, then renders only the new account.
+- Base: old backend fixture falls back to a bounded preview with an explicit count.
+- Bad: showing the first imported note in a drawer for an unmatched workflow row,
+  or mixing workflow updated time with note publish time in one unlabeled stream.
+
+### 6. Tests Required
+- View/component tests cover account switch, source tabs, cursor load-more,
+  loaded/total, data-as-of, stale response and degraded null score.
+- Assert both score labels and i18n key parity; run type-check/build/test/i18n check.
+
+### 7. Wrong vs Correct
+```vue
+<!-- Wrong: a null score is coerced into a passing visual tier. -->
+<span :class="scoreTierClass(score || 0)">{{ score || 0 }}</span>
+
+<!-- Correct: preserve null semantics and explicit RQGM naming. -->
+<span :class="scoreTierClass(score, thresholds)">
+  {{ score == null || degraded ? '—' : score.toFixed(1) }}
+</span>
+```

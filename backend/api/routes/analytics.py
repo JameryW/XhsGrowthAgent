@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field, field_validator
@@ -80,7 +81,12 @@ async def _get_completed_workflows(
         for status_filter in ("completed", "analyzing"):
             offset = 0
             while True:
-                rows, total = await db_list(status=status_filter, limit=100, offset=offset)
+                rows, total = await db_list(
+                    account_id=account_id,
+                    status=status_filter,
+                    limit=100,
+                    offset=offset,
+                )
                 if not rows:
                     break
                 for row in rows:
@@ -215,7 +221,22 @@ def _as_percent_engagement_rate(value: Any) -> float:
     return round(er, 2)
 
 
-def _extract_post_data(wf_state: dict[str, Any]) -> dict[str, Any] | None:
+def _normalize_platform_post_id(value: Any) -> str:
+    """Normalize a platform post identifier without accepting synthetic IDs."""
+    raw = str(value or "").strip()
+    if not raw or raw.startswith("mock_") or raw.startswith("workflow:"):
+        return ""
+    if "://" in raw:
+        parsed = urlparse(raw)
+        path_id = parsed.path.rstrip("/").rsplit("/", 1)[-1]
+        if path_id:
+            raw = path_id
+    return raw
+
+
+def _extract_post_data(
+    wf_state: dict[str, Any], account_id: str | None = None
+) -> dict[str, Any] | None:
     """Extract post performance data from a completed workflow state."""
     publish = wf_state.get("publish_result") or {}
     analytics = wf_state.get("analytics") or {}
@@ -233,6 +254,20 @@ def _extract_post_data(wf_state: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
     is_dry_run = status == "mock_published"
+    workflow_thread_id = str(
+        publish.get("workflow_thread_id")
+        or wf_state.get("session_id")
+        or wf_state.get("thread_id")
+        or ""
+    ).strip()
+    platform_post_id = _normalize_platform_post_id(
+        publish.get("platform_post_id") or publish.get("post_id")
+    )
+    # Synthetic/session ids are display keys only; only an explicit platform
+    # id may link an imported Creator Center note.
+    display_id = platform_post_id or (
+        f"workflow:{workflow_thread_id}" if workflow_thread_id else ""
+    )
 
     # Prefer explicit engagement_rate; otherwise derive from counts/views
     raw_er = analytics.get("engagement_rate")
@@ -250,7 +285,12 @@ def _extract_post_data(wf_state: dict[str, Any]) -> dict[str, Any] | None:
             raw_er = 0.0
 
     return {
-        "id": publish.get("post_id", wf_state.get("session_id", "")),
+        "id": display_id,
+        "account_id": account_id or wf_state.get("account_id", ""),
+        "workflow_thread_id": workflow_thread_id,
+        "platform_post_id": platform_post_id,
+        "link_status": "unmatched",
+        "source": "workflow",
         "title": title,
         "likes": analytics.get("likes", 0),
         "comments": analytics.get("comments", 0),
@@ -332,7 +372,7 @@ async def get_growth_report(
     topics: dict[str, int] = {}
     for wf in workflows:
         state = wf.get("_state", {})
-        post = _extract_post_data(state)
+        post = _extract_post_data(state, account_id)
         if post:
             posts.append(post)
         plan = state.get("content_plan") or {}
@@ -361,6 +401,10 @@ def _imported_notes_as_posts(notes: list[Any]) -> list[dict[str, Any]]:
         posts.append(
             {
                 "id": d.get("note_id", ""),
+                "platform_post_id": _normalize_platform_post_id(d.get("note_id", "")),
+                "workflow_thread_id": "",
+                "link_status": "unmatched",
+                "account_id": d.get("account_id", ""),
                 "title": d.get("title", ""),
                 "likes": int(d.get("likes") or 0),
                 "comments": int(d.get("comments") or 0),
@@ -382,20 +426,66 @@ async def _merge_imported_posts(
     *,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
-    """Append imported creator-center notes not already present (by post id)."""
+    """Merge imported notes using explicit platform identity only.
+
+    Missing/synthetic workflow ids never collapse an imported note.  A single
+    matching workflow is marked ``linked``; duplicate workflow claims are
+    surfaced as ``ambiguous`` and remain separate.
+    """
     try:
         from backend.db import creator_stats as stats_db
 
-        imported = await stats_db.list_note_stats(account_id, limit=limit, order_by="published")
+        # Reports and period aggregates need the complete durable snapshot;
+        # ``limit`` remains only for compatibility with older callers.
+        imported = await stats_db.list_all_note_stats(account_id)
     except Exception:
         return posts
-    seen_ids = {p.get("id") for p in posts if p.get("id")}
-    for ip in _imported_notes_as_posts(imported):
-        if ip["id"] and ip["id"] in seen_ids:
+
+    by_platform_id: dict[str, list[dict[str, Any]]] = {}
+    for post in posts:
+        # Workflow rows must opt in with an explicit platform id.  Falling
+        # back to ``id`` would turn the synthetic ``workflow:<thread>``
+        # display key into a false Creator Center link.
+        platform_id = _normalize_platform_post_id(post.get("platform_post_id"))
+        if platform_id:
+            by_platform_id.setdefault(platform_id, []).append(post)
+
+    imported_posts = _imported_notes_as_posts(imported)
+    imported_by_platform: dict[str, list[dict[str, Any]]] = {}
+    unmatched_imported: list[dict[str, Any]] = []
+    for ip in imported_posts:
+        platform_id = _normalize_platform_post_id(ip.get("platform_post_id") or ip.get("id"))
+        if platform_id:
+            imported_by_platform.setdefault(platform_id, []).append(ip)
+        else:
+            unmatched_imported.append(ip)
+
+    # Resolve each normalized platform identity as a group.  Grouping the
+    # imported side as well as the workflow side prevents URL-vs-id variants
+    # from silently dropping a second Creator Center claim.
+    for platform_id, candidates in imported_by_platform.items():
+        matches = by_platform_id.get(platform_id, [])
+        if len(matches) == 1 and len(candidates) == 1:
+            workflow = matches[0]
+            imported_note = candidates[0]
+            workflow["link_status"] = "linked"
+            workflow["linked_note_id"] = imported_note.get("id")
+            imported_note["link_status"] = "linked"
+            imported_note["workflow_thread_id"] = workflow.get("workflow_thread_id", "")
             continue
-        posts.append(ip)
-        if ip["id"]:
-            seen_ids.add(ip["id"])
+
+        # Zero/one/many workflows combined with multiple imported claims are
+        # all explicit ambiguity or unmatched states; never collapse rows.
+        if len(matches) > 1 or len(candidates) > 1:
+            for workflow in matches:
+                workflow["link_status"] = "ambiguous"
+            for imported_note in candidates:
+                imported_note["link_status"] = "ambiguous"
+                if len(matches) == 1:
+                    imported_note["workflow_thread_id"] = matches[0].get("workflow_thread_id", "")
+        posts.extend(candidates)
+
+    posts.extend(unmatched_imported)
     return posts
 
 
@@ -428,7 +518,7 @@ async def get_performance(
     posts: list[dict[str, Any]] = []
     for wf in workflows:
         state = wf.get("_state", {})
-        post = _extract_post_data(state)
+        post = _extract_post_data(state, account_id)
         if post:
             posts.append(post)
 
@@ -530,7 +620,7 @@ async def get_dashboard(
     topics: dict[str, int] = {}
     for wf in workflows:
         state = wf.get("_state", {})
-        post = _extract_post_data(state)
+        post = _extract_post_data(state, account_id)
         if post:
             posts.append(post)
         plan = state.get("content_plan") or {}
@@ -713,6 +803,7 @@ async def get_creator_stats(
     account_id = (account_id or "").strip()
     account = await stats_db.get_account_stats(account_id)
     notes = await stats_db.list_note_stats(account_id, limit=limit)
+    canonical_notes = [stats_db.canonicalize_note_stats(note) for note in notes]
     # total = full count (not page size); note_count on account is a fallback
     total = await stats_db.count_note_stats(account_id)
     if total == 0 and account is not None:
@@ -721,13 +812,65 @@ async def get_creator_stats(
         data={
             "account_id": account_id,
             "account": account.to_dict() if account else None,
-            "notes": [n.to_dict() for n in notes],
-            "audience_analysis": summarize_audience(account, notes),
+            "notes": [n.to_dict() for n in canonical_notes],
+            "audience_analysis": summarize_audience(account, canonical_notes),
             "total": total,
             "limit": limit,
+            "data_as_of": max(
+                [
+                    value
+                    for value in [
+                        account.synced_at if account else "",
+                        *(note.synced_at for note in canonical_notes),
+                    ]
+                    if value
+                ],
+                default=None,
+            ),
+            "scope": "account_history",
+            "subject_type": "imported_note",
+            "assessment_type": "historical_performance",
+            "algorithm_version": "historical_quality.v1",
+            "status": "ready" if canonical_notes or account else "unavailable",
+            "engagement_rate_unit": "fraction",
             "fetched_at": datetime.now(UTC).isoformat(),
         }
     )
+
+
+@router.get("/creator-stats/{account_id}/notes")
+async def get_creator_stats_notes(
+    account_id: str,
+    cursor: str | None = Query(None, description="历史笔记游标"),
+    limit: int = Query(50, ge=1, le=500, description="每页数量"),
+    sort: str = Query("published_at_desc", description="稳定排序：published_at_desc"),
+    published_from: str | None = Query(None, description="发布时间起始（ISO-8601）"),
+    published_to: str | None = Query(None, description="发布时间结束（ISO-8601）"),
+) -> ApiResponse[Any]:
+    """Canonical historical-note fact reader shared by Analytics/Evaluation.
+
+    The older ``GET /creator-stats/{account_id}`` remains a bounded overview
+    preview.  This route owns the complete filtered ``total`` and cursor
+    contract so callers do not need to coordinate different 100/200/500 caps.
+    """
+    from backend.db import creator_stats as stats_db
+
+    normalized_account_id = (account_id or "").strip()
+    if not normalized_account_id:
+        raise ValidationError("account_id", "account_id cannot be empty")
+    if sort != "published_at_desc":
+        raise ValidationError("sort", "sort must be published_at_desc")
+    try:
+        page = await stats_db.list_note_stats_page(
+            normalized_account_id,
+            cursor=cursor,
+            limit=limit,
+            published_from=published_from,
+            published_to=published_to,
+        )
+    except ValueError as exc:
+        raise ValidationError("cursor", str(exc)) from exc
+    return success(data=page.to_dict())
 
 
 async def _get_imported_creator_note(account_id: str, note_id: str) -> tuple[str, Any]:
@@ -743,7 +886,7 @@ async def _get_imported_creator_note(account_id: str, note_id: str) -> tuple[str
     note = await stats_db.get_note_stats(normalized_account_id, normalized_note_id)
     if note is None:
         raise CreatorNoteNotFoundError(normalized_account_id, normalized_note_id)
-    return normalized_account_id, note
+    return normalized_account_id, stats_db.canonicalize_note_stats(note)
 
 
 @router.get("/creator-stats/{account_id}/notes/{note_id}")
@@ -754,6 +897,10 @@ async def get_creator_note_detail(account_id: str, note_id: str) -> ApiResponse[
         data={
             "account_id": normalized_account_id,
             "note": note.to_dict(),
+            "scope": "single_note",
+            "assessment_type": "historical_performance",
+            "data_as_of": note.synced_at or None,
+            "note_synced_at": note.synced_at or None,
             "fetched_at": datetime.now(UTC).isoformat(),
         }
     )
@@ -770,11 +917,38 @@ async def get_creator_note_quality(
 
     normalized_account_id, note = await _get_imported_creator_note(account_id, note_id)
     report = analyze_note_quality(note, normalized_account_id, locale=locale)
+    report_data = report.to_dict()
+    report_data.update(
+        {
+            "assessment_type": "historical_performance",
+            "algorithm_version": "historical_quality.v1",
+            "scope": "single_note",
+            "status": "ready" if report.overall_score is not None else "unavailable",
+            "data_as_of": note.synced_at or None,
+            "note_synced_at": note.synced_at or None,
+            "coverage": {
+                "available": [item.key for item in report.dimensions if item.available],
+                "unavailable": [item.key for item in report.dimensions if not item.available],
+                "weighted_ratio": round(
+                    sum(1 for item in report.dimensions if item.available) / len(report.dimensions),
+                    4,
+                )
+                if report.dimensions
+                else 0.0,
+            },
+        }
+    )
     return success(
         data={
             "account_id": normalized_account_id,
             "note_id": note.note_id,
-            "quality": report.to_dict(),
+            "subject_type": "imported_note",
+            "subject_id": note.note_id,
+            "scope": "single_note",
+            "assessment_type": "historical_performance",
+            "status": report_data["status"],
+            "data_as_of": note.synced_at or None,
+            "quality": report_data,
             "analyzed_at": datetime.now(UTC).isoformat(),
         }
     )
@@ -795,7 +969,40 @@ async def get_creator_quality(
     # durable note history without triggering a browser re-sync or DB writes.
     notes = await stats_db.list_all_note_stats(normalized_account_id)
     report = analyze_historical_quality(notes, normalized_account_id, locale=locale)
-    return success(data=report.to_dict())
+    account = await stats_db.get_account_stats(normalized_account_id)
+    data = report.to_dict()
+    data.update(
+        {
+            "assessment_type": "historical_performance",
+            "algorithm_version": "historical_quality.v1",
+            "scope": "account_history",
+            "subject_type": "imported_note",
+            "subject_id": normalized_account_id,
+            "status": "ready" if report.overall_score is not None else "unavailable",
+            "data_as_of": max(
+                [
+                    value
+                    for value in [
+                        account.synced_at if account else "",
+                        *(note.synced_at for note in notes),
+                    ]
+                    if value
+                ],
+                default=None,
+            ),
+            "coverage": {
+                "available": [item.key for item in report.dimensions if item.available],
+                "unavailable": [item.key for item in report.dimensions if not item.available],
+                "weighted_ratio": round(
+                    sum(1 for item in report.dimensions if item.available) / len(report.dimensions),
+                    4,
+                )
+                if report.dimensions
+                else 0.0,
+            },
+        }
+    )
+    return success(data=data)
 
 
 @router.get("/creator-stats/{account_id}/suggestions")

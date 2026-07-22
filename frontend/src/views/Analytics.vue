@@ -11,7 +11,8 @@ import CreatorStatsPanel from '@/components/settings/CreatorStatsPanel.vue'
 import CreatorNoteQualityPanel from '@/components/settings/CreatorNoteQualityPanel.vue'
 import { AnalyticsSkeleton } from '@/components/skeletons'
 import { useAnalyticsStore, useAccountsStore } from '@/stores'
-import { getCreatorStats, type CreatorAccountStats } from '@/api/analytics'
+import * as analyticsApi from '@/api/analytics'
+import type { CreatorAccountStats, CreatorNoteStats, CreatorNotesPayload } from '@/api/analytics'
 import type { PostPerformance } from '@/types/analytics'
 
 const TrendChart = defineAsyncComponent(() => import('@/components/charts/TrendChart.vue'))
@@ -32,10 +33,84 @@ const creatorAccount = ref<CreatorAccountStats | null>(null)
 const fansValue = computed(() => creatorAccount.value?.fans ?? null)
 const fansDisplay = computed(() => fansValue.value !== null ? formatNumber(fansValue.value, locale.value) : '—')
 
+// Canonical historical-note reader shared with EvaluationView. Dashboard
+// performance remains the period aggregate; this collection is the durable
+// imported-note fact source and exposes cursor/total/data-as-of explicitly.
+const historicalNotes = ref<CreatorNoteStats[]>([])
+const historicalTotal = ref(0)
+const historicalCursor = ref<string | null>(null)
+const historicalDataAsOf = ref<string | null>(null)
+const historicalLoading = ref(false)
+const historicalError = ref<string | null>(null)
+const showAllHistorical = ref(false)
+let historicalRequest = 0
+
+async function readHistoricalNotes(accountId: string, cursor: string | null = null): Promise<CreatorNotesPayload> {
+  let reader: typeof analyticsApi.getCreatorNotes | undefined
+  try { reader = analyticsApi.getCreatorNotes } catch { reader = undefined }
+  if (typeof reader === 'function') {
+    try {
+      return await reader(accountId, { cursor, limit: 50, sort: 'published_at_desc' }, { suppressToast: true })
+    } catch {
+      // Compatibility with older backends that have not exposed the cursor
+      // reader yet; fall back to the bounded legacy overview.
+    }
+  }
+  const legacy = await analyticsApi.getCreatorStats(accountId, 50)
+  return {
+    account_id: accountId,
+    items: legacy.notes || [],
+    total: legacy.total ?? legacy.notes?.length ?? 0,
+    limit: legacy.limit ?? 50,
+    next_cursor: null,
+    data_as_of: legacy.data_as_of ?? legacy.fetched_at ?? null,
+  }
+}
+
+async function loadHistoricalNotes(accountId: string, reset = true) {
+  const request = ++historicalRequest
+  if (reset) {
+    historicalNotes.value = []
+    historicalTotal.value = 0
+    historicalCursor.value = null
+    historicalDataAsOf.value = null
+    showAllHistorical.value = false
+  }
+  historicalError.value = null
+  if (!accountId) {
+    historicalLoading.value = false
+    return
+  }
+  historicalLoading.value = true
+  try {
+    const page = await readHistoricalNotes(accountId, reset ? null : historicalCursor.value)
+    // The selected scope falls back to the first loaded account when there is
+    // no explicit global active account. Compare against the same canonical
+    // account resolver so a valid first-account response is not discarded.
+    if (request !== historicalRequest || accountId !== selectedAnalyticsAccountId.value) return
+    const items = (page.items || []).filter(note => Boolean(note.note_id))
+    historicalNotes.value = reset ? items : [...historicalNotes.value, ...items]
+    historicalTotal.value = Number.isFinite(page.total) ? page.total : historicalNotes.value.length
+    historicalCursor.value = page.next_cursor ?? null
+    historicalDataAsOf.value = page.data_as_of ?? null
+  } catch (error: unknown) {
+    if (request === historicalRequest) historicalError.value = error instanceof Error ? error.message : t('analytics.history.loadError')
+  } finally {
+    if (request === historicalRequest) historicalLoading.value = false
+  }
+}
+
+const historicalHasMore = computed(() => Boolean(historicalCursor.value) && historicalNotes.value.length < historicalTotal.value)
+const selectedAnalyticsAccountId = computed(() => accountsStore.activeAccountId || accountsStore.accounts[0]?.id || '')
+function loadMoreHistorical() {
+  if (!historicalLoading.value && historicalHasMore.value) void loadHistoricalNotes(selectedAnalyticsAccountId.value, false)
+}
+
 onMounted(async () => {
   // Refresh the shared account labels so a name imported from Creator Center
   // is visible even when this route stayed mounted across the import.
   await accountsStore.fetchAccounts()
+  await loadHistoricalNotes(selectedAnalyticsAccountId.value)
   // AN-12: auto-retry once if the previous session ended in an error, instead
   // of leaving the error state showing on re-entry.
   if (analyticsStore.error || (!analyticsStore.posts.length && !analyticsStore.isLoading)) {
@@ -43,12 +118,21 @@ onMounted(async () => {
   }
 })
 
+watch(selectedAnalyticsAccountId, (accountId, previous) => {
+  if (!accountId || accountId === previous) return
+  // Analytics intentionally follows the global active account. Reload both
+  // period aggregates and the canonical historical reader as one scope.
+  selectedPost.value = null
+  void analyticsStore.fetchAllData()
+  void loadHistoricalNotes(accountId)
+})
+
 const isLoading = computed(() => analyticsStore.isLoading && !analyticsStore.posts.length)
 // AN-12: switching period keeps old data visible under a busy overlay rather
 // than blanking to a skeleton.
 const isRefreshing = computed(() => analyticsStore.isLoading && analyticsStore.posts.length > 0)
 const hasError = computed(() => !!analyticsStore.error && !analyticsStore.posts.length)
-const isEmpty = computed(() => !analyticsStore.isLoading && !analyticsStore.error && !analyticsStore.posts.length)
+const isEmpty = computed(() => !analyticsStore.isLoading && !analyticsStore.error && !analyticsStore.posts.length && !historicalLoading.value && !historicalNotes.value.length)
 // AN-09: refresh failure with cached data must not be silent — surface an
 // inline notice that the shown data is stale, with a retry.
 const hasStaleError = computed(() => !!analyticsStore.error && analyticsStore.posts.length > 0)
@@ -198,8 +282,24 @@ type AnalyticsTableRow = Record<string, unknown> & PostPerformance & {
 }
 
 const visibleTableData = computed<AnalyticsTableRow[]>(() => {
-  const posts = analyticsStore.posts
-  const sliced = showAllPosts.value ? posts : posts.slice(0, 10)
+  const canonical = historicalNotes.value.map(note => ({
+    id: note.note_id,
+    title: note.title,
+    likes: note.likes,
+    comments: note.comments,
+    collects: note.collects,
+    shares: note.shares,
+    views: note.views,
+    // Canonical API stores a fraction; table presentation uses the shared
+    // formatter's percent-like input (5 means 5%).
+    engagement_rate: engagementRatePercent(note.engagement_rate),
+    published_at: note.published_at,
+    source: note.source,
+  }))
+  const posts = canonical.length ? canonical : analyticsStore.posts
+  const sliced = canonical.length
+    ? (showAllHistorical.value ? posts : posts.slice(0, 8))
+    : (showAllPosts.value ? posts : posts.slice(0, 10))
   return sliced.map(post => ({
   ...post,
   views_display: formatNumber(post.views || 0, locale.value),
@@ -208,6 +308,14 @@ const visibleTableData = computed<AnalyticsTableRow[]>(() => {
 }))
 })
 const tableData = visibleTableData
+const tableUsesCanonicalHistory = computed(() => historicalNotes.value.length > 0)
+const tableLoadedCount = computed(() => tableUsesCanonicalHistory.value ? historicalNotes.value.length : analyticsStore.posts.length)
+const tableTotalCount = computed(() => tableUsesCanonicalHistory.value ? historicalTotal.value : (analyticsStore.performanceData?.total ?? analyticsStore.posts.length))
+
+function engagementRatePercent(value: number | undefined): number {
+  if (value == null || Number.isNaN(value)) return 0
+  return value <= 1 ? value * 100 : value
+}
 
 function csvCell(value: unknown): string {
   const text = value === null || value === undefined ? '' : String(value)
@@ -225,14 +333,15 @@ function exportPostsCsv() {
     t('analytics.table.engagementRate'),
     t('analytics.table.publishedAt'),
   ]
-  const rows = analyticsStore.posts.map(post => [
+  const exportRows = tableUsesCanonicalHistory.value ? historicalNotes.value : analyticsStore.posts
+  const rows = exportRows.map(post => [
     post.title,
     post.views,
     post.likes,
     post.comments,
     post.collects,
     post.shares,
-    post.engagement_rate,
+    engagementRatePercent(post.engagement_rate),
     post.published_at,
   ])
   const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n')
@@ -275,7 +384,7 @@ async function refreshData() {
   const accountId = accountsStore.activeAccountId || analyticsStore.accountId
   if (accountId) {
     try {
-      const payload = await getCreatorStats(accountId, 1)
+      const payload = await analyticsApi.getCreatorStats(accountId, 1)
       creatorAccount.value = payload.account
     } catch {
       // Fans card falls back to '—'; not a page-level failure.
@@ -299,6 +408,9 @@ const detailNoteId = computed(() => {
   // The backend's id is the imported note_id when available. Never use title
   // matching: titles are not stable identifiers and a missing match must not
   // silently select another note in the quality panel.
+  const source = selectedPost.value?.source
+  const linkStatus = selectedPost.value?.link_status
+  if (source === 'workflow' && linkStatus !== 'linked') return ''
   return typeof selectedPost.value?.id === 'string' ? selectedPost.value.id : ''
 })
 const detailAccountId = computed(() => accountsStore.activeAccountId || analyticsStore.accountId || '')
@@ -634,8 +746,8 @@ function startWithTopic(topic: string, niche?: string) {
           <AppIcon name="FileText" size="md" variant="white" class="hidden md:block" :aria-label="t('analytics.recentPosts')" />
         </div>
         <div class="flex-1">
-          <div class="text-violet-600 font-semibold text-xs md:text-sm">{{ t('analytics.recentPosts') }}</div>
-          <div class="text-[10px] md:text-xs text-slate-400">{{ t('analytics.top10') }}</div>
+          <div class="text-violet-600 font-semibold text-xs md:text-sm">{{ tableUsesCanonicalHistory ? t('analytics.history.title') : t('analytics.recentPosts') }}</div>
+          <div class="text-[10px] md:text-xs text-slate-400">{{ tableUsesCanonicalHistory ? t('analytics.history.loadedCount', { loaded: Math.min(tableData.length, tableLoadedCount), total: tableTotalCount }) : t('analytics.top10') }}</div>
         </div>
         <button
           type="button"
@@ -646,6 +758,13 @@ function startWithTopic(topic: string, niche?: string) {
           {{ t('analytics.exportCsv') }}
         </button>
       </div>
+
+      <div v-if="historicalError" class="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-200" role="alert">
+        <AppIcon name="AlertTriangle" size="sm" variant="peach" />
+        <span class="flex-1">{{ historicalError }}</span>
+      <button type="button" class="min-h-[36px] rounded-md border border-amber-300 px-2 font-medium hover:bg-amber-100 dark:border-amber-400/40 dark:hover:bg-amber-900/40" @click="loadHistoricalNotes(selectedAnalyticsAccountId)">{{ t('analytics.history.retry') }}</button>
+      </div>
+      <div v-if="historicalDataAsOf" class="mb-2 text-[11px] text-slate-400" role="status">{{ t('analytics.history.dataAsOf', { time: formatDate(historicalDataAsOf) }) }}</div>
 
       <DataTable
         :columns="tableColumns"
@@ -661,7 +780,15 @@ function startWithTopic(topic: string, niche?: string) {
         <span class="inline-block w-2.5 h-2.5 rounded-sm bg-rose-200" aria-hidden="true" />
         <span>{{ t('analytics.bestPostLegend') }}</span>
       </div>
-      <div v-if="analyticsStore.posts.length > 10" class="mt-3 flex justify-center">
+      <div v-if="tableUsesCanonicalHistory && historicalNotes.length > 8" class="mt-3 flex flex-wrap items-center justify-center gap-2">
+        <button type="button" class="min-h-[44px] px-4 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" @click="showAllHistorical = !showAllHistorical">
+          {{ showAllHistorical ? t('analytics.showLess') : t('analytics.history.showLoaded', { loaded: Math.min(historicalNotes.length, 8), total: historicalTotal }) }}
+        </button>
+        <button v-if="historicalHasMore" type="button" class="min-h-[44px] px-4 py-1.5 rounded-lg border border-violet-200 bg-violet-50 text-xs font-medium text-violet-700 hover:bg-violet-100 transition dark:border-violet-500/40 dark:bg-violet-950/30 dark:text-violet-200" :disabled="historicalLoading" @click="loadMoreHistorical">
+          {{ historicalLoading ? t('analytics.refreshing') : t('analytics.history.loadMore') }}
+        </button>
+      </div>
+      <div v-else-if="!tableUsesCanonicalHistory && analyticsStore.posts.length > 10" class="mt-3 flex justify-center">
         <button
           type="button"
           class="min-h-[44px] px-4 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
@@ -778,11 +905,18 @@ function startWithTopic(topic: string, niche?: string) {
           </div>
         </dl>
         <CreatorNoteQualityPanel
-          v-if="detailAccountId"
+          v-if="detailAccountId && detailNoteId"
           :account-id="detailAccountId"
           :note-id="detailNoteId"
           compact
         />
+        <div
+          v-else-if="selectedPost?.source === 'workflow'"
+          class="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-500 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-400"
+          role="status"
+        >
+          {{ t('analytics.detail.noLinkedNote') }}
+        </div>
       </div>
     </div>
   </Teleport>

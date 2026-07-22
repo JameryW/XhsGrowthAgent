@@ -78,6 +78,37 @@ export interface CreatorNoteStats {
   audience_profile?: CreatorAggregatePoint[]
   audience_trend?: CreatorAggregatePoint[]
   detail_metrics?: Record<string, unknown>
+  /** Optional canonical-reader metadata; additive for older imports. */
+  data_as_of?: string | null
+  note_synced_at?: string | null
+  status?: 'ready' | 'partial' | 'unavailable' | 'stale' | string
+  subject_type?: 'imported_note' | string
+  scope?: 'account_history' | 'single_note' | string
+  assessment_type?: 'historical_performance' | 'rqgm_content_review' | string
+  algorithm_version?: string | null
+}
+
+export interface CreatorNotesQuery {
+  cursor?: string | null
+  limit?: number
+  sort?: 'published_at_desc' | string
+  published_from?: string | null
+  published_to?: string | null
+}
+
+export interface CreatorNotesPayload {
+  account_id: string
+  items: CreatorNoteStats[]
+  total: number
+  limit: number
+  next_cursor?: string | null
+  data_as_of?: string | null
+  query?: {
+    sort?: string
+    published_from?: string | null
+    published_to?: string | null
+  }
+  scope?: string
 }
 
 export interface CreatorAccountStats {
@@ -169,6 +200,8 @@ export interface CreatorStatsPayload {
   limit?: number
   fetched_at: string
   audience_analysis?: CreatorAudienceAnalysis
+  data_as_of?: string | null
+  scope?: string
 }
 
 export interface CreatorSuggestionsPayload {
@@ -188,7 +221,12 @@ export type CreatorQualityDimensionKey =
 export type CreatorQualityInsightDimension = CreatorQualityDimensionKey | 'data_collection'
 export type CreatorQualityGrade = 'strong' | 'developing' | 'needs_attention' | 'insufficient_data'
 export type CreatorQualityConfidence = 'low' | 'medium' | 'high'
-export type CreatorQualityScope = 'all_imported_history' | 'single_imported_note'
+export type CreatorQualityScope =
+  | 'account_history'
+  | 'single_note'
+  // Compatibility for older persisted/report payloads.
+  | 'all_imported_history'
+  | 'single_imported_note'
 
 /** Deterministic account-level quality signal derived from imported note history. */
 export interface CreatorQualityDimension {
@@ -227,6 +265,10 @@ export interface CreatorQualityReport {
   recommendations: CreatorQualityRecommendation[]
   cold_start: boolean
   insufficient_data: boolean
+  data_as_of?: string | null
+  algorithm_version?: string | null
+  status?: 'ready' | 'partial' | 'unavailable' | string
+  coverage?: Record<string, unknown> | null
 }
 
 /** Import real Creator Center account/note stats through the account's bound browser. */
@@ -267,10 +309,70 @@ export async function getCreatorStats(
   }) as unknown as CreatorStatsPayload
 }
 
+/**
+ * Canonical reader for imported historical notes.
+ *
+ * Both Analytics and Evaluation use this cursor contract.  The bounded
+ * creator-stats overview remains available for legacy callers, but new UI
+ * lists must not invent their own limits or offset pagination.
+ */
+export async function getCreatorNotes(
+  accountId: string,
+  query: CreatorNotesQuery = {},
+  options?: { suppressToast?: boolean },
+): Promise<CreatorNotesPayload> {
+  // The canonical reader accepts up to 500 rows per cursor page. Keep this
+  // boundary aligned with the API rather than inheriting the legacy overview
+  // endpoint's 200-row cap; cursor pagination still remains the default path.
+  const requestedLimit = Math.max(1, Math.min(query.limit ?? 50, 500))
+  const params: Record<string, string> = {
+    limit: String(requestedLimit),
+    sort: query.sort ?? 'published_at_desc',
+  }
+  if (query.cursor) params.cursor = query.cursor
+  if (query.published_from) params.published_from = query.published_from
+  if (query.published_to) params.published_to = query.published_to
+
+  try {
+    return await client.get(`/analytics/creator-stats/${accountId}/notes`, {
+      params,
+      ...(options ?? {}),
+    }) as unknown as CreatorNotesPayload
+  } catch (error) {
+    // Additive rollout compatibility: older servers expose only the bounded
+    // overview. Preserve the canonical shape while the server is upgraded;
+    // callers still display the bounded/legacy nature via its total field.
+    const code = String((error as { code?: unknown })?.code || '')
+    if (!['NOT_FOUND', 'HTTP_404', 'NETWORK_ERROR'].includes(code) && !/fetch|network|404/i.test(String((error as Error)?.message || ''))) {
+      throw error
+    }
+    // The compatibility endpoint still validates its historical 200-row
+    // bound, so cap only the fallback request while preserving canonical
+    // callers' requested page size on upgraded servers.
+    const legacy = await getCreatorStats(accountId, Math.min(requestedLimit, 200))
+    return {
+      account_id: accountId,
+      items: legacy.notes || [],
+      total: legacy.total ?? legacy.notes?.length ?? 0,
+      limit: legacy.limit ?? Math.min(requestedLimit, 200),
+      next_cursor: null,
+      data_as_of: legacy.data_as_of ?? legacy.fetched_at ?? null,
+      query: {
+        sort: params.sort,
+        published_from: query.published_from ?? null,
+        published_to: query.published_to ?? null,
+      },
+    }
+  }
+}
+
 export interface CreatorNoteDetailPayload {
   account_id: string
   note: CreatorNoteStats
   fetched_at: string
+  data_as_of?: string | null
+  note_synced_at?: string | null
+  scope?: string
 }
 
 export interface CreatorNoteQualityPayload {
@@ -278,6 +380,11 @@ export interface CreatorNoteQualityPayload {
   note_id: string
   quality: CreatorQualityReport
   analyzed_at: string
+  data_as_of?: string | null
+  scope?: string
+  status?: string
+  coverage?: Record<string, unknown>
+  algorithm_version?: string | null
 }
 
 /** Read one imported historical note without starting a browser sync. */

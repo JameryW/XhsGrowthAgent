@@ -223,6 +223,8 @@ function dimensionLabel(key: string): string {
         <p class="mt-2 break-words text-sm leading-6 text-slate-600 dark:text-slate-300">{{ report.summary }}</p>
         <p class="mt-2 text-[10px] leading-relaxed text-slate-400">
           {{ t('creatorQuality.scopeLabel') }}: {{ translateEnum('scope', report.scope) }}
+          <span v-if="report.data_as_of"> · {{ t('evaluation.dataAsOf') }} {{ report.data_as_of }}</span>
+          <span v-if="report.algorithm_version"> · {{ report.algorithm_version }}</span>
         </p>
       </div>
 

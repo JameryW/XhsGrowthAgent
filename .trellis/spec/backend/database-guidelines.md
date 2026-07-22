@@ -294,7 +294,9 @@ by the default.
   `list_note_stats()` display reader. The quality route must never start a
   browser sync or write a database row.
 - `GET /api/analytics/creator-stats/{account_id}/quality?locale=zh-CN|en`
-  returns a deterministic report over `scope="all_imported_history"`. Fewer
+  returns a deterministic report over the complete durable history. The
+  response envelope and deterministic analyzer report use
+  `scope="account_history"`. Fewer
   than three imported notes is an insufficient-data response: `overall_score`
   is `null`, `grade="insufficient_data"`, and the only recommendation is to
   collect more real history. The locale controls generated summary, evidence,
@@ -333,3 +335,59 @@ thresholds, evidence, and recommendations. A dimension that requires multiple
 notes (currently consistency) is returned with available=false; it must not be
 converted into a fabricated score. Missing imported notes return the structured
 ERROR_CREATOR_NOTE_NOT_FOUND 404 response.
+
+## Scenario: Canonical history reader and durable evaluation runs
+
+### 1. Scope / Trigger
+- Trigger: Analytics and Evaluation need the same imported-note collection, or
+  a historical note evaluation must survive refresh and be auditable.
+
+### 2. Signatures
+- `list_note_stats_page(account_id, *, cursor, limit, published_from, published_to) -> NoteStatsPage`
+- `GET /api/analytics/creator-stats/{account_id}/notes`
+- `quality_evaluations.ensure_tables()`, `get_cached(...)`, `create_run(...)`,
+  `update_run(...)`, `get_latest_for_subject(...)`
+
+### 3. Contracts
+- History ordering is `(published_at DESC, note_id DESC)`; cursor is opaque and
+  `total` is the full filtered count, independent of the cursor remainder.
+- Every page returns `account_id`, `items`, `total`, `next_cursor`, `data_as_of`,
+  query filters, and `engagement_rate_unit="fraction"`; item DTOs carry
+  `subject_type="imported_note"`, `assessment_type="historical_performance"`,
+  `scope="account_history"`, and `note_synced_at`.
+- `quality_evaluation_runs` stores source/content/context hashes,
+  evaluator fingerprint, status, result/coverage/threshold JSON and timestamps.
+  The in-memory fallback is test/dev only; Postgres startup calls `ensure_tables`.
+
+### 4. Validation & Error Matrix
+- Blank account ID → structured validation error at the API boundary.
+- Unsupported sort or malformed cursor → 400; never silently restart page one.
+- Cursor pages over 500/600 rows must have no duplicate or skipped IDs.
+- Historical report reads `list_all_note_stats`; it must not use the bounded
+  display reader or trigger a browser sync/write.
+- DB/cache failure → log and return the safe in-memory/empty fallback; never
+  claim a newer `data_as_of` than the rows actually read.
+
+### 5. Good/Base/Bad Cases
+- Good: two clients traverse the same cursor stream and receive identical IDs,
+  metrics and snapshot metadata.
+- Base: old clients keep using bounded overview/detail routes with additive fields.
+- Bad: Analytics sorts by engagement while Evaluation sorts by publish time and
+  labels both as the complete historical list.
+
+### 6. Tests Required
+- Assert stable cursor traversal, complete `total`, fraction normalization and
+  `data_as_of` for >500 rows and tied timestamps.
+- Assert account isolation and read-only quality/detail routes.
+- Assert cached runs are idempotent, forced runs retain prior versions, and
+  latest lookup includes stale/degraded audit records.
+
+### 7. Wrong vs Correct
+```python
+# Wrong: reuse the 100-row display preview for a complete account report.
+notes = await list_note_stats(account_id, limit=100)
+
+# Correct: one canonical cursor reader for pages, full reader for aggregates.
+page = await list_note_stats_page(account_id, cursor=cursor, limit=50)
+all_notes = await list_all_note_stats(account_id)
+```

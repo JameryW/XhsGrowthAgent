@@ -702,3 +702,51 @@ Before merging any PR that touches `backend/`:
 - [ ] No emoji in variable names, function names, or log messages
 - [ ] Comments explain WHY, not WHAT
 - [ ] No speculative abstractions (three similar lines before extracting)
+
+## Scenario: Quality-consistency API and evaluator changes
+
+### 1. Scope / Trigger
+- Trigger: a change touches canonical historical-note reads, RQGM evaluation
+  statuses, account filters, evaluation persistence, or cross-layer DTOs.
+
+### 2. Signatures
+- `list_note_stats_page(...) -> NoteStatsPage`
+- `POST /api/evaluation/note`, `GET /api/evaluation/note/{account_id}/{note_id}/latest`
+- `EvaluatorAgent._build_evaluation_result(...)` and historical sanitizer
+
+### 3. Contracts
+- Additive response metadata must include account/subject/scope,
+  assessment type, status, coverage, snapshot/evaluation timestamps and the
+  deterministic algorithm or evaluator fingerprint.
+- Use one `MIN_EVALUATION_COVERAGE` constant; no missing dimension may be filled
+  with 70 and no degraded result may become a pass.
+- Canonical history is stable cursor pagination with fraction engagement rates;
+  old bounded readers remain compatibility previews.
+
+### 4. Validation & Error Matrix
+- Ruff check + format and mypy must pass for changed backend modules.
+- Empty IDs, malformed cursors and unsupported sort values fail at the API boundary.
+- DB/cache failures log a safe fallback; evaluator failures return explicit
+  degraded/partial states and do not enter aggregates.
+
+### 5. Good/Base/Bad Cases
+- Good: focused tests prove >500 pagination, two-account isolation, idempotent
+  evaluation, force versioning and threshold-aware UI metadata.
+- Base: legacy workflow checkpoints remain readable through additive adapters.
+- Bad: broad exception swallowing, hidden list caps, or changing score semantics
+  without updating API types/tests/i18n.
+
+### 6. Tests Required
+- `tests/unit/api/test_quality_consistency_backend.py` and identity tests cover
+  cursor, fractions, degraded/partial and durable runs.
+- Existing evaluator tests cover omitted dimensions, timeout and no fake pass.
+- Run `pytest -q tests/unit`, `ruff check`, `ruff format --check`, and compileall.
+
+### 7. Wrong vs Correct
+```python
+# Wrong: a raw LLM score bypasses coverage and status normalization.
+return {"overall_score": raw["overall_score"], "decision": raw["decision"]}
+
+# Correct: normalize dimensions, coverage, status and nullability centrally.
+return agent._build_evaluation_result(raw, historical=is_historical, state=state)
+```

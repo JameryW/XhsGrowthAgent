@@ -73,7 +73,7 @@ def test_build_evaluation_result_includes_altruism_and_weights_it():
     )
 
 
-def test_missing_altruism_filled_with_neutral_default():
+def test_missing_altruism_is_unavailable_instead_of_neutral_default():
     agent = EvaluatorAgent()
     raw = {
         "dimensions": [
@@ -100,7 +100,10 @@ def test_missing_altruism_filled_with_neutral_default():
     result = agent._build_evaluation_result(raw)
     dims = {d["dimension"]: d for d in result["dimensions"]}
     assert "altruism" in dims
-    assert dims["altruism"]["score"] == 70.0  # neutral fill
+    assert dims["altruism"]["score"] is None
+    assert dims["altruism"]["available"] is False
+    assert result["status"] == "partial"
+    assert result["overall_score"] == 80.0
     # overall includes weight * 70 for altruism
     assert result["overall_score"] > 0
 

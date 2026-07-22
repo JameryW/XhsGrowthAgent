@@ -25,9 +25,13 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   const periodSummary = ref<AnalyticsPeriodSummary | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
+  let requestGeneration = 0
 
-  // ponytail: derive accountId from accountsStore instead of hardcoding 'default'
-  const accountId = computed(() => useAccountsStore().activeAccountId ?? 'default')
+  // Derive the scope from the selected account, or the first loaded account
+  // when no explicit active account exists. Never query a synthetic `default`
+  // account: an empty account scope is a real no-data state.
+  const accountsStore = useAccountsStore()
+  const accountId = computed(() => accountsStore.activeAccountId ?? accountsStore.accounts[0]?.id ?? '')
 
   // Computed
   const posts = computed<PostPerformance[]>(() =>
@@ -83,20 +87,32 @@ export const useAnalyticsStore = defineStore('analytics', () => {
 
   // Actions
   async function fetchAllData() {
+    const generation = ++requestGeneration
+    const requestedAccountId = accountId.value
+    if (!requestedAccountId) {
+      growthReport.value = null
+      performanceData.value = null
+      costData.value = null
+      periodSummary.value = null
+      error.value = null
+      isLoading.value = false
+      return
+    }
     isLoading.value = true
     error.value = null
     try {
       const { report, performance, costs, period_summary } = await analyticsApi.getDashboard(
-        accountId.value, period.value, 20
+        requestedAccountId, period.value, 20
       )
+      if (generation !== requestGeneration || accountId.value !== requestedAccountId) return
       growthReport.value = report
       performanceData.value = performance
       costData.value = costs
       periodSummary.value = period_summary ?? null
     } catch (e: any) {
-      error.value = e.message
+      if (generation === requestGeneration) error.value = e.message
     } finally {
-      isLoading.value = false
+      if (generation === requestGeneration) isLoading.value = false
     }
   }
 

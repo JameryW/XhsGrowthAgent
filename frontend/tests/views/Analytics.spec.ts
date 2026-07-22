@@ -34,8 +34,8 @@ vi.mock('@/api/analytics', () => ({
 // onMounted doesn't hang.
 vi.mock('@/api/accounts', () => ({
   KNOWN_NICHES: [],
-  listAccounts: vi.fn().mockResolvedValue([]),
-  getActiveAccount: vi.fn().mockResolvedValue(null),
+  listAccounts: vi.fn().mockResolvedValue([{ id: 'acct1', name: 'Account 1', is_active: true, created_at: '' }]),
+  getActiveAccount: vi.fn().mockResolvedValue({ id: 'acct1', name: 'Account 1', is_active: true, created_at: '' }),
   createAccount: vi.fn(),
   updateAccount: vi.fn(),
   deleteAccount: vi.fn(),

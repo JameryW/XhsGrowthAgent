@@ -9,7 +9,8 @@ import EvaluationOverview from '@/components/evaluation/EvaluationOverview.vue'
 import CreatorQualityPanel from '@/components/settings/CreatorQualityPanel.vue'
 import CreatorNoteQualityPanel from '@/components/settings/CreatorNoteQualityPanel.vue'
 import { getEvaluationList, getEvaluationResult } from '@/api/evaluation'
-import { getCreatorStats, type CreatorNoteStats } from '@/api/analytics'
+import * as analyticsApi from '@/api/analytics'
+import type { CreatorNoteStats, CreatorNotesPayload } from '@/api/analytics'
 import { useAccountsStore } from '@/stores/accounts'
 import { EvaluationSkeleton } from '@/components/skeletons'
 import { trackInteraction } from '@/utils/interactionTelemetry'
@@ -77,33 +78,78 @@ watch(
 
 // ── 历史笔记（单篇流的第二数据源；账号切换时重载）──
 const notesItems = ref<CreatorNoteStats[]>([])
+const notesTotal = ref(0)
+const notesCursor = ref<string | null>(null)
+const notesDataAsOf = ref<string | null>(null)
 const notesLoading = ref(false)
-const notesError = ref(false)
+const notesError = ref<string | null>(null)
 let notesRequest = 0
 
-async function loadNotes(accountId: string) {
+async function readNotesPage(accountId: string, cursor: string | null = null): Promise<CreatorNotesPayload> {
+  // Older test fixtures/backends only expose the bounded overview. Keep the
+  // adapter local so every new UI reader still shares the canonical payload
+  // shape when the endpoint is available.
+  let reader: typeof analyticsApi.getCreatorNotes | undefined
+  try { reader = analyticsApi.getCreatorNotes } catch { reader = undefined }
+  if (typeof reader === 'function') {
+    try {
+      return await reader(accountId, {
+        cursor,
+        limit: 50,
+        sort: 'published_at_desc',
+      }, { suppressToast: true })
+    } catch {
+      // Older deployments (and tests with an unavailable canonical reader)
+      // may only expose the bounded overview endpoint. Keep the page usable
+      // while retaining the canonical shape for the upgraded endpoint.
+    }
+  }
+  const legacy = await analyticsApi.getCreatorStats(accountId, 50)
+  return {
+    account_id: accountId,
+    items: legacy.notes || [],
+    total: legacy.total ?? legacy.notes?.length ?? 0,
+    limit: legacy.limit ?? 50,
+    next_cursor: null,
+    data_as_of: legacy.data_as_of ?? legacy.fetched_at ?? null,
+    query: { sort: 'published_at_desc', published_from: null, published_to: null },
+  }
+}
+
+async function loadNotes(accountId: string, reset = true) {
   const request = ++notesRequest
-  notesItems.value = []
-  notesError.value = false
+  if (reset) {
+    notesItems.value = []
+    notesTotal.value = 0
+    notesCursor.value = null
+    notesDataAsOf.value = null
+  }
+  notesError.value = null
   if (!accountId) {
     notesLoading.value = false
     return
   }
   notesLoading.value = true
   try {
-    const stats = await getCreatorStats(accountId, 200)
+    const stats = await readNotesPage(accountId, reset ? null : notesCursor.value)
     if (request !== notesRequest) return
-    notesItems.value = (stats.notes || []).filter((note) => Boolean(note.note_id))
-  } catch {
-    if (request === notesRequest) notesError.value = true
+    const incoming = (stats.items || []).filter((note) => Boolean(note.note_id))
+    notesItems.value = reset ? incoming : [...notesItems.value, ...incoming]
+    notesTotal.value = Number.isFinite(stats.total) ? stats.total : notesItems.value.length
+    notesCursor.value = stats.next_cursor ?? null
+    notesDataAsOf.value = stats.data_as_of ?? null
+  } catch (e) {
+    if (request === notesRequest) notesError.value = (e as Error).message || t('evaluation.stream.notesUnavailable')
   } finally {
     if (request === notesRequest) notesLoading.value = false
   }
 }
 
-watch(selectedAccountId, (accountId) => {
-  if (!isDetailView.value) void loadNotes(accountId)
-}, { immediate: true })
+const notesHasMore = computed(() => Boolean(notesCursor.value) && notesItems.value.length < notesTotal.value)
+
+function loadMoreNotes() {
+  if (!notesLoading.value && notesHasMore.value) void loadNotes(selectedAccountId.value, false)
+}
 
 // ════════════════════════════════════════════════════════════
 // 列表页状态
@@ -115,8 +161,24 @@ const listOffset = ref(0)
 const listLoading = ref(false)
 const listError = ref<string | null>(null)
 const searchQuery = ref('')
+let listRequest = 0
 
-async function loadList(reset = false) {
+// Historical-note drawer state is declared before the account watcher below;
+// the watcher runs immediately during setup and must be able to clear stale
+// cross-account subjects safely.
+const drawerNoteId = ref('')
+const drawerNoteTitle = ref('')
+
+async function loadList(reset = false, accountId = selectedAccountId.value) {
+  const request = ++listRequest
+  if (!accountId) {
+    listItems.value = []
+    listTotal.value = 0
+    listOffset.value = 0
+    listLoading.value = false
+    listError.value = null
+    return
+  }
   listLoading.value = true
   listError.value = null
   if (reset) {
@@ -125,11 +187,12 @@ async function loadList(reset = false) {
   }
   try {
     const res: EvaluationListResponse = await getEvaluationList(
-      undefined,
+      accountId,
       listLimit,
       listOffset.value,
       { suppressToast: true },
     )
+    if (request !== listRequest || accountId !== selectedAccountId.value) return
     if (reset) {
       listItems.value = res.workflows
     } else {
@@ -137,9 +200,10 @@ async function loadList(reset = false) {
     }
     listTotal.value = res.total
   } catch (e) {
+    if (request !== listRequest || accountId !== selectedAccountId.value) return
     listError.value = (e as Error).message || t('evaluation.list.loadError')
   } finally {
-    listLoading.value = false
+    if (request === listRequest) listLoading.value = false
   }
 }
 
@@ -148,15 +212,32 @@ async function loadList(reset = false) {
 const hasMore = computed(() => listItems.value.length < listTotal.value)
 
 function loadMore() {
-  listOffset.value += listLimit
-  loadList(false)
+  if (listLoading.value || !selectedAccountId.value) return
+  listOffset.value = listItems.value.length
+  void loadList(false, selectedAccountId.value)
 }
+
+watch(selectedAccountId, (accountId) => {
+  // A drawer belongs to the previous account's subject. Close it before the
+  // new account's paged reader resolves so no old note briefly renders under
+  // a different account scope.
+  drawerNoteId.value = ''
+  drawerNoteTitle.value = ''
+  if (!isDetailView.value) {
+    // Account changes invalidate every paged collection immediately. The
+    // request generation guards prevent late rows from the old account from
+    // flashing into the new scope.
+    void loadNotes(accountId, true)
+    void loadList(true, accountId)
+  }
+}, { immediate: true })
 
 // 前端过滤：标题 + thread_id + account_id + decision (EV-09)
 const decisionFilter = ref<string>('all')
 const filteredItems = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   return listItems.value.filter((w) => {
+    if (selectedAccountId.value && w.account_id !== selectedAccountId.value) return false
     if (decisionFilter.value !== 'all' && w.decision !== decisionFilter.value) return false
     if (!q) return true
     const title = (w.selected_title || '').toLowerCase()
@@ -183,7 +264,7 @@ function evaluationActionCta(target: 'review' | 'dashboard') {
 }
 
 function backToList() {
-  router.push({ name: 'evaluation', query: { tab: 'workflow' } })
+  router.push({ name: 'evaluation', query: { tab: sourceTab.value } })
 }
 
 // EV-01: copy the evaluated thread id for support/handoff.
@@ -197,10 +278,12 @@ async function copyThreadId() {
 }
 
 // 列表页首次挂载加载
-onMounted(() => {
+onMounted(async () => {
   if (isDetailView.value) return
-  void refreshAccounts()
-  void loadList(true)
+  await refreshAccounts()
+  if (selectedAccountId.value && !listItems.value.length && !listLoading.value) {
+    await loadList(true, selectedAccountId.value)
+  }
 })
 
 // 路由切换到列表页时按需加载（从详情返回且列表为空）
@@ -210,37 +293,37 @@ watch(isDetailView, (detail) => {
   }
 })
 
-// ── 单篇质量流：工作流评估 × 历史笔记按时间混排 ──
-type StreamRow =
-  | { kind: 'workflow'; time: number; payload: EvaluationListItem }
-  | { kind: 'note'; time: number; payload: CreatorNoteStats }
+// ── 来源分离：已发布历史笔记与工作流内容评审 ──
+type SourceTab = 'historical' | 'workflow'
+const sourceTab = ref<SourceTab>(route.query.tab === 'workflow' ? 'workflow' : 'historical')
 
-function noteTime(note: CreatorNoteStats): number {
-  const time = new Date(note.published_at || note.synced_at || '').getTime()
-  return Number.isNaN(time) ? 0 : time
-}
+const workflowRows = computed(() => filteredItems.value
+  .slice()
+  .sort((a, b) => (new Date(b.updated_at).getTime() || 0) - (new Date(a.updated_at).getTime() || 0)))
 
-const streamRows = computed<StreamRow[]>(() => {
-  const rows: StreamRow[] = filteredItems.value.map((item) => ({
-    kind: 'workflow' as const,
-    time: new Date(item.updated_at).getTime() || 0,
-    payload: item,
-  }))
-  // 决策筛选只适用于工作流评估；筛选激活时隐藏历史笔记行。
-  if (decisionFilter.value === 'all') {
-    const q = searchQuery.value.trim().toLowerCase()
-    for (const note of notesItems.value) {
-      if (q && !(note.title || '').toLowerCase().includes(q)) continue
-      rows.push({ kind: 'note', time: noteTime(note), payload: note })
-    }
-  }
-  return rows.sort((a, b) => b.time - a.time)
+const historicalRows = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  return notesItems.value
+    .filter((note) => !selectedAccountId.value || note.account_id === selectedAccountId.value)
+    .filter((note) => !q || (note.title || '').toLowerCase().includes(q) || note.note_id.toLowerCase().includes(q))
+    .slice()
+    .sort((a, b) => {
+      const at = new Date(a.published_at || a.synced_at || '').getTime() || 0
+      const bt = new Date(b.published_at || b.synced_at || '').getTime() || 0
+      return bt - at || b.note_id.localeCompare(a.note_id)
+    })
 })
 
-// ── 历史笔记下钻抽屉 ──
-const drawerNoteId = ref('')
-const drawerNoteTitle = ref('')
+const visibleRowsCount = computed(() => sourceTab.value === 'workflow' ? workflowRows.value.length : historicalRows.value.length)
+const visibleRowsTotal = computed(() => sourceTab.value === 'workflow' ? listTotal.value : notesTotal.value)
 
+function setSourceTab(tab: SourceTab) {
+  sourceTab.value = tab
+  if (tab === 'workflow') decisionFilter.value = 'all'
+  void router.replace({ query: { ...route.query, tab } })
+}
+
+// ── 历史笔记下钻抽屉 ──
 function openNoteDrawer(note: CreatorNoteStats) {
   drawerNoteId.value = note.note_id
   drawerNoteTitle.value = note.title
@@ -315,6 +398,12 @@ const detailError = ref<string | null>(null)
 const ev = computed(() => result.value?.evaluation_result)
 const hasResult = computed(() => !!result.value && result.value.has_evaluation && !!ev.value)
 const scoreThresholds = computed(() => result.value?.thresholds ?? SCORE_THRESHOLDS)
+const detailStatus = computed(() => {
+  const status = result.value?.status || ev.value?.status
+  if (result.value?.degraded || ev.value?.degraded) return 'degraded'
+  return status || 'ready'
+})
+const detailUnavailable = computed(() => ['unavailable', 'degraded', 'failed', 'running'].includes(detailStatus.value))
 
 async function loadDetail(threadId: string) {
   detailLoading.value = true
@@ -365,6 +454,7 @@ const biasCardClass = computed(() => {
 
 const detailDecisionClass = computed(() => {
   const d = ev.value?.decision
+  if (!d || detailUnavailable.value) return 'decision-unknown'
   if (d === 'approved') return 'decision-approved'
   if (d === 'needs_revision') return 'decision-revision'
   return 'decision-rejected'
@@ -433,123 +523,80 @@ function dimDescription(dim: string): string {
         <CreatorQualityPanel :account-id="selectedAccount.id" :account-name="selectedAccount.name" class="shadow-sm" />
       </section>
 
-      <!-- 单篇区块：工作流评估 × 历史笔记，统一时间流 -->
+      <!-- 单篇区块：来源分离，避免将发布后表现与内容评审混成一个分数 -->
       <section class="eval-section" :aria-label="t('evaluation.section.content')">
         <div class="section-head">
           <p class="section-eyebrow">{{ t('evaluation.section.content') }}</p>
           <h2 class="section-title">{{ t('evaluation.stream.title') }}</h2>
+          <p class="section-description">{{ t('evaluation.stream.separationHint') }}</p>
         </div>
 
-      <!-- EV-09: decision filter chips -->
-      <section class="filter-chips" role="group" :aria-label="t('evaluation.list.filterLabel')">
-        <button
-          v-for="opt in ['all', 'approved', 'needs_revision', 'rejected']"
-          :key="opt"
-          type="button"
-          class="filter-chip min-h-[36px]"
-          :class="{ 'filter-chip--active': decisionFilter === opt }"
-          :aria-pressed="decisionFilter === opt"
-          @click="setDecisionFilter(opt)"
-        >
-          {{ opt === 'all' ? t('evaluation.list.filterAll') : decisionLabel(opt) }}
-        </button>
-      </section>
-
-      <!-- 搜索框 -->
-      <section class="search-bar">
-        <input
-          v-model="searchQuery"
-          class="thread-input"
-          :aria-label="t('evaluation.list.searchPlaceholder')"
-          :placeholder="t('evaluation.list.searchPlaceholder')"
-        />
-        <span class="result-count">{{ streamRows.length }}</span>
-      </section>
-
-      <!-- 加载错误 -->
-      <div v-if="listError" class="error-card" role="alert">
-        <AppIcon name="AlertCircle" />
-        <span>{{ listError }}</span>
-        <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 px-3 text-xs font-medium hover:bg-rose-100" @click="loadList(true)">{{ t('evaluation.error.retry') }}</button>
-      </div>
-
-      <!-- 加载中（首次） — EV-11/INF-02: structured skeleton -->
-      <EvaluationSkeleton v-if="listLoading && listItems.length === 0" />
-
-      <!-- 空列表 -->
-      <div
-        v-else-if="!listError && streamRows.length === 0 && !notesLoading"
-        class="empty-state"
-      >
-        <AppIcon name="HelpCircle" size="xl" />
-        <div class="empty-title">{{ (listItems.length || notesItems.length) ? t('evaluation.list.noMatch') : t('evaluation.list.empty') }}</div>
-      </div>
-
-      <!-- 统一单篇时间流 -->
-      <div v-else class="eval-list">
-        <div v-if="notesLoading" class="notes-hint" aria-busy="true">{{ t('creatorNoteQuality.loading') }}</div>
-        <div v-if="notesError" class="notes-hint" role="status">{{ t('evaluation.stream.notesUnavailable') }}</div>
-        <template v-for="row in streamRows" :key="row.kind === 'workflow' ? row.payload.thread_id : row.payload.note_id">
-          <button
-            v-if="row.kind === 'workflow'"
-            type="button"
-            class="eval-item"
-            :aria-label="`${row.payload.selected_title || t('evaluation.empty.title')} · ${decisionLabel(row.payload.decision)}`"
-            @click="openDetail(row.payload.thread_id)"
-          >
-            <div class="item-main">
-              <div class="item-title">{{ row.payload.selected_title || t('evaluation.empty.title') }}</div>
-              <div class="item-meta">
-                <span class="source-badge source-workflow">{{ t('evaluation.stream.sourceWorkflow') }}</span>
-                <span class="meta-tag">{{ phaseLabel(row.payload.phase) }}</span>
-                <span class="meta-sep">·</span>
-                <span class="meta-account">{{ row.payload.account_id }}</span>
-                <span class="meta-sep">·</span>
-                <span class="meta-time">{{ formatDateTime(row.payload.updated_at) }}</span>
-              </div>
-            </div>
-            <div class="item-right">
-              <span
-                class="item-score"
-                :class="scoreTierClass(row.payload.overall_score, { pass: row.payload.pass_threshold ?? SCORE_THRESHOLDS.pass, warn: row.payload.warn_threshold ?? SCORE_THRESHOLDS.warn })"
-              >
-                {{ row.payload.overall_score == null ? '—' : row.payload.overall_score.toFixed(1) }}
-              </span>
-              <span class="decision-badge" :class="decisionBadgeClass(row.payload.decision)">
-                {{ decisionLabel(row.payload.decision) }}
-              </span>
-            </div>
+        <div class="source-tabs" role="tablist" :aria-label="t('evaluation.stream.tabsLabel')">
+          <button type="button" role="tab" class="source-tab min-h-11" :class="{ 'source-tab--active': sourceTab === 'historical' }" :aria-selected="sourceTab === 'historical'" @click="setSourceTab('historical')">
+            {{ t('evaluation.stream.historicalTab') }}
+            <span class="source-tab-count">{{ notesItems.length }} / {{ notesTotal }}</span>
           </button>
-          <button
-            v-else
-            type="button"
-            class="eval-item"
-            :aria-label="`${row.payload.title || t('creatorNoteQuality.untitled')} · ${t('evaluation.stream.sourceImported')}`"
-            @click="openNoteDrawer(row.payload)"
-          >
-            <div class="item-main">
-              <div class="item-title">{{ row.payload.title || t('creatorNoteQuality.untitled') }}</div>
-              <div class="item-meta">
-                <span class="source-badge source-imported">{{ t('evaluation.stream.sourceImported') }}</span>
-                <span class="meta-time">{{ formatDateTime(row.payload.published_at) }}</span>
-              </div>
-            </div>
-            <div class="item-right item-right-note">
-              <span class="note-metric">{{ t('creatorNoteQuality.metrics.views') }} {{ formatCompact(row.payload.views) }}</span>
-              <span class="note-metric">{{ t('creatorNoteQuality.metrics.likes') }} {{ formatCompact(row.payload.likes) }}</span>
-            </div>
+          <button type="button" role="tab" class="source-tab min-h-11" :class="{ 'source-tab--active': sourceTab === 'workflow' }" :aria-selected="sourceTab === 'workflow'" @click="setSourceTab('workflow')">
+            {{ t('evaluation.stream.workflowTab') }}
+            <span class="source-tab-count">{{ listItems.length }} / {{ listTotal }}</span>
           </button>
-        </template>
-      </div>
+        </div>
 
-      <!-- 加载更多 -->
-      <div v-if="hasMore" class="load-more">
-          <button class="load-more-btn min-h-11" type="button" :disabled="listLoading" @click="loadMore">
-          <AppIcon v-if="listLoading" name="Loader2" class="spin" />
-          <span>{{ t('evaluation.list.loadMore') }}</span>
-        </button>
-      </div>
-      <div v-else-if="listItems.length > 0" class="no-more">{{ t('evaluation.list.noMore') }}</div>
+        <section v-if="sourceTab === 'workflow'" class="filter-chips" role="group" :aria-label="t('evaluation.list.filterLabel')">
+          <button v-for="opt in ['all', 'approved', 'needs_revision', 'rejected']" :key="opt" type="button" class="filter-chip min-h-[36px]" :class="{ 'filter-chip--active': decisionFilter === opt }" :aria-pressed="decisionFilter === opt" @click="setDecisionFilter(opt)">
+            {{ opt === 'all' ? t('evaluation.list.filterAll') : decisionLabel(opt) }}
+          </button>
+        </section>
+
+        <section class="search-bar">
+          <input v-model="searchQuery" class="thread-input" :aria-label="t('evaluation.list.searchPlaceholder')" :placeholder="t('evaluation.list.searchPlaceholder')" />
+          <span class="result-count">{{ t('evaluation.list.loadedCount', { loaded: visibleRowsCount, total: visibleRowsTotal }) }}</span>
+        </section>
+
+        <div v-if="sourceTab === 'workflow' && listError" class="error-card" role="alert">
+          <AppIcon name="AlertCircle" />
+          <span>{{ listError }}</span>
+          <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 px-3 text-xs font-medium hover:bg-rose-100" @click="loadList(true, selectedAccountId)">{{ t('evaluation.error.retry') }}</button>
+        </div>
+        <div v-if="sourceTab === 'historical' && notesError" class="error-card" role="alert">
+          <AppIcon name="AlertCircle" />
+          <span>{{ notesError }}</span>
+          <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 px-3 text-xs font-medium hover:bg-rose-100" @click="loadNotes(selectedAccountId, true)">{{ t('evaluation.error.retry') }}</button>
+        </div>
+
+        <EvaluationSkeleton v-if="(sourceTab === 'workflow' ? listLoading && !listItems.length : notesLoading && !notesItems.length)" />
+
+        <div v-else-if="visibleRowsCount === 0 && !(sourceTab === 'workflow' ? listError : notesError)" class="empty-state">
+          <AppIcon name="HelpCircle" size="xl" />
+          <div class="empty-title">{{ sourceTab === 'workflow' ? t('evaluation.list.empty') : t('evaluation.stream.historicalEmpty') }}</div>
+        </div>
+
+        <div v-else class="eval-list">
+          <div v-if="sourceTab === 'historical' && notesLoading" class="notes-hint" aria-busy="true">{{ t('creatorNoteQuality.loading') }}</div>
+          <div v-if="sourceTab === 'workflow' && listLoading" class="notes-hint" aria-busy="true">{{ t('evaluation.list.loading') }}</div>
+          <template v-if="sourceTab === 'workflow'">
+            <button v-for="item in workflowRows" :key="item.thread_id" type="button" class="eval-item" :aria-label="`${item.selected_title || t('evaluation.empty.title')} · ${decisionLabel(item.decision || 'unknown')}`" @click="openDetail(item.thread_id)">
+              <div class="item-main">
+                <div class="item-title">{{ item.selected_title || t('evaluation.empty.title') }}</div>
+                <div class="item-meta"><span class="source-badge source-workflow">{{ t('evaluation.stream.sourceWorkflow') }}</span><span class="meta-tag">{{ phaseLabel(item.phase) }}</span><span class="meta-sep">·</span><span class="meta-account">{{ item.account_id }}</span><span class="meta-sep">·</span><span class="meta-time">{{ formatDateTime(item.updated_at) }}</span></div>
+              </div>
+              <div class="item-right"><span class="score-kind">{{ t('evaluation.rqgmScoreLabel') }}</span><span class="item-score" :class="scoreTierClass(item.overall_score, { pass: item.pass_threshold ?? SCORE_THRESHOLDS.pass, warn: item.warn_threshold ?? SCORE_THRESHOLDS.warn })">{{ item.overall_score == null || item.degraded || item.status_detail === 'degraded' || item.status_detail === 'failed' ? '—' : item.overall_score.toFixed(1) }}</span><span class="decision-badge" :class="decisionBadgeClass(item.decision || 'unknown')">{{ item.degraded ? t('evaluation.status.degraded') : decisionLabel(item.decision || 'unknown') }}</span></div>
+            </button>
+          </template>
+          <template v-else>
+            <button v-for="note in historicalRows" :key="note.note_id" type="button" class="eval-item" :aria-label="`${note.title || t('creatorNoteQuality.untitled')} · ${t('evaluation.stream.sourceImported')}`" @click="openNoteDrawer(note)">
+              <div class="item-main"><div class="item-title">{{ note.title || t('creatorNoteQuality.untitled') }}</div><div class="item-meta"><span class="source-badge source-imported">{{ t('evaluation.stream.sourceImported') }}</span><span class="meta-time">{{ formatDateTime(note.published_at) }}</span><span v-if="note.synced_at" class="meta-time">· {{ t('evaluation.dataAsOf') }} {{ formatDateTime(note.synced_at) }}</span></div></div>
+              <div class="item-right item-right-note"><span class="score-kind">{{ t('evaluation.performanceScoreLabel') }}</span><span class="note-metric">{{ t('creatorNoteQuality.metrics.views') }} {{ formatCompact(note.views) }}</span><span class="note-metric">{{ t('creatorNoteQuality.metrics.likes') }} {{ formatCompact(note.likes) }}</span></div>
+            </button>
+          </template>
+        </div>
+
+        <div v-if="sourceTab === 'workflow' && hasMore" class="load-more"><button class="load-more-btn min-h-11" type="button" :disabled="listLoading" @click="loadMore"><AppIcon v-if="listLoading" name="Loader2" class="spin" /><span>{{ t('evaluation.list.loadMore') }}</span></button></div>
+        <div v-if="sourceTab === 'historical' && notesHasMore" class="load-more"><button class="load-more-btn min-h-11" type="button" :disabled="notesLoading" @click="loadMoreNotes"><AppIcon v-if="notesLoading" name="Loader2" class="spin" /><span>{{ t('evaluation.list.loadMore') }}</span></button></div>
+        <div v-if="(sourceTab === 'workflow' ? listItems.length : notesItems.length) > 0" class="data-as-of" role="status">
+          <span>{{ t('evaluation.list.loadedCount', { loaded: sourceTab === 'workflow' ? listItems.length : notesItems.length, total: sourceTab === 'workflow' ? listTotal : notesTotal }) }}</span>
+          <span v-if="sourceTab === 'historical' && notesDataAsOf"> · {{ t('evaluation.dataAsOf') }} {{ formatDateTime(notesDataAsOf) }}</span>
+        </div>
       </section>
     </template>
 
@@ -566,7 +613,7 @@ function dimDescription(dim: string): string {
              user arriving at /evaluation/:threadId knows what was judged. -->
         <template v-if="detailThreadId" #meta>
           <span class="font-mono">{{ detailThreadId.slice(-8) }}</span>
-          <span v-if="ev" class="decision-badge" :class="detailDecisionClass">{{ t(DETAIL_DECISION_KEYS[ev.decision] ?? 'evaluation.decision.unknown') }}</span>
+          <span v-if="ev" class="decision-badge" :class="detailDecisionClass">{{ detailUnavailable ? t('evaluation.status.notReady') : t(DETAIL_DECISION_KEYS[ev.decision || 'unknown'] ?? 'evaluation.decision.unknown') }}</span>
           <button type="button" class="copy-thread min-h-[36px] px-2 text-xs rounded-md border border-slate-200 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800" @click="copyThreadId">
             <AppIcon name="Copy" size="sm" />
             {{ t('evaluation.action.copyId') }}
@@ -602,13 +649,15 @@ function dimDescription(dim: string): string {
         <!-- 总分 + 决策 -->
         <section class="overview-card">
           <div class="score-block">
-            <span class="score-label">{{ t('evaluation.overall') }}</span>
-            <span class="score-value" :class="scoreClass">{{ ev.overall_score == null ? '—' : ev.overall_score.toFixed(1) }}</span>
+            <span class="score-label">{{ t('evaluation.rqgmScoreLabel') }}</span>
+            <span class="score-value" :class="detailUnavailable ? 'score-none' : scoreClass">{{ detailUnavailable || ev.overall_score == null ? '—' : ev.overall_score.toFixed(1) }}</span>
           </div>
           <div class="decision-badge" :class="detailDecisionClass">
-            {{ t(DETAIL_DECISION_KEYS[ev.decision] ?? 'evaluation.decision.unknown') }}
+            {{ detailUnavailable ? t('evaluation.status.notReady') : t(DETAIL_DECISION_KEYS[ev.decision || 'unknown'] ?? 'evaluation.decision.unknown') }}
           </div>
           <p class="text-xs text-slate-400">{{ t('evaluation.weightedScoreHint') }}</p>
+          <p v-if="detailUnavailable" class="status-notice" role="status">{{ t('evaluation.status.degradedHint') }} <button type="button" class="retry-btn min-h-[36px]" @click="retryDetail">{{ t('evaluation.error.retry') }}</button></p>
+          <p v-if="result?.data_as_of || result?.evaluated_at" class="text-xs text-slate-400">{{ t('evaluation.dataAsOf') }} {{ formatDateTime(result?.data_as_of || result?.evaluated_at || '') }}</p>
           <p v-if="ev.summary" class="summary">{{ ev.summary }}</p>
         </section>
 
@@ -638,8 +687,8 @@ function dimDescription(dim: string): string {
                 <span class="dim-help" tabindex="0" :title="dimDescription(d.dimension)" :aria-label="dimDescription(d.dimension)">?</span>
                 <span v-if="d.is_blocking" class="blocking-tag">{{ t('evaluation.blocking') }}</span>
               </span>
-              <span class="dim-score" :class="scoreTierClass(d.score, scoreThresholds)">
-                {{ d.score?.toFixed(1) }}
+              <span class="dim-score" :class="d.available === false || d.score == null ? 'score-none' : scoreTierClass(d.score, scoreThresholds)">
+                {{ d.available === false || d.score == null ? '—' : d.score.toFixed(1) }}
               </span>
             </div>
             <p v-if="d.rationale" class="dim-rationale">{{ d.rationale }}</p>
@@ -738,6 +787,8 @@ function dimDescription(dim: string): string {
   letter-spacing: -0.01em;
   color: #1e293b;
 }
+.section-description { margin-top: 0.35rem; font-size: 0.75rem; line-height: 1.5; color: #64748b; }
+:global(.dark) .section-description { color: #94a3b8; }
 :global(.dark) .section-title { color: #f1f5f9; }
 
 /* ── 单篇时间流：来源徽章与笔记指标 ── */
@@ -753,9 +804,18 @@ function dimDescription(dim: string): string {
 :global(.dark) .source-workflow { background: rgba(20,184,166,0.16); color: #5eead4; }
 .source-imported { background: #ede9fe; color: #6d28d9; }
 :global(.dark) .source-imported { background: rgba(139,92,246,0.18); color: #c4b5fd; }
+.source-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.9rem; border-bottom: 1px solid #e2e8f0; }
+.source-tab { display: inline-flex; align-items: center; gap: 0.45rem; border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 0.5rem 0.75rem; color: #64748b; font-size: 0.8rem; font-weight: 700; cursor: pointer; }
+.source-tab--active { border-color: #7c3aed; color: #6d28d9; }
+.source-tab-count { color: #94a3b8; font-size: 0.68rem; font-weight: 600; }
+:global(.dark) .source-tabs { border-color: #334155; }
+:global(.dark) .source-tab { color: #94a3b8; }
+:global(.dark) .source-tab--active { color: #c4b5fd; border-color: #a78bfa; }
 .item-right-note { flex-direction: row; align-items: center; gap: 0.5rem; }
 .note-metric { font-size: 0.75rem; color: #64748b; white-space: nowrap; font-variant-numeric: tabular-nums; }
 :global(.dark) .note-metric { color: #94a3b8; }
+.score-kind { font-size: 0.62rem; color: #94a3b8; white-space: nowrap; }
+.data-as-of { display: flex; flex-wrap: wrap; justify-content: center; margin-top: 0.7rem; color: #94a3b8; font-size: 0.7rem; }
 .notes-hint {
   padding: 0.5rem 0.875rem;
   font-size: 0.75rem;
@@ -847,11 +907,14 @@ function dimDescription(dim: string): string {
 .score-pass { color: #16a34a; }
 .score-warn { color: #d97706; }
 .score-fail { color: #dc2626; }
+.score-none { color: #94a3b8; }
 .decision-badge { padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
 .decision-approved { background: #dcfce7; color: #15803d; }
 .decision-revision { background: #fef3c7; color: #b45309; }
 .decision-rejected { background: #fee2e2; color: #b91c1c; }
+.decision-unknown { background: #f1f5f9; color: #64748b; }
 .summary { font-size: 0.8125rem; color: #475569; margin: 0; }
+.status-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: #b45309; }
 
 .card-title { font-size: 0.9rem; font-weight: 600; color: #1e293b; margin: 0 0 0.75rem; }
 .bias-card { border-color: #fde68a; background: #fffbeb; }

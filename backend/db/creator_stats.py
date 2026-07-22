@@ -6,12 +6,14 @@ in-memory store so dry-run/fixture paths work without a database.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import logging
 from typing import Any
 
 from backend.db.pool import get_pool, is_pool_ready
-from backend.services.creator_stats.types import AccountStatsOverview, NoteStats
+from backend.services.creator_stats.types import AccountStatsOverview, NoteStats, NoteStatsPage
 
 logger = logging.getLogger("xhs_growth.db.creator_stats")
 
@@ -89,6 +91,8 @@ CREATE INDEX IF NOT EXISTS idx_creator_note_stats_account
     ON creator_note_stats (account_id);
 CREATE INDEX IF NOT EXISTS idx_creator_note_stats_engagement
     ON creator_note_stats (account_id, engagement_rate DESC);
+CREATE INDEX IF NOT EXISTS idx_creator_note_stats_published
+    ON creator_note_stats (account_id, published_at DESC, note_id DESC);
 """
 
 _ADD_BODY_TEXT_COL_SQL = (
@@ -613,6 +617,229 @@ async def list_note_stats(
         )
         rows = await cur.fetchall()
     return [_note_from_row(r) for r in rows]
+
+
+def encode_note_cursor(published_at: str, note_id: str) -> str:
+    """Encode the canonical ``(published_at, note_id)`` sort key opaquely."""
+    payload = json.dumps(
+        {"v": 1, "published_at": str(published_at or ""), "note_id": str(note_id or "")},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def decode_note_cursor(cursor: str) -> tuple[str, str]:
+    """Decode and validate a canonical history cursor.
+
+    A malformed token is rejected by the API as a validation error instead of
+    silently starting from the first page, which makes stale/corrupt links
+    visible to callers.
+    """
+    token = (cursor or "").strip()
+    if not token:
+        raise ValueError("cursor cannot be empty")
+    try:
+        padded = token + "=" * (-len(token) % 4)
+        raw = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
+    except (ValueError, TypeError, UnicodeDecodeError, binascii.Error, json.JSONDecodeError) as exc:
+        raise ValueError("invalid note cursor") from exc
+    if not isinstance(raw, dict) or raw.get("v") != 1:
+        raise ValueError("unsupported note cursor")
+    published_at = raw.get("published_at")
+    note_id = raw.get("note_id")
+    if not isinstance(published_at, str) or not isinstance(note_id, str):
+        raise ValueError("invalid note cursor fields")
+    return published_at, note_id
+
+
+def _max_data_as_of(notes: list[NoteStats], account: AccountStatsOverview | None = None) -> str:
+    values = [str(note.synced_at or "") for note in notes if str(note.synced_at or "")]
+    if account is not None and str(account.synced_at or ""):
+        values.append(str(account.synced_at))
+    return max(values, default="")
+
+
+def _canonical_note(note: NoteStats) -> NoteStats:
+    """Return a detached note whose engagement rate is always a fraction."""
+    normalized = NoteStats.from_dict(note.to_dict())
+    try:
+        rate = float(normalized.engagement_rate or 0.0)
+    except (TypeError, ValueError):
+        rate = 0.0
+    if rate > 1.0:
+        rate /= 100.0
+    normalized.engagement_rate = min(max(rate, 0.0), 1.0)
+    return normalized
+
+
+def canonicalize_note_stats(note: NoteStats) -> NoteStats:
+    """Return a detached note DTO using the canonical fraction rate unit.
+
+    Detail/compatibility readers use the same boundary normalizer as the
+    cursor reader so an older percent-scale import cannot disagree with the
+    shared historical fact stream.
+    """
+    return _canonical_note(note)
+
+
+async def list_note_stats_page(
+    account_id: str,
+    *,
+    cursor: str | None = None,
+    limit: int = 50,
+    published_from: str | None = None,
+    published_to: str | None = None,
+) -> NoteStatsPage:
+    """Read the canonical historical-note fact stream.
+
+    The reader is deliberately separate from ``list_note_stats``.  The latter
+    remains a bounded compatibility preview used by older UI surfaces, while
+    this endpoint has a complete filtered ``total`` and stable cursor ordering
+    by ``published_at DESC, note_id DESC``.  It never joins workflow rows and
+    therefore cannot leak another account's notes.
+    """
+    normalized_account_id = (account_id or "").strip()
+    try:
+        page_limit = int(limit)
+    except (TypeError, ValueError):
+        page_limit = 50
+    page_limit = max(1, min(page_limit, 500))
+    from_value = str(published_from or "").strip() or None
+    to_value = str(published_to or "").strip() or None
+    decoded_cursor = decode_note_cursor(cursor) if cursor else None
+
+    if not normalized_account_id:
+        return NoteStatsPage(
+            account_id="",
+            total=0,
+            limit=page_limit,
+            published_from=from_value,
+            published_to=to_value,
+        )
+
+    if not is_pool_ready():
+        bucket = _mem_notes.get(normalized_account_id, {})
+        notes = [NoteStats.from_dict(value) for value in bucket.values()]
+        if from_value:
+            notes = [note for note in notes if note.published_at >= from_value]
+        if to_value:
+            notes = [note for note in notes if note.published_at <= to_value]
+        notes.sort(key=lambda note: (str(note.published_at or ""), str(note.note_id)), reverse=True)
+        filtered_notes = notes
+        total = len(filtered_notes)
+        if decoded_cursor is not None:
+            cursor_published, cursor_note_id = decoded_cursor
+            notes = [
+                note
+                for note in notes
+                if (
+                    str(note.published_at or "") < cursor_published
+                    or (
+                        str(note.published_at or "") == cursor_published
+                        and str(note.note_id) < cursor_note_id
+                    )
+                )
+            ]
+        selected = notes[: page_limit + 1]
+        has_next = len(selected) > page_limit
+        items = [_canonical_note(note) for note in selected[:page_limit]]
+        next_cursor = (
+            encode_note_cursor(items[-1].published_at, items[-1].note_id)
+            if has_next and items
+            else None
+        )
+        account = _mem_accounts.get(normalized_account_id)
+        account_obj = AccountStatsOverview.from_dict(account) if account else None
+        return NoteStatsPage(
+            account_id=normalized_account_id,
+            items=items,
+            total=total,
+            limit=page_limit,
+            next_cursor=next_cursor,
+            data_as_of=_max_data_as_of(filtered_notes, account_obj),
+            published_from=from_value,
+            published_to=to_value,
+        )
+
+    pool = get_pool()
+    conditions = ["account_id = %s"]
+    params: list[Any] = [normalized_account_id]
+    if from_value:
+        conditions.append("published_at >= %s")
+        params.append(from_value)
+    if to_value:
+        conditions.append("published_at <= %s")
+        params.append(to_value)
+    if decoded_cursor:
+        cursor_published, cursor_note_id = decoded_cursor
+        conditions.append("(published_at < %s OR (published_at = %s AND note_id < %s))")
+        params.extend([cursor_published, cursor_published, cursor_note_id])
+    where = " AND ".join(conditions)
+    count_conditions = conditions[:]
+    count_params = params[:]
+    if decoded_cursor:
+        # ``total`` describes the complete filtered stream, not the remainder
+        # after a cursor.  Remove the cursor predicate from the count query.
+        count_conditions = count_conditions[:-1]
+        count_params = count_params[:-3]
+    selected_rows: list[Any]
+    async with pool.connection() as conn, conn.cursor() as cur:
+        await cur.execute(
+            f"SELECT COUNT(*) FROM creator_note_stats WHERE {' AND '.join(count_conditions)}",
+            count_params,
+        )
+        count_row = await cur.fetchone()
+        total = (
+            int(next(iter(count_row.values()), 0) or 0)
+            if isinstance(count_row, dict)
+            else int((count_row[0] if count_row else 0) or 0)
+        )
+        await cur.execute(
+            f"""SELECT account_id, note_id, title, body_text, views, likes, comments, collects,
+                   shares, published_at, content_type, tags_json, cover_url,
+                   engagement_rate, synced_at, source, raw_json
+            FROM creator_note_stats WHERE {where}
+            ORDER BY published_at DESC, note_id DESC LIMIT %s""",
+            params + [page_limit + 1],
+        )
+        selected_rows = list(await cur.fetchall())
+        await cur.execute(
+            "SELECT synced_at FROM creator_account_stats WHERE account_id = %s",
+            (normalized_account_id,),
+        )
+        account_row = await cur.fetchone()
+    selected_notes = [_note_from_row(row) for row in selected_rows]
+    has_next = len(selected_notes) > page_limit
+    items = [_canonical_note(note) for note in selected_notes[:page_limit]]
+    account_synced_at = ""
+    if account_row:
+        account_synced_at = (
+            str(next(iter(account_row.values()), "") or "")
+            if isinstance(account_row, dict)
+            else str(account_row[0] or "")
+        )
+    account_obj = AccountStatsOverview(normalized_account_id, synced_at=account_synced_at)
+    return NoteStatsPage(
+        account_id=normalized_account_id,
+        items=items,
+        total=total,
+        limit=page_limit,
+        next_cursor=(
+            encode_note_cursor(items[-1].published_at, items[-1].note_id)
+            if has_next and items
+            else None
+        ),
+        data_as_of=account_synced_at or _max_data_as_of(selected_notes, account_obj),
+        published_from=from_value,
+        published_to=to_value,
+    )
+
+
+# Explicit aliases make the canonical reader discoverable to service callers
+# while retaining one implementation and one ordering contract.
+list_note_stats_cursor = list_note_stats_page
+list_note_stats_paginated = list_note_stats_page
 
 
 async def get_note_stats(account_id: str, note_id: str) -> NoteStats | None:

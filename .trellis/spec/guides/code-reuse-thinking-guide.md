@@ -103,3 +103,27 @@ When you've made similar changes to multiple files:
 - [ ] No copy-pasted logic that should be shared
 - [ ] Constants defined in one place
 - [ ] Similar patterns follow same structure
+
+## Consistency feature reuse checklist
+
+- [ ] Reuse `list_note_stats_page` for Analytics and Evaluation; do not create
+  another bounded note reader or duplicate cursor semantics in a component.
+- [ ] Reuse `NoteStatsPage.to_dict` taxonomy and the shared fraction formatter;
+  keep presentation percent conversion at the UI boundary only.
+- [ ] Reuse `MIN_EVALUATION_COVERAGE`, evaluator fingerprint and threshold
+  metadata; never redefine score tiers or neutral-fill behavior per route.
+- [ ] Reuse `quality_evaluations` cache/version helpers for historical RQGM;
+  do not put user-visible audit records in training samples or checkpoints.
+- [ ] Reuse one account/request-generation stale-guard pattern for Analytics,
+  Evaluation and note drawers; extract only after the same pattern appears in
+  three consumers.
+
+### Wrong vs Correct
+
+```ts
+// Wrong: each page invents its own 100/200/500 cap and sort order.
+const notes = await getCreatorStats(accountId, 200)
+
+// Correct: all pages consume the canonical reader and only choose presentation size.
+const page = await getCreatorNotes(accountId, { cursor, limit: 50 })
+```

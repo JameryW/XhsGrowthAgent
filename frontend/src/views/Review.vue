@@ -326,7 +326,7 @@ const DECISION_KEYS: Record<string, string> = {
   rejected: 'review.evaluation.decision.rejected',
 }
 
-function decisionClass(d: string): string {
+function decisionClass(d: string | null | undefined): string {
   if (d === 'approved') return 'decision-approved'
   if (d === 'needs_revision') return 'decision-revision'
   return 'decision-rejected'
@@ -929,7 +929,7 @@ const handleCancelConfirm = () => {
                           class="inline-flex self-start px-2 py-0.5 rounded-full text-[10px] font-semibold"
                           :class="decisionClass(getEvaluation(wf.thread_id)!.decision)"
                         >
-                          {{ t(DECISION_KEYS[getEvaluation(wf.thread_id)!.decision] ?? 'review.evaluation.decision.unknown') }}
+                          {{ t(DECISION_KEYS[getEvaluation(wf.thread_id)!.decision ?? ''] ?? 'review.evaluation.decision.unknown') }}
                         </div>
                         <p v-if="getEvaluation(wf.thread_id)!.summary" class="text-[10px] text-slate-500 leading-relaxed">
                           {{ getEvaluation(wf.thread_id)!.summary }}

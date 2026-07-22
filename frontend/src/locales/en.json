@@ -703,7 +703,7 @@
       "empty": "No evaluation yet. Saving copy will trigger evaluation.",
       "loading": "Loading evaluation…",
       "loadFailed": "Failed to load evaluation",
-      "overall": "Overall",
+      "overall": "RQGM content review score",
       "radarTitle": "6-Dimension Radar",
       "dimensionsTitle": "Dimension Details",
       "hintsTitle": "Revision Hints",
@@ -734,6 +734,15 @@
     "engagementBreakdown": "Engagement Breakdown",
     "recentPosts": "Recent Post Performance",
     "top10": "TOP 10",
+    "history": {
+      "title": "Historical notes",
+      "loadedCount": "Loaded {loaded} / {total}",
+      "showLoaded": "Show {loaded} / {total} · View all",
+      "loadMore": "Load more historical notes",
+      "retry": "Retry",
+      "dataAsOf": "Historical data as of {time}",
+      "loadError": "Failed to load historical notes"
+    },
     "vsPrevPeriod": "vs prev period",
     "fans": "Followers",
     "bestPostLegend": "Best-performing post",
@@ -767,7 +776,8 @@
     "exportCsv": "Export CSV",
     "detail": {
       "title": "Post detail",
-      "untitled": "Untitled post"
+      "untitled": "Untitled post",
+      "noLinkedNote": "This workflow has no explicit Creator Center note link, so it remains a separate record."
     },
     "weekdays": {
       "mon": "Mon",
@@ -829,6 +839,7 @@
     "syncFailed": "Sync failed",
     "lastSync": "Last import: {source} · +{imported} / ~{updated}",
     "importedSection": "Imported overview",
+    "notesLoaded": "Loaded {loaded} / {total} notes",
     "noImported": "No real notes imported yet — use the browser import button above.",
     "period": {
       "creatorCenterLabel": "Creator Center range",
@@ -881,14 +892,14 @@
     }
   },
   "creatorQuality": {
-    "title": "Historical Note Quality",
-    "subtitle": "A read-only signal from imported note engagement, saves, titles, and consistency",
+    "title": "Historical Note Published Performance",
+    "subtitle": "A read-only published-performance signal from imported note engagement, saves, titles, and consistency",
     "page": {
       "eyebrow": "Account-level creative diagnosis",
-      "hubSubtitle": "Review historical creative quality and single-workflow evaluations in one place",
-      "tab": "Historical quality",
+      "hubSubtitle": "Review published performance and single-workflow content reviews in one place",
+      "tab": "Published performance",
       "workflowTab": "Single-content evaluation",
-      "description": "Use real Creator Center history imported through the browser to understand account-level strengths, gaps, and next actions.",
+      "description": "Use real Creator Center history imported through the browser to understand published-performance strengths, gaps, and next actions.",
       "accountLabel": "Account to analyze",
       "refreshAccounts": "Refresh account list",
       "refresh": "Refresh accounts",
@@ -900,7 +911,7 @@
     },
     "refresh": "Refresh quality report",
     "loading": "Analyzing imported historical notes…",
-    "score": "Overall quality score",
+    "score": "Published performance score",
     "scoreOutOf": "/ 100",
     "gradeLabel": "Quality grade",
     "confidenceLabel": "Sample confidence",
@@ -927,7 +938,9 @@
     },
     "scope": {
       "all_imported_history": "All imported historical notes",
-      "single_imported_note": "Selected imported note"
+      "single_imported_note": "Selected imported note",
+      "account_history": "Account history",
+      "single_note": "Selected note"
     },
     "dimension": {
       "engagement": "Engagement signal",
@@ -937,7 +950,7 @@
     },
     "lowData": {
       "title": "Too little history for an absolute judgement",
-      "description": "Import and accumulate more historical notes to receive a more stable overall quality signal."
+      "description": "Import and accumulate more historical notes to receive a more stable published-performance signal."
     },
     "empty": {
       "title": "Import historical notes first",
@@ -951,7 +964,8 @@
   },
   "creatorNoteQuality": {
     "title": "Single historical note",
-    "subtitle": "Open an imported note and review its content, audience signals, and quality score",
+    "subtitle": "Open an imported note to review published performance and the RQGM content review",
+    "comparisonHint": "Published performance uses real post-publication outcomes; the RQGM content review uses a content snapshot. Do not compare the scores directly.",
     "refresh": "Refresh notes",
     "loading": "Loading imported notes…",
     "loadingDetail": "Loading note details and quality…",
@@ -986,11 +1000,11 @@
     },
     "rqgm": {
       "sectionTitle": "Creation Quality Evaluation",
-      "sectionHint": "RQGM judge panel scores the note content; historical notes lack generation-side metadata, so visual dimensions are reference-only",
+      "sectionHint": "The RQGM judge scores only dimensions with evidence; visual and image-quality dimensions are unavailable when the real image was not read",
       "run": "RQGM Evaluation",
       "running": "Evaluating…",
       "costHint": "Takes ~10–30s and incurs an LLM cost",
-      "overall": "Overall",
+      "overall": "RQGM content review score",
       "radarTitle": "Dimension Radar",
       "dimensionsTitle": "Dimension Details",
       "hintsTitle": "Revision Hints",
@@ -998,6 +1012,9 @@
       "blocking": "Blocking",
       "empty": "Click the button above to run RQGM evaluation on this note",
       "error": "RQGM evaluation failed, please retry later",
+      "notReady": "Evaluation did not complete; no RQGM content review score is available.",
+      "partial": "Evaluation is partial; the score only uses available dimensions.",
+      "retry": "Retry evaluation",
       "decision": {
         "approved": "Approved",
         "needs_revision": "Needs Revision",
@@ -2153,9 +2170,9 @@
     "title": "Creation Quality Evaluation",
     "subtitle": "RQGM agent-as-a-judge panel · 9-dimension scoring & revision hints",
     "overview": {
-      "eyebrow": "Quality overview",
-      "title": "History and per-piece quality in one view",
-      "accountScore": "Account score",
+      "eyebrow": "Performance + content review",
+      "title": "Published performance and content review in one view",
+      "accountScore": "Published performance score",
       "evaluated": "Evaluated workflows",
       "samples": "Notes analyzed",
       "noAccount": "No account selected — showing workflow evaluations only"
@@ -2165,10 +2182,15 @@
       "content": "Content review"
     },
     "stream": {
-      "title": "Content quality stream",
+      "title": "Content assessment sources",
       "sourceWorkflow": "Workflow",
       "sourceImported": "Imported",
-      "notesUnavailable": "Imported notes unavailable"
+      "notesUnavailable": "Imported notes unavailable",
+      "separationHint": "Published history shows post-publication performance; workflow content shows RQGM content review. Scores are not directly comparable.",
+      "tabsLabel": "Assessment source",
+      "historicalTab": "Published historical notes",
+      "workflowTab": "Workflow content review",
+      "historicalEmpty": "No imported historical notes"
     },
     "list": {
       "subtitle": "Workflows with evaluation results — click to view detail",
@@ -2181,6 +2203,7 @@
       "noMatch": "No evaluations match the current search or filter",
       "loadMore": "Load more",
       "noMore": "All loaded",
+      "loadedCount": "Loaded {loaded} / {total}",
       "back": "Back to list",
       "detailTitle": "Evaluation Detail"
     },
@@ -2188,12 +2211,22 @@
     "search": "Search",
     "searching": "Searching…",
     "initialHint": "Enter a workflow ID to view its creation-quality evaluation",
-    "overall": "Overall",
+    "overall": "RQGM content review score",
+    "performanceScoreLabel": "Published performance score",
+    "rqgmScoreLabel": "RQGM content review score",
+    "rqgmTrendLabel": "RQGM content review trend",
+    "dataAsOf": "Data as of",
+    "evaluationId": "Evaluation ID",
+    "status": {
+      "degraded": "Evaluation incomplete",
+      "notReady": "Evaluation unavailable",
+      "degradedHint": "The model evaluation did not complete; this result is excluded from pass rates and trends."
+    },
     "radarTitle": "9-Dimension Radar",
     "radarTitleDynamic": "{count}-Dimension Radar",
-    "radarSeries": "Quality Score",
+    "radarSeries": "RQGM content review score",
     "dimensionsTitle": "Dimension Details",
-    "weightedScoreHint": "Overall score is weighted across the dimensions below.",
+    "weightedScoreHint": "The RQGM content review score uses available dimensions; unavailable dimensions show —.",
     "radarScore": "Score",
     "radarRationale": "Why",
     "hintsTitle": "Revision Hints",

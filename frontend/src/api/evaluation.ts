@@ -7,6 +7,15 @@ import type {
 
 type RequestOptions = { suppressToast?: boolean }
 
+interface EvaluationSourceMetadata {
+  content_hash?: string | null
+  data_as_of?: string | null
+  context_hash?: string | null
+  niche?: string | null
+  niche_source?: string | null
+  note_synced_at?: string | null
+}
+
 // 列出有评估结果的工作流 — 含标题 + 评估摘要（专用端点，不污染通用 /workflow/list）
 export async function getEvaluationList(
   accountId?: string,
@@ -31,8 +40,80 @@ export async function getEvaluationResult(threadId: string, options?: RequestOpt
 export async function evaluateNote(
   accountId: string,
   noteId: string,
-): Promise<{ account_id: string; note_id: string; evaluation_result: EvaluationResultResponse['evaluation_result'] }> {
-  return client.post('/evaluation/note', { account_id: accountId, note_id: noteId }) as unknown as Promise<{ account_id: string; note_id: string; evaluation_result: EvaluationResultResponse['evaluation_result'] }>
+  options?: RequestOptions & { force?: boolean },
+): Promise<{
+  account_id: string
+  note_id: string
+  evaluation_result: EvaluationResultResponse['evaluation_result']
+  thresholds?: EvaluationResultResponse['thresholds']
+  evaluation_id?: string | null
+  status?: EvaluationResultResponse['status']
+  degraded?: boolean
+  coverage?: EvaluationResultResponse['coverage']
+  data_as_of?: string | null
+  source?: EvaluationSourceMetadata
+  evaluated_at?: string | null
+  evaluator_fingerprint?: string | null
+  stale?: boolean
+  stale_at?: string | null
+}> {
+  const body: Record<string, unknown> = { account_id: accountId, note_id: noteId }
+  if (options?.force) body.force = true
+  return client.post('/evaluation/note', body, options) as unknown as Promise<{
+    account_id: string
+    note_id: string
+    evaluation_result: EvaluationResultResponse['evaluation_result']
+    thresholds?: EvaluationResultResponse['thresholds']
+    evaluation_id?: string | null
+    status?: EvaluationResultResponse['status']
+    degraded?: boolean
+    coverage?: EvaluationResultResponse['coverage']
+    data_as_of?: string | null
+    source?: EvaluationSourceMetadata
+    evaluated_at?: string | null
+    evaluator_fingerprint?: string | null
+    stale?: boolean
+    stale_at?: string | null
+  }>
+}
+
+/** Restore the latest persisted historical-note RQGM run after refresh. */
+export async function getLatestNoteEvaluation(
+  accountId: string,
+  noteId: string,
+  options?: RequestOptions,
+): Promise<{
+  account_id: string
+  note_id: string
+  evaluation_result?: EvaluationResultResponse['evaluation_result'] | null
+  thresholds?: EvaluationResultResponse['thresholds']
+  evaluation_id?: string | null
+  status?: EvaluationResultResponse['status']
+  degraded?: boolean
+  coverage?: EvaluationResultResponse['coverage']
+  data_as_of?: string | null
+  source?: EvaluationSourceMetadata
+  evaluated_at?: string | null
+  evaluator_fingerprint?: string | null
+  stale?: boolean
+  stale_at?: string | null
+}> {
+  return client.get(`/evaluation/note/${accountId}/${noteId}/latest`, options) as unknown as Promise<{
+    account_id: string
+    note_id: string
+    evaluation_result?: EvaluationResultResponse['evaluation_result'] | null
+    thresholds?: EvaluationResultResponse['thresholds']
+    evaluation_id?: string | null
+    status?: EvaluationResultResponse['status']
+    degraded?: boolean
+    coverage?: EvaluationResultResponse['coverage']
+    data_as_of?: string | null
+    source?: EvaluationSourceMetadata
+    evaluated_at?: string | null
+    evaluator_fingerprint?: string | null
+    stale?: boolean
+    stale_at?: string | null
+  }>
 }
 
 // 获取评估历史趋势（overall_score 时序 + 各维度均值）

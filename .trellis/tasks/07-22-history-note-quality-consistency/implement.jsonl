@@ -1,0 +1,10 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"数据库池、事务性 Creator Statistics 快照、全量历史质量读取、只读单篇接口与兼容迁移约束。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Ruff、mypy、pytest、API/服务测试及后端实现质量门槛。"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"API 错误码、降级、重试和失败状态的统一处理。"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"跨账号/评估运行/快照日志的字段、级别和敏感内容约束。"}
+{"file":".trellis/spec/backend/free-creation.md","reason":"thread-less EvaluatorAgent 调用、历史笔记 RQGM 端点现有契约与兼容规则。"}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Vue 组件拆分、API 客户端、i18n、加载/失败状态、响应式与历史笔记面板约束。"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"账号上下文、异步 stale guard、Pinia 与组件状态同步约束。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"跨数据库、API、服务和前端的契约映射与验收清单。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"避免重复 reader、评分常量和格式化逻辑漂移。"}
+{"file":".trellis/tasks/07-22-history-note-quality-consistency/research/data-lineage-audit.md","reason":"两页当前数据集合、账号范围、截断、评分语义、刷新与缺陷的代码证据。"}

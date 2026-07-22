@@ -7,16 +7,15 @@ import {
   type Account,
   type NicheResolution,
 } from '@/api/accounts'
-import {
-  syncCreatorStats,
-  getCreatorStats,
-  getCreatorSuggestions,
-  type CreatorAccountStats,
-  type CreatorNoteStats,
-  type CreatorAggregatePoint,
-  type CreatorAudienceAnalysis,
-  type CreatorSuggestion,
-  type CreatorStatsSyncResult,
+import * as analyticsApi from '@/api/analytics'
+import type {
+  CreatorAccountStats,
+  CreatorNoteStats,
+  CreatorAggregatePoint,
+  CreatorAudienceAnalysis,
+  CreatorSuggestion,
+  CreatorStatsSyncResult,
+  CreatorNotesPayload,
 } from '@/api/analytics'
 import { useAccountsStore } from '@/stores/accounts'
 import { useToastStore } from '@/stores/toast'
@@ -52,6 +51,7 @@ const lastSync = ref<CreatorStatsSyncResult | null>(null)
 const accountStats = ref<CreatorAccountStats | null>(null)
 const notes = ref<CreatorNoteStats[]>([])
 const notesTotal = ref(0)
+const notesDataAsOf = ref<string | null>(null)
 const suggestions = ref<CreatorSuggestion[]>([])
 const audience = ref<CreatorAudienceAnalysis | null>(null)
 const suggestionMode = ref<'trend' | 'brief' | 'free'>('trend')
@@ -158,14 +158,36 @@ async function loadImported() {
   if (!props.accountId) return
   isLoadingStats.value = true
   try {
-    const [stats, tips] = await Promise.all([
-      getCreatorStats(props.accountId, 100),
-      getCreatorSuggestions(props.accountId, suggestionMode.value),
+    let reader: typeof analyticsApi.getCreatorNotes | undefined
+    try { reader = analyticsApi.getCreatorNotes } catch { reader = undefined }
+    const notesPromise: Promise<CreatorNotesPayload> = typeof reader === 'function'
+      ? reader(props.accountId, { limit: 50, sort: 'published_at_desc' }, { suppressToast: true }).catch(() => analyticsApi.getCreatorStats(props.accountId, 50).then((legacy) => ({
+        account_id: props.accountId,
+        items: legacy.notes || [],
+        total: legacy.total ?? legacy.notes?.length ?? 0,
+        limit: legacy.limit ?? 50,
+        next_cursor: null,
+        data_as_of: legacy.data_as_of ?? legacy.fetched_at ?? null,
+      })))
+      : analyticsApi.getCreatorStats(props.accountId, 50).then((legacy) => ({
+        account_id: props.accountId,
+        items: legacy.notes || [],
+        total: legacy.total ?? legacy.notes?.length ?? 0,
+        limit: legacy.limit ?? 50,
+        next_cursor: null,
+        data_as_of: legacy.data_as_of ?? legacy.fetched_at ?? null,
+      }))
+    const [stats, tips, notePage] = await Promise.all([
+      // Profile + account aggregates remain on the bounded overview endpoint.
+      analyticsApi.getCreatorStats(props.accountId, 1),
+      analyticsApi.getCreatorSuggestions(props.accountId, suggestionMode.value),
+      notesPromise,
     ])
     accountStats.value = stats.account
     syncImportedDisplayName(accountStats.value)
-    notes.value = stats.notes || []
-    notesTotal.value = stats.total ?? notes.value.length
+    notes.value = notePage.items || []
+    notesTotal.value = notePage.total ?? notes.value.length
+    notesDataAsOf.value = notePage.data_as_of ?? null
     audience.value = stats.audience_analysis || null
     suggestions.value = tips.suggestions || []
   } catch {
@@ -173,6 +195,7 @@ async function loadImported() {
     accountStats.value = null
     notes.value = []
     notesTotal.value = 0
+    notesDataAsOf.value = null
     audience.value = null
     suggestions.value = []
   } finally {
@@ -194,7 +217,7 @@ async function runSync() {
   isSyncing.value = true
   syncError.value = ''
   try {
-    const result = await syncCreatorStats({
+    const result = await analyticsApi.syncCreatorStats({
       account_id: props.accountId,
       period: period.value,
       analyze: analyze.value,
@@ -293,7 +316,7 @@ async function applyManualNiche() {
 async function changeSuggestionMode(mode: 'trend' | 'brief' | 'free') {
   suggestionMode.value = mode
   try {
-    const tips = await getCreatorSuggestions(props.accountId, mode)
+    const tips = await analyticsApi.getCreatorSuggestions(props.accountId, mode)
     suggestions.value = tips.suggestions || []
   } catch {
     suggestions.value = []
@@ -478,6 +501,9 @@ function pointValue(point: CreatorAggregatePoint): string {
     <div v-if="accountStats || notes.length" class="space-y-2">
       <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">
         {{ t('creatorStats.importedSection') }}
+      </div>
+      <div v-if="notesDataAsOf" class="text-[11px] text-slate-400" role="status">
+        {{ t('evaluation.dataAsOf') }} {{ notesDataAsOf }} · {{ t('creatorStats.notesLoaded', { loaded: notes.length, total: notesTotal }) }}
       </div>
       <div
         v-if="accountStats && hasCreatorProfile"

@@ -200,11 +200,21 @@ instance of this pattern. Reuse it — do not re-thread the entity.
 
 ```python
 # backend/api/routes/evaluation.py:_build_note_eval_state
-def _build_note_eval_state(note: NoteStats, niche: str) -> XHSGrowthState:
+def _build_note_eval_state(
+    note: NoteStats,
+    niche: str,
+    *,
+    niche_source: str = "",
+    niche_context_available: bool = False,
+) -> XHSGrowthState:
     cover_url = (note.cover_url or "").strip()
     return cast("XHSGrowthState", {
         "account_id": note.account_id,
-        "niche": niche or "母婴",                 # account.niche, fallback 母婴
+        "niche": niche or "",                    # no synthetic cold-start niche
+        "niche_source": niche_source,
+        "niche_context_available": niche_context_available,
+        "visual_input_available": False,
+        "historical_note": True,
         "copy_content": {
             "selected_title": note.title or "",
             "body_text": note.body_text or "",
@@ -235,13 +245,23 @@ checkpoint persistence was thread-bound. Synthesizing the minimal state reuses
 the exact same agent + weights + prompt epoch as the workflow `evaluator_gate`.
 
 **Contracts**:
-- Request: `POST /evaluation/note` body `{ account_id: str, note_id: str }`.
-- Response `data`: `{ account_id, note_id, evaluation_result: EvaluationResult }`.
-- `evaluation_result` shape is identical to `GET /evaluation/result/{thread_id}`
-  (overall_score / dimensions[10] / decision / revision_hints / bias_warning /
-  summary) — frontend reuses the same `EvaluationRadar` + dimension renderer.
+- Request: `POST /evaluation/note` body `{ account_id: str, note_id: str, force?: bool }`.
+- Response `data` includes `evaluation_id`, `account_id`, `subject_type="imported_note"`,
+  `subject_id`, `assessment_type="rqgm_content_review"`, `status`, `coverage`,
+  `source` hashes/data timestamp, `evaluator_fingerprint`, `evaluated_at`,
+  `thresholds`, and the nested `evaluation_result`.
+- `status=ready|partial` may carry a score; `status=degraded|failed` MUST carry
+  `overall_score=null`, `decision=null`, and `degraded=true`.
+- Missing required dimensions (`copywriting`, `compliance`) or weighted coverage
+  below `MIN_EVALUATION_COVERAGE` produces `partial` with no overall score;
+  missing dimensions never receive a neutral 70.
+- Historical visual/image-quality dimensions are unavailable until a multimodal
+  evaluator actually reads image bytes. Missing niche context leaves audience/
+  reach unavailable; it is never replaced by a synthetic `母婴` value.
 - No checkpoint write (unlike `POST /evaluation/run/{thread_id}` which calls
-  `graph.aupdate_state`). The note has no thread.
+  `graph.aupdate_state`). The note has no thread. Durable runs live in
+  `quality_evaluation_runs`; unchanged input/fingerprint is idempotent and
+  `force=true` creates a new auditable version.
 
 **Validation & Error Matrix**:
 | Condition | Error |
@@ -249,9 +269,12 @@ the exact same agent + weights + prompt epoch as the workflow `evaluator_gate`.
 | empty `account_id` | `ValidationError("account_id", ...)` → 400 |
 | empty `note_id` | `ValidationError("note_id", ...)` → 400 |
 | note not imported | `CreatorNoteNotFoundError(account_id, note_id)` → 404 |
-| account has no `niche` | falls back `"母婴"` (not an error) |
+| account has no `niche` | keeps `niche=""`, returns `niche_context_available=false`; audience/reach are unavailable |
 | `store` is None | tolerated — `EvaluatorAgent` skips memory recall |
-| LLM timeout (60s) | `EvaluatorAgent` returns `degraded=True` pass-through (100/approved fake) |
+| LLM timeout (60s) / model error | `status=degraded`, null score/decision, retryable summary; never a fake pass |
+| evaluator omits a dimension | dimension is `available=false`, `score=null`; coverage/threshold rules apply |
+| same content/context/fingerprint and no `force` | return latest non-stale persisted run; do not call the model again |
+| `force=true` or content/context changes | mark prior runs stale, create a new run, retain old versions |
 
 **Wrong vs Correct — entity-specific error type**:
 
@@ -268,8 +291,8 @@ raise CreatorNoteNotFoundError(account_id, note_id)
 - `visual_plan.image_urls` is a new field threaded through `evaluator.yaml`
   user_template (`图片URL：{image_urls}`) and `EvaluatorAgent.execute`.
 - Current model `astron-code-latest` (XUNFEI) is text-only — the URL is injected
-  as text, so `visual` / `image_quality` dimensions are reference scores, not
-  real image judgment.
+  as text, so `visual` / `image_quality` dimensions are explicitly unavailable,
+  not reference scores.
 - When a multimodal model is routed to `TaskType.EVALUATION`, switch `ainvoke`
   to pass image+text messages; the `image_urls` field is already in place, no
   prompt-schema change needed.
@@ -278,7 +301,9 @@ raise CreatorNoteNotFoundError(account_id, note_id)
 - note→state mapping asserts (title/body/hashtags/cover_url/content_type land in
   the right state sub-dicts).
 - `cover_url=""` → `image_urls=[]`, `image_count=0`.
-- account `niche=""` / account missing → fallback `"母婴"`.
+- account `niche=""` / account missing → empty niche + unavailable audience/reach.
+- missing dimensions and timeout → partial/degraded null score; no 70/100/approved fallback.
+- repeated unchanged request → same `evaluation_id` with `cache_hit`; `force=true` → new ID.
 - note not found → 404, evaluator NOT called.
 - empty account_id / note_id → 400.
 - `store` from `graph.store` passed as positional arg #2 to `execute`.
@@ -538,6 +563,54 @@ discovers draft management without typing `/help` first:
   `/evaluate`).
 - `/analytics <id>` is listed (shipped via the post-publish analytics PR).
 - Non-free (trend/brief) banner is unchanged (`terminalHint` → `/help`).
+
+## Scenario: Historical-note RQGM contract (thread-less and durable)
+
+### 1. Scope / Trigger
+- Trigger: a user manually evaluates an imported Creator Center note or refreshes its detail panel.
+
+### 2. Signatures
+- `POST /api/evaluation/note {account_id, note_id, force?}`
+- `GET /api/evaluation/note/{account_id}/{note_id}/latest`
+- `quality_evaluation_runs.get_cached(...)`, `create_run(...)`, `mark_subject_stale(...)`
+
+### 3. Contracts
+- Identity is `(account_id, subject_type="imported_note", subject_id=note_id,
+  assessment_type="rqgm_content_review", source_content_hash, context_hash,
+  evaluator_fingerprint)`.
+- `ready|partial` may expose a score; `degraded|failed|running` expose no
+  consumable score/decision. Every result carries coverage, thresholds,
+  source/data timestamp and evaluation ID.
+- `force=true` retains a new version; unchanged input returns the latest
+  non-stale run without another model call.
+
+### 4. Validation & Error Matrix
+- Blank account/note IDs → `ValidationError` 400.
+- Missing imported note → `CreatorNoteNotFoundError` 404.
+- Missing niche/image/dimensions → explicit unavailable coverage, not a default score.
+- Timeout/model failure → degraded/null result and retryable summary.
+
+### 5. Good/Base/Bad Cases
+- Good: refresh restores the same `evaluation_id` and score for unchanged content.
+- Base: text-only historical evaluation marks visual/image-quality unavailable.
+- Bad: writing a note result into a workflow checkpoint or returning `100/approved` on timeout.
+
+### 6. Tests Required
+- Assert note field mapping and account scope.
+- Assert no neutral fill for omitted dimensions, no fake pass on timeout, and
+  visual/niche coverage markers.
+- Assert cache hit is idempotent, force creates a second ID, and latest returns
+  stale/degraded audit records.
+
+### 7. Wrong vs Correct
+```python
+# Wrong: invent context and treat a timeout as approval.
+{"niche": "母婴", "overall_score": 100, "decision": "approved", "degraded": True}
+
+# Correct: preserve missing context and make the result non-consumable.
+{"niche": "", "niche_context_available": False,
+ "overall_score": None, "decision": None, "status": "degraded"}
+```
 
 ---
 

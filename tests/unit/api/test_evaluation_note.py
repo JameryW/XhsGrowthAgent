@@ -1,7 +1,7 @@
 """Unit tests for POST /api/evaluation/note — thread-less RQGM eval of a historical note.
 
 Covers: note->state mapping (title/body/tags/cover_url/content_type), evaluator
-invocation, account niche lookup fallback, validation errors, missing note 404.
+invocation, missing niche safety, validation errors, missing note 404.
 """
 
 from __future__ import annotations
@@ -74,7 +74,11 @@ class TestRunNoteEvaluation:
         data = r.json()["data"]
         assert data["account_id"] == "acct1"
         assert data["note_id"] == "n1"
-        assert data["evaluation_result"]["decision"] == "approved"
+        # A mock result without the required copywriting/compliance dimensions
+        # is intentionally downgraded to a partial, scoreless result instead
+        # of trusting a caller-supplied approval verdict.
+        assert data["evaluation_result"]["decision"] is None
+        assert data["evaluation_result"]["status"] == "partial"
 
         # state passed to EvaluatorAgent.execute carries the note fields
         state = mock_exec.call_args.args[0]
@@ -102,7 +106,7 @@ class TestRunNoteEvaluation:
         assert visual_plan["image_urls"] == []
         assert visual_plan["image_count"] == 0
 
-    def test_missing_account_niche_falls_back_default(self, client):
+    def test_missing_account_niche_is_explicitly_unavailable(self, client):
         note = _note()
         with (
             patch(_GET_NOTE, AsyncMock(return_value=note)),
@@ -111,7 +115,9 @@ class TestRunNoteEvaluation:
         ):
             r = client.post("/api/evaluation/note", json={"account_id": "acct1", "note_id": "n1"})
         assert r.status_code == 200, r.text
-        assert mock_exec.call_args.args[0]["niche"] == "母婴"
+        state = mock_exec.call_args.args[0]
+        assert state["niche"] == ""
+        assert state["niche_context_available"] is False
 
     def test_missing_note_returns_404(self, client):
         with (

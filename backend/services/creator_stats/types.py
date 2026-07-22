@@ -161,6 +161,66 @@ class NoteStats:
 
 
 @dataclass
+class NoteStatsPage:
+    """Canonical, cursor-paginated historical-note fact page.
+
+    ``engagement_rate`` in every item is a fraction in the inclusive 0--1
+    domain.  Presentation layers may format it as a percentage, but must not
+    change the API value or infer a second unit.
+    """
+
+    account_id: str
+    items: list[NoteStats] = field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    next_cursor: str | None = None
+    data_as_of: str = ""
+    published_from: str | None = None
+    published_to: str | None = None
+    sort: str = "published_at_desc"
+
+    def to_dict(self) -> dict[str, Any]:
+        data_as_of = self.data_as_of or None
+        items = []
+        for item in self.items:
+            row = item.to_dict()
+            # Every row carries the same taxonomy and its own source timestamp
+            # so list consumers do not need to infer semantics from the URL.
+            row.update(
+                {
+                    "subject_type": "imported_note",
+                    "subject_id": item.note_id,
+                    "scope": "account_history",
+                    "assessment_type": "historical_performance",
+                    "status": "ready",
+                    "algorithm_version": "historical_quality.v1",
+                    "data_as_of": item.synced_at or data_as_of,
+                    "note_synced_at": item.synced_at or None,
+                }
+            )
+            items.append(row)
+        return {
+            "account_id": self.account_id,
+            "items": items,
+            "total": self.total,
+            "limit": self.limit,
+            "next_cursor": self.next_cursor,
+            "data_as_of": data_as_of,
+            "query": {
+                "sort": self.sort,
+                "published_from": self.published_from,
+                "published_to": self.published_to,
+            },
+            "engagement_rate_unit": "fraction",
+            "scope": "account_history",
+            "subject_type": "imported_note",
+            "assessment_type": "historical_performance",
+            "algorithm_version": "historical_quality.v1",
+            "status": "ready" if items or self.total else "unavailable",
+        }
+
+
+@dataclass
 class CreatorStatsBundle:
     """Normalized account + note payload ready for persistence."""
 
@@ -304,7 +364,7 @@ class CreatorQualityReport:
     note_id: str = ""
     total_notes: int = 0
     notes_analyzed: int = 0
-    scope: str = "all_imported_history"
+    scope: str = "account_history"
     overall_score: float | None = None
     grade: QualityGrade = "insufficient_data"
     confidence: QualityConfidence = "low"

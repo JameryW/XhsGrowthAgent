@@ -31,6 +31,11 @@ export interface PostPerformance {
   published_at: string
   /** Source of the row; imported rows are eligible for note-quality drill-down. */
   source?: string
+  account_id?: string
+  workflow_thread_id?: string
+  platform_post_id?: string
+  link_status?: 'linked' | 'unmatched' | 'ambiguous' | string
+  linked_note_id?: string
 }
 
 // 性能数据

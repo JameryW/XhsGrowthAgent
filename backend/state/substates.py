@@ -89,6 +89,12 @@ class PublishResult(TypedDict, total=False):
     published_at: str
     ab_variant: str | None
     status: ContentStatus
+    # Explicit publish-to-history identity.  The workflow checkpoint is the
+    # durable source for this mapping; analytics must not infer it from title
+    # or a synthetic session id.
+    workflow_thread_id: str
+    platform_post_id: str
+    link_status: str  # linked | unmatched | ambiguous
 
 
 class AnalyticsSnapshot(TypedDict, total=False):

@@ -151,6 +151,27 @@ When a CLI auto-detects a mode by probing a remote resource (e.g., checking if `
 
 **Real-world example**: Agent-session update hints fetched npm `latest` metadata with `response.read(4096)` and then parsed it as complete JSON. The `@mindfoldhq/trellis` package metadata exceeded 4 KB, so the JSON was truncated, parse failed silently, and the first session injection showed no update hint. Fix: read the complete response before parsing, and add a regression where `version` is followed by an 8 KB metadata tail.
 
+## Checklist: Historical-note consistency changes
+
+Before changing Analytics/Evaluation history or quality scoring, trace the same
+contract through every layer:
+
+- [ ] Database reader: one account-scoped `(published_at, note_id)` cursor,
+  complete filtered total, fraction engagement rate and snapshot timestamp.
+- [ ] API: additive subject/scope/assessment/status/coverage/version metadata;
+  malformed cursor and empty account fail explicitly.
+- [ ] Service/evaluator: historical performance and RQGM content review remain
+  separate; missing context and degraded runs are scoreless and excluded from
+  aggregates.
+- [ ] Persistence: evaluation identity includes source/context/fingerprint;
+  cache hits are idempotent, force runs retain versions, stale runs remain auditable.
+- [ ] Frontend: selected account is passed to every list/trend request, cursor
+  resets on switch, late responses are ignored, and loaded/total/data-as-of are visible.
+- [ ] Identity: workflow rows link imported notes only on explicit platform IDs;
+  synthetic IDs and duplicate claims remain unmatched/ambiguous.
+- [ ] Tests: prove two-account isolation, >500 traversal, raw metric equality,
+  null/degraded semantics, refresh restoration and threshold-aware rendering.
+
 ---
 
 ## When to Create Flow Documentation
