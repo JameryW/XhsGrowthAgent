@@ -1,0 +1,12 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Creator Stats 原子导入、存储层 snapshot metadata、Postgres/memory fallback 与只读历史接口约束。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"后端类型、Ruff、pytest、格式和兼容实现质量门槛。"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"快照/一致性日志只能记录安全身份、状态和计数，不能泄露正文或原始快照。"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Analytics/Evaluation 账号边界、快照 stale guard、分页和异步响应提交规则。"}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"前端 API 类型、单位边界 formatter、加载错误状态和 i18n 约束。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"跨数据库、API、前端的历史笔记一致性验收清单。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"复用 canonical reader、共享单位和快照算法，避免再次分叉。"}
+{"file":".trellis/tasks/07-22-history-quality-consistency-followup/research/continuation-audit.md","reason":"本轮代码图与数据链路审计发现的分页快照、版本摘要和互动率单位风险。"}
+{"file":"backend/db/creator_stats.py","reason":"实现完整账户 note 集合的稳定版本摘要、原子导入快照持久化，以及无账户行 Postgres 的统一只读快照读取。"}
+{"file":"backend/api/routes/analytics.py","reason":"统一 Analytics report/performance/dashboard 的 fraction 原始互动率和显式单位，所有质量/详情接口复用存储层快照元数据。"}
+{"file":"frontend/src/views/Analytics.vue","reason":"按显式 engagement_rate_unit 转换展示、CSV 和原始互动率比对，继续沿用 snapshot stale guard。"}
+{"file":"backend/omp/extensions/xhsagent-ext/src/analytics_format.ts","reason":"复用 OMP Analytics 单位格式化器，避免 report/dashboard/performance 各自复制转换逻辑。"}

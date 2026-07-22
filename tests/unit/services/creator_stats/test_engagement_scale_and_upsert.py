@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from backend.api.routes import analytics as analytics_routes
 from backend.api.routes.analytics import (
+    _as_fraction_engagement_rate,
     _as_percent_engagement_rate,
     _build_growth_report,
     _extract_post_data,
@@ -19,9 +20,11 @@ from backend.api.routes.analytics import (
 from backend.db.creator_stats import (
     _reset_memory_store,
     get_account_stats,
+    get_creator_stats_snapshot,
     get_note_stats,
     list_note_stats,
     upsert_account_stats,
+    upsert_bundle,
     upsert_note_stats,
     upsert_notes,
 )
@@ -46,6 +49,13 @@ def test_as_percent_engagement_rate_converts_fraction_and_keeps_percent():
     assert _as_percent_engagement_rate(12.5) == 12.5
     assert _as_percent_engagement_rate(-1) == 0.0
     assert _as_percent_engagement_rate(None) == 0.0
+
+
+def test_as_fraction_engagement_rate_preserves_public_precision():
+    assert _as_fraction_engagement_rate(0.123456) == 0.123456
+    assert _as_fraction_engagement_rate(12.3456) == 0.123456
+    assert _as_fraction_engagement_rate(100) == 1.0
+    assert _as_fraction_engagement_rate(-1) == 0.0
 
 
 def test_extract_post_data_normalizes_fraction_engagement():
@@ -177,8 +187,35 @@ async def test_dashboard_avg_rate_consistent_after_merge():
     data = resp.json()["data"]
     rates = [p["engagement_rate"] for p in data["performance"]["posts"]]
     assert rates
-    assert all(r >= 1.0 for r in rates)  # percent-like, not raw 0.05
-    assert data["report"]["metrics"]["avg_engagement_rate"] == pytest.approx(5.0)
+    assert all(r == pytest.approx(0.05) for r in rates)  # public contract is fraction
+    assert data["report"]["metrics"]["avg_engagement_rate"] == pytest.approx(0.05)
+    assert data["engagement_rate_unit"] == "fraction"
+
+
+@pytest.mark.asyncio
+async def test_bundle_persists_one_snapshot_identity_for_account_and_notes():
+    account = AccountStatsOverview(
+        account_id="bundle_acc",
+        synced_at="2026-07-22T10:00:00Z",
+        note_count=1,
+    )
+    note = NoteStats(
+        note_id="bundle_note",
+        account_id="bundle_acc",
+        views=100,
+        likes=5,
+        engagement_rate=0.05,
+        published_at="2026-07-21T10:00:00Z",
+        synced_at="2026-07-22T10:00:00Z",
+    )
+
+    await upsert_bundle(account, [note])
+    stored = await get_account_stats("bundle_acc")
+    snapshot = await get_creator_stats_snapshot("bundle_acc")
+
+    assert stored is not None
+    assert stored.snapshot_id == snapshot["snapshot_id"]
+    assert stored.snapshot_id is not None
 
 
 # ── Invalid upsert skip ─────────────────────────────────────────────────────

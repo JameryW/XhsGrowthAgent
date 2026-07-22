@@ -70,17 +70,7 @@ async def _creator_snapshot_metadata(account_id: str) -> dict[str, Any]:
     try:
         from backend.db import creator_stats as stats_db
 
-        account = await stats_db.get_account_stats(normalized)
-        notes = await stats_db.list_all_note_stats(normalized)
-        values = [
-            getattr(account, "synced_at", "") if account else "",
-            *(getattr(note, "synced_at", "") for note in notes),
-        ]
-        data_as_of = max((str(value) for value in values if str(value or "")), default=None)
-        return {
-            "data_as_of": data_as_of,
-            "snapshot_id": build_snapshot_id(normalized, data_as_of),
-        }
+        return await stats_db.get_creator_stats_snapshot(normalized)
     except Exception:
         # The imported tables are optional in local/legacy deployments.  Do
         # not invent a timestamp when they are unavailable.
@@ -288,6 +278,47 @@ def _as_percent_engagement_rate(value: Any) -> float:
     return round(er, 2)
 
 
+def _as_fraction_engagement_rate(value: Any) -> float:
+    """Normalize an internal percent/fraction rate to the public fraction unit."""
+
+    try:
+        rate = float(value or 0.0)
+    except (TypeError, ValueError):
+        rate = 0.0
+    if rate < 0:
+        return 0.0
+    if rate > 1.0:
+        rate /= 100.0
+    return round(min(rate, 1.0), 6)
+
+
+def _serialize_analytics_rate_units(
+    *,
+    posts: list[dict[str, Any]] | None = None,
+    report: dict[str, Any] | None = None,
+    period_summary: dict[str, Any] | None = None,
+) -> None:
+    """Convert analytics response rates at the API boundary to fractions."""
+
+    for post in posts or []:
+        post["engagement_rate"] = _as_fraction_engagement_rate(post.get("engagement_rate"))
+    if report is not None:
+        metrics = report.get("metrics")
+        if isinstance(metrics, dict) and "avg_engagement_rate" in metrics:
+            metrics["avg_engagement_rate"] = _as_fraction_engagement_rate(
+                metrics.get("avg_engagement_rate")
+            )
+        report["engagement_rate_unit"] = "fraction"
+    if period_summary is not None:
+        for key in ("current", "previous"):
+            metrics = period_summary.get(key)
+            if isinstance(metrics, dict) and "avg_engagement_rate" in metrics:
+                metrics["avg_engagement_rate"] = _as_fraction_engagement_rate(
+                    metrics.get("avg_engagement_rate")
+                )
+        period_summary["engagement_rate_unit"] = "fraction"
+
+
 def _normalize_platform_post_id(value: Any) -> str:
     """Normalize a platform post identifier without accepting synthetic IDs."""
     raw = str(value or "").strip()
@@ -488,6 +519,7 @@ async def get_growth_report(
             "link_stats": _link_stats(posts),
         }
     )
+    _serialize_analytics_rate_units(report=report)
     return success(data=report)
 
 
@@ -670,6 +702,7 @@ async def get_performance(
     link_stats = _link_stats(posts)
     total = len(posts)
     posts = posts[:limit]
+    _serialize_analytics_rate_units(posts=posts)
 
     snapshot = _complete_snapshot_metadata(
         account_id,
@@ -694,6 +727,7 @@ async def get_performance(
             "contract_version": QUALITY_CONSISTENCY_CONTRACT
             if quality_consistency_v2_enabled()
             else "legacy_compatible",
+            "engagement_rate_unit": "fraction",
             "link_stats": link_stats,
         }
     )
@@ -866,6 +900,11 @@ async def get_dashboard(
     contract_version = (
         QUALITY_CONSISTENCY_CONTRACT if quality_consistency_v2_enabled() else "legacy_compatible"
     )
+    _serialize_analytics_rate_units(
+        posts=sorted_posts,
+        report=report,
+        period_summary=period_summary,
+    )
     for post in sorted_posts:
         post["snapshot_id"] = snapshot["snapshot_id"]
     report.update(
@@ -877,6 +916,7 @@ async def get_dashboard(
             "data_as_of": snapshot["data_as_of"],
             "snapshot_id": snapshot["snapshot_id"],
             "contract_version": contract_version,
+            "engagement_rate_unit": "fraction",
             "link_stats": _link_stats(posts),
         }
     )
@@ -889,6 +929,7 @@ async def get_dashboard(
             "assessment_type": "historical_performance",
             "status": "ready" if filtered_posts else "unavailable",
             "contract_version": contract_version,
+            "engagement_rate_unit": "fraction",
             "link_stats": _link_stats(posts),
         }
     )
@@ -909,6 +950,7 @@ async def get_dashboard(
             "account_id": account_id,
             "data_as_of": snapshot["data_as_of"],
             "snapshot_id": snapshot["snapshot_id"],
+            "engagement_rate_unit": "fraction",
             "contract_version": contract_version,
         }
     )
@@ -1030,20 +1072,10 @@ async def get_creator_stats(
     total = await stats_db.count_note_stats(account_id)
     if total == 0 and account is not None:
         total = int(getattr(account, "note_count", 0) or 0)
-    data_as_of = max(
-        [
-            value
-            for value in [
-                account.synced_at if account else "",
-                *(note.synced_at for note in canonical_notes),
-            ]
-            if value
-        ],
-        default=None,
-    )
-    snapshot = build_snapshot_id(account_id, data_as_of)
+    snapshot = await stats_db.get_creator_stats_snapshot(account_id)
+    data_as_of = snapshot["data_as_of"]
     for row in note_rows:
-        row["snapshot_id"] = snapshot
+        row["snapshot_id"] = snapshot["snapshot_id"]
     return success(
         data={
             "account_id": account_id,
@@ -1053,7 +1085,7 @@ async def get_creator_stats(
             "total": total,
             "limit": limit,
             "data_as_of": data_as_of,
-            "snapshot_id": snapshot,
+            "snapshot_id": snapshot["snapshot_id"],
             "scope": "account_history",
             "subject_type": "imported_note",
             "assessment_type": "historical_performance",
@@ -1129,16 +1161,16 @@ async def _get_imported_creator_note(account_id: str, note_id: str) -> tuple[str
 async def get_creator_note_detail(account_id: str, note_id: str) -> ApiResponse[Any]:
     """Read one imported Creator Center note without starting a sync."""
     normalized_account_id, note = await _get_imported_creator_note(account_id, note_id)
-    snapshot = build_snapshot_id(normalized_account_id, note.synced_at or None)
+    snapshot_metadata = await _creator_snapshot_metadata(normalized_account_id)
     return success(
         data={
             "account_id": normalized_account_id,
             "note": note.to_dict(),
             "scope": "single_note",
             "assessment_type": "historical_performance",
-            "data_as_of": note.synced_at or None,
+            "data_as_of": snapshot_metadata["data_as_of"] or note.synced_at or None,
             "note_synced_at": note.synced_at or None,
-            "snapshot_id": snapshot,
+            "snapshot_id": snapshot_metadata["snapshot_id"],
             "contract_version": QUALITY_CONSISTENCY_CONTRACT
             if quality_consistency_v2_enabled()
             else "legacy_compatible",
@@ -1157,7 +1189,7 @@ async def get_creator_note_quality(
     from backend.services.creator_stats.quality import analyze_note_quality
 
     normalized_account_id, note = await _get_imported_creator_note(account_id, note_id)
-    snapshot = build_snapshot_id(normalized_account_id, note.synced_at or None)
+    snapshot_metadata = await _creator_snapshot_metadata(normalized_account_id)
     report = analyze_note_quality(note, normalized_account_id, locale=locale)
     report_data = report.to_dict()
     report_data.update(
@@ -1166,9 +1198,9 @@ async def get_creator_note_quality(
             "algorithm_version": "historical_quality.v1",
             "scope": "single_note",
             "status": "ready" if report.overall_score is not None else "unavailable",
-            "data_as_of": note.synced_at or None,
+            "data_as_of": snapshot_metadata["data_as_of"] or note.synced_at or None,
             "note_synced_at": note.synced_at or None,
-            "snapshot_id": snapshot,
+            "snapshot_id": snapshot_metadata["snapshot_id"],
             "contract_version": QUALITY_CONSISTENCY_CONTRACT
             if quality_consistency_v2_enabled()
             else "legacy_compatible",
@@ -1193,8 +1225,8 @@ async def get_creator_note_quality(
             "scope": "single_note",
             "assessment_type": "historical_performance",
             "status": report_data["status"],
-            "data_as_of": note.synced_at or None,
-            "snapshot_id": snapshot,
+            "data_as_of": snapshot_metadata["data_as_of"] or note.synced_at or None,
+            "snapshot_id": snapshot_metadata["snapshot_id"],
             "contract_version": QUALITY_CONSISTENCY_CONTRACT
             if quality_consistency_v2_enabled()
             else "legacy_compatible",
@@ -1219,19 +1251,8 @@ async def get_creator_quality(
     # durable note history without triggering a browser re-sync or DB writes.
     notes = await stats_db.list_all_note_stats(normalized_account_id)
     report = analyze_historical_quality(notes, normalized_account_id, locale=locale)
-    account = await stats_db.get_account_stats(normalized_account_id)
-    data_as_of = max(
-        [
-            value
-            for value in [
-                account.synced_at if account else "",
-                *(note.synced_at for note in notes),
-            ]
-            if value
-        ],
-        default=None,
-    )
-    snapshot = build_snapshot_id(normalized_account_id, data_as_of)
+    snapshot = await stats_db.get_creator_stats_snapshot(normalized_account_id)
+    data_as_of = snapshot["data_as_of"]
     data = report.to_dict()
     data.update(
         {
@@ -1242,7 +1263,7 @@ async def get_creator_quality(
             "subject_id": normalized_account_id,
             "status": "ready" if report.overall_score is not None else "unavailable",
             "data_as_of": data_as_of,
-            "snapshot_id": snapshot,
+            "snapshot_id": snapshot["snapshot_id"],
             "contract_version": QUALITY_CONSISTENCY_CONTRACT
             if quality_consistency_v2_enabled()
             else "legacy_compatible",

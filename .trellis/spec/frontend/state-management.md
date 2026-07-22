@@ -207,6 +207,9 @@ code, but it can pull unrelated workspace stores into the public entry chunk.
   active request. Late responses are discarded, never merged into the new account.
 - Store/component state exposes `loaded / total`, `next_cursor`, `data_as_of` and
   stale/loading/error status; compact previews never imply completeness.
+- Analytics historical pages compare their canonical page `snapshot_id` with
+  the dashboard snapshot before appending; a mismatch stops pagination and
+  exposes retry rather than merging two imports.
 
 ### 4. Validation & Error Matrix
 - No active account → clear state and no request; do not use `default`.

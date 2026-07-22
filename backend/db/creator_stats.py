@@ -15,6 +15,7 @@ from typing import Any
 from backend.db.pool import get_pool, is_pool_ready
 from backend.services.creator_stats.types import AccountStatsOverview, NoteStats, NoteStatsPage
 from backend.services.quality_consistency import snapshot_id as build_snapshot_id
+from backend.services.quality_consistency import version_digest
 
 logger = logging.getLogger("xhs_growth.db.creator_stats")
 
@@ -353,6 +354,7 @@ async def upsert_bundle(
         logger.warning("upsert_bundle skipped: empty account_id")
         return 0, 0
     bundle_account.account_id = account_id
+    bundle_account.snapshot_id = build_creator_stats_snapshot_id(bundle_account, notes)
 
     if not is_pool_ready():
         await upsert_account_stats(bundle_account)
@@ -412,6 +414,7 @@ async def get_account_stats(account_id: str) -> AccountStatsOverview | None:
                 "audience_view_periods",
                 "audience_profile",
                 "detail_metrics",
+                "snapshot_id",
             ):
                 if not data.get(key) and raw_json_value.get(key) is not None:
                     data[key] = raw_json_value[key]
@@ -442,6 +445,7 @@ async def get_account_stats(account_id: str) -> AccountStatsOverview | None:
         note_count=row[14],
         period=row[15],
         synced_at=row[16],
+        snapshot_id=raw_account.get("snapshot_id"),
         source=row[17],
         audience_sources=raw_account.get("audience_sources") or [],
         audience_view_periods=raw_account.get("audience_view_periods") or [],
@@ -576,6 +580,25 @@ async def list_all_note_stats(account_id: str) -> list[NoteStats]:
     return [_note_from_row(row) for row in rows]
 
 
+async def get_creator_stats_snapshot(account_id: str) -> dict[str, Any]:
+    """Read the account-wide snapshot identity without triggering a sync."""
+
+    normalized_account_id = (account_id or "").strip()
+    if not normalized_account_id:
+        return {
+            "account_id": "",
+            "data_as_of": None,
+            "snapshot_id": None,
+            "note_count": 0,
+        }
+    account = await get_account_stats(normalized_account_id)
+    notes = await list_all_note_stats(normalized_account_id)
+    return {
+        "account_id": normalized_account_id,
+        **build_creator_stats_snapshot_metadata(account, notes),
+    }
+
+
 async def list_note_stats(
     account_id: str, *, limit: int = 100, order_by: str = "engagement"
 ) -> list[NoteStats]:
@@ -674,6 +697,71 @@ def _canonical_note(note: NoteStats) -> NoteStats:
     return normalized
 
 
+def _creator_note_snapshot_version(note: NoteStats) -> str:
+    """Hash canonical note facts so equal timestamps cannot hide an overwrite."""
+
+    return version_digest(_canonical_note(note).to_dict())
+
+
+def build_creator_stats_snapshot_id(
+    account: AccountStatsOverview | None,
+    notes: list[NoteStats],
+) -> str | None:
+    """Build an account snapshot from the complete durable note population."""
+
+    account_id = (account.account_id if account else "").strip()
+    if not account_id:
+        account_id = next(
+            (
+                str(note.account_id or "").strip()
+                for note in notes
+                if str(note.account_id or "").strip()
+            ),
+            "",
+        )
+    if not account_id:
+        return None
+    account_notes = [
+        note
+        for note in notes
+        if str(note.account_id or "").strip() == account_id and str(note.note_id or "").strip()
+    ]
+    data_as_of = _max_data_as_of(account_notes, account)
+    subject_versions = [
+        (note.note_id, _creator_note_snapshot_version(note)) for note in account_notes
+    ]
+    return build_snapshot_id(
+        account_id,
+        data_as_of or None,
+        subject_versions=subject_versions,
+    )
+
+
+def build_creator_stats_snapshot_metadata(
+    account: AccountStatsOverview | None,
+    notes: list[NoteStats],
+) -> dict[str, Any]:
+    """Return one read-only snapshot contract for all Creator Stats consumers."""
+
+    data_as_of = _max_data_as_of(notes, account)
+    derived_snapshot = build_creator_stats_snapshot_id(account, notes)
+    # Persisted IDs identify the atomic import. Prefer them only when they
+    # still agree with the complete durable rows; otherwise the derived digest
+    # safely detects a legacy/manual overwrite without writing during a read.
+    stored_snapshot = getattr(account, "snapshot_id", None) if account else None
+    snapshot = (
+        stored_snapshot
+        if stored_snapshot and stored_snapshot == derived_snapshot
+        else derived_snapshot or stored_snapshot
+    )
+    return {
+        "data_as_of": data_as_of or None,
+        "snapshot_id": snapshot,
+        "note_count": len(notes),
+        "stored_snapshot_id": stored_snapshot,
+    }
+
+
 def canonicalize_note_stats(note: NoteStats) -> NoteStats:
     """Return a detached note DTO using the canonical fraction rate unit.
 
@@ -750,21 +838,15 @@ async def list_note_stats_page(
             if has_next and items
             else None
         )
-        account = _mem_accounts.get(normalized_account_id)
-        account_obj = AccountStatsOverview.from_dict(account) if account else None
-        data_as_of = _max_data_as_of(filtered_notes, account_obj)
+        snapshot = await get_creator_stats_snapshot(normalized_account_id)
         return NoteStatsPage(
             account_id=normalized_account_id,
             items=items,
             total=total,
             limit=page_limit,
             next_cursor=next_cursor,
-            data_as_of=data_as_of,
-            # Keep the snapshot identity identical across the canonical reader,
-            # dashboard bundle, and quality endpoints.  The account's atomic
-            # sync timestamp is the MVP boundary; callers may still use the
-            # helper's optional subject-version mode for future import runs.
-            snapshot_id=build_snapshot_id(normalized_account_id, data_as_of),
+            data_as_of=snapshot["data_as_of"] or "",
+            snapshot_id=snapshot["snapshot_id"],
             published_from=from_value,
             published_to=to_value,
         )
@@ -811,23 +893,10 @@ async def list_note_stats_page(
             params + [page_limit + 1],
         )
         selected_rows = list(await cur.fetchall())
-        await cur.execute(
-            "SELECT synced_at FROM creator_account_stats WHERE account_id = %s",
-            (normalized_account_id,),
-        )
-        account_row = await cur.fetchone()
     selected_notes = [_note_from_row(row) for row in selected_rows]
     has_next = len(selected_notes) > page_limit
     items = [_canonical_note(note) for note in selected_notes[:page_limit]]
-    account_synced_at = ""
-    if account_row:
-        account_synced_at = (
-            str(next(iter(account_row.values()), "") or "")
-            if isinstance(account_row, dict)
-            else str(account_row[0] or "")
-        )
-    account_obj = AccountStatsOverview(normalized_account_id, synced_at=account_synced_at)
-    data_as_of = account_synced_at or _max_data_as_of(selected_notes, account_obj)
+    snapshot = await get_creator_stats_snapshot(normalized_account_id)
     return NoteStatsPage(
         account_id=normalized_account_id,
         items=items,
@@ -838,8 +907,8 @@ async def list_note_stats_page(
             if has_next and items
             else None
         ),
-        data_as_of=data_as_of,
-        snapshot_id=build_snapshot_id(normalized_account_id, data_as_of),
+        data_as_of=snapshot["data_as_of"] or "",
+        snapshot_id=snapshot["snapshot_id"],
         published_from=from_value,
         published_to=to_value,
     )

@@ -1,6 +1,7 @@
 /** xhs_analytics_dashboard — get analytics dashboard data for an account. */
 import type { ExtensionAPI, ToolDefinition } from "@oh-my-pi/pi-coding-agent";
 import { get } from "../api_client.js";
+import { formatAnalyticsRate } from "../analytics_format.js";
 import { textResult } from "../types.js";
 
 interface AnalyticsDashboardResponse {
@@ -27,6 +28,7 @@ interface AnalyticsDashboardResponse {
     today_cost_usd: number;
     by_model: Record<string, number>;
   };
+  engagement_rate_unit?: "fraction" | "percent" | string;
 }
 
 export default function register(pi: ExtensionAPI) {
@@ -50,7 +52,7 @@ export default function register(pi: ExtensionAPI) {
         // Report metrics
         const metrics = result.report?.metrics;
         if (metrics) {
-          lines.push(`  Posts: ${metrics.total_posts}, Engagement: ${metrics.total_engagement}, Avg Rate: ${metrics.avg_engagement_rate}%`);
+          lines.push(`  Posts: ${metrics.total_posts}, Engagement: ${metrics.total_engagement}, Avg Rate: ${formatAnalyticsRate(metrics.avg_engagement_rate, result.engagement_rate_unit)}`);
           if (metrics.best_post_title) lines.push(`  Best Post: ${metrics.best_post_title}`);
           if (metrics.trend_topics?.length) lines.push(`  Trend Topics: ${metrics.trend_topics.join(", ")}`);
         }

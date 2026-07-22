@@ -157,8 +157,11 @@ Before changing Analytics/Evaluation history or quality scoring, trace the same
 contract through every layer:
 
 - [ ] Database reader: one account-scoped `(published_at, note_id)` cursor,
-  complete filtered total, fraction engagement rate and snapshot timestamp.
+  complete filtered total, fraction engagement rate and a stable account
+  snapshot digest based on the complete note population.
 - [ ] API: additive subject/scope/assessment/status/coverage/version metadata;
+  `/analytics/report`, `/analytics/performance`, and `/analytics/dashboard`
+  declare `engagement_rate_unit="fraction"` for raw rates and aggregates.
   malformed cursor and empty account fail explicitly.
 - [ ] Service/evaluator: historical performance and RQGM content review remain
   separate; missing context and degraded runs are scoreless and excluded from

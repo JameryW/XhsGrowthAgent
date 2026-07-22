@@ -43,6 +43,7 @@ export async function getDashboard(
   account_id?: string
   data_as_of?: string | null
   snapshot_id?: string | null
+  engagement_rate_unit?: 'fraction' | 'percent' | string
   contract_version?: string | null
 }> {
   return client.get(`/analytics/dashboard/${accountId}`, { params: { period, limit } })
@@ -139,6 +140,7 @@ export interface CreatorAccountStats {
   note_count: number
   period: string
   synced_at: string
+  snapshot_id?: string | null
   source: string
   audience_sources?: CreatorAggregatePoint[]
   audience_view_periods?: CreatorAggregatePoint[]
@@ -218,7 +220,7 @@ export interface CreatorStatsPayload {
   algorithm_version?: string | null
   status?: string
   contract_version?: string | null
-  engagement_rate_unit?: string
+  engagement_rate_unit?: 'fraction' | 'percent' | string
 }
 
 export interface CreatorSuggestionsPayload {

@@ -403,5 +403,7 @@ async def test_performance_endpoint_includes_imported_creator_notes():
     assert row["views"] == 42000
     assert row["likes"] == 3800
     assert row.get("source") in ("fixture", "creator_statistics")
-    # Fraction engagement converted for UI % display
-    assert row["engagement_rate"] > 1.0
+    # Analytics raw responses use the canonical fraction unit; UI adapters
+    # convert it to percent only at the presentation boundary.
+    assert data["engagement_rate_unit"] == "fraction"
+    assert 0 <= row["engagement_rate"] <= 1

@@ -159,8 +159,8 @@ watch([() => analyticsStore.posts, historicalNotes], () => {
     const noteId = post.linked_note_id || (post.source === 'workflow' ? '' : post.id || '')
     const note = noteId ? facts.get(noteId) : undefined
     if (!note) continue
-    const postRate = engagementRatePercent(post.engagement_rate)
-    const noteRate = engagementRatePercent(note.engagement_rate)
+    const postRate = engagementRatePercent(post.engagement_rate, analyticsStore.performanceData?.engagement_rate_unit)
+    const noteRate = engagementRatePercent(note.engagement_rate, 'fraction')
     const fieldsMatch = post.views === note.views
       && post.likes === note.likes
       && post.comments === note.comments
@@ -233,7 +233,7 @@ const metrics = computed(() => [
   { icon: 'Upload', title: t('analytics.postsPublished'), value: currentPeriod.value?.posts ?? 0, subtitle: periodLabel.value, variant: 'pink' as const, delta: postsDelta.value },
   { icon: 'Eye', title: t('analytics.totalViews'), value: formatNumber(totalViews.value, locale.value), subtitle: periodLabel.value, variant: 'cyan' as const, delta: viewsDelta.value },
   { icon: 'MessageCircle', title: t('analytics.totalEngagement'), value: formatNumber(currentPeriod.value?.engagement ?? 0, locale.value), subtitle: `${currentPeriod.value?.posts ?? 0} ` + t('analytics.postsPublished'), variant: 'purple' as const, delta: engDelta.value },
-  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: formatPercent(currentPeriod.value?.avg_engagement_rate ?? 0, locale.value), subtitle: (currentPeriod.value?.posts ?? 0) > 0 ? `${currentPeriod.value?.posts ?? 0} ` + t('analytics.postsPublished') : periodLabel.value, variant: 'peach' as const },
+  { icon: 'TrendingUp', title: t('analytics.avgEngagementRate'), value: formatPercent(engagementRatePercent(currentPeriod.value?.avg_engagement_rate, analyticsStore.periodSummary?.engagement_rate_unit), locale.value), subtitle: (currentPeriod.value?.posts ?? 0) > 0 ? `${currentPeriod.value?.posts ?? 0} ` + t('analytics.postsPublished') : periodLabel.value, variant: 'peach' as const },
   // AN-05: fans card on the first screen (was buried in CreatorStatsPanel);
   // AI cost moved out to the demoted cost section.
   { icon: 'Users', title: t('analytics.fans'), value: fansDisplay.value, subtitle: periodLabel.value, variant: 'cyan' as const, delta: '—' },
@@ -341,11 +341,16 @@ const visibleTableData = computed<AnalyticsTableRow[]>(() => {
     views: note.views,
     // Canonical API stores a fraction; table presentation uses the shared
     // formatter's percent-like input (5 means 5%).
-    engagement_rate: engagementRatePercent(note.engagement_rate),
+    engagement_rate: engagementRatePercent(note.engagement_rate, 'fraction'),
     published_at: note.published_at,
     source: note.source,
   }))
-  const posts = canonical.length ? canonical : analyticsStore.posts
+  const posts = canonical.length
+    ? canonical
+    : analyticsStore.posts.map(post => ({
+      ...post,
+      engagement_rate: engagementRatePercent(post.engagement_rate, analyticsStore.performanceData?.engagement_rate_unit),
+    }))
   const sliced = canonical.length
     ? (showAllHistorical.value ? posts : posts.slice(0, 8))
     : (showAllPosts.value ? posts : posts.slice(0, 10))
@@ -361,8 +366,10 @@ const tableUsesCanonicalHistory = computed(() => historicalNotes.value.length > 
 const tableLoadedCount = computed(() => tableUsesCanonicalHistory.value ? historicalNotes.value.length : analyticsStore.posts.length)
 const tableTotalCount = computed(() => tableUsesCanonicalHistory.value ? historicalTotal.value : (analyticsStore.performanceData?.total ?? analyticsStore.posts.length))
 
-function engagementRatePercent(value: number | undefined): number {
+function engagementRatePercent(value: number | undefined, unit?: string): number {
   if (value == null || Number.isNaN(value)) return 0
+  if (unit === 'fraction') return value * 100
+  if (unit === 'percent') return value
   return value <= 1 ? value * 100 : value
 }
 
@@ -390,7 +397,10 @@ function exportPostsCsv() {
     post.comments,
     post.collects,
     post.shares,
-    engagementRatePercent(post.engagement_rate),
+    engagementRatePercent(
+      post.engagement_rate,
+      tableUsesCanonicalHistory.value ? 'fraction' : analyticsStore.performanceData?.engagement_rate_unit,
+    ),
     post.published_at,
   ])
   const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n')

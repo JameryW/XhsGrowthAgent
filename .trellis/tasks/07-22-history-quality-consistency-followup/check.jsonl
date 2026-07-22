@@ -1,0 +1,12 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"检查 snapshot metadata 是否读取完整 durable snapshot、旧数据兼容且不触发同步。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"检查后端 lint、mypy、测试和格式质量。"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"检查新增一致性日志不泄露内容和凭证。"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"检查快照变化、账号切换和 cursor 追加 stale guard。"}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"检查 API 单位适配、i18n、错误和展示行为。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"逐层检查 snapshot_id/data_as_of/engagement_rate_unit 契约闭环。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查是否仍有重复快照/单位转换实现。"}
+{"file":".trellis/tasks/07-22-history-quality-consistency-followup/research/continuation-audit.md","reason":"对照本轮续审风险验证实现和回归测试。"}
+{"file":"tests/unit/api/test_quality_consistency_backend.py","reason":"回归同时间戳指标覆盖、无账户行 600 条 Postgres 分页和 content-version 快照。"}
+{"file":"tests/unit/services/creator_stats/test_dashboard_and_validation.py","reason":"回归 canonical/dashboard/report/performance/quality/detail 快照一致，以及 Analytics fraction 单位。"}
+{"file":"tests/unit/services/creator_stats/test_normalize_client_fixes.py","reason":"同步旧测试到新的 Analytics fraction 原始响应契约。"}
+{"file":".trellis/tasks/07-22-history-quality-consistency-followup/prd.md","reason":"记录 1449 后端单测、588 前端测试、lint/mypy/compile、类型/i18n/build 与 OMP typecheck 的最终证据。"}

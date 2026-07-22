@@ -54,6 +54,9 @@ class AccountStatsOverview:
     audience_view_periods: list[dict[str, Any]] = field(default_factory=list)
     audience_profile: list[dict[str, Any]] = field(default_factory=list)
     detail_metrics: dict[str, Any] = field(default_factory=dict)
+    # Opaque identity of the atomic Creator Stats import. Older rows may not
+    # have it; the storage reader derives a compatible digest from all notes.
+    snapshot_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -78,6 +81,7 @@ class AccountStatsOverview:
             note_count=int(data.get("note_count") or 0),
             period=str(data.get("period") or "30d"),
             synced_at=str(data.get("synced_at") or ""),
+            snapshot_id=str(data.get("snapshot_id") or "") or None,
             source=str(data.get("source") or "creator_statistics"),
             audience_sources=_dict_list(data.get("audience_sources")),
             audience_view_periods=_dict_list(data.get("audience_view_periods")),

@@ -327,6 +327,9 @@ Indentation and surrounding punctuation/labels stay `DIM` so structure stays sca
 ### 3. Contracts
 - Canonical note rows are scoped by account and carry `total`, cursor,
   `data_as_of`, `note_synced_at`, `assessment_type` and fraction engagement rate.
+- Analytics report/performance/dashboard payloads declare
+  `engagement_rate_unit`; use that explicit unit for store/table/CSV formatting,
+  and keep the numeric fraction untouched outside presentation adapters.
 - Label published performance as “发布后表现分” and RQGM as “RQGM 内容评审分”;
   never render an unqualified “综合质量分”.
 - Null/degraded/failed scores render `—` and an unavailable/retry state; they

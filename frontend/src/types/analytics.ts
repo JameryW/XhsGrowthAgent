@@ -17,6 +17,7 @@ export interface GrowthReport {
   generated_at?: string
   data_as_of?: string | null
   snapshot_id?: string | null
+  engagement_rate_unit?: 'fraction' | 'percent' | string
   scope?: string
   subject_type?: string
   assessment_type?: string
@@ -73,6 +74,7 @@ export interface PerformanceData {
   assessment_type?: string
   status?: string
   contract_version?: string | null
+  engagement_rate_unit?: 'fraction' | 'percent' | string
   link_stats?: GrowthReport['link_stats']
 }
 
@@ -93,6 +95,7 @@ export interface AnalyticsPeriodSummary {
   previous: AnalyticsPeriodMetrics
   data_as_of?: string | null
   snapshot_id?: string | null
+  engagement_rate_unit?: 'fraction' | 'percent' | string
 }
 
 // 成本数据

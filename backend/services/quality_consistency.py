@@ -9,6 +9,7 @@ snapshot format or feature-flag parser.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from typing import Any
 
@@ -39,7 +40,7 @@ def snapshot_id(
 ) -> str | None:
     """Build a stable opaque snapshot identity for a response.
 
-    ``data_as_of`` is the MVP snapshot boundary.  When callers have the
+    ``data_as_of`` is the compatibility boundary.  When callers have the
     complete note version list available, including it makes the identity
     change even if an older row was refreshed without moving the account
     timestamp.  The returned value contains no account or note identifiers.
@@ -47,13 +48,15 @@ def snapshot_id(
 
     account = str(account_id or "").strip()
     as_of = str(data_as_of or "").strip()
-    if not account or not as_of:
+    if not account:
         return None
     versions = sorted(
         (str(subject).strip(), str(version).strip())
         for subject, version in (subject_versions or [])
         if str(subject).strip()
     )
+    if not as_of and not versions:
+        return None
     payload: dict[str, Any] = {
         "account_id": account,
         "data_as_of": as_of,
@@ -62,6 +65,19 @@ def snapshot_id(
     encoded = repr(payload).encode("utf-8")
     digest = hashlib.sha256(encoded).hexdigest()[:32]
     return f"snapshot:{digest}"
+
+
+def version_digest(payload: Any) -> str:
+    """Return a deterministic opaque digest for a source-version payload."""
+
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def max_timestamp(*values: Any) -> str | None:

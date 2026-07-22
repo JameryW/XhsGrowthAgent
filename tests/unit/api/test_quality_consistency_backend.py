@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from backend.api.routes.evaluation import _sanitize_historical_evaluation
@@ -61,6 +64,89 @@ async def test_canonical_history_cursor_walks_more_than_500_without_duplicates()
     assert all(0 <= item.engagement_rate <= 1 for item in first_page.items)
 
 
+@pytest.mark.asyncio
+async def test_snapshot_changes_when_metrics_are_overwritten_at_same_timestamp() -> None:
+    note = _note(1)
+    await creator_stats.upsert_notes([note])
+    first = await creator_stats.get_creator_stats_snapshot("acc-a")
+
+    note.likes = 99
+    note.engagement_rate = 0.99
+    await creator_stats.upsert_notes([note])
+    second = await creator_stats.get_creator_stats_snapshot("acc-a")
+
+    assert first["data_as_of"] == second["data_as_of"]
+    assert first["snapshot_id"] != second["snapshot_id"]
+
+
+@pytest.mark.asyncio
+async def test_snapshot_without_account_row_uses_complete_note_population() -> None:
+    await creator_stats.upsert_notes([_note(index) for index in range(3)])
+    snapshot = await creator_stats.get_creator_stats_snapshot("acc-a")
+    page = await creator_stats.list_note_stats_page("acc-a", limit=1)
+
+    assert snapshot["note_count"] == 3
+    assert snapshot["snapshot_id"] is not None
+    assert page.snapshot_id == snapshot["snapshot_id"]
+
+
+@pytest.mark.asyncio
+async def test_postgres_page_snapshot_reads_all_notes_without_account_row() -> None:
+    """Legacy Postgres rows must share one full-population snapshot across pages."""
+
+    all_rows = [
+        (
+            note.account_id,
+            note.note_id,
+            note.title,
+            note.body_text,
+            note.views,
+            note.likes,
+            note.comments,
+            note.collects,
+            note.shares,
+            note.published_at,
+            note.content_type,
+            "[]",
+            note.cover_url,
+            note.engagement_rate,
+            note.synced_at,
+            note.source,
+            "{}",
+        )
+        for note in (_note(index) for index in range(600))
+    ]
+    selected_rows = all_rows[:51]
+    cursor = MagicMock()
+    cursor.execute = AsyncMock()
+    cursor.fetchone = AsyncMock(side_effect=[None, (600,), None])
+    cursor.fetchall = AsyncMock(side_effect=[all_rows, selected_rows, all_rows])
+    conn = MagicMock()
+
+    @asynccontextmanager
+    async def cursor_context():
+        yield cursor
+
+    conn.cursor = cursor_context
+    pool = MagicMock()
+
+    @asynccontextmanager
+    async def connection_context():
+        yield conn
+
+    pool.connection = connection_context
+    with (
+        patch("backend.db.creator_stats.is_pool_ready", return_value=True),
+        patch("backend.db.creator_stats.get_pool", return_value=pool),
+    ):
+        snapshot = await creator_stats.get_creator_stats_snapshot("acc-a")
+        page = await creator_stats.list_note_stats_page("acc-a", limit=50)
+
+    assert snapshot["note_count"] == 600
+    assert page.total == 600
+    assert page.snapshot_id == snapshot["snapshot_id"]
+
+
 def test_snapshot_id_changes_with_subject_version_but_not_order() -> None:
     first = snapshot_id(
         "acc-a",
@@ -79,6 +165,13 @@ def test_snapshot_id_changes_with_subject_version_but_not_order() -> None:
     )
     assert first == reordered
     assert first != changed
+
+
+def test_snapshot_id_can_use_content_versions_when_legacy_timestamp_is_missing() -> None:
+    snapshot = snapshot_id("acc-a", None, subject_versions=[("note-1", "digest")])
+
+    assert snapshot is not None
+    assert snapshot.startswith("snapshot:")
 
 
 def test_historical_degraded_result_never_exposes_legacy_pass() -> None:

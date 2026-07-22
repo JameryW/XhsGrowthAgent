@@ -1,6 +1,7 @@
 /** xhs_analytics_report — get growth report for an account. */
 import type { ExtensionAPI, ToolDefinition } from "@oh-my-pi/pi-coding-agent";
 import { get } from "../api_client.js";
+import { formatAnalyticsRate } from "../analytics_format.js";
 import { textResult } from "../types.js";
 
 interface MetricsData {
@@ -22,6 +23,7 @@ interface ReportResponse {
   metrics: MetricsData;
   insights: InsightEntry[];
   generated_at: string;
+  engagement_rate_unit?: "fraction" | "percent" | string;
 }
 
 export default function register(pi: ExtensionAPI) {
@@ -46,7 +48,7 @@ export default function register(pi: ExtensionAPI) {
           `Growth Report — ${params.account_id} (${params.period}):`,
           `  Posts: ${m.total_posts || 0}`,
           `  Total Engagement: ${m.total_engagement || 0}`,
-          `  Avg Engagement Rate: ${m.avg_engagement_rate || 0}%`,
+          `  Avg Engagement Rate: ${formatAnalyticsRate(m.avg_engagement_rate, result.engagement_rate_unit)}`,
         ];
 
         if (m.best_post_title) {

@@ -49,8 +49,9 @@ export const useAnalyticsStore = defineStore('analytics', () => {
 
   const avgEngagementRate = computed(() => {
     if (!posts.value.length) return 0
+    const unit = performanceData.value?.engagement_rate_unit
     return posts.value.reduce((sum, post) =>
-      sum + post.engagement_rate, 0
+      sum + engagementRatePercent(post.engagement_rate, unit), 0
     ) / posts.value.length
   })
 
@@ -203,4 +204,11 @@ function responseSnapshotId(
   summary: AnalyticsPeriodSummary | undefined,
 ): string | null {
   return report?.snapshot_id ?? performance?.snapshot_id ?? summary?.snapshot_id ?? null
+}
+
+function engagementRatePercent(value: number, unit?: string): number {
+  if (unit === 'fraction') return value * 100
+  if (unit === 'percent') return value
+  // Compatibility for a legacy response that predates the explicit unit.
+  return value <= 1 ? value * 100 : value
 }

@@ -258,6 +258,12 @@ in-memory convenience path.
 - Persist an account overview and all imported note rows through one database
   transaction (`upsert_bundle`), so readers never observe a partially written
   creator-statistics snapshot.
+- Assign that atomic import an opaque `snapshot_id` derived from the account,
+  `data_as_of`, and a deterministic digest of the complete canonical note set.
+  Persist the ID with the account raw snapshot. Readers of older rows may
+  recompute the same digest without writing; they must never derive a page
+  snapshot from only the selected rows. A metric overwrite at the same
+  `synced_at` therefore remains observable as a new snapshot.
 
 ### Scheduled Import Operations
 
@@ -355,6 +361,10 @@ ERROR_CREATOR_NOTE_NOT_FOUND 404 response.
   query filters, and `engagement_rate_unit="fraction"`; item DTOs carry
   `subject_type="imported_note"`, `assessment_type="historical_performance"`,
   `scope="account_history"`, and `note_synced_at`.
+- `get_creator_stats_snapshot(account_id)` is the storage-layer source for
+  `data_as_of`/`snapshot_id` in canonical pages, Analytics, and quality/detail
+  responses. It is read-only and must include the complete account population,
+  including legacy Postgres rows where no account overview row exists.
 - `quality_evaluation_runs` stores source/content/context hashes,
   evaluator fingerprint, status, result/coverage/threshold JSON and timestamps.
   The in-memory fallback is test/dev only; Postgres startup calls `ensure_tables`.
