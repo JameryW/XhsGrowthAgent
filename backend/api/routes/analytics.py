@@ -67,14 +67,43 @@ async def _creator_snapshot_metadata(account_id: str) -> dict[str, Any]:
     if not normalized:
         return {"data_as_of": None, "snapshot_id": None}
 
+    bundle = await _creator_snapshot_bundle(normalized)
+    return {
+        key: bundle[key]
+        for key in ("account_id", "data_as_of", "snapshot_id", "note_count")
+        if key in bundle
+    }
+
+
+async def _creator_snapshot_bundle(account_id: str) -> dict[str, Any]:
+    """Read imported facts and snapshot metadata from one storage boundary."""
+
+    normalized = (account_id or "").strip()
+    if not normalized:
+        return {
+            "account_id": "",
+            "account": None,
+            "notes": [],
+            "data_as_of": None,
+            "snapshot_id": None,
+            "note_count": 0,
+        }
+
     try:
         from backend.db import creator_stats as stats_db
 
-        return await stats_db.get_creator_stats_snapshot(normalized)
+        return await stats_db.get_creator_stats_snapshot_bundle(normalized)
     except Exception:
         # The imported tables are optional in local/legacy deployments.  Do
         # not invent a timestamp when they are unavailable.
-        return {"data_as_of": None, "snapshot_id": None}
+        return {
+            "account_id": normalized,
+            "account": None,
+            "notes": [],
+            "data_as_of": None,
+            "snapshot_id": None,
+            "note_count": 0,
+        }
 
 
 def _workflow_data_as_of(workflows: list[dict[str, Any]]) -> str | None:
@@ -495,14 +524,20 @@ async def get_growth_report(
         if topic:
             topics[topic] = topics.get(topic, 0) + 1
 
-    posts = await _merge_imported_posts(account_id, posts, limit=100)
+    snapshot_bundle = await _creator_snapshot_bundle(account_id)
+    posts = await _merge_imported_posts(
+        account_id,
+        posts,
+        limit=100,
+        imported_notes=snapshot_bundle.get("notes", []),
+    )
     for t, c in _topics_from_imported(posts).items():
         topics[t] = topics.get(t, 0) + c
     filtered_posts = _filter_by_period(posts, period)
     report = _build_growth_report(account_id, period, filtered_posts, topics)
     snapshot = _complete_snapshot_metadata(
         account_id,
-        await _creator_snapshot_metadata(account_id),
+        snapshot_bundle,
         workflows,
     )
     report.update(
@@ -570,6 +605,7 @@ async def _merge_imported_posts(
     posts: list[dict[str, Any]],
     *,
     limit: int = 100,
+    imported_notes: list[Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Merge imported notes using explicit platform identity only.
 
@@ -577,14 +613,19 @@ async def _merge_imported_posts(
     matching workflow is marked ``linked``; duplicate workflow claims are
     surfaced as ``ambiguous`` and remain separate.
     """
-    try:
-        from backend.db import creator_stats as stats_db
+    if imported_notes is None:
+        try:
+            from backend.db import creator_stats as stats_db
 
-        # Reports and period aggregates need the complete durable snapshot;
-        # ``limit`` remains only for compatibility with older callers.
-        imported = await stats_db.list_all_note_stats(account_id)
-    except Exception:
-        return posts
+            # Reports and period aggregates need the complete durable
+            # snapshot; ``limit`` remains only for compatibility with older
+            # callers.  Route callers can inject a bundle-owned list so the
+            # response snapshot cannot be read from a later import.
+            imported = await stats_db.list_all_note_stats(account_id)
+        except Exception:
+            return posts
+    else:
+        imported = imported_notes
 
     by_platform_id: dict[str, list[dict[str, Any]]] = {}
     for post in posts:
@@ -696,7 +737,13 @@ async def get_performance(
         if post:
             posts.append(post)
 
-    posts = await _merge_imported_posts(account_id, posts, limit=max(limit, 50))
+    snapshot_bundle = await _creator_snapshot_bundle(account_id)
+    posts = await _merge_imported_posts(
+        account_id,
+        posts,
+        limit=max(limit, 50),
+        imported_notes=snapshot_bundle.get("notes", []),
+    )
     posts = _filter_by_period(posts, period)
     posts.sort(key=lambda p: p.get("published_at", ""), reverse=True)
     link_stats = _link_stats(posts)
@@ -706,7 +753,7 @@ async def get_performance(
 
     snapshot = _complete_snapshot_metadata(
         account_id,
-        await _creator_snapshot_metadata(account_id),
+        snapshot_bundle,
         workflows,
     )
     for post in posts:
@@ -826,7 +873,13 @@ async def get_dashboard(
     # Merge the full imported snapshot before computing period aggregates. The
     # visible table remains paginated below, but current/previous totals must
     # not depend on its ``limit``.
-    posts = await _merge_imported_posts(account_id, posts, limit=500)
+    snapshot_bundle = await _creator_snapshot_bundle(account_id)
+    posts = await _merge_imported_posts(
+        account_id,
+        posts,
+        limit=500,
+        imported_notes=snapshot_bundle.get("notes", []),
+    )
     for t, c in _topics_from_imported(posts).items():
         topics[t] = topics.get(t, 0) + c
 
@@ -894,7 +947,7 @@ async def get_dashboard(
 
     snapshot = _complete_snapshot_metadata(
         account_id,
-        await _creator_snapshot_metadata(account_id),
+        snapshot_bundle,
         workflows,
     )
     contract_version = (
@@ -1049,8 +1102,17 @@ async def get_creator_stats(
     from backend.services.creator_stats.audience import summarize_audience
 
     account_id = (account_id or "").strip()
-    account = await stats_db.get_account_stats(account_id)
-    notes = await stats_db.list_note_stats(account_id, limit=limit)
+    snapshot = await _creator_snapshot_bundle(account_id)
+    account = snapshot.get("account")
+    all_notes = list(snapshot.get("notes", []))
+    all_notes.sort(
+        key=lambda note: (
+            float(getattr(note, "engagement_rate", 0.0) or 0.0),
+            int(getattr(note, "views", 0) or 0),
+        ),
+        reverse=True,
+    )
+    notes = all_notes[:limit]
     canonical_notes = [stats_db.canonicalize_note_stats(note) for note in notes]
     note_rows = []
     for note in canonical_notes:
@@ -1069,10 +1131,9 @@ async def get_creator_stats(
         )
         note_rows.append(row)
     # total = full count (not page size); note_count on account is a fallback
-    total = await stats_db.count_note_stats(account_id)
+    total = len(all_notes)
     if total == 0 and account is not None:
         total = int(getattr(account, "note_count", 0) or 0)
-    snapshot = await stats_db.get_creator_stats_snapshot(account_id)
     data_as_of = snapshot["data_as_of"]
     for row in note_rows:
         row["snapshot_id"] = snapshot["snapshot_id"]
@@ -1141,9 +1202,10 @@ async def get_creator_stats_notes(
     return success(data=payload)
 
 
-async def _get_imported_creator_note(account_id: str, note_id: str) -> tuple[str, Any]:
-    """Load one persisted creator note for the detail/quality endpoints."""
-    from backend.db import creator_stats as stats_db
+async def _get_imported_creator_note_with_snapshot(
+    account_id: str, note_id: str
+) -> tuple[str, Any, dict[str, Any]]:
+    """Load a note and its account snapshot from the same read bundle."""
 
     normalized_account_id = (account_id or "").strip()
     normalized_note_id = (note_id or "").strip()
@@ -1151,17 +1213,28 @@ async def _get_imported_creator_note(account_id: str, note_id: str) -> tuple[str
         raise ValidationError("account_id", "account_id cannot be empty")
     if not normalized_note_id:
         raise ValidationError("note_id", "note_id cannot be empty")
-    note = await stats_db.get_note_stats(normalized_account_id, normalized_note_id)
+    from backend.db import creator_stats as stats_db
+
+    snapshot = await _creator_snapshot_bundle(normalized_account_id)
+    note = next(
+        (
+            item
+            for item in snapshot.get("notes", [])
+            if str(getattr(item, "note_id", "") or "").strip() == normalized_note_id
+        ),
+        None,
+    )
     if note is None:
         raise CreatorNoteNotFoundError(normalized_account_id, normalized_note_id)
-    return normalized_account_id, stats_db.canonicalize_note_stats(note)
+    return normalized_account_id, stats_db.canonicalize_note_stats(note), snapshot
 
 
 @router.get("/creator-stats/{account_id}/notes/{note_id}")
 async def get_creator_note_detail(account_id: str, note_id: str) -> ApiResponse[Any]:
     """Read one imported Creator Center note without starting a sync."""
-    normalized_account_id, note = await _get_imported_creator_note(account_id, note_id)
-    snapshot_metadata = await _creator_snapshot_metadata(normalized_account_id)
+    normalized_account_id, note, snapshot_metadata = await _get_imported_creator_note_with_snapshot(
+        account_id, note_id
+    )
     return success(
         data={
             "account_id": normalized_account_id,
@@ -1188,8 +1261,9 @@ async def get_creator_note_quality(
     """Evaluate one imported note with the historical quality analyzer."""
     from backend.services.creator_stats.quality import analyze_note_quality
 
-    normalized_account_id, note = await _get_imported_creator_note(account_id, note_id)
-    snapshot_metadata = await _creator_snapshot_metadata(normalized_account_id)
+    normalized_account_id, note, snapshot_metadata = await _get_imported_creator_note_with_snapshot(
+        account_id, note_id
+    )
     report = analyze_note_quality(note, normalized_account_id, locale=locale)
     report_data = report.to_dict()
     report_data.update(
@@ -1242,16 +1316,16 @@ async def get_creator_quality(
     locale: str = Query("zh-CN", max_length=16, description="报告文案语言：zh-CN | en"),
 ) -> ApiResponse[Any]:
     """Return a read-only quality report over every imported note for an account."""
-    from backend.db import creator_stats as stats_db
     from backend.services.creator_stats.quality import analyze_historical_quality
 
     normalized_account_id = (account_id or "").strip()
     # Do not use list_note_stats here: that reader is intentionally capped for
-    # interactive display.  Historical quality must state and analyze the full
-    # durable note history without triggering a browser re-sync or DB writes.
-    notes = await stats_db.list_all_note_stats(normalized_account_id)
+    # interactive display.  Historical quality must analyze the same complete
+    # durable note bundle that supplies its snapshot metadata; it must not
+    # calculate from one import and label the response with a later one.
+    snapshot = await _creator_snapshot_bundle(normalized_account_id)
+    notes = snapshot.get("notes", [])
     report = analyze_historical_quality(notes, normalized_account_id, locale=locale)
-    snapshot = await stats_db.get_creator_stats_snapshot(normalized_account_id)
     data_as_of = snapshot["data_as_of"]
     data = report.to_dict()
     data.update(

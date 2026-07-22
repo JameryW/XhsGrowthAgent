@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Creator Stats 完整 population、snapshot bundle、legacy fallback 和只读事务契约。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"后端 Ruff、mypy、pytest、格式和类型质量门槛。"}
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"API client、Vue fallback、loading/stale 状态与显式单位边界规范。"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Analytics/Evaluation snapshot stale guard、账号边界和异步响应提交规则。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Storage→API→frontend→OMP 数据契约闭环与单位/快照检查清单。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"复用 bundle、fallback mapper 和单位 formatter，避免读取逻辑漂移。"}
+{"file":".trellis/tasks/07-22-history-quality-consistency-round4/research/round4-audit.md","reason":"第四轮发现的 route 混批窗口、前端 fallback 元数据缺失和 OMP 单位歧义。"}

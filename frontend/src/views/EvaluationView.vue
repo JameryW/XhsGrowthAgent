@@ -118,6 +118,7 @@ async function readNotesPage(accountId: string, cursor: string | null = null): P
     next_cursor: null,
     data_as_of: legacy.data_as_of ?? legacy.fetched_at ?? null,
     snapshot_id: legacy.snapshot_id ?? null,
+    engagement_rate_unit: legacy.engagement_rate_unit,
     query: { sort: 'published_at_desc', published_from: null, published_to: null },
   }
 }

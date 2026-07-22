@@ -159,6 +159,9 @@ contract through every layer:
 - [ ] Database reader: one account-scoped `(published_at, note_id)` cursor,
   complete filtered total, fraction engagement rate and a stable account
   snapshot digest based on the complete note population.
+- [ ] Any report/quality response that calculates from imported notes reads a
+  single account snapshot bundle; do not compute from one population and add
+  `snapshot_id` from a later independent read.
 - [ ] API: additive subject/scope/assessment/status/coverage/version metadata;
   `/analytics/report`, `/analytics/performance`, and `/analytics/dashboard`
   declare `engagement_rate_unit="fraction"` for raw rates and aggregates.
@@ -170,6 +173,8 @@ contract through every layer:
   cache hits are idempotent, force runs retain versions, stale runs remain auditable.
 - [ ] Frontend: selected account is passed to every list/trend request, cursor
   resets on switch, late responses are ignored, and loaded/total/data-as-of are visible.
+- [ ] Frontend compatibility fallbacks preserve snapshot/unit metadata so the
+  same stale and fraction guards remain active on older servers.
 - [ ] Identity: workflow rows link imported notes only on explicit platform IDs;
   synthetic IDs and duplicate claims remain unmatched/ambiguous.
 - [ ] Tests: prove two-account isolation, >500 traversal, raw metric equality,

@@ -605,13 +605,21 @@ async def _set_repeatable_read(cur: Any) -> None:
     await cur.execute(_REPEATABLE_READ_SQL)
 
 
-async def get_creator_stats_snapshot(account_id: str) -> dict[str, Any]:
-    """Read the account-wide snapshot identity without triggering a sync."""
+async def get_creator_stats_snapshot_bundle(account_id: str) -> dict[str, Any]:
+    """Read account, complete notes and their snapshot in one read boundary.
+
+    Analytics and quality consumers must calculate from the same note
+    population that produced ``snapshot_id``.  The Postgres path therefore
+    keeps both row readers inside one repeatable-read transaction; the memory
+    fallback preserves the same response shape without opening a database.
+    """
 
     normalized_account_id = (account_id or "").strip()
     if not normalized_account_id:
         return {
             "account_id": "",
+            "account": None,
+            "notes": [],
             "data_as_of": None,
             "snapshot_id": None,
             "note_count": 0,
@@ -627,7 +635,20 @@ async def get_creator_stats_snapshot(account_id: str) -> dict[str, Any]:
             notes = await _fetch_all_note_stats(cur, normalized_account_id)
     return {
         "account_id": normalized_account_id,
+        "account": account,
+        "notes": notes,
         **build_creator_stats_snapshot_metadata(account, notes),
+    }
+
+
+async def get_creator_stats_snapshot(account_id: str) -> dict[str, Any]:
+    """Read the account-wide snapshot identity without triggering a sync."""
+
+    bundle = await get_creator_stats_snapshot_bundle(account_id)
+    return {
+        key: bundle[key]
+        for key in ("account_id", "data_as_of", "snapshot_id", "note_count", "stored_snapshot_id")
+        if key in bundle
     }
 
 

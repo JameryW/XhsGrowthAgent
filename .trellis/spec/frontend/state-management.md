@@ -210,6 +210,13 @@ code, but it can pull unrelated workspace stores into the public entry chunk.
 - Analytics historical pages compare their canonical page `snapshot_id` with
   the dashboard snapshot before appending; a mismatch stops pagination and
   exposes retry rather than merging two imports.
+- If the canonical endpoint falls back to the bounded legacy overview, the
+  adapter must still carry `snapshot_id`, `data_as_of` and
+  `engagement_rate_unit` when the server provides it. If an old server omits
+  the unit, preserve `undefined` so the existing compatibility heuristic can
+  run; do not label an unknown percent-scale value as fraction. Missing
+  snapshot metadata must not silently disable the stale guard for a
+  compatibility response.
 
 ### 4. Validation & Error Matrix
 - No active account → clear state and no request; do not use `default`.

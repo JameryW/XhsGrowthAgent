@@ -91,6 +91,21 @@ async def test_snapshot_without_account_row_uses_complete_note_population() -> N
 
 
 @pytest.mark.asyncio
+async def test_snapshot_bundle_exposes_facts_and_metadata_from_same_population() -> None:
+    await creator_stats.upsert_notes([_note(index) for index in range(3)])
+
+    bundle = await creator_stats.get_creator_stats_snapshot_bundle("acc-a")
+    snapshot = await creator_stats.get_creator_stats_snapshot("acc-a")
+
+    assert bundle["account_id"] == "acc-a"
+    assert bundle["account"] is None
+    assert len(bundle["notes"]) == 3
+    assert bundle["note_count"] == len(bundle["notes"])
+    assert bundle["snapshot_id"] == snapshot["snapshot_id"]
+    assert bundle["data_as_of"] == snapshot["data_as_of"]
+
+
+@pytest.mark.asyncio
 async def test_postgres_page_snapshot_reads_all_notes_without_account_row() -> None:
     """Legacy Postgres rows must share one full-population snapshot across pages."""
 

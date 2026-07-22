@@ -68,6 +68,7 @@ async function readHistoricalNotes(accountId: string, cursor: string | null = nu
     next_cursor: null,
     data_as_of: legacy.data_as_of ?? legacy.fetched_at ?? null,
     snapshot_id: legacy.snapshot_id ?? null,
+    engagement_rate_unit: legacy.engagement_rate_unit,
   }
 }
 

@@ -224,6 +224,39 @@ async def test_quality_endpoint_uses_all_history_over_display_limit_and_is_read_
 
 
 @pytest.mark.asyncio
+async def test_quality_endpoint_uses_one_snapshot_bundle_for_notes_and_metadata():
+    note = _note("bundle_note", engagement_rate=0.12, likes=120, collects=30)
+    bundle = {
+        "account_id": "quality_acc",
+        "account": None,
+        "notes": [note],
+        "note_count": 1,
+        "data_as_of": "2026-07-22T10:00:00Z",
+        "snapshot_id": "snapshot:bundle",
+    }
+    client = TestClient(_app())
+
+    with pytest.MonkeyPatch.context() as mp:
+
+        async def _bundle(_account_id: str) -> dict[str, object]:
+            return bundle
+
+        async def _unexpected_metadata(_account_id: str) -> dict[str, object]:
+            raise AssertionError("quality route must not read a second snapshot")
+
+        mp.setattr(analytics_routes, "_creator_snapshot_bundle", _bundle)
+        mp.setattr(analytics_routes, "_creator_snapshot_metadata", _unexpected_metadata)
+        response = client.get("/api/analytics/creator-stats/quality_acc/quality")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total_notes"] == 1
+    assert data["notes_analyzed"] == 1
+    assert data["snapshot_id"] == "snapshot:bundle"
+    assert data["data_as_of"] == "2026-07-22T10:00:00Z"
+
+
+@pytest.mark.asyncio
 async def test_single_note_detail_and_quality_endpoints_are_read_only():
     note = _note(
         "detail_001",

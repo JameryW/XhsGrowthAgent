@@ -16,7 +16,7 @@ from backend.services.creator_stats.suggestions import (
     get_suggestions_for_mode,
     suggestions_from_analysis,
 )
-from backend.services.creator_stats.types import AnalysisResult
+from backend.services.creator_stats.types import AnalysisResult, NoteStats
 
 
 @pytest.fixture(autouse=True)
@@ -136,6 +136,52 @@ async def test_dashboard_includes_imported_notes_for_frontend_path():
     # Insight mentions creator-center import path
     messages = " ".join(i["message"] for i in report["insights"])
     assert "创作者中心" in messages or report["metrics"]["total_posts"] > 0
+
+
+@pytest.mark.asyncio
+async def test_dashboard_uses_bundle_notes_and_snapshot_without_re_reading_metadata():
+    recent = (datetime.now(UTC) - timedelta(hours=12)).isoformat()
+    bundle_note = NoteStats(
+        note_id="bundle_dash_note",
+        account_id="bundle_dash",
+        title="同一批次",
+        views=1000,
+        likes=100,
+        published_at=recent,
+        synced_at="2026-07-22T10:00:00Z",
+        engagement_rate=0.1,
+    )
+    bundle = {
+        "account_id": "bundle_dash",
+        "account": None,
+        "notes": [bundle_note],
+        "note_count": 1,
+        "data_as_of": "2026-07-22T10:00:00Z",
+        "snapshot_id": "snapshot:bundle-dash",
+    }
+    client = TestClient(_app())
+
+    with pytest.MonkeyPatch.context() as mp:
+
+        async def _empty(*_a, **_k):
+            return []
+
+        async def _bundle(_account_id: str) -> dict[str, object]:
+            return bundle
+
+        async def _unexpected_metadata(_account_id: str) -> dict[str, object]:
+            raise AssertionError("dashboard must not read a second snapshot")
+
+        mp.setattr(analytics_routes, "_get_completed_workflows", _empty)
+        mp.setattr(analytics_routes, "_creator_snapshot_bundle", _bundle)
+        mp.setattr(analytics_routes, "_creator_snapshot_metadata", _unexpected_metadata)
+        response = client.get("/api/analytics/dashboard/bundle_dash?period=weekly&limit=20")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["snapshot_id"] == "snapshot:bundle-dash"
+    assert data["performance"]["posts"][0]["id"] == "bundle_dash_note"
+    assert data["report"]["metrics"]["total_posts"] == 1
 
 
 @pytest.mark.asyncio

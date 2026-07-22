@@ -356,6 +356,7 @@ export async function getCreatorNotes(
       next_cursor: null,
       data_as_of: legacy.data_as_of ?? legacy.fetched_at ?? null,
       snapshot_id: legacy.snapshot_id ?? null,
+      engagement_rate_unit: legacy.engagement_rate_unit,
       query: {
         sort: query.sort ?? 'published_at_desc',
         published_from: query.published_from ?? null,
@@ -395,6 +396,8 @@ export async function getCreatorNotes(
       limit: legacy.limit ?? Math.min(requestedLimit, 200),
       next_cursor: null,
       data_as_of: legacy.data_as_of ?? legacy.fetched_at ?? null,
+      snapshot_id: legacy.snapshot_id ?? null,
+      engagement_rate_unit: legacy.engagement_rate_unit,
       query: {
         sort: params.sort,
         published_from: query.published_from ?? null,

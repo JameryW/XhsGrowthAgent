@@ -32,10 +32,15 @@ interface CreatorStatsResponse {
   account: CreatorAccountStats | null;
   notes: CreatorNoteStats[];
   total: number;
+  engagement_rate_unit?: "fraction" | "percent" | string;
+  data_as_of?: string | null;
+  snapshot_id?: string | null;
 }
 
-function formatPercent(value: number | undefined): string {
+function formatPercent(value: number | undefined, unit?: string): string {
   const rate = Number(value) || 0;
+  if (unit === "percent") return `${rate.toFixed(2)}%`;
+  if (unit === "fraction") return `${(rate * 100).toFixed(2)}%`;
   return `${(rate <= 1 ? rate * 100 : rate).toFixed(2)}%`;
 }
 
@@ -76,11 +81,11 @@ export default function register(pi: ExtensionAPI) {
         const topNotes = [...notes]
           .sort((a, b) => (Number(b.engagement_rate) || 0) - (Number(a.engagement_rate) || 0) || (b.views || 0) - (a.views || 0))
           .slice(0, 5);
-        lines.push(`  Loaded: ${notes.length}/${result.total || notes.length} notes; average note engagement: ${formatPercent(averageRate)}`);
+        lines.push(`  Loaded: ${notes.length}/${result.total || notes.length} notes; average note engagement: ${formatPercent(averageRate, result.engagement_rate_unit)}`);
         lines.push("  Top notes by engagement:");
         for (const [index, note] of topNotes.entries()) {
           lines.push(
-            `  ${index + 1}. ${note.title || "(untitled)"} — ${formatPercent(note.engagement_rate)}; ${note.views || 0} views; ❤️${note.likes || 0} ⭐${note.collects || 0} 💬${note.comments || 0}`,
+            `  ${index + 1}. ${note.title || "(untitled)"} — ${formatPercent(note.engagement_rate, result.engagement_rate_unit)}; ${note.views || 0} views; ❤️${note.likes || 0} ⭐${note.collects || 0} 💬${note.comments || 0}`,
           );
         }
         return textResult(lines.join("\n"), { ...result });

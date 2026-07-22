@@ -365,6 +365,11 @@ ERROR_CREATOR_NOTE_NOT_FOUND 404 response.
   `data_as_of`/`snapshot_id` in canonical pages, Analytics, and quality/detail
   responses. It is read-only and must include the complete account population,
   including legacy Postgres rows where no account overview row exists.
+- Consumers that both calculate from imported notes and return snapshot
+  metadata should use the read-only `get_creator_stats_snapshot_bundle`
+  contract (account + complete notes + metadata). They must not call
+  `list_all_note_stats` and then `get_creator_stats_snapshot` independently;
+  both values need the same repeatable-read boundary.
 - A Postgres canonical page must read its filtered count, selected rows, account
   row and complete note population in one explicit `REPEATABLE READ` transaction.
   The snapshot metadata is derived before that transaction is released; it must
