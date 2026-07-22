@@ -7,7 +7,7 @@ import { getEvaluationTrend } from '@/api/evaluation'
 import { getCreatorQuality, type CreatorQualityReport } from '@/api/analytics'
 import type { Account } from '@/api/accounts'
 import type { EvaluationTrendResponse } from '@/types/evaluation'
-import { SCORE_THRESHOLDS, scoreTier as scoreTierOf } from '@/constants/evaluation'
+import { SCORE_THRESHOLDS, scoreTier as scoreTierOf, DIMENSION_LABEL_KEYS } from '@/constants/evaluation'
 import { formatShortDate } from '@/utils/format'
 import { ALL_ACCOUNTS_ID } from '@/constants/qualityConsistency'
 
@@ -142,6 +142,20 @@ function scoreTierClass(score: number | null | undefined): string {
     default: return ''
   }
 }
+
+// Dimension chips must speak the UI language — the API returns raw keys like
+// "copywriting"; the detail view translates via the same shared map.
+function dimLabel(dim: string): string {
+  return t(DIMENSION_LABEL_KEYS[dim] ?? 'evaluation.dim.unknown', { dim })
+}
+
+// Backend timestamps arrive as raw ISO; render them like every other
+// data-as-of on the page, falling back to the raw string when unparseable.
+function formatDataAsOf(value: string | null | undefined): string {
+  if (!value) return ''
+  const formatted = formatShortDate(value, locale.value)
+  return formatted === '—' ? value : formatted
+}
 </script>
 
 <template>
@@ -150,19 +164,10 @@ function scoreTierClass(score: number | null | undefined): string {
     <div class="ov-blob ov-blob-b" aria-hidden="true" />
 
     <div class="relative">
-      <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div class="min-w-0">
-          <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-violet-700 dark:text-violet-300">
-            <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-rose-500 shadow-sm">
-              <AppIcon name="ClipboardCheck" size="sm" variant="white" />
-            </span>
-            {{ t('evaluation.overview.eyebrow') }}
-          </div>
-          <h2 class="mt-3 text-xl font-semibold tracking-tight text-slate-800 md:text-2xl dark:text-slate-100">
-            {{ t('evaluation.overview.title') }}
-          </h2>
-        </div>
-
+      <!-- The band's own eyebrow/title duplicated the PageHeader directly
+           above (same scope, same message); the strip now opens with the
+           account selector. aria-label on the section keeps the landmark. -->
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-end">
         <div v-if="accounts.length" class="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
           <label class="min-w-0 flex-1 lg:w-64">
             <span class="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
@@ -233,7 +238,7 @@ function scoreTierClass(score: number | null | undefined): string {
                 class="dim-avg-chip"
                 :class="scoreTierClass(v)"
               >
-                {{ k }}: {{ v.toFixed(1) }}
+                {{ dimLabel(String(k)) }}: {{ v.toFixed(1) }}
               </span>
             </div>
           </template>
@@ -242,7 +247,7 @@ function scoreTierClass(score: number | null | undefined): string {
             <button type="button" class="retry-btn min-h-[36px]" @click="retryTrend">{{ t('evaluation.trend.retry') }}</button>
           </div>
           <p v-else class="ov-hint">{{ t('evaluation.trend.empty') }}</p>
-          <p v-if="trend?.data_as_of" class="ov-meta">{{ t('evaluation.dataAsOf') }} {{ trend.data_as_of }}</p>
+          <p v-if="trend?.data_as_of" class="ov-meta">{{ t('evaluation.dataAsOf') }} {{ formatDataAsOf(trend.data_as_of) }}</p>
         </div>
 
         <!-- 融合 KPI -->

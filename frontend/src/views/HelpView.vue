@@ -82,7 +82,9 @@ async function copyFeedbackTemplate() {
 
     <section v-if="activeSection === 'faq'" class="space-y-3" aria-labelledby="faq-title">
       <div class="flex items-center justify-between px-1">
-        <h2 id="faq-title" class="text-base font-semibold text-slate-700">{{ t('help.faqTitle') }}</h2>
+        <!-- Kept for the section landmark only; the active tab already says
+             "常见问题" visibly. -->
+        <h2 id="faq-title" class="sr-only">{{ t('help.faqTitle') }}</h2>
         <button class="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm text-violet-600 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-950/40" @click="openShortcuts">
           <AppIcon name="Keyboard" size="sm" variant="purple" aria-hidden="true" />
           {{ t('help.openShortcuts') }}

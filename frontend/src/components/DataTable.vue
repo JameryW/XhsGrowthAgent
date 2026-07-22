@@ -148,10 +148,5 @@ function ariaSortFor(key: string): 'ascending' | 'descending' | 'none' {
         {{ row[col.key] }}
       </div>
     </div>
-
-    <!-- Footer -->
-    <div v-if="hasData" class="px-3 md:px-4 py-2 md:py-3 border-t border-slate-100 bg-slate-50/50 text-[10px] md:text-xs text-slate-500 text-center font-medium dark:border-slate-700/50 dark:bg-slate-800/50 dark:text-slate-400" role="rowgroup">
-      {{ t('dataTable.records', { count: props.data.length }) }}
-    </div>
   </div>
 </template>

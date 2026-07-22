@@ -222,7 +222,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
       tone="purple"
     >
       <template #meta>
-        <span>{{ total }} · {{ t('history.records') }}</span>
+        <span>{{ t('history.records', { count: total }) }}</span>
       </template>
       <template #actions>
         <NeonButton variant="ghost" size="sm" class="min-h-11" @click="fetchWorkflows" :loading="isLoading">
@@ -305,7 +305,9 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
               </div>
               <div class="flex items-center gap-2 md:gap-3 mt-0.5 md:mt-1 text-[10px] md:text-xs text-slate-400">
                 <span>{{ phaseLabel(wf.phase) }}</span>
-                <span>{{ statusLabel(wf.status) }}</span>
+                <!-- Status is only shown when it adds information beyond the
+                     phase label (both read "已完成" for finished runs). -->
+                <span v-if="statusLabel(wf.status) !== phaseLabel(wf.phase)">{{ statusLabel(wf.status) }}</span>
                 <span>{{ formatDate(wf.created_at) }}</span>
               </div>
             </div>

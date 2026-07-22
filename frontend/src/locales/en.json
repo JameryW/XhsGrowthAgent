@@ -546,7 +546,7 @@
   "review": {
     "title": "Content Review",
     "subtitle": "Awaiting Your Decision",
-    "pendingApproval": "Pending Review",
+    "pendingCount": "{count} pending",
     "copyContent": "Copy Content",
     "copyContentEn": "Copy Content",
     "visualPlan": "Visual Plan",
@@ -719,7 +719,6 @@
   },
   "analytics": {
     "title": "Analytics Center",
-    "analyticsLabel": "Analytics",
     "postsPublished": "Posts Published",
     "totalViews": "Total Views",
     "totalEngagement": "Total Engagement",
@@ -733,11 +732,10 @@
     "recentPerformanceTrend": "Recent performance trend",
     "engagementBreakdown": "Engagement Breakdown",
     "recentPosts": "Recent Post Performance",
-    "top10": "TOP 10",
     "history": {
       "title": "Historical notes",
       "loadedCount": "Loaded {loaded} / {total}",
-      "showLoaded": "Show {loaded} / {total} · View all",
+      "showAll": "Show all",
       "loadMore": "Load more historical notes",
       "retry": "Retry",
       "dataAsOf": "Historical data as of {time}",
@@ -799,15 +797,13 @@
     "month": "This Month",
     "year": "This Year",
     "account": "Account",
-    "period": "Period",
     "refresh": "Refresh",
     "refreshing": "Refreshing...",
     "lastUpdated": "Updated at {time}",
     "empty": {
       "title": "No Analytics Data",
       "description": "Start creating and publish content to see performance analytics here.",
-      "startWorkflow": "Start Creating",
-      "importHint": "You can also import historical notes from Creator Center to bind a niche and get creative suggestions."
+      "startWorkflow": "Start Creating"
     },
     "error": {
       "title": "Failed to Load Data",
@@ -896,7 +892,6 @@
     "title": "Historical Note Published Performance",
     "subtitle": "A read-only published-performance signal from imported note engagement, saves, titles, and consistency",
     "page": {
-      "eyebrow": "Account-level creative diagnosis",
       "hubSubtitle": "Review published performance and single-workflow content reviews in one place",
       "tab": "Published performance",
       "workflowTab": "Single-content evaluation",
@@ -1123,8 +1118,7 @@
   "dataTable": {
     "title": "Data Table",
     "noData": "No data",
-    "noDataDesc": "Waiting for data to load or operations to generate",
-    "records": "{count} records"
+    "noDataDesc": "Waiting for data to load or operations to generate"
   },
   "errorBoundary": {
     "componentError": "Component Error",
@@ -1224,7 +1218,6 @@
     "tabError": "Error",
     "tabCompleted": "Completed",
     "tabStale": "Stale",
-    "tabPaused": "Paused",
     "overflowMore": "More",
     "checkpointLost": "Workflow content data was lost after a container restart. Please restart the workflow.",
     "checkpointLostTitle": "Data Lost",
@@ -1235,7 +1228,7 @@
   "history": {
     "title": "Workflow History",
     "subtitle": "View and manage past workflows",
-    "records": "records",
+    "records": "{count} records",
     "refresh": "Refresh history",
     "empty": "No workflow history",
     "emptyDesc": "Start your first creation to begin your content growth journey",
@@ -2169,9 +2162,7 @@
   },
   "evaluation": {
     "title": "Creation Quality Evaluation",
-    "subtitle": "RQGM agent-as-a-judge panel · 9-dimension scoring & revision hints",
     "overview": {
-      "eyebrow": "Performance + content review",
       "title": "Published performance and content review in one view",
       "accountScore": "Published performance score",
       "evaluated": "Evaluated workflows",
