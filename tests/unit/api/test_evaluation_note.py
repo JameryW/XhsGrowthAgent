@@ -107,7 +107,9 @@ class TestRunNoteEvaluation:
         assert visual_plan["image_count"] == 0
 
     def test_missing_account_niche_is_explicitly_unavailable(self, client):
-        note = _note()
+        # Keep the fixture genuinely cold-start: a note with no niche signal
+        # should remain unavailable rather than silently using a default.
+        note = _note(title="随手记录", body_text="", tags=[])
         with (
             patch(_GET_NOTE, AsyncMock(return_value=note)),
             patch(_GET_ACCOUNT, AsyncMock(return_value=None)),

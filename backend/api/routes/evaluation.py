@@ -443,7 +443,10 @@ async def _historical_niche_context(
 
     bound_niche = (getattr(account, "niche", "") if account else "") or ""
     bound_source = (getattr(account, "niche_source", "") if account else "") or ""
-    if bound_niche.strip():
+    # Manual/account-bound values are explicit user context.  An inferred
+    # value is a reusable hint, not an immutable override: let the resolver
+    # re-check the current note before falling back to that hint.
+    if bound_niche.strip() and bound_source.strip() in {"manual", "account_bound"}:
         return (
             bound_niche.strip(),
             bound_source.strip() or "account_bound",
@@ -1069,7 +1072,12 @@ async def get_evaluator_trend(request: Request) -> ApiResponse[Any]:
         ):
             continue
         row_status = str(r.get("status") or "ready").lower()
-        if bool(r.get("degraded")) or row_status in {"degraded", "failed", "running"}:
+        if bool(r.get("degraded")) or row_status in {
+            "degraded",
+            "failed",
+            "running",
+            "unavailable",
+        }:
             continue
         if r.get("overall_score") is None:
             continue
