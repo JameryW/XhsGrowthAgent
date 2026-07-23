@@ -37,6 +37,13 @@ const route = useRoute()
 const workflowStore = useWorkflowStore()
 const accountsStore = useAccountsStore()
 
+// Keep the free-mode boundary close to the route so every input surface can
+// make the same decision. Free mode is intentionally thread-less.
+const isFreeCreationEntry = computed(() => route.query.mode === 'free')
+const freeCreationTopic = computed(() => (
+  typeof route.query.topic === 'string' ? route.query.topic : ''
+))
+
 /** Resolve the selected XHS account, not the console user's UUID. */
 async function getCurrentAccountId(): Promise<string> {
   if (!accountsStore.activeAccountId) {
@@ -94,7 +101,12 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectAttempts = 0
 const MAX_RECONNECT_ATTEMPTS = 3
 const wsConnected = ref(false)
+const wsConnecting = ref(false)
 const wsStatus = ref<'idle' | 'running' | 'streaming'>('idle')
+const MAX_PENDING_AGENT_MESSAGES = 5
+// Messages typed while the free-mode socket is connecting are kept only for
+// this component instance. They must never leak into another account/session.
+const pendingAgentMessages: string[] = []
 
 // ── CJK width calculation ─────────────────────────────────────────────
 // ponytail: inline wcwidth — avoids relying on experimental term.unicode API
@@ -544,66 +556,143 @@ function runQuickAction(command: string) {
 // ── WebSocket ───────────────────────────────────────────────────────────
 
 function connectAgentWs() {
-  if (ws && ws.readyState === WebSocket.OPEN) return
+  // A manual retry can happen while an automatic retry is already opening a
+  // socket. Reusing that attempt avoids duplicate agent sessions and mixed
+  // event streams.
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+  wsConnecting.value = true
 
   // Free mode appends ?mode=free so the backend registers only the free-mode
   // tool subset (no thread-bound workflow tools visible to the LLM).
   const wsUrl = isFreeCreationEntry.value
     ? `${WS_BASE_URL}?mode=free`
     : WS_BASE_URL
-  ws = new WebSocket(wsUrl)
+  let socket: WebSocket
+  try {
+    socket = new WebSocket(wsUrl)
+  } catch {
+    wsConnecting.value = false
+    writeLineColored(
+      isFreeCreationEntry.value ? t('tui.freeAgentUnavailable') : t('tui.agentUnavailable'),
+      ANSI.YELLOW,
+    )
+    return
+  }
+  ws = socket
 
-  ws.onopen = () => {
+  socket.onopen = () => {
+    if (ws !== socket) return
     wsConnected.value = true
+    wsConnecting.value = false
     reconnectAttempts = 0
     mode.value = 'agent'
-    writeLineColored('⚡ Agent mode connected', ANSI.BRIGHT_GREEN)
-    writePrompt()
+    writeLineColored(t('tui.agentConnected'), ANSI.BRIGHT_GREEN)
+    const queuedCount = flushPendingAgentMessages()
+    if (queuedCount > 0) {
+      isProcessing.value = true
+      writeLineColored(t('tui.freeQueuedMessagesSent', { count: queuedCount }), ANSI.DIM)
+    } else {
+      writePrompt()
+    }
   }
 
-  ws.onmessage = (ev: MessageEvent) => {
+  socket.onmessage = (ev: MessageEvent) => {
+    if (ws !== socket) return
     try {
       const event = JSON.parse(ev.data)
       handleAgentEvent(event)
     } catch { /* ignore malformed */ }
   }
 
-  ws.onclose = () => {
+  socket.onclose = () => {
+    if (ws !== socket) return
     wsConnected.value = false
+    wsConnecting.value = false
     if (mode.value === 'agent') {
       mode.value = 'command'
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts++
+        wsConnecting.value = true
         writeLineColored(t('tui.agentDisconnected', { cur: reconnectAttempts, max: MAX_RECONNECT_ATTEMPTS }), ANSI.YELLOW)
-        reconnectTimer = setTimeout(connectAgentWs, 3000)
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null
+          connectAgentWs()
+        }, 3000)
       } else {
         writeLineColored(t('tui.agentDisconnectedMax'), ANSI.RED)
+        isProcessing.value = false
         writePrompt()
       }
     }
   }
 
-  ws.onerror = () => { /* onclose will fire */ }
+  socket.onerror = () => { /* onclose will fire */ }
 }
 
 function disconnectAgentWs() {
   if (reconnectTimer) clearTimeout(reconnectTimer)
+  reconnectTimer = null
+  wsConnecting.value = false
   ws?.close()
   ws = null
   wsConnected.value = false
 }
 
-function sendAgentMessage(msg: Record<string, unknown>) {
+function sendAgentMessage(msg: Record<string, unknown>): boolean {
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg))
+    try {
+      ws.send(JSON.stringify(msg))
+      return true
+    } catch {
+      return false
+    }
   }
+  return false
+}
+
+function queueFreeAgentMessage(text: string) {
+  if (pendingAgentMessages.length >= MAX_PENDING_AGENT_MESSAGES) {
+    pendingAgentMessages.shift()
+    writeLineColored(t('tui.freeMessageQueueFull'), ANSI.YELLOW)
+  }
+  pendingAgentMessages.push(text)
+  writeLineColored(t('tui.freeMessageQueued'), ANSI.YELLOW)
+}
+
+function flushPendingAgentMessages(): number {
+  if (!ws || ws.readyState !== WebSocket.OPEN || pendingAgentMessages.length === 0) return 0
+  const queued = pendingAgentMessages.splice(0)
+  for (const content of queued) {
+    ws.send(JSON.stringify({ type: 'send_message', content }))
+  }
+  return queued.length
+}
+
+function sendFreeNewSession() {
+  if (sendAgentMessage({ type: 'new_session' })) {
+    writeLineColored(t('tui.freeNewSession'), ANSI.BRIGHT_GREEN)
+  } else {
+    writeLineColored(t('tui.freeAgentUnavailable'), ANSI.YELLOW)
+  }
+}
+
+function retryFreeAgentConnection() {
+  if (!isFreeCreationEntry.value || wsConnected.value || wsConnecting.value) return
+  reconnectAttempts = 0
+  mode.value = 'agent'
+  writeLineColored(t('tui.agentRetrying'), ANSI.YELLOW)
+  connectAgentWs()
 }
 
 function handleAgentEvent(event: Record<string, unknown>) {
   const type = event.type as string
 
   if (type === 'ready') {
-    writeLineColored('✓ Agent ready', ANSI.BRIGHT_GREEN)
+    writeLineColored(t('tui.agentReady'), ANSI.BRIGHT_GREEN)
     wsStatus.value = 'idle'
     writePrompt()
   } else if (type === 'agent_message') {
@@ -852,16 +941,45 @@ async function processAgentCommand(text: string) {
   if (text.startsWith('/')) {
     const [cmd] = text.split(/\s+/)
     switch (cmd) {
+      case '/start':
+        if (isFreeCreationEntry.value) {
+          sendFreeNewSession()
+        } else {
+          writeLineColored(t('tui.unknownCommand', { command: cmd }), ANSI.RED)
+        }
+        isProcessing.value = false; writePrompt()
+        break
       case '/status':
+        if (isFreeCreationEntry.value) {
+          writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
+          isProcessing.value = false; writePrompt()
+          break
+        }
         sendAgentMessage({ type: 'get_status' })
         isProcessing.value = false; writePrompt()
         break
       case '/new':
-        sendAgentMessage({ type: 'new_session' })
+        if (isFreeCreationEntry.value) {
+          sendFreeNewSession()
+        } else {
+          sendAgentMessage({ type: 'new_session' })
+        }
         isProcessing.value = false; writePrompt()
         break
       case '/abort':
         sendAgentMessage({ type: 'abort' })
+        isProcessing.value = false; writePrompt()
+        break
+      case '/pause':
+      case '/resume':
+      case '/cancel':
+      case '/approve':
+      case '/reject':
+        if (isFreeCreationEntry.value) {
+          writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
+        } else {
+          writeLineColored(t('tui.unknownCommand', { command: cmd }), ANSI.RED)
+        }
         isProcessing.value = false; writePrompt()
         break
       case '/mode':
@@ -925,7 +1043,15 @@ async function processAgentCommand(text: string) {
         isProcessing.value = false; writePrompt()
     }
   } else {
-    sendAgentMessage({ type: 'send_message', content: text })
+    if (!sendAgentMessage({ type: 'send_message', content: text })) {
+      if (isFreeCreationEntry.value) {
+        queueFreeAgentMessage(text)
+      } else {
+        writeLineColored(t('tui.agentUnavailable'), ANSI.YELLOW)
+      }
+      isProcessing.value = false
+      writePrompt()
+    }
   }
 }
 
@@ -935,7 +1061,10 @@ async function processCommandMode(text: string) {
     if (text.startsWith('/')) {
       await processSlashCommand(text)
     } else if (isFreeCreationEntry.value) {
-      writeLineColored(t('tui.freeAgentUnavailable'), ANSI.YELLOW)
+      // onclose falls back to command mode so the terminal remains usable.
+      // Keep free-mode natural-language input semantics and hold it until the
+      // agent reconnects instead of forcing the user to retype the message.
+      queueFreeAgentMessage(text)
     } else {
       await handleStart(text)
     }
@@ -954,8 +1083,7 @@ async function processSlashCommand(cmd: string) {
   switch (command) {
     case '/start':
       if (isFreeCreationEntry.value) {
-        sendAgentMessage({ type: 'new_session' })
-        writeLineColored(t('tui.freeNewSession'), ANSI.BRIGHT_GREEN)
+        sendFreeNewSession()
       } else {
         await handleStart(arg || undefined)
       }
@@ -1667,11 +1795,27 @@ function showHelp() {
 // ── Status bar computed ────────────────────────────────────────────────
 
 const modeLabel = computed(() => mode.value === 'agent' ? t('tui.modeLabelAgent') : t('tui.modeLabelCmd'))
-// ponytail: modeIndicatorColor removed — mode badge uses :class binding directly
-const isFreeCreationEntry = computed(() => route.query.mode === 'free')
-const freeCreationTopic = computed(() => (
-  typeof route.query.topic === 'string' ? route.query.topic : ''
-))
+const freeConnectionState = computed<'connected' | 'connecting' | 'disconnected'>(() => {
+  if (wsConnected.value) return 'connected'
+  if (wsConnecting.value) return 'connecting'
+  return 'disconnected'
+})
+const freeConnectionLabel = computed(() => {
+  if (!isFreeCreationEntry.value) return ''
+  if (freeConnectionState.value === 'connected') return t('tui.agentConnectionConnected')
+  if (freeConnectionState.value === 'connecting') return t('tui.agentConnectionConnecting')
+  return t('tui.agentConnectionDisconnected')
+})
+const mobileInputPlaceholder = computed(() => {
+  if (isFreeCreationEntry.value) {
+    return wsConnected.value
+      ? t('tui.messagePlaceholder')
+      : t('tui.freeMessageQueuedPlaceholder')
+  }
+  return mode.value === 'agent' && wsConnected.value
+    ? t('tui.messagePlaceholder')
+    : t('tui.commandPlaceholder')
+})
 const accountContextLabel = computed(() => accountsStore.activeAccount?.name || t('tui.defaultAccount'))
 
 // ── Lifecycle ───────────────────────────────────────────────────────────
@@ -1878,9 +2022,10 @@ onUnmounted(() => {
   <div class="tui-container h-[calc(100dvh-4rem)] flex flex-col" @click="closeContextMenu">
     <!-- Status bar — native TUI style -->
     <div class="tui-statusbar flex items-center gap-2 px-3 py-1 shrink-0">
-      <div class="tui-status-dot" :class="wsConnected ? 'connected' : 'disconnected'" />
+      <div class="tui-status-dot" :class="freeConnectionState" />
       <span class="tui-status-label">{{ t('tui.statusLabel') }}</span>
-      <span class="tui-mode-badge" :class="mode === 'agent' && wsConnected ? 'mode-agent' : 'mode-cmd'">{{ modeLabel }}</span>
+      <span class="tui-mode-badge" :class="mode === 'agent' ? 'mode-agent' : 'mode-cmd'">{{ modeLabel }}</span>
+      <span v-if="isFreeCreationEntry" class="tui-connection-state" :class="`state-${freeConnectionState}`" role="status" aria-live="polite">{{ freeConnectionLabel }}</span>
       <span v-if="activeThreadId" class="tui-thread-id">{{ activeThreadId.slice(0, 8) }}</span>
       <div class="flex-1" />
       <span v-if="isProcessing" class="tui-running-indicator">● {{ t('tui.processing') }}</span>
@@ -1896,9 +2041,11 @@ onUnmounted(() => {
     <div v-if="isFreeCreationEntry" class="tui-quick-actions flex flex-wrap items-center gap-2 px-3 py-2 shrink-0">
       <span class="tui-account-context">{{ t('tui.accountContext', { account: accountContextLabel }) }}</span>
       <span class="tui-quick-label">{{ t('tui.quickActions') }}</span>
+      <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/start')">{{ t('tui.quickNewSession') }}</button>
       <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/suggest')">{{ t('tui.quickSuggest') }}</button>
       <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/drafts')">{{ t('tui.quickDrafts') }}</button>
       <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/help')">{{ t('tui.quickHelp') }}</button>
+      <button v-if="freeConnectionState === 'disconnected'" class="tui-quick-btn tui-quick-btn-retry" :disabled="isProcessing" @click.stop="retryFreeAgentConnection">{{ t('tui.quickReconnect') }}</button>
     </div>
 
     <!-- Search bar — native terminal search -->
@@ -1929,11 +2076,16 @@ onUnmounted(() => {
       <input
         v-model="mobileInput"
         class="tui-mobile-input flex-1"
-        :placeholder="mode === 'agent' && wsConnected ? t('tui.messagePlaceholder') : t('tui.commandPlaceholder')"
+        :placeholder="mobileInputPlaceholder"
         enterkeyhint="send"
         @keydown.enter="submitMobileInput"
       />
-      <button class="tui-mobile-send" @click="submitMobileInput">↵</button>
+      <button
+        class="tui-mobile-send"
+        :disabled="!mobileInput.trim()"
+        :aria-label="t('tui.mobileSend')"
+        @click="submitMobileInput"
+      >↵</button>
     </div>
 
     <!-- Context menu -->
@@ -1989,6 +2141,11 @@ onUnmounted(() => {
 .tui-status-dot.disconnected {
   background: #414868;
 }
+.tui-status-dot.connecting {
+  background: #e0af68;
+  box-shadow: 0 0 4px 1px #e0af6840;
+  animation: pulse-glow 1.2s ease-in-out infinite;
+}
 
 @keyframes pulse-glow {
   0%, 100% { opacity: 1; }
@@ -2021,6 +2178,15 @@ onUnmounted(() => {
   color: #e0af68;
   border: 1px solid #e0af6830;
 }
+
+.tui-connection-state {
+  font-size: 10px;
+  padding-left: 4px;
+  white-space: nowrap;
+}
+.tui-connection-state.state-connected { color: #9ece6a; }
+.tui-connection-state.state-connecting { color: #e0af68; }
+.tui-connection-state.state-disconnected { color: #f7768e; }
 
 .tui-thread-id {
   color: #414868;
@@ -2085,6 +2251,7 @@ onUnmounted(() => {
 }
 .tui-quick-btn:hover { color: #c0caf5; border-color: #7aa2f7; }
 .tui-quick-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.tui-quick-btn-retry { color: #e0af68; border-color: #e0af6860; }
 
 /* ── Search bar — flat, terminal-native ─────────────────────────────── */
 .tui-searchbar {
@@ -2216,6 +2383,11 @@ onUnmounted(() => {
 .tui-mobile-send:active {
   background: #565f89;
   transform: translateY(1px); /* ponytail: tactile press feedback */
+}
+.tui-mobile-send:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
 }
 
 /* ── Context menu — sharp, flat, native ─────────────────────────────── */

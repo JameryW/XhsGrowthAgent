@@ -564,6 +564,31 @@ discovers draft management without typing `/help` first:
 - `/analytics <id>` is listed (shipped via the post-publish analytics PR).
 - Non-free (trend/brief) banner is unchanged (`terminalHint` → `/help`).
 
+### Agent dispatch and connection recovery
+
+The free entry defaults to Agent mode, so command behavior must be correct in
+that dispatcher before a user switches to command mode:
+
+- `processAgentCommand` and `processSlashCommand` both recognize `/start` in
+  free mode. It sends `new_session` and only reports the session reset after
+  the WebSocket accepted the message. `/start` must not fall through to
+  `unknownCommand` in the default Agent mode.
+- Workflow commands (`/status`, `/pause`, `/resume`, `/cancel`, `/approve`,
+  `/reject`) remain isolated in both dispatchers and show the localized
+  `freeWorkflowOpDisabled` message.
+- The status bar exposes three local connection states: connected, connecting
+  (including an automatic-reconnect timer), and disconnected. Once automatic
+  retries are exhausted, the free entry exposes a manual retry action. A retry
+  must not open a second socket while an existing socket is CONNECTING or OPEN.
+- Natural-language messages entered in free mode while the socket is not OPEN
+  are held in a bounded, in-memory queue for the current TUI instance. The
+  queue is flushed in entry order after the socket opens; it is not persisted
+  across unmounts, accounts, or sessions. The UI tells the user when a message
+  is queued and when queued messages are sent. Fixed workflow mode does not use
+  this queue.
+- On mobile, the free-mode input keeps creation/message wording while
+  connecting or disconnected, and the send control is disabled for blank input.
+
 ## Scenario: Historical-note RQGM contract (thread-less and durable)
 
 ### 1. Scope / Trigger
