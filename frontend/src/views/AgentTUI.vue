@@ -66,6 +66,9 @@ let searchAddon: SearchAddon | null = null
 // ── State ───────────────────────────────────────────────────────────────
 const activeThreadId = ref<string | null>(null)
 const isProcessing = ref(false)
+// Distinguish an in-flight Agent turn from local free-mode commands such as
+// /suggest and /drafts. The stop control is driven by this narrower state.
+const agentTurnProcessing = ref(false)
 const currentInput = ref('')
 const cursorPos = ref(0)
 const commandHistory = ref<string[]>([])
@@ -107,6 +110,7 @@ const MAX_PENDING_AGENT_MESSAGES = 5
 // Messages typed while the free-mode socket is connecting are kept only for
 // this component instance. They must never leak into another account/session.
 const pendingAgentMessages: string[] = []
+const pendingAgentMessageCount = ref(0)
 // A new-session request is kept separately so it can invalidate older queued
 // messages and be sent before messages typed after the reset request.
 let pendingFreeNewSession = false
@@ -283,8 +287,8 @@ function handleTermData(data: string) {
     tabComplete()
   } else if (data === '\x03') {
     // Ctrl+C
-    if (mode.value === 'agent' && isProcessing.value) {
-      sendAgentMessage({ type: 'abort' })
+    if (mode.value === 'agent' && agentTurnProcessing.value) {
+      requestAgentAbort(false)
     }
     writeLineColored('^C', ANSI.YELLOW)
     currentInput.value = ''
@@ -641,6 +645,7 @@ function connectAgentWs() {
       isProcessing.value = false
       writeLineColored(t('tui.agentTurnInterrupted'), ANSI.YELLOW)
     }
+    agentTurnProcessing.value = false
     if (mode.value === 'agent') {
       mode.value = 'command'
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
@@ -670,6 +675,7 @@ function disconnectAgentWs() {
   ws = null
   socket?.close()
   wsConnected.value = false
+  agentTurnProcessing.value = false
 }
 
 function sendAgentMessage(msg: Record<string, unknown>): boolean {
@@ -690,7 +696,13 @@ function queueFreeAgentMessage(text: string) {
     writeLineColored(t('tui.freeMessageQueueFull'), ANSI.YELLOW)
   }
   pendingAgentMessages.push(text)
+  pendingAgentMessageCount.value = pendingAgentMessages.length
   writeLineColored(t('tui.freeMessageQueued'), ANSI.YELLOW)
+}
+
+function clearPendingAgentMessages() {
+  pendingAgentMessages.length = 0
+  pendingAgentMessageCount.value = 0
 }
 
 function flushPendingAgentMessages(): { queuedCount: number; startedNewSession: boolean } {
@@ -704,6 +716,7 @@ function flushPendingAgentMessages(): { queuedCount: number; startedNewSession: 
       return { queuedCount: 0, startedNewSession: false }
     }
     pendingFreeNewSession = false
+    agentTurnProcessing.value = false
     startedNewSession = true
   }
 
@@ -712,22 +725,36 @@ function flushPendingAgentMessages(): { queuedCount: number; startedNewSession: 
     const content = pendingAgentMessages[0]
     if (!sendAgentMessage({ type: 'send_message', content })) break
     pendingAgentMessages.shift()
+    pendingAgentMessageCount.value = pendingAgentMessages.length
     queuedCount++
   }
+  if (queuedCount > 0) agentTurnProcessing.value = true
   return { queuedCount, startedNewSession }
 }
 
 function sendFreeNewSession() {
   // Any messages waiting before /start belong to the old context and must
   // never cross the session boundary.
-  pendingAgentMessages.length = 0
+  clearPendingAgentMessages()
   pendingFreeNewSession = true
+  agentTurnProcessing.value = false
   if (sendAgentMessage({ type: 'new_session' })) {
     pendingFreeNewSession = false
     writeLineColored(t('tui.freeNewSession'), ANSI.BRIGHT_GREEN)
   } else {
     writeLineColored(t('tui.freeNewSessionQueued'), ANSI.YELLOW)
   }
+}
+
+function requestAgentAbort(writeTerminalPrompt = true) {
+  const sent = sendAgentMessage({ type: 'abort' })
+  agentTurnProcessing.value = false
+  isProcessing.value = false
+  writeLineColored(
+    sent ? t('tui.agentAbortRequested') : (isFreeCreationEntry.value ? t('tui.freeAgentUnavailable') : t('tui.agentUnavailable')),
+    ANSI.YELLOW,
+  )
+  if (writeTerminalPrompt) writePrompt()
 }
 
 function retryFreeAgentConnection() {
@@ -756,6 +783,7 @@ function handleAgentEvent(event: Record<string, unknown>) {
       // ponytail: dim rule closes the AI reply block, separates it from the next prompt
       writeLine('')
       writeLineColored(`${'─'.repeat(Math.max(8, Math.min(termCols - 2, 40)))}`, ANSI.DIM)
+      agentTurnProcessing.value = false
       isProcessing.value = false
       writePrompt()
     }
@@ -779,14 +807,22 @@ function handleAgentEvent(event: Record<string, unknown>) {
   } else if (type === 'status') {
     const status = event.status as string
     wsStatus.value = status as 'idle' | 'running' | 'streaming'
-    if (status === 'running') isProcessing.value = true
-    else if (status === 'idle') { isProcessing.value = false; writePrompt() }
+    if (status === 'running') {
+      agentTurnProcessing.value = true
+      isProcessing.value = true
+    } else if (status === 'idle') {
+      agentTurnProcessing.value = false
+      isProcessing.value = false
+      writePrompt()
+    }
   } else if (type === 'session_end') {
+    agentTurnProcessing.value = false
     isProcessing.value = false
     writePrompt()
   } else if (type === 'error') {
     // ponytail: 2-space indent aligns with ▸/↳ tool block; red mark + default-color msg for hierarchy
     writeLine(`  ${ANSI.RED}⚠${ANSI.RESET} ${event.message || t('tui.unknownError')}`)
+    agentTurnProcessing.value = false
     isProcessing.value = false
     writePrompt()
   }
@@ -1017,8 +1053,7 @@ async function processAgentCommand(text: string) {
         isProcessing.value = false; writePrompt()
         break
       case '/abort':
-        sendAgentMessage({ type: 'abort' })
-        isProcessing.value = false; writePrompt()
+        requestAgentAbort()
         break
       case '/pause':
       case '/resume':
@@ -1093,7 +1128,9 @@ async function processAgentCommand(text: string) {
         isProcessing.value = false; writePrompt()
     }
   } else {
-    if (!sendAgentMessage({ type: 'send_message', content: text })) {
+    if (sendAgentMessage({ type: 'send_message', content: text })) {
+      agentTurnProcessing.value = true
+    } else {
       if (isFreeCreationEntry.value) {
         queueFreeAgentMessage(text)
       } else {
@@ -2076,6 +2113,7 @@ onUnmounted(() => {
       <span class="tui-status-label">{{ t('tui.statusLabel') }}</span>
       <span class="tui-mode-badge" :class="mode === 'agent' ? 'mode-agent' : 'mode-cmd'">{{ modeLabel }}</span>
       <span v-if="isFreeCreationEntry" class="tui-connection-state" :class="`state-${freeConnectionState}`" role="status" aria-live="polite">{{ freeConnectionLabel }}</span>
+      <span v-if="isFreeCreationEntry && pendingAgentMessageCount > 0" class="tui-queue-state" role="status" aria-live="polite">{{ t('tui.queuePending', { count: pendingAgentMessageCount }) }}</span>
       <span v-if="activeThreadId" class="tui-thread-id">{{ activeThreadId.slice(0, 8) }}</span>
       <div class="flex-1" />
       <span v-if="isProcessing" class="tui-running-indicator">● {{ t('tui.processing') }}</span>
@@ -2091,6 +2129,7 @@ onUnmounted(() => {
     <div v-if="isFreeCreationEntry" class="tui-quick-actions flex flex-wrap items-center gap-2 px-3 py-2 shrink-0">
       <span class="tui-account-context">{{ t('tui.accountContext', { account: accountContextLabel }) }}</span>
       <span class="tui-quick-label">{{ t('tui.quickActions') }}</span>
+      <button v-if="agentTurnProcessing" class="tui-quick-btn tui-quick-btn-stop" @click.stop="requestAgentAbort()">{{ t('tui.quickStop') }}</button>
       <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/start')">{{ t('tui.quickNewSession') }}</button>
       <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/suggest')">{{ t('tui.quickSuggest') }}</button>
       <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/drafts')">{{ t('tui.quickDrafts') }}</button>
@@ -2246,6 +2285,11 @@ onUnmounted(() => {
 .tui-connection-state.state-connected { color: #9ece6a; }
 .tui-connection-state.state-connecting { color: #e0af68; }
 .tui-connection-state.state-disconnected { color: #f7768e; }
+.tui-queue-state {
+  color: #e0af68;
+  font-size: 10px;
+  white-space: nowrap;
+}
 
 .tui-thread-id {
   color: #414868;
@@ -2311,6 +2355,8 @@ onUnmounted(() => {
 .tui-quick-btn:hover { color: #c0caf5; border-color: #7aa2f7; }
 .tui-quick-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .tui-quick-btn-retry { color: #e0af68; border-color: #e0af6860; }
+.tui-quick-btn-stop { color: #f7768e; border-color: #f7768e80; }
+.tui-quick-btn-stop:hover { color: #ff9eaf; border-color: #f7768e; }
 
 .tui-prompt-actions {
   background: #16161e;
