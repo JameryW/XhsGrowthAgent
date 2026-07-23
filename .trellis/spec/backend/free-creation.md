@@ -586,8 +586,20 @@ that dispatcher before a user switches to command mode:
   across unmounts, accounts, or sessions. The UI tells the user when a message
   is queued and when queued messages are sent. Fixed workflow mode does not use
   this queue.
+- A free-mode `/start` or new-session action invalidates messages already in
+  that queue. If the socket is unavailable, the new-session intent is held in
+  memory; after reconnect, `new_session` is sent before messages entered after
+  the reset action. The UI must distinguish this queued reset from an action
+  that failed to run.
+- If the socket closes while a turn is locally marked as processing, the TUI
+  clears the processing state and tells the user that the streamed response may
+  be incomplete. A later reconnect restores input availability; it does not
+  claim to resume the lost stream.
 - On mobile, the free-mode input keeps creation/message wording while
   connecting or disconnected, and the send control is disabled for blank input.
+- Free mode exposes editable natural-language example prompts. Clicking an
+  example only prefills the desktop terminal line or mobile input; it must not
+  submit an Agent request without explicit user confirmation.
 
 ## Scenario: Historical-note RQGM contract (thread-less and durable)
 

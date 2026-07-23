@@ -169,4 +169,69 @@ describe('AgentTUI free creation interaction contract', () => {
     expect(terminal.lines.join('\n')).toContain('已发送暂存消息')
     wrapper.unmount()
   })
+
+  it('starts a new session before messages typed after the reset request', async () => {
+    const { wrapper, terminal, socket } = await mountFreeTui()
+
+    terminal.type('旧会话里的消息')
+    terminal.type('\r')
+    terminal.type('/start')
+    terminal.type('\r')
+    terminal.type('新会话里的消息')
+    terminal.type('\r')
+    await flushPromises()
+
+    socket.open()
+    await flushPromises()
+
+    expect(socket.sent).toEqual([
+      JSON.stringify({ type: 'new_session' }),
+      JSON.stringify({ type: 'send_message', content: '新会话里的消息' }),
+    ])
+    expect(terminal.lines.join('\n')).toContain('新会话请求已暂存')
+    expect(terminal.lines.join('\n')).toContain('已开启新会话')
+    wrapper.unmount()
+  })
+
+  it('makes the prompt available again when an active turn is interrupted', async () => {
+    const { wrapper, terminal, socket } = await mountFreeTui()
+    socket.open()
+
+    terminal.type('帮我写一篇笔记')
+    terminal.type('\r')
+    await flushPromises()
+    expect(wrapper.find('.tui-running-indicator').exists()).toBe(true)
+
+    socket.close()
+    await flushPromises()
+
+    expect(wrapper.find('.tui-running-indicator').exists()).toBe(false)
+    expect(terminal.lines.join('\n')).toContain('本轮输出可能未完成')
+    wrapper.unmount()
+  })
+
+  it('prefills a free-creation example without sending it', async () => {
+    const { wrapper, terminal, socket } = await mountFreeTui()
+
+    await wrapper.find('.tui-prompt-btn').trigger('click')
+    await flushPromises()
+
+    expect(socket.sent).toHaveLength(0)
+    expect(terminal.lines.join('\n')).toContain('写一篇小红书笔记')
+    wrapper.unmount()
+  })
+
+  it('prefills the native mobile input without sending it', async () => {
+    const previousWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 375 })
+    const { wrapper, socket } = await mountFreeTui()
+
+    await wrapper.find('.tui-prompt-btn').trigger('click')
+    await flushPromises()
+
+    expect((wrapper.find('.tui-mobile-input').element as HTMLInputElement).value).toBe('写一篇小红书笔记')
+    expect(socket.sent).toHaveLength(0)
+    wrapper.unmount()
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth })
+  })
 })

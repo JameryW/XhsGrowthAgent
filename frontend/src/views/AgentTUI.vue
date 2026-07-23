@@ -107,6 +107,9 @@ const MAX_PENDING_AGENT_MESSAGES = 5
 // Messages typed while the free-mode socket is connecting are kept only for
 // this component instance. They must never leak into another account/session.
 const pendingAgentMessages: string[] = []
+// A new-session request is kept separately so it can invalidate older queued
+// messages and be sent before messages typed after the reset request.
+let pendingFreeNewSession = false
 
 // ── CJK width calculation ─────────────────────────────────────────────
 // ponytail: inline wcwidth — avoids relying on experimental term.unicode API
@@ -553,6 +556,22 @@ function runQuickAction(command: string) {
   void processCommand(command)
 }
 
+/** Put a natural-language example into the active input surface without
+ * sending it. The user can edit the example before committing a request that
+ * may create or update a draft. */
+function prefillFreePrompt(prompt: string) {
+  if (isProcessing.value) return
+  if (isMobile.value) {
+    mobileInput.value = prompt
+    return
+  }
+  currentInput.value = prompt
+  cursorPos.value = prompt.length
+  historyIndex.value = -1
+  refreshInputLine()
+  term?.focus()
+}
+
 // ── WebSocket ───────────────────────────────────────────────────────────
 
 function connectAgentWs() {
@@ -591,7 +610,10 @@ function connectAgentWs() {
     reconnectAttempts = 0
     mode.value = 'agent'
     writeLineColored(t('tui.agentConnected'), ANSI.BRIGHT_GREEN)
-    const queuedCount = flushPendingAgentMessages()
+    const { queuedCount, startedNewSession } = flushPendingAgentMessages()
+    if (startedNewSession) {
+      writeLineColored(t('tui.freeNewSession'), ANSI.BRIGHT_GREEN)
+    }
     if (queuedCount > 0) {
       isProcessing.value = true
       writeLineColored(t('tui.freeQueuedMessagesSent', { count: queuedCount }), ANSI.DIM)
@@ -612,6 +634,13 @@ function connectAgentWs() {
     if (ws !== socket) return
     wsConnected.value = false
     wsConnecting.value = false
+    if (isFreeCreationEntry.value && isProcessing.value) {
+      // A disconnected stream cannot be resumed by this TUI instance. Make
+      // the prompt usable again instead of leaving it in a permanent busy
+      // state after a successful reconnect.
+      isProcessing.value = false
+      writeLineColored(t('tui.agentTurnInterrupted'), ANSI.YELLOW)
+    }
     if (mode.value === 'agent') {
       mode.value = 'command'
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
@@ -637,8 +666,9 @@ function disconnectAgentWs() {
   if (reconnectTimer) clearTimeout(reconnectTimer)
   reconnectTimer = null
   wsConnecting.value = false
-  ws?.close()
+  const socket = ws
   ws = null
+  socket?.close()
   wsConnected.value = false
 }
 
@@ -663,20 +693,40 @@ function queueFreeAgentMessage(text: string) {
   writeLineColored(t('tui.freeMessageQueued'), ANSI.YELLOW)
 }
 
-function flushPendingAgentMessages(): number {
-  if (!ws || ws.readyState !== WebSocket.OPEN || pendingAgentMessages.length === 0) return 0
-  const queued = pendingAgentMessages.splice(0)
-  for (const content of queued) {
-    ws.send(JSON.stringify({ type: 'send_message', content }))
+function flushPendingAgentMessages(): { queuedCount: number; startedNewSession: boolean } {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    return { queuedCount: 0, startedNewSession: false }
   }
-  return queued.length
+
+  let startedNewSession = false
+  if (pendingFreeNewSession) {
+    if (!sendAgentMessage({ type: 'new_session' })) {
+      return { queuedCount: 0, startedNewSession: false }
+    }
+    pendingFreeNewSession = false
+    startedNewSession = true
+  }
+
+  let queuedCount = 0
+  while (pendingAgentMessages.length > 0) {
+    const content = pendingAgentMessages[0]
+    if (!sendAgentMessage({ type: 'send_message', content })) break
+    pendingAgentMessages.shift()
+    queuedCount++
+  }
+  return { queuedCount, startedNewSession }
 }
 
 function sendFreeNewSession() {
+  // Any messages waiting before /start belong to the old context and must
+  // never cross the session boundary.
+  pendingAgentMessages.length = 0
+  pendingFreeNewSession = true
   if (sendAgentMessage({ type: 'new_session' })) {
+    pendingFreeNewSession = false
     writeLineColored(t('tui.freeNewSession'), ANSI.BRIGHT_GREEN)
   } else {
-    writeLineColored(t('tui.freeAgentUnavailable'), ANSI.YELLOW)
+    writeLineColored(t('tui.freeNewSessionQueued'), ANSI.YELLOW)
   }
 }
 
@@ -2048,6 +2098,15 @@ onUnmounted(() => {
       <button v-if="freeConnectionState === 'disconnected'" class="tui-quick-btn tui-quick-btn-retry" :disabled="isProcessing" @click.stop="retryFreeAgentConnection">{{ t('tui.quickReconnect') }}</button>
     </div>
 
+    <div v-if="isFreeCreationEntry" class="tui-prompt-actions flex items-center gap-2 px-3 py-2 shrink-0">
+      <span class="tui-quick-label shrink-0">{{ t('tui.tryPrompts') }}</span>
+      <div class="tui-prompt-scroll flex items-center gap-2">
+        <button class="tui-prompt-btn shrink-0" :disabled="isProcessing" @click.stop="prefillFreePrompt(t('tui.promptWriteNote'))">{{ t('tui.promptWriteNote') }}</button>
+        <button class="tui-prompt-btn shrink-0" :disabled="isProcessing" @click.stop="prefillFreePrompt(t('tui.promptFindTopics'))">{{ t('tui.promptFindTopics') }}</button>
+        <button class="tui-prompt-btn shrink-0" :disabled="isProcessing" @click.stop="prefillFreePrompt(t('tui.promptImproveDraft'))">{{ t('tui.promptImproveDraft') }}</button>
+      </div>
+    </div>
+
     <!-- Search bar — native terminal search -->
     <div v-if="searchVisible" class="tui-searchbar flex items-center gap-1 px-2 py-1 shrink-0" @click.stop>
       <input
@@ -2252,6 +2311,31 @@ onUnmounted(() => {
 .tui-quick-btn:hover { color: #c0caf5; border-color: #7aa2f7; }
 .tui-quick-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .tui-quick-btn-retry { color: #e0af68; border-color: #e0af6860; }
+
+.tui-prompt-actions {
+  background: #16161e;
+  border-bottom: 1px solid #292e42;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Menlo', monospace;
+  font-size: 11px;
+  min-width: 0;
+}
+.tui-prompt-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.tui-prompt-btn {
+  min-height: 2.75rem;
+  padding: 0.25rem 0.6rem;
+  color: #7dcfff;
+  background: #1a1b26;
+  border: 1px dashed #3b4261;
+  border-radius: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tui-prompt-btn:hover { color: #c0caf5; border-color: #7dcfff; }
+.tui-prompt-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Search bar — flat, terminal-native ─────────────────────────────── */
 .tui-searchbar {
