@@ -600,6 +600,15 @@ that dispatcher before a user switches to command mode:
 - Free mode exposes editable natural-language example prompts. Clicking an
   example only prefills the desktop terminal line or mobile input; it must not
   submit an Agent request without explicit user confirmation.
+- A successfully sent free-mode natural-language turn exposes a touch-friendly
+  stop action. Ctrl+C, `/abort`, and that action share one abort path: send
+  `{type: "abort"}`, immediately clear the local Agent-turn/processing state,
+  and show localized feedback. If the socket is unavailable, the local state
+  still releases so the prompt cannot remain stuck.
+- The free entry maintains a reactive display count for the in-memory pending
+  message queue. The count is shown in the status bar while nonzero and returns
+  to zero when queued messages are sent or invalidated by `/start`; it is not a
+  second persistence mechanism.
 
 ## Scenario: Historical-note RQGM contract (thread-less and durable)
 

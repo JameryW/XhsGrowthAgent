@@ -158,6 +158,7 @@ describe('AgentTUI free creation interaction contract', () => {
     await flushPromises()
     expect(socket.sent).toHaveLength(0)
     expect(terminal.lines.join('\n')).toContain('消息已暂存')
+    expect(wrapper.find('.tui-queue-state').text()).toContain('待发送：1')
 
     socket.open()
     await flushPromises()
@@ -167,6 +168,7 @@ describe('AgentTUI free creation interaction contract', () => {
       content: '帮我写一篇旅行笔记',
     }))
     expect(terminal.lines.join('\n')).toContain('已发送暂存消息')
+    expect(wrapper.find('.tui-queue-state').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -190,6 +192,39 @@ describe('AgentTUI free creation interaction contract', () => {
     ])
     expect(terminal.lines.join('\n')).toContain('新会话请求已暂存')
     expect(terminal.lines.join('\n')).toContain('已开启新会话')
+    wrapper.unmount()
+  })
+
+  it('offers a visible stop action for an active Agent turn', async () => {
+    const { wrapper, terminal, socket } = await mountFreeTui()
+    socket.open()
+
+    terminal.type('帮我写一篇笔记')
+    terminal.type('\r')
+    await flushPromises()
+    expect(wrapper.find('.tui-quick-btn-stop').exists()).toBe(true)
+
+    await wrapper.find('.tui-quick-btn-stop').trigger('click')
+    await flushPromises()
+
+    expect(socket.sent).toContain(JSON.stringify({ type: 'abort' }))
+    expect(wrapper.find('.tui-running-indicator').exists()).toBe(false)
+    expect(terminal.lines.join('\n')).toContain('已请求停止生成')
+    wrapper.unmount()
+  })
+
+  it('uses the same abort path for Ctrl+C', async () => {
+    const { wrapper, terminal, socket } = await mountFreeTui()
+    socket.open()
+
+    terminal.type('帮我写一篇笔记')
+    terminal.type('\r')
+    await flushPromises()
+    terminal.type('\x03')
+    await flushPromises()
+
+    expect(socket.sent).toContain(JSON.stringify({ type: 'abort' }))
+    expect(wrapper.find('.tui-running-indicator').exists()).toBe(false)
     wrapper.unmount()
   })
 
