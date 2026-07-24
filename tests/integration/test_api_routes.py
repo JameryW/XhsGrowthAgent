@@ -6,13 +6,18 @@ Uses FastAPI TestClient and mocks graph execution.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.api.app import app
+from backend.api.deps import get_current_user
+from backend.db.accounts import AccountRow
+from backend.db.workflows import WorkflowRow
 from backend.state.enums import WorkflowPhase
+
+TEST_USER_ID = "user-test"
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -34,11 +39,46 @@ def mock_graph():
 
 @pytest.fixture
 def client(mock_graph):
-    """Test client with mocked graph."""
+    """Test client with mocked graph and an authenticated user."""
     # Set the graph directly on app.state before creating client
     app.state.graph = mock_graph
-    yield TestClient(app)
+
+    async def _user():
+        return {"id": TEST_USER_ID, "username": "tester"}
+
+    app.dependency_overrides[get_current_user] = _user
+
+    # Private routes resolve/verify account ownership via account_scope, which
+    # imported the DB lookups directly — patch them there (no DB in tests).
+    owned = AccountRow(
+        id="test_account",
+        name="test_account",
+        is_active=True,
+        owner_user_id=TEST_USER_ID,
+    )
+    with (
+        patch("backend.api.account_scope.get_account", AsyncMock(return_value=owned)),
+        patch(
+            "backend.api.account_scope.get_active_account",
+            AsyncMock(return_value=owned),
+        ),
+        patch(
+            "backend.api.account_scope.list_accounts",
+            AsyncMock(return_value=[owned]),
+        ),
+        # assert_thread_owned looks up the workflow row via a function-level
+        # import — patch at the source module (no DB in tests). Returning an
+        # owned row for any thread keeps "not found" tests working: they still
+        # 404 on empty graph state below.
+        patch(
+            "backend.db.workflows.get_workflow",
+            AsyncMock(return_value=WorkflowRow(thread_id="t", account_id="test_account")),
+        ),
+    ):
+        yield TestClient(app)
+
     # Clean up after test
+    app.dependency_overrides.pop(get_current_user, None)
     if hasattr(app.state, "graph"):
         delattr(app.state, "graph")
 
@@ -121,7 +161,18 @@ class TestWorkflowRoutes:
 
     def test_start_workflow_invalid_account(self, client):
         """Start workflow with empty account_id returns error."""
-        response = client.post("/api/workflow/start", json={"account_id": "", "phase": "scouting"})
+        from backend.api.errors import ValidationError
+
+        # Empty account_id is rejected during account resolution with a
+        # field-naming validation error; the endpoint must surface it as a
+        # unified 400 response.
+        with patch(
+            "backend.api.routes.workflow.resolve_required_account_id",
+            AsyncMock(side_effect=ValidationError("account_id", "account_id is required")),
+        ):
+            response = client.post(
+                "/api/workflow/start", json={"account_id": "", "phase": "scouting"}
+            )
 
         assert response.status_code == 400
         data = response.json()

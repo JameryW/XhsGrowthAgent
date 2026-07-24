@@ -23,6 +23,8 @@ from backend.services.creator_stats.normalize import (
 from backend.services.creator_stats.pipeline import import_bundle, sync_from_fixture
 from backend.services.creator_stats.types import NoteStats
 
+from .conftest import grant_test_user
+
 
 @pytest.fixture(autouse=True)
 def _clear_mem():
@@ -325,16 +327,17 @@ async def test_free_draft_create_includes_creative_suggestions():
 
     client = TestClient(app)
 
-    resp = client.post(
-        "/api/free/draft",
-        json={
-            "account_id": "free_wire",
-            "title": "草稿标题",
-            "body": "草稿正文",
-            "hashtags": ["母婴"],
-            "niche": "母婴",
-        },
-    )
+    with grant_test_user(app):
+        resp = client.post(
+            "/api/free/draft",
+            json={
+                "account_id": "free_wire",
+                "title": "草稿标题",
+                "body": "草稿正文",
+                "hashtags": ["母婴"],
+                "niche": "母婴",
+            },
+        )
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["draft_id"]

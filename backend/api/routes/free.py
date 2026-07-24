@@ -28,7 +28,10 @@ from pydantic import BaseModel, Field, field_validator
 
 from backend.agents.evaluator import EvaluatorAgent
 from backend.agents.publisher import run_publish
-from backend.api.account_scope import require_owned_account, resolve_required_account_id
+from backend.api.account_scope import (  # noqa: F401
+    require_owned_account,  # tests patch this name here
+    resolve_required_account_id,
+)
 from backend.api.deps import get_current_user
 from backend.api.errors import ValidationError
 from backend.api.responses import ApiResponse, success
@@ -651,6 +654,7 @@ async def get_analytics(
     draft_id: str,
     request: Request,
     account_id: str = Query(default="default", description="账号 ID"),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """Fetch post-publish engagement analytics for a free draft (thread-less).
 
@@ -660,6 +664,7 @@ async def get_analytics(
     shares/engagement_rate. Raises ValidationError → 400 if the draft hasn't
     been published (no post_id) or no CDP endpoint is available.
     """
+    account_id = await resolve_required_account_id(str(user["id"]), account_id)
     draft = await _load_draft(request, account_id, draft_id)
     post_id = draft.get("post_id", "")
     if not post_id:

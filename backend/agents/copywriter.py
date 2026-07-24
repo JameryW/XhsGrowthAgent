@@ -341,11 +341,7 @@ class CopywriterAgent(BaseAgent):
         """Run de_ai_taste polish on generated copy; never fail the node."""
         if not isinstance(copy_content, dict):
             return copy_content
-        title = str(
-            copy_content.get("selected_title")
-            or copy_content.get("title")
-            or ""
-        ).strip()
+        title = str(copy_content.get("selected_title") or copy_content.get("title") or "").strip()
         body = str(copy_content.get("body_text") or copy_content.get("body") or "").strip()
         if not title and not body:
             return copy_content
@@ -373,10 +369,9 @@ class CopywriterAgent(BaseAgent):
             out["selected_title"] = polished["selected_title"]
             # Keep title_candidates coherent when first candidate matched old title.
             candidates = out.get("title_candidates")
-            if isinstance(candidates, list) and candidates:
-                if str(candidates[0]) == title:
-                    candidates = [polished["selected_title"], *candidates[1:]]
-                    out["title_candidates"] = candidates
+            if isinstance(candidates, list) and candidates and str(candidates[0]) == title:
+                candidates = [polished["selected_title"], *candidates[1:]]
+                out["title_candidates"] = candidates
         if polished.get("body_text"):
             out["body_text"] = polished["body_text"]
         if polished.get("cta") is not None and str(polished.get("cta") or "").strip():

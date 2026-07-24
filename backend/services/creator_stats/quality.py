@@ -755,8 +755,8 @@ def _recommendation_for(
             advice=_copy(
                 locale,
                 (
-                    "下一篇正文至少写清 2–3 个可执行要点：分段、步骤/清单，或补充真实使用感受与注意项，"
-                    "避免只有标签或空泛金句。"
+                    "下一篇正文至少写清 2–3 个可执行要点：分段、步骤/清单，"
+                    "或补充真实使用感受与注意项，避免只有标签或空泛金句。"
                 ),
                 (
                     "In the next post, write at least 2–3 actionable points: use paragraphs, "

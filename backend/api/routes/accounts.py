@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from backend.api.account_scope import account_to_public_dict, require_owned_account
 from backend.api.deps import get_current_user
-from backend.api.errors import APIError, AccountNotFoundError, ErrorCode, ValidationError
+from backend.api.errors import AccountNotFoundError, APIError, ErrorCode, ValidationError
 from backend.api.responses import ApiResponse, success
 
 logger = logging.getLogger("xhs_growth.api.accounts")
@@ -427,6 +427,3 @@ async def stop_qr_login(
 
     stopped = await stop_session(account_id)
     return success(data={"stopped": stopped, "account_id": account_id})
-
-
-

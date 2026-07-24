@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.api.deps import SERVICE_USER_ID
 from backend.api.errors import AccountNotFoundError, ValidationError, WorkflowNotFoundError
 from backend.db.accounts import AccountRow, get_account, get_active_account, list_accounts
 
@@ -32,8 +33,18 @@ def is_all_accounts_sentinel(value: str | None) -> bool:
     return raw in {s.lower() for s in _ALL_ACCOUNT_SENTINELS}
 
 
+def _is_service(user_id: str) -> bool:
+    """Trusted in-mesh callers (omp bridge/extension) bypass owner checks."""
+
+    return user_id == SERVICE_USER_ID
+
+
 async def require_owned_account(user_id: str, account_id: str) -> AccountRow:
-    """Return account if it exists and is owned by ``user_id``; else 404."""
+    """Return account if it exists and is owned by ``user_id``; else 404.
+
+    The service identity only requires the account to exist — in-mesh
+    callers act across accounts by design.
+    """
     uid = (user_id or "").strip()
     aid = (account_id or "").strip()
     if not uid:
@@ -41,7 +52,9 @@ async def require_owned_account(user_id: str, account_id: str) -> AccountRow:
     if not aid or aid.lower() == "default" or is_all_accounts_sentinel(aid):
         raise ValidationError("account_id", "a concrete account_id is required")
     account = await get_account(aid)
-    if account is None or (account.owner_user_id or "").strip() != uid:
+    if account is None:
+        raise AccountNotFoundError(aid)
+    if not _is_service(uid) and (account.owner_user_id or "").strip() != uid:
         raise AccountNotFoundError(aid)
     return account
 
@@ -70,11 +83,14 @@ async def resolve_required_account_id(
     if not default_to_active:
         raise ValidationError("account_id", "account_id is required")
 
-    active = await get_active_account(owner_user_id=uid)
+    # The service identity is not tied to one console user; resolve across
+    # all accounts instead of an owner-filtered set.
+    owner_filter = None if _is_service(uid) else uid
+    active = await get_active_account(owner_user_id=owner_filter)
     if active is not None:
         return active.id
 
-    owned = await list_accounts(owner_user_id=uid)
+    owned = await list_accounts(owner_user_id=owner_filter)
     if owned:
         return owned[0].id
 
@@ -92,6 +108,8 @@ async def assert_thread_owned(
     """Ensure workflow exists and belongs to an account owned by the user.
 
     Returns the workflow's account_id. Optional ``account_id`` must match when set.
+    The service identity skips the owner check but still resolves the row
+    when it exists (a missing row is not an error for in-mesh callers).
     """
     tid = (thread_id or "").strip()
     if not tid:
@@ -101,19 +119,22 @@ async def assert_thread_owned(
 
     row = await get_workflow(tid)
     if row is None:
+        if _is_service(user_id):
+            return ""
         raise WorkflowNotFoundError(tid)
 
     owner_account = (row.account_id or "").strip()
     if not owner_account:
+        if _is_service(user_id):
+            return ""
         raise WorkflowNotFoundError(tid)
 
     await require_owned_account(user_id, owner_account)
 
     requested = (account_id or "").strip()
-    if requested and not is_all_accounts_sentinel(requested):
-        if requested != owner_account:
-            # Hide cross-account threads as not found.
-            raise WorkflowNotFoundError(tid)
+    if requested and not is_all_accounts_sentinel(requested) and requested != owner_account:
+        # Hide cross-account threads as not found.
+        raise WorkflowNotFoundError(tid)
 
     return owner_account
 

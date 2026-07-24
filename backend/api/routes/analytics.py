@@ -529,10 +529,12 @@ async def get_growth_report(
     account_id: str,
     period: str = "weekly",
     request: Request = None,  # type: ignore[assignment]
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """获取增长报告 — workflows + imported creator-center notes."""
     assert request is not None
     account_id = (account_id or "").strip()
+    await require_owned_account(str(user["id"]), account_id)
     graph = request.app.state.graph
     workflows = await _get_completed_workflows(graph, account_id)
 
@@ -747,10 +749,12 @@ async def get_performance(
     period: str = "weekly",
     limit: int = Query(20, ge=1, le=100),
     request: Request = None,  # type: ignore[assignment]
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """获取最近帖子表现 — workflow publish analytics + imported creator-center notes."""
     assert request is not None
     account_id = (account_id or "").strip()
+    await require_owned_account(str(user["id"]), account_id)
     graph = request.app.state.graph
     workflows = await _get_completed_workflows(graph, account_id)
 
@@ -805,7 +809,11 @@ async def get_performance(
 
 
 @router.get("/costs")
-async def get_costs(period: str = "weekly", request: Request = None) -> ApiResponse[Any]:  # type: ignore[assignment]
+async def get_costs(
+    period: str = "weekly",
+    request: Request = None,  # type: ignore[assignment]
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """获取 LLM 调用成本 — aggregated from workflow performance logs."""
     assert request is not None
     graph = request.app.state.graph
@@ -869,6 +877,7 @@ async def get_dashboard(
     period: str = "weekly",
     limit: int = Query(20, ge=1, le=100),
     request: Request = None,  # type: ignore[assignment]
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """Single-request analytics bundle — report + performance + costs.
 
@@ -878,6 +887,7 @@ async def get_dashboard(
     """
     assert request is not None
     account_id = (account_id or "").strip()
+    await require_owned_account(str(user["id"]), account_id)
     graph = request.app.state.graph
     workflows = await _get_completed_workflows(graph, account_id)
 
@@ -1110,6 +1120,7 @@ async def sync_creator_stats(
 async def sync_all_creator_stats(
     body: CreatorStatsSyncAllRequest,
     request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """导入所有激活账号；停用账号不会启动浏览器或写入数据。"""
     from backend.services.creator_stats.pipeline import sync_all_active_accounts
@@ -1128,12 +1139,14 @@ async def sync_all_creator_stats(
 async def get_creator_stats(
     account_id: str,
     limit: int = Query(50, ge=1, le=200),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """读取本地已导入的创作者中心账户/笔记统计。"""
     from backend.db import creator_stats as stats_db
     from backend.services.creator_stats.audience import summarize_audience
 
     account_id = (account_id or "").strip()
+    await require_owned_account(str(user["id"]), account_id)
     snapshot = await _creator_snapshot_bundle(account_id)
     account = snapshot.get("account")
     all_notes = list(snapshot.get("notes", []))
@@ -1201,6 +1214,7 @@ async def get_creator_stats_notes(
     sort: str = Query("published_at_desc", description="稳定排序：published_at_desc"),
     published_from: str | None = Query(None, description="发布时间起始（ISO-8601）"),
     published_to: str | None = Query(None, description="发布时间结束（ISO-8601）"),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """Canonical historical-note fact reader shared by Analytics/Evaluation.
 
@@ -1213,6 +1227,7 @@ async def get_creator_stats_notes(
     normalized_account_id = (account_id or "").strip()
     if not normalized_account_id:
         raise ValidationError("account_id", "account_id cannot be empty")
+    await require_owned_account(str(user["id"]), normalized_account_id)
     if sort != "published_at_desc":
         raise ValidationError("sort", "sort must be published_at_desc")
     try:
@@ -1262,8 +1277,13 @@ async def _get_imported_creator_note_with_snapshot(
 
 
 @router.get("/creator-stats/{account_id}/notes/{note_id}")
-async def get_creator_note_detail(account_id: str, note_id: str) -> ApiResponse[Any]:
+async def get_creator_note_detail(
+    account_id: str,
+    note_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """Read one imported Creator Center note without starting a sync."""
+    await require_owned_account(str(user["id"]), account_id)
     normalized_account_id, note, snapshot_metadata = await _get_imported_creator_note_with_snapshot(
         account_id, note_id
     )
@@ -1289,9 +1309,12 @@ async def get_creator_note_quality(
     account_id: str,
     note_id: str,
     locale: str = Query("zh-CN", max_length=16, description="报告文案语言：zh-CN | en"),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """Evaluate one imported note with the historical quality analyzer."""
     from backend.services.creator_stats.quality import analyze_note_quality
+
+    await require_owned_account(str(user["id"]), account_id)
 
     normalized_account_id, note, snapshot_metadata = await _get_imported_creator_note_with_snapshot(
         account_id, note_id
@@ -1398,6 +1421,7 @@ async def get_creator_suggestions(
         description="创作模式：trend | brief | free（大小写不敏感）",
     ),
     request: Request = None,  # type: ignore[assignment]
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """按创作模式返回账户级创作建议（共享召回面）。"""
     from backend.services.creator_stats.suggestions import (
@@ -1407,6 +1431,7 @@ async def get_creator_suggestions(
 
     assert request is not None
     account_id = (account_id or "").strip()
+    await require_owned_account(str(user["id"]), account_id)
     graph = getattr(request.app.state, "graph", None)
     store = getattr(graph, "store", None) if graph is not None else None
     mode_norm = _normalize_mode(mode)
@@ -1425,7 +1450,10 @@ async def get_creator_suggestions(
 
 
 @router.get("/creator-stats/{account_id}/analysis")
-async def get_creator_analysis(account_id: str) -> ApiResponse[Any]:
+async def get_creator_analysis(
+    account_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """对已导入笔记即时跑创作分析（不强制重新拉取远端）。"""
     from backend.db import creator_stats as stats_db
     from backend.services.creator_stats.analyze import analyze_notes
@@ -1433,6 +1461,7 @@ async def get_creator_analysis(account_id: str) -> ApiResponse[Any]:
     from backend.services.creator_stats.suggestions import suggestions_from_analysis
 
     account_id = (account_id or "").strip()
+    await require_owned_account(str(user["id"]), account_id)
     notes = await stats_db.list_note_stats(account_id, limit=100)
     account = await stats_db.get_account_stats(account_id)
     analysis = analyze_notes(notes, account_id)

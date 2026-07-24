@@ -34,12 +34,14 @@ def test_all_accounts_sentinels_rejected():
 
 @pytest.mark.asyncio
 async def test_require_owned_account_denies_foreign_owner():
-    with patch(
-        "backend.api.account_scope.get_account",
-        new=AsyncMock(return_value=_account("a1", "user-u")),
+    with (
+        patch(
+            "backend.api.account_scope.get_account",
+            new=AsyncMock(return_value=_account("a1", "user-u")),
+        ),
+        pytest.raises(AccountNotFoundError),
     ):
-        with pytest.raises(AccountNotFoundError):
-            await require_owned_account("user-v", "a1")
+        await require_owned_account("user-v", "a1")
 
 
 @pytest.mark.asyncio
@@ -54,9 +56,10 @@ async def test_require_owned_account_allows_owner():
 async def test_resolve_rejects_all_accounts_sentinel():
     with pytest.raises(ValidationError) as ei:
         await resolve_required_account_id("user-u", "__all_accounts__")
-    assert "all-accounts" in str(ei.value.message).lower() or "aggregate" in str(
-        ei.value.message
-    ).lower()
+    assert (
+        "all-accounts" in str(ei.value.message).lower()
+        or "aggregate" in str(ei.value.message).lower()
+    )
 
 
 @pytest.mark.asyncio
@@ -88,6 +91,6 @@ async def test_assert_thread_owned_mismatch():
             "backend.api.account_scope.require_owned_account",
             new=AsyncMock(return_value=_account("acc-a", "user-u")),
         ),
+        pytest.raises(WorkflowNotFoundError),
     ):
-        with pytest.raises(WorkflowNotFoundError):
-            await assert_thread_owned("user-u", "t1", account_id="acc-b")
+        await assert_thread_owned("user-u", "t1", account_id="acc-b")

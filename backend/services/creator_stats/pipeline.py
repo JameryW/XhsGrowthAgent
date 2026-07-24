@@ -48,8 +48,7 @@ _post_login_sync_once: set[str] = set()
 
 _AUTH_PREFLIGHT_MESSAGES: dict[str, str] = {
     "stale_id_token": (
-        "创作者中心登录已失效（仅残留 id_token）。"
-        "请在设置页对该账号重新扫码登录后再同步。"
+        "创作者中心登录已失效（仅残留 id_token）。请在设置页对该账号重新扫码登录后再同步。"
     ),
     "www_only": (
         "主站 cookie 存在，但创作者中心未登录（缺少 access-token-creator）。"
@@ -59,9 +58,7 @@ _AUTH_PREFLIGHT_MESSAGES: dict[str, str] = {
         "主站登录态存在，但创作者中心未登录（缺少 access-token-creator）。"
         "请在设置页重新扫码登录以刷新创作者中心会话后再同步。"
     ),
-    "missing_strong_cookie": (
-        "未检测到创作者中心登录态。请先启动绑定浏览器并扫码登录后再同步。"
-    ),
+    "missing_strong_cookie": ("未检测到创作者中心登录态。请先启动绑定浏览器并扫码登录后再同步。"),
     "cdp_unavailable": "未检测到该账号可用的浏览器会话。",
     "cdp_port_down": "绑定浏览器未运行。请先启动账号 Chrome 并登录创作者中心。",
     "cdp_unreachable": "无法连接绑定浏览器的 CDP 端口。请检查 Chrome 是否已启动。",
@@ -542,9 +539,7 @@ async def sync_account_stats(
                 account_id=account_id,
                 source="creator_statistics",
                 error=str(e),
-                error_code=classify_sync_error(
-                    str(e), status_code=getattr(e, "status_code", None)
-                ),
+                error_code=classify_sync_error(str(e), status_code=getattr(e, "status_code", None)),
             )
         except Exception as e:
             logger.exception("injected client fetch failed for %s", account_id)

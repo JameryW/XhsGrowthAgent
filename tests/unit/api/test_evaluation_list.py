@@ -13,12 +13,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from backend.api.deps import get_current_user
 from backend.api.middleware import error_handler_middleware
 from backend.api.routes.evaluation import router
 from backend.db.workflows import WorkflowRow
 
 _DB_LIST = "backend.api.routes.evaluation.db_list"
 _IS_POOL_READY = "backend.api.routes.evaluation.is_pool_ready"
+_RESOLVE_ACCOUNT = "backend.api.routes.evaluation.resolve_required_account_id"
 
 
 def _row(thread_id: str, account_id: str = "acc1", **overrides) -> WorkflowRow:
@@ -64,7 +66,19 @@ def app_and_client():
     app.include_router(router, prefix="/api/evaluation")
     app.state.graph = graph
     app.middleware("http")(error_handler_middleware)
-    return app, TestClient(app), graph
+
+    async def _user():
+        return {"id": "user-test", "username": "tester"}
+
+    app.dependency_overrides[get_current_user] = _user
+
+    async def _resolve(user_id: str, account_id: str | None = None, **kwargs):
+        return (account_id or "").strip() or "acc1"
+
+    with patch(_RESOLVE_ACCOUNT, new_callable=AsyncMock, side_effect=_resolve):
+        yield app, TestClient(app), graph
+
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 # ── Filtering & enrichment ────────────────────────────────────────────────
@@ -112,7 +126,7 @@ def test_returns_only_workflows_with_evaluation(app_and_client):
     assert wf["t1"]["subject_id"] == "t1"
     assert wf["t2"]["decision"] == "needs_revision"
     assert "t3" not in wf
-    assert data["scope"] == "all_accounts"
+    assert data["scope"] == "account_history"
     assert data["snapshot_id"].startswith("snapshot:")
 
 

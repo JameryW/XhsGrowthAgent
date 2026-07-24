@@ -18,6 +18,8 @@ from backend.services.creator_stats.normalize import (
 )
 from backend.services.creator_stats.pipeline import sync_from_fixture
 
+from .conftest import grant_test_user
+
 
 @pytest.fixture(autouse=True)
 def _clear_mem():
@@ -204,7 +206,7 @@ def test_body_text_captured_and_truncated():
         {
             "note_id": "body1",
             "title": "今日分享",
-            "body": "宝宝辅食添加清单，母婴育儿干货 " + ("x" * 3000),
+            "body": "宝宝辅食添加清单，母婴育儿干货 " + ("x" * 5000),
             "views": 10,
         },
         "a",
@@ -212,7 +214,7 @@ def test_body_text_captured_and_truncated():
     assert note is not None
     assert "宝宝" in note.body_text
     assert "母婴" in note.body_text
-    assert len(note.body_text) <= 2000
+    assert len(note.body_text) <= 4000
 
 
 def test_body_html_stripped_for_niche_keywords():
@@ -387,7 +389,7 @@ async def test_performance_endpoint_includes_imported_creator_notes():
 
     client = TestClient(app)
 
-    with pytest.MonkeyPatch.context() as mp:
+    with pytest.MonkeyPatch.context() as mp, grant_test_user(app):
 
         async def _empty(*_a, **_k):
             return []

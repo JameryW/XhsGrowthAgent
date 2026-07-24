@@ -24,6 +24,8 @@ from backend.services.creator_stats.pipeline import (
 from backend.services.creator_stats.types import AccountStatsOverview, NoteStats, SyncResult
 from backend.tools.xhs import analytics as analytics_tools
 
+from .conftest import grant_test_user
+
 
 @pytest.fixture(autouse=True)
 def _clear_mem():
@@ -138,7 +140,8 @@ async def test_batch_sync_returns_already_running_when_postgres_lock_is_busy():
 
 
 def test_batch_sync_endpoint_returns_atomic_batch_summary():
-    client = TestClient(_app())
+    app = _app()
+    client = TestClient(app)
     summary = {
         "ok": True,
         "status": "completed",
@@ -147,11 +150,14 @@ def test_batch_sync_endpoint_returns_atomic_batch_summary():
         "failed": 0,
         "results": [],
     }
-    with patch(
-        "backend.services.creator_stats.pipeline.sync_all_active_accounts",
-        new_callable=AsyncMock,
-        return_value=summary,
-    ) as sync_all:
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new_callable=AsyncMock,
+            return_value=summary,
+        ) as sync_all,
+        grant_test_user(app),
+    ):
         response = client.post(
             "/api/analytics/creator-stats/sync-all",
             json={"period": "7d", "analyze": False},
@@ -199,8 +205,10 @@ async def test_sync_from_fixture_deletes_stale_local_notes():
 @pytest.mark.asyncio
 async def test_get_creator_stats_after_fixture_service_import():
     await sync_from_fixture("api_get")
-    client = TestClient(_app())
-    resp = client.get("/api/analytics/creator-stats/api_get")
+    app = _app()
+    client = TestClient(app)
+    with grant_test_user(app):
+        resp = client.get("/api/analytics/creator-stats/api_get")
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["account"]["views"] == 128400
@@ -232,8 +240,10 @@ async def test_get_creator_stats_after_fixture_service_import():
 async def test_get_creator_stats_total_ignores_limit():
     """total must be full note count even when page limit < total."""
     await sync_from_fixture("api_limit")
-    client = TestClient(_app())
-    resp = client.get("/api/analytics/creator-stats/api_limit?limit=2")
+    app = _app()
+    client = TestClient(app)
+    with grant_test_user(app):
+        resp = client.get("/api/analytics/creator-stats/api_limit?limit=2")
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert len(data["notes"]) == 2
@@ -246,9 +256,11 @@ async def test_get_creator_stats_total_ignores_limit():
 @pytest.mark.asyncio
 async def test_suggestions_endpoint_each_mode():
     await sync_from_fixture("api_sug")
-    client = TestClient(_app())
+    app = _app()
+    client = TestClient(app)
     for mode in ("trend", "brief", "free"):
-        resp = client.get(f"/api/analytics/creator-stats/api_sug/suggestions?mode={mode}")
+        with grant_test_user(app):
+            resp = client.get(f"/api/analytics/creator-stats/api_sug/suggestions?mode={mode}")
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["mode"] == mode
@@ -260,8 +272,10 @@ async def test_suggestions_endpoint_each_mode():
 @pytest.mark.asyncio
 async def test_free_mode_suggestions_route():
     await sync_from_fixture("api_free")
-    client = TestClient(_app())
-    resp = client.get("/api/free/suggestions/api_free")
+    app = _app()
+    client = TestClient(app)
+    with grant_test_user(app):
+        resp = client.get("/api/free/suggestions/api_free")
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["mode"] == "free"
@@ -270,8 +284,10 @@ async def test_free_mode_suggestions_route():
 
 
 def test_cold_start_suggestions_endpoint():
-    client = TestClient(_app())
-    resp = client.get("/api/analytics/creator-stats/no_data_yet/suggestions?mode=trend")
+    app = _app()
+    client = TestClient(app)
+    with grant_test_user(app):
+        resp = client.get("/api/analytics/creator-stats/no_data_yet/suggestions?mode=trend")
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["cold_start"] is True
@@ -327,8 +343,10 @@ async def test_analytics_reader_strips_account_id_whitespace():
 @pytest.mark.asyncio
 async def test_free_suggestions_after_import_not_cold_start():
     await sync_account_stats("free_sug_acc", dry_run=True)
-    client = TestClient(_app())
-    resp = client.get("/api/free/suggestions/free_sug_acc")
+    app = _app()
+    client = TestClient(app)
+    with grant_test_user(app):
+        resp = client.get("/api/free/suggestions/free_sug_acc")
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["count"] > 0

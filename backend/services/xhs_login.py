@@ -95,6 +95,7 @@ def _cookie_names_mean_logged_in(cookie_names: set[str]) -> tuple[bool, list[str
         return False, ["web_session"], "missing_strong_cookie"
     return False, [], "missing_strong_cookie"
 
+
 # codeStatus 语义（spike + reverse-engineered CLI 源码确认）。
 _CODE_WAITING = 0  # 待扫
 _CODE_SCANNED = 1  # 已扫待确认
