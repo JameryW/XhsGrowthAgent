@@ -8,7 +8,7 @@ import logging
 from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
 
 from backend.api.errors import APIError, ErrorCode, ValidationError
@@ -286,6 +286,7 @@ async def start_qr_login(account_id: str) -> ApiResponse[Any]:
         ValidationError: 账号未绑定 chrome_profile_path / cdp_port，或 host Chrome 未启动.
     """
     from backend.db.accounts import get_account
+    from backend.services.creator_stats.pipeline import clear_post_login_sync_gate
     from backend.services.xhs_login import LoginError, get_or_create_session
 
     account = await get_account(account_id)
@@ -309,6 +310,9 @@ async def start_qr_login(account_id: str) -> ApiResponse[Any]:
             "启动该账号的常驻 Chrome，再扫码登录。",
         )
 
+    # New QR attempt may re-login after an expired session — allow post-login
+    # auto-import again for this account.
+    clear_post_login_sync_gate(account_id)
     session = get_or_create_session(account_id, account.chrome_profile_path, cdp_endpoint)
     try:
         result = await asyncio.wait_for(session.start(), timeout=_QR_LOGIN_START_TIMEOUT_S)
@@ -340,7 +344,10 @@ async def start_qr_login(account_id: str) -> ApiResponse[Any]:
 
 
 @router.get("/{account_id}/login/qr/status")
-async def get_qr_login_status(account_id: str) -> ApiResponse[Any]:
+async def get_qr_login_status(
+    account_id: str,
+    background_tasks: BackgroundTasks,
+) -> ApiResponse[Any]:
     """查询扫码登录状态.
 
     Returns:
@@ -350,11 +357,15 @@ async def get_qr_login_status(account_id: str) -> ApiResponse[Any]:
         - ``confirmed`` — 已确认登录，登录态已写 profile
         - ``expired`` — 二维码过期，已自动刷新，返回新 url
 
+    On ``confirmed``, schedules a best-effort Creator Center stats import so
+    the dashboard is fresh without a separate manual sync click.
+
     Raises:
         AccountNotFoundError: 账号不存在.
         ValidationError: 账号未绑定 chrome_profile_path 或无进行中的登录会话.
     """
     from backend.db.accounts import get_account
+    from backend.services.creator_stats.pipeline import sync_after_login
     from backend.services.xhs_login import LoginError, get_session
 
     account = await get_account(account_id)
@@ -383,6 +394,8 @@ async def get_qr_login_status(account_id: str) -> ApiResponse[Any]:
             details={"account_id": account_id},
             status_code=503,
         ) from e
+    if isinstance(result, dict) and result.get("status") == "confirmed":
+        background_tasks.add_task(sync_after_login, account_id)
     return success(data=result)
 
 

@@ -93,6 +93,75 @@ def test_normalize_account_maps_creator_aliases():
     assert "phone" not in overview.to_dict()
 
 
+def test_normalize_account_fans_prefers_personal_info_over_period_rise():
+    """account/base net_rise_fans_count is 涨粉, not total 粉丝数."""
+    raw = {
+        "data": {
+            "thirty": {
+                "view_count": 1000,
+                "like_count": 10,
+                "net_rise_fans_count": 53,
+                "rise_fans_count": 53,
+                "publish_note_num": 5,
+            }
+        },
+        "_personal_info": {
+            "data": {
+                "fans_count": 64,
+                "follow_count": 14,
+                "grow_info": {"fans_count": 64, "max_fans_count": 500},
+            }
+        },
+    }
+    overview = normalize_account_overview(raw, "acc_fans", period="30d", synced_at="t0")
+    assert overview.fans == 64
+    assert overview.views == 1000
+    assert overview.note_count == 5
+
+
+def test_normalize_account_fans_ignores_net_rise_without_personal_info():
+    raw = {
+        "data": {
+            "thirty": {
+                "view_count": 100,
+                "net_rise_fans_count": 53,
+                "rise_fans_count": 53,
+            }
+        }
+    }
+    overview = normalize_account_overview(raw, "acc_rise", period="30d")
+    # Without a total-fans field, do not treat period rise as fans.
+    assert overview.fans == 0
+    assert overview.views == 100
+
+
+def test_normalize_note_body_prefers_body_text_and_drops_title_duplicate_desc():
+    from backend.services.creator_stats.normalize import normalize_note
+
+    note = normalize_note(
+        {
+            "id": "n1",
+            "display_title": "标题即标题",
+            "desc": "标题即标题",  # creator note_info often mirrors title
+            "body_text": "这是真正的正文\n第二行 #tag",
+            "view_count": 10,
+            "likes": 1,
+        },
+        "acc",
+    )
+    assert note is not None
+    assert note.title == "标题即标题"
+    assert "真正的正文" in note.body_text
+    assert note.body_text != note.title
+
+    note2 = normalize_note(
+        {"id": "n2", "title": "只有标题", "desc": "只有标题", "view_count": 1},
+        "acc",
+    )
+    assert note2 is not None
+    assert note2.body_text == ""
+
+
 def test_normalize_account_profile_ignores_sensitive_and_nested_fields():
     profile = normalize_account_profile(
         {

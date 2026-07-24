@@ -186,13 +186,14 @@ class TestStart:
         from backend.services.xhs_login import XhsLoginSession
 
         mock_module, mock_page, on_calls = _wire_playwright_mock(
-            cookies=[{"name": "web_session", "value": "session-1"}],
+            cookies=[{"name": "access-token-creator.xiaohongshu.com", "value": "tok"}],
             page_text="首页 发布 通知 消息 我",
         )
         session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
 
-        with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
-            result = await session.start()
+        with patch.object(XhsLoginSession, "_warm_creator_session", new=AsyncMock()) as warm:
+            with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
+                result = await session.start()
 
         assert result == {
             "status": "confirmed",
@@ -201,6 +202,7 @@ class TestStart:
             "account_id": "acc-1",
         }
         assert on_calls, "page.on('response', ...) was not registered"
+        warm.assert_awaited_once()
         mock_page.close.assert_awaited()
         assert session._confirmed is True
         assert session._context is None
@@ -365,18 +367,21 @@ class TestGetStatus:
         assert result["qr_id"] == "qr123"
         await session.stop()
 
-    async def test_status_confirmed_when_profile_cookie_is_present(self, tmp_path):
-        """Durable profile login cookie wins when qrcode/status still says waiting."""
+    async def test_status_confirmed_when_creator_cookie_is_present(self, tmp_path):
+        """Creator access token wins when qrcode/status still says waiting."""
         from backend.services.xhs_login import XhsLoginSession
 
         mock_module, _, on_calls = _wire_playwright_mock(
-            cookies=[{"name": "id_token", "value": "token-1"}],
-            page_text="登录后推荐更懂你的笔记",
+            cookies=[
+                {"name": "access-token-creator.xiaohongshu.com", "value": "tok"},
+            ],
+            page_text="首页 发布 通知 消息 我",
         )
         session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
-        with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
-            await self._start_session(session, on_calls)
-            result = await session.get_status()
+        with patch.object(XhsLoginSession, "_warm_creator_session", new=AsyncMock()):
+            with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
+                await self._start_session(session, on_calls)
+                result = await session.get_status()
 
         assert result["status"] == "confirmed"
         assert result["url"] == ""
@@ -837,7 +842,7 @@ class TestInspectProfileLoginStatus:
         from backend.services.xhs_login import inspect_profile_login_status
 
         mock_module, _, _ = _wire_playwright_mock(
-            cookies=[{"name": "id_token", "value": "token-1"}]
+            cookies=[{"name": "access-token-creator.xiaohongshu.com", "value": "tok"}]
         )
 
         with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
@@ -845,6 +850,41 @@ class TestInspectProfileLoginStatus:
 
         assert result["status"] == "logged_in"
         assert result["is_logged_in"] is True
+        assert result["signals"] == ["access-token-creator.xiaohongshu.com"]
+
+    async def test_logged_in_when_www_session_pair_present(self):
+        """web_session + id_token is the durable Creator Center SSO pair."""
+        from backend.services.xhs_login import inspect_profile_login_status
+
+        mock_module, _, _ = _wire_playwright_mock(
+            cookies=[
+                {"name": "id_token", "value": "token-1"},
+                {"name": "web_session", "value": "session-1"},
+            ]
+        )
+
+        with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
+            result = await inspect_profile_login_status("acc-1", "http://127.0.0.1:9223")
+
+        assert result["status"] == "logged_in"
+        assert result["is_logged_in"] is True
+        assert result["reason"] == "strong_cookie"
+        assert set(result["signals"]) == {"id_token", "web_session"}
+
+    async def test_logged_out_when_only_stale_id_token_present(self):
+        """Lone id_token is a common false-positive after creator session expiry."""
+        from backend.services.xhs_login import inspect_profile_login_status
+
+        mock_module, _, _ = _wire_playwright_mock(
+            cookies=[{"name": "id_token", "value": "token-1"}]
+        )
+
+        with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
+            result = await inspect_profile_login_status("acc-1", "http://127.0.0.1:9223")
+
+        assert result["status"] == "logged_out"
+        assert result["is_logged_in"] is False
+        assert result["reason"] == "stale_id_token"
         assert result["signals"] == ["id_token"]
 
     async def test_logged_out_when_only_anonymous_cookie_present(self):
@@ -876,8 +916,8 @@ class TestInspectProfileLoginStatus:
             return {
                 "cookies": [
                     {
-                        "name": "id_token",
-                        "value": "token-1",
+                        "name": "access-token-creator.xiaohongshu.com",
+                        "value": "tok",
                         "domain": ".xiaohongshu.com",
                     }
                 ]
@@ -893,7 +933,7 @@ class TestInspectProfileLoginStatus:
 
         assert result["status"] == "logged_in"
         assert result["is_logged_in"] is True
-        assert result["signals"] == ["id_token"]
+        assert result["signals"] == ["access-token-creator.xiaohongshu.com"]
         assert calls == [("Storage.getCookies", None)]
         raw_ws.close.assert_awaited_once()
 

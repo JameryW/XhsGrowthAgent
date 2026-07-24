@@ -11,13 +11,17 @@ from fastapi.testclient import TestClient
 
 from backend.api.routes import analytics as analytics_routes
 from backend.api.routes import free as free_routes
-from backend.db.creator_stats import _reset_memory_store
+from backend.db.creator_stats import (
+    _reset_memory_store,
+    list_note_stats,
+    upsert_bundle,
+)
 from backend.services.creator_stats.pipeline import (
     sync_account_stats,
     sync_all_active_accounts,
     sync_from_fixture,
 )
-from backend.services.creator_stats.types import SyncResult
+from backend.services.creator_stats.types import AccountStatsOverview, NoteStats, SyncResult
 from backend.tools.xhs import analytics as analytics_tools
 
 
@@ -163,7 +167,33 @@ async def test_fixture_service_path_twice_is_consistent():
     r1 = await sync_from_fixture("api_twice")
     r2 = await sync_from_fixture("api_twice")
     assert r1.notes_imported == 5
+    assert r1.notes_deleted == 0
     assert r2.notes_updated == 5
+    assert r2.notes_deleted == 0
+
+
+@pytest.mark.asyncio
+async def test_sync_from_fixture_deletes_stale_local_notes():
+    """Full import path must surface notes_deleted and drop orphan local rows."""
+    await upsert_bundle(
+        AccountStatsOverview(account_id="api_prune", note_count=1),
+        [
+            NoteStats(
+                note_id="orphan-local",
+                account_id="api_prune",
+                title="deleted on creator center",
+                views=9,
+            )
+        ],
+    )
+    result = await sync_from_fixture("api_prune", run_creative_analysis=False)
+    assert result.error is None
+    assert result.account_synced is True
+    assert result.notes_imported == 5
+    assert result.notes_deleted == 1
+    note_ids = {n.note_id for n in await list_note_stats("api_prune")}
+    assert "orphan-local" not in note_ids
+    assert len(note_ids) == 5
 
 
 @pytest.mark.asyncio

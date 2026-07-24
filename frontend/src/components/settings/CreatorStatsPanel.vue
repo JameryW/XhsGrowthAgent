@@ -224,14 +224,26 @@ async function runSync() {
     })
     lastSync.value = result
     if (result.ok === false || (result.error && !result.import_ok && !result.account_synced)) {
-      syncError.value = result.error || t('creatorStats.syncFailed')
-      toast.error(syncError.value)
+      if (result.error_code === 'AUTH_EXPIRED') {
+        syncError.value = result.error || t('creatorStats.syncAuthExpired')
+        toast.error(t('creatorStats.syncAuthExpired'))
+      } else if (result.error_code === 'BROWSER_UNAVAILABLE') {
+        syncError.value = result.error || t('creatorStats.syncBrowserUnavailable')
+        toast.error(t('creatorStats.syncBrowserUnavailable'))
+      } else {
+        syncError.value = result.error || t('creatorStats.syncFailed')
+        toast.error(syncError.value)
+      }
     } else {
       toast.success(
         t('creatorStats.syncSuccess', {
           imported: result.notes_imported ?? 0,
           updated: result.notes_updated ?? 0,
-          total: (result.notes_imported ?? 0) + (result.notes_updated ?? 0),
+          deleted: result.notes_deleted ?? 0,
+          total:
+            (result.notes_imported ?? 0)
+            + (result.notes_updated ?? 0)
+            + (result.notes_deleted ?? 0),
         })
       )
       if (result.niche_resolution?.niche) {
@@ -502,6 +514,7 @@ function pointShare(point: CreatorAggregatePoint): string {
             source: lastSync.source,
             imported: lastSync.notes_imported ?? 0,
             updated: lastSync.notes_updated ?? 0,
+            deleted: lastSync.notes_deleted ?? 0,
           }) }}
         </span>
       </div>

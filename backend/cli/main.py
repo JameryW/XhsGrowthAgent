@@ -463,10 +463,14 @@ def sync_stats(
             if result.error:
                 console.print(f"[red]同步失败: {result.error}[/red]")
                 # Partial success: import may have succeeded while analysis failed
-                if result.account_synced and result.notes_imported + result.notes_updated > 0:
+                if (
+                    result.account_synced
+                    and result.notes_imported + result.notes_updated + result.notes_deleted > 0
+                ):
                     console.print(
                         f"[yellow]已导入 notes_imported={result.notes_imported} "
-                        f"notes_updated={result.notes_updated}（分析阶段失败）[/yellow]"
+                        f"notes_updated={result.notes_updated} "
+                        f"notes_deleted={result.notes_deleted}（分析阶段失败）[/yellow]"
                     )
                 raise typer.Exit(1)
 
@@ -476,6 +480,7 @@ def sync_stats(
             table.add_row("source", result.source)
             table.add_row("notes_imported", str(result.notes_imported))
             table.add_row("notes_updated", str(result.notes_updated))
+            table.add_row("notes_deleted", str(result.notes_deleted))
             table.add_row("account_synced", str(result.account_synced))
             if result.analysis:
                 table.add_row("note_count", str(result.analysis.note_count))

@@ -465,6 +465,17 @@ def normalize_account_overview(
     profile_data: dict[str, Any] = dict(profile)
     profile_data.update(insights)
     now = synced_at or datetime.now(UTC).isoformat()
+
+    # Total followers (粉丝数) vs period rise (涨粉数):
+    # account/base seven|thirty expose rise_fans_count / net_rise_fans_count for the
+    # selected window only. Using those as ``fans`` made imports show e.g. 53
+    # (30d net rise) while the creator home personal_info.fans_count is 64.
+    # Never treat *rise* metrics as the cumulative total.
+    fans = _int_field(data, "fans", "fans_count", "fansCount", "follower_count", "followers")
+    personal_total = _personal_info_fans_count(raw, profile_raw)
+    if personal_total > 0:
+        fans = personal_total
+
     return AccountStatsOverview(
         account_id=account_id,
         **profile_data,
@@ -483,9 +494,7 @@ def normalize_account_overview(
             "favorite_count",
         ),
         shares=_int_field(data, "shares", "share_count", "shareCount", "shared_count"),
-        fans=_int_field(
-            data, "fans", "fans_count", "fansCount", "follower_count", "net_rise_fans_count"
-        ),
+        fans=fans,
         # Avoid generic "total" — galaxy payloads often use total for page size/total hits
         note_count=_int_field(
             data,
@@ -500,6 +509,52 @@ def normalize_account_overview(
         synced_at=now,
         source="creator_statistics",
     )
+
+
+def _personal_info_fans_count(
+    account_raw: dict[str, Any] | None,
+    profile_raw: dict[str, Any] | None = None,
+) -> int:
+    """Extract cumulative fans_count from personal_info / profile payloads."""
+    candidates: list[dict[str, Any]] = []
+    for root in (account_raw, profile_raw):
+        if not isinstance(root, dict):
+            continue
+        candidates.append(root)
+        personal = root.get("_personal_info")
+        if isinstance(personal, dict):
+            candidates.append(personal)
+        for key in ("data", "result", "grow_info", "profile", "user", "user_info"):
+            nested = root.get(key) if isinstance(root, dict) else None
+            if isinstance(nested, dict):
+                candidates.append(nested)
+                grow = nested.get("grow_info")
+                if isinstance(grow, dict):
+                    candidates.append(grow)
+            # personal_info envelope: {data: {fans_count, grow_info: {fans_count}}}
+            if isinstance(personal, dict):
+                pdata = personal.get(key)
+                if isinstance(pdata, dict):
+                    candidates.append(pdata)
+                    grow2 = pdata.get("grow_info")
+                    if isinstance(grow2, dict):
+                        candidates.append(grow2)
+
+    for candidate in candidates:
+        # Only accept true total aliases — never rise/net_rise period deltas.
+        total = _int_field(
+            candidate,
+            "fans_count",
+            "fansCount",
+            "total_fans",
+            "totalFans",
+            "follower_count",
+            "followers",
+            "fans",
+        )
+        if total > 0:
+            return total
+    return 0
 
 
 def normalize_note(
@@ -549,22 +604,27 @@ def normalize_note(
     if not title:
         title = _str_field(metrics, "title", "display_title")
 
-    # Body snippet for niche infer / analysis — truncate to keep rows small
+    # Body snippet for niche infer / analysis — truncate to keep rows small.
+    # Prefer body_text (public-page scrape) over desc: creator note_info.desc is
+    # frequently just a copy of the title, not the caption body.
     body_text = _str_field(
         data,
         "body_text",
         "body",
         "content",
-        "desc",
         "description",
         "note_desc",
         "text",
+        "desc",
     )
     if not body_text:
-        body_text = _str_field(metrics, "body", "content", "desc", "description")
+        body_text = _str_field(metrics, "body", "content", "description", "desc")
     body_text = _strip_html(body_text)
-    if len(body_text) > 2000:
-        body_text = body_text[:2000]
+    # Drop title-duplicate "bodies" so UI/quality treat missing caption correctly.
+    if body_text and title and body_text.strip() == title.strip():
+        body_text = ""
+    if len(body_text) > 4000:
+        body_text = body_text[:4000]
 
     content_type = _content_type(
         data.get("content_type")

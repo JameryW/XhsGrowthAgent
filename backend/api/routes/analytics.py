@@ -1042,10 +1042,13 @@ async def sync_creator_stats(
     if not cdp_endpoint:
         # Do not substitute fixture or a caller-provided cookie under a real
         # account id. Existing durable imports remain untouched on this path.
+        from backend.services.creator_stats.types import ERROR_BROWSER_UNAVAILABLE
+
         result = SyncResult(
             account_id=body.account_id,
             source="creator_statistics",
             error="未检测到该账号可用的浏览器会话。请先启动并登录绑定账号的 Chrome 后重试。",
+            error_code=ERROR_BROWSER_UNAVAILABLE,
         )
     else:
         result = await sync_account_stats(
@@ -1071,6 +1074,7 @@ async def sync_creator_stats(
         data["ok"] = False
     data["analyzed"] = result.analysis is not None
     data["import_ok"] = bool(result.account_synced)
+    data["error_code"] = result.error_code
     return success(data=data)
 
 

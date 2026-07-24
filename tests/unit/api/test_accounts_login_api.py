@@ -233,7 +233,7 @@ def test_get_login_status_returns_profile_state(client):
                 "status": "logged_in",
                 "is_logged_in": True,
                 "reason": "strong_cookie",
-                "signals": ["id_token"],
+                "signals": ["access-token-creator.xiaohongshu.com"],
             },
         ) as mock_status,
     ):

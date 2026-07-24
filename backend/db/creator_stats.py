@@ -360,44 +360,103 @@ async def upsert_notes(notes: list[NoteStats]) -> tuple[int, int]:
     return imported, updated
 
 
+async def _delete_stale_notes_on_conn(
+    conn: Any, account_id: str, keep_note_ids: set[str]
+) -> int:
+    """Remove local notes missing from an account-wide snapshot (same transaction)."""
+    async with conn.cursor() as cur:
+        if keep_note_ids:
+            await cur.execute(
+                """
+                DELETE FROM creator_note_stats
+                WHERE account_id = %s
+                  AND NOT (note_id = ANY(%s))
+                """,
+                (account_id, list(keep_note_ids)),
+            )
+        else:
+            # Empty remote snapshot ⇒ every local note is stale.
+            await cur.execute(
+                "DELETE FROM creator_note_stats WHERE account_id = %s",
+                (account_id,),
+            )
+        return int(cur.rowcount or 0)
+
+
+def _delete_stale_notes_mem(account_id: str, keep_note_ids: set[str]) -> int:
+    """In-memory counterpart of ``_delete_stale_notes_on_conn``."""
+    bucket = _mem_notes.get(account_id)
+    if not bucket:
+        return 0
+    stale = [note_id for note_id in list(bucket) if note_id not in keep_note_ids]
+    for note_id in stale:
+        del bucket[note_id]
+    if not bucket:
+        _mem_notes.pop(account_id, None)
+    return len(stale)
+
+
 async def upsert_bundle(
     bundle_account: AccountStatsOverview, notes: list[NoteStats]
-) -> tuple[int, int]:
-    """Atomically persist an account snapshot and its note rows.
+) -> tuple[int, int, int]:
+    """Atomically persist an account snapshot and reconcile its note rows.
 
     A successful fetch used to write the account row and every note through
     separate implicit transactions.  A failure halfway through left a current
     account overview paired with a partial note set.  The live Note Manager
     response is an account-wide snapshot, so these writes must commit together.
+
+    Notes present locally but absent from the incoming snapshot are treated as
+    deleted on Creator Center and removed from durable storage (same transaction
+    as the upserts). Returns ``(imported_new, updated, deleted)``.
     """
     account_id = (bundle_account.account_id or "").strip()
     if not account_id:
         logger.warning("upsert_bundle skipped: empty account_id")
-        return 0, 0
+        return 0, 0, 0
     bundle_account.account_id = account_id
     bundle_account.snapshot_id = build_creator_stats_snapshot_id(bundle_account, notes)
 
+    keep_note_ids: set[str] = set()
+    valid_notes: list[NoteStats] = []
+    for note in notes:
+        note_account_id = (note.account_id or "").strip() or account_id
+        note_id = (note.note_id or "").strip()
+        if not note_account_id or not note_id:
+            continue
+        # Snapshot ownership is the bundle account; ignore mis-tagged rows.
+        if note_account_id != account_id:
+            logger.warning(
+                "upsert_bundle skipped foreign note: account_id=%r note_id=%r expected=%r",
+                note_account_id,
+                note_id,
+                account_id,
+            )
+            continue
+        note.account_id = account_id
+        note.note_id = note_id
+        keep_note_ids.add(note_id)
+        valid_notes.append(note)
+
     if not is_pool_ready():
         await upsert_account_stats(bundle_account)
-        return await upsert_notes(notes)
+        imported, updated = await upsert_notes(valid_notes)
+        deleted = _delete_stale_notes_mem(account_id, keep_note_ids)
+        return imported, updated, deleted
 
     pool = get_pool()
     imported = 0
     updated = 0
+    deleted = 0
     async with pool.connection() as conn, conn.transaction():
         await _upsert_account_on_conn(conn, bundle_account)
-        for note in notes:
-            note_account_id = (note.account_id or "").strip()
-            note_id = (note.note_id or "").strip()
-            if not note_account_id or not note_id:
-                continue
-            note.account_id = note_account_id
-            note.note_id = note_id
+        for note in valid_notes:
             if await _upsert_note_on_conn(conn, note):
                 imported += 1
             else:
                 updated += 1
-    return imported, updated
+        deleted = await _delete_stale_notes_on_conn(conn, account_id, keep_note_ids)
+    return imported, updated, deleted
 
 
 def _account_from_row(row: Any) -> AccountStatsOverview | None:

@@ -70,6 +70,23 @@ async def _creator_stats_scheduler(app: FastAPI, interval_hours: float) -> None:
             store = getattr(graph, "store", None) if graph is not None else None
             result = await sync_all_active_accounts(store=store, period="30d")
             finished_at = datetime.now(UTC)
+            last_error = result.get("error")
+            if not last_error and int(result.get("failed") or 0) > 0:
+                # Batch completed with per-account failures — surface the first
+                # few messages so /health is actionable (not just failed=N).
+                account_errors: list[str] = []
+                for item in result.get("results") or []:
+                    if not isinstance(item, dict):
+                        continue
+                    err = item.get("error")
+                    if not err or item.get("account_synced"):
+                        continue
+                    account_id = str(item.get("account_id") or "?").strip() or "?"
+                    account_errors.append(f"{account_id}: {err}")
+                    if len(account_errors) >= 3:
+                        break
+                if account_errors:
+                    last_error = "; ".join(account_errors)
             state.update(
                 {
                     "status": "completed" if result.get("ok") else "failed",
@@ -79,17 +96,18 @@ async def _creator_stats_scheduler(app: FastAPI, interval_hours: float) -> None:
                     "last_failed": result.get("failed", 0),
                     "last_started_at": started_at.isoformat(),
                     "last_finished_at": finished_at.isoformat(),
-                    "last_error": result.get("error"),
+                    "last_error": last_error,
                     "next_run_at": (finished_at + timedelta(seconds=interval_seconds)).isoformat(),
                 }
             )
             logger.info(
                 "scheduled creator stats import finished: status=%s active=%s "
-                "succeeded=%s failed=%s",
+                "succeeded=%s failed=%s error=%s",
                 result.get("status"),
                 result.get("active_accounts", 0),
                 result.get("succeeded", 0),
                 result.get("failed", 0),
+                last_error,
             )
         except asyncio.CancelledError:
             state.update(

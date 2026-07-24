@@ -274,13 +274,72 @@ async def system_health() -> ApiResponse[Any]:
     except Exception:
         pass
 
+    # Creator stats background import (active accounts). Operators historically
+    # only looked at /api/system/health — keep the scheduler summary here too.
+    scheduler_check: dict[str, Any] = {
+        "status": "disabled",
+        "message": "定时同步未启用",
+    }
+    try:
+        from backend.api.app import app as fastapi_app
+
+        scheduler_state = getattr(fastapi_app.state, "creator_stats_scheduler_status", None)
+        if isinstance(scheduler_state, dict):
+            enabled = bool(scheduler_state.get("enabled"))
+            status = str(scheduler_state.get("status") or "disabled")
+            last_failed = int(scheduler_state.get("last_failed") or 0)
+            last_error = scheduler_state.get("last_error")
+            if not enabled:
+                scheduler_check = {
+                    "status": "disabled",
+                    "message": "定时同步未启用",
+                    "interval_hours": scheduler_state.get("interval_hours"),
+                }
+            elif status == "running":
+                scheduler_check = {
+                    "status": "ok",
+                    "message": "定时同步进行中",
+                    "run_count": scheduler_state.get("run_count"),
+                    "last_started_at": scheduler_state.get("last_started_at"),
+                }
+            elif last_failed > 0 or status == "failed":
+                scheduler_check = {
+                    "status": "warning",
+                    "message": last_error or "最近一轮同步存在失败账号",
+                    "last_failed": last_failed,
+                    "last_succeeded": scheduler_state.get("last_succeeded"),
+                    "last_finished_at": scheduler_state.get("last_finished_at"),
+                    "next_run_at": scheduler_state.get("next_run_at"),
+                    "run_count": scheduler_state.get("run_count"),
+                }
+            else:
+                scheduler_check = {
+                    "status": "ok",
+                    "message": "定时同步正常",
+                    "last_succeeded": scheduler_state.get("last_succeeded"),
+                    "last_finished_at": scheduler_state.get("last_finished_at"),
+                    "next_run_at": scheduler_state.get("next_run_at"),
+                    "run_count": scheduler_state.get("run_count"),
+                    "interval_hours": scheduler_state.get("interval_hours"),
+                }
+    except Exception as exc:
+        scheduler_check = {
+            "status": "warning",
+            "message": f"无法读取定时同步状态: {exc}",
+        }
+
     checks = {
         "llm_providers": llm,
         "ripple_cas": ripple,
         "search_api": search,
         "database": database_check,
         "memory_store": memory,
+        "creator_stats_scheduler": scheduler_check,
     }
+
+    # Soft-degrade overall when the scheduler is enabled but last run failed.
+    if overall == "ok" and scheduler_check.get("status") == "warning":
+        overall = "degraded"
 
     result_data = {
         "status": overall,

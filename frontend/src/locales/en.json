@@ -832,9 +832,11 @@
     "browserPrerequisite": "Prerequisite: keep the account's bound Chrome browser running and logged in to Creator Center. If it is unavailable, start or reconnect that browser and try again.",
     "analyze": "Analyze style after import",
     "syncBrowser": "Import from bound browser",
-    "syncSuccess": "Import done: +{imported} new, ~{updated} updated",
+    "syncSuccess": "Import done: +{imported} new, ~{updated} updated, -{deleted} deleted",
     "syncFailed": "Sync failed",
-    "lastSync": "Last import: {source} · +{imported} / ~{updated}",
+    "syncAuthExpired": "Creator Center login expired — re-scan QR login for this account first",
+    "syncBrowserUnavailable": "Bound browser session not found — start the account Chrome and log in",
+    "lastSync": "Last import: {source} · +{imported} / ~{updated} / -{deleted}",
     "importedSection": "Imported overview",
     "notesLoaded": "Loaded {loaded} / {total} notes",
     "noImported": "No real notes imported yet — use the browser import button above.",
@@ -890,7 +892,7 @@
   },
   "creatorQuality": {
     "title": "Historical Note Published Performance",
-    "subtitle": "A read-only published-performance signal from imported note engagement, saves, titles, and consistency",
+    "subtitle": "A read-only published-performance signal from imported note engagement, saves, titles, body craft, and consistency",
     "page": {
       "hubSubtitle": "Review published performance and single-workflow content reviews in one place",
       "tab": "Published performance",
@@ -920,7 +922,7 @@
     "weaknesses": "Gaps to address",
     "recommendations": "Priority actions",
     "none": "Nothing to show yet",
-    "scopeLimit": "This report only uses imported interaction, save, title, and performance-consistency signals. It does not judge visual or body-copy quality that was not imported.",
+    "scopeLimit": "This report uses imported interaction, save, title, body-craft, and performance-consistency signals. It does not judge visual quality that was not imported.",
     "grade": {
       "strong": "Strong",
       "developing": "Developing",
@@ -942,6 +944,7 @@
       "engagement": "Engagement signal",
       "save_value": "Save value",
       "title_craft": "Title craft",
+      "body_craft": "Body craft",
       "consistency": "Performance consistency"
     },
     "lowData": {
@@ -1966,6 +1969,8 @@
       "loginStatusChecking": "Checking…",
       "loginStatusLoggedIn": "Logged in",
       "loginStatusLoggedOut": "Not logged in",
+      "loginStatusStaleSession": "Session expired — scan to re-login",
+      "loginStatusWwwOnly": "www session only — re-scan for Creator Center",
       "loginStatusInactive": "Account inactive",
       "loginStatusUnavailable": "Browser unavailable",
       "loginStatusMissingProfile": "Browser not bound",

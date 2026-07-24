@@ -173,7 +173,10 @@ async def test_cdp_capture_associates_camel_case_note_id_with_profile_responses(
         def locator(self, _selector: str):
             return self
 
-        async def evaluate(self, _script: str) -> None:
+        async def evaluate(self, _script: str) -> str:
+            return ""
+
+        async def wait_for_timeout(self, _ms: int) -> None:
             return None
 
         async def close(self) -> None:
@@ -244,6 +247,118 @@ async def test_cdp_transport_aclose_clears_state():
     assert transport._playwright is None
     # Idempotent — safe to call when nothing is connected.
     await transport.aclose()
+
+
+async def test_cdp_fetch_fails_fast_on_login_page():
+    """Expired creator sessions must not wait the full capture timeout."""
+    from backend.services.creator_stats.client import CreatorStatsFetchError
+
+    class LoginPage:
+        url = "https://creator.xiaohongshu.com/login"
+
+        def on(self, event: str, handler) -> None:
+            return None
+
+        def remove_listener(self, event: str, handler) -> None:
+            return None
+
+        async def goto(self, url: str, **_kwargs) -> None:
+            self.url = "https://creator.xiaohongshu.com/login"
+
+        def get_by_text(self, _text: str, **_kwargs):
+            return self
+
+        async def click(self, **_kwargs) -> None:
+            raise TimeoutError("no menu on login shell")
+
+        async def evaluate(self, _script: str) -> str:
+            return "短信登录\n发送验证码\n登录即同意\n用户协议"
+
+        async def wait_for_timeout(self, _ms: int) -> None:
+            return None
+
+        async def close(self) -> None:
+            return None
+
+    class FakeContext:
+        async def new_page(self) -> LoginPage:
+            return LoginPage()
+
+    class FakeBrowser:
+        contexts = [FakeContext()]
+
+    transport = CdpTransport("http://127.0.0.1:9222", timeout=30)
+    transport._ensure_browser = AsyncMock(return_value=FakeBrowser())
+
+    with pytest.raises(CreatorStatsFetchError) as exc:
+        await transport.fetch_creator_center(max_pages=1)
+
+    assert exc.value.status_code == 401
+    assert "login" in str(exc.value).lower()
+
+
+async def test_cdp_fetch_fails_on_profile_401_instead_of_generic_timeout():
+    from backend.services.creator_stats.client import CreatorStatsFetchError
+
+    class AuthFailPage:
+        url = CREATOR_STATS_PAGE
+
+        def __init__(self) -> None:
+            self._response_handler = None
+
+        def on(self, event: str, handler) -> None:
+            self._response_handler = handler
+
+        def remove_listener(self, event: str, handler) -> None:
+            return None
+
+        async def _emit(self, path: str, *, status: int = 200, body: dict | None = None) -> None:
+            response = SimpleNamespace(
+                url=f"https://creator.xiaohongshu.com{path}",
+                status=status,
+                json=AsyncMock(return_value=body or {}),
+            )
+            assert self._response_handler is not None
+            self._response_handler(response)
+            await asyncio.sleep(0)
+
+        async def goto(self, url: str, **_kwargs) -> None:
+            self.url = url
+            if "statistics" in url:
+                await self._emit(CREATOR_PROFILE_PATH, status=401, body={"success": False})
+            else:
+                await self._emit(CREATOR_PROFILE_PATH, status=401, body={"success": False})
+
+        def get_by_text(self, _text: str, **_kwargs):
+            return self
+
+        async def click(self, **_kwargs) -> None:
+            await self.goto(CREATOR_NOTE_MANAGER_PAGE)
+
+        async def evaluate(self, _script: str) -> str:
+            return "创作服务平台"
+
+        async def wait_for_timeout(self, _ms: int) -> None:
+            return None
+
+        async def close(self) -> None:
+            return None
+
+    class FakeContext:
+        async def new_page(self) -> AuthFailPage:
+            return AuthFailPage()
+
+    class FakeBrowser:
+        contexts = [FakeContext()]
+
+    transport = CdpTransport("http://127.0.0.1:9222", timeout=0.5)
+    transport._ensure_browser = AsyncMock(return_value=FakeBrowser())
+
+    with pytest.raises(CreatorStatsFetchError) as exc:
+        await transport.fetch_creator_center(max_pages=1)
+
+    assert exc.value.status_code == 401
+    assert "auth failed" in str(exc.value).lower() or "login" in str(exc.value).lower()
 
 
 async def test_client_aclose_safe_for_transport_without_aclose():

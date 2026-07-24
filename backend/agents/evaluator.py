@@ -20,7 +20,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 
 from backend.agents.base import BaseAgent
-from backend.config.models import TaskType
+from backend.config.models import TASK_TIMEOUT_OVERRIDES, TaskType
 from backend.db.evaluator_config import (
     BIAS_SEVERITY_NOTES,
     EvaluatorWeights,
@@ -31,6 +31,12 @@ from backend.state.enums import ContentStatus
 from backend.state.schema import XHSGrowthState
 
 logger = logging.getLogger("xhs_growth.agents.evaluator")
+
+# Outer wall-clock budget for the LLM panel call. Must match (or slightly
+# exceed) TASK_TIMEOUT_OVERRIDES["evaluation"] so the model HTTP client can
+# finish before this wait_for aborts; previously hard-coded to 60s while the
+# task override was 120s, which caused premature degraded results.
+_EVALUATION_LLM_TIMEOUT_S = float(TASK_TIMEOUT_OVERRIDES.get(TaskType.EVALUATION.value, 120))
 
 # 维度权重（compliance 由 is_blocking 单独兜底，不参与加权平均的拉高）
 # Keep in sync with backend.db.evaluator_config.DEFAULT_DIMENSION_WEIGHTS
@@ -187,18 +193,22 @@ class EvaluatorAgent(BaseAgent):
             memory_context=audience_ctx,
         )
 
-        # ponytail: ainvoke 无内置 timeout；astron-code-latest 不稳时会挂起整个
-        # review submit 请求（HTTP 长连接等待，不抛异常），evaluator_node 的 try/except
-        # 捕不到 → 降级放行失效。60s 上限：超时抛 TimeoutError → node except 捕获 → 降级。
+        # ponytail: ainvoke 无内置 wall-clock timeout；provider 不稳时会挂起整个
+        # review/evaluate 请求。外层 wait_for 与 TASK_TIMEOUT_OVERRIDES["evaluation"]
+        # 对齐（默认 120s），超时抛 TimeoutError → 返回 degraded（不伪造 100/approved）。
         try:
             response = await asyncio.wait_for(
                 self.model.ainvoke(
                     [SystemMessage(content=system_prompt), HumanMessage(content=user_msg)]
                 ),
-                timeout=60.0,
+                timeout=_EVALUATION_LLM_TIMEOUT_S,
             )
         except TimeoutError as e:
-            logger.warning("Evaluator LLM 调用超时(60s)，结果标记为 degraded: %s", e)
+            logger.warning(
+                "Evaluator LLM 调用超时(%.0fs)，结果标记为 degraded: %s",
+                _EVALUATION_LLM_TIMEOUT_S,
+                e,
+            )
             return {
                 "evaluation_result": {
                     "overall_score": None,

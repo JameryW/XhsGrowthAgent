@@ -138,6 +138,7 @@ def test_cli_live_prepares_db_and_uses_account_cdp_endpoint():
         source="creator_statistics",
         notes_imported=1,
         notes_updated=0,
+        notes_deleted=0,
         account_synced=True,
         analysis=None,
         niche_resolution=None,

@@ -30,6 +30,10 @@ CREATOR_STATS_PAGE = "https://creator.xiaohongshu.com/statistics/account/v2"
 # Paths are reverse-engineered and may change; client isolates that risk.
 ACCOUNT_OVERVIEW_PATH = "/api/galaxy/v2/creator/datacenter/account/base"
 CREATOR_PROFILE_PATH = "/api/galaxy/user/info"
+# Home personal_info carries cumulative fans_count; account/base only has
+# period rise/net-rise fan metrics (涨粉), not total followers.
+CREATOR_PERSONAL_INFO_PATH = "/api/galaxy/creator/home/personal_info"
+CREATOR_HOME_PAGE = "https://creator.xiaohongshu.com/new/home"
 # This is the signed endpoint that the Creator Center's Note Manager itself
 # calls.  It is intentionally distinct from the legacy cookie/httpx endpoint:
 # current creator-center requests require browser-generated x-s/x-t headers.
@@ -203,10 +207,71 @@ class CdpTransport:
     @staticmethod
     def _page_index(url: str) -> int:
         try:
+            # Creator Center has used both page=0 and page=1 as the first page.
             raw = parse_qs(urlsplit(url).query).get("page", ["0"])[0]
             return max(0, int(raw))
         except (TypeError, ValueError):
             return 0
+
+    @staticmethod
+    async def _scrape_public_note_body(
+        page: Any,
+        note_id: str,
+        *,
+        xsec_token: str = "",
+        xsec_source: str = "pc_creatormng",
+        timeout_ms: int = 12_000,
+    ) -> str:
+        """Read the public explore caption for one note (creator APIs omit body).
+
+        Uses the note's ``xsec_token`` from the posted-list response so the
+        public page can resolve without an extra signed feed request.
+        """
+        note_id = (note_id or "").strip()
+        if not note_id or page is None:
+            return ""
+        url = f"https://www.xiaohongshu.com/explore/{quote(note_id, safe='')}"
+        query: list[str] = []
+        if xsec_token:
+            query.append(f"xsec_token={quote(xsec_token, safe='')}")
+        if xsec_source:
+            query.append(f"xsec_source={quote(xsec_source, safe='')}")
+        if query:
+            url = f"{url}?{'&'.join(query)}"
+        await page.goto(
+            url,
+            wait_until="domcontentloaded",
+            timeout=max(1_000, int(timeout_ms)),
+        )
+        deadline = asyncio.get_running_loop().time() + max(1.0, timeout_ms / 1000.0)
+        script = """() => {
+            const pick = (sel) => {
+                const el = document.querySelector(sel);
+                if (!el) return '';
+                return (el.innerText || el.textContent || '').trim();
+            };
+            // Prefer caption containers; avoid comment threads under .note-text.
+            return pick('#detail-desc .note-text')
+                || pick('.note-content .desc')
+                || pick('#detail-desc')
+                || pick('.note-content .note-text')
+                || pick('.desc');
+        }"""
+        while asyncio.get_running_loop().time() < deadline:
+            try:
+                text = await page.evaluate(script)
+            except Exception:
+                text = ""
+            if isinstance(text, str):
+                cleaned = text.strip()
+                # Drop trailing UI chrome that sometimes rides on the container.
+                for marker in ("\n猜你想搜", "\n编辑于", "\n共 ", "\n评论"):
+                    if marker in cleaned:
+                        cleaned = cleaned.split(marker, 1)[0].strip()
+                if cleaned:
+                    return cleaned[:4000]
+            await asyncio.sleep(0.25)
+        return ""
 
     @staticmethod
     def _validate_creator_response(
@@ -214,7 +279,9 @@ class CdpTransport:
     ) -> None:
         if status in (401, 403):
             raise CreatorStatsFetchError(
-                f"creator stats auth failed during {operation}", status_code=status
+                f"creator stats auth failed during {operation}; "
+                "re-login the bound Chrome profile to creator.xiaohongshu.com",
+                status_code=status,
             )
         if status >= 400:
             raise CreatorStatsFetchError(
@@ -223,6 +290,68 @@ class CdpTransport:
         # Reuse the shared envelope validation so platform error code/message
         # becomes the user-facing sync error instead of a misleading empty list.
         _unwrap_api_body(body)
+
+    @staticmethod
+    def _looks_like_login_url(url: str) -> bool:
+        path = urlsplit(url or "").path.lower()
+        return (
+            "/login" in path
+            or path.endswith("/login")
+            or "website-login" in path
+            or "passport" in path
+        )
+
+    @staticmethod
+    async def _page_shows_login_ui(page: Any) -> bool:
+        """Best-effort detection of the Creator Center SMS/QR login shell."""
+        try:
+            url = str(getattr(page, "url", "") or "")
+            if CdpTransport._looks_like_login_url(url):
+                return True
+            text = await page.evaluate("() => (document.body && document.body.innerText) || ''")
+        except Exception:
+            return False
+        if not isinstance(text, str) or not text.strip():
+            return False
+        # Match the live creator login shell without treating menu labels as login.
+        markers = ("短信登录", "扫码登录", "发送验证码", "请先登录", "登录即同意")
+        hits = sum(1 for marker in markers if marker in text)
+        return hits >= 2
+
+    @staticmethod
+    def _auth_error_from_captured(
+        *,
+        profile_response: tuple[int, dict[str, Any] | list[Any] | None] | None,
+        account_response: tuple[int, dict[str, Any] | list[Any] | None] | None,
+        note_responses: dict[int, tuple[int, dict[str, Any] | list[Any] | None]],
+        login_ui: bool,
+    ) -> CreatorStatsFetchError | None:
+        """Map observed auth failures to a clear, actionable fetch error."""
+        for label, response in (
+            ("creator profile", profile_response),
+            ("account overview", account_response),
+        ):
+            if response is not None and response[0] in (401, 403):
+                return CreatorStatsFetchError(
+                    f"creator stats auth failed during {label} (HTTP {response[0]}); "
+                    "re-login the bound Chrome profile to creator.xiaohongshu.com",
+                    status_code=response[0],
+                )
+        for page_index, response in note_responses.items():
+            if response[0] in (401, 403):
+                return CreatorStatsFetchError(
+                    f"creator stats auth failed during note list page {page_index} "
+                    f"(HTTP {response[0]}); re-login the bound Chrome profile "
+                    "to creator.xiaohongshu.com",
+                    status_code=response[0],
+                )
+        if login_ui:
+            return CreatorStatsFetchError(
+                "creator center login page is showing; "
+                "re-login the bound Chrome profile (scan QR) before syncing",
+                status_code=401,
+            )
+        return None
 
     async def fetch_creator_center(
         self, *, max_pages: int = 50, period: str = "30d"
@@ -246,6 +375,7 @@ class CdpTransport:
             page = await context.new_page()
             account_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
             profile_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
+            personal_info_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
             note_responses: dict[int, tuple[int, dict[str, Any] | list[Any] | None]] = {}
             insight_responses: dict[str, tuple[int, dict[str, Any] | list[Any] | None]] = {}
             note_detail_responses: dict[
@@ -253,17 +383,28 @@ class CdpTransport:
             ] = {}
             account_ready = asyncio.Event()
             profile_ready = asyncio.Event()
+            personal_ready = asyncio.Event()
             first_notes_ready = asyncio.Event()
+            auth_failed = asyncio.Event()
             pending: set[asyncio.Task[None]] = set()
+            auth_status: int | None = None
+
+            def _record_auth_status(status: int) -> None:
+                nonlocal auth_status
+                if status in (401, 403):
+                    auth_status = status
+                    auth_failed.set()
 
             async def capture(response: Any) -> None:
-                nonlocal account_response, profile_response
+                nonlocal account_response, profile_response, personal_info_response
                 path = urlsplit(response.url).path
                 note_id = _note_detail_id(response.url)
                 if path not in (
                     ACCOUNT_OVERVIEW_PATH,
                     CREATOR_PROFILE_PATH,
+                    CREATOR_PERSONAL_INFO_PATH,
                     NOTE_LIST_PATH,
+                    LEGACY_NOTE_LIST_PATH,
                     AUDIENCE_SOURCE_PATH,
                     AUDIENCE_PERIODS_PATH,
                     NOTE_DETAIL_PATH,
@@ -274,25 +415,34 @@ class CdpTransport:
                     body: dict[str, Any] | list[Any] | None = await response.json()
                 except Exception:
                     body = None
+                status = int(getattr(response, "status", 0) or 0)
                 if path == ACCOUNT_OVERVIEW_PATH:
-                    account_response = (response.status, body)
+                    account_response = (status, body)
+                    _record_auth_status(status)
                     account_ready.set()
                     return
                 if path == CREATOR_PROFILE_PATH:
-                    profile_response = (response.status, body)
+                    profile_response = (status, body)
+                    _record_auth_status(status)
                     profile_ready.set()
+                    return
+                if path == CREATOR_PERSONAL_INFO_PATH:
+                    personal_info_response = (status, body)
+                    personal_ready.set()
                     return
                 if path in (AUDIENCE_SOURCE_PATH, AUDIENCE_PERIODS_PATH, NOTE_DETAIL_PATH):
                     # These are optional enrichment calls.  A permission or
                     # rollout failure must not discard the note snapshot.
-                    insight_responses[path] = (response.status, body)
+                    insight_responses[path] = (status, body)
                     return
                 if path in NOTE_DETAIL_RESPONSE_PATHS and note_id:
-                    note_detail_responses.setdefault(note_id, {})[path] = (response.status, body)
+                    note_detail_responses.setdefault(note_id, {})[path] = (status, body)
                     return
                 page_index = self._page_index(response.url)
-                note_responses[page_index] = (response.status, body)
-                if page_index == 0:
+                note_responses[page_index] = (status, body)
+                _record_auth_status(status)
+                # First list page may be page=0 or page=1 depending on frontend.
+                if page_index in (0, 1) or len(note_responses) == 1:
                     first_notes_ready.set()
 
             def on_response(response: Any) -> None:
@@ -317,6 +467,20 @@ class CdpTransport:
                         wait_until="domcontentloaded",
                         timeout=self._timeout * 1000,
                     )
+                    # SPA login shell may paint after domcontentloaded.
+                    with contextlib.suppress(Exception):
+                        await page.wait_for_timeout(800)
+                    # Fail fast when the profile is logged out of Creator Center.
+                    if await self._page_shows_login_ui(page) or auth_failed.is_set():
+                        login_ui = await self._page_shows_login_ui(page)
+                        auth_err = self._auth_error_from_captured(
+                            profile_response=profile_response,
+                            account_response=account_response,
+                            note_responses=note_responses,
+                            login_ui=login_ui or auth_failed.is_set(),
+                        )
+                        if auth_err is not None:
+                            raise auth_err
                     try:
                         await page.get_by_text("笔记管理", exact=True).click(
                             timeout=min(15_000, int(self._timeout * 1000))
@@ -330,38 +494,113 @@ class CdpTransport:
                             wait_until="domcontentloaded",
                             timeout=self._timeout * 1000,
                         )
+                        with contextlib.suppress(Exception):
+                            await page.wait_for_timeout(800)
+                        if await self._page_shows_login_ui(page) or auth_failed.is_set():
+                            login_ui = await self._page_shows_login_ui(page)
+                            auth_err = self._auth_error_from_captured(
+                                profile_response=profile_response,
+                                account_response=account_response,
+                                note_responses=note_responses,
+                                login_ui=login_ui or auth_failed.is_set(),
+                            )
+                            if auth_err is not None:
+                                raise auth_err
+                except CreatorStatsFetchError:
+                    raise
                 except Exception as e:
                     raise CreatorStatsFetchError(
                         f"creator note manager did not load: {type(e).__name__}: {e}"
                     ) from e
 
-                try:
-                    await asyncio.wait_for(
-                        asyncio.gather(account_ready.wait(), first_notes_ready.wait()),
-                        timeout=self._timeout,
-                    )
-                except TimeoutError as e:
-                    raise CreatorStatsFetchError(
-                        "creator note manager did not return account and first note page; "
-                        "verify the profile is logged in"
-                    ) from e
+                async def _wait_initial_data() -> None:
+                    await account_ready.wait()
+                    await first_notes_ready.wait()
 
-                if account_response is None or 0 not in note_responses:
+                data_ready = asyncio.create_task(_wait_initial_data())
+                auth_ready = asyncio.create_task(auth_failed.wait())
+                try:
+                    done, pending_wait = await asyncio.wait(
+                        {data_ready, auth_ready},
+                        timeout=self._timeout,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for task in pending_wait:
+                        task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await asyncio.gather(*pending_wait, return_exceptions=True)
+                    if auth_ready in done and auth_failed.is_set() and not (
+                        account_ready.is_set() and first_notes_ready.is_set()
+                    ):
+                        login_ui = await self._page_shows_login_ui(page)
+                        auth_err = self._auth_error_from_captured(
+                            profile_response=profile_response,
+                            account_response=account_response,
+                            note_responses=note_responses,
+                            login_ui=login_ui,
+                        )
+                        if auth_err is not None:
+                            raise auth_err
+                    if data_ready not in done:
+                        raise TimeoutError("timed out waiting for creator stats responses")
+                    # Propagate wait exceptions if any.
+                    await data_ready
+                except TimeoutError as e:
+                    login_ui = await self._page_shows_login_ui(page)
+                    auth_err = self._auth_error_from_captured(
+                        profile_response=profile_response,
+                        account_response=account_response,
+                        note_responses=note_responses,
+                        login_ui=login_ui,
+                    )
+                    if auth_err is not None:
+                        raise auth_err from e
+                    detail_bits = [
+                        f"account_ready={account_ready.is_set()}",
+                        f"notes_ready={first_notes_ready.is_set()}",
+                        f"note_pages={sorted(note_responses)}",
+                    ]
+                    if auth_status is not None:
+                        detail_bits.append(f"auth_http={auth_status}")
+                    raise CreatorStatsFetchError(
+                        "creator note manager did not return account and first note page "
+                        f"({', '.join(detail_bits)}); verify the profile is logged in to "
+                        "creator.xiaohongshu.com",
+                        status_code=auth_status,
+                    ) from e
+                finally:
+                    for task in (data_ready, auth_ready):
+                        if not task.done():
+                            task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError, Exception):
+                        await asyncio.gather(data_ready, auth_ready, return_exceptions=True)
+
+                first_note_page = 0 if 0 in note_responses else (1 if 1 in note_responses else None)
+                if account_response is None or first_note_page is None:
                     raise CreatorStatsFetchError(
                         "creator note manager returned incomplete initial data"
                     )
                 self._validate_creator_response(*account_response, operation="account overview")
-                self._validate_creator_response(*note_responses[0], operation="note list")
+                self._validate_creator_response(
+                    *note_responses[first_note_page], operation="note list"
+                )
                 try:
                     await asyncio.wait_for(profile_ready.wait(), timeout=min(2.0, self._timeout))
                 except TimeoutError:
                     # Identity data enriches the snapshot but must not discard already-read stats.
                     logger.info("creator profile response was not observed during stats sync")
+                if profile_response is not None and profile_response[0] in (401, 403):
+                    # Profile is optional for metrics, but 401 is a strong auth signal.
+                    logger.warning(
+                        "creator profile returned HTTP %s during stats sync",
+                        profile_response[0],
+                    )
 
                 # The Creator Center app itself knows how to generate a fresh
                 # signature for every page. Trigger its infinite-scroll path
                 # instead of replaying a stale signed request.
-                for page_index in range(1, max_pages):
+                start_page = first_note_page + 1
+                for page_index in range(start_page, start_page + max_pages - 1):
                     previous_pages = len(note_responses)
                     try:
                         await page.locator("div.content").evaluate(
@@ -401,9 +640,17 @@ class CdpTransport:
                     _status, body = note_responses[page_index]
                     data = _unwrap_api_body(body)
                     if isinstance(data, dict):
-                        items = data.get("notes")
+                        # Posted notes API may nest under notes / note_list / list.
+                        items = (
+                            data.get("notes")
+                            or data.get("note_list")
+                            or data.get("note_infos")
+                            or data.get("list")
+                        )
                         if isinstance(items, list):
                             raw_notes.extend(item for item in items if isinstance(item, dict))
+                    elif isinstance(data, list):
+                        raw_notes.extend(item for item in data if isinstance(item, dict))
                 if pending:
                     await asyncio.gather(*pending, return_exceptions=True)
 
@@ -471,6 +718,70 @@ class CdpTransport:
                         detail = details.get(str(legacy_note_id))
                         if isinstance(detail, dict):
                             raw_notes[index] = {**note, **detail}
+
+                # Creator list/detail APIs often only expose display_title (and a
+                # note_info.desc that equals the title). Full captions live on the
+                # public explore page — scrape them with the note's xsec_token.
+                body_deadline = asyncio.get_running_loop().time() + min(
+                    90.0, max(30.0, float(self._detail_timeout))
+                )
+                for index, note in enumerate(raw_notes[:50]):
+                    remaining = body_deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        logger.info("public note body enrichment budget exhausted")
+                        break
+                    note_id = str(
+                        note.get("note_id") or note.get("noteId") or note.get("id") or ""
+                    ).strip()
+                    if not note_id:
+                        continue
+                    title = str(
+                        note.get("display_title") or note.get("title") or note.get("desc") or ""
+                    ).strip()
+                    existing = str(
+                        note.get("body_text") or note.get("body") or note.get("desc") or ""
+                    ).strip()
+                    # Skip when we already have a caption distinct from the title.
+                    if existing and existing != title and len(existing) > len(title):
+                        continue
+                    xsec_token = str(note.get("xsec_token") or note.get("xsecToken") or "").strip()
+                    xsec_source = str(
+                        note.get("xsec_source") or note.get("xsecSource") or "pc_creatormng"
+                    ).strip()
+                    try:
+                        body_text = await self._scrape_public_note_body(
+                            page,
+                            note_id,
+                            xsec_token=xsec_token,
+                            xsec_source=xsec_source,
+                            timeout_ms=max(1_000, min(12_000, int(remaining * 1000))),
+                        )
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        logger.info("public note body scrape skipped for %s: %s", note_id, exc)
+                        continue
+                    if body_text:
+                        raw_notes[index] = {
+                            **raw_notes[index],
+                            "body_text": body_text,
+                            "desc": body_text,
+                        }
+
+                # personal_info (total fans_count) is often only requested from the
+                # creator home shell, not the stats dashboard. Fetch it once when
+                # the stats navigation did not already observe it.
+                if personal_info_response is None:
+                    with contextlib.suppress(Exception):
+                        await page.goto(
+                            CREATOR_HOME_PAGE,
+                            wait_until="domcontentloaded",
+                            timeout=min(10_000, int(self._timeout * 1000)),
+                        )
+                        await asyncio.wait_for(personal_ready.wait(), timeout=min(4.0, self._timeout))
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
+
                 account_body = account_response[1]
                 profile_body = profile_response[1] if profile_response is not None else {}
                 if isinstance(account_body, dict):
@@ -482,6 +793,8 @@ class CdpTransport:
                         ],
                         "note_detail": insight_responses.get(NOTE_DETAIL_PATH, (0, {}))[1],
                     }
+                    if personal_info_response is not None:
+                        account_body["_personal_info"] = personal_info_response[1]
                 return (
                     account_body if isinstance(account_body, dict) else {},
                     profile_body if isinstance(profile_body, dict) else {},

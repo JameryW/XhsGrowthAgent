@@ -143,6 +143,15 @@ class CopywriterAgent(BaseAgent):
 
         copy_content = self._parse_json_response(cast(str, response.content))
 
+        # ── De-AI-taste polish (workflow post-pass) ──
+        # RQGM ai_taste feedback lands in human_feedback.revisions; always run a
+        # polish so first drafts and revision loops both drop template-y AI copy.
+        copy_content = await self._apply_de_ai_taste(
+            copy_content,
+            niche=str(niche or ""),
+            revision_hints=[str(h) for h in revisions if h],
+        )
+
         # ── Multi-style generation when blogger_notes exist ──
         blogger_notes = state.get("blogger_notes") or []
         content_versions: list[dict[str, Any]] = []
@@ -154,6 +163,8 @@ class CopywriterAgent(BaseAgent):
                 system_prompt,
                 niche,
             )
+            # Variants: algorithmic only (cost control); main draft already LLM-polished.
+            content_versions = self._algorithmic_de_ai_variants(content_versions)
 
         # ── Creative Memory: 沉淀 ──
         from backend.memory.types import MaterialEntry
@@ -319,3 +330,98 @@ class CopywriterAgent(BaseAgent):
                 lines.append(f"- 改进建议: {', '.join(pmf['improvement_strategies'])}")
 
         return "\n".join(lines)
+
+    async def _apply_de_ai_taste(
+        self,
+        copy_content: dict[str, Any],
+        *,
+        niche: str = "",
+        revision_hints: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Run de_ai_taste polish on generated copy; never fail the node."""
+        if not isinstance(copy_content, dict):
+            return copy_content
+        title = str(
+            copy_content.get("selected_title")
+            or copy_content.get("title")
+            or ""
+        ).strip()
+        body = str(copy_content.get("body_text") or copy_content.get("body") or "").strip()
+        if not title and not body:
+            return copy_content
+        try:
+            from backend.tools.content.de_ai_taste import polish_copy
+
+            polished = await polish_copy(
+                selected_title=title,
+                body_text=body,
+                cta=str(copy_content.get("cta") or ""),
+                tone=str(copy_content.get("tone") or ""),
+                niche=niche,
+                revision_hints=list(revision_hints or []),
+                use_llm=True,
+            )
+        except Exception as e:
+            logger.warning("de_ai_taste polish skipped: %s", e)
+            return copy_content
+
+        if not isinstance(polished, dict):
+            return copy_content
+
+        out = dict(copy_content)
+        if polished.get("selected_title"):
+            out["selected_title"] = polished["selected_title"]
+            # Keep title_candidates coherent when first candidate matched old title.
+            candidates = out.get("title_candidates")
+            if isinstance(candidates, list) and candidates:
+                if str(candidates[0]) == title:
+                    candidates = [polished["selected_title"], *candidates[1:]]
+                    out["title_candidates"] = candidates
+        if polished.get("body_text"):
+            out["body_text"] = polished["body_text"]
+        if polished.get("cta") is not None and str(polished.get("cta") or "").strip():
+            out["cta"] = polished["cta"]
+        if polished.get("tone"):
+            out["tone"] = polished["tone"]
+        if polished.get("changes"):
+            out["de_ai_changes"] = polished["changes"]
+        if polished.get("ai_signals_found"):
+            out["de_ai_signals"] = polished["ai_signals_found"]
+        out["de_ai_polished"] = bool(polished.get("polished"))
+        out["de_ai_method"] = str(polished.get("method") or "")
+        return out
+
+    @staticmethod
+    def _algorithmic_de_ai_variants(
+        variants: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Cheap cliché scrub for multi-style variants (no extra LLM calls)."""
+        if not variants:
+            return variants
+        try:
+            from backend.tools.content.de_ai_taste import algorithmic_de_ai
+        except Exception:
+            return variants
+
+        polished_variants: list[dict[str, Any]] = []
+        for variant in variants:
+            if not isinstance(variant, dict):
+                polished_variants.append(variant)
+                continue
+            result = algorithmic_de_ai(
+                {
+                    "selected_title": variant.get("title") or "",
+                    "body_text": variant.get("body") or "",
+                    "cta": variant.get("cta") or "",
+                    "tone": variant.get("tone") or "",
+                }
+            )
+            item = dict(variant)
+            if result.get("selected_title"):
+                item["title"] = result["selected_title"]
+            if result.get("body_text"):
+                item["body"] = result["body_text"]
+            if result.get("cta"):
+                item["cta"] = result["cta"]
+            polished_variants.append(item)
+        return polished_variants

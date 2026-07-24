@@ -159,7 +159,15 @@ function loginStatusText(accountId: string): string {
   const status = loginStatusFor(accountId)
   switch (status.status) {
     case 'logged_in': return t('settings.xhsAccounts.loginStatusLoggedIn')
-    case 'logged_out': return t('settings.xhsAccounts.loginStatusLoggedOut')
+    case 'logged_out':
+      // www cookies without creator token used to show a false green "已登录".
+      if (status.reason === 'www_only' || status.reason === 'missing_creator_token') {
+        return t('settings.xhsAccounts.loginStatusWwwOnly')
+      }
+      if (status.reason === 'stale_id_token') {
+        return t('settings.xhsAccounts.loginStatusStaleSession')
+      }
+      return t('settings.xhsAccounts.loginStatusLoggedOut')
     case 'unavailable':
       if (status.reason === 'account_inactive') return t('settings.xhsAccounts.loginStatusInactive')
       if (status.reason === 'missing_profile') return t('settings.xhsAccounts.loginStatusMissingProfile')

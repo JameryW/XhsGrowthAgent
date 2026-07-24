@@ -81,6 +81,44 @@ async def test_scheduler_records_unexpected_failure_before_retry(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_scheduler_surfaces_per_account_errors_in_last_error(monkeypatch):
+    app = _scheduler_app()
+    result = {
+        "ok": False,
+        "status": "completed",
+        "active_accounts": 1,
+        "succeeded": 0,
+        "failed": 1,
+        "results": [
+            {
+                "account_id": "acc-1",
+                "account_synced": False,
+                "error": "creator center login page is showing; re-login",
+            }
+        ],
+    }
+
+    async def stop_after_first_run(seconds: float) -> None:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", stop_after_first_run)
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(return_value=result),
+        ),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(app, 1)
+
+    state = app.state.creator_stats_scheduler_status
+    assert state["status"] == "failed"
+    assert state["last_failed"] == 1
+    assert "acc-1" in (state["last_error"] or "")
+    assert "login page" in (state["last_error"] or "")
+
+
+@pytest.mark.asyncio
 async def test_health_exposes_scheduler_summary_without_raw_results(monkeypatch):
     monkeypatch.setattr(
         "backend.db.pool.is_pool_ready",

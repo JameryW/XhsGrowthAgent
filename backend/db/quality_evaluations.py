@@ -400,6 +400,111 @@ async def get_latest_for_subject(
         return None
 
 
+def _run_to_trend_row(run: QualityEvaluationRun) -> dict[str, Any] | None:
+    """Map a durable quality run into the trend endpoint's sample shape.
+
+    Returns None when the run has no consumable score (degraded / incomplete).
+    Historical-note RQGM evaluations live here rather than in
+    ``evaluator_samples`` (training-only); the trend chart must include them.
+    """
+    result = run.result_json if isinstance(run.result_json, dict) else {}
+    status = str(result.get("status") or run.status or "ready").lower()
+    if bool(result.get("degraded")) or status in {
+        "degraded",
+        "failed",
+        "running",
+        "unavailable",
+    }:
+        return None
+    score = result.get("overall_score")
+    if score is None:
+        return None
+    try:
+        score_f = float(score)
+    except (TypeError, ValueError):
+        return None
+    created = str(run.completed_at or run.created_at or result.get("evaluated_at") or "")
+    dims = result.get("dimensions") or []
+    if not isinstance(dims, list):
+        dims = []
+    return {
+        "created_at": created,
+        "overall_score": score_f,
+        "decision": str(result.get("decision") or ""),
+        "dimensions": dims,
+        "account_id": run.account_id,
+        "status": status,
+        "degraded": False,
+        "data_as_of": run.source_data_as_of or created,
+        "source": "quality_evaluation_run",
+        "subject_type": run.subject_type,
+        "subject_id": run.subject_id,
+    }
+
+
+async def fetch_trend_points(
+    account_id: str | None = None, limit: int = 100
+) -> list[dict[str, Any]]:
+    """Newest-first then reversed: ascending timeline of scorable quality runs.
+
+    Used by ``GET /evaluation/trend`` so historical-note RQGM reviews appear
+    alongside workflow evaluator samples.
+    """
+    limit = max(1, min(int(limit or 100), 500))
+    if not is_pool_ready():
+        rows = [
+            row
+            for run in _mem_runs.values()
+            if (not account_id or run.account_id == account_id)
+            for row in (_run_to_trend_row(run),)
+            if row is not None
+        ]
+        rows.sort(key=lambda r: str(r.get("created_at") or ""))
+        return rows[-limit:]
+
+    try:
+        from psycopg.rows import dict_row
+
+        pool = get_pool()
+        async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            # Pull the newest N, then reverse to ascending for chart plotting.
+            if account_id:
+                await cur.execute(
+                    f"""
+                    SELECT {_SELECT_COLUMNS}
+                    FROM quality_evaluation_runs
+                    WHERE account_id = %s
+                    ORDER BY COALESCE(completed_at, created_at) DESC
+                    LIMIT %s
+                    """,
+                    (account_id, limit),
+                )
+            else:
+                await cur.execute(
+                    f"""
+                    SELECT {_SELECT_COLUMNS}
+                    FROM quality_evaluation_runs
+                    ORDER BY COALESCE(completed_at, created_at) DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+            runs = [_from_row(r) for r in await cur.fetchall()]
+    except Exception as exc:
+        logger.warning("fetch quality evaluation trend failed: %s", exc)
+        return []
+
+    points: list[dict[str, Any]] = []
+    for run in runs:
+        if run is None:
+            continue
+        row = _run_to_trend_row(run)
+        if row is not None:
+            points.append(row)
+    points.sort(key=lambda r: str(r.get("created_at") or ""))
+    return points
+
+
 async def mark_subject_stale(
     account_id: str,
     subject_type: str,

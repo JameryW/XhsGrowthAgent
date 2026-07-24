@@ -371,28 +371,50 @@ async def export_samples(account_id: str | None = None, limit: int = 1000) -> li
 
 
 async def fetch_trend(account_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
-    """Fetch samples in ascending time order for trend visualization.
+    """Fetch the newest samples, returned in ascending time order for charts.
 
-    Returns minimal fields (created_at, overall_score, decision, dimensions)
-    so the frontend can plot an overall-score timeline + per-dimension trends.
+    Returns minimal fields (created_at, overall_score, decision, dimensions,
+    account_id) so the frontend can plot an overall-score timeline +
+    per-dimension trends.  Selecting DESC then reversing avoids the old
+    ``ORDER BY created_at ASC LIMIT N`` trap that dropped the latest points
+    once the table grew past the limit.
     """
     from psycopg.rows import dict_row
 
+    limit = max(1, min(int(limit or 100), 500))
     pool = get_pool()
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         if account_id:
             await cur.execute(
-                "SELECT created_at, overall_score, decision, dimensions FROM "
-                "evaluator_samples WHERE account_id = %s ORDER BY created_at ASC LIMIT %s",
+                """
+                SELECT created_at, overall_score, decision, dimensions, account_id
+                FROM evaluator_samples
+                WHERE account_id = %s
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
                 (account_id, limit),
             )
         else:
             await cur.execute(
-                "SELECT created_at, overall_score, decision, dimensions FROM "
-                "evaluator_samples ORDER BY created_at ASC LIMIT %s",
+                """
+                SELECT created_at, overall_score, decision, dimensions, account_id
+                FROM evaluator_samples
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
                 (limit,),
             )
-        return list(await cur.fetchall())
+        rows = list(await cur.fetchall())
+    # Newest-first from SQL → ascending for the chart.
+    rows.reverse()
+    for row in rows:
+        row.setdefault("source", "evaluator_sample")
+        if "status" not in row:
+            row["status"] = "ready"
+        if "degraded" not in row:
+            row["degraded"] = False
+    return rows
 
 
 async def backfill_engagement(thread_id: str, engagement: dict[str, Any]) -> int:

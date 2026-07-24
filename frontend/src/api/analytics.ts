@@ -162,10 +162,19 @@ export interface CreatorAudienceAnalysis {
   insights: string[]
 }
 
+export type CreatorStatsSyncErrorCode =
+  | 'AUTH_EXPIRED'
+  | 'BROWSER_UNAVAILABLE'
+  | 'FETCH_FAILED'
+  | 'ALREADY_RUNNING'
+  | string
+
 export interface CreatorStatsSyncResult {
   account_id: string
   notes_imported: number
   notes_updated: number
+  /** Notes present locally but missing from the Creator Center snapshot. */
+  notes_deleted?: number
   account_synced: boolean
   analysis?: {
     note_count?: number
@@ -176,6 +185,8 @@ export interface CreatorStatsSyncResult {
   suggestions?: Record<string, CreatorSuggestion[]>
   source: string
   error?: string | null
+  /** Machine-readable failure class for UI routing (re-login vs browser down). */
+  error_code?: CreatorStatsSyncErrorCode | null
   niche_resolution?: NicheResolution | null
   ok?: boolean
   import_ok?: boolean
@@ -235,6 +246,7 @@ export type CreatorQualityDimensionKey =
   | 'engagement'
   | 'save_value'
   | 'title_craft'
+  | 'body_craft'
   | 'consistency'
 
 export type CreatorQualityInsightDimension = CreatorQualityDimensionKey | 'data_collection'

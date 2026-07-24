@@ -3,6 +3,7 @@
 Tools:
 - hashtag_researcher: 话题标签研究 (LLM 增强)
 - title_generator: 标题生成 (LLM 增强)
+- de_ai_taste: 去 AI 味润色 (LLM 增强 + 算法降级)
 - image_prompt_generator: 图片提示词生成
 - layout_recommender: 排版布局推荐 (基于场景分析)
 - style_library: 视觉风格库 (基于场景分析)
@@ -10,8 +11,10 @@ Tools:
 Helpers:
 - get_default_layouts: 默认布局配置 (降级使用)
 - get_default_styles: 默认风格配置 (降级使用)
+- polish_copy / algorithmic_de_ai: 供 agent 直调的去 AI 味接口
 """
 
+from backend.tools.content.de_ai_taste import algorithmic_de_ai, de_ai_taste, polish_copy
 from backend.tools.content.hashtag_researcher import hashtag_researcher
 from backend.tools.content.image_prompt import image_prompt_generator
 from backend.tools.content.layout import get_default_layouts, layout_recommender
@@ -26,6 +29,9 @@ __all__ = [
     "hashtag_researcher",
     "research_hashtags",
     "title_generator",
+    "de_ai_taste",
+    "polish_copy",
+    "algorithmic_de_ai",
     "image_prompt_generator",
     "layout_recommender",
     "get_default_layouts",
