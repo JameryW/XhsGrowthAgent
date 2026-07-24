@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -60,6 +61,12 @@ class CreatorStatsSyncAllRequest(BaseModel):
 # Simple in-memory cache with TTL
 _cache: dict[str, tuple[float, Any]] = {}
 _CACHE_TTL = 30  # seconds
+
+# Bound on concurrent checkpointer reads in _get_completed_workflows.  The
+# checkpointer pool is created with max_size=10 (backend/graph/builder.py), so
+# 8 leaves headroom for the rest of the app while still parallelizing cold
+# dashboard loads.
+_STATE_FETCH_CONCURRENCY = 8
 
 
 async def _creator_snapshot_metadata(account_id: str) -> dict[str, Any]:
@@ -157,39 +164,54 @@ def _set_cached(key: str, value: Any) -> None:
 async def _get_completed_workflows(
     graph: Any, account_id: str | None = None
 ) -> list[dict[str, Any]]:
-    """Read full state for completed workflows, with caching."""
+    """Read full state for completed workflows, with caching.
+
+    Checkpoint reads run concurrently (bounded by ``_STATE_FETCH_CONCURRENCY``):
+    each ``aget_state`` is a separate checkpointer round trip, so fetching them
+    serially made every cold dashboard/report request cost N sequential reads.
+    """
     cache_key = f"completed_{account_id or 'all'}"
     cached = _get_cached(cache_key)
     if cached is not None:
         return cast(list[dict[str, Any]], cached)
 
-    results: list[dict[str, Any]] = []
+    rows: list[Any] = []
     if is_pool_ready():
         # Include completed and analyzing workflows (both have publish_result)
         for status_filter in ("completed", "analyzing"):
             offset = 0
             while True:
-                rows, total = await db_list(
+                batch, total = await db_list(
                     account_id=account_id,
                     status=status_filter,
                     limit=100,
                     offset=offset,
                 )
-                if not rows:
+                if not batch:
                     break
-                for row in rows:
-                    if account_id and row.account_id != account_id:
-                        continue
-                    try:
-                        config = {"configurable": {"thread_id": row.thread_id}}
-                        state = await graph.aget_state(config)
-                        if state.values:
-                            results.append({**row.to_dict(), "_state": state.values})
-                    except Exception:
-                        continue
-                offset += len(rows)
-                if offset >= total or len(rows) < 100:
+                rows.extend(batch)
+                offset += len(batch)
+                if offset >= total or len(batch) < 100:
                     break
+
+    semaphore = asyncio.Semaphore(_STATE_FETCH_CONCURRENCY)
+
+    async def _read_workflow_state(row: Any) -> dict[str, Any] | None:
+        if account_id and row.account_id != account_id:
+            return None
+        async with semaphore:
+            try:
+                config = {"configurable": {"thread_id": row.thread_id}}
+                state = await graph.aget_state(config)
+            except Exception:
+                return None
+        if not state.values:
+            return None
+        return {**row.to_dict(), "_state": state.values}
+
+    # gather preserves input order, so results stay in created_at DESC order.
+    fetched = await asyncio.gather(*(_read_workflow_state(row) for row in rows))
+    results = [item for item in fetched if item is not None]
 
     _set_cached(cache_key, results)
     return results

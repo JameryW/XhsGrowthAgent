@@ -1276,7 +1276,7 @@
     "showcaseTitleLabel": "展示标题",
     "showcaseTitlePlaceholder": "留空则使用工作流名称",
     "showcaseSummaryLabel": "展示摘要",
-    "showcaseSummaryPlaceholder": "可选，最多 360 个字符",
+    "showcaseSummaryPlaceholder": "可选，留空将根据内容自动生成",
     "showcaseFeatured": "在展示页置顶推荐",
     "showcaseFeaturedRank": "置顶顺序",
     "showcaseCancel": "取消",

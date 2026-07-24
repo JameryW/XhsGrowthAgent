@@ -8,6 +8,7 @@ contracts rather than frontend conventions.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -544,6 +545,123 @@ async def _load_checkpoints(request: Request, thread_id: str) -> list[dict[str, 
         return []
 
 
+_SUMMARY_PROMPT = {
+    "system": (
+        "你是小红书内容增长平台的案例编辑。根据给定的笔记信息，为公开案例展示页"
+        "撰写一句中文摘要（40-80 字），概括选题角度与内容亮点；语气客观克制，"
+        '不使用 emoji，不得编造输入中不存在的数据。只输出 JSON：{"summary": "..."}'
+    ),
+    "user_template": (
+        "标题：{title}\n选题：{topic}\n目标受众：{audience}\n内容要点：{key_points}\n"
+        "正文：{body}\n真实数据：{metrics}"
+    ),
+}
+
+# Bound on concurrent LLM/state reads during lazy list backfill.
+_SUMMARY_BACKFILL_CONCURRENCY = 4
+
+
+def _summary_metrics_text(metrics: dict[str, Any]) -> str:
+    parts = []
+    for key, label in (
+        ("views", "阅读"),
+        ("likes", "点赞"),
+        ("collects", "收藏"),
+        ("comments", "评论"),
+    ):
+        value = metrics.get(key)
+        if isinstance(value, (int, float)):
+            parts.append(f"{label} {int(value)}")
+    return "、".join(parts) if parts else "（暂无）"
+
+
+async def _generate_case_summary(state: dict[str, Any] | None, row: WorkflowRow) -> str | None:
+    """Generate a public case summary: LLM-polished, deterministic fallback.
+
+    Returns ``None`` when there is no meaningful source content at all, so
+    callers can keep the generic placeholder instead of persisting noise.
+    LLM output passes the same ``_safe_text`` redaction as operator input.
+    """
+
+    result = _public_result(state or {})
+    fallback = result.get("summary") or result.get("topic")
+    if not fallback:
+        # No state-derived content (e.g. missing checkpoint): an LLM summary
+        # written from the label alone would be invention, so keep the generic
+        # placeholder instead of persisting noise.
+        return None
+    title = (
+        _safe_text(row.public_title, 120) or result.get("title") or _safe_text(row.label, 120) or ""
+    )
+
+    def _fallback(_data: dict[str, Any]) -> dict[str, Any]:
+        return {"summary": fallback}
+
+    inputs = {
+        "title": title or "（无）",
+        "topic": result.get("topic") or "（无）",
+        "audience": result.get("target_audience") or "（无）",
+        "key_points": "、".join(result.get("key_points") or []) or "（无）",
+        "body": result.get("summary") or "（无）",
+        "metrics": _summary_metrics_text(result.get("metrics") or {}),
+    }
+    try:
+        from backend.config.models import TaskType
+        from backend.services.llm_enrichment import get_llm_service
+
+        generated = await get_llm_service().enrich_with_llm(
+            task_type=TaskType.WRITING,
+            prompt_template=_SUMMARY_PROMPT,
+            input_data=inputs,
+            fallback_fn=_fallback,
+        )
+    except Exception:
+        generated = _fallback(inputs)
+    if isinstance(generated, dict):
+        text = _safe_text(generated.get("summary"), 360)
+        if text:
+            return text
+    return _safe_text(fallback, 360)
+
+
+async def _backfill_missing_summaries(request: Request, rows: list[WorkflowRow]) -> None:
+    """Generate and persist summaries for listed public rows that lack one.
+
+    The list reader never loads workflow state for card rendering, so rows
+    approved before summary generation existed would show the generic
+    placeholder forever.  Generation is bounded and write-through: the first
+    listing pays it once, later reads stay on the persisted column.  The
+    backfill never touches ``updated_at`` so it cannot reorder recent-first
+    listings.
+    """
+
+    pending = [row for row in rows if not _safe_text(row.public_summary, 360)]
+    if not pending:
+        return
+    semaphore = asyncio.Semaphore(_SUMMARY_BACKFILL_CONCURRENCY)
+
+    async def _backfill(row: WorkflowRow) -> None:
+        async with semaphore:
+            try:
+                state = await _load_state(request, row.thread_id)
+                summary = await _generate_case_summary(state, row)
+                if not summary:
+                    return
+                updated = await db_update(
+                    row.thread_id, public_summary=summary, touch_updated_at=False
+                )
+                if updated is not None:
+                    row.public_summary = updated.public_summary
+            except Exception:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "showcase summary backfill failed for a case", exc_info=True
+                )
+
+    await asyncio.gather(*(_backfill(row) for row in pending))
+
+
 def _case_payload(
     row: WorkflowRow,
     state: dict[str, Any] | None = None,
@@ -646,6 +764,8 @@ async def list_public_cases(
             rows[0] if rows else None,
         )
     page = rows[offset : offset + limit]
+    # Write-through backfill for rows approved before summaries were generated.
+    await _backfill_missing_summaries(request, page)
     cases = [_case_payload(row, featured=row is featured_row) for row in page]
     data = {
         "cases": cases,
@@ -667,6 +787,7 @@ async def list_public_cases(
 async def update_showcase_visibility(
     public_id: str,
     payload: ShowcaseVisibilityUpdate,
+    request: Request,
     current: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """Approve, edit, or revoke a public case from the authenticated console."""
@@ -676,6 +797,15 @@ async def update_showcase_visibility(
     approved_at = datetime.now(UTC).isoformat() if is_public else None
     approved_by = (current.get("username") or current.get("id")) if is_public else None
     featured = bool(payload.featured and payload.visibility == "public")
+    public_summary = _safe_text(payload.public_summary, 360)
+    summary_auto_generated = False
+    if is_public and not public_summary:
+        # Operator left the summary blank: generate one from the workflow
+        # content (LLM-polished with a deterministic excerpt fallback) so the
+        # public card never shows the generic placeholder.
+        state = await _load_state(request, row.thread_id)
+        public_summary = await _generate_case_summary(state, row)
+        summary_auto_generated = public_summary is not None
     updated = await db_update(
         row.thread_id,
         showcase_visibility=payload.visibility,
@@ -683,7 +813,7 @@ async def update_showcase_visibility(
         showcase_featured=featured,
         featured_rank=payload.featured_rank if featured else None,
         public_title=_safe_text(payload.public_title, 120),
-        public_summary=_safe_text(payload.public_summary, 360),
+        public_summary=public_summary,
         approved_at=approved_at,
         approved_by=approved_by,
         redaction_version="v1",
@@ -696,6 +826,7 @@ async def update_showcase_visibility(
             "visibility": payload.visibility,
             "approved_at": approved_at,
             "approved_by": approved_by,
+            "summary_auto_generated": summary_auto_generated,
             "case": _case_payload(updated, featured=featured),
         }
     )

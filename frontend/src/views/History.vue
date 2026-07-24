@@ -190,10 +190,14 @@ async function saveShowcaseSettings() {
           ? Math.max(0, Math.min(1000, Math.round(showcaseFeaturedRank.value || 1)))
           : null,
       }
-      await updateShowcaseVisibility(workflow.showcase_public_id, payload)
+      const response = await updateShowcaseVisibility(workflow.showcase_public_id, payload)
       workflow.showcase_visibility = payload.visibility
       workflow.public_title = payload.public_title
-      workflow.public_summary = payload.public_summary
+      // When the summary was left blank, the server generates one from the
+      // workflow content; sync it back so the dialog shows the real value.
+      workflow.public_summary = !payload.public_summary && response.summary_auto_generated
+        ? response.case?.summary ?? null
+        : payload.public_summary
       workflow.showcase_featured = Boolean(payload.featured)
       workflow.featured_rank = payload.featured_rank
     }

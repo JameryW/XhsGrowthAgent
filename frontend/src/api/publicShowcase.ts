@@ -37,6 +37,8 @@ export interface ShowcaseVisibilityUpdateResponse {
   visibility: 'private' | 'unlisted' | 'public'
   approved_at?: string | null
   approved_by?: string | null
+  summary_auto_generated?: boolean
+  case?: { summary?: string | null }
 }
 
 export async function listPublicCases(
