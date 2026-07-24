@@ -2048,7 +2048,6 @@
     "freeWelcomeHint": "自由创作模式已开启：请直接描述你的创作目标，智能体会编排创作、评估与发布。",
     "freeTopic": "带入主题：{topic}",
     "freeAgentUnavailable": "自由创作需要 Agent 连接；当前操作未执行，请重试连接。",
-    "freeAgentReady": "已进入自由创作对话模式，直接输入文字即可开始创作、评估与发布。",
     "freeMessageQueued": "智能体尚未连接，消息已暂存，连接成功后会自动发送。",
     "freeMessageQueueFull": "待发送消息已达到上限，已移除最早的一条消息。",
     "freeQueuedMessagesSent": "已发送暂存消息（{count} 条）。",
@@ -2223,9 +2222,9 @@
     "resumingWorkflow": "恢复活跃工作流：{threadId}",
     "helpText": "可用命令：\n  /start [话题]  - 开始固定流程创作（可选话题）\n  /status [id]   - 查看工作流状态\n  /pause [id]    - 暂停工作流\n  /resume [id]   - 恢复工作流\n  /cancel [id]   - 取消工作流\n  /approve [id]  - 通过审核\n  /reject <意见> - 驳回并附修改意见\n  /help          - 显示帮助\n  /clear         - 清除终端\n\n或直接输入话题开始固定流程创作。"
   },
-    "evaluation": {
-      "title": "创作质量评估",
-      "overview": {
+  "evaluation": {
+    "title": "创作质量评估",
+    "overview": {
       "title": "发布后表现与内容评审一屏掌握",
       "accountScore": "发布后表现分",
       "evaluated": "已评估工作流",
