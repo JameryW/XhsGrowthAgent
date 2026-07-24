@@ -23,11 +23,13 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from backend.agents.evaluator import EvaluatorAgent
 from backend.agents.publisher import run_publish
+from backend.api.account_scope import require_owned_account, resolve_required_account_id
+from backend.api.deps import get_current_user
 from backend.api.errors import ValidationError
 from backend.api.responses import ApiResponse, success
 from backend.config.settings import Settings
@@ -43,7 +45,7 @@ _evaluator = EvaluatorAgent()
 class FreeDraft(BaseModel):
     """A free-mode content draft — title/body/hashtags/images, no workflow."""
 
-    account_id: str = Field(default="default", description="账号 ID")
+    account_id: str = Field(default="", description="账号 ID（必填，禁止 default）")
     title: str = Field(default="", description="标题")
     body: str = Field(default="", description="正文")
     hashtags: list[str] = Field(default_factory=list, description="话题标签")
@@ -73,7 +75,7 @@ class FreeDraft(BaseModel):
 class FreeDraftRef(BaseModel):
     """Reference to a stored free draft."""
 
-    account_id: str = Field(default="default", description="账号 ID")
+    account_id: str = Field(default="", description="账号 ID（必填）")
     draft_id: str = Field(description="草稿 ID")
 
 
@@ -195,13 +197,18 @@ async def _load_draft(request: Request, account_id: str, draft_id: str) -> dict[
 
 
 @router.post("/draft")
-async def create_draft(draft: FreeDraft, request: Request) -> ApiResponse[Any]:
+async def create_draft(
+    draft: FreeDraft,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """Create (or overwrite) a free-mode draft. Returns the draft_id.
 
     The agent calls this with conversational content it produced, then feeds
     the draft_id to /evaluate and /publish.
     """
-    account_id = draft.account_id or "default"
+    account_id = await resolve_required_account_id(str(user["id"]), draft.account_id)
+    draft.account_id = account_id
     graph = getattr(request.app.state, "graph", None)
     store = getattr(graph, "store", None)
     if store is None:
@@ -284,14 +291,18 @@ async def create_draft(draft: FreeDraft, request: Request) -> ApiResponse[Any]:
 
 
 @router.post("/evaluate")
-async def evaluate_draft(ref: FreeDraftRef, request: Request) -> ApiResponse[Any]:
+async def evaluate_draft(
+    ref: FreeDraftRef,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """Evaluate a free draft via the RQGM agent-as-a-judge panel (thread-less).
 
     Loads the draft from BaseStore, synthesizes a minimal state, and calls
     EvaluatorAgent.execute. The result is NOT written to a checkpoint (free
     mode has no thread); it is returned to the agent directly.
     """
-    account_id = ref.account_id or "default"
+    account_id = await resolve_required_account_id(str(user["id"]), ref.account_id)
     draft = await _load_draft(request, account_id, ref.draft_id)
 
     graph = getattr(request.app.state, "graph", None)
@@ -331,7 +342,11 @@ async def evaluate_draft(ref: FreeDraftRef, request: Request) -> ApiResponse[Any
 
 
 @router.post("/publish")
-async def publish_draft(ref: FreeDraftRef, request: Request) -> ApiResponse[Any]:
+async def publish_draft(
+    ref: FreeDraftRef,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """Publish a free draft to Xiaohongshu (thread-less).
 
     Loads the draft, synthesizes a minimal state, and calls run_publish — the
@@ -339,7 +354,7 @@ async def publish_draft(ref: FreeDraftRef, request: Request) -> ApiResponse[Any]
     validation, XHSClient.publish_post, ContentHistory recording). Publish
     results are recorded to account memory by run_publish itself.
     """
-    account_id = ref.account_id or "default"
+    account_id = await resolve_required_account_id(str(user["id"]), ref.account_id)
     draft = await _load_draft(request, account_id, ref.draft_id)
 
     graph = getattr(request.app.state, "graph", None)
@@ -432,8 +447,9 @@ async def list_drafts(
         description="过滤草稿: all|published|unpublished|publish_failed|evaluated|unevaluated",
     ),
     q: str = Query(default="", description="标题子串 (case-insensitive contains)"),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
-    """List free-mode drafts for an account (thread-less).
+    """List free-mode drafts for an owned account (thread-less).
 
     Returns a summary list (draft_id + title + hashtags) — no full body, to
     keep payloads small. Uses BaseStore.asearch with an empty query (returns
@@ -449,6 +465,7 @@ async def list_drafts(
     filtered set; `truncated` reflects the pre-filter 100-cap (whether the
     store likely holds more than 100 drafts total), independent of filter.
     """
+    account_id = await resolve_required_account_id(str(user["id"]), account_id)
     if status not in _DRAFT_STATUS_FILTERS:
         raise ValidationError(
             "status",
@@ -520,7 +537,8 @@ async def list_drafts(
 async def get_draft(
     draft_id: str,
     request: Request,
-    account_id: str = Query(default="default", description="账号 ID"),
+    account_id: str = Query(default="", description="账号 ID"),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """Fetch a single free draft's full record (thread-less).
 
@@ -529,6 +547,7 @@ async def get_draft(
     server-set metadata like created_at/updated_at/last_evaluation/published).
     Raises ValidationError → 400 if the draft is missing or corrupt.
     """
+    account_id = await resolve_required_account_id(str(user["id"]), account_id)
     draft = await _load_draft(request, account_id, draft_id)
     return success(data={"draft_id": draft_id, "draft": draft})
 
@@ -539,10 +558,12 @@ async def update_draft(
     update: FreeDraftUpdate,
     request: Request,
     account_id: str = Query(..., description="账号 ID"),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """Update a free-mode draft (thread-less). Overwrites specified fields,
     keeps the draft_id unchanged.
     """
+    account_id = await resolve_required_account_id(str(user["id"]), account_id)
     existing = await _load_draft(request, account_id, draft_id)
     graph = getattr(request.app.state, "graph", None)
     store = getattr(graph, "store", None)
@@ -591,10 +612,12 @@ async def delete_draft(
     draft_id: str,
     request: Request,
     account_id: str = Query(..., description="账号 ID"),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """Delete a free-mode draft (thread-less). Idempotent — deleting a
     non-existent draft returns success.
     """
+    account_id = await resolve_required_account_id(str(user["id"]), account_id)
     graph = getattr(request.app.state, "graph", None)
     store = getattr(graph, "store", None)
     if store is None:
@@ -703,6 +726,7 @@ async def get_analytics(
 async def free_mode_suggestions(
     account_id: str,
     request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """Free-mode creative suggestions from imported creator-center stats.
 
@@ -710,7 +734,7 @@ async def free_mode_suggestions(
     """
     from backend.services.creator_stats.suggestions import get_suggestions_for_mode
 
-    account_id = (account_id or "").strip() or "default"
+    account_id = await resolve_required_account_id(str(user["id"]), account_id)
     graph = getattr(request.app.state, "graph", None)
     store = getattr(graph, "store", None) if graph is not None else None
     suggestions = await get_suggestions_for_mode(account_id, "free", store=store)

@@ -7,9 +7,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
+from backend.api.account_scope import require_owned_account, resolve_required_account_id
+from backend.api.deps import get_current_user
 from backend.api.errors import CreatorNoteNotFoundError, ValidationError
 from backend.api.responses import ApiResponse, success
 from backend.db.pool import is_pool_ready
@@ -1016,6 +1018,7 @@ async def get_dashboard(
 async def sync_creator_stats(
     body: CreatorStatsSyncRequest,
     request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """从创作者中心统计页导入账户/笔记数据，并沉淀创作风格。
 
@@ -1027,6 +1030,9 @@ async def sync_creator_stats(
     from backend.db.accounts import get_account_cdp_endpoint
     from backend.services.creator_stats.pipeline import sync_account_stats
     from backend.services.creator_stats.types import SyncResult
+
+    account_id = await resolve_required_account_id(str(user["id"]), body.account_id)
+    body.account_id = account_id
 
     graph = getattr(request.app.state, "graph", None)
     store = getattr(graph, "store", None) if graph is not None else None
@@ -1318,11 +1324,13 @@ async def get_creator_note_quality(
 async def get_creator_quality(
     account_id: str,
     locale: str = Query("zh-CN", max_length=16, description="报告文案语言：zh-CN | en"),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """Return a read-only quality report over every imported note for an account."""
     from backend.services.creator_stats.quality import analyze_historical_quality
 
-    normalized_account_id = (account_id or "").strip()
+    normalized_account_id = await resolve_required_account_id(str(user["id"]), account_id)
+    await require_owned_account(str(user["id"]), normalized_account_id)
     # Do not use list_note_stats here: that reader is intentionally capped for
     # interactive display.  Historical quality must analyze the same complete
     # durable note bundle that supplies its snapshot metadata; it must not

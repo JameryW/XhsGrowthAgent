@@ -11,8 +11,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 
+from backend.api.account_scope import resolve_required_account_id
+from backend.api.deps import get_current_user
 from backend.api.responses import ApiResponse, success
 from backend.db.pool import is_pool_ready
 from backend.db.workflows import list_workflows as db_list
@@ -97,8 +99,11 @@ def _gate_snapshot(values: dict[str, Any], gate: str) -> dict[str, Any]:
 
 
 @router.get("/inbox")
-async def get_inbox(request: Request) -> ApiResponse[Any]:
-    """List all at-gate threads for the active account.
+async def get_inbox(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """List all at-gate threads for the active owned account.
 
     Reads workflows from DB for the active account, then probes each via
     graph.aget_state to detect which (if any) gate it's paused at. Threads
@@ -106,16 +111,11 @@ async def get_inbox(request: Request) -> ApiResponse[Any]:
     """
     graph = request.app.state.graph
 
-    # Resolve the active account — inbox is per-account.
-    account_id: str | None = None
     try:
-        from backend.db.accounts import get_active_account as db_get_active
-
-        acc = await db_get_active()
-        if acc is not None:
-            account_id = acc.id
+        account_id = await resolve_required_account_id(str(user["id"]), None)
     except Exception:
-        logger.debug("get_active_account failed", exc_info=True)
+        logger.debug("resolve inbox account failed", exc_info=True)
+        return success(data={"inbox": [], "account_id": None})
 
     # No account configured or DB unavailable → empty inbox, not an error.
     if not account_id or not is_pool_ready():

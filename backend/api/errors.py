@@ -84,6 +84,18 @@ class CreatorNoteNotFoundError(APIError):
         )
 
 
+class AccountNotFoundError(APIError):
+    """Account missing or not visible to the current console user."""
+
+    def __init__(self, account_id: str):
+        super().__init__(
+            code=ErrorCode.ACCOUNT_NOT_FOUND,
+            message=f"Account '{account_id}' not found",
+            details={"account_id": account_id},
+            status_code=404,
+        )
+
+
 class ReviewNotPendingError(APIError):
     """No pending review exception."""
 

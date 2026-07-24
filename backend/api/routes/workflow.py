@@ -13,13 +13,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile
 
 from backend.agents.publisher import run_publish
+from backend.api.account_scope import assert_thread_owned, require_owned_account, resolve_required_account_id
+from backend.api.deps import get_current_user
 from backend.api.errors import ValidationError, WorkflowNotFoundError
 from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
@@ -473,10 +475,16 @@ def _get_ripple_progress(thread_id: str) -> dict[str, Any]:
 
 
 @router.post("/start")
-async def start_workflow(req: WorkflowStartRequest, request: Request) -> ApiResponse[Any]:
-    """启动新的增长引擎工作流"""
-    if not req.account_id or req.account_id.strip() == "":
-        raise ValidationError("account_id", "account_id cannot be empty")
+async def start_workflow(
+    req: WorkflowStartRequest,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """启动新的增长引擎工作流（必须使用当前用户拥有的账号）."""
+    account_id = await resolve_required_account_id(str(user["id"]), req.account_id)
+    await require_owned_account(str(user["id"]), account_id)
+    # Keep request fields consistent for the rest of the handler.
+    req.account_id = account_id
 
     graph = request.app.state.graph
     thread_id = f"xhs_{req.account_id}_{uuid.uuid4().hex[:8]}"
@@ -1623,12 +1631,14 @@ async def stream_workflow_progress(thread_id: str, request: Request) -> Streamin
 @router.get("/list")
 async def list_workflows_endpoint(
     request: Request,
-    account_id: str | None = Query(None, description="筛选账号 ID"),
+    account_id: str | None = Query(None, description="账号 ID（省略则用当前用户活跃账号）"),
     status: str | None = Query(None, description="筛选状态: running/completed/error/cancelled"),
     limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
     offset: int = Query(0, ge=0, description="分页偏移"),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
-    """列出工作流 — 从 DB 查询，按创建时间倒序"""
+    """列出工作流 — 从 DB 查询，按创建时间倒序（单账号隔离，禁止全量聚合）."""
+    account_id = await resolve_required_account_id(str(user["id"]), account_id)
     if is_pool_ready():
         rows, total = await db_list(
             account_id=account_id,

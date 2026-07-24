@@ -4,7 +4,7 @@ import type {
   EvaluationResultResponse,
   EvaluationTrendResponse,
 } from '@/types/evaluation'
-import { ALL_ACCOUNTS_ID } from '@/constants/qualityConsistency'
+
 
 type RequestOptions = { suppressToast?: boolean }
 
@@ -29,7 +29,7 @@ export async function getEvaluationList(
     limit: String(limit),
     offset: String(offset),
   })
-  if (accountId && accountId !== ALL_ACCOUNTS_ID) params.set('account_id', accountId)
+  if (accountId) params.set('account_id', accountId)
   return client.get(`/evaluation/list?${params.toString()}`, options) as unknown as EvaluationListResponse
 }
 

@@ -25,7 +25,7 @@ import {
   RADAR_EXCLUDED_DIMENSIONS,
   DIMENSION_LABEL_KEYS,
 } from '@/constants/evaluation'
-import { ALL_ACCOUNTS_ID, hasSnapshotMismatch } from '@/constants/qualityConsistency'
+import { hasSnapshotMismatch } from '@/constants/qualityConsistency'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -40,7 +40,7 @@ const accountsStore = useAccountsStore()
 const selectedAccountId = ref('')
 const hasUserSelectedAccount = ref(false)
 const selectedAccount = computed(() =>
-  selectedAccountId.value === ALL_ACCOUNTS_ID
+  false
     ? undefined
     : accountsStore.accounts.find((account) => account.id === selectedAccountId.value)
 )
@@ -134,7 +134,7 @@ async function loadNotes(accountId: string, reset = true) {
     notesSnapshotMismatch.value = false
   }
   notesError.value = null
-  if (!accountId || accountId === ALL_ACCOUNTS_ID) {
+  if (!accountId) {
     notesLoading.value = false
     return
   }
@@ -209,15 +209,13 @@ async function loadList(reset = false, accountId = selectedAccountId.value) {
   }
   try {
     const res: EvaluationListResponse = await getEvaluationList(
-      accountId === ALL_ACCOUNTS_ID ? undefined : accountId,
+      accountId,
       listLimit,
       listOffset.value,
       { suppressToast: true },
     )
     if (request !== listRequest || accountId !== selectedAccountId.value) return
-    const foreignRows = accountId !== ALL_ACCOUNTS_ID
-      ? res.workflows.filter((item) => item.account_id !== accountId).length
-      : 0
+    const foreignRows = res.workflows.filter((item) => item.account_id !== accountId).length
     if (foreignRows > 0) {
       trackInteraction('quality_cross_account_row', { source: 'quality', count: foreignRows })
     }
@@ -276,7 +274,7 @@ const decisionFilter = ref<string>('all')
 const filteredItems = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   return listItems.value.filter((w) => {
-    if (selectedAccountId.value && selectedAccountId.value !== ALL_ACCOUNTS_ID && w.account_id !== selectedAccountId.value) return false
+    if (selectedAccountId.value && w.account_id !== selectedAccountId.value) return false
     if (decisionFilter.value !== 'all' && w.decision !== decisionFilter.value) return false
     if (!q) return true
     const title = (w.selected_title || '').toLowerCase()
@@ -335,10 +333,10 @@ watch(isDetailView, (detail) => {
 // ── 来源分离：已发布历史笔记与工作流内容评审 ──
 type SourceTab = 'historical' | 'workflow'
 const sourceTab = ref<SourceTab>(route.query.tab === 'workflow' ? 'workflow' : 'historical')
-const historicalAvailable = computed(() => selectedAccountId.value !== ALL_ACCOUNTS_ID)
+const historicalAvailable = computed(() => Boolean(selectedAccountId.value))
 
 watch(selectedAccountId, (accountId) => {
-  if (accountId === ALL_ACCOUNTS_ID && sourceTab.value !== 'workflow') {
+  if (!accountId && sourceTab.value !== 'workflow') {
     sourceTab.value = 'workflow'
     void router.replace({ query: { ...route.query, tab: 'workflow' } })
   }
@@ -351,7 +349,7 @@ const workflowRows = computed(() => filteredItems.value
 const historicalRows = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   return notesItems.value
-    .filter((note) => !selectedAccountId.value || selectedAccountId.value === ALL_ACCOUNTS_ID || note.account_id === selectedAccountId.value)
+    .filter((note) => !selectedAccountId.value || note.account_id === selectedAccountId.value)
     .filter((note) => !q || (note.title || '').toLowerCase().includes(q) || note.note_id.toLowerCase().includes(q))
     .slice()
     .sort((a, b) => {
@@ -588,9 +586,7 @@ function dimDescription(dim: string): string {
           </button>
         </div>
 
-        <div v-if="selectedAccountId === ALL_ACCOUNTS_ID" class="mt-3 rounded-lg border border-violet-200 bg-violet-50/70 px-3 py-2 text-xs leading-5 text-violet-700 dark:border-violet-400/30 dark:bg-violet-950/30 dark:text-violet-200" role="status">
-          {{ t('evaluation.allAccountsWorkflowOnly') }}
-        </div>
+
         <div v-if="notesSnapshotMismatch || listSnapshotMismatch" class="mt-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs leading-5 text-amber-700 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-200" role="alert">
           <AppIcon name="AlertTriangle" size="sm" variant="peach" />
           <span class="flex-1">{{ t('evaluation.snapshotMismatch') }}</span>
@@ -635,7 +631,7 @@ function dimDescription(dim: string): string {
             <button v-for="item in workflowRows" :key="item.thread_id" type="button" class="eval-item" :aria-label="`${item.selected_title || t('evaluation.empty.title')} · ${decisionLabel(item.decision || 'unknown')}`" @click="openDetail(item.thread_id)">
               <div class="item-main">
                 <div class="item-title">{{ item.selected_title || t('evaluation.empty.title') }}</div>
-                <div class="item-meta"><span class="source-badge source-workflow">{{ t('evaluation.stream.sourceWorkflow') }}</span><span class="meta-tag">{{ phaseLabel(item.phase) }}</span><template v-if="selectedAccountId === ALL_ACCOUNTS_ID"><span class="meta-sep">·</span><span class="meta-account">{{ item.account_id }}</span></template><span class="meta-sep">·</span><span class="meta-time">{{ formatDateTime(item.updated_at) }}</span></div>
+                <div class="item-meta"><span class="source-badge source-workflow">{{ t('evaluation.stream.sourceWorkflow') }}</span><span class="meta-tag">{{ phaseLabel(item.phase) }}</span><span class="meta-sep">·</span><span class="meta-time">{{ formatDateTime(item.updated_at) }}</span></div>
               </div>
               <div class="item-right"><span class="score-kind">{{ t('evaluation.rqgmScoreLabel') }}</span><span class="item-score" :class="scoreTierClass(item.overall_score, { pass: item.pass_threshold ?? SCORE_THRESHOLDS.pass, warn: item.warn_threshold ?? SCORE_THRESHOLDS.warn })">{{ item.overall_score == null || item.degraded || item.status_detail === 'degraded' || item.status_detail === 'failed' ? '—' : item.overall_score.toFixed(1) }}</span><span class="decision-badge" :class="decisionBadgeClass(item.decision || 'unknown')">{{ item.degraded ? t('evaluation.status.degraded') : decisionLabel(item.decision || 'unknown') }}</span></div>
             </button>
