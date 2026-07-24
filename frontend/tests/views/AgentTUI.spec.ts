@@ -269,4 +269,54 @@ describe('AgentTUI free creation interaction contract', () => {
     wrapper.unmount()
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth })
   })
+
+  it('renders exactly one prompt and one closing rule for a turn with empty message pairs', async () => {
+    const { wrapper, terminal, socket } = await mountFreeTui()
+    socket.open()
+    await flushPromises()
+
+    // omp emits empty message pairs (no text blocks) around the real text
+    // turn — replay the captured sequence from the live bridge.
+    const send = (obj: Record<string, unknown>) =>
+      socket.onmessage?.({ data: JSON.stringify(obj) } as MessageEvent)
+    const promptCount = () => terminal.lines.filter((l) => l.includes('❯')).length
+    const baseline = promptCount()
+
+    terminal.type('hello')
+    terminal.type('\r')
+    await flushPromises()
+
+    send({ type: 'status', status: 'running' })
+    send({ type: 'agent_message', text: '', done: false })
+    send({ type: 'agent_message', text: '', done: true })
+    send({ type: 'agent_message', text: '', done: false })
+    send({ type: 'agent_message', text: '', done: true })
+    send({ type: 'agent_message', text: '', done: false })
+    send({ type: 'agent_message', text: 'Hello', done: false })
+    send({ type: 'agent_message', text: '', done: true })
+    send({ type: 'status', status: 'idle' })
+    send({ type: 'session_end' })
+    await flushPromises()
+
+    // done + idle + session_end collapse into exactly one new prompt
+    expect(promptCount() - baseline).toBe(1)
+    // only the text turn gets a ◆ ─── closing rule; empty pairs leave nothing
+    expect(terminal.lines.filter((l) => l.includes('◆') && l.includes('─'))).toHaveLength(1)
+    // typed desktop input stays on its own line (one write chunk from the
+    // fake terminal type()) — a second entry would be the removed echo
+    expect(terminal.lines.filter((l) => l.includes('hello'))).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('echoes quick-action commands once since no typed line exists', async () => {
+    const { wrapper, terminal, socket } = await mountFreeTui()
+    socket.open()
+    await flushPromises()
+
+    await wrapper.find('.tui-quick-btn:not(.tui-quick-btn-stop)').trigger('click')
+    await flushPromises()
+
+    expect(terminal.lines.some((l) => l.includes('❯') && l.includes('/start'))).toBe(true)
+    wrapper.unmount()
+  })
 })
