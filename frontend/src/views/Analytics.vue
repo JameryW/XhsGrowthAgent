@@ -131,12 +131,15 @@ onMounted(async () => {
   // Refresh the shared account labels so a name imported from Creator Center
   // is visible even when this route stayed mounted across the import.
   await accountsStore.fetchAccounts()
-  await loadHistoricalNotes(selectedAnalyticsAccountId.value)
+  // The historical reader and the dashboard bundle hit independent endpoints;
+  // fetch them in parallel instead of serializing the page-load waterfall.
+  const loads: Promise<unknown>[] = [loadHistoricalNotes(selectedAnalyticsAccountId.value)]
   // AN-12: auto-retry once if the previous session ended in an error, instead
   // of leaving the error state showing on re-entry.
   if (analyticsStore.error || (!analyticsStore.posts.length && !analyticsStore.isLoading)) {
-    await refreshData()
+    loads.push(refreshData())
   }
+  await Promise.all(loads)
 })
 
 watch(selectedAnalyticsAccountId, (accountId, previous) => {
