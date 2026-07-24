@@ -144,6 +144,12 @@ let termCols = 80
 let promptVisible = false
 
 function writeLine(text: string) {
+  if (promptVisible && !currentInput.value) {
+    // Async output (agent events, connection messages) arriving while a bare
+    // prompt is on screen would glue onto the ❯ — erase it first; the next
+    // writePrompt re-renders the prompt below the new line.
+    term?.write('\r\x1b[2K')
+  }
   promptVisible = false
   term?.writeln(text)
 }
@@ -161,6 +167,12 @@ function writeLineColored(text: string, color: string) {
 function padLabel(label: string, width: number): string {
   const w = getStringWidth(label)
   return w >= width ? label : label + ' '.repeat(width - w)
+}
+
+/** Compact ISO timestamp for terminal display:
+ *  2026-07-24T14:49:42.950654+00:00 → 07-24 14:49 */
+function fmtTs(iso: string): string {
+  return iso.length >= 16 ? iso.slice(5, 16).replace('T', ' ') : iso
 }
 
 function writePrompt(force = false) {
@@ -1394,7 +1406,7 @@ async function handleDrafts(argStr = '') {
     const count = data.count ?? data.drafts?.length ?? 0
     const filterLabel = draftsFilterLabel(status, query)
     const w = cardWidth(termCols)
-    writeBoxTitle(writeLine, t('tui.draftsListTitle', { accountId, count, filter: filterLabel }), { width: w })
+    writeBoxTitle(writeLine, t('tui.draftsListTitle', { accountId: accountId.slice(0, 8), count, filter: filterLabel }), { width: w })
     if (data.truncated) {
       writeLine(boxLine(`${ANSI.DIM}${t('tui.draftsTruncated')}${ANSI.RESET}`))
     }
@@ -1413,7 +1425,9 @@ async function handleDrafts(argStr = '') {
         writeLine(boxLine(`${ANSI.DIM}${t('tui.draftsNone')}${ANSI.RESET}`))
       }
     } else {
-      // Row layout: G{id} + title (truncated to fit) + right-aligned badges + dim date
+      // Two-line row layout: id + badges on line 1, title + date on line 2.
+      // Full draft ids stay visible (commands need them for copy-paste) while
+      // the title gets the whole card width instead of a sliver.
       const inner = w - 2 // "│ " prefix
       for (const d of data.drafts) {
         const rightPlain: string[] = []
@@ -1442,21 +1456,22 @@ async function handleDrafts(argStr = '') {
           rightPlain.push(`[${b}]`)
           rightColored.push(badge(b, ANSI.BRIGHT_CYAN))
         }
-        // updated_at (short, YYYY-MM-DDTHH:MM)
-        if (d.updated_at) {
-          const short = d.updated_at.slice(0, 16)
-          rightPlain.push(short)
-          rightColored.push(`${ANSI.DIM}${short}${ANSI.RESET}`)
-        }
-        const rightW = rightPlain.length ? getStringWidth(rightPlain.join(' ')) : 0
+        const badgesW = rightPlain.length ? getStringWidth(rightPlain.join(' ')) : 0
+        const idGap = badgesW > 0 ? Math.max(2, inner - getStringWidth(d.draft_id) - badgesW) : 0
+        const badgePart = rightColored.length ? `${' '.repeat(idGap)}${rightColored.join(' ')}` : ''
+        writeLine(boxLine(`${ANSI.BRIGHT_GREEN}${d.draft_id}${ANSI.RESET}${badgePart}`))
+
+        const dateStr = d.updated_at ? fmtTs(d.updated_at) : ''
+        const dateW = dateStr ? getStringWidth(dateStr) : 0
         const titleText = d.title || t('tui.draftUntitled')
-        const titleBudget = Math.max(8, inner - getStringWidth(d.draft_id) - 2 - rightW - 2)
+        const titleBudget = Math.max(8, inner - 2 - (dateW ? dateW + 2 : 0))
         const titleTrunc = truncateDisplay(titleText, titleBudget)
-        const titlePart = d.title ? titleTrunc : `${ANSI.DIM}${titleTrunc}${ANSI.RESET}`
-        const leftW = getStringWidth(d.draft_id) + 2 + getStringWidth(titleTrunc)
-        const gap = rightW > 0 ? Math.max(2, inner - leftW - rightW) : 0
-        const rightPart = rightColored.length ? `${' '.repeat(gap)}${rightColored.join(' ')}` : ''
-        writeLine(boxLine(`${ANSI.BRIGHT_GREEN}${d.draft_id}${ANSI.RESET}: ${titlePart}${rightPart}`))
+        const titlePart = d.title
+          ? `${ANSI.BRIGHT_WHITE}${titleTrunc}${ANSI.RESET}`
+          : `${ANSI.DIM}${titleTrunc}${ANSI.RESET}`
+        const dateGap = dateStr ? Math.max(2, inner - 2 - getStringWidth(titleTrunc) - dateW) : 0
+        const datePart = dateStr ? `${' '.repeat(dateGap)}${ANSI.DIM}${dateStr}${ANSI.RESET}` : ''
+        writeLine(boxLine(`  ${titlePart}${datePart}`))
       }
     }
     writeLine(boxBottom(w))
@@ -1603,14 +1618,14 @@ async function handleDraft(draftId: string) {
       if (lp && lp.status && lp.status !== 'published' && lp.status !== 'mock_published') {
         const etype = lp.error_type ? ` (${lp.error_type})` : ''
         const detail = lp.error ? ` — ${lp.error}${etype}` : etype
-        const at = lp.at ? `  ${D}${lp.at}${R}` : ''
+        const at = lp.at ? `  ${D}${fmtTs(lp.at)}${R}` : ''
         writeLine(boxLine(`${ANSI.RED}${t('tui.draftDetailLastPublishLabel')}${R}: ${ANSI.RED}${lp.status}${detail}${R}${at}`))
       }
       if (draft.created_at) {
-        writeLine(boxLine(`${D}${t('tui.draftDetailCreatedLabel')}${R}: ${draft.created_at}`))
+        writeLine(boxLine(`${D}${t('tui.draftDetailCreatedLabel')}${R}: ${fmtTs(draft.created_at)}`))
       }
       if (draft.updated_at) {
-        writeLine(boxLine(`${D}${t('tui.draftDetailUpdatedLabel')}${R}: ${draft.updated_at}`))
+        writeLine(boxLine(`${D}${t('tui.draftDetailUpdatedLabel')}${R}: ${fmtTs(draft.updated_at)}`))
       }
     }
     writeLine(boxBottom(w))
@@ -1699,7 +1714,7 @@ async function handleAnalytics(draftId: string) {
       writeLine(boxLine(kvLine(label, value, { labelWidth: metricLw, valueColor: color })))
     }
     if (a.fetched_at) {
-      writeLine(boxLine(kvLine(t('tui.analyticsFetchedAtLabel'), a.fetched_at, { labelWidth: metricLw, valueColor: '' })))
+      writeLine(boxLine(kvLine(t('tui.analyticsFetchedAtLabel'), fmtTs(a.fetched_at), { labelWidth: metricLw, valueColor: '' })))
     }
     writeLine(boxBottom(w))
     writeLine('')
@@ -1879,7 +1894,7 @@ async function handleEdit(args: string) {
     writeLine('')
     writeLineColored(t('tui.editUpdated', { field, value }), ANSI.BRIGHT_GREEN)
     if (data.draft?.updated_at) {
-      writeLine(`  ${D}${t('tui.draftDetailUpdatedLabel')}${R}: ${C}${data.draft.updated_at}${R}`)
+      writeLine(`  ${D}${t('tui.draftDetailUpdatedLabel')}${R}: ${C}${fmtTs(data.draft.updated_at)}${R}`)
     }
     writeLine('')
   } catch (err: any) {
@@ -2039,6 +2054,21 @@ function renderFreeCommandGrid() {
   const groupW = Math.max(...groups.map((g) => getStringWidth(g.label)))
   const cmdW = Math.max(...groups.flatMap((g) => g.cmds.map(([cmd]) => getStringWidth(cmd))))
   const descW = Math.max(...groups.flatMap((g) => g.cmds.map(([, desc]) => getStringWidth(desc))))
+  // Narrow terminals (mobile) can't fit two columns — degrade to one command
+  // per line with width-truncated descriptions instead of letting text wrap
+  // mid-word; drop descriptions entirely when even that can't fit.
+  const twoColW = 2 + groupW + 2 + cmdW + 1 + descW + 3 + cmdW + 1 + descW
+  if (twoColW > termCols - 2) {
+    const descBudget = termCols - 2 - (2 + groupW + 2 + cmdW + 1)
+    for (const g of groups) {
+      g.cmds.forEach(([cmd, desc], i) => {
+        const label = i === 0 ? `${Y}${padEndDisplay(g.label, groupW)}${R}` : ' '.repeat(groupW)
+        const descPart = descBudget >= 8 ? ` ${D}${truncateDisplay(desc, descBudget)}${R}` : ''
+        writeLine(`  ${label}  ${C}${cmd}${R}${descPart}`)
+      })
+    }
+    return
+  }
   for (const g of groups) {
     for (let i = 0; i < g.cmds.length; i += 2) {
       // Group label shows on the first row of the group only
@@ -2209,7 +2239,6 @@ onMounted(() => {
   // Non-free (trend/brief) keeps command mode default — behavior unchanged.
   if (isFreeCreationEntry.value) {
     mode.value = 'agent'
-    writeLineColored(`  ${t('tui.freeAgentReady')}`, ANSI.DIM)
     // Surface the free-mode TUI commands on first entry so the user knows
     // draft management exists without typing /help first (discoverability —
     // same class as the post_url hint). Compact grouped grid; full reference in /help.

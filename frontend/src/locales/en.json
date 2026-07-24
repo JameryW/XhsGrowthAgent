@@ -2048,7 +2048,6 @@
     "freeWelcomeHint": "Free creation mode is active: describe your creation goal and the agent will orchestrate creation, evaluation, and publishing.",
     "freeTopic": "Topic: {topic}",
     "freeAgentUnavailable": "Free creation needs an Agent connection; this action was not run. Retry the connection and try again.",
-    "freeAgentReady": "Free creation chat mode is active — type to create, evaluate, and publish.",
     "freeMessageQueued": "The agent is not connected yet. Your message is queued and will be sent automatically.",
     "freeMessageQueueFull": "The pending message limit was reached; the oldest message was removed.",
     "freeQueuedMessagesSent": "Sent queued messages ({count}).",
