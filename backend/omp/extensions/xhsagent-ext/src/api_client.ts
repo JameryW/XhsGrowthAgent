@@ -61,9 +61,14 @@ async function request(
       ? `${BASE}${path}?${new URLSearchParams(params as Record<string, string>)}`
       : `${BASE}${path}`;
 
+  const headers: Record<string, string> = {};
+  if (method === "POST") headers["Content-Type"] = "application/json";
+  // Trusted in-mesh calls authenticate with the shared service token.
+  if (config.serviceToken) headers["Authorization"] = `Bearer ${config.serviceToken}`;
+
   const res = await fetch(url, {
     method,
-    headers: method === "POST" ? { "Content-Type": "application/json" } : undefined,
+    headers: Object.keys(headers).length ? headers : undefined,
     body: method === "POST" && params ? JSON.stringify(params) : undefined,
     signal: AbortSignal.timeout(timeoutFor(path)),
   });

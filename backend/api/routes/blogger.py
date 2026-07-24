@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from langgraph.types import Command, StateSnapshot
 from pydantic import BaseModel, Field
 
+from backend.api.account_scope import assert_thread_owned
+from backend.api.deps import get_current_user
 from backend.api.errors import ValidationError, WorkflowNotFoundError
 from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
@@ -44,11 +46,14 @@ def _is_at_blogger_gate(state: StateSnapshot) -> bool:
 async def get_pending_blogger_selection(
     thread_id: str,
     request: Request = None,  # type: ignore[assignment]
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """获取候选博主列表 — 返回 blogger_candidates 和配置."""
     assert request is not None
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -74,11 +79,14 @@ async def select_blogger(
     thread_id: str,
     selection: BloggerSelection,
     request: Request = None,  # type: ignore[assignment]
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """选择博主 — 从 blogger_gate 中断恢复."""
     assert request is not None
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}

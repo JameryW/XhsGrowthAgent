@@ -21,7 +21,6 @@ from backend.agents.evaluator import MIN_EVALUATION_COVERAGE, EvaluatorAgent
 from backend.api.account_scope import (
     assert_note_owned,
     assert_thread_owned,
-    require_owned_account,
     resolve_required_account_id,
 )
 from backend.api.deps import get_current_user
@@ -36,7 +35,6 @@ from backend.db.pool import is_pool_ready
 from backend.db.workflows import list_workflows as db_list
 from backend.services.creator_stats.types import NoteStats
 from backend.services.quality_consistency import (
-    ALL_ACCOUNTS_SCOPE,
     QUALITY_CONSISTENCY_CONTRACT,
     quality_consistency_v2_enabled,
 )
@@ -339,7 +337,11 @@ async def get_evaluation_result(
 
 
 @router.post("/run/{thread_id}")
-async def run_evaluation(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def run_evaluation(
+    thread_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """对指定工作流当前内容手动触发评估 (不推进工作流).
 
     读取当前 copy_content / visual_plan / content_plan，调用 EvaluatorAgent，
@@ -347,6 +349,8 @@ async def run_evaluation(thread_id: str, request: Request) -> ApiResponse[Any]:
     """
     if not thread_id or not thread_id.strip():
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -1102,7 +1106,10 @@ async def get_latest_note_evaluation(
 
 
 @router.get("/weights")
-async def get_evaluator_weights(request: Request) -> ApiResponse[Any]:
+async def get_evaluator_weights(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """查看当前生效的 grader 权重（默认 + DB 覆盖解析后）.
 
     可选 query: account_id（按账号隔离权重）。
@@ -1136,7 +1143,10 @@ async def get_evaluator_weights(request: Request) -> ApiResponse[Any]:
 
 
 @router.get("/epochs")
-async def get_evaluator_epochs(request: Request) -> ApiResponse[Any]:
+async def get_evaluator_epochs(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """查看 prompt epoch 演化历史 + 当前 active epoch.
 
     返回 list_epochs（newest first）每项含 epoch_id/bias_severity/note/active/created_at。
@@ -1166,7 +1176,10 @@ async def get_evaluator_epochs(request: Request) -> ApiResponse[Any]:
 
 
 @router.get("/samples")
-async def get_evaluator_samples(request: Request) -> ApiResponse[Any]:
+async def get_evaluator_samples(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """导出训练样本（jsonl 训练格式预览）."""
     from backend.db.evaluator_config import export_samples
     from backend.db.pool import is_pool_ready

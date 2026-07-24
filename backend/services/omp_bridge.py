@@ -995,7 +995,14 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
         return _make_text_result(guide, {"mode": "free"})
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as raw_client:
+        # Trusted in-mesh call: authenticate with the shared service token so
+        # account-scoped endpoints (which require a console user JWT or the
+        # service token) accept bridge-originated requests.
+        headers: dict[str, str] = {}
+        service_token = os.environ.get("XHS_SERVICE_TOKEN", "").strip()
+        if service_token:
+            headers["Authorization"] = f"Bearer {service_token}"
+        async with httpx.AsyncClient(timeout=30.0, headers=headers) as raw_client:
             # Wrap client methods with retry logic
             client = _RetryingClient(raw_client, tool_name)
             if tool_name == "xhs_workflow_status":

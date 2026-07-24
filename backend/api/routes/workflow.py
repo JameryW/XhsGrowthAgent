@@ -20,7 +20,11 @@ from pydantic import BaseModel, Field
 from starlette.datastructures import UploadFile
 
 from backend.agents.publisher import run_publish
-from backend.api.account_scope import assert_thread_owned, require_owned_account, resolve_required_account_id
+from backend.api.account_scope import (
+    assert_thread_owned,
+    require_owned_account,
+    resolve_required_account_id,
+)
 from backend.api.deps import get_current_user
 from backend.api.errors import ValidationError, WorkflowNotFoundError
 from backend.api.responses import ApiResponse, success
@@ -649,10 +653,16 @@ async def start_workflow(
 
 
 @router.get("/status/{thread_id}")
-async def get_workflow_status(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def get_workflow_status(
+    thread_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """获取工作流状态"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -926,10 +936,13 @@ async def get_checkpoint_history(
     request: Request,
     limit: int = Query(20, ge=1, le=100, description="Max checkpoints to return"),
     before: str | None = Query(None, description="Checkpoint ID cursor for pagination"),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """获取工作流的检查点历史记录（用于回放）"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -1023,10 +1036,16 @@ async def get_checkpoint_history(
 
 
 @router.post("/pause/{thread_id}")
-async def pause_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def pause_workflow(
+    thread_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """暂停工作流"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -1059,10 +1078,16 @@ async def pause_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
 
 
 @router.post("/resume/{thread_id}")
-async def resume_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def resume_workflow(
+    thread_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """恢复暂停或可重试错误的工作流"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -1294,7 +1319,10 @@ async def resume_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
 
 @router.post("/recover/{thread_id}")
 async def recover_workflow(
-    thread_id: str, req: RecoverRequest, request: Request
+    thread_id: str,
+    req: RecoverRequest,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """显式恢复操作 — 把状态诊断变成可执行操作。
 
@@ -1305,6 +1333,8 @@ async def recover_workflow(
     """
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -1440,10 +1470,16 @@ async def recover_workflow(
 
 
 @router.post("/cancel/{thread_id}")
-async def cancel_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def cancel_workflow(
+    thread_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """取消工作流"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -1686,10 +1722,16 @@ async def list_workflows_endpoint(
 
 
 @router.delete("/{thread_id}")
-async def delete_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def delete_workflow(
+    thread_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """删除工作流记录 — 只能删除已完成/已取消/出错的工作流"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     row = await db_get(thread_id) if is_pool_ready() else None
     in_history = (_HISTORY_DIR / f"{thread_id}.json").exists()
@@ -1735,10 +1777,16 @@ async def delete_workflow(thread_id: str, request: Request) -> ApiResponse[Any]:
 
 
 @router.post("/ripple-retry/{thread_id}")
-async def retry_ripple_analysis(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def retry_ripple_analysis(
+    thread_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """重新运行 Ripple 传播预测和 PMF 验证（当之前超时或不可用时）"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -1878,7 +1926,10 @@ class BriefExtractResponse(BaseModel):
 
 
 @router.post("/brief/extract")
-async def extract_brief_file(request: Request) -> ApiResponse[Any]:
+async def extract_brief_file(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """Extract text from a brief document (PDF) without requiring a thread ID.
 
     Used by the frontend for immediate preview after file selection.
@@ -1926,10 +1977,16 @@ class BriefUploadResponse(BaseModel):
 
 
 @router.post("/brief/upload/{thread_id}")
-async def upload_brief_file(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def upload_brief_file(
+    thread_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """Upload a brief document (PDF) and extract text content."""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     form = await request.form()
     file = form.get("file")
@@ -2060,10 +2117,16 @@ async def _extract_pdf_with_llm(content_bytes: bytes) -> str:
 
 
 @router.get("/brief/export/{thread_id}")
-async def export_shooting_plan(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def export_shooting_plan(
+    thread_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """Export shooting plan as formatted text (for copy/download)."""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -2148,13 +2211,19 @@ class ImageUploadResponse(BaseModel):
 
 
 @router.post("/images/upload/{thread_id}")
-async def upload_images(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def upload_images(
+    thread_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """Upload images for a workflow (before publishing).
 
     Stored on disk, paths saved to visual_plan.image_paths.
     """
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     form = await request.form()
     files = form.getlist("files")
@@ -2224,10 +2293,16 @@ async def upload_images(thread_id: str, request: Request) -> ApiResponse[Any]:
 
 
 @router.post("/trigger-analytics/{thread_id}")
-async def trigger_analytics(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def trigger_analytics(
+    thread_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """手动触发 analyst 节点（发布后手动运行 Ripple 分析）"""
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -2280,7 +2355,11 @@ async def trigger_analytics(thread_id: str, request: Request) -> ApiResponse[Any
 
 
 @router.post("/publish-retry/{thread_id}")
-async def retry_publish(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def retry_publish(
+    thread_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """重试发布：用工作流现有内容重跑发布步骤，不重走创作链路。
 
     用于发布失败（status=failed/error）或试运行（mock_published）后手动重发。
@@ -2288,6 +2367,8 @@ async def retry_publish(thread_id: str, request: Request) -> ApiResponse[Any]:
     """
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}

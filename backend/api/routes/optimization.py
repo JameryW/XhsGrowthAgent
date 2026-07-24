@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
+from backend.api.account_scope import assert_thread_owned
+from backend.api.deps import get_current_user
 from backend.api.errors import ChoiceNotPendingError, ValidationError, WorkflowNotFoundError
 from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
@@ -31,11 +33,14 @@ async def submit_draft(
     thread_id: str,
     draft: DraftSubmission,
     request: Request = None,  # type: ignore[assignment]
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """Submit user draft — update state and resume graph if interrupted at draft_gate."""
     assert request is not None
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -103,11 +108,14 @@ async def select_version(
     thread_id: str,
     choice: VersionChoice,
     request: Request = None,  # type: ignore[assignment]
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """选择版本 — 从 choice_gate 中断恢复."""
     assert request is not None
     if not thread_id or thread_id.strip() == "":
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}

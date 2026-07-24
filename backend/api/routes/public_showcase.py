@@ -515,10 +515,13 @@ async def _resolve_any_case(public_id: str) -> WorkflowRow:
 
 
 async def _load_state(request: Request, thread_id: str) -> dict[str, Any] | None:
+    from backend.api.deps import service_identity
     from backend.api.routes.workflow import get_workflow_status
 
     try:
-        response = await get_workflow_status(thread_id, request)
+        # Internal anonymous read: present the trusted service identity so the
+        # authenticated status route accepts this direct (non-HTTP) call.
+        response = await get_workflow_status(thread_id, request, service_identity())
         data = getattr(response, "data", None)
         return data if isinstance(data, dict) else None
     except Exception:

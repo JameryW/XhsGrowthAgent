@@ -7,11 +7,13 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from langgraph.types import Command, StateSnapshot
 from pydantic import BaseModel
 
 from backend.agents.evaluator import EvaluatorAgent
+from backend.api.account_scope import assert_thread_owned
+from backend.api.deps import get_current_user
 from backend.api.errors import ReviewNotPendingError
 from backend.api.responses import ApiResponse, success
 from backend.api.routes import _runner
@@ -92,8 +94,14 @@ def _build_version_entry(
 
 
 @router.get("/pending/{thread_id}")
-async def get_pending_review(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def get_pending_review(
+    thread_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """获取待审核内容 — includes version history if available."""
+    await assert_thread_owned(str(user["id"]), thread_id)
+
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
@@ -119,9 +127,14 @@ async def get_pending_review(thread_id: str, request: Request) -> ApiResponse[An
 
 @router.post("/submit/{thread_id}")
 async def submit_review(
-    thread_id: str, decision: ReviewDecision, request: Request
+    thread_id: str,
+    decision: ReviewDecision,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """提交审核决定 — saves version before resuming on 'needs_revision'."""
+    await assert_thread_owned(str(user["id"]), thread_id)
+
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
@@ -186,8 +199,14 @@ async def submit_review(
 
 
 @router.get("/versions/{thread_id}")
-async def get_version_history(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def get_version_history(
+    thread_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """获取内容版本历史 — all revisions for a workflow."""
+    await assert_thread_owned(str(user["id"]), thread_id)
+
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
@@ -215,8 +234,14 @@ async def get_version_history(thread_id: str, request: Request) -> ApiResponse[A
 
 
 @router.get("/ripple-pending/{thread_id}")
-async def get_pending_ripple_decision(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def get_pending_ripple_decision(
+    thread_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """获取 Ripple 决策等待状态 — Ripple 结果 + 决策选项"""
+    await assert_thread_owned(str(user["id"]), thread_id)
+
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
@@ -250,9 +275,14 @@ async def get_pending_ripple_decision(thread_id: str, request: Request) -> ApiRe
 
 @router.post("/ripple-decision/{thread_id}")
 async def submit_ripple_decision(
-    thread_id: str, decision: RippleDecision, request: Request
+    thread_id: str,
+    decision: RippleDecision,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """提交 Ripple 决策 — 用户选择接受/换角度/换话题"""
+    await assert_thread_owned(str(user["id"]), thread_id)
+
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
 
@@ -332,7 +362,10 @@ class CopyUpdateRequest(BaseModel):
 
 @router.post("/update-copy/{thread_id}")
 async def update_copy_content(
-    thread_id: str, body: CopyUpdateRequest, request: Request
+    thread_id: str,
+    body: CopyUpdateRequest,
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """手动覆盖文案 — 部分更新 copy_content，保存后自动重跑 evaluator.
 
@@ -346,6 +379,8 @@ async def update_copy_content(
         from backend.api.errors import ValidationError
 
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    await assert_thread_owned(str(user["id"]), thread_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
