@@ -92,10 +92,13 @@ def test_quality_report_normalizes_percent_rates_and_does_not_mutate_notes():
         "engagement",
         "save_value",
         "title_craft",
+        "body_craft",
         "consistency",
     ]
     assert "12.50%" in _dimension(data, "engagement")["evidence"]
-    assert all("body_text" not in item["evidence"] for item in data["dimensions"])
+    # Empty optional bodies → body_craft unavailable, not a negative score.
+    assert _dimension(data, "body_craft")["available"] is False
+    assert "未导入可分析正文" in _dimension(data, "body_craft")["evidence"]
     assert data["recommendations"]
     assert [note.to_dict() for note in notes] == before
     assert analyze_historical_quality(list(reversed(notes)), "quality_acc").to_dict() == data
@@ -129,6 +132,66 @@ def test_quality_report_returns_honest_cold_and_sparse_responses():
     assert sparse["weaknesses"] == []
     assert sparse["recommendations"][0]["dimension"] == "data_collection"
     assert "未导入可分析标题" in _dimension(sparse, "title_craft")["evidence"]
+    assert _dimension(sparse, "body_craft")["available"] is False
+    assert "未导入可分析正文" in _dimension(sparse, "body_craft")["evidence"]
+
+
+def test_quality_report_scores_imported_body_craft():
+    """Imported body_text contributes a transparent body_craft dimension."""
+    notes = [
+        _note(
+            "rich",
+            engagement_rate=0.15,
+            likes=150,
+            body_text=(
+                "第一步：整理资料。\n第二步：对比实测结果。\n"
+                "个人使用下来的感受：效率明显提升，建议收藏这份清单。"
+            ),
+        ),
+        _note(
+            "thin",
+            engagement_rate=0.10,
+            likes=100,
+            body_text="太给力了 #AI #大模型",
+        ),
+        _note(
+            "missing",
+            engagement_rate=0.08,
+            likes=80,
+            body_text="",
+        ),
+    ]
+
+    report = analyze_historical_quality(notes, "quality_acc")
+    data = report.to_dict()
+    body = _dimension(data, "body_craft")
+    assert body["available"] is True
+    assert body["score"] is not None
+    assert body["score"] > 0
+    assert "已导入正文覆盖 2/3 篇" in body["evidence"]
+    assert "结构/干货/体验信号" in body["evidence"]
+
+    # A corpus of rich structured bodies should outscore thin hashtag blurbs.
+    rich_only = analyze_historical_quality(
+        [
+            _note(
+                f"r{i}",
+                engagement_rate=0.12,
+                likes=120,
+                body_text="第一步：整理。\n第二步：实测。个人使用下来的感受：效率提升，建议收藏。",
+            )
+            for i in range(3)
+        ],
+        "quality_acc",
+    ).to_dict()
+    thin_only = analyze_historical_quality(
+        [
+            _note(f"t{i}", engagement_rate=0.12, likes=120, body_text="太给力了 #AI")
+            for i in range(3)
+        ],
+        "quality_acc",
+    ).to_dict()
+    assert _dimension(rich_only, "body_craft")["score"] > _dimension(thin_only, "body_craft")["score"]
 
 
 def test_single_note_quality_reuses_historical_dimensions_without_fake_consistency():
@@ -138,6 +201,7 @@ def test_single_note_quality_reuses_historical_dimensions_without_fake_consisten
         likes=200,
         collects=50,
         title="5个提高效率的方法清单",
+        body_text="第一步：整理资料。\n第二步：实测对比，个人使用下来的感受很稳。",
     )
     before = note.to_dict()
 
@@ -156,6 +220,8 @@ def test_single_note_quality_reuses_historical_dimensions_without_fake_consisten
     assert dimensions["engagement"]["available"] is True
     assert dimensions["save_value"]["available"] is True
     assert dimensions["title_craft"]["available"] is True
+    assert dimensions["body_craft"]["available"] is True
+    assert dimensions["body_craft"]["score"] > 0
     assert dimensions["consistency"]["available"] is False
     assert data["recommendations"]
     assert note.to_dict() == before
@@ -209,7 +275,15 @@ async def test_quality_endpoint_uses_all_history_over_display_limit_and_is_read_
     assert data["notes_analyzed"] == data["total_notes"]
     assert data["overall_score"] is not None
     assert data["grade"] in {"strong", "developing", "needs_attention"}
-    assert len(data["dimensions"]) == 4
+    assert len(data["dimensions"]) == 5
+    assert {item["key"] for item in data["dimensions"]} >= {
+        "engagement",
+        "save_value",
+        "title_craft",
+        "body_craft",
+        "consistency",
+    }
+    assert _dimension(data, "body_craft")["available"] is False
     assert data["recommendations"]
 
     after = {note.note_id: note.to_dict() for note in await list_all_note_stats("quality_acc")}

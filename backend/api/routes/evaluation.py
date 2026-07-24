@@ -1186,7 +1186,22 @@ async def get_evaluator_trend(request: Request) -> ApiResponse[Any]:
             }
         )
     limit = int(request.query_params.get("limit", "100"))
-    rows = await fetch_trend(account_id, limit=limit)
+    # Workflow RQGM samples (evaluator_samples) + historical-note / durable
+    # quality runs.  The UI "RQGM 内容评审趋势" must include both; previously
+    # only training samples were plotted, so accounts that only evaluate
+    # imported notes looked frozen at the last workflow run date.
+    workflow_rows = await fetch_trend(account_id, limit=limit)
+    try:
+        from backend.db import quality_evaluations as quality_db
+
+        note_rows = await quality_db.fetch_trend_points(account_id, limit=limit)
+    except Exception:
+        logger.exception("quality evaluation trend fetch failed; using workflow samples only")
+        note_rows = []
+    rows = list(workflow_rows) + list(note_rows)
+    rows.sort(key=lambda r: str(r.get("created_at") or ""))
+    if len(rows) > limit:
+        rows = rows[-limit:]
 
     # Build timeline points + accumulate per-dimension scores for averages.
     points: list[dict[str, Any]] = []

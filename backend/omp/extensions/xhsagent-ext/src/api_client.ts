@@ -41,6 +41,16 @@ export function getApiAvailability(): boolean | null {
 
 // ── HTTP helpers ────────────────────────────────────────────────────────
 
+/** Longer budget for RQGM evaluation POSTs (10-dim LLM panel, 60–120s). */
+const EVALUATION_TIMEOUT_MS = 180_000;
+
+function timeoutFor(path: string): number {
+  if (path.startsWith("/evaluation/run") || path.startsWith("/evaluation/note") || path.startsWith("/free/evaluate")) {
+    return EVALUATION_TIMEOUT_MS;
+  }
+  return config.timeout;
+}
+
 async function request(
   method: "GET" | "POST" | "DELETE",
   path: string,
@@ -55,7 +65,7 @@ async function request(
     method,
     headers: method === "POST" ? { "Content-Type": "application/json" } : undefined,
     body: method === "POST" && params ? JSON.stringify(params) : undefined,
-    signal: AbortSignal.timeout(config.timeout),
+    signal: AbortSignal.timeout(timeoutFor(path)),
   });
 
   if (!res.ok) {

@@ -209,13 +209,97 @@ async def test_bundle_persists_one_snapshot_identity_for_account_and_notes():
         synced_at="2026-07-22T10:00:00Z",
     )
 
-    await upsert_bundle(account, [note])
+    imported, updated, deleted = await upsert_bundle(account, [note])
+    assert (imported, updated, deleted) == (1, 0, 0)
     stored = await get_account_stats("bundle_acc")
     snapshot = await get_creator_stats_snapshot("bundle_acc")
 
     assert stored is not None
     assert stored.snapshot_id == snapshot["snapshot_id"]
     assert stored.snapshot_id is not None
+
+
+@pytest.mark.asyncio
+async def test_upsert_bundle_deletes_notes_missing_from_snapshot():
+    """Account-wide snapshot must drop local notes removed on Creator Center."""
+    account = AccountStatsOverview(account_id="prune_acc", note_count=2, synced_at="t1")
+    keep = NoteStats(
+        note_id="keep",
+        account_id="prune_acc",
+        title="still live",
+        views=10,
+        likes=1,
+        published_at="2026-07-20T00:00:00Z",
+        synced_at="t1",
+    )
+    gone = NoteStats(
+        note_id="gone",
+        account_id="prune_acc",
+        title="deleted remotely",
+        views=5,
+        likes=0,
+        published_at="2026-07-19T00:00:00Z",
+        synced_at="t1",
+    )
+    imported, updated, deleted = await upsert_bundle(account, [keep, gone])
+    assert (imported, updated, deleted) == (2, 0, 0)
+    assert {n.note_id for n in await list_note_stats("prune_acc")} == {"keep", "gone"}
+
+    account.note_count = 1
+    account.synced_at = "t2"
+    keep.synced_at = "t2"
+    keep.views = 20
+    imported, updated, deleted = await upsert_bundle(account, [keep])
+    assert imported == 0
+    assert updated == 1
+    assert deleted == 1
+    remaining = await list_note_stats("prune_acc")
+    assert len(remaining) == 1
+    assert remaining[0].note_id == "keep"
+    assert remaining[0].views == 20
+    assert await get_note_stats("prune_acc", "gone") is None
+
+
+@pytest.mark.asyncio
+async def test_upsert_bundle_empty_snapshot_deletes_all_local_notes():
+    account = AccountStatsOverview(account_id="empty_acc", note_count=1, synced_at="t1")
+    await upsert_bundle(
+        account,
+        [
+            NoteStats(
+                note_id="only",
+                account_id="empty_acc",
+                title="will vanish",
+                views=1,
+                published_at="2026-07-18T00:00:00Z",
+            )
+        ],
+    )
+    account.note_count = 0
+    imported, updated, deleted = await upsert_bundle(account, [])
+    assert (imported, updated, deleted) == (0, 0, 1)
+    assert await list_note_stats("empty_acc") == []
+
+
+@pytest.mark.asyncio
+async def test_upsert_bundle_does_not_delete_other_account_notes():
+    a1 = AccountStatsOverview(account_id="a1", note_count=1)
+    a2 = AccountStatsOverview(account_id="a2", note_count=1)
+    await upsert_bundle(
+        a1,
+        [NoteStats(note_id="n1", account_id="a1", title="a1 note", views=1)],
+    )
+    await upsert_bundle(
+        a2,
+        [NoteStats(note_id="n2", account_id="a2", title="a2 note", views=1)],
+    )
+    # Re-sync a1 with empty notes — only a1 should be pruned.
+    imported, updated, deleted = await upsert_bundle(a1, [])
+    assert deleted == 1
+    assert await list_note_stats("a1") == []
+    other = await list_note_stats("a2")
+    assert len(other) == 1
+    assert other[0].note_id == "n2"
 
 
 # ── Invalid upsert skip ─────────────────────────────────────────────────────

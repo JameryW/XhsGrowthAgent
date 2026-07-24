@@ -10,7 +10,13 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
 CreativeMode = Literal["trend", "brief", "free"]
-QualityDimensionKey = Literal["engagement", "save_value", "title_craft", "consistency"]
+QualityDimensionKey = Literal[
+    "engagement",
+    "save_value",
+    "title_craft",
+    "body_craft",
+    "consistency",
+]
 QualityGrade = Literal["strong", "developing", "needs_attention", "insufficient_data"]
 QualityConfidence = Literal["low", "medium", "high"]
 
@@ -404,6 +410,52 @@ class CreatorQualityReport:
         }
 
 
+# Machine-readable sync failure classes (UI/ops routing).
+ERROR_AUTH_EXPIRED = "AUTH_EXPIRED"
+ERROR_BROWSER_UNAVAILABLE = "BROWSER_UNAVAILABLE"
+ERROR_FETCH_FAILED = "FETCH_FAILED"
+ERROR_ALREADY_RUNNING = "ALREADY_RUNNING"
+
+
+def classify_sync_error(message: str | None, *, status_code: int | None = None) -> str | None:
+    """Map free-text / HTTP status into a stable ``error_code``."""
+    if not message and status_code is None:
+        return None
+    if status_code in (401, 403):
+        return ERROR_AUTH_EXPIRED
+    text = str(message or "").lower()
+    if any(
+        token in text
+        for token in (
+            "login page",
+            "auth failed",
+            "re-login",
+            "logged in",
+            "stale_id",
+            "扫码",
+            "登录",
+            "auth expired",
+        )
+    ):
+        return ERROR_AUTH_EXPIRED
+    if any(
+        token in text
+        for token in (
+            "browser",
+            "cdp",
+            "浏览器",
+            "cdp_endpoint",
+            "cookie required",
+            "no logged-in browser context",
+            "playwright not installed",
+        )
+    ):
+        return ERROR_BROWSER_UNAVAILABLE
+    if "already_running" in text:
+        return ERROR_ALREADY_RUNNING
+    return ERROR_FETCH_FAILED
+
+
 @dataclass
 class SyncResult:
     """Primary observables returned by the sync/import entry point."""
@@ -411,18 +463,27 @@ class SyncResult:
     account_id: str
     notes_imported: int = 0
     notes_updated: int = 0
+    notes_deleted: int = 0
     account_synced: bool = False
     analysis: AnalysisResult | None = None
     suggestions: dict[str, list[CreativeSuggestion]] = field(default_factory=dict)
     source: str = "fixture"
     error: str | None = None
+    error_code: str | None = None
     niche_resolution: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        # Keep error_code filled for failed results so clients never have to
+        # re-parse free-text messages.
+        if self.error and not self.error_code:
+            self.error_code = classify_sync_error(self.error)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "account_id": self.account_id,
             "notes_imported": self.notes_imported,
             "notes_updated": self.notes_updated,
+            "notes_deleted": self.notes_deleted,
             "account_synced": self.account_synced,
             "analysis": self.analysis.to_dict() if self.analysis else None,
             "suggestions": {
@@ -430,5 +491,6 @@ class SyncResult:
             },
             "source": self.source,
             "error": self.error,
+            "error_code": self.error_code,
             "niche_resolution": self.niche_resolution,
         }

@@ -23,8 +23,11 @@ from backend.services.creator_stats.normalize import (
     normalize_note_list,
 )
 from backend.services.creator_stats.pipeline import (
+    clear_post_login_sync_gate,
     import_bundle,
+    preflight_creator_login,
     sync_account_stats,
+    sync_after_login,
     sync_all_active_accounts,
     sync_from_fixture,
     sync_from_payload,
@@ -43,6 +46,10 @@ from backend.services.creator_stats.suggestions import (
     suggestions_from_analysis,
 )
 from backend.services.creator_stats.types import (
+    ERROR_ALREADY_RUNNING,
+    ERROR_AUTH_EXPIRED,
+    ERROR_BROWSER_UNAVAILABLE,
+    ERROR_FETCH_FAILED,
     AccountStatsOverview,
     AnalysisResult,
     CreativeMode,
@@ -58,11 +65,16 @@ from backend.services.creator_stats.types import (
     QualityRecommendation,
     StyleFinding,
     SyncResult,
+    classify_sync_error,
 )
 
 __all__ = [
     "CREATOR_PROFILE_PATH",
     "CREATOR_STATS_PAGE",
+    "ERROR_ALREADY_RUNNING",
+    "ERROR_AUTH_EXPIRED",
+    "ERROR_BROWSER_UNAVAILABLE",
+    "ERROR_FETCH_FAILED",
     "AccountStatsOverview",
     "AnalysisResult",
     "CreativeMode",
@@ -86,9 +98,13 @@ __all__ = [
     "analyze_note_quality",
     "as_fraction_engagement_rate",
     "build_mode_creative_context",
+    "classify_sync_error",
+    "clear_post_login_sync_gate",
     "format_suggestions_context",
     "get_suggestions_for_mode",
     "import_bundle",
+    "preflight_creator_login",
+    "sync_after_login",
     "sync_all_active_accounts",
     "MIN_NOTES_FOR_OVERALL_SCORE",
     "extract_note_items",

@@ -39,15 +39,17 @@ QualityReportLocale = Literal["zh-CN", "en"]
 _ENGAGEMENT_SCORE_TARGET = 0.12
 _SAVE_VALUE_SCORE_TARGET = 0.04
 _DIMENSION_WEIGHTS: dict[QualityDimensionKey, float] = {
-    "engagement": 0.35,
-    "save_value": 0.25,
-    "title_craft": 0.20,
-    "consistency": 0.20,
+    "engagement": 0.30,
+    "save_value": 0.20,
+    "title_craft": 0.15,
+    "body_craft": 0.20,
+    "consistency": 0.15,
 }
 _DIMENSION_ORDER: tuple[QualityDimensionKey, ...] = (
     "engagement",
     "save_value",
     "title_craft",
+    "body_craft",
     "consistency",
 )
 
@@ -61,13 +63,28 @@ def _copy(locale: QualityReportLocale, chinese: str, english: str) -> str:
     return english if locale == "en" else chinese
 
 
-# Keep title assessment title-only.  Missing ``body_text`` is an import-data
-# limitation and must never be converted into a negative copywriting signal.
+# Title assessment stays title-only.  Body is scored separately via body_craft.
+# Missing ``body_text`` is an import-data gap and must never become a negative
+# copywriting signal (dimension marked unavailable instead).
 _TITLE_HOOK_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\d+\s*(?:个|条|步|点|种|招|款)"),
     re.compile(r"[？?]|为什么|怎么|如何|有没有"),
     re.compile(r"\bvs\b|对比|前后|之前|之后|从.+到", re.IGNORECASE),
     re.compile(r"清单|合集|推荐|种草|避雷|干货|指南"),
+)
+
+# Body substance: actionable structure / first-person experience / list cues.
+_BODY_SUBSTANCE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"步骤|方法|建议|注意|避坑|干货|推荐|清单|对比|总结|经验|实测|技巧|教程|攻略|感受|使用下来"
+    ),
+    re.compile(
+        r"(?:^|\n)\s*(?:\d+[\.、\)）]|[①②③④⑤⑥⑦⑧⑨⑩]|[一二三四五六七八九十]+[、.])",
+        re.MULTILINE,
+    ),
+    re.compile(r"(?:首先|然后|接着|最后|第一步|第二步|第三步)"),
+    re.compile(r"(?:^|\n)\s*[-•*·]\s+\S+", re.MULTILINE),
+    re.compile(r"\n\s*\n"),  # multi-paragraph body
 )
 
 
@@ -177,6 +194,10 @@ def _title_text(note: NoteStats) -> str:
     return str(getattr(note, "title", "") or "").strip()
 
 
+def _body_text(note: NoteStats) -> str:
+    return str(getattr(note, "body_text", "") or "").strip()
+
+
 def _is_readable_title(title: str) -> bool:
     compact = re.sub(r"\s+", "", title)
     return 6 <= len(compact) <= 36
@@ -184,6 +205,23 @@ def _is_readable_title(title: str) -> bool:
 
 def _has_title_hook(title: str) -> bool:
     return any(pattern.search(title) for pattern in _TITLE_HOOK_PATTERNS)
+
+
+def _compact_body_chars(body: str) -> str:
+    """Length proxy without hashtags / XHS emoji tokens / pure whitespace."""
+    cleaned = re.sub(r"#[^\s#]+", " ", body)
+    cleaned = re.sub(r"\[[^\]]+R\]", " ", cleaned)
+    return re.sub(r"\s+", "", cleaned)
+
+
+def _is_readable_body(body: str) -> bool:
+    """XHS note bodies: short blurbs score low; 40–2000 compact chars is usable."""
+    compact = _compact_body_chars(body)
+    return 40 <= len(compact) <= 2000
+
+
+def _has_body_substance(body: str) -> bool:
+    return any(pattern.search(body) for pattern in _BODY_SUBSTANCE_PATTERNS)
 
 
 def _engagement_dimension(
@@ -374,6 +412,81 @@ def _title_craft_dimension(
     )
 
 
+def _body_craft_dimension(
+    samples: list[_RateSample], locale: QualityReportLocale
+) -> _DimensionMetrics:
+    body_samples = [sample for sample in samples if _body_text(sample.note)]
+    if not samples:
+        return _DimensionMetrics(
+            score=0.0,
+            evidence=_copy(
+                locale,
+                "尚无已导入笔记，无法计算正文表达信号。",
+                "No imported notes are available to calculate body-craft signals.",
+            ),
+            available=False,
+        )
+    if not body_samples:
+        return _DimensionMetrics(
+            score=0.0,
+            evidence=_copy(
+                locale,
+                "未导入可分析正文；缺失正文不会被记为负面文案信号。",
+                (
+                    "No analyzable body text was imported; missing bodies were not scored "
+                    "negatively."
+                ),
+            ),
+            available=False,
+        )
+
+    readable = [sample for sample in body_samples if _is_readable_body(_body_text(sample.note))]
+    substantial = [
+        sample for sample in body_samples if _has_body_substance(_body_text(sample.note))
+    ]
+    readable_ratio = len(readable) / len(body_samples)
+    substance_ratio = len(substantial) / len(body_samples)
+    # Coverage among all notes also matters: many empty bodies drag the craft signal.
+    coverage_ratio = len(body_samples) / len(samples)
+    score = _clamp_score(
+        (readable_ratio * 0.40 + substance_ratio * 0.40 + coverage_ratio * 0.20) * 100
+    )
+    top_ids = tuple(
+        sorted(
+            str(sample.note.note_id)
+            for sample in substantial
+            if str(getattr(sample.note, "note_id", "")).strip()
+        )[:3]
+    )
+    bottom_ids = tuple(
+        sorted(
+            str(sample.note.note_id)
+            for sample in body_samples
+            if not _has_body_substance(_body_text(sample.note))
+            and str(getattr(sample.note, "note_id", "")).strip()
+        )[:3]
+    )
+    return _DimensionMetrics(
+        score=score,
+        evidence=_copy(
+            locale,
+            (
+                f"已导入正文覆盖 {len(body_samples)}/{len(samples)} 篇；其中 "
+                f"{len(readable)}/{len(body_samples)} 篇长度可用，"
+                f"{len(substantial)}/{len(body_samples)} 篇含结构/干货/体验信号。"
+            ),
+            (
+                f"Body text is available for {len(body_samples)}/{len(samples)} imported notes; "
+                f"{len(readable)}/{len(body_samples)} have a usable length and "
+                f"{len(substantial)}/{len(body_samples)} contain structure, practical tips, or "
+                "experience signals."
+            ),
+        ),
+        top_note_ids=top_ids,
+        bottom_note_ids=bottom_ids,
+    )
+
+
 def _consistency_dimension(
     samples: list[_RateSample], locale: QualityReportLocale
 ) -> _DimensionMetrics:
@@ -452,6 +565,7 @@ def _dimension_metrics(
         "engagement": _engagement_dimension(samples, locale),
         "save_value": _save_value_dimension(samples, locale),
         "title_craft": _title_craft_dimension(samples, locale),
+        "body_craft": _body_craft_dimension(samples, locale),
         "consistency": _consistency_dimension(samples, locale),
     }
 
@@ -499,24 +613,28 @@ _STRENGTH_TITLES: dict[QualityDimensionKey, str] = {
     "engagement": "互动信号表现较好",
     "save_value": "收藏价值表现较好",
     "title_craft": "标题表达表现较好",
+    "body_craft": "正文表达表现较好",
     "consistency": "表现稳定性较好",
 }
 _STRENGTH_TITLES_EN: dict[QualityDimensionKey, str] = {
     "engagement": "Engagement signals are relatively strong",
     "save_value": "Save value is relatively strong",
     "title_craft": "Title craft is relatively strong",
+    "body_craft": "Body craft is relatively strong",
     "consistency": "Performance consistency is relatively strong",
 }
 _WEAKNESS_TITLES: dict[QualityDimensionKey, str] = {
     "engagement": "互动信号有提升空间",
     "save_value": "收藏价值有提升空间",
     "title_craft": "标题钩子覆盖有提升空间",
+    "body_craft": "正文信息密度有提升空间",
     "consistency": "表现稳定性有提升空间",
 }
 _WEAKNESS_TITLES_EN: dict[QualityDimensionKey, str] = {
     "engagement": "Engagement signals have room to improve",
     "save_value": "Save value has room to improve",
     "title_craft": "Title-hook coverage has room to improve",
+    "body_craft": "Body information density has room to improve",
     "consistency": "Performance consistency has room to improve",
 }
 
@@ -625,6 +743,30 @@ def _recommendation_for(
             evidence=metrics.evidence,
             related_note_ids=list(metrics.top_note_ids or metrics.bottom_note_ids),
         )
+    if key == "body_craft":
+        return QualityRecommendation(
+            priority=priority,
+            dimension=key,
+            title=_copy(
+                locale,
+                "提升正文信息密度与结构",
+                "Raise body density and structure",
+            ),
+            advice=_copy(
+                locale,
+                (
+                    "下一篇正文至少写清 2–3 个可执行要点：分段、步骤/清单，或补充真实使用感受与注意项，"
+                    "避免只有标签或空泛金句。"
+                ),
+                (
+                    "In the next post, write at least 2–3 actionable points: use paragraphs, "
+                    "steps/checklists, or real experience and caveats—avoid hashtag-only or "
+                    "empty platitude bodies."
+                ),
+            ),
+            evidence=metrics.evidence,
+            related_note_ids=list(metrics.top_note_ids or metrics.bottom_note_ids),
+        )
     return QualityRecommendation(
         priority=priority,
         dimension=key,
@@ -707,9 +849,9 @@ def _single_note_data_recommendation(
         title=_copy(locale, "补充笔记表现数据", "Import more note-performance signals"),
         advice=_copy(
             locale,
-            "该笔记缺少可用的浏览、互动或标题信号；请刷新创作者中心导入后再评估。",
+            "该笔记缺少可用的浏览、互动、标题或正文信号；请刷新创作者中心导入后再评估。",
             (
-                "This note has no usable view, interaction, or title signal; refresh the "
+                "This note has no usable view, interaction, title, or body signal; refresh the "
                 "Creator Center import before evaluating it again."
             ),
         ),
@@ -798,14 +940,14 @@ def analyze_historical_quality(
             (
                 f"基于全部 {note_count} 篇已导入历史笔记，整体创作质量处于「{grade}」区间"
                 f"（{score:.1f}/100，{confidence} 置信度）。{engagement_evidence}{save_evidence}"
-                "评分仅覆盖互动、收藏、标题和表现稳定性，不评判未导入的视觉或正文质量。"
+                "评分覆盖互动、收藏、标题、正文表达和表现稳定性；不评判未导入的视觉质量。"
             ),
             (
                 f"Based on all {note_count} imported historical notes, overall creative quality "
                 f"is in the “{grade}” range ({score:.1f}/100, {confidence} confidence). "
                 f"{engagement_evidence} {save_evidence} "
-                "This score covers engagement, saves, titles, and performance consistency only; "
-                "it does not judge visual or body quality that was not imported."
+                "This score covers engagement, saves, titles, body craft, and performance "
+                "consistency; it does not judge visual quality that was not imported."
             ),
         ),
         dimensions=dimensions,
@@ -881,13 +1023,13 @@ def analyze_note_quality(
         (
             f"基于单篇已导入历史笔记{note_label_zh}"
             f"的可用信号，当前质量分为 {score:.1f}/100，置信度为 low。"
-            "该结果只覆盖互动、收藏和标题信号；表现稳定性需要跨笔记样本。"
+            "该结果覆盖互动、收藏、标题和正文信号；表现稳定性需要跨笔记样本。"
         ),
         (
             f"Based on the available signals for the single imported note "
             f"{note_label_en}, "
             f"the quality signal is {score:.1f}/100 with low confidence. "
-            "It covers engagement, saves, and title signals only; consistency requires "
+            "It covers engagement, saves, title, and body signals; consistency requires "
             "multiple notes."
         ),
     )

@@ -53,11 +53,47 @@ _LOGIN_COOKIE_NAMES = {
     "id_token",
     "access-token-creator.xiaohongshu.com",
 }
-_STRONG_LOGIN_COOKIE_NAMES = {
-    "id_token",
+# Creator Center needs its own access token. A bare ``id_token`` often survives
+# after the creator session expires and produces false "logged_in" status while
+# creator APIs return 401 and the login shell is shown.
+_CREATOR_LOGIN_COOKIE_NAMES = {
     "access-token-creator.xiaohongshu.com",
 }
+_STRONG_LOGIN_COOKIE_NAMES = {
+    "access-token-creator.xiaohongshu.com",
+    # www durable pair — both must be present (see ``_cookie_names_mean_logged_in``).
+    "id_token",
+    "web_session",
+}
 _LOGIN_STATUS_URLS = [_EXPLORE_URL, "https://creator.xiaohongshu.com"]
+_CREATOR_HOME_URL = "https://creator.xiaohongshu.com/new/home"
+
+
+def _cookie_names_mean_logged_in(cookie_names: set[str]) -> tuple[bool, list[str], str]:
+    """Return (is_logged_in, signal_names, reason) from observed cookie names.
+
+    Rules (2026-07 Creator Center cookie model):
+    - ``access-token-creator.*`` alone is enough when present.
+    - Durable www pair ``web_session`` + ``id_token`` is enough — current
+      creator.xiaohongshu.com SSO uses these; the dedicated creator access
+      cookie is often absent even on a fully working stats dashboard.
+    - Lone ``id_token`` (no ``web_session``) is stale and not logged in —
+      that state previously produced a false green "已登录" while creator
+      APIs returned 401.
+    """
+    names = {str(n) for n in cookie_names if n}
+    creator_hits = sorted(names & _CREATOR_LOGIN_COOKIE_NAMES)
+    if creator_hits:
+        return True, creator_hits, "strong_cookie"
+    has_id = "id_token" in names
+    has_session = "web_session" in names
+    if has_id and has_session:
+        return True, sorted({"id_token", "web_session"}), "strong_cookie"
+    if has_id and not has_session:
+        return False, ["id_token"], "stale_id_token"
+    if has_session and not has_id:
+        return False, ["web_session"], "missing_strong_cookie"
+    return False, [], "missing_strong_cookie"
 
 # codeStatus 语义（spike + reverse-engineered CLI 源码确认）。
 _CODE_WAITING = 0  # 待扫
@@ -72,9 +108,13 @@ _QR_CONFIRM_TIMEOUT_S = 120.0
 # 等待二维码就绪的窗口（秒）。优先取 qrcode/create 响应；若 XHS 前端
 # 已渲染二维码但接口响应被 service worker/时序隐藏，则回退读取 DOM 图片。
 # API route 外层有 10s 硬超时，内部等待必须短于它。
+# Wait for qrcode/create or a rendered DOM QR. Keep under the API route's 10s
+# outer timeout (accounts.start_qr_login wait_for(..., 10s)).
 _QR_CREATE_WAIT_S = 5.0
-_ALREADY_LOGIN_CHECK_S = 3.0
-_EXPLORE_GOTO_TIMEOUT_MS = 15000
+_ALREADY_LOGIN_CHECK_S = 1.5
+_EXPLORE_GOTO_TIMEOUT_MS = 12000
+# XHS often commits explore then redirects to /website-login/error a moment later.
+_SECURITY_REDIRECT_SETTLE_S = 1.5
 
 _VERIFICATION_CODE_FILL_SCRIPT = r"""
 async (code) => {
@@ -463,14 +503,36 @@ class XhsLoginSession:
 
             # 开 explore 页——登录浮层自动触发 qrcode/create。
             await self._goto_explore()
+            # Partial sessions (www cookies without creator token) keep the feed
+            # open without a QR modal. Click the login entry so qrcode/create or
+            # a DOM QR appears.
+            await self._ensure_login_modal()
 
-            # If the persistent profile is already logged in, XHS does not show
-            # the login layer and therefore will not call qrcode/create. Treat
-            # that as a successful login instead of making the UI spin for 30s.
+            # If the persistent profile is already fully logged in, XHS does not
+            # show the login layer and therefore will not call qrcode/create.
+            # Only skip when the login modal is absent AND durable cookies exist.
             if await self._wait_for_existing_login(timeout=_ALREADY_LOGIN_CHECK_S):
+                # Prefer capturing a DOM QR when the scan modal is still open —
+                # www cookies alone do not unlock Creator Center.
+                qr_early = await self._extract_qr_image_from_dom()
+                if qr_early:
+                    self._qr_id = f"dom-{int(time.time() * 1000)}"
+                    self._qr_url = qr_early
+                    self._qr_created_at = time.time()
+                    self._code_status = _CODE_WAITING
+                    logger.info(
+                        "profile 有 cookie 但登录浮层仍在，返回 DOM 二维码: account=%s",
+                        self.account_id,
+                    )
+                    return {
+                        "qr_id": self._qr_id,
+                        "url": self._qr_url,
+                        "account_id": self.account_id,
+                    }
                 self._confirmed = True
                 self._code_status = _CODE_CONFIRMED
                 logger.info("扫码登录已跳过：profile 已登录 account=%s", self.account_id)
+                await self._warm_creator_session()
                 await self.stop()
                 return {
                     "status": "confirmed",
@@ -481,11 +543,19 @@ class XhsLoginSession:
 
             # 等二维码就绪：优先等 qrcode/create 响应；若当前 XHS 前端只把
             # data:image 二维码渲染到 DOM，也直接返回该图片让前端显示。
+            # _wait_for_qr_ready raises LoginError on security-block pages.
             qr_data = await self._wait_for_qr_ready(timeout=_QR_CREATE_WAIT_S)
             if qr_data is None:
+                page_hint = ""
+                if self._page is not None:
+                    with contextlib.suppress(Exception):
+                        page_hint = f"（当前页: {str(self._page.url)[:120]}）"
                 raise LoginError(
                     f"启动扫码登录失败：{_QR_CREATE_WAIT_S:.0f}s 内未找到登录二维码"
-                    "（可能被 XHS shield 拦截、页面结构变化或网络异常）"
+                    f"{page_hint}。"
+                    "常见原因：1) 小红书 IP/环境风控（error 300012）"
+                    " 2) headless Chrome 被拦截 3) 页面结构变化。"
+                    "请切换安全网络，用 headed Chrome 重试，或稍后重试。"
                 )
         except LoginError:
             # 显式 LoginError（未装 / CDP 连不上 / 超时）：关 context 后原样抛出。
@@ -608,6 +678,9 @@ class XhsLoginSession:
                 list(self._login_info.keys()),
             )
             status = "confirmed"
+            # Mint Creator Center cookies (access-token-creator.*) so stats/publish
+            # do not see a "logged_in" www session that still fails on creator APIs.
+            await self._warm_creator_session()
             # 兜底资源回收：登录态已落盘 profile，headless Chrome 无需再常驻。
             # 前端若未显式调 stop 也不会泄漏——confirmed 即关闭 context。
             # stop() 幂等，前端后续调 stop 仍安全（no-op）。
@@ -792,7 +865,11 @@ class XhsLoginSession:
         return False
 
     async def _looks_logged_in(self) -> bool:
-        """Detect an existing login state without forcing a QR-code flow."""
+        """Detect an existing login state without forcing a QR-code flow.
+
+        Prefer durable cookies. Feed-page text matching is only a weak fallback
+        and must not treat the scan-login modal ("登录后推荐…扫码") as logged-in.
+        """
         if self._context is None:
             return False
         try:
@@ -806,7 +883,8 @@ class XhsLoginSession:
             for cookie in cookies
             if isinstance(cookie, dict) and bool(cookie.get("value"))
         }
-        if cookie_names & _STRONG_LOGIN_COOKIE_NAMES:
+        is_logged_in, _signals, _reason = _cookie_names_mean_logged_in(cookie_names)
+        if is_logged_in:
             return True
 
         has_login_cookie = bool(cookie_names & _LOGIN_COOKIE_NAMES)
@@ -814,13 +892,25 @@ class XhsLoginSession:
             return False
 
         if self._page is None:
-            return True
+            return False
         try:
             text = await self._page.evaluate("document.body.innerText || ''")
         except Exception as e:
             logger.debug("读取 XHS 登录页面文本失败: %s", e)
             return False
         if not isinstance(text, str):
+            return False
+        # Login modal / unauthenticated shell — keep the QR flow open.
+        if any(
+            marker in text
+            for marker in (
+                "登录后推荐",
+                "可用小红书或微信扫码",
+                "小红书或微信扫码",
+                "发送验证码",
+                "短信登录",
+            )
+        ):
             return False
         return all(keyword in text for keyword in ("发布", "通知", "消息", "我"))
 
@@ -902,9 +992,18 @@ class XhsLoginSession:
         return result if isinstance(result, dict) else None
 
     async def _wait_for_qr_ready(self, timeout: float) -> dict[str, Any] | None:
-        """Wait until a QR is available from network response or rendered DOM."""
+        """Wait until a QR is available from network response or rendered DOM.
+
+        Raises ``LoginError`` immediately when the explore page is redirected to
+        the XHS security-block shell (IP risk / shield), so callers do not fall
+        through to the generic "QR not found" message.
+        """
         deadline = time.time() + timeout
         while time.time() < deadline:
+            security_error = await self._detect_security_restriction()
+            if security_error:
+                raise LoginError(security_error)
+
             if self._qr_id and self._qr_url:
                 return {"qr_id": self._qr_id, "url": self._qr_url}
 
@@ -917,6 +1016,11 @@ class XhsLoginSession:
                 return {"qr_id": self._qr_id, "url": self._qr_url}
 
             await asyncio.sleep(0.3)
+
+        # Final diagnosis for a clearer operator-facing error.
+        security_error = await self._detect_security_restriction()
+        if security_error:
+            raise LoginError(security_error)
         return None
 
     async def _extract_qr_image_from_dom(self) -> str:
@@ -971,8 +1075,9 @@ class XhsLoginSession:
         if qr_data is None:
             await self.stop()
             raise LoginError(
-                f"启动扫码登录失败：{_QR_CREATE_WAIT_S:.0f}s 内未找到登录二维码"
-                "（可能被 XHS shield 拦截、页面结构变化或网络异常）"
+                f"启动扫码登录失败：{_QR_CREATE_WAIT_S:.0f}s 内未找到登录二维码。"
+                "常见原因：小红书 IP/环境风控（300012）、headless 被拦截或页面变化。"
+                "请切换安全网络或以 headed Chrome 重试。"
             )
         return {
             "qr_id": qr_data["qr_id"],
@@ -1121,7 +1226,61 @@ class XhsLoginSession:
             for cookie in cookies
             if isinstance(cookie, dict) and bool(cookie.get("value"))
         }
-        return bool(names & _STRONG_LOGIN_COOKIE_NAMES)
+        is_logged_in, _signals, _reason = _cookie_names_mean_logged_in(names)
+        return is_logged_in
+
+    async def _warm_creator_session(self) -> None:
+        """Best-effort visit to Creator Center after www QR login succeeds.
+
+        www login alone often leaves only ``web_session``/``id_token``. Creator
+        stats and note manager need ``access-token-creator.xiaohongshu.com``,
+        which the creator origin sets when a valid SSO session loads its home.
+        Failures here must never undo an already-confirmed login.
+        """
+        if self._page is None:
+            return
+        try:
+            await self._page.goto(
+                _CREATOR_HOME_URL,
+                wait_until="domcontentloaded",
+                timeout=15_000,
+            )
+            # Give the creator SPA a brief window to mint auth cookies.
+            await asyncio.sleep(1.5)
+            logger.info("creator session warm-up finished: account=%s", self.account_id)
+        except Exception as e:
+            logger.info(
+                "creator session warm-up skipped for account=%s: %s",
+                self.account_id,
+                e,
+            )
+
+    async def _ensure_login_modal(self) -> None:
+        """Open the www scan-login overlay when explore is already partially logged in.
+
+        After IP-risk recovery the profile often has ``web_session``+``id_token``
+        so explore loads the feed without a QR. Creator Center still needs a
+        fresh scan. Clicking the site's own 登录 entry triggers qrcode/create
+        or at least paints a DOM QR image we can return to the frontend.
+        """
+        if self._page is None or self._qr_id:
+            return
+        existing = await self._extract_qr_image_from_dom()
+        if existing:
+            return
+        for label in ("登录", "登录/注册", "扫码登录"):
+            try:
+                locator = self._page.get_by_text(label, exact=True).first
+                await locator.click(timeout=2_000)
+                await asyncio.sleep(0.8)
+            except Exception as e:
+                logger.debug("打开登录浮层点击 %r 失败: %s", label, e)
+                continue
+            if self._qr_id or await self._extract_qr_image_from_dom():
+                logger.info("已打开小红书登录浮层: account=%s via=%s", self.account_id, label)
+                return
+        # One more settle for SPA paint after the last click attempt.
+        await asyncio.sleep(0.5)
 
     async def _goto_explore(self) -> None:
         """Navigate to XHS explore without blocking on safety pages forever."""
@@ -1143,6 +1302,16 @@ class XhsLoginSession:
                 raise LoginError(security_error) from e
             raise
 
+        # Explore often first paints, then soft-redirects to /website-login/error
+        # (error_code=300012 IP at risk). Poll briefly so we fail with the real
+        # shield message instead of a generic "QR not found" timeout.
+        deadline = time.time() + _SECURITY_REDIRECT_SETTLE_S
+        while time.time() < deadline:
+            security_error = await self._detect_security_restriction()
+            if security_error:
+                raise LoginError(security_error)
+            await asyncio.sleep(0.25)
+
         security_error = await self._detect_security_restriction()
         if security_error:
             raise LoginError(security_error)
@@ -1158,26 +1327,48 @@ class XhsLoginSession:
             query = parse_qs(parsed.query)
             error_code = (query.get("error_code") or [""])[0]
             error_msg = (query.get("error_msg") or query.get("verifyMsg") or [""])[0]
-            if error_code == "300012" or "IP at risk" in error_msg:
+            try:
+                from urllib.parse import unquote
+
+                error_msg = unquote(error_msg)
+            except Exception:
+                pass
+            if error_code == "300012" or "IP at risk" in error_msg or "secure network" in error_msg:
                 return (
-                    "小红书安全限制：当前网络/IP 被判定存在风险，无法生成登录二维码。"
-                    "请切换安全网络或稍后重试。"
+                    "小红书安全限制：当前网络/IP 被判定存在风险（error_code=300012），"
+                    "无法生成登录二维码。请切换到更安全的网络（家庭宽带/手机热点），"
+                    "或以 headed Chrome 在本机扫码后重试；云主机/机房 IP 常被拦截。"
                 )
             detail = f"error_code={error_code}" if error_code else "未知错误码"
             if error_msg:
                 detail = f"{detail}, {error_msg}"
             return (
-                f"小红书安全限制：无法生成登录二维码（{detail}）。请在浏览器中完成安全校验后重试。"
+                f"小红书安全限制：无法生成登录二维码（{detail}）。"
+                "请在浏览器中完成安全校验或切换网络后重试。"
             )
 
         try:
             title = await self._page.title()
         except Exception:
             title = ""
-        if "安全限制" in str(title):
+        body_snip = ""
+        try:
+            body_snip = await self._page.evaluate(
+                "() => (document.body && document.body.innerText || '').slice(0, 240)"
+            )
+        except Exception:
+            body_snip = ""
+        body_text = str(body_snip or "")
+        if (
+            "安全限制" in str(title)
+            or "安全限制" in body_text
+            or "IP at risk" in body_text
+            or "Switch to a secure network" in body_text
+        ):
             return (
-                "小红书安全限制：当前浏览器页面被安全校验拦截，无法生成登录二维码。"
-                "请在浏览器中完成安全校验或切换网络后重试。"
+                "小红书安全限制：当前浏览器页面被安全校验拦截（IP/环境风险），"
+                "无法生成登录二维码。请切换安全网络，避免长期使用 headless Chrome，"
+                "或在可访问小红书的本机浏览器完成扫码后重试。"
             )
         return None
 
@@ -1341,13 +1532,12 @@ async def _inspect_profile_login_status_raw(account_id: str, cdp_endpoint: str) 
             and bool(cookie.get("value"))
             and "xiaohongshu.com" in str(cookie.get("domain") or "")
         }
-        signals = sorted(cookie_names & _STRONG_LOGIN_COOKIE_NAMES)
-        is_logged_in = bool(signals)
+        is_logged_in, signals, reason = _cookie_names_mean_logged_in(cookie_names)
         return {
             "account_id": account_id,
             "status": "logged_in" if is_logged_in else "logged_out",
             "is_logged_in": is_logged_in,
-            "reason": "strong_cookie" if is_logged_in else "missing_strong_cookie",
+            "reason": reason,
             "signals": signals,
         }
     except Exception as e:
@@ -1371,9 +1561,12 @@ async def inspect_profile_login_status(account_id: str, cdp_endpoint: str) -> di
     """Return the durable login state for an account's Chrome profile.
 
     This read-only probe is used by the settings page. It must not start a QR
-    flow, navigate tabs, or close the host Chrome instance. A strong creator/web
-    auth cookie is required to report ``logged_in``; anonymous cookies such as
-    ``web_session`` alone are not enough for publishing.
+    flow, navigate tabs, or close the host Chrome instance.
+
+    ``logged_in`` requires either the creator access token or the durable
+    www pair (``web_session`` + ``id_token``). A lone ``id_token`` is treated
+    as logged out — it commonly survives after session expiry and previously
+    caused a false green "已登录" while Creator Center returned 401.
     """
     if not cdp_endpoint:
         return {
@@ -1428,13 +1621,12 @@ async def inspect_profile_login_status(account_id: str, cdp_endpoint: str) -> di
             for cookie in cookies
             if isinstance(cookie, dict) and bool(cookie.get("value"))
         }
-        signals = sorted(cookie_names & _STRONG_LOGIN_COOKIE_NAMES)
-        is_logged_in = bool(signals)
+        is_logged_in, signals, reason = _cookie_names_mean_logged_in(cookie_names)
         return {
             "account_id": account_id,
             "status": "logged_in" if is_logged_in else "logged_out",
             "is_logged_in": is_logged_in,
-            "reason": "strong_cookie" if is_logged_in else "missing_strong_cookie",
+            "reason": reason,
             "signals": signals,
         }
     except Exception as e:

@@ -21,6 +21,7 @@ class ToolRegistry:
         "copywriter": [
             "hashtag_researcher",
             "title_generator",
+            "de_ai_taste",
             # Ripple — 文案传播预测
             "ripple_predict_content_spread",
         ],
@@ -101,6 +102,7 @@ class ToolRegistry:
     def register_content_tools(cls) -> None:
         """注册所有内容生成工具"""
         from backend.tools.content import (
+            de_ai_taste,
             hashtag_researcher,
             image_prompt_generator,
             layout_recommender,
@@ -112,6 +114,7 @@ class ToolRegistry:
             [
                 hashtag_researcher,
                 title_generator,
+                de_ai_taste,
                 image_prompt_generator,
                 layout_recommender,
                 style_library,

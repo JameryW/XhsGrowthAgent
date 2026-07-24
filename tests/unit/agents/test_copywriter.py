@@ -51,7 +51,24 @@ class TestCopywriterAgent:
 }
 ```"""
 
-        with patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop:
+        with (
+            patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop,
+            patch(
+                "backend.tools.content.de_ai_taste.polish_copy",
+                new=AsyncMock(
+                    return_value={
+                        "selected_title": "🔥 美食探店攻略",
+                        "body_text": "今天给大家分享...",
+                        "cta": "",
+                        "tone": "亲切",
+                        "changes": [],
+                        "ai_signals_found": [],
+                        "polished": False,
+                        "method": "llm",
+                    }
+                ),
+            ),
+        ):
             mock_model = MagicMock()
             mock_model.ainvoke = AsyncMock(return_value=mock_response)
             mock_model_prop.return_value = mock_model
@@ -62,8 +79,30 @@ class TestCopywriterAgent:
         assert result["phase"] == WorkflowPhase.CREATING
         assert len(result["copy_content"]["title_candidates"]) == 2
 
+    @pytest.fixture
+    def _mock_de_ai(self):
+        """Avoid real LLM polish during copywriter unit tests."""
+
+        async def _identity(**kwargs):
+            return {
+                "selected_title": kwargs.get("selected_title") or "",
+                "body_text": kwargs.get("body_text") or "",
+                "cta": kwargs.get("cta") or "",
+                "tone": kwargs.get("tone") or "",
+                "changes": [],
+                "ai_signals_found": [],
+                "polished": False,
+                "method": "skip",
+            }
+
+        with patch(
+            "backend.tools.content.de_ai_taste.polish_copy",
+            new=AsyncMock(side_effect=_identity),
+        ) as mock:
+            yield mock
+
     @pytest.mark.asyncio
-    async def test_execute_recalls_past_content(self, agent, mock_state, mock_store):
+    async def test_execute_recalls_past_content(self, agent, mock_state, mock_store, _mock_de_ai):
         """Execute recalls similar past content."""
         mock_item = MagicMock()
         mock_item.value = {"title": "历史爆款", "engagement_rate": 0.1}
@@ -83,7 +122,7 @@ class TestCopywriterAgent:
         assert mock_store.asearch.called
 
     @pytest.mark.asyncio
-    async def test_execute_recalls_audience_prefs(self, agent, mock_state, mock_store):
+    async def test_execute_recalls_audience_prefs(self, agent, mock_state, mock_store, _mock_de_ai):
         """Execute recalls audience preferences."""
         mock_pref = MagicMock()
         mock_pref.value = {"preference": "喜欢实用内容"}
@@ -103,7 +142,7 @@ class TestCopywriterAgent:
         assert mock_store.asearch.call_count >= 2
 
     @pytest.mark.asyncio
-    async def test_execute_handles_empty_plan(self, agent, mock_store):
+    async def test_execute_handles_empty_plan(self, agent, mock_store, _mock_de_ai):
         """Execute handles empty content plan."""
         mock_state = {"account_id": "test", "content_plan": {}}
 
@@ -120,7 +159,7 @@ class TestCopywriterAgent:
         assert "copy_content" in result
 
     @pytest.mark.asyncio
-    async def test_execute_handles_invalid_json(self, agent, mock_state, mock_store):
+    async def test_execute_handles_invalid_json(self, agent, mock_state, mock_store, _mock_de_ai):
         """Execute handles invalid LLM response."""
         mock_response = MagicMock()
         mock_response.content = "Not valid JSON"
@@ -137,7 +176,7 @@ class TestCopywriterAgent:
         assert result["copy_content"].get("raw_content") == "Not valid JSON"
 
     @pytest.mark.asyncio
-    async def test_execute_with_key_points(self, agent, mock_store):
+    async def test_execute_with_key_points(self, agent, mock_store, _mock_de_ai):
         """Execute includes key points in generation."""
         mock_state = {
             "account_id": "test",
@@ -158,6 +197,49 @@ class TestCopywriterAgent:
             result = await agent.execute(mock_state, store=mock_store)
 
         assert result["phase"] == WorkflowPhase.CREATING
+
+    @pytest.mark.asyncio
+    async def test_execute_applies_de_ai_taste_polish(self, agent, mock_state, mock_store):
+        """Post-generation polish rewrites body and records de_ai metadata."""
+        mock_response = MagicMock()
+        mock_response.content = """{
+          "selected_title": "在当今社会好物",
+          "title_candidates": ["在当今社会好物"],
+          "body_text": "综上所述赋能生活",
+          "cta": "欢迎在评论区留言交流。",
+          "tone": "专业"
+        }"""
+
+        with (
+            patch.object(type(agent), "model", new_callable=PropertyMock) as mock_model_prop,
+            patch(
+                "backend.tools.content.de_ai_taste.polish_copy",
+                new=AsyncMock(
+                    return_value={
+                        "selected_title": "用了一周真实感受",
+                        "body_text": "自己用下来真的省事",
+                        "cta": "评论区聊聊你的用法。",
+                        "tone": "口语",
+                        "changes": ["去套话"],
+                        "ai_signals_found": ["综上所述"],
+                        "polished": True,
+                        "method": "llm",
+                    }
+                ),
+            ) as mock_polish,
+        ):
+            mock_model = MagicMock()
+            mock_model.ainvoke = AsyncMock(return_value=mock_response)
+            mock_model_prop.return_value = mock_model
+            result = await agent.execute(mock_state, store=mock_store)
+
+        copy = result["copy_content"]
+        assert copy["selected_title"] == "用了一周真实感受"
+        assert copy["body_text"] == "自己用下来真的省事"
+        assert copy["de_ai_polished"] is True
+        assert copy["de_ai_method"] == "llm"
+        assert copy["de_ai_changes"] == ["去套话"]
+        mock_polish.assert_awaited_once()
 
     def test_agent_attributes(self, agent):
         """Verify agent class attributes."""

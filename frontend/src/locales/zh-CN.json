@@ -832,9 +832,11 @@
     "browserPrerequisite": "前置条件：请保持该账号绑定的 Chrome 浏览器已启动并登录创作者中心。浏览器不可用时，请启动或重新连接后重试。",
     "analyze": "导入后分析风格",
     "syncBrowser": "从已绑定浏览器导入",
-    "syncSuccess": "导入完成：新增 {imported}，更新 {updated}",
+    "syncSuccess": "导入完成：新增 {imported}，更新 {updated}，删除 {deleted}",
     "syncFailed": "同步失败",
-    "lastSync": "上次导入：{source} · +{imported} / ~{updated}",
+    "syncAuthExpired": "创作者中心登录已失效，请先在账号设置中重新扫码登录",
+    "syncBrowserUnavailable": "未检测到绑定浏览器会话，请先启动账号 Chrome 并登录",
+    "lastSync": "上次导入：{source} · +{imported} / ~{updated} / -{deleted}",
     "importedSection": "已导入概览",
     "notesLoaded": "已加载 {loaded} / 共 {total} 条笔记",
     "noImported": "尚未导入真实笔记数据，请先点击上方浏览器导入。",
@@ -890,7 +892,7 @@
   },
   "creatorQuality": {
     "title": "历史笔记发布后表现",
-    "subtitle": "基于已导入历史笔记的互动、收藏、标题和稳定性信号生成发布后表现",
+    "subtitle": "基于已导入历史笔记的互动、收藏、标题、正文和稳定性信号生成发布后表现",
     "page": {
       "hubSubtitle": "从发布后表现到单篇内容评审，集中查看可执行的改进信号",
       "tab": "发布后表现",
@@ -920,7 +922,7 @@
     "weaknesses": "待补短板",
     "recommendations": "优先行动",
     "none": "暂无可展示内容",
-    "scopeLimit": "该报告仅依据已导入的互动、收藏、标题和表现稳定性信号，不评价未导入的图片或正文质量。",
+    "scopeLimit": "该报告依据已导入的互动、收藏、标题、正文和表现稳定性信号；不评价未导入的图片质量。",
     "grade": {
       "strong": "表现稳健",
       "developing": "持续成长",
@@ -942,6 +944,7 @@
       "engagement": "互动信号",
       "save_value": "收藏价值",
       "title_craft": "标题表达",
+      "body_craft": "正文表达",
       "consistency": "表现稳定性"
     },
     "lowData": {
@@ -1966,6 +1969,8 @@
       "loginStatusChecking": "检查中…",
       "loginStatusLoggedIn": "已登录",
       "loginStatusLoggedOut": "未登录",
+      "loginStatusStaleSession": "登录已失效，请重新扫码",
+      "loginStatusWwwOnly": "主站已登录，创作者中心未登录（请重新扫码）",
       "loginStatusInactive": "账号未启用",
       "loginStatusUnavailable": "浏览器不可用",
       "loginStatusMissingProfile": "未绑定浏览器",

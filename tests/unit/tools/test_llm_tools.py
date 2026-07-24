@@ -368,6 +368,7 @@ def test_tool_registry_has_content_tools():
 
     assert "hashtag_researcher" in names
     assert "title_generator" in names
+    assert "de_ai_taste" in names
     assert "image_prompt_generator" in names
 
 
@@ -402,6 +403,7 @@ def test_copywriter_has_content_tools():
 
     assert "hashtag_researcher" in tool_names
     assert "title_generator" in tool_names
+    assert "de_ai_taste" in tool_names
 
 
 def test_visual_designer_has_image_prompt():

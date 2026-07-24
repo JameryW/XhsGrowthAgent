@@ -483,21 +483,24 @@ async def test_avg_bias_score_no_samples_returns_none():
 
 @pytest.mark.asyncio
 async def test_fetch_trend_returns_asc_rows():
-    """fetch_trend returns minimal fields in ascending time order."""
+    """fetch_trend loads newest first, then returns ascending for charts."""
     from backend.db.evaluator_config import fetch_trend
 
+    # SQL returns DESC (newest first); fetch_trend reverses to ASC.
     rows = [
-        {
-            "created_at": "2026-07-01T01:00:00",
-            "overall_score": 80.0,
-            "decision": "approved",
-            "dimensions": [],
-        },
         {
             "created_at": "2026-07-01T02:00:00",
             "overall_score": 55.0,
             "decision": "needs_revision",
             "dimensions": [],
+            "account_id": "acct1",
+        },
+        {
+            "created_at": "2026-07-01T01:00:00",
+            "overall_score": 80.0,
+            "decision": "approved",
+            "dimensions": [],
+            "account_id": "acct1",
         },
     ]
     cursor = MagicMock()
@@ -506,10 +509,14 @@ async def test_fetch_trend_returns_asc_rows():
     conn = _make_mock_conn(cursor=cursor)
     with patch("backend.db.evaluator_config.get_pool", return_value=_make_mock_pool(conn)):
         out = await fetch_trend("acct1", limit=50)
-    assert out == rows
-    # ASC ordering requested
+    assert [r["created_at"] for r in out] == [
+        "2026-07-01T01:00:00",
+        "2026-07-01T02:00:00",
+    ]
+    assert out[0]["overall_score"] == 80.0
+    assert out[0]["source"] == "evaluator_sample"
     sql = cursor.execute.await_args.args[0]
-    assert "ORDER BY created_at ASC" in sql
+    assert "ORDER BY created_at DESC" in sql
 
 
 # ── Online co-evolution: maybe_evolve ──

@@ -38,6 +38,10 @@ export async function getEvaluationResult(threadId: string, options?: RequestOpt
   return client.get(`/evaluation/result/${threadId}`, options) as unknown as EvaluationResultResponse
 }
 
+// RQGM note evaluation can take 60–120s (10-dim LLM panel + retries).
+// Default axios timeout is 30s and surfaces as "Request timeout".
+const EVALUATE_NOTE_TIMEOUT_MS = 180_000
+
 // 对已导入历史笔记手动触发 RQGM 评估（thread-less，不写 checkpoint）
 export async function evaluateNote(
   accountId: string,
@@ -64,7 +68,10 @@ export async function evaluateNote(
 }> {
   const body: Record<string, unknown> = { account_id: accountId, note_id: noteId }
   if (options?.force) body.force = true
-  return client.post('/evaluation/note', body, options) as unknown as Promise<{
+  return client.post('/evaluation/note', body, {
+    ...options,
+    timeout: EVALUATE_NOTE_TIMEOUT_MS,
+  }) as unknown as Promise<{
     account_id: string
     note_id: string
     evaluation_result: EvaluationResultResponse['evaluation_result']
