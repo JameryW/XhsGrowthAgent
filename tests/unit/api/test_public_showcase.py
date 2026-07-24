@@ -9,6 +9,7 @@ from starlette.responses import Response
 
 from backend.api.routes.public_showcase import (
     ShowcaseVisibilityUpdate,
+    _generate_case_summary,
     _key_checkpoints,
     _public_id,
     _public_result,
@@ -374,7 +375,7 @@ async def test_authenticated_operator_can_approve_and_revoke_case_visibility():
             return_value=updated,
         ) as db_update_mock,
     ):
-        approved = await update_showcase_visibility("case-public", payload, current)
+        approved = await update_showcase_visibility("case-public", payload, MagicMock(), current)
 
     kwargs = db_update_mock.await_args.kwargs
     assert kwargs["showcase_visibility"] == "public"
@@ -447,3 +448,215 @@ class TestLoadCheckpointsDirectCall:
             result = await _load_checkpoints(MagicMock(), "thread-1")
 
         assert result == []
+
+
+class TestGenerateCaseSummary:
+    """LLM-polished showcase summary with deterministic fallback and redaction."""
+
+    @pytest.mark.asyncio
+    async def test_prefers_llm_output_and_redacts_pii(self):
+        row = _row("thread-1")
+        state = {
+            "content_plan": {"selected_topic": "春日减脂"},
+            "copy_content": {"selected_title": "春日减脂餐", "body_text": "正文"},
+        }
+        service = MagicMock()
+        service.enrich_with_llm = AsyncMock(
+            return_value={"summary": "联系 test@example.com 获取春日减脂餐灵感"}
+        )
+        with patch("backend.services.llm_enrichment.get_llm_service", return_value=service):
+            summary = await _generate_case_summary(state, row)
+
+        assert summary == "联系 [已脱敏邮箱] 获取春日减脂餐灵感"
+        service.enrich_with_llm.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_content_excerpt_when_llm_fails(self):
+        row = _row("thread-1")
+        state = {"copy_content": {"body_text": "这是笔记正文摘录"}}
+        service = MagicMock()
+        service.enrich_with_llm = AsyncMock(side_effect=RuntimeError("llm down"))
+        with patch("backend.services.llm_enrichment.get_llm_service", return_value=service):
+            summary = await _generate_case_summary(state, row)
+
+        assert summary == "这是笔记正文摘录"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_when_llm_returns_unusable_payload(self):
+        row = _row("thread-1")
+        state = {"content_plan": {"selected_topic": "春日选题"}}
+        service = MagicMock()
+        service.enrich_with_llm = AsyncMock(return_value={})
+        with patch("backend.services.llm_enrichment.get_llm_service", return_value=service):
+            summary = await _generate_case_summary(state, row)
+
+        assert summary == "春日选题"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_without_state_content_and_skips_llm(self):
+        row = _row("thread-1")
+        service = MagicMock()
+        service.enrich_with_llm = AsyncMock()
+        with patch("backend.services.llm_enrichment.get_llm_service", return_value=service):
+            assert await _generate_case_summary(None, row) is None
+            assert await _generate_case_summary({}, row) is None
+
+        service.enrich_with_llm.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_approve_without_summary_auto_generates_and_persists():
+    row = _row("public-thread", visibility="private")
+    updated = _row("public-thread", visibility="public")
+    updated.public_summary = "自动生成的摘要"
+    payload = ShowcaseVisibilityUpdate(visibility="public")
+
+    with (
+        patch(
+            "backend.api.routes.public_showcase._resolve_any_case",
+            new_callable=AsyncMock,
+            return_value=row,
+        ),
+        patch(
+            "backend.api.routes.public_showcase._load_state",
+            new_callable=AsyncMock,
+            return_value={"copy_content": {"body_text": "正文"}},
+        ),
+        patch(
+            "backend.api.routes.public_showcase._generate_case_summary",
+            new_callable=AsyncMock,
+            return_value="自动生成的摘要",
+        ) as generate_mock,
+        patch(
+            "backend.api.routes.public_showcase.db_update",
+            new_callable=AsyncMock,
+            return_value=updated,
+        ) as db_update_mock,
+    ):
+        response = await update_showcase_visibility(
+            "case-public", payload, MagicMock(), {"id": "operator-1"}
+        )
+
+    generate_mock.assert_awaited_once()
+    assert db_update_mock.await_args.kwargs["public_summary"] == "自动生成的摘要"
+    assert response.data["summary_auto_generated"] is True
+    assert response.data["case"]["summary"] == "自动生成的摘要"
+
+
+@pytest.mark.asyncio
+async def test_approve_with_manual_summary_skips_generation():
+    row = _row("public-thread", visibility="private")
+    updated = _row("public-thread", visibility="public")
+    updated.public_summary = "手写摘要"
+    payload = ShowcaseVisibilityUpdate(visibility="public", public_summary="手写摘要")
+
+    with (
+        patch(
+            "backend.api.routes.public_showcase._resolve_any_case",
+            new_callable=AsyncMock,
+            return_value=row,
+        ),
+        patch(
+            "backend.api.routes.public_showcase._generate_case_summary",
+            new_callable=AsyncMock,
+        ) as generate_mock,
+        patch(
+            "backend.api.routes.public_showcase.db_update",
+            new_callable=AsyncMock,
+            return_value=updated,
+        ) as db_update_mock,
+    ):
+        response = await update_showcase_visibility(
+            "case-public", payload, MagicMock(), {"id": "operator-1"}
+        )
+
+    generate_mock.assert_not_called()
+    assert db_update_mock.await_args.kwargs["public_summary"] == "手写摘要"
+    assert response.data["summary_auto_generated"] is False
+
+
+@pytest.mark.asyncio
+async def test_public_case_list_backfills_missing_summary_without_touching_updated_at():
+    row = _row("public-thread", visibility="public")
+    updated = _row("public-thread", visibility="public")
+    updated.public_summary = "回填的摘要"
+    request = MagicMock()
+    request.headers = {}
+
+    with (
+        patch("backend.api.routes.public_showcase.is_pool_ready", return_value=True),
+        patch(
+            "backend.api.routes.public_showcase.db_list",
+            new_callable=AsyncMock,
+            return_value=([row], 1),
+        ),
+        patch(
+            "backend.api.routes.public_showcase._load_state",
+            new_callable=AsyncMock,
+            return_value={"copy_content": {"body_text": "正文"}},
+        ),
+        patch(
+            "backend.api.routes.public_showcase._generate_case_summary",
+            new_callable=AsyncMock,
+            return_value="回填的摘要",
+        ),
+        patch(
+            "backend.api.routes.public_showcase.db_update",
+            new_callable=AsyncMock,
+            return_value=updated,
+        ) as db_update_mock,
+    ):
+        response = await list_public_cases(
+            request=request,
+            response=Response(),
+            limit=24,
+            offset=0,
+            q=None,
+            mode=None,
+            status=None,
+            sort="recent",
+        )
+
+    kwargs = db_update_mock.await_args.kwargs
+    assert kwargs["public_summary"] == "回填的摘要"
+    assert kwargs["touch_updated_at"] is False
+    assert response.data["cases"][0]["summary"] == "回填的摘要"
+
+
+@pytest.mark.asyncio
+async def test_public_case_list_skips_backfill_when_summary_present():
+    row = _row("public-thread", visibility="public")
+    row.public_summary = "已有摘要"
+    request = MagicMock()
+    request.headers = {}
+
+    with (
+        patch("backend.api.routes.public_showcase.is_pool_ready", return_value=True),
+        patch(
+            "backend.api.routes.public_showcase.db_list",
+            new_callable=AsyncMock,
+            return_value=([row], 1),
+        ),
+        patch(
+            "backend.api.routes.public_showcase._load_state",
+            new_callable=AsyncMock,
+        ) as load_state_mock,
+        patch(
+            "backend.api.routes.public_showcase.db_update",
+            new_callable=AsyncMock,
+        ) as db_update_mock,
+    ):
+        response = await list_public_cases(
+            request=request,
+            response=Response(),
+            limit=24,
+            offset=0,
+            q=None,
+            mode=None,
+            status=None,
+            sort="recent",
+        )
+
+    load_state_mock.assert_not_called()
+    db_update_mock.assert_not_called()
+    assert response.data["cases"][0]["summary"] == "已有摘要"

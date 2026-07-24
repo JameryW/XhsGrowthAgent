@@ -1276,7 +1276,7 @@
     "showcaseTitleLabel": "Display title",
     "showcaseTitlePlaceholder": "Leave empty to use the workflow name",
     "showcaseSummaryLabel": "Display summary",
-    "showcaseSummaryPlaceholder": "Optional, up to 360 characters",
+    "showcaseSummaryPlaceholder": "Optional — auto-generated from the content if left blank",
     "showcaseFeatured": "Feature this case on the showcase page",
     "showcaseFeaturedRank": "Feature order",
     "showcaseCancel": "Cancel",

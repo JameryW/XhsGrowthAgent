@@ -221,12 +221,19 @@ async def get_workflow_by_public_id(public_id: str) -> WorkflowRow | None:
     return _row_from_dict(row)
 
 
-async def update_workflow(thread_id: str, **fields: Any) -> WorkflowRow | None:
-    """Update selected fields. Automatically sets updated_at."""
+async def update_workflow(
+    thread_id: str, *, touch_updated_at: bool = True, **fields: Any
+) -> WorkflowRow | None:
+    """Update selected fields. Sets updated_at unless touch_updated_at=False.
+
+    ``touch_updated_at=False`` is for write-through backfills (e.g. generated
+    showcase summaries) that must not reorder ``updated_at``-sorted listings.
+    """
     if not fields:
         return await get_workflow(thread_id)
 
-    fields["updated_at"] = datetime.now(UTC).isoformat()
+    if touch_updated_at:
+        fields["updated_at"] = datetime.now(UTC).isoformat()
     set_clause = ", ".join(f"{k} = %s" for k in fields)
     values = list(fields.values()) + [thread_id]
 
