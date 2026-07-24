@@ -31,6 +31,8 @@ class AccountRow:
     # Bound content niche (赛道): manual override or inferred from history notes
     niche: str = ""
     niche_source: str = ""  # manual | inferred | account_bound | ""
+    # Console-user ownership for multi-user isolation. Empty only before migration.
+    owner_user_id: str = ""
 
 
 @dataclass
@@ -91,6 +93,12 @@ _ADD_NICHE_COL_SQL = "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS niche TEXT N
 _ADD_NICHE_SOURCE_COL_SQL = (
     "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS niche_source TEXT NOT NULL DEFAULT ''"
 )
+_ADD_OWNER_USER_ID_COL_SQL = (
+    "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS owner_user_id TEXT NOT NULL DEFAULT ''"
+)
+_CREATE_OWNER_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_accounts_owner_user_id ON accounts (owner_user_id);
+"""
 
 
 async def ensure_tables() -> None:
@@ -105,17 +113,58 @@ async def ensure_tables() -> None:
         await conn.execute(_ADD_CDP_PORT_COL_SQL)
         await conn.execute(_ADD_NICHE_COL_SQL)
         await conn.execute(_ADD_NICHE_SOURCE_COL_SQL)
+        await conn.execute(_ADD_OWNER_USER_ID_COL_SQL)
+        await conn.execute(_CREATE_OWNER_INDEX_SQL)
+    await _migrate_unowned_accounts_to_first_console_user()
     logger.info("accounts tables ensured")
+
+
+async def _migrate_unowned_accounts_to_first_console_user() -> None:
+    """Assign legacy accounts with empty owner to the oldest console user."""
+    from backend.db.pool import is_pool_ready
+
+    if not is_pool_ready():
+        return
+    try:
+        from backend.db.console_users import list_users
+
+        users = await list_users()
+        if not users:
+            return
+        owner_id = users[0].id
+        pool = get_pool()
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                UPDATE accounts
+                SET owner_user_id = %s
+                WHERE owner_user_id = '' OR owner_user_id IS NULL
+                """,
+                (owner_id,),
+            )
+            n = int(getattr(cur, "rowcount", 0) or 0)
+            if n:
+                logger.info(
+                    "migrated %s unowned account(s) to console user %s", n, owner_id
+                )
+    except Exception as exc:
+        logger.warning("owner_user_id migration skipped: %s", exc)
 
 
 # ── Account CRUD ──
 
 
-async def create_account(name: str, is_active: bool = False) -> AccountRow:
+async def create_account(
+    name: str,
+    is_active: bool = False,
+    *,
+    owner_user_id: str = "",
+) -> AccountRow:
     from datetime import UTC, datetime
 
     now = datetime.now(UTC).isoformat()
     id_ = str(uuid.uuid4())
+    owner = (owner_user_id or "").strip()
 
     # Auto-allocate per-account Chrome profile binding (CDP multi-profile mode).
     # chrome_profile_path defaults to <chrome_profiles_dir>/<account_id> (empty
@@ -135,10 +184,10 @@ async def create_account(name: str, is_active: bool = False) -> AccountRow:
             """
             INSERT INTO accounts
                 (id, name, is_active, created_at, updated_at,
-                 chrome_profile_path, cdp_port)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                 chrome_profile_path, cdp_port, owner_user_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (id_, name, is_active, now, now, chrome_profile_path, cdp_port),
+            (id_, name, is_active, now, now, chrome_profile_path, cdp_port, owner),
         )
     return AccountRow(
         id=id_,
@@ -148,6 +197,7 @@ async def create_account(name: str, is_active: bool = False) -> AccountRow:
         updated_at=now,
         chrome_profile_path=chrome_profile_path,
         cdp_port=cdp_port,
+        owner_user_id=owner,
     )
 
 
@@ -190,32 +240,55 @@ async def get_account(account_id: str) -> AccountRow | None:
     return _account_from_dict(row)
 
 
-async def list_accounts() -> list[AccountRow]:
+async def list_accounts(*, owner_user_id: str | None = None) -> list[AccountRow]:
+    """List accounts, optionally filtered to a console-user owner.
+
+    System jobs omit ``owner_user_id``. User-facing APIs pass the authenticated id.
+    """
     pool = get_pool()
+    owner = (owner_user_id or "").strip() or None
     async with pool.connection() as conn:
         from psycopg.rows import dict_row
 
         async with conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute("SELECT * FROM accounts ORDER BY is_active DESC, created_at ASC")
+            if owner is None:
+                await cur.execute(
+                    "SELECT * FROM accounts ORDER BY is_active DESC, created_at ASC"
+                )
+            else:
+                await cur.execute(
+                    """
+                    SELECT * FROM accounts
+                    WHERE owner_user_id = %s
+                    ORDER BY is_active DESC, created_at ASC
+                    """,
+                    (owner,),
+                )
             rows = await cur.fetchall()
     return [_account_from_dict(r) for r in rows]
 
 
-async def list_active_accounts() -> list[AccountRow]:
-    """Return only accounts explicitly enabled for background imports.
-
-    Keep this query separate from :func:`list_accounts` so callers cannot
-    accidentally start a browser session for a disabled account when running
-    the all-account import job.
-    """
+async def list_active_accounts(*, owner_user_id: str | None = None) -> list[AccountRow]:
+    """Return accounts enabled for background imports (optionally owner-scoped)."""
     pool = get_pool()
+    owner = (owner_user_id or "").strip() or None
     async with pool.connection() as conn:
         from psycopg.rows import dict_row
 
         async with conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute(
-                "SELECT * FROM accounts WHERE is_active = TRUE ORDER BY created_at ASC"
-            )
+            if owner is None:
+                await cur.execute(
+                    "SELECT * FROM accounts WHERE is_active = TRUE ORDER BY created_at ASC"
+                )
+            else:
+                await cur.execute(
+                    """
+                    SELECT * FROM accounts
+                    WHERE is_active = TRUE AND owner_user_id = %s
+                    ORDER BY created_at ASC
+                    """,
+                    (owner,),
+                )
             rows = await cur.fetchall()
     return [_account_from_dict(r) for r in rows]
 
@@ -268,39 +341,84 @@ async def delete_account(account_id: str) -> bool:
     return cur.rowcount == 1
 
 
-async def get_active_account() -> AccountRow | None:
-    """Return the currently active account."""
+async def get_active_account(*, owner_user_id: str | None = None) -> AccountRow | None:
+    """Return the currently active account (optionally scoped to an owner)."""
     pool = get_pool()
+    owner = (owner_user_id or "").strip() or None
     async with pool.connection() as conn:
         from psycopg.rows import dict_row
 
         async with conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute("SELECT * FROM accounts WHERE is_active = TRUE LIMIT 1")
+            if owner is None:
+                await cur.execute("SELECT * FROM accounts WHERE is_active = TRUE LIMIT 1")
+            else:
+                await cur.execute(
+                    """
+                    SELECT * FROM accounts
+                    WHERE is_active = TRUE AND owner_user_id = %s
+                    LIMIT 1
+                    """,
+                    (owner,),
+                )
             row = await cur.fetchone()
     if row is None:
         return None
     return _account_from_dict(row)
 
 
-async def set_active_account(account_id: str) -> AccountRow | None:
-    """Deactivate all accounts, then activate the given one. Returns the activated account."""
+async def set_active_account(
+    account_id: str, *, owner_user_id: str | None = None
+) -> AccountRow | None:
+    """Activate ``account_id``; deactivate siblings in the same ownership scope."""
     from datetime import UTC, datetime
 
     now = datetime.now(UTC).isoformat()
+    owner = (owner_user_id or "").strip() or None
+    account_id = (account_id or "").strip()
+    if not account_id:
+        return None
 
     pool = get_pool()
     async with pool.connection() as conn:
-        # Deactivate all
-        await conn.execute("UPDATE accounts SET is_active = FALSE, updated_at = %s", (now,))
-        # Activate target
         from psycopg.rows import dict_row
 
-        async with conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute(
-                "UPDATE accounts SET is_active = TRUE, updated_at = %s WHERE id = %s RETURNING *",
-                (now, account_id),
+        if owner is None:
+            await conn.execute(
+                "UPDATE accounts SET is_active = FALSE, updated_at = %s", (now,)
             )
-            row = await cur.fetchone()
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(
+                    "UPDATE accounts SET is_active = TRUE, updated_at = %s "
+                    "WHERE id = %s RETURNING *",
+                    (now, account_id),
+                )
+                row = await cur.fetchone()
+        else:
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(
+                    "SELECT id FROM accounts WHERE id = %s AND owner_user_id = %s",
+                    (account_id, owner),
+                )
+                owned = await cur.fetchone()
+            if owned is None:
+                return None
+            await conn.execute(
+                """
+                UPDATE accounts SET is_active = FALSE, updated_at = %s
+                WHERE owner_user_id = %s
+                """,
+                (now, owner),
+            )
+            async with conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(
+                    """
+                    UPDATE accounts SET is_active = TRUE, updated_at = %s
+                    WHERE id = %s AND owner_user_id = %s
+                    RETURNING *
+                    """,
+                    (now, account_id, owner),
+                )
+                row = await cur.fetchone()
     if row is None:
         return None
     return _account_from_dict(row)
@@ -394,4 +512,5 @@ def _account_from_dict(d: dict[str, Any]) -> AccountRow:
         cdp_port=int(d.get("cdp_port") or 0),
         niche=d.get("niche", "") or "",
         niche_source=d.get("niche_source", "") or "",
+        owner_user_id=str(d.get("owner_user_id") or ""),
     )

@@ -8,10 +8,12 @@ import logging
 from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel
 
-from backend.api.errors import APIError, ErrorCode, ValidationError
+from backend.api.account_scope import account_to_public_dict, require_owned_account
+from backend.api.deps import get_current_user
+from backend.api.errors import APIError, AccountNotFoundError, ErrorCode, ValidationError
 from backend.api.responses import ApiResponse, success
 
 logger = logging.getLogger("xhs_growth.api.accounts")
@@ -66,90 +68,71 @@ class SubmitVerificationCodeRequest(BaseModel):
 
 
 @router.post("")
-async def create_account(request: CreateAccountRequest) -> ApiResponse[Any]:
-    """Create a new account."""
+async def create_account(
+    request: CreateAccountRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Create a new account owned by the authenticated console user."""
     if not request.name.strip():
         raise ValidationError("name", "Account name cannot be empty")
 
     from backend.db.accounts import create_account as db_create
     from backend.db.accounts import set_active_account
 
-    account = await db_create(name=request.name.strip(), is_active=request.is_active)
+    owner_id = str(user["id"])
+    account = await db_create(
+        name=request.name.strip(),
+        is_active=request.is_active,
+        owner_user_id=owner_id,
+    )
 
     # If this is the first account or explicitly set active, activate it
     if request.is_active:
-        await set_active_account(account.id)
+        await set_active_account(account.id, owner_user_id=owner_id)
 
-    return success(
-        data={
-            "id": account.id,
-            "name": account.name,
-            "is_active": account.is_active,
-            "created_at": account.created_at,
-            "chrome_profile_path": account.chrome_profile_path,
-            "cdp_port": account.cdp_port,
-            "niche": account.niche,
-            "niche_source": account.niche_source,
-        }
-    )
+    return success(data=account_to_public_dict(account))
 
 
 @router.get("")
-async def list_accounts() -> ApiResponse[Any]:
-    """List all accounts."""
+async def list_accounts(
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """List accounts owned by the authenticated console user."""
     from backend.db.accounts import list_accounts as db_list
 
-    accounts = await db_list()
-    return success(
-        data=[
-            {
-                "id": a.id,
-                "name": a.name,
-                "is_active": a.is_active,
-                "created_at": a.created_at,
-                "updated_at": a.updated_at,
-                "chrome_profile_path": a.chrome_profile_path,
-                "cdp_port": a.cdp_port,
-                "niche": a.niche,
-                "niche_source": a.niche_source,
-            }
-            for a in accounts
-        ]
-    )
+    accounts = await db_list(owner_user_id=str(user["id"]))
+    return success(data=[account_to_public_dict(a) for a in accounts])
 
 
 @router.get("/active")
-async def get_active_account() -> ApiResponse[Any]:
-    """Get the currently active account."""
+async def get_active_account(
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Get the currently active account for this console user."""
     from backend.db.accounts import get_active_account as db_get_active
 
-    account = await db_get_active()
+    account = await db_get_active(owner_user_id=str(user["id"]))
     if account is None:
         return success(data=None)
-    return success(
-        data={
-            "id": account.id,
-            "name": account.name,
-            "is_active": account.is_active,
-            "created_at": account.created_at,
-            "updated_at": getattr(account, "updated_at", None),
-            "chrome_profile_path": account.chrome_profile_path,
-            "cdp_port": account.cdp_port,
-            "niche": account.niche,
-            "niche_source": account.niche_source,
-        }
-    )
+    return success(data=account_to_public_dict(account))
 
 
 @router.put("/{account_id}")
-async def update_account(account_id: str, request: UpdateAccountRequest) -> ApiResponse[Any]:
-    """Update an account's name, active status, or Chrome profile binding."""
+async def update_account(
+    account_id: str,
+    request: UpdateAccountRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Update an owned account's name, active status, or Chrome profile binding."""
     from backend.db.accounts import set_active_account
     from backend.db.accounts import update_account as db_update
 
+    owner_id = str(user["id"])
+    await require_owned_account(owner_id, account_id)
+
     # If setting active, use set_active_account which handles deactivation of others
     if request.is_active is True:
-        account = await set_active_account(account_id)
+        account = await set_active_account(account_id, owner_user_id=owner_id)
         if account is None:
             raise AccountNotFoundError(account_id)
     else:
@@ -179,24 +162,18 @@ async def update_account(account_id: str, request: UpdateAccountRequest) -> ApiR
         if account is None:
             raise AccountNotFoundError(account_id)
 
-    return success(
-        data={
-            "id": account.id,
-            "name": account.name,
-            "is_active": account.is_active,
-            "chrome_profile_path": account.chrome_profile_path,
-            "cdp_port": account.cdp_port,
-            "niche": account.niche,
-            "niche_source": account.niche_source,
-        }
-    )
+    return success(data=account_to_public_dict(account))
 
 
 @router.delete("/{account_id}")
-async def delete_account(account_id: str) -> ApiResponse[Any]:
-    """Delete an account."""
+async def delete_account(
+    account_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Delete an owned account."""
     from backend.db.accounts import delete_account as db_delete
 
+    await require_owned_account(str(user["id"]), account_id)
     deleted = await db_delete(account_id)
     if not deleted:
         raise AccountNotFoundError(account_id)
@@ -206,19 +183,18 @@ async def delete_account(account_id: str) -> ApiResponse[Any]:
 
 @router.post("/{account_id}/niche/resolve")
 async def resolve_account_niche_route(
-    account_id: str, body: ResolveNicheRequest
+    account_id: str,
+    body: ResolveNicheRequest,
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """Infer niche from imported note history, or apply manual niche override.
 
     Manual non-empty ``manual_niche`` always wins. Empty → keyword infer from
     creator-center note stats; no signal → cold_start.
     """
-    from backend.db.accounts import get_account
     from backend.services.niche_resolver import resolve_account_niche
 
-    account = await get_account(account_id)
-    if account is None:
-        raise AccountNotFoundError(account_id)
+    await require_owned_account(str(user["id"]), account_id)
 
     result = await resolve_account_niche(
         account_id,
@@ -235,14 +211,15 @@ async def resolve_account_niche_route(
 
 
 @router.get("/{account_id}/login/status")
-async def get_account_login_status(account_id: str) -> ApiResponse[Any]:
+async def get_account_login_status(
+    account_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """Check whether the account's Chrome profile has a durable XHS login."""
-    from backend.db.accounts import get_account, get_account_cdp_endpoint
+    from backend.db.accounts import get_account_cdp_endpoint
     from backend.services.xhs_login import inspect_profile_login_status
 
-    account = await get_account(account_id)
-    if account is None:
-        raise AccountNotFoundError(account_id)
+    account = await require_owned_account(str(user["id"]), account_id)
 
     if not account.chrome_profile_path:
         return success(
@@ -273,7 +250,10 @@ async def get_account_login_status(account_id: str) -> ApiResponse[Any]:
 
 
 @router.post("/{account_id}/login/qr")
-async def start_qr_login(account_id: str) -> ApiResponse[Any]:
+async def start_qr_login(
+    account_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """启动扫码登录：connect_over_cdp 连 host 真实 Chrome，拦 qrcode/create.
 
     Returns:
@@ -282,16 +262,13 @@ async def start_qr_login(account_id: str) -> ApiResponse[Any]:
         (``account.chrome_profile_path``)，常驻 Chrome 后续 CDP 发布复用。
 
     Raises:
-        AccountNotFoundError: 账号不存在.
+        AccountNotFoundError: 账号不存在或不属于当前用户.
         ValidationError: 账号未绑定 chrome_profile_path / cdp_port，或 host Chrome 未启动.
     """
-    from backend.db.accounts import get_account
     from backend.services.creator_stats.pipeline import clear_post_login_sync_gate
     from backend.services.xhs_login import LoginError, get_or_create_session
 
-    account = await get_account(account_id)
-    if account is None:
-        raise AccountNotFoundError(account_id)
+    account = await require_owned_account(str(user["id"]), account_id)
 
     if not account.chrome_profile_path:
         raise ValidationError(
@@ -347,6 +324,7 @@ async def start_qr_login(account_id: str) -> ApiResponse[Any]:
 async def get_qr_login_status(
     account_id: str,
     background_tasks: BackgroundTasks,
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """查询扫码登录状态.
 
@@ -361,16 +339,13 @@ async def get_qr_login_status(
     the dashboard is fresh without a separate manual sync click.
 
     Raises:
-        AccountNotFoundError: 账号不存在.
+        AccountNotFoundError: 账号不存在或不属于当前用户.
         ValidationError: 账号未绑定 chrome_profile_path 或无进行中的登录会话.
     """
-    from backend.db.accounts import get_account
     from backend.services.creator_stats.pipeline import sync_after_login
     from backend.services.xhs_login import LoginError, get_session
 
-    account = await get_account(account_id)
-    if account is None:
-        raise AccountNotFoundError(account_id)
+    account = await require_owned_account(str(user["id"]), account_id)
 
     if not account.chrome_profile_path:
         raise ValidationError(
@@ -401,15 +376,14 @@ async def get_qr_login_status(
 
 @router.post("/{account_id}/login/qr/verification-code")
 async def submit_qr_verification_code(
-    account_id: str, request: SubmitVerificationCodeRequest
+    account_id: str,
+    request: SubmitVerificationCodeRequest,
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """Submit a numeric web verification code into the active CDP login page."""
-    from backend.db.accounts import get_account
     from backend.services.xhs_login import LoginError, get_session
 
-    account = await get_account(account_id)
-    if account is None:
-        raise AccountNotFoundError(account_id)
+    await require_owned_account(str(user["id"]), account_id)
 
     code = request.code.strip()
     if not code.isdigit() or not (4 <= len(code) <= 8):
@@ -435,34 +409,24 @@ async def submit_qr_verification_code(
 
 
 @router.post("/{account_id}/login/qr/stop")
-async def stop_qr_login(account_id: str) -> ApiResponse[Any]:
+async def stop_qr_login(
+    account_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """关闭扫码登录会话（profile 已落盘，可由 launcher 起常驻 CDP Chrome）.
 
     登录确认后调用此端点释放 headless Chrome。即使不调，进程退出时也会
     回收（profile 已持久化）。
 
     Raises:
-        AccountNotFoundError: 账号不存在.
+        AccountNotFoundError: 账号不存在或不属于当前用户.
     """
-    from backend.db.accounts import get_account
     from backend.services.xhs_login import stop_session
 
-    account = await get_account(account_id)
-    if account is None:
-        raise AccountNotFoundError(account_id)
+    await require_owned_account(str(user["id"]), account_id)
 
     stopped = await stop_session(account_id)
     return success(data={"stopped": stopped, "account_id": account_id})
 
 
-# ── Error classes ──
 
-
-class AccountNotFoundError(APIError):
-    def __init__(self, account_id: str):
-        super().__init__(
-            code=ErrorCode.ACCOUNT_NOT_FOUND,
-            message=f"Account '{account_id}' not found",
-            details={"account_id": account_id},
-            status_code=404,
-        )

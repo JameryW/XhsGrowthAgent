@@ -9,7 +9,7 @@ import type { Account } from '@/api/accounts'
 import type { EvaluationTrendResponse } from '@/types/evaluation'
 import { SCORE_THRESHOLDS, scoreTier as scoreTierOf, DIMENSION_LABEL_KEYS } from '@/constants/evaluation'
 import { formatShortDate } from '@/utils/format'
-import { ALL_ACCOUNTS_ID } from '@/constants/qualityConsistency'
+
 
 /**
  * EvaluationOverview — fused headline band for the quality hub.
@@ -35,7 +35,7 @@ const emit = defineEmits<{
 }>()
 
 const { t, locale } = useI18n()
-const isAllAccounts = computed(() => props.accountId === ALL_ACCOUNTS_ID)
+const isAllAccounts = computed(() => false)
 
 // ── 账户综合分（确定性历史报告，与下方诊断区块同源）──
 const report = ref<CreatorQualityReport | null>(null)
@@ -53,7 +53,7 @@ watch(
 async function loadReport(accountId: string, reportLocale: string) {
   const request = ++reportRequest
   report.value = null
-  if (!accountId || accountId === ALL_ACCOUNTS_ID) {
+  if (!accountId) {
     reportLoading.value = false
     return
   }
@@ -108,7 +108,7 @@ async function loadTrend(accountId = props.accountId) {
   }
   try {
     const response = await getEvaluationTrend(
-      accountId === ALL_ACCOUNTS_ID ? undefined : accountId,
+      accountId,
       100,
       { suppressToast: true },
     )
@@ -180,7 +180,7 @@ function formatDataAsOf(value: string | null | undefined): string {
                 :aria-label="t('creatorQuality.page.accountLabel')"
                 @change="emit('update:accountId', ($event.target as HTMLSelectElement).value)"
               >
-                <option :value="ALL_ACCOUNTS_ID">{{ t('evaluation.allAccounts') }}</option>
+
                 <option v-for="account in accounts" :key="account.id" :value="account.id">
                   {{ account.name }}{{ account.is_active ? ` (${t('settings.active')})` : '' }}
                 </option>

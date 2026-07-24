@@ -14,10 +14,17 @@ import logging
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
 from backend.agents.evaluator import MIN_EVALUATION_COVERAGE, EvaluatorAgent
+from backend.api.account_scope import (
+    assert_note_owned,
+    assert_thread_owned,
+    require_owned_account,
+    resolve_required_account_id,
+)
+from backend.api.deps import get_current_user
 from backend.api.errors import CreatorNoteNotFoundError, ValidationError, WorkflowNotFoundError
 from backend.api.responses import ApiResponse, success
 from backend.db.accounts import get_account
@@ -129,9 +136,10 @@ async def _score_thresholds(account_id: str | None = None) -> dict[str, float]:
 @router.get("/list")
 async def list_evaluated_workflows(
     request: Request,
-    account_id: str | None = Query(None, description="筛选账号 ID"),
+    account_id: str | None = Query(None, description="账号 ID（必填；省略时用当前用户活跃账号）"),
     limit: int = Query(20, ge=1, le=100, description="返回数量限制（过滤后）"),
     offset: int = Query(0, ge=0, description="分页偏移（过滤后）"),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """列出有评估结果的工作流 — 含标题 + 评估摘要.
 
@@ -141,8 +149,10 @@ async def list_evaluated_workflows(
 
     分页注意：has_evaluation 过滤在 checkpoint 读取后进行，DB 端的 limit/offset
     无法精确对应过滤后页码，因此先分页读取完整 DB 来源，再对过滤结果切片。
+
+    Account isolation: always single owned account (no all-accounts aggregate).
     """
-    account_id = (account_id or "").strip() or None
+    account_id = await resolve_required_account_id(str(user["id"]), account_id)
     if not is_pool_ready():
         return success(
             data={
@@ -151,7 +161,7 @@ async def list_evaluated_workflows(
                 "limit": limit,
                 "offset": offset,
                 "account_id": account_id,
-                "scope": "account_history" if account_id else "all_accounts",
+                "scope": "account_history",
                 "assessment_type": "rqgm_content_review",
                 "data_as_of": None,
                 "snapshot_id": None,
@@ -265,22 +275,29 @@ async def list_evaluated_workflows(
             "limit": limit,
             "offset": offset,
             "account_id": account_id,
-            "scope": "account_history" if account_id else "all_accounts",
+            "scope": "account_history",
             "assessment_type": "rqgm_content_review",
             "contract_version": QUALITY_CONSISTENCY_CONTRACT
             if quality_consistency_v2_enabled()
             else "legacy_compatible",
             "data_as_of": data_as_of,
-            "snapshot_id": build_snapshot_id(account_id or ALL_ACCOUNTS_SCOPE, data_as_of),
+            "snapshot_id": build_snapshot_id(account_id, data_as_of),
         }
     )
 
 
 @router.get("/result/{thread_id}")
-async def get_evaluation_result(thread_id: str, request: Request) -> ApiResponse[Any]:
+async def get_evaluation_result(
+    thread_id: str,
+    request: Request,
+    account_id: str | None = Query(None, description="可选：声明所属账号，必须匹配"),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """获取指定工作流的创作质量评估结果."""
     if not thread_id or not thread_id.strip():
         raise ValidationError("thread_id", "thread_id cannot be empty")
+
+    owned_account_id = await assert_thread_owned(str(user["id"]), thread_id, account_id)
 
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": thread_id}}
@@ -291,14 +308,14 @@ async def get_evaluation_result(thread_id: str, request: Request) -> ApiResponse
         raise WorkflowNotFoundError(thread_id)
 
     evaluation = values.get("evaluation_result") or {}
-    thresholds = await _score_thresholds(str(values.get("account_id") or ""))
+    thresholds = await _score_thresholds(owned_account_id)
     return success(
         data={
             "thread_id": thread_id,
             "has_evaluation": bool(evaluation),
             "evaluation_result": evaluation,
             "thresholds": thresholds,
-            "account_id": str(values.get("account_id") or "") or None,
+            "account_id": owned_account_id,
             "subject_type": "workflow_draft",
             "subject_id": thread_id,
             "scope": "workflow_draft",
@@ -804,6 +821,7 @@ async def run_note_evaluation(
     ref: NoteEvaluationRequest,
     request: Request,
     force: bool | None = Query(None, description="强制创建新的评估版本（覆盖 body）"),
+    user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """对已导入历史笔记手动触发 RQGM 评估 (thread-less, 不写 checkpoint).
 
@@ -811,12 +829,11 @@ async def run_note_evaluation(
     调 EvaluatorAgent.execute → 返回 evaluation_result。
     历史笔记无生成侧元数据，visual/image_quality 维度标记为不可用。
     """
-    account_id = (ref.account_id or "").strip()
     note_id = (ref.note_id or "").strip()
-    if not account_id:
-        raise ValidationError("account_id", "account_id cannot be empty")
     if not note_id:
         raise ValidationError("note_id", "note_id cannot be empty")
+    account_id = await resolve_required_account_id(str(user["id"]), ref.account_id)
+    await assert_note_owned(str(user["id"]), account_id, note_id)
 
     note, snapshot_bundle = await _get_historical_note_with_snapshot(account_id, note_id)
     if note is None:
@@ -998,14 +1015,17 @@ async def run_note_evaluation(
 
 
 @router.get("/note/{account_id}/{note_id}/latest")
-async def get_latest_note_evaluation(account_id: str, note_id: str) -> ApiResponse[Any]:
+async def get_latest_note_evaluation(
+    account_id: str,
+    note_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
     """Restore the latest persisted historical-note RQGM run after refresh."""
-    normalized_account_id = (account_id or "").strip()
     normalized_note_id = (note_id or "").strip()
-    if not normalized_account_id:
-        raise ValidationError("account_id", "account_id cannot be empty")
     if not normalized_note_id:
         raise ValidationError("note_id", "note_id cannot be empty")
+    normalized_account_id = await resolve_required_account_id(str(user["id"]), account_id)
+    await assert_note_owned(str(user["id"]), normalized_account_id, normalized_note_id)
     from backend.db import quality_evaluations as quality_db
 
     run = await quality_db.get_latest_for_subject(
@@ -1160,12 +1180,21 @@ async def get_evaluator_samples(request: Request) -> ApiResponse[Any]:
 
 
 @router.get("/trend")
-async def get_evaluator_trend(request: Request) -> ApiResponse[Any]:
-    """评估历史趋势 — overall_score 时序 + 各维度均值聚合."""
+async def get_evaluator_trend(
+    request: Request,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """评估历史趋势 — overall_score 时序 + 各维度均值聚合.
+
+    Always single owned account (no all-accounts aggregate).
+    """
     from backend.db.evaluator_config import WEIGHTED_DIMENSIONS, fetch_trend
     from backend.db.pool import is_pool_ready
 
-    account_id = (request.query_params.get("account_id") or "").strip() or None
+    account_id = await resolve_required_account_id(
+        str(user["id"]),
+        request.query_params.get("account_id"),
+    )
     thresholds = await _score_thresholds(account_id)
     if not is_pool_ready():
         return success(
@@ -1174,7 +1203,7 @@ async def get_evaluator_trend(request: Request) -> ApiResponse[Any]:
                 "points": [],
                 "dim_averages": {},
                 "account_id": account_id,
-                "scope": "account_history" if account_id else "all_accounts",
+                "scope": "account_history",
                 "assessment_type": "rqgm_content_review",
                 "pass_threshold": thresholds["pass"],
                 "warn_threshold": thresholds["warn"],
@@ -1274,7 +1303,7 @@ async def get_evaluator_trend(request: Request) -> ApiResponse[Any]:
             "points": points,
             "dim_averages": dim_averages,
             "account_id": account_id,
-            "scope": "account_history" if account_id else "all_accounts",
+            "scope": "account_history",
             "assessment_type": "rqgm_content_review",
             "pass_threshold": thresholds["pass"],
             "warn_threshold": thresholds["warn"],
@@ -1283,7 +1312,7 @@ async def get_evaluator_trend(request: Request) -> ApiResponse[Any]:
                 default=None,
             ),
             "snapshot_id": build_snapshot_id(
-                account_id or ALL_ACCOUNTS_SCOPE,
+                account_id,
                 max((str(point.get("created_at") or "") for point in points), default=None),
             ),
             "contract_version": QUALITY_CONSISTENCY_CONTRACT

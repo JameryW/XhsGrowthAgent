@@ -56,10 +56,69 @@ def mock_store():
 
 @pytest.fixture
 def client(mock_store):
+    from backend.api.deps import get_current_user
+    from backend.db.accounts import AccountRow
+
     graph = MagicMock()
     graph.store = mock_store
     app.state.graph = graph
-    yield TestClient(app)
+
+    async def _user():
+        return {"id": "user-test", "username": "tester"}
+
+    app.dependency_overrides[get_current_user] = _user
+
+    owned = AccountRow(
+        id="acct1",
+        name="acct1",
+        is_active=True,
+        owner_user_id="user-test",
+    )
+
+    async def _owned(user_id: str, account_id: str | None = None, **kwargs):
+        # resolve_required_account_id / require_owned_account signatures vary
+        aid = account_id if account_id is not None else user_id
+        if isinstance(kwargs.get("default_to_active"), bool) or account_id is not None:
+            # resolve_required_account_id(user_id, account_id)
+            raw = (account_id or "acct1").strip() or "acct1"
+            if raw in {"default", ""}:
+                return "acct1"
+            return raw
+        return owned
+
+    with (
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=owned,
+        ),
+        patch(
+            "backend.api.account_scope.resolve_required_account_id",
+            new_callable=AsyncMock,
+            side_effect=lambda uid, aid=None, **kw: (aid or "acct1").strip()
+            or "acct1",
+        ),
+        patch(
+            "backend.api.account_scope.require_owned_account",
+            new_callable=AsyncMock,
+            return_value=owned,
+        ),
+        # free routes import helpers at call sites from account_scope
+        patch(
+            "backend.api.routes.free.resolve_required_account_id",
+            new_callable=AsyncMock,
+            side_effect=lambda uid, aid=None, **kw: (aid or "acct1").strip()
+            or "acct1",
+        ),
+        patch(
+            "backend.api.routes.free.require_owned_account",
+            new_callable=AsyncMock,
+            return_value=owned,
+        ),
+    ):
+        yield TestClient(app)
+
+    app.dependency_overrides.pop(get_current_user, None)
     if hasattr(app.state, "graph"):
         delattr(app.state, "graph")
 
@@ -97,11 +156,12 @@ class TestCreateDraft:
         assert draft["published"] is False
 
     def test_create_defaults_account_id(self, client):
+        """Missing account_id resolves to the caller's active/owned account."""
         body = {**DRAFT_BODY}
         del body["account_id"]
         r = client.post("/api/free/draft", json=body)
         assert r.status_code == 200
-        assert r.json()["data"]["draft"]["account_id"] == "default"
+        assert r.json()["data"]["draft"]["account_id"] == "acct1"
 
     def test_create_empty_niche_auto_resolves_cold_start(self, client):
         """Empty niche → auto-infer; no notes → cold_start default 母婴 (not source=manual)."""
@@ -1055,15 +1115,15 @@ class TestGetSuggestions:
         assert data["cold_start"] is True
 
     def test_suggestions_defaults_account_id(self, client, mock_store):
-        """Empty/missing path account_id falls back to 'default'."""
+        """Empty/whitespace path account_id falls back to owned active account."""
         with patch(
             "backend.services.creator_stats.suggestions.get_suggestions_for_mode",
             AsyncMock(return_value=[]),
         ) as mock_fn:
-            r = client.get("/api/free/suggestions/%20")  # whitespace → 'default'
+            r = client.get("/api/free/suggestions/%20")  # whitespace → owned active
         assert r.status_code == 200, r.text
-        assert r.json()["data"]["account_id"] == "default"
-        assert mock_fn.await_args.args[0] == "default"
+        assert r.json()["data"]["account_id"] == "acct1"
+        assert mock_fn.await_args.args[0] == "acct1"
 
     def test_suggestions_empty_returns_count_zero(self, client, mock_store):
         with patch(

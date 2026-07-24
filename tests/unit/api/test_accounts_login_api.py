@@ -31,18 +31,6 @@ def setup_crypto():
     crypto_mod._fernet = None
 
 
-@pytest.fixture
-def client():
-    """Create a test client with the accounts router mounted."""
-    from fastapi import FastAPI
-
-    from backend.api.routes.accounts import router
-
-    app = FastAPI()
-    app.include_router(router, prefix="/api/accounts")
-    return TestClient(app)
-
-
 def _mock_account(account_id: str = "acc-1", profile_path: str = "/tmp/profile-acc-1"):
     """Build a mock AccountRow with a chrome_profile_path binding."""
     from backend.db.accounts import AccountRow
@@ -54,7 +42,27 @@ def _mock_account(account_id: str = "acc-1", profile_path: str = "/tmp/profile-a
         created_at="2026-01-01T00:00:00",
         chrome_profile_path=profile_path,
         cdp_port=9223,
+        owner_user_id="user-test",
     )
+
+
+@pytest.fixture
+def client():
+    """Create a test client with the accounts router mounted + auth override."""
+    from fastapi import FastAPI
+
+    from backend.api.deps import get_current_user
+    from backend.api.routes.accounts import router
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/accounts")
+
+    async def _user():
+        return {"id": "user-test", "username": "tester"}
+
+    app.dependency_overrides[get_current_user] = _user
+    return TestClient(app)
+
 
 
 # ── POST /login/qr ──
@@ -69,7 +77,7 @@ def test_start_qr_login_returns_qr_id_and_url(client):
     )
 
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
             new_callable=AsyncMock,
@@ -99,7 +107,7 @@ def test_start_qr_login_can_return_already_confirmed(client):
     )
 
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
             new_callable=AsyncMock,
@@ -122,7 +130,7 @@ def test_start_qr_login_can_return_already_confirmed(client):
 def test_start_qr_login_404_when_account_not_found(client):
     """Account doesn't exist → 404 AccountNotFoundError."""
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=None),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=None),
         pytest.raises(Exception, match="not found"),
     ):
         client.post("/api/accounts/acc-1/login/qr")
@@ -132,10 +140,16 @@ def test_start_qr_login_400_when_no_profile_path(client):
     """Account has no chrome_profile_path → ValidationError (400)."""
     from backend.db.accounts import AccountRow
 
-    account = AccountRow(id="acc-1", name="No Profile", chrome_profile_path="", cdp_port=0)
+    account = AccountRow(
+        id="acc-1",
+        name="No Profile",
+        chrome_profile_path="",
+        cdp_port=0,
+        owner_user_id="user-test",
+    )
 
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
         pytest.raises(Exception, match="chrome_profile_path"),
     ):
         client.post("/api/accounts/acc-1/login/qr")
@@ -154,7 +168,7 @@ def test_start_qr_login_503_on_login_error(client):
     from backend.api.errors import ErrorCode
 
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
             new_callable=AsyncMock,
@@ -184,7 +198,7 @@ def test_start_qr_login_503_on_start_timeout(client):
     mock_session.start = AsyncMock(side_effect=TimeoutError())
 
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
             new_callable=AsyncMock,
@@ -214,7 +228,7 @@ def test_get_login_status_returns_profile_state(client):
     """GET /accounts/{id}/login/status → durable profile login status."""
     account = _mock_account()
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
             new_callable=AsyncMock,
@@ -251,8 +265,14 @@ def test_get_login_status_unavailable_when_no_profile(client):
     """Missing profile binding → unavailable status, not a QR/session error."""
     from backend.db.accounts import AccountRow
 
-    account = AccountRow(id="acc-1", name="No Profile", chrome_profile_path="", cdp_port=0)
-    with patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account):
+    account = AccountRow(
+        id="acc-1",
+        name="No Profile",
+        chrome_profile_path="",
+        cdp_port=0,
+        owner_user_id="user-test",
+    )
+    with patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account):
         resp = client.get("/api/accounts/acc-1/login/status")
 
     assert resp.status_code == 200
@@ -265,7 +285,7 @@ def test_get_login_status_browser_down_when_cdp_endpoint_not_answering(client):
     """CDP port not answering → browser-not-running status for the settings UI."""
     account = _mock_account()
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
             new_callable=AsyncMock,
@@ -306,7 +326,7 @@ def test_get_qr_status_returns_current_status(client):
     )
 
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
         patch("backend.services.xhs_login.get_session", return_value=mock_session),
     ):
         resp = client.get("/api/accounts/acc-1/login/qr/status")
@@ -321,7 +341,7 @@ def test_get_qr_status_returns_current_status(client):
 def test_get_qr_status_404_when_account_not_found(client):
     """Account doesn't exist → 404."""
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=None),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=None),
         pytest.raises(Exception, match="not found"),
     ):
         client.get("/api/accounts/acc-1/login/qr/status")
@@ -331,7 +351,7 @@ def test_get_qr_status_400_when_no_session(client):
     """No active login session → ValidationError."""
     account = _mock_account()
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
         patch("backend.services.xhs_login.get_session", return_value=None),
         pytest.raises(Exception, match="没有进行中的扫码登录会话"),
     ):
@@ -347,7 +367,7 @@ def test_get_qr_status_confirmed_clears_url(client):
     )
 
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
         patch("backend.services.xhs_login.get_session", return_value=mock_session),
     ):
         resp = client.get("/api/accounts/acc-1/login/qr/status")
@@ -377,7 +397,7 @@ def test_submit_verification_code_forwards_to_session(client):
     )
 
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
         patch("backend.services.xhs_login.get_session", return_value=mock_session),
     ):
         resp = client.post(
@@ -396,7 +416,7 @@ def test_submit_verification_code_rejects_non_numeric_code(client):
     """Non-numeric verification code → ValidationError."""
     account = _mock_account()
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
         pytest.raises(Exception, match="验证码必须"),
     ):
         client.post(
@@ -409,7 +429,7 @@ def test_submit_verification_code_400_when_no_session(client):
     """No active login session → ValidationError."""
     account = _mock_account()
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
         patch("backend.services.xhs_login.get_session", return_value=None),
         pytest.raises(Exception, match="没有进行中的扫码登录会话"),
     ):
@@ -426,7 +446,7 @@ def test_stop_qr_login_closes_session(client):
     """POST /accounts/{id}/login/qr/stop → {stopped: true, account_id}."""
     account = _mock_account()
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
         patch("backend.services.xhs_login.stop_session", new_callable=AsyncMock, return_value=True),
     ):
         resp = client.post("/api/accounts/acc-1/login/qr/stop")
@@ -441,7 +461,7 @@ def test_stop_qr_login_returns_false_when_no_session(client):
     """Stop on account with no active session → {stopped: false} (not an error)."""
     account = _mock_account()
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=account),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
         patch(
             "backend.services.xhs_login.stop_session",
             new_callable=AsyncMock,
@@ -457,7 +477,7 @@ def test_stop_qr_login_returns_false_when_no_session(client):
 def test_stop_qr_login_404_when_account_not_found(client):
     """Account doesn't exist → 404."""
     with (
-        patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=None),
+        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=None),
         pytest.raises(Exception, match="not found"),
     ):
         client.post("/api/accounts/acc-1/login/qr/stop")
