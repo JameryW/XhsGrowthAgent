@@ -138,11 +138,18 @@ let termCols = 80
 
 // ── Terminal helpers ────────────────────────────────────────────────────
 
+// Tracks whether the last thing on screen is an input prompt. A turn end
+// emits done + status-idle + session_end, each of which used to write its own
+// prompt — collapsing consecutive prompts here keeps exactly one ❯ per turn.
+let promptVisible = false
+
 function writeLine(text: string) {
+  promptVisible = false
   term?.writeln(text)
 }
 
 function write(text: string) {
+  promptVisible = false
   term?.write(text)
 }
 
@@ -156,20 +163,24 @@ function padLabel(label: string, width: number): string {
   return w >= width ? label : label + ' '.repeat(width - w)
 }
 
-function writePrompt() {
+function writePrompt(force = false) {
+  if (!force && promptVisible) return
   const prompt = isProcessing.value
     ? `${ANSI.DIM}⏳${ANSI.RESET} `
     : mode.value === 'agent' && wsConnected.value
       ? `${ANSI.BRIGHT_GREEN}❯${ANSI.RESET} `
       : `${ANSI.BRIGHT_CYAN}❯${ANSI.RESET} `
   write(prompt)
+  promptVisible = true
 }
 
 /** Clear current input line and rewrite — uses display width for cursor positioning */
 function refreshInputLine() {
   if (!term) return
   term.write('\r\x1b[2K')
-  writePrompt()
+  // Force: the erase above wiped the on-screen prompt even though it is still
+  // logically "visible" (the flag must stay set — input continues on this line)
+  writePrompt(true)
   if (currentInput.value) {
     term.write(currentInput.value)
     // Position cursor: move left by the width of text after cursor
@@ -348,7 +359,7 @@ function setupKeyEventHandler() {
     // Ctrl+L: clear screen
     if (ev.ctrlKey && !ev.shiftKey && ev.key === 'l') {
       term?.clear()
-      writePrompt()
+      writePrompt(true) // force: clear() wiped the on-screen prompt
       return false
     }
     // Ctrl+U: clear input line
@@ -532,7 +543,7 @@ function menuSearch() {
 
 function menuClear() {
   term?.clear()
-  writePrompt()
+  writePrompt(true) // force: clear() wiped the on-screen prompt
   closeContextMenu()
 }
 
@@ -547,7 +558,9 @@ function submitMobileInput() {
 
 function runQuickAction(command: string) {
   if (isProcessing.value) return
-  void processCommand(command)
+  // No typed line exists for button-triggered commands — echo so the user
+  // sees what was run.
+  void processCommand(command, { echo: true })
 }
 
 /** Put a natural-language example into the active input surface without
@@ -776,13 +789,19 @@ function handleAgentEvent(event: Record<string, unknown>) {
       write(ansi)
     }
     if (done) {
-      // Accent endpoint + dim rule closes the AI reply block, separates it from the next prompt
-      aiTurnMarkerShown = false
-      writeLine('')
-      writeLine(`${ANSI.BRIGHT_MAGENTA}◆${ANSI.RESET} ${ANSI.DIM}${'─'.repeat(Math.max(8, Math.min(termCols - 4, 38)))}${ANSI.RESET}`)
+      // Close the reply block only when this turn actually rendered text.
+      // omp emits empty message pairs (no text blocks) whose done events must
+      // not leave stray rules behind; the closing prompt for a text-less turn
+      // arrives via the status-idle / session_end handlers (prompt writes are
+      // deduped by writePrompt, so a turn still ends with exactly one ❯).
+      if (aiTurnMarkerShown) {
+        aiTurnMarkerShown = false
+        writeLine('')
+        writeLine(`${ANSI.BRIGHT_MAGENTA}◆${ANSI.RESET} ${ANSI.DIM}${'─'.repeat(Math.max(8, Math.min(termCols - 4, 38)))}${ANSI.RESET}`)
+        writePrompt()
+      }
       agentTurnProcessing.value = false
       isProcessing.value = false
-      writePrompt()
     }
   } else if (type === 'tool_call') {
     const toolName = event.tool_name as string
@@ -1011,12 +1030,16 @@ function colorizeResultLine(line: string): string {
 
 // ── Command processing ──────────────────────────────────────────────────
 
-async function processCommand(text: string) {
+async function processCommand(text: string, opts: { echo?: boolean } = {}) {
   const trimmed = text.trim()
   if (!trimmed) return
 
-  // Echo: bright-blue prompt glyph + bright-white input (was all-dim)
-  writeLine(`${ANSI.BRIGHT_BLUE}❯${ANSI.RESET} ${ANSI.BRIGHT_WHITE}${trimmed}${ANSI.RESET}`)
+  // Echo only when the input never appeared on the terminal line (quick-action
+  // buttons). Typed or mobile-injected input already left its line in
+  // scrollback — echoing it again shows every command twice.
+  if (opts.echo) {
+    writeLine(`${ANSI.BRIGHT_BLUE}❯${ANSI.RESET} ${ANSI.BRIGHT_WHITE}${trimmed}${ANSI.RESET}`)
+  }
 
   if (mode.value === 'agent') {
     await processAgentCommand(trimmed)
@@ -1080,7 +1103,7 @@ async function processAgentCommand(text: string) {
         showHelp(); isProcessing.value = false; writePrompt()
         break
       case '/clear':
-        term?.clear(); writePrompt()
+        term?.clear(); writePrompt(true) // force: clear() wiped the on-screen prompt
         isProcessing.value = false
         break
       case '/drafts': {
@@ -1218,7 +1241,7 @@ async function processSlashCommand(cmd: string) {
       writeLineColored(t('tui.modeSwitchingToAgent'), ANSI.YELLOW)
       break
     case '/help': showHelp(); break
-    case '/clear': term?.clear(); writePrompt(); break
+    case '/clear': term?.clear(); writePrompt(true); break // force: clear() wiped the on-screen prompt
     default:
       writeLineColored(t('tui.unknownCommand', { command }), ANSI.RED)
   }
