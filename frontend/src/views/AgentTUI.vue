@@ -31,6 +31,21 @@ import {
 import { submitReview } from '@/api/review'
 import client from '@/api/client'
 import { markdownToAnsi, ANSI } from '@/utils/markdownToAnsi'
+import {
+  getStringWidth,
+  padEndDisplay,
+  truncateDisplay,
+  wrapDisplay,
+  cardWidth,
+  writeBoxTitle,
+  boxLine,
+  boxBottom,
+  hr,
+  kvLine,
+  badge,
+  writeEmptyState,
+  writeError,
+} from '@/utils/ansiCards'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -114,34 +129,9 @@ const pendingAgentMessageCount = ref(0)
 // A new-session request is kept separately so it can invalidate older queued
 // messages and be sent before messages typed after the reset request.
 let pendingFreeNewSession = false
-
-// ── CJK width calculation ─────────────────────────────────────────────
-// ponytail: inline wcwidth — avoids relying on experimental term.unicode API
-function getStringWidth(str: string): number {
-  let width = 0
-  for (const char of str) {
-    const code = char.codePointAt(0)!
-    // CJK ideographs, fullwidth forms, Hangul, etc. = width 2
-    if (code >= 0x1100 && (
-      code <= 0x115F ||
-      code === 0x2329 || code === 0x232A ||
-      (code >= 0x2E80 && code <= 0xA4CF && code !== 0x303F) ||
-      (code >= 0xAC00 && code <= 0xD7A3) ||
-      (code >= 0xF900 && code <= 0xFAFF) ||
-      (code >= 0xFE10 && code <= 0xFE19) ||
-      (code >= 0xFE30 && code <= 0xFE6F) ||
-      (code >= 0xFF01 && code <= 0xFF60) ||
-      (code >= 0xFFE0 && code <= 0xFFE6) ||
-      (code >= 0x20000 && code <= 0x2FFFD) ||
-      (code >= 0x30000 && code <= 0x3FFFD)
-    )) {
-      width += 2
-    } else {
-      width += 1
-    }
-  }
-  return width
-}
+// Whether the ◆ AI turn marker has been emitted for the in-flight reply.
+// Reset when the turn closes (done / error / session_end / disconnect).
+let aiTurnMarkerShown = false
 
 // ── Terminal column tracking (for adaptive markdown width) ────────────
 let termCols = 80
@@ -638,6 +628,7 @@ function connectAgentWs() {
     if (ws !== socket) return
     wsConnected.value = false
     wsConnecting.value = false
+    aiTurnMarkerShown = false
     if (isFreeCreationEntry.value && isProcessing.value) {
       // A disconnected stream cannot be resumed by this TUI instance. Make
       // the prompt usable again instead of leaving it in a permanent busy
@@ -776,13 +767,19 @@ function handleAgentEvent(event: Record<string, unknown>) {
     const text = event.text as string
     const done = event.done as boolean
     if (!done && text) {
+      if (!aiTurnMarkerShown) {
+        // Turn marker makes consecutive AI replies distinguishable in scrollback
+        writeLine(`${ANSI.BRIGHT_MAGENTA}◆${ANSI.RESET} ${ANSI.DIM}AI${ANSI.RESET}`)
+        aiTurnMarkerShown = true
+      }
       const ansi = markdownToAnsi(text, termCols)
       write(ansi)
     }
     if (done) {
-      // ponytail: dim rule closes the AI reply block, separates it from the next prompt
+      // Accent endpoint + dim rule closes the AI reply block, separates it from the next prompt
+      aiTurnMarkerShown = false
       writeLine('')
-      writeLineColored(`${'─'.repeat(Math.max(8, Math.min(termCols - 2, 40)))}`, ANSI.DIM)
+      writeLine(`${ANSI.BRIGHT_MAGENTA}◆${ANSI.RESET} ${ANSI.DIM}${'─'.repeat(Math.max(8, Math.min(termCols - 4, 38)))}${ANSI.RESET}`)
       agentTurnProcessing.value = false
       isProcessing.value = false
       writePrompt()
@@ -802,8 +799,12 @@ function handleAgentEvent(event: Record<string, unknown>) {
     // across lines indented under the ↳, instead of being flattened+truncated.
     const header = `  ${ANSI.DIM}↳${ANSI.RESET} ${mark} ${ANSI.DIM}${toolName}${ANSI.RESET}`
     writeLine(`${header} ${lines[0]}`)
-    const indent = '    '
-    for (const ln of lines.slice(1)) writeLine(`${indent}${ln}`)
+    // Tree connectors tie continuation lines to the call; the last line uses ╰
+    const rest = lines.slice(1)
+    for (let i = 0; i < rest.length; i++) {
+      const branch = i === rest.length - 1 ? '╰' : '│'
+      writeLine(`  ${ANSI.DIM}${branch}${ANSI.RESET} ${rest[i]}`)
+    }
   } else if (type === 'status') {
     const status = event.status as string
     wsStatus.value = status as 'idle' | 'running' | 'streaming'
@@ -816,12 +817,14 @@ function handleAgentEvent(event: Record<string, unknown>) {
       writePrompt()
     }
   } else if (type === 'session_end') {
+    aiTurnMarkerShown = false
     agentTurnProcessing.value = false
     isProcessing.value = false
     writePrompt()
   } else if (type === 'error') {
     // ponytail: 2-space indent aligns with ▸/↳ tool block; red mark + default-color msg for hierarchy
     writeLine(`  ${ANSI.RED}⚠${ANSI.RESET} ${event.message || t('tui.unknownError')}`)
+    aiTurnMarkerShown = false
     agentTurnProcessing.value = false
     isProcessing.value = false
     writePrompt()
@@ -1012,7 +1015,8 @@ async function processCommand(text: string) {
   const trimmed = text.trim()
   if (!trimmed) return
 
-  writeLineColored(`❯ ${trimmed}`, ANSI.DIM)
+  // Echo: bright-blue prompt glyph + bright-white input (was all-dim)
+  writeLine(`${ANSI.BRIGHT_BLUE}❯${ANSI.RESET} ${ANSI.BRIGHT_WHITE}${trimmed}${ANSI.RESET}`)
 
   if (mode.value === 'agent') {
     await processAgentCommand(trimmed)
@@ -1326,6 +1330,12 @@ function draftsFilterLabel(status: string, query: string): string {
   return t('tui.draftsFilterSep', { filter: parts.join(' · ') })
 }
 
+/** Score → traffic-light color: green ≥80, yellow ≥60, red below (0–100 scale). */
+function scoreColor(score: number | null | undefined): string {
+  if (score === null || score === undefined) return ANSI.DIM
+  return score >= 80 ? ANSI.BRIGHT_GREEN : score >= 60 ? ANSI.BRIGHT_YELLOW : ANSI.RED
+}
+
 async function handleDrafts(argStr = '') {
   if (!isFreeCreationEntry.value) {
     writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
@@ -1360,53 +1370,76 @@ async function handleDrafts(argStr = '') {
     writeLine('')
     const count = data.count ?? data.drafts?.length ?? 0
     const filterLabel = draftsFilterLabel(status, query)
-    writeLineColored(t('tui.draftsListTitle', { accountId, count, filter: filterLabel }), ANSI.BRIGHT_CYAN)
+    const w = cardWidth(termCols)
+    writeBoxTitle(writeLine, t('tui.draftsListTitle', { accountId, count, filter: filterLabel }), { width: w })
     if (data.truncated) {
-      writeLineColored(`  ${t('tui.draftsTruncated')}`, ANSI.DIM)
+      writeLine(boxLine(`${ANSI.DIM}${t('tui.draftsTruncated')}${ANSI.RESET}`))
     }
     if (!data.drafts || data.drafts.length === 0) {
-      writeLineColored(`  ${t('tui.draftsNone')}`, ANSI.DIM)
-      // Only nudge to create when the list is genuinely empty (no filter
-      // applied) — a filtered-empty (e.g. /drafts published) is expected, not
-      // a "create one" prompt, so don't clutter it with the hint.
+      // Guided empty state only when the list is genuinely empty (no filter
+      // applied) — a filtered-empty (e.g. /drafts published) is expected and
+      // stays a single dim line, no "create one" nudge.
       if (status === 'all' && !query) {
-        writeLineColored(`  ${t('tui.draftsNoneHint')}`, ANSI.DIM)
+        writeEmptyState(writeLine, {
+          width: w,
+          icon: '✨',
+          title: t('tui.draftsEmptyTitle'),
+          hint: t('tui.draftsNoneHint'),
+        })
+      } else {
+        writeLine(boxLine(`${ANSI.DIM}${t('tui.draftsNone')}${ANSI.RESET}`))
       }
     } else {
+      // Row layout: G{id} + title (truncated to fit) + right-aligned badges + dim date
+      const inner = w - 2 // "│ " prefix
       for (const d of data.drafts) {
-        const titlePart = d.title
-          ? d.title
-          : `${ANSI.DIM}${t('tui.draftUntitled')}${ANSI.RESET}`
-        let line = `  ${ANSI.BRIGHT_GREEN}${d.draft_id}${ANSI.RESET}: ${titlePart}`
+        const rightPlain: string[] = []
+        const rightColored: string[] = []
         // evaluation badge (only if last_evaluation present). A degraded
         // (fake-approved fallback) eval shows [degraded] — the score is
         // meaningless when the LLM failed.
         const le = d.last_evaluation
         if (le && le.degraded) {
-          line += `  ${ANSI.BRIGHT_YELLOW}[${t('tui.draftsBadgeDegraded')}]${ANSI.RESET}`
+          const b = t('tui.draftsBadgeDegraded')
+          rightPlain.push(`[${b}]`)
+          rightColored.push(badge(b, ANSI.BRIGHT_YELLOW))
         } else if (le && le.decision) {
           const decColor =
             le.decision === 'approved' ? ANSI.BRIGHT_GREEN
             : le.decision === 'needs_revision' ? ANSI.BRIGHT_YELLOW
             : ANSI.RED
           const score = le.overall_score != null ? le.overall_score : ''
-          line += `  ${decColor}[${t('tui.draftEvalBadge', { score, decision: le.decision })}]${ANSI.RESET}`
+          const b = t('tui.draftEvalBadge', { score, decision: le.decision })
+          rightPlain.push(`[${b}]`)
+          rightColored.push(badge(b, decColor))
         }
         // published badge
         if (d.published) {
-          line += `  ${ANSI.BRIGHT_CYAN}[${t('tui.draftPublished')}]${ANSI.RESET}`
+          const b = t('tui.draftPublished')
+          rightPlain.push(`[${b}]`)
+          rightColored.push(badge(b, ANSI.BRIGHT_CYAN))
         }
         // updated_at (short, YYYY-MM-DDTHH:MM)
         if (d.updated_at) {
           const short = d.updated_at.slice(0, 16)
-          line += `  ${ANSI.DIM}${short}${ANSI.RESET}`
+          rightPlain.push(short)
+          rightColored.push(`${ANSI.DIM}${short}${ANSI.RESET}`)
         }
-        writeLine(line)
+        const rightW = rightPlain.length ? getStringWidth(rightPlain.join(' ')) : 0
+        const titleText = d.title || t('tui.draftUntitled')
+        const titleBudget = Math.max(8, inner - getStringWidth(d.draft_id) - 2 - rightW - 2)
+        const titleTrunc = truncateDisplay(titleText, titleBudget)
+        const titlePart = d.title ? titleTrunc : `${ANSI.DIM}${titleTrunc}${ANSI.RESET}`
+        const leftW = getStringWidth(d.draft_id) + 2 + getStringWidth(titleTrunc)
+        const gap = rightW > 0 ? Math.max(2, inner - leftW - rightW) : 0
+        const rightPart = rightColored.length ? `${' '.repeat(gap)}${rightColored.join(' ')}` : ''
+        writeLine(boxLine(`${ANSI.BRIGHT_GREEN}${d.draft_id}${ANSI.RESET}: ${titlePart}${rightPart}`))
       }
     }
+    writeLine(boxBottom(w))
     writeLine('')
   } catch (err: any) {
-    writeLineColored(err.message || t('tui.draftsFetchFailed'), ANSI.RED)
+    writeError(writeLine, err.message || t('tui.draftsFetchFailed'))
   }
 }
 
@@ -1443,40 +1476,51 @@ async function handleDraft(draftId: string) {
     const resp = await client.get(`/free/draft/${draftId}?account_id=${encodeURIComponent(accountId)}`)
     const data = resp as unknown as { draft_id: string; draft: FreeDraftRecord }
     const draft = data.draft || {}
-    const C = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, W = ANSI.BRIGHT_WHITE
+    const C = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM
     const Y = ANSI.BRIGHT_YELLOW, R = ANSI.RESET
+    const w = cardWidth(termCols)
     writeLine('')
-    writeLine(`${C}╭${'─'.repeat(52)}╮${R}`)
-    writeLine(`${C}│${R} ${W}${t('tui.draftDetailTitle')}${R}${' '.repeat(Math.max(0, 51 - getStringWidth(t('tui.draftDetailTitle'))))}${C}│${R}`)
-    writeLine(`${C}╰${'─'.repeat(52)}╯${R}`)
-    writeLine(`  ${D}${t('tui.draftDetailDraftIdLabel')}${R}: ${G}${data.draft_id}${R}`)
+    writeBoxTitle(writeLine, t('tui.draftDetailTitle'), { width: w })
+    // Primary fields as aligned kv rows — label column is CJK-aware padded
+    const mainRows: Array<[string, string]> = [
+      [t('tui.draftDetailDraftIdLabel'), `${G}${data.draft_id}${R}`],
+    ]
     if (draft.account_id) {
-      writeLine(`  ${D}${t('tui.draftDetailAccountLabel')}${R}: ${draft.account_id}`)
+      mainRows.push([t('tui.draftDetailAccountLabel'), `${draft.account_id}`])
     }
-    writeLine(`  ${D}${t('tui.draftDetailTitleLabel')}${R}: ${draft.title || `${D}${t('tui.draftUntitled')}${R}`}`)
-    if (draft.body) {
-      writeLine(`  ${D}${t('tui.draftDetailBodyLabel')}${R}:`)
-      writeLine(`    ${draft.body}`)
-    }
+    mainRows.push([t('tui.draftDetailTitleLabel'), draft.title || `${D}${t('tui.draftUntitled')}${R}`])
     if (draft.hashtags && draft.hashtags.length > 0) {
-      writeLine(`  ${D}${t('tui.draftDetailHashtagsLabel')}${R}: ${G}${draft.hashtags.join(', ')}${R}`)
+      mainRows.push([t('tui.draftDetailHashtagsLabel'), `${G}${draft.hashtags.join(', ')}${R}`])
     }
     if (draft.image_paths && draft.image_paths.length > 0) {
-      writeLine(`  ${D}${t('tui.draftDetailImagesLabel')}${R}: ${draft.image_paths.join(', ')}`)
+      mainRows.push([t('tui.draftDetailImagesLabel'), `${draft.image_paths.join(', ')}`])
     }
     if (draft.niche) {
-      writeLine(`  ${D}${t('tui.draftDetailNicheLabel')}${R}: ${draft.niche}`)
+      mainRows.push([t('tui.draftDetailNicheLabel'), `${draft.niche}`])
     }
     if (draft.content_angle) {
-      writeLine(`  ${D}${t('tui.draftDetailAngleLabel')}${R}: ${draft.content_angle}`)
+      mainRows.push([t('tui.draftDetailAngleLabel'), `${draft.content_angle}`])
     }
     if (draft.target_audience) {
-      writeLine(`  ${D}${t('tui.draftDetailAudienceLabel')}${R}: ${draft.target_audience}`)
+      mainRows.push([t('tui.draftDetailAudienceLabel'), `${draft.target_audience}`])
+    }
+    const mainLw = Math.max(...mainRows.map(([label]) => getStringWidth(label)))
+    // Keep the original field order: body renders between title and hashtags
+    for (const [label, value] of mainRows) {
+      writeLine(boxLine(kvLine(label, value, { labelWidth: mainLw })))
+      if (label === t('tui.draftDetailTitleLabel') && draft.body) {
+        writeLine(boxLine(`${D}${t('tui.draftDetailBodyLabel')}${R}:`))
+        // Wrap the body to the card width (CJK-aware) so long/multi-line text
+        // stays inside the box instead of overflowing the terminal row
+        for (const bodyLine of wrapDisplay(draft.body, w - 4, { hangingIndent: 2 })) {
+          writeLine(boxLine(bodyLine ? `  ${bodyLine}` : ''))
+        }
+      }
     }
     // Status fields — render only if present (graceful for pre-#216 drafts)
     const hasStatus = draft.created_at || draft.updated_at || draft.last_evaluation || draft.published !== undefined
     if (hasStatus) {
-      writeLine(`  ${D}${'─'.repeat(20)}${R}`)
+      writeLine(boxLine(hr(w - 4)))
       if (draft.last_evaluation) {
         const score = draft.last_evaluation.overall_score
         const decision = draft.last_evaluation.decision
@@ -1485,28 +1529,28 @@ async function handleDraft(draftId: string) {
           // Degraded (LLM timeout → fake-approved fallback): the 100/approved is
           // not a real score — surface the degradation + cause instead, and point
           // at re-running /evaluate (do not publish on a degraded verdict).
-          writeLine(`  ${Y}${t('tui.draftDetailEvalDegraded')}${R}`)
+          writeLine(boxLine(`${Y}${t('tui.draftDetailEvalDegraded')}${R}`))
           if (draft.last_evaluation.summary) {
-            writeLine(`  ${D}${draft.last_evaluation.summary}${R}`)
+            writeLine(boxLine(`${D}${draft.last_evaluation.summary}${R}`))
           }
-          writeLine(`  ${Y}${t('tui.draftDetailReEvaluateHint', { id: data.draft_id })}${R}`)
+          writeLine(boxLine(`${Y}${t('tui.draftDetailReEvaluateHint', { id: data.draft_id })}${R}`))
         } else {
           const scoreStr = score !== undefined ? score.toFixed(1) : '?'
           const decisionColor = decision === 'approved' ? G : (decision === 'rejected' ? ANSI.RED : Y)
-          writeLine(`  ${D}${t('tui.draftDetailEvalLabel')}${R}: ${decisionColor}${scoreStr} (${decision || '?'})${R}`)
+          writeLine(boxLine(`${D}${t('tui.draftDetailEvalLabel')}${R}: ${scoreColor(score)}${scoreStr}${R} ${decisionColor}(${decision || '?'})${R}`))
           // revision hints — only render if present + non-empty (graceful for
           // pre-#217 drafts without the revision_hints key)
           const hints = draft.last_evaluation.revision_hints
           if (hints && hints.length > 0) {
-            writeLine(`  ${D}${t('tui.draftDetailHintsLabel')}${R}:`)
+            writeLine(boxLine(`${D}${t('tui.draftDetailHintsLabel')}${R}:`))
             for (const hint of hints) {
-              writeLine(`    ${D}• ${hint}${R}`)
+              writeLine(boxLine(`  ${D}• ${hint}${R}`))
             }
             // Next-step hint for revise-able drafts — closes the evaluate→edit
             // loop. approved drafts already get an analytics hint below; only
             // needs_revision/rejected with concrete hints point at /edit→/evaluate.
             if (decision === 'needs_revision' || decision === 'rejected') {
-              writeLine(`  ${Y}${t('tui.draftDetailReviseHint', { id: data.draft_id })}${R}`)
+              writeLine(boxLine(`${Y}${t('tui.draftDetailReviseHint', { id: data.draft_id })}${R}`))
             }
           }
         }
@@ -1514,19 +1558,19 @@ async function handleDraft(draftId: string) {
       if (draft.published !== undefined) {
         const pubColor = draft.published ? G : D
         const pubStr = draft.published ? t('tui.draftDetailPublishedYes') : t('tui.draftDetailPublishedNo')
-        writeLine(`  ${D}${t('tui.draftDetailPublishedLabel')}${R}: ${pubColor}${pubStr}${R}`)
+        writeLine(boxLine(`${D}${t('tui.draftDetailPublishedLabel')}${R}: ${pubColor}${pubStr}${R}`))
       }
       // Post URL + action hint — only when published with a post_id (PR #223 persists
       // post_id/post_url on real publish). Mock-published (dry-run) carries a
       // "mock_*" post_id → show the mock hint instead of the analytics hint.
       if (draft.post_url) {
-        writeLine(`  ${D}${t('tui.draftDetailPostUrlLabel')}${R}: ${C}${draft.post_url}${R}`)
+        writeLine(boxLine(`${D}${t('tui.draftDetailPostUrlLabel')}${R}: ${C}${draft.post_url}${R}`))
       }
       const pid = draft.post_id || ''
       if (pid && pid.startsWith('mock_')) {
-        writeLine(`  ${Y}${t('tui.draftDetailMockPublishedHint')}${R}`)
+        writeLine(boxLine(`${Y}${t('tui.draftDetailMockPublishedHint')}${R}`))
       } else if (pid) {
-        writeLine(`  ${Y}${t('tui.draftDetailAnalyticsHint', { id: data.draft_id })}${R}`)
+        writeLine(boxLine(`${Y}${t('tui.draftDetailAnalyticsHint', { id: data.draft_id })}${R}`))
       }
       // Last publish outcome — on a failure, surface the durable cause + when
       // (#239 only surfaces it for the single publish turn; this persists it).
@@ -1537,18 +1581,19 @@ async function handleDraft(draftId: string) {
         const etype = lp.error_type ? ` (${lp.error_type})` : ''
         const detail = lp.error ? ` — ${lp.error}${etype}` : etype
         const at = lp.at ? `  ${D}${lp.at}${R}` : ''
-        writeLine(`  ${ANSI.RED}${t('tui.draftDetailLastPublishLabel')}${R}: ${ANSI.RED}${lp.status}${detail}${R}${at}`)
+        writeLine(boxLine(`${ANSI.RED}${t('tui.draftDetailLastPublishLabel')}${R}: ${ANSI.RED}${lp.status}${detail}${R}${at}`))
       }
       if (draft.created_at) {
-        writeLine(`  ${D}${t('tui.draftDetailCreatedLabel')}${R}: ${draft.created_at}`)
+        writeLine(boxLine(`${D}${t('tui.draftDetailCreatedLabel')}${R}: ${draft.created_at}`))
       }
       if (draft.updated_at) {
-        writeLine(`  ${D}${t('tui.draftDetailUpdatedLabel')}${R}: ${draft.updated_at}`)
+        writeLine(boxLine(`${D}${t('tui.draftDetailUpdatedLabel')}${R}: ${draft.updated_at}`))
       }
     }
+    writeLine(boxBottom(w))
     writeLine('')
   } catch (err: any) {
-    writeLineColored(err.message || t('tui.draftDetailFetchFailed'), ANSI.RED)
+    writeError(writeLine, err.message || t('tui.draftDetailFetchFailed'))
   }
 }
 
@@ -1571,14 +1616,14 @@ async function handleDelete(draftId: string) {
     title = data.draft?.title || t('tui.draftUntitled')
     writeLineColored(t('tui.draftDeleting', { title }), ANSI.YELLOW)
   } catch (err: any) {
-    writeLineColored(t('tui.draftNotFound'), ANSI.RED)
+    writeError(writeLine, t('tui.draftNotFound'))
     return
   }
   try {
     await client.delete(`/free/draft/${draftId}?account_id=${encodeURIComponent(accountId)}`)
     writeLineColored(t('tui.draftDeleted', { title }), ANSI.BRIGHT_GREEN)
   } catch (err: any) {
-    writeLineColored(err.message || t('tui.draftDeleteFailed'), ANSI.RED)
+    writeError(writeLine, err.message || t('tui.draftDeleteFailed'))
   }
 }
 
@@ -1609,28 +1654,34 @@ async function handleAnalytics(draftId: string) {
       }
     }
     const a = data.analytics || {}
-    const C = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, W = ANSI.BRIGHT_WHITE
-    const Y = ANSI.BRIGHT_YELLOW, R = ANSI.RESET
+    const G = ANSI.BRIGHT_GREEN
+    const w = cardWidth(termCols)
     writeLine('')
-    writeLine(`${C}╭${'─'.repeat(52)}╮${R}`)
-    writeLine(`${C}│${R} ${W}${t('tui.analyticsTitle')}${R}${' '.repeat(Math.max(0, 51 - getStringWidth(t('tui.analyticsTitle'))))}${C}│${R}`)
-    writeLine(`${C}╰${'─'.repeat(52)}╯${R}`)
-    writeLine(`  ${D}${t('tui.analyticsDraftIdLabel')}${R}: ${G}${data.draft_id}${R}`)
-    writeLine(`  ${D}${t('tui.analyticsPostIdLabel')}${R}: ${data.post_id || ''}`)
-    writeLine(`  ${D}${'─'.repeat(20)}${R}`)
-    writeLine(`  ${D}${t('tui.analyticsViewsLabel')}${R}:      ${G}${a.views ?? 0}${R}`)
-    writeLine(`  ${D}${t('tui.analyticsLikesLabel')}${R}:      ${G}${a.likes ?? 0}${R}`)
-    writeLine(`  ${D}${t('tui.analyticsCollectsLabel')}${R}:   ${G}${a.collects ?? 0}${R}`)
-    writeLine(`  ${D}${t('tui.analyticsCommentsLabel')}${R}:   ${G}${a.comments ?? 0}${R}`)
-    writeLine(`  ${D}${t('tui.analyticsSharesLabel')}${R}:     ${G}${a.shares ?? 0}${R}`)
+    writeBoxTitle(writeLine, t('tui.analyticsTitle'), { width: w })
+    writeLine(boxLine(kvLine(t('tui.analyticsDraftIdLabel'), data.draft_id, { valueColor: G })))
+    writeLine(boxLine(kvLine(t('tui.analyticsPostIdLabel'), data.post_id || '', { valueColor: '' })))
+    writeLine(boxLine(hr(w - 4)))
+    // Aligned metric rows; engagement rate is tier-colored (≥5 green, ≥2 yellow)
     const er = a.engagement_rate ?? 0
-    writeLine(`  ${D}${t('tui.analyticsEngagementLabel')}${R}: ${Y}${er.toFixed(2)}%${R}`)
-    if (a.fetched_at) {
-      writeLine(`  ${D}${t('tui.analyticsFetchedAtLabel')}${R}:  ${a.fetched_at}`)
+    const metricRows: Array<[string, string, string]> = [
+      [t('tui.analyticsViewsLabel'), `${a.views ?? 0}`, G],
+      [t('tui.analyticsLikesLabel'), `${a.likes ?? 0}`, G],
+      [t('tui.analyticsCollectsLabel'), `${a.collects ?? 0}`, G],
+      [t('tui.analyticsCommentsLabel'), `${a.comments ?? 0}`, G],
+      [t('tui.analyticsSharesLabel'), `${a.shares ?? 0}`, G],
+      [t('tui.analyticsEngagementLabel'), `${er.toFixed(2)}%`, er >= 5 ? G : er >= 2 ? ANSI.BRIGHT_YELLOW : ANSI.RED],
+    ]
+    const metricLw = Math.max(...metricRows.map(([label]) => getStringWidth(label)), getStringWidth(t('tui.analyticsFetchedAtLabel')))
+    for (const [label, value, color] of metricRows) {
+      writeLine(boxLine(kvLine(label, value, { labelWidth: metricLw, valueColor: color })))
     }
+    if (a.fetched_at) {
+      writeLine(boxLine(kvLine(t('tui.analyticsFetchedAtLabel'), a.fetched_at, { labelWidth: metricLw, valueColor: '' })))
+    }
+    writeLine(boxBottom(w))
     writeLine('')
   } catch (err: any) {
-    writeLineColored(err.message || t('tui.analyticsFetchFailed'), ANSI.RED)
+    writeError(writeLine, err.message || t('tui.analyticsFetchFailed'), t('tui.analyticsNotPublished'))
   }
 }
 
@@ -1661,33 +1712,34 @@ async function handleSuggest() {
       cold_start?: boolean
     }
     const suggestions = data.suggestions || []
-    const C = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, W = ANSI.BRIGHT_WHITE
+    const G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, W = ANSI.BRIGHT_WHITE
     const Y = ANSI.BRIGHT_YELLOW, R = ANSI.RESET
+    const w = cardWidth(termCols)
     writeLine('')
-    writeLine(`${C}╭${'─'.repeat(52)}╮${R}`)
-    writeLine(`${C}│${R} ${W}${t('tui.suggestTitle')}${R}${' '.repeat(Math.max(0, 51 - getStringWidth(t('tui.suggestTitle'))))}${C}│${R}`)
-    writeLine(`${C}╰${'─'.repeat(52)}╯${R}`)
-    writeLine(`  ${D}${t('tui.suggestCountLabel')}${R}: ${G}${data.count ?? suggestions.length}${R}`)
+    writeBoxTitle(writeLine, t('tui.suggestTitle'), { width: w })
+    writeLine(boxLine(kvLine(t('tui.suggestCountLabel'), `${data.count ?? suggestions.length}`, { valueColor: G })))
     if (data.cold_start) {
-      writeLine(`  ${Y}${t('tui.suggestColdStart')}${R}`)
+      writeLine(boxLine(`${Y}${t('tui.suggestColdStart')}${R}`))
     }
-    writeLine(`  ${D}${'─'.repeat(20)}${R}`)
+    writeLine(boxLine(hr(w - 4)))
     if (!suggestions.length) {
-      writeLine(`  ${D}${t('tui.suggestEmpty')}${R}`)
+      writeEmptyState(writeLine, { width: w, icon: '💡', title: t('tui.suggestEmpty') })
+      writeLine(boxBottom(w))
       writeLine('')
       return
     }
     for (const s of suggestions) {
       const cat = s.category || '?'
       const title = s.title || cat
-      writeLine(`  ${Y}[${cat}]${R} ${W}${title}${R}`)
-      if (s.advice) writeLine(`    ${D}${s.advice}${R}`)
-      if (s.evidence) writeLine(`    ${D}${t('tui.suggestEvidenceLabel')}: ${s.evidence}${R}`)
+      writeLine(boxLine(`${badge(cat, Y)} ${W}${title}${R}`))
+      if (s.advice) writeLine(boxLine(`  ${D}${s.advice}${R}`))
+      if (s.evidence) writeLine(boxLine(`  ${D}${t('tui.suggestEvidenceLabel')}: ${s.evidence}${R}`))
     }
-    writeLine(`  ${D}${t('tui.suggestNextHint')}${R}`)
+    writeLine(boxLine(`${D}${t('tui.suggestNextHint')}${R}`))
+    writeLine(boxBottom(w))
     writeLine('')
   } catch (err: any) {
-    writeLineColored(err.message || t('tui.suggestFetchFailed'), ANSI.RED)
+    writeError(writeLine, err.message || t('tui.suggestFetchFailed'))
   }
 }
 
@@ -1722,7 +1774,7 @@ async function handleEvaluate(draftId: string) {
       }
     }
     const ev = data.evaluation_result || {}
-    const C = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, W = ANSI.BRIGHT_WHITE
+    const G = ANSI.BRIGHT_GREEN, D = ANSI.DIM
     const Y = ANSI.BRIGHT_YELLOW, M = ANSI.BRIGHT_MAGENTA, R = ANSI.RESET
     const score = ev.overall_score
     const scoreStr = score !== undefined && score !== null ? score.toFixed(1) : '?'
@@ -1730,38 +1782,44 @@ async function handleEvaluate(draftId: string) {
     const decisionColor = decision === 'approved' ? G
       : decision === 'rejected' ? ANSI.RED
       : decision === 'needs_revision' ? Y : D
+    const w = cardWidth(termCols)
     writeLine('')
-    writeLine(`${C}╭${'─'.repeat(52)}╮${R}`)
-    writeLine(`${C}│${R} ${W}${t('tui.evaluateTitle')}${R}${' '.repeat(Math.max(0, 51 - getStringWidth(t('tui.evaluateTitle'))))}${C}│${R}`)
-    writeLine(`${C}╰${'─'.repeat(52)}╯${R}`)
-    writeLine(`  ${D}${t('tui.evaluateDraftIdLabel')}${R}: ${G}${data.draft_id}${R}`)
-    writeLine(`  ${D}${t('tui.evaluateOverallLabel')}${R}:  ${C}${scoreStr}${R}`)
-    writeLine(`  ${D}${t('tui.evaluateDecisionLabel')}${R}: ${decisionColor}${decision || '?'}${R}`)
+    writeBoxTitle(writeLine, t('tui.evaluateTitle'), { width: w })
+    // Aligned kv rows; scores are tier-colored (≥80 green, ≥60 yellow, else red)
+    const evalLw = Math.max(
+      getStringWidth(t('tui.evaluateDraftIdLabel')),
+      getStringWidth(t('tui.evaluateOverallLabel')),
+      getStringWidth(t('tui.evaluateDecisionLabel')),
+    )
+    writeLine(boxLine(kvLine(t('tui.evaluateDraftIdLabel'), data.draft_id, { labelWidth: evalLw, valueColor: G })))
+    writeLine(boxLine(kvLine(t('tui.evaluateOverallLabel'), scoreStr, { labelWidth: evalLw, valueColor: scoreColor(score) })))
+    writeLine(boxLine(kvLine(t('tui.evaluateDecisionLabel'), decision || '?', { labelWidth: evalLw, valueColor: decisionColor })))
     const dims = ev.dimensions || []
     if (dims.length > 0) {
-      writeLine(`  ${D}${'─'.repeat(20)}${R}`)
-      writeLine(`  ${D}${t('tui.evaluateDimensionsLabel')}${R}:`)
+      writeLine(boxLine(hr(w - 4)))
+      writeLine(boxLine(`${D}${t('tui.evaluateDimensionsLabel')}${R}:`))
       for (const d of dims) {
         const dScore = d.score !== undefined && d.score !== null ? d.score.toFixed(1) : '?'
         const blk = d.is_blocking ? ` ${ANSI.RED}[BLOCKING]${R}` : ''
-        writeLine(`    ${D}- ${d.dimension || '?'}: ${C}${dScore}${R}${blk}${R}`)
+        writeLine(boxLine(`  ${D}- ${d.dimension || '?'}: ${scoreColor(d.score)}${dScore}${R}${blk}${R}`))
       }
     }
     if (ev.bias_warning) {
-      writeLine(`  ${D}${'─'.repeat(20)}${R}`)
-      writeLine(`  ${D}⚠ ${t('tui.evaluateBiasLabel')}${R}: ${M}${ev.bias_warning}${R}`)
+      writeLine(boxLine(hr(w - 4)))
+      writeLine(boxLine(`${D}⚠ ${t('tui.evaluateBiasLabel')}${R}: ${M}${ev.bias_warning}${R}`))
     }
     const hints = ev.revision_hints || []
     if (hints.length > 0) {
-      writeLine(`  ${D}${t('tui.evaluateHintsLabel')}${R}:`)
+      writeLine(boxLine(`${D}${t('tui.evaluateHintsLabel')}${R}:`))
       for (const hint of hints) {
-        writeLine(`    ${D}• ${hint}${R}`)
+        writeLine(boxLine(`  ${D}• ${hint}${R}`))
       }
     }
-    writeLine(`  ${G}${t('tui.evaluateWrittenBack', { id: data.draft_id })}${R}`)
+    writeLine(boxLine(`${G}${t('tui.evaluateWrittenBack', { id: data.draft_id })}${R}`))
+    writeLine(boxBottom(w))
     writeLine('')
   } catch (err: any) {
-    writeLineColored(err.message || t('tui.evaluateFailed'), ANSI.RED)
+    writeError(writeLine, err.message || t('tui.evaluateFailed'))
   }
 }
 
@@ -1802,81 +1860,173 @@ async function handleEdit(args: string) {
     }
     writeLine('')
   } catch (err: any) {
-    writeLineColored(err.message || t('tui.editFailed'), ANSI.RED)
+    writeError(writeLine, err.message || t('tui.editFailed'))
   }
 }
 
+interface HelpRow {
+  usage: string
+  args?: string
+  desc: string
+  color?: string
+}
+
 function showHelp() {
-  const C = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, W = ANSI.BRIGHT_WHITE, R = ANSI.RESET
+  const G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, R = ANSI.RESET
   const Y = ANSI.BRIGHT_YELLOW, B = ANSI.BRIGHT_BLUE
+  const w = cardWidth(termCols)
 
-  const hw = Math.max(30, Math.min(termCols - 4, 52))
-  writeLine('')
-  writeLine(`${C}╭${'─'.repeat(hw)}╮${R}`)
-  writeLine(`${C}│${R}  ${W}XHS Growth Agent — Help${R}${' '.repeat(Math.max(0, hw - 26))}${C}│${R}`)
-  writeLine(`${C}╰${'─'.repeat(hw)}╯${R}`)
-
-  const sep = `${D}${'─'.repeat(Math.min(38, hw - 2))}${R}`
-
+  // Same entry sets as before — agent/command mode × free/non-free branches
+  const sections: Array<{ title: string; rows: HelpRow[] }> = []
   if (mode.value === 'agent') {
-    writeLine('')
-    writeLine(`  ${Y}Agent Mode${R}`)
-    writeLine(`  ${sep}`)
-    writeLine(`  ${G}<message>${R}      Send message to AI agent`)
-    writeLine(`  ${G}/status${R}        Get agent status`)
-    writeLine(`  ${G}/new${R}           Start new session`)
-    writeLine(`  ${G}/abort${R}         Abort current turn`)
-    writeLine(`  ${G}/mode${R}          ${t('tui.helpSwitchToCommand')}`)
+    sections.push({ title: t('tui.helpAgentMode'), rows: [
+      { usage: '<message>', desc: t('tui.helpDescMessage') },
+      { usage: '/status', desc: t('tui.helpDescStatus') },
+      { usage: '/new', desc: t('tui.helpDescNew') },
+      { usage: '/abort', desc: t('tui.helpDescAbort') },
+      { usage: '/mode', desc: t('tui.helpSwitchToCommand') },
+    ] })
     if (isFreeCreationEntry.value) {
-      writeLine('')
-      writeLine(`  ${Y}Free Draft Commands${R}`)
-      writeLine(`  ${sep}`)
-      writeLine(`  ${G}/drafts${R} ${D}[status] [q]${R}  List/filter drafts${R}`)
-      writeLine(`  ${G}/draft${R} ${D}<id>${R}     View a draft`)
-      writeLine(`  ${G}/delete${R} ${D}<id>${R}    Delete a draft`)
-      writeLine(`  ${G}/edit${R} ${D}<id> <f> <v>${R} Edit a draft field`)
-      writeLine(`  ${G}/analytics${R} ${D}<id>${R} Post-publish engagement`)
-      writeLine(`  ${G}/evaluate${R} ${D}<id>${R} Re-evaluate a draft`)
-      writeLine(`  ${G}/suggest${R}       Creative suggestions (style/topic/format/timing)`)
+      sections.push({ title: t('tui.helpFreeDrafts'), rows: [
+        { usage: '/drafts', args: '[status] [q]', desc: t('tui.helpDescDrafts') },
+        { usage: '/draft', args: '<id>', desc: t('tui.helpDescDraft') },
+        { usage: '/delete', args: '<id>', desc: t('tui.helpDescDelete') },
+        { usage: '/edit', args: '<id> <f> <v>', desc: t('tui.helpDescEdit') },
+        { usage: '/analytics', args: '<id>', desc: t('tui.helpDescAnalytics') },
+        { usage: '/evaluate', args: '<id>', desc: t('tui.helpDescEvaluate') },
+        { usage: '/suggest', desc: t('tui.helpDescSuggest') },
+      ] })
     }
+  } else if (isFreeCreationEntry.value) {
+    sections.push({ title: t('tui.helpCommandMode'), rows: [
+      { usage: '/start', desc: t('tui.freeNewSession') },
+      { usage: '/drafts', args: '[status] [q]', desc: t('tui.helpDescDrafts') },
+      { usage: '/draft', args: '<id>', desc: t('tui.helpDescDraft') },
+      { usage: '/delete', args: '<id>', desc: t('tui.helpDescDelete') },
+      { usage: '/edit', args: '<id> <field> <value>', desc: t('tui.helpDescEdit') },
+      { usage: '/analytics', args: '<id>', desc: t('tui.helpDescAnalytics') },
+      { usage: '/evaluate', args: '<id>', desc: t('tui.helpDescEvaluate') },
+      { usage: '/suggest', desc: t('tui.helpDescSuggest') },
+      { usage: '/mode', desc: t('tui.helpSwitchToAgent') },
+    ] })
   } else {
-    writeLine('')
-    writeLine(`  ${Y}Command Mode${R}`)
-    writeLine(`  ${sep}`)
-    if (isFreeCreationEntry.value) {
-      writeLine(`  ${G}/start${R}         ${D}${t('tui.freeNewSession')}${R}`)
-      writeLine(`  ${G}/drafts${R} ${D}[status] [q]${R}  List/filter drafts${R}`)
-      writeLine(`  ${G}/draft${R} ${D}<id>${R}  Show draft detail`)
-      writeLine(`  ${G}/delete${R} ${D}<id>${R}  Delete a draft`)
-      writeLine(`  ${G}/edit${R} ${D}<id> <field> <value>${R}  Edit a draft field`)
-      writeLine(`  ${G}/analytics${R} ${D}<id>${R} Post-publish engagement`)
-      writeLine(`  ${G}/evaluate${R} ${D}<id>${R}  Re-evaluate a draft`)
-      writeLine(`  ${G}/suggest${R}       Creative suggestions (style/topic/format/timing)`)
-      writeLine(`  ${G}/mode${R}          ${t('tui.helpSwitchToAgent')}`)
-    } else {
-      writeLine(`  ${G}/start${R} ${D}[topic]${R}  Start workflow`)
-      writeLine(`  ${G}/status${R} ${D}[id]${R}    Check workflow status`)
-      writeLine(`  ${G}/pause${R} ${D}[id]${R}     Pause workflow`)
-      writeLine(`  ${G}/resume${R} ${D}[id]${R}    Resume workflow`)
-      writeLine(`  ${G}/cancel${R} ${D}[id]${R}    Cancel workflow`)
-      writeLine(`  ${G}/approve${R} ${D}[id]${R}   Approve content`)
-      writeLine(`  ${G}/reject${R} ${D}<msg>${R}   Reject with feedback`)
-      writeLine(`  ${G}/mode${R}          ${t('tui.helpSwitchToAgent')}`)
+    sections.push({ title: t('tui.helpCommandMode'), rows: [
+      { usage: '/start', args: '[topic]', desc: t('tui.helpDescStart') },
+      { usage: '/status', args: '[id]', desc: t('tui.helpDescStatusWorkflow') },
+      { usage: '/pause', args: '[id]', desc: t('tui.helpDescPause') },
+      { usage: '/resume', args: '[id]', desc: t('tui.helpDescResume') },
+      { usage: '/cancel', args: '[id]', desc: t('tui.helpDescCancel') },
+      { usage: '/approve', args: '[id]', desc: t('tui.helpDescApprove') },
+      { usage: '/reject', args: '<msg>', desc: t('tui.helpDescReject') },
+      { usage: '/mode', desc: t('tui.helpSwitchToAgent') },
+    ] })
+  }
+  sections.push({ title: t('tui.helpShortcuts'), rows: [
+    { usage: '/help', desc: t('tui.helpDescHelp') },
+    { usage: '/clear', desc: t('tui.helpDescClear') },
+    { usage: '↑/↓', desc: t('tui.helpDescHistory'), color: B },
+    { usage: 'Tab', desc: t('tui.helpDescTab'), color: B },
+    { usage: 'Ctrl+C', desc: t('tui.helpDescCtrlC'), color: B },
+    { usage: 'Ctrl+U/W/K/A/E', desc: t('tui.helpDescLineEdit'), color: B },
+    { usage: 'Ctrl+Shift+F', desc: t('tui.helpDescSearch'), color: B },
+    { usage: 'Ctrl+Shift+C/V', desc: t('tui.helpDescCopyPaste'), color: B },
+  ] })
+
+  writeLine('')
+  writeBoxTitle(writeLine, t('tui.helpTitle'), { width: w })
+  for (const section of sections) {
+    writeLine(boxLine(`${Y}${section.title}${R}`))
+    // Usage column (usage + args) display-width aligned across the section
+    const usageW = (r: HelpRow) => getStringWidth(r.usage) + (r.args ? 1 + getStringWidth(r.args) : 0)
+    const uw = Math.max(...section.rows.map(usageW))
+    for (const row of section.rows) {
+      const argsPart = row.args ? ` ${D}${row.args}${R}` : ''
+      const pad = ' '.repeat(Math.max(2, uw - usageW(row) + 2))
+      writeLine(boxLine(`  ${row.color ?? G}${row.usage}${R}${argsPart}${pad}${D}${row.desc}${R}`))
+    }
+    writeLine(boxLine())
+  }
+  writeLine(boxBottom(w))
+  writeLine('')
+}
+
+/** Original banner for non-free (trend/brief) mode — unchanged legacy layout. */
+function renderLegacyBanner() {
+  const W = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, R = ANSI.RESET, Y = ANSI.BRIGHT_YELLOW
+  const bannerWidth = Math.max(30, Math.min(termCols - 4, 50))
+  writeLine('')
+  writeLine(`${W}╭${'─'.repeat(bannerWidth)}╮${R}`)
+  const bannerName = t('tui.bannerName')
+  const bannerVersion = t('tui.bannerVersion')
+  const bannerSubtitle = t('tui.bannerSubtitle')
+  writeLine(`${W}│${R}  ${G}${bannerName}${R}  ${D}${bannerVersion}${R}${' '.repeat(Math.max(0, bannerWidth - getStringWidth(bannerName) - getStringWidth(bannerVersion) - 4))}${W}│${R}`)
+  writeLine(`${W}│${R}  ${D}${bannerSubtitle}${R}${' '.repeat(Math.max(0, bannerWidth - getStringWidth(bannerSubtitle) - 2))}${W}│${R}`)
+  writeLine(`${W}├${'─'.repeat(bannerWidth)}┤${R}`)
+  const flowText = t('tui.workflowFlow')
+  writeLine(`${W}│${R}  ${Y}${flowText}${R}${' '.repeat(Math.max(0, bannerWidth - getStringWidth(flowText) - 2))}${W}│${R}`)
+  writeLine(`${W}╰${'─'.repeat(bannerWidth)}╯${R}`)
+  writeLine('')
+  writeLineColored(`  ${t('tui.terminalHint')}`, ANSI.DIM)
+  writeLine('')
+}
+
+/** Free-mode hero: accent title card (cyan border, bright-white name, magenta
+ *  version) with subtitle / flow / optional topic as boxed lines. */
+function renderFreeWelcome() {
+  const R = ANSI.RESET
+  const w = cardWidth(termCols)
+  const name = t('tui.bannerName')
+  const version = t('tui.bannerVersion')
+  const inner = w - 2
+  const headW = getStringWidth(name) + getStringWidth(version) + 1
+  const trail = Math.max(1, inner - 3 - headW)
+  writeLine('')
+  writeLine(`${ANSI.BRIGHT_CYAN}╭─${R} ${ANSI.BRIGHT_WHITE}${name}${R} ${ANSI.BRIGHT_MAGENTA}${version}${R} ${ANSI.BRIGHT_CYAN}${'─'.repeat(trail)}╮${R}`)
+  writeLine(boxLine(`${ANSI.DIM}${t('tui.bannerSubtitle')}${R}`))
+  writeLine(boxLine(`${ANSI.BRIGHT_YELLOW}${t('tui.freeFlow')}${R}`))
+  if (freeCreationTopic.value) {
+    writeLine(boxLine(`${ANSI.BRIGHT_CYAN}${t('tui.freeTopic', { topic: freeCreationTopic.value })}${R}`))
+  }
+  writeLine(boxBottom(w))
+  writeLine('')
+  writeLineColored(`  ${t('tui.freeWelcomeHint')}`, ANSI.DIM)
+}
+
+/** Free-mode command grid — Session / Drafts / Insights groups, two aligned
+ *  columns per row. Replaces the old 9-line all-dim command dump. */
+function renderFreeCommandGrid() {
+  const R = ANSI.RESET, D = ANSI.DIM, C = ANSI.BRIGHT_CYAN, Y = ANSI.BRIGHT_YELLOW
+  const groups: Array<{ label: string; cmds: Array<[string, string]> }> = [
+    { label: t('tui.freeGroupSession'), cmds: [
+      ['/start', t('tui.freeDescStart')],
+      ['/mode', t('tui.freeDescMode')],
+    ] },
+    { label: t('tui.freeGroupDrafts'), cmds: [
+      ['/drafts', t('tui.freeDescDrafts')],
+      ['/draft', t('tui.freeDescDraft')],
+      ['/edit', t('tui.freeDescEdit')],
+      ['/delete', t('tui.freeDescDelete')],
+    ] },
+    { label: t('tui.freeGroupInsights'), cmds: [
+      ['/analytics', t('tui.freeDescAnalytics')],
+      ['/evaluate', t('tui.freeDescEvaluate')],
+      ['/suggest', t('tui.freeDescSuggest')],
+    ] },
+  ]
+  const groupW = Math.max(...groups.map((g) => getStringWidth(g.label)))
+  const cmdW = Math.max(...groups.flatMap((g) => g.cmds.map(([cmd]) => getStringWidth(cmd))))
+  const descW = Math.max(...groups.flatMap((g) => g.cmds.map(([, desc]) => getStringWidth(desc))))
+  for (const g of groups) {
+    for (let i = 0; i < g.cmds.length; i += 2) {
+      // Group label shows on the first row of the group only
+      const label = i === 0 ? `${Y}${padEndDisplay(g.label, groupW)}${R}` : ' '.repeat(groupW)
+      const cells = g.cmds.slice(i, i + 2).map(([cmd, desc], idx, row) => {
+        const descPart = idx === row.length - 1 ? desc : padEndDisplay(desc, descW)
+        return `${C}${padEndDisplay(cmd, cmdW)}${R} ${D}${descPart}${R}`
+      })
+      writeLine(`  ${label}  ${cells.join('   ')}`)
     }
   }
-
-  writeLine('')
-  writeLine(`  ${Y}Shortcuts${R}`)
-  writeLine(`  ${sep}`)
-  writeLine(`  ${G}/help${R}            Show this help`)
-  writeLine(`  ${G}/clear${R}           Clear terminal`)
-  writeLine(`  ${B}↑/↓${R}              Command history`)
-  writeLine(`  ${B}Tab${R}              Auto-complete`)
-  writeLine(`  ${B}Ctrl+C${R}           Abort / interrupt`)
-  writeLine(`  ${B}Ctrl+U/W/K/A/E${R}   Line editing`)
-  writeLine(`  ${B}Ctrl+Shift+F${R}     Search`)
-  writeLine(`  ${B}Ctrl+Shift+C/V${R}   Copy / Paste`)
-  writeLine('')
 }
 
 // ── Status bar computed ────────────────────────────────────────────────
@@ -2024,26 +2174,13 @@ onMounted(() => {
   // Click outside context menu to close it
   document.addEventListener('click', handleDocumentClick)
 
-  // Welcome banner — native TUI feel with box drawing, adaptive width
-  const W = ANSI.BRIGHT_CYAN, G = ANSI.BRIGHT_GREEN, D = ANSI.DIM, R = ANSI.RESET, Y = ANSI.BRIGHT_YELLOW
-  const bannerWidth = Math.max(30, Math.min(termCols - 4, 50))
-  writeLine('')
-  writeLine(`${W}╭${'─'.repeat(bannerWidth)}╮${R}`)
-  const bannerName = t('tui.bannerName')
-  const bannerVersion = t('tui.bannerVersion')
-  const bannerSubtitle = t('tui.bannerSubtitle')
-  writeLine(`${W}│${R}  ${G}${bannerName}${R}  ${D}${bannerVersion}${R}${' '.repeat(Math.max(0, bannerWidth - getStringWidth(bannerName) - getStringWidth(bannerVersion) - 4))}${W}│${R}`)
-  writeLine(`${W}│${R}  ${D}${bannerSubtitle}${R}${' '.repeat(Math.max(0, bannerWidth - getStringWidth(bannerSubtitle) - 2))}${W}│${R}`)
-  writeLine(`${W}├${'─'.repeat(bannerWidth)}┤${R}`)
-  const flowText = isFreeCreationEntry.value ? t('tui.freeFlow') : t('tui.workflowFlow')
-  writeLine(`${W}│${R}  ${Y}${flowText}${R}${' '.repeat(Math.max(0, bannerWidth - getStringWidth(flowText) - 2))}${W}│${R}`)
-  writeLine(`${W}╰${'─'.repeat(bannerWidth)}╯${R}`)
-  writeLine('')
-  writeLineColored(`  ${isFreeCreationEntry.value ? t('tui.freeWelcomeHint') : t('tui.terminalHint')}`, ANSI.DIM)
-  if (isFreeCreationEntry.value && freeCreationTopic.value) {
-    writeLineColored(`  ${t('tui.freeTopic', { topic: freeCreationTopic.value })}`, ANSI.DIM)
+  // Welcome area — free mode gets the redesigned hero + grouped command grid;
+  // non-free mode keeps the original banner unchanged.
+  if (isFreeCreationEntry.value) {
+    renderFreeWelcome()
+  } else {
+    renderLegacyBanner()
   }
-  writeLine('')
 
   // Free mode: default to agent mode so plain text routes to omp conversation immediately.
   // Non-free (trend/brief) keeps command mode default — behavior unchanged.
@@ -2052,17 +2189,8 @@ onMounted(() => {
     writeLineColored(`  ${t('tui.freeAgentReady')}`, ANSI.DIM)
     // Surface the free-mode TUI commands on first entry so the user knows
     // draft management exists without typing /help first (discoverability —
-    // same class as the post_url hint). Dim, compact; full reference in /help.
-    writeLineColored(`  ${t('tui.freeCommandsLabel')}`, ANSI.DIM)
-    writeLineColored(`    ${t('tui.freeCmdStart')}`, ANSI.DIM)
-    writeLineColored(`    ${t('tui.freeCmdDrafts')}`, ANSI.DIM)
-    writeLineColored(`    ${t('tui.freeCmdDraft')}`, ANSI.DIM)
-    writeLineColored(`    ${t('tui.freeCmdEdit')}`, ANSI.DIM)
-    writeLineColored(`    ${t('tui.freeCmdDelete')}`, ANSI.DIM)
-    writeLineColored(`    ${t('tui.freeCmdAnalytics')}`, ANSI.DIM)
-    writeLineColored(`    ${t('tui.freeCmdEvaluate')}`, ANSI.DIM)
-    writeLineColored(`    ${t('tui.freeCmdSuggest')}`, ANSI.DIM)
-    writeLineColored(`    ${t('tui.freeCmdMode')}`, ANSI.DIM)
+    // same class as the post_url hint). Compact grouped grid; full reference in /help.
+    renderFreeCommandGrid()
   }
 
   // Try connecting to agent WebSocket
@@ -2112,6 +2240,7 @@ onUnmounted(() => {
       <div class="tui-status-dot" :class="freeConnectionState" />
       <span class="tui-status-label">{{ t('tui.statusLabel') }}</span>
       <span class="tui-mode-badge" :class="mode === 'agent' ? 'mode-agent' : 'mode-cmd'">{{ modeLabel }}</span>
+      <span v-if="isFreeCreationEntry" class="tui-free-badge">{{ t('tui.freeModeBadge') }}</span>
       <span v-if="isFreeCreationEntry" class="tui-connection-state" :class="`state-${freeConnectionState}`" role="status" aria-live="polite">{{ freeConnectionLabel }}</span>
       <span v-if="isFreeCreationEntry && pendingAgentMessageCount > 0" class="tui-queue-state" role="status" aria-live="polite">{{ t('tui.queuePending', { count: pendingAgentMessageCount }) }}</span>
       <span v-if="activeThreadId" class="tui-thread-id">{{ activeThreadId.slice(0, 8) }}</span>
@@ -2125,24 +2254,27 @@ onUnmounted(() => {
       >⌕</button>
     </div>
 
-    <!-- Guided shortcuts keep Free Creation discoverable without hiding the terminal. -->
-    <div v-if="isFreeCreationEntry" class="tui-quick-actions flex flex-wrap items-center gap-2 px-3 py-2 shrink-0">
-      <span class="tui-account-context">{{ t('tui.accountContext', { account: accountContextLabel }) }}</span>
-      <span class="tui-quick-label">{{ t('tui.quickActions') }}</span>
-      <button v-if="agentTurnProcessing" class="tui-quick-btn tui-quick-btn-stop" @click.stop="requestAgentAbort()">{{ t('tui.quickStop') }}</button>
-      <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/start')">{{ t('tui.quickNewSession') }}</button>
-      <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/suggest')">{{ t('tui.quickSuggest') }}</button>
-      <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/drafts')">{{ t('tui.quickDrafts') }}</button>
-      <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/help')">{{ t('tui.quickHelp') }}</button>
-      <button v-if="freeConnectionState === 'disconnected'" class="tui-quick-btn tui-quick-btn-retry" :disabled="isProcessing" @click.stop="retryFreeAgentConnection">{{ t('tui.quickReconnect') }}</button>
-    </div>
+    <!-- Guided shortcuts keep Free Creation discoverable without hiding the terminal.
+         Quick actions + prompt chips share one "action deck" container. -->
+    <div v-if="isFreeCreationEntry" class="tui-action-deck shrink-0">
+      <div class="tui-quick-actions flex flex-wrap items-center gap-2 px-3 py-2">
+        <span class="tui-account-context">{{ t('tui.accountContext', { account: accountContextLabel }) }}</span>
+        <span class="tui-quick-label">{{ t('tui.quickActions') }}</span>
+        <button v-if="agentTurnProcessing" class="tui-quick-btn tui-quick-btn-stop" @click.stop="requestAgentAbort()">{{ t('tui.quickStop') }}</button>
+        <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/start')">{{ t('tui.quickNewSession') }}</button>
+        <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/suggest')">{{ t('tui.quickSuggest') }}</button>
+        <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/drafts')">{{ t('tui.quickDrafts') }}</button>
+        <button class="tui-quick-btn" :disabled="isProcessing" @click.stop="runQuickAction('/help')">{{ t('tui.quickHelp') }}</button>
+        <button v-if="freeConnectionState === 'disconnected'" class="tui-quick-btn tui-quick-btn-retry" :disabled="isProcessing" @click.stop="retryFreeAgentConnection">{{ t('tui.quickReconnect') }}</button>
+      </div>
 
-    <div v-if="isFreeCreationEntry" class="tui-prompt-actions flex items-center gap-2 px-3 py-2 shrink-0">
-      <span class="tui-quick-label shrink-0">{{ t('tui.tryPrompts') }}</span>
-      <div class="tui-prompt-scroll flex items-center gap-2">
-        <button class="tui-prompt-btn shrink-0" :disabled="isProcessing" @click.stop="prefillFreePrompt(t('tui.promptWriteNote'))">{{ t('tui.promptWriteNote') }}</button>
-        <button class="tui-prompt-btn shrink-0" :disabled="isProcessing" @click.stop="prefillFreePrompt(t('tui.promptFindTopics'))">{{ t('tui.promptFindTopics') }}</button>
-        <button class="tui-prompt-btn shrink-0" :disabled="isProcessing" @click.stop="prefillFreePrompt(t('tui.promptImproveDraft'))">{{ t('tui.promptImproveDraft') }}</button>
+      <div class="tui-prompt-actions flex items-center gap-2 px-3 py-2">
+        <span class="tui-quick-label shrink-0">{{ t('tui.tryPrompts') }}</span>
+        <div class="tui-prompt-scroll flex items-center gap-2">
+          <button class="tui-prompt-btn shrink-0" :disabled="isProcessing" @click.stop="prefillFreePrompt(t('tui.promptWriteNote'))">{{ t('tui.promptWriteNote') }}</button>
+          <button class="tui-prompt-btn shrink-0" :disabled="isProcessing" @click.stop="prefillFreePrompt(t('tui.promptFindTopics'))">{{ t('tui.promptFindTopics') }}</button>
+          <button class="tui-prompt-btn shrink-0" :disabled="isProcessing" @click.stop="prefillFreePrompt(t('tui.promptImproveDraft'))">{{ t('tui.promptImproveDraft') }}</button>
+        </div>
       </div>
     </div>
 
@@ -2160,7 +2292,7 @@ onUnmounted(() => {
       />
       <button class="tui-search-toggle" :class="{ active: searchCaseSensitive }" :title="t('tui.searchCaseSensitive')" @click="searchCaseSensitive = !searchCaseSensitive; onSearchInput()">Aa</button>
       <button class="tui-search-toggle" :class="{ active: searchRegex }" :title="t('tui.searchRegex')" @click="searchRegex = !searchRegex; onSearchInput()">.*</button>
-      <span class="tui-search-info">{{ searchResultInfo }}</span>
+      <span class="tui-search-info" :class="{ 'tui-search-info-empty': searchResultInfo }">{{ searchResultInfo }}</span>
       <button class="tui-search-nav" :title="t('tui.searchPrevious')" @click="doSearch('prev')">↑</button>
       <button class="tui-search-nav" :title="t('tui.searchNext')" @click="doSearch('next')">↓</button>
       <button class="tui-search-nav" :title="t('common.close')" @click="closeSearch">✕</button>
@@ -2193,12 +2325,12 @@ onUnmounted(() => {
       :style="{ left: `${contextMenuPos.x}px`, top: `${contextMenuPos.y}px` }"
       @click.stop
     >
-      <button v-if="contextMenuHasSelection" class="tui-menu-item" @click="menuCopy">{{ t('tui.contextCopy') }}</button>
-      <button class="tui-menu-item" @click="menuPaste">{{ t('tui.contextPaste') }}</button>
-      <button class="tui-menu-item" @click="menuSelectAll">{{ t('tui.contextSelectAll') }}</button>
+      <button v-if="contextMenuHasSelection" class="tui-menu-item" @click="menuCopy"><span class="tui-menu-icon">⧉</span>{{ t('tui.contextCopy') }}</button>
+      <button class="tui-menu-item" @click="menuPaste"><span class="tui-menu-icon">⤓</span>{{ t('tui.contextPaste') }}</button>
+      <button class="tui-menu-item" @click="menuSelectAll"><span class="tui-menu-icon">☐</span>{{ t('tui.contextSelectAll') }}</button>
       <div class="tui-menu-sep" />
-      <button class="tui-menu-item" @click="menuSearch">{{ t('tui.contextSearch') }}</button>
-      <button class="tui-menu-item" @click="menuClear">{{ t('tui.contextClear') }}</button>
+      <button class="tui-menu-item" @click="menuSearch"><span class="tui-menu-icon">⌕</span>{{ t('tui.contextSearch') }}</button>
+      <button class="tui-menu-item" @click="menuClear"><span class="tui-menu-icon">✕</span>{{ t('tui.contextClear') }}</button>
     </div>
   </div>
 </template>
@@ -2279,12 +2411,26 @@ onUnmounted(() => {
 
 .tui-connection-state {
   font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
   padding-left: 4px;
   white-space: nowrap;
 }
 .tui-connection-state.state-connected { color: #9ece6a; }
 .tui-connection-state.state-connecting { color: #e0af68; }
 .tui-connection-state.state-disconnected { color: #f7768e; }
+
+/* Free-mode identity pill — brand blue→purple gradient, white text */
+.tui-free-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.8px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #7aa2f7, #bb9af7);
+  white-space: nowrap;
+}
 .tui-queue-state {
   color: #e0af68;
   font-size: 10px;
@@ -2335,8 +2481,10 @@ onUnmounted(() => {
 .tui-status-btn:hover { color: #a9b1d6; }
 .tui-status-btn.active { color: #7aa2f7; }
 
-.tui-quick-actions {
-  background: #16161e;
+/* ── Free-mode action deck — quick actions + prompt chips in one container ── */
+.tui-action-deck {
+  background: linear-gradient(180deg, #1c1f30 0%, #16161e 100%);
+  border-top: 1px solid #7aa2f733;
   border-bottom: 1px solid #292e42;
   font-family: 'JetBrains Mono', 'Fira Code', 'Menlo', monospace;
   font-size: 11px;
@@ -2345,24 +2493,27 @@ onUnmounted(() => {
 .tui-quick-label { color: #565f89; }
 .tui-quick-btn {
   min-height: 2.75rem;
-  padding: 0.25rem 0.6rem;
+  padding: 0.25rem 0.9rem;
   color: #a9b1d6;
   background: #1a1b26;
   border: 1px solid #3b4261;
-  border-radius: 2px;
+  border-radius: 999px;
   cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, transform 0.08s, box-shadow 0.15s;
 }
-.tui-quick-btn:hover { color: #c0caf5; border-color: #7aa2f7; }
+.tui-quick-btn:hover:not(:disabled) {
+  color: #c0caf5;
+  border-color: #7aa2f7;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px #7aa2f730;
+}
 .tui-quick-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .tui-quick-btn-retry { color: #e0af68; border-color: #e0af6860; }
 .tui-quick-btn-stop { color: #f7768e; border-color: #f7768e80; }
-.tui-quick-btn-stop:hover { color: #ff9eaf; border-color: #f7768e; }
+.tui-quick-btn-stop:hover:not(:disabled) { color: #ff9eaf; border-color: #f7768e; }
 
 .tui-prompt-actions {
-  background: #16161e;
-  border-bottom: 1px solid #292e42;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Menlo', monospace;
-  font-size: 11px;
+  border-top: 1px solid #292e4280;
   min-width: 0;
 }
 .tui-prompt-scroll {
@@ -2372,15 +2523,20 @@ onUnmounted(() => {
 }
 .tui-prompt-btn {
   min-height: 2.75rem;
-  padding: 0.25rem 0.6rem;
+  padding: 0.25rem 0.9rem;
   color: #7dcfff;
-  background: #1a1b26;
-  border: 1px dashed #3b4261;
-  border-radius: 2px;
+  background: transparent;
+  border: 1px dashed #3b426199;
+  border-radius: 999px;
   cursor: pointer;
   white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s, transform 0.08s;
 }
-.tui-prompt-btn:hover { color: #c0caf5; border-color: #7dcfff; }
+.tui-prompt-btn:hover:not(:disabled) {
+  color: #c0caf5;
+  border-color: #7dcfff;
+  transform: translateY(-1px);
+}
 .tui-prompt-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Search bar — flat, terminal-native ─────────────────────────────── */
@@ -2407,16 +2563,16 @@ onUnmounted(() => {
   color: #a9b1d6;
   font-size: 12px;
   min-height: 2.75rem;
-  padding: 2px 8px;
-  border-radius: 0;
-  border: 1px solid #292e42;
+  padding: 2px 10px;
+  border-radius: 6px;
+  border: 1px solid #3b4261;
   font-family: inherit;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .tui-search-input:focus {
   border-color: #7aa2f7;
-  box-shadow: 0 0 0 1px #7aa2f720;
+  box-shadow: 0 0 0 2px #7aa2f730;
 }
 .tui-search-input::placeholder {
   color: #414868;
@@ -2428,7 +2584,7 @@ onUnmounted(() => {
   font-size: 10px;
   font-family: inherit;
   padding: 1px 4px;
-  border-radius: 0;
+  border-radius: 6px;
   color: #565f89;
   background: none;
   border: 1px solid transparent;
@@ -2437,17 +2593,21 @@ onUnmounted(() => {
 }
 .tui-search-toggle:hover { color: #a9b1d6; }
 .tui-search-toggle.active {
-  color: #7aa2f7;
-  border-color: #7aa2f740;
-  background: #7aa2f710;
+  color: #c0caf5;
+  border-color: #7aa2f7;
+  background: #7aa2f720;
+  box-shadow: 0 0 0 1px #7aa2f740;
 }
 
 .tui-search-info {
-  color: #414868;
+  color: #7982a9;
   font-size: 10px;
+  font-weight: 600;
   min-width: 60px;
   text-align: center;
 }
+/* No-match state — warning color while "(not found)" is shown */
+.tui-search-info.tui-search-info-empty { color: #f7768e; }
 
 .tui-search-nav {
   min-width: 44px;
@@ -2459,15 +2619,15 @@ onUnmounted(() => {
   border: none;
   padding: 2px 4px;
   cursor: pointer;
-  border-radius: 0;
+  border-radius: 6px;
   transition: all 0.15s;
 }
 .tui-search-nav:hover {
-  color: #a9b1d6;
+  color: #c0caf5;
   background: #292e42;
 }
 
-/* ── Mobile input bar — utilitarian, less rounded ───────────────────── */
+/* ── Mobile input bar — pill input + gradient send, matches action deck ── */
 .tui-mobile-bar {
   background: #16161e;
   border-top: 1px solid #292e42;
@@ -2479,15 +2639,16 @@ onUnmounted(() => {
   color: #a9b1d6;
   font-size: 14px;
   min-height: 2.75rem;
-  padding: 6px 10px;
-  border-radius: 2px;
-  border: 1px solid #292e42;
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: 1px solid #3b4261;
   font-family: 'JetBrains Mono', 'Menlo', monospace;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .tui-mobile-input:focus {
   border-color: #7aa2f7;
+  box-shadow: 0 0 0 2px #7aa2f730;
 }
 .tui-mobile-input::placeholder {
   color: #414868;
@@ -2496,63 +2657,82 @@ onUnmounted(() => {
 .tui-mobile-send {
   min-width: 44px;
   min-height: 44px;
-  background: #7aa2f7;
-  color: #1a1b26;
+  background: linear-gradient(135deg, #7aa2f7, #bb9af7);
+  color: #ffffff;
   font-size: 13px;
   font-weight: 700;
   padding: 6px 12px;
-  border-radius: 2px;
-  border: 1px solid #89b4fa;
+  border-radius: 999px;
+  border: none;
   cursor: pointer;
   font-family: inherit;
-  transition: background 0.15s, transform 0.08s;
+  transition: filter 0.15s, transform 0.08s;
 }
 .tui-mobile-send:hover {
-  background: #89b4fa;
+  filter: brightness(1.12);
 }
 .tui-mobile-send:active {
-  background: #565f89;
+  filter: brightness(0.92);
   transform: translateY(1px); /* ponytail: tactile press feedback */
 }
 .tui-mobile-send:disabled {
   opacity: 0.45;
   cursor: not-allowed;
   transform: none;
+  filter: none;
 }
 
-/* ── Context menu — sharp, flat, native ─────────────────────────────── */
+/* ── Context menu — modern floating card ────────────────────────────── */
 .tui-context-menu {
   background: #1a1b26;
   border: 1px solid #3b4261;
-  border-radius: 0;
-  box-shadow: 4px 4px 0 #00000080;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px #7aa2f71a;
   font-family: 'JetBrains Mono', 'Menlo', monospace;
-  padding: 2px 0;
+  padding: 4px;
+  /* pop-in on open — same family as the search bar slide-in */
+  animation: tui-menu-in 0.12s ease-out;
+}
+@keyframes tui-menu-in {
+  from { opacity: 0; transform: translateY(-3px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .tui-menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   text-align: left;
   min-height: 2.75rem;
-  padding: 4px 12px;
+  padding: 4px 10px;
   font-size: 12px;
   color: #a9b1d6;
   background: none;
   border: none;
+  border-radius: 5px;
   cursor: pointer;
   font-family: inherit;
-  transition: background 0.08s;
+  transition: background 0.08s, color 0.08s, box-shadow 0.08s;
+}
+.tui-menu-icon {
+  width: 16px;
+  text-align: center;
+  color: #565f89;
+  transition: color 0.08s;
 }
 .tui-menu-item:hover {
   background: #292e42;
   color: #c0caf5;
+  /* accent left bar marks the hovered row */
+  box-shadow: inset 2px 0 0 0 #7aa2f7;
 }
+.tui-menu-item:hover .tui-menu-icon { color: #7aa2f7; }
 
 .tui-menu-sep {
   height: 1px;
   background: #292e42;
-  margin: 2px 8px;
+  margin: 4px 8px;
 }
 
 /* ── xterm.js overrides — native terminal feel ──────────────────────── */
