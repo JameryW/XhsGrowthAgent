@@ -25,6 +25,8 @@ from backend.services.creator_stats.pipeline import sync_account_stats, sync_fro
 from backend.services.creator_stats.types import NoteStats
 from backend.services.niche_resolver import infer_niche_from_notes
 
+from .conftest import grant_test_user
+
 
 @pytest.fixture(autouse=True)
 def _clear_mem():
@@ -155,6 +157,7 @@ async def test_api_browser_sync_requires_bound_browser_even_with_legacy_fields()
     client = TestClient(app)
 
     with (
+        grant_test_user(app),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
             new_callable=AsyncMock,
@@ -193,6 +196,7 @@ def test_api_browser_sync_ignores_legacy_fields_and_uses_bound_browser():
     client = TestClient(app)
 
     with (
+        grant_test_user(app),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
             new_callable=AsyncMock,

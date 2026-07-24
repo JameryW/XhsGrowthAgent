@@ -360,9 +360,7 @@ async def upsert_notes(notes: list[NoteStats]) -> tuple[int, int]:
     return imported, updated
 
 
-async def _delete_stale_notes_on_conn(
-    conn: Any, account_id: str, keep_note_ids: set[str]
-) -> int:
+async def _delete_stale_notes_on_conn(conn: Any, account_id: str, keep_note_ids: set[str]) -> int:
     """Remove local notes missing from an account-wide snapshot (same transaction)."""
     async with conn.cursor() as cur:
         if keep_note_ids:

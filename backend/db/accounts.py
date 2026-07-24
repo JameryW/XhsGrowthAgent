@@ -144,9 +144,7 @@ async def _migrate_unowned_accounts_to_first_console_user() -> None:
             )
             n = int(getattr(cur, "rowcount", 0) or 0)
             if n:
-                logger.info(
-                    "migrated %s unowned account(s) to console user %s", n, owner_id
-                )
+                logger.info("migrated %s unowned account(s) to console user %s", n, owner_id)
     except Exception as exc:
         logger.warning("owner_user_id migration skipped: %s", exc)
 
@@ -252,9 +250,7 @@ async def list_accounts(*, owner_user_id: str | None = None) -> list[AccountRow]
 
         async with conn.cursor(row_factory=dict_row) as cur:
             if owner is None:
-                await cur.execute(
-                    "SELECT * FROM accounts ORDER BY is_active DESC, created_at ASC"
-                )
+                await cur.execute("SELECT * FROM accounts ORDER BY is_active DESC, created_at ASC")
             else:
                 await cur.execute(
                     """
@@ -383,9 +379,7 @@ async def set_active_account(
         from psycopg.rows import dict_row
 
         if owner is None:
-            await conn.execute(
-                "UPDATE accounts SET is_active = FALSE, updated_at = %s", (now,)
-            )
+            await conn.execute("UPDATE accounts SET is_active = FALSE, updated_at = %s", (now,))
             async with conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
                     "UPDATE accounts SET is_active = TRUE, updated_at = %s "

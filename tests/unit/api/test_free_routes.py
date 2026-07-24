@@ -77,7 +77,6 @@ def client(mock_store):
 
     async def _owned(user_id: str, account_id: str | None = None, **kwargs):
         # resolve_required_account_id / require_owned_account signatures vary
-        aid = account_id if account_id is not None else user_id
         if isinstance(kwargs.get("default_to_active"), bool) or account_id is not None:
             # resolve_required_account_id(user_id, account_id)
             raw = (account_id or "acct1").strip() or "acct1"
@@ -95,8 +94,7 @@ def client(mock_store):
         patch(
             "backend.api.account_scope.resolve_required_account_id",
             new_callable=AsyncMock,
-            side_effect=lambda uid, aid=None, **kw: (aid or "acct1").strip()
-            or "acct1",
+            side_effect=lambda uid, aid=None, **kw: (aid or "acct1").strip() or "acct1",
         ),
         patch(
             "backend.api.account_scope.require_owned_account",
@@ -107,8 +105,7 @@ def client(mock_store):
         patch(
             "backend.api.routes.free.resolve_required_account_id",
             new_callable=AsyncMock,
-            side_effect=lambda uid, aid=None, **kw: (aid or "acct1").strip()
-            or "acct1",
+            side_effect=lambda uid, aid=None, **kw: (aid or "acct1").strip() or "acct1",
         ),
         patch(
             "backend.api.routes.free.require_owned_account",

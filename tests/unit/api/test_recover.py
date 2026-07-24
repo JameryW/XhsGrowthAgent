@@ -77,7 +77,26 @@ def app_and_client():
     from backend.api.middleware import error_handler_middleware
 
     app.middleware("http")(error_handler_middleware)
-    return app, TestClient(app), graph
+
+    # Private routes require an authenticated user; thread ownership is
+    # checked via account_scope → patch the DB lookups (no DB in tests).
+    from backend.api.deps import get_current_user
+    from backend.db.accounts import AccountRow
+    from backend.db.workflows import WorkflowRow
+
+    async def _user() -> dict[str, str]:
+        return {"id": "user-test", "username": "tester"}
+
+    app.dependency_overrides[get_current_user] = _user
+    owned = AccountRow(id="acc1", name="acc1", is_active=True, owner_user_id="user-test")
+    with (
+        patch("backend.api.account_scope.get_account", AsyncMock(return_value=owned)),
+        patch(
+            "backend.db.workflows.get_workflow",
+            AsyncMock(return_value=WorkflowRow(thread_id="t", account_id="acc1")),
+        ),
+    ):
+        yield app, TestClient(app), graph
 
 
 def _clear_active_tasks(thread_id: str) -> None:

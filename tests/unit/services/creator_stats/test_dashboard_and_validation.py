@@ -18,6 +18,8 @@ from backend.services.creator_stats.suggestions import (
 )
 from backend.services.creator_stats.types import AnalysisResult, NoteStats
 
+from .conftest import grant_test_user
+
 
 @pytest.fixture(autouse=True)
 def _clear_mem():
@@ -103,9 +105,10 @@ def _app() -> FastAPI:
 async def test_dashboard_includes_imported_notes_for_frontend_path():
     """Frontend Analytics uses GET /dashboard — must surface creator-center imports."""
     await _seed_recent("dash_acc")
-    client = TestClient(_app())
+    app = _app()
+    client = TestClient(app)
 
-    with pytest.MonkeyPatch.context() as mp:
+    with pytest.MonkeyPatch.context() as mp, grant_test_user(app):
 
         async def _empty(*_a, **_k):
             return []
@@ -159,9 +162,10 @@ async def test_dashboard_uses_bundle_notes_and_snapshot_without_re_reading_metad
         "data_as_of": "2026-07-22T10:00:00Z",
         "snapshot_id": "snapshot:bundle-dash",
     }
-    client = TestClient(_app())
+    app = _app()
+    client = TestClient(app)
 
-    with pytest.MonkeyPatch.context() as mp:
+    with pytest.MonkeyPatch.context() as mp, grant_test_user(app):
 
         async def _empty(*_a, **_k):
             return []
@@ -187,8 +191,9 @@ async def test_dashboard_uses_bundle_notes_and_snapshot_without_re_reading_metad
 @pytest.mark.asyncio
 async def test_growth_report_includes_imported_notes():
     await _seed_recent("rep_acc", "rep_note_1")
-    client = TestClient(_app())
-    with pytest.MonkeyPatch.context() as mp:
+    app = _app()
+    client = TestClient(app)
+    with pytest.MonkeyPatch.context() as mp, grant_test_user(app):
 
         async def _empty(*_a, **_k):
             return []
@@ -205,31 +210,35 @@ async def test_growth_report_includes_imported_notes():
 @pytest.mark.asyncio
 async def test_canonical_note_endpoint_exposes_stable_scope_and_snapshot():
     await _seed_recent("canonical_acc", "canonical_note_1")
-    client = TestClient(_app())
+    app = _app()
+    client = TestClient(app)
 
-    first = client.get("/api/analytics/creator-stats/canonical_acc/notes?limit=1")
-    assert first.status_code == 200
-    data = first.json()["data"]
-    assert data["account_id"] == "canonical_acc"
-    assert data["scope"] == "account_history"
-    assert data["subject_type"] == "imported_note"
-    assert data["assessment_type"] == "historical_performance"
-    assert data["engagement_rate_unit"] == "fraction"
-    assert data["snapshot_id"].startswith("snapshot:")
-    assert data["items"][0]["subject_id"] == "canonical_note_1"
-    assert data["items"][0]["note_synced_at"]
+    with grant_test_user(app):
+        first = client.get("/api/analytics/creator-stats/canonical_acc/notes?limit=1")
+        assert first.status_code == 200
+        data = first.json()["data"]
+        assert data["account_id"] == "canonical_acc"
+        assert data["scope"] == "account_history"
+        assert data["subject_type"] == "imported_note"
+        assert data["assessment_type"] == "historical_performance"
+        assert data["engagement_rate_unit"] == "fraction"
+        assert data["snapshot_id"].startswith("snapshot:")
+        assert data["items"][0]["subject_id"] == "canonical_note_1"
+        assert data["items"][0]["note_synced_at"]
 
-    with pytest.MonkeyPatch.context() as mp:
+        with pytest.MonkeyPatch.context() as mp:
 
-        async def _empty(*_a, **_k):
-            return []
+            async def _empty(*_a, **_k):
+                return []
 
-        mp.setattr(analytics_routes, "_get_completed_workflows", _empty)
-        dashboard = client.get("/api/analytics/dashboard/canonical_acc?period=weekly&limit=20")
-        report = client.get("/api/analytics/report/canonical_acc?period=weekly")
-        performance = client.get("/api/analytics/performance/canonical_acc?period=weekly&limit=20")
-    quality = client.get("/api/analytics/creator-stats/canonical_acc/quality")
-    detail = client.get("/api/analytics/creator-stats/canonical_acc/notes/canonical_note_1")
+            mp.setattr(analytics_routes, "_get_completed_workflows", _empty)
+            dashboard = client.get("/api/analytics/dashboard/canonical_acc?period=weekly&limit=20")
+            report = client.get("/api/analytics/report/canonical_acc?period=weekly")
+            performance = client.get(
+                "/api/analytics/performance/canonical_acc?period=weekly&limit=20"
+            )
+        quality = client.get("/api/analytics/creator-stats/canonical_acc/quality")
+        detail = client.get("/api/analytics/creator-stats/canonical_acc/notes/canonical_note_1")
 
     snapshot_ids = {
         data["snapshot_id"],
@@ -248,8 +257,9 @@ async def test_canonical_note_endpoint_exposes_stable_scope_and_snapshot():
 async def test_performance_and_dashboard_strip_account_id():
     """Path account_id with spaces must still resolve imported notes."""
     await _seed_recent("strip_dash", "strip_n1")
-    client = TestClient(_app())
-    with pytest.MonkeyPatch.context() as mp:
+    app = _app()
+    client = TestClient(app)
+    with pytest.MonkeyPatch.context() as mp, grant_test_user(app):
 
         async def _empty(*_a, **_k):
             return []

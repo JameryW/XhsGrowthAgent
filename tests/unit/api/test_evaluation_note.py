@@ -22,10 +22,33 @@ _GET_ACCOUNT = "backend.api.routes.evaluation.get_account"
 
 @pytest.fixture
 def client():
+    from backend.api.deps import get_current_user
+
     graph = MagicMock()
     graph.store = MagicMock()
     app.state.graph = graph
-    yield TestClient(app)
+
+    async def _user():
+        return {"id": "user-test", "username": "tester"}
+
+    app.dependency_overrides[get_current_user] = _user
+
+    # Owned by the overridden console user so account_scope checks pass.
+    owned = AccountRow(id="acct1", name="acct1", owner_user_id="user-test")
+
+    with (
+        # account_scope imports get_account directly; resolve_required_account_id /
+        # require_owned_account / assert_note_owned all resolve through it.
+        patch("backend.api.account_scope.get_account", AsyncMock(return_value=owned)),
+        # No active/owned fallback: an empty account_id must stay a 400.
+        patch("backend.api.account_scope.get_active_account", AsyncMock(return_value=None)),
+        patch("backend.api.account_scope.list_accounts", AsyncMock(return_value=[])),
+        # assert_note_owned imports get_note_stats from backend.db.creator_stats.
+        patch("backend.db.creator_stats.get_note_stats", AsyncMock(return_value=_note())),
+    ):
+        yield TestClient(app)
+
+    app.dependency_overrides.pop(get_current_user, None)
     if hasattr(app.state, "graph"):
         delattr(app.state, "graph")
 

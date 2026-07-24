@@ -30,6 +30,8 @@ from backend.db.creator_stats import (
 )
 from backend.services.creator_stats.types import AccountStatsOverview, NoteStats
 
+from .conftest import grant_test_user
+
 
 @pytest.fixture(autouse=True)
 def _clear_mem():
@@ -176,7 +178,7 @@ async def test_dashboard_avg_rate_consistent_after_merge():
         "content_plan": {},
     }
 
-    with pytest.MonkeyPatch.context() as mp:
+    with pytest.MonkeyPatch.context() as mp, grant_test_user(app):
 
         async def _wf(*_a, **_k):
             return [{"_state": wf_state, "account_id": "mix_acc"}]

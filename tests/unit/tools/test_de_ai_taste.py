@@ -13,8 +13,7 @@ def test_algorithmic_de_ai_scrubs_common_cliches():
     raw = {
         "selected_title": "在当今社会 好物分享",
         "body_text": (
-            "在当今社会，值得一提的是这款产品能够赋能你的生活。"
-            "综上所述，家人们一定要试试。"
+            "在当今社会，值得一提的是这款产品能够赋能你的生活。综上所述，家人们一定要试试。"
         ),
         "cta": "欢迎在评论区留言交流。",
         "tone": "专业",

@@ -218,7 +218,7 @@ async def polish_copy(
             fallback_fn=algorithmic_de_ai,
         )
         if isinstance(result, dict) and result.get("method") == "algorithmic":
-            return cast(dict[str, Any], result)
+            return result
         return _normalize_result(result, fallback)
     except Exception as e:
         logger.warning("polish_copy LLM path failed, using algorithmic fallback: %s", e)

@@ -16,8 +16,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from backend.api.deps import get_current_user
 from backend.api.middleware import error_handler_middleware
 from backend.api.routes.review import router
+from backend.db.accounts import AccountRow
+from backend.db.workflows import WorkflowRow
 
 _EVAL_PATH = "backend.api.routes.review._evaluator"
 
@@ -59,7 +62,24 @@ def app_and_client():
     app.include_router(router, prefix="/api/review")
     app.state.graph = graph
     app.middleware("http")(error_handler_middleware)
-    return app, TestClient(app), graph
+
+    async def _user():
+        return {"id": "user-test", "username": "tester"}
+
+    app.dependency_overrides[get_current_user] = _user
+
+    # assert_thread_owned resolves the workflow row (function-level import,
+    # patch at source) then checks account ownership via account_scope.
+    owned = AccountRow(id="acc1", name="acc1", is_active=True, owner_user_id="user-test")
+    with (
+        patch(
+            "backend.db.workflows.get_workflow",
+            AsyncMock(return_value=WorkflowRow(thread_id="t1", account_id="acc1")),
+        ),
+        patch("backend.api.account_scope.get_account", AsyncMock(return_value=owned)),
+    ):
+        yield app, TestClient(app), graph
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 def test_partial_update_merges_and_runs_evaluator(app_and_client):

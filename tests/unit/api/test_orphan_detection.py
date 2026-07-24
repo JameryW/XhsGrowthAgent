@@ -15,14 +15,21 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from backend.api.deps import get_current_user
 from backend.api.middleware import error_handler_middleware
 from backend.api.routes import _runner
 from backend.api.routes.workflow import router
+from backend.db.accounts import AccountRow
 from backend.db.workflows import WorkflowRow
 
 _POOL_READY = "backend.api.routes.workflow.is_pool_ready"
 _DB_LIST = "backend.api.routes.workflow.db_list"
 _DB_GET = "backend.api.routes.workflow.db_get"
+_ACTIVE_ACCOUNT = "backend.api.account_scope.get_active_account"
+# assert_thread_owned looks up the workflow row via a function-level import
+# inside account_scope — patch at the source module (no DB in tests).
+_DB_GET_SRC = "backend.db.workflows.get_workflow"
+_GET_ACCOUNT = "backend.api.account_scope.get_account"
 
 
 def _make_row(thread_id: str, status: str = "running") -> WorkflowRow:
@@ -48,7 +55,22 @@ def _client_with_graph(graph: MagicMock) -> TestClient:
     app.include_router(router, prefix="/api/workflow")
     app.state.graph = graph
     app.middleware("http")(error_handler_middleware)
+
+    async def _user() -> dict[str, str]:
+        return {"id": "user-test", "username": "tester"}
+
+    app.dependency_overrides[get_current_user] = _user
     return TestClient(app)
+
+
+def _owned_account() -> AccountRow:
+    """Account owned by the overridden test user (passes account_scope checks)."""
+    return AccountRow(
+        id="acct",
+        name="acct",
+        is_active=True,
+        owner_user_id="user-test",
+    )
 
 
 def _empty_snapshot() -> MagicMock:
@@ -72,6 +94,7 @@ class TestListOrphanDetection:
         with (
             patch(_POOL_READY, return_value=True),
             patch(_DB_LIST, new_callable=AsyncMock, return_value=(rows, 1)),
+            patch(_ACTIVE_ACCOUNT, new_callable=AsyncMock, return_value=_owned_account()),
         ):
             client = _client_with_graph(MagicMock())
             resp = client.get("/api/workflow/list")
@@ -91,6 +114,7 @@ class TestListOrphanDetection:
             with (
                 patch(_POOL_READY, return_value=True),
                 patch(_DB_LIST, new_callable=AsyncMock, return_value=(rows, 1)),
+                patch(_ACTIVE_ACCOUNT, new_callable=AsyncMock, return_value=_owned_account()),
             ):
                 client = _client_with_graph(MagicMock())
                 resp = client.get("/api/workflow/list")
@@ -112,6 +136,7 @@ class TestListOrphanDetection:
         with (
             patch(_POOL_READY, return_value=True),
             patch(_DB_LIST, new_callable=AsyncMock, return_value=(rows, 1)),
+            patch(_ACTIVE_ACCOUNT, new_callable=AsyncMock, return_value=_owned_account()),
         ):
             client = _client_with_graph(MagicMock())
             resp = client.get("/api/workflow/list")
@@ -136,6 +161,8 @@ class TestStatusOrphanDetection:
         with (
             patch(_POOL_READY, return_value=True),
             patch(_DB_GET, new_callable=AsyncMock, return_value=row),
+            patch(_DB_GET_SRC, new_callable=AsyncMock, return_value=row),
+            patch(_GET_ACCOUNT, new_callable=AsyncMock, return_value=_owned_account()),
         ):
             client = _client_with_graph(graph)
             resp = client.get("/api/workflow/status/orphan_status")

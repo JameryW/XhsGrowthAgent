@@ -505,7 +505,7 @@ class CdpTransport:
                                 login_ui=login_ui or auth_failed.is_set(),
                             )
                             if auth_err is not None:
-                                raise auth_err
+                                raise auth_err from None
                 except CreatorStatsFetchError:
                     raise
                 except Exception as e:
@@ -529,8 +529,10 @@ class CdpTransport:
                         task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await asyncio.gather(*pending_wait, return_exceptions=True)
-                    if auth_ready in done and auth_failed.is_set() and not (
-                        account_ready.is_set() and first_notes_ready.is_set()
+                    if (
+                        auth_ready in done
+                        and auth_failed.is_set()
+                        and not (account_ready.is_set() and first_notes_ready.is_set())
                     ):
                         login_ui = await self._page_shows_login_ui(page)
                         auth_err = self._auth_error_from_captured(
@@ -778,7 +780,9 @@ class CdpTransport:
                             wait_until="domcontentloaded",
                             timeout=min(10_000, int(self._timeout * 1000)),
                         )
-                        await asyncio.wait_for(personal_ready.wait(), timeout=min(4.0, self._timeout))
+                        await asyncio.wait_for(
+                            personal_ready.wait(), timeout=min(4.0, self._timeout)
+                        )
                 if pending:
                     await asyncio.gather(*pending, return_exceptions=True)
 

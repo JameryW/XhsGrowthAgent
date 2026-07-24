@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from backend.agents.evaluator import EvaluatorAgent
 from backend.api.app import app
+from backend.api.deps import get_current_user
 from backend.state.enums import ContentStatus, WorkflowPhase
 
 
@@ -31,14 +32,34 @@ def mock_graph():
 
 @pytest.fixture
 def client(mock_graph):
+    async def _user():
+        return {"id": "user-test", "username": "tester"}
+
+    app.dependency_overrides[get_current_user] = _user
     app.state.graph = mock_graph
     yield TestClient(app)
+    app.dependency_overrides.pop(get_current_user, None)
     if hasattr(app.state, "graph"):
         delattr(app.state, "graph")
 
 
+@pytest.fixture
+def owned_thread():
+    """Patch workflow/account lookups so thread t1 belongs to user-test."""
+    account = MagicMock()
+    account.id = "acc-1"
+    account.owner_user_id = "user-test"
+    row = MagicMock()
+    row.account_id = "acc-1"
+    with (
+        patch("backend.db.workflows.get_workflow", AsyncMock(return_value=row)) as mock_get,
+        patch("backend.api.account_scope.get_account", AsyncMock(return_value=account)),
+    ):
+        yield mock_get
+
+
 class TestEvaluationResultRoute:
-    def test_get_result_returns_evaluation(self, client, mock_graph):
+    def test_get_result_returns_evaluation(self, client, mock_graph, owned_thread):
         mock_graph.aget_state.return_value.values["evaluation_result"] = {
             "overall_score": 82.0,
             "decision": ContentStatus.APPROVED,
@@ -49,13 +70,14 @@ class TestEvaluationResultRoute:
         assert data["has_evaluation"] is True
         assert data["evaluation_result"]["decision"] == "approved"
 
-    def test_get_result_no_evaluation(self, client, mock_graph):
+    def test_get_result_no_evaluation(self, client, mock_graph, owned_thread):
         mock_graph.aget_state.return_value.values.pop("evaluation_result", None)
         r = client.get("/api/evaluation/result/t1")
         assert r.status_code == 200
         assert r.json()["data"]["has_evaluation"] is False
 
-    def test_get_result_not_found(self, client, mock_graph):
+    def test_get_result_not_found(self, client, mock_graph, owned_thread):
+        owned_thread.return_value = None
         empty = MagicMock()
         empty.values = {}
         empty.next = []
@@ -69,7 +91,7 @@ class TestEvaluationResultRoute:
 
 
 class TestRunEvaluationRoute:
-    def test_run_returns_evaluation_and_persists(self, client, mock_graph):
+    def test_run_returns_evaluation_and_persists(self, client, mock_graph, owned_thread):
         mock_response = MagicMock()
         mock_response.content = (
             '{"overall_score": 80, "dimensions": ['
@@ -92,7 +114,7 @@ class TestRunEvaluationRoute:
         assert data["evaluation_result"]["overall_score"] is None
         mock_graph.aupdate_state.assert_called_once()
 
-    def test_run_no_content_raises(self, client, mock_graph):
+    def test_run_no_content_raises(self, client, mock_graph, owned_thread):
         mock_graph.aget_state.return_value.values = {
             "session_id": "t1",
             "phase": WorkflowPhase.SCOUTING,
@@ -100,7 +122,8 @@ class TestRunEvaluationRoute:
         r = client.post("/api/evaluation/run/t1")
         assert r.status_code == 400
 
-    def test_run_not_found(self, client, mock_graph):
+    def test_run_not_found(self, client, mock_graph, owned_thread):
+        owned_thread.return_value = None
         empty = MagicMock()
         empty.values = {}
         empty.next = []

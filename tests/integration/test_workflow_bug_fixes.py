@@ -23,8 +23,11 @@ from fastapi.testclient import TestClient
 from langgraph.types import Command
 
 from backend.api.app import app
+from backend.api.deps import get_current_user
 from backend.api.routes import _runner as runner_module
 from backend.api.routes import workflow as workflow_module
+from backend.db.accounts import AccountRow
+from backend.db.workflows import WorkflowRow
 from backend.graph.routers import (
     _check_terminal,
     review_outcome,
@@ -88,13 +91,45 @@ def mock_graph():
 
 @pytest.fixture
 def client(mock_graph):
-    """Test client with mocked graph."""
+    """Test client with mocked graph and an authenticated user."""
     app.state.graph = mock_graph
     original_bg_tasks = runner_module._background_tasks.copy()
     original_last_status = workflow_module._last_status.copy()
     runner_module._background_tasks.clear()
     workflow_module._last_status.clear()
-    yield TestClient(app)
+
+    async def _user():
+        return {"id": "user-test", "username": "tester"}
+
+    app.dependency_overrides[get_current_user] = _user
+
+    # Private routes verify thread ownership: workflow row lookup is patched
+    # at the source module (function-level import in account_scope), account
+    # ownership via account_scope.get_account.
+    owned = AccountRow(
+        id="test_account",
+        name="test_account",
+        is_active=True,
+        owner_user_id="user-test",
+    )
+    with (
+        patch(
+            "backend.db.workflows.get_workflow",
+            AsyncMock(return_value=WorkflowRow(thread_id="t", account_id="test_account")),
+        ),
+        patch("backend.api.account_scope.get_account", AsyncMock(return_value=owned)),
+        patch(
+            "backend.api.account_scope.get_active_account",
+            AsyncMock(return_value=owned),
+        ),
+        patch(
+            "backend.api.account_scope.list_accounts",
+            AsyncMock(return_value=[owned]),
+        ),
+    ):
+        yield TestClient(app)
+
+    app.dependency_overrides.pop(get_current_user, None)
     runner_module._background_tasks.clear()
     runner_module._background_tasks.update(original_bg_tasks)
     workflow_module._last_status.clear()

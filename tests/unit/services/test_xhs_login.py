@@ -191,9 +191,11 @@ class TestStart:
         )
         session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
 
-        with patch.object(XhsLoginSession, "_warm_creator_session", new=AsyncMock()) as warm:
-            with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
-                result = await session.start()
+        with (
+            patch.object(XhsLoginSession, "_warm_creator_session", new=AsyncMock()) as warm,
+            patch.dict(sys.modules, {"playwright.async_api": mock_module}),
+        ):
+            result = await session.start()
 
         assert result == {
             "status": "confirmed",
@@ -378,10 +380,12 @@ class TestGetStatus:
             page_text="首页 发布 通知 消息 我",
         )
         session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
-        with patch.object(XhsLoginSession, "_warm_creator_session", new=AsyncMock()):
-            with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
-                await self._start_session(session, on_calls)
-                result = await session.get_status()
+        with (
+            patch.object(XhsLoginSession, "_warm_creator_session", new=AsyncMock()),
+            patch.dict(sys.modules, {"playwright.async_api": mock_module}),
+        ):
+            await self._start_session(session, on_calls)
+            result = await session.get_status()
 
         assert result["status"] == "confirmed"
         assert result["url"] == ""

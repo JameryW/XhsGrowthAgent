@@ -13,13 +13,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from backend.api.deps import get_current_user
 from backend.api.middleware import error_handler_middleware
 from backend.api.routes.inbox import router
 from backend.db.workflows import WorkflowRow
 
 _DB_LIST = "backend.api.routes.inbox.db_list"
 _IS_POOL_READY = "backend.api.routes.inbox.is_pool_ready"
-_GET_ACTIVE = "backend.db.accounts.get_active_account"
+_GET_ACTIVE = "backend.api.account_scope.get_active_account"
 
 
 def _row(thread_id: str, account_id: str = "acc1", **overrides) -> WorkflowRow:
@@ -41,6 +42,7 @@ class _Account:
     def __init__(self, id: str) -> None:
         self.id = id
         self.name = id
+        self.owner_user_id = "user-test"
 
 
 def _snapshot(values: dict, next_nodes=(), interrupts=()) -> MagicMock:
@@ -64,12 +66,17 @@ def _make_graph(state_map: dict[str, MagicMock]) -> MagicMock:
 
 @pytest.fixture
 def app_and_client():
+    async def _user():
+        return {"id": "user-test", "username": "tester"}
+
     graph = _make_graph({})
     app = FastAPI()
     app.include_router(router, prefix="/api")
     app.state.graph = graph
     app.middleware("http")(error_handler_middleware)
-    return app, TestClient(app), graph
+    app.dependency_overrides[get_current_user] = _user
+    yield app, TestClient(app), graph
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 # ── Empty inbox ───────────────────────────────────────────────────────────

@@ -23,6 +23,8 @@ from backend.services.creator_stats.suggestions import (
     get_suggestions_for_mode,
 )
 
+from .conftest import grant_test_user
+
 
 @pytest.fixture(autouse=True)
 def _clear():
@@ -85,6 +87,7 @@ async def test_api_suggestions_mode_case_insensitive():
     with (
         patch("backend.db.accounts.get_account", new_callable=AsyncMock, return_value=None),
         patch("backend.db.accounts.update_account", new_callable=AsyncMock),
+        grant_test_user(app),
     ):
         sync = await sync_from_fixture("api_mode")
         assert sync.account_synced is True

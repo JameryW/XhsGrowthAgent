@@ -64,7 +64,6 @@ def client():
     return TestClient(app)
 
 
-
 # ── POST /login/qr ──
 
 
@@ -77,7 +76,11 @@ def test_start_qr_login_returns_qr_id_and_url(client):
     )
 
     with (
-        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=account,
+        ),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
             new_callable=AsyncMock,
@@ -107,7 +110,11 @@ def test_start_qr_login_can_return_already_confirmed(client):
     )
 
     with (
-        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=account,
+        ),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
             new_callable=AsyncMock,
@@ -149,7 +156,11 @@ def test_start_qr_login_400_when_no_profile_path(client):
     )
 
     with (
-        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=account,
+        ),
         pytest.raises(Exception, match="chrome_profile_path"),
     ):
         client.post("/api/accounts/acc-1/login/qr")
@@ -168,7 +179,11 @@ def test_start_qr_login_503_on_login_error(client):
     from backend.api.errors import ErrorCode
 
     with (
-        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=account,
+        ),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
             new_callable=AsyncMock,
@@ -198,7 +213,11 @@ def test_start_qr_login_503_on_start_timeout(client):
     mock_session.start = AsyncMock(side_effect=TimeoutError())
 
     with (
-        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=account,
+        ),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
             new_callable=AsyncMock,
@@ -228,7 +247,11 @@ def test_get_login_status_returns_profile_state(client):
     """GET /accounts/{id}/login/status → durable profile login status."""
     account = _mock_account()
     with (
-        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=account,
+        ),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
             new_callable=AsyncMock,
@@ -272,7 +295,11 @@ def test_get_login_status_unavailable_when_no_profile(client):
         cdp_port=0,
         owner_user_id="user-test",
     )
-    with patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account):
+    with patch(
+        "backend.api.account_scope.get_account",
+        new_callable=AsyncMock,
+        return_value=account,
+    ):
         resp = client.get("/api/accounts/acc-1/login/status")
 
     assert resp.status_code == 200
@@ -285,7 +312,11 @@ def test_get_login_status_browser_down_when_cdp_endpoint_not_answering(client):
     """CDP port not answering → browser-not-running status for the settings UI."""
     account = _mock_account()
     with (
-        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=account,
+        ),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
             new_callable=AsyncMock,
@@ -326,7 +357,11 @@ def test_get_qr_status_returns_current_status(client):
     )
 
     with (
-        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=account,
+        ),
         patch("backend.services.xhs_login.get_session", return_value=mock_session),
     ):
         resp = client.get("/api/accounts/acc-1/login/qr/status")
@@ -351,7 +386,11 @@ def test_get_qr_status_400_when_no_session(client):
     """No active login session → ValidationError."""
     account = _mock_account()
     with (
-        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=account,
+        ),
         patch("backend.services.xhs_login.get_session", return_value=None),
         pytest.raises(Exception, match="没有进行中的扫码登录会话"),
     ):
@@ -367,7 +406,11 @@ def test_get_qr_status_confirmed_clears_url(client):
     )
 
     with (
-        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=account,
+        ),
         patch("backend.services.xhs_login.get_session", return_value=mock_session),
     ):
         resp = client.get("/api/accounts/acc-1/login/qr/status")
@@ -397,7 +440,11 @@ def test_submit_verification_code_forwards_to_session(client):
     )
 
     with (
-        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=account,
+        ),
         patch("backend.services.xhs_login.get_session", return_value=mock_session),
     ):
         resp = client.post(
@@ -416,7 +463,11 @@ def test_submit_verification_code_rejects_non_numeric_code(client):
     """Non-numeric verification code → ValidationError."""
     account = _mock_account()
     with (
-        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=account,
+        ),
         pytest.raises(Exception, match="验证码必须"),
     ):
         client.post(
@@ -429,7 +480,11 @@ def test_submit_verification_code_400_when_no_session(client):
     """No active login session → ValidationError."""
     account = _mock_account()
     with (
-        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=account,
+        ),
         patch("backend.services.xhs_login.get_session", return_value=None),
         pytest.raises(Exception, match="没有进行中的扫码登录会话"),
     ):
@@ -446,7 +501,11 @@ def test_stop_qr_login_closes_session(client):
     """POST /accounts/{id}/login/qr/stop → {stopped: true, account_id}."""
     account = _mock_account()
     with (
-        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=account,
+        ),
         patch("backend.services.xhs_login.stop_session", new_callable=AsyncMock, return_value=True),
     ):
         resp = client.post("/api/accounts/acc-1/login/qr/stop")
@@ -461,7 +520,11 @@ def test_stop_qr_login_returns_false_when_no_session(client):
     """Stop on account with no active session → {stopped: false} (not an error)."""
     account = _mock_account()
     with (
-        patch("backend.api.account_scope.get_account", new_callable=AsyncMock, return_value=account),
+        patch(
+            "backend.api.account_scope.get_account",
+            new_callable=AsyncMock,
+            return_value=account,
+        ),
         patch(
             "backend.services.xhs_login.stop_session",
             new_callable=AsyncMock,

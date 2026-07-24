@@ -21,6 +21,8 @@ from backend.db.creator_stats import (
 from backend.services.creator_stats.quality import analyze_historical_quality, analyze_note_quality
 from backend.services.creator_stats.types import NoteStats
 
+from .conftest import grant_test_user
+
 
 @pytest.fixture(autouse=True)
 def _clear_creator_stats() -> None:
@@ -191,7 +193,9 @@ def test_quality_report_scores_imported_body_craft():
         ],
         "quality_acc",
     ).to_dict()
-    assert _dimension(rich_only, "body_craft")["score"] > _dimension(thin_only, "body_craft")["score"]
+    rich_score = _dimension(rich_only, "body_craft")["score"]
+    thin_score = _dimension(thin_only, "body_craft")["score"]
+    assert rich_score > thin_score
 
 
 def test_single_note_quality_reuses_historical_dimensions_without_fake_consistency():
@@ -264,8 +268,10 @@ async def test_quality_endpoint_uses_all_history_over_display_limit_and_is_read_
     before = {note.note_id: note.to_dict() for note in await list_all_note_stats("quality_acc")}
     assert len(before) == 101
 
-    client = TestClient(_app())
-    response = client.get("/api/analytics/creator-stats/quality_acc/quality")
+    app = _app()
+    client = TestClient(app)
+    with grant_test_user(app):
+        response = client.get("/api/analytics/creator-stats/quality_acc/quality")
     assert response.status_code == 200
     payload = response.json()
     assert payload["success"] is True
@@ -289,7 +295,8 @@ async def test_quality_endpoint_uses_all_history_over_display_limit_and_is_read_
     after = {note.note_id: note.to_dict() for note in await list_all_note_stats("quality_acc")}
     assert after == before
 
-    english_response = client.get("/api/analytics/creator-stats/quality_acc/quality?locale=en")
+    with grant_test_user(app):
+        english_response = client.get("/api/analytics/creator-stats/quality_acc/quality?locale=en")
     assert english_response.status_code == 200
     english = english_response.json()["data"]
     assert "Based on all 101 imported historical notes" in english["summary"]
@@ -308,9 +315,13 @@ async def test_quality_endpoint_uses_one_snapshot_bundle_for_notes_and_metadata(
         "data_as_of": "2026-07-22T10:00:00Z",
         "snapshot_id": "snapshot:bundle",
     }
-    client = TestClient(_app())
+    app = _app()
+    client = TestClient(app)
 
-    with pytest.MonkeyPatch.context() as mp:
+    with (
+        grant_test_user(app),
+        pytest.MonkeyPatch.context() as mp,
+    ):
 
         async def _bundle(_account_id: str) -> dict[str, object]:
             return bundle
@@ -342,26 +353,28 @@ async def test_single_note_detail_and_quality_endpoints_are_read_only():
     await upsert_notes([note])
     before = (await get_note_stats("quality_acc", "detail_001")).to_dict()  # type: ignore[union-attr]
 
-    client = TestClient(_app())
-    detail = client.get("/api/analytics/creator-stats/quality_acc/notes/detail_001")
-    assert detail.status_code == 200
-    detail_data = detail.json()["data"]
-    assert detail_data["note"]["note_id"] == "detail_001"
-    assert detail_data["note"]["body_text"] == "第一步：整理资料。"
+    app = _app()
+    client = TestClient(app)
+    with grant_test_user(app):
+        detail = client.get("/api/analytics/creator-stats/quality_acc/notes/detail_001")
+        assert detail.status_code == 200
+        detail_data = detail.json()["data"]
+        assert detail_data["note"]["note_id"] == "detail_001"
+        assert detail_data["note"]["body_text"] == "第一步：整理资料。"
 
-    quality = client.get(
-        "/api/analytics/creator-stats/quality_acc/notes/detail_001/quality?locale=en"
-    )
-    assert quality.status_code == 200
-    quality_data = quality.json()["data"]
-    assert quality_data["note_id"] == "detail_001"
-    assert quality_data["quality"]["scope"] == "single_note"
-    assert quality_data["quality"]["overall_score"] is not None
-    assert "single imported note" in quality_data["quality"]["summary"]
+        quality = client.get(
+            "/api/analytics/creator-stats/quality_acc/notes/detail_001/quality?locale=en"
+        )
+        assert quality.status_code == 200
+        quality_data = quality.json()["data"]
+        assert quality_data["note_id"] == "detail_001"
+        assert quality_data["quality"]["scope"] == "single_note"
+        assert quality_data["quality"]["overall_score"] is not None
+        assert "single imported note" in quality_data["quality"]["summary"]
 
-    after = (await get_note_stats("quality_acc", "detail_001")).to_dict()  # type: ignore[union-attr]
-    assert after == before
+        after = (await get_note_stats("quality_acc", "detail_001")).to_dict()  # type: ignore[union-attr]
+        assert after == before
 
-    missing = client.get("/api/analytics/creator-stats/quality_acc/notes/missing")
-    assert missing.status_code == 404
-    assert missing.json()["error"]["code"] == "ERROR_CREATOR_NOTE_NOT_FOUND"
+        missing = client.get("/api/analytics/creator-stats/quality_acc/notes/missing")
+        assert missing.status_code == 404
+        assert missing.json()["error"]["code"] == "ERROR_CREATOR_NOTE_NOT_FOUND"
