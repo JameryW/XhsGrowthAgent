@@ -145,7 +145,8 @@ async def _creator_stats_scheduler(
                         break
                 if account_errors:
                     last_error = "; ".join(account_errors)
-            succeeded = bool(result.get("ok"))
+            # cooldown（冷却期内跳过）不是失败——不计入退避序列。
+            succeeded = bool(result.get("ok")) or result.get("status") == "cooldown"
             state.update(
                 {
                     "status": "completed" if succeeded else "failed",

@@ -663,38 +663,59 @@ class CdpTransport:
                     previous_pages = len(note_responses)
                     # 翻页也保持人的节奏——连续秒翻列表是明显的机器特征。
                     await self._pace()
-                    try:
-                        await page.locator("div.content").evaluate(
+                    # 渐进滚动：瞬时 scrollTop=scrollHeight 是典型机器行为。
+                    # 分 2-4 段滚动、段间停顿，最后一段才到底触发加载。
+                    scroll_steps = random.randint(2, 4)
+                    for step in range(scroll_steps):
+                        last_step = step == scroll_steps - 1
+                        script = (
                             """el => {
                                 el.scrollTop = el.scrollHeight
                                 el.dispatchEvent(new Event('scroll', { bubbles: true }))
                             }"""
+                            if last_step
+                            else """el => {
+                                el.scrollTop = Math.min(
+                                    el.scrollTop + el.clientHeight * (0.6 + Math.random() * 0.8),
+                                    el.scrollHeight
+                                )
+                                el.dispatchEvent(new Event('scroll', { bubbles: true }))
+                            }"""
                         )
-                    except Exception as e:
-                        logger.debug(
-                            "creator note list cannot scroll for page %s: %s", page_index, e
+                        try:
+                            await page.locator("div.content").evaluate(script)
+                        except Exception as e:
+                            logger.debug(
+                                "creator note list cannot scroll for page %s: %s", page_index, e
+                            )
+                            break
+                        if not last_step:
+                            await asyncio.sleep(random.uniform(0.15, 0.45))
+                    else:
+                        # All scroll steps completed — wait for the next page.
+                        try:
+                            await self._wait_for(
+                                lambda expected=page_index, before=previous_pages: (
+                                    expected in note_responses or len(note_responses) > before
+                                ),
+                                min(8.0, self._timeout),
+                            )
+                        except TimeoutError:
+                            # No next request is the normal end-of-list condition.
+                            break
+                        if page_index not in note_responses:
+                            break
+                        self._validate_creator_response(
+                            *note_responses[page_index], operation=f"note list page {page_index}"
                         )
-                        break
-                    try:
-                        await self._wait_for(
-                            lambda expected=page_index, before=previous_pages: (
-                                expected in note_responses or len(note_responses) > before
-                            ),
-                            min(8.0, self._timeout),
-                        )
-                    except TimeoutError:
-                        # No next request is the normal end-of-list condition.
-                        break
-                    if page_index not in note_responses:
-                        break
-                    self._validate_creator_response(
-                        *note_responses[page_index], operation=f"note list page {page_index}"
-                    )
-                    next_data = _unwrap_api_body(note_responses[page_index][1])
-                    if (isinstance(next_data, dict) and not extract_note_items(next_data)) or (
-                        isinstance(next_data, list) and not next_data
-                    ):
-                        break
+                        next_data = _unwrap_api_body(note_responses[page_index][1])
+                        if (isinstance(next_data, dict) and not extract_note_items(next_data)) or (
+                            isinstance(next_data, list) and not next_data
+                        ):
+                            break
+                        continue
+                    # Scroll evaluate failed — stop paginating.
+                    break
 
                 raw_notes: list[dict[str, Any]] = []
                 for page_index in sorted(note_responses):

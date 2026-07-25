@@ -677,13 +677,24 @@ async def sync_account_stats(
     )
 
 
+# 上次成功完成全量同步的时刻（进程内）。冷却期内再次触发（主要是手动
+# sync-all）直接跳过——短时间内反复全量爬创作者中心是明显的机器/滥用模式。
+_last_successful_sync_finished_at: datetime | None = None
+
+
 async def sync_all_active_accounts(
     *,
     store: BaseStore | None = None,
     period: str = "30d",
     run_creative_analysis: bool = True,
 ) -> dict[str, Any]:
-    """Run the active-account batch under local and distributed locks."""
+    """Run the active-account batch under local and distributed locks.
+
+    冷却：距上次成功同步不足 ``CREATOR_STATS_SYNC_COOLDOWN_MINUTES``（默认
+    30，0 关闭）时返回 ``status="cooldown"`` 而不爬取。调度器把 cooldown
+    视为非失败（不触发退避）。
+    """
+    global _last_successful_sync_finished_at
     if _active_accounts_sync_lock.locked():
         return {
             "ok": False,
@@ -693,9 +704,31 @@ async def sync_all_active_accounts(
             "failed": 0,
             "results": [],
         }
+    cooldown_minutes = _env_int("CREATOR_STATS_SYNC_COOLDOWN_MINUTES", 30)
+    if cooldown_minutes > 0 and _last_successful_sync_finished_at is not None:
+        elapsed = datetime.now(UTC) - _last_successful_sync_finished_at
+        remaining = timedelta(minutes=cooldown_minutes) - elapsed
+        if remaining.total_seconds() > 0:
+            logger.info(
+                "active accounts sync skipped: cooldown %.0fs remaining",
+                remaining.total_seconds(),
+            )
+            return {
+                "ok": False,
+                "status": "cooldown",
+                "active_accounts": 0,
+                "succeeded": 0,
+                "failed": 0,
+                "results": [],
+                "error": (
+                    f"距离上次成功同步不足 {cooldown_minutes} 分钟，"
+                    "为避免频繁访问创作者中心已跳过本次同步。"
+                ),
+                "retry_after_seconds": int(remaining.total_seconds()),
+            }
     try:
         async with _distributed_active_accounts_sync_lock():
-            return await _sync_all_active_accounts_locked(
+            result = await _sync_all_active_accounts_locked(
                 store=store,
                 period=period,
                 run_creative_analysis=run_creative_analysis,
@@ -709,6 +742,9 @@ async def sync_all_active_accounts(
             "failed": 0,
             "results": [],
         }
+    if result.get("ok"):
+        _last_successful_sync_finished_at = datetime.now(UTC)
+    return result
 
 
 async def _sync_all_active_accounts_locked(

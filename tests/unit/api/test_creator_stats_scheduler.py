@@ -235,3 +235,36 @@ async def test_scheduler_backs_off_after_consecutive_failures(monkeypatch):
     state = app.state.creator_stats_scheduler_status
     assert state["consecutive_failures"] == 2
     assert state["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_scheduler_treats_cooldown_as_non_failure(monkeypatch):
+    """冷却跳过（status=cooldown）不算失败：不计入退避、间隔不翻倍。"""
+    app = _scheduler_app()
+    result = {
+        "ok": False,
+        "status": "cooldown",
+        "active_accounts": 0,
+        "succeeded": 0,
+        "failed": 0,
+    }
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", fake_sleep)
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(return_value=result),
+        ),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(app, 0.5)
+
+    state = app.state.creator_stats_scheduler_status
+    assert state["consecutive_failures"] == 0
+    assert state["status"] == "completed"
+    assert 1800.0 * 0.9 * 0.99 <= sleep_calls[0] <= 1800.0 * 1.1
