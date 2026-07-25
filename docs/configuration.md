@@ -38,6 +38,8 @@
 | `CREATOR_STATS_ENRICH_RECENT_DAYS` | 否 | 增量同步：发布距今不超过该天数的笔记总是重新访问详情页 | `7` |
 | `CREATOR_STATS_BODY_LOOKBACK_DAYS` | 否 | 增量同步：仅为该天数内发布且尚无正文的笔记抓取公开正文（已有正文永不重抓） | `30` |
 | `CREATOR_STATS_REQUEST_DELAY_MIN_S` / `CREATOR_STATS_REQUEST_DELAY_MAX_S` | 否 | 单次同步内逐篇笔记页面访问之间的随机间隔（秒），防风控 | `2.0` / `6.0` |
+| `CREATOR_STATS_LONG_PAUSE_CHANCE` | 否 | 反风控：每次访问停顿以小概率改为长停顿（模拟人走神/切换任务），打乱均匀节奏；`0` 关闭 | `0.08` |
+| `CREATOR_STATS_LONG_PAUSE_MIN_S` / `CREATOR_STATS_LONG_PAUSE_MAX_S` | 否 | 反风控：长停顿的随机区间（秒） | `15.0` / `45.0` |
 
 此外，连续同步失败会自动退避降频：第二次连续失败起，下次运行间隔翻倍（封顶 2×，即 24h→48h 节奏），成功一次即复位。
 

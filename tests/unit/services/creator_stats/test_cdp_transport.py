@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from backend.services.creator_stats import client as client_module
 from backend.services.creator_stats.client import (
     ACCOUNT_OVERVIEW_PATH,
     CREATOR_NOTE_MANAGER_PAGE,
@@ -541,3 +542,66 @@ async def test_cdp_fetch_all_forwards_optional_filters():
     transport.fetch_creator_center.assert_awaited_once_with(
         max_pages=50, period="30d", detail_filter=detail_filter, body_filter=body_filter
     )
+
+
+# ── 反风控节奏：乱序访问 / 翻页节奏 / 偶发长停顿 ──
+
+
+async def test_pace_inserts_long_pause_when_chance_hits(monkeypatch):
+    """长停顿概率命中时，_pace 睡长停顿区间而不是短停顿区间。"""
+    transport = CdpTransport("http://127.0.0.1:9222", request_delay=(1.0, 2.0))
+    monkeypatch.setattr(transport, "_long_pause_chance", 1.0)
+    monkeypatch.setattr(transport, "_long_pause", (15.0, 45.0))
+    sleeps: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(client_module.asyncio, "sleep", fake_sleep)
+
+    await transport._pace()
+
+    assert len(sleeps) == 1
+    assert 15.0 <= sleeps[0] <= 45.0
+
+
+async def test_pace_short_pause_when_chance_misses(monkeypatch):
+    """长停顿概率未命中时，_pace 保持常规短停顿。"""
+    transport = CdpTransport("http://127.0.0.1:9222", request_delay=(1.0, 2.0))
+    monkeypatch.setattr(transport, "_long_pause_chance", 0.0)
+    sleeps: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(client_module.asyncio, "sleep", fake_sleep)
+
+    await transport._pace()
+
+    assert len(sleeps) == 1
+    assert 1.0 <= sleeps[0] <= 2.0
+
+
+async def test_cdp_detail_visits_follow_shuffled_order(monkeypatch):
+    """详情页访问顺序由 shuffle 决定，不再是固定的列表顺序。"""
+    page = _FakeNotesPage(note_count=4)
+    transport = _transport_with_page(page)
+    # 确定性 shuffle：反转，便于断言顺序确实来自 shuffle。
+    monkeypatch.setattr(client_module.random, "shuffle", lambda items: items.reverse())
+
+    await transport.fetch_creator_center(max_pages=1, body_filter=lambda _note: False)
+
+    ids = [url.rsplit("noteId=", 1)[1] for url in page.detail_urls]
+    assert ids == ["note-4", "note-3", "note-2", "note-1"]
+
+
+async def test_cdp_paces_between_list_page_turns():
+    """列表翻页也经过 _pace——连续秒翻是机器特征。"""
+    page = _FakeNotesPage(note_count=2)
+    transport = _transport_with_page(page)
+    transport._pace = AsyncMock()
+
+    await transport.fetch_creator_center(max_pages=2)
+
+    # 1 次翻页（第 2 页不存在，等待超时后正常结束）+ 1 次详情 + 1 次正文。
+    assert transport._pace.await_count == 3
