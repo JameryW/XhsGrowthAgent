@@ -10,12 +10,30 @@ import i18n from '@/locales'
 
 const { t } = i18n.global
 
+/** Remembers the last logged-in console user across logout, so the next
+ *  login can tell a user switch apart from a same-user re-login. */
+const LAST_USER_KEY = 'auth_last_user_id'
+
+/** localStorage namespaces written by account-scoped stores (workflow tabs).
+ *  On a console-user switch the previous user's threads/tabs must not be
+ *  restored — they would 404 (ownership is hidden cross-user) and leak
+ *  another user's context into the new session. */
+const ACCOUNT_SCOPED_LS_KEYS = ['activeThreadId', 'openTabIds', 'tabLabels'] as const
+
+function clearAccountScopedLocalStorage(): void {
+  for (const key of ACCOUNT_SCOPED_LS_KEYS) localStorage.removeItem(key)
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const toastStore = useToastStore()
 
   // State - restore from localStorage
   const token = ref<string | null>(localStorage.getItem(AUTH_TOKEN_KEY))
   const user = ref<AuthUser | null>(null)
+  /** Set by login() when the console user changed: the caller must perform a
+   *  full navigation (not router.push) so every Pinia store re-initializes
+   *  without the previous user's in-memory state. */
+  const requiresFullReset = ref(false)
 
   // Initialize user from localStorage
   const storedUser = localStorage.getItem(AUTH_USER_KEY)
@@ -40,6 +58,14 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
     try {
       const result = await authApi.login({ username, password })
+      // A different console user must not inherit the previous user's
+      // account-scoped state (tabs, cached analytics, account selections).
+      const previousUserId = localStorage.getItem(LAST_USER_KEY)
+      if (previousUserId && previousUserId !== result.user.id) {
+        clearAccountScopedLocalStorage()
+        requiresFullReset.value = true
+      }
+      localStorage.setItem(LAST_USER_KEY, result.user.id)
       token.value = result.token
       user.value = result.user
       localStorage.setItem(AUTH_TOKEN_KEY, result.token)
@@ -104,6 +130,7 @@ export const useAuthStore = defineStore('auth', () => {
     error,
     isInitialized,
     isAuthenticated,
+    requiresFullReset,
     login,
     logout,
     clearAuth,
