@@ -1260,6 +1260,7 @@
     "delete": "Delete",
     "deleteTitle": "Delete Workflow",
     "deleteMessage": "This will permanently remove this workflow from history. This action cannot be undone.",
+    "deleteMessageShared": "This workflow is currently public/shared on the Showcase. Deleting it will also remove it from the Showcase. This action cannot be undone.",
     "deleteConfirm": "Delete",
     "deleteSuccess": "Workflow deleted",
     "deleteFailed": "Failed to delete workflow",

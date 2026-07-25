@@ -31,6 +31,17 @@ const showDeleteModal = ref(false)
 const deleteTarget = ref<string | null>(null)
 const isDeleting = ref(false)
 
+// Deleting a workflow that is shared on the public Showcase also removes it
+// from the Showcase, so the confirmation message calls that out explicitly.
+const deleteTargetIsShared = computed(() => {
+  const wf = workflows.value.find(w => w.thread_id === deleteTarget.value)
+  return !!wf?.showcase_visibility && wf.showcase_visibility !== 'private'
+})
+
+const deleteMessage = computed(() =>
+  deleteTargetIsShared.value ? t('history.deleteMessageShared') : t('history.deleteMessage')
+)
+
 type ShowcaseVisibility = 'private' | 'unlisted' | 'public'
 
 // Public Showcase controls are kept on the history page because this is the
@@ -399,7 +410,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
     <ConfirmModal
       :is-open="showDeleteModal"
       :title="t('history.deleteTitle')"
-      :message="t('history.deleteMessage')"
+      :message="deleteMessage"
       :confirm-action="t('history.deleteConfirm')"
       variant="danger"
       @confirm="confirmDelete"
