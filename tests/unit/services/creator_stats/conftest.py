@@ -39,6 +39,7 @@ def _deterministic_enrichment(monkeypatch):
     monkeypatch.setenv("CREATOR_STATS_LIGHT_RUN_CHANCE", "0")
     monkeypatch.setenv("CREATOR_STATS_ENRICH_SKIP_CHANCE", "0")
     monkeypatch.setenv("CREATOR_STATS_PAGE_STOP_CHANCE", "0")
+    monkeypatch.setenv("CREATOR_STATS_DASHBOARD_BROWSE_CHANCE", "0")
 
 
 @contextmanager

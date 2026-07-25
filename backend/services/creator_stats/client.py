@@ -220,6 +220,12 @@ class CdpTransport:
         self._page_stop_chance = max(
             0.0, min(1.0, _env_float("CREATOR_STATS_PAGE_STOP_CHANCE", 0.15))
         )
+        # 数据页浏览噪声：以该概率在数据页上先点一下别的日期范围 Tab 再进
+        # 笔记管理——人看数据会切换时间范围对比，"每次进数据页只干一件事"
+        # 是固定行为模式。
+        self._dashboard_browse_chance = max(
+            0.0, min(1.0, _env_float("CREATOR_STATS_DASHBOARD_BROWSE_CHANCE", 0.25))
+        )
         # 每轮抓取的节奏基准（在 fetch 开头随机缩放 request_delay 得到）：
         # 有的运行整体偏快、有的偏慢，避免跨运行统一的节奏画像。
         self._run_delay: tuple[float, float] | None = None
@@ -611,6 +617,22 @@ class CdpTransport:
                         )
                         if auth_err is not None:
                             raise auth_err
+                    # 数据页浏览噪声：以一定概率先点一下别的日期范围 Tab
+                    # （人看数据会切换时间范围对比）。Tab 文案可能随改版变
+                    # 化，逐个候选尝试、失败静默。
+                    if (
+                        self._dashboard_browse_chance > 0
+                        and random.random() < self._dashboard_browse_chance
+                    ):
+                        for tab_text in ("近7天", "7天", "近 7 天"):
+                            try:
+                                await page.get_by_text(tab_text, exact=True).click(timeout=1500)
+                                with contextlib.suppress(Exception):
+                                    await page.wait_for_timeout(random.uniform(600.0, 1500.0))
+                                await self._human_touch(page)
+                                break
+                            except Exception:
+                                continue
                     try:
                         await page.get_by_text("笔记管理", exact=True).click(
                             timeout=min(15_000, int(self._timeout * 1000))

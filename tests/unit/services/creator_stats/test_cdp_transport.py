@@ -391,6 +391,7 @@ class _FakeNotesPage:
         self.detail_urls: list[str] = []
         self.body_urls: list[str] = []
         self.visited: list[str] = []
+        self.requested_texts: list[str] = []
 
     def on(self, event: str, handler) -> None:
         assert event == "response"
@@ -430,7 +431,8 @@ class _FakeNotesPage:
         elif "www.xiaohongshu.com/explore/" in url:
             self.body_urls.append(url)
 
-    def get_by_text(self, _text: str, **_kwargs):
+    def get_by_text(self, text: str, **_kwargs):
+        self.requested_texts.append(text)
         return self
 
     async def click(self, **_kwargs) -> None:
@@ -745,3 +747,25 @@ async def test_cdp_pagination_still_works_when_stop_disabled(monkeypatch):
 
     # 1 次翻页尝试（第 2 页不存在，等待超时后正常结束）。
     assert transport._pace.await_count == 1
+
+
+async def test_cdp_dashboard_browse_clicks_date_tab_when_enabled(monkeypatch):
+    """数据页浏览噪声命中时，进笔记管理前会先点一个日期范围 Tab。"""
+    monkeypatch.setenv("CREATOR_STATS_DASHBOARD_BROWSE_CHANCE", "1")
+    page = _FakeNotesPage(note_count=1)
+    transport = _transport_with_page(page)
+
+    await transport.fetch_creator_center(max_pages=1, body_filter=lambda _note: False)
+
+    assert page.requested_texts[0] == "近7天"
+    assert "笔记管理" in page.requested_texts
+
+
+async def test_cdp_dashboard_browse_disabled_by_default(monkeypatch):
+    """浏览噪声关闭时，只点"笔记管理"，不碰日期 Tab（原行为）。"""
+    page = _FakeNotesPage(note_count=1)
+    transport = _transport_with_page(page)
+
+    await transport.fetch_creator_center(max_pages=1, body_filter=lambda _note: False)
+
+    assert page.requested_texts == ["笔记管理"]

@@ -52,6 +52,17 @@ _HOUR_ACTIVITY_WEIGHTS: dict[int, float] = {
     22: 4.0,
 }
 
+# 跳过概率的星期权重（周一→周日）：周末创作者更活跃、更可能看数据，跳过
+# 更少；周一跳过最多。固定的跳过概率本身不区分星期，也是一种规律。
+_WEEKDAY_SKIP_FACTORS: tuple[float, ...] = (1.2, 1.0, 1.0, 1.0, 0.9, 0.8, 0.8)
+
+
+def _weekday_skip_factor(weekday: int) -> float:
+    """返回该星期几对应的跳过概率权重；越界输入按 1.0 处理。"""
+    if 0 <= weekday < len(_WEEKDAY_SKIP_FACTORS):
+        return _WEEKDAY_SKIP_FACTORS[weekday]
+    return 1.0
+
 
 def _clip_to_active_window(candidate: datetime, start_hour: int, end_hour: int) -> datetime:
     """把候选运行时刻限制在中国本地时间的每日活跃窗口内。
@@ -91,11 +102,13 @@ async def _creator_stats_scheduler(
     反风控调度策略（核心：不允许任何可被识别的规律性）：
       1. 启动后不立即爬——先随机延迟 ``startup_delay``，避免"部署/重启即爬"
          的机器模式；``None`` 表示启动即跑（测试/手动语义）。
-      2. 间隔不固定：每轮间隔在 0.75-1.5× ``interval_hours`` 间随机（18-36h），
-         且运行时刻被 ``active_window`` 限制在中国本地时间的每日活跃窗口内，
-         深夜不爬；``None`` 表示不限制。
-      3. 随机跳过：每轮以 ``skip_day_chance`` 概率整天跳过——人不会每天都
-         看创作者中心，"每天必爬一次"本身就是规律。跳过不算失败。
+      2. 间隔不固定：每轮间隔在 0.75-1.5× ``interval_hours`` 间按三角分布
+         取值（峰值 1×——人有"大致每天看一次"的习惯，均匀分布反而是毫无
+         习惯的机器特征），且运行时刻被 ``active_window`` 限制在中国本地
+         时间的每日活跃窗口内，深夜不爬；``None`` 表示不限制。
+      3. 随机跳过：每轮以 ``skip_day_chance`` 概率整天跳过（按星期加权——
+         周末创作者更活跃、跳过更少），"每天必爬一次"本身就是规律。
+         跳过不算失败。
       4. 连续失败退避：第二次起连续失败间隔按 1.5-2.5× 随机放大，被风控/登录态
          失效时自动降频，成功一次即复位。
     """
@@ -233,12 +246,14 @@ async def _creator_stats_scheduler(
         # 4. 失败退避：第二次连续失败起间隔按 1.5-2.5× 随机放大（固定倍数
         # 本身也是可预测的退避节律），成功即复位。
         backoff = 1.0 if consecutive_failures <= 1 else random.uniform(1.5, 2.5)
-        # 2. 间隔在 0.75-1.5× interval 间随机（默认 18-36h），不留固定周期；
+        # 2. 间隔按 0.75-1.5× 三角分布取值（峰值 1×，模拟人的习惯节律）；
         # active_window 再把落点限制在人类活动时段。
-        if skip_day_chance > 0 and random.random() < skip_day_chance:
-            skip_next_run = True
+        if skip_day_chance > 0:
+            factor = _weekday_skip_factor(datetime.now(_CN_TZ).weekday())
+            if random.random() < min(1.0, skip_day_chance * factor):
+                skip_next_run = True
         candidate = datetime.now(UTC) + timedelta(
-            seconds=interval_seconds * random.uniform(0.75, 1.5) * backoff
+            seconds=interval_seconds * random.triangular(0.75, 1.5, 1.0) * backoff
         )
         await _sleep_until(_next_run(candidate))
 
