@@ -110,6 +110,24 @@ const contextMenuHasSelection = ref(false)
 // ── Mobile input state ────────────────────────────────────────────────
 const mobileInput = ref('')
 
+// ── Scroll-to-bottom FAB ───────────────────────────────────────────────
+// xterm keeps the viewport pinned when the user scrolls up into scrollback —
+// new output arrives silently below. The FAB surfaces that state and jumps
+// back down on click.
+const scrolledUp = ref(false)
+
+function updateScrolledUp() {
+  if (!term) return
+  const buf = term.buffer.active
+  scrolledUp.value = buf.viewportY < buf.baseY
+}
+
+function scrollToBottom() {
+  term?.scrollToBottom()
+  scrolledUp.value = false
+  term?.focus()
+}
+
 // ── Agent mode: WebSocket ───────────────────────────────────────────────
 // Base WS URL — mode query param appended in connectAgentWs based on
 // isFreeCreationEntry so free mode sessions register the free tool subset.
@@ -132,6 +150,8 @@ let pendingFreeNewSession = false
 // Whether the ◆ AI turn marker has been emitted for the in-flight reply.
 // Reset when the turn closes (done / error / session_end / disconnect).
 let aiTurnMarkerShown = false
+// Turn start timestamp (status=running) — the closing rule shows elapsed time.
+let turnStartedAt = 0
 
 // ── Terminal column tracking (for adaptive markdown width) ────────────
 let termCols = 80
@@ -143,7 +163,38 @@ let termCols = 80
 // prompt — collapsing consecutive prompts here keeps exactly one ❯ per turn.
 let promptVisible = false
 
+// ── Agent "thinking" spinner ────────────────────────────────────────────
+// Native-terminal waiting indicator: braille frames on the last line while an
+// agent turn has produced no output yet. Frames are written straight to xterm
+// (bypassing writeLine/promptVisible); ANY line output stops it (writeLine
+// below), and handleAgentEvent restarts it only between events — never
+// mid-stream — so a tick can never erase real output or typed input.
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+let spinnerTimer: ReturnType<typeof setInterval> | null = null
+let spinnerFrame = 0
+
+function stopSpinner() {
+  if (!spinnerTimer) return
+  clearInterval(spinnerTimer)
+  spinnerTimer = null
+  term?.write('\r\x1b[2K')
+}
+
+function startSpinner(label?: string) {
+  if (spinnerTimer || !term) return
+  const text = label ?? t('tui.processing')
+  spinnerFrame = 0
+  const draw = () => {
+    const frame = SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]
+    term?.write(`\r\x1b[2K${ANSI.BRIGHT_MAGENTA}${frame}${ANSI.RESET} ${ANSI.DIM}${text}${ANSI.RESET}`)
+    spinnerFrame++
+  }
+  draw()
+  spinnerTimer = setInterval(draw, 100)
+}
+
 function writeLine(text: string) {
+  stopSpinner()
   if (promptVisible && !currentInput.value) {
     // Async output (agent events, connection messages) arriving while a bare
     // prompt is on screen would glue onto the ❯ — erase it first; the next
@@ -169,10 +220,17 @@ function padLabel(label: string, width: number): string {
   return w >= width ? label : label + ' '.repeat(width - w)
 }
 
-/** Compact ISO timestamp for terminal display:
- *  2026-07-24T14:49:42.950654+00:00 → 07-24 14:49 */
+/** Compact timestamp for terminal display, in LOCAL time:
+ *  2026-07-24T14:49:42.950654+00:00 → 07-24 22:49 (UTC+8).
+ *  Naive ISO strings (no offset) are already local — Date.parse treats them
+ *  as such, so they pass through unchanged. Unparseable input falls back to
+ *  the old slice behavior. */
 function fmtTs(iso: string): string {
-  return iso.length >= 16 ? iso.slice(5, 16).replace('T', ' ') : iso
+  const ms = Date.parse(iso)
+  if (Number.isNaN(ms)) return iso.length >= 16 ? iso.slice(5, 16).replace('T', ' ') : iso
+  const d = new Date(ms)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
 function writePrompt(force = false) {
@@ -267,6 +325,10 @@ function tabComplete() {
 
 function handleTermData(data: string) {
   if (!term) return
+
+  // Typed input shares the line the spinner draws on — stop it first so the
+  // next tick can't erase the user's text.
+  stopSpinner()
 
   // During IME composition, ignore intermediate data
   if (isComposing) return
@@ -465,7 +527,7 @@ function doSearch(direction: 'next' | 'prev') {
     ? searchAddon.findNext(searchQuery.value, opts)
     : searchAddon.findPrevious(searchQuery.value, opts)
   // ponytail: searchAddon doesn't expose result count directly in v6; show found/not-found
-  searchResultInfo.value = found ? '' : ' (not found)'
+  searchResultInfo.value = found ? '' : t('tui.searchNotFound')
 }
 
 function onSearchInput() {
@@ -494,8 +556,11 @@ async function pasteFromClipboard() {
   } catch { /* clipboard API may fail */ }
 }
 
-/** Inject text into the terminal input buffer (for paste, mobile input, etc.) */
-function injectInput(text: string) {
+/** Inject text into the terminal input buffer (for paste, mobile input, etc.).
+ *  Multi-line text simulates Enter between lines; with submit=true the final
+ *  line is submitted too (mobile send button), otherwise it stays in the
+ *  input buffer for further editing (paste). */
+function injectInput(text: string, opts: { submit?: boolean } = {}) {
   if (!term) return
   // Strip carriage returns; keep newlines as Enter
   const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
@@ -518,6 +583,7 @@ function injectInput(text: string) {
       handleTermData(lines[i])
     }
   }
+  if (opts.submit) handleTermData('\r')
 }
 
 // ── Context menu ───────────────────────────────────────────────────────
@@ -564,7 +630,7 @@ function menuClear() {
 function submitMobileInput() {
   const text = mobileInput.value
   if (!text.trim()) return
-  injectInput(text)
+  injectInput(text, { submit: true })
   mobileInput.value = ''
 }
 
@@ -654,6 +720,7 @@ function connectAgentWs() {
     wsConnected.value = false
     wsConnecting.value = false
     aiTurnMarkerShown = false
+    turnStartedAt = 0
     if (isFreeCreationEntry.value && isProcessing.value) {
       // A disconnected stream cannot be resumed by this TUI instance. Make
       // the prompt usable again instead of leaving it in a permanent busy
@@ -668,6 +735,9 @@ function connectAgentWs() {
         reconnectAttempts++
         wsConnecting.value = true
         writeLineColored(t('tui.agentDisconnected', { cur: reconnectAttempts, max: MAX_RECONNECT_ATTEMPTS }), ANSI.YELLOW)
+        // Keep a live indicator during the 3s backoff — otherwise the
+        // terminal looks frozen between the disconnect notice and the retry.
+        startSpinner(t('tui.agentRetrying'))
         reconnectTimer = setTimeout(() => {
           reconnectTimer = null
           connectAgentWs()
@@ -684,6 +754,7 @@ function connectAgentWs() {
 }
 
 function disconnectAgentWs() {
+  stopSpinner()
   if (reconnectTimer) clearTimeout(reconnectTimer)
   reconnectTimer = null
   wsConnecting.value = false
@@ -808,8 +879,14 @@ function handleAgentEvent(event: Record<string, unknown>) {
       // deduped by writePrompt, so a turn still ends with exactly one ❯).
       if (aiTurnMarkerShown) {
         aiTurnMarkerShown = false
+        // Elapsed time closes the turn — same "how long did that take" cue a
+        // native CLI gives after a long command.
+        const elapsed = turnStartedAt > 0 ? (Date.now() - turnStartedAt) / 1000 : 0
+        turnStartedAt = 0
+        // Sub-100ms turns (mocks, local echoes) get no timestamp — "0.0s" is noise.
+        const elapsedPart = elapsed >= 0.1 ? ` ${elapsed >= 10 ? Math.round(elapsed) : elapsed.toFixed(1)}s` : ''
         writeLine('')
-        writeLine(`${ANSI.BRIGHT_MAGENTA}◆${ANSI.RESET} ${ANSI.DIM}${'─'.repeat(Math.max(8, Math.min(termCols - 4, 38)))}${ANSI.RESET}`)
+        writeLine(`${ANSI.BRIGHT_MAGENTA}◆${ANSI.RESET} ${ANSI.DIM}${'─'.repeat(Math.max(8, Math.min(termCols - 4, 38)))}${elapsedPart}${ANSI.RESET}`)
         writePrompt()
       }
       agentTurnProcessing.value = false
@@ -818,7 +895,10 @@ function handleAgentEvent(event: Record<string, unknown>) {
   } else if (type === 'tool_call') {
     const toolName = event.tool_name as string
     const args = event.args as Record<string, unknown>
-    const argsStr = formatArgs(args)
+    // Cap the whole args preview to the remaining row width — a draft body in
+    // the args would otherwise wrap the ▸ line across several terminal rows.
+    const argsBudget = Math.max(16, termCols - getStringWidth(toolName) - 6)
+    const argsStr = truncateDisplay(formatArgs(args), argsBudget)
     writeLine(`${ANSI.BRIGHT_YELLOW}▸${ANSI.RESET} ${ANSI.BRIGHT_CYAN}${toolName}${ANSI.RESET}${ANSI.DIM}(${argsStr})${ANSI.RESET}`)
   } else if (type === 'tool_result') {
     const toolName = event.tool_name as string
@@ -842,6 +922,7 @@ function handleAgentEvent(event: Record<string, unknown>) {
     if (status === 'running') {
       agentTurnProcessing.value = true
       isProcessing.value = true
+      turnStartedAt = Date.now()
     } else if (status === 'idle') {
       agentTurnProcessing.value = false
       isProcessing.value = false
@@ -849,6 +930,7 @@ function handleAgentEvent(event: Record<string, unknown>) {
     }
   } else if (type === 'session_end') {
     aiTurnMarkerShown = false
+    turnStartedAt = 0
     agentTurnProcessing.value = false
     isProcessing.value = false
     writePrompt()
@@ -856,17 +938,27 @@ function handleAgentEvent(event: Record<string, unknown>) {
     // ponytail: 2-space indent aligns with ▸/↳ tool block; red mark + default-color msg for hierarchy
     writeLine(`  ${ANSI.RED}⚠${ANSI.RESET} ${event.message || t('tui.unknownError')}`)
     aiTurnMarkerShown = false
+    turnStartedAt = 0
     agentTurnProcessing.value = false
     isProcessing.value = false
     writePrompt()
   }
+
+  // Turn still in flight with nothing on screen yet → keep the waiting
+  // indicator alive. Never restart mid-stream: aiTurnMarkerShown means text
+  // chunks are being written without trailing newlines, and a spinner tick
+  // would erase the partially written line.
+  if (agentTurnProcessing.value && !aiTurnMarkerShown) startSpinner()
 }
+
+/** Display-width cap for a single arg value in the ▸ tool(...) preview. */
+const MAX_ARG_VALUE_WIDTH = 24
 
 function formatArgs(args: Record<string, unknown>): string {
   if (!args || Object.keys(args).length === 0) return ''
   const parts = Object.entries(args)
     .slice(0, 3)
-    .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+    .map(([k, v]) => `${k}=${truncateDisplay(JSON.stringify(v) ?? '', MAX_ARG_VALUE_WIDTH)}`)
   const suffix = Object.keys(args).length > 3 ? ', ...' : ''
   return parts.join(', ') + suffix
 }
@@ -876,7 +968,8 @@ function formatArgs(args: Record<string, unknown>): string {
 const MAX_RESULT_LINES = 12
 
 /** Format a tool result as display lines.
- *  - short primitives / single-key objects: one line, 160-char cap (scannable)
+ *  - short primitives / single-key objects: one line, capped adaptively to the
+ *    terminal width (max 160 chars — scannable)
  *  - multi-line text or structured JSON (object/array with >1 key/element):
  *    pretty-printed across lines, capped at MAX_RESULT_LINES with a dim overflow footer
  *  - errors: full text, never truncated (diagnostics must stay visible) */
@@ -912,23 +1005,33 @@ function formatResultLines(result: unknown, isError = false): string[] {
   const isObj = typeof value === 'object'
   const str = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
 
-  // Decide multi-line: explicit newlines, OR a structured object/array with more
-  // than one member. Single-key objects ({draft_id: "x"}) stay single-line.
-  const hasNewlines = str.includes('\n')
+  // Decide multi-line: explicit newlines in string content, OR a structured
+  // object/array with more than one member. Note the pretty-printed JSON of
+  // ANY object contains newlines, so testing str for '\n' would wrongly make
+  // single-key objects ({draft_id: "x"}) multi-line — they stay single-line.
   const multiMember = isObj && _memberCount(value) > 1
-  const multiline = hasNewlines || multiMember
+  const multiline = isObj ? multiMember : str.includes('\n')
 
   if (!multiline) {
     const flat = str.replace(/\s*\n\s*/g, ' ').trim()
-    return [flat.length > 160 && !isError ? flat.slice(0, 160) + `${ANSI.DIM} …${ANSI.RESET}` : flat]
+    // Adaptive cap: 160 on wide terminals, but narrow ones (mobile) get a
+    // tighter budget so a single result can't wrap into a multi-row wall.
+    const cap = Math.min(160, Math.max(48, termCols - 8))
+    return [flat.length > cap && !isError ? flat.slice(0, cap) + `${ANSI.DIM} …${ANSI.RESET}` : flat]
   }
 
   let lines = str.split('\n')
+  // Wrap overlong lines BEFORE colorizing (wrapDisplay measures raw text, not
+  // ANSI). Each wrapped continuation becomes its own line downstream, so it
+  // gets its own │/╰ tree connector instead of spilling raw across the
+  // terminal edge and breaking the ↳ indent. Budget 6 = "  │ " prefix + margin.
+  const wrapW = Math.max(24, termCols - 6)
+  lines = lines.flatMap((ln) => wrapDisplay(ln, wrapW, { hangingIndent: 2 }))
   // ponytail: errors bypass the line cap so full stacktraces/messages survive
   if (!isError && lines.length > MAX_RESULT_LINES) {
     const omitted = lines.length - MAX_RESULT_LINES
     lines = lines.slice(0, MAX_RESULT_LINES)
-    lines.push(`${ANSI.DIM}… (${omitted} more lines)${ANSI.RESET}`)
+    lines.push(`${ANSI.DIM}… (${omitted} more line${omitted === 1 ? '' : 's'})${ANSI.RESET}`)
   }
   // ponytail: semantic color — let the verdict jump out. Color by key/value
   // pattern (content-based), not by tool name, so any tool result with a
@@ -1290,12 +1393,15 @@ async function handleStatus(threadId: string) {
   const barW = 20
   const filled = Math.round((pct / 100) * barW)
   const bar = `${G}${'█'.repeat(filled)}${D}${'░'.repeat(barW - filled)}${R}`
+  // Uniform 2-space gap after the padded label — the value column used to be
+  // ragged (each row hand-tuned its own trailing spaces).
+  const row = (label: string, value: string) => `  ${D}${padLabel(label, 9)}${R}  ${value}`
   writeLine('')
-  writeLine(`  ${D}${padLabel(t('tui.statusPhase'), 9)}${R}    ${C}${state.phase}${R}`)
-  writeLine(`  ${D}${padLabel(t('tui.statusStatus'), 9)}${R}   ${W}${state.status}${R}`)
-  writeLine(`  ${D}${padLabel(t('tui.statusProgress'), 9)}${R} ${bar} ${G}${pct}%${R}`)
-  writeLine(`  ${D}${padLabel(t('tui.statusAgent'), 9)}${R}    ${state.current_agent || `${D}${t('tui.statusNone')}${R}`}`)
-  writeLine(`  ${D}${padLabel(t('tui.statusNext'), 9)}${R}     ${state.next_steps?.length ? state.next_steps.join(', ') : `${D}${t('tui.statusNone')}${R}`}`)
+  writeLine(row(t('tui.statusPhase'), `${C}${state.phase}${R}`))
+  writeLine(row(t('tui.statusStatus'), `${W}${state.status}${R}`))
+  writeLine(row(t('tui.statusProgress'), `${bar} ${G}${pct}%${R}`))
+  writeLine(row(t('tui.statusAgent'), `${state.current_agent || `${D}${t('tui.statusNone')}${R}`}`))
+  writeLine(row(t('tui.statusNext'), `${state.next_steps?.length ? state.next_steps.join(', ') : `${D}${t('tui.statusNone')}${R}`}`))
   writeLine('')
 }
 
@@ -1429,7 +1535,10 @@ async function handleDrafts(argStr = '') {
       // Full draft ids stay visible (commands need them for copy-paste) while
       // the title gets the whole card width instead of a sliver.
       const inner = w - 2 // "│ " prefix
-      for (const d of data.drafts) {
+      for (const [idx, d] of data.drafts.entries()) {
+        // Breathing room between two-line records so adjacent drafts don't
+        // blur into one block when the list is long.
+        if (idx > 0) writeLine(boxLine())
         const rightPlain: string[] = []
         const rightColored: string[] = []
         // evaluation badge (only if last_evaluation present). A degraded
@@ -1770,8 +1879,20 @@ async function handleSuggest() {
       const cat = s.category || '?'
       const title = s.title || cat
       writeLine(boxLine(`${badge(cat, Y)} ${W}${title}${R}`))
-      if (s.advice) writeLine(boxLine(`  ${D}${s.advice}${R}`))
-      if (s.evidence) writeLine(boxLine(`  ${D}${t('tui.suggestEvidenceLabel')}: ${s.evidence}${R}`))
+      // Advice/evidence can be long free text with URLs — wrap to the card
+      // width instead of letting it run to the terminal edge and clip.
+      if (s.advice) {
+        for (const l of wrapDisplay(s.advice, w - 6)) {
+          writeLine(boxLine(`  ${D}${l}${R}`))
+        }
+      }
+      if (s.evidence) {
+        const prefix = `${t('tui.suggestEvidenceLabel')}: `
+        const evLines = wrapDisplay(prefix + s.evidence, w - 6, { hangingIndent: 2 })
+        for (const l of evLines) {
+          writeLine(boxLine(`  ${D}${l}${R}`))
+        }
+      }
     }
     writeLine(boxLine(`${D}${t('tui.suggestNextHint')}${R}`))
     writeLine(boxBottom(w))
@@ -2027,7 +2148,10 @@ function renderFreeWelcome() {
   }
   writeLine(boxBottom(w))
   writeLine('')
-  writeLineColored(`  ${t('tui.freeWelcomeHint')}`, ANSI.DIM)
+  // Wrap the hint instead of letting xterm hard-break it mid-word (mobile).
+  for (const l of wrapDisplay(t('tui.freeWelcomeHint'), termCols - 4)) {
+    writeLineColored(`  ${l}`, ANSI.DIM)
+  }
 }
 
 /** Free-mode command grid — Session / Drafts / Insights groups, two aligned
@@ -2164,8 +2288,19 @@ onMounted(() => {
   term.loadAddon(new WebLinksAddon())
   term.loadAddon(searchAddon)
 
-  // WebGL renderer (desktop only — mobile often fails)
-  if (!isMobile.value) {
+  // WebGL renderer (desktop only — mobile often fails). Preflight WebGL2
+  // first: on GPU-blocklisted environments (VMs, RDP, some headless setups)
+  // the addon fails ASYNCHRONOUSLY after load and leaves xterm with no
+  // renderer at all — a permanently blank terminal. The try/catch only
+  // covers synchronous activation errors, so don't load it without support.
+  const webgl2Supported = (() => {
+    try {
+      return !!document.createElement('canvas').getContext('webgl2')
+    } catch {
+      return false
+    }
+  })()
+  if (!isMobile.value && webgl2Supported) {
     try {
       const webglAddon = new WebglAddon()
       webglAddon.onContextLoss(() => {
@@ -2196,6 +2331,10 @@ onMounted(() => {
   // Track terminal columns for adaptive markdown width
   termCols = term.cols
   term.onResize(({ cols }) => { termCols = cols })
+
+  // FAB visibility follows the viewport; mouse-wheel / keyboard / drag all
+  // funnel through onScroll.
+  term.onScroll(updateScrolledUp)
 
   // Click terminal area → focus (native TUI: always captures input)
   termRef.value?.addEventListener('click', () => term?.focus())
@@ -2268,6 +2407,7 @@ function handleDocumentClick(ev: MouseEvent) {
 }
 
 onUnmounted(() => {
+  stopSpinner()
   disconnectAgentWs()
   document.removeEventListener('click', handleDocumentClick)
   if (termRef.value) {
@@ -2350,8 +2490,17 @@ onUnmounted(() => {
       <button class="tui-search-nav" :title="t('common.close')" @click="closeSearch">✕</button>
     </div>
 
-    <!-- xterm.js container -->
-    <div ref="termRef" class="tui-term-area flex-1 min-h-0" tabindex="0" @focus="term?.focus()" />
+    <!-- xterm.js container (wrapper anchors the scroll-to-bottom FAB) -->
+    <div class="tui-term-wrap flex-1 min-h-0">
+      <div ref="termRef" class="tui-term-area h-full min-h-0" tabindex="0" @focus="term?.focus()" />
+      <button
+        v-if="scrolledUp"
+        class="tui-scroll-fab"
+        :title="t('tui.scrollToBottom')"
+        :aria-label="t('tui.scrollToBottom')"
+        @click.stop="scrollToBottom"
+      >↓</button>
+    </div>
 
     <!-- Mobile input bar -->
     <div v-if="isMobile" class="tui-mobile-bar flex items-center gap-2 px-3 py-2 shrink-0">
@@ -2377,12 +2526,12 @@ onUnmounted(() => {
       :style="{ left: `${contextMenuPos.x}px`, top: `${contextMenuPos.y}px` }"
       @click.stop
     >
-      <button v-if="contextMenuHasSelection" class="tui-menu-item" @click="menuCopy"><span class="tui-menu-icon">⧉</span>{{ t('tui.contextCopy') }}</button>
-      <button class="tui-menu-item" @click="menuPaste"><span class="tui-menu-icon">⤓</span>{{ t('tui.contextPaste') }}</button>
+      <button v-if="contextMenuHasSelection" class="tui-menu-item" @click="menuCopy"><span class="tui-menu-icon">⧉</span>{{ t('tui.contextCopy') }}<span class="tui-menu-shortcut">Ctrl+Shift+C</span></button>
+      <button class="tui-menu-item" @click="menuPaste"><span class="tui-menu-icon">⤓</span>{{ t('tui.contextPaste') }}<span class="tui-menu-shortcut">Ctrl+Shift+V</span></button>
       <button class="tui-menu-item" @click="menuSelectAll"><span class="tui-menu-icon">☐</span>{{ t('tui.contextSelectAll') }}</button>
       <div class="tui-menu-sep" />
-      <button class="tui-menu-item" @click="menuSearch"><span class="tui-menu-icon">⌕</span>{{ t('tui.contextSearch') }}</button>
-      <button class="tui-menu-item" @click="menuClear"><span class="tui-menu-icon">✕</span>{{ t('tui.contextClear') }}</button>
+      <button class="tui-menu-item" @click="menuSearch"><span class="tui-menu-icon">⌕</span>{{ t('tui.contextSearch') }}<span class="tui-menu-shortcut">Ctrl+Shift+F</span></button>
+      <button class="tui-menu-item" @click="menuClear"><span class="tui-menu-icon">✕</span>{{ t('tui.contextClear') }}<span class="tui-menu-shortcut">Ctrl+L</span></button>
     </div>
   </div>
 </template>
@@ -2532,6 +2681,14 @@ onUnmounted(() => {
 }
 .tui-status-btn:hover { color: #a9b1d6; }
 .tui-status-btn.active { color: #7aa2f7; }
+
+/* Narrow screens (phones): keep only the high-signal items — dot, mode/free
+   badges, busy/queue indicators, search — so the bar never overflows or wraps. */
+@media (max-width: 640px) {
+  .tui-status-label,
+  .tui-connection-state,
+  .tui-thread-id { display: none; }
+}
 
 /* ── Free-mode action deck — quick actions + prompt chips in one container ── */
 .tui-action-deck {
@@ -2780,6 +2937,41 @@ onUnmounted(() => {
   box-shadow: inset 2px 0 0 0 #7aa2f7;
 }
 .tui-menu-item:hover .tui-menu-icon { color: #7aa2f7; }
+
+.tui-menu-shortcut {
+  margin-left: auto;
+  padding-left: 18px;
+  color: #565f89;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* ── Scroll-to-bottom FAB ───────────────────────────────────────────── */
+.tui-term-wrap { position: relative; }
+.tui-scroll-fab {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  z-index: 10;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: #1f2335ee;
+  color: #7aa2f7;
+  border: 1px solid #3b4261;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: color 0.15s, border-color 0.15s, transform 0.08s;
+  /* pop-in — same family as the context menu */
+  animation: tui-menu-in 0.12s ease-out;
+}
+.tui-scroll-fab:hover {
+  color: #c0caf5;
+  border-color: #7aa2f7;
+  transform: translateY(-1px);
+}
 
 .tui-menu-sep {
   height: 1px;

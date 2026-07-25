@@ -183,6 +183,14 @@ describe('ansiCards', () => {
       expect(lines.map(strip)).toHaveLength(3)
     })
 
+    it('centers double-width pictographic icons by their real cell width', () => {
+      const lines: string[] = []
+      // width 39: ✨ renders as 2 cells, so pad = floor((39-2-2)/2) = 17,
+      // icon index = 2 ("│ ") + 17. Measured as width 1 it would sit at 20.
+      writeEmptyState((l) => lines.push(l), { width: 39, icon: '✨', title: 'x' })
+      expect(strip(lines[1]).indexOf('✨')).toBe(19)
+    })
+
     it('truncates overlong title/hint to the card width', () => {
       const lines: string[] = []
       writeEmptyState((l) => lines.push(l), { width: 36, title: 'x'.repeat(100) })
