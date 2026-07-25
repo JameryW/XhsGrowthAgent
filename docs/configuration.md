@@ -32,11 +32,10 @@
 
 | 变量 | 必填 | 说明 | 默认值 |
 |------|------|------|--------|
-| `CREATOR_STATS_SYNC_INTERVAL_HOURS` | 否 | 后台定时导入间隔（实际执行带 ±10% 抖动）；仅导入 `is_active=true` 的账号，设为 `0` 可关闭 | `24` |
+| `CREATOR_STATS_SYNC_INTERVAL_HOURS` | 否 | 后台定时导入间隔（实际执行带 ±10% 抖动）；仅导入当前激活账号（`get_active_account`，切换账号后旧账号不再同步），设为 `0` 可关闭 | `24` |
 | `CREATOR_STATS_ENRICH_RECENT_DAYS` | 否 | 增量同步：发布距今不超过该天数的笔记总是重新访问详情页 | `7` |
 | `CREATOR_STATS_BODY_LOOKBACK_DAYS` | 否 | 增量同步：仅为该天数内发布且尚无正文的笔记抓取公开正文（已有正文永不重抓） | `30` |
 | `CREATOR_STATS_REQUEST_DELAY_MIN_S` / `CREATOR_STATS_REQUEST_DELAY_MAX_S` | 否 | 单次同步内逐篇笔记页面访问之间的随机间隔（秒），防风控 | `2.0` / `6.0` |
-| `CREATOR_STATS_INTER_ACCOUNT_DELAY_MAX_S` | 否 | 批量同步时相邻账号之间的随机延迟上限（秒，下限 45），设为 `0` 关闭 | `120` |
 
 **PostgreSQL URI 格式:**
 ```

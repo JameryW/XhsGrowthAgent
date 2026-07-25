@@ -22,7 +22,7 @@ from backend.services.creator_stats.pipeline import (
     import_bundle,
     sync_from_creator_center,
 )
-from backend.services.creator_stats.types import NoteStats
+from backend.services.creator_stats.types import NoteStats, SyncResult
 
 pytestmark = pytest.mark.asyncio
 
@@ -149,29 +149,38 @@ async def test_sync_from_creator_center_passes_incremental_filters_on_cdp():
     assert result.error is None
 
 
-# ── Inter-account pacing ──────────────────────────────────────────────────────
+# ── Current-active-account-only sync ─────────────────────────────────────────
 
 
-async def test_active_accounts_sync_paces_between_accounts_but_not_before_first():
-    accounts = [SimpleNamespace(id="a1"), SimpleNamespace(id="a2"), SimpleNamespace(id="a3")]
+async def test_batch_sync_only_syncs_current_active_account():
+    """Switching the active account must stop the previous account's sync."""
     with (
         patch(
-            "backend.db.accounts.list_active_accounts",
-            AsyncMock(return_value=accounts),
+            "backend.db.accounts.get_active_account",
+            AsyncMock(return_value=SimpleNamespace(id="current-1")),
         ),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
-            AsyncMock(return_value=""),
+            AsyncMock(return_value="http://127.0.0.1:9222"),
         ),
-        patch.object(pipeline, "_pace_between_accounts", AsyncMock()) as pace,
+        patch.object(
+            pipeline,
+            "sync_account_stats",
+            AsyncMock(return_value=SyncResult(account_id="current-1", account_synced=True)),
+        ) as sync_mock,
     ):
         summary = await pipeline._sync_all_active_accounts_locked()
 
-    assert pace.await_count == 2
-    assert summary["active_accounts"] == 3
+    assert summary["active_accounts"] == 1
+    assert summary["succeeded"] == 1
+    assert sync_mock.await_count == 1
+    assert sync_mock.await_args.args[0] == "current-1"
 
 
-async def test_pace_between_accounts_zero_delay_disables_sleep(monkeypatch):
-    monkeypatch.setenv("CREATOR_STATS_INTER_ACCOUNT_DELAY_MAX_S", "0")
-    with patch.object(pipeline.random, "uniform", side_effect=AssertionError("must not sleep")):
-        await pipeline._pace_between_accounts()
+async def test_batch_sync_without_active_account_is_empty_success():
+    with patch("backend.db.accounts.get_active_account", AsyncMock(return_value=None)):
+        summary = await pipeline._sync_all_active_accounts_locked()
+
+    assert summary["ok"] is True
+    assert summary["active_accounts"] == 0
+    assert summary["results"] == []

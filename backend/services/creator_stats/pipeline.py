@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import random
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -53,13 +52,6 @@ _post_login_sync_once: set[str] = set()
 def _env_int(name: str, default: int) -> int:
     try:
         return int(os.environ.get(name, "") or default)
-    except ValueError:
-        return default
-
-
-def _env_float(name: str, default: float) -> float:
-    try:
-        return float(os.environ.get(name, "") or default)
     except ValueError:
         return default
 
@@ -131,14 +123,6 @@ def _build_incremental_filters(
         return bool(published) and published >= body_cutoff
 
     return detail_filter, body_filter
-
-
-async def _pace_between_accounts() -> None:
-    """Random delay between per-account crawls to avoid back-to-back bursts."""
-    max_delay = _env_float("CREATOR_STATS_INTER_ACCOUNT_DELAY_MAX_S", 120.0)
-    if max_delay <= 0:
-        return
-    await asyncio.sleep(random.uniform(45.0, max(45.0, max_delay)))
 
 
 _AUTH_PREFLIGHT_MESSAGES: dict[str, str] = {
@@ -733,13 +717,13 @@ async def _sync_all_active_accounts_locked(
     period: str = "30d",
     run_creative_analysis: bool = True,
 ) -> dict[str, Any]:
-    """Import Creator Center data for every active account, sequentially.
+    """Import Creator Center data for the currently active account only.
 
-    Only rows with ``accounts.is_active = TRUE`` are selected.  The operation
-    shares a process-wide lock with the scheduler and the HTTP trigger, so a
-    second invocation returns ``already_running`` instead of starting a
-    duplicate browser crawl.  Network failures are isolated per account and
-    represented in the returned batch summary.
+    Only the single account returned by ``get_active_account()`` is synced, so
+    switching the active account immediately stops the previous account's data
+    from being refreshed.  The operation shares a process-wide lock with the
+    scheduler and the HTTP trigger, so a second invocation returns
+    ``already_running`` instead of starting a duplicate browser crawl.
     """
     if _active_accounts_sync_lock.locked():
         return {
@@ -753,12 +737,12 @@ async def _sync_all_active_accounts_locked(
 
     async with _active_accounts_sync_lock:
         started_at = datetime.now(UTC).isoformat()
-        from backend.db.accounts import get_account_cdp_endpoint, list_active_accounts
+        from backend.db.accounts import get_account_cdp_endpoint, get_active_account
 
         try:
-            accounts = await list_active_accounts()
+            current = await get_active_account()
         except Exception as exc:
-            logger.exception("list active accounts failed before creator stats sync")
+            logger.exception("active account lookup failed before creator stats sync")
             return {
                 "ok": False,
                 "status": "failed",
@@ -770,12 +754,10 @@ async def _sync_all_active_accounts_locked(
                 "started_at": started_at,
                 "finished_at": datetime.now(UTC).isoformat(),
             }
+        accounts = [current] if current is not None else []
 
         results: list[dict[str, Any]] = []
-        for index, account in enumerate(accounts):
-            if index:
-                # Stagger accounts so the batch is not one continuous burst.
-                await _pace_between_accounts()
+        for account in accounts:
             account_id = str(account.id).strip()
             if not account_id:
                 continue
