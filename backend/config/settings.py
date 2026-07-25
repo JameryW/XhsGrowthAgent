@@ -126,7 +126,7 @@ class CreatorStatsSettings(BaseSettings):
     # A complete account crawl opens a real logged-in browser tab, so keep the
     # default conservative.  Set to 0 to disable the background worker while
     # retaining the manual ``sync-all`` API.
-    sync_interval_hours: float = 6.0
+    sync_interval_hours: float = 24.0
 
     model_config = {
         "env_prefix": "CREATOR_STATS_",
