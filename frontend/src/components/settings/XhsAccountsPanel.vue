@@ -9,6 +9,7 @@ import {
   type AccountLoginStatus,
   type AccountLoginStatusValue,
 } from '@/api/accounts'
+import { syncAllCreatorStats } from '@/api/analytics'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
@@ -24,6 +25,39 @@ const isCreating = ref(false)
 const editingAccountId = ref<string | null>(null)
 const showDeleteModal = ref(false)
 const deleteTarget = ref<{ id: string; name: string } | null>(null)
+
+// 手动触发同步（与定时任务同一通道：仅同步当前激活账号，有冷却/并发锁）。
+const isSyncing = ref(false)
+// 同步完成后重建 CreatorStatsPanel 以重新加载导入数据。
+const statsPanelKey = ref(0)
+const hasActiveAccount = computed(() => store.accounts.some(a => a.is_active))
+
+async function syncNow() {
+  if (isSyncing.value) return
+  isSyncing.value = true
+  try {
+    const result = await syncAllCreatorStats({ period: '30d', analyze: true })
+    if (result.status === 'cooldown') {
+      const minutes = Math.max(1, Math.ceil((result.retry_after_seconds ?? 0) / 60))
+      toast.warning(t('settings.xhsAccounts.syncNowCooldown', { minutes }))
+      return
+    }
+    if (result.status === 'already_running') {
+      toast.warning(t('settings.xhsAccounts.syncNowAlreadyRunning'))
+      return
+    }
+    if (result.ok) {
+      toast.success(t('settings.xhsAccounts.syncNowSuccess', { count: result.succeeded }))
+      statsPanelKey.value += 1
+      return
+    }
+    toast.error(result.error || t('settings.xhsAccounts.syncNowFailed'))
+  } catch (e: any) {
+    toast.error(e?.message || t('settings.xhsAccounts.syncNowFailed'))
+  } finally {
+    isSyncing.value = false
+  }
+}
 
 type LoginStatusValue = AccountLoginStatusValue | 'checking'
 type LoginStatusView = AccountLoginStatus | {
@@ -253,6 +287,17 @@ function onQrConfirmed() {
           >
             <AppIcon name="RefreshCw" size="xs" variant="cyan" :animate="isRefreshingLoginStatuses" />
           </button>
+          <NeonButton
+            variant="purple"
+            size="sm"
+            :loading="isSyncing"
+            :disabled="isSyncing || !hasActiveAccount"
+            :title="t('settings.xhsAccounts.syncNowHint')"
+            @click="syncNow"
+          >
+            <AppIcon name="Zap" size="xs" variant="white" />
+            <span class="ml-1">{{ t('settings.xhsAccounts.syncNow') }}</span>
+          </NeonButton>
         </div>
         <form @submit.prevent="createAccount" class="flex items-center gap-2">
           <input
@@ -348,6 +393,7 @@ function onQrConfirmed() {
     <!-- Selected account: import stats + niche bind -->
     <CreatorStatsPanel
       v-if="editingAccountId"
+      :key="`${editingAccountId}-${statsPanelKey}`"
       :account-id="editingAccountId"
       :account-name="store.accounts.find(a => a.id === editingAccountId)?.name"
       @updated="store.fetchAccounts()"
