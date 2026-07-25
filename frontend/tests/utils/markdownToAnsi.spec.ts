@@ -51,7 +51,9 @@ describe('markdownToAnsi', () => {
     expect(markdownToAnsi('`code`')).toContain(`${ANSI.CYAN}code${ANSI.RESET}`)
   })
 
-  it('keeps fullwidth punctuation conversion (regression)', () => {
-    expect(markdownToAnsi('你好？世界！')).toBe('你好?世界!')
+  it('preserves fullwidth punctuation as-is', () => {
+    // An earlier WebGL workaround mapped these to ASCII; the current renderers
+    // handle fullwidth glyphs fine, so Chinese punctuation stays untouched.
+    expect(markdownToAnsi('你好？世界！')).toBe('你好？世界！')
   })
 })
