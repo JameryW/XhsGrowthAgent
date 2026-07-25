@@ -45,7 +45,9 @@ async def test_scheduler_runs_immediately_and_records_batch_summary(monkeypatch)
         await _creator_stats_scheduler(app, 0.5)
 
     sync.assert_awaited_once_with(store=None, period="30d")
-    assert sleep_calls == [1800.0]
+    # Scheduler sleep carries ±10% jitter around the configured interval.
+    assert len(sleep_calls) == 1
+    assert 1800.0 * 0.9 <= sleep_calls[0] <= 1800.0 * 1.1
     state = app.state.creator_stats_scheduler_status
     assert state["status"] == "completed"
     assert state["run_count"] == 1

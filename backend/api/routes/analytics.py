@@ -1122,7 +1122,7 @@ async def sync_all_creator_stats(
     request: Request,
     user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
-    """导入所有激活账号；停用账号不会启动浏览器或写入数据。"""
+    """仅导入当前激活账号；切换激活账号后，之前的账号不再同步。"""
     from backend.services.creator_stats.pipeline import sync_all_active_accounts
 
     graph = getattr(request.app.state, "graph", None)

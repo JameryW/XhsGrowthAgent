@@ -59,26 +59,22 @@ async def test_fixture_service_path_returns_import_counts():
 
 
 @pytest.mark.asyncio
-async def test_batch_sync_uses_only_active_accounts():
-    active = [
-        SimpleNamespace(id="active-1"),
-        SimpleNamespace(id="active-2"),
-    ]
-
-    async def cdp_endpoint(account_id: str) -> str:
-        return f"http://127.0.0.1:{9000 + int(account_id[-1])}"
+async def test_batch_sync_uses_only_current_active_account():
+    """Only the currently active account is synced, never previous ones."""
 
     async def sync(account_id: str, **kwargs):
         return SyncResult(account_id=account_id, account_synced=True)
 
     with (
         patch(
-            "backend.db.accounts.list_active_accounts", new_callable=AsyncMock, return_value=active
+            "backend.db.accounts.get_active_account",
+            new_callable=AsyncMock,
+            return_value=SimpleNamespace(id="active-1"),
         ),
         patch(
             "backend.db.accounts.get_account_cdp_endpoint",
             new_callable=AsyncMock,
-            side_effect=cdp_endpoint,
+            return_value="http://127.0.0.1:9001",
         ),
         patch(
             "backend.services.creator_stats.pipeline.sync_account_stats",
@@ -89,9 +85,9 @@ async def test_batch_sync_uses_only_active_accounts():
         result = await sync_all_active_accounts(run_creative_analysis=False)
 
     assert result["ok"] is True
-    assert result["active_accounts"] == 2
-    assert result["succeeded"] == 2
-    assert [call.args[0] for call in sync_mock.await_args_list] == ["active-1", "active-2"]
+    assert result["active_accounts"] == 1
+    assert result["succeeded"] == 1
+    assert [call.args[0] for call in sync_mock.await_args_list] == ["active-1"]
 
 
 @pytest.mark.asyncio
