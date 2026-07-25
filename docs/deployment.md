@@ -303,11 +303,12 @@ scripts/chrome-profiles.sh start
 scripts/chrome-profiles.sh status
 # 停止所有（按 pidfile SIGTERM，超时 SIGKILL）
 scripts/chrome-profiles.sh stop
-# 有可用 X11 时 headed 启动（扫码登录态需 headed）；无 X11 时自动切换 headless
+# Chrome 始终以 headed 模式运行——headless 会被小红书风控拦截（扫码登录
+# 300012）。无 DISPLAY 时脚本自动启动 Xvfb 虚拟显示，不会回退 headless。
 scripts/chrome-profiles.sh start
-# 已登录账号也可显式使用 headless
+# 应急显式 headless（不推荐，仅调试用，会打印风控警告）
 scripts/chrome-profiles.sh start --headless
-# 强制策略：XHS_CHROME_HEADLESS=0|1；默认 auto（无 DISPLAY 自动 headless）
+# 策略变量：XHS_CHROME_HEADLESS=0|1；默认 0（始终 headed）
 ```
 
 launcher 逻辑（`backend/services/chrome_launcher.py`，可单测）：

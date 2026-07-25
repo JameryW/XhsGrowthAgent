@@ -8,10 +8,13 @@
 # Usage:
 #   scripts/chrome-profiles.sh start    # launch/keepalive Chrome for every
 #                                       # active account with a cdp_port binding
-#                                       # (headless automatically when no X11)
+#                                       # (always headed; auto-starts Xvfb when
+#                                       # no X display exists)
 #   scripts/chrome-profiles.sh status   # probe each account's CDP port (read-only)
 #   scripts/chrome-profiles.sh stop     # SIGTERM every account's Chrome (via pidfile)
-#   scripts/chrome-profiles.sh start --headless  # launch Chrome with --headless=new
+#   scripts/chrome-profiles.sh start --headless  # emergency override (NOT
+#                                       # recommended: XHS risk control blocks
+#                                       # headless, QR login fails with 300012)
 #
 # Runs on the HOST (Chrome lives on the host; the backend container connects to
 # it via host.containers.internal:<port>). Requires POSTGRES_URI to point at the
@@ -41,9 +44,11 @@ if [[ "${POSTGRES_URI:-}" == *"@postgres-xhs:"* ]]; then
     export POSTGRES_URI="${POSTGRES_URI/@postgres-xhs:/@localhost:}"
 fi
 
-# Host Chrome needs an X display in headed mode. In service/agent shells DISPLAY
-# is often unset even though an Xvfb socket is already available, so pick one
-# before the launcher starts Chrome.
+# Host Chrome runs HEADED ONLY — headless Chrome is flagged by XHS risk
+# control (QR login fails with 300012 / "未找到登录二维码").  Headed mode
+# needs an X display: in service/agent shells DISPLAY is often unset even
+# though an Xvfb socket is already available, so pick one; when no X server
+# exists at all, start Xvfb ourselves so headed always works unattended.
 if [[ -z "${DISPLAY:-}" && -d /tmp/.X11-unix ]]; then
     for socket in /tmp/.X11-unix/X99 /tmp/.X11-unix/X97 /tmp/.X11-unix/X*; do
         if [[ -S "$socket" ]]; then
@@ -53,11 +58,23 @@ if [[ -z "${DISPLAY:-}" && -d /tmp/.X11-unix ]]; then
     done
 fi
 
-# Creator Center sync only needs a CDP browser. Service shells commonly have
-# no X11 display, and a headed Chrome would fail after leaving a stale
-# forwarder behind. Keep headed mode for QR-login sessions when a display is
-# available, but make the unattended/default path self-healing. Operators can
-# override the policy with XHS_CHROME_HEADLESS=0|1 (or pass --headless).
+if [[ -z "${DISPLAY:-}" ]] && command -v Xvfb >/dev/null 2>&1; then
+    for disp in 99 98 97 96 95; do
+        if [[ ! -e "/tmp/.X11-unix/X${disp}" ]]; then
+            echo ">>> 无 X display，启动 Xvfb :${disp}（headed Chrome 需要）..."
+            nohup Xvfb ":${disp}" -screen 0 1920x1080x24 >"/tmp/xvfb-${disp}.log" 2>&1 &
+            sleep 2
+            if [[ -S "/tmp/.X11-unix/X${disp}" ]]; then
+                export DISPLAY=":${disp}"
+                break
+            fi
+        fi
+    done
+fi
+
+# Never fall back to headless automatically.  --headless (or
+# XHS_CHROME_HEADLESS=1) remains as an explicit operator override for
+# emergencies, but the default path stays headed even without a display.
 headless_arg=0
 for arg in "$@"; do
     if [[ "$arg" == "--headless" ]]; then
@@ -67,19 +84,15 @@ for arg in "$@"; do
 done
 
 if [[ "${1:-}" == "start" && "$headless_arg" -eq 0 ]]; then
-    case "${XHS_CHROME_HEADLESS:-auto}" in
+    case "${XHS_CHROME_HEADLESS:-0}" in
         1|true|yes)
+            echo ">>> 警告：显式启用 headless 模式，可能被小红书风控拦截（不推荐）" >&2
             set -- "$@" --headless
             ;;
-        0|false|no)
-            ;;
-        auto)
-            if [[ -z "${DISPLAY:-}" ]]; then
-                set -- "$@" --headless
-            fi
+        0|false|no|auto)
             ;;
         *)
-            echo "XHS_CHROME_HEADLESS must be auto, 0, or 1" >&2
+            echo "XHS_CHROME_HEADLESS must be 0 or 1" >&2
             exit 2
             ;;
     esac
