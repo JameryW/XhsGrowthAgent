@@ -128,6 +128,16 @@ class CreatorStatsSettings(BaseSettings):
     # retaining the manual ``sync-all`` API.
     sync_interval_hours: float = 24.0
 
+    # 反风控调度：部署/重启后不立即爬取，先随机延迟（秒），避免"启动即爬"
+    # 的机器模式。设为 0 可关闭（恢复启动即跑）。
+    startup_delay_min_seconds: float = 300.0
+    startup_delay_max_seconds: float = 1800.0
+
+    # 反风控调度：每日运行时刻限制在中国本地时间（UTC+8）的活跃窗口内，
+    # 深夜不爬创作者中心。窗口外的时间点会被平移到窗口内的随机点。
+    active_window_start_hour: int = 8
+    active_window_end_hour: int = 23
+
     model_config = {
         "env_prefix": "CREATOR_STATS_",
         "env_file": ".env",
