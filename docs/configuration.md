@@ -33,9 +33,13 @@
 | 变量 | 必填 | 说明 | 默认值 |
 |------|------|------|--------|
 | `CREATOR_STATS_SYNC_INTERVAL_HOURS` | 否 | 后台定时导入间隔（实际执行带 ±10% 抖动）；仅导入当前激活账号（`get_active_account`，切换账号后旧账号不再同步），设为 `0` 可关闭 | `24` |
+| `CREATOR_STATS_STARTUP_DELAY_MIN_SECONDS` / `CREATOR_STATS_STARTUP_DELAY_MAX_SECONDS` | 否 | 反风控：服务启动/重启后首次同步前的随机延迟（秒），避免"启动即爬"的机器模式；设为 `0` 恢复启动即跑 | `300` / `1800` |
+| `CREATOR_STATS_ACTIVE_WINDOW_START_HOUR` / `CREATOR_STATS_ACTIVE_WINDOW_END_HOUR` | 否 | 反风控：每日同步时刻限制在中国本地时间（UTC+8）的该窗口内，窗口外的候选时刻平移到窗口内随机点，深夜不爬 | `8` / `23` |
 | `CREATOR_STATS_ENRICH_RECENT_DAYS` | 否 | 增量同步：发布距今不超过该天数的笔记总是重新访问详情页 | `7` |
 | `CREATOR_STATS_BODY_LOOKBACK_DAYS` | 否 | 增量同步：仅为该天数内发布且尚无正文的笔记抓取公开正文（已有正文永不重抓） | `30` |
 | `CREATOR_STATS_REQUEST_DELAY_MIN_S` / `CREATOR_STATS_REQUEST_DELAY_MAX_S` | 否 | 单次同步内逐篇笔记页面访问之间的随机间隔（秒），防风控 | `2.0` / `6.0` |
+
+此外，连续同步失败会自动退避降频：第二次连续失败起，下次运行间隔翻倍（封顶 2×，即 24h→48h 节奏），成功一次即复位。
 
 **PostgreSQL URI 格式:**
 ```

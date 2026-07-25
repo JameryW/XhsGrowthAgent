@@ -9,7 +9,7 @@ import os
 import random
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, cast
 
@@ -28,12 +28,47 @@ from backend.services.ripple_service import RippleService
 load_dotenv(override=True)
 
 
-async def _creator_stats_scheduler(app: FastAPI, interval_hours: float) -> None:
-    """Import active-account data immediately, then repeat at a fixed interval.
+# 小红书创作者在中国——活跃窗口按中国本地时间（UTC+8）计算，与容器 TZ 无关。
+_CN_TZ = timezone(timedelta(hours=8))
+
+
+def _clip_to_active_window(candidate: datetime, start_hour: int, end_hour: int) -> datetime:
+    """把候选运行时刻限制在中国本地时间的每日活跃窗口内。
+
+    风控视角下，凌晨准时打开创作者中心是典型的机器行为。候选时刻落在窗口外
+    时，平移到下一个窗口内的一个随机点（不是窗口起点——起点本身又会成为
+    新的固定模式）。
+    """
+    local = candidate.astimezone(_CN_TZ)
+    day_start = local.replace(hour=start_hour, minute=0, second=0, microsecond=0)
+    day_end = local.replace(hour=end_hour, minute=0, second=0, microsecond=0)
+    if day_start <= local < day_end:
+        return candidate
+    base = day_start if local < day_start else day_start + timedelta(days=1)
+    span_seconds = max(60.0, (day_end - day_start).total_seconds())
+    return (base + timedelta(seconds=random.uniform(0, span_seconds))).astimezone(UTC)
+
+
+async def _creator_stats_scheduler(
+    app: FastAPI,
+    interval_hours: float,
+    *,
+    startup_delay: tuple[float, float] | None = None,
+    active_window: tuple[int, int] | None = None,
+) -> None:
+    """Import active-account data on a human-looking schedule.
 
     The task is deliberately detached from application startup so a slow
     browser crawl cannot block readiness.  Its small state summary is exposed
     through ``/health``; raw account results are kept out of that response.
+
+    反风控调度策略：
+      1. 启动后不立即爬——先随机延迟 ``startup_delay``，避免"部署/重启即爬"
+         的机器模式；``None`` 表示启动即跑（测试/手动语义）。
+      2. 周期间隔带 ±10% jitter，且运行时刻被 ``active_window`` 限制在中国
+         本地时间的每日活跃窗口内，深夜不爬；``None`` 表示不限制。
+      3. 连续失败退避：第二次起连续失败间隔翻倍（封顶 2×），被风控/登录态
+         失效时自动降频，成功一次即复位。
     """
     interval_seconds = max(60.0, float(interval_hours) * 3600.0)
     logger = logging.getLogger("xhs_growth.creator_stats.scheduler")
@@ -49,6 +84,27 @@ async def _creator_stats_scheduler(app: FastAPI, interval_hours: float) -> None:
         state = {}
         app.state.creator_stats_scheduler_status = state
 
+    def _next_run(candidate: datetime) -> datetime:
+        if active_window is not None:
+            return _clip_to_active_window(candidate, active_window[0], active_window[1])
+        return candidate
+
+    async def _sleep_until(target: datetime) -> None:
+        state["next_run_at"] = target.isoformat()
+        delay = max(1.0, (target - datetime.now(UTC)).total_seconds())
+        await asyncio.sleep(delay)
+
+    # 1. 启动随机延迟：部署/重启后不再立刻爬取。
+    if startup_delay is not None:
+        delay_min = max(0.0, float(startup_delay[0]))
+        delay_max = max(delay_min, float(startup_delay[1]))
+        if delay_max > 0:
+            candidate = datetime.now(UTC) + timedelta(seconds=random.uniform(delay_min, delay_max))
+            target = _next_run(candidate)
+            logger.info("creator stats scheduler first run delayed until %s", target.isoformat())
+            await _sleep_until(target)
+
+    consecutive_failures = 0
     while True:
         started_at = datetime.now(UTC)
         state.update(
@@ -64,6 +120,7 @@ async def _creator_stats_scheduler(app: FastAPI, interval_hours: float) -> None:
             interval_hours,
             state["run_count"],
         )
+        succeeded = False
         try:
             from backend.services.creator_stats.pipeline import sync_all_active_accounts
 
@@ -88,9 +145,10 @@ async def _creator_stats_scheduler(app: FastAPI, interval_hours: float) -> None:
                         break
                 if account_errors:
                     last_error = "; ".join(account_errors)
+            succeeded = bool(result.get("ok"))
             state.update(
                 {
-                    "status": "completed" if result.get("ok") else "failed",
+                    "status": "completed" if succeeded else "failed",
                     "last_status": result.get("status"),
                     "last_active_accounts": result.get("active_accounts", 0),
                     "last_succeeded": result.get("succeeded", 0),
@@ -98,7 +156,6 @@ async def _creator_stats_scheduler(app: FastAPI, interval_hours: float) -> None:
                     "last_started_at": started_at.isoformat(),
                     "last_finished_at": finished_at.isoformat(),
                     "last_error": last_error,
-                    "next_run_at": (finished_at + timedelta(seconds=interval_seconds)).isoformat(),
                 }
             )
             logger.info(
@@ -125,13 +182,19 @@ async def _creator_stats_scheduler(app: FastAPI, interval_hours: float) -> None:
                     "status": "failed",
                     "last_finished_at": finished_at.isoformat(),
                     "last_error": str(exc),
-                    "next_run_at": (finished_at + timedelta(seconds=interval_seconds)).isoformat(),
                 }
             )
             logger.exception("scheduled creator stats import failed")
-        # ±10% jitter so multi-instance schedulers do not fire on the exact
-        # same wall-clock marks every cycle.
-        await asyncio.sleep(interval_seconds * random.uniform(0.9, 1.1))
+        # 3. 失败退避：第二次连续失败起间隔翻倍（封顶 2×），成功即复位。
+        consecutive_failures = 0 if succeeded else consecutive_failures + 1
+        state["consecutive_failures"] = consecutive_failures
+        backoff = 1.0 if consecutive_failures <= 1 else 2.0
+        # ±10% jitter so the crawl does not fire on exact wall-clock marks
+        # every cycle; active_window then keeps the run inside human hours.
+        candidate = datetime.now(UTC) + timedelta(
+            seconds=interval_seconds * random.uniform(0.9, 1.1) * backoff
+        )
+        await _sleep_until(_next_run(candidate))
 
 
 @asynccontextmanager
@@ -249,6 +312,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         interval_hours = float(settings.creator_stats.sync_interval_hours)
     except (AttributeError, TypeError, ValueError):
         interval_hours = 0.0
+    # 反风控调度参数（启动随机延迟 + 中国时间活跃窗口）；读取失败时退化为
+    # 旧行为（启动即跑、不限窗口），不影响调度器可用性。
+    startup_delay: tuple[float, float] | None = None
+    active_window: tuple[int, int] | None = None
+    try:
+        cs_settings = settings.creator_stats
+        startup_delay = (
+            float(cs_settings.startup_delay_min_seconds),
+            float(cs_settings.startup_delay_max_seconds),
+        )
+        active_window = (
+            int(cs_settings.active_window_start_hour),
+            int(cs_settings.active_window_end_hour),
+        )
+    except (AttributeError, TypeError, ValueError):
+        startup_delay = None
+        active_window = None
     app.state.creator_stats_scheduler_status = {
         "enabled": bool(db_uri and interval_hours > 0 and pool_ready),
         "interval_hours": interval_hours,
@@ -266,7 +346,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if db_uri and interval_hours > 0 and pool_ready:
         app.state.creator_stats_scheduler_status["status"] = "scheduled"
         creator_stats_scheduler = asyncio.create_task(
-            _creator_stats_scheduler(app, interval_hours),
+            _creator_stats_scheduler(
+                app,
+                interval_hours,
+                startup_delay=startup_delay,
+                active_window=active_window,
+            ),
             name="creator-stats-active-account-scheduler",
         )
         app.state.creator_stats_scheduler = creator_stats_scheduler
