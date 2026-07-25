@@ -17,6 +17,7 @@ import pytest
 from backend.services.creator_stats import client as client_module
 from backend.services.creator_stats.client import (
     ACCOUNT_OVERVIEW_PATH,
+    CREATOR_HOME_PAGE,
     CREATOR_NOTE_MANAGER_PAGE,
     CREATOR_PROFILE_PATH,
     CREATOR_STATS_PAGE,
@@ -389,6 +390,7 @@ class _FakeNotesPage:
         self._notes = [_numbered_note(i + 1) for i in range(note_count)]
         self.detail_urls: list[str] = []
         self.body_urls: list[str] = []
+        self.visited: list[str] = []
 
     def on(self, event: str, handler) -> None:
         assert event == "response"
@@ -409,6 +411,7 @@ class _FakeNotesPage:
         await asyncio.sleep(0)
 
     async def goto(self, url: str, **_kwargs) -> None:
+        self.visited.append(url)
         if url == CREATOR_STATS_PAGE:
             await self._emit(ACCOUNT_OVERVIEW_PATH, _native_account())
             await self._emit(CREATOR_PROFILE_PATH, _native_profile())
@@ -685,3 +688,60 @@ async def test_cdp_human_touch_tolerates_pages_without_mouse():
     )
 
     assert len(notes) == 1
+
+
+async def test_cdp_home_entry_visits_creator_home_before_stats(monkeypatch):
+    """入口随机化命中时，会话从创作者主页开始，而不是直接深链数据页。"""
+    monkeypatch.setenv("CREATOR_STATS_HOME_ENTRY_CHANCE", "1")
+    page = _FakeNotesPage(note_count=1)
+    transport = _transport_with_page(page)
+
+    await transport.fetch_creator_center(max_pages=1, body_filter=lambda _note: False)
+
+    assert page.visited[0] == CREATOR_HOME_PAGE
+    assert CREATOR_STATS_PAGE in page.visited
+
+
+async def test_cdp_home_entry_disabled_goes_straight_to_stats(monkeypatch):
+    """入口随机化关闭时，仍直接打开数据统计页（原行为）。"""
+    monkeypatch.setenv("CREATOR_STATS_HOME_ENTRY_CHANCE", "0")
+    page = _FakeNotesPage(note_count=1)
+    transport = _transport_with_page(page)
+
+    await transport.fetch_creator_center(max_pages=1, body_filter=lambda _note: False)
+
+    assert page.visited[0] == CREATOR_STATS_PAGE
+
+
+async def test_cdp_page_stop_chance_one_skips_pagination(monkeypatch):
+    """翻页提前停止概率为 1 时，不再翻页（_pace 不会因翻页被调用）。"""
+    monkeypatch.setenv("CREATOR_STATS_PAGE_STOP_CHANCE", "1")
+    page = _FakeNotesPage(note_count=2)
+    transport = _transport_with_page(page)
+    transport._pace = AsyncMock()
+
+    _account, _profile, notes = await transport.fetch_creator_center(
+        max_pages=3,
+        detail_filter=lambda _note: False,
+        body_filter=lambda _note: False,
+    )
+
+    transport._pace.assert_not_awaited()
+    assert len(notes) == 2
+
+
+async def test_cdp_pagination_still_works_when_stop_disabled(monkeypatch):
+    """翻页提前停止关闭时，保持原有翻页行为（回归保护）。"""
+    monkeypatch.setenv("CREATOR_STATS_PAGE_STOP_CHANCE", "0")
+    page = _FakeNotesPage(note_count=2)
+    transport = _transport_with_page(page)
+    transport._pace = AsyncMock()
+
+    await transport.fetch_creator_center(
+        max_pages=2,
+        detail_filter=lambda _note: False,
+        body_filter=lambda _note: False,
+    )
+
+    # 1 次翻页尝试（第 2 页不存在，等待超时后正常结束）。
+    assert transport._pace.await_count == 1
