@@ -605,3 +605,33 @@ async def test_cdp_paces_between_list_page_turns():
 
     # 1 次翻页（第 2 页不存在，等待超时后正常结束）+ 1 次详情 + 1 次正文。
     assert transport._pace.await_count == 3
+
+
+def test_new_run_pace_scales_delay_per_run():
+    """每轮抓取的节奏基准在配置区间的 0.7-1.6 倍间随机缩放。"""
+    transport = CdpTransport("http://127.0.0.1:9222", request_delay=(2.0, 6.0))
+
+    transport._new_run_pace()
+
+    assert transport._run_delay is not None
+    lo, hi = transport._run_delay
+    assert 2.0 * 0.7 <= lo <= 2.0 * 1.6
+    assert 6.0 * 0.7 <= hi <= 6.0 * 1.6
+    assert lo <= hi
+
+
+async def test_pace_uses_run_delay_baseline(monkeypatch):
+    """_pace 使用本轮节奏基准（_run_delay）而不是全局配置区间。"""
+    transport = CdpTransport("http://127.0.0.1:9222", request_delay=(2.0, 6.0))
+    transport._run_delay = (5.0, 5.0)
+    monkeypatch.setattr(transport, "_long_pause_chance", 0.0)
+    sleeps: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(client_module.asyncio, "sleep", fake_sleep)
+
+    await transport._pace()
+
+    assert sleeps == [5.0]

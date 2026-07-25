@@ -138,6 +138,10 @@ class CreatorStatsSettings(BaseSettings):
     active_window_start_hour: int = 8
     active_window_end_hour: int = 23
 
+    # 反风控调度：每轮以该概率整天跳过同步——"每天必爬一次"本身就是可识别
+    # 的规律，人不会每天都看创作者中心。0 表示从不跳过。
+    skip_day_chance: float = 0.15
+
     model_config = {
         "env_prefix": "CREATOR_STATS_",
         "env_file": ".env",

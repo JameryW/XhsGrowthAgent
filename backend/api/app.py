@@ -55,6 +55,7 @@ async def _creator_stats_scheduler(
     *,
     startup_delay: tuple[float, float] | None = None,
     active_window: tuple[int, int] | None = None,
+    skip_day_chance: float = 0.0,
 ) -> None:
     """Import active-account data on a human-looking schedule.
 
@@ -62,12 +63,15 @@ async def _creator_stats_scheduler(
     browser crawl cannot block readiness.  Its small state summary is exposed
     through ``/health``; raw account results are kept out of that response.
 
-    反风控调度策略：
+    反风控调度策略（核心：不允许任何可被识别的规律性）：
       1. 启动后不立即爬——先随机延迟 ``startup_delay``，避免"部署/重启即爬"
          的机器模式；``None`` 表示启动即跑（测试/手动语义）。
-      2. 周期间隔带 ±10% jitter，且运行时刻被 ``active_window`` 限制在中国
-         本地时间的每日活跃窗口内，深夜不爬；``None`` 表示不限制。
-      3. 连续失败退避：第二次起连续失败间隔翻倍（封顶 2×），被风控/登录态
+      2. 间隔不固定：每轮间隔在 0.75-1.5× ``interval_hours`` 间随机（18-36h），
+         且运行时刻被 ``active_window`` 限制在中国本地时间的每日活跃窗口内，
+         深夜不爬；``None`` 表示不限制。
+      3. 随机跳过：每轮以 ``skip_day_chance`` 概率整天跳过——人不会每天都
+         看创作者中心，"每天必爬一次"本身就是规律。跳过不算失败。
+      4. 连续失败退避：第二次起连续失败间隔翻倍（封顶 2×），被风控/登录态
          失效时自动降频，成功一次即复位。
     """
     interval_seconds = max(60.0, float(interval_hours) * 3600.0)
@@ -105,95 +109,109 @@ async def _creator_stats_scheduler(
             await _sleep_until(target)
 
     consecutive_failures = 0
+    skip_next_run = False
     while True:
         started_at = datetime.now(UTC)
-        state.update(
-            {
-                "status": "running",
-                "last_started_at": started_at.isoformat(),
-                "last_error": None,
-                "run_count": int(state.get("run_count") or 0) + 1,
-            }
-        )
-        logger.info(
-            "scheduled creator stats import started: interval_hours=%s run=%s",
-            interval_hours,
-            state["run_count"],
-        )
-        succeeded = False
-        try:
-            from backend.services.creator_stats.pipeline import sync_all_active_accounts
-
-            graph = getattr(app.state, "graph", None)
-            store = getattr(graph, "store", None) if graph is not None else None
-            result = await sync_all_active_accounts(store=store, period="30d")
-            finished_at = datetime.now(UTC)
-            last_error = result.get("error")
-            if not last_error and int(result.get("failed") or 0) > 0:
-                # Batch completed with per-account failures — surface the first
-                # few messages so /health is actionable (not just failed=N).
-                account_errors: list[str] = []
-                for item in result.get("results") or []:
-                    if not isinstance(item, dict):
-                        continue
-                    err = item.get("error")
-                    if not err or item.get("account_synced"):
-                        continue
-                    account_id = str(item.get("account_id") or "?").strip() or "?"
-                    account_errors.append(f"{account_id}: {err}")
-                    if len(account_errors) >= 3:
-                        break
-                if account_errors:
-                    last_error = "; ".join(account_errors)
-            # cooldown（冷却期内跳过）不是失败——不计入退避序列。
-            succeeded = bool(result.get("ok")) or result.get("status") == "cooldown"
+        if skip_next_run:
+            # 3. 随机跳过：本轮不爬，直接排下一轮。跳过不算失败、不触发退避。
+            skip_next_run = False
             state.update(
                 {
-                    "status": "completed" if succeeded else "failed",
-                    "last_status": result.get("status"),
-                    "last_active_accounts": result.get("active_accounts", 0),
-                    "last_succeeded": result.get("succeeded", 0),
-                    "last_failed": result.get("failed", 0),
+                    "status": "skipped",
+                    "last_skipped_at": started_at.isoformat(),
+                }
+            )
+            logger.info("scheduled creator stats import skipped this cycle (irregular cadence)")
+        else:
+            state.update(
+                {
+                    "status": "running",
                     "last_started_at": started_at.isoformat(),
-                    "last_finished_at": finished_at.isoformat(),
-                    "last_error": last_error,
+                    "last_error": None,
+                    "run_count": int(state.get("run_count") or 0) + 1,
                 }
             )
             logger.info(
-                "scheduled creator stats import finished: status=%s active=%s "
-                "succeeded=%s failed=%s error=%s",
-                result.get("status"),
-                result.get("active_accounts", 0),
-                result.get("succeeded", 0),
-                result.get("failed", 0),
-                last_error,
+                "scheduled creator stats import started: interval_hours=%s run=%s",
+                interval_hours,
+                state["run_count"],
             )
-        except asyncio.CancelledError:
-            state.update(
-                {
-                    "status": "cancelled",
-                    "last_finished_at": datetime.now(UTC).isoformat(),
-                }
-            )
-            raise
-        except Exception as exc:
-            finished_at = datetime.now(UTC)
-            state.update(
-                {
-                    "status": "failed",
-                    "last_finished_at": finished_at.isoformat(),
-                    "last_error": str(exc),
-                }
-            )
-            logger.exception("scheduled creator stats import failed")
-        # 3. 失败退避：第二次连续失败起间隔翻倍（封顶 2×），成功即复位。
-        consecutive_failures = 0 if succeeded else consecutive_failures + 1
-        state["consecutive_failures"] = consecutive_failures
+            succeeded = False
+            try:
+                from backend.services.creator_stats.pipeline import sync_all_active_accounts
+
+                graph = getattr(app.state, "graph", None)
+                store = getattr(graph, "store", None) if graph is not None else None
+                result = await sync_all_active_accounts(store=store, period="30d")
+                finished_at = datetime.now(UTC)
+                last_error = result.get("error")
+                if not last_error and int(result.get("failed") or 0) > 0:
+                    # Batch completed with per-account failures — surface the first
+                    # few messages so /health is actionable (not just failed=N).
+                    account_errors: list[str] = []
+                    for item in result.get("results") or []:
+                        if not isinstance(item, dict):
+                            continue
+                        err = item.get("error")
+                        if not err or item.get("account_synced"):
+                            continue
+                        account_id = str(item.get("account_id") or "?").strip() or "?"
+                        account_errors.append(f"{account_id}: {err}")
+                        if len(account_errors) >= 3:
+                            break
+                    if account_errors:
+                        last_error = "; ".join(account_errors)
+                # cooldown（冷却期内跳过）不是失败——不计入退避序列。
+                succeeded = bool(result.get("ok")) or result.get("status") == "cooldown"
+                state.update(
+                    {
+                        "status": "completed" if succeeded else "failed",
+                        "last_status": result.get("status"),
+                        "last_active_accounts": result.get("active_accounts", 0),
+                        "last_succeeded": result.get("succeeded", 0),
+                        "last_failed": result.get("failed", 0),
+                        "last_started_at": started_at.isoformat(),
+                        "last_finished_at": finished_at.isoformat(),
+                        "last_error": last_error,
+                    }
+                )
+                logger.info(
+                    "scheduled creator stats import finished: status=%s active=%s "
+                    "succeeded=%s failed=%s error=%s",
+                    result.get("status"),
+                    result.get("active_accounts", 0),
+                    result.get("succeeded", 0),
+                    result.get("failed", 0),
+                    last_error,
+                )
+            except asyncio.CancelledError:
+                state.update(
+                    {
+                        "status": "cancelled",
+                        "last_finished_at": datetime.now(UTC).isoformat(),
+                    }
+                )
+                raise
+            except Exception as exc:
+                finished_at = datetime.now(UTC)
+                state.update(
+                    {
+                        "status": "failed",
+                        "last_finished_at": finished_at.isoformat(),
+                        "last_error": str(exc),
+                    }
+                )
+                logger.exception("scheduled creator stats import failed")
+            # 4. 失败退避：第二次连续失败起间隔翻倍（封顶 2×），成功即复位。
+            consecutive_failures = 0 if succeeded else consecutive_failures + 1
+            state["consecutive_failures"] = consecutive_failures
         backoff = 1.0 if consecutive_failures <= 1 else 2.0
-        # ±10% jitter so the crawl does not fire on exact wall-clock marks
-        # every cycle; active_window then keeps the run inside human hours.
+        # 2. 间隔在 0.75-1.5× interval 间随机（默认 18-36h），不留固定周期；
+        # active_window 再把落点限制在人类活动时段。
+        if skip_day_chance > 0 and random.random() < skip_day_chance:
+            skip_next_run = True
         candidate = datetime.now(UTC) + timedelta(
-            seconds=interval_seconds * random.uniform(0.9, 1.1) * backoff
+            seconds=interval_seconds * random.uniform(0.75, 1.5) * backoff
         )
         await _sleep_until(_next_run(candidate))
 
@@ -313,10 +331,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         interval_hours = float(settings.creator_stats.sync_interval_hours)
     except (AttributeError, TypeError, ValueError):
         interval_hours = 0.0
-    # 反风控调度参数（启动随机延迟 + 中国时间活跃窗口）；读取失败时退化为
-    # 旧行为（启动即跑、不限窗口），不影响调度器可用性。
+    # 反风控调度参数（启动随机延迟 + 中国时间活跃窗口 + 随机跳过）；
+    # 读取失败时退化为旧行为（启动即跑、不限窗口、不跳过），不影响可用性。
     startup_delay: tuple[float, float] | None = None
     active_window: tuple[int, int] | None = None
+    skip_day_chance = 0.0
     try:
         cs_settings = settings.creator_stats
         startup_delay = (
@@ -327,9 +346,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             int(cs_settings.active_window_start_hour),
             int(cs_settings.active_window_end_hour),
         )
+        skip_day_chance = max(0.0, min(1.0, float(cs_settings.skip_day_chance)))
     except (AttributeError, TypeError, ValueError):
         startup_delay = None
         active_window = None
+        skip_day_chance = 0.0
     app.state.creator_stats_scheduler_status = {
         "enabled": bool(db_uri and interval_hours > 0 and pool_ready),
         "interval_hours": interval_hours,
@@ -352,6 +373,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 interval_hours,
                 startup_delay=startup_delay,
                 active_window=active_window,
+                skip_day_chance=skip_day_chance,
             ),
             name="creator-stats-active-account-scheduler",
         )

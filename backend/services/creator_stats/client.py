@@ -198,17 +198,26 @@ class CdpTransport:
         long_min = max(0.0, _env_float("CREATOR_STATS_LONG_PAUSE_MIN_S", 15.0))
         long_max = max(long_min, _env_float("CREATOR_STATS_LONG_PAUSE_MAX_S", 45.0))
         self._long_pause = (long_min, long_max)
+        # 每轮抓取的节奏基准（在 fetch 开头随机缩放 request_delay 得到）：
+        # 有的运行整体偏快、有的偏慢，避免跨运行统一的节奏画像。
+        self._run_delay: tuple[float, float] | None = None
         self._playwright: Any = None
         self._browser: Any = None
         self._fetch_lock = asyncio.Lock()
 
+    def _new_run_pace(self) -> None:
+        """Roll this run's pacing baseline (0.7-1.6× the configured range)."""
+        delay_min, delay_max = self._request_delay
+        scale = random.uniform(0.7, 1.6)
+        self._run_delay = (delay_min * scale, delay_max * scale)
+
     async def _pace(self) -> None:
         """Sleep a random interval before the next page visit.
 
-        大部分是 request_delay 区间内的短停顿；以小概率插入 15-45s 的长
+        大部分是本轮节奏基准区间内的短停顿；以小概率插入 15-45s 的长
         停顿，避免爬行节奏成为均匀的节拍器。
         """
-        delay_min, delay_max = self._request_delay
+        delay_min, delay_max = self._run_delay or self._request_delay
         if delay_max <= 0:
             return
         if random.random() < self._long_pause_chance:
@@ -426,6 +435,8 @@ class CdpTransport:
         period_norm = normalize_period(period)
 
         async with self._fetch_lock:
+            # 每轮换一个节奏基准：本轮整体偏快或偏慢，跨运行无统一节奏。
+            self._new_run_pace()
             browser = await self._ensure_browser()
             context = browser.contexts[0]
             page = await context.new_page()
