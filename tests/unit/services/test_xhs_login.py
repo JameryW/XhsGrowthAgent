@@ -1,4 +1,4 @@
-"""Tests for XhsLoginSession — headless Chrome QR-code login service.
+"""Tests for XhsLoginSession — QR-code login service (headed Chrome only).
 
 Uses AsyncMock/MagicMock for the Playwright chain so tests run without the
 [browser] extra. The response-interception logic (the heart of path B') is
@@ -213,7 +213,7 @@ class TestStart:
         """start() launch/wait failure → context closed, no zombie Chrome.
 
         Regression guard: route returns 503 on LoginError but never calls
-        stop(); without self-cleanup the headless Chrome leaks.
+        stop(); without self-cleanup the Chrome leaks.
         """
         from backend.services.xhs_login import XhsLoginSession
 
@@ -482,7 +482,7 @@ class TestGetStatus:
         """confirmed → stop() auto-called (resource guard); profile already persisted.
 
         Without this, every confirmed-but-not-explicitly-stopped session leaks a
-        headless Chrome in a long-running server. Frontend's explicit stop()
+        headless-free login Chrome in a long-running server. Frontend's explicit stop()
         call becomes a safe no-op.
         """
         from backend.services.xhs_login import XhsLoginSession

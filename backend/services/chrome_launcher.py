@@ -352,14 +352,15 @@ def _internal_cdp_port(cdp_port: int) -> int:
     return cdp_port + _INTERNAL_PORT_OFFSET
 
 
-def _build_launch_cmd(
-    chrome_bin: str, profile_path: str, port: int, headless: bool = False
-) -> list[str]:
+def _build_launch_cmd(chrome_bin: str, profile_path: str, port: int) -> list[str]:
     """Construct the Chrome command line for a per-account instance.
 
     Chrome listens on ``_internal_cdp_port(port)`` (127.0.0.1 only — Chrome 144
     ignores --remote-debugging-address). A socat forwarder exposes the public
     ``port`` on 0.0.0.0 for the backend container. See ``_ensure_socat_forwarder``.
+
+    Always headed — headless Chrome is banned outright (XHS risk control blocks
+    it: QR login fails with 300012 / "未找到登录二维码").
 
     Uses ``create_subprocess_exec`` (not a shell) — args are passed directly to
     execve, so no shell-injection surface even if profile_path/port ever came
@@ -371,15 +372,12 @@ def _build_launch_cmd(
         f"--remote-debugging-port={_internal_cdp_port(port)}",
     ]
     cmd.extend(_DEFAULT_FLAGS)
-    if headless:
-        cmd.append("--headless=new")
     return cmd
 
 
 async def ensure_chrome(
     account: AccountRow,
     *,
-    headless: bool = False,
     chrome_bin: str | None = None,
 ) -> ChromeStatus:
     """Ensure the account's dedicated Chrome is running. Launch if down.
@@ -484,7 +482,7 @@ async def ensure_chrome(
             message=str(e),
         )
 
-    cmd = _build_launch_cmd(bin_, profile_path, port, headless=headless)
+    cmd = _build_launch_cmd(bin_, profile_path, port)
     try:
         # start_new_session=True detaches the Chrome from this process group
         # so it survives the launcher (and the shell that ran it) exiting.
@@ -618,7 +616,6 @@ async def stop_chrome(account: AccountRow) -> ChromeStatus:
 async def ensure_all(
     accounts: list[AccountRow],
     *,
-    headless: bool = False,
     chrome_bin: str | None = None,
 ) -> list[ChromeStatus]:
     """Ensure Chrome is up for every account that has a port binding.
@@ -630,9 +627,7 @@ async def ensure_all(
     targets = [a for a in accounts if a.is_active and a.cdp_port > 0 and a.chrome_profile_path]
     if not targets:
         return []
-    return await asyncio.gather(
-        *(ensure_chrome(a, headless=headless, chrome_bin=chrome_bin) for a in targets)
-    )
+    return await asyncio.gather(*(ensure_chrome(a, chrome_bin=chrome_bin) for a in targets))
 
 
 async def stop_all(accounts: list[AccountRow]) -> list[ChromeStatus]:
@@ -728,11 +723,11 @@ async def _load_accounts() -> list[AccountRow]:
         return []
 
 
-async def _cli(subcommand: str, headless: bool) -> int:
+async def _cli(subcommand: str) -> int:
     """Run the requested bulk op against all accounts. Returns exit code."""
     accounts = await _load_accounts()
     if subcommand == "start":
-        statuses = await ensure_all(accounts, headless=headless)
+        statuses = await ensure_all(accounts)
     elif subcommand == "status":
         statuses = await status_all(accounts)
     elif subcommand == "stop":
@@ -760,11 +755,6 @@ def main() -> None:
         choices=("start", "status", "stop"),
         help="start=launch/keepalive, status=probe ports, stop=SIGTERM all",
     )
-    parser.add_argument(
-        "--headless",
-        action="store_true",
-        help="launch Chrome with --headless=new (default: headed, for 扫码 login)",
-    )
     args = parser.parse_args()
 
     import asyncio
@@ -772,7 +762,7 @@ def main() -> None:
     from backend.db.pool import close_pool
 
     try:
-        code = asyncio.run(_cli(args.subcommand, args.headless))
+        code = asyncio.run(_cli(args.subcommand))
     finally:
         with contextlib.suppress(Exception):  # noqa: BLE001 — best-effort cleanup on the way out
             asyncio.run(close_pool())
