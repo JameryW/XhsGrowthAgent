@@ -1260,6 +1260,7 @@
     "delete": "删除",
     "deleteTitle": "删除工作流",
     "deleteMessage": "将从历史记录中永久删除此工作流。此操作不可撤销。",
+    "deleteMessageShared": "该工作流正在展示页公开/分享中，删除后将同时从展示页移除，且此操作不可撤销。",
     "deleteConfirm": "确认删除",
     "deleteSuccess": "工作流已删除",
     "deleteFailed": "删除失败",
