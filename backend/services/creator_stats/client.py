@@ -209,6 +209,17 @@ class CdpTransport:
         self._enrich_skip_chance = max(
             0.0, min(1.0, _env_float("CREATOR_STATS_ENRICH_SKIP_CHANCE", 0.15))
         )
+        # 入口随机化：以该概率先打开创作者主页（真人通常从主页点进数据页），
+        # 而不是每轮都直接深链到数据统计页——"每次会话都以同一个深链开头"
+        # 是可识别的会话模式。
+        self._home_entry_chance = max(
+            0.0, min(1.0, _env_float("CREATOR_STATS_HOME_ENTRY_CHANCE", 0.5))
+        )
+        # 翻页提前停止：每翻一页后以该概率停止继续翻——人很少每次都把列表
+        # 滚到底；被截断的旧笔记下轮仍有机会被翻到。
+        self._page_stop_chance = max(
+            0.0, min(1.0, _env_float("CREATOR_STATS_PAGE_STOP_CHANCE", 0.15))
+        )
         # 每轮抓取的节奏基准（在 fetch 开头随机缩放 request_delay 得到）：
         # 有的运行整体偏快、有的偏慢，避免跨运行统一的节奏画像。
         self._run_delay: tuple[float, float] | None = None
@@ -474,6 +485,8 @@ class CdpTransport:
             light_run = self._light_run_chance > 0 and random.random() < self._light_run_chance
             if light_run:
                 logger.info("creator stats light run: skipping per-note enrichment this round")
+            # 每轮的深入预算也随机缩放——会话总时长不聚类在固定上限。
+            detail_budget = self._detail_timeout * random.uniform(0.7, 1.3)
             browser = await self._ensure_browser()
             context = browser.contexts[0]
             page = await context.new_page()
@@ -557,6 +570,17 @@ class CdpTransport:
             page.on("response", on_response)
             try:
                 try:
+                    # 入口随机化：真人通常从创作者主页点进数据页，而不是每次
+                    # 都直接深链。主页加载顺带带出 personal_info（总粉丝数）。
+                    if self._home_entry_chance > 0 and random.random() < self._home_entry_chance:
+                        with contextlib.suppress(Exception):
+                            await page.goto(
+                                CREATOR_HOME_PAGE,
+                                wait_until="domcontentloaded",
+                                timeout=self._timeout * 1000,
+                            )
+                            await page.wait_for_timeout(random.uniform(900.0, 2200.0))
+                            await self._human_touch(page)
                     # Start at the statistics dashboard: it loads the account
                     # overview request we need, then use the site's own menu
                     # transition to Note Manager so the signed note request is
@@ -710,6 +734,11 @@ class CdpTransport:
                 # instead of replaying a stale signed request.
                 start_page = first_note_page + 1
                 for page_index in range(start_page, start_page + max_pages - 1):
+                    # 翻页提前停止：人很少每次都把列表滚到底。每翻一页前掷一次，
+                    # 命中就停——被截断的旧笔记下轮仍有机会被翻到。
+                    if self._page_stop_chance > 0 and random.random() < self._page_stop_chance:
+                        logger.info("creator note list pagination stopped early (human-like)")
+                        break
                     previous_pages = len(note_responses)
                     # 翻页也保持人的节奏——连续秒翻列表是明显的机器特征。
                     await self._pace()
@@ -718,6 +747,20 @@ class CdpTransport:
                     scroll_steps = random.randint(2, 4)
                     for step in range(scroll_steps):
                         last_step = step == scroll_steps - 1
+                        # 偶尔往回滚一下——人看列表会回看上一屏。
+                        if not last_step and random.random() < 0.15:
+                            with contextlib.suppress(Exception):
+                                await page.locator("div.content").evaluate(
+                                    """el => {
+                                        el.scrollTop = Math.max(
+                                            el.scrollTop
+                                                - el.clientHeight * (0.3 + Math.random() * 0.5),
+                                            0
+                                        )
+                                        el.dispatchEvent(new Event('scroll', { bubbles: true }))
+                                    }"""
+                                )
+                                await asyncio.sleep(random.uniform(0.2, 0.6))
                         script = (
                             """el => {
                                 el.scrollTop = el.scrollHeight
@@ -792,7 +835,7 @@ class CdpTransport:
                 # issues the four authenticated requests we capture above.
                 # Keep a bounded batch: a malformed/slow note must not prevent
                 # the account snapshot from being imported.
-                detail_deadline = asyncio.get_running_loop().time() + self._detail_timeout
+                detail_deadline = asyncio.get_running_loop().time() + detail_budget
                 detail_failures = 0
                 detail_candidates: list[str] = []
                 if not light_run:
@@ -888,7 +931,7 @@ class CdpTransport:
                 # note_info.desc that equals the title). Full captions live on the
                 # public explore page — scrape them with the note's xsec_token.
                 body_deadline = asyncio.get_running_loop().time() + min(
-                    90.0, max(30.0, float(self._detail_timeout))
+                    90.0, max(30.0, float(detail_budget))
                 )
                 body_failures = 0
                 body_empty = 0
