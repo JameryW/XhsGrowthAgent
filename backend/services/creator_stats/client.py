@@ -190,15 +190,42 @@ class CdpTransport:
         delay_min = max(0.0, float(request_delay[0]))
         delay_max = max(delay_min, float(request_delay[1]))
         self._request_delay = (delay_min, delay_max)
+        # 均匀的短停顿本身也是节拍器式的机器特征——以小概率插入一次"走神"
+        # 长停顿打乱节奏（人刷创作者中心会被消息/倒水打断）。
+        self._long_pause_chance = max(
+            0.0, min(1.0, _env_float("CREATOR_STATS_LONG_PAUSE_CHANCE", 0.08))
+        )
+        long_min = max(0.0, _env_float("CREATOR_STATS_LONG_PAUSE_MIN_S", 15.0))
+        long_max = max(long_min, _env_float("CREATOR_STATS_LONG_PAUSE_MAX_S", 45.0))
+        self._long_pause = (long_min, long_max)
+        # 每轮抓取的节奏基准（在 fetch 开头随机缩放 request_delay 得到）：
+        # 有的运行整体偏快、有的偏慢，避免跨运行统一的节奏画像。
+        self._run_delay: tuple[float, float] | None = None
         self._playwright: Any = None
         self._browser: Any = None
         self._fetch_lock = asyncio.Lock()
 
-    async def _pace(self) -> None:
-        """Sleep a random interval before the next per-note page visit."""
+    def _new_run_pace(self) -> None:
+        """Roll this run's pacing baseline (0.7-1.6× the configured range)."""
         delay_min, delay_max = self._request_delay
-        if delay_max > 0:
-            await asyncio.sleep(random.uniform(delay_min, delay_max))
+        scale = random.uniform(0.7, 1.6)
+        self._run_delay = (delay_min * scale, delay_max * scale)
+
+    async def _pace(self) -> None:
+        """Sleep a random interval before the next page visit.
+
+        大部分是本轮节奏基准区间内的短停顿；以小概率插入 15-45s 的长
+        停顿，避免爬行节奏成为均匀的节拍器。
+        """
+        delay_min, delay_max = self._run_delay or self._request_delay
+        if delay_max <= 0:
+            return
+        if random.random() < self._long_pause_chance:
+            long_min, long_max = self._long_pause
+            if long_max > 0:
+                await asyncio.sleep(random.uniform(long_min, long_max))
+            return
+        await asyncio.sleep(random.uniform(delay_min, delay_max))
 
     async def _ensure_browser(self) -> Any:
         if self._browser is not None:
@@ -408,6 +435,8 @@ class CdpTransport:
         period_norm = normalize_period(period)
 
         async with self._fetch_lock:
+            # 每轮换一个节奏基准：本轮整体偏快或偏慢，跨运行无统一节奏。
+            self._new_run_pace()
             browser = await self._ensure_browser()
             context = browser.contexts[0]
             page = await context.new_page()
@@ -505,9 +534,10 @@ class CdpTransport:
                         wait_until="domcontentloaded",
                         timeout=self._timeout * 1000,
                     )
-                    # SPA login shell may paint after domcontentloaded.
+                    # SPA login shell may paint after domcontentloaded.  停顿
+                    # 时长抖动——固定毫秒数是时序特征。
                     with contextlib.suppress(Exception):
-                        await page.wait_for_timeout(800)
+                        await page.wait_for_timeout(random.uniform(700.0, 1600.0))
                     # Fail fast when the profile is logged out of Creator Center.
                     if await self._page_shows_login_ui(page) or auth_failed.is_set():
                         login_ui = await self._page_shows_login_ui(page)
@@ -533,7 +563,7 @@ class CdpTransport:
                             timeout=self._timeout * 1000,
                         )
                         with contextlib.suppress(Exception):
-                            await page.wait_for_timeout(800)
+                            await page.wait_for_timeout(random.uniform(700.0, 1600.0))
                         if await self._page_shows_login_ui(page) or auth_failed.is_set():
                             login_ui = await self._page_shows_login_ui(page)
                             auth_err = self._auth_error_from_captured(
@@ -642,38 +672,61 @@ class CdpTransport:
                 start_page = first_note_page + 1
                 for page_index in range(start_page, start_page + max_pages - 1):
                     previous_pages = len(note_responses)
-                    try:
-                        await page.locator("div.content").evaluate(
+                    # 翻页也保持人的节奏——连续秒翻列表是明显的机器特征。
+                    await self._pace()
+                    # 渐进滚动：瞬时 scrollTop=scrollHeight 是典型机器行为。
+                    # 分 2-4 段滚动、段间停顿，最后一段才到底触发加载。
+                    scroll_steps = random.randint(2, 4)
+                    for step in range(scroll_steps):
+                        last_step = step == scroll_steps - 1
+                        script = (
                             """el => {
                                 el.scrollTop = el.scrollHeight
                                 el.dispatchEvent(new Event('scroll', { bubbles: true }))
                             }"""
+                            if last_step
+                            else """el => {
+                                el.scrollTop = Math.min(
+                                    el.scrollTop + el.clientHeight * (0.6 + Math.random() * 0.8),
+                                    el.scrollHeight
+                                )
+                                el.dispatchEvent(new Event('scroll', { bubbles: true }))
+                            }"""
                         )
-                    except Exception as e:
-                        logger.debug(
-                            "creator note list cannot scroll for page %s: %s", page_index, e
+                        try:
+                            await page.locator("div.content").evaluate(script)
+                        except Exception as e:
+                            logger.debug(
+                                "creator note list cannot scroll for page %s: %s", page_index, e
+                            )
+                            break
+                        if not last_step:
+                            await asyncio.sleep(random.uniform(0.15, 0.45))
+                    else:
+                        # All scroll steps completed — wait for the next page.
+                        try:
+                            await self._wait_for(
+                                lambda expected=page_index, before=previous_pages: (
+                                    expected in note_responses or len(note_responses) > before
+                                ),
+                                min(8.0, self._timeout),
+                            )
+                        except TimeoutError:
+                            # No next request is the normal end-of-list condition.
+                            break
+                        if page_index not in note_responses:
+                            break
+                        self._validate_creator_response(
+                            *note_responses[page_index], operation=f"note list page {page_index}"
                         )
-                        break
-                    try:
-                        await self._wait_for(
-                            lambda expected=page_index, before=previous_pages: (
-                                expected in note_responses or len(note_responses) > before
-                            ),
-                            min(8.0, self._timeout),
-                        )
-                    except TimeoutError:
-                        # No next request is the normal end-of-list condition.
-                        break
-                    if page_index not in note_responses:
-                        break
-                    self._validate_creator_response(
-                        *note_responses[page_index], operation=f"note list page {page_index}"
-                    )
-                    next_data = _unwrap_api_body(note_responses[page_index][1])
-                    if (isinstance(next_data, dict) and not extract_note_items(next_data)) or (
-                        isinstance(next_data, list) and not next_data
-                    ):
-                        break
+                        next_data = _unwrap_api_body(note_responses[page_index][1])
+                        if (isinstance(next_data, dict) and not extract_note_items(next_data)) or (
+                            isinstance(next_data, list) and not next_data
+                        ):
+                            break
+                        continue
+                    # Scroll evaluate failed — stop paginating.
+                    break
 
                 raw_notes: list[dict[str, Any]] = []
                 for page_index in sorted(note_responses):
@@ -702,7 +755,7 @@ class CdpTransport:
                 # the account snapshot from being imported.
                 detail_deadline = asyncio.get_running_loop().time() + self._detail_timeout
                 detail_failures = 0
-                detail_visits = 0
+                detail_candidates: list[str] = []
                 for note in raw_notes[:100]:
                     note_id = str(
                         note.get("note_id") or note.get("noteId") or note.get("id") or ""
@@ -711,13 +764,17 @@ class CdpTransport:
                         continue
                     if detail_filter is not None and not detail_filter(note):
                         continue
+                    detail_candidates.append(note_id)
+                # 乱序访问：每次以不同顺序浏览笔记详情，避免固定的"新→旧"
+                # 访问序列——固定顺序本身是可被风控识别的爬行特征。
+                random.shuffle(detail_candidates)
+                for visit_order, note_id in enumerate(detail_candidates):
                     remaining = detail_deadline - asyncio.get_running_loop().time()
                     if remaining <= 0:
                         logger.info("note detail enrichment budget exhausted")
                         break
-                    if detail_visits:
+                    if visit_order:
                         await self._pace()
-                    detail_visits += 1
                     try:
                         await page.goto(
                             f"{NOTE_DETAIL_PAGE}?noteId={quote(note_id, safe='')}",
@@ -785,12 +842,8 @@ class CdpTransport:
                 )
                 body_failures = 0
                 body_empty = 0
-                body_visits = 0
+                body_candidates: list[int] = []
                 for index, note in enumerate(raw_notes[:50]):
-                    remaining = body_deadline - asyncio.get_running_loop().time()
-                    if remaining <= 0:
-                        logger.info("public note body enrichment budget exhausted")
-                        break
                     note_id = str(
                         note.get("note_id") or note.get("noteId") or note.get("id") or ""
                     ).strip()
@@ -807,13 +860,24 @@ class CdpTransport:
                         continue
                     if body_filter is not None and not body_filter(note):
                         continue
+                    body_candidates.append(index)
+                # 乱序访问公开正文页，避免与详情页相同的固定访问序列。
+                random.shuffle(body_candidates)
+                for visit_order, index in enumerate(body_candidates):
+                    remaining = body_deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        logger.info("public note body enrichment budget exhausted")
+                        break
+                    note = raw_notes[index]
+                    note_id = str(
+                        note.get("note_id") or note.get("noteId") or note.get("id") or ""
+                    ).strip()
                     xsec_token = str(note.get("xsec_token") or note.get("xsecToken") or "").strip()
                     xsec_source = str(
                         note.get("xsec_source") or note.get("xsecSource") or "pc_creatormng"
                     ).strip()
-                    if body_visits:
+                    if visit_order:
                         await self._pace()
-                    body_visits += 1
                     try:
                         body_text = await self._scrape_public_note_body(
                             page,

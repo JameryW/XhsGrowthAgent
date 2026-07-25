@@ -16,6 +16,7 @@ from backend.db.creator_stats import (
     list_note_stats,
     upsert_bundle,
 )
+from backend.services.creator_stats import pipeline as pipeline_module
 from backend.services.creator_stats.pipeline import (
     sync_account_stats,
     sync_all_active_accounts,
@@ -30,8 +31,10 @@ from .conftest import grant_test_user
 @pytest.fixture(autouse=True)
 def _clear_mem():
     _reset_memory_store()
+    pipeline_module._last_successful_sync_finished_at = None
     yield
     _reset_memory_store()
+    pipeline_module._last_successful_sync_finished_at = None
 
 
 def _app() -> FastAPI:
@@ -133,6 +136,57 @@ async def test_batch_sync_returns_already_running_when_postgres_lock_is_busy():
 
     assert result["ok"] is False
     assert result["status"] == "already_running"
+
+
+def _active_account_patches(sync_mock: AsyncMock):
+    return (
+        patch(
+            "backend.db.accounts.get_active_account",
+            new_callable=AsyncMock,
+            return_value=SimpleNamespace(id="active-1"),
+        ),
+        patch(
+            "backend.db.accounts.get_account_cdp_endpoint",
+            new_callable=AsyncMock,
+            return_value="http://127.0.0.1:9001",
+        ),
+        patch(
+            "backend.services.creator_stats.pipeline.sync_account_stats",
+            new=sync_mock,
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_batch_sync_cooldown_skips_second_run_within_window():
+    """成功同步后冷却期内再次触发 → status=cooldown，不再爬取。"""
+    sync_mock = AsyncMock(return_value=SyncResult(account_id="active-1", account_synced=True))
+    p1, p2, p3 = _active_account_patches(sync_mock)
+    with p1, p2, p3:
+        first = await sync_all_active_accounts(run_creative_analysis=False)
+        second = await sync_all_active_accounts(run_creative_analysis=False)
+
+    assert first["ok"] is True
+    assert second["ok"] is False
+    assert second["status"] == "cooldown"
+    assert second["retry_after_seconds"] > 0
+    # 第二次没有触发任何账号爬取。
+    assert sync_mock.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_batch_sync_cooldown_disabled_when_zero(monkeypatch):
+    """CREATOR_STATS_SYNC_COOLDOWN_MINUTES=0 关闭冷却，连续触发都执行。"""
+    monkeypatch.setenv("CREATOR_STATS_SYNC_COOLDOWN_MINUTES", "0")
+    sync_mock = AsyncMock(return_value=SyncResult(account_id="active-1", account_synced=True))
+    p1, p2, p3 = _active_account_patches(sync_mock)
+    with p1, p2, p3:
+        first = await sync_all_active_accounts(run_creative_analysis=False)
+        second = await sync_all_active_accounts(run_creative_analysis=False)
+
+    assert first["ok"] is True
+    assert second["ok"] is True
+    assert sync_mock.await_count == 2
 
 
 def test_batch_sync_endpoint_returns_atomic_batch_summary():

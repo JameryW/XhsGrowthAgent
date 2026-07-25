@@ -46,9 +46,9 @@ async def test_scheduler_runs_immediately_and_records_batch_summary(monkeypatch)
         await _creator_stats_scheduler(app, 0.5)
 
     sync.assert_awaited_once_with(store=None, period="30d")
-    # Scheduler sleep carries ±10% jitter around the configured interval.
+    # Scheduler sleep carries a 0.75-1.5x random factor around the interval.
     assert len(sleep_calls) == 1
-    assert 1800.0 * 0.9 <= sleep_calls[0] <= 1800.0 * 1.1
+    assert 1800.0 * 0.75 * 0.99 <= sleep_calls[0] <= 1800.0 * 1.5
     state = app.state.creator_stats_scheduler_status
     assert state["status"] == "completed"
     assert state["run_count"] == 1
@@ -203,8 +203,8 @@ async def test_scheduler_delays_first_run_when_startup_delay_configured(monkeypa
     sync.assert_awaited_once()
     # 第一次 sleep 是启动延迟（5-10s 区间内，减去微小耗时）。
     assert 4.0 <= sleep_calls[0] <= 10.0
-    # 第二次 sleep 是周期睡眠（1800s ±10%）。
-    assert 1800.0 * 0.9 * 0.99 <= sleep_calls[1] <= 1800.0 * 1.1
+    # 第二次 sleep 是周期睡眠（1800s × 0.75-1.5 随机因子）。
+    assert 1800.0 * 0.75 * 0.99 <= sleep_calls[1] <= 1800.0 * 1.5
 
 
 @pytest.mark.asyncio
@@ -228,10 +228,73 @@ async def test_scheduler_backs_off_after_consecutive_failures(monkeypatch):
     ):
         await _creator_stats_scheduler(app, 0.5)
 
-    # 第一次失败：按原周期（1800s ±10%）。
-    assert 1800.0 * 0.9 * 0.99 <= sleep_calls[0] <= 1800.0 * 1.1
-    # 第二次连续失败：间隔翻倍（3600s ±10%）。
-    assert 3600.0 * 0.9 * 0.99 <= sleep_calls[1] <= 3600.0 * 1.1
+    # 第一次失败：按原周期（1800s × 0.75-1.5）。
+    assert 1800.0 * 0.75 * 0.99 <= sleep_calls[0] <= 1800.0 * 1.5
+    # 第二次连续失败：间隔翻倍（3600s × 0.75-1.5）。
+    assert 3600.0 * 0.75 * 0.99 <= sleep_calls[1] <= 3600.0 * 1.5
     state = app.state.creator_stats_scheduler_status
     assert state["consecutive_failures"] == 2
     assert state["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_scheduler_treats_cooldown_as_non_failure(monkeypatch):
+    """冷却跳过（status=cooldown）不算失败：不计入退避、间隔不翻倍。"""
+    app = _scheduler_app()
+    result = {
+        "ok": False,
+        "status": "cooldown",
+        "active_accounts": 0,
+        "succeeded": 0,
+        "failed": 0,
+    }
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", fake_sleep)
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(return_value=result),
+        ),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(app, 0.5)
+
+    state = app.state.creator_stats_scheduler_status
+    assert state["consecutive_failures"] == 0
+    assert state["status"] == "completed"
+    assert 1800.0 * 0.75 * 0.99 <= sleep_calls[0] <= 1800.0 * 1.5
+
+
+@pytest.mark.asyncio
+async def test_scheduler_randomly_skips_cycles_when_configured(monkeypatch):
+    """skip_day_chance=1.0 时，每轮运行后下一轮整天跳过（不爬但仍按节奏睡眠）。"""
+    app = _scheduler_app()
+    result = {"ok": True, "status": "completed", "active_accounts": 1, "succeeded": 1, "failed": 0}
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        if len(sleep_calls) >= 2:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", fake_sleep)
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(return_value=result),
+        ) as sync,
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(app, 0.5, skip_day_chance=1.0)
+
+    # 第一轮正常运行，第二轮被跳过——sync 只调用一次。
+    sync.assert_awaited_once()
+    state = app.state.creator_stats_scheduler_status
+    assert state["status"] == "skipped"
+    assert state["run_count"] == 1
+    assert len(sleep_calls) == 2
