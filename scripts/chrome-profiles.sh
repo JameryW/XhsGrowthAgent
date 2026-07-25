@@ -12,9 +12,9 @@
 #                                       # no X display exists)
 #   scripts/chrome-profiles.sh status   # probe each account's CDP port (read-only)
 #   scripts/chrome-profiles.sh stop     # SIGTERM every account's Chrome (via pidfile)
-#   scripts/chrome-profiles.sh start --headless  # emergency override (NOT
-#                                       # recommended: XHS risk control blocks
-#                                       # headless, QR login fails with 300012)
+#
+# headless 模式已完全禁止：小红书风控会拦截 headless Chrome（扫码登录 300012）。
+# 传入 --headless 会直接报错退出；无 X display 时脚本自动启动 Xvfb。
 #
 # Runs on the HOST (Chrome lives on the host; the backend container connects to
 # it via host.containers.internal:<port>). Requires POSTGRES_URI to point at the
@@ -44,8 +44,8 @@ if [[ "${POSTGRES_URI:-}" == *"@postgres-xhs:"* ]]; then
     export POSTGRES_URI="${POSTGRES_URI/@postgres-xhs:/@localhost:}"
 fi
 
-# Host Chrome runs HEADED ONLY — headless Chrome is flagged by XHS risk
-# control (QR login fails with 300012 / "未找到登录二维码").  Headed mode
+# Host Chrome runs HEADED ONLY — headless Chrome is banned (XHS risk control
+# blocks it: QR login fails with 300012 / "未找到登录二维码").  Headed mode
 # needs an X display: in service/agent shells DISPLAY is often unset even
 # though an Xvfb socket is already available, so pick one; when no X server
 # exists at all, start Xvfb ourselves so headed always works unattended.
@@ -72,33 +72,16 @@ if [[ -z "${DISPLAY:-}" ]] && command -v Xvfb >/dev/null 2>&1; then
     done
 fi
 
-# Never fall back to headless automatically.  --headless (or
-# XHS_CHROME_HEADLESS=1) remains as an explicit operator override for
-# emergencies, but the default path stays headed even without a display.
-headless_arg=0
+# headless is banned outright — XHS risk control blocks headless Chrome (QR
+# login fails with 300012 / "未找到登录二维码"). Reject any explicit attempt.
 for arg in "$@"; do
     if [[ "$arg" == "--headless" ]]; then
-        headless_arg=1
-        break
+        echo "错误：headless 模式已被完全禁止（小红书风控会拦截 headless Chrome，扫码登录 300012）。请使用默认 headed 模式。" >&2
+        exit 2
     fi
 done
 
-if [[ "${1:-}" == "start" && "$headless_arg" -eq 0 ]]; then
-    case "${XHS_CHROME_HEADLESS:-0}" in
-        1|true|yes)
-            echo ">>> 警告：显式启用 headless 模式，可能被小红书风控拦截（不推荐）" >&2
-            set -- "$@" --headless
-            ;;
-        0|false|no|auto)
-            ;;
-        *)
-            echo "XHS_CHROME_HEADLESS must be 0 or 1" >&2
-            exit 2
-            ;;
-    esac
-fi
-
 cd "$PROJECT_DIR"
 
-# Forward all args (subcommand + flags like --headless) to the python CLI.
+# Forward all args (subcommand + flags) to the python CLI.
 exec python3 -m backend.services.chrome_launcher "$@"

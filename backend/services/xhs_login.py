@@ -24,7 +24,6 @@ import asyncio
 import contextlib
 import json
 import logging
-import os
 import time
 import urllib.request
 from pathlib import Path
@@ -384,7 +383,7 @@ class XhsLoginSession:
         return self._qr_url
 
     async def start(self) -> dict[str, Any]:
-        """启动 headless Chrome，拦截 qrcode/create，返回 ``{qr_id, url}``.
+        """启动 Chrome（headed），拦截 qrcode/create，返回 ``{qr_id, url}``.
 
         若会话已启动且二维码有效，复用现有会话（返回当前 qr_id+url）。
         若二维码已过期，自动刷新。
@@ -471,11 +470,11 @@ class XhsLoginSession:
             else:
                 # 回退：launch_persistent_context（playwright bundled chromium）。
                 # 会被 xhs 471 风控——仅 cdp_endpoint 不可用时兜底。
+                # headless 已完全禁止（风控拦截），固定 headed。
                 Path(self.profile_path).mkdir(parents=True, exist_ok=True)
-                headless = os.getenv("XHS_LOGIN_HEADLESS", "0") == "1"
                 self._context = await self._playwright.chromium.launch_persistent_context(
                     user_data_dir=self.profile_path,
-                    headless=headless,
+                    headless=False,
                     user_agent=(
                         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
                         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -555,8 +554,8 @@ class XhsLoginSession:
                     f"启动扫码登录失败：{_QR_CREATE_WAIT_S:.0f}s 内未找到登录二维码"
                     f"{page_hint}。"
                     "常见原因：1) 小红书 IP/环境风控（error 300012）"
-                    " 2) headless Chrome 被拦截 3) 页面结构变化。"
-                    "请切换安全网络，用 headed Chrome 重试，或稍后重试。"
+                    " 2) 页面结构变化。"
+                    "请切换安全网络后重试，或稍后再试。"
                 )
         except LoginError:
             # 显式 LoginError（未装 / CDP 连不上 / 超时）：关 context 后原样抛出。
@@ -682,7 +681,7 @@ class XhsLoginSession:
             # Mint Creator Center cookies (access-token-creator.*) so stats/publish
             # do not see a "logged_in" www session that still fails on creator APIs.
             await self._warm_creator_session()
-            # 兜底资源回收：登录态已落盘 profile，headless Chrome 无需再常驻。
+            # 兜底资源回收：登录态已落盘 profile，登录用 Chrome 无需再常驻。
             # 前端若未显式调 stop 也不会泄漏——confirmed 即关闭 context。
             # stop() 幂等，前端后续调 stop 仍安全（no-op）。
             await self.stop()
@@ -1077,8 +1076,8 @@ class XhsLoginSession:
             await self.stop()
             raise LoginError(
                 f"启动扫码登录失败：{_QR_CREATE_WAIT_S:.0f}s 内未找到登录二维码。"
-                "常见原因：小红书 IP/环境风控（300012）、headless 被拦截或页面变化。"
-                "请切换安全网络或以 headed Chrome 重试。"
+                "常见原因：小红书 IP/环境风控（300012）或页面变化。"
+                "请切换安全网络后重试。"
             )
         return {
             "qr_id": qr_data["qr_id"],
@@ -1368,7 +1367,7 @@ class XhsLoginSession:
         ):
             return (
                 "小红书安全限制：当前浏览器页面被安全校验拦截（IP/环境风险），"
-                "无法生成登录二维码。请切换安全网络，避免长期使用 headless Chrome，"
+                "无法生成登录二维码。请切换安全网络，"
                 "或在可访问小红书的本机浏览器完成扫码后重试。"
             )
         return None

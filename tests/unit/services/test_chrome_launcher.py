@@ -450,9 +450,7 @@ async def test_ensure_all_filters_unbound_accounts(monkeypatch):
     """Accounts without port/profile/is_active are skipped; only bound+active launch."""
     launched: list[AccountRow] = []
 
-    async def _fake_ensure(
-        a: AccountRow, *, headless: bool = False, chrome_bin: str | None = None
-    ) -> ChromeStatus:
+    async def _fake_ensure(a: AccountRow, *, chrome_bin: str | None = None) -> ChromeStatus:
         launched.append(a)
         return ChromeStatus(a.id, a.cdp_port, a.chrome_profile_path, True, "launched")
 
@@ -572,7 +570,7 @@ def test_build_launch_cmd_includes_core_flags():
     """The launch command carries user-data-dir, internal port (cdp_port+OFFSET),
     and the default flags. Chrome listens on internal port (loopback only —
     Chrome 144 ignores --remote-debugging-address); socat exposes cdp_port."""
-    cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223, headless=False)
+    cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223)
     assert "/usr/bin/google-chrome" in cmd
     assert "--user-data-dir=/p/acc" in cmd
     # Chrome binds the *internal* port (cdp_port + _INTERNAL_PORT_OFFSET);
@@ -591,6 +589,11 @@ def test_internal_cdp_port_offset():
     assert cl._internal_cdp_port(9223) == 9223 + cl._INTERNAL_PORT_OFFSET
 
 
-def test_build_launch_cmd_headless_flag():
-    cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p", 9223, headless=True)
-    assert "--headless=new" in cmd
+def test_build_launch_cmd_bans_headless():
+    """headless 已完全禁止：_build_launch_cmd 不再接受 headless 参数，
+    任何调用路径都无法产出 --headless 标志。"""
+    import inspect
+
+    assert "headless" not in inspect.signature(cl._build_launch_cmd).parameters
+    cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p", 9223)
+    assert not any(f.startswith("--headless") for f in cmd)

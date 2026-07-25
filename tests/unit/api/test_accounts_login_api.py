@@ -1,6 +1,6 @@
 """Tests for the scan-login (QR code) endpoints on the accounts router.
 
-POST /accounts/{id}/login/qr        — start headless Chrome, return qr_id+url
+POST /accounts/{id}/login/qr        — start login Chrome (headed), return qr_id+url
 GET  /accounts/{id}/login/qr/status — poll codeStatus → waiting/scanned/confirmed/expired
 POST /accounts/{id}/login/qr/stop   — close the login session
 
