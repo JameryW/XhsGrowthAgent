@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import random
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -128,7 +129,9 @@ async def _creator_stats_scheduler(app: FastAPI, interval_hours: float) -> None:
                 }
             )
             logger.exception("scheduled creator stats import failed")
-        await asyncio.sleep(interval_seconds)
+        # ±10% jitter so multi-instance schedulers do not fire on the exact
+        # same wall-clock marks every cycle.
+        await asyncio.sleep(interval_seconds * random.uniform(0.9, 1.1))
 
 
 @asynccontextmanager

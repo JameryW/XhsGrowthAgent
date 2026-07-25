@@ -23,6 +23,7 @@ from backend.services.creator_stats.client import (
     NOTE_AUDIENCE_SOURCE_PATH,
     NOTE_AUDIENCE_TREND_PATH,
     NOTE_BASE_PATH,
+    NOTE_DETAIL_PAGE,
     NOTE_LIST_PATH,
     CdpTransport,
     CreatorStatsClient,
@@ -370,3 +371,173 @@ async def test_client_aclose_safe_for_transport_without_aclose():
 
     client = CreatorStatsClient(transport=_NoCloseTransport())
     await client.aclose()
+
+
+# ── Incremental sync: filters, pacing, circuit breakers ─────────────────────
+
+
+def _numbered_note(index: int) -> dict:
+    return {**_native_note(), "id": f"note-{index}", "display_title": f"笔记{index}"}
+
+
+class _FakeNotesPage:
+    """Native-page stub serving ``note_count`` posted notes plus detail APIs."""
+
+    def __init__(self, note_count: int = 2) -> None:
+        self._response_handler = None
+        self._notes = [_numbered_note(i + 1) for i in range(note_count)]
+        self.detail_urls: list[str] = []
+        self.body_urls: list[str] = []
+
+    def on(self, event: str, handler) -> None:
+        assert event == "response"
+        self._response_handler = handler
+
+    def remove_listener(self, event: str, handler) -> None:
+        assert event == "response"
+        assert handler is self._response_handler
+
+    async def _emit(self, path: str, body: dict, *, query: str = "") -> None:
+        response = SimpleNamespace(
+            url=f"https://creator.xiaohongshu.com{path}{query}",
+            status=200,
+            json=AsyncMock(return_value=body),
+        )
+        assert self._response_handler is not None
+        self._response_handler(response)
+        await asyncio.sleep(0)
+
+    async def goto(self, url: str, **_kwargs) -> None:
+        if url == CREATOR_STATS_PAGE:
+            await self._emit(ACCOUNT_OVERVIEW_PATH, _native_account())
+            await self._emit(CREATOR_PROFILE_PATH, _native_profile())
+        elif url == CREATOR_NOTE_MANAGER_PAGE:
+            await self._emit(NOTE_LIST_PATH, {"data": {"notes": self._notes}})
+        elif url.startswith(NOTE_DETAIL_PAGE):
+            self.detail_urls.append(url)
+            note_id = url.rsplit("noteId=", 1)[1]
+            query = f"?noteId={note_id}"
+            await self._emit(NOTE_BASE_PATH, {"data": {"view_count": 100}}, query=query)
+            await self._emit(
+                NOTE_AUDIENCE_SOURCE_PATH,
+                {"data": {"source": [{"title": "首页推荐", "value": 48}]}},
+                query=query,
+            )
+        elif "www.xiaohongshu.com/explore/" in url:
+            self.body_urls.append(url)
+
+    def get_by_text(self, _text: str, **_kwargs):
+        return self
+
+    async def click(self, **_kwargs) -> None:
+        await self.goto(CREATOR_NOTE_MANAGER_PAGE)
+
+    def locator(self, _selector: str):
+        return self
+
+    async def evaluate(self, _script: str) -> str:
+        return "公开正文内容"
+
+    async def wait_for_timeout(self, _ms: int) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
+
+def _transport_with_page(page: _FakeNotesPage) -> CdpTransport:
+    class FakeContext:
+        async def new_page(self) -> _FakeNotesPage:
+            return page
+
+    class FakeBrowser:
+        contexts = [FakeContext()]
+
+    transport = CdpTransport("http://127.0.0.1:9222", timeout=1, request_delay=(0, 0))
+    transport._ensure_browser = AsyncMock(return_value=FakeBrowser())
+    return transport
+
+
+async def test_cdp_incremental_filters_skip_unselected_notes():
+    """Only notes approved by the filters get detail/body page visits."""
+    page = _FakeNotesPage(note_count=2)
+    transport = _transport_with_page(page)
+
+    _account, _profile, notes = await transport.fetch_creator_center(
+        max_pages=1,
+        detail_filter=lambda note: str(note.get("id")) == "note-1",
+        body_filter=lambda note: str(note.get("id")) == "note-2",
+    )
+
+    assert [url.rsplit("noteId=", 1)[1] for url in page.detail_urls] == ["note-1"]
+    assert len(page.body_urls) == 1
+    assert "note-2" in page.body_urls[0]
+    assert len(notes) == 2
+
+
+async def test_cdp_paces_between_note_visits_but_not_before_first():
+    page = _FakeNotesPage(note_count=2)
+    transport = _transport_with_page(page)
+    transport._pace = AsyncMock()
+
+    await transport.fetch_creator_center(max_pages=1)
+
+    # 2 detail visits + 2 body visits; the first visit of each loop is unpaced.
+    assert transport._pace.await_count == 2
+
+
+async def test_cdp_detail_circuit_breaks_after_three_consecutive_failures():
+    class FailingDetailPage(_FakeNotesPage):
+        async def goto(self, url: str, **kwargs) -> None:
+            if url.startswith(NOTE_DETAIL_PAGE):
+                self.detail_urls.append(url)
+                raise RuntimeError("risk control interstitial")
+            await super().goto(url, **kwargs)
+
+    page = FailingDetailPage(note_count=5)
+    transport = _transport_with_page(page)
+
+    await transport.fetch_creator_center(max_pages=1, body_filter=lambda _note: False)
+
+    assert len(page.detail_urls) == 3
+
+
+async def test_cdp_body_circuit_breaks_after_three_consecutive_failures():
+    page = _FakeNotesPage(note_count=5)
+    transport = _transport_with_page(page)
+    transport._scrape_public_note_body = AsyncMock(side_effect=RuntimeError("boom"))
+
+    await transport.fetch_creator_center(max_pages=1, detail_filter=lambda _note: False)
+
+    assert transport._scrape_public_note_body.await_count == 3
+
+
+async def test_cdp_body_circuit_breaks_after_five_consecutive_empty_results():
+    """Repeated empty public pages usually mean risk control is serving a shell."""
+    page = _FakeNotesPage(note_count=7)
+    transport = _transport_with_page(page)
+    transport._scrape_public_note_body = AsyncMock(return_value="")
+
+    await transport.fetch_creator_center(max_pages=1, detail_filter=lambda _note: False)
+
+    assert transport._scrape_public_note_body.await_count == 5
+
+
+async def test_cdp_fetch_all_forwards_optional_filters():
+    transport = CdpTransport("http://127.0.0.1:9222")
+    transport.fetch_creator_center = AsyncMock(
+        return_value=(_native_account(), _native_profile(), [_native_note()])
+    )
+    client = CreatorStatsClient(transport=transport)
+
+    def detail_filter(_note: dict) -> bool:
+        return True
+
+    def body_filter(_note: dict) -> bool:
+        return False
+
+    await client.fetch_all("acct", detail_filter=detail_filter, body_filter=body_filter)
+
+    transport.fetch_creator_center.assert_awaited_once_with(
+        max_pages=50, period="30d", detail_filter=detail_filter, body_filter=body_filter
+    )

@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+import os
+import random
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -23,12 +25,13 @@ from backend.services.creator_stats.client import (
     CreatorStatsFetchError,
     FixtureTransport,
 )
-from backend.services.creator_stats.normalize import normalize_bundle
+from backend.services.creator_stats.normalize import normalize_bundle, normalize_note
 from backend.services.creator_stats.suggestions import suggestions_from_analysis
 from backend.services.creator_stats.types import (
     ERROR_AUTH_EXPIRED,
     ERROR_BROWSER_UNAVAILABLE,
     CreatorStatsBundle,
+    NoteStats,
     SyncResult,
     classify_sync_error,
 )
@@ -45,6 +48,98 @@ _ACTIVE_ACCOUNTS_SYNC_LOCK_KEY = "xhs_growth.creator_stats.active_accounts"
 
 # One auto-import per account after QR confirm (cleared when a new QR starts).
 _post_login_sync_once: set[str] = set()
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, "") or default)
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, "") or default)
+    except ValueError:
+        return default
+
+
+async def _load_note_sync_state(account_id: str) -> dict[str, NoteStats] | None:
+    """Persisted per-note state for incremental sync; None when unreadable."""
+    try:
+        rows = await stats_db.list_all_note_stats(account_id)
+    except Exception:
+        logger.warning("note sync state lookup failed for %s", account_id, exc_info=True)
+        return None
+    return {row.note_id: row for row in rows}
+
+
+def _build_incremental_filters(
+    existing: dict[str, NoteStats] | None,
+    *,
+    recent_days: int = 7,
+    body_lookback_days: int = 30,
+) -> tuple[Callable[[dict[str, Any]], bool], Callable[[dict[str, Any]], bool]]:
+    """Per-note visit deciders for detail-page and public-body enrichment.
+
+    Anti-risk-control strategy: only visit a note's detail page when it is new,
+    recently published, or its list metrics moved; only scrape the public body
+    when the stored row has no caption yet (captions do not change, so a note
+    is never re-scraped).  ``existing=None`` (state unreadable) disables both
+    enrichments entirely — the list payload is still imported, which is the
+    safest crawl.  Timestamps are ISO strings compared lexicographically.
+    """
+    now = datetime.now(UTC)
+    recent_cutoff = (now - timedelta(days=max(0, recent_days))).isoformat()
+    body_cutoff = (now - timedelta(days=max(0, body_lookback_days))).isoformat()
+
+    def _normalize(note: dict[str, Any]) -> NoteStats | None:
+        try:
+            return normalize_note(note, "")
+        except Exception:
+            return None
+
+    def detail_filter(note: dict[str, Any]) -> bool:
+        if existing is None:
+            return False
+        current = _normalize(note)
+        if current is None:
+            return False
+        previous = existing.get(current.note_id)
+        if previous is None:
+            return True
+        published = current.published_at or previous.published_at
+        if published and published >= recent_cutoff:
+            return True
+        return (current.views, current.likes, current.comments, current.collects) != (
+            previous.views,
+            previous.likes,
+            previous.comments,
+            previous.collects,
+        )
+
+    def body_filter(note: dict[str, Any]) -> bool:
+        if existing is None:
+            return False
+        current = _normalize(note)
+        if current is None:
+            return False
+        previous = existing.get(current.note_id)
+        if previous is not None and previous.body_text:
+            return False
+        published = current.published_at or (previous.published_at if previous else "")
+        return bool(published) and published >= body_cutoff
+
+    return detail_filter, body_filter
+
+
+async def _pace_between_accounts() -> None:
+    """Random delay between per-account crawls to avoid back-to-back bursts."""
+    max_delay = _env_float("CREATOR_STATS_INTER_ACCOUNT_DELAY_MAX_S", 120.0)
+    if max_delay <= 0:
+        return
+    await asyncio.sleep(random.uniform(45.0, max(45.0, max_delay)))
+
 
 _AUTH_PREFLIGHT_MESSAGES: dict[str, str] = {
     "stale_id_token": (
@@ -451,13 +546,23 @@ async def sync_from_creator_center(
         if blocked is not None:
             return blocked
 
+    fetch_kwargs: dict[str, Any] = {}
     if client is None:
         if cdp_endpoint:
             client = CreatorStatsClient(cdp_endpoint=cdp_endpoint)
+            # Incremental sync: skip per-note page visits for notes whose
+            # stored state is already fresh, so a daily run only re-visits
+            # new/changed notes instead of the whole history.
+            existing = await _load_note_sync_state(account_id)
+            fetch_kwargs["detail_filter"], fetch_kwargs["body_filter"] = _build_incremental_filters(
+                existing,
+                recent_days=_env_int("CREATOR_STATS_ENRICH_RECENT_DAYS", 7),
+                body_lookback_days=_env_int("CREATOR_STATS_BODY_LOOKBACK_DAYS", 30),
+            )
         else:
             client = CreatorStatsClient(cookie=cookie)
     try:
-        bundle = await client.fetch_all(account_id, period=period)
+        bundle = await client.fetch_all(account_id, period=period, **fetch_kwargs)
     except CreatorStatsFetchError as e:
         logger.warning("creator stats fetch failed for %s: %s", account_id, e)
         return SyncResult(
@@ -667,7 +772,10 @@ async def _sync_all_active_accounts_locked(
             }
 
         results: list[dict[str, Any]] = []
-        for account in accounts:
+        for index, account in enumerate(accounts):
+            if index:
+                # Stagger accounts so the batch is not one continuous burst.
+                await _pace_between_accounts()
             account_id = str(account.id).strip()
             if not account_id:
                 continue

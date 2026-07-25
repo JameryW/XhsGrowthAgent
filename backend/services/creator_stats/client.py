@@ -11,6 +11,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
+import random
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib.parse import parse_qs, quote, urlsplit
@@ -22,6 +25,14 @@ from backend.services.creator_stats.types import CreatorStatsBundle
 from backend.services.xhs_api import XHSApiEndpoints
 
 logger = logging.getLogger("xhs_growth.creator_stats.client")
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, "") or default)
+    except ValueError:
+        return default
+
 
 # Creator-center statistics surface (product UI)
 CREATOR_STATS_PAGE = "https://creator.xiaohongshu.com/statistics/account/v2"
@@ -164,13 +175,30 @@ class CdpTransport:
         *,
         timeout: float = 30.0,
         detail_timeout: float = 120.0,
+        request_delay: tuple[float, float] | None = None,
     ):
         self.cdp_endpoint = cdp_endpoint
         self._timeout = timeout
         self._detail_timeout = max(1.0, float(detail_timeout))
+        # Random pause between per-note page visits.  Back-to-back navigations
+        # look like a bot to XHS risk control; jitter keeps the crawl human-paced.
+        if request_delay is None:
+            request_delay = (
+                _env_float("CREATOR_STATS_REQUEST_DELAY_MIN_S", 2.0),
+                _env_float("CREATOR_STATS_REQUEST_DELAY_MAX_S", 6.0),
+            )
+        delay_min = max(0.0, float(request_delay[0]))
+        delay_max = max(delay_min, float(request_delay[1]))
+        self._request_delay = (delay_min, delay_max)
         self._playwright: Any = None
         self._browser: Any = None
         self._fetch_lock = asyncio.Lock()
+
+    async def _pace(self) -> None:
+        """Sleep a random interval before the next per-note page visit."""
+        delay_min, delay_max = self._request_delay
+        if delay_max > 0:
+            await asyncio.sleep(random.uniform(delay_min, delay_max))
 
     async def _ensure_browser(self) -> Any:
         if self._browser is not None:
@@ -354,7 +382,12 @@ class CdpTransport:
         return None
 
     async def fetch_creator_center(
-        self, *, max_pages: int = 50, period: str = "30d"
+        self,
+        *,
+        max_pages: int = 50,
+        period: str = "30d",
+        detail_filter: Callable[[dict[str, Any]], bool] | None = None,
+        body_filter: Callable[[dict[str, Any]], bool] | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
         """Capture overview, public profile, and up to ``max_pages`` native note pages.
 
@@ -362,6 +395,11 @@ class CdpTransport:
         ``div.content`` scroll container reaches the bottom.  We only observe
         those requests; no request headers, cookies, or user content are
         fabricated by this service.
+
+        ``detail_filter`` / ``body_filter`` decide per raw note whether the
+        extra detail-page / public-body visits are worth making.  Incremental
+        sync passes filters that skip unchanged notes so the crawl does not
+        re-visit every note page on every run (risk-control friendly).
         """
         try:
             max_pages = max(1, min(int(max_pages), 50))
@@ -663,16 +701,23 @@ class CdpTransport:
                 # Keep a bounded batch: a malformed/slow note must not prevent
                 # the account snapshot from being imported.
                 detail_deadline = asyncio.get_running_loop().time() + self._detail_timeout
+                detail_failures = 0
+                detail_visits = 0
                 for note in raw_notes[:100]:
                     note_id = str(
                         note.get("note_id") or note.get("noteId") or note.get("id") or ""
                     ).strip()
                     if not note_id:
                         continue
+                    if detail_filter is not None and not detail_filter(note):
+                        continue
                     remaining = detail_deadline - asyncio.get_running_loop().time()
                     if remaining <= 0:
                         logger.info("note detail enrichment budget exhausted")
                         break
+                    if detail_visits:
+                        await self._pace()
+                    detail_visits += 1
                     try:
                         await page.goto(
                             f"{NOTE_DETAIL_PAGE}?noteId={quote(note_id, safe='')}",
@@ -691,10 +736,21 @@ class CdpTransport:
                             ),
                             min(5.0, self._timeout, remaining),
                         )
+                        detail_failures = 0
                     except asyncio.CancelledError:
                         raise
                     except Exception as exc:
                         logger.info("note detail enrichment skipped for %s: %s", note_id, exc)
+                        detail_failures += 1
+                        if detail_failures >= 3:
+                            # Repeated failures usually mean risk control or a
+                            # dead page — stop instead of hammering the site.
+                            logger.warning(
+                                "note detail enrichment circuit break after %s "
+                                "consecutive failures",
+                                detail_failures,
+                            )
+                            break
 
                 # Wait for response callbacks created by the final navigation
                 # before taking the captured payloads out of the local map.
@@ -727,6 +783,9 @@ class CdpTransport:
                 body_deadline = asyncio.get_running_loop().time() + min(
                     90.0, max(30.0, float(self._detail_timeout))
                 )
+                body_failures = 0
+                body_empty = 0
+                body_visits = 0
                 for index, note in enumerate(raw_notes[:50]):
                     remaining = body_deadline - asyncio.get_running_loop().time()
                     if remaining <= 0:
@@ -746,10 +805,15 @@ class CdpTransport:
                     # Skip when we already have a caption distinct from the title.
                     if existing and existing != title and len(existing) > len(title):
                         continue
+                    if body_filter is not None and not body_filter(note):
+                        continue
                     xsec_token = str(note.get("xsec_token") or note.get("xsecToken") or "").strip()
                     xsec_source = str(
                         note.get("xsec_source") or note.get("xsecSource") or "pc_creatormng"
                     ).strip()
+                    if body_visits:
+                        await self._pace()
+                    body_visits += 1
                     try:
                         body_text = await self._scrape_public_note_body(
                             page,
@@ -762,13 +826,34 @@ class CdpTransport:
                         raise
                     except Exception as exc:
                         logger.info("public note body scrape skipped for %s: %s", note_id, exc)
+                        body_failures += 1
+                        if body_failures >= 3:
+                            logger.warning(
+                                "public note body scrape circuit break after %s "
+                                "consecutive failures",
+                                body_failures,
+                            )
+                            break
                         continue
+                    body_failures = 0
                     if body_text:
+                        body_empty = 0
                         raw_notes[index] = {
                             **raw_notes[index],
                             "body_text": body_text,
                             "desc": body_text,
                         }
+                    else:
+                        body_empty += 1
+                        if body_empty >= 5:
+                            # A run of empty bodies on the public explore page
+                            # usually means risk control is serving a shell page.
+                            logger.warning(
+                                "public note body scrape circuit break: %s consecutive empty "
+                                "results (possible risk control)",
+                                body_empty,
+                            )
+                            break
 
                 # personal_info (total fans_count) is often only requested from the
                 # creator home shell, not the stats dashboard. Fetch it once when
@@ -1126,6 +1211,8 @@ class CreatorStatsClient:
         period: str = "30d",
         max_pages: int = 50,
         page_size: int = 50,
+        detail_filter: Callable[[dict[str, Any]], bool] | None = None,
+        body_filter: Callable[[dict[str, Any]], bool] | None = None,
     ) -> CreatorStatsBundle:
         """Fetch account overview + paginated notes, return normalized bundle."""
         try:
@@ -1140,8 +1227,15 @@ class CreatorStatsClient:
         max_pages = max(1, min(max_pages, 50))
         period_norm = normalize_period(period)
         if isinstance(self.transport, CdpTransport):
+            # Forward optional filters only when set, so mocked transports in
+            # older tests keep seeing the original two-keyword call shape.
+            cdp_kwargs: dict[str, Any] = {"max_pages": max_pages, "period": period_norm}
+            if detail_filter is not None:
+                cdp_kwargs["detail_filter"] = detail_filter
+            if body_filter is not None:
+                cdp_kwargs["body_filter"] = body_filter
             account_raw, profile_raw, notes_raw = await self.transport.fetch_creator_center(
-                max_pages=max_pages, period=period_norm
+                **cdp_kwargs
             )
             return normalize_bundle(
                 account_raw,
