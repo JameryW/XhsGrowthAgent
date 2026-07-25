@@ -24,8 +24,22 @@ Extension UI:
 Lifecycle:
   - OmpBridgeManager started in FastAPI lifespan (startup)
   - Sessions start on-demand (first WebSocket connection)
-  - Sessions stop after idle timeout (default 5 min) or on manager shutdown
-  - Graceful shutdown: SIGTERM + timeout -> SIGKILL
+  - Sessions stop after idle timeout (default 5 min, OMP_IDLE_TIMEOUT) or on
+    manager shutdown; the idle timer defers while a turn is in flight
+  - Graceful shutdown: SIGTERM + timeout -> SIGKILL; manager.stop() gives busy
+    sessions a bounded grace period first
+  - Unexpected omp process death is surfaced (error + session_end events) and
+    the session is dropped, instead of lingering as a zombie
+
+Resilience:
+  - omp stdout is read with a 16 MiB line limit — asyncio's default 64 KiB
+    used to kill the reader silently on oversized NDJSON lines, freezing the
+    turn mid-run (observed in production logs as LimitOverrunError)
+  - Every emitted event carries a monotonic ``seq``; sessions keep a bounded
+    event buffer so a reconnecting WebSocket (?session_id=&last_seq=) replays
+    exactly what it missed while disconnected
+  - The WebSocket sends an application-level ping every 25s of silence so
+    browsers/proxies don't drop idle connections mid-turn
 """
 
 from __future__ import annotations
@@ -38,6 +52,7 @@ import os
 import shutil
 import signal
 import uuid
+from collections import deque
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -2006,6 +2021,17 @@ def _make_text_result(text: str, details: Any = None, is_error: bool = False) ->
 # ── OmpSession — one omp subprocess per session ────────────────────────────
 
 
+# Buffer limit for the omp stdout StreamReader. asyncio's default is 64 KiB;
+# a single NDJSON line beyond that (long message_update with full accumulated
+# text, large tool results) killed the reader task silently and froze the
+# turn mid-run (observed in production logs as LimitOverrunError).
+_STDOUT_BUFFER_LIMIT = 16 * 1024 * 1024  # 16 MiB
+
+# Reconnect replay: how many recent translated events are kept per session so
+# a reconnecting WebSocket can fetch exactly what it missed.
+_EVENT_BUFFER_SIZE = 1000
+
+
 class OmpSession:
     """Manages one ``omp --mode rpc`` subprocess for a single session.
 
@@ -2028,6 +2054,13 @@ class OmpSession:
         self._host_tool_tasks: dict[str, asyncio.Task[None]] = {}
         # Track auto-executed tool call IDs (to avoid forwarding cancels for them)
         self._auto_executed_ids: set[str] = set()
+        # Busy tracking: True between agent_start and agent_end (in-flight turn)
+        self._busy = False
+        # Reconnect replay: monotonically increasing seq + bounded event buffer
+        self._seq = 0
+        self._event_buffer: deque[dict[str, Any]] = deque(maxlen=_EVENT_BUFFER_SIZE)
+        # Manager callback invoked when the omp process dies unexpectedly
+        self._on_dead: Callable[[str], Coroutine[None, None, None]] | None = None
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -2055,6 +2088,7 @@ class OmpSession:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            limit=_STDOUT_BUFFER_LIMIT,
             cwd=cwd,
             env={
                 **os.environ,
@@ -2072,12 +2106,14 @@ class OmpSession:
         # Start stdout reader
         self._reader_task = asyncio.create_task(self._read_stdout())
 
-        # Wait for ready signal
+        # Wait for ready signal. 60s (not 30s) leaves room for cold starts —
+        # a first-run `bun x @oh-my-pi/pi-coding-agent` may download the
+        # package before omp can print its ready line.
         try:
-            await asyncio.wait_for(self._ready.wait(), timeout=30)
+            await asyncio.wait_for(self._ready.wait(), timeout=60)
         except TimeoutError:
             await self.stop()
-            raise RuntimeError("omp did not send ready signal within 30s") from None
+            raise RuntimeError("omp did not send ready signal within 60s") from None
 
         logger.info("omp RPC session %s ready", self.session_id)
 
@@ -2127,6 +2163,21 @@ class OmpSession:
     @property
     def is_ready(self) -> bool:
         return self._ready.is_set() and self._proc is not None
+
+    @property
+    def is_busy(self) -> bool:
+        """True while an agent turn is in flight (agent_start .. agent_end)."""
+        return self._busy
+
+    @property
+    def current_seq(self) -> int:
+        """Seq of the most recently emitted event (0 = none yet)."""
+        return self._seq
+
+    def events_after(self, last_seq: int, high_water: int | None = None) -> list[dict[str, Any]]:
+        """Buffered events with ``last_seq < seq <= high_water`` (reconnect replay)."""
+        upper = self._seq if high_water is None else high_water
+        return [e for e in self._event_buffer if last_seq < e.get("seq", 0) <= upper]
 
     # ── High-level API (called by WebSocket handler) ─────────────────────
 
@@ -2235,20 +2286,77 @@ class OmpSession:
             self._pending.pop(cmd_id, None)
 
     async def _read_stdout(self) -> None:
-        """Read NDJSON from omp stdout, dispatch events/responses."""
+        """Read NDJSON from omp stdout, dispatch events/responses.
+
+        Any exit from this loop — EOF (omp exited) or a reader error such as
+        an oversized NDJSON line — is an unexpected process death, unless
+        ``stop()`` cleared ``_proc`` first (normal shutdown). Unexpected
+        deaths are surfaced to the frontend and the manager instead of
+        leaving a zombie session that looks ready but never emits again.
+        """
         if not self._proc or not self._proc.stdout:
             return
-        while True:
-            line = await self._proc.stdout.readline()
-            if not line:
-                logger.warning("omp stdout closed for session %s", self.session_id)
-                break
+        reason = "stdout closed"
+        try:
+            while True:
+                line = await self._proc.stdout.readline()
+                if not line:
+                    logger.warning("omp stdout closed for session %s", self.session_id)
+                    break
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "omp sent non-JSON for session %s: %s", self.session_id, line[:200]
+                    )
+                    continue
+                await self._handle_omp_output(obj)
+        except asyncio.CancelledError:
+            # stop() cancels the reader — normal shutdown, not a crash
+            raise
+        except Exception as e:
+            reason = f"reader error: {e}"
+            logger.exception("omp stdout reader failed for session %s", self.session_id)
+        if self._proc is not None:
+            await self._handle_process_died(reason)
+
+    async def _handle_process_died(self, reason: str) -> None:
+        """Handle unexpected omp process death: fail pending work, notify, detach."""
+        proc = self._proc
+        self._proc = None
+        logger.warning(
+            "omp process for session %s died unexpectedly (%s, returncode=%s)",
+            self.session_id,
+            reason,
+            proc.returncode if proc else None,
+        )
+        # Fail pending command responses so awaiters don't hang until timeout
+        for fut in self._pending.values():
+            if not fut.done():
+                fut.set_exception(RuntimeError(f"omp process exited unexpectedly ({reason})"))
+        self._pending.clear()
+        # Cancel in-flight host tool executions
+        for task in self._host_tool_tasks.values():
+            if not task.done():
+                task.cancel()
+        self._host_tool_tasks.clear()
+        self._auto_executed_ids.clear()
+        self._busy = False
+        # Unblock the frontend: surface the crash and end the current turn
+        await self._emit(
+            {
+                "type": ServerEventType.ERROR,
+                "message": f"omp process exited unexpectedly ({reason})",
+                "level": "error",
+            }
+        )
+        await self._emit({"type": ServerEventType.SESSION_END})
+        # Let the manager drop this session so a reconnect spawns a fresh one
+        if self._on_dead is not None:
             try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                logger.warning("omp sent non-JSON for session %s: %s", self.session_id, line[:200])
-                continue
-            await self._handle_omp_output(obj)
+                await self._on_dead(self.session_id)
+            except Exception:
+                logger.exception("on_dead callback failed for session %s", self.session_id)
 
     async def _handle_omp_output(self, obj: dict[str, Any]) -> None:
         """Route omp output to ready signal, pending responses, or event translation."""
@@ -2356,6 +2464,7 @@ class OmpSession:
             )
 
         elif etype == "agent_start":
+            self._busy = True
             await self._emit(
                 {
                     "type": ServerEventType.STATUS,
@@ -2364,6 +2473,7 @@ class OmpSession:
             )
 
         elif etype == "agent_end":
+            self._busy = False
             await self._emit(
                 {
                     "type": ServerEventType.STATUS,
@@ -2383,12 +2493,18 @@ class OmpSession:
 
         elif etype in (
             "auto_compaction_start",
-            "auto_compaction_end",
             "auto_retry_start",
+        ):
+            # Surface LLM-provider retries / context compaction so the
+            # frontend shows activity instead of looking frozen mid-turn.
+            status = "compacting" if "compaction" in etype else "retrying"
+            await self._emit({"type": ServerEventType.STATUS, "status": status})
+
+        elif etype in (
+            "auto_compaction_end",
             "auto_retry_end",
         ):
-            # ponytail: skip compaction/retry events for MVP
-            pass
+            await self._emit({"type": ServerEventType.STATUS, "status": "running"})
 
         elif etype == "notice":
             level = event.get("level", "info")
@@ -2508,9 +2624,17 @@ class OmpSession:
         )
 
     async def _emit(self, event: dict[str, Any]) -> None:
-        """Push translated event to all registered callbacks."""
+        """Push translated event to all registered callbacks.
+
+        Every event gets a monotonically increasing ``seq`` and is kept in a
+        bounded ring buffer, so a reconnecting WebSocket can replay exactly
+        the events it missed while disconnected (see ``events_after``).
+        """
         # Add session_id to all events so frontend can route
         event.setdefault("session_id", self.session_id)
+        self._seq += 1
+        event["seq"] = self._seq
+        self._event_buffer.append(event)
         for cb in self._event_callbacks:
             try:
                 await cb(event)
@@ -2553,8 +2677,23 @@ class OmpBridgeManager:
         """Start the manager. No sessions are started yet (on-demand)."""
         logger.info("OmpBridgeManager started (idle_timeout=%ds)", self._idle_timeout)
 
-    async def stop(self) -> None:
-        """Stop all sessions and the manager."""
+    async def stop(self, grace_seconds: float = 10.0) -> None:
+        """Stop all sessions and the manager.
+
+        Sessions with an in-flight turn get up to ``grace_seconds`` to finish
+        before being terminated, so a deploy/restart does not needlessly kill
+        a turn that is seconds from completing. Bounded because the container
+        runtime applies its own stop timeout (podman default: 10s).
+        """
+        busy_waited = 0.0
+        while any(s.is_busy for s in self._sessions.values()):
+            if busy_waited >= grace_seconds:
+                busy = [sid for sid, s in self._sessions.items() if s.is_busy]
+                logger.info("Shutdown grace expired with busy sessions: %s", busy)
+                break
+            await asyncio.sleep(0.5)
+            busy_waited += 0.5
+
         # Cancel all idle timers
         for timer_task in self._idle_timers.values():
             if not timer_task.done():
@@ -2586,32 +2725,56 @@ class OmpBridgeManager:
             if timer and not timer.done():
                 timer.cancel()
             session = self._sessions[session_id]
-            # The extension receives XHS_AGENT_MODE at process startup and
-            # conditionally registers its local tools. A host-tool refresh
-            # alone would leave thread-bound extension tools visible after a
-            # free↔workflow navigation, so replace the subprocess when the
-            # mode changes.
-            if session.mode != mode:
-                logger.info(
-                    "Session %s mode changed %s→%s, restarting omp subprocess",
-                    session_id,
-                    session.mode,
-                    mode,
-                )
-                await session.stop()
-                session = OmpSession(session_id, mode=mode)
-                await session.start()
-                self._sessions[session_id] = session
-            return session
+            if not session.is_ready:
+                # Zombie session: the omp process died without the manager
+                # noticing (or was detached by _drop_session racing a
+                # reconnect). Drop it and fall through to create a fresh
+                # subprocess under the same session_id.
+                logger.warning("Replacing dead omp session %s", session_id)
+                self._sessions.pop(session_id, None)
+                with contextlib.suppress(Exception):
+                    await session.stop()
+            else:
+                # The extension receives XHS_AGENT_MODE at process startup and
+                # conditionally registers its local tools. A host-tool refresh
+                # alone would leave thread-bound extension tools visible after a
+                # free↔workflow navigation, so replace the subprocess when the
+                # mode changes.
+                if session.mode != mode:
+                    logger.info(
+                        "Session %s mode changed %s→%s, restarting omp subprocess",
+                        session_id,
+                        session.mode,
+                        mode,
+                    )
+                    await session.stop()
+                    session = self._new_session(session_id, mode)
+                    await session.start()
+                    self._sessions[session_id] = session
+                return session
 
         # Create new session
         if not session_id:
             session_id = f"omp_{uuid.uuid4().hex[:8]}"
-        session = OmpSession(session_id, mode=mode)
+        session = self._new_session(session_id, mode)
         await session.start()
         self._sessions[session_id] = session
         logger.info("Created omp session %s (mode=%s)", session_id, mode)
         return session
+
+    def _new_session(self, session_id: str, mode: str) -> OmpSession:
+        """Create an OmpSession wired to this manager's dead-session hook."""
+        session = OmpSession(session_id, mode=mode)
+        session._on_dead = self._drop_session
+        return session
+
+    async def _drop_session(self, session_id: str) -> None:
+        """Remove a session whose omp process died unexpectedly."""
+        timer = self._idle_timers.pop(session_id, None)
+        if timer and not timer.done():
+            timer.cancel()
+        if self._sessions.pop(session_id, None) is not None:
+            logger.info("Dropped dead omp session %s", session_id)
 
     def start_idle_timer(self, session_id: str) -> None:
         """Start idle timer for a session. Called on WebSocket disconnect."""
@@ -2621,12 +2784,25 @@ class OmpBridgeManager:
             existing.cancel()
 
         async def _idle_timeout() -> None:
-            await asyncio.sleep(self._idle_timeout)
-            session = self._sessions.pop(session_id, None)
-            if session:
+            while True:
+                await asyncio.sleep(self._idle_timeout)
+                session = self._sessions.get(session_id)
+                if session is None:
+                    return
+                if session.is_busy:
+                    # A turn is still in flight (e.g. user closed the tab
+                    # mid-run) — defer instead of killing the subprocess and
+                    # losing work the user may come back to.
+                    logger.info(
+                        "Idle timeout for session %s but a turn is in flight, deferring",
+                        session_id,
+                    )
+                    continue
+                self._sessions.pop(session_id, None)
                 logger.info("Idle timeout for session %s, stopping", session_id)
                 with contextlib.suppress(Exception):
                     await session.stop()
+                return
 
         self._idle_timers[session_id] = asyncio.create_task(_idle_timeout())
 
@@ -2651,8 +2827,17 @@ _manager: OmpBridgeManager | None = None
 
 
 def get_bridge_manager() -> OmpBridgeManager:
-    """Get or create the singleton OmpBridgeManager."""
+    """Get or create the singleton OmpBridgeManager.
+
+    Idle timeout is configurable via ``OMP_IDLE_TIMEOUT`` (seconds); invalid
+    values fall back to the default instead of crashing startup.
+    """
     global _manager
     if _manager is None:
-        _manager = OmpBridgeManager()
+        try:
+            idle_timeout = int(os.environ.get("OMP_IDLE_TIMEOUT", "") or _DEFAULT_IDLE_TIMEOUT)
+        except ValueError:
+            logger.warning("Invalid OMP_IDLE_TIMEOUT, using default %ds", _DEFAULT_IDLE_TIMEOUT)
+            idle_timeout = _DEFAULT_IDLE_TIMEOUT
+        _manager = OmpBridgeManager(idle_timeout=idle_timeout)
     return _manager

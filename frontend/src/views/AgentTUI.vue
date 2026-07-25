@@ -147,6 +147,43 @@ const pendingAgentMessageCount = ref(0)
 // A new-session request is kept separately so it can invalidate older queued
 // messages and be sent before messages typed after the reset request.
 let pendingFreeNewSession = false
+// Reconnect continuity: the backend assigns a session_id and tags every
+// session event with a monotonically increasing seq. Persisting both lets an
+// auto-reconnect (or page reload in the same tab) resume the SAME omp session
+// and replay exactly the events missed during the drop, instead of silently
+// starting a fresh conversation.
+let agentSessionId = ''
+let agentLastSeq = 0
+
+function agentSessionStorageKey(): string {
+  return `xhs.agent.tuiSession.${isFreeCreationEntry.value ? 'free' : 'workflow'}`
+}
+
+function loadAgentSessionCursor(): void {
+  agentSessionId = ''
+  agentLastSeq = 0
+  try {
+    const raw = sessionStorage.getItem(agentSessionStorageKey())
+    if (raw) {
+      const parsed = JSON.parse(raw) as { sessionId?: unknown; lastSeq?: unknown }
+      if (typeof parsed.sessionId === 'string') agentSessionId = parsed.sessionId
+      if (typeof parsed.lastSeq === 'number') agentLastSeq = parsed.lastSeq
+    }
+  } catch { /* corrupted storage — start fresh */ }
+}
+
+function saveAgentSessionCursor(): void {
+  try {
+    if (agentSessionId) {
+      sessionStorage.setItem(
+        agentSessionStorageKey(),
+        JSON.stringify({ sessionId: agentSessionId, lastSeq: agentLastSeq }),
+      )
+    } else {
+      sessionStorage.removeItem(agentSessionStorageKey())
+    }
+  } catch { /* storage unavailable — reconnect continuity just degrades */ }
+}
 // Whether the ◆ AI turn marker has been emitted for the in-flight reply.
 // Reset when the turn closes (done / error / session_end / disconnect).
 let aiTurnMarkerShown = false
@@ -172,6 +209,11 @@ let promptVisible = false
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 let spinnerTimer: ReturnType<typeof setInterval> | null = null
 let spinnerFrame = 0
+let spinnerText = ''
+// Current long-running activity label — set by status events (retrying /
+// compacting) so the spinner can say WHY the turn is taking long; undefined
+// falls back to the generic processing label.
+let activityLabel: string | undefined
 
 function stopSpinner() {
   if (!spinnerTimer) return
@@ -181,12 +223,18 @@ function stopSpinner() {
 }
 
 function startSpinner(label?: string) {
-  if (spinnerTimer || !term) return
   const text = label ?? t('tui.processing')
+  if (spinnerTimer) {
+    // Already spinning — relabel in place (running → retrying → running)
+    spinnerText = text
+    return
+  }
+  if (!term) return
+  spinnerText = text
   spinnerFrame = 0
   const draw = () => {
     const frame = SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]
-    term?.write(`\r\x1b[2K${ANSI.BRIGHT_MAGENTA}${frame}${ANSI.RESET} ${ANSI.DIM}${text}${ANSI.RESET}`)
+    term?.write(`\r\x1b[2K${ANSI.BRIGHT_MAGENTA}${frame}${ANSI.RESET} ${ANSI.DIM}${spinnerText}${ANSI.RESET}`)
     spinnerFrame++
   }
   draw()
@@ -671,10 +719,17 @@ function connectAgentWs() {
   wsConnecting.value = true
 
   // Free mode appends ?mode=free so the backend registers only the free-mode
-  // tool subset (no thread-bound workflow tools visible to the LLM).
-  const wsUrl = isFreeCreationEntry.value
-    ? `${WS_BASE_URL}?mode=free`
-    : WS_BASE_URL
+  // tool subset (no thread-bound workflow tools visible to the LLM). A stored
+  // session cursor (session_id + last_seq) resumes the same omp session after
+  // a drop and replays exactly the events missed while disconnected.
+  const params = new URLSearchParams()
+  if (isFreeCreationEntry.value) params.set('mode', 'free')
+  if (agentSessionId) {
+    params.set('session_id', agentSessionId)
+    if (agentLastSeq > 0) params.set('last_seq', String(agentLastSeq))
+  }
+  const query = params.toString()
+  const wsUrl = query ? `${WS_BASE_URL}?${query}` : WS_BASE_URL
   let socket: WebSocket
   try {
     socket = new WebSocket(wsUrl)
@@ -721,6 +776,7 @@ function connectAgentWs() {
     wsConnecting.value = false
     aiTurnMarkerShown = false
     turnStartedAt = 0
+    activityLabel = undefined
     if (isFreeCreationEntry.value && isProcessing.value) {
       // A disconnected stream cannot be resumed by this TUI instance. Make
       // the prompt usable again instead of leaving it in a permanent busy
@@ -855,6 +911,37 @@ function retryFreeAgentConnection() {
 function handleAgentEvent(event: Record<string, unknown>) {
   const type = event.type as string
 
+  if (type === 'ping') {
+    // Application-level heartbeat — reply so both directions stay busy.
+    sendAgentMessage({ type: 'pong' })
+    return
+  }
+
+  // Reconnect cursor: seq tags every session event; session_id switches when
+  // the backend moves us to a different conversation (new_session, or a
+  // server-side replacement after a crash).
+  const seq = event.seq as number | undefined
+  const sid = event.session_id as string | undefined
+  let cursorDirty = false
+  if (sid && sid !== agentSessionId) {
+    agentSessionId = sid
+    agentLastSeq = typeof seq === 'number' ? seq : 0
+    cursorDirty = true
+  }
+  if (type === 'status' && event.status === 'connected' && event.resumed === false) {
+    // Fresh subprocess behind a familiar session_id (server restart, dead
+    // session replacement) — old seqs don't apply, replay is impossible.
+    if (agentLastSeq !== 0) {
+      agentLastSeq = 0
+      cursorDirty = true
+    }
+  }
+  if (typeof seq === 'number' && seq > agentLastSeq) {
+    agentLastSeq = seq
+    cursorDirty = true
+  }
+  if (cursorDirty) saveAgentSessionCursor()
+
   if (type === 'ready') {
     writeLineColored(t('tui.agentReady'), ANSI.BRIGHT_GREEN)
     wsStatus.value = 'idle'
@@ -920,10 +1007,18 @@ function handleAgentEvent(event: Record<string, unknown>) {
     const status = event.status as string
     wsStatus.value = status as 'idle' | 'running' | 'streaming'
     if (status === 'running') {
+      activityLabel = undefined
       agentTurnProcessing.value = true
       isProcessing.value = true
       turnStartedAt = Date.now()
+    } else if (status === 'retrying' || status === 'compacting') {
+      // LLM provider retry / context compaction — the turn is still alive;
+      // relabel the waiting spinner so the terminal doesn't look frozen.
+      agentTurnProcessing.value = true
+      isProcessing.value = true
+      activityLabel = t(status === 'retrying' ? 'tui.agentRetryingProvider' : 'tui.agentCompacting')
     } else if (status === 'idle') {
+      activityLabel = undefined
       agentTurnProcessing.value = false
       isProcessing.value = false
       writePrompt()
@@ -931,6 +1026,7 @@ function handleAgentEvent(event: Record<string, unknown>) {
   } else if (type === 'session_end') {
     aiTurnMarkerShown = false
     turnStartedAt = 0
+    activityLabel = undefined
     agentTurnProcessing.value = false
     isProcessing.value = false
     writePrompt()
@@ -939,6 +1035,7 @@ function handleAgentEvent(event: Record<string, unknown>) {
     writeLine(`  ${ANSI.RED}⚠${ANSI.RESET} ${event.message || t('tui.unknownError')}`)
     aiTurnMarkerShown = false
     turnStartedAt = 0
+    activityLabel = undefined
     agentTurnProcessing.value = false
     isProcessing.value = false
     writePrompt()
@@ -948,7 +1045,7 @@ function handleAgentEvent(event: Record<string, unknown>) {
   // indicator alive. Never restart mid-stream: aiTurnMarkerShown means text
   // chunks are being written without trailing newlines, and a spinner tick
   // would erase the partially written line.
-  if (agentTurnProcessing.value && !aiTurnMarkerShown) startSpinner()
+  if (agentTurnProcessing.value && !aiTurnMarkerShown) startSpinner(activityLabel)
 }
 
 /** Display-width cap for a single arg value in the ▸ tool(...) preview. */
@@ -2383,6 +2480,10 @@ onMounted(() => {
     // same class as the post_url hint). Compact grouped grid; full reference in /help.
     renderFreeCommandGrid()
   }
+
+  // Restore the reconnect cursor (session_id + last_seq) BEFORE opening the
+  // socket so the first connect of this mount can already resume.
+  loadAgentSessionCursor()
 
   // Try connecting to agent WebSocket
   connectAgentWs()

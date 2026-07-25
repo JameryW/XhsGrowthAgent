@@ -2109,6 +2109,8 @@
     "agentConnected": "✓ Agent connected",
     "agentReady": "✓ Agent ready",
     "agentRetrying": "Retrying the agent connection...",
+    "agentRetryingProvider": "Model request failed, retrying automatically…",
+    "agentCompacting": "Context too long, compacting conversation history…",
     "agentAbortRequested": "Generation stop requested.",
     "agentTurnInterrupted": "⚠ Agent connection interrupted; this response may be incomplete. You can continue when the connection is restored.",
     "agentConnectionConnected": "Connected",

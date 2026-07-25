@@ -39,6 +39,11 @@ logger = logging.getLogger("xhs_growth.api.agent")
 
 router = APIRouter()
 
+# Application-level heartbeat: keeps the WebSocket busy during long silent
+# stretches (host-tool execution, waiting on extension UI) so browsers,
+# proxies, and container networks don't drop the connection mid-turn.
+_HEARTBEAT_SECONDS = 25
+
 
 @router.websocket_route("/api/agent/ws")
 async def agent_ws(websocket: WebSocket) -> None:
@@ -50,11 +55,20 @@ async def agent_ws(websocket: WebSocket) -> None:
     # Accept query params before accepting the websocket
     session_id_param = websocket.query_params.get("session_id")
     mode_param = websocket.query_params.get("mode", "workflow")
+    # Reconnect replay cursor: seq of the last event the client received.
+    try:
+        last_seq = int(websocket.query_params.get("last_seq", "0") or 0)
+    except ValueError:
+        last_seq = 0
 
     await websocket.accept()
     manager = get_bridge_manager()
 
-    # Get or create session
+    # Get or create session. Capture the prior instance so we can tell the
+    # frontend whether this connection RESUMED a live session or spawned a
+    # fresh one behind a familiar session_id (server restart, dead-session
+    # replacement) — replay cursors only survive a genuine resume.
+    prior = manager.get_session(session_id_param) if session_id_param else None
     session: OmpSession | None = None
     try:
         session = await manager.get_or_create_session(session_id_param, mode=mode_param)
@@ -74,6 +88,7 @@ async def agent_ws(websocket: WebSocket) -> None:
         await websocket.close()
         return
 
+    resumed = prior is not None and prior is session
     current_session_id = session.session_id
 
     # ponytail: send session_id to frontend so it can reconnect later
@@ -82,6 +97,7 @@ async def agent_ws(websocket: WebSocket) -> None:
             "type": ServerEventType.STATUS,
             "status": "connected",
             "session_id": current_session_id,
+            "resumed": resumed,
         }
     )
 
@@ -94,14 +110,30 @@ async def agent_ws(websocket: WebSocket) -> None:
 
     session.on_event(on_bridge_event)
 
-    # Task that drains send_queue -> websocket
+    # Reconnect replay: enqueue the buffered events this client missed while
+    # disconnected. Registration and current_seq read are synchronous, and
+    # put_nowait never yields, so no live event can overtake the replayed
+    # ones or be delivered twice (live events have seq > high_water). Only a
+    # genuinely resumed session shares seq history with the client's cursor.
+    if last_seq and resumed:
+        for missed in session.events_after(last_seq, session.current_seq):
+            send_queue.put_nowait(missed)
+
+    # Task that drains send_queue -> websocket. Sends an application-level
+    # ping after HEARTBEAT_SECONDS of silence so idle connections (e.g.
+    # during long host-tool execution) are not dropped by intermediaries.
     async def sender() -> None:
         try:
             while True:
-                event = await send_queue.get()
+                try:
+                    event = await asyncio.wait_for(send_queue.get(), timeout=_HEARTBEAT_SECONDS)
+                except TimeoutError:
+                    event = {"type": "ping"}
                 await websocket.send_json(event)
-        except Exception:
-            pass  # websocket closed
+        except Exception as e:
+            # Websocket closed mid-send; the receive loop surfaces the
+            # disconnect. Log instead of dying silently.
+            logger.debug("agent ws sender stopped (session %s): %s", current_session_id, e)
 
     sender_task = asyncio.create_task(sender())
 
@@ -119,6 +151,11 @@ async def agent_ws(websocket: WebSocket) -> None:
             msg_type = msg.get("type")
 
             try:
+                if msg_type == "pong":
+                    # Heartbeat reply — keeps the client->server direction
+                    # busy; nothing else to do.
+                    continue
+
                 if msg_type == ClientMessageType.SEND_MESSAGE:
                     content = msg.get("content", "")
                     if not content:
