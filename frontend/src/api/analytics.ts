@@ -195,7 +195,7 @@ export interface CreatorStatsSyncResult {
 
 export interface CreatorStatsBatchSyncResult {
   ok: boolean
-  status: 'completed' | 'already_running' | 'failed' | string
+  status: 'completed' | 'already_running' | 'cooldown' | 'failed' | string
   active_accounts: number
   succeeded: number
   failed: number
@@ -203,6 +203,8 @@ export interface CreatorStatsBatchSyncResult {
   started_at?: string
   finished_at?: string
   error?: string
+  /** cooldown 状态时距离下次可同步的剩余秒数。 */
+  retry_after_seconds?: number
 }
 
 export interface CreatorSuggestion {
