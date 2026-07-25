@@ -168,9 +168,11 @@ const handleErrorBoundaryRefresh = () => {
       {{ t('common.skipToContent') }}
     </a>
 
-    <!-- Status indicators (always visible) -->
+    <!-- Status indicators (always visible). Hidden on /tui: the terminal page
+         has its own fixed palette and the floating toggle covers its status
+         bar's search button on mobile. -->
     <Toast />
-    <ThemeToggle v-if="!isImmersivePage && (!showChrome || isMobile)" class="fixed right-3 top-3 z-[80]" />
+    <ThemeToggle v-if="!isImmersivePage && route.name !== 'tui' && (!showChrome || isMobile)" class="fixed right-3 top-3 z-[80]" />
 
     <!-- Authenticated chrome -->
     <template v-if="showChrome">

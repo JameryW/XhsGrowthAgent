@@ -179,12 +179,15 @@ export interface EmptyStateOptions {
  */
 export function writeEmptyState(write: (line: string) => void, opts: EmptyStateOptions): void {
   const { width, icon, title, hint } = opts
-  const center = (plain: string, colored: string): string => {
-    const pad = Math.max(1, Math.floor((width - 2 - getStringWidth(plain)) / 2))
+  const center = (plain: string, colored: string, plainWidth?: number): string => {
+    const w = plainWidth ?? getStringWidth(plain)
+    const pad = Math.max(1, Math.floor((width - 2 - w) / 2))
     return boxLine(' '.repeat(pad) + colored)
   }
   write(boxLine())
-  if (icon) write(center(icon, `${ANSI.BRIGHT_CYAN}${icon}${ANSI.RESET}`))
+  // Pictographic icons (✨, 💡) render double-width in xterm.js but measure 1 —
+  // pass the real width so the icon row centers like the text rows.
+  if (icon) write(center(icon, `${ANSI.BRIGHT_CYAN}${icon}${ANSI.RESET}`, getStringWidth(icon) + 1))
   const titleText = truncateDisplay(title, width - 6)
   write(center(titleText, `${ANSI.BRIGHT_WHITE}${titleText}${ANSI.RESET}`))
   if (hint) {

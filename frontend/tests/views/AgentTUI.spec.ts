@@ -19,6 +19,9 @@ const { FakeTerminal, FakeWebSocket } = vi.hoisted(() => {
     open() {}
     focus() {}
     dispose() {}
+    buffer = { active: { viewportY: 0, baseY: 0 } }
+    onScroll() { return { dispose: vi.fn() } }
+    scrollToBottom() {}
     onData(handler: (data: string) => void) {
       this.onDataHandler = handler
       return { dispose: vi.fn() }
