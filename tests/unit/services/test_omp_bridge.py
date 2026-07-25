@@ -1412,15 +1412,11 @@ class TestReadStdoutResilience:
 
         assert session._proc is None
         assert not session.is_ready
-        error_event = next(
-            e for e in collector.events if e["type"] == ServerEventType.ERROR
-        )
+        error_event = next(e for e in collector.events if e["type"] == ServerEventType.ERROR)
         assert "reader error" in error_event["message"]
 
     async def test_reader_cancelled_by_stop_is_not_a_crash(self):
-        session = _make_live_session(
-            "s-cancel", AsyncMock(side_effect=asyncio.CancelledError())
-        )
+        session = _make_live_session("s-cancel", AsyncMock(side_effect=asyncio.CancelledError()))
         collector = _EventCollector()
         session.on_event(collector)
 
