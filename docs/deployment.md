@@ -259,7 +259,7 @@ XHS_CHROME_PROFILES_DIR=/test/xhs/.chrome-profiles
 # 起始 port（创建账号时从 base+1 递增找首个未占用 port）
 XHS_CDP_BASE_PORT=9222
 # Creator Center background import interval (hours; 0 disables the scheduler)
-CREATOR_STATS_SYNC_INTERVAL_HOURS=6
+CREATOR_STATS_SYNC_INTERVAL_HOURS=24
 # 可选：显式指定 Chrome binary 路径（默认自动探测 google-chrome > google-chrome-stable > chromium）
 # XHS_CHROME_BIN=/usr/bin/google-chrome
 ```

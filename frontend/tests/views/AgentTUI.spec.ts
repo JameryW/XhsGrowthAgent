@@ -127,6 +127,7 @@ describe('AgentTUI free creation interaction contract', () => {
     setActivePinia(createPinia())
     FakeTerminal.instances = []
     FakeWebSocket.instances = []
+    sessionStorage.clear()
     vi.stubGlobal('WebSocket', FakeWebSocket)
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
@@ -320,6 +321,98 @@ describe('AgentTUI free creation interaction contract', () => {
     await flushPromises()
 
     expect(terminal.lines.some((l) => l.includes('❯') && l.includes('/start'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('replies pong to an application-level ping', async () => {
+    const { wrapper, socket } = await mountFreeTui()
+    socket.open()
+    await flushPromises()
+
+    socket.onmessage?.({ data: JSON.stringify({ type: 'ping' }) } as MessageEvent)
+    await flushPromises()
+
+    expect(socket.sent).toContain(JSON.stringify({ type: 'pong' }))
+    wrapper.unmount()
+  })
+
+  it('resumes the same session with a replay cursor after a drop', async () => {
+    const { wrapper, socket } = await mountFreeTui()
+    socket.open()
+    await flushPromises()
+    const send = (obj: Record<string, unknown>) =>
+      socket.onmessage?.({ data: JSON.stringify(obj) } as MessageEvent)
+
+    send({ type: 'status', status: 'connected', session_id: 'omp_abc', resumed: true })
+    send({ type: 'status', status: 'running', session_id: 'omp_abc', seq: 7 })
+    await flushPromises()
+
+    // First connect carries no cursor
+    expect(FakeWebSocket.instances[0].url).not.toContain('session_id')
+
+    vi.useFakeTimers()
+    socket.close()
+    await vi.advanceTimersByTimeAsync(3100)
+
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    const reconnectUrl = FakeWebSocket.instances[1].url
+    expect(reconnectUrl).toContain('mode=free')
+    expect(reconnectUrl).toContain('session_id=omp_abc')
+    expect(reconnectUrl).toContain('last_seq=7')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('resets the replay cursor when the backend cannot resume the session', async () => {
+    const { wrapper, socket } = await mountFreeTui()
+    socket.open()
+    await flushPromises()
+    const send = (obj: Record<string, unknown>) =>
+      socket.onmessage?.({ data: JSON.stringify(obj) } as MessageEvent)
+
+    send({ type: 'status', status: 'connected', session_id: 'omp_abc', resumed: true })
+    send({ type: 'status', status: 'running', session_id: 'omp_abc', seq: 7 })
+    // Server restarted: same session_id, but a fresh subprocess (no replay)
+    send({ type: 'status', status: 'connected', session_id: 'omp_abc', resumed: false })
+    await flushPromises()
+
+    vi.useFakeTimers()
+    socket.close()
+    await vi.advanceTimersByTimeAsync(3100)
+
+    const reconnectUrl = FakeWebSocket.instances[1].url
+    expect(reconnectUrl).toContain('session_id=omp_abc')
+    expect(reconnectUrl).not.toContain('last_seq')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('keeps the turn alive across provider retry and compaction statuses', async () => {
+    const { wrapper, terminal, socket } = await mountFreeTui()
+    socket.open()
+    await flushPromises()
+    const send = (obj: Record<string, unknown>) =>
+      socket.onmessage?.({ data: JSON.stringify(obj) } as MessageEvent)
+
+    terminal.type('帮我写一篇笔记')
+    terminal.type('\r')
+    await flushPromises()
+    expect(wrapper.find('.tui-running-indicator').exists()).toBe(true)
+
+    send({ type: 'status', status: 'running' })
+    send({ type: 'status', status: 'retrying' })
+    await flushPromises()
+    expect(wrapper.find('.tui-running-indicator').exists()).toBe(true)
+
+    send({ type: 'status', status: 'compacting' })
+    send({ type: 'status', status: 'running' })
+    await flushPromises()
+    expect(wrapper.find('.tui-running-indicator').exists()).toBe(true)
+
+    send({ type: 'status', status: 'idle' })
+    send({ type: 'session_end' })
+    await flushPromises()
+    expect(wrapper.find('.tui-running-indicator').exists()).toBe(false)
     wrapper.unmount()
   })
 })

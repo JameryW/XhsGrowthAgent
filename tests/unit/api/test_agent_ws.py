@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import patch
 
@@ -76,3 +77,119 @@ async def test_new_session_preserves_free_creation_mode() -> None:
     assert manager.calls[0] == ((None,), {"mode": "free"})
     assert manager.calls[1] == ((), {"mode": "free"})
     assert websocket.sent[-1]["session_id"] == "replacement"
+
+
+# ── Reconnect replay + heartbeat protocol ──────────────────────────────────
+
+
+class _ReplaySession:
+    """Fake session with a replay buffer, as OmpSession exposes it."""
+
+    def __init__(self, session_id: str, mode: str = "workflow") -> None:
+        self.session_id = session_id
+        self.mode = mode
+        self.is_ready = True
+        self.callbacks = []
+        self.current_seq = 5
+        self._buffered = [
+            {"type": "agent_message", "text": "missed-1", "seq": 4, "session_id": session_id},
+            {"type": "agent_message", "text": "missed-2", "seq": 5, "session_id": session_id},
+        ]
+
+    def on_event(self, callback) -> None:
+        self.callbacks.append(callback)
+
+    def remove_event_callback(self, callback) -> None:
+        if callback in self.callbacks:
+            self.callbacks.remove(callback)
+
+    def events_after(self, last_seq: int, high_water: int | None = None) -> list[dict]:
+        upper = self.current_seq if high_water is None else high_water
+        return [e for e in self._buffered if last_seq < e["seq"] <= upper]
+
+
+class _ReplayManager:
+    def __init__(self) -> None:
+        self.session = _ReplaySession("omp_x")
+
+    def get_session(self, session_id: str | None):
+        if session_id == self.session.session_id:
+            return self.session
+        return None
+
+    async def get_or_create_session(self, session_id=None, mode="workflow"):
+        return self.session
+
+    def start_idle_timer(self, _session_id: str) -> None:
+        return None
+
+
+class _ReplayWebSocket:
+    """Reconnect with a replay cursor; disconnects once replay is flushed."""
+
+    query_params = {"session_id": "omp_x", "last_seq": "3"}
+
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+        self.accepted = False
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def send_json(self, payload: dict) -> None:
+        self.sent.append(payload)
+
+    async def receive_text(self) -> str:
+        # Give the sender task a moment to flush the replayed events
+        for _ in range(100):
+            if any(m.get("text") == "missed-2" for m in self.sent):
+                break
+            await asyncio.sleep(0.01)
+        raise WebSocketDisconnect()
+
+
+async def test_reconnect_replays_missed_events_for_resumed_session() -> None:
+    websocket = _ReplayWebSocket()
+    manager = _ReplayManager()
+
+    with patch("backend.api.routes.agent.get_bridge_manager", return_value=manager):
+        await agent_ws(websocket)  # type: ignore[arg-type]
+
+    connected = websocket.sent[0]
+    assert connected["status"] == "connected"
+    assert connected["resumed"] is True
+    texts = [m.get("text") for m in websocket.sent if m.get("type") == "agent_message"]
+    assert texts == ["missed-1", "missed-2"]
+
+
+class _PongWebSocket:
+    query_params: dict = {}
+
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+        self._sent_pong = False
+
+    async def accept(self) -> None:
+        return None
+
+    async def send_json(self, payload: dict) -> None:
+        self.sent.append(payload)
+
+    async def receive_text(self) -> str:
+        if not self._sent_pong:
+            self._sent_pong = True
+            return json.dumps({"type": "pong"})
+        raise WebSocketDisconnect()
+
+
+async def test_pong_heartbeat_reply_is_silently_ignored() -> None:
+    websocket = _PongWebSocket()
+    manager = _ReplayManager()
+
+    with patch("backend.api.routes.agent.get_bridge_manager", return_value=manager):
+        await agent_ws(websocket)  # type: ignore[arg-type]
+
+    # Fresh session (no session_id param) → not resumed; no unknown-type error
+    assert websocket.sent[0]["resumed"] is False
+    errors = [m for m in websocket.sent if m.get("type") == "error"]
+    assert errors == []

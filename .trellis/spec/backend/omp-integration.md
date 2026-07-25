@@ -15,7 +15,7 @@
 
 ### 2. Signatures
 
-**WebSocket**: `WS /api/agent/ws?session_id=<optional>`
+**WebSocket**: `WS /api/agent/ws?session_id=<optional>&last_seq=<optional>&mode=<optional>`
 
 **Frontend → Backend** (`ClientMessageType`):
 | Type | Fields | Description |
@@ -26,6 +26,7 @@
 | `abort` | — | Cancel current agent turn → omp `abort` command |
 | `host_tool_result` | `id, result, is_error?` | Frontend-executed host tool result → omp `host_tool_result` |
 | `extension_ui_response` | `id, value?/confirmed?/cancelled?` | User's response to extension UI request → omp `extension_ui_response` |
+| `pong` | — | Heartbeat reply to a server `ping` (silently ignored) |
 
 **Backend → Frontend** (`ServerEventType`):
 | Type | Key Fields | Description |
@@ -36,9 +37,19 @@
 | `tool_result` | `tool_call_id, tool_name, result, is_error` | omp built-in tool finished |
 | `host_tool_call` | `id, toolCallId, toolName, arguments` | Unknown host tool needs frontend execution |
 | `extension_ui_request` | `id, method, title, options?/message?/placeholder?/prefill?` | Extension wants UI interaction |
-| `status` | `status, model?, session_id?` | Agent status change (`idle`/`running`/`streaming`/`connected`) |
+| `status` | `status, model?, session_id?, resumed?` | Agent status change (`idle`/`running`/`streaming`/`connected`/`retrying`/`compacting`); `connected` carries `session_id` + `resumed` |
 | `error` | `message, level?` | Error event |
 | `session_end` | — | Agent turn completed |
+| `ping` | — | Application-level heartbeat (every 25s of silence); frontend replies `pong` |
+
+Every session event (all of the above except connection-level `ping` and the
+initial `connected` status) carries a monotonically increasing `seq` and a
+`session_id`. The frontend persists both (per mode, sessionStorage) and passes
+them back on reconnect; the backend replays buffered events with
+`seq > last_seq` when — and only when — the session is genuinely resumed
+(`resumed: true`). A fresh subprocess behind a familiar `session_id` (server
+restart, dead-session replacement) returns `resumed: false` and the frontend
+must reset its replay cursor.
 
 ### 3. Contracts
 
@@ -61,31 +72,35 @@
 **Multi-Session**:
 - `OmpBridgeManager` singleton manages `OmpSession` instances keyed by `session_id`
 - Sessions start on-demand (first WebSocket connection)
-- Idle timeout (default 5 min): starts on WebSocket disconnect, cancelled on reconnect
+- Idle timeout (default 5 min): starts on WebSocket disconnect, cancelled on reconnect; **defers while a turn is in flight** (`session.is_busy`) instead of killing mid-run
 - `OMP_CWD` env var: working directory for omp subprocess (default: `os.getcwd()`)
 - `OMP_IDLE_TIMEOUT` env var: idle timeout in seconds (default: 300)
+- omp stdout is read with a **16 MiB StreamReader limit** (`_STDOUT_BUFFER_LIMIT`) — asyncio's 64 KiB default killed the reader on oversized NDJSON lines and froze turns mid-run
+- Unexpected omp process death (stdout EOF or reader error) fails pending requests, emits `error` + `session_end`, and drops the session via the manager's `_drop_session` hook; a reconnect with the same `session_id` spawns a fresh subprocess (`resumed: false`)
 
 **Session Lifecycle**:
 1. Frontend connects `WS /api/agent/ws` → backend creates new `OmpSession` → spawns `omp --mode rpc`
-2. omp sends `{"type":"ready"}` → backend registers XHS host tools → frontend receives `ready` + `status: connected`
+2. omp sends `{"type":"ready"}` → backend registers XHS host tools → frontend receives `ready` + `status: connected` (with `session_id`, `resumed`)
 3. Frontend sends `send_message` → omp processes → streaming `agent_message`/`tool_call`/`tool_result` events
-4. Frontend disconnects → backend starts idle timer
-5. Idle timeout expires → backend stops omp subprocess (SIGTERM → 5s → SIGKILL)
-6. Frontend reconnects with `?session_id=xxx` → if session still alive, resume; else create new
+4. Frontend disconnects → backend starts idle timer (turn keeps running; events keep buffering)
+5. Idle timeout expires and session is not busy → backend stops omp subprocess (SIGTERM → 5s → SIGKILL)
+6. Frontend reconnects with `?session_id=xxx&last_seq=N` → if session still alive: resume + replay buffered events `seq > N`; else create new (`resumed: false`, cursor reset)
+7. Manager shutdown (deploy/restart) gives busy sessions up to `grace_seconds` (default 10s) to finish, then stops all
 
 ### 4. Validation & Error Matrix
 
 | Condition | Error Event | Behavior |
 |-----------|-------------|----------|
 | omp not in PATH / bun unavailable | `error` on startup | Bridge not started (non-fatal) |
-| omp doesn't send ready within 30s | `error` | Session creation fails |
+| omp doesn't send ready within 60s | `error` | Session creation fails |
 | Empty `send_message` content | `error` | "empty message" |
 | Unknown `type` in frontend message | `error` | "unknown message type: X" |
 | omp response `success: false` | `error` | Error message forwarded to frontend |
-| omp subprocess crashes | `error` | stdout reader exits, pending requests cancelled |
+| omp subprocess crashes / oversized NDJSON line | `error` + `session_end` | Reader exit kills the session loudly: pending requests failed, session dropped, reconnect spawns fresh subprocess |
 | Host tool auto-execution API fails | `host_tool_result` with `is_error: true` | Error result sent back to omp |
 | `host_tool_result` with non-dict result | Wrapped as `{content: [{type: "text", text: str(result)}]}` | Type safety for omp protocol |
 | WebSocket reconnect after max retries | Falls back to command mode | Frontend shows command mode UI |
+| Idle timeout while turn in flight | — | Timer defers one interval; never kills a busy session |
 
 ### 5. Good/Base/Bad Cases
 
@@ -106,11 +121,20 @@
 - [ ] OmpSession: host_tool_call for unknown tool → forwarded to frontend
 - [ ] OmpSession: extension_ui_request → translated with method/title/options
 - [ ] OmpSession: message_update delta calculation (streaming text)
+- [x] OmpSession: reader EOF / oversized-line error → session dead, pending failed, error + session_end emitted, manager notified
+- [x] OmpSession: `_emit` assigns monotonic `seq`; bounded replay buffer; `events_after` slicing
+- [x] OmpSession: `is_busy` tracks agent_start/agent_end; cleared on process death
+- [x] OmpSession: auto_retry/auto_compaction forwarded as `retrying`/`compacting` status
+- [x] OmpSession: start() passes 16 MiB stdout `limit` to create_subprocess_exec
 - [ ] OmpBridgeManager: get_or_create_session creates on first call
-- [ ] OmpBridgeManager: idle timer starts on disconnect, cancelled on reconnect
-- [ ] OmpBridgeManager: stop_all shuts down all sessions
-- [ ] agent.py: WebSocket session_id query param routes to correct session
-- [ ] agent.py: NEW_SESSION creates new session, moves callbacks, starts idle timer on old
+- [x] OmpBridgeManager: dead/zombie session replaced on reconnect; `_drop_session` hook wired
+- [x] OmpBridgeManager: idle timer defers while session busy, stops when idle
+- [x] OmpBridgeManager: stop() waits for busy sessions within grace, stops anyway after expiry
+- [x] OmpBridgeManager: `OMP_IDLE_TIMEOUT` env override + invalid-value fallback
+- [x] agent.py: WebSocket session_id query param routes to correct session
+- [x] agent.py: reconnect with `last_seq` replays missed events only when `resumed`
+- [x] agent.py: `pong` heartbeat reply silently ignored
+- [x] agent.py: NEW_SESSION creates new session, moves callbacks, starts idle timer on old
 
 ### 7. Wrong vs Correct
 

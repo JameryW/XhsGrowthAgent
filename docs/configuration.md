@@ -32,7 +32,7 @@
 
 | 变量 | 必填 | 说明 | 默认值 |
 |------|------|------|--------|
-| `CREATOR_STATS_SYNC_INTERVAL_HOURS` | 否 | 后台定时导入间隔；仅导入 `is_active=true` 的账号，设为 `0` 可关闭 | `6` |
+| `CREATOR_STATS_SYNC_INTERVAL_HOURS` | 否 | 后台定时导入间隔；仅导入 `is_active=true` 的账号，设为 `0` 可关闭 | `24` |
 
 **PostgreSQL URI 格式:**
 ```

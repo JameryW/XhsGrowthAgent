@@ -2109,6 +2109,8 @@
     "agentConnected": "✓ 智能体已连接",
     "agentReady": "✓ 智能体已就绪",
     "agentRetrying": "正在重试智能体连接……",
+    "agentRetryingProvider": "模型请求失败，正在自动重试…",
+    "agentCompacting": "上下文过长，正在压缩对话历史…",
     "agentAbortRequested": "已请求停止生成。",
     "agentTurnInterrupted": "⚠ 智能体连接中断，本轮输出可能未完成；连接恢复后可以继续输入。",
     "agentConnectionConnected": "已连接",

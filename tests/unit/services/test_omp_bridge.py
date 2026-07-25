@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import backend.services.omp_bridge as omp_bridge_module
 from backend.services.omp_bridge import (
+    _DEFAULT_IDLE_TIMEOUT,
+    _EVENT_BUFFER_SIZE,
+    _STDOUT_BUFFER_LIMIT,
     _XHS_TOOL_NAMES,
     THREAD_BOUND_TOOLS,
     XHS_HOST_TOOLS,
     OmpBridgeManager,
     OmpSession,
+    ServerEventType,
     _execute_xhs_host_tool,
     _make_text_result,
     _tools_for_mode,
@@ -1304,6 +1310,10 @@ class TestGetOrCreateSessionMode:
     async def test_existing_session_same_mode_no_reregister(self):
         manager = OmpBridgeManager()
         session = OmpSession("existing", mode="free")
+        # Mark as a live session (started + ready) — dead sessions are
+        # replaced instead of reused.
+        session._ready.set()
+        session._proc = MagicMock()
         manager._sessions["existing"] = session
         with patch.object(OmpSession, "set_mode", new_callable=AsyncMock) as mock_set_mode:
             result = await manager.get_or_create_session("existing", mode="free")
@@ -1313,6 +1323,9 @@ class TestGetOrCreateSessionMode:
     async def test_existing_session_mode_mismatch_restarts_subprocess(self):
         manager = OmpBridgeManager()
         session = OmpSession("existing", mode="workflow")
+        # Live session — see test_existing_session_same_mode_no_reregister.
+        session._ready.set()
+        session._proc = MagicMock()
         manager._sessions["existing"] = session
         with (
             patch.object(session, "stop", new_callable=AsyncMock) as mock_stop,
@@ -1324,3 +1337,282 @@ class TestGetOrCreateSessionMode:
         assert result.session_id == "existing"
         mock_stop.assert_awaited_once()
         mock_start.assert_awaited_once()
+
+
+# ── Session resilience: reader death, seq/replay, busy tracking ────────────
+
+
+def _make_live_session(session_id: str, readline: AsyncMock) -> OmpSession:
+    """An OmpSession posing as started, with a fake subprocess stdout."""
+    session = OmpSession(session_id)
+    session._ready.set()
+    proc = MagicMock()
+    proc.stdout = MagicMock()
+    proc.stdout.readline = readline
+    proc.returncode = 1
+    session._proc = proc
+    return session
+
+
+class _EventCollector:
+    """Async event callback that records emitted events."""
+
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+
+    async def __call__(self, event: dict) -> None:
+        self.events.append(event)
+
+
+@pytest.mark.asyncio
+class TestReadStdoutResilience:
+    """Reader exit (EOF or error) must kill the session loudly, not leave a zombie."""
+
+    async def test_reader_eof_marks_session_dead_and_notifies(self):
+        session = _make_live_session("s-eof", AsyncMock(return_value=b""))
+        collector = _EventCollector()
+        session.on_event(collector)
+        dropped: list[str] = []
+
+        async def on_dead(sid: str) -> None:
+            dropped.append(sid)
+
+        session._on_dead = on_dead
+        fut = asyncio.get_running_loop().create_future()
+        session._pending["req_1"] = fut
+
+        await session._read_stdout()
+
+        assert session._proc is None
+        assert not session.is_ready
+        assert not session.is_busy
+        # Pending command futures fail fast instead of hanging until timeout
+        assert fut.done()
+        assert isinstance(fut.exception(), RuntimeError)
+        assert "omp process exited unexpectedly" in str(fut.exception())
+        # Frontend is unblocked: error + session_end
+        types = [e["type"] for e in collector.events]
+        assert ServerEventType.ERROR in types
+        assert ServerEventType.SESSION_END in types
+        error_event = next(e for e in collector.events if e["type"] == ServerEventType.ERROR)
+        assert "omp process exited unexpectedly" in error_event["message"]
+        # Manager hook fires so the session is dropped
+        assert dropped == ["s-eof"]
+
+    async def test_reader_oversized_line_error_kills_session(self):
+        """Regression: asyncio's default 64KiB limit killed the reader silently."""
+        session = _make_live_session(
+            "s-limit",
+            AsyncMock(side_effect=ValueError("Separator is found, but chunk is longer than limit")),
+        )
+        collector = _EventCollector()
+        session.on_event(collector)
+
+        await session._read_stdout()
+
+        assert session._proc is None
+        assert not session.is_ready
+        error_event = next(
+            e for e in collector.events if e["type"] == ServerEventType.ERROR
+        )
+        assert "reader error" in error_event["message"]
+
+    async def test_reader_cancelled_by_stop_is_not_a_crash(self):
+        session = _make_live_session(
+            "s-cancel", AsyncMock(side_effect=asyncio.CancelledError())
+        )
+        collector = _EventCollector()
+        session.on_event(collector)
+
+        with pytest.raises(asyncio.CancelledError):
+            await session._read_stdout()
+
+        # Normal shutdown path: no death handling, no error events
+        assert session._proc is not None
+        assert collector.events == []
+
+    async def test_death_events_are_buffered_for_replay(self):
+        session = _make_live_session("s-buf", AsyncMock(return_value=b""))
+        await session._read_stdout()
+        replay = session.events_after(0)
+        types = [e["type"] for e in replay]
+        assert ServerEventType.ERROR in types
+        assert ServerEventType.SESSION_END in types
+
+
+@pytest.mark.asyncio
+class TestEventSeqAndReplay:
+    """_emit tags events with a monotonic seq and keeps a bounded replay buffer."""
+
+    async def test_emit_assigns_monotonic_seq_and_session_id(self):
+        session = OmpSession("s-seq")
+        await session._emit({"type": "status", "status": "running"})
+        await session._emit({"type": "agent_message", "text": "hi", "done": False})
+        await session._emit({"type": "session_end"})
+
+        assert [e["seq"] for e in session._event_buffer] == [1, 2, 3]
+        assert session.current_seq == 3
+        assert all(e["session_id"] == "s-seq" for e in session._event_buffer)
+
+    async def test_events_after_slices_by_cursor(self):
+        session = OmpSession("s-slice")
+        for i in range(5):
+            await session._emit({"type": "agent_message", "text": str(i)})
+
+        replay = session.events_after(2, session.current_seq)
+        assert [e["seq"] for e in replay] == [3, 4, 5]
+        assert [e["seq"] for e in session.events_after(0, 2)] == [1, 2]
+        assert session.events_after(5) == []
+
+    async def test_buffer_is_bounded_and_drops_oldest(self):
+        session = OmpSession("s-bound")
+        for _ in range(_EVENT_BUFFER_SIZE + 5):
+            await session._emit({"type": "agent_message", "text": "x"})
+
+        assert len(session._event_buffer) == _EVENT_BUFFER_SIZE
+        # Oldest surviving event is seq 6 — a client with last_seq < 6 has a gap
+        assert session._event_buffer[0]["seq"] == 6
+
+
+@pytest.mark.asyncio
+class TestBusyTracking:
+    async def test_busy_tracks_agent_turn(self):
+        session = OmpSession("s-busy")
+        assert not session.is_busy
+        await session._translate_event({"type": "agent_start"})
+        assert session.is_busy
+        await session._translate_event({"type": "agent_end"})
+        assert not session.is_busy
+
+    async def test_process_death_clears_busy(self):
+        session = _make_live_session("s-busy-die", AsyncMock(return_value=b""))
+        session._busy = True
+        await session._read_stdout()
+        assert not session.is_busy
+
+
+@pytest.mark.asyncio
+class TestCompactionRetryForwarding:
+    """LLM-provider retry/compaction events surface as status, not silence."""
+
+    async def test_retry_and_compaction_forwarded_as_status(self):
+        session = OmpSession("s-retry")
+        collector = _EventCollector()
+        session.on_event(collector)
+
+        await session._translate_event({"type": "auto_retry_start"})
+        await session._translate_event({"type": "auto_retry_end"})
+        await session._translate_event({"type": "auto_compaction_start"})
+        await session._translate_event({"type": "auto_compaction_end"})
+
+        statuses = [e["status"] for e in collector.events if e["type"] == "status"]
+        assert statuses == ["retrying", "running", "compacting", "running"]
+
+
+@pytest.mark.asyncio
+class TestSubprocessSpawn:
+    async def test_start_passes_large_stdout_limit(self):
+        session = OmpSession("s-spawn")
+        with (
+            patch.object(OmpSession, "register_host_tools", new_callable=AsyncMock),
+            patch.object(OmpSession, "_drain_stderr", new_callable=AsyncMock),
+            patch.object(OmpSession, "_read_stdout", new_callable=AsyncMock),
+            patch("shutil.which", return_value="/fake/omp"),
+            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
+            patch("asyncio.wait_for", new_callable=AsyncMock),
+        ):
+            await session.start()
+        assert mock_exec.await_args.kwargs["limit"] == _STDOUT_BUFFER_LIMIT
+
+
+@pytest.mark.asyncio
+class TestManagerResilience:
+    async def test_dead_session_replaced_on_reconnect(self):
+        manager = OmpBridgeManager()
+        dead = OmpSession("dead-1")  # never started → not ready
+        manager._sessions["dead-1"] = dead
+        with (
+            patch.object(dead, "stop", new_callable=AsyncMock) as mock_stop,
+            patch.object(OmpSession, "start", new_callable=AsyncMock),
+        ):
+            session = await manager.get_or_create_session("dead-1", mode="free")
+        assert session is not dead
+        assert session.session_id == "dead-1"
+        assert manager._sessions["dead-1"] is session
+        assert session._on_dead is not None
+        mock_stop.assert_awaited_once()
+
+    async def test_drop_session_removes_and_cancels_timer(self):
+        manager = OmpBridgeManager(idle_timeout=60)
+        manager._sessions["s-drop"] = OmpSession("s-drop")
+        manager.start_idle_timer("s-drop")
+        assert "s-drop" in manager._idle_timers
+
+        await manager._drop_session("s-drop")
+
+        assert "s-drop" not in manager._sessions
+        assert "s-drop" not in manager._idle_timers
+
+    async def test_idle_timer_defers_while_busy(self):
+        manager = OmpBridgeManager(idle_timeout=0.05)
+        session = OmpSession("s-idle")
+        session._busy = True
+        manager._sessions["s-idle"] = session
+        with patch.object(session, "stop", new_callable=AsyncMock) as mock_stop:
+            manager.start_idle_timer("s-idle")
+            await asyncio.sleep(0.15)
+            # Turn in flight — the timer must not kill the subprocess
+            mock_stop.assert_not_awaited()
+            assert "s-idle" in manager._sessions
+
+            session._busy = False
+            await asyncio.sleep(0.15)
+            mock_stop.assert_awaited_once()
+            assert "s-idle" not in manager._sessions
+
+    async def test_stop_waits_for_busy_session_within_grace(self):
+        manager = OmpBridgeManager()
+        session = OmpSession("s-grace")
+        session._busy = True
+        manager._sessions["s-grace"] = session
+        with patch.object(session, "stop", new_callable=AsyncMock) as mock_stop:
+
+            async def finish_turn() -> None:
+                await asyncio.sleep(0.2)
+                session._busy = False
+
+            task = asyncio.create_task(finish_turn())
+            await manager.stop(grace_seconds=2.0)
+            await task
+        mock_stop.assert_awaited_once()
+        assert manager._sessions == {}
+
+    async def test_stop_grace_expires_and_stops_anyway(self):
+        manager = OmpBridgeManager()
+        session = OmpSession("s-grace-x")
+        session._busy = True
+        manager._sessions["s-grace-x"] = session
+        with patch.object(session, "stop", new_callable=AsyncMock) as mock_stop:
+            await manager.stop(grace_seconds=0.1)
+        mock_stop.assert_awaited_once()
+        assert manager._sessions == {}
+
+
+class TestGetBridgeManager:
+    def test_idle_timeout_env_override(self, monkeypatch):
+        monkeypatch.setenv("OMP_IDLE_TIMEOUT", "42")
+        monkeypatch.setattr(omp_bridge_module, "_manager", None)
+        manager = omp_bridge_module.get_bridge_manager()
+        assert manager._idle_timeout == 42
+
+    def test_idle_timeout_env_invalid_falls_back(self, monkeypatch):
+        monkeypatch.setenv("OMP_IDLE_TIMEOUT", "not-a-number")
+        monkeypatch.setattr(omp_bridge_module, "_manager", None)
+        manager = omp_bridge_module.get_bridge_manager()
+        assert manager._idle_timeout == _DEFAULT_IDLE_TIMEOUT
+
+    def test_idle_timeout_default(self, monkeypatch):
+        monkeypatch.delenv("OMP_IDLE_TIMEOUT", raising=False)
+        monkeypatch.setattr(omp_bridge_module, "_manager", None)
+        manager = omp_bridge_module.get_bridge_manager()
+        assert manager._idle_timeout == _DEFAULT_IDLE_TIMEOUT
