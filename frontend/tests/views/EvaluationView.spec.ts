@@ -204,43 +204,29 @@ describe('EvaluationView', () => {
     expect(wrapper.find('[data-testid="quality-panel"]').exists()).toBe(true)
   })
 
-  it('uses an explicit all-accounts workflow scope without loading history', async () => {
+  it('scopes every query to the active account and offers no all-accounts option', async () => {
     const { getEvaluationList, getEvaluationTrend } = await import('@/api/evaluation')
     const { listAccounts } = await import('@/api/accounts')
-    ;(getEvaluationList as any).mockResolvedValue({
-      workflows: [],
-      total: 0,
-      snapshot_id: 'snapshot:global',
-    })
-    ;(getEvaluationTrend as any).mockResolvedValue({
-      db_ready: true,
-      points: [],
-      dim_averages: {},
-      scope: 'all_accounts',
-    })
+    ;(getEvaluationList as any).mockResolvedValue({ workflows: [], total: 0 })
+    ;(getEvaluationTrend as any).mockResolvedValue({ db_ready: true, points: [], dim_averages: {} })
     ;(listAccounts as any).mockResolvedValue([{ id: 'acc-1', name: '测试账号', is_active: true }])
 
     const wrapper = await mountEval({}, { tab: 'workflow' })
     const accountSelect = wrapper.find('select')
-    expect(accountSelect.find(`option[value="${ALL_ACCOUNTS_ID}"]`).exists()).toBe(true)
-
-    await accountSelect.setValue(ALL_ACCOUNTS_ID)
-    await flushPromises()
-    await flushPromises()
+    // The backend rejects all-accounts aggregates; the UI must not offer one.
+    expect(accountSelect.find(`option[value="${ALL_ACCOUNTS_ID}"]`).exists()).toBe(false)
 
     expect(getEvaluationList).toHaveBeenLastCalledWith(
-      undefined,
+      'acc-1',
       20,
       0,
       expect.objectContaining({ suppressToast: true }),
     )
     expect(getEvaluationTrend).toHaveBeenLastCalledWith(
-      undefined,
+      'acc-1',
       100,
       expect.objectContaining({ suppressToast: true }),
     )
-    expect(wrapper.text()).toContain(tt('evaluation.allAccountsWorkflowOnly'))
-    expect(wrapper.findAll('.source-tab')).toHaveLength(1)
   })
 
   const workflowRow = {
