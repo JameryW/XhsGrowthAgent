@@ -36,9 +36,15 @@ const handleLogin = async () => {
 
   try {
     await authStore.login(username.value.trim(), password.value.trim())
-    // Redirect to intended destination or dashboard
+    // Redirect to intended destination or dashboard.  A console-user switch
+    // needs a full navigation so every store drops the previous user's
+    // in-memory account state (router.push would keep it alive).
     const redirect = route.query.redirect as string || '/dashboard'
-    router.push(redirect)
+    if (authStore.requiresFullReset) {
+      window.location.assign(redirect)
+    } else {
+      router.push(redirect)
+    }
   } catch (e: any) {
     localError.value = e.message || t('login.error.loginFailed')
     // Clear password on failed login
