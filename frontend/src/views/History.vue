@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
@@ -13,12 +13,13 @@ import {
   type ShowcaseVisibilityUpdate,
 } from '@/api/publicShowcase'
 import type { WorkflowListItem } from '@/types/workflow'
-import { useWorkflowStore, useToastStore } from '@/stores'
+import { useWorkflowStore, useToastStore, useAccountsStore } from '@/stores'
 
 const { t, locale } = useI18n()
 const router = useRouter()
 const workflowStore = useWorkflowStore()
 const toastStore = useToastStore()
+const accountsStore = useAccountsStore()
 
 const workflows = ref<WorkflowListItem[]>([])
 const isLoading = ref(false)
@@ -57,6 +58,13 @@ async function fetchWorkflows() {
 }
 
 onMounted(fetchWorkflows)
+
+// The workflow list is scoped to the active account on the backend; reload
+// when the active account changes while this page stays mounted.
+watch(() => accountsStore.activeAccountId, (nextId, prevId) => {
+  if (!prevId || nextId === prevId) return
+  void fetchWorkflows()
+})
 
 const statusColor = (status: string) => {
   switch (status) {

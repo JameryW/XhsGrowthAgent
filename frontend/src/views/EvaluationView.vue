@@ -75,7 +75,21 @@ function openSettings() {
 
 watch(
   () => [accountsStore.activeAccountId, accountsStore.accounts] as const,
-  selectDefaultAccount,
+  (current, previous) => {
+    // A global active-account switch wins over a stale in-page manual
+    // selection: every page must follow the current account.
+    const activeId = current[0]
+    const prevActiveId = previous?.[0]
+    if (
+      activeId &&
+      prevActiveId &&
+      activeId !== prevActiveId &&
+      activeId !== selectedAccountId.value
+    ) {
+      hasUserSelectedAccount.value = false
+    }
+    selectDefaultAccount()
+  },
   { immediate: true }
 )
 

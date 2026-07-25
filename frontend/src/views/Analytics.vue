@@ -135,8 +135,12 @@ onMounted(async () => {
   // fetch them in parallel instead of serializing the page-load waterfall.
   const loads: Promise<unknown>[] = [loadHistoricalNotes(selectedAnalyticsAccountId.value)]
   // AN-12: auto-retry once if the previous session ended in an error, instead
-  // of leaving the error state showing on re-entry.
-  if (analyticsStore.error || (!analyticsStore.posts.length && !analyticsStore.isLoading)) {
+  // of leaving the error state showing on re-entry.  Also refresh when the
+  // cached bundle belongs to a different (previously active) account.
+  const cacheIsForOtherAccount = Boolean(
+    analyticsStore.dataAccountId && analyticsStore.dataAccountId !== selectedAnalyticsAccountId.value
+  )
+  if (analyticsStore.error || (!analyticsStore.posts.length && !analyticsStore.isLoading) || cacheIsForOtherAccount) {
     loads.push(refreshData())
   }
   await Promise.all(loads)
@@ -145,9 +149,10 @@ onMounted(async () => {
 watch(selectedAnalyticsAccountId, (accountId, previous) => {
   if (!accountId || accountId === previous) return
   // Analytics intentionally follows the global active account. Reload both
-  // period aggregates and the canonical historical reader as one scope.
+  // period aggregates (incl. the fans card) and the canonical historical
+  // reader as one scope.
   selectedPost.value = null
-  void analyticsStore.fetchAllData()
+  void refreshData()
   void loadHistoricalNotes(accountId)
 })
 

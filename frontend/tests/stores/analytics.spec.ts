@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { nextTick } from 'vue'
 
 const mocks = vi.hoisted(() => ({
   getGrowthReport: vi.fn(),
@@ -120,5 +121,55 @@ describe('analytics standalone actions', () => {
     expect(mocks.getGrowthReport).not.toHaveBeenCalled()
     expect(analytics.growthReport).toBeNull()
     expect(analytics.performanceData).toBeNull()
+  })
+})
+
+describe('analytics account switching', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mocks.getGrowthReport.mockReset()
+    mocks.getPerformance.mockReset()
+  })
+
+  it('clears cached data when the active account switches away', async () => {
+    const accounts = useAccountsStore()
+    const analytics = useAnalyticsStore()
+    accounts.activeAccount = account('acc-a')
+    mocks.getPerformance.mockResolvedValueOnce({
+      account_id: 'acc-a',
+      posts: [{ id: 'p1', likes: 1, comments: 0, collects: 0, shares: 0, views: 10, engagement_rate: 0.1, published_at: '' }],
+      snapshot_id: 'snapshot:a',
+      data_as_of: '2026-07-22T10:00:00Z',
+    })
+    await analytics.fetchPerformance()
+    expect(analytics.performanceData).not.toBeNull()
+    expect(analytics.dataAccountId).toBe('acc-a')
+
+    accounts.activeAccount = account('acc-b')
+    await nextTick()
+
+    expect(analytics.performanceData).toBeNull()
+    expect(analytics.snapshotId).toBeNull()
+    expect(analytics.dataAccountId).toBeNull()
+  })
+
+  it('keeps the cache when the same account is re-resolved', async () => {
+    const accounts = useAccountsStore()
+    const analytics = useAnalyticsStore()
+    accounts.activeAccount = account('acc-a')
+    mocks.getPerformance.mockResolvedValueOnce({
+      account_id: 'acc-a',
+      posts: [],
+      snapshot_id: 'snapshot:a',
+      data_as_of: null,
+    })
+    await analytics.fetchPerformance()
+
+    // Re-resolve the same account (e.g. a background fetchAccounts refresh).
+    accounts.activeAccount = { ...account('acc-a'), name: ' renamed ' } as any
+    await nextTick()
+
+    expect(analytics.performanceData).not.toBeNull()
+    expect(analytics.dataAccountId).toBe('acc-a')
   })
 })

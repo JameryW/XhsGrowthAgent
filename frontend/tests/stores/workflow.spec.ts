@@ -71,7 +71,9 @@ vi.mock('@/locales', () => ({
 }))
 
 import { useWorkflowStore } from '@/stores/workflow'
+import { useAccountsStore } from '@/stores/accounts'
 import { getCheckpointHistory, getWorkflowStatus } from '@/api/workflow'
+import { nextTick } from 'vue'
 
 describe('workflow store', () => {
   beforeEach(() => {
@@ -143,6 +145,27 @@ describe('workflow store', () => {
     it('openTabIds starts empty', () => {
       const store = useWorkflowStore()
       expect(store.openTabIds).toEqual([])
+    })
+
+    it('stashes tabs per account and restores them when switching back', async () => {
+      const accounts = useAccountsStore()
+      const store = useWorkflowStore()
+      accounts.activeAccount = { id: 'acc-a', name: 'A', is_active: true } as any
+
+      await store.startWorkflow('acc-a')
+      expect(store.openTabIds).toContain('test-thread')
+
+      // Switch to account B → acc-a's tabs leave the dashboard.
+      accounts.activeAccount = { id: 'acc-b', name: 'B', is_active: true } as any
+      await nextTick()
+      expect(store.openTabIds).toEqual([])
+      expect(store.currentThreadId).toBeNull()
+
+      // Switch back → the stashed acc-a tabs are restored.
+      accounts.activeAccount = { id: 'acc-a', name: 'A', is_active: true } as any
+      await nextTick()
+      await vi.waitFor(() => expect(store.openTabIds).toContain('test-thread'))
+      expect(store.currentThreadId).toBe('test-thread')
     })
 
     it('getTabLabel returns short ID when no label set', () => {

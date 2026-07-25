@@ -181,6 +181,13 @@ async function fetchReviewQueue() {
   }
 }
 
+// The review queue is scoped to the active account on the backend; reload it
+// when the active account changes while this page stays mounted.
+watch(() => accountsStore.activeAccountId, (nextId, prevId) => {
+  if (!prevId || nextId === prevId) return
+  void fetchReviewQueue()
+})
+
 onMounted(async () => {
   const threadId = route.params.threadId
   if (typeof threadId === 'string' && threadId) {
