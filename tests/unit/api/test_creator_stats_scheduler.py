@@ -2,13 +2,21 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import random
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from backend.api.app import _CN_TZ, _clip_to_active_window, _creator_stats_scheduler, app, health
+from backend.api.app import (
+    _CN_TZ,
+    _clip_to_active_window,
+    _creator_stats_scheduler,
+    _weekday_skip_factor,
+    app,
+    health,
+)
 
 app_module = importlib.import_module("backend.api.app")
 
@@ -311,6 +319,8 @@ async def test_scheduler_randomly_skips_cycles_when_configured(monkeypatch):
             raise asyncio.CancelledError
 
     monkeypatch.setattr(app_module.asyncio, "sleep", fake_sleep)
+    # 固定星期权重为 1.0，隔离星期加权对本用例的干扰。
+    monkeypatch.setattr(app_module, "_weekday_skip_factor", lambda _weekday: 1.0)
     with (
         patch(
             "backend.services.creator_stats.pipeline.sync_all_active_accounts",
@@ -326,3 +336,21 @@ async def test_scheduler_randomly_skips_cycles_when_configured(monkeypatch):
     assert state["status"] == "skipped"
     assert state["run_count"] == 1
     assert len(sleep_calls) == 2
+
+
+def test_weekday_skip_factor_weekends_lower_than_monday():
+    """周末（5=周六、6=周日）的跳过权重低于周一（0），工作日居中。"""
+    assert _weekday_skip_factor(5) < _weekday_skip_factor(0)
+    assert _weekday_skip_factor(6) < _weekday_skip_factor(0)
+    assert _weekday_skip_factor(0) > _weekday_skip_factor(2)
+    assert _weekday_skip_factor(-1) == 1.0
+    assert _weekday_skip_factor(7) == 1.0
+
+
+def test_interval_jitter_stays_within_triangular_bounds():
+    """三角分布的间隔抖动仍在 0.75-1.5× 区间内（既有调度测试的边界前提）。"""
+    samples = [random.triangular(0.75, 1.5, 1.0) for _ in range(2000)]
+    assert all(0.75 <= s <= 1.5 for s in samples)
+    # 峰值在 1×：样本均值应明显偏离均匀分布的 1.125，靠近 1.083。
+    mean = sum(samples) / len(samples)
+    assert 1.05 <= mean <= 1.12
