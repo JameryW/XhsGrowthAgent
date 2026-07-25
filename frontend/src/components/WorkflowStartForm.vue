@@ -95,6 +95,13 @@ onMounted(async () => {
   }
 })
 
+// Follow the global active account when it changes while this form is alive.
+watch(() => accountsStore.activeAccountId, (nextId, prevId) => {
+  if (!nextId || !prevId || nextId === prevId) return
+  accountId.value = nextId
+  applyNicheDefault()
+})
+
 async function onBriefPdfUpload(file: File) {
   // Extract text immediately for preview — no thread ID needed
   await workflowStore.extractBriefPdf(file)

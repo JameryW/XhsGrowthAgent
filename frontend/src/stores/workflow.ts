@@ -17,6 +17,7 @@ import type { BriefUploadResult } from '@/api/workflow'
 import { useRealtimeStore } from './realtime'
 import { useToastStore } from './toast'
 import { useOfflineStore } from './offline'
+import { useAccountsStore } from './accounts'
 import { EventType } from '@/realtime/events'
 import { useLoading } from '@/composables/useLoading'
 import i18n from '@/locales'
@@ -910,6 +911,47 @@ export const useWorkflowStore = defineStore('workflow', () => {
       }
     }
   }
+
+  // ── Account switching: open tabs are per-account view state ──
+  //
+  // Threads belong to the account that started them.  When the active account
+  // changes, the dashboard must not keep showing the previous account's
+  // workflows.  Stash the current tabs per account so switching back within
+  // the session restores them.
+  const accountsStore = useAccountsStore()
+  const tabsByAccount = new Map<
+    string,
+    { tabIds: string[]; labels: Record<string, string>; activeId: string | null }
+  >()
+
+  watch(
+    () => accountsStore.activeAccountId,
+    (nextId, prevId) => {
+      // Initial load resolves null → account; only a real switch (both ids
+      // known) reshapes the tab bar.
+      if (!prevId || nextId === prevId) return
+      tabsByAccount.set(prevId, {
+        tabIds: [...openTabIds.value],
+        labels: { ...tabLabels.value },
+        activeId: activeThreadId.value,
+      })
+      for (const id of [...openTabIds.value]) {
+        closeTab(id)
+      }
+      const stash = nextId ? tabsByAccount.get(nextId) : undefined
+      if (!stash) return
+      openTabIds.value = [...stash.tabIds]
+      tabLabels.value = { ...stash.labels }
+      saveOpenTabs(openTabIds.value)
+      saveTabLabels(tabLabels.value)
+      if (stash.activeId && stash.tabIds.includes(stash.activeId)) {
+        activeThreadId.value = stash.activeId
+        localStorage.setItem(LS_ACTIVE_THREAD, stash.activeId)
+      }
+      // Repopulate workflowStates for the restored threads.
+      void refreshAllTabs()
+    }
+  )
 
   async function pauseWorkflow() {
     if (!activeThreadId.value) return

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import * as analyticsApi from '@/api/analytics'
 import type {
   GrowthReport,
@@ -25,6 +25,9 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   const periodSummary = ref<AnalyticsPeriodSummary | null>(null)
   const dataAsOf = ref<string | null>(null)
   const snapshotId = ref<string | null>(null)
+  // Account that produced the cached report/performance/summary.  Views use
+  // it to detect that the active account changed while they were unmounted.
+  const dataAccountId = ref<string | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   let requestGeneration = 0
@@ -35,6 +38,19 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   // account: an empty account scope is a real no-data state.
   const accountsStore = useAccountsStore()
   const accountId = computed(() => accountsStore.activeAccountId ?? accountsStore.accounts[0]?.id ?? '')
+
+  // Cached analytics belong to exactly one account.  When the active account
+  // changes (settings panel, another client, omp), drop the previous
+  // account's cache so no view can render a mixed-account snapshot.
+  watch(
+    () => accountsStore.activeAccountId,
+    (nextId, prevId) => {
+      if (!prevId || nextId === prevId) return
+      if (dataAccountId.value && dataAccountId.value !== nextId) {
+        clearAccountScopedData()
+      }
+    }
+  )
 
   // Computed
   const posts = computed<PostPerformance[]>(() =>
@@ -62,6 +78,8 @@ export const useAnalyticsStore = defineStore('analytics', () => {
 
   realtimeStore.wsService.onEvent(EventType.ANALYTICS_REPORT_UPDATED, (msg) => {
     const p = msg.payload as { report?: GrowthReport }
+    // Ignore pushes for other accounts — the cache is single-account scoped.
+    if (p.report && p.report.account_id && p.report.account_id !== accountId.value) return
     if (p.report) {
       growthReport.value = p.report
       toastStore.info(t('common.success'), t('analytics.title'))
@@ -80,6 +98,8 @@ export const useAnalyticsStore = defineStore('analytics', () => {
 
   realtimeStore.wsService.onEvent(EventType.ANALYTICS_PERFORMANCE_NEW, (msg) => {
     const p = msg.payload as { post?: PostPerformance }
+    // Ignore pushes for other accounts — the cache is single-account scoped.
+    if (p.post?.account_id && p.post.account_id !== accountId.value) return
     if (p.post && performanceData.value) {
       performanceData.value = {
         ...performanceData.value,
@@ -96,6 +116,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     periodSummary.value = null
     dataAsOf.value = null
     snapshotId.value = null
+    dataAccountId.value = null
   }
 
   async function fetchAllData() {
@@ -131,6 +152,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
       performanceData.value = performance
       costData.value = costs
       periodSummary.value = period_summary ?? null
+      dataAccountId.value = requestedAccountId
       dataAsOf.value = dashboard.data_as_of
         ?? responseDataAsOf(report, performanceData.value, period_summary)
       snapshotId.value = dashboard.snapshot_id
@@ -181,6 +203,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
         || period.value !== requestedPeriod
       ) return
       growthReport.value = report
+      dataAccountId.value = requestedAccountId
       dataAsOf.value = report.data_as_of ?? null
       snapshotId.value = report.snapshot_id ?? null
     } catch (e: any) {
@@ -229,6 +252,7 @@ export const useAnalyticsStore = defineStore('analytics', () => {
         || period.value !== requestedPeriod
       ) return
       performanceData.value = performance
+      dataAccountId.value = requestedAccountId
       dataAsOf.value = performance.data_as_of ?? null
       snapshotId.value = performance.snapshot_id ?? null
     } catch (e: any) {
@@ -273,11 +297,13 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     periodSummary,
     dataAsOf,
     snapshotId,
+    dataAccountId,
     isLoading,
     error,
     posts,
     totalEngagement,
     avgEngagementRate,
+    clearAccountScopedData,
     fetchAllData,
     fetchReport,
     fetchPerformance,
