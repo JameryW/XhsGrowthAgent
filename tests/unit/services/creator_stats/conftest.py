@@ -28,6 +28,18 @@ def _clear_creator_stats():
     _reset_stats()
 
 
+@pytest.fixture(autouse=True)
+def _deterministic_enrichment(monkeypatch):
+    """Keep crawl behavior deterministic unless a test opts into randomness.
+
+    Production defaults randomly skip whole enrichment stages (light runs) and
+    individual notes; tests that are not about that randomness must see every
+    candidate visited every time.
+    """
+    monkeypatch.setenv("CREATOR_STATS_LIGHT_RUN_CHANCE", "0")
+    monkeypatch.setenv("CREATOR_STATS_ENRICH_SKIP_CHANCE", "0")
+
+
 @contextmanager
 def grant_test_user(app: FastAPI) -> Iterator[None]:
     """Authenticate requests as a console user who owns any requested account.

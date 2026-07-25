@@ -198,6 +198,17 @@ class CdpTransport:
         long_min = max(0.0, _env_float("CREATOR_STATS_LONG_PAUSE_MIN_S", 15.0))
         long_max = max(long_min, _env_float("CREATOR_STATS_LONG_PAUSE_MAX_S", 45.0))
         self._long_pause = (long_min, long_max)
+        # 轻量轮：以小概率本轮只看概览+列表，不做逐篇详情/正文深入——人不会
+        # 每次都把每篇笔记翻到底，"每轮必全量深入"本身是可识别的固定流程。
+        self._light_run_chance = max(
+            0.0, min(1.0, _env_float("CREATOR_STATS_LIGHT_RUN_CHANCE", 0.15))
+        )
+        # 逐篇跳过：即使在深入轮，也以该概率跳过单篇笔记的详情/正文访问
+        # （被跳过的笔记下轮仍会被增量过滤器选中），避免"候选全扫"的机器人
+        # 完备性特征。
+        self._enrich_skip_chance = max(
+            0.0, min(1.0, _env_float("CREATOR_STATS_ENRICH_SKIP_CHANCE", 0.15))
+        )
         # 每轮抓取的节奏基准（在 fetch 开头随机缩放 request_delay 得到）：
         # 有的运行整体偏快、有的偏慢，避免跨运行统一的节奏画像。
         self._run_delay: tuple[float, float] | None = None
@@ -226,6 +237,28 @@ class CdpTransport:
                 await asyncio.sleep(random.uniform(long_min, long_max))
             return
         await asyncio.sleep(random.uniform(delay_min, delay_max))
+
+    async def _human_touch(self, page: Any) -> None:
+        """Simulate small random mouse movements on the page.
+
+        长时间无任何鼠标轨迹的"幽灵浏览"是风控可识别的会话特征；真人浏览
+        创作者中心时指针会无意识移动。移动本身带随机步数/落点，不产生新的
+        固定模式。页面对象为测试替身或无鼠标能力时静默跳过。
+        """
+        mouse = getattr(page, "mouse", None)
+        if mouse is None:
+            return
+        with contextlib.suppress(Exception):
+            viewport = getattr(page, "viewport_size", None)
+            width = int(viewport.get("width", 1280)) if isinstance(viewport, dict) else 1280
+            height = int(viewport.get("height", 800)) if isinstance(viewport, dict) else 800
+            x = random.uniform(0.1, 0.9) * width
+            y = random.uniform(0.1, 0.9) * height
+            for _ in range(random.randint(1, 3)):
+                x = min(max(x + random.uniform(-240.0, 240.0), 8.0), width - 8.0)
+                y = min(max(y + random.uniform(-160.0, 160.0), 8.0), height - 8.0)
+                await mouse.move(x, y, steps=random.randint(3, 12))
+                await asyncio.sleep(random.uniform(0.05, 0.3))
 
     async def _ensure_browser(self) -> Any:
         if self._browser is not None:
@@ -437,6 +470,10 @@ class CdpTransport:
         async with self._fetch_lock:
             # 每轮换一个节奏基准：本轮整体偏快或偏慢，跨运行无统一节奏。
             self._new_run_pace()
+            # 轻量轮：本轮只看概览+列表就离开，不做逐篇详情/正文深入。
+            light_run = self._light_run_chance > 0 and random.random() < self._light_run_chance
+            if light_run:
+                logger.info("creator stats light run: skipping per-note enrichment this round")
             browser = await self._ensure_browser()
             context = browser.contexts[0]
             page = await context.new_page()
@@ -538,6 +575,7 @@ class CdpTransport:
                     # 时长抖动——固定毫秒数是时序特征。
                     with contextlib.suppress(Exception):
                         await page.wait_for_timeout(random.uniform(700.0, 1600.0))
+                    await self._human_touch(page)
                     # Fail fast when the profile is logged out of Creator Center.
                     if await self._page_shows_login_ui(page) or auth_failed.is_set():
                         login_ui = await self._page_shows_login_ui(page)
@@ -564,6 +602,7 @@ class CdpTransport:
                         )
                         with contextlib.suppress(Exception):
                             await page.wait_for_timeout(random.uniform(700.0, 1600.0))
+                        await self._human_touch(page)
                         if await self._page_shows_login_ui(page) or auth_failed.is_set():
                             login_ui = await self._page_shows_login_ui(page)
                             auth_err = self._auth_error_from_captured(
@@ -756,15 +795,23 @@ class CdpTransport:
                 detail_deadline = asyncio.get_running_loop().time() + self._detail_timeout
                 detail_failures = 0
                 detail_candidates: list[str] = []
-                for note in raw_notes[:100]:
-                    note_id = str(
-                        note.get("note_id") or note.get("noteId") or note.get("id") or ""
-                    ).strip()
-                    if not note_id:
-                        continue
-                    if detail_filter is not None and not detail_filter(note):
-                        continue
-                    detail_candidates.append(note_id)
+                if not light_run:
+                    for note in raw_notes[:100]:
+                        note_id = str(
+                            note.get("note_id") or note.get("noteId") or note.get("id") or ""
+                        ).strip()
+                        if not note_id:
+                            continue
+                        if detail_filter is not None and not detail_filter(note):
+                            continue
+                        # 逐篇随机跳过：人翻笔记列表不会每篇都点开，候选全扫
+                        # 是机器人的完备性特征；跳过的笔记下轮仍会被过滤器选中。
+                        if (
+                            self._enrich_skip_chance > 0
+                            and random.random() < self._enrich_skip_chance
+                        ):
+                            continue
+                        detail_candidates.append(note_id)
                 # 乱序访问：每次以不同顺序浏览笔记详情，避免固定的"新→旧"
                 # 访问序列——固定顺序本身是可被风控识别的爬行特征。
                 random.shuffle(detail_candidates)
@@ -787,6 +834,9 @@ class CdpTransport:
                         remaining = detail_deadline - asyncio.get_running_loop().time()
                         if remaining <= 0:
                             break
+                        # 打开详情页后偶尔动一下鼠标，避免整段会话无指针轨迹。
+                        if random.random() < 0.7:
+                            await self._human_touch(page)
                         await self._wait_for(
                             lambda current=note_id: (
                                 len(note_detail_responses.get(current, {})) >= 2
@@ -843,24 +893,30 @@ class CdpTransport:
                 body_failures = 0
                 body_empty = 0
                 body_candidates: list[int] = []
-                for index, note in enumerate(raw_notes[:50]):
-                    note_id = str(
-                        note.get("note_id") or note.get("noteId") or note.get("id") or ""
-                    ).strip()
-                    if not note_id:
-                        continue
-                    title = str(
-                        note.get("display_title") or note.get("title") or note.get("desc") or ""
-                    ).strip()
-                    existing = str(
-                        note.get("body_text") or note.get("body") or note.get("desc") or ""
-                    ).strip()
-                    # Skip when we already have a caption distinct from the title.
-                    if existing and existing != title and len(existing) > len(title):
-                        continue
-                    if body_filter is not None and not body_filter(note):
-                        continue
-                    body_candidates.append(index)
+                if not light_run:
+                    for index, note in enumerate(raw_notes[:50]):
+                        note_id = str(
+                            note.get("note_id") or note.get("noteId") or note.get("id") or ""
+                        ).strip()
+                        if not note_id:
+                            continue
+                        title = str(
+                            note.get("display_title") or note.get("title") or note.get("desc") or ""
+                        ).strip()
+                        existing = str(
+                            note.get("body_text") or note.get("body") or note.get("desc") or ""
+                        ).strip()
+                        # Skip when we already have a caption distinct from the title.
+                        if existing and existing != title and len(existing) > len(title):
+                            continue
+                        if body_filter is not None and not body_filter(note):
+                            continue
+                        if (
+                            self._enrich_skip_chance > 0
+                            and random.random() < self._enrich_skip_chance
+                        ):
+                            continue
+                        body_candidates.append(index)
                 # 乱序访问公开正文页，避免与详情页相同的固定访问序列。
                 random.shuffle(body_candidates)
                 for visit_order, index in enumerate(body_candidates):
@@ -878,6 +934,9 @@ class CdpTransport:
                     ).strip()
                     if visit_order:
                         await self._pace()
+                    # 正文页之间也偶尔动一下鼠标。
+                    if random.random() < 0.7:
+                        await self._human_touch(page)
                     try:
                         body_text = await self._scrape_public_note_body(
                             page,
