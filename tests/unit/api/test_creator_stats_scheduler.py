@@ -178,6 +178,34 @@ def test_clip_to_active_window_moves_late_night_into_next_day_window():
     assert 8 <= local.hour < 23
 
 
+def test_clip_to_active_window_biases_toward_evening_hours():
+    """窗口内落点按人类活跃度加权：晚间（20-22 点）应显著多于清晨（8 点）。
+
+    均匀分布下晚间 3 小时约占 3/15=20%、8 点占 1/15≈6.7%；加权后晚间权重
+    11.5 vs 8 点 1.0。3000 次采样下 8 点次数 > 晚间次数的概率可以忽略。
+    """
+    candidate = datetime(2026, 1, 15, 20, 0, tzinfo=UTC)  # 凌晨 4 点 CST，窗口外
+    evening = 0
+    early = 0
+    samples = 3000
+    for _ in range(samples):
+        local = _clip_to_active_window(candidate, 8, 23).astimezone(_CN_TZ)
+        assert 8 <= local.hour < 23
+        if local.hour in (20, 21, 22):
+            evening += 1
+        elif local.hour == 8:
+            early += 1
+    assert evening > early * 3
+
+
+def test_clip_to_active_window_supports_hours_without_explicit_weights():
+    """窗口包含权重表之外的小时（如 7 点）时按默认权重 1.0 处理，不报错。"""
+    candidate = datetime(2026, 1, 15, 20, 0, tzinfo=UTC)
+    clipped = _clip_to_active_window(candidate, 7, 10)
+    local = clipped.astimezone(_CN_TZ)
+    assert 7 <= local.hour < 10
+
+
 @pytest.mark.asyncio
 async def test_scheduler_delays_first_run_when_startup_delay_configured(monkeypatch):
     """配置启动延迟后，首次运行前先睡一段随机延迟，不再启动即爬。"""
@@ -209,7 +237,7 @@ async def test_scheduler_delays_first_run_when_startup_delay_configured(monkeypa
 
 @pytest.mark.asyncio
 async def test_scheduler_backs_off_after_consecutive_failures(monkeypatch):
-    """连续失败第二次起，下次运行间隔翻倍（24h → 48h 节奏）。"""
+    """连续失败第二次起，下次运行间隔按 1.5-2.5× 随机放大（24h → 36-60h 节奏）。"""
     app = _scheduler_app()
     sleep_calls: list[float] = []
 
@@ -230,8 +258,8 @@ async def test_scheduler_backs_off_after_consecutive_failures(monkeypatch):
 
     # 第一次失败：按原周期（1800s × 0.75-1.5）。
     assert 1800.0 * 0.75 * 0.99 <= sleep_calls[0] <= 1800.0 * 1.5
-    # 第二次连续失败：间隔翻倍（3600s × 0.75-1.5）。
-    assert 3600.0 * 0.75 * 0.99 <= sleep_calls[1] <= 3600.0 * 1.5
+    # 第二次连续失败：间隔按 1.5-2.5× 随机放大（1800s × 1.5-2.5 × 0.75-1.5）。
+    assert 1800.0 * 1.5 * 0.75 * 0.99 <= sleep_calls[1] <= 1800.0 * 2.5 * 1.5
     state = app.state.creator_stats_scheduler_status
     assert state["consecutive_failures"] == 2
     assert state["status"] == "failed"

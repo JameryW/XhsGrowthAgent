@@ -31,13 +31,35 @@ load_dotenv(override=True)
 # 小红书创作者在中国——活跃窗口按中国本地时间（UTC+8）计算，与容器 TZ 无关。
 _CN_TZ = timezone(timedelta(hours=8))
 
+# 窗口内时刻的人类活跃度权重（中国本地小时 → 相对权重）：晚间（20-22 点）
+# 创作者最活跃，上午/下午次之，清晨与午休最低。窗口内均匀分布本身也是
+# 机器特征——人看创作者中心的时刻集中在休息时段。
+_HOUR_ACTIVITY_WEIGHTS: dict[int, float] = {
+    8: 1.0,
+    9: 2.5,
+    10: 3.0,
+    11: 3.0,
+    12: 1.5,
+    13: 1.0,
+    14: 2.5,
+    15: 3.0,
+    16: 3.0,
+    17: 2.5,
+    18: 2.0,
+    19: 2.0,
+    20: 3.5,
+    21: 4.0,
+    22: 4.0,
+}
+
 
 def _clip_to_active_window(candidate: datetime, start_hour: int, end_hour: int) -> datetime:
     """把候选运行时刻限制在中国本地时间的每日活跃窗口内。
 
     风控视角下，凌晨准时打开创作者中心是典型的机器行为。候选时刻落在窗口外
     时，平移到下一个窗口内的一个随机点（不是窗口起点——起点本身又会成为
-    新的固定模式）。
+    新的固定模式）。窗口内的落点按人类活跃度加权（晚间高、清晨低），
+    而不是均匀分布——任何整窗等概率的时刻分布都是可识别的机器特征。
     """
     local = candidate.astimezone(_CN_TZ)
     day_start = local.replace(hour=start_hour, minute=0, second=0, microsecond=0)
@@ -45,8 +67,11 @@ def _clip_to_active_window(candidate: datetime, start_hour: int, end_hour: int) 
     if day_start <= local < day_end:
         return candidate
     base = day_start if local < day_start else day_start + timedelta(days=1)
-    span_seconds = max(60.0, (day_end - day_start).total_seconds())
-    return (base + timedelta(seconds=random.uniform(0, span_seconds))).astimezone(UTC)
+    hours = list(range(start_hour, end_hour))
+    weights = [_HOUR_ACTIVITY_WEIGHTS.get(h, 1.0) for h in hours]
+    hour = random.choices(hours, weights=weights, k=1)[0]
+    picked = base + timedelta(hours=hour - start_hour, seconds=random.uniform(0.0, 3600.0))
+    return picked.astimezone(UTC)
 
 
 async def _creator_stats_scheduler(
@@ -71,7 +96,7 @@ async def _creator_stats_scheduler(
          深夜不爬；``None`` 表示不限制。
       3. 随机跳过：每轮以 ``skip_day_chance`` 概率整天跳过——人不会每天都
          看创作者中心，"每天必爬一次"本身就是规律。跳过不算失败。
-      4. 连续失败退避：第二次起连续失败间隔翻倍（封顶 2×），被风控/登录态
+      4. 连续失败退避：第二次起连续失败间隔按 1.5-2.5× 随机放大，被风控/登录态
          失效时自动降频，成功一次即复位。
     """
     interval_seconds = max(60.0, float(interval_hours) * 3600.0)
@@ -202,10 +227,12 @@ async def _creator_stats_scheduler(
                     }
                 )
                 logger.exception("scheduled creator stats import failed")
-            # 4. 失败退避：第二次连续失败起间隔翻倍（封顶 2×），成功即复位。
+            # 4. 失败退避计数：成功即复位，第二次连续失败起才放大间隔。
             consecutive_failures = 0 if succeeded else consecutive_failures + 1
             state["consecutive_failures"] = consecutive_failures
-        backoff = 1.0 if consecutive_failures <= 1 else 2.0
+        # 4. 失败退避：第二次连续失败起间隔按 1.5-2.5× 随机放大（固定倍数
+        # 本身也是可预测的退避节律），成功即复位。
+        backoff = 1.0 if consecutive_failures <= 1 else random.uniform(1.5, 2.5)
         # 2. 间隔在 0.75-1.5× interval 间随机（默认 18-36h），不留固定周期；
         # active_window 再把落点限制在人类活动时段。
         if skip_day_chance > 0 and random.random() < skip_day_chance:

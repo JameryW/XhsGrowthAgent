@@ -635,3 +635,53 @@ async def test_pace_uses_run_delay_baseline(monkeypatch):
     await transport._pace()
 
     assert sleeps == [5.0]
+
+
+async def test_cdp_light_run_skips_per_note_enrichment(monkeypatch):
+    """轻量轮（light run）：只看概览+列表，不访问任何笔记详情/正文页。"""
+    monkeypatch.setenv("CREATOR_STATS_LIGHT_RUN_CHANCE", "1")
+    page = _FakeNotesPage(note_count=3)
+    transport = _transport_with_page(page)
+
+    _account, _profile, notes = await transport.fetch_creator_center(max_pages=1)
+
+    assert page.detail_urls == []
+    assert page.body_urls == []
+    assert len(notes) == 3
+    assert all("audience_source" not in note for note in notes)
+
+
+async def test_cdp_enrich_skip_chance_one_visits_no_note_pages(monkeypatch):
+    """逐篇跳过概率为 1 时，深入轮也不访问任何详情/正文页。"""
+    monkeypatch.setenv("CREATOR_STATS_ENRICH_SKIP_CHANCE", "1")
+    page = _FakeNotesPage(note_count=3)
+    transport = _transport_with_page(page)
+
+    _account, _profile, notes = await transport.fetch_creator_center(max_pages=1)
+
+    assert page.detail_urls == []
+    assert page.body_urls == []
+    assert len(notes) == 3
+
+
+async def test_cdp_human_touch_moves_mouse_when_available():
+    """页面带鼠标能力时，抓取过程会产生随机鼠标轨迹（避免幽灵浏览特征）。"""
+    page = _FakeNotesPage(note_count=1)
+    page.mouse = SimpleNamespace(move=AsyncMock())
+    transport = _transport_with_page(page)
+
+    await transport.fetch_creator_center(max_pages=1, body_filter=lambda _note: False)
+
+    assert page.mouse.move.await_count >= 1
+
+
+async def test_cdp_human_touch_tolerates_pages_without_mouse():
+    """无鼠标能力的页面（测试替身）不应导致抓取失败。"""
+    page = _FakeNotesPage(note_count=1)
+    transport = _transport_with_page(page)
+
+    _account, _profile, notes = await transport.fetch_creator_center(
+        max_pages=1, body_filter=lambda _note: False
+    )
+
+    assert len(notes) == 1
