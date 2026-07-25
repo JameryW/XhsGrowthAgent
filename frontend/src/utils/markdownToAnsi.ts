@@ -111,11 +111,6 @@ export function markdownToAnsi(md: string, termCols = 80): string {
   // Links: [text](url) → underlined blue text + dim url
   out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, `${BRIGHT_BLUE}${UNDERLINE}$1${RESET} ${DIM}($2)${RESET}`)
 
-  // Fullwidth punctuation → ASCII equivalents (terminal CJK rendering fix)
-  // ponytail: WebGL renderer can't render fullwidth glyphs; halfwidth is correct for monospace TUI anyway
-  const fwMap: Record<string, string> = { '？': '?', '！': '!', '：': ':', '；': ';', '，': ',', '。': '.', '（': '(', '）': ')' }
-  out = out.replace(/[？！：；，。（）]/g, (ch) => fwMap[ch] ?? ch)
-
   // Horizontal rules: --- → dim line (adaptive width)
   const hrWidth = Math.max(20, termCols - 4)
   out = out.replace(/^---+$/gm, `${DIM}${'─'.repeat(hrWidth)}${RESET}`)
