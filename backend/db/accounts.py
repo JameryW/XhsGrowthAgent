@@ -338,7 +338,12 @@ async def delete_account(account_id: str) -> bool:
 
 
 async def get_active_account(*, owner_user_id: str | None = None) -> AccountRow | None:
-    """Return the currently active account (optionally scoped to an owner)."""
+    """Return the currently active account (optionally scoped to an owner).
+
+    Legacy data may hold more than one ``is_active = TRUE`` row (e.g. written
+    before activation became exclusive); the most recently updated row wins so
+    the result is deterministic.
+    """
     pool = get_pool()
     owner = (owner_user_id or "").strip() or None
     async with pool.connection() as conn:
@@ -346,12 +351,15 @@ async def get_active_account(*, owner_user_id: str | None = None) -> AccountRow 
 
         async with conn.cursor(row_factory=dict_row) as cur:
             if owner is None:
-                await cur.execute("SELECT * FROM accounts WHERE is_active = TRUE LIMIT 1")
+                await cur.execute(
+                    "SELECT * FROM accounts WHERE is_active = TRUE ORDER BY updated_at DESC LIMIT 1"
+                )
             else:
                 await cur.execute(
                     """
                     SELECT * FROM accounts
                     WHERE is_active = TRUE AND owner_user_id = %s
+                    ORDER BY updated_at DESC
                     LIMIT 1
                     """,
                     (owner,),
