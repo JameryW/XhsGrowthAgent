@@ -2072,6 +2072,7 @@
     "freeAccountUnbound": "未绑定账号",
     "freeNoAccountTitle": "还没有绑定账号",
     "freeNoAccountHint": "自由创作需要绑定一个小红书账号——打开左侧「账户」添加并登录后再来创作。",
+    "freeNoAccountBanner": "当前未绑定小红书账号：直接输入创作目标时，智能体生成的草稿将无法在 /drafts 中管理。请先在左侧「账户」添加并登录账号。",
     "accountContext": "账号：{account}",
     "quickActions": "快捷操作",
     "quickNewSession": "新会话",
