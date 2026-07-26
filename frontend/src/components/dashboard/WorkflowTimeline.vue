@@ -159,7 +159,12 @@ const currentAgent = computed(() => {
   return es.value?.current_agent || nextNode || ''
 })
 
-const hasError = computed(() => workflowStore.currentPhase === 'error' || !!es.value?.error)
+const hasError = computed(
+  () =>
+    workflowStore.currentPhase === 'error'
+    || workflowStore.currentStatus === 'error'
+    || !!es.value?.error,
+)
 const errorMessage = computed(() => es.value?.error || '')
 const agentTimeline = computed(() => workflowStore.agentTimeline)
 const hasTimelineData = computed(() => agentTimeline.value.length > 0)

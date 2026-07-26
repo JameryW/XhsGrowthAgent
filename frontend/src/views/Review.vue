@@ -21,9 +21,11 @@ import type { WorkflowListItem, WorkflowStateResponse } from '@/types/workflow'
 import type { EvaluationResult } from '@/types/evaluation'
 import { SCORE_THRESHOLDS, scoreTier, type ScoreThresholds, DIMENSION_LABEL_KEYS } from '@/constants/evaluation'
 import {
+  HISTORY_ACCOUNT_TOTALS_KEY,
   REVIEW_VIEW_ACCOUNT_KEY,
   accountQuery,
   readSessionString,
+  readSessionTotals,
   writeSessionString,
 } from '@/utils/accountViewSession'
 import { accountIdFromThreadId } from '@/utils/threadAccount'
@@ -102,6 +104,50 @@ const reviewSiblingHints = computed(() =>
     .map(c => ({ id: c.id, name: c.name, total: c.total as number }))
     .sort((a, b) => b.total - a.total),
 )
+
+/** History totals: session seed + optional bulk refresh when queue is empty. */
+const historyAccountTotals = ref<Record<string, number>>(
+  readSessionTotals(HISTORY_ACCOUNT_TOTALS_KEY),
+)
+
+const historySiblingHints = computed(() => {
+  if (!hasMultipleAccounts.value) return [] as { id: string; name: string; total: number }[]
+  const totals = historyAccountTotals.value
+  const viewId = reviewAccountId.value
+  const loc = locale.value || 'zh-CN'
+  return accountsStore.accounts
+    .filter(a => a.id !== viewId)
+    .map(a => ({
+      id: a.id,
+      name: a.name,
+      total: totals[a.id] ?? 0,
+    }))
+    .filter(h => h.total > 0)
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, loc))
+})
+
+function openHistoryForAccount(accountId: string) {
+  void router.push({
+    name: 'history',
+    query: accountQuery(accountId, { omitIfEquals: accountsStore.activeAccountId }),
+  })
+}
+
+async function refreshHistoryTotalsIfNeeded() {
+  if (!hasMultipleAccounts.value) return
+  // Skip network when session already has sibling counts.
+  const known = Object.keys(historyAccountTotals.value).length
+  if (known >= accountsStore.accounts.length) return
+  try {
+    const { getWorkflowAccountTotals } = await import('@/api/workflow')
+    const res = await getWorkflowAccountTotals(undefined, { suppressToast: true })
+    if (res?.totals && typeof res.totals === 'object') {
+      historyAccountTotals.value = { ...res.totals }
+    }
+  } catch {
+    // Session seed is enough for offline-ish empty states.
+  }
+}
 
 const reviewPrefetchTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
@@ -339,6 +385,9 @@ async function fetchReviewQueue() {
       })
     }
     listLoaded.value = true
+    if ((result.total ?? result.workflows.length) === 0 && hasMultipleAccounts.value) {
+      void refreshHistoryTotalsIfNeeded()
+    }
     for (const threadId of reviewStore.pendingReviews.keys()) {
       void ensureWorkflowInQueue(threadId)
     }
@@ -1045,6 +1094,7 @@ const handleCancelConfirm = () => {
       <div
         v-if="reviewSiblingHints.length"
         class="mx-auto mb-5 max-w-sm rounded-xl border border-amber-100 bg-amber-50/70 p-3 text-left dark:border-amber-500/25 dark:bg-amber-950/30"
+        data-testid="review-empty-siblings"
       >
         <p class="mb-2 text-xs font-semibold text-amber-800 dark:text-amber-100">
           {{ t('review.emptyOtherAccounts') }}
@@ -1060,6 +1110,30 @@ const handleCancelConfirm = () => {
           >
             <span class="truncate">{{ hint.name }}</span>
             <span class="ml-2 shrink-0 text-[10px] opacity-80">{{ hint.total }}</span>
+          </NeonButton>
+        </div>
+      </div>
+      <div
+        v-if="historySiblingHints.length"
+        class="mx-auto mb-5 max-w-sm rounded-xl border border-violet-100 bg-violet-50/70 p-3 text-left dark:border-violet-500/25 dark:bg-violet-950/30"
+        data-testid="review-empty-history-siblings"
+      >
+        <p class="mb-2 text-xs font-semibold text-violet-700 dark:text-violet-200">
+          {{ t('review.emptyHistoryOtherAccounts') }}
+        </p>
+        <div class="flex flex-col gap-2">
+          <NeonButton
+            v-for="hint in historySiblingHints"
+            :key="`hist-${hint.id}`"
+            variant="ghost"
+            size="sm"
+            class="min-h-11 w-full justify-between"
+            @click="openHistoryForAccount(hint.id)"
+          >
+            <span class="truncate">{{ hint.name }}</span>
+            <span class="ml-2 shrink-0 text-[10px] opacity-80">
+              {{ t('history.siblingCount', { count: hint.total }) }}
+            </span>
           </NeonButton>
         </div>
       </div>

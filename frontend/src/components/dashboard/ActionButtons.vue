@@ -19,7 +19,17 @@ const accountsStore = useAccountsStore()
 const hasActiveWorkflow = computed(() => !!workflowStore.currentThreadId)
 const isPaused = computed(() => workflowStore.currentPhase === 'paused')
 const isStale = computed(() => workflowStore.isStale)
-const isCancelled = computed(() => workflowStore.currentPhase === 'cancelled')
+// Prefer status for terminal flags — phase can lag after graph ends.
+const isCancelled = computed(
+  () =>
+    workflowStore.currentPhase === 'cancelled'
+    || workflowStore.currentStatus === 'cancelled',
+)
+const isCompleted = computed(
+  () =>
+    workflowStore.currentPhase === 'completed'
+    || workflowStore.currentStatus === 'completed',
+)
 const needsReview = computed(() => reviewStore.hasPendingReview)
 const canPause = computed(() => workflowStore.isRunning)
 // Trust status, not phase alone: a terminal "completed" row can still have
@@ -82,19 +92,34 @@ const pauseWorkflow = () => {
   workflowStore.pauseWorkflow()
 }
 
+const threadOwnerId = computed(() => {
+  const threadId = workflowStore.currentThreadId
+  return (
+    workflowStore.effectiveState?.account_id
+    || accountIdFromThreadId(threadId)
+    || null
+  )
+})
+
 const goToReview = () => {
   const threadId = workflowStore.currentThreadId
   if (!threadId) return
   reviewStore.fetchPendingReview(threadId)
-  const owner =
-    workflowStore.effectiveState?.account_id
-    || accountIdFromThreadId(threadId)
-  const q = accountQuery(owner, { omitIfEquals: accountsStore.activeAccountId })
+  const q = accountQuery(threadOwnerId.value, {
+    omitIfEquals: accountsStore.activeAccountId,
+  })
   router.push({
     name: 'review',
     params: { threadId },
     query: q,
   })
+}
+
+const goToHistory = () => {
+  const q = accountQuery(threadOwnerId.value, {
+    omitIfEquals: accountsStore.activeAccountId,
+  })
+  router.push({ name: 'history', query: q })
 }
 
 const resumeWorkflow = () => {
@@ -235,6 +260,36 @@ const openPostUrl = () => {
         </span>
       </NeonButton>
 
+      <!-- Completed: primary outlets match Dashboard nextAction -->
+      <NeonButton
+        v-if="isCompleted && !workflowStore.isReplayMode"
+        variant="cyan"
+        size="lg"
+        class="w-full sm:w-auto"
+        :title="t('dashboard.hero.completedDescription')"
+        :aria-label="t('dashboard.hero.completedCta')"
+        @click="goToHistory"
+      >
+        <span class="inline-flex items-center gap-2">
+          <AppIcon name="History" size="lg" variant="white" />
+          <span class="font-bold">{{ t('dashboard.hero.completedCta') }}</span>
+        </span>
+      </NeonButton>
+      <NeonButton
+        v-if="isCompleted && !workflowStore.isReplayMode"
+        variant="pink"
+        size="lg"
+        class="w-full sm:w-auto"
+        :title="t('dashboard.actionButtons.startNewDesc')"
+        :aria-label="t('dashboard.actionButtons.startNew')"
+        @click="startNewWorkflow"
+      >
+        <span class="inline-flex items-center gap-2">
+          <AppIcon name="Rocket" size="lg" variant="white" />
+          <span class="font-bold">{{ t('dashboard.actionButtons.startNew') }}</span>
+        </span>
+      </NeonButton>
+
       <!-- Regular buttons when not reviewing, paused, or cancelled -->
       <NeonButton
         v-if="canPause"
@@ -266,7 +321,7 @@ const openPostUrl = () => {
 
       <!-- Context-aware: View post after publishing -->
       <NeonButton
-        v-if="hasPostUrl && (currentPhase === 'publishing' || currentPhase === 'analyzing' || currentPhase === 'completed')"
+        v-if="hasPostUrl && (currentPhase === 'publishing' || currentPhase === 'analyzing' || isCompleted)"
         variant="cyan"
         size="sm"
         :title="t('dashboard.publishResult.viewPost')"
