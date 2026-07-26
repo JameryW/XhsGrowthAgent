@@ -515,17 +515,43 @@ async def _resolve_any_case(public_id: str) -> WorkflowRow:
 
 
 async def _load_state(request: Request, thread_id: str) -> dict[str, Any] | None:
-    from backend.api.deps import service_identity
-    from backend.api.routes.workflow import get_workflow_status
+    """Load workflow content for summary generation / public projection.
 
+    Prefer the live graph checkpoint (full copy/plan payload). Fall back to the
+    status route (history file / DB envelope) when the graph is unavailable.
+    """
+    import logging
+
+    log = logging.getLogger(__name__)
+
+    # 1) Direct graph state — richest source for body_text / selected_topic.
     try:
-        # Internal anonymous read: present the trusted service identity so the
-        # authenticated status route accepts this direct (non-HTTP) call.
+        graph = getattr(request.app.state, "graph", None)
+        if graph is not None:
+            snapshot = await graph.aget_state({"configurable": {"thread_id": thread_id}})
+            values = getattr(snapshot, "values", None) or {}
+            if isinstance(values, dict) and values:
+                return values
+    except Exception:
+        log.debug("showcase load_state graph failed for %s", thread_id, exc_info=True)
+
+    # 2) Status route (history file / service identity) as a secondary source.
+    try:
+        from backend.api.deps import service_identity
+        from backend.api.routes.workflow import get_workflow_status
+
         response = await get_workflow_status(thread_id, request, service_identity())
         data = getattr(response, "data", None)
-        return data if isinstance(data, dict) else None
+        if isinstance(data, dict) and data:
+            return data
+        if data is not None and hasattr(data, "model_dump"):
+            dumped = data.model_dump()
+            if isinstance(dumped, dict) and dumped:
+                return dumped
     except Exception:
-        return None
+        log.debug("showcase load_state status failed for %s", thread_id, exc_info=True)
+
+    return None
 
 
 async def _load_checkpoints(request: Request, thread_id: str) -> list[dict[str, Any]]:
@@ -587,25 +613,30 @@ async def _generate_case_summary(state: dict[str, Any] | None, row: WorkflowRow)
     """
 
     result = _public_result(state or {})
-    fallback = result.get("summary") or result.get("topic")
-    if not fallback:
-        # No state-derived content (e.g. missing checkpoint): an LLM summary
-        # written from the label alone would be invention, so keep the generic
-        # placeholder instead of persisting noise.
-        return None
     title = (
         _safe_text(row.public_title, 120) or result.get("title") or _safe_text(row.label, 120) or ""
     )
+    # Prefer body/topic; accept title/label so partial checkpoints still get a
+    # non-generic card blurb when the operator leaves the summary blank.
+    fallback = (
+        result.get("summary")
+        or result.get("topic")
+        or result.get("title")
+        or _safe_text(row.label, 360)
+        or _safe_text(row.public_title, 360)
+    )
+    if not fallback:
+        return None
 
     def _fallback(_data: dict[str, Any]) -> dict[str, Any]:
         return {"summary": fallback}
 
     inputs = {
         "title": title or "（无）",
-        "topic": result.get("topic") or "（无）",
+        "topic": result.get("topic") or title or "（无）",
         "audience": result.get("target_audience") or "（无）",
         "key_points": "、".join(result.get("key_points") or []) or "（无）",
-        "body": result.get("summary") or "（无）",
+        "body": result.get("summary") or fallback or "（无）",
         "metrics": _summary_metrics_text(result.get("metrics") or {}),
     }
     try:
@@ -830,6 +861,8 @@ async def update_showcase_visibility(
             "approved_at": approved_at,
             "approved_by": approved_by,
             "summary_auto_generated": summary_auto_generated,
+            # Top-level for clients that do not dig into case.summary.
+            "public_summary": updated.public_summary,
             "case": _case_payload(updated, featured=featured),
         }
     )

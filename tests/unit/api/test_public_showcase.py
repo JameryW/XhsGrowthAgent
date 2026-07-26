@@ -493,8 +493,10 @@ class TestGenerateCaseSummary:
         assert summary == "春日选题"
 
     @pytest.mark.asyncio
-    async def test_returns_none_without_state_content_and_skips_llm(self):
+    async def test_returns_none_without_any_content_and_skips_llm(self):
         row = _row("thread-1")
+        row.label = ""
+        row.public_title = None
         service = MagicMock()
         service.enrich_with_llm = AsyncMock()
         with patch("backend.services.llm_enrichment.get_llm_service", return_value=service):
@@ -502,6 +504,18 @@ class TestGenerateCaseSummary:
             assert await _generate_case_summary({}, row) is None
 
         service.enrich_with_llm.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_uses_label_when_state_has_no_body(self):
+        row = _row("thread-1")
+        row.label = "仅有标签的案例"
+        service = MagicMock()
+        service.enrich_with_llm = AsyncMock(return_value={"summary": "润色后的标签摘要"})
+        with patch("backend.services.llm_enrichment.get_llm_service", return_value=service):
+            summary = await _generate_case_summary({}, row)
+
+        assert summary == "润色后的标签摘要"
+        service.enrich_with_llm.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -540,6 +554,7 @@ async def test_approve_without_summary_auto_generates_and_persists():
     generate_mock.assert_awaited_once()
     assert db_update_mock.await_args.kwargs["public_summary"] == "自动生成的摘要"
     assert response.data["summary_auto_generated"] is True
+    assert response.data["public_summary"] == "自动生成的摘要"
     assert response.data["case"]["summary"] == "自动生成的摘要"
 
 
