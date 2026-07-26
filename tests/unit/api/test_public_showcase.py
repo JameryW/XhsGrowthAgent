@@ -178,6 +178,11 @@ async def test_public_case_list_excludes_private_rows_and_uses_featured_fallback
             new_callable=AsyncMock,
             return_value={public.account_id, private.account_id},
         ),
+        patch(
+            "backend.api.routes.public_showcase._load_state",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
     ):
         response = await list_public_cases(
             request=MagicMock(),
@@ -214,6 +219,11 @@ async def test_public_case_list_demotes_and_hides_deleted_account_rows():
             "backend.api.routes.public_showcase._existing_account_ids",
             new_callable=AsyncMock,
             return_value={live.account_id},
+        ),
+        patch(
+            "backend.api.routes.public_showcase._load_state",
+            new_callable=AsyncMock,
+            return_value=None,
         ),
         patch(
             "backend.api.routes.public_showcase.db_update",
@@ -288,6 +298,9 @@ async def test_public_manifest_returns_key_steps_without_internal_identifiers():
     assert len(response.data["steps"]) == 2
     assert all("checkpoint_id" not in step for step in response.data["steps"])
     assert all("current_agent" not in step for step in response.data["steps"])
+    # Manifest embeds result for first-paint without N detail round-trips.
+    assert all("result" in step for step in response.data["steps"])
+    assert response.data["workflow"]["replay_available"] is True
 
 
 @pytest.mark.asyncio
@@ -318,6 +331,11 @@ async def test_public_manifest_is_paginated_and_cacheable():
             new_callable=AsyncMock,
             return_value=checkpoints,
         ),
+        patch(
+            "backend.api.routes.public_showcase._load_state",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
     ):
         response = await get_public_replay_manifest(
             "case-public", request, response_headers, True, {"id": "user"}, 1, 1
@@ -329,6 +347,47 @@ async def test_public_manifest_is_paginated_and_cacheable():
     assert response.data["has_more"] is True
     assert response_headers.headers["Cache-Control"].startswith("public")
     assert response_headers.headers["ETag"]
+
+
+@pytest.mark.asyncio
+async def test_public_manifest_synthesizes_final_step_when_history_empty():
+    row = _row("public-thread", visibility="public")
+    state = {
+        "status": "completed",
+        "phase": "completed",
+        "copy_content": {
+            "selected_title": "终局标题",
+            "body_text": "终局正文摘要",
+        },
+        "content_plan": {"selected_topic": "终局选题"},
+    }
+
+    with (
+        patch(
+            "backend.api.routes.public_showcase._resolve_case",
+            new_callable=AsyncMock,
+            return_value=row,
+        ),
+        patch(
+            "backend.api.routes.public_showcase._load_checkpoints",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "backend.api.routes.public_showcase._load_state",
+            new_callable=AsyncMock,
+            return_value=state,
+        ),
+    ):
+        response = await get_public_replay_manifest(
+            "case-public", MagicMock(), Response(), False, None
+        )
+
+    assert response.data["total_steps"] == 1
+    assert response.data["key_step_count"] == 1
+    assert response.data["steps"][0]["title"] == "终局标题"
+    assert response.data["steps"][0]["result"]["topic"] == "终局选题"
+    assert response.data["workflow"]["replay_available"] is True
 
 
 @pytest.mark.asyncio
@@ -667,7 +726,7 @@ async def test_public_case_list_backfills_missing_summary_without_touching_updat
         patch(
             "backend.api.routes.public_showcase._load_state",
             new_callable=AsyncMock,
-            return_value={"copy_content": {"body_text": "正文"}},
+            return_value={"copy_content": {"body_text": "正文", "selected_title": "标题"}},
         ),
         patch(
             "backend.api.routes.public_showcase._generate_case_summary",
@@ -719,6 +778,7 @@ async def test_public_case_list_skips_backfill_when_summary_present():
         patch(
             "backend.api.routes.public_showcase._load_state",
             new_callable=AsyncMock,
+            return_value=None,
         ) as load_state_mock,
         patch(
             "backend.api.routes.public_showcase.db_update",
@@ -736,6 +796,8 @@ async def test_public_case_list_skips_backfill_when_summary_present():
             sort="recent",
         )
 
-    load_state_mock.assert_not_called()
+    # Card enrichment loads state once per visible row; summary backfill is skipped.
+    load_state_mock.assert_awaited()
     db_update_mock.assert_not_called()
     assert response.data["cases"][0]["summary"] == "已有摘要"
+    assert response.data["cases"][0]["result_preview"].get("topic")
