@@ -62,7 +62,7 @@ const totalActiveClasses = {
 
 function chipTitle(chip: AccountScopeChip): string {
   const tpl = chip.isWorkspace ? props.titleForWorkspace : props.titleForBrowse
-  if (tpl) return tpl.replaceAll('{name}', chip.name)
+  if (tpl) return tpl.replace(/\{name\}/g, chip.name)
   return chip.name
 }
 
@@ -94,7 +94,7 @@ watch(
   async (id, prev) => {
     const chip = props.chips.find(c => c.id === id)
     if (chip?.name && id !== prev && props.announceTemplate) {
-      liveMessage.value = props.announceTemplate.replaceAll('{name}', chip.name)
+      liveMessage.value = props.announceTemplate.replace(/\{name\}/g, chip.name)
     }
     // Keep the active chip visible inside the horizontal scroller on mobile.
     if (!id || id === prev) return
