@@ -7,6 +7,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import { useWorkflowStore, useReviewStore, useRealtimeStore, useAccountsStore } from '@/stores'
 import { accountIdFromThreadId } from '@/utils/threadAccount'
 import { accountQuery } from '@/utils/accountViewSession'
+import { prefetchStartWorkspace } from '@/utils/routePrefetch'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -84,7 +85,12 @@ const statusSourceColor = computed(() => {
 })
 
 // Operations
+const warmStartRoute = () => {
+  void prefetchStartWorkspace({ deep: false, data: true })
+}
+
 const startNewWorkflow = () => {
+  warmStartRoute()
   router.push('/start')
 }
 
@@ -170,6 +176,9 @@ const openPostUrl = () => {
         class="w-full sm:w-auto"
         :title="t('dashboard.actionButtons.startNewDesc')"
         :aria-label="t('dashboard.actionButtons.startNew')"
+        @mouseenter="warmStartRoute"
+        @focus="warmStartRoute"
+        @pointerdown="warmStartRoute"
         @click="startNewWorkflow"
       >
         <span class="inline-flex items-center gap-2">
@@ -252,6 +261,9 @@ const openPostUrl = () => {
         class="w-full sm:w-auto"
         :title="t('dashboard.actionButtons.startNewDesc')"
         :aria-label="t('dashboard.actionButtons.startNew')"
+        @mouseenter="warmStartRoute"
+        @focus="warmStartRoute"
+        @pointerdown="warmStartRoute"
         @click="startNewWorkflow"
       >
         <span class="inline-flex items-center gap-2">
@@ -282,6 +294,9 @@ const openPostUrl = () => {
         class="w-full sm:w-auto"
         :title="t('dashboard.actionButtons.startNewDesc')"
         :aria-label="t('dashboard.actionButtons.startNew')"
+        @mouseenter="warmStartRoute"
+        @focus="warmStartRoute"
+        @pointerdown="warmStartRoute"
         @click="startNewWorkflow"
       >
         <span class="inline-flex items-center gap-2">

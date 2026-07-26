@@ -23,6 +23,7 @@ import { formatNumber, formatPercent, formatShortDate } from '@/utils/format'
 import { trackInteraction } from '@/utils/interactionTelemetry'
 import { useFocusTrap } from '@/composables/useFocusTrap'
 import { hasSnapshotMismatch } from '@/constants/qualityConsistency'
+import { navigateToStart, prefetchStartWorkspace } from '@/utils/routePrefetch'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -594,7 +595,10 @@ function handleCreatorStatsUpdated() {
 }
 
 function goHome() {
-  router.push('/start')
+  navigateToStart(router)
+}
+function warmStart() {
+  void prefetchStartWorkspace({ deep: false, data: true })
 }
 
 // AN-08: single-post drill-down. The table row emits its data; we open a
@@ -815,6 +819,9 @@ function startWithTopic(topic: string, niche?: string) {
         <div class="flex flex-wrap items-center justify-center gap-2">
           <button
             type="button"
+            @mouseenter="warmStart"
+            @focus="warmStart"
+            @pointerdown="warmStart"
             @click="goHome"
             class="min-h-11 px-4 py-2 rounded-lg bg-teal-500 text-white text-sm font-medium hover:bg-teal-600 transition-all duration-200 flex items-center gap-2"
           >

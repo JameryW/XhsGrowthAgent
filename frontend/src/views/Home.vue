@@ -8,6 +8,8 @@ import WorkflowStartForm from '@/components/WorkflowStartForm.vue'
 import ConfirmStartModal from '@/components/ConfirmStartModal.vue'
 import type { WorkflowConfig, WorkflowMode } from '@/components/WorkflowStartForm.vue'
 import { useAccountsStore, useWorkflowStore } from '@/stores'
+import { prefetchAgentTuiChunk } from '@/api/agent'
+import { prefetchRouteChunk } from '@/utils/routePrefetch'
 
 const { t } = useI18n()
 
@@ -58,6 +60,9 @@ const handleAccountChange = (accountId: string) => {
 
 // Check for topic and niche query params from analytics
 onMounted(() => {
+  // Prefetch free-mode TUI + post-start dashboard while user fills the form.
+  prefetchAgentTuiChunk()
+  void prefetchRouteChunk('dashboard')
   const topic = route.query.topic as string
   const niche = route.query.niche as string
   if (topic) {
@@ -69,10 +74,12 @@ onMounted(() => {
 })
 
 const goToDashboard = () => {
+  void prefetchRouteChunk('dashboard')
   router.push('/dashboard')
 }
 
 const goToHistory = () => {
+  void prefetchRouteChunk('history')
   router.push('/history')
 }
 
@@ -84,9 +91,15 @@ const handleSubmit = async () => {
   if (startFormRef.value) {
     formConfig.value = startFormRef.value.getConfig()
   }
+  // Trend/brief confirm dialog is about to open — warm dashboard for after start.
+  if (formConfig.value.workflowMode !== 'free') {
+    void prefetchRouteChunk('dashboard')
+  }
   if (formConfig.value.workflowMode === 'free') {
     isStarting.value = true
     try {
+      // Ensure chunk is warm before navigation (no-op if already cached).
+      prefetchAgentTuiChunk()
       const query: Record<string, string> = { mode: 'free' }
       const topic = formConfig.value.topic || prefilledTopic.value || (route.query.topic as string)
       const niche = formConfig.value.niche || (route.query.niche as string)
@@ -127,6 +140,8 @@ const confirmStart = async () => {
       await startFormRef.value.uploadPendingPdf(threadId)
     }
     showConfirm.value = false
+    // Chunk should already be warm from onMounted; ensure before navigate.
+    void prefetchRouteChunk('dashboard')
     router.push('/dashboard')
   } finally {
     isStarting.value = false

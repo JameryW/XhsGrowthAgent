@@ -5,7 +5,21 @@ from __future__ import annotations
 import sys
 from unittest.mock import MagicMock, patch
 
-from backend.memory.index import get_prod_store_index, get_store_index
+import pytest
+
+from backend.memory.index import (
+    clear_store_index_cache,
+    get_prod_store_index,
+    get_store_index,
+    semantic_index_status,
+)
+
+
+@pytest.fixture(autouse=True)
+def _clear_index_cache():
+    clear_store_index_cache()
+    yield
+    clear_store_index_cache()
 
 
 class TestGetStoreIndex:
@@ -22,6 +36,13 @@ class TestGetStoreIndex:
         # embed is now an Embeddings object, not a string
         assert result["embed"] is not None
         assert "title" in result["fields"]
+
+    @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}, clear=True)
+    def test_caches_index_config_across_calls(self):
+        first = get_store_index()
+        second = get_store_index()
+        assert first is not None
+        assert first is second
 
     @patch.dict(
         "os.environ",
@@ -68,6 +89,30 @@ class TestGetStoreIndex:
         # But without OPENAI_API_KEY, still returns None
         result = get_store_index()
         assert result is None
+
+
+class TestSemanticIndexStatus:
+    @patch.dict("os.environ", {}, clear=True)
+    def test_disabled_without_api_key(self):
+        status = semantic_index_status()
+        assert status["enabled"] is False
+        assert status["reason"] == "missing_api_key"
+
+    @patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}, clear=True)
+    def test_enabled_with_openai_key(self):
+        status = semantic_index_status()
+        assert status["enabled"] is True
+        assert status["reason"] == "ok"
+
+    @patch.dict(
+        "os.environ",
+        {"XHS_EMBED_MODEL": "local:BAAI/bge-small-zh-v1.5", "XHS_EMBED_DIMS": "512"},
+        clear=True,
+    )
+    def test_local_enabled_without_key(self):
+        status = semantic_index_status()
+        assert status["enabled"] is True
+        assert status["embed_dims"] == 512
 
 
 class TestLocalProvider:

@@ -9,12 +9,19 @@ import {
   deleteAccount as apiDelete,
 } from '@/api/accounts'
 
+/** Skip network when a recent successful fetch is still warm (page re-entry). */
+const ACCOUNTS_FRESH_MS = 30_000
+
 export const useAccountsStore = defineStore('accounts', () => {
   // ── State ──
   const accounts = ref<Account[]>([])
   const activeAccount = ref<Account | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
+  /** Timestamp of last successful fetch (0 = never). */
+  const lastFetchedAt = ref(0)
+  /** In-flight fetch so concurrent callers share one round-trip. */
+  let inFlight: Promise<void> | null = null
 
   // ── Computed ──
   const activeAccountId = computed(() => activeAccount.value?.id ?? null)
@@ -24,18 +31,34 @@ export const useAccountsStore = defineStore('accounts', () => {
 
   // ── Actions ──
 
-  async function fetchAccounts() {
+  async function fetchAccounts(options?: { force?: boolean }) {
+    const force = options?.force === true
+    const fresh =
+      !force
+      && lastFetchedAt.value > 0
+      && Date.now() - lastFetchedAt.value < ACCOUNTS_FRESH_MS
+      && accounts.value.length > 0
+
+    if (fresh) return
+    if (inFlight) return inFlight
+
     isLoading.value = true
     error.value = null
-    try {
-      accounts.value = await listAccounts()
-      // Also fetch active account
-      activeAccount.value = await getActiveAccount()
-    } catch (e: any) {
-      error.value = e.message
-    } finally {
-      isLoading.value = false
-    }
+    inFlight = (async () => {
+      try {
+        // Parallelize list + active (was sequential = 2 RTTs).
+        const [list, active] = await Promise.all([listAccounts(), getActiveAccount()])
+        accounts.value = list
+        activeAccount.value = active
+        lastFetchedAt.value = Date.now()
+      } catch (e: any) {
+        error.value = e.message
+      } finally {
+        isLoading.value = false
+        inFlight = null
+      }
+    })()
+    return inFlight
   }
 
   async function createAccount(name: string) {
@@ -47,7 +70,7 @@ export const useAccountsStore = defineStore('accounts', () => {
   async function setActiveAccount(accountId: string) {
     const updated = await apiUpdate(accountId, { is_active: true })
     // Refresh list to reflect active state changes
-    await fetchAccounts()
+    await fetchAccounts({ force: true })
     return updated
   }
 

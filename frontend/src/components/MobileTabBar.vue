@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import { useAccountsStore, useAuthStore, useRealtimeStore } from '@/stores'
 import { useCrossAccountHintsStore } from '@/stores/crossAccountHints'
+import { prefetchRouteByPath, prefetchStartWorkspace } from '@/utils/routePrefetch'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -61,8 +62,21 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleMenuKeydown)
 })
 
+const warmStartRoute = () => {
+  void prefetchStartWorkspace({ deep: false, data: true })
+}
+
+const warmNavPath = (path: string) => {
+  if (path === '/start') {
+    warmStartRoute()
+    return
+  }
+  void prefetchRouteByPath(path)
+}
+
 const navigate = (path: string) => {
   showMore.value = false
+  warmNavPath(path)
   router.push(path)
 }
 
@@ -87,7 +101,11 @@ const handleLogout = async () => {
       <button
         v-for="tab in tabs"
         :key="tab.path"
+        type="button"
         @click="navigate(tab.path)"
+        @mouseenter="warmNavPath(tab.path)"
+        @focus="warmNavPath(tab.path)"
+        @pointerdown="warmNavPath(tab.path)"
         :class="[
           'relative flex min-h-11 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 transition-all duration-200',
           isActiveTab(tab.path) ? 'text-rose-500' : 'text-slate-400'
@@ -143,32 +161,44 @@ const handleLogout = async () => {
           </div>
         </div>
         <button
+          type="button"
           class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
           role="menuitem"
+          @mouseenter="warmNavPath('/analytics')"
+          @focus="warmNavPath('/analytics')"
           @click="navigate('/analytics')"
         >
           <AppIcon name="BarChart3" size="sm" variant="cyan" aria-hidden="true" />
           <span>{{ t('nav.analytics') }}</span>
         </button>
         <button
+          type="button"
           class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
           role="menuitem"
+          @mouseenter="warmNavPath('/evaluation')"
+          @focus="warmNavPath('/evaluation')"
           @click="navigate('/evaluation')"
         >
           <AppIcon name="ClipboardCheck" size="sm" variant="purple" aria-hidden="true" />
           <span>{{ t('nav.evaluation') }}</span>
         </button>
         <button
+          type="button"
           class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
           role="menuitem"
+          @mouseenter="warmNavPath('/history')"
+          @focus="warmNavPath('/history')"
           @click="navigate('/history')"
         >
           <AppIcon name="History" size="sm" variant="cyan" aria-hidden="true" />
           <span>{{ t('nav.history') }}</span>
         </button>
         <button
+          type="button"
           class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
           role="menuitem"
+          @mouseenter="warmNavPath('/settings')"
+          @focus="warmNavPath('/settings')"
           @click="openSettings"
         >
           <AppIcon name="Settings" size="sm" variant="cyan" aria-hidden="true" />

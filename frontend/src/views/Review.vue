@@ -30,6 +30,7 @@ import {
 } from '@/utils/accountViewSession'
 import { accountIdFromThreadId } from '@/utils/threadAccount'
 import { useCrossAccountHintsStore } from '@/stores/crossAccountHints'
+import { navigateToStart, prefetchStartWorkspace } from '@/utils/routePrefetch'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -847,7 +848,8 @@ function goDashboard() {
     }),
   })
 }
-function goHome() { router.push('/start') }
+function goHome() { navigateToStart(router) }
+function warmStart() { void prefetchStartWorkspace({ deep: false, data: true }) }
 
 function toggleExpand(tid: string) {
   if (expandedThreadId.value === tid) {
@@ -1141,7 +1143,13 @@ const handleCancelConfirm = () => {
         <NeonButton variant="pink" size="sm" @click="goDashboard">
           {{ t('review.emptyState.goDashboard') }}
         </NeonButton>
-        <NeonButton variant="ghost" size="sm" @click="goHome">
+        <NeonButton
+          variant="ghost"
+          size="sm"
+          @mouseenter="warmStart"
+          @focus="warmStart"
+          @click="goHome"
+        >
           {{ t('review.emptyState.goHome') }}
         </NeonButton>
       </div>

@@ -21,11 +21,11 @@ const health = ref<HealthCheck | null>(null)
 const isLoading = ref(false)
 const error = ref<string | null>(null)
 
-async function fetchHealth() {
+async function fetchHealth(options?: { fresh?: boolean }) {
   isLoading.value = true
   error.value = null
   try {
-    health.value = await getSystemHealth()
+    health.value = await getSystemHealth(options)
   } catch (e: any) {
     error.value = e.message
   } finally {
@@ -33,7 +33,16 @@ async function fetchHealth() {
   }
 }
 
-onMounted(fetchHealth)
+// Defer health probe so the start form paints first; still uses client+server caches.
+onMounted(() => {
+  const run = () => { void fetchHealth() }
+  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    const idle = window.requestIdleCallback as (cb: () => void, opts?: { timeout: number }) => number
+    idle(run, { timeout: 400 })
+  } else {
+    window.setTimeout(run, 0)
+  }
+})
 
 // Build checklist items from health data
 const checklistItems = computed<ChecklistItem[]>(() => {
@@ -178,7 +187,7 @@ defineExpose({ readiness })
           <span class="text-sm font-medium text-rose-700">{{ t('checklist.apiError') }}</span>
         </div>
         <p class="text-xs text-rose-600">{{ error }}</p>
-        <NeonButton variant="ghost" size="sm" class="mt-2" @click="fetchHealth">
+        <NeonButton variant="ghost" size="sm" class="mt-2" @click="fetchHealth({ fresh: true })">
           <AppIcon name="RefreshCw" size="sm" variant="pink" />
           <span class="ml-1">{{ t('common.retry') }}</span>
         </NeonButton>
@@ -247,7 +256,8 @@ defineExpose({ readiness })
       <!-- Action buttons -->
       <div class="flex items-center justify-between">
         <button
-          @click="fetchHealth"
+          type="button"
+          @click="fetchHealth({ fresh: true })"
           class="text-xs text-slate-400 hover:text-slate-600 transition-colors flex items-center gap-1"
         >
           <AppIcon name="RefreshCw" size="sm" variant="cyan" />

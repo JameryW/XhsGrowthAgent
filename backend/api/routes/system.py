@@ -2,16 +2,35 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
+import time
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
-import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from backend.api.responses import ApiResponse, success
 
+logger = logging.getLogger("xhs_growth.api.system")
+
 router = APIRouter()
+
+# Short-lived response cache so /start page mounts don't re-probe every visit.
+_HEALTH_CACHE_TTL_S = 15.0
+_health_cache: dict[str, Any] | None = None
+_health_cache_at: float = 0.0
+# Coalesce concurrent cold probes (first request after process start).
+_ripple_probe_lock = asyncio.Lock()
+_ripple_probe_task: asyncio.Task[None] | None = None
+
+
+def clear_health_cache() -> None:
+    """Drop cached health payload (tests / forced refresh)."""
+    global _health_cache, _health_cache_at
+    _health_cache = None
+    _health_cache_at = 0.0
 
 
 def _check_env_var(name: str) -> dict[str, Any]:
@@ -40,10 +59,92 @@ def _check_llm_providers() -> dict[str, Any]:
     }
 
 
+def _ripple_llm_config_payload() -> tuple[bool, dict[str, str]]:
+    llm_platform = os.environ.get("RIPPLE_LLM_MODEL_PLATFORM", "")
+    llm_name = os.environ.get("RIPPLE_LLM_MODEL_NAME", "")
+    llm_key = os.environ.get("RIPPLE_LLM_API_KEY", "")
+    return bool(llm_platform and llm_name and llm_key), {
+        "platform": llm_platform,
+        "model": llm_name,
+    }
+
+
+def _map_ripple_cached_status() -> dict[str, Any] | None:
+    """Map RippleService background health cache → API payload, or None if cold."""
+    try:
+        from backend.services.ripple_service import RippleService
+
+        hs = RippleService.get_instance()._health_status
+    except Exception:
+        return None
+
+    if not hs.last_check:
+        return None
+
+    llm_ok, llm_cfg = _ripple_llm_config_payload()
+
+    if hs.reason == "disabled" or hs.last_check == "disabled":
+        return {
+            "status": "disabled",
+            "configured": False,
+            "message": "Ripple 服务未启用",
+            "reason": "disabled",
+        }
+
+    if hs.is_healthy:
+        if llm_ok:
+            return {
+                "status": "ok",
+                "configured": True,
+                "message": "Ripple CAS 可用，LLM 配置完整",
+                "reason": "ok",
+                "llm_config": llm_cfg,
+                "latency_ms": hs.latency_ms,
+            }
+        return {
+            "status": "warning",
+            "configured": True,
+            "message": "Ripple CAS 可用但缺少 LLM 配置（模拟将失败）",
+            "reason": "llm_missing",
+            "llm_config": llm_cfg,
+            "latency_ms": hs.latency_ms,
+        }
+
+    return {
+        "status": "warning",
+        "configured": True,
+        "message": hs.error or f"Ripple CAS 不可用（{hs.last_check}）",
+        "reason": hs.reason or "unreachable",
+    }
+
+
+def _schedule_ripple_probe() -> None:
+    """Kick a background health_check if none is in flight (non-blocking)."""
+    global _ripple_probe_task
+
+    async def _run() -> None:
+        try:
+            from backend.services.ripple_service import RippleService
+
+            async with _ripple_probe_lock:
+                await RippleService.get_instance().health_check()
+        except Exception as exc:
+            logger.debug("background ripple probe failed: %s", exc)
+
+    if _ripple_probe_task is None or _ripple_probe_task.done():
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        _ripple_probe_task = loop.create_task(_run())
+
+
 async def _check_ripple() -> dict[str, Any]:
-    """Check Ripple CAS engine availability and LLM config."""
+    """Check Ripple CAS using background-cached status (no request-path HTTP wait).
+
+    Falls back to a non-blocking pending state when the process has never probed.
+    """
     base_url = os.environ.get("RIPPLE_BASE_URL")
-    api_token = os.environ.get("RIPPLE_API_TOKEN")
     enabled = os.environ.get("RIPPLE_ENABLED", "false").lower() == "true"
 
     if not enabled:
@@ -62,48 +163,17 @@ async def _check_ripple() -> dict[str, Any]:
             "reason": "unconfigured",
         }
 
-    headers = {"Accept": "application/json"}
-    if api_token:
-        headers["Authorization"] = f"Bearer {api_token}"
+    cached = _map_ripple_cached_status()
+    if cached is not None:
+        return cached
 
-    try:
-        async with httpx.AsyncClient(timeout=5.0, headers=headers) as client:
-            resp = await client.get(f"{base_url.rstrip('/')}/healthz")
-        if resp.status_code != 200:
-            return {
-                "status": "warning",
-                "configured": True,
-                "message": f"Ripple CAS 健康检查失败：HTTP {resp.status_code}",
-                "reason": "unreachable",
-            }
-    except httpx.HTTPError as exc:
-        return {
-            "status": "warning",
-            "configured": True,
-            "message": f"Ripple CAS 不可达：{exc}",
-            "reason": "unreachable",
-        }
-
-    # Healthz is OK — verify LLM config so simulations won't fail with "missing model_name"
-    llm_platform = os.environ.get("RIPPLE_LLM_MODEL_PLATFORM", "")
-    llm_name = os.environ.get("RIPPLE_LLM_MODEL_NAME", "")
-    llm_key = os.environ.get("RIPPLE_LLM_API_KEY", "")
-    llm_configured = bool(llm_platform and llm_name and llm_key)
-
-    if llm_configured:
-        return {
-            "status": "ok",
-            "configured": True,
-            "message": "Ripple CAS 可用，LLM 配置完整",
-            "reason": "ok",
-            "llm_config": {"platform": llm_platform, "model": llm_name},
-        }
+    # Cold process: schedule probe, do not block the page-load health request.
+    _schedule_ripple_probe()
     return {
         "status": "warning",
         "configured": True,
-        "message": "Ripple CAS 可用但缺少 LLM 配置（模拟将失败）",
-        "reason": "llm_missing",
-        "llm_config": {"platform": llm_platform, "model": llm_name},
+        "message": "Ripple 健康状态探测中（后台）",
+        "reason": "pending",
     }
 
 
@@ -121,8 +191,12 @@ def _check_search() -> dict[str, Any]:
 
 
 async def _check_memory_store() -> dict[str, Any]:
-    """Check memory store status: backend type, semantic index, namespace counts."""
-    from backend.memory.index import get_store_index
+    """Check memory store status: backend type + semantic index (env only).
+
+    Intentionally avoids ``get_store_index()`` (may load HF models) and
+    ``store.alist(limit=1000)`` (expensive on Postgres under page-load path).
+    """
+    from backend.memory.index import semantic_index_status
 
     store = None
     try:
@@ -146,39 +220,11 @@ async def _check_memory_store() -> dict[str, Any]:
     else:
         backend = "unavailable"
 
-    # Check semantic index availability
-    index_config = get_store_index()
-    semantic_enabled = index_config is not None
-    embed_model = ""
-    embed_dims = 0
-    if index_config:
-        # embed field is an Embeddings object (not serializable) — report the
-        # configured model string from env instead, for the health payload.
-        embed_model = os.environ.get("XHS_EMBED_MODEL", "")
-        embed_dims = index_config.get("dims", 0)
-
-    # Count items per namespace (best-effort)
-    namespace_counts: dict[str, int] = {}
-    total_items = 0
-    if store is not None:
-        try:
-            # List all namespaces and count items
-            # InMemoryStore and AsyncPostgresStore both support alist with namespace prefix
-            known_prefixes = [
-                ("accounts",),  # All account-scoped data
-                ("benchmarks",),  # Niche benchmarks
-            ]
-            for prefix in known_prefixes:
-                try:
-                    items = await store.alist(namespace_prefix=prefix, limit=1000)
-                    for item in items:
-                        ns_key = "/".join(str(p) for p in item.namespace)
-                        namespace_counts[ns_key] = namespace_counts.get(ns_key, 0) + 1
-                        total_items += 1
-                except Exception:
-                    pass
-        except Exception:
-            pass
+    # Env-only semantic index check — no Embeddings construction.
+    sem = semantic_index_status()
+    semantic_enabled = bool(sem.get("enabled"))
+    embed_model = str(sem.get("embed_model") or "")
+    embed_dims = int(sem.get("embed_dims") or 0)
 
     # Build status
     if backend == "unavailable":
@@ -200,30 +246,18 @@ async def _check_memory_store() -> dict[str, Any]:
     if semantic_enabled:
         result["embed_model"] = embed_model
         result["embed_dims"] = embed_dims
-    if namespace_counts:
-        result["namespace_counts"] = namespace_counts
-        result["total_items"] = total_items
 
     return result
 
 
-@router.get("/health")
-async def system_health() -> ApiResponse[Any]:
-    """系统健康检查
-
-    检查所有外部依赖的可用性：
-    - LLM Provider API keys
-    - Ripple CAS 引擎
-    - 数据库/存储
-    - 搜索 API (Tavily)
-    """
+async def _build_health_payload() -> dict[str, Any]:
+    """Assemble the full health payload (uncached)."""
     llm = _check_llm_providers()
-    ripple = await _check_ripple()
+    # Ripple + memory are both non-blocking / cheap; run concurrently with
+    # active-account lookup.
+    ripple_task = asyncio.create_task(_check_ripple())
+    memory_task = asyncio.create_task(_check_memory_store())
     search = _check_search()
-    memory = await _check_memory_store()
-
-    # Overall status: ok if LLM is configured.
-    overall = "ok" if llm["status"] == "ok" else "degraded"
 
     # Detect checkpointer mode from app state
     try:
@@ -328,6 +362,12 @@ async def system_health() -> ApiResponse[Any]:
             "message": f"无法读取定时同步状态: {exc}",
         }
 
+    ripple = await ripple_task
+    memory = await memory_task
+
+    # Overall status: ok if LLM is configured.
+    overall = "ok" if llm["status"] == "ok" else "degraded"
+
     checks = {
         "llm_providers": llm,
         "ripple_cas": ripple,
@@ -341,7 +381,7 @@ async def system_health() -> ApiResponse[Any]:
     if overall == "ok" and scheduler_check.get("status") == "warning":
         overall = "degraded"
 
-    result_data = {
+    result_data: dict[str, Any] = {
         "status": overall,
         "checks": checks,
         "version": "0.1.0",
@@ -350,4 +390,36 @@ async def system_health() -> ApiResponse[Any]:
     if active_account:
         result_data["active_account"] = active_account
 
+    return result_data
+
+
+@router.get("/health")
+async def system_health(
+    fresh: Annotated[
+        bool, Query(description="跳过短时缓存，强制重新组装")
+    ] = False,
+) -> ApiResponse[Any]:
+    """系统健康检查
+
+    检查所有外部依赖的可用性：
+    - LLM Provider API keys
+    - Ripple CAS 引擎（读后台缓存，不阻塞页面）
+    - 数据库/存储
+    - 搜索 API (Tavily)
+
+    默认缓存 15s，避免 /start 挂载重复探测。``?fresh=1`` 强制刷新。
+    """
+    global _health_cache, _health_cache_at
+
+    now = time.monotonic()
+    if (
+        not fresh
+        and _health_cache is not None
+        and (now - _health_cache_at) < _HEALTH_CACHE_TTL_S
+    ):
+        return success(data=_health_cache)
+
+    result_data = await _build_health_payload()
+    _health_cache = result_data
+    _health_cache_at = now
     return success(data=result_data)

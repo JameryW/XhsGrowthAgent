@@ -193,3 +193,53 @@ async def test_pong_heartbeat_reply_is_silently_ignored() -> None:
     assert websocket.sent[0]["resumed"] is False
     errors = [m for m in websocket.sent if m.get("type") == "error"]
     assert errors == []
+
+
+class _PrewarmManager:
+    def __init__(self, *, ready_mode: str | None = None) -> None:
+        self.created: list[str] = []
+        self._ready_mode = ready_mode
+        self._session = _FakeSession("warm1", ready_mode or "free")
+
+    @property
+    def session_ids(self) -> list[str]:
+        return ["warm1"] if self._ready_mode else []
+
+    def get_session(self, session_id: str):
+        if self._ready_mode and session_id == "warm1":
+            return self._session
+        return None
+
+    async def get_or_create_session(self, session_id=None, mode: str = "workflow"):
+        self.created.append(mode)
+        await asyncio.sleep(0)
+        return _FakeSession("new", mode)
+
+
+async def test_prewarm_agent_session_returns_ready_when_live() -> None:
+    from backend.api.routes.agent import prewarm_agent_session
+
+    manager = _PrewarmManager(ready_mode="free")
+    with patch("backend.api.routes.agent.get_bridge_manager", return_value=manager):
+        resp = await prewarm_agent_session(mode="free", _user={"id": "u1"})
+
+    assert resp.success is True
+    assert resp.data == {"status": "ready", "mode": "free", "session_id": "warm1"}
+    assert manager.created == []
+
+
+async def test_prewarm_agent_session_fires_background_create() -> None:
+    from backend.api.routes import agent as agent_mod
+    from backend.api.routes.agent import prewarm_agent_session
+
+    agent_mod._prewarm_tasks.clear()
+    manager = _PrewarmManager(ready_mode=None)
+    with patch("backend.api.routes.agent.get_bridge_manager", return_value=manager):
+        resp = await prewarm_agent_session(mode="free", _user={"id": "u1"})
+        assert resp.data["status"] == "warming"
+        # Let background task run
+        task = agent_mod._prewarm_tasks.get("free")
+        if task is not None:
+            await task
+
+    assert "free" in manager.created
