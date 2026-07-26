@@ -437,7 +437,12 @@ def _is_decision_checkpoint(checkpoint: dict[str, Any]) -> bool:
     )
 
 
-def _public_step(thread_id: str, checkpoint: dict[str, Any]) -> dict[str, Any]:
+def _public_step(
+    thread_id: str,
+    checkpoint: dict[str, Any],
+    *,
+    include_result: bool = False,
+) -> dict[str, Any]:
     result = _public_result(checkpoint)
     phase = _phase(checkpoint.get("phase"))
     step = checkpoint.get("step") if isinstance(checkpoint.get("step"), int) else 0
@@ -445,7 +450,7 @@ def _public_step(thread_id: str, checkpoint: dict[str, Any]) -> dict[str, Any]:
     summary = result.get("summary") or (
         "该阶段已完成关键处理" if phase != "creating" else "正在整理创作结果"
     )
-    return {
+    payload = {
         "public_id": _step_public_id(thread_id, str(checkpoint.get("checkpoint_id") or step)),
         "step": step,
         "phase": phase,
@@ -458,6 +463,10 @@ def _public_step(thread_id: str, checkpoint: dict[str, Any]) -> dict[str, Any]:
         "error_category": _public_error_category(checkpoint.get("error")),
         "result_kind": phase,
     }
+    # Manifest embeds result so the first paint does not wait on N detail calls.
+    if include_result and result:
+        payload["result"] = result
+    return payload
 
 
 def _key_checkpoints(checkpoints: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -777,11 +786,16 @@ async def _backfill_missing_summaries(request: Request, rows: list[WorkflowRow])
     await asyncio.gather(*(_backfill(row) for row in pending))
 
 
+def _is_featured_row(row: WorkflowRow) -> bool:
+    return bool(row.showcase_featured) or row.featured_rank is not None
+
+
 def _case_payload(
     row: WorkflowRow,
     state: dict[str, Any] | None = None,
     *,
     featured: bool = False,
+    replay_available: bool | None = None,
 ) -> dict[str, Any]:
     state = state or {}
     result = _public_result(state)
@@ -799,6 +813,24 @@ def _case_payload(
         or result.get("topic")
         or "从洞察到产出的完整创作过程"
     )
+    preview = {
+        key: result[key]
+        for key in ("title", "topic", "hashtags", "visual", "metrics")
+        if key in result
+    }
+    # List path often has no checkpoint state — still seed topic/title from the
+    # operator-facing public columns so cards are not blank shells.
+    if "topic" not in preview:
+        topic = _safe_text(row.public_title, 120) or _safe_text(row.label, 120)
+        if topic:
+            preview["topic"] = topic
+    if "title" not in preview and title and title != "内容创作案例":
+        preview["title"] = title
+
+    is_featured = featured or _is_featured_row(row)
+    if replay_available is None:
+        replay_available = status != "attention" or bool(state)
+
     payload: dict[str, Any] = {
         "public_id": _public_id(row),
         "title": title,
@@ -808,13 +840,9 @@ def _case_payload(
         "workflow_mode": row.workflow_mode if row.workflow_mode in {"trend", "brief"} else "trend",
         "created_at": row.created_at,
         "updated_at": row.updated_at,
-        "featured": featured,
-        "replay_available": status != "attention" or bool(state),
-        "result_preview": {
-            key: result[key]
-            for key in ("title", "topic", "hashtags", "visual", "metrics")
-            if key in result
-        },
+        "featured": is_featured,
+        "replay_available": replay_available,
+        "result_preview": preview,
     }
     if state:
         payload["has_final_summary"] = bool(result)
@@ -822,6 +850,47 @@ def _case_payload(
     if row.featured_rank is not None:
         payload["featured_rank"] = row.featured_rank
     return payload
+
+
+async def _load_states_for_rows(
+    request: Request, rows: list[WorkflowRow], *, concurrency: int = 4
+) -> dict[str, dict[str, Any] | None]:
+    """Bounded parallel state load for public card / replay enrichment."""
+    if not rows:
+        return {}
+    sem = asyncio.Semaphore(max(1, concurrency))
+    out: dict[str, dict[str, Any] | None] = {}
+
+    async def _one(row: WorkflowRow) -> None:
+        async with sem:
+            out[row.thread_id] = await _load_state(request, row.thread_id)
+
+    await asyncio.gather(*(_one(row) for row in rows))
+    return out
+
+
+def _synthetic_final_checkpoint(state: dict[str, Any]) -> dict[str, Any]:
+    """Build a single presenter step when LangGraph history is unavailable."""
+    phase = _phase(state.get("phase") or "completed")
+    return {
+        "checkpoint_id": "final",
+        "step": 0,
+        "phase": phase,
+        "current_agent": state.get("current_agent") or "",
+        "created_at": state.get("updated_at") or state.get("created_at"),
+        "next_nodes": [],
+        "trend_data": state.get("trend_data") or {},
+        "content_plan": state.get("content_plan") or {},
+        "copy_content": state.get("copy_content") or {},
+        "draft_content": state.get("draft_content") or {},
+        "visual_plan": state.get("visual_plan") or {},
+        "publish_result": state.get("publish_result") or {},
+        "analytics": state.get("analytics") or {},
+        "ripple_prediction": state.get("ripple_prediction") or {},
+        "ripple_pmf": state.get("ripple_pmf") or {},
+        "brief_content": state.get("brief_content") or {},
+        "error": state.get("error"),
+    }
 
 
 @router.get("/showcase/cases", response_model=None)
@@ -869,7 +938,7 @@ async def list_public_cases(
         (
             row
             for row in sorted(
-                (item for item in rows if item.showcase_featured or item.featured_rank is not None),
+                (item for item in rows if _is_featured_row(item)),
                 key=lambda item: item.featured_rank if item.featured_rank is not None else 10**9,
             )
         ),
@@ -883,7 +952,16 @@ async def list_public_cases(
     page = rows[offset : offset + limit]
     # Write-through backfill for rows approved before summaries were generated.
     await _backfill_missing_summaries(request, page)
-    cases = [_case_payload(row, featured=row is featured_row) for row in page]
+    # Enrich visible cards with live state so topic/hashtags are not empty shells.
+    states = await _load_states_for_rows(request, page)
+    cases = [
+        _case_payload(
+            row,
+            states.get(row.thread_id),
+            featured=row is featured_row or _is_featured_row(row),
+        )
+        for row in page
+    ]
     data = {
         "cases": cases,
         "total": len(rows),
@@ -1008,14 +1086,23 @@ async def get_public_replay_manifest(
     limit = max(1, min(int(limit), 20))
     offset = max(0, int(offset))
     checkpoints = await _load_checkpoints(request, row.thread_id)
+    state = await _load_state(request, row.thread_id)
     allow_technical = bool(user) and include_technical
     key_checkpoints = _key_checkpoints(checkpoints)
+    # If history is empty (or only system steps) but final state has content,
+    # still offer a single readable step so public replay is not a dead end.
+    if not key_checkpoints and state and _public_result(state):
+        key_checkpoints = [_synthetic_final_checkpoint(state)]
+        if not checkpoints:
+            checkpoints = list(key_checkpoints)
     visible = checkpoints if allow_technical else key_checkpoints
     page = visible[offset : offset + limit]
     data = {
         "public_id": public_id,
         "view": "all" if allow_technical else "key",
-        "steps": [_public_step(row.thread_id, checkpoint) for checkpoint in page],
+        "steps": [
+            _public_step(row.thread_id, checkpoint, include_result=True) for checkpoint in page
+        ],
         "offset": offset,
         "limit": limit,
         "total_steps": len(visible),
@@ -1023,7 +1110,12 @@ async def get_public_replay_manifest(
         "technical_step_count": len(checkpoints),
         "has_more": offset + limit < len(visible),
         "technical_steps_available": bool(user and len(checkpoints) > len(key_checkpoints)),
-        "workflow": _case_payload(row),
+        "workflow": _case_payload(
+            row,
+            state,
+            featured=_is_featured_row(row),
+            replay_available=bool(key_checkpoints),
+        ),
     }
     not_modified = _cache_headers(data, request, response, last_modified=row.updated_at)
     return not_modified or success(data=data)

@@ -325,6 +325,20 @@ async function loadStep(stepId: string | null) {
     scheduleNextStepPrefetch()
     return
   }
+  // Manifest now embeds result on key steps — paint immediately without a round-trip.
+  if (manifestStep.result && !technical) {
+    selectedStep.value = manifestStep
+    writeCachedStep(stepId, technical, manifestStep)
+    detailLoading.value = false
+    trackInteraction(firstResultTracked.value ? 'replay_select_to_render' : 'replay_first_result_visible', {
+      view: viewMode.value,
+      cached: false,
+      duration_ms: 0,
+    })
+    firstResultTracked.value = true
+    scheduleNextStepPrefetch()
+    return
+  }
   const startedAt = typeof performance !== 'undefined' ? performance.now() : 0
   try {
     const nextStep = await getPublicReplayCheckpoint(publicId.value, stepId, technical, {
