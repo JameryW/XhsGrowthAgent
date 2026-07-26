@@ -126,6 +126,7 @@ from backend.db.system_config import (
 )
 from backend.db.workflows import (
     WorkflowRow,
+    count_workflows_for_accounts,
     create_workflow,
     delete_workflow,
     get_workflow,
@@ -142,6 +143,7 @@ __all__ = [
     "create_workflow",
     "get_workflow",
     "list_workflows",
+    "count_workflows_for_accounts",
     "update_workflow",
     "delete_workflow",
     "AccountRow",

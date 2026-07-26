@@ -75,6 +75,36 @@ def _load_history_file(thread_id: str) -> dict[str, Any] | None:
     return None
 
 
+def _account_id_from_thread(thread_id: str) -> str:
+    """Parse account id from ``xhs_{account_id}_{8hex}`` thread minting scheme."""
+    if not thread_id.startswith("xhs_"):
+        return ""
+    body = thread_id[4:]
+    sep = body.rfind("_")
+    if sep <= 0:
+        return ""
+    suffix = body[sep + 1 :]
+    if len(suffix) != 8 or any(c not in "0123456789abcdefABCDEF" for c in suffix):
+        return ""
+    return body[:sep].strip()
+
+
+def _resolve_status_account_id(
+    thread_id: str,
+    values: dict[str, Any] | None = None,
+    *,
+    db_account_id: str | None = None,
+) -> str:
+    """Prefer state/DB account_id; fall back to parsing the thread id."""
+    if values:
+        raw = values.get("account_id")
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+    if isinstance(db_account_id, str) and db_account_id.strip():
+        return db_account_id.strip()
+    return _account_id_from_thread(thread_id)
+
+
 # ── DB-aware helpers ──
 
 # Re-export shared helpers from _runner for use in this module
@@ -362,6 +392,10 @@ class WorkflowStatusResponse(BaseModel):
     progress_percent: int = Field(default=0, description="进度百分比")
     created_at: str | None = None
     updated_at: str | None = None
+    account_id: str = Field(
+        default="",
+        description="Owning XHS account id (from state/DB, else parsed from thread_id)",
+    )
     agent_timeline: list[AgentTimelineEntry] = Field(
         default_factory=list, description="Agent 执行时间线"
     )
@@ -760,6 +794,7 @@ async def get_workflow_status(
                 progress_percent=progress,
                 created_at=state.values.get("created_at"),
                 updated_at=state.values.get("updated_at"),
+                account_id=_resolve_status_account_id(thread_id, state.values),
                 agent_timeline=agent_timeline,
                 trend_data=state.values.get("trend_data") or {},
                 content_plan=state.values.get("content_plan") or {},
@@ -818,6 +853,7 @@ async def get_workflow_status(
                 progress_percent=get_progress(phase),
                 created_at=saved.get("created_at"),
                 updated_at=saved.get("updated_at"),
+                account_id=_resolve_status_account_id(thread_id, saved),
                 agent_timeline=agent_timeline,
                 trend_data=saved.get("trend_data") or {},
                 content_plan=saved.get("content_plan") or {},
@@ -888,6 +924,9 @@ async def get_workflow_status(
             progress_percent=row.progress_percent,
             created_at=row.created_at,
             updated_at=row.updated_at,
+            account_id=_resolve_status_account_id(
+                thread_id, db_account_id=row.account_id
+            ),
             label=row.label or "",
             checkpoint_lost=checkpoint_lost,
             orphan=is_orphan,
@@ -1719,6 +1758,35 @@ async def list_workflows_endpoint(
             "offset": offset,
         }
     )
+
+
+@router.get("/account-totals")
+async def workflow_account_totals(
+    status: str | None = Query(
+        None,
+        description="可选：按状态计数（如 awaiting_review），省略则计全部工作流",
+    ),
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Return workflow counts for every account owned by the current user.
+
+    Metadata-only (no workflow content). Powers history/review multi-account
+    chip badges in a single round-trip instead of N× ``/list?limit=1`` probes.
+    Still ownership-scoped: only the caller's accounts appear.
+    """
+    from backend.db.accounts import list_accounts as db_list_accounts
+    from backend.db.workflows import count_workflows_for_accounts
+
+    owned = await db_list_accounts(owner_user_id=str(user["id"]))
+    ids = [a.id for a in owned if a.id]
+    if not ids:
+        return success(data={"totals": {}, "status": status})
+
+    if not is_pool_ready():
+        return success(data={"totals": {aid: 0 for aid in ids}, "status": status})
+
+    totals = await count_workflows_for_accounts(ids, status=status)
+    return success(data={"totals": totals, "status": status})
 
 
 @router.delete("/{thread_id}")

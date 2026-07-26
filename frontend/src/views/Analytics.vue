@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { onMounted, computed, ref, defineAsyncComponent, nextTick, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import MetricCard from '@/components/MetricCard.vue'
 import DataTable from '@/components/DataTable.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import AccountScopeBar from '@/components/AccountScopeBar.vue'
+import AccountViewNotice from '@/components/AccountViewNotice.vue'
 import CreatorStatsPanel from '@/components/settings/CreatorStatsPanel.vue'
 import CreatorNoteQualityPanel from '@/components/settings/CreatorNoteQualityPanel.vue'
 import { AnalyticsSkeleton } from '@/components/skeletons'
-import { useAnalyticsStore, useAccountsStore } from '@/stores'
+import { useAnalyticsStore, useAccountsStore, useToastStore } from '@/stores'
 import * as analyticsApi from '@/api/analytics'
 import type { CreatorAccountStats, CreatorNoteStats, CreatorNotesPayload } from '@/api/analytics'
 import type { PostPerformance } from '@/types/analytics'
@@ -23,10 +25,14 @@ import { useFocusTrap } from '@/composables/useFocusTrap'
 import { hasSnapshotMismatch } from '@/constants/qualityConsistency'
 
 const { t, locale } = useI18n()
+const route = useRoute()
 const router = useRouter()
 const analyticsStore = useAnalyticsStore()
 const accountsStore = useAccountsStore()
+const toastStore = useToastStore()
 const lastUpdatedAt = ref<Date | null>(null)
+const isPromotingWorkspace = ref(false)
+let suppressAnalyticsQueryWatch = false
 // AN-05: creator fans for the first-screen metric card. Single snapshot only —
 // the payload has no historical fans array, so the period growth delta falls
 // back to '—' until a second snapshot exists.
@@ -122,7 +128,93 @@ const historicalHasMore = computed(() => Boolean(historicalCursor.value) && hist
 const showHistoricalDataAsOf = computed(() =>
   Boolean(historicalDataAsOf.value) && historicalDataAsOf.value !== analyticsStore.dataAsOf
 )
-const selectedAnalyticsAccountId = computed(() => accountsStore.activeAccountId || accountsStore.accounts[0]?.id || '')
+const selectedAnalyticsAccountId = computed(
+  () => analyticsStore.accountId || accountsStore.activeAccountId || accountsStore.accounts[0]?.id || '',
+)
+const hasMultipleAccounts = computed(() => accountsStore.accounts.length > 1)
+const viewAccountName = computed(() => {
+  const id = selectedAnalyticsAccountId.value
+  return accountsStore.accounts.find(a => a.id === id)?.name?.trim()
+    || accountsStore.activeAccount?.name?.trim()
+    || t('nav.accountSelect')
+})
+const workspaceAccountName = computed(
+  () => accountsStore.activeAccount?.name?.trim() || t('nav.accountSelect'),
+)
+const analyticsAccountChips = computed(() => {
+  const chips = accountsStore.accounts.map(acc => ({
+    id: acc.id,
+    name: acc.name,
+    isViewing: acc.id === selectedAnalyticsAccountId.value,
+    isWorkspace: acc.id === accountsStore.activeAccountId,
+  }))
+  return chips.sort((a, b) => {
+    if (a.isWorkspace !== b.isWorkspace) return a.isWorkspace ? -1 : 1
+    return a.name.localeCompare(b.name, locale.value)
+  })
+})
+
+function queryAnalyticsAccountId(): string | null {
+  const raw = route.query.account
+  if (typeof raw === 'string' && raw.trim()) return raw.trim()
+  if (Array.isArray(raw) && typeof raw[0] === 'string' && raw[0].trim()) return raw[0].trim()
+  return null
+}
+
+function syncAnalyticsAccountQuery(accountId: string | null) {
+  const current = queryAnalyticsAccountId()
+  // Workspace follow mode omits ?account= from the URL.
+  const effective =
+    accountId && accountId === accountsStore.activeAccountId ? null : accountId
+  if ((effective || null) === (current || null)) return
+  const nextQuery: Record<string, string | string[]> = {
+    ...(route.query as Record<string, string | string[]>),
+  }
+  if (effective) nextQuery.account = effective
+  else delete nextQuery.account
+  suppressAnalyticsQueryWatch = true
+  void router.replace({ query: nextQuery }).finally(() => {
+    suppressAnalyticsQueryWatch = false
+  })
+}
+
+function selectAnalyticsAccount(accountId: string) {
+  if (!accountId || accountId === selectedAnalyticsAccountId.value) return
+  if (!accountsStore.accounts.some(a => a.id === accountId)) return
+  selectedPost.value = null
+  analyticsStore.setViewAccountId(accountId)
+  syncAnalyticsAccountQuery(accountId)
+}
+
+async function promoteAnalyticsAccountToWorkspace() {
+  const accountId = selectedAnalyticsAccountId.value
+  if (!accountId || accountId === accountsStore.activeAccountId || isPromotingWorkspace.value) return
+  isPromotingWorkspace.value = true
+  try {
+    await accountsStore.setActiveAccount(accountId)
+    analyticsStore.setViewAccountId(null)
+    syncAnalyticsAccountQuery(null)
+    toastStore.success(
+      t('history.workspaceSwitched'),
+      t('history.workspaceSwitchedDetail', { name: viewAccountName.value }),
+    )
+  } catch (e: unknown) {
+    toastStore.error(
+      t('history.switchAccountFailed'),
+      e instanceof Error ? e.message : String(e),
+    )
+  } finally {
+    isPromotingWorkspace.value = false
+  }
+}
+
+function backToWorkspaceAnalytics() {
+  if (!accountsStore.activeAccountId) return
+  selectedPost.value = null
+  analyticsStore.setViewAccountId(null)
+  syncAnalyticsAccountQuery(null)
+}
+
 function loadMoreHistorical() {
   if (!historicalLoading.value && historicalHasMore.value) void loadHistoricalNotes(selectedAnalyticsAccountId.value, false)
 }
@@ -131,6 +223,11 @@ onMounted(async () => {
   // Refresh the shared account labels so a name imported from Creator Center
   // is visible even when this route stayed mounted across the import.
   await accountsStore.fetchAccounts()
+  // Honor ?account= deep links without flipping workspace active.
+  const fromQuery = queryAnalyticsAccountId()
+  if (fromQuery && accountsStore.accounts.some(a => a.id === fromQuery)) {
+    analyticsStore.setViewAccountId(fromQuery)
+  }
   // The historical reader and the dashboard bundle hit independent endpoints;
   // fetch them in parallel instead of serializing the page-load waterfall.
   const loads: Promise<unknown>[] = [loadHistoricalNotes(selectedAnalyticsAccountId.value)]
@@ -148,13 +245,29 @@ onMounted(async () => {
 
 watch(selectedAnalyticsAccountId, (accountId, previous) => {
   if (!accountId || accountId === previous) return
-  // Analytics intentionally follows the global active account. Reload both
-  // period aggregates (incl. the fans card) and the canonical historical
-  // reader as one scope.
+  // Local view or workspace follow — reload dashboard + historical notes.
   selectedPost.value = null
   void refreshData()
   void loadHistoricalNotes(accountId)
 })
+
+watch(
+  () => queryAnalyticsAccountId(),
+  (next) => {
+    if (suppressAnalyticsQueryWatch) return
+    if (!next) {
+      if (analyticsStore.viewAccountId) {
+        selectedPost.value = null
+        analyticsStore.setViewAccountId(null)
+      }
+      return
+    }
+    if (next === selectedAnalyticsAccountId.value) return
+    if (accountsStore.accounts.length && !accountsStore.accounts.some(a => a.id === next)) return
+    selectedPost.value = null
+    analyticsStore.setViewAccountId(next)
+  },
+)
 
 watch(() => analyticsStore.snapshotId, (snapshot) => {
   if (hasSnapshotMismatch(snapshot, historicalSnapshotId.value)) {
@@ -463,7 +576,7 @@ async function refreshData() {
   }
   // AN-05: best-effort fetch of creator fans for the first-screen card; do not
   // block on failure (the rest of the page still renders).
-  const accountId = accountsStore.activeAccountId || analyticsStore.accountId
+  const accountId = selectedAnalyticsAccountId.value || analyticsStore.accountId
   if (accountId) {
     try {
       const payload = await analyticsApi.getCreatorStats(accountId, 1)
@@ -471,6 +584,8 @@ async function refreshData() {
     } catch {
       // Fans card falls back to '—'; not a page-level failure.
     }
+  } else {
+    creatorAccount.value = null
   }
 }
 
@@ -495,7 +610,7 @@ const detailNoteId = computed(() => {
   if (source === 'workflow' && linkStatus !== 'linked') return ''
   return typeof selectedPost.value?.id === 'string' ? selectedPost.value.id : ''
 })
-const detailAccountId = computed(() => accountsStore.activeAccountId || analyticsStore.accountId || '')
+const detailAccountId = computed(() => selectedAnalyticsAccountId.value || analyticsStore.accountId || '')
 // The row-metric grid is the fallback for posts with no linked creator note.
 // When the quality panel renders, its freshly fetched metric cards cover the
 // same numbers — showing the grid as well duplicated them.
@@ -578,8 +693,8 @@ function startWithTopic(topic: string, niche?: string) {
       tone="cyan"
     >
       <template #meta>
-        <span v-if="accountsStore.activeAccount?.name || analyticsStore.accountId">
-          {{ t('analytics.account') }}: {{ accountsStore.activeAccount?.name || analyticsStore.accountId }}
+        <span v-if="viewAccountName || analyticsStore.accountId">
+          {{ t('analytics.account') }}: {{ viewAccountName || analyticsStore.accountId }}
         </span>
         <!-- Period is already shown by the active range button below; the raw
              enum value here was redundant and unlocalized. -->
@@ -622,6 +737,45 @@ function startWithTopic(topic: string, niche?: string) {
         </div>
       </template>
     </PageHeader>
+
+    <AccountScopeBar
+      v-if="hasMultipleAccounts"
+      :chips="analyticsAccountChips"
+      :label="t('history.accountFilter')"
+      tone="violet"
+      id-prefix="analytics-account-chip"
+      :disabled="isPromotingWorkspace || analyticsStore.isLoading"
+      :workspace-badge-label="t('history.workspaceBadge')"
+      :title-for-workspace="t('history.chipTitleWorkspace')"
+      :title-for-browse="t('analytics.chipTitleBrowse')"
+      :announce-template="t('history.announceViewing')"
+      @select="selectAnalyticsAccount"
+    />
+
+    <AccountViewNotice
+      v-if="analyticsStore.isViewingNonWorkspace"
+      variant="viewOnly"
+      data-testid="analytics-view-only"
+      :message="t('analytics.viewOnlyBanner', {
+        view: viewAccountName,
+        workspace: workspaceAccountName,
+      })"
+    >
+      <template #actions>
+        <NeonButton variant="ghost" size="sm" class="min-h-11" @click="backToWorkspaceAnalytics">
+          {{ t('analytics.backToWorkspace', { name: workspaceAccountName }) }}
+        </NeonButton>
+        <NeonButton
+          variant="cyan"
+          size="sm"
+          class="min-h-11"
+          :loading="isPromotingWorkspace"
+          @click="promoteAnalyticsAccountToWorkspace"
+        >
+          {{ t('history.useAsWorkspace', { name: viewAccountName }) }}
+        </NeonButton>
+      </template>
+    </AccountViewNotice>
 
   <AnalyticsSkeleton v-if="isLoading" />
 
@@ -938,13 +1092,13 @@ function startWithTopic(topic: string, niche?: string) {
        error, empty and data states (was duplicated in each branch), demoted
        below the analytics content so results come first and tools last. -->
   <section
-    v-if="!isLoading && (accountsStore.activeAccountId || analyticsStore.accountId)"
+    v-if="!isLoading && selectedAnalyticsAccountId"
     class="min-w-0"
     :aria-label="t('creatorStats.title')"
   >
     <CreatorStatsPanel
-      :account-id="accountsStore.activeAccountId || analyticsStore.accountId"
-      :account-name="accountsStore.activeAccount?.name"
+      :account-id="selectedAnalyticsAccountId"
+      :account-name="viewAccountName"
       compact
       @updated="handleCreatorStatsUpdated"
     />

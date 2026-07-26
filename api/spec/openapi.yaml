@@ -818,10 +818,21 @@ components:
           example: "thread_abc123"
         phase:
           $ref: '#/components/schemas/WorkflowPhase'
+        status:
+          $ref: '#/components/schemas/WorkflowStatus'
         current_agent:
           type: string
           description: Currently executing agent name
           example: "copywriter"
+        account_id:
+          type: string
+          description: Owning XHS account id (state/DB, else derived from thread_id)
+          example: "9eaec02e-e1a4-429b-bed2-ce33ce7fc9dd"
+        progress_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Workflow progress percentage
         trend_data:
           $ref: '#/components/schemas/TrendData'
         content_plan:

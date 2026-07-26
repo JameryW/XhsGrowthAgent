@@ -8,6 +8,8 @@ import PageHeader from '@/components/PageHeader.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import CelebrationEffect from '@/components/CelebrationEffect.vue'
 import WorkflowCardBody from '@/components/WorkflowCardBody.vue'
+import AccountScopeBar from '@/components/AccountScopeBar.vue'
+import AccountViewNotice from '@/components/AccountViewNotice.vue'
 import EvaluationRadar from '@/components/charts/EvaluationRadar.vue'
 import { ReviewSkeleton } from '@/components/skeletons'
 import { useReviewStore, useToastStore, useAccountsStore } from '@/stores'
@@ -18,6 +20,14 @@ import type { ContentStatus } from '@/types'
 import type { WorkflowListItem, WorkflowStateResponse } from '@/types/workflow'
 import type { EvaluationResult } from '@/types/evaluation'
 import { SCORE_THRESHOLDS, scoreTier, type ScoreThresholds, DIMENSION_LABEL_KEYS } from '@/constants/evaluation'
+import {
+  REVIEW_VIEW_ACCOUNT_KEY,
+  accountQuery,
+  readSessionString,
+  writeSessionString,
+} from '@/utils/accountViewSession'
+import { accountIdFromThreadId } from '@/utils/threadAccount'
+import { useCrossAccountHintsStore } from '@/stores/crossAccountHints'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -34,6 +44,66 @@ const loadingDetailIds = ref<Set<string>>(new Set())
 const listLoaded = ref(false)
 const error = ref<string | null>(null)
 const expandedThreadId = ref<string | null>(null)
+
+/**
+ * Local review-queue account view (may differ from workspace active account).
+ * Mirrors History's multi-account browse so pending reviews on a non-active
+ * account are not invisible.
+ */
+
+function readStoredReviewAccount(): string | null {
+  return readSessionString(REVIEW_VIEW_ACCOUNT_KEY)
+}
+
+function persistReviewAccount(accountId: string | null) {
+  writeSessionString(REVIEW_VIEW_ACCOUNT_KEY, accountId)
+}
+
+const crossAccountHints = useCrossAccountHintsStore()
+const reviewAccountId = ref<string | null>(null)
+const reviewAwaitingTotals = computed(() => crossAccountHints.reviewAwaitingTotals)
+const isPromotingWorkspace = ref(false)
+/** Soft auto-browse when preferred account has no pending reviews (once/mount). */
+let didAutoBrowseReviewEmpty = false
+let suppressReviewQueryWatch = false
+const autoBrowseNotice = ref<{ fromName: string; toName: string; count: number } | null>(null)
+const hasMultipleAccounts = computed(() => accountsStore.accounts.length > 1)
+const reviewAccountName = computed(() => {
+  const id = reviewAccountId.value
+  return accountsStore.accounts.find(a => a.id === id)?.name?.trim()
+    || accountsStore.activeAccount?.name?.trim()
+    || t('nav.accountSelect')
+})
+const isReviewingNonWorkspace = computed(
+  () =>
+    !!reviewAccountId.value
+    && !!accountsStore.activeAccountId
+    && reviewAccountId.value !== accountsStore.activeAccountId,
+)
+const reviewAccountChips = computed(() => {
+  const chips = accountsStore.accounts.map(acc => ({
+    id: acc.id,
+    name: acc.name,
+    total: reviewAwaitingTotals.value[acc.id] as number | undefined,
+    isViewing: acc.id === reviewAccountId.value,
+    isWorkspace: acc.id === accountsStore.activeAccountId,
+  }))
+  return chips.sort((a, b) => {
+    if (a.isWorkspace !== b.isWorkspace) return a.isWorkspace ? -1 : 1
+    const ta = typeof a.total === 'number' ? a.total : -1
+    const tb = typeof b.total === 'number' ? b.total : -1
+    if (ta !== tb) return tb - ta
+    return a.name.localeCompare(b.name, locale.value)
+  })
+})
+const reviewSiblingHints = computed(() =>
+  reviewAccountChips.value
+    .filter(c => !c.isViewing && typeof c.total === 'number' && c.total > 0)
+    .map(c => ({ id: c.id, name: c.name, total: c.total as number }))
+    .sort((a, b) => b.total - a.total),
+)
+
+const reviewPrefetchTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 // Detail lazy-load pump (same pattern as Showcase)
 const pendingDetailIds = new Set<string>()
@@ -165,42 +235,256 @@ async function ensureWorkflowInQueue(threadId: string) {
   queueDetail(threadId)
 }
 
+async function ensureReviewAccountsLoaded() {
+  if (accountsStore.accounts.length > 0 && accountsStore.activeAccount) return
+  await accountsStore.fetchAccounts()
+}
+
+async function loadReviewAwaitingTotals() {
+  await crossAccountHints.refreshReviewAwaitingTotals(true)
+}
+
+function queryReviewAccountId(): string | null {
+  const raw = route.query.account
+  if (typeof raw === 'string' && raw.trim()) return raw.trim()
+  if (Array.isArray(raw) && typeof raw[0] === 'string' && raw[0].trim()) return raw[0].trim()
+  return null
+}
+
+function syncReviewAccountQuery(accountId: string | null) {
+  const current = queryReviewAccountId()
+  if ((accountId || null) === (current || null)) return
+  const nextQuery: Record<string, string | string[]> = {
+    ...(route.query as Record<string, string | string[]>),
+  }
+  if (accountId) nextQuery.account = accountId
+  else delete nextQuery.account
+  suppressReviewQueryWatch = true
+  void router.replace({ query: nextQuery }).finally(() => {
+    suppressReviewQueryWatch = false
+  })
+}
+
+function resolveInitialReviewAccount(): string | null {
+  const fromQuery = queryReviewAccountId()
+  if (fromQuery && accountsStore.accounts.some(a => a.id === fromQuery)) return fromQuery
+  // Deep-linked /review/:threadId owns a specific account — prefer that over
+  // session/workspace so the queue matches the thread being opened.
+  const routeThread = route.params.threadId
+  if (typeof routeThread === 'string' && routeThread) {
+    const fromThread = accountIdFromThreadId(routeThread)
+    if (fromThread && accountsStore.accounts.some(a => a.id === fromThread)) return fromThread
+  }
+  const stored = readStoredReviewAccount()
+  if (stored && accountsStore.accounts.some(a => a.id === stored)) return stored
+  return accountsStore.activeAccountId
+}
+
+/**
+ * When the preferred account has no pending reviews but a sibling does,
+ * jump the local view once (does not flip workspace).
+ */
+async function maybeAutoBrowseReviewEmpty(accountId: string | null, listCount: number): Promise<boolean> {
+  if (didAutoBrowseReviewEmpty || listCount > 0 || !hasMultipleAccounts.value || !accountId) {
+    return false
+  }
+  // Respect intentional deep-link to this empty account (query or thread route).
+  if (queryReviewAccountId() === accountId) return false
+  if (typeof route.params.threadId === 'string' && route.params.threadId) return false
+  await loadReviewAwaitingTotals()
+  if (destroyed.value) return false
+  const best = reviewSiblingHints.value[0]
+  if (!best || best.id === accountId) return false
+
+  didAutoBrowseReviewEmpty = true
+  const fromName =
+    accountsStore.accounts.find(a => a.id === accountId)?.name?.trim()
+    || t('nav.accountSelect')
+  autoBrowseNotice.value = {
+    fromName,
+    toName: best.name,
+    count: best.total,
+  }
+  selectReviewAccount(best.id)
+  return true
+}
+
 // ── Fetch review queue ──
 async function fetchReviewQueue() {
   error.value = null
   try {
-    const result = await listWorkflows({ status: 'awaiting_review', limit: 50 }, { suppressToast: true })
+    await ensureReviewAccountsLoaded()
+    if (!reviewAccountId.value) {
+      reviewAccountId.value = resolveInitialReviewAccount()
+      if (reviewAccountId.value) {
+        persistReviewAccount(reviewAccountId.value)
+        syncReviewAccountQuery(reviewAccountId.value)
+      }
+    }
+    const accountId = reviewAccountId.value
+    const result = await listWorkflows(
+      {
+        status: 'awaiting_review',
+        limit: 50,
+        ...(accountId ? { account_id: accountId } : {}),
+      },
+      { suppressToast: true },
+    )
     if (destroyed.value) return
     workflows.value = result.workflows
+    if (accountId) {
+      crossAccountHints.setReviewAwaitingTotals({
+        ...crossAccountHints.reviewAwaitingTotals,
+        [accountId]: result.total ?? result.workflows.length,
+      })
+    }
     listLoaded.value = true
     for (const threadId of reviewStore.pendingReviews.keys()) {
       void ensureWorkflowInQueue(threadId)
     }
+    await loadReviewAwaitingTotals()
+    if (destroyed.value) return
+    if (await maybeAutoBrowseReviewEmpty(accountId, result.workflows.length)) {
+      return
+    }
+    // Prefetch the next hottest sibling so the first manual switch is snappy.
+    const nextHot = reviewSiblingHints.value[0]
+    if (nextHot) scheduleReviewPrefetch(nextHot.id)
   } catch (e: any) {
     if (!destroyed.value) error.value = e.message
   }
 }
 
-// The review queue is scoped to the active account on the backend; reload it
-// when the active account changes while this page stays mounted.
+function selectReviewAccount(accountId: string) {
+  if (!accountId || accountId === reviewAccountId.value) return
+  if (!accountsStore.accounts.some(a => a.id === accountId)) return
+  reviewAccountId.value = accountId
+  persistReviewAccount(accountId)
+  syncReviewAccountQuery(accountId)
+  listLoaded.value = false
+  workflows.value = []
+  expandedThreadId.value = null
+  void fetchReviewQueue()
+}
+
+async function promoteReviewAccountToWorkspace() {
+  const accountId = reviewAccountId.value
+  if (!accountId || accountId === accountsStore.activeAccountId || isPromotingWorkspace.value) return
+  isPromotingWorkspace.value = true
+  try {
+    await accountsStore.setActiveAccount(accountId)
+    toastStore.success(
+      t('review.workspaceSwitched'),
+      t('review.workspaceSwitchedDetail', { name: reviewAccountName.value }),
+    )
+  } catch (e: any) {
+    toastStore.error(t('review.switchAccountFailed'), e?.message)
+  } finally {
+    isPromotingWorkspace.value = false
+  }
+}
+
+/** Debounced warm of another account's awaiting_review queue (chip hover). */
+function scheduleReviewPrefetch(accountId: string) {
+  if (!accountId || accountId === reviewAccountId.value) return
+  if (!accountsStore.accounts.some(a => a.id === accountId)) return
+  const existing = reviewPrefetchTimers.get(accountId)
+  if (existing) clearTimeout(existing)
+  reviewPrefetchTimers.set(
+    accountId,
+    setTimeout(() => {
+      reviewPrefetchTimers.delete(accountId)
+      void listWorkflows(
+        { status: 'awaiting_review', limit: 50, account_id: accountId },
+        { suppressToast: true },
+      )
+        .then((res) => {
+          if (destroyed.value) return
+          crossAccountHints.setReviewAwaitingTotals({
+            ...crossAccountHints.reviewAwaitingTotals,
+            [accountId]: res.total ?? res.workflows.length,
+          })
+        })
+        .catch(() => {})
+    }, 140),
+  )
+}
+
+function dismissReviewAutoBrowseNotice() {
+  autoBrowseNotice.value = null
+}
+
+function backToWorkspaceReview() {
+  autoBrowseNotice.value = null
+  const id = accountsStore.activeAccountId
+  if (id) selectReviewAccount(id)
+}
+
+// Reload when the workspace account changes only if we were viewing that workspace
+// account (intentional browse of another account is preserved).
 watch(() => accountsStore.activeAccountId, (nextId, prevId) => {
-  if (!prevId || nextId === prevId) return
+  if (!prevId || !nextId || nextId === prevId) return
+  if (reviewAccountId.value && reviewAccountId.value !== prevId) return
+  reviewAccountId.value = nextId
+  persistReviewAccount(nextId)
+  syncReviewAccountQuery(nextId)
   void fetchReviewQueue()
 })
 
+// Browser back/forward or shared ?account= links on the review route.
+watch(
+  () => queryReviewAccountId(),
+  (next) => {
+    if (suppressReviewQueryWatch) return
+    if (!next || next === reviewAccountId.value) return
+    if (accountsStore.accounts.length && !accountsStore.accounts.some(a => a.id === next)) return
+    reviewAccountId.value = next
+    persistReviewAccount(next)
+    listLoaded.value = false
+    workflows.value = []
+    expandedThreadId.value = null
+    void fetchReviewQueue()
+  },
+)
+
 onMounted(async () => {
-  const threadId = route.params.threadId
-  if (typeof threadId === 'string' && threadId) {
-    expandedThreadId.value = threadId
-  }
+  const threadId = typeof route.params.threadId === 'string' ? route.params.threadId : null
+  if (threadId) expandedThreadId.value = threadId
   await fetchReviewQueue()
-  if (typeof threadId === 'string' && threadId && !workflows.value.some((wf) => wf.thread_id === threadId)) {
+  if (!threadId || destroyed.value) return
+  if (!workflows.value.some((wf) => wf.thread_id === threadId)) {
     await ensureWorkflowInQueue(threadId)
+  }
+  // Prefer authoritative status.account_id when thread-id parse was missing
+  // or mismatched the initial scope.
+  if (destroyed.value) return
+  const detail = workflowDetails.value.get(threadId)
+  const owner = detail?.account_id
+  if (
+    owner
+    && owner !== reviewAccountId.value
+    && accountsStore.accounts.some(a => a.id === owner)
+  ) {
+    reviewAccountId.value = owner
+    persistReviewAccount(owner)
+    syncReviewAccountQuery(owner)
+    listLoaded.value = false
+    workflows.value = []
+    await fetchReviewQueue()
+    if (destroyed.value) return
+    expandedThreadId.value = threadId
+    if (!workflows.value.some((wf) => wf.thread_id === threadId)) {
+      await ensureWorkflowInQueue(threadId)
+    }
+  } else {
+    expandedThreadId.value = threadId
   }
 })
 onUnmounted(() => {
   destroyed.value = true
   if (detailPumpTimer !== null) window.clearTimeout(detailPumpTimer)
+  for (const t of reviewPrefetchTimers.values()) clearTimeout(t)
+  reviewPrefetchTimers.clear()
   for (const stop of watchStops) stop()
 })
 
@@ -506,7 +790,14 @@ function formatDate(iso: string) {
   return d.toLocaleString(locale.value || undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-function goDashboard() { router.push('/dashboard') }
+function goDashboard() {
+  router.push({
+    name: 'dashboard',
+    query: accountQuery(reviewAccountId.value, {
+      omitIfEquals: accountsStore.activeAccountId,
+    }),
+  })
+}
 function goHome() { router.push('/start') }
 
 function toggleExpand(tid: string) {
@@ -574,9 +865,11 @@ const requestDecision = async (tid: string, decision: ContentStatus) => {
     confirmModalVariant.value = 'danger'
     showConfirmModal.value = true
   } else if (decision === 'approved') {
-    // Load accounts for the publish-account picker; default to the active one
+    // Load accounts for the publish-account picker; default to the account
+    // currently being reviewed (may differ from workspace active).
     await accountsStore.fetchAccounts().catch(() => {})
-    publishAccountId.value = accountsStore.activeAccountId
+    publishAccountId.value =
+      reviewAccountId.value || accountsStore.activeAccountId
     // Force explicit mode choice: reset to unset each time the modal opens.
     publishMode.value = null
     showPublishConfirm.value = true
@@ -666,6 +959,8 @@ const handleCancelConfirm = () => {
     tone="peach"
   >
     <template #meta>
+      <span>{{ t('review.scopedTo', { name: reviewAccountName }) }}</span>
+      <span v-if="workflows.length" class="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
       <span v-if="workflows.length">{{ t('review.pendingCount', { count: workflows.length }) }}</span>
     </template>
     <template #actions>
@@ -675,6 +970,66 @@ const handleCancelConfirm = () => {
       </NeonButton>
     </template>
   </PageHeader>
+
+  <AccountScopeBar
+    v-if="hasMultipleAccounts"
+    :chips="reviewAccountChips"
+    :label="t('review.accountFilter')"
+    tone="amber"
+    id-prefix="review-account-chip"
+    :workspace-badge-label="t('history.workspaceBadge')"
+    :title-for-workspace="t('history.chipTitleWorkspace')"
+    :title-for-browse="t('history.chipTitleBrowse')"
+    :announce-template="t('history.announceViewing')"
+    @select="selectReviewAccount"
+    @prefetch="scheduleReviewPrefetch"
+  />
+
+  <AccountViewNotice
+    v-if="autoBrowseNotice"
+    variant="auto"
+    :message="t('review.autoBrowseNotice', {
+      from: autoBrowseNotice.fromName,
+      to: autoBrowseNotice.toName,
+      count: autoBrowseNotice.count,
+    })"
+  >
+    <template #actions>
+      <NeonButton variant="ghost" size="sm" class="min-h-11" @click="backToWorkspaceReview">
+        {{ t('review.backToWorkspaceQueue', { name: autoBrowseNotice.fromName }) }}
+      </NeonButton>
+      <NeonButton variant="ghost" size="sm" class="min-h-11" @click="dismissReviewAutoBrowseNotice">
+        {{ t('common.close') }}
+      </NeonButton>
+    </template>
+  </AccountViewNotice>
+
+  <AccountViewNotice
+    v-if="isReviewingNonWorkspace"
+    variant="viewOnly"
+    :message="t('review.viewOnlyBanner', {
+      view: reviewAccountName,
+      workspace: accountsStore.activeAccount?.name || t('nav.accountSelect'),
+    })"
+  >
+    <template #actions>
+      <NeonButton variant="ghost" size="sm" class="min-h-11" @click="backToWorkspaceReview">
+        {{ t('review.backToWorkspaceQueue', {
+          name: accountsStore.activeAccount?.name || t('nav.accountSelect'),
+        }) }}
+      </NeonButton>
+      <NeonButton
+        variant="cyan"
+        size="sm"
+        class="min-h-11"
+        :loading="isPromotingWorkspace"
+        @click="promoteReviewAccountToWorkspace"
+      >
+        {{ t('review.useAsWorkspace', { name: reviewAccountName }) }}
+      </NeonButton>
+    </template>
+  </AccountViewNotice>
+
   <ReviewSkeleton v-if="!listLoaded" />
 
   <!-- Empty State -->
@@ -684,7 +1039,30 @@ const handleCancelConfirm = () => {
         <AppIcon name="Inbox" size="xl" variant="peach" />
       </div>
       <h2 class="text-lg md:text-xl font-semibold text-slate-700 mb-2">{{ t('review.emptyState.title') }}</h2>
-      <p class="text-xs md:text-sm text-slate-500 mb-4">{{ t('review.emptyState.noWorkflow') }}</p>
+      <p class="text-xs md:text-sm text-slate-500 mb-4">
+        {{ t('review.emptyState.noWorkflowForAccount', { name: reviewAccountName }) }}
+      </p>
+      <div
+        v-if="reviewSiblingHints.length"
+        class="mx-auto mb-5 max-w-sm rounded-xl border border-amber-100 bg-amber-50/70 p-3 text-left dark:border-amber-500/25 dark:bg-amber-950/30"
+      >
+        <p class="mb-2 text-xs font-semibold text-amber-800 dark:text-amber-100">
+          {{ t('review.emptyOtherAccounts') }}
+        </p>
+        <div class="flex flex-col gap-2">
+          <NeonButton
+            v-for="hint in reviewSiblingHints"
+            :key="hint.id"
+            variant="cyan"
+            size="sm"
+            class="min-h-11 w-full justify-between"
+            @click="selectReviewAccount(hint.id)"
+          >
+            <span class="truncate">{{ hint.name }}</span>
+            <span class="ml-2 shrink-0 text-[10px] opacity-80">{{ hint.total }}</span>
+          </NeonButton>
+        </div>
+      </div>
       <div class="flex gap-3 justify-center">
         <NeonButton variant="pink" size="sm" @click="goDashboard">
           {{ t('review.emptyState.goDashboard') }}

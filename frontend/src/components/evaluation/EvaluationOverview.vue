@@ -23,10 +23,13 @@ const props = withDefaults(defineProps<{
   activeAccountId?: string | null
   accountsLoading?: boolean
   evaluatedTotal?: number
+  /** Parent page owns multi-account chips (EvaluationView). */
+  hideAccountSelector?: boolean
 }>(), {
   activeAccountId: null,
   accountsLoading: false,
   evaluatedTotal: 0,
+  hideAccountSelector: false,
 })
 
 const emit = defineEmits<{
@@ -168,7 +171,10 @@ function formatDataAsOf(value: string | null | undefined): string {
            above (same scope, same message); the strip now opens with the
            account selector. aria-label on the section keeps the landmark. -->
       <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-end">
-        <div v-if="accounts.length" class="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+        <div
+          v-if="accounts.length && !hideAccountSelector"
+          class="flex w-full flex-col gap-2 sm:flex-row lg:w-auto"
+        >
           <label class="min-w-0 flex-1 lg:w-64">
             <span class="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">
               {{ t('creatorQuality.page.accountLabel') }}
@@ -191,6 +197,19 @@ function formatDataAsOf(value: string | null | undefined): string {
           <button
             type="button"
             class="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-60 sm:self-end dark:border-slate-600/60 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-violet-400/40 dark:hover:bg-violet-950/35 dark:hover:text-violet-200"
+            :disabled="accountsLoading"
+            :aria-label="t('creatorQuality.page.refreshAccounts')"
+            :title="t('creatorQuality.page.refreshAccounts')"
+            @click="emit('refreshAccounts')"
+          >
+            <AppIcon name="RefreshCw" size="xs" variant="purple" :animate="accountsLoading" />
+            <span>{{ t('creatorQuality.page.refresh') }}</span>
+          </button>
+        </div>
+        <div v-else-if="accounts.length && hideAccountSelector" class="flex w-full justify-end lg:w-auto">
+          <button
+            type="button"
+            class="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600/60 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-violet-400/40 dark:hover:bg-violet-950/35 dark:hover:text-violet-200"
             :disabled="accountsLoading"
             :aria-label="t('creatorQuality.page.refreshAccounts')"
             :title="t('creatorQuality.page.refreshAccounts')"

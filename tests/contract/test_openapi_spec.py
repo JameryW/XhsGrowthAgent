@@ -272,6 +272,12 @@ class TestOpenAPIEnums:
         """Verify WorkflowStatus enum exists."""
         assert "WorkflowStatus" in schemas, "Missing WorkflowStatus enum"
 
+    def test_workflow_state_has_account_id(self, schemas):
+        """Multi-account UI needs account_id on workflow status/state payloads."""
+        workflow_state = schemas.get("WorkflowState") or {}
+        props = workflow_state.get("properties") or {}
+        assert "account_id" in props, "WorkflowState must expose account_id for multi-account UI"
+
     def test_review_decision_enum_exists(self, schemas):
         """Verify ReviewDecision enum exists."""
         assert "ReviewDecision" in schemas, "Missing ReviewDecision enum"

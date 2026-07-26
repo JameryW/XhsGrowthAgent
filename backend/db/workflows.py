@@ -101,6 +101,7 @@ _CREATE_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_workflows_account_id ON workflows (account_id);
 CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows (status);
 CREATE INDEX IF NOT EXISTS idx_workflows_created_at ON workflows (created_at);
+CREATE INDEX IF NOT EXISTS idx_workflows_account_status ON workflows (account_id, status);
 """
 
 
@@ -290,6 +291,54 @@ async def list_workflows(
             rows = await cur.fetchall()
 
     return [_row_from_dict(r) for r in rows], total
+
+
+async def count_workflows_for_accounts(
+    account_ids: list[str],
+    *,
+    status: str | None = None,
+) -> dict[str, int]:
+    """Return workflow counts keyed by account_id for the given accounts.
+
+    Used by history/review multi-account chip badges in one query without
+    loading workflow content. Optional ``status`` scopes the count (e.g.
+    ``awaiting_review`` for the review queue). Callers must only pass account
+    IDs the authenticated user owns — this helper does not enforce ownership.
+    """
+    if not account_ids:
+        return {}
+
+    # De-dupe while preserving order for stable test assertions.
+    unique_ids: list[str] = list(dict.fromkeys(aid for aid in account_ids if aid))
+    if not unique_ids:
+        return {}
+
+    conditions = ["account_id = ANY(%s)"]
+    params: list[Any] = [unique_ids]
+    if status:
+        conditions.append("status = %s")
+        params.append(status)
+    where = " AND ".join(conditions)
+
+    pool = get_pool()
+    async with pool.connection() as conn:
+        from psycopg.rows import dict_row
+
+        async with conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                f"""
+                SELECT account_id, COUNT(*)::int AS cnt
+                FROM workflows
+                WHERE {where}
+                GROUP BY account_id
+                """,
+                params,
+            )
+            rows = await cur.fetchall()
+
+    counts = {str(r["account_id"]): int(r["cnt"]) for r in rows}
+    # Always include requested ids (zero when no workflows yet).
+    return {aid: counts.get(aid, 0) for aid in unique_ids}
 
 
 async def delete_workflow(thread_id: str) -> bool:

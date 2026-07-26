@@ -5,6 +5,7 @@ import { ref, computed } from 'vue'
 import * as authApi from '@/api/auth'
 import type { AuthUser } from '@/types/auth'
 import { AUTH_TOKEN_KEY, AUTH_USER_KEY } from '@/types/auth'
+import { clearAccountViewSession } from '@/utils/accountViewSession'
 import { useToastStore } from './toast'
 import i18n from '@/locales'
 
@@ -22,6 +23,8 @@ const ACCOUNT_SCOPED_LS_KEYS = ['activeThreadId', 'openTabIds', 'tabLabels'] as 
 
 function clearAccountScopedLocalStorage(): void {
   for (const key of ACCOUNT_SCOPED_LS_KEYS) localStorage.removeItem(key)
+  // History/Review multi-account view prefs (session) — avoid cross-user leak.
+  clearAccountViewSession()
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -99,6 +102,9 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     localStorage.removeItem(AUTH_TOKEN_KEY)
     localStorage.removeItem(AUTH_USER_KEY)
+    // Drop multi-account view prefs so the next session cannot inherit them
+    // from the same browser tab (sessionStorage survives soft logouts).
+    clearAccountViewSession()
   }
 
   async function initialize() {
