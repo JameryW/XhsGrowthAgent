@@ -555,6 +555,7 @@
     "accountFilter": "View account",
     "viewOnlyBanner": "Viewing the review queue for “{view}”; workspace is still “{workspace}”.",
     "emptyOtherAccounts": "Other accounts have pending reviews:",
+    "emptyHistoryOtherAccounts": "No pending reviews here, but other accounts have history:",
     "autoBrowseNotice": "“{from}” has no pending reviews — showing “{to}” ({count}). Workspace unchanged.",
     "useAsWorkspace": "Use “{name}” as workspace",
     "workspaceSwitched": "Workspace account updated",

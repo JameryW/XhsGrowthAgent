@@ -555,6 +555,7 @@
     "accountFilter": "查看账号",
     "viewOnlyBanner": "正在查看「{view}」的待审核队列；工作区账号仍是「{workspace}」。",
     "emptyOtherAccounts": "其他账号有待审核：",
+    "emptyHistoryOtherAccounts": "当前账号无待审，但其他账号有历史记录：",
     "autoBrowseNotice": "「{from}」暂无待审核，已自动查看「{to}」的 {count} 条（未切换工作区）",
     "useAsWorkspace": "将「{name}」设为工作区",
     "workspaceSwitched": "工作区账号已更新",
