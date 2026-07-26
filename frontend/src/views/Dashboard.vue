@@ -124,7 +124,16 @@ function reviewPathForThread(threadId: string | null | undefined): string {
   return `${base}?account=${encodeURIComponent(q.account)}`
 }
 
+function historyPathForThreadAccount(): string {
+  const q = accountQuery(threadAccountId.value, {
+    omitIfEquals: accountsStore.activeAccountId,
+  })
+  if (!('account' in q)) return '/history'
+  return `/history?account=${encodeURIComponent(q.account)}`
+}
+
 const nextAction = computed(() => {
+  // Trust status gates first — never offer review when already completed.
   if (workflowStore.isAwaitingReview) {
     return {
       icon: 'CheckCircle',
@@ -163,7 +172,35 @@ const nextAction = computed(() => {
       action: 'scroll' as const,
     }
   }
-  if (workflowStore.currentPhase === 'idle' && workflowStore.currentStatus === 'idle') {
+  // Stale: graph still has next nodes but no live task — resume is the only fix.
+  if (workflowStore.isStale) {
+    return {
+      icon: 'Play',
+      title: t('workflow.staleDetected'),
+      description: t('workflow.staleHint'),
+      label: t('dashboard.actionButtons.resume'),
+      action: 'resume' as const,
+    }
+  }
+  // DB-05: error recovery is a single source — retry resumes the current
+  // thread (mirrors ErrorState "retry=resume"), not a fresh /start.
+  // Check status as well as phase (terminal status can lag mid-flight phase).
+  if (
+    workflowStore.currentPhase === 'error'
+    || workflowStore.currentStatus === 'error'
+  ) {
+    return {
+      icon: 'RefreshCw',
+      title: t('dashboard.hero.errorTitle'),
+      description: t('dashboard.hero.errorDescription'),
+      label: t('dashboard.nextAction.retryCta'),
+      action: 'resume' as const,
+    }
+  }
+  if (
+    workflowStore.currentPhase === 'cancelled'
+    || workflowStore.currentStatus === 'cancelled'
+  ) {
     return {
       icon: 'Rocket',
       title: t('dashboard.nextAction.startTitle'),
@@ -173,15 +210,28 @@ const nextAction = computed(() => {
       action: 'navigate' as const,
     }
   }
-  // DB-05: error recovery is a single source — retry resumes the current
-  // thread (mirrors ErrorState "retry=resume"), not a fresh /start.
-  if (workflowStore.currentPhase === 'error') {
+  // Completed: primary outlet is History for the thread's account scope.
+  if (
+    workflowStore.currentPhase === 'completed'
+    || workflowStore.currentStatus === 'completed'
+  ) {
     return {
-      icon: 'RefreshCw',
-      title: t('dashboard.hero.errorTitle'),
-      description: t('dashboard.hero.errorDescription'),
-      label: t('dashboard.nextAction.retryCta'),
-      action: 'resume' as const,
+      icon: 'History',
+      title: t('dashboard.hero.completedTitle'),
+      description: t('dashboard.hero.completedDescription'),
+      label: t('dashboard.hero.completedCta'),
+      path: historyPathForThreadAccount(),
+      action: 'navigate' as const,
+    }
+  }
+  if (workflowStore.currentPhase === 'idle' && workflowStore.currentStatus === 'idle') {
+    return {
+      icon: 'Rocket',
+      title: t('dashboard.nextAction.startTitle'),
+      description: t('dashboard.nextAction.startDesc'),
+      label: t('dashboard.nextAction.startCta'),
+      path: '/start',
+      action: 'navigate' as const,
     }
   }
   return null
