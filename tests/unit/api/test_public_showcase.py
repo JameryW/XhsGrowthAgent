@@ -460,14 +460,16 @@ async def test_authenticated_operator_can_approve_and_revoke_case_visibility():
 class TestLoadCheckpointsDirectCall:
     """_load_checkpoints calls the get_checkpoint_history route as a plain function.
 
-    FastAPI does not resolve Query() defaults on direct calls, so the cursor
-    must be passed explicitly — otherwise `before` stays a truthy FieldInfo,
-    a broken cursor config raises inside aget_state_history, and the swallowed
-    exception silently empties the replay manifest (0 steps for every case).
+    FastAPI does not resolve Depends()/Query() defaults on direct calls:
+    - without ``before=None``, Query(None) is a truthy FieldInfo and breaks
+      the cursor config;
+    - without ``user=service_identity()``, ownership asserts blow up and the
+      swallowed exception empties the public replay manifest (0 steps).
     """
 
     @pytest.mark.asyncio
-    async def test_passes_explicit_none_cursor_and_returns_checkpoints(self):
+    async def test_passes_explicit_none_cursor_and_service_user(self):
+        from backend.api.deps import SERVICE_USER_ID
         from backend.api.routes.public_showcase import _load_checkpoints
 
         response = MagicMock()
@@ -488,6 +490,7 @@ class TestLoadCheckpointsDirectCall:
 
         assert history.await_args.kwargs["before"] is None
         assert history.await_args.kwargs["limit"] == 100
+        assert history.await_args.kwargs["user"]["id"] == SERVICE_USER_ID
         assert [cp["checkpoint_id"] for cp in result] == ["cp-1"]
 
     @pytest.mark.asyncio
