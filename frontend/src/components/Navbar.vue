@@ -9,6 +9,7 @@ import HelpCenter from '@/components/HelpCenter.vue'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import { useCrossAccountHintsStore } from '@/stores/crossAccountHints'
+import { prefetchRouteByPath, prefetchStartWorkspace } from '@/utils/routePrefetch'
 
 const { t } = useI18n()
 
@@ -105,6 +106,26 @@ const navSections = computed<NavSection[]>(() => [
 ])
 
 const navigateTo = (path: string) => router.push(path)
+
+/** Hover / keyboard focus intent → warm Home chunk + accounts/health caches. */
+const warmStartRoute = () => {
+  void prefetchStartWorkspace({ deep: false, data: true })
+}
+
+/** Prefetch the destination chunk when the user aims at a nav item. */
+const warmNavPath = (path: string) => {
+  if (path === '/start') {
+    warmStartRoute()
+    return
+  }
+  void prefetchRouteByPath(path)
+}
+
+const goStart = () => {
+  // Pointerdown/click: ensure warm started even without prior hover (touch).
+  warmStartRoute()
+  void router.push('/start')
+}
 
 const isItemActive = (path: string) =>
   currentPath.value === path || currentPath.value.startsWith(`${path}/`)
@@ -267,7 +288,11 @@ watch(
 
     <!-- 开始创作按钮 -->
     <button
-      @click="router.push('/start')"
+      type="button"
+      @click="goStart"
+      @mouseenter="warmStartRoute"
+      @focus="warmStartRoute"
+      @pointerdown="warmStartRoute"
       class="group mb-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 p-3 text-sm font-bold text-white shadow-lg shadow-rose-500/25 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-rose-500/40 active:translate-y-0"
       :aria-label="t('nav.startWorkflow')"
       :title="isTablet ? t('nav.startWorkflow') : undefined"
@@ -288,7 +313,11 @@ watch(
           <button
             v-for="item in section.items"
             :key="item.path"
+            type="button"
             @click="navigateTo(item.path)"
+            @mouseenter="warmNavPath(item.path)"
+            @focus="warmNavPath(item.path)"
+            @pointerdown="warmNavPath(item.path)"
             :class="[
               'app-nav-item group relative flex min-h-12 w-full items-center rounded-2xl border text-left transition-all duration-200',
               isTablet ? 'justify-center px-2' : 'gap-3 px-3',

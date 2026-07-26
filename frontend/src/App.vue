@@ -22,6 +22,7 @@ import { useThemeStore } from "@/stores/theme"
 import { useOnboarding } from "@/composables/useOnboarding"
 import { useShortcuts } from "@/composables/useShortcuts"
 import { useBreakpoints } from "@/composables/useBreakpoints"
+import { scheduleIdleStartPrefetch } from "@/utils/routePrefetch"
 
 const { t } = useI18n()
 const realtimeStore = useRealtimeStore()
@@ -110,6 +111,8 @@ watch(
   ([authenticated, immersive]) => {
     if (authenticated && !immersive) {
       realtimeStore.connect()
+      // Idle-warm /start so「开始创作」is instant after the first paint settles.
+      scheduleIdleStartPrefetch(2500)
     } else {
       realtimeStore.disconnect()
     }

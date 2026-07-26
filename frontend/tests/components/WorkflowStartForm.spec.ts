@@ -13,6 +13,11 @@ vi.mock('@/api/accounts', () => ({
   deleteAccount: vi.fn(),
 }))
 
+vi.mock('@/api/agent', () => ({
+  prefetchAgentTuiChunk: vi.fn(),
+  prewarmAgentSession: vi.fn().mockResolvedValue({ status: 'warming', mode: 'free' }),
+}))
+
 const mockedListAccounts = vi.mocked(listAccounts)
 const mockedGetActiveAccount = vi.mocked(getActiveAccount)
 

@@ -24,10 +24,12 @@ import asyncio
 import contextlib
 import json
 import logging
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 
+from backend.api.deps import get_current_user
+from backend.api.responses import ApiResponse, success
 from backend.services.omp_bridge import (
     ClientMessageType,
     OmpSession,
@@ -43,6 +45,53 @@ router = APIRouter()
 # stretches (host-tool execution, waiting on extension UI) so browsers,
 # proxies, and container networks don't drop the connection mid-turn.
 _HEARTBEAT_SECONDS = 25
+
+# Coalesce concurrent free-mode prewarm requests (form mode select + submit).
+_prewarm_tasks: dict[str, asyncio.Task[None]] = {}
+
+
+@router.post("/api/agent/prewarm")
+async def prewarm_agent_session(
+    mode: Annotated[
+        str, Query(description="omp session mode: free | workflow")
+    ] = "free",
+    _user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Fire-and-forget omp session warm-up for free-creation entry latency.
+
+    Returns immediately. The subprocess start (up to ~60s cold) runs in the
+    background so selecting free mode on /start can overlap with form fill-in.
+    """
+    session_mode = mode if mode in ("free", "workflow") else "free"
+    manager = get_bridge_manager()
+
+    existing = _prewarm_tasks.get(session_mode)
+    if existing is not None and not existing.done():
+        return success(data={"status": "warming", "mode": session_mode})
+
+    # Reuse a live ready session if one already exists for this mode.
+    for sid in manager.session_ids:
+        sess = manager.get_session(sid)
+        if sess is not None and sess.mode == session_mode and sess.is_ready:
+            return success(
+                data={"status": "ready", "mode": session_mode, "session_id": sid}
+            )
+
+    async def _warm() -> None:
+        try:
+            session = await manager.get_or_create_session(mode=session_mode)
+            logger.info(
+                "omp prewarm ready mode=%s session_id=%s",
+                session_mode,
+                session.session_id,
+            )
+        except Exception:
+            logger.exception("omp prewarm failed mode=%s", session_mode)
+        finally:
+            _prewarm_tasks.pop(session_mode, None)
+
+    _prewarm_tasks[session_mode] = asyncio.create_task(_warm())
+    return success(data={"status": "warming", "mode": session_mode})
 
 
 @router.websocket_route("/api/agent/ws")

@@ -34,6 +34,39 @@ export interface HealthCheck {
   timestamp: string
 }
 
-export async function getSystemHealth(): Promise<HealthCheck> {
-  return client.get('/system/health') as unknown as HealthCheck
+/** Client-side cache so PreLaunchChecklist remounts don't re-hit the API. */
+const HEALTH_CACHE_TTL_MS = 30_000
+let healthCache: { data: HealthCheck; at: number } | null = null
+let healthInFlight: Promise<HealthCheck> | null = null
+
+export function clearSystemHealthCache(): void {
+  healthCache = null
+  healthInFlight = null
+}
+
+export async function getSystemHealth(options?: { fresh?: boolean }): Promise<HealthCheck> {
+  const fresh = options?.fresh === true
+  const now = Date.now()
+  if (
+    !fresh
+    && healthCache
+    && now - healthCache.at < HEALTH_CACHE_TTL_MS
+  ) {
+    return healthCache.data
+  }
+  if (!fresh && healthInFlight) {
+    return healthInFlight
+  }
+
+  const path = fresh ? '/system/health?fresh=1' : '/system/health'
+  healthInFlight = (client.get(path) as unknown as Promise<HealthCheck>)
+    .then((data) => {
+      healthCache = { data, at: Date.now() }
+      return data
+    })
+    .finally(() => {
+      healthInFlight = null
+    })
+
+  return healthInFlight
 }

@@ -6,6 +6,7 @@ import NeonButton from '@/components/NeonButton.vue'
 import BriefFileUpload from '@/components/BriefFileUpload.vue'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useAccountsStore } from '@/stores/accounts'
+import { prefetchAgentTuiChunk, prewarmAgentSession } from '@/api/agent'
 import type { WorkflowPhase } from '@/types/workflow'
 
 const { t } = useI18n()
@@ -79,6 +80,8 @@ function selectNiche(value: string) {
 
 // Load accounts and auto-select the active one
 onMounted(async () => {
+  // Warm free-mode assets early — TUI chunk is ~500KB; omp cold start up to 60s.
+  prefetchAgentTuiChunk()
   try {
     await accountsStore.fetchAccounts()
     // Auto-select active account
@@ -129,9 +132,16 @@ function onBriefPdfClear() {
 
 // When switching to brief mode, auto-set phase to scouting (brief starts from orchestrator)
 // When switching to trend mode, keep current phase
+// Free mode: prewarm omp so /tui connect is faster after submit.
 watch(workflowMode, (mode) => {
   if (mode === 'brief') {
     phase.value = 'scouting'
+  }
+  if (mode === 'free') {
+    prefetchAgentTuiChunk()
+    void prewarmAgentSession('free').catch(() => {
+      // Best-effort; TUI will start omp on WebSocket connect if prewarm fails.
+    })
   }
 })
 

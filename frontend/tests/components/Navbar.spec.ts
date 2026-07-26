@@ -4,11 +4,20 @@ import { createPinia, setActivePinia } from 'pinia'
 import Navbar from '@/components/Navbar.vue'
 import { getActiveAccount, listAccounts } from '@/api/accounts'
 
-const { routerPush } = vi.hoisted(() => ({ routerPush: vi.fn() }))
+const { routerPush, prefetchStartWorkspace } = vi.hoisted(() => ({
+  routerPush: vi.fn(),
+  prefetchStartWorkspace: vi.fn(() => Promise.resolve()),
+}))
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ path: '/dashboard/demo-thread', name: 'dashboard' }),
   useRouter: () => ({ push: routerPush }),
+}))
+
+vi.mock('@/utils/routePrefetch', () => ({
+  prefetchStartWorkspace,
+  scheduleIdleStartPrefetch: vi.fn(),
+  prefetchRouteChunk: vi.fn(),
 }))
 
 vi.mock('@/api/accounts', () => ({
@@ -71,8 +80,18 @@ describe('Navbar workspace navigation', () => {
 
     await wrapper.find('button[aria-label="开始创作"]').trigger('click')
     expect(routerPush).toHaveBeenCalledWith('/start')
+    expect(prefetchStartWorkspace).toHaveBeenCalled()
 
     await wrapper.find('button[aria-label="账户"]').trigger('click')
     expect(routerPush).toHaveBeenCalledWith('/settings?tab=xhs-accounts')
+  })
+
+  it('warms the start workspace on hover before navigation', async () => {
+    const wrapper = mount(Navbar)
+    prefetchStartWorkspace.mockClear()
+
+    await wrapper.find('button[aria-label="开始创作"]').trigger('mouseenter')
+    expect(prefetchStartWorkspace).toHaveBeenCalledWith({ deep: false, data: true })
+    expect(routerPush).not.toHaveBeenCalledWith('/start')
   })
 })

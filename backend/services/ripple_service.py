@@ -281,15 +281,19 @@ class RippleService:
         self._bg_task = None
 
     async def _health_check_loop(self, interval_seconds: float) -> None:
-        """Periodically check Ripple health. Rebuilds client on recovery."""
+        """Periodically check Ripple health. Rebuilds client on recovery.
+
+        Probes immediately on start so ``/system/health`` can serve a cached
+        status without a first-interval wait.
+        """
         try:
             while True:
-                await asyncio.sleep(interval_seconds)
                 prev_healthy = self._health_status.is_healthy
                 await self.health_check()
                 if self._health_status.is_healthy and not prev_healthy:
                     logger.info("Ripple service recovered via background check — rebuilding client")
                     await self._rebuild_client()
+                await asyncio.sleep(interval_seconds)
         except asyncio.CancelledError:
             pass
         except Exception as e:

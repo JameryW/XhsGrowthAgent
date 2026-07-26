@@ -20,6 +20,7 @@ import { useWorkflowStore, useToastStore, useAccountsStore } from '@/stores'
 import { useCrossAccountHintsStore } from '@/stores/crossAccountHints'
 import { useHistoryAccountScope } from '@/composables/useHistoryAccountScope'
 import { accountQuery } from '@/utils/accountViewSession'
+import { navigateToStart, prefetchRouteChunk, prefetchStartWorkspace } from '@/utils/routePrefetch'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -950,10 +951,22 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
       </div>
 
       <div class="flex justify-center gap-3">
-        <NeonButton variant="pink" size="sm" @click="router.push('/start')">
+        <NeonButton
+          variant="pink"
+          size="sm"
+          @mouseenter="prefetchStartWorkspace({ deep: false, data: true })"
+          @focus="prefetchStartWorkspace({ deep: false, data: true })"
+          @click="navigateToStart(router)"
+        >
           {{ t('history.startNew') }}
         </NeonButton>
-        <NeonButton variant="ghost" size="sm" @click="router.push('/dashboard')">
+        <NeonButton
+          variant="ghost"
+          size="sm"
+          @mouseenter="prefetchRouteChunk('dashboard')"
+          @focus="prefetchRouteChunk('dashboard')"
+          @click="prefetchRouteChunk('dashboard'); router.push('/dashboard')"
+        >
           {{ t('history.backHome') }}
         </NeonButton>
       </div>

@@ -23,6 +23,7 @@ import { useRealtimeStore } from '@/stores/realtime'
 import { trackInteraction } from '@/utils/interactionTelemetry'
 import { accountIdFromThreadId } from '@/utils/threadAccount'
 import { accountQuery } from '@/utils/accountViewSession'
+import { navigateToStart, prefetchStartWorkspace } from '@/utils/routePrefetch'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -290,8 +291,12 @@ const handleErrorRetry = () => {
   if (workflowStore.activeThreadId) {
     void workflowStore.refreshStatus()
   } else {
-    router.push('/start')
+    navigateToStart(router)
   }
+}
+
+const warmStart = () => {
+  void prefetchStartWorkspace({ deep: false, data: true })
 }
 
 const handleErrorDismiss = () => {
@@ -575,7 +580,10 @@ onUnmounted(() => {
                 </button>
                 <button
                   v-if="workflowStore.publishError.recovery.action === 'reconfigure'"
-                  @click="router.push('/start')"
+                  type="button"
+                  @mouseenter="warmStart"
+                  @focus="warmStart"
+                  @click="navigateToStart(router)"
                   class="btn-sm bg-violet-100 text-violet-600 hover:bg-violet-200 text-xs"
                 >
                   {{ workflowStore.publishError.recovery.action_label }}

@@ -9,7 +9,12 @@ Components:
 """
 
 from backend.memory.creative import CreativeMemory
-from backend.memory.index import get_prod_store_index, get_store_index
+from backend.memory.index import (
+    clear_store_index_cache,
+    get_prod_store_index,
+    get_store_index,
+    semantic_index_status,
+)
 from backend.memory.scene_database import SceneDatabase
 from backend.memory.store import MemoryManager
 
@@ -17,6 +22,8 @@ __all__ = [
     "CreativeMemory",
     "MemoryManager",
     "SceneDatabase",
+    "clear_store_index_cache",
     "get_store_index",
     "get_prod_store_index",
+    "semantic_index_status",
 ]
