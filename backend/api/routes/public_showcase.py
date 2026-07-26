@@ -538,9 +538,23 @@ def _key_checkpoints(checkpoints: Iterable[dict[str, Any]]) -> list[dict[str, An
 
 
 async def _all_rows() -> list[WorkflowRow]:
+    """All workflow rows (admin resolve fallbacks). Prefer scoped helpers below."""
     if not is_pool_ready():
         return []
     rows, _ = await db_list(limit=1000, offset=0)
+    return rows
+
+
+async def _public_rows(*, limit: int = 500) -> list[WorkflowRow]:
+    """Only public showcase rows — avoids scanning private history tables."""
+    if not is_pool_ready():
+        return []
+    rows, _ = await db_list(
+        showcase_visibility="public",
+        order_by="updated_at",
+        limit=max(1, min(limit, 1000)),
+        offset=0,
+    )
     return rows
 
 
@@ -1068,7 +1082,10 @@ async def list_public_cases(
 ) -> ApiResponse[Any] | Response:
     """List explicitly public cases without exposing internal workflow IDs."""
 
-    raw_public = [row for row in await _all_rows() if _visibility(row) == "public"]
+    # DB-side visibility filter (index-backed) instead of scanning all private rows.
+    raw_public = [
+        row for row in await _public_rows(limit=500) if _visibility(row) == "public"
+    ]
     # Drop cases whose XHS account was deleted (and write-through demote them).
     rows = await _demote_orphaned_public_rows(raw_public)
     search = q.strip().casefold() if q else ""
@@ -1177,6 +1194,8 @@ async def update_showcase_visibility(
     )
     if updated is None:
         raise WorkflowNotFoundError(public_id)
+    # Operator edits must not serve stale public projections.
+    clear_checkpoint_cache(row.thread_id)
     return success(
         data={
             "public_id": _public_id(updated),
@@ -1211,6 +1230,7 @@ async def revoke_showcase_visibility(
     )
     if updated is None:
         raise WorkflowNotFoundError(public_id)
+    clear_checkpoint_cache(row.thread_id)
     return success(
         data={
             "public_id": _public_id(updated),
