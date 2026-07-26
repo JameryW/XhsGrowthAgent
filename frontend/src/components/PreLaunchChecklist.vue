@@ -36,11 +36,11 @@ async function fetchHealth(options?: { fresh?: boolean }) {
 // Defer health probe so the start form paints first; still uses client+server caches.
 onMounted(() => {
   const run = () => { void fetchHealth() }
-  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-    const idle = window.requestIdleCallback as (cb: () => void, opts?: { timeout: number }) => number
-    idle(run, { timeout: 400 })
+  const ric = (window as Window & { requestIdleCallback?: typeof requestIdleCallback }).requestIdleCallback
+  if (typeof ric === 'function') {
+    ric(run, { timeout: 400 })
   } else {
-    window.setTimeout(run, 0)
+    setTimeout(run, 0)
   }
 })
 

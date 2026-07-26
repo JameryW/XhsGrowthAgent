@@ -174,34 +174,27 @@ export function navigateToStart(router: { push: (to: string) => unknown }): void
   void router.push('/start')
 }
 
+function scheduleIdle(cb: () => void, timeoutMs: number): void {
+  if (typeof window === 'undefined') return
+  const ric = (window as Window & { requestIdleCallback?: typeof requestIdleCallback })
+    .requestIdleCallback
+  if (typeof ric === 'function') {
+    ric(cb, { timeout: timeoutMs })
+  } else {
+    setTimeout(cb, Math.min(timeoutMs, 800))
+  }
+}
+
 /** Schedule start + nav warm-up when the browser is idle. */
 export function scheduleIdleStartPrefetch(timeoutMs = 2500): void {
   if (typeof window === 'undefined') return
-  const run = () => {
+  scheduleIdle(() => {
     void prefetchStartWorkspace({ deep: true, data: true })
     // Second idle tick: warmer nav without competing with start path.
-    const nav = () => {
+    scheduleIdle(() => {
       void prefetchWorkspaceNav()
-    }
-    if ('requestIdleCallback' in window) {
-      const idle = window.requestIdleCallback as (
-        cb: () => void,
-        opts?: { timeout: number },
-      ) => number
-      idle(nav, { timeout: timeoutMs })
-    } else {
-      window.setTimeout(nav, 400)
-    }
-  }
-  if ('requestIdleCallback' in window) {
-    const idle = window.requestIdleCallback as (
-      cb: () => void,
-      opts?: { timeout: number },
-    ) => number
-    idle(run, { timeout: timeoutMs })
-  } else {
-    window.setTimeout(run, Math.min(timeoutMs, 800))
-  }
+    }, timeoutMs)
+  }, timeoutMs)
 }
 
 /** Test helper — reset module state. */
