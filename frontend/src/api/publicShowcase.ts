@@ -38,7 +38,9 @@ export interface ShowcaseVisibilityUpdateResponse {
   approved_at?: string | null
   approved_by?: string | null
   summary_auto_generated?: boolean
-  case?: { summary?: string | null }
+  /** Persisted summary when auto-generation ran (also mirrored on case.summary). */
+  public_summary?: string | null
+  case?: { summary?: string | null; title?: string | null }
 }
 
 export async function listPublicCases(
@@ -58,8 +60,13 @@ export async function getPublicCase(
 export async function updateShowcaseVisibility(
   publicId: string,
   payload: ShowcaseVisibilityUpdate,
+  options?: RequestOptions & { timeout?: number },
 ): Promise<ShowcaseVisibilityUpdateResponse> {
-  return client.put(`/public/admin/showcase/cases/${encodeURIComponent(publicId)}`, payload) as unknown as ShowcaseVisibilityUpdateResponse
+  return client.put(
+    `/public/admin/showcase/cases/${encodeURIComponent(publicId)}`,
+    payload,
+    options,
+  ) as unknown as ShowcaseVisibilityUpdateResponse
 }
 
 export async function revokeShowcaseVisibility(publicId: string): Promise<ShowcaseVisibilityUpdateResponse> {
