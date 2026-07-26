@@ -45,13 +45,18 @@ from backend.db.workflows import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# In-process TTL cache for public replay checkpoint history. Manifest + each
-# step detail used to re-scan aget_state_history; a short TTL collapses the
-# burst when a visitor opens a case and clicks through steps.
+# In-process TTL caches for public read paths. Manifest + step detail + list
+# card enrichment re-hit the same graph/history work; a short TTL collapses
+# the burst when a visitor opens a case, walks steps, or reloads showcase.
 _CHECKPOINT_CACHE_TTL_S = 45.0
 _CHECKPOINT_CACHE_MAX = 64
 _checkpoint_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 _checkpoint_inflight: dict[str, asyncio.Task[list[dict[str, Any]]]] = {}
+
+_STATE_CACHE_TTL_S = 45.0
+_STATE_CACHE_MAX = 64
+_state_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
+_state_inflight: dict[str, asyncio.Task[dict[str, Any] | None]] = {}
 
 
 class ShowcaseVisibilityUpdate(BaseModel):
@@ -642,16 +647,34 @@ async def _resolve_any_case(public_id: str) -> WorkflowRow:
     raise WorkflowNotFoundError(public_id)
 
 
-async def _load_state(request: Request, thread_id: str) -> dict[str, Any] | None:
-    """Load workflow content for summary generation / public projection.
+def _state_cache_get(thread_id: str) -> tuple[bool, dict[str, Any] | None]:
+    """Return (hit, value). Value may be None when we cached a miss."""
+    entry = _state_cache.get(thread_id)
+    if not entry:
+        return False, None
+    ts, value = entry
+    if time.monotonic() - ts > _STATE_CACHE_TTL_S:
+        _state_cache.pop(thread_id, None)
+        return False, None
+    if value is None:
+        return True, None
+    return True, dict(value)
 
-    Prefer the live graph checkpoint (full copy/plan payload). Fall back to the
-    status route (history file / DB envelope) when the graph is unavailable.
-    """
-    import logging
 
-    log = logging.getLogger(__name__)
+def _state_cache_put(thread_id: str, value: dict[str, Any] | None) -> None:
+    stored = dict(value) if isinstance(value, dict) else None
+    _state_cache[thread_id] = (time.monotonic(), stored)
+    if len(_state_cache) <= _STATE_CACHE_MAX:
+        return
+    ordered = sorted(_state_cache.items(), key=lambda kv: kv[1][0])
+    for key, _ in ordered[: max(1, len(_state_cache) - _STATE_CACHE_MAX)]:
+        _state_cache.pop(key, None)
 
+
+async def _fetch_state_uncached(
+    request: Request, thread_id: str
+) -> dict[str, Any] | None:
+    """Load workflow content: graph first, status route fallback."""
     # 1) Direct graph state — richest source for body_text / selected_topic.
     try:
         graph = getattr(request.app.state, "graph", None)
@@ -661,7 +684,7 @@ async def _load_state(request: Request, thread_id: str) -> dict[str, Any] | None
             if isinstance(values, dict) and values:
                 return values
     except Exception:
-        log.debug("showcase load_state graph failed for %s", thread_id, exc_info=True)
+        logger.debug("showcase load_state graph failed for %s", thread_id, exc_info=True)
 
     # 2) Status route (history file / service identity) as a secondary source.
     try:
@@ -677,9 +700,42 @@ async def _load_state(request: Request, thread_id: str) -> dict[str, Any] | None
             if isinstance(dumped, dict) and dumped:
                 return dumped
     except Exception:
-        log.debug("showcase load_state status failed for %s", thread_id, exc_info=True)
+        logger.debug("showcase load_state status failed for %s", thread_id, exc_info=True)
 
     return None
+
+
+async def _load_state(request: Request, thread_id: str) -> dict[str, Any] | None:
+    """Load workflow content for summary generation / public projection.
+
+    Prefer the live graph checkpoint (full copy/plan payload). Fall back to the
+    status route (history file / DB envelope) when the graph is unavailable.
+    Results are TTL-cached — list cards + replay + final-summary share them.
+    """
+    hit, cached = _state_cache_get(thread_id)
+    if hit:
+        return cached
+
+    inflight = _state_inflight.get(thread_id)
+    if inflight is not None:
+        try:
+            value = await inflight
+            return dict(value) if isinstance(value, dict) else value
+        except Exception:
+            pass
+
+    async def _run() -> dict[str, Any] | None:
+        return await _fetch_state_uncached(request, thread_id)
+
+    task = asyncio.create_task(_run())
+    _state_inflight[thread_id] = task
+    try:
+        value = await task
+        _state_cache_put(thread_id, value)
+        return dict(value) if isinstance(value, dict) else value
+    finally:
+        if _state_inflight.get(thread_id) is task:
+            _state_inflight.pop(thread_id, None)
 
 
 def _checkpoint_cache_get(thread_id: str) -> list[dict[str, Any]] | None:
@@ -705,11 +761,13 @@ def _checkpoint_cache_put(thread_id: str, rows: list[dict[str, Any]]) -> None:
 
 
 def clear_checkpoint_cache(thread_id: str | None = None) -> None:
-    """Test helper — clear one thread or the whole checkpoint TTL cache."""
+    """Test helper — clear checkpoint and state TTL caches."""
     if thread_id is None:
         _checkpoint_cache.clear()
+        _state_cache.clear()
         return
     _checkpoint_cache.pop(thread_id, None)
+    _state_cache.pop(thread_id, None)
 
 
 async def _fetch_checkpoints_uncached(

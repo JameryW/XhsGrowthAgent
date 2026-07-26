@@ -616,6 +616,33 @@ class TestLoadCheckpointsDirectCall:
         assert third[0]["checkpoint_id"] == "cp-1"
 
     @pytest.mark.asyncio
+    async def test_state_ttl_cache_avoids_second_graph_read(self):
+        from backend.api.routes.public_showcase import (
+            _load_state,
+            clear_checkpoint_cache,
+        )
+
+        clear_checkpoint_cache()
+        request = MagicMock()
+        graph = MagicMock()
+        snapshot = MagicMock()
+        snapshot.values = {"copy_content": {"selected_title": "缓存标题"}, "phase": "completed"}
+
+        async def aget_state(_config):
+            return snapshot
+
+        graph.aget_state = aget_state
+        request.app.state.graph = graph
+
+        first = await _load_state(request, "thread-state")
+        # Mutate graph return — cache should still serve original.
+        snapshot.values = {"copy_content": {"selected_title": "新标题"}, "phase": "completed"}
+        second = await _load_state(request, "thread-state")
+
+        assert first is not None and first["copy_content"]["selected_title"] == "缓存标题"
+        assert second is not None and second["copy_content"]["selected_title"] == "缓存标题"
+
+    @pytest.mark.asyncio
     async def test_swallowed_failure_returns_empty_list(self):
         from backend.api.routes.public_showcase import (
             _load_checkpoints,
