@@ -174,6 +174,12 @@ async function prefetchStep(stepId: string) {
   if (!manifest.value || !publicId.value) return
   const technical = viewMode.value === 'all' && isAuthenticated.value
   if (readCachedStep(stepId, technical) || prefetchAbortControllers.has(stepId)) return
+  // Manifest already embeds result for key steps — cache without a network hop.
+  const embedded = steps.value.find(step => step.public_id === stepId)
+  if (embedded?.result && !technical) {
+    writeCachedStep(stepId, technical, embedded)
+    return
+  }
   const controller = new AbortController()
   prefetchAbortControllers.set(stepId, controller)
   try {

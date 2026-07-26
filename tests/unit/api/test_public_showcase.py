@@ -158,7 +158,8 @@ def test_key_checkpoints_deduplicate_system_steps_by_business_phase():
 
     result = _key_checkpoints(checkpoints)
 
-    assert [item["checkpoint_id"] for item in result] == ["scout", "copy"]
+    # Prefer the latest meaningful snapshot per phase (richer public payload).
+    assert [item["checkpoint_id"] for item in result] == ["scout-new", "copy"]
 
 
 @pytest.mark.asyncio
@@ -349,6 +350,36 @@ async def test_public_manifest_is_paginated_and_cacheable():
     assert response_headers.headers["ETag"]
 
 
+def test_key_checkpoints_prefers_latest_snapshot_per_phase():
+    from backend.api.routes.public_showcase import _key_checkpoints
+
+    checkpoints = [
+        {
+            "checkpoint_id": "create-early",
+            "step": 2,
+            "phase": "creating",
+            "current_agent": "copywriter",
+            "copy_content": {"selected_title": "草稿标题"},
+        },
+        {
+            "checkpoint_id": "create-late",
+            "step": 5,
+            "phase": "creating",
+            "current_agent": "copywriter",
+            "copy_content": {"selected_title": "终稿标题", "body_text": "终稿正文"},
+        },
+        {
+            "checkpoint_id": "scout",
+            "step": 1,
+            "phase": "scouting",
+            "current_agent": "trend_scout",
+            "trend_data": {"hot_topics": [{"topic": "AI"}]},
+        },
+    ]
+    selected = _key_checkpoints(checkpoints)
+    assert [item["checkpoint_id"] for item in selected] == ["scout", "create-late"]
+
+
 @pytest.mark.asyncio
 async def test_public_manifest_synthesizes_final_step_when_history_empty():
     row = _row("public-thread", visibility="public")
@@ -529,8 +560,12 @@ class TestLoadCheckpointsDirectCall:
     @pytest.mark.asyncio
     async def test_passes_explicit_none_cursor_and_service_user(self):
         from backend.api.deps import SERVICE_USER_ID
-        from backend.api.routes.public_showcase import _load_checkpoints
+        from backend.api.routes.public_showcase import (
+            _load_checkpoints,
+            clear_checkpoint_cache,
+        )
 
+        clear_checkpoint_cache()
         response = MagicMock()
         response.data = {
             "checkpoints": [
@@ -553,12 +588,44 @@ class TestLoadCheckpointsDirectCall:
         assert [cp["checkpoint_id"] for cp in result] == ["cp-1"]
 
     @pytest.mark.asyncio
-    async def test_swallowed_failure_returns_empty_list(self):
-        from backend.api.routes.public_showcase import _load_checkpoints
+    async def test_ttl_cache_avoids_second_history_fetch(self):
+        from backend.api.routes.public_showcase import (
+            _load_checkpoints,
+            clear_checkpoint_cache,
+        )
 
+        clear_checkpoint_cache()
+        response = MagicMock()
+        response.data = {
+            "checkpoints": [
+                {"checkpoint_id": "cp-1", "step": 1, "phase": "scouting"},
+            ],
+            "has_more": False,
+        }
+        history = AsyncMock(return_value=response)
+        with patch("backend.api.routes.workflow.get_checkpoint_history", history):
+            first = await _load_checkpoints(MagicMock(), "thread-cache")
+            second = await _load_checkpoints(MagicMock(), "thread-cache")
+
+        assert history.await_count == 1
+        assert [cp["checkpoint_id"] for cp in first] == ["cp-1"]
+        assert [cp["checkpoint_id"] for cp in second] == ["cp-1"]
+        # Callers get copies — mutating one result must not poison the cache.
+        first[0]["checkpoint_id"] = "mutated"
+        third = await _load_checkpoints(MagicMock(), "thread-cache")
+        assert third[0]["checkpoint_id"] == "cp-1"
+
+    @pytest.mark.asyncio
+    async def test_swallowed_failure_returns_empty_list(self):
+        from backend.api.routes.public_showcase import (
+            _load_checkpoints,
+            clear_checkpoint_cache,
+        )
+
+        clear_checkpoint_cache()
         history = AsyncMock(side_effect=RuntimeError("checkpointer gone"))
         with patch("backend.api.routes.workflow.get_checkpoint_history", history):
-            result = await _load_checkpoints(MagicMock(), "thread-1")
+            result = await _load_checkpoints(MagicMock(), "thread-fail")
 
         assert result == []
 
