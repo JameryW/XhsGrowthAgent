@@ -17,6 +17,7 @@ import {
 } from '@/api/publicShowcase'
 import type { WorkflowListItem, WorkflowStatus } from '@/types/workflow'
 import { useWorkflowStore, useToastStore, useAccountsStore } from '@/stores'
+import { useCrossAccountHintsStore } from '@/stores/crossAccountHints'
 import { useHistoryAccountScope } from '@/composables/useHistoryAccountScope'
 import { accountQuery } from '@/utils/accountViewSession'
 
@@ -26,6 +27,7 @@ const router = useRouter()
 const workflowStore = useWorkflowStore()
 const toastStore = useToastStore()
 const accountsStore = useAccountsStore()
+const crossAccountHints = useCrossAccountHintsStore()
 
 const {
   historyAccountId,
@@ -62,6 +64,29 @@ const viewAccountName = computed(
 const workspaceAccountName = computed(
   () => workspaceAccountNameRaw.value || t('nav.accountSelect'),
 )
+
+/** Other accounts with pending reviews — empty History can still point users there. */
+const reviewSiblingHints = computed(() => {
+  if (!hasMultipleAccounts.value) return [] as { id: string; name: string; total: number }[]
+  const viewId = historyAccountId.value
+  const loc = locale.value || 'zh-CN'
+  return accountsStore.accounts
+    .filter(a => a.id !== viewId)
+    .map(a => ({
+      id: a.id,
+      name: a.name,
+      total: crossAccountHints.reviewAwaitingTotals[a.id] ?? 0,
+    }))
+    .filter(h => h.total > 0)
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, loc))
+})
+
+function openReviewForAccount(accountId: string) {
+  void router.push({
+    name: 'review',
+    query: accountQuery(accountId, { omitIfEquals: accountsStore.activeAccountId }),
+  })
+}
 
 const workflows = ref<WorkflowListItem[]>([])
 /** First paint only — account switches use soft refresh / cache paint. */
@@ -438,6 +463,8 @@ function onRefreshClick() {
 }
 
 onMounted(() => {
+  crossAccountHints.hydrateFromSession()
+  void crossAccountHints.refreshReviewAwaitingTotals()
   void fetchWorkflows({ soft: false })
 })
 
@@ -873,6 +900,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
       <div
         v-if="siblingHints.length"
         class="mx-auto mb-5 max-w-md rounded-xl border border-violet-100 bg-violet-50/70 p-3 text-left dark:border-violet-500/25 dark:bg-violet-950/30"
+        data-testid="history-empty-siblings"
       >
         <p class="mb-2 text-xs font-semibold text-violet-700 dark:text-violet-200">
           {{ t('history.emptyOtherAccounts') }}
@@ -891,6 +919,31 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
             <span class="truncate">{{ hint.name }}</span>
             <span class="ml-2 shrink-0 text-[10px] opacity-80">
               {{ t('history.siblingCount', { count: hint.total }) }}
+            </span>
+          </NeonButton>
+        </div>
+      </div>
+
+      <div
+        v-if="reviewSiblingHints.length"
+        class="mx-auto mb-5 max-w-md rounded-xl border border-amber-100 bg-amber-50/70 p-3 text-left dark:border-amber-500/25 dark:bg-amber-950/30"
+        data-testid="history-empty-review-siblings"
+      >
+        <p class="mb-2 text-xs font-semibold text-amber-800 dark:text-amber-200">
+          {{ t('history.emptyReviewOtherAccounts') }}
+        </p>
+        <div class="flex flex-col gap-2">
+          <NeonButton
+            v-for="hint in reviewSiblingHints"
+            :key="`review-${hint.id}`"
+            variant="peach"
+            size="sm"
+            class="min-h-11 w-full justify-between"
+            @click="openReviewForAccount(hint.id)"
+          >
+            <span class="truncate">{{ hint.name }}</span>
+            <span class="ml-2 shrink-0 text-[10px] opacity-80">
+              {{ t('history.reviewSiblingCount', { count: hint.total }) }}
             </span>
           </NeonButton>
         </div>

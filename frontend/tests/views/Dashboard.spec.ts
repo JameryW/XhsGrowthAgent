@@ -124,6 +124,27 @@ describe('Dashboard view', () => {
       await wrapper.vm.$nextTick()
       expect(resumeSpy).toHaveBeenCalled()
     })
+
+    it('completed → history CTA (not review)', async () => {
+      const store = useWorkflowStore()
+      store.workflowStates.set('t-done', {
+        thread_id: 't-done', phase: 'completed', status: 'completed', progress_percent: 100,
+      } as any)
+      store.activeThreadId = 't-done'
+      const { wrapper } = await mountDashboard({}, { threadId: 't-done' })
+      expect(wrapper.text()).toContain(tt('dashboard.hero.completedCta'))
+      expect(wrapper.text()).not.toContain(tt('dashboard.nextAction.reviewCta'))
+    })
+
+    it('stale → resume CTA', async () => {
+      const store = useWorkflowStore()
+      store.workflowStates.set('t-stale', {
+        thread_id: 't-stale', phase: 'creating', status: 'stale', progress_percent: 40,
+      } as any)
+      store.activeThreadId = 't-stale'
+      const { wrapper } = await mountDashboard({}, { threadId: 't-stale' })
+      expect(wrapper.text()).toContain(tt('dashboard.actionButtons.resume'))
+    })
   })
 
   describe('DB-06: todo chips', () => {
