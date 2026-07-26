@@ -167,13 +167,19 @@ async def test_public_case_list_excludes_private_rows_and_uses_featured_fallback
     public = _row("public-thread", visibility="public", featured=False)
     private = _row("private-thread", visibility="private", featured=True)
 
+    async def list_side_effect(*_args, **kwargs):
+        # Public list now queries showcase_visibility=public at the DB layer.
+        if kwargs.get("showcase_visibility") == "public":
+            return [public], 1
+        return [public, private], 2
+
     with (
         patch("backend.api.routes.public_showcase.is_pool_ready", return_value=True),
         patch(
             "backend.api.routes.public_showcase.db_list",
             new_callable=AsyncMock,
-            return_value=([public, private], 2),
-        ),
+            side_effect=list_side_effect,
+        ) as list_mock,
         patch(
             "backend.api.routes.public_showcase._existing_account_ids",
             new_callable=AsyncMock,
@@ -196,6 +202,8 @@ async def test_public_case_list_excludes_private_rows_and_uses_featured_fallback
             sort="recent",
         )
 
+    assert list_mock.await_args.kwargs.get("showcase_visibility") == "public"
+    assert list_mock.await_args.kwargs.get("order_by") == "updated_at"
     assert response.data["total"] == 1
     assert response.data["cases"][0]["public_id"] == _public_id(public)
     assert response.data["featured_public_id"] == _public_id(public)

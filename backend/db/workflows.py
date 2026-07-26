@@ -102,6 +102,10 @@ CREATE INDEX IF NOT EXISTS idx_workflows_account_id ON workflows (account_id);
 CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows (status);
 CREATE INDEX IF NOT EXISTS idx_workflows_created_at ON workflows (created_at);
 CREATE INDEX IF NOT EXISTS idx_workflows_account_status ON workflows (account_id, status);
+CREATE INDEX IF NOT EXISTS idx_workflows_showcase_visibility ON workflows (showcase_visibility);
+CREATE INDEX IF NOT EXISTS idx_workflows_public_updated
+    ON workflows (updated_at DESC)
+    WHERE showcase_visibility = 'public';
 """
 
 
@@ -256,10 +260,17 @@ async def update_workflow(
 async def list_workflows(
     account_id: str | None = None,
     status: str | None = None,
+    showcase_visibility: str | None = None,
+    *,
+    order_by: str = "created_at",
     limit: int = 20,
     offset: int = 0,
 ) -> tuple[list[WorkflowRow], int]:
-    """Return (workflows, total_count) filtered and paginated."""
+    """Return (workflows, total_count) filtered and paginated.
+
+    ``showcase_visibility`` scopes public Showcase listing without scanning
+    private rows. ``order_by`` accepts ``created_at`` (default) or ``updated_at``.
+    """
     conditions: list[str] = []
     params: list[Any] = []
 
@@ -269,8 +280,12 @@ async def list_workflows(
     if status:
         conditions.append("status = %s")
         params.append(status)
+    if showcase_visibility:
+        conditions.append("showcase_visibility = %s")
+        params.append(showcase_visibility)
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    order_col = "updated_at" if order_by == "updated_at" else "created_at"
 
     pool = get_pool()
     async with pool.connection() as conn:
@@ -283,7 +298,7 @@ async def list_workflows(
             total = count_row["cnt"] if count_row else 0
 
             # Rows
-            order_and_limit = "ORDER BY created_at DESC LIMIT %s OFFSET %s"
+            order_and_limit = f"ORDER BY {order_col} DESC LIMIT %s OFFSET %s"
             await cur.execute(
                 f"SELECT * FROM workflows {where} {order_and_limit}",
                 params + [limit, offset],

@@ -645,6 +645,22 @@ function showcaseVisibilityLabel(workflow: WorkflowListItem): string {
   return t('history.showcasePrivate')
 }
 
+function isShowcaseLinkable(workflow: WorkflowListItem): boolean {
+  return (
+    !!workflow.showcase_public_id
+    && (workflow.showcase_visibility === 'public' || workflow.showcase_visibility === 'unlisted')
+  )
+}
+
+function openPublicShowcase(workflow: WorkflowListItem) {
+  if (!isShowcaseLinkable(workflow) || !workflow.showcase_public_id) return
+  void router.push({
+    name: 'replay',
+    params: { publicId: workflow.showcase_public_id },
+    query: { from: 'history' },
+  })
+}
+
 async function saveShowcaseSettings() {
   const workflow = showcaseTarget.value
   if (!workflow || isUpdatingShowcase.value) return
@@ -990,6 +1006,16 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
                 @click.stop="replayWorkflow(wf.thread_id)"
               >
                 {{ t('history.replay') }}
+              </NeonButton>
+              <NeonButton
+                v-if="isShowcaseLinkable(wf)"
+                variant="cyan"
+                size="sm"
+                class="min-h-11"
+                @click.stop="openPublicShowcase(wf)"
+              >
+                <AppIcon name="ExternalLink" size="sm" variant="white" />
+                <span class="hidden md:inline">{{ t('history.showcaseOpenPublic') }}</span>
               </NeonButton>
               <NeonButton
                 variant="ghost"

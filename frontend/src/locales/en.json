@@ -1305,6 +1305,7 @@
     "deleteFailed": "Failed to delete workflow",
     "replay": "Replay",
     "showcaseManage": "Showcase",
+    "showcaseOpenPublic": "Open public replay",
     "showcasePublic": "Public",
     "showcaseUnlisted": "Unlisted",
     "showcasePrivate": "Private",
