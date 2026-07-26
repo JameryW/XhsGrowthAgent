@@ -4,6 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import AccountScopeBar from '@/components/AccountScopeBar.vue'
+import AccountViewNotice from '@/components/AccountViewNotice.vue'
+import NeonButton from '@/components/NeonButton.vue'
 import EvaluationRadar from '@/components/charts/EvaluationRadar.vue'
 import EvaluationOverview from '@/components/evaluation/EvaluationOverview.vue'
 import CreatorQualityPanel from '@/components/settings/CreatorQualityPanel.vue'
@@ -12,6 +15,16 @@ import { getEvaluationList, getEvaluationResult } from '@/api/evaluation'
 import * as analyticsApi from '@/api/analytics'
 import type { CreatorNoteStats, CreatorNotesPayload } from '@/api/analytics'
 import { useAccountsStore } from '@/stores/accounts'
+import { useToastStore } from '@/stores/toast'
+import { useLocalAccountBrowse } from '@/composables/useLocalAccountBrowse'
+import {
+  EVALUATION_VIEW_ACCOUNT_KEY,
+  accountQuery,
+  readQueryString,
+  readSessionString,
+  withAccountQuery,
+  writeSessionString,
+} from '@/utils/accountViewSession'
 import { EvaluationSkeleton } from '@/components/skeletons'
 import { trackInteraction } from '@/utils/interactionTelemetry'
 import type {
@@ -36,27 +49,76 @@ const detailThreadId = computed(() => (route.params.threadId as string | undefin
 const isDetailView = computed(() => !!detailThreadId.value)
 
 // ── 账号选择（供总览/诊断/单篇流共用）──
+// Local view may differ from workspace active — same contract as History /
+// Analytics / Review. Intentional browse is preserved across workspace flips.
 const accountsStore = useAccountsStore()
+const toastStore = useToastStore()
 const selectedAccountId = ref('')
 const hasUserSelectedAccount = ref(false)
+
+function persistEvaluationAccount(accountId: string | null) {
+  writeSessionString(EVALUATION_VIEW_ACCOUNT_KEY, accountId)
+}
+const isPromotingWorkspace = ref(false)
 const selectedAccount = computed(() =>
-  false
-    ? undefined
-    : accountsStore.accounts.find((account) => account.id === selectedAccountId.value)
+  accountsStore.accounts.find((account) => account.id === selectedAccountId.value),
 )
 const hasAccounts = computed(() => accountsStore.accounts.length > 0)
 
+const {
+  hasMultipleAccounts,
+  isViewingNonWorkspace,
+  viewAccountName: viewAccountNameRaw,
+  workspaceAccountName: workspaceAccountNameRaw,
+  accountChips: evaluationAccountChips,
+  selectAccount,
+  backToWorkspace,
+  promoteToWorkspace,
+} = useLocalAccountBrowse({
+  accountsStore,
+  selectedAccountId,
+  locale,
+  onSelected: (id, meta) => {
+    hasUserSelectedAccount.value = !meta.isWorkspace
+    persistEvaluationAccount(meta.isWorkspace ? null : id)
+    syncEvaluationAccountQuery(id)
+  },
+})
+
+const viewAccountName = computed(() => viewAccountNameRaw.value || t('nav.accountSelect'))
+const workspaceAccountName = computed(
+  () => workspaceAccountNameRaw.value || t('nav.accountSelect'),
+)
+
 function selectDefaultAccount() {
   const selectedStillExists = accountsStore.accounts.some(
-    (account) => account.id === selectedAccountId.value
+    (account) => account.id === selectedAccountId.value,
   )
   if (hasUserSelectedAccount.value && selectedStillExists) return
+
+  // URL → session sticky browse → workspace
+  const fromQuery = readQueryString(route.query as Record<string, unknown>, 'account')
+  if (fromQuery && accountsStore.accounts.some(a => a.id === fromQuery)) {
+    selectedAccountId.value = fromQuery
+    hasUserSelectedAccount.value = fromQuery !== accountsStore.activeAccountId
+    return
+  }
+  const stored = readSessionString(EVALUATION_VIEW_ACCOUNT_KEY)
+  if (stored && accountsStore.accounts.some(a => a.id === stored)) {
+    selectedAccountId.value = stored
+    hasUserSelectedAccount.value = stored !== accountsStore.activeAccountId
+    // Restore sticky browse into the URL so refresh/share keeps scope.
+    syncEvaluationAccountQuery(stored)
+    return
+  }
+
   const activeAccountExists = accountsStore.accounts.some(
-    (account) => account.id === accountsStore.activeAccountId
+    (account) => account.id === accountsStore.activeAccountId,
   )
   selectedAccountId.value = activeAccountExists
     ? accountsStore.activeAccountId!
     : accountsStore.accounts[0]?.id || ''
+  hasUserSelectedAccount.value = false
 }
 
 async function refreshAccounts() {
@@ -64,9 +126,49 @@ async function refreshAccounts() {
   selectDefaultAccount()
 }
 
+function syncEvaluationAccountQuery(accountId: string | null) {
+  const current = readQueryString(route.query as Record<string, unknown>, 'account')
+  const effective =
+    accountId && accountId === accountsStore.activeAccountId ? null : accountId
+  if ((effective || null) === (current || null)) return
+  const nextQuery: Record<string, string | string[]> = {
+    ...(route.query as Record<string, string | string[]>),
+  }
+  if (effective) nextQuery.account = effective
+  else delete nextQuery.account
+  void router.replace({ query: nextQuery })
+}
+
 function onAccountSelected(accountId: string) {
-  selectedAccountId.value = accountId
-  hasUserSelectedAccount.value = true
+  selectAccount(accountId)
+}
+
+async function promoteEvaluationAccountToWorkspace() {
+  if (isPromotingWorkspace.value) return
+  isPromotingWorkspace.value = true
+  try {
+    const result = await promoteToWorkspace()
+    if (result.ok) {
+      hasUserSelectedAccount.value = false
+      persistEvaluationAccount(null)
+      syncEvaluationAccountQuery(null)
+      toastStore.success(
+        t('history.workspaceSwitched'),
+        t('history.workspaceSwitchedDetail', { name: result.name }),
+      )
+    } else if (result.error && result.error !== 'noop') {
+      toastStore.error(t('history.switchAccountFailed'), result.error)
+    }
+  } finally {
+    isPromotingWorkspace.value = false
+  }
+}
+
+function backToWorkspaceEvaluation() {
+  hasUserSelectedAccount.value = false
+  persistEvaluationAccount(null)
+  backToWorkspace()
+  syncEvaluationAccountQuery(null)
 }
 
 function openSettings() {
@@ -76,21 +178,30 @@ function openSettings() {
 watch(
   () => [accountsStore.activeAccountId, accountsStore.accounts] as const,
   (current, previous) => {
-    // A global active-account switch wins over a stale in-page manual
-    // selection: every page must follow the current account.
     const activeId = current[0]
     const prevActiveId = previous?.[0]
-    if (
-      activeId &&
-      prevActiveId &&
-      activeId !== prevActiveId &&
-      activeId !== selectedAccountId.value
-    ) {
-      hasUserSelectedAccount.value = false
+    if (activeId && prevActiveId && activeId !== prevActiveId) {
+      // Follow workspace only when we were on the previous workspace account
+      // (or never manually browsed). Keep intentional non-workspace browse.
+      if (!hasUserSelectedAccount.value || selectedAccountId.value === prevActiveId) {
+        hasUserSelectedAccount.value = false
+      }
     }
     selectDefaultAccount()
   },
-  { immediate: true }
+  { immediate: true },
+)
+
+// Honor ?account= deep links on the evaluation hub.
+watch(
+  () => readQueryString(route.query as Record<string, unknown>, 'account'),
+  (next) => {
+    if (!next || next === selectedAccountId.value) return
+    if (accountsStore.accounts.length && !accountsStore.accounts.some(a => a.id === next)) return
+    selectedAccountId.value = next
+    hasUserSelectedAccount.value = next !== accountsStore.activeAccountId
+  },
+  { immediate: true },
 )
 
 // ── 历史笔记（单篇流的第二数据源；账号切换时重载）──
@@ -300,7 +411,15 @@ const filteredItems = computed(() => {
 
 function openDetail(threadId: string) {
   trackInteraction('evaluation_drilldown', { method: 'click' })
-  router.push({ name: 'evaluation-detail', params: { threadId }, query: { tab: 'workflow' } })
+  router.push({
+    name: 'evaluation-detail',
+    params: { threadId },
+    query: withAccountQuery(
+      { tab: 'workflow' },
+      selectedAccountId.value,
+      { omitIfEquals: accountsStore.activeAccountId },
+    ),
+  })
 }
 
 function setDecisionFilter(opt: string) {
@@ -310,12 +429,26 @@ function setDecisionFilter(opt: string) {
 
 function evaluationActionCta(target: 'review' | 'dashboard') {
   trackInteraction('evaluation_decision_cta', { decision: ev.value?.decision ?? '', method: target })
-  if (target === 'review' && detailThreadId.value) router.push(`/review/${detailThreadId.value}`)
-  else if (detailThreadId.value) router.push(`/dashboard/${detailThreadId.value}`)
+  if (!detailThreadId.value) return
+  const q = accountQuery(selectedAccountId.value, {
+    omitIfEquals: accountsStore.activeAccountId,
+  })
+  if (target === 'review') {
+    router.push({ name: 'review', params: { threadId: detailThreadId.value }, query: q })
+  } else {
+    router.push({ name: 'dashboard', params: { threadId: detailThreadId.value }, query: q })
+  }
 }
 
 function backToList() {
-  router.push({ name: 'evaluation', query: { tab: sourceTab.value } })
+  router.push({
+    name: 'evaluation',
+    query: withAccountQuery(
+      { tab: sourceTab.value },
+      selectedAccountId.value,
+      { omitIfEquals: accountsStore.activeAccountId },
+    ),
+  })
 }
 
 // EV-01: copy the evaluated thread id for support/handoff.
@@ -547,6 +680,46 @@ function dimDescription(dim: string): string {
         title-id="evaluation-title"
       />
 
+      <AccountScopeBar
+        v-if="hasMultipleAccounts"
+        class="eval-section"
+        :chips="evaluationAccountChips"
+        :label="t('history.accountFilter')"
+        tone="violet"
+        id-prefix="evaluation-account-chip"
+        :disabled="isPromotingWorkspace"
+        :workspace-badge-label="t('history.workspaceBadge')"
+        :title-for-workspace="t('history.chipTitleWorkspace')"
+        :title-for-browse="t('evaluation.chipTitleBrowse')"
+        :announce-template="t('history.announceViewing')"
+        @select="onAccountSelected"
+      />
+
+      <AccountViewNotice
+        v-if="isViewingNonWorkspace"
+        class="eval-section"
+        variant="viewOnly"
+        :message="t('evaluation.viewOnlyBanner', {
+          view: viewAccountName,
+          workspace: workspaceAccountName,
+        })"
+      >
+        <template #actions>
+          <NeonButton variant="ghost" size="sm" class="min-h-11" @click="backToWorkspaceEvaluation">
+            {{ t('evaluation.backToWorkspace', { name: workspaceAccountName }) }}
+          </NeonButton>
+          <NeonButton
+            variant="cyan"
+            size="sm"
+            class="min-h-11"
+            :loading="isPromotingWorkspace"
+            @click="promoteEvaluationAccountToWorkspace"
+          >
+            {{ t('history.useAsWorkspace', { name: viewAccountName }) }}
+          </NeonButton>
+        </template>
+      </AccountViewNotice>
+
       <!-- 融合总览：历史账户分 × 单篇评估趋势 -->
       <EvaluationOverview
         class="eval-section"
@@ -554,6 +727,7 @@ function dimDescription(dim: string): string {
         :accounts="accountsStore.accounts"
         :active-account-id="accountsStore.activeAccountId"
         :accounts-loading="accountsStore.isLoading"
+        :hide-account-selector="hasMultipleAccounts"
         :evaluated-total="listTotal"
         @update:account-id="onAccountSelected"
         @refresh-accounts="refreshAccounts"

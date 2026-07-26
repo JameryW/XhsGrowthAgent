@@ -18,6 +18,19 @@ import { useRealtimeStore } from './realtime'
 import { useToastStore } from './toast'
 import { useOfflineStore } from './offline'
 import { useAccountsStore } from './accounts'
+import { accountIdFromThreadId } from '@/utils/threadAccount'
+
+/** Ensure status payloads always carry account ownership for multi-account UI. */
+function withAccountId(
+  threadId: string,
+  state: WorkflowStateResponse,
+  fallbackAccountId?: string | null,
+): WorkflowStateResponse {
+  if (state.account_id) return state
+  const derived = accountIdFromThreadId(threadId) || fallbackAccountId || undefined
+  if (!derived) return state
+  return { ...state, account_id: derived }
+}
 import { EventType } from '@/realtime/events'
 import { useLoading } from '@/composables/useLoading'
 import i18n from '@/locales'
@@ -360,7 +373,14 @@ export const useWorkflowStore = defineStore('workflow', () => {
   const TAB_FOLD_LIMIT = 8
 
   const workflowList = computed(() => {
-    const items: Array<{ threadId: string; label: string; status: WorkflowStatus; phase: WorkflowPhase; progress: number }> = []
+    const items: Array<{
+      threadId: string
+      label: string
+      status: WorkflowStatus
+      phase: WorkflowPhase
+      progress: number
+      accountId: string | null
+    }> = []
     for (const id of openTabIds.value) {
       const state = workflowStates.value.get(id)
       // Skip tabs with no state data (workflow may have been deleted)
@@ -376,6 +396,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         status: state?.status || 'idle',
         phase: state?.phase || 'idle',
         progress: state?.progress_percent ?? 0,
+        accountId: state.account_id || accountIdFromThreadId(id),
       })
     }
     return items
@@ -758,6 +779,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         next_steps: [],
         agent_timeline: [],
         workflow_mode: options?.workflowMode,
+        account_id: accountId,
       } as WorkflowStateResponse)
 
       // Add tab
@@ -781,7 +803,11 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
       // Fetch full status from backend
       try {
-        const fullState = await workflowApi.getWorkflowStatus(threadId)
+        const fullState = withAccountId(
+          threadId,
+          await workflowApi.getWorkflowStatus(threadId),
+          accountId,
+        )
         workflowStates.value.set(threadId, fullState)
         if (threadId === activeThreadId.value) {
           updateProgressFromPhase(fullState.phase, fullState.progress_percent)
@@ -821,7 +847,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isLoading.value = true
     error.value = null
     try {
-      const state = await workflowApi.getWorkflowStatus(threadId)
+      const state = withAccountId(threadId, await workflowApi.getWorkflowStatus(threadId))
       workflowStates.value.set(threadId, state)
       // Sync backend label to tab label (only if no user rename)
       if (state.label && !tabLabels.value[threadId]) {
@@ -878,7 +904,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     const failedIds: string[] = []
     const promises = ids.map(async (id) => {
       try {
-        const state = await workflowApi.getWorkflowStatus(id)
+        const state = withAccountId(id, await workflowApi.getWorkflowStatus(id))
         workflowStates.value.set(id, state)
         // Sync backend label to tab label (only if no user rename)
         if (state.label && !tabLabels.value[id]) {

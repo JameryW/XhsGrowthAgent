@@ -33,24 +33,56 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   let requestGeneration = 0
   let scopedRequestGeneration = 0
 
-  // Derive the scope from the selected account, or the first loaded account
-  // when no explicit active account exists. Never query a synthetic `default`
-  // account: an empty account scope is a real no-data state.
+  // Derive the scope from an optional local view override, then the workspace
+  // active account, then the first loaded account. Never query a synthetic
+  // `default` account: an empty account scope is a real no-data state.
   const accountsStore = useAccountsStore()
-  const accountId = computed(() => accountsStore.activeAccountId ?? accountsStore.accounts[0]?.id ?? '')
+  /** Local Analytics view account — null means follow workspace active. */
+  const viewAccountId = ref<string | null>(null)
+  const accountId = computed(
+    () =>
+      viewAccountId.value
+      || accountsStore.activeAccountId
+      || accountsStore.accounts[0]?.id
+      || '',
+  )
+  const isViewingNonWorkspace = computed(
+    () =>
+      !!viewAccountId.value
+      && !!accountsStore.activeAccountId
+      && viewAccountId.value !== accountsStore.activeAccountId,
+  )
 
-  // Cached analytics belong to exactly one account.  When the active account
-  // changes (settings panel, another client, omp), drop the previous
-  // account's cache so no view can render a mixed-account snapshot.
+  // Cached analytics belong to exactly one account.  When the *effective*
+  // scope changes (workspace switch while following workspace, or local view
+  // switch), drop the previous account's cache so no view can render a
+  // mixed-account snapshot.
   watch(
     () => accountsStore.activeAccountId,
     (nextId, prevId) => {
       if (!prevId || nextId === prevId) return
+      // Browsing another account: keep that view; drop override if it now
+      // matches the new workspace active account.
+      if (viewAccountId.value) {
+        if (viewAccountId.value === nextId) viewAccountId.value = null
+        return
+      }
       if (dataAccountId.value && dataAccountId.value !== nextId) {
         clearAccountScopedData()
       }
-    }
+    },
   )
+
+  function setViewAccountId(next: string | null) {
+    const id = (next || '').trim() || null
+    // Selecting the workspace account clears the override (follow mode).
+    const normalized =
+      id && id === accountsStore.activeAccountId ? null : id
+    if (normalized === viewAccountId.value) return
+    viewAccountId.value = normalized
+    clearAccountScopedData()
+    costData.value = null
+  }
 
   // Computed
   const posts = computed<PostPerformance[]>(() =>
@@ -290,6 +322,9 @@ export const useAnalyticsStore = defineStore('analytics', () => {
 
   return {
     accountId,
+    viewAccountId,
+    isViewingNonWorkspace,
+    setViewAccountId,
     period,
     growthReport,
     performanceData,

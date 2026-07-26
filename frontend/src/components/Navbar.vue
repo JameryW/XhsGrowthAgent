@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useWorkflowStore, useAuthStore, useRealtimeStore, useShortcutsStore, useAccountsStore } from '@/stores'
@@ -8,6 +8,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import HelpCenter from '@/components/HelpCenter.vue'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
+import { useCrossAccountHintsStore } from '@/stores/crossAccountHints'
 
 const { t } = useI18n()
 
@@ -20,6 +21,8 @@ interface NavItem {
   hint: string
   color: NavColor
   needsAttention?: boolean
+  /** Optional numeric badge (e.g. multi-account pending reviews). */
+  badgeCount?: number
 }
 
 interface NavSection {
@@ -35,9 +38,15 @@ const authStore = useAuthStore()
 const realtimeStore = useRealtimeStore()
 const shortcutsStore = useShortcutsStore()
 const accountsStore = useAccountsStore()
+const crossAccountHints = useCrossAccountHintsStore()
 const { isTablet } = useBreakpoints()
 
 const currentPath = computed(() => route.path)
+
+const multiAccountReviewCount = computed(() => crossAccountHints.reviewAwaitingCount)
+const reviewNeedsAttention = computed(
+  () => workflowStore.isAwaitingReview || multiAccountReviewCount.value > 0,
+)
 
 const navSections = computed<NavSection[]>(() => [
   {
@@ -55,9 +64,14 @@ const navSections = computed<NavSection[]>(() => [
         path: '/review',
         icon: 'CheckCircle',
         label: t('nav.review'),
-        hint: t('nav.hints.review'),
+        hint: multiAccountReviewCount.value > 0 && !workflowStore.isAwaitingReview
+          ? t('nav.hints.reviewOtherAccounts', { count: multiAccountReviewCount.value })
+          : t('nav.hints.review'),
         color: 'cyan',
-        needsAttention: workflowStore.isAwaitingReview,
+        needsAttention: reviewNeedsAttention.value,
+        badgeCount: multiAccountReviewCount.value > 0
+          ? multiAccountReviewCount.value
+          : undefined,
       },
     ],
   },
@@ -187,7 +201,20 @@ const handleLogout = async () => {
 
 onMounted(() => {
   if (!accountsStore.activeAccount) void accountsStore.fetchAccounts()
+  crossAccountHints.hydrateFromSession()
+  void crossAccountHints.refreshReviewAwaitingTotals()
 })
+
+// Re-sync when entering review/history (Review writes totals into the shared store).
+watch(
+  () => route.path,
+  (path) => {
+    if (path.startsWith('/review') || path.startsWith('/history')) {
+      crossAccountHints.hydrateFromSession()
+      void crossAccountHints.refreshReviewAwaitingTotals()
+    }
+  },
+)
 </script>
 
 <template>
@@ -290,7 +317,18 @@ onMounted(() => {
               <span :class="['block truncate text-sm font-bold', isItemActive(item.path) ? 'text-slate-800' : 'text-slate-600 group-hover:text-slate-800']">{{ item.label }}</span>
               <span class="mt-0.5 block truncate text-[10px] text-slate-400">{{ item.hint }}</span>
             </span>
-            <span v-if="item.needsAttention" class="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-100 px-1.5 text-[10px] font-bold text-rose-600" :aria-label="t('nav.status.reviewNeeded')">
+            <span
+              v-if="item.badgeCount"
+              class="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-100 px-1.5 text-[10px] font-bold text-rose-600"
+              :aria-label="t('nav.status.reviewCount', { count: item.badgeCount })"
+            >
+              {{ item.badgeCount > 99 ? '99+' : item.badgeCount }}
+            </span>
+            <span
+              v-else-if="item.needsAttention"
+              class="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-100 px-1.5 text-[10px] font-bold text-rose-600"
+              :aria-label="t('nav.status.reviewNeeded')"
+            >
               !
             </span>
             <AppIcon v-if="isItemActive(item.path) && !isTablet" name="ChevronRight" size="sm" variant="cyan" aria-hidden="true" />

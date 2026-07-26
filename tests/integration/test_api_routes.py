@@ -203,6 +203,8 @@ class TestWorkflowRoutes:
         assert "phase" in data["data"]
         assert "current_agent" in data["data"]
         assert "progress_percent" in data["data"]
+        # Owning account is required for multi-account UI (dashboard banner).
+        assert data["data"].get("account_id") == mock_state_values.get("account_id", "test_account")
         assert data["error"] is None
 
     def test_get_workflow_status_not_found(self, client, mock_graph):

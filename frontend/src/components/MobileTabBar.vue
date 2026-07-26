@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import { useAccountsStore, useAuthStore, useRealtimeStore } from '@/stores'
+import { useCrossAccountHintsStore } from '@/stores/crossAccountHints'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -11,12 +12,20 @@ const router = useRouter()
 const authStore = useAuthStore()
 const accountsStore = useAccountsStore()
 const realtimeStore = useRealtimeStore()
+const crossAccountHints = useCrossAccountHintsStore()
 const showMore = ref(false)
+
+const reviewAwaitingCount = computed(() => crossAccountHints.reviewAwaitingCount)
 
 const tabs = computed(() => [
   { path: '/start', icon: 'Rocket', label: t('nav.startShort') },
   { path: '/dashboard', icon: 'Home', label: t('nav.dashboardShort') },
-  { path: '/review', icon: 'CheckCircle', label: t('nav.reviewShort') },
+  {
+    path: '/review',
+    icon: 'CheckCircle',
+    label: t('nav.reviewShort'),
+    badgeCount: reviewAwaitingCount.value > 0 ? reviewAwaitingCount.value : undefined,
+  },
 ])
 
 const currentPath = computed(() => route.path)
@@ -33,6 +42,8 @@ const connectionLabel = computed(() => {
 
 onMounted(() => {
   if (!accountsStore.activeAccount) void accountsStore.fetchAccounts()
+  crossAccountHints.hydrateFromSession()
+  void crossAccountHints.refreshReviewAwaitingTotals()
   document.addEventListener('keydown', handleMenuKeydown)
 })
 
@@ -84,8 +95,14 @@ const handleLogout = async () => {
         :aria-current="isActiveTab(tab.path) ? 'page' : undefined"
         :aria-label="tab.label"
       >
-        <span :class="['flex h-8 w-10 items-center justify-center rounded-xl transition-all duration-200', isActiveTab(tab.path) ? 'bg-rose-50 shadow-sm ring-1 ring-rose-100' : '']" aria-hidden="true">
+        <span :class="['relative flex h-8 w-10 items-center justify-center rounded-xl transition-all duration-200', isActiveTab(tab.path) ? 'bg-rose-50 shadow-sm ring-1 ring-rose-100' : '']" aria-hidden="true">
           <AppIcon :name="tab.icon" size="md" :variant="isActiveTab(tab.path) ? 'pink' : 'cyan'" />
+          <span
+            v-if="tab.badgeCount"
+            class="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white"
+          >
+            {{ tab.badgeCount > 99 ? '99+' : tab.badgeCount }}
+          </span>
         </span>
         <span class="max-w-full truncate px-0.5 text-[10px] font-medium leading-tight">{{ tab.label }}</span>
         <span v-if="isActiveTab(tab.path)" class="absolute bottom-1 h-1 w-1 rounded-full bg-rose-500" aria-hidden="true" />

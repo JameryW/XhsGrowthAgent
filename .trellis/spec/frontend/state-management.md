@@ -12,6 +12,11 @@
 | `useRealtimeStore` | `stores/realtime.ts` | WebSocket connection, event recovery |
 | `useToastStore` | `stores/toast.ts` | Success/error/warning/info notifications |
 | `useThemeStore` | `stores/theme.ts` | Browser-local light/dark/system preference and root theme application |
+| `useCrossAccountHintsStore` | `stores/crossAccountHints.ts` | Multi-account review badge totals (nav / mobile) |
+| `useAccountsStore` | `stores/accounts.ts` | Owned XHS accounts + workspace active |
+
+Multi-account local view (History / Review / Analytics / Evaluation / Dashboard)
+is documented in [multi-account.md](./multi-account.md).
 
 ---
 

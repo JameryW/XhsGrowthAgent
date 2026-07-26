@@ -7,10 +7,26 @@ import i18n from '@/locales'
 const { t } = i18n.global
 
 const props = defineProps<{
-  tabs: Array<{ threadId: string; label: string; status: WorkflowStatus; phase: WorkflowPhase; progress: number }>
+  tabs: Array<{
+    threadId: string
+    label: string
+    status: WorkflowStatus
+    phase: WorkflowPhase
+    progress: number
+    accountId?: string | null
+  }>
   activeThreadId: string | null
   hasOverflow: boolean
-  overflowTabs: Array<{ threadId: string; label: string; status: WorkflowStatus; phase: WorkflowPhase; progress: number }>
+  overflowTabs: Array<{
+    threadId: string
+    label: string
+    status: WorkflowStatus
+    phase: WorkflowPhase
+    progress: number
+    accountId?: string | null
+  }>
+  /** Workspace active account — tabs for other accounts get a subtle marker. */
+  workspaceAccountId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -62,6 +78,12 @@ function statusColor(status: WorkflowStatus): string {
 
 function isActive(tabId: string): boolean {
   return tabId === props.activeThreadId
+}
+
+function isOtherAccount(tab: { accountId?: string | null }): boolean {
+  const workspace = props.workspaceAccountId
+  const owner = tab.accountId
+  return !!(workspace && owner && workspace !== owner)
 }
 
 function onTabClick(tabId: string) {
@@ -138,6 +160,12 @@ function toggleOverflow() {
           @click.stop
         />
         <span v-else class="tab-label">{{ tab.label }}</span>
+        <span
+          v-if="isOtherAccount(tab)"
+          class="ml-0.5 inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400"
+          :title="t('dashboard.tabOtherAccount')"
+          aria-hidden="true"
+        />
 
         <button
           class="tab-close"
@@ -168,6 +196,12 @@ function toggleOverflow() {
           :class="[statusColor(tab.status), tab.status === 'running' ? 'animate-pulse' : '']"
         />
         <span class="tab-label">{{ tab.label }}</span>
+        <span
+          v-if="isOtherAccount(tab)"
+          class="ml-0.5 inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400"
+          :title="t('dashboard.tabOtherAccount')"
+          aria-hidden="true"
+        />
         <button class="tab-close" @click="onCloseClick(tab.threadId, $event)">
           <AppIcon name="X" size="xs" />
         </button>

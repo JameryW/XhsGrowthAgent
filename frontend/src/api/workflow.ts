@@ -2,7 +2,7 @@ import client from './client'
 import type { WorkflowStartRequest, WorkflowResponse, WorkflowStateResponse, WorkflowListResponse, CheckpointHistoryResponse } from '@/types/workflow'
 import { useRetry } from '@/composables/useRetry'
 
-type RequestOptions = { suppressToast?: boolean }
+type RequestOptions = { suppressToast?: boolean; signal?: AbortSignal }
 
 // Brief upload result from backend
 export interface BriefUploadResult {
@@ -19,6 +19,17 @@ export async function listWorkflows(params?: {
   offset?: number
 }, options?: RequestOptions): Promise<WorkflowListResponse> {
   return client.get('/workflow/list', { params, ...options }) as unknown as WorkflowListResponse
+}
+
+/** Owned-account workflow counts for history/review chip badges (single round-trip). */
+export async function getWorkflowAccountTotals(
+  params?: { status?: string },
+  options?: RequestOptions,
+): Promise<{ totals: Record<string, number>; status?: string | null }> {
+  return client.get('/workflow/account-totals', {
+    params,
+    ...options,
+  }) as unknown as { totals: Record<string, number>; status?: string | null }
 }
 
 // 启动固定工作流（简单模式）

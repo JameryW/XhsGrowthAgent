@@ -4,13 +4,16 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import NeonButton from '@/components/NeonButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
-import { useWorkflowStore, useReviewStore, useRealtimeStore } from '@/stores'
+import { useWorkflowStore, useReviewStore, useRealtimeStore, useAccountsStore } from '@/stores'
+import { accountIdFromThreadId } from '@/utils/threadAccount'
+import { accountQuery } from '@/utils/accountViewSession'
 
 const { t } = useI18n()
 const router = useRouter()
 const workflowStore = useWorkflowStore()
 const reviewStore = useReviewStore()
 const realtimeStore = useRealtimeStore()
+const accountsStore = useAccountsStore()
 
 // Check if workflow is active
 const hasActiveWorkflow = computed(() => !!workflowStore.currentThreadId)
@@ -78,10 +81,18 @@ const pauseWorkflow = () => {
 }
 
 const goToReview = () => {
-  if (workflowStore.currentThreadId) {
-    reviewStore.fetchPendingReview(workflowStore.currentThreadId)
-    router.push('/review')
-  }
+  const threadId = workflowStore.currentThreadId
+  if (!threadId) return
+  reviewStore.fetchPendingReview(threadId)
+  const owner =
+    workflowStore.effectiveState?.account_id
+    || accountIdFromThreadId(threadId)
+  const q = accountQuery(owner, { omitIfEquals: accountsStore.activeAccountId })
+  router.push({
+    name: 'review',
+    params: { threadId },
+    query: q,
+  })
 }
 
 const resumeWorkflow = () => {

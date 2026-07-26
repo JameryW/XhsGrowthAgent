@@ -16,10 +16,13 @@ import { DashboardSkeleton } from '@/components/skeletons'
 import ErrorState from '@/components/ErrorState.vue'
 import ErrorCard from '@/components/ErrorCard.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import AccountViewNotice from '@/components/AccountViewNotice.vue'
 import { getDashboardHero } from '@/composables/dashboardHero'
-import { useWorkflowStore, useToastStore, useErrorStore } from '@/stores'
+import { useWorkflowStore, useToastStore, useErrorStore, useAccountsStore } from '@/stores'
 import { useRealtimeStore } from '@/stores/realtime'
 import { trackInteraction } from '@/utils/interactionTelemetry'
+import { accountIdFromThreadId } from '@/utils/threadAccount'
+import { accountQuery } from '@/utils/accountViewSession'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -27,6 +30,49 @@ const route = router.currentRoute
 const workflowStore = useWorkflowStore()
 const toastStore = useToastStore()
 const errorStore = useErrorStore()
+const accountsStore = useAccountsStore()
+const isPromotingWorkspace = ref(false)
+
+/** Thread owner may differ from workspace active when opened from History. */
+const threadAccountId = computed(() => {
+  // Prefer authoritative status payload; fall back to thread-id minting scheme.
+  const fromState = workflowStore.effectiveState?.account_id
+  if (fromState) return fromState
+  return accountIdFromThreadId(workflowStore.activeThreadId)
+})
+const isThreadFromOtherAccount = computed(() => {
+  const tid = threadAccountId.value
+  const active = accountsStore.activeAccountId
+  return !!(tid && active && tid !== active)
+})
+const threadAccountName = computed(() => {
+  const id = threadAccountId.value
+  if (!id) return t('nav.accountSelect')
+  return accountsStore.accounts.find(a => a.id === id)?.name?.trim() || id.slice(0, 8)
+})
+const workspaceAccountName = computed(
+  () => accountsStore.activeAccount?.name?.trim() || t('nav.accountSelect'),
+)
+
+async function promoteThreadAccountToWorkspace() {
+  const accountId = threadAccountId.value
+  if (!accountId || accountId === accountsStore.activeAccountId || isPromotingWorkspace.value) return
+  isPromotingWorkspace.value = true
+  try {
+    await accountsStore.setActiveAccount(accountId)
+    toastStore.success(
+      t('history.workspaceSwitched'),
+      t('history.workspaceSwitchedDetail', { name: threadAccountName.value }),
+    )
+  } catch (e: unknown) {
+    toastStore.error(
+      t('history.switchAccountFailed'),
+      e instanceof Error ? e.message : String(e),
+    )
+  } finally {
+    isPromotingWorkspace.value = false
+  }
+}
 
 const showOptimization = computed(() =>
   workflowStore.currentPhase === 'creating' ||
@@ -68,6 +114,16 @@ const todoChips = computed(() => {
   return chips
 })
 
+/** Preserve thread ownership when jumping to review / history. */
+function reviewPathForThread(threadId: string | null | undefined): string {
+  const base = threadId ? `/review/${threadId}` : '/review'
+  const q = accountQuery(threadAccountId.value, {
+    omitIfEquals: accountsStore.activeAccountId,
+  })
+  if (!('account' in q)) return base
+  return `${base}?account=${encodeURIComponent(q.account)}`
+}
+
 const nextAction = computed(() => {
   if (workflowStore.isAwaitingReview) {
     return {
@@ -75,7 +131,7 @@ const nextAction = computed(() => {
       title: t('dashboard.nextAction.reviewTitle'),
       description: t('dashboard.nextAction.reviewDesc'),
       label: t('dashboard.nextAction.reviewCta'),
-      path: workflowStore.activeThreadId ? `/review/${workflowStore.activeThreadId}` : '/review',
+      path: reviewPathForThread(workflowStore.activeThreadId),
       action: 'navigate' as const,
     }
   }
@@ -290,10 +346,42 @@ onUnmounted(() => {
         :active-thread-id="workflowStore.activeThreadId"
         :has-overflow="workflowStore.hasOverflow"
         :overflow-tabs="workflowStore.overflowTabs"
+        :workspace-account-id="accountsStore.activeAccountId"
         @switch="handleSwitchTab"
         @close="workflowStore.closeTab($event)"
         @rename="(id, label) => workflowStore.renameTab(id, label)"
       />
+    </div>
+
+    <div v-if="isThreadFromOtherAccount" class="app-page-content px-0 pb-0 pt-2 md:pt-3">
+      <AccountViewNotice
+        variant="viewOnly"
+        data-testid="dashboard-cross-account"
+        :message="t('dashboard.crossAccountBanner', {
+          view: threadAccountName,
+          workspace: workspaceAccountName,
+        })"
+      >
+        <template #actions>
+          <NeonButton
+            variant="cyan"
+            size="sm"
+            class="min-h-11"
+            :loading="isPromotingWorkspace"
+            @click="promoteThreadAccountToWorkspace"
+          >
+            {{ t('history.useAsWorkspace', { name: threadAccountName }) }}
+          </NeonButton>
+          <NeonButton
+            variant="ghost"
+            size="sm"
+            class="min-h-11"
+            @click="router.push({ name: 'history', query: threadAccountId ? { account: threadAccountId } : {} })"
+          >
+            {{ t('dashboard.openAccountHistory') }}
+          </NeonButton>
+        </template>
+      </AccountViewNotice>
     </div>
 
     <DashboardSkeleton v-if="isLoading" />
@@ -345,7 +433,12 @@ onUnmounted(() => {
           <div class="h-full rounded-full bg-gradient-to-r from-neon-pink via-neon-peach to-neon-cyan motion-safe:transition-[width] motion-safe:duration-500" :style="{ width: `${dashboardHero.progress}%` }" />
         </div>
         <div v-if="workflowStore.currentPhase === 'completed'" class="relative mt-4 flex justify-end">
-          <NeonButton variant="cyan" size="sm" class="min-h-11" @click="router.push('/history')">
+          <NeonButton
+            variant="cyan"
+            size="sm"
+            class="min-h-11"
+            @click="router.push({ name: 'history', query: accountQuery(threadAccountId, { omitIfEquals: accountsStore.activeAccountId }) })"
+          >
             <span class="inline-flex items-center gap-2"><AppIcon name="History" size="sm" variant="white" aria-hidden="true" />{{ t('dashboard.hero.completedCta') }}</span>
           </NeonButton>
         </div>
@@ -425,7 +518,7 @@ onUnmounted(() => {
                 </button>
                 <button
                   v-if="workflowStore.publishError.recovery.action === 'revise_content'"
-                  @click="router.push('/review')"
+                  @click="router.push(reviewPathForThread(workflowStore.activeThreadId))"
                   class="btn-sm bg-amber-100 text-amber-600 hover:bg-amber-200 text-xs"
                 >
                   {{ workflowStore.publishError.recovery.action_label }}
@@ -446,7 +539,7 @@ onUnmounted(() => {
                 </button>
                 <button
                   v-if="workflowStore.publishError.recovery.action === 'provide_images'"
-                  @click="router.push('/review')"
+                  @click="router.push(reviewPathForThread(workflowStore.activeThreadId))"
                   class="btn-sm bg-teal-100 text-teal-600 hover:bg-teal-200 text-xs"
                 >
                   {{ workflowStore.publishError.recovery.action_label }}

@@ -342,6 +342,8 @@ export interface WorkflowStateResponse {
   progress_percent: number
   created_at?: string
   updated_at?: string
+  /** Owning XHS account when provided by status/list payloads. */
+  account_id?: string
   agent_timeline: AgentTimelineEntry[]
   workflow_mode?: 'trend' | 'brief'
   brief_content?: BriefContent
