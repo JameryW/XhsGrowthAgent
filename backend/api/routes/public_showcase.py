@@ -630,16 +630,24 @@ async def _load_state(request: Request, thread_id: str) -> dict[str, Any] | None
 async def _load_checkpoints(request: Request, thread_id: str) -> list[dict[str, Any]]:
     import logging
 
+    from backend.api.deps import service_identity
     from backend.api.routes.workflow import get_checkpoint_history
 
     try:
-        # before=None must be passed explicitly: get_checkpoint_history is a
-        # FastAPI route, and calling it directly leaves `before` at its raw
-        # Query(None) default — a truthy FieldInfo — which builds a broken
-        # cursor config, raises inside aget_state_history, and (via the except
-        # below) silently empties the replay manifest.
-        response = await get_checkpoint_history(thread_id, request, limit=100, before=None)
+        # Call the authenticated history route as the trusted service identity.
+        # Direct route invocation does NOT inject Depends()/Query() defaults —
+        # without an explicit user, assert_thread_owned blows up; without
+        # before=None, the Query(None) FieldInfo is truthy and breaks pagination.
+        response = await get_checkpoint_history(
+            thread_id,
+            request,
+            limit=100,
+            before=None,
+            user=service_identity(),
+        )
         data = getattr(response, "data", None)
+        if data is not None and hasattr(data, "model_dump"):
+            data = data.model_dump()
         checkpoints = data.get("checkpoints", []) if isinstance(data, dict) else []
         return [_checkpoint_dict(item) for item in checkpoints]
     except Exception:
