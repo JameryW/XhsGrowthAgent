@@ -484,6 +484,69 @@ async def _all_rows() -> list[WorkflowRow]:
     return rows
 
 
+async def _existing_account_ids() -> set[str]:
+    """Account ids that still exist — public cases must not outlive their account."""
+    if not is_pool_ready():
+        return set()
+    try:
+        from backend.db.accounts import list_accounts
+
+        accounts = await list_accounts(owner_user_id=None)
+        return {a.id for a in accounts if a.id}
+    except Exception:
+        return set()
+
+
+def _account_still_exists(row: WorkflowRow, existing: set[str] | None = None) -> bool:
+    aid = (row.account_id or "").strip()
+    if not aid:
+        return False
+    if existing is not None:
+        return aid in existing
+    return True
+
+
+async def _demote_orphaned_public_rows(rows: list[WorkflowRow]) -> list[WorkflowRow]:
+    """Hide + persist private for public/unlisted rows whose account was deleted."""
+    if not rows:
+        return rows
+    existing = await _existing_account_ids()
+    if not existing:
+        # Fail open only when the accounts table is empty (dev bootstrap);
+        # if we have accounts, orphans are filtered. If lookup failed to an
+        # empty set while rows exist, still filter by empty → demote all
+        # which is safer than leaking deleted-account content.
+        pass
+    kept: list[WorkflowRow] = []
+    for row in rows:
+        if _account_still_exists(row, existing):
+            kept.append(row)
+            continue
+        if _visibility(row) not in _PUBLIC_VISIBILITIES:
+            continue
+        try:
+            await db_update(
+                row.thread_id,
+                showcase_visibility="private",
+                showcase_featured=False,
+                featured_rank=None,
+                approved_at=None,
+                approved_by=None,
+            )
+            row.showcase_visibility = "private"
+            row.showcase_featured = False
+            row.featured_rank = None
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "failed to demote orphaned public showcase %s",
+                row.thread_id,
+                exc_info=True,
+            )
+    return kept
+
+
 def _is_link_public(row: WorkflowRow) -> bool:
     return _visibility(row) in _PUBLIC_VISIBILITIES
 
@@ -491,11 +554,21 @@ def _is_link_public(row: WorkflowRow) -> bool:
 async def _resolve_case(public_id: str) -> WorkflowRow:
     if not is_pool_ready():
         raise WorkflowNotFoundError(public_id)
+    existing = await _existing_account_ids()
     direct = await db_get_by_public_id(public_id)
-    if direct and _is_link_public(direct) and _public_id(direct) == public_id:
+    if (
+        direct
+        and _is_link_public(direct)
+        and _public_id(direct) == public_id
+        and _account_still_exists(direct, existing)
+    ):
         return direct
     for row in await _all_rows():
-        if _is_link_public(row) and _public_id(row) == public_id:
+        if (
+            _is_link_public(row)
+            and _public_id(row) == public_id
+            and _account_still_exists(row, existing)
+        ):
             return row
     raise WorkflowNotFoundError(public_id)
 
@@ -756,7 +829,9 @@ async def list_public_cases(
 ) -> ApiResponse[Any] | Response:
     """List explicitly public cases without exposing internal workflow IDs."""
 
-    rows = [row for row in await _all_rows() if _visibility(row) == "public"]
+    raw_public = [row for row in await _all_rows() if _visibility(row) == "public"]
+    # Drop cases whose XHS account was deleted (and write-through demote them).
+    rows = await _demote_orphaned_public_rows(raw_public)
     search = q.strip().casefold() if q else ""
     if mode in {"trend", "brief"}:
         rows = [row for row in rows if row.workflow_mode == mode]
