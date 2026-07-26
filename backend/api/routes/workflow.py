@@ -717,6 +717,20 @@ async def get_workflow_status(
         # derive_status already maps this to STALE — flag it for the response.
         is_orphan = derived_status == WorkflowStatus.STALE and not has_active
 
+        # Graph can end (no next nodes / no interrupt → COMPLETED) while the
+        # stored phase is still mid-flight (e.g. reviewing). Heal the phase we
+        # return and persist so the dashboard does not keep showing gate CTAs.
+        if status_str == WorkflowStatus.COMPLETED.value and phase not in (
+            WorkflowPhase.COMPLETED.value,
+            WorkflowPhase.ERROR.value,
+            WorkflowPhase.CANCELLED.value,
+        ):
+            phase = WorkflowPhase.COMPLETED.value
+        elif status_str == WorkflowStatus.ERROR.value and phase != WorkflowPhase.ERROR.value:
+            phase = WorkflowPhase.ERROR.value
+        elif status_str == WorkflowStatus.CANCELLED.value and phase != WorkflowPhase.CANCELLED.value:
+            phase = WorkflowPhase.CANCELLED.value
+
         # Compute progress: completed → always 100; awaiting gates → phase-based; error → 0
         if status_str == "completed":
             progress = 100
