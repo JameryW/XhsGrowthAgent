@@ -173,6 +173,11 @@ async def test_public_case_list_excludes_private_rows_and_uses_featured_fallback
             new_callable=AsyncMock,
             return_value=([public, private], 2),
         ),
+        patch(
+            "backend.api.routes.public_showcase._existing_account_ids",
+            new_callable=AsyncMock,
+            return_value={public.account_id, private.account_id},
+        ),
     ):
         response = await list_public_cases(
             request=MagicMock(),
@@ -190,6 +195,52 @@ async def test_public_case_list_excludes_private_rows_and_uses_featured_fallback
     assert response.data["featured_public_id"] == _public_id(public)
     assert "thread_id" not in response.data["cases"][0]
     assert "account_id" not in response.data["cases"][0]
+
+
+@pytest.mark.asyncio
+async def test_public_case_list_demotes_and_hides_deleted_account_rows():
+    live = _row("live-thread", visibility="public", featured=True)
+    orphan = _row("orphan-thread", visibility="public", featured=False)
+    orphan.account_id = "deleted-account"
+
+    with (
+        patch("backend.api.routes.public_showcase.is_pool_ready", return_value=True),
+        patch(
+            "backend.api.routes.public_showcase.db_list",
+            new_callable=AsyncMock,
+            return_value=([live, orphan], 2),
+        ),
+        patch(
+            "backend.api.routes.public_showcase._existing_account_ids",
+            new_callable=AsyncMock,
+            return_value={live.account_id},
+        ),
+        patch(
+            "backend.api.routes.public_showcase.db_update",
+            new_callable=AsyncMock,
+            return_value=orphan,
+        ) as demote_mock,
+    ):
+        response = await list_public_cases(
+            request=MagicMock(),
+            response=Response(),
+            limit=24,
+            offset=0,
+            q=None,
+            mode=None,
+            status=None,
+            sort="recent",
+        )
+
+    assert response.data["total"] == 1
+    assert response.data["cases"][0]["public_id"] == _public_id(live)
+    demote_calls = [
+        call
+        for call in demote_mock.await_args_list
+        if call.kwargs.get("showcase_visibility") == "private"
+    ]
+    assert demote_calls, "expected orphaned row to be demoted to private"
+    assert demote_calls[0].args[0] == orphan.thread_id
 
 
 @pytest.mark.asyncio
@@ -606,6 +657,11 @@ async def test_public_case_list_backfills_missing_summary_without_touching_updat
             return_value=([row], 1),
         ),
         patch(
+            "backend.api.routes.public_showcase._existing_account_ids",
+            new_callable=AsyncMock,
+            return_value={row.account_id},
+        ),
+        patch(
             "backend.api.routes.public_showcase._load_state",
             new_callable=AsyncMock,
             return_value={"copy_content": {"body_text": "正文"}},
@@ -651,6 +707,11 @@ async def test_public_case_list_skips_backfill_when_summary_present():
             "backend.api.routes.public_showcase.db_list",
             new_callable=AsyncMock,
             return_value=([row], 1),
+        ),
+        patch(
+            "backend.api.routes.public_showcase._existing_account_ids",
+            new_callable=AsyncMock,
+            return_value={row.account_id},
         ),
         patch(
             "backend.api.routes.public_showcase._load_state",
