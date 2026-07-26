@@ -165,11 +165,21 @@ function writeCache(nextCases: PublicCase[], total = nextCases.length) {
   }
 }
 
+/** Seed detail cache from list payloads so cards paint topic/tags immediately. */
+function seedDetailFromList(items: PublicCase[]) {
+  for (const item of items) {
+    if (!item?.public_id || detailCache.value.has(item.public_id)) continue
+    detailCache.value.set(item.public_id, item)
+    detailState.value = { ...detailState.value, [item.public_id]: 'ready' }
+  }
+}
+
 function hydrate(cached: { cases: PublicCase[]; total: number }) {
   cases.value = cached.cases
   totalCases.value = cached.total
   loaded.value = true
-  if (cached.cases[0]) void loadCaseDetail(cached.cases[0].public_id)
+  seedDetailFromList(cached.cases)
+  // Full detail still upgrades the featured panel (complete result payload).
   if (featuredCase.value) void loadCaseDetail(featuredCase.value.public_id)
 }
 
@@ -216,8 +226,10 @@ async function loadCases(useCache = true) {
     cases.value = response.cases || []
     totalCases.value = response.total ?? cases.value.length
     loaded.value = true
+    seedDetailFromList(cases.value)
     writeCache(cases.value, totalCases.value)
     trackFirstCaseVisible(false, startedAt)
+    // Only re-fetch featured for the full `result` body; grid cards already have preview.
     if (featuredCase.value) void loadCaseDetail(featuredCase.value.public_id)
     trackInteraction('showcase_cases_loaded', { count: cases.value.length, cached: false })
   } catch (error: any) {
@@ -247,7 +259,9 @@ async function loadMoreCases() {
     )
     if (abortController.signal.aborted || requestToken !== listRequestToken) return
     const existing = new Set(cases.value.map(item => item.public_id))
-    cases.value = [...cases.value, ...(response.cases || []).filter(item => !existing.has(item.public_id))]
+    const incoming = (response.cases || []).filter(item => !existing.has(item.public_id))
+    cases.value = [...cases.value, ...incoming]
+    seedDetailFromList(incoming)
     totalCases.value = response.total ?? totalCases.value
     writeCache(cases.value, totalCases.value)
     await nextTick()

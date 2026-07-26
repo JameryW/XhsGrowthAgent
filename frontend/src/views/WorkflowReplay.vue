@@ -484,22 +484,110 @@ function goWorkspace() {
   else void router.push({ name: 'login', query: { redirect: '/dashboard' } })
 }
 
+function buildShareHref(step = false): string {
+  const query: Record<string, string> = {}
+  const fromRaw = route.query.from
+  const from = typeof fromRaw === 'string' && fromRaw.trim() ? fromRaw.trim() : 'showcase'
+  query.from = from
+  if (step && selectedStepId.value) query.step = selectedStepId.value
+  const resolved = router.resolve({
+    name: 'replay',
+    params: { publicId: publicId.value },
+    query,
+  })
+  return typeof window !== 'undefined'
+    ? new URL(resolved.href, window.location.origin).toString()
+    : resolved.href
+}
+
+async function writeClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // fall through to execCommand path
+  }
+  try {
+    const el = document.createElement('textarea')
+    el.value = text
+    el.setAttribute('readonly', '')
+    el.style.position = 'fixed'
+    el.style.left = '-9999px'
+    document.body.appendChild(el)
+    el.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(el)
+    return ok
+  } catch {
+    return false
+  }
+}
+
+let shareResetTimer: ReturnType<typeof setTimeout> | null = null
+
 async function copyLink(step = false) {
   const state = step ? stepShareState : caseShareState
   state.value = 'idle'
-  const query = step && selectedStepId.value ? { ...route.query, step: selectedStepId.value } : { from: '/' }
-  const resolved = router.resolve({ name: 'replay', params: { publicId: publicId.value }, query })
-  const href = typeof window !== 'undefined' ? new URL(resolved.href, window.location.origin).toString() : resolved.href
+  if (shareResetTimer) {
+    clearTimeout(shareResetTimer)
+    shareResetTimer = null
+  }
+  const href = buildShareHref(step)
+  const title = manifest.value?.workflow.title || t('replay.title')
+  // Prefer native share sheet on mobile when available (still falls back to copy).
+  const canShare =
+    typeof navigator !== 'undefined'
+    && typeof navigator.share === 'function'
+    && (!step || !!selectedStepId.value)
+  if (canShare && /Mobi|Android|iPhone/i.test(navigator.userAgent || '')) {
+    try {
+      await navigator.share({
+        title,
+        text: step
+          ? t('replay.publicShareStepText', { title })
+          : t('replay.publicShareCaseText', { title }),
+        url: href,
+      })
+      state.value = 'success'
+      trackInteraction(step ? 'replay_step_link_copy' : 'replay_case_link_copy', {
+        has_step: step,
+        method: 'share',
+      })
+      trackInteraction('replay_share', { has_step: step, method: 'share' })
+      shareResetTimer = setTimeout(() => {
+        if (state.value === 'success') state.value = 'idle'
+      }, 2200)
+      return
+    } catch {
+      // User cancelled share sheet or share failed — fall through to clipboard.
+    }
+  }
   try {
-    await navigator.clipboard.writeText(href)
+    const ok = await writeClipboard(href)
+    if (!ok) throw new Error('clipboard unavailable')
     state.value = 'success'
-    trackInteraction(step ? 'replay_step_link_copy' : 'replay_case_link_copy', { has_step: step })
-    trackInteraction('replay_share', { has_step: step })
+    toastStore.success(
+      step ? t('replay.publicSharedStep') : t('replay.publicSharedCase'),
+      href.length > 72 ? `${href.slice(0, 72)}…` : href,
+    )
+    trackInteraction(step ? 'replay_step_link_copy' : 'replay_case_link_copy', {
+      has_step: step,
+      method: 'clipboard',
+    })
+    trackInteraction('replay_share', { has_step: step, method: 'clipboard' })
+    shareResetTimer = setTimeout(() => {
+      if (state.value === 'success') state.value = 'idle'
+    }, 2200)
   } catch {
     state.value = 'error'
+    toastStore.warning(t('replay.publicShareFailed'), href)
     trackInteraction('replay_share_error', { has_step: step })
+    shareResetTimer = setTimeout(() => {
+      if (state.value === 'error') state.value = 'idle'
+    }, 2800)
   }
-  setTimeout(() => { state.value = 'idle' }, 2000)
 }
 
 // RP-03: narrative layer helpers.
