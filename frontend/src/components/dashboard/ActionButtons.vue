@@ -17,13 +17,15 @@ const accountsStore = useAccountsStore()
 
 // Check if workflow is active
 const hasActiveWorkflow = computed(() => !!workflowStore.currentThreadId)
-const isReviewing = computed(() => workflowStore.currentPhase === 'reviewing')
 const isPaused = computed(() => workflowStore.currentPhase === 'paused')
 const isStale = computed(() => workflowStore.isStale)
 const isCancelled = computed(() => workflowStore.currentPhase === 'cancelled')
 const needsReview = computed(() => reviewStore.hasPendingReview)
 const canPause = computed(() => workflowStore.isRunning)
-const canReview = computed(() => workflowStore.isAwaitingReview || isReviewing.value)
+// Trust status, not phase alone: a terminal "completed" row can still have
+// phase=reviewing when the graph ended without advancing the phase flag
+// (no next nodes / no interrupt → derive_status=completed).
+const canReview = computed(() => workflowStore.isAwaitingReview)
 const waitingStatusText = computed(() => {
   if (workflowStore.isAwaitingDraft) return t('dashboard.actionButtons.awaitingDraft')
   if (workflowStore.isAwaitingChoice) return t('dashboard.actionButtons.awaitingChoice')
