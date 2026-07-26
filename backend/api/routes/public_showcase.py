@@ -12,8 +12,10 @@ import asyncio
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
+import time
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from email.utils import format_datetime
@@ -41,6 +43,15 @@ from backend.db.workflows import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+# In-process TTL cache for public replay checkpoint history. Manifest + each
+# step detail used to re-scan aget_state_history; a short TTL collapses the
+# burst when a visitor opens a case and clicks through steps.
+_CHECKPOINT_CACHE_TTL_S = 45.0
+_CHECKPOINT_CACHE_MAX = 64
+_checkpoint_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_checkpoint_inflight: dict[str, asyncio.Task[list[dict[str, Any]]]] = {}
 
 
 class ShowcaseVisibilityUpdate(BaseModel):
@@ -437,6 +448,32 @@ def _is_decision_checkpoint(checkpoint: dict[str, Any]) -> bool:
     )
 
 
+# Presenter-facing labels when a checkpoint has business data but no title yet.
+_PHASE_TITLE_FALLBACK: dict[str, str] = {
+    "briefing": "Brief 解析",
+    "scouting": "趋势洞察",
+    "planning": "内容策略",
+    "creating": "文案创作",
+    "reviewing": "人工审核",
+    "publishing": "发布上线",
+    "analyzing": "效果分析",
+    "engaging": "互动运营",
+    "completed": "创作结果",
+}
+
+_PHASE_SUMMARY_FALLBACK: dict[str, str] = {
+    "briefing": "已完成 Brief 解析与方向确认",
+    "scouting": "已完成热点与受众洞察",
+    "planning": "已完成选题与内容策略",
+    "creating": "已完成文案与版本生成",
+    "reviewing": "内容已进入审核节点",
+    "publishing": "内容已进入发布流程",
+    "analyzing": "已完成发布后分析",
+    "engaging": "已完成互动运营动作",
+    "completed": "完整创作链路已结束",
+}
+
+
 def _public_step(
     thread_id: str,
     checkpoint: dict[str, Any],
@@ -446,9 +483,16 @@ def _public_step(
     result = _public_result(checkpoint)
     phase = _phase(checkpoint.get("phase"))
     step = checkpoint.get("step") if isinstance(checkpoint.get("step"), int) else 0
-    title = result.get("title") or result.get("topic")
-    summary = result.get("summary") or (
-        "该阶段已完成关键处理" if phase != "creating" else "正在整理创作结果"
+    title = (
+        result.get("title")
+        or result.get("topic")
+        or _PHASE_TITLE_FALLBACK.get(phase)
+        or "创作步骤"
+    )
+    summary = (
+        result.get("summary")
+        or _PHASE_SUMMARY_FALLBACK.get(phase)
+        or ("该阶段已完成关键处理" if phase != "creating" else "正在整理创作结果")
     )
     payload = {
         "public_id": _step_public_id(thread_id, str(checkpoint.get("checkpoint_id") or step)),
@@ -470,17 +514,19 @@ def _public_step(
 
 
 def _key_checkpoints(checkpoints: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One step per business phase — prefer the *latest* meaningful snapshot.
+
+    Early checkpoints in a phase often lack final titles/body; the last one is
+    usually the richest public artifact for that phase.
+    """
     ordered = sorted(checkpoints, key=lambda item: item.get("step", 0))
-    selected: list[dict[str, Any]] = []
-    seen_phases: set[str] = set()
+    best_by_phase: dict[str, dict[str, Any]] = {}
     for checkpoint in ordered:
         if not _is_meaningful_checkpoint(checkpoint):
             continue
         phase = _phase(checkpoint.get("phase"))
-        if phase in seen_phases:
-            continue
-        seen_phases.add(phase)
-        selected.append(checkpoint)
+        best_by_phase[phase] = checkpoint
+    selected = sorted(best_by_phase.values(), key=lambda item: item.get("step", 0))
     if not selected and ordered:
         selected.append(ordered[-1])
     return selected
@@ -636,32 +682,90 @@ async def _load_state(request: Request, thread_id: str) -> dict[str, Any] | None
     return None
 
 
-async def _load_checkpoints(request: Request, thread_id: str) -> list[dict[str, Any]]:
-    import logging
+def _checkpoint_cache_get(thread_id: str) -> list[dict[str, Any]] | None:
+    entry = _checkpoint_cache.get(thread_id)
+    if not entry:
+        return None
+    ts, rows = entry
+    if time.monotonic() - ts > _CHECKPOINT_CACHE_TTL_S:
+        _checkpoint_cache.pop(thread_id, None)
+        return None
+    # Return shallow copies so callers cannot mutate the cache entry.
+    return [dict(item) for item in rows]
 
+
+def _checkpoint_cache_put(thread_id: str, rows: list[dict[str, Any]]) -> None:
+    _checkpoint_cache[thread_id] = (time.monotonic(), [dict(item) for item in rows])
+    if len(_checkpoint_cache) <= _CHECKPOINT_CACHE_MAX:
+        return
+    # Drop oldest entries when the process holds too many public cases.
+    ordered = sorted(_checkpoint_cache.items(), key=lambda kv: kv[1][0])
+    for key, _ in ordered[: max(1, len(_checkpoint_cache) - _CHECKPOINT_CACHE_MAX)]:
+        _checkpoint_cache.pop(key, None)
+
+
+def clear_checkpoint_cache(thread_id: str | None = None) -> None:
+    """Test helper — clear one thread or the whole checkpoint TTL cache."""
+    if thread_id is None:
+        _checkpoint_cache.clear()
+        return
+    _checkpoint_cache.pop(thread_id, None)
+
+
+async def _fetch_checkpoints_uncached(
+    request: Request, thread_id: str
+) -> list[dict[str, Any]]:
     from backend.api.deps import service_identity
     from backend.api.routes.workflow import get_checkpoint_history
 
+    # Call the authenticated history route as the trusted service identity.
+    # Direct route invocation does NOT inject Depends()/Query() defaults —
+    # without an explicit user, assert_thread_owned blows up; without
+    # before=None, the Query(None) FieldInfo is truthy and breaks pagination.
+    response = await get_checkpoint_history(
+        thread_id,
+        request,
+        limit=100,
+        before=None,
+        user=service_identity(),
+    )
+    data = getattr(response, "data", None)
+    if data is not None and hasattr(data, "model_dump"):
+        data = data.model_dump()
+    checkpoints = data.get("checkpoints", []) if isinstance(data, dict) else []
+    return [_checkpoint_dict(item) for item in checkpoints]
+
+
+async def _load_checkpoints(request: Request, thread_id: str) -> list[dict[str, Any]]:
+    cached = _checkpoint_cache_get(thread_id)
+    if cached is not None:
+        return cached
+
+    inflight = _checkpoint_inflight.get(thread_id)
+    if inflight is not None:
+        try:
+            rows = await inflight
+            return [dict(item) for item in rows]
+        except Exception:
+            # Fall through to a fresh fetch if the in-flight task failed.
+            pass
+
+    async def _run() -> list[dict[str, Any]]:
+        try:
+            return await _fetch_checkpoints_uncached(request, thread_id)
+        except Exception:
+            logger.warning("Failed to load checkpoints for replay", exc_info=True)
+            return []
+
+    task = asyncio.create_task(_run())
+    _checkpoint_inflight[thread_id] = task
     try:
-        # Call the authenticated history route as the trusted service identity.
-        # Direct route invocation does NOT inject Depends()/Query() defaults —
-        # without an explicit user, assert_thread_owned blows up; without
-        # before=None, the Query(None) FieldInfo is truthy and breaks pagination.
-        response = await get_checkpoint_history(
-            thread_id,
-            request,
-            limit=100,
-            before=None,
-            user=service_identity(),
-        )
-        data = getattr(response, "data", None)
-        if data is not None and hasattr(data, "model_dump"):
-            data = data.model_dump()
-        checkpoints = data.get("checkpoints", []) if isinstance(data, dict) else []
-        return [_checkpoint_dict(item) for item in checkpoints]
-    except Exception:
-        logging.getLogger(__name__).warning("Failed to load checkpoints for replay", exc_info=True)
-        return []
+        rows = await task
+        _checkpoint_cache_put(thread_id, rows)
+        return [dict(item) for item in rows]
+    finally:
+        if _checkpoint_inflight.get(thread_id) is task:
+            _checkpoint_inflight.pop(thread_id, None)
 
 
 _SUMMARY_PROMPT = {
@@ -1085,8 +1189,11 @@ async def get_public_replay_manifest(
     row = await _resolve_case(public_id)
     limit = max(1, min(int(limit), 20))
     offset = max(0, int(offset))
-    checkpoints = await _load_checkpoints(request, row.thread_id)
-    state = await _load_state(request, row.thread_id)
+    # Parallel: history scan + final state (independent IO).
+    checkpoints, state = await asyncio.gather(
+        _load_checkpoints(request, row.thread_id),
+        _load_state(request, row.thread_id),
+    )
     allow_technical = bool(user) and include_technical
     key_checkpoints = _key_checkpoints(checkpoints)
     # If history is empty (or only system steps) but final state has content,
