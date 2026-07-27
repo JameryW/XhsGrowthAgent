@@ -728,7 +728,9 @@ async def get_workflow_status(
             phase = WorkflowPhase.COMPLETED.value
         elif status_str == WorkflowStatus.ERROR.value and phase != WorkflowPhase.ERROR.value:
             phase = WorkflowPhase.ERROR.value
-        elif status_str == WorkflowStatus.CANCELLED.value and phase != WorkflowPhase.CANCELLED.value:
+        elif (
+            status_str == WorkflowStatus.CANCELLED.value and phase != WorkflowPhase.CANCELLED.value
+        ):
             phase = WorkflowPhase.CANCELLED.value
 
         # Compute progress: completed → always 100; awaiting gates → phase-based; error → 0
@@ -938,9 +940,7 @@ async def get_workflow_status(
             progress_percent=row.progress_percent,
             created_at=row.created_at,
             updated_at=row.updated_at,
-            account_id=_resolve_status_account_id(
-                thread_id, db_account_id=row.account_id
-            ),
+            account_id=_resolve_status_account_id(thread_id, db_account_id=row.account_id),
             label=row.label or "",
             checkpoint_lost=checkpoint_lost,
             orphan=is_orphan,

@@ -42,10 +42,7 @@ class TestAccountIdFromThread:
 class TestResolveStatusAccountId:
     def test_prefers_state_over_thread_parse(self):
         tid = "xhs_from-thread_12345678"
-        assert (
-            _resolve_status_account_id(tid, {"account_id": "from-state"})
-            == "from-state"
-        )
+        assert _resolve_status_account_id(tid, {"account_id": "from-state"}) == "from-state"
 
     def test_falls_back_to_db_then_thread(self):
         aid = "c056e160-6c6e-424b-96df-67733a5d9c56"

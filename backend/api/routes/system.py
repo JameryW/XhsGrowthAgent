@@ -395,9 +395,7 @@ async def _build_health_payload() -> dict[str, Any]:
 
 @router.get("/health")
 async def system_health(
-    fresh: Annotated[
-        bool, Query(description="跳过短时缓存，强制重新组装")
-    ] = False,
+    fresh: Annotated[bool, Query(description="跳过短时缓存，强制重新组装")] = False,
 ) -> ApiResponse[Any]:
     """系统健康检查
 
@@ -412,11 +410,7 @@ async def system_health(
     global _health_cache, _health_cache_at
 
     now = time.monotonic()
-    if (
-        not fresh
-        and _health_cache is not None
-        and (now - _health_cache_at) < _HEALTH_CACHE_TTL_S
-    ):
+    if not fresh and _health_cache is not None and (now - _health_cache_at) < _HEALTH_CACHE_TTL_S:
         return success(data=_health_cache)
 
     result_data = await _build_health_payload()

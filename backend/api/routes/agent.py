@@ -52,9 +52,7 @@ _prewarm_tasks: dict[str, asyncio.Task[None]] = {}
 
 @router.post("/api/agent/prewarm")
 async def prewarm_agent_session(
-    mode: Annotated[
-        str, Query(description="omp session mode: free | workflow")
-    ] = "free",
+    mode: Annotated[str, Query(description="omp session mode: free | workflow")] = "free",
     _user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
     """Fire-and-forget omp session warm-up for free-creation entry latency.
@@ -73,9 +71,7 @@ async def prewarm_agent_session(
     for sid in manager.session_ids:
         sess = manager.get_session(sid)
         if sess is not None and sess.mode == session_mode and sess.is_ready:
-            return success(
-                data={"status": "ready", "mode": session_mode, "session_id": sid}
-            )
+            return success(data={"status": "ready", "mode": session_mode, "session_id": sid})
 
     async def _warm() -> None:
         try:
