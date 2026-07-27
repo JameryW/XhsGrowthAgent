@@ -489,10 +489,7 @@ def _public_step(
     phase = _phase(checkpoint.get("phase"))
     step = checkpoint.get("step") if isinstance(checkpoint.get("step"), int) else 0
     title = (
-        result.get("title")
-        or result.get("topic")
-        or _PHASE_TITLE_FALLBACK.get(phase)
-        or "创作步骤"
+        result.get("title") or result.get("topic") or _PHASE_TITLE_FALLBACK.get(phase) or "创作步骤"
     )
     summary = (
         result.get("summary")
@@ -685,9 +682,7 @@ def _state_cache_put(thread_id: str, value: dict[str, Any] | None) -> None:
         _state_cache.pop(key, None)
 
 
-async def _fetch_state_uncached(
-    request: Request, thread_id: str
-) -> dict[str, Any] | None:
+async def _fetch_state_uncached(request: Request, thread_id: str) -> dict[str, Any] | None:
     """Load workflow content: graph first, status route fallback."""
     # 1) Direct graph state — richest source for body_text / selected_topic.
     try:
@@ -784,9 +779,7 @@ def clear_checkpoint_cache(thread_id: str | None = None) -> None:
     _state_cache.pop(thread_id, None)
 
 
-async def _fetch_checkpoints_uncached(
-    request: Request, thread_id: str
-) -> list[dict[str, Any]]:
+async def _fetch_checkpoints_uncached(request: Request, thread_id: str) -> list[dict[str, Any]]:
     from backend.api.deps import service_identity
     from backend.api.routes.workflow import get_checkpoint_history
 
@@ -1083,9 +1076,7 @@ async def list_public_cases(
     """List explicitly public cases without exposing internal workflow IDs."""
 
     # DB-side visibility filter (index-backed) instead of scanning all private rows.
-    raw_public = [
-        row for row in await _public_rows(limit=500) if _visibility(row) == "public"
-    ]
+    raw_public = [row for row in await _public_rows(limit=500) if _visibility(row) == "public"]
     # Drop cases whose XHS account was deleted (and write-through demote them).
     rows = await _demote_orphaned_public_rows(raw_public)
     search = q.strip().casefold() if q else ""
