@@ -2254,7 +2254,7 @@ function renderLegacyBanner() {
 
 /** Free-mode hero: accent title card (cyan border, bright-white name, magenta
  *  version) with subtitle / flow / optional topic as boxed lines. */
-function renderFreeWelcome() {
+function renderFreeWelcome(accountFetchOk = false) {
   const R = ANSI.RESET
   const w = cardWidth(termCols)
   const name = t('tui.bannerName')
@@ -2274,6 +2274,17 @@ function renderFreeWelcome() {
   // Wrap the hint instead of letting xterm hard-break it mid-word (mobile).
   for (const l of wrapDisplay(t('tui.freeWelcomeHint'), termCols - 4)) {
     writeLineColored(`  ${l}`, ANSI.DIM)
+  }
+  // Proactive no-account warning: free-text creation still reaches the agent
+  // (which writes the draft to the un-owned "default" namespace), but the
+  // account-scoped /drafts list can't see it — so a creation goal typed without
+  // a bound account produces a draft the user can never manage in the TUI.
+  // Surface that up front instead of letting them discover it the hard way.
+  if (accountFetchOk && !accountsStore.activeAccountId) {
+    writeLine('')
+    for (const l of wrapDisplay(`⚠ ${t('tui.freeNoAccountBanner')}`, termCols - 4)) {
+      writeLineColored(`  ${l}`, ANSI.YELLOW)
+    }
   }
 }
 
@@ -2362,7 +2373,7 @@ const accountContextLabel = computed(() =>
 let resizeObserver: ResizeObserver | null = null
 let viewportHandler: (() => void) | null = null
 
-onMounted(() => {
+onMounted(async () => {
   term = new Terminal({
     cursorBlink: true,
     cursorStyle: 'block', // native terminal default
@@ -2494,7 +2505,19 @@ onMounted(() => {
   // Welcome area — free mode gets the redesigned hero + grouped command grid;
   // non-free mode keeps the original banner unchanged.
   if (isFreeCreationEntry.value) {
-    renderFreeWelcome()
+    // Resolve account state BEFORE rendering the welcome so the no-account
+    // warning (renderFreeWelcome) is accurate on first paint — without this the
+    // banner can't tell "no account" from "not yet fetched". Only warn when the
+    // fetch succeeded with an empty list; a thrown fetch (transient/offline)
+    // leaves the flag false so we don't show a false alarm.
+    let freeAccountFetchOk = false
+    try {
+      await accountsStore.fetchAccounts()
+      freeAccountFetchOk = true
+    } catch {
+      freeAccountFetchOk = false
+    }
+    renderFreeWelcome(freeAccountFetchOk)
   } else {
     renderLegacyBanner()
   }
