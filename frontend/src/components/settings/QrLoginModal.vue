@@ -118,7 +118,9 @@ async function startSession() {
       qrImgSrc.value = ''
       stopPolling()
       emit('confirmed')
-      await stopQrLogin(props.accountId).catch(() => {})
+      // No stopQrLogin here: after confirmed the backend detaches itself and
+      // keeps the logged-in tab open in the host Chrome (parked on creator
+      // home). Calling stop would close that tab and undo the navigation.
       return
     }
     if (!res.url) {
@@ -182,8 +184,8 @@ async function pollOnce() {
         verificationRequired.value = false
         stopPolling()
         emit('confirmed')
-        // Best-effort cleanup; profile already persisted on the backend.
-        await stopQrLogin(props.accountId).catch(() => {})
+        // No stopQrLogin: backend keeps the logged-in tab open in host Chrome
+        // (see startSession confirmed branch) and self-detaches the session.
       }
     }
   } catch (e: any) {
@@ -219,7 +221,7 @@ async function submitVerificationCode() {
       verificationRequired.value = false
       stopPolling()
       emit('confirmed')
-      await stopQrLogin(props.accountId).catch(() => {})
+      // No stopQrLogin: keep the logged-in tab open in host Chrome.
     } else {
       await pollOnce()
     }

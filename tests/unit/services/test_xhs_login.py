@@ -506,6 +506,48 @@ class TestGetStatus:
         # subsequent stop() is a no-op (idempotent)
         await session.stop()
 
+    async def test_confirmed_keeps_tab_open_in_cdp_mode(self, tmp_path):
+        """CDP 模式 confirmed → 保留 host Chrome 里的已登录 tab.
+
+        旧行为是 confirmed 即 close page，操作员看不到登录结果（"页面没跳转"）。
+        新行为：page 不 close（tab 留在常驻 host Chrome 停在 creator home），
+        仅断连接 + 会话自摘出注册表，同账号下次 start() 可新建会话。
+        """
+        from backend.services import xhs_login
+        from backend.services.xhs_login import XhsLoginSession
+
+        mock_module, mock_page, on_calls = _wire_playwright_mock()
+        session = XhsLoginSession(
+            "acc-cdp", str(tmp_path / "profile"), cdp_endpoint="http://127.0.0.1:9222"
+        )
+        xhs_login._sessions["acc-cdp"] = session
+        try:
+            with (
+                patch.object(XhsLoginSession, "_warm_creator_session", new=AsyncMock()),
+                patch.dict(sys.modules, {"playwright.async_api": mock_module}),
+            ):
+                await self._start_session(session, on_calls)
+                handler = on_calls[0][1]
+                await handler(
+                    _build_mock_response(
+                        "https://x/api/sns/web/v1/login/qrcode/status",
+                        "GET",
+                        {"data": {"codeStatus": 2}},
+                    )
+                )
+                result = await session.get_status()
+
+            assert result["status"] == "confirmed"
+            assert result["url"] == ""
+            mock_page.close.assert_not_awaited()  # tab 保留在 host Chrome
+            assert session._page is None  # 引用已丢，playwright 断连不影响 tab
+            assert session._context is None  # 连接已断
+            assert "acc-cdp" not in xhs_login._sessions  # 会话自摘
+            # 后续 stop() 幂等 no-op
+            await session.stop()
+        finally:
+            xhs_login._sessions.pop("acc-cdp", None)
+
     async def test_status_expired_refreshes_qr(self, tmp_path):
         """Expired QR (timeout) → status=expired with a new url after refresh."""
         from backend.services.xhs_login import XhsLoginSession

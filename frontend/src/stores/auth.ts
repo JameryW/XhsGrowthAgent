@@ -73,6 +73,12 @@ export const useAuthStore = defineStore('auth', () => {
       user.value = result.user
       localStorage.setItem(AUTH_TOKEN_KEY, result.token)
       localStorage.setItem(AUTH_USER_KEY, JSON.stringify(result.user))
+      // The token was just minted by a successful login round-trip — mark auth
+      // initialized so the router guard does not re-validate it on the very
+      // next navigation. That re-validation could fail on a transient network
+      // blip and bounce the user straight back to /login after a successful
+      // login (the guard's initialize() clears auth on validate errors).
+      isInitialized.value = true
       toastStore.success(t('common.success'), `${result.user.username}`)
       return result
     } catch (e: any) {
@@ -120,9 +126,14 @@ export const useAuthStore = defineStore('auth', () => {
         // Token invalid - clear state
         clearAuth()
       }
-    } catch {
-      // Validation failed - clear state
-      clearAuth()
+    } catch (e: any) {
+      // Only a definitive server answer (401/invalid) means the token is dead.
+      // Transport failures (backend restarting, network blip) must NOT log the
+      // user out — keep the token; the API client's 401 interceptor handles a
+      // truly expired session on the next real request.
+      if (e?.code !== 'NETWORK_ERROR') {
+        clearAuth()
+      }
     } finally {
       isLoading.value = false
       isInitialized.value = true

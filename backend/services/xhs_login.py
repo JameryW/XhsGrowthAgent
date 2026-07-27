@@ -532,8 +532,10 @@ class XhsLoginSession:
                 self._confirmed = True
                 self._code_status = _CODE_CONFIRMED
                 logger.info("扫码登录已跳过：profile 已登录 account=%s", self.account_id)
+                # 与 get_status() confirmed 分支一致：停在 creator home + 留 tab。
                 await self._warm_creator_session()
-                await self.stop()
+                await self.stop(keep_page=True)
+                _detach_session_if_current(self)
                 return {
                     "status": "confirmed",
                     "qr_id": "",
@@ -680,11 +682,16 @@ class XhsLoginSession:
             status = "confirmed"
             # Mint Creator Center cookies (access-token-creator.*) so stats/publish
             # do not see a "logged_in" www session that still fails on creator APIs.
+            # 同时把页面停在 creator home——下面的 keep_page 会把这个 tab 留下来。
             await self._warm_creator_session()
-            # 兜底资源回收：登录态已落盘 profile，登录用 Chrome 无需再常驻。
-            # 前端若未显式调 stop 也不会泄漏——confirmed 即关闭 context。
-            # stop() 幂等，前端后续调 stop 仍安全（no-op）。
-            await self.stop()
+            # 登录确认后保留可见结果：CDP 模式断开连接但 tab 留在 host Chrome
+            # （停在 creator home），操作员能直接看到已登录页面。tab 不算泄漏——
+            # host Chrome 由 launcher 常驻管理，该页就是登录态的可视化。
+            # persistent context 兜底模式下 keep_page 被忽略（断连即杀进程）。
+            await self.stop(keep_page=True)
+            # 会话自摘：登录态已交接给 profile + 可见 tab，_sessions 不再持有对象，
+            # 同账号下次 start() 能新建会话（profile 失效时重走扫码）。
+            _detach_session_if_current(self)
 
         return {
             "status": status,
@@ -745,30 +752,41 @@ class XhsLoginSession:
             "frame_url": fill_result.get("frame_url"),
         }
 
-    async def stop(self) -> None:
+    async def stop(self, *, keep_page: bool = False) -> None:
         """关闭 page + 断开连接（profile 已落盘）.
 
         CDP 模式（connect_over_cdp）：只 close 自己开的 page + 断 playwright 连接，
         不 close host Chrome 的 context（launcher 管 host Chrome 生命周期）。
         launch_persistent_context 模式：close context 即杀 Chrome 进程（原行为）。
+
+        ``keep_page=True``：登录确认后调用——断开连接但保留 host Chrome 里的
+        已登录 tab（停在 creator home），让操作员直接看到登录结果。仅 CDP 模式
+        （含 raw CDP）有效：persistent context 兜底模式下断连接即杀进程，页面
+        必然消失，该参数被忽略。
         """
         if self._raw_ws is not None:
-            with contextlib.suppress(Exception):
-                if self._raw_target_id:
-                    await self._raw_send(
-                        "Target.closeTarget",
-                        {"targetId": self._raw_target_id},
-                        session_id=None,
-                    )
+            if not keep_page:
+                with contextlib.suppress(Exception):
+                    if self._raw_target_id:
+                        await self._raw_send(
+                            "Target.closeTarget",
+                            {"targetId": self._raw_target_id},
+                            session_id=None,
+                        )
             with contextlib.suppress(Exception):
                 await self._raw_ws.close()
             self._raw_ws = None
             self._raw_target_id = ""
             self._raw_session_id = ""
         if self._page is not None:
-            with contextlib.suppress(Exception):
-                await self._page.close()
-            self._page = None
+            if keep_page and self._browser is not None:
+                # CDP 模式：page 属于 host 常驻 Chrome——只丢引用不 close，
+                # tab 留在浏览器里显示已登录页面（playwright 断连不影响它）。
+                self._page = None
+            else:
+                with contextlib.suppress(Exception):
+                    await self._page.close()
+                self._page = None
         if self._browser is not None:
             # CDP 模式：只关我们 new_context 的（若新建过），default context 不动。
             # _playwright.stop() 断 CDP 连接，host Chrome 继续跑。
@@ -1172,7 +1190,10 @@ class XhsLoginSession:
         if await self._raw_has_strong_cookie():
             self._confirmed = True
             self._code_status = _CODE_CONFIRMED
-            await self.stop()
+            # 与 playwright-CDP confirmed 分支一致：保留 host Chrome 里的已登录
+            # tab（不发 Target.closeTarget），只断 ws，会话自摘出注册表。
+            await self.stop(keep_page=True)
+            _detach_session_if_current(self)
             return {
                 "status": "confirmed",
                 "qr_id": self._qr_id,
@@ -1468,6 +1489,17 @@ class XhsLoginSession:
 # stop 显式关闭；进程退出时残留会话由 Chrome 自身 GC 回收（profile 已落盘）。
 
 _sessions: dict[str, XhsLoginSession] = {}
+
+
+def _detach_session_if_current(session: XhsLoginSession) -> None:
+    """登录确认后会话自摘：登录态已落盘 profile、tab 已交接给 host Chrome。
+
+    仅当注册表里仍是本对象时才 pop（并发下可能已被新会话覆盖）。
+    摘除后同账号下次 start() 新建会话；profile 仍有效则 start() 经
+    _wait_for_existing_login 短路再次 confirmed（幂等）。
+    """
+    if _sessions.get(session.account_id) is session:
+        _sessions.pop(session.account_id, None)
 
 
 def get_session(account_id: str) -> XhsLoginSession | None:
