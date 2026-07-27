@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "验收：测试覆盖 + 三连绿标准"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "验收：LoginError/APIError 契约未被破坏"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "验收：auth store 行为符合规范"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "验收：前后端 stop 语义一致，无悬空调用"}

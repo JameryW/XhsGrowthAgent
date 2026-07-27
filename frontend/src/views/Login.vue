@@ -39,7 +39,7 @@ const handleLogin = async () => {
     // Redirect to intended destination or dashboard.  A console-user switch
     // needs a full navigation so every store drops the previous user's
     // in-memory account state (router.push would keep it alive).
-    const redirect = route.query.redirect as string || '/dashboard'
+    const redirect = safeRedirect(route.query.redirect)
     if (authStore.requiresFullReset) {
       window.location.assign(redirect)
     } else {
@@ -54,6 +54,15 @@ const handleLogin = async () => {
 
 const handleDismissError = () => {
   localError.value = null
+}
+
+/** Only allow same-origin absolute paths as post-login destinations.
+ *  Rejects protocol-relative (`//evil.com`), scheme URLs and backslash
+ *  tricks that `window.location.assign` would follow off-site. */
+function safeRedirect(raw: unknown): string {
+  const value = typeof raw === 'string' ? raw : ''
+  if (/^\/(?!\/|\\)/.test(value)) return value
+  return '/dashboard'
 }
 </script>
 

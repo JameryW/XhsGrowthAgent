@@ -413,10 +413,12 @@ async def stop_qr_login(
     account_id: str,
     user: dict[str, Any] = Depends(get_current_user),
 ) -> ApiResponse[Any]:
-    """关闭扫码登录会话（profile 已落盘，可由 launcher 起常驻 CDP Chrome）.
+    """关闭扫码登录会话.
 
-    登录确认后调用此端点释放 headless Chrome。即使不调，进程退出时也会
-    回收（profile 已持久化）。
+    主要用于用户主动放弃登录（未 confirmed 关 modal）时清理：关掉登录 tab、
+    断连接、移除会话。登录确认后后端已自行断连接并将会话从注册表摘除
+    （已登录 tab 保留在 host Chrome 显示登录结果），此时再调是 no-op
+    （返回 stopped=false）。即使全程不调，进程退出时也会回收。
 
     Raises:
         AccountNotFoundError: 账号不存在或不属于当前用户.

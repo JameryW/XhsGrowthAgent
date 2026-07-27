@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "xhs_login confirmed 分支改造涉及 LoginError 契约与 stop 语义"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "confirmed/保留 tab 路径日志措辞规范"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "后端测试约定（pytest-asyncio、mock 风格）"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "auth store 修复（isInitialized / initialize 错误分类）须符合 Pinia 规范"}
+{"file": ".trellis/spec/frontend/component-patterns.md", "reason": "QrLoginModal / Login.vue 改动遵循组件规范"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "后端留 tab 与前端删除 post-confirmed stop 的跨层一致性"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "释放连接逻辑复用 stop() 既有分支，避免新抽象"}
