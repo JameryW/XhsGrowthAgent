@@ -67,6 +67,25 @@ async function getCurrentAccountId(): Promise<string> {
   return accountsStore.activeAccountId || 'default'
 }
 
+/**
+ * Free mode needs a real bound account: the 'default' sentinel only makes the
+ * backend fall through to "resolve an owned account", which 400s in English
+ * ("no owned account available") when the console user owns none — surfaced
+ * raw with no next step. Guard the account-dependent free handlers up front so
+ * they show a localized, actionable empty state instead of that round-trip.
+ * Workflow handlers pass through (the guard is a free-mode-only gate).
+ */
+function requireFreeAccount(): boolean {
+  if (!isFreeCreationEntry.value || accountsStore.activeAccountId) return true
+  writeEmptyState(writeLine, {
+    width: cardWidth(termCols),
+    icon: '🔗',
+    title: t('tui.freeNoAccountTitle'),
+    hint: t('tui.freeNoAccountHint'),
+  })
+  return false
+}
+
 // ── Mobile detection ──────────────────────────────────────────────────
 const isMobile = computed(() =>
   'ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth < 768,
@@ -1586,6 +1605,7 @@ async function handleDrafts(argStr = '') {
     writeLineColored(t('tui.draftsInvalidStatus', { status }), ANSI.RED)
     return
   }
+  if (!requireFreeAccount()) return
   const accountId = await getCurrentAccountId()
   try {
     const params = new URLSearchParams()
@@ -1715,6 +1735,7 @@ async function handleDraft(draftId: string) {
     writeLineColored(t('tui.draftDetailMissing'), ANSI.RED)
     return
   }
+  if (!requireFreeAccount()) return
   const accountId = await getCurrentAccountId()
   try {
     const resp = await client.get(`/free/draft/${draftId}?account_id=${encodeURIComponent(accountId)}`)
@@ -1850,6 +1871,7 @@ async function handleDelete(draftId: string) {
     writeLineColored(t('tui.draftDeleteUsage'), ANSI.RED)
     return
   }
+  if (!requireFreeAccount()) return
   const accountId = await getCurrentAccountId()
   let title = ''
   // GET first so the user sees what is being deleted (acts as confirmation).
@@ -1880,6 +1902,7 @@ async function handleAnalytics(draftId: string) {
     writeLineColored(t('tui.analyticsMissing'), ANSI.RED)
     return
   }
+  if (!requireFreeAccount()) return
   const accountId = await getCurrentAccountId()
   try {
     const resp = await client.get(`/free/analytics/${draftId}?account_id=${encodeURIComponent(accountId)}`)
@@ -1940,6 +1963,7 @@ async function handleSuggest() {
     writeLineColored(t('tui.freeWorkflowOpDisabled'), ANSI.YELLOW)
     return
   }
+  if (!requireFreeAccount()) return
   const accountId = await getCurrentAccountId()
   try {
     const resp = await client.get(`/free/suggestions/${encodeURIComponent(accountId)}`)
@@ -2013,6 +2037,7 @@ async function handleEvaluate(draftId: string) {
     writeLineColored(t('tui.evaluateMissing'), ANSI.RED)
     return
   }
+  if (!requireFreeAccount()) return
   const accountId = await getCurrentAccountId()
   try {
     const resp = await client.post('/free/evaluate', {
@@ -2101,6 +2126,7 @@ async function handleEdit(args: string) {
     writeLineColored(t('tui.editUnknownField', { field, allowed: ALLOWED.join(', ') }), ANSI.RED)
     return
   }
+  if (!requireFreeAccount()) return
   const accountId = await getCurrentAccountId()
   try {
     const resp = await client.patch(
@@ -2327,7 +2353,9 @@ const mobileInputPlaceholder = computed(() => {
     ? t('tui.messagePlaceholder')
     : t('tui.commandPlaceholder')
 })
-const accountContextLabel = computed(() => accountsStore.activeAccount?.name || t('tui.defaultAccount'))
+const accountContextLabel = computed(() =>
+  accountsStore.activeAccount?.name ||
+  (isFreeCreationEntry.value ? t('tui.freeAccountUnbound') : t('tui.defaultAccount')))
 
 // ── Lifecycle ───────────────────────────────────────────────────────────
 
