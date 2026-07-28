@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/index.md","reason":"Follow backend layer conventions and available package guidance."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Apply Python typing, linting, async testing, and mocking conventions."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Keep the read-only CDP fallback diagnostics at the correct log level without leaking auth data."}
+{"file":".trellis/spec/backend/browser-auth-probes.md","reason":"Follow the project contract for Cookie/page evidence and read-only CDP probing."}
+{"file":".trellis/tasks/07-28-fix-creator-center-login-status-detection/research/cdp-creator-page-auth.md","reason":"Use the confirmed CDP constraints and page-evidence design for implementation."}
+{"file":".trellis/tasks/07-28-fix-creator-center-login-status-detection/prd.md","reason":"Task requirements and acceptance criteria."}

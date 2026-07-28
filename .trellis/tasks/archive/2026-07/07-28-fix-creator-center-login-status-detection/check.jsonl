@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/index.md","reason":"Review backend layer boundaries and conventions."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Review lint, typing, testing, and mock quality."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Check that CDP probe logging is safe and appropriately leveled."}
+{"file":".trellis/spec/backend/browser-auth-probes.md","reason":"Review the new Cookie/page evidence and read-only CDP probe contract."}
+{"file":".trellis/tasks/07-28-fix-creator-center-login-status-detection/research/cdp-creator-page-auth.md","reason":"Validate the implementation against the CDP safety constraints."}
+{"file":".trellis/tasks/07-28-fix-creator-center-login-status-detection/prd.md","reason":"Verify every acceptance criterion and regression boundary."}

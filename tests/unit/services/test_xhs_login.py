@@ -1084,6 +1084,145 @@ class TestInspectProfileLoginStatus:
         assert calls == [("Storage.getCookies", None)]
         raw_ws.close.assert_awaited_once()
 
+    async def test_container_endpoint_accepts_ready_creator_page_without_creator_cookie(self):
+        """A live Creator Center page can prove login when its token cookie is absent."""
+        from backend.services.xhs_login import XhsLoginSession, inspect_profile_login_status
+
+        raw_ws = MagicMock()
+        raw_ws.close = AsyncMock()
+        calls = []
+
+        async def _fake_raw_connect(session):
+            session._raw_ws = raw_ws
+
+        async def _fake_raw_send(session, method, params=None, *, session_id=""):
+            calls.append((method, session_id))
+            if method == "Storage.getCookies":
+                return {
+                    "cookies": [
+                        {"name": "id_token", "value": "token", "domain": ".xiaohongshu.com"},
+                        {
+                            "name": "web_session",
+                            "value": "session",
+                            "domain": ".xiaohongshu.com",
+                        },
+                    ]
+                }
+            if method == "Target.getTargets":
+                return {
+                    "targetInfos": [
+                        {
+                            "targetId": "creator-page",
+                            "type": "page",
+                            "url": "https://creator.xiaohongshu.com/new/home",
+                        }
+                    ]
+                }
+            if method == "Target.attachToTarget":
+                return {"sessionId": "creator-session"}
+            if method == "Runtime.evaluate":
+                assert session_id == "creator-session"
+                assert params is not None and params["expression"].rstrip().endswith(")()")
+                return {"result": {"value": {"ready": True}}}
+            if method == "Target.detachFromTarget":
+                return {}
+            return {}
+
+        with (
+            patch.object(XhsLoginSession, "_raw_connect", _fake_raw_connect),
+            patch.object(XhsLoginSession, "_raw_send", _fake_raw_send),
+        ):
+            result = await inspect_profile_login_status(
+                "acc-1", "http://host.containers.internal:9224"
+            )
+
+        assert result["status"] == "logged_in"
+        assert result["is_logged_in"] is True
+        assert result["reason"] == "creator_page_ready"
+        assert result["signals"] == ["creator_page_ready"]
+        assert ("Target.detachFromTarget", None) in calls
+        raw_ws.close.assert_awaited_once()
+
+    async def test_container_endpoint_keeps_www_only_when_creator_page_is_login_shell(self):
+        """A Creator Center login shell must not turn a partial www session green."""
+        from backend.services.xhs_login import XhsLoginSession, inspect_profile_login_status
+
+        raw_ws = MagicMock()
+        raw_ws.close = AsyncMock()
+
+        async def _fake_raw_connect(session):
+            session._raw_ws = raw_ws
+
+        async def _fake_raw_send(session, method, params=None, *, session_id=""):
+            if method == "Storage.getCookies":
+                return {
+                    "cookies": [
+                        {"name": "id_token", "value": "token", "domain": ".xiaohongshu.com"},
+                        {
+                            "name": "web_session",
+                            "value": "session",
+                            "domain": ".xiaohongshu.com",
+                        },
+                    ]
+                }
+            if method == "Target.getTargets":
+                return {
+                    "targetInfos": [
+                        {
+                            "targetId": "creator-login",
+                            "type": "page",
+                            "url": "https://creator.xiaohongshu.com/login",
+                        }
+                    ]
+                }
+            if method == "Target.attachToTarget":
+                return {"sessionId": "creator-login-session"}
+            if method == "Runtime.evaluate":
+                assert session_id == "creator-login-session"
+                return {"result": {"value": {"ready": False, "signals": []}}}
+            return {}
+
+        with (
+            patch.object(XhsLoginSession, "_raw_connect", _fake_raw_connect),
+            patch.object(XhsLoginSession, "_raw_send", _fake_raw_send),
+        ):
+            result = await inspect_profile_login_status(
+                "acc-1", "http://host.containers.internal:9224"
+            )
+
+        assert result["status"] == "logged_out"
+        assert result["is_logged_in"] is False
+        assert result["reason"] == "www_only"
+        assert set(result["signals"]) == {"id_token", "web_session"}
+        raw_ws.close.assert_awaited_once()
+
+    async def test_playwright_endpoint_accepts_ready_creator_page_without_creator_cookie(self):
+        """The Playwright fallback uses existing Creator Center pages too."""
+        from backend.services.xhs_login import inspect_profile_login_status
+
+        mock_module, mock_page, _ = _wire_playwright_mock(
+            pages=[],
+            cookies=[
+                {"name": "id_token", "value": "token"},
+                {"name": "web_session", "value": "session"},
+            ],
+        )
+        mock_page.evaluate = AsyncMock(return_value={"ready": True})
+        mock_connect = (
+            mock_module.async_playwright.return_value.start.return_value.chromium.connect_over_cdp
+        )
+        mock_browser = mock_connect.return_value
+        mock_context = mock_browser.contexts[0]
+        mock_context.pages = [mock_page]
+
+        with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
+            result = await inspect_profile_login_status("acc-1", "http://127.0.0.1:9223")
+
+        assert result["status"] == "logged_in"
+        assert result["is_logged_in"] is True
+        assert result["reason"] == "creator_page_ready"
+        mock_page.evaluate.assert_awaited_once()
+
     async def test_unavailable_when_cdp_connection_fails(self):
         from backend.services.xhs_login import inspect_profile_login_status
 
