@@ -1,4 +1,9 @@
-"""XHS engagement tools — 评论回复与私信处理."""
+"""小红书互动工具。
+
+本模块仅提供人工审核后的单次、显式调用（manual-only）工具。调用前必须由
+操作员确认目标账号、目标内容和待发送文本；这些工具不会注册到
+``ToolRegistry``，也不会被工作流 agent 调度、轮询或自动触发。
+"""
 
 from __future__ import annotations
 
@@ -65,7 +70,9 @@ async def comment_replier(
     reply_content: str,
     account_id: str = "",
 ) -> dict[str, Any]:
-    """回复小红书评论.
+    """人工确认后回复一条小红书评论（manual-only）。
+
+    仅允许操作员在核对目标和回复内容后显式调用；不会由工作流 agent 自动触发。
 
     Args:
         comment_id: 评论 ID
@@ -116,7 +123,9 @@ async def dm_handler(
     reply_content: str,
     account_id: str = "",
 ) -> dict[str, Any]:
-    """处理小红书私信.
+    """人工确认后发送一条小红书私信（manual-only）。
+
+    仅允许操作员在核对收件人和消息内容后显式调用；不会由工作流 agent 自动触发。
 
     Args:
         message_id: 消息 ID
@@ -165,7 +174,9 @@ async def escalation_flagger(
     reason: str = "",
     severity: str = "medium",
 ) -> dict[str, Any]:
-    """标记需要人工处理的互动（负面评论、投诉等）.
+    """人工审核后标记需要处理的互动（manual-only）。
+
+    仅允许操作员显式发起，供人工审核流程记录升级事项；不会由工作流 agent 自动触发。
 
     Args:
         content: 需要标记的内容
@@ -218,7 +229,9 @@ async def escalation_flagger(
 
 @tool
 async def fetch_pending_comments(post_id: str, limit: int = 20) -> list[dict[str, Any]]:
-    """获取待回复的评论列表.
+    """人工审核时获取待回复评论（manual-only）。
+
+    必须由操作员明确发起，且结果只能用于人工审核；不会被工作流 agent 自动轮询或调度。
 
     Args:
         post_id: 笔记 ID
