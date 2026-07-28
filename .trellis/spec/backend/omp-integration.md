@@ -376,3 +376,15 @@ extension and the Python bridge, and extend `tests/unit/services/test_omp_bridge
 the bridge.
 
 **Related**: [[backend/api/routes]] shapes; [[backend/realtime/events]] EventType enum for SSE names.
+
+### Creator Stats input and batch metadata
+
+The TypeScript `xhs_creator_stats` tool validates the read-only query at its
+boundary: `account_id` is trimmed and non-empty, and `limit` is an integer in
+the inclusive `1..200` range. This mirrors `GET /analytics/creator-stats/{id}`
+and prevents invalid requests from reaching the backend.
+
+`CreatorStatsBatchSyncResult` consumers should preserve the backend's optional
+operational metadata: `retry_after_seconds` for cooldowns, `risk_code` for
+machine-readable auth/risk routing, and `force_light` for scheduled mode
+observability. These fields are additive and may be absent on older servers.

@@ -46,8 +46,18 @@ function formatPercent(value: number | undefined, unit?: string): string {
 
 export default function register(pi: ExtensionAPI) {
   const schema = pi.zod.object({
-    account_id: pi.zod.string().describe("Account ID with imported Creator Center statistics"),
-    limit: pi.zod.number().default(20).describe("Maximum imported notes to inspect (1-200)"),
+    account_id: pi.zod
+      .string()
+      .trim()
+      .min(1)
+      .describe("Account ID with imported Creator Center statistics"),
+    limit: pi.zod
+      .number()
+      .int()
+      .min(1)
+      .max(200)
+      .default(20)
+      .describe("Maximum imported notes to inspect (1-200)"),
   });
 
   const tool: ToolDefinition<typeof schema> = {

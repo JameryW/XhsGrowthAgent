@@ -205,6 +205,10 @@ export interface CreatorStatsBatchSyncResult {
   error?: string
   /** cooldown 状态时距离下次可同步的剩余秒数。 */
   retry_after_seconds?: number
+  /** Machine-readable risk/auth gate reason returned during cooldown. */
+  risk_code?: CreatorStatsSyncErrorCode | null
+  /** Whether the scheduled batch was forced into list-only mode. */
+  force_light?: boolean
 }
 
 export interface CreatorSuggestion {
