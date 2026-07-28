@@ -2034,6 +2034,8 @@
       "syncNowCooldown": "同步过于频繁，请约 {minutes} 分钟后再试",
       "syncNowFailed": "同步失败",
       "qrLogin": "扫码登录",
+      "qrRiskBadge": "风控冷却 {minutes} 分钟",
+      "qrRiskCooldown": "扫码登录冷却中，约 {minutes} 分钟后再试；请优先切换家庭宽带或手机热点",
       "qrLoginTitle": "扫码登录小红书",
       "qrWaiting": "请用小红书 App 扫码",
       "qrScanned": "已扫码，请在手机上确认",

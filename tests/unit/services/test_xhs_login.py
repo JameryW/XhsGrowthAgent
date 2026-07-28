@@ -381,7 +381,7 @@ class TestStart:
         assert session._raw_session_id == "session-1"
 
     async def test_raw_cdp_clears_partial_cookies_before_explore(self, tmp_path):
-        """www_only profiles must clear SSO cookies before navigate, else no QR."""
+        """www_only: warm creator first; if no token, clear then explore for QR."""
         from backend.services.xhs_login import XhsLoginSession
 
         session = XhsLoginSession(
@@ -390,6 +390,7 @@ class TestStart:
             cdp_endpoint="http://host.containers.internal:9224",
         )
         methods: list[str] = []
+        navigate_urls: list[str] = []
 
         async def _fake_raw_send(method, params=None, *, session_id=""):
             methods.append(method)
@@ -397,6 +398,9 @@ class TestStart:
                 return {"targetId": "t1"}
             if method == "Target.attachToTarget":
                 return {"sessionId": "s1"}
+            if method == "Page.navigate":
+                navigate_urls.append(str((params or {}).get("url") or ""))
+                return {}
             if method == "Storage.getCookies":
                 return {
                     "cookies": [
@@ -414,6 +418,14 @@ class TestStart:
                         },
                     ]
                 }
+            if method == "Network.getCookies":
+                # No creator token after warm-up
+                return {
+                    "cookies": [
+                        {"name": "web_session", "value": "s"},
+                        {"name": "id_token", "value": "t"},
+                    ]
+                }
             return {}
 
         session._raw_connect = AsyncMock()
@@ -425,9 +437,10 @@ class TestStart:
         result = await session._start_raw_cdp()
         assert result["qr_id"] == "dom-1"
         assert "Network.deleteCookies" in methods
-        assert methods.count("Page.navigate") >= 1
-        # clear happens before first explore navigate
-        assert methods.index("Network.deleteCookies") < methods.index("Page.navigate")
+        # Creator home first, then explore after clear
+        assert any("creator.xiaohongshu.com" in u for u in navigate_urls)
+        assert any("explore" in u for u in navigate_urls)
+        assert "Network.deleteCookies" in methods
 
 
 class TestGetStatus:

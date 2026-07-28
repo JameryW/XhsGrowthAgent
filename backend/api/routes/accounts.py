@@ -287,9 +287,27 @@ async def start_qr_login(
             "启动该账号的常驻 Chrome，再扫码登录。",
         )
 
+    from backend.services.xhs_risk_gate import (
+        check_qr_start_allowed,
+        is_security_risk_message,
+        note_qr_attempt,
+        note_qr_risk_block,
+    )
+
+    # Anti-risk: refuse spam / post-300012 retries before opening Chrome.
+    blocked = check_qr_start_allowed(account_id)
+    if blocked is not None:
+        raise APIError(
+            code=ErrorCode.RATE_LIMIT_EXCEEDED,
+            message=blocked.message,
+            details=blocked.to_details(account_id),
+            status_code=429,
+        )
+
     # New QR attempt may re-login after an expired session — allow post-login
     # auto-import again for this account.
     clear_post_login_sync_gate(account_id)
+    note_qr_attempt(account_id)
     session = get_or_create_session(account_id, account.chrome_profile_path, cdp_endpoint)
     try:
         result = await asyncio.wait_for(session.start(), timeout=_QR_LOGIN_START_TIMEOUT_S)
@@ -298,23 +316,36 @@ async def start_qr_login(
 
         with contextlib.suppress(Exception):
             await asyncio.wait_for(stop_session(account_id), timeout=3.0)
+        note_qr_risk_block(account_id, reason="qr_start_timeout")
         raise APIError(
             code=ErrorCode.SERVICE_UNAVAILABLE,
             message=(
                 "启动扫码登录超时：小红书页面未能生成二维码。"
-                "当前页面可能被安全限制拦截，请切换网络或稍后重试。"
+                "当前页面可能被安全限制拦截，请切换到家庭宽带/手机热点后稍后再试。"
             ),
-            details={"account_id": account_id, "timeout_s": _QR_LOGIN_START_TIMEOUT_S},
+            details={
+                "account_id": account_id,
+                "timeout_s": _QR_LOGIN_START_TIMEOUT_S,
+                "risk_code": "qr_timeout",
+            },
             status_code=503,
         ) from e
     except LoginError as e:
         # LoginError 是预期内的启动失败（playwright 未装 / shield 拦截），
         # 返回 SERVICE_UNAVAILABLE 而非 500，让前端能区分"登录服务不可用"
         # 与"内部错误"。
+        msg = str(e)
+        details: dict[str, Any] = {"account_id": account_id}
+        if is_security_risk_message(msg):
+            note_qr_risk_block(account_id, reason="300012" if "300012" in msg else "security_risk")
+            details["risk_code"] = "300012" if "300012" in msg else "security_risk"
+            from backend.services.xhs_risk_gate import qr_risk_block_seconds
+
+            details["retry_after_seconds"] = int(qr_risk_block_seconds())
         raise APIError(
             code=ErrorCode.SERVICE_UNAVAILABLE,
-            message=str(e),
-            details={"account_id": account_id},
+            message=msg,
+            details=details,
             status_code=503,
         ) from e
     return success(data=result)

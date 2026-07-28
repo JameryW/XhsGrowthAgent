@@ -703,6 +703,12 @@ async def sync_all_active_accounts(
             "failed": 0,
             "results": [],
         }
+    from backend.services.xhs_risk_gate import (
+        check_sync_auth_cooldown,
+        clear_sync_auth_failure,
+        note_sync_auth_failure,
+    )
+
     cooldown_minutes = _env_int("CREATOR_STATS_SYNC_COOLDOWN_MINUTES", 30)
     if cooldown_minutes > 0 and _last_successful_sync_finished_at is not None:
         elapsed = datetime.now(UTC) - _last_successful_sync_finished_at
@@ -725,6 +731,25 @@ async def sync_all_active_accounts(
                 ),
                 "retry_after_seconds": int(remaining.total_seconds()),
             }
+
+    # Longer block after AUTH_EXPIRED / empty-shell risk (anti hammer).
+    auth_block = check_sync_auth_cooldown()
+    if auth_block is not None:
+        logger.info(
+            "active accounts sync skipped: auth-fail cooldown %ss",
+            auth_block.retry_after_seconds,
+        )
+        return {
+            "ok": False,
+            "status": "cooldown",
+            "active_accounts": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "results": [],
+            "error": auth_block.message,
+            "retry_after_seconds": auth_block.retry_after_seconds,
+            "risk_code": auth_block.risk_code,
+        }
     try:
         async with _distributed_active_accounts_sync_lock():
             result = await _sync_all_active_accounts_locked(
@@ -741,8 +766,29 @@ async def sync_all_active_accounts(
             "failed": 0,
             "results": [],
         }
-    if result.get("ok"):
+    if result.get("ok") or int(result.get("succeeded") or 0) > 0:
         _last_successful_sync_finished_at = datetime.now(UTC)
+    # Per-account gates: clear on success, block on auth/shell failures.
+    for item in result.get("results") or []:
+        if not isinstance(item, dict):
+            continue
+        aid = str(item.get("account_id") or "")
+        if not aid:
+            continue
+        if item.get("account_synced"):
+            clear_sync_auth_failure(aid)
+            continue
+        err = str(item.get("error") or "")
+        code = str(item.get("error_code") or "")
+        text = f"{code} {err}".lower()
+        if (
+            code == ERROR_AUTH_EXPIRED
+            or "401" in text
+            or "auth" in text
+            or "re-login" in text
+            or "登录" in err
+        ):
+            note_sync_auth_failure(aid, reason=code or "AUTH_EXPIRED")
     return result
 
 

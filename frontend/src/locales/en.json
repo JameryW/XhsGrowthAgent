@@ -2034,6 +2034,8 @@
       "syncNowCooldown": "Syncing too frequently — please try again in about {minutes} min",
       "syncNowFailed": "Sync failed",
       "qrLogin": "Scan Login",
+      "qrRiskBadge": "Risk cooldown {minutes}m",
+      "qrRiskCooldown": "Scan-login cooling down — retry in about {minutes} min; prefer home broadband or mobile hotspot",
       "qrLoginTitle": "Scan to Log In — Xiaohongshu",
       "qrWaiting": "Scan with the Xiaohongshu app",
       "qrScanned": "Scanned — please confirm on your phone",

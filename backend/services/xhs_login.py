@@ -503,28 +503,41 @@ class XhsLoginSession:
             # 注册响应拦截器：监听 qrcode/create + qrcode/status。
             self._page.on("response", self._on_response)
 
-            # Partial www sessions (web_session+id_token, no creator token) load
-            # the feed with no QR modal. Clear them first so explore paints login.
+            # ── Creator-first path (avoid clearing cookies when possible) ──
+            # www_only sessions often still mint access-token-creator after a
+            # creator-home visit. Clearing cookies first forces a full re-login
+            # and raises 300012 risk on datacenter IPs.
             cookie_names = await self._cookie_names_from_context()
-            _logged_in, _signals, reason = _cookie_names_mean_logged_in(cookie_names)
-            partial_auth = cookie_names & (
-                _PARTIAL_WWW_AUTH_COOKIE_NAMES | _CREATOR_LOGIN_COOKIE_NAMES
-            )
-            if reason in ("www_only", "stale_id_token", "missing_strong_cookie") and partial_auth:
+            is_creator, _signals, reason = _cookie_names_mean_logged_in(cookie_names)
+            if is_creator:
+                return await self._confirm_existing_creator_login()
+
+            if reason == "www_only":
+                logger.info(
+                    "www_only session: warm creator home before clearing cookies account=%s",
+                    self.account_id,
+                )
+                await self._warm_creator_session()
+                # Security page on creator origin is a real risk signal.
+                security_error = await self._detect_security_restriction()
+                if security_error:
+                    raise LoginError(security_error)
+                cookie_names = await self._cookie_names_from_context()
+                is_creator, _signals, reason = _cookie_names_mean_logged_in(cookie_names)
+                if is_creator:
+                    return await self._confirm_existing_creator_login(already_warmed=True)
+
+            # Still no creator token — clear partial www SSO so explore paints QR.
+            if cookie_names & (_PARTIAL_WWW_AUTH_COOKIE_NAMES | _CREATOR_LOGIN_COOKIE_NAMES):
                 await self._clear_partial_login_cookies()
 
             # 开 explore 页——登录浮层自动触发 qrcode/create。
             await self._goto_explore()
-            # Partial sessions (www cookies without creator token) keep the feed
-            # open without a QR modal. Click the login entry so qrcode/create or
-            # a DOM QR appears.
+            # Partial sessions keep the feed open without a QR modal — click 登录.
             await self._ensure_login_modal()
 
-            # Only skip QR when the profile already has a *creator* access token.
-            # www feed chrome (发布/通知/…) must not short-circuit re-login.
+            # Creator token may appear mid-flow; only then skip QR.
             if await self._wait_for_existing_login(timeout=_ALREADY_LOGIN_CHECK_S):
-                # Prefer capturing a DOM QR when the scan modal is still open —
-                # www cookies alone do not unlock Creator Center.
                 qr_early = await self._extract_qr_image_from_dom()
                 if qr_early:
                     self._qr_id = f"dom-{int(time.time() * 1000)}"
@@ -540,39 +553,18 @@ class XhsLoginSession:
                         "url": self._qr_url,
                         "account_id": self.account_id,
                     }
-                self._confirmed = True
-                self._code_status = _CODE_CONFIRMED
-                logger.info(
-                    "扫码登录已跳过：profile 已具备创作者中心登录态 account=%s",
-                    self.account_id,
-                )
-                # 与 get_status() confirmed 分支一致：停在 creator home + 留 tab。
-                await self._warm_creator_session()
-                await self.stop(keep_page=True)
-                _detach_session_if_current(self)
-                return {
-                    "status": "confirmed",
-                    "qr_id": "",
-                    "url": "",
-                    "account_id": self.account_id,
-                }
+                return await self._confirm_existing_creator_login()
 
-            # 等二维码就绪：优先等 qrcode/create 响应；若当前 XHS 前端只把
-            # data:image 二维码渲染到 DOM，也直接返回该图片让前端显示。
+            # 等二维码就绪：优先等 qrcode/create 响应；DOM data:image 回退。
             # _wait_for_qr_ready raises LoginError on security-block pages.
             qr_data = await self._wait_for_qr_ready(timeout=_QR_CREATE_WAIT_S)
             if qr_data is None:
-                # Last resort: half-login may have been reminted during goto —
-                # clear again and retry once.
+                # One recovery only: reminted www cookies may hide the modal again.
                 names_now = await self._cookie_names_from_context()
-                _, _, reason_now = _cookie_names_mean_logged_in(names_now)
-                if reason_now in ("www_only", "stale_id_token") or (
-                    names_now & _PARTIAL_WWW_AUTH_COOKIE_NAMES
-                ):
+                if names_now & _PARTIAL_WWW_AUTH_COOKIE_NAMES:
                     logger.info(
-                        "首次未找到二维码且仍为半登录态，清理 cookie 后重试: account=%s reason=%s",
+                        "首次未找到二维码且仍有 www cookie，清理后重试一次: account=%s",
                         self.account_id,
-                        reason_now,
                     )
                     await self._clear_partial_login_cookies()
                     await self._goto_explore()
@@ -588,7 +580,7 @@ class XhsLoginSession:
                     f"{page_hint}。"
                     "常见原因：1) 小红书 IP/环境风控（error 300012）"
                     " 2) 页面结构变化。"
-                    "请切换安全网络后重试，或稍后再试。"
+                    "请切换家庭宽带或手机热点后稍后再试。"
                 )
         except LoginError:
             # 显式 LoginError（未装 / CDP 连不上 / 超时）：关 context 后原样抛出。
@@ -950,6 +942,27 @@ class XhsLoginSession:
             if isinstance(cookie, dict) and bool(cookie.get("value"))
         }
 
+    async def _confirm_existing_creator_login(
+        self, *, already_warmed: bool = False
+    ) -> dict[str, Any]:
+        """Mark session confirmed when creator access token is present."""
+        self._confirmed = True
+        self._code_status = _CODE_CONFIRMED
+        logger.info(
+            "扫码登录已跳过：profile 已具备创作者中心登录态 account=%s",
+            self.account_id,
+        )
+        if not already_warmed:
+            await self._warm_creator_session()
+        await self.stop(keep_page=True)
+        _detach_session_if_current(self)
+        return {
+            "status": "confirmed",
+            "qr_id": "",
+            "url": "",
+            "account_id": self.account_id,
+        }
+
     async def _clear_partial_login_cookies(self) -> int:
         """Drop www SSO cookies that block the explore login QR modal.
 
@@ -1149,9 +1162,39 @@ class XhsLoginSession:
         await self._raw_send("Page.enable")
         await self._raw_send("Runtime.enable")
         await self._raw_send("Network.enable")
-        # Drop partial www SSO before explore so the login QR modal appears.
-        # Without this, web_session+id_token keep the feed open and start()
-        # times out with "5s 内未找到登录二维码" (the container path uses raw CDP).
+
+        # Creator-first: if access-token already present, skip QR entirely.
+        if await self._raw_has_strong_cookie():
+            self._confirmed = True
+            self._code_status = _CODE_CONFIRMED
+            await self._raw_send("Page.navigate", {"url": _CREATOR_HOME_URL})
+            await asyncio.sleep(1.0)
+            await self.stop(keep_page=True)
+            _detach_session_if_current(self)
+            return {
+                "status": "confirmed",
+                "qr_id": "",
+                "url": "",
+                "account_id": self.account_id,
+            }
+
+        # www_only: try creator home warm-up before clearing cookies (less risk).
+        await self._raw_send("Page.navigate", {"url": _CREATOR_HOME_URL})
+        await asyncio.sleep(1.5)
+        if await self._raw_has_strong_cookie():
+            self._confirmed = True
+            self._code_status = _CODE_CONFIRMED
+            await self.stop(keep_page=True)
+            _detach_session_if_current(self)
+            logger.info("raw CDP creator warm minted access token account=%s", self.account_id)
+            return {
+                "status": "confirmed",
+                "qr_id": "",
+                "url": "",
+                "account_id": self.account_id,
+            }
+
+        # Still no creator token — clear partial www SSO so explore paints QR.
         cleared = await self._raw_clear_partial_login_cookies()
         if cleared:
             logger.info(
@@ -1163,19 +1206,7 @@ class XhsLoginSession:
 
         qr_data = await self._raw_wait_for_qr(timeout=_QR_CREATE_WAIT_S)
         if qr_data is None:
-            # Creator-ready already? Skip QR (settings re-open after true login).
-            if await self._raw_has_strong_cookie():
-                self._confirmed = True
-                self._code_status = _CODE_CONFIRMED
-                await self.stop(keep_page=True)
-                _detach_session_if_current(self)
-                return {
-                    "status": "confirmed",
-                    "qr_id": "",
-                    "url": "",
-                    "account_id": self.account_id,
-                }
-            # Retry once: cookies may have been reminted on first navigate.
+            # One recovery if www cookies reminted on navigate.
             cleared_again = await self._raw_clear_partial_login_cookies()
             logger.info(
                 "raw CDP 首次未找到二维码，二次清理后重试: account=%s cleared=%s",
@@ -1189,7 +1220,7 @@ class XhsLoginSession:
             raise LoginError(
                 f"启动扫码登录失败：{_QR_CREATE_WAIT_S:.0f}s 内未找到登录二维码。"
                 "常见原因：小红书 IP/环境风控（300012）、半登录态未清干净或页面变化。"
-                "请切换安全网络后重试。"
+                "请切换家庭宽带或手机热点后稍后再试。"
             )
         return {
             "qr_id": qr_data["qr_id"],
