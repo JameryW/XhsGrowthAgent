@@ -14,6 +14,12 @@ CDP login reuses only the first existing `browser.contexts[0]`; when the bound
 Chrome exposes no browser context, login fails with an actionable error and
 must never call `browser.new_context()`. Creating a short-lived login page
 inside that existing context remains allowed.
+QR login status probes use the same browser-side DOM check for Playwright-CDP
+and raw-CDP. `verification_required` is true only when a visible, enabled
+numeric/code input exists, including a multi-box code control; visible page
+copy alone is not evidence. The flag is returned only with `scanned` status
+and is explicitly false when that status has no fillable verification control.
+Waiting, confirmed, and expired responses must not carry a stale flag.
 
 ## Interaction safeguards
 
