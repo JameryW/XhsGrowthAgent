@@ -182,7 +182,7 @@ class TestStart:
         assert session._context is None
 
     async def test_start_returns_confirmed_when_profile_already_logged_in(self, tmp_path):
-        """Existing profile login state → no QR is needed and no 30s wait."""
+        """Existing creator access token → no QR is needed and no 30s wait."""
         from backend.services.xhs_login import XhsLoginSession
 
         mock_module, mock_page, on_calls = _wire_playwright_mock(
@@ -208,6 +208,40 @@ class TestStart:
         mock_page.close.assert_awaited()
         assert session._confirmed is True
         assert session._context is None
+
+    async def test_start_www_only_feed_does_not_skip_qr(self, tmp_path):
+        """www cookies + feed chrome must not short-circuit as 'already logged in'.
+
+        Regression: partial sessions previously skipped QR (no creator token) then
+        raw CDP timed out with '5s 内未找到登录二维码'.
+        """
+        from backend.services.xhs_login import XhsLoginSession
+
+        mock_module, mock_page, on_calls = _wire_playwright_mock(
+            cookies=[
+                {"name": "web_session", "value": "sess"},
+                {"name": "id_token", "value": "tok"},
+            ],
+            page_text="首页 发布 通知 消息 我",
+        )
+        # clear_cookies used when forcing QR after detecting www_only.
+        mock_context = mock_module.async_playwright.return_value.start.return_value.chromium.launch_persistent_context.return_value
+        # When connect_over_cdp is not used (no cdp_endpoint), launch_persistent is used.
+        # Default session has no cdp → launch_persistent_context.
+        mock_context.clear_cookies = AsyncMock()
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+
+        with (
+            patch.dict(sys.modules, {"playwright.async_api": mock_module}),
+            patch("backend.services.xhs_login._ALREADY_LOGIN_CHECK_S", 0.01),
+            patch("backend.services.xhs_login._QR_CREATE_WAIT_S", 0.15),
+            pytest.raises(Exception, match="未找到登录二维码"),
+        ):
+            await session.start()
+
+        # Must have attempted to clear partial www cookies (not skip-confirmed).
+        assert mock_context.clear_cookies.await_count >= 1
+        assert session._confirmed is False
 
     async def test_start_failure_closes_context_no_leak(self, tmp_path):
         """start() launch/wait failure → context closed, no zombie Chrome.
@@ -344,6 +378,55 @@ class TestStart:
             ("Target.attachToTarget", None),
         ]
         assert session._raw_session_id == "session-1"
+
+    async def test_raw_cdp_clears_partial_cookies_before_explore(self, tmp_path):
+        """www_only profiles must clear SSO cookies before navigate, else no QR."""
+        from backend.services.xhs_login import XhsLoginSession
+
+        session = XhsLoginSession(
+            "acc-1",
+            str(tmp_path / "profile"),
+            cdp_endpoint="http://host.containers.internal:9224",
+        )
+        methods: list[str] = []
+
+        async def _fake_raw_send(method, params=None, *, session_id=""):
+            methods.append(method)
+            if method == "Target.createTarget":
+                return {"targetId": "t1"}
+            if method == "Target.attachToTarget":
+                return {"sessionId": "s1"}
+            if method == "Storage.getCookies":
+                return {
+                    "cookies": [
+                        {
+                            "name": "web_session",
+                            "value": "s",
+                            "domain": ".xiaohongshu.com",
+                            "path": "/",
+                        },
+                        {
+                            "name": "id_token",
+                            "value": "t",
+                            "domain": ".xiaohongshu.com",
+                            "path": "/",
+                        },
+                    ]
+                }
+            return {}
+
+        session._raw_connect = AsyncMock()
+        session._raw_send = _fake_raw_send
+        session._raw_wait_for_qr = AsyncMock(
+            return_value={"qr_id": "dom-1", "url": "data:image/png;base64,abc"}
+        )
+
+        result = await session._start_raw_cdp()
+        assert result["qr_id"] == "dom-1"
+        assert "Network.deleteCookies" in methods
+        assert methods.count("Page.navigate") >= 1
+        # clear happens before first explore navigate
+        assert methods.index("Network.deleteCookies") < methods.index("Page.navigate")
 
 
 class TestGetStatus:

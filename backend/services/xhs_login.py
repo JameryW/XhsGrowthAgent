@@ -63,6 +63,9 @@ _CREATOR_LOGIN_COOKIE_NAMES = {
 _STRONG_LOGIN_COOKIE_NAMES = {
     "access-token-creator.xiaohongshu.com",
 }
+# Partial www SSO cookies that keep explore on the feed (no login QR modal).
+# Clearing them forces explore to re-show the scan-login shell.
+_PARTIAL_WWW_AUTH_COOKIE_NAMES = frozenset({"web_session", "id_token"})
 _LOGIN_STATUS_URLS = [_EXPLORE_URL, "https://creator.xiaohongshu.com"]
 _CREATOR_HOME_URL = "https://creator.xiaohongshu.com/new/home"
 
@@ -500,6 +503,16 @@ class XhsLoginSession:
             # 注册响应拦截器：监听 qrcode/create + qrcode/status。
             self._page.on("response", self._on_response)
 
+            # Partial www sessions (web_session+id_token, no creator token) load
+            # the feed with no QR modal. Clear them first so explore paints login.
+            cookie_names = await self._cookie_names_from_context()
+            _logged_in, _signals, reason = _cookie_names_mean_logged_in(cookie_names)
+            if reason in ("www_only", "stale_id_token", "missing_strong_cookie") and (
+                cookie_names & (_PARTIAL_WWW_AUTH_COOKIE_NAMES | _CREATOR_LOGIN_COOKIE_NAMES)
+            ):
+                if reason != "strong_cookie":
+                    await self._clear_partial_login_cookies()
+
             # 开 explore 页——登录浮层自动触发 qrcode/create。
             await self._goto_explore()
             # Partial sessions (www cookies without creator token) keep the feed
@@ -507,9 +520,8 @@ class XhsLoginSession:
             # a DOM QR appears.
             await self._ensure_login_modal()
 
-            # If the persistent profile is already fully logged in, XHS does not
-            # show the login layer and therefore will not call qrcode/create.
-            # Only skip when the login modal is absent AND durable cookies exist.
+            # Only skip QR when the profile already has a *creator* access token.
+            # www feed chrome (发布/通知/…) must not short-circuit re-login.
             if await self._wait_for_existing_login(timeout=_ALREADY_LOGIN_CHECK_S):
                 # Prefer capturing a DOM QR when the scan modal is still open —
                 # www cookies alone do not unlock Creator Center.
@@ -530,7 +542,10 @@ class XhsLoginSession:
                     }
                 self._confirmed = True
                 self._code_status = _CODE_CONFIRMED
-                logger.info("扫码登录已跳过：profile 已登录 account=%s", self.account_id)
+                logger.info(
+                    "扫码登录已跳过：profile 已具备创作者中心登录态 account=%s",
+                    self.account_id,
+                )
                 # 与 get_status() confirmed 分支一致：停在 creator home + 留 tab。
                 await self._warm_creator_session()
                 await self.stop(keep_page=True)
@@ -546,6 +561,23 @@ class XhsLoginSession:
             # data:image 二维码渲染到 DOM，也直接返回该图片让前端显示。
             # _wait_for_qr_ready raises LoginError on security-block pages.
             qr_data = await self._wait_for_qr_ready(timeout=_QR_CREATE_WAIT_S)
+            if qr_data is None:
+                # Last resort: half-login may have been reminted during goto —
+                # clear again and retry once.
+                names_now = await self._cookie_names_from_context()
+                _, _, reason_now = _cookie_names_mean_logged_in(names_now)
+                if reason_now in ("www_only", "stale_id_token") or (
+                    names_now & _PARTIAL_WWW_AUTH_COOKIE_NAMES
+                ):
+                    logger.info(
+                        "首次未找到二维码且仍为半登录态，清理 cookie 后重试: account=%s reason=%s",
+                        self.account_id,
+                        reason_now,
+                    )
+                    await self._clear_partial_login_cookies()
+                    await self._goto_explore()
+                    await self._ensure_login_modal()
+                    qr_data = await self._wait_for_qr_ready(timeout=_QR_CREATE_WAIT_S)
             if qr_data is None:
                 page_hint = ""
                 if self._page is not None:
@@ -882,10 +914,11 @@ class XhsLoginSession:
         return False
 
     async def _looks_logged_in(self) -> bool:
-        """Detect an existing login state without forcing a QR-code flow.
+        """Detect a *creator-ready* login without forcing a QR-code flow.
 
-        Prefer durable cookies. Feed-page text matching is only a weak fallback
-        and must not treat the scan-login modal ("登录后推荐…扫码") as logged-in.
+        Only the creator access token counts. Feed page text (发布/通知/消息/我)
+        must not short-circuit QR — a www-only session renders the feed while
+        Creator Center still returns 401 and explore never paints a login QR.
         """
         if self._context is None:
             return False
@@ -901,35 +934,62 @@ class XhsLoginSession:
             if isinstance(cookie, dict) and bool(cookie.get("value"))
         }
         is_logged_in, _signals, _reason = _cookie_names_mean_logged_in(cookie_names)
-        if is_logged_in:
-            return True
+        return is_logged_in
 
-        has_login_cookie = bool(cookie_names & _LOGIN_COOKIE_NAMES)
-        if not has_login_cookie:
-            return False
-
-        if self._page is None:
-            return False
+    async def _cookie_names_from_context(self) -> set[str]:
+        if self._context is None:
+            return set()
         try:
-            text = await self._page.evaluate("document.body.innerText || ''")
+            cookies = await self._context.cookies([_EXPLORE_URL, "https://creator.xiaohongshu.com"])
         except Exception as e:
-            logger.debug("读取 XHS 登录页面文本失败: %s", e)
-            return False
-        if not isinstance(text, str):
-            return False
-        # Login modal / unauthenticated shell — keep the QR flow open.
-        if any(
-            marker in text
-            for marker in (
-                "登录后推荐",
-                "可用小红书或微信扫码",
-                "小红书或微信扫码",
-                "发送验证码",
-                "短信登录",
+            logger.debug("读取 cookie 名失败: %s", e)
+            return set()
+        return {
+            str(cookie.get("name") or "")
+            for cookie in cookies
+            if isinstance(cookie, dict) and bool(cookie.get("value"))
+        }
+
+    async def _clear_partial_login_cookies(self) -> int:
+        """Drop www SSO cookies that block the explore login QR modal.
+
+        Returns the number of cookies deleted.
+        """
+        if self._context is None:
+            return 0
+        try:
+            cookies = await self._context.cookies()
+        except Exception as e:
+            logger.debug("列举 cookie 以清理半登录态失败: %s", e)
+            return 0
+        deleted = 0
+        for cookie in cookies:
+            if not isinstance(cookie, dict):
+                continue
+            name = str(cookie.get("name") or "")
+            if name not in _PARTIAL_WWW_AUTH_COOKIE_NAMES and name not in _CREATOR_LOGIN_COOKIE_NAMES:
+                continue
+            try:
+                await self._context.clear_cookies(
+                    name=name,
+                    domain=cookie.get("domain"),
+                    path=cookie.get("path") or "/",
+                )
+                deleted += 1
+            except TypeError:
+                # Older playwright: clear_cookies() clears all — last resort.
+                with contextlib.suppress(Exception):
+                    await self._context.clear_cookies()
+                    return -1
+            except Exception as e:
+                logger.debug("删除 cookie %s 失败: %s", name, e)
+        if deleted:
+            logger.info(
+                "已清理半登录 cookie 以强制展示扫码浮层: account=%s count=%s",
+                self.account_id,
+                deleted,
             )
-        ):
-            return False
-        return all(keyword in text for keyword in ("发布", "通知", "消息", "我"))
+        return deleted
 
     async def _refresh_qr(self) -> dict[str, Any]:
         """刷新二维码：重新 goto explore 页触发新的 qrcode/create.
@@ -1086,14 +1146,46 @@ class XhsLoginSession:
         await self._raw_send("Page.enable")
         await self._raw_send("Runtime.enable")
         await self._raw_send("Network.enable")
+        # Drop partial www SSO before explore so the login QR modal appears.
+        # Without this, web_session+id_token keep the feed open and start()
+        # times out with "5s 内未找到登录二维码" (the container path uses raw CDP).
+        cleared = await self._raw_clear_partial_login_cookies()
+        if cleared:
+            logger.info(
+                "raw CDP 已清理半登录 cookie 以强制扫码: account=%s count=%s",
+                self.account_id,
+                cleared,
+            )
         await self._raw_send("Page.navigate", {"url": _EXPLORE_URL})
 
         qr_data = await self._raw_wait_for_qr(timeout=_QR_CREATE_WAIT_S)
         if qr_data is None:
+            # Creator-ready already? Skip QR (settings re-open after true login).
+            if await self._raw_has_strong_cookie():
+                self._confirmed = True
+                self._code_status = _CODE_CONFIRMED
+                await self.stop(keep_page=True)
+                _detach_session_if_current(self)
+                return {
+                    "status": "confirmed",
+                    "qr_id": "",
+                    "url": "",
+                    "account_id": self.account_id,
+                }
+            # Retry once: cookies may have been reminted on first navigate.
+            cleared_again = await self._raw_clear_partial_login_cookies()
+            logger.info(
+                "raw CDP 首次未找到二维码，二次清理后重试: account=%s cleared=%s",
+                self.account_id,
+                cleared_again,
+            )
+            await self._raw_send("Page.navigate", {"url": _EXPLORE_URL})
+            qr_data = await self._raw_wait_for_qr(timeout=_QR_CREATE_WAIT_S)
+        if qr_data is None:
             await self.stop()
             raise LoginError(
                 f"启动扫码登录失败：{_QR_CREATE_WAIT_S:.0f}s 内未找到登录二维码。"
-                "常见原因：小红书 IP/环境风控（300012）或页面变化。"
+                "常见原因：小红书 IP/环境风控（300012）、半登录态未清干净或页面变化。"
                 "请切换安全网络后重试。"
             )
         return {
@@ -1248,6 +1340,51 @@ class XhsLoginSession:
         }
         is_logged_in, _signals, _reason = _cookie_names_mean_logged_in(names)
         return is_logged_in
+
+    async def _raw_clear_partial_login_cookies(self) -> int:
+        """Delete www/creator auth cookies via CDP so explore shows the QR shell.
+
+        Uses ``Network.deleteCookies`` / ``Storage.getCookies`` (browser-level).
+        Returns the number of cookies deleted.
+        """
+        try:
+            result = await self._raw_send("Storage.getCookies", session_id=None)
+        except Exception as e:
+            logger.debug("raw CDP Storage.getCookies 失败: %s", e)
+            try:
+                result = await self._raw_send(
+                    "Network.getCookies", {"urls": _LOGIN_STATUS_URLS}
+                )
+            except Exception as e2:
+                logger.debug("raw CDP Network.getCookies 失败: %s", e2)
+                return 0
+        cookies = result.get("cookies") if isinstance(result, dict) else None
+        if not isinstance(cookies, list):
+            return 0
+        targets = _PARTIAL_WWW_AUTH_COOKIE_NAMES | _CREATOR_LOGIN_COOKIE_NAMES
+        deleted = 0
+        for cookie in cookies:
+            if not isinstance(cookie, dict):
+                continue
+            name = str(cookie.get("name") or "")
+            if name not in targets or not cookie.get("value"):
+                continue
+            domain = str(cookie.get("domain") or "")
+            path = str(cookie.get("path") or "/")
+            params: dict[str, Any] = {"name": name}
+            if domain:
+                params["domain"] = domain
+            if path:
+                params["path"] = path
+            try:
+                await self._raw_send("Network.deleteCookies", params, session_id=None)
+                deleted += 1
+            except Exception:
+                # Some CDP versions require the page session for Network.*.
+                with contextlib.suppress(Exception):
+                    await self._raw_send("Network.deleteCookies", params)
+                    deleted += 1
+        return deleted
 
     async def _warm_creator_session(self) -> None:
         """Best-effort visit to Creator Center after www QR login succeeds.
