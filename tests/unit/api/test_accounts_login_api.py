@@ -31,6 +31,18 @@ def setup_crypto():
     crypto_mod._fernet = None
 
 
+@pytest.fixture(autouse=True)
+def reset_qr_risk_gates(monkeypatch):
+    """Disable QR cooldowns so sequential login API tests do not 429 each other."""
+    from backend.services.xhs_risk_gate import reset_gates_for_tests
+
+    monkeypatch.setenv("XHS_QR_LOGIN_COOLDOWN_SECONDS", "0")
+    monkeypatch.setenv("XHS_QR_RISK_BLOCK_SECONDS", "0")
+    reset_gates_for_tests()
+    yield
+    reset_gates_for_tests()
+
+
 def _mock_account(account_id: str = "acc-1", profile_path: str = "/tmp/profile-acc-1"):
     """Build a mock AccountRow with a chrome_profile_path binding."""
     from backend.db.accounts import AccountRow
