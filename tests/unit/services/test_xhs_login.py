@@ -225,7 +225,8 @@ class TestStart:
             page_text="首页 发布 通知 消息 我",
         )
         # clear_cookies used when forcing QR after detecting www_only.
-        mock_context = mock_module.async_playwright.return_value.start.return_value.chromium.launch_persistent_context.return_value
+        chromium = mock_module.async_playwright.return_value.start.return_value.chromium
+        mock_context = chromium.launch_persistent_context.return_value
         # When connect_over_cdp is not used (no cdp_endpoint), launch_persistent is used.
         # Default session has no cdp → launch_persistent_context.
         mock_context.clear_cookies = AsyncMock()

@@ -507,11 +507,11 @@ class XhsLoginSession:
             # the feed with no QR modal. Clear them first so explore paints login.
             cookie_names = await self._cookie_names_from_context()
             _logged_in, _signals, reason = _cookie_names_mean_logged_in(cookie_names)
-            if reason in ("www_only", "stale_id_token", "missing_strong_cookie") and (
-                cookie_names & (_PARTIAL_WWW_AUTH_COOKIE_NAMES | _CREATOR_LOGIN_COOKIE_NAMES)
-            ):
-                if reason != "strong_cookie":
-                    await self._clear_partial_login_cookies()
+            partial_auth = cookie_names & (
+                _PARTIAL_WWW_AUTH_COOKIE_NAMES | _CREATOR_LOGIN_COOKIE_NAMES
+            )
+            if reason in ("www_only", "stale_id_token", "missing_strong_cookie") and partial_auth:
+                await self._clear_partial_login_cookies()
 
             # 开 explore 页——登录浮层自动触发 qrcode/create。
             await self._goto_explore()
@@ -967,7 +967,10 @@ class XhsLoginSession:
             if not isinstance(cookie, dict):
                 continue
             name = str(cookie.get("name") or "")
-            if name not in _PARTIAL_WWW_AUTH_COOKIE_NAMES and name not in _CREATOR_LOGIN_COOKIE_NAMES:
+            if (
+                name not in _PARTIAL_WWW_AUTH_COOKIE_NAMES
+                and name not in _CREATOR_LOGIN_COOKIE_NAMES
+            ):
                 continue
             try:
                 await self._context.clear_cookies(
@@ -1352,9 +1355,7 @@ class XhsLoginSession:
         except Exception as e:
             logger.debug("raw CDP Storage.getCookies 失败: %s", e)
             try:
-                result = await self._raw_send(
-                    "Network.getCookies", {"urls": _LOGIN_STATUS_URLS}
-                )
+                result = await self._raw_send("Network.getCookies", {"urls": _LOGIN_STATUS_URLS})
             except Exception as e2:
                 logger.debug("raw CDP Network.getCookies 失败: %s", e2)
                 return 0
