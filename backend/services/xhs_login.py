@@ -515,7 +515,13 @@ class XhsLoginSession:
                         "——确认 launcher 已启动该账号 Chrome（chrome-profiles.sh start）"
                     ) from e
                 contexts = self._browser.contexts
-                self._context = contexts[0] if contexts else await self._browser.new_context()
+                if not contexts:
+                    raise LoginError(
+                        "绑定 Chrome 没有可用 browser context，请启动账号 Chrome 后重试。"
+                    )
+                # CDP 登录必须复用 launcher 创建的持久 profile context。
+                # 绝不能创建隔离 context，否则扫码态可能写入错误的 profile。
+                self._context = contexts[0]
                 logger.info("扫码登录连 host Chrome: %s", self.cdp_endpoint)
             else:
                 # 回退：launch_persistent_context（playwright bundled chromium）。

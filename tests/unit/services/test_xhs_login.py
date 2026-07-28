@@ -209,6 +209,33 @@ class TestStart:
         assert session._confirmed is True
         assert session._context is None
 
+    async def test_cdp_without_browser_context_fails_closed(self, tmp_path):
+        """CDP login must not create an isolated context when Chrome has none."""
+        from backend.services.xhs_login import LoginError, XhsLoginSession
+
+        mock_module, _, _ = _wire_playwright_mock()
+        chromium = mock_module.async_playwright.return_value.start.return_value.chromium
+        browser = chromium.connect_over_cdp.return_value
+        browser.contexts = []
+        browser.new_context = AsyncMock()
+        session = XhsLoginSession(
+            "acc-cdp",
+            str(tmp_path / "profile"),
+            cdp_endpoint="http://127.0.0.1:9222",
+        )
+
+        with (
+            patch.dict(sys.modules, {"playwright.async_api": mock_module}),
+            pytest.raises(LoginError, match="没有可用 browser context.*启动账号 Chrome"),
+        ):
+            await session.start()
+
+        browser.new_context.assert_not_called()
+        assert session._browser is None
+        assert session._context is None
+        assert session._page is None
+        assert session._playwright is None
+
     async def test_start_www_only_feed_does_not_skip_qr(self, tmp_path):
         """www cookies + feed chrome must not short-circuit as 'already logged in'.
 

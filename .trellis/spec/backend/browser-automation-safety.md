@@ -10,6 +10,10 @@ When an account has a bound Chrome profile, interactive operations must attach
 through its CDP endpoint. Engagement must not start a second browser, create a
 cookie-only temporary context, inject stealth scripts, or serialize cookies.
 If the account has no usable CDP endpoint, the operation fails closed.
+CDP login reuses only the first existing `browser.contexts[0]`; when the bound
+Chrome exposes no browser context, login fails with an actionable error and
+must never call `browser.new_context()`. Creating a short-lived login page
+inside that existing context remains allowed.
 
 ## Interaction safeguards
 
