@@ -225,7 +225,7 @@ LLMEOF
     echo "  Ripple LLM config written (credentials redacted)"
 
     echo ">>> 启动 XhsGrowthAgent 后端..."
-    # Production defaults: Creator Center only, list-first, no public-body crawl.
+    # Production defaults: Creator Center only, list-first, no public-note-page crawl.
     podman run -d \
         --name xhs-growth \
         --network "$NET" \
@@ -254,7 +254,6 @@ LLMEOF
         -e CREATOR_STATS_SAFE_MODE="${CREATOR_STATS_SAFE_MODE:-1}" \
         -e CREATOR_STATS_MAX_LIST_PAGES="${CREATOR_STATS_MAX_LIST_PAGES:-3}" \
         -e CREATOR_STATS_MAX_DETAIL_VISITS="${CREATOR_STATS_MAX_DETAIL_VISITS:-2}" \
-        -e CREATOR_STATS_MAX_BODY_VISITS="${CREATOR_STATS_MAX_BODY_VISITS:-0}" \
         -e RIPPLE_BASE_URL=http://ripple-service:8080 \
         -e RIPPLE_API_TOKEN="${RIPPLE_API_TOKEN:-}" \
         -e RIPPLE_ENABLED=true \

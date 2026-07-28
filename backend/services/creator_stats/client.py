@@ -208,11 +208,11 @@ class CdpTransport:
         long_min = max(0.0, _env_float("CREATOR_STATS_LONG_PAUSE_MIN_S", 20.0))
         long_max = max(long_min, _env_float("CREATOR_STATS_LONG_PAUSE_MAX_S", 60.0))
         self._long_pause = (long_min, long_max)
-        # 轻量轮：更高默认概率只看概览+列表——大幅减少详情/正文请求面。
+        # 轻量轮：更高默认概率只看概览+列表——大幅减少详情请求面。
         self._light_run_chance = max(
             0.0, min(1.0, _env_float("CREATOR_STATS_LIGHT_RUN_CHANCE", 0.35))
         )
-        # 逐篇跳过：即使在深入轮，也以该概率跳过单篇笔记的详情/正文访问
+        # 逐篇跳过：即使在深入轮，也以该概率跳过单篇笔记的详情访问
         # （被跳过的笔记下轮仍会被增量过滤器选中），避免"候选全扫"的机器人
         # 完备性特征。
         self._enrich_skip_chance = max(
@@ -238,10 +238,12 @@ class CdpTransport:
         # Hard caps: even with incremental filters, bound per-run page opens.
         self._max_list_pages = max(1, min(50, _env_int("CREATOR_STATS_MAX_LIST_PAGES", 5)))
         self._max_detail_visits = max(0, min(50, _env_int("CREATOR_STATS_MAX_DETAIL_VISITS", 4)))
-        # Default 0: public explore body scrape is the highest risk surface
-        # (leaves creator.xiaohongshu.com). Enable explicitly when needed.
-        self._max_body_visits = max(0, min(50, _env_int("CREATOR_STATS_MAX_BODY_VISITS", 0)))
+        # Deprecated compatibility field. Public note pages are permanently
+        # disabled; this value is never read by the fetch path, even when a
+        # stale environment or a legacy test mutates it after construction.
+        self._max_body_visits = 0
         self._detail_circuit_failures = max(1, _env_int("CREATOR_STATS_DETAIL_CIRCUIT_FAILURES", 2))
+        # Deprecated compatibility field; no public body request is executed.
         self._body_empty_circuit = max(1, _env_int("CREATOR_STATS_BODY_EMPTY_CIRCUIT", 3))
         # Brief linger before closing the tab so the session does not look like
         # instant open→scrape→close automation.
@@ -257,12 +259,11 @@ class CdpTransport:
             self._long_pause_chance = max(self._long_pause_chance, 0.18)
             self._max_list_pages = min(self._max_list_pages, 3)
             self._max_detail_visits = min(self._max_detail_visits, 2)
-            self._max_body_visits = 0
             lo, hi = self._request_delay
             self._request_delay = (lo * 1.4, hi * 1.4)
             logger.info(
                 f"creator stats SAFE_MODE on: list_pages<={self._max_list_pages} "
-                f"detail<={self._max_detail_visits} body=0 "
+                f"detail<={self._max_detail_visits} public_note_pages=0 "
                 f"light>={self._light_run_chance:.2f}"
             )
         # 每轮抓取的节奏基准（在 fetch 开头随机缩放 request_delay 得到）：
@@ -356,66 +357,6 @@ class CdpTransport:
             return max(0, int(raw))
         except (TypeError, ValueError):
             return 0
-
-    @staticmethod
-    async def _scrape_public_note_body(
-        page: Any,
-        note_id: str,
-        *,
-        xsec_token: str = "",
-        xsec_source: str = "pc_creatormng",
-        timeout_ms: int = 12_000,
-    ) -> str:
-        """Read the public explore caption for one note (creator APIs omit body).
-
-        Uses the note's ``xsec_token`` from the posted-list response so the
-        public page can resolve without an extra signed feed request.
-        """
-        note_id = (note_id or "").strip()
-        if not note_id or page is None:
-            return ""
-        url = f"https://www.xiaohongshu.com/explore/{quote(note_id, safe='')}"
-        query: list[str] = []
-        if xsec_token:
-            query.append(f"xsec_token={quote(xsec_token, safe='')}")
-        if xsec_source:
-            query.append(f"xsec_source={quote(xsec_source, safe='')}")
-        if query:
-            url = f"{url}?{'&'.join(query)}"
-        await page.goto(
-            url,
-            wait_until="domcontentloaded",
-            timeout=max(1_000, int(timeout_ms)),
-        )
-        deadline = asyncio.get_running_loop().time() + max(1.0, timeout_ms / 1000.0)
-        script = """() => {
-            const pick = (sel) => {
-                const el = document.querySelector(sel);
-                if (!el) return '';
-                return (el.innerText || el.textContent || '').trim();
-            };
-            // Prefer caption containers; avoid comment threads under .note-text.
-            return pick('#detail-desc .note-text')
-                || pick('.note-content .desc')
-                || pick('#detail-desc')
-                || pick('.note-content .note-text')
-                || pick('.desc');
-        }"""
-        while asyncio.get_running_loop().time() < deadline:
-            try:
-                text = await page.evaluate(script)
-            except Exception:
-                text = ""
-            if isinstance(text, str):
-                cleaned = text.strip()
-                # Drop trailing UI chrome that sometimes rides on the container.
-                for marker in ("\n猜你想搜", "\n编辑于", "\n共 ", "\n评论"):
-                    if marker in cleaned:
-                        cleaned = cleaned.split(marker, 1)[0].strip()
-                if cleaned:
-                    return cleaned[:4000]
-            await asyncio.sleep(0.25)
-        return ""
 
     @staticmethod
     def _validate_creator_response(
@@ -513,13 +454,13 @@ class CdpTransport:
         those requests; no request headers, cookies, or user content are
         fabricated by this service.
 
-        ``detail_filter`` / ``body_filter`` decide per raw note whether the
-        extra detail-page / public-body visits are worth making.  Incremental
-        sync passes filters that skip unchanged notes so the crawl does not
-        re-visit every note page on every run (risk-control friendly).
+        ``detail_filter`` decides per raw note whether the Creator Center detail
+        page is worth opening.  ``body_filter`` remains accepted for callers
+        from older versions, but public-note body enrichment is permanently
+        disabled and the filter is ignored.
 
-        ``force_light`` skips all per-note detail/body enrichment (scheduled
-        syncs use this by default to minimize risk surface).
+        ``force_light`` skips all per-note detail enrichment (scheduled syncs
+        use this by default to minimize risk surface).
         """
         try:
             # Cap list pagination hard — unbounded max_pages is a risk signal.
@@ -531,7 +472,7 @@ class CdpTransport:
         async with self._fetch_lock:
             # 每轮换一个节奏基准：本轮整体偏快或偏慢，跨运行无统一节奏。
             self._new_run_pace()
-            # 轻量轮：本轮只看概览+列表就离开，不做逐篇详情/正文深入。
+            # 轻量轮：本轮只看概览+列表就离开，不做逐篇详情深入。
             if force_light:
                 light_run = True
             else:
@@ -1001,102 +942,6 @@ class CdpTransport:
                         detail = details.get(str(legacy_note_id))
                         if isinstance(detail, dict):
                             raw_notes[index] = {**note, **detail}
-
-                # Creator list/detail APIs often only expose display_title (and a
-                # note_info.desc that equals the title). Full captions live on the
-                # public explore page — scrape them with the note's xsec_token.
-                body_deadline = asyncio.get_running_loop().time() + min(
-                    90.0, max(30.0, float(detail_budget))
-                )
-                body_failures = 0
-                body_empty = 0
-                body_candidates: list[int] = []
-                if not light_run:
-                    for index, note in enumerate(raw_notes[:50]):
-                        note_id = str(
-                            note.get("note_id") or note.get("noteId") or note.get("id") or ""
-                        ).strip()
-                        if not note_id:
-                            continue
-                        title = str(
-                            note.get("display_title") or note.get("title") or note.get("desc") or ""
-                        ).strip()
-                        existing = str(
-                            note.get("body_text") or note.get("body") or note.get("desc") or ""
-                        ).strip()
-                        # Skip when we already have a caption distinct from the title.
-                        if existing and existing != title and len(existing) > len(title):
-                            continue
-                        if body_filter is not None and not body_filter(note):
-                            continue
-                        if (
-                            self._enrich_skip_chance > 0
-                            and random.random() < self._enrich_skip_chance
-                        ):
-                            continue
-                        body_candidates.append(index)
-                # 乱序访问公开正文页，避免与详情页相同的固定访问序列。
-                random.shuffle(body_candidates)
-                if self._max_body_visits >= 0:
-                    body_candidates = body_candidates[: self._max_body_visits]
-                for visit_order, index in enumerate(body_candidates):
-                    remaining = body_deadline - asyncio.get_running_loop().time()
-                    if remaining <= 0:
-                        logger.info("public note body enrichment budget exhausted")
-                        break
-                    note = raw_notes[index]
-                    note_id = str(
-                        note.get("note_id") or note.get("noteId") or note.get("id") or ""
-                    ).strip()
-                    xsec_token = str(note.get("xsec_token") or note.get("xsecToken") or "").strip()
-                    xsec_source = str(
-                        note.get("xsec_source") or note.get("xsecSource") or "pc_creatormng"
-                    ).strip()
-                    if visit_order:
-                        await self._pace()
-                    # 正文页之间也偶尔动一下鼠标。
-                    if random.random() < 0.7:
-                        await self._human_touch(page)
-                    try:
-                        body_text = await self._scrape_public_note_body(
-                            page,
-                            note_id,
-                            xsec_token=xsec_token,
-                            xsec_source=xsec_source,
-                            timeout_ms=max(1_000, min(12_000, int(remaining * 1000))),
-                        )
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as exc:
-                        logger.info("public note body scrape skipped for %s: %s", note_id, exc)
-                        body_failures += 1
-                        if body_failures >= self._detail_circuit_failures:
-                            logger.warning(
-                                "public note body scrape circuit break after %s "
-                                "consecutive failures",
-                                body_failures,
-                            )
-                            break
-                        continue
-                    body_failures = 0
-                    if body_text:
-                        body_empty = 0
-                        raw_notes[index] = {
-                            **raw_notes[index],
-                            "body_text": body_text,
-                            "desc": body_text,
-                        }
-                    else:
-                        body_empty += 1
-                        if body_empty >= self._body_empty_circuit:
-                            # A run of empty bodies on the public explore page
-                            # usually means risk control is serving a shell page.
-                            logger.warning(
-                                "public note body scrape circuit break: %s consecutive empty "
-                                "results (possible risk control)",
-                                body_empty,
-                            )
-                            break
 
                 # personal_info (total fans_count) is often only requested from the
                 # creator home shell, not the stats dashboard. Fetch it once when
