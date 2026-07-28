@@ -9,7 +9,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.services.xhs_publisher import _NOTE_ID_RE, XHSPublisher
+from backend.services.xhs_publisher import (
+    _NOTE_ID_RE,
+    PublisherConfigurationError,
+    XHSPublisher,
+)
 
 
 @pytest.fixture
@@ -234,11 +238,19 @@ class TestCDPMode:
     """CDP 连接真实 Chrome 模式——绕过 XHS 反爬的关键路径。"""
 
     def test_cdp_endpoint_stored(self):
-        """cdp_endpoint 传入后存为实例属性，决定 _ensure_browser 走 CDP 还是 launch。"""
+        """cdp_endpoint 传入后存为实例属性，决定是否允许连接持久 Chrome。"""
         pub_cdp = XHSPublisher(cookie="", cdp_endpoint="http://127.0.0.1:9222")
         pub_launch = XHSPublisher(cookie="", cdp_endpoint="")
         assert pub_cdp.cdp_endpoint == "http://127.0.0.1:9222"
         assert pub_launch.cdp_endpoint == ""
+
+    @pytest.mark.asyncio
+    async def test_missing_cdp_fails_closed_before_starting_browser(self):
+        """No account CDP must not fall back to a new browser or Cookie state."""
+        publisher = XHSPublisher(cookie="a=1")
+
+        with pytest.raises(PublisherConfigurationError, match="cdp_endpoint"):
+            await publisher._ensure_browser()
 
     @pytest.mark.asyncio
     async def test_cdp_mode_uses_existing_context_no_stealth_no_cookie(self, monkeypatch):

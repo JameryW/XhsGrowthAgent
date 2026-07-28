@@ -36,6 +36,9 @@ class XHSPlatformSettings(BaseSettings):
 
     api_base: str = "https://edith.xiaohongshu.com"
     use_browser: bool = False
+    # Automatic comment/DM actions are opt-in; explicit engagement tools remain
+    # available regardless of this workflow-level gate.
+    auto_engagement: bool = False
     # Legacy compatibility field. All XHS browser paths are headed; this value
     # is intentionally ignored by browser services.
     headless: bool = False

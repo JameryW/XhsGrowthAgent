@@ -181,3 +181,26 @@ class TestEngagementMemoryWrites:
                 assert result["engagement_error"] == "XHS API down"
                 # Generic error field must NOT be set — would flip derive_status to ERROR
                 assert "error" not in result or result.get("error") is None
+
+    @pytest.mark.asyncio
+    async def test_automatic_engagement_is_opt_in(self, agent, mock_store):
+        """The workflow must not read or open public pages when the gate is off."""
+        mock_state = {
+            "account_id": "test_account",
+            "execution_mode": "single",
+            "publish_result": {"post_id": "real_post_123"},
+        }
+
+        with patch("backend.agents.engagement.Settings") as mock_settings_cls:
+            mock_settings = MagicMock()
+            mock_settings.platform.use_browser = True
+            mock_settings.platform.auto_engagement = False
+            mock_settings_cls.return_value = mock_settings
+
+            with patch("backend.services.xhs_client.XHSClient") as mock_client_cls:
+                result = await agent.execute(mock_state, store=mock_store)
+
+                mock_client_cls.assert_not_called()
+                assert result["phase"] == WorkflowPhase.COMPLETED
+                assert result["engagement_actions"] == []
+                assert result["engagement_error"] is None

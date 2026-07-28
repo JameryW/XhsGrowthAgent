@@ -69,6 +69,15 @@ class EngagementAgent(BaseAgent):
                 "engagement_error": engagement_error,
             }
 
+        if not settings.platform.auto_engagement:
+            logger.info("XHS_AUTO_ENGAGEMENT=false，跳过工作流自动互动；显式互动工具仍可用")
+            mode = state.get("execution_mode", "single")
+            return {
+                "engagement_actions": engagement_actions,
+                "phase": WorkflowPhase.COMPLETED if mode == "single" else WorkflowPhase.ENGAGING,
+                "engagement_error": engagement_error,
+            }
+
         # 调用真实互动服务
         from backend.services.xhs_client import XHSClient
 

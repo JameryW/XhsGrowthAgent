@@ -245,6 +245,7 @@ LLMEOF
         -e HF_HOME=/opt/hf-cache \
         -e HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}" \
         -e XHS_USE_BROWSER="${XHS_USE_BROWSER:-false}" \
+        -e XHS_AUTO_ENGAGEMENT="${XHS_AUTO_ENGAGEMENT:-false}" \
         -e XHS_CHROME_PROFILES_DIR="${XHS_CHROME_PROFILES_DIR:-$PROJECT_DIR/.chrome-profiles}" \
         -e XHS_CDP_BASE_PORT="${XHS_CDP_BASE_PORT:-9222}" \
         -e XHS_ENGAGEMENT_COOLDOWN_SECONDS="${XHS_ENGAGEMENT_COOLDOWN_SECONDS:-5}" \

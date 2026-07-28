@@ -67,6 +67,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger("xhs_growth.publisher")
 
 
+class PublisherConfigurationError(RuntimeError):
+    """Raised when publishing has no persistent account browser to attach to."""
+
+
 class XHSPublisher:
     """Playwright-based 小红书发布器"""
 
@@ -87,92 +91,53 @@ class XHSPublisher:
         self.headless = False
         self.cookie_storage_path = cookie_storage_path or os.path.expanduser("~/.xhs_cookies.json")
         self.slow_mo = slow_mo
-        # CDP 模式：连接常驻真实 Chrome（用户扫码登录的持久 profile），而非 launch
-        # 新浏览器。没有 CDP 时保留 headed fallback 供旧调用和测试使用。
+        # 连接常驻真实 Chrome（用户扫码登录的持久 profile），没有 CDP 时 fail closed。
         self.cdp_endpoint = cdp_endpoint
         self._browser: Browser | None = None
         self._page: Page | None = None
+        self._playwright: Any = None
 
     async def _ensure_browser(self) -> Browser:
-        """确保浏览器已启动/连接"""
-        if self._browser is None:
-            from playwright.async_api import async_playwright  # lazy: optional [browser] extra
+        """Attach to the account's already-running persistent Chrome only."""
+        if not self.cdp_endpoint:
+            raise PublisherConfigurationError(
+                "publishing requires an account cdp_endpoint; refusing to launch a browser"
+            )
+        if self._browser is not None:
+            return self._browser
 
-            playwright = await async_playwright().start()
-            if self.cdp_endpoint:
-                # CDP 模式：连接常驻真实 Chrome（profile 自带登录态，不注 stealth/cookie）
-                self._browser = await playwright.chromium.connect_over_cdp(self.cdp_endpoint)
-                logger.info(f"已通过 CDP 连接真实 Chrome: {self.cdp_endpoint}")
-            else:
-                self._browser = await playwright.chromium.launch(
-                    headless=False,
-                    slow_mo=self.slow_mo,
-                    args=[
-                        "--disable-blink-features=AutomationControlled",
-                        "--no-sandbox",
-                        "--disable-dev-shm-usage",
-                    ],
-                )
+        try:
+            from playwright.async_api import async_playwright  # lazy: optional [browser] extra
+        except ImportError as exc:
+            raise PublisherConfigurationError(
+                "playwright is not installed; install the browser extra"
+            ) from exc
+
+        self._playwright = await async_playwright().start()
+        try:
+            self._browser = await self._playwright.chromium.connect_over_cdp(self.cdp_endpoint)
+        except Exception as exc:
+            await self._stop_playwright()
+            raise PublisherConfigurationError(
+                f"unable to connect to account Chrome CDP {self.cdp_endpoint}: {exc}"
+            ) from exc
+        logger.info(f"已通过 CDP 连接真实 Chrome: {self.cdp_endpoint}")
         return self._browser
 
     async def _ensure_page(self) -> Page:
         """确保页面已创建并登录"""
         browser = await self._ensure_browser()
         if self._page is None:
-            if self.cdp_endpoint:
-                # CDP 模式：用真实 Chrome 已有的 context（profile 自带登录态），
-                # 不 new_context / 不注 stealth / 不注 cookie——在已合法的浏览器里
-                # 注入伪装脚本或裸 cookie 反而是自动化特征，会被 XHS shield 标红。
-                contexts = browser.contexts
-                context = contexts[0] if contexts else await browser.new_context()
-                self._page = await context.new_page()
-                return self._page
-            context = await browser.new_context(
-                viewport={"width": 1280, "height": 800},
-                locale="zh-CN",
-            )
-            # 反自动化检测：XHS 的 shield/sec 检测 webdriver/CDP/permissions 等指纹，
-            # 仅隐藏 navigator.webdriver 不够。用 playwright-stealth 注入全套反检测
-            # init script（plugins/webgl/vendor/permissions/ua 等）。可选依赖，未装则
-            # fallback 到手动 webdriver 隐藏。
-            try:
-                from playwright_stealth import Stealth
-
-                # 不覆盖 platform/languages（stealth 默认 Win32/en-US 与真实 Linux UA +
-                # zh-CN locale 冲突，指纹不一致反而是自动化特征）。只启用检测隐藏类。
-                await Stealth(
-                    navigator_platform=False,
-                    navigator_languages=False,
-                    navigator_languages_override=("zh-CN", "zh"),
-                ).apply_stealth_async(context)
-                logger.info("playwright-stealth 已应用")
-            except Exception as e:
-                logger.warning(f"playwright-stealth 不可用，fallback 手动隐藏: {e}")
-                await context.add_init_script(
-                    "Object.defineProperty(navigator, 'webdriver', { get: () => false });"
+            # CDP 模式：用真实 Chrome 已有的 context（profile 自带登录态）。
+            # 没有 context 时拒绝继续，避免创建临时浏览器状态。
+            contexts = browser.contexts
+            if not contexts:
+                raise PublisherConfigurationError(
+                    "account Chrome CDP has no browser context; refusing to create one"
                 )
-            # 设置 Cookie
-            if self.cookie:
-                await self._set_cookies(context)
+            context = contexts[0]
             self._page = await context.new_page()
         return self._page
-
-    async def _set_cookies(self, context: Any) -> None:
-        """设置登录 Cookie"""
-        cookies = []
-        for item in self.cookie.split(";"):
-            item = item.strip()
-            if "=" in item:
-                name, value = item.split("=", 1)
-                cookies.append(
-                    {
-                        "name": name.strip(),
-                        "value": value.strip(),
-                        "domain": ".xiaohongshu.com",
-                        "path": "/",
-                    }
-                )
-        await context.add_cookies(cookies)
 
     async def _goto_creator_page(self, page: Page) -> None:
         """Navigate to creator page without waiting for never-idle background traffic."""
@@ -669,12 +634,21 @@ class XHSPublisher:
                 "error": "发布状态未知，请手动确认",
             }
 
+    async def _stop_playwright(self) -> None:
+        if self._playwright is not None:
+            stop = getattr(self._playwright, "stop", None)
+            if stop is not None:
+                await stop()
+            self._playwright = None
+
     async def close(self) -> None:
-        """关闭浏览器"""
-        if self._browser:
-            await self._browser.close()
-            self._browser = None
-            self._page = None
+        """断开 Playwright，不关闭账号的持久 Chrome。"""
+        if self._page is not None:
+            with contextlib.suppress(Exception):
+                await self._page.close()
+        self._page = None
+        self._browser = None
+        await self._stop_playwright()
 
     async def __aenter__(self) -> XHSPublisher:
         return self
