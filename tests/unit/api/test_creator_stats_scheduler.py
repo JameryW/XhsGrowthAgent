@@ -245,7 +245,7 @@ async def test_scheduler_delays_first_run_when_startup_delay_configured(monkeypa
 
 @pytest.mark.asyncio
 async def test_scheduler_backs_off_after_consecutive_failures(monkeypatch):
-    """连续失败第二次起，下次运行间隔按 1.5-2.5× 随机放大（24h → 36-60h 节奏）。"""
+    """Risk/auth failures use a stronger 3–6× interval multiplier every time."""
     app = _scheduler_app()
     sleep_calls: list[float] = []
 
@@ -264,10 +264,11 @@ async def test_scheduler_backs_off_after_consecutive_failures(monkeypatch):
     ):
         await _creator_stats_scheduler(app, 0.5)
 
-    # 第一次失败：按原周期（1800s × 0.75-1.5）。
-    assert 1800.0 * 0.75 * 0.99 <= sleep_calls[0] <= 1800.0 * 1.5
-    # 第二次连续失败：间隔按 1.5-2.5× 随机放大（1800s × 1.5-2.5 × 0.75-1.5）。
-    assert 1800.0 * 1.5 * 0.75 * 0.99 <= sleep_calls[1] <= 1800.0 * 2.5 * 1.5
+    # Risk-shaped errors: interval × triangular(0.75,1.5) × uniform(3,6).
+    lo = 1800.0 * 0.75 * 3.0 * 0.99
+    hi = 1800.0 * 1.5 * 6.0
+    assert lo <= sleep_calls[0] <= hi
+    assert lo <= sleep_calls[1] <= hi
     state = app.state.creator_stats_scheduler_status
     assert state["consecutive_failures"] == 2
     assert state["status"] == "failed"

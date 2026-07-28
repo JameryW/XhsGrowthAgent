@@ -183,9 +183,10 @@ class CdpTransport:
         # Random pause between per-note page visits.  Back-to-back navigations
         # look like a bot to XHS risk control; jitter keeps the crawl human-paced.
         if request_delay is None:
+            # Defaults raised vs early versions (2-6s): slower is safer under risk control.
             request_delay = (
-                _env_float("CREATOR_STATS_REQUEST_DELAY_MIN_S", 2.0),
-                _env_float("CREATOR_STATS_REQUEST_DELAY_MAX_S", 6.0),
+                _env_float("CREATOR_STATS_REQUEST_DELAY_MIN_S", 3.5),
+                _env_float("CREATOR_STATS_REQUEST_DELAY_MAX_S", 10.0),
             )
         delay_min = max(0.0, float(request_delay[0]))
         delay_max = max(delay_min, float(request_delay[1]))
@@ -193,38 +194,53 @@ class CdpTransport:
         # 均匀的短停顿本身也是节拍器式的机器特征——以小概率插入一次"走神"
         # 长停顿打乱节奏（人刷创作者中心会被消息/倒水打断）。
         self._long_pause_chance = max(
-            0.0, min(1.0, _env_float("CREATOR_STATS_LONG_PAUSE_CHANCE", 0.08))
+            0.0, min(1.0, _env_float("CREATOR_STATS_LONG_PAUSE_CHANCE", 0.12))
         )
-        long_min = max(0.0, _env_float("CREATOR_STATS_LONG_PAUSE_MIN_S", 15.0))
-        long_max = max(long_min, _env_float("CREATOR_STATS_LONG_PAUSE_MAX_S", 45.0))
+        long_min = max(0.0, _env_float("CREATOR_STATS_LONG_PAUSE_MIN_S", 20.0))
+        long_max = max(long_min, _env_float("CREATOR_STATS_LONG_PAUSE_MAX_S", 60.0))
         self._long_pause = (long_min, long_max)
-        # 轻量轮：以小概率本轮只看概览+列表，不做逐篇详情/正文深入——人不会
-        # 每次都把每篇笔记翻到底，"每轮必全量深入"本身是可识别的固定流程。
+        # 轻量轮：更高默认概率只看概览+列表——大幅减少详情/正文请求面。
         self._light_run_chance = max(
-            0.0, min(1.0, _env_float("CREATOR_STATS_LIGHT_RUN_CHANCE", 0.15))
+            0.0, min(1.0, _env_float("CREATOR_STATS_LIGHT_RUN_CHANCE", 0.35))
         )
         # 逐篇跳过：即使在深入轮，也以该概率跳过单篇笔记的详情/正文访问
         # （被跳过的笔记下轮仍会被增量过滤器选中），避免"候选全扫"的机器人
         # 完备性特征。
         self._enrich_skip_chance = max(
-            0.0, min(1.0, _env_float("CREATOR_STATS_ENRICH_SKIP_CHANCE", 0.15))
+            0.0, min(1.0, _env_float("CREATOR_STATS_ENRICH_SKIP_CHANCE", 0.30))
         )
         # 入口随机化：以该概率先打开创作者主页（真人通常从主页点进数据页），
         # 而不是每轮都直接深链到数据统计页——"每次会话都以同一个深链开头"
         # 是可识别的会话模式。
         self._home_entry_chance = max(
-            0.0, min(1.0, _env_float("CREATOR_STATS_HOME_ENTRY_CHANCE", 0.5))
+            0.0, min(1.0, _env_float("CREATOR_STATS_HOME_ENTRY_CHANCE", 0.55))
         )
         # 翻页提前停止：每翻一页后以该概率停止继续翻——人很少每次都把列表
         # 滚到底；被截断的旧笔记下轮仍有机会被翻到。
         self._page_stop_chance = max(
-            0.0, min(1.0, _env_float("CREATOR_STATS_PAGE_STOP_CHANCE", 0.15))
+            0.0, min(1.0, _env_float("CREATOR_STATS_PAGE_STOP_CHANCE", 0.28))
         )
         # 数据页浏览噪声：以该概率在数据页上先点一下别的日期范围 Tab 再进
         # 笔记管理——人看数据会切换时间范围对比，"每次进数据页只干一件事"
         # 是固定行为模式。
         self._dashboard_browse_chance = max(
-            0.0, min(1.0, _env_float("CREATOR_STATS_DASHBOARD_BROWSE_CHANCE", 0.25))
+            0.0, min(1.0, _env_float("CREATOR_STATS_DASHBOARD_BROWSE_CHANCE", 0.30))
+        )
+        # Hard caps: even with incremental filters, bound per-run page opens.
+        self._max_list_pages = max(1, min(50, int(_env_float("CREATOR_STATS_MAX_LIST_PAGES", 6))))
+        self._max_detail_visits = max(
+            0, min(50, int(_env_float("CREATOR_STATS_MAX_DETAIL_VISITS", 6)))
+        )
+        self._max_body_visits = max(0, min(50, int(_env_float("CREATOR_STATS_MAX_BODY_VISITS", 4))))
+        self._detail_circuit_failures = max(
+            1, int(_env_float("CREATOR_STATS_DETAIL_CIRCUIT_FAILURES", 2))
+        )
+        self._body_empty_circuit = max(1, int(_env_float("CREATOR_STATS_BODY_EMPTY_CIRCUIT", 3)))
+        # Brief linger before closing the tab so the session does not look like
+        # instant open→scrape→close automation.
+        self._session_wind_down = (
+            max(0.0, _env_float("CREATOR_STATS_SESSION_WIND_DOWN_MIN_S", 2.0)),
+            max(0.0, _env_float("CREATOR_STATS_SESSION_WIND_DOWN_MAX_S", 8.0)),
         )
         # 每轮抓取的节奏基准（在 fetch 开头随机缩放 request_delay 得到）：
         # 有的运行整体偏快、有的偏慢，避免跨运行统一的节奏画像。
@@ -479,9 +495,10 @@ class CdpTransport:
         re-visit every note page on every run (risk-control friendly).
         """
         try:
-            max_pages = max(1, min(int(max_pages), 50))
+            # Cap list pagination hard — unbounded max_pages is a risk signal.
+            max_pages = max(1, min(int(max_pages), self._max_list_pages))
         except (TypeError, ValueError):
-            max_pages = 50
+            max_pages = self._max_list_pages
         period_norm = normalize_period(period)
 
         async with self._fetch_lock:
@@ -492,7 +509,8 @@ class CdpTransport:
             if light_run:
                 logger.info("creator stats light run: skipping per-note enrichment this round")
             # 每轮的深入预算也随机缩放——会话总时长不聚类在固定上限。
-            detail_budget = self._detail_timeout * random.uniform(0.7, 1.3)
+            # Slightly lower ceiling than before to keep sessions short under risk.
+            detail_budget = self._detail_timeout * random.uniform(0.45, 0.95)
             browser = await self._ensure_browser()
             context = browser.contexts[0]
             page = await context.new_page()
@@ -880,6 +898,8 @@ class CdpTransport:
                 # 乱序访问：每次以不同顺序浏览笔记详情，避免固定的"新→旧"
                 # 访问序列——固定顺序本身是可被风控识别的爬行特征。
                 random.shuffle(detail_candidates)
+                if self._max_detail_visits >= 0:
+                    detail_candidates = detail_candidates[: self._max_detail_visits]
                 for visit_order, note_id in enumerate(detail_candidates):
                     remaining = detail_deadline - asyncio.get_running_loop().time()
                     if remaining <= 0:
@@ -914,7 +934,7 @@ class CdpTransport:
                     except Exception as exc:
                         logger.info("note detail enrichment skipped for %s: %s", note_id, exc)
                         detail_failures += 1
-                        if detail_failures >= 3:
+                        if detail_failures >= self._detail_circuit_failures:
                             # Repeated failures usually mean risk control or a
                             # dead page — stop instead of hammering the site.
                             logger.warning(
@@ -984,6 +1004,8 @@ class CdpTransport:
                         body_candidates.append(index)
                 # 乱序访问公开正文页，避免与详情页相同的固定访问序列。
                 random.shuffle(body_candidates)
+                if self._max_body_visits >= 0:
+                    body_candidates = body_candidates[: self._max_body_visits]
                 for visit_order, index in enumerate(body_candidates):
                     remaining = body_deadline - asyncio.get_running_loop().time()
                     if remaining <= 0:
@@ -1015,7 +1037,7 @@ class CdpTransport:
                     except Exception as exc:
                         logger.info("public note body scrape skipped for %s: %s", note_id, exc)
                         body_failures += 1
-                        if body_failures >= 3:
+                        if body_failures >= self._detail_circuit_failures:
                             logger.warning(
                                 "public note body scrape circuit break after %s "
                                 "consecutive failures",
@@ -1033,7 +1055,7 @@ class CdpTransport:
                         }
                     else:
                         body_empty += 1
-                        if body_empty >= 5:
+                        if body_empty >= self._body_empty_circuit:
                             # A run of empty bodies on the public explore page
                             # usually means risk control is serving a shell page.
                             logger.warning(
@@ -1072,6 +1094,10 @@ class CdpTransport:
                     }
                     if personal_info_response is not None:
                         account_body["_personal_info"] = personal_info_response[1]
+                # Human-like wind-down: linger briefly before closing the tab.
+                wind_min, wind_max = self._session_wind_down
+                if wind_max > 0:
+                    await asyncio.sleep(random.uniform(wind_min, max(wind_min, wind_max)))
                 return (
                     account_body if isinstance(account_body, dict) else {},
                     profile_body if isinstance(profile_body, dict) else {},
@@ -1412,7 +1438,11 @@ class CreatorStatsClient:
         except (TypeError, ValueError):
             max_pages = 50
         page_size = max(1, min(page_size, 100))
-        max_pages = max(1, min(max_pages, 50))
+        # Prefer transport's safer list-page cap when available.
+        list_cap = 50
+        if isinstance(self.transport, CdpTransport):
+            list_cap = max(1, int(getattr(self.transport, "_max_list_pages", 50) or 50))
+        max_pages = max(1, min(max_pages, list_cap))
         period_norm = normalize_period(period)
         if isinstance(self.transport, CdpTransport):
             # Forward optional filters only when set, so mocked transports in

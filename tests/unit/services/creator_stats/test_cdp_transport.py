@@ -505,7 +505,8 @@ async def test_cdp_detail_circuit_breaks_after_three_consecutive_failures():
 
     await transport.fetch_creator_center(max_pages=1, body_filter=lambda _note: False)
 
-    assert len(page.detail_urls) == 3
+    # Default detail circuit is 2 consecutive failures under risk-safe defaults.
+    assert len(page.detail_urls) == transport._detail_circuit_failures
 
 
 async def test_cdp_body_circuit_breaks_after_three_consecutive_failures():
@@ -515,7 +516,7 @@ async def test_cdp_body_circuit_breaks_after_three_consecutive_failures():
 
     await transport.fetch_creator_center(max_pages=1, detail_filter=lambda _note: False)
 
-    assert transport._scrape_public_note_body.await_count == 3
+    assert transport._scrape_public_note_body.await_count == transport._detail_circuit_failures
 
 
 async def test_cdp_body_circuit_breaks_after_five_consecutive_empty_results():
@@ -526,7 +527,7 @@ async def test_cdp_body_circuit_breaks_after_five_consecutive_empty_results():
 
     await transport.fetch_creator_center(max_pages=1, detail_filter=lambda _note: False)
 
-    assert transport._scrape_public_note_body.await_count == 5
+    assert transport._scrape_public_note_body.await_count == transport._body_empty_circuit
 
 
 async def test_cdp_fetch_all_forwards_optional_filters():
@@ -545,8 +546,29 @@ async def test_cdp_fetch_all_forwards_optional_filters():
     await client.fetch_all("acct", detail_filter=detail_filter, body_filter=body_filter)
 
     transport.fetch_creator_center.assert_awaited_once_with(
-        max_pages=50, period="30d", detail_filter=detail_filter, body_filter=body_filter
+        max_pages=transport._max_list_pages,
+        period="30d",
+        detail_filter=detail_filter,
+        body_filter=body_filter,
     )
+
+
+async def test_cdp_caps_detail_and_body_visits(monkeypatch):
+    """Per-run hard caps bound how many note pages open even with many candidates."""
+    monkeypatch.setenv("CREATOR_STATS_LIGHT_RUN_CHANCE", "0")
+    monkeypatch.setenv("CREATOR_STATS_ENRICH_SKIP_CHANCE", "0")
+    monkeypatch.setenv("CREATOR_STATS_MAX_DETAIL_VISITS", "2")
+    monkeypatch.setenv("CREATOR_STATS_MAX_BODY_VISITS", "1")
+    page = _FakeNotesPage(note_count=8)
+    transport = _transport_with_page(page)
+    transport._max_detail_visits = 2
+    transport._max_body_visits = 1
+    transport._scrape_public_note_body = AsyncMock(return_value="caption text long enough")
+
+    await transport.fetch_creator_center(max_pages=1)
+
+    assert len(page.detail_urls) <= 2
+    assert transport._scrape_public_note_body.await_count <= 1
 
 
 # ── 反风控节奏：乱序访问 / 翻页节奏 / 偶发长停顿 ──
