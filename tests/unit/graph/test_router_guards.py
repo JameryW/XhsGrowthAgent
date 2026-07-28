@@ -25,11 +25,10 @@ def test_should_continue_returns_end_on_error_phase():
     assert should_continue(state) == "__end__"
 
 
-def test_should_continue_continues_on_non_terminal_error():
-    """An error string with an active phase should not terminate — may retry."""
+def test_should_continue_ends_after_analysis_even_with_error_field():
+    """An active analysis phase still terminates after analysis."""
     state = {"phase": WorkflowPhase.ANALYZING, "error": "Something failed"}
-    # With ANALYZING phase and error, should_continue routes to engagement (not __end__)
-    assert should_continue(state) != "__end__"
+    assert should_continue(state) == "__end__"
 
 
 def test_should_plan_returns_end_on_cancelled():

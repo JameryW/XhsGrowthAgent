@@ -127,10 +127,10 @@ class TestContinuousModeE2E:
 
     @pytest.mark.asyncio
     async def test_single_mode_does_not_loop_after_analyzing(self):
-        """Single execution mode: after analyst, goes to engagement (not orchestrator).
+        """Single execution mode: after analyst, ends without interaction.
 
         Confirms the continuous-mode loop-back is gated on execution_mode
-        and doesn't accidentally trigger in single mode.
+        and that single mode does not restart an automatic interaction cycle.
         """
         graph = _compile_test_graph()
         thread_id = "e2e-single-no-loop"
@@ -162,15 +162,13 @@ class TestContinuousModeE2E:
 
         final_state = await graph.ainvoke(initial_state, config)
 
-        # In single mode, should_continue routes ANALYZING → engagement.
-        # The engagement agent (dry_run guard or no-browser) sets phase=COMPLETED.
+        # In single mode, should_continue routes ANALYZING → END.
         # cycle_count may be 1 (orchestrator runs first, sees pre-set
-        # current_agent, bumps the counter) but must NOT reach the cap —
-        # single mode doesn't loop back to orchestrator after engagement.
+        # current_agent, bumps the counter) but must NOT reach the cap.
         assert final_state.get("cycle_count", 0) < _MAX_CYCLE_COUNT
-        # Should reach engagement or completed, not loop back to scouting.
+        # The analyst result remains visible at the terminal graph boundary.
         assert final_state.get("phase") in (
-            WorkflowPhase.ENGAGING,
+            WorkflowPhase.ANALYZING,
             WorkflowPhase.COMPLETED,
         )
 

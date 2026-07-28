@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"Document that automatic workflow comment/DM interaction is removed while explicit operator tools remain bounded."}
+{"file":".trellis/spec/backend/workflow-state.md","reason":"Update graph routing and stale-state conventions after removing the engagement node."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Keep the documented backend tree aligned with deleted automatic agent/node files."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Follow backend typing, formatting, testing, and compatibility conventions."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Terminate stale removed-node states safely without invoking browser interaction."}

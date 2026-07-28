@@ -267,7 +267,7 @@ async function cleanup() {
   // skips its state writes + emits after the next await resumes.
   disposed = true
   stopPolling()
-  // If not confirmed, tell backend to release the headless Chrome session.
+  // If not confirmed, tell backend to release the active browser session.
   if (status.value !== 'confirmed') {
     await stopQrLogin(props.accountId).catch(() => {})
   }

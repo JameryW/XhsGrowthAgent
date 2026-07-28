@@ -209,6 +209,33 @@ class TestStart:
         assert session._confirmed is True
         assert session._context is None
 
+    async def test_cdp_without_browser_context_fails_closed(self, tmp_path):
+        """CDP login must not create an isolated context when Chrome has none."""
+        from backend.services.xhs_login import LoginError, XhsLoginSession
+
+        mock_module, _, _ = _wire_playwright_mock()
+        chromium = mock_module.async_playwright.return_value.start.return_value.chromium
+        browser = chromium.connect_over_cdp.return_value
+        browser.contexts = []
+        browser.new_context = AsyncMock()
+        session = XhsLoginSession(
+            "acc-cdp",
+            str(tmp_path / "profile"),
+            cdp_endpoint="http://127.0.0.1:9222",
+        )
+
+        with (
+            patch.dict(sys.modules, {"playwright.async_api": mock_module}),
+            pytest.raises(LoginError, match="没有可用 browser context.*启动账号 Chrome"),
+        ):
+            await session.start()
+
+        browser.new_context.assert_not_called()
+        assert session._browser is None
+        assert session._context is None
+        assert session._page is None
+        assert session._playwright is None
+
     async def test_start_www_only_feed_does_not_skip_qr(self, tmp_path):
         """www cookies + feed chrome must not short-circuit as 'already logged in'.
 
@@ -489,10 +516,10 @@ class TestGetStatus:
         await session.stop()
 
     async def test_status_scanned_after_code_status_1(self, tmp_path):
-        """codeStatus=1 (scanned, awaiting confirm) → status=scanned."""
+        """codeStatus=1 without a fillable control reports verification=false."""
         from backend.services.xhs_login import XhsLoginSession
 
-        mock_module, _, on_calls = _wire_playwright_mock()
+        mock_module, mock_page, on_calls = _wire_playwright_mock()
         session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
         with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
             await self._start_session(session, on_calls)
@@ -503,8 +530,41 @@ class TestGetStatus:
                 {"data": {"codeStatus": 1}},
             )
             await handler(status_resp)
+            mock_page.evaluate = AsyncMock(
+                return_value={"scanned": True, "verification_required": False}
+            )
             result = await session.get_status()
         assert result["status"] == "scanned"
+        assert result["verification_required"] is False
+        await session.stop()
+
+    async def test_status_scanned_reports_verification_from_visible_control(self, tmp_path):
+        """Normal Playwright-CDP status uses the shared page-state probe."""
+        from backend.services.xhs_login import _LOGIN_PAGE_STATE_SCRIPT, XhsLoginSession
+
+        mock_module, mock_page, on_calls = _wire_playwright_mock()
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+        with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
+            await self._start_session(session, on_calls)
+            handler = on_calls[0][1]
+            await handler(
+                _build_mock_response(
+                    "https://edith.xiaohongshu.com/api/sns/web/v1/login/qrcode/status",
+                    "GET",
+                    {"data": {"codeStatus": 1}},
+                )
+            )
+            mock_page.evaluate = AsyncMock(
+                side_effect=[
+                    {"status": 200, "body": {"data": {"code_status": 1}}},
+                    {"scanned": True, "verification_required": True},
+                ]
+            )
+            result = await session.get_status()
+
+        assert result["status"] == "scanned"
+        assert result["verification_required"] is True
+        assert mock_page.evaluate.await_args_list[1].args == (_LOGIN_PAGE_STATE_SCRIPT,)
         await session.stop()
 
     async def test_status_confirmed_after_code_status_2(self, tmp_path):
@@ -525,6 +585,7 @@ class TestGetStatus:
             result = await session.get_status()
         assert result["status"] == "confirmed"
         assert result["url"] == ""  # url cleared on confirm
+        assert "verification_required" not in result
         await session.stop()
 
     async def test_status_confirmed_is_idempotent(self, tmp_path):
@@ -695,6 +756,7 @@ class TestGetStatus:
         assert result["status"] == "scanned"
         assert result["qr_id"] == "qr123"
         assert result["url"] == "https://x/qr?qrId=qr123"
+        assert result["verification_required"] is False
         await session.stop()
 
     async def test_status_code_status_3_refreshes_qr(self, tmp_path):
@@ -760,6 +822,45 @@ class TestGetStatus:
         assert result["status"] == "scanned"
         assert result["url"] == ""
         assert result["verification_required"] is True
+        session._raw_ws = None
+
+    async def test_raw_status_reports_false_without_a_fillable_control(self, tmp_path):
+        """Unrelated page copy must not turn raw-CDP status into a prompt."""
+        from backend.services.xhs_login import XhsLoginSession
+
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+        session._raw_ws = MagicMock()
+        session._qr_id = "dom-1"
+        session._qr_url = "data:image/png;base64,abc"
+        session._raw_has_strong_cookie = AsyncMock(return_value=False)
+        session._raw_login_page_state = AsyncMock(
+            return_value={
+                "scanned": True,
+                "verification_required": False,
+                "text": "帮助页面提到验证码，但没有可填写控件",
+            }
+        )
+
+        result = await session.get_status()
+
+        assert result["status"] == "scanned"
+        assert result["verification_required"] is False
+        session._raw_ws = None
+
+    async def test_raw_page_state_uses_shared_probe_script(self, tmp_path):
+        """Raw CDP evaluates the same page-state script as Playwright-CDP."""
+        from backend.services.xhs_login import _LOGIN_PAGE_STATE_SCRIPT, XhsLoginSession
+
+        session = XhsLoginSession("acc-1", str(tmp_path / "profile"))
+        session._raw_ws = MagicMock()
+        session._raw_eval = AsyncMock(
+            return_value={"scanned": True, "verification_required": False}
+        )
+
+        result = await session._raw_login_page_state()
+
+        assert result["verification_required"] is False
+        session._raw_eval.assert_awaited_once_with(_LOGIN_PAGE_STATE_SCRIPT)
         session._raw_ws = None
 
     async def test_raw_status_disconnect_raises_login_error_and_cleans_up(self, tmp_path):

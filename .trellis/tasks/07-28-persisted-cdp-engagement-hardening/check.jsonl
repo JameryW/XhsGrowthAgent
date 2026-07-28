@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Use the repository's required lint, format, mypy, and pytest verification expectations."}
+{"file":".trellis/spec/backend/browser-auth-probes.md","reason":"Verify the change does not navigate or mutate browser state during login evidence checks."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Check that risk-control failures stop safely and are not converted into unsafe retries."}
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"Verify all browser launch paths remain headed and engagement tests cover CDP reuse and risk stops."}

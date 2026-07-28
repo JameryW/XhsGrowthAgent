@@ -13,6 +13,12 @@ from backend.tools.content import (
     title_generator,
 )
 from backend.tools.scheduling import timing_optimizer
+from backend.tools.xhs import (
+    comment_replier,
+    dm_handler,
+    escalation_flagger,
+    fetch_pending_comments,
+)
 
 # ── hashtag_researcher tests ──
 
@@ -415,3 +421,41 @@ def test_visual_designer_has_image_prompt():
     tool_names = [t.name for t in tools]
 
     assert "image_prompt_generator" in tool_names
+
+
+def test_legacy_engagement_agent_is_not_in_tool_registry():
+    """Legacy engagement tools are not schedulable by workflow agents."""
+    from backend.tools.registry import ToolRegistry
+
+    assert "engagement" not in ToolRegistry._agent_tools
+    assert ToolRegistry.get_tools_for_agent("engagement") == []
+
+
+def test_workflow_agent_tool_sets_exclude_engagement_tools():
+    """No workflow-agent mapping exposes the manual interaction tools."""
+    from backend.tools.registry import ToolRegistry
+
+    interaction_tools = {
+        "comment_replier",
+        "dm_handler",
+        "escalation_flagger",
+        "fetch_pending_comments",
+    }
+
+    for agent_name, mapped_names in ToolRegistry._agent_tools.items():
+        # Inspect the mapping itself so an interaction tool cannot hide behind
+        # the registry's "only return registered tools" filtering.
+        assert interaction_tools.isdisjoint(mapped_names), agent_name
+
+
+def test_manual_engagement_tools_remain_importable():
+    """Manual-only interaction tools remain available for explicit operator use."""
+    tools = (comment_replier, dm_handler, escalation_flagger, fetch_pending_comments)
+
+    assert {tool.name for tool in tools} == {
+        "comment_replier",
+        "dm_handler",
+        "escalation_flagger",
+        "fetch_pending_comments",
+    }
+    assert all("manual-only" in tool.description for tool in tools)

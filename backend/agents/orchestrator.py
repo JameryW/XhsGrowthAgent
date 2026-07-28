@@ -17,11 +17,6 @@ class OrchestratorAgent(BaseAgent):
     prompt_file = "orchestrator.yaml"
 
     async def execute(self, state: XHSGrowthState, store: BaseStore) -> dict[str, Any]:
-        # 优先处理待处理互动
-        pending = state.get("engagement_actions", [])
-        if pending and not state.get("content_plan"):
-            return {"phase": WorkflowPhase.ENGAGING}
-
         # 有数据但无分析 → 先分析
         analytics = state.get("analytics", {})
         if analytics and not analytics.get("insights"):

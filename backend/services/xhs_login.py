@@ -308,19 +308,93 @@ _QR_IMAGE_EXTRACT_SCRIPT = """
 }
 """
 
-_RAW_LOGIN_STATE_SCRIPT = """
+_LOGIN_PAGE_STATE_SCRIPT = r"""
 () => {
-    const text = String(document.body?.innerText || '');
-    const lower = text.toLowerCase();
+    const isVisible = (element) => {
+        if (!element || !element.getClientRects().length) return false;
+        let current = element;
+        while (current && current.nodeType === 1) {
+            const style = window.getComputedStyle(current);
+            if (
+                style.display === 'none'
+                || style.visibility === 'hidden'
+                || style.visibility === 'collapse'
+                || style.opacity === '0'
+                || current.getAttribute('aria-hidden') === 'true'
+            ) {
+                return false;
+            }
+            current = current.parentElement;
+        }
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+    };
+    const isEnabled = (input) => (
+        !input.disabled
+        && !input.readOnly
+        && input.getAttribute('aria-disabled') !== 'true'
+    );
+    const inputMetadata = (input) => {
+        const labels = Array.from(input.labels || [])
+            .map((label) => label.innerText || '')
+            .join(' ');
+        return [
+            input.getAttribute('type'),
+            input.getAttribute('name'),
+            input.getAttribute('id'),
+            input.getAttribute('class'),
+            input.getAttribute('placeholder'),
+            input.getAttribute('aria-label'),
+            input.getAttribute('autocomplete'),
+            input.getAttribute('inputmode'),
+            input.getAttribute('pattern'),
+            input.getAttribute('data-testid'),
+            labels,
+        ].filter(Boolean).join(' ').toLowerCase();
+    };
+    const codeMarker = new RegExp([
+        '验证码', '校验码', '安全码', '动态码', '短信码', '一次性',
+        'one[-_ ]?time', 'captcha', 'verification', 'verify', 'sms', 'otp',
+        '\\bcode\\b',
+    ].join('|'));
+    const inputs = Array.from(document.querySelectorAll('input'))
+        .filter((input) => isEnabled(input) && isVisible(input))
+        .map((input) => {
+            const type = (input.getAttribute('type') || 'text').toLowerCase();
+            const inputMode = (input.getAttribute('inputmode') || '').toLowerCase();
+            const autocomplete = (input.getAttribute('autocomplete') || '').toLowerCase();
+            const pattern = input.getAttribute('pattern') || '';
+            const maxLength = Number(
+                input.getAttribute('maxlength') || input.maxLength || 0,
+            );
+            const metadata = inputMetadata(input);
+            const marked = codeMarker.test(metadata);
+            const numeric = (
+                ['tel', 'number'].includes(type)
+                || ['numeric', 'decimal', 'tel'].includes(inputMode)
+                || autocomplete === 'one-time-code'
+                || /\d/.test(pattern)
+            );
+            const codeType = ['text', 'search', 'tel', 'number'].includes(type);
+            const rect = input.getBoundingClientRect();
+            const singleBox = maxLength === 1 || (numeric && rect.width <= 72);
+            const validLength = maxLength >= 4 && maxLength <= 8;
+            const standalone = codeType && (marked || (numeric && validLength));
+            return { input, marked, numeric, singleBox, standalone };
+        });
+
+    // A regular OTP field needs semantic/numeric evidence. A row of enabled
+    // one-character boxes is also a code control even when its class/label is
+    // opaque; unrelated body copy is deliberately never consulted here.
+    const multiBoxCount = inputs.filter((item) => item.singleBox).length;
+    const verificationRequired = inputs.some((item) => item.standalone)
+        || (multiBoxCount >= 4 && multiBoxCount <= 8);
+
+    const visibleText = String(document.body?.innerText || '');
     return {
-        scanned: text.includes('扫码成功') || text.includes('请在手机上确认'),
-        verification_required:
-            text.includes('验证码')
-            || text.includes('校验码')
-            || lower.includes('sms verification')
-            || lower.includes('verification code'),
-        qr_expired: text.includes('二维码已过期'),
-        text: text.slice(0, 500),
+        scanned: visibleText.includes('扫码成功') || visibleText.includes('请在手机上确认'),
+        verification_required: verificationRequired,
+        qr_expired: visibleText.includes('二维码已过期'),
     };
 }
 """
@@ -515,7 +589,13 @@ class XhsLoginSession:
                         "——确认 launcher 已启动该账号 Chrome（chrome-profiles.sh start）"
                     ) from e
                 contexts = self._browser.contexts
-                self._context = contexts[0] if contexts else await self._browser.new_context()
+                if not contexts:
+                    raise LoginError(
+                        "绑定 Chrome 没有可用 browser context，请启动账号 Chrome 后重试。"
+                    )
+                # CDP 登录必须复用 launcher 创建的持久 profile context。
+                # 绝不能创建隔离 context，否则扫码态可能写入错误的 profile。
+                self._context = contexts[0]
                 logger.info("扫码登录连 host Chrome: %s", self.cdp_endpoint)
             else:
                 # 回退：launch_persistent_context（playwright bundled chromium）。
@@ -739,6 +819,10 @@ class XhsLoginSession:
             _CODE_CONFIRMED: "confirmed",
         }
         status = status_map.get(self._code_status, "waiting")
+        verification_required = False
+        if status == "scanned":
+            page_state = await self._probe_login_page_state()
+            verification_required = bool(page_state.get("verification_required"))
 
         if self._code_status == _CODE_CONFIRMED and not self._confirmed:
             # codeStatus==2：登录成功，cookie 已由 persistent context 写入 profile。
@@ -764,12 +848,15 @@ class XhsLoginSession:
             # 同账号下次 start() 能新建会话（profile 失效时重走扫码）。
             _detach_session_if_current(self)
 
-        return {
+        result: dict[str, Any] = {
             "status": status,
             "qr_id": self._qr_id,
             "url": self._qr_url if status != "confirmed" else "",
             "account_id": self.account_id,
         }
+        if status == "scanned":
+            result["verification_required"] = verification_required
+        return result
 
     async def submit_verification_code(self, code: str) -> dict[str, Any]:
         """Fill a numeric verification code into the current CDP login page.
@@ -1398,13 +1485,28 @@ class XhsLoginSession:
             "account_id": self.account_id,
         }
 
-    async def _raw_login_page_state(self) -> dict[str, Any]:
+    async def _probe_login_page_state(self) -> dict[str, Any]:
+        """Read login-page state through the active CDP transport.
+
+        Playwright-CDP and raw-CDP must use the same browser-side probe. In
+        particular, verification is evidence from a visible, enabled input;
+        page copy alone is not enough to show the verification prompt.
+        """
         try:
-            result = await self._raw_eval(_RAW_LOGIN_STATE_SCRIPT)
+            if self._raw_ws is not None:
+                result = await self._raw_eval(_LOGIN_PAGE_STATE_SCRIPT)
+            elif self._page is not None:
+                result = await self._page.evaluate(_LOGIN_PAGE_STATE_SCRIPT)
+            else:
+                return {}
         except Exception as e:
-            logger.debug("raw CDP 读取扫码页面状态失败: %s", e)
+            logger.debug("读取扫码页面状态失败: %s", e)
             return {}
         return result if isinstance(result, dict) else {}
+
+    async def _raw_login_page_state(self) -> dict[str, Any]:
+        """Compatibility wrapper for the raw-CDP status path."""
+        return await self._probe_login_page_state()
 
     async def _raw_has_strong_cookie(self) -> bool:
         try:

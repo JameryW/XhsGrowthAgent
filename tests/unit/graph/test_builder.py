@@ -29,7 +29,6 @@ class TestBuildGraph:
             "review_gate",
             "publisher",
             "analyst",
-            "engagement",
             "revise_content",
             # 发布前优化节点
             "viral_matcher",
@@ -51,12 +50,13 @@ class TestBuildGraph:
         # This is implicit in the graph structure
         assert "orchestrator" in graph.nodes
 
-    def test_analyst_can_route_to_engagement(self):
-        """Analyst routing includes every branch returned by should_continue."""
+    def test_analyst_ends_after_single_mode_analysis(self):
+        """Automatic engagement was removed; single-mode analysis ends."""
         graph = build_graph()
 
         ends = graph.branches["analyst"]["should_continue"].ends
-        assert ends["engagement"] == "engagement"
+        assert "engagement" not in ends
+        assert ends["__end__"] == "__end__"
 
 
 class TestCompileGraphDev:

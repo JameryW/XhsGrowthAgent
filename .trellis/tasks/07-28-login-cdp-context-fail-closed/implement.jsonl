@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"Apply the existing fail-closed CDP and persistent-profile safety rule to the login session."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Keep login service ownership and browser lifecycle documentation consistent with the context reuse boundary."}

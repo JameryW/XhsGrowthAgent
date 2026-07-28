@@ -95,6 +95,39 @@ describe('QrLoginModal verification input gate', () => {
     expect(wrapper.find('input[inputmode="numeric"]').exists()).toBe(true)
   })
 
+  it('clears the numeric input when a later poll no longer requires verification', async () => {
+    mockedGetQrLoginStatus
+      .mockResolvedValueOnce(qrStatus('scanned', true))
+      .mockResolvedValueOnce(qrStatus('scanned', false))
+    const wrapper = mount(QrLoginModal, {
+      props: {
+        accountId: 'account-1',
+        accountName: '测试账号',
+        isOpen: true,
+      },
+      global: {
+        stubs: {
+          AppIcon: { template: '<span />' },
+          NeonButton: {
+            props: ['disabled', 'loading'],
+            template: '<button :disabled="disabled"><slot /></button>',
+          },
+          Teleport: { template: '<div><slot /></div>' },
+        },
+      },
+    })
+    mountedWrappers.push(wrapper)
+
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+    expect(wrapper.find('input[inputmode="numeric"]').exists()).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+    expect(wrapper.find('input[inputmode="numeric"]').exists()).toBe(false)
+  })
+
   it('hides the numeric input after the session is confirmed', async () => {
     const wrapper = await mountAfterPoll(qrStatus('confirmed', true))
 

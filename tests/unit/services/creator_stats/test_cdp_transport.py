@@ -461,7 +461,7 @@ def _transport_with_page(page: _FakeNotesPage) -> CdpTransport:
 
     transport = CdpTransport("http://127.0.0.1:9222", timeout=1, request_delay=(0, 0))
     transport._ensure_browser = AsyncMock(return_value=FakeBrowser())
-    # Tests that exercise enrichment need body visits enabled (prod default is 0).
+    # Deliberately mutate the legacy cap: it must not enable public-page visits.
     transport._max_body_visits = 10
     transport._max_detail_visits = 20
     transport._session_wind_down = (0.0, 0.0)
@@ -469,7 +469,7 @@ def _transport_with_page(page: _FakeNotesPage) -> CdpTransport:
 
 
 async def test_cdp_incremental_filters_skip_unselected_notes():
-    """Only notes approved by the filters get detail/body page visits."""
+    """Detail filters still work while the legacy body filter is ignored."""
     page = _FakeNotesPage(note_count=2)
     transport = _transport_with_page(page)
 
@@ -480,20 +480,21 @@ async def test_cdp_incremental_filters_skip_unselected_notes():
     )
 
     assert [url.rsplit("noteId=", 1)[1] for url in page.detail_urls] == ["note-1"]
-    assert len(page.body_urls) == 1
-    assert "note-2" in page.body_urls[0]
+    assert page.body_urls == []
     assert len(notes) == 2
 
 
 async def test_cdp_paces_between_note_visits_but_not_before_first():
     page = _FakeNotesPage(note_count=2)
     transport = _transport_with_page(page)
+    transport._light_run_chance = 0.0
+    transport._enrich_skip_chance = 0.0
     transport._pace = AsyncMock()
 
     await transport.fetch_creator_center(max_pages=1)
 
-    # 2 detail visits + 2 body visits; the first visit of each loop is unpaced.
-    assert transport._pace.await_count == 2
+    # Two Creator Center detail visits; the first visit is unpaced.
+    assert transport._pace.await_count == 1
 
 
 async def test_cdp_detail_circuit_breaks_after_three_consecutive_failures():
@@ -506,32 +507,13 @@ async def test_cdp_detail_circuit_breaks_after_three_consecutive_failures():
 
     page = FailingDetailPage(note_count=5)
     transport = _transport_with_page(page)
+    transport._light_run_chance = 0.0
+    transport._enrich_skip_chance = 0.0
 
     await transport.fetch_creator_center(max_pages=1, body_filter=lambda _note: False)
 
     # Default detail circuit is 2 consecutive failures under risk-safe defaults.
     assert len(page.detail_urls) == transport._detail_circuit_failures
-
-
-async def test_cdp_body_circuit_breaks_after_three_consecutive_failures():
-    page = _FakeNotesPage(note_count=5)
-    transport = _transport_with_page(page)
-    transport._scrape_public_note_body = AsyncMock(side_effect=RuntimeError("boom"))
-
-    await transport.fetch_creator_center(max_pages=1, detail_filter=lambda _note: False)
-
-    assert transport._scrape_public_note_body.await_count == transport._detail_circuit_failures
-
-
-async def test_cdp_body_circuit_breaks_after_five_consecutive_empty_results():
-    """Repeated empty public pages usually mean risk control is serving a shell."""
-    page = _FakeNotesPage(note_count=7)
-    transport = _transport_with_page(page)
-    transport._scrape_public_note_body = AsyncMock(return_value="")
-
-    await transport.fetch_creator_center(max_pages=1, detail_filter=lambda _note: False)
-
-    assert transport._scrape_public_note_body.await_count == transport._body_empty_circuit
 
 
 async def test_cdp_fetch_all_forwards_optional_filters():
@@ -573,22 +555,38 @@ async def test_cdp_fetch_all_forwards_force_light():
     )
 
 
-async def test_cdp_caps_detail_and_body_visits(monkeypatch):
-    """Per-run hard caps bound how many note pages open even with many candidates."""
+async def test_cdp_legacy_body_cap_cannot_enable_public_page_browsing(monkeypatch):
+    """Positive legacy caps and filters never navigate to public note pages."""
     monkeypatch.setenv("CREATOR_STATS_LIGHT_RUN_CHANCE", "0")
     monkeypatch.setenv("CREATOR_STATS_ENRICH_SKIP_CHANCE", "0")
     monkeypatch.setenv("CREATOR_STATS_MAX_DETAIL_VISITS", "2")
-    monkeypatch.setenv("CREATOR_STATS_MAX_BODY_VISITS", "1")
+    monkeypatch.setenv("CREATOR_STATS_MAX_BODY_VISITS", "20")
     page = _FakeNotesPage(note_count=8)
     transport = _transport_with_page(page)
     transport._max_detail_visits = 2
-    transport._max_body_visits = 1
-    transport._scrape_public_note_body = AsyncMock(return_value="caption text long enough")
+    transport._max_body_visits = 50
 
-    await transport.fetch_creator_center(max_pages=1)
+    await transport.fetch_creator_center(max_pages=1, body_filter=lambda _note: True)
 
     assert len(page.detail_urls) <= 2
-    assert transport._scrape_public_note_body.await_count <= 1
+    assert page.body_urls == []
+    assert all("www.xiaohongshu.com/explore/" not in url for url in page.visited)
+    assert not hasattr(transport, "_scrape_public_note_body")
+
+
+async def test_cdp_preserves_body_text_from_creator_center_payload():
+    """A caption supplied by Creator Center is kept without public navigation."""
+    page = _FakeNotesPage(note_count=1)
+    page._notes[0]["body_text"] = "创作者中心已有正文"
+    transport = _transport_with_page(page)
+
+    _account, _profile, notes = await transport.fetch_creator_center(
+        max_pages=1,
+        force_light=True,
+    )
+
+    assert notes[0]["body_text"] == "创作者中心已有正文"
+    assert page.body_urls == []
 
 
 async def test_cdp_nonfinite_env_values_fall_back_to_safe_defaults(monkeypatch):
@@ -605,6 +603,24 @@ async def test_cdp_nonfinite_env_values_fall_back_to_safe_defaults(monkeypatch):
     assert transport._max_list_pages == 5
     assert transport._max_detail_visits == 4
     assert transport._max_body_visits == 0
+
+
+async def test_cdp_safe_mode_clamps_public_body_and_crawl_budgets(monkeypatch):
+    """Production safe mode tightens Creator Center crawl caps."""
+    monkeypatch.setenv("CREATOR_STATS_SAFE_MODE", "1")
+    monkeypatch.setenv("CREATOR_STATS_LIGHT_RUN_CHANCE", "0")
+    monkeypatch.setenv("CREATOR_STATS_ENRICH_SKIP_CHANCE", "0")
+    monkeypatch.setenv("CREATOR_STATS_MAX_LIST_PAGES", "20")
+    monkeypatch.setenv("CREATOR_STATS_MAX_DETAIL_VISITS", "20")
+    monkeypatch.setenv("CREATOR_STATS_MAX_BODY_VISITS", "20")
+
+    transport = CdpTransport("http://127.0.0.1:9222")
+
+    assert transport._max_list_pages == 3
+    assert transport._max_detail_visits == 2
+    assert transport._max_body_visits == 0
+    assert transport._light_run_chance >= 0.75
+    assert transport._enrich_skip_chance >= 0.55
 
 
 # ── 反风控节奏：乱序访问 / 翻页节奏 / 偶发长停顿 ──
@@ -666,8 +682,8 @@ async def test_cdp_paces_between_list_page_turns():
 
     await transport.fetch_creator_center(max_pages=2)
 
-    # 1 次翻页（第 2 页不存在，等待超时后正常结束）+ 1 次详情 + 1 次正文。
-    assert transport._pace.await_count == 3
+    # 1 次翻页（第 2 页不存在，等待超时后正常结束）+ 1 次详情。
+    assert transport._pace.await_count == 2
 
 
 async def test_new_run_pace_scales_delay_per_run():
@@ -701,7 +717,7 @@ async def test_pace_uses_run_delay_baseline(monkeypatch):
 
 
 async def test_cdp_light_run_skips_per_note_enrichment(monkeypatch):
-    """轻量轮（light run）：只看概览+列表，不访问任何笔记详情/正文页。"""
+    """轻量轮（light run）：只看概览+列表，不访问笔记详情页。"""
     monkeypatch.setenv("CREATOR_STATS_LIGHT_RUN_CHANCE", "1")
     page = _FakeNotesPage(note_count=3)
     transport = _transport_with_page(page)
@@ -715,7 +731,7 @@ async def test_cdp_light_run_skips_per_note_enrichment(monkeypatch):
 
 
 async def test_cdp_enrich_skip_chance_one_visits_no_note_pages(monkeypatch):
-    """逐篇跳过概率为 1 时，深入轮也不访问任何详情/正文页。"""
+    """逐篇跳过概率为 1 时，深入轮也不访问任何详情页。"""
     monkeypatch.setenv("CREATOR_STATS_ENRICH_SKIP_CHANCE", "1")
     page = _FakeNotesPage(note_count=3)
     transport = _transport_with_page(page)

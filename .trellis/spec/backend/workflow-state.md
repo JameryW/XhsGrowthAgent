@@ -490,29 +490,16 @@ if state.interrupts:
 await graph.ainvoke(resume_value, config)
 ```
 
-## Engagement Routing
+## Post-publish and legacy engagement states
 
-### Single-exec vs continuous mode
+The publisher terminates the workflow after publishing. Post-publish analysis
+is manual and is never followed by automatic comment or DM interaction.
 
-The engagement node's outgoing edge is **conditional**, not fixed:
-
-- **Single-exec** mode (default): `engagement → END` — workflow terminates after engagement
-- **Continuous** mode: `engagement → orchestrator` — loops back for the next cycle
-
-```python
-# backend/graph/routers.py
-def engagement_router(state: XHSGrowthState) -> Literal["orchestrator", "__end__"]:
-    if terminal := _check_terminal(state):
-        return terminal
-    mode = state.get("execution_mode", "single")
-    if mode == "continuous":
-        return "orchestrator"
-    return "__end__"
-```
-
-**Common Mistake:** Using `add_edge("engagement", "orchestrator")` creates an infinite loop in single-exec mode because engagement always routes back to orchestrator.
-
-**Fix:** Use `add_conditional_edges("engagement", engagement_router, ...)` instead.
+Legacy checkpoints may still contain `WorkflowPhase.ENGAGING` or an
+`engagement` next node from older graph versions. The orchestrator must route
+the legacy phase to `__end__`, and status inference must treat the removed
+next node as completed. It must never instantiate a replacement interaction
+node or restart browser activity.
 
 ## Router Terminal Guard Convention
 
@@ -544,7 +531,7 @@ def content_strategist_router(
 ```
 
 **Audit:** Most routers already have the guard (e.g. `ripple_finalize_router`,
-`engagement_router`, `orchestrator_router`). If a new router is added or an
+`orchestrator_router`). If a new router is added or an
 existing one is missing the guard, add it — the risk of silent error-phase
 overwrite is high for any router that feeds into a node with auto-accept logic.
 
@@ -568,9 +555,8 @@ overwrite is high for any router that feeds into a node with auto-accept logic.
 - `test_on_task_done_marks_stale`: done callback marks registry as stale when task exits while running
 - `test_resume_accepts_stale`: resume endpoint allows resuming from STALE status
 - `test_derive_status_error_non_terminal`: error present + next non-empty + phase≠ERROR → RUNNING
-- `test_engagement_router_single_mode`: execution_mode="single" → "__end__"
-- `test_engagement_router_continuous_mode`: execution_mode="continuous" → "orchestrator"
-- `test_engagement_router_default_single`: no execution_mode → "__end__"
+- `test_should_continue_single_mode_after_analysis`: ANALYZING → "__end__"
+- `test_orchestrator_router_legacy_engaging`: ENGAGING → "__end__"
 
 ## Ripple State Fields
 

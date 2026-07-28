@@ -137,18 +137,22 @@ def _build_incremental_filters(
     recent_days: int = 7,
     body_lookback_days: int = 30,
 ) -> tuple[Callable[[dict[str, Any]], bool], Callable[[dict[str, Any]], bool]]:
-    """Per-note visit deciders for detail-page and public-body enrichment.
+    """Return incremental Creator Center detail and legacy body filters.
 
     Anti-risk-control strategy: only visit a note's detail page when it is new,
-    recently published, or its list metrics moved; only scrape the public body
-    when the stored row has no caption yet (captions do not change, so a note
-    is never re-scraped).  ``existing=None`` (state unreadable) disables both
-    enrichments entirely — the list payload is still imported, which is the
-    safest crawl.  Timestamps are ISO strings compared lexicographically.
+    recently published, or its list metrics moved.  Public-note body browsing
+    was permanently removed; the second callable remains a compatibility
+    no-op for older transports and callers.  ``existing=None`` (state
+    unreadable) disables detail enrichment entirely — the list payload is
+    still imported, which is the safest crawl. Timestamps are ISO strings
+    compared lexicographically.
     """
     now = datetime.now(UTC)
     recent_cutoff = (now - timedelta(days=max(0, recent_days))).isoformat()
-    body_cutoff = (now - timedelta(days=max(0, body_lookback_days))).isoformat()
+    # Keep the keyword in the signature for older callers/configuration. It no
+    # longer influences any browser action because public note pages are out of
+    # scope permanently.
+    _ = body_lookback_days
 
     def _normalize(note: dict[str, Any]) -> NoteStats | None:
         try:
@@ -175,17 +179,9 @@ def _build_incremental_filters(
             previous.collects,
         )
 
-    def body_filter(note: dict[str, Any]) -> bool:
-        if existing is None:
-            return False
-        current = _normalize(note)
-        if current is None:
-            return False
-        previous = existing.get(current.note_id)
-        if previous is not None and previous.body_text:
-            return False
-        published = current.published_at or (previous.published_at if previous else "")
-        return bool(published) and published >= body_cutoff
+    def body_filter(_note: dict[str, Any]) -> bool:
+        """Legacy compatibility hook; public note body browsing is disabled."""
+        return False
 
     return detail_filter, body_filter
 
@@ -303,6 +299,9 @@ async def sync_after_login(account_id: str, *, store: BaseStore | None = None) -
             period="30d",
             run_creative_analysis=True,
             cdp_endpoint=cdp_endpoint,
+            # Post-login automation is overview/list-only by default; Creator
+            # Center detail enrichment remains an explicit configuration choice.
+            force_light=True,
             # Preflight just confirmed login; skip a second cookie probe.
             skip_login_preflight=True,
             # A successful QR login is an explicit refresh request; do not
@@ -594,7 +593,8 @@ async def sync_from_creator_center(
     cdp_endpoint 非空 → 走 CDP 连宿主已登录 Chrome（cookie jar 自带，不用 cookie）。
     否则 fallback cookie（httpx）。注入的 client 优先级最高。
 
-    ``force_light`` skips per-note detail/body pages (default for scheduled sync).
+    ``force_light`` skips per-note Creator Center detail pages (default for
+    scheduled syncs). Public-note body pages are never visited.
     """
     cdp_endpoint = (cdp_endpoint or "").strip()
     # An injected client is an explicit caller-owned fetch (tests, retries, or
@@ -782,13 +782,14 @@ def _resolve_force_light(*, prefer_light: bool | None) -> bool:
 
     Scheduled jobs default to force_light. Manual API defaults to chance-based
     light runs inside the transport (prefer_light=False).
-    ``CREATOR_STATS_DEEP_EVERY_N_RUNS`` lets scheduled jobs deep-enrich rarely.
+    ``CREATOR_STATS_DEEP_EVERY_N_RUNS`` lets scheduled jobs deep-enrich rarely
+    when explicitly set to a positive integer; an unset value stays list-only.
     """
     global _scheduled_light_streak
     if prefer_light is False:
         return False
     if prefer_light is True:
-        deep_every = _env_int("CREATOR_STATS_DEEP_EVERY_N_RUNS", 5)
+        deep_every = _env_int("CREATOR_STATS_DEEP_EVERY_N_RUNS", 0)
         if deep_every <= 0:
             return True
         _scheduled_light_streak += 1

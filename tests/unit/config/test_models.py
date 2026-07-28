@@ -117,8 +117,8 @@ class TestResolveModelId:
         """PUBLISHING uses astron-code-latest."""
         assert resolve_model_id(TaskType.PUBLISHING) == "astron-code-latest"
 
-    def test_engagement_use_xunfei(self):
-        """ENGAGEMENT uses astron-code-latest."""
+    def test_legacy_engagement_route_remains_resolvable(self):
+        """Persisted engagement routing config remains backward compatible."""
         assert resolve_model_id(TaskType.ENGAGEMENT) == "astron-code-latest"
 
     def test_routing_overrides(self):

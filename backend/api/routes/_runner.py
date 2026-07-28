@@ -139,7 +139,7 @@ def _emit_status_transition(
     elif new_status == WorkflowStatus.COMPLETED:
         # Emit WORKFLOW_COMPLETED here (single source of truth) — not in
         # individual nodes like publisher, which would prematurely close SSE
-        # streams before analyst/engagement nodes have run.
+        # streams before any manually requested post-publish analysis has run.
         if snapshot is not None:
             values = snapshot.values or {}
             payload["publish_result"] = values.get("publish_result", {})

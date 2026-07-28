@@ -36,7 +36,6 @@ class ToolRegistry:
             "ripple_get_simulation_log",
             "ripple_generate_report",
         ],
-        "engagement": ["comment_replier", "dm_handler", "escalation_flagger"],
         "blogger_scout": ["xhs_trending", "keyword_monitor"],
     }
 

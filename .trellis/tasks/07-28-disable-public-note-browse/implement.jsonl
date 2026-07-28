@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"Defines the headed/CDP browser boundary and requires Creator Center collection to avoid public note pages."}
+{"file":".trellis/spec/backend/index.md","reason":"Provides backend implementation and quality-check conventions for the transport change."}

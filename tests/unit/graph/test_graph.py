@@ -23,7 +23,6 @@ def test_graph_has_all_nodes():
         "review_gate",
         "publisher",
         "analyst",
-        "engagement",
         "revise_content",
     }
     # StateGraph.nodes 包含所有添加的节点

@@ -1,4 +1,9 @@
-"""XHS engagement tools — 评论回复与私信处理."""
+"""小红书互动工具。
+
+本模块仅提供人工审核后的单次、显式调用（manual-only）工具。调用前必须由
+操作员确认目标账号、目标内容和待发送文本；这些工具不会注册到
+``ToolRegistry``，也不会被工作流 agent 调度、轮询或自动触发。
+"""
 
 from __future__ import annotations
 
@@ -14,7 +19,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("xhs_growth.tools.engagement")
 
 
-def _get_engagement() -> XHSEngagement:
+def _get_engagement(cdp_endpoint: str = "", account_id: str = "") -> XHSEngagement:
     """获取 XHSEngagement 实例"""
     from backend.config.settings import Settings
     from backend.services.xhs_engagement import XHSEngagement
@@ -22,8 +27,29 @@ def _get_engagement() -> XHSEngagement:
     settings = Settings()
     return XHSEngagement(
         cookie="",
-        headless=settings.platform.headless,
+        headless=False,
+        cdp_endpoint=cdp_endpoint or settings.platform.cdp_endpoint,
+        account_id=account_id,
     )
+
+
+async def _resolve_engagement_cdp_endpoint(account_id: str) -> str:
+    """Prefer the dedicated Chrome endpoint bound to the selected account."""
+    from backend.config.settings import Settings
+
+    settings = Settings()
+    endpoint = settings.platform.cdp_endpoint.strip()
+    account_id = account_id.strip()
+    if account_id:
+        try:
+            from backend.db.accounts import get_account_cdp_endpoint
+
+            account_endpoint = (await get_account_cdp_endpoint(account_id)).strip()
+            if account_endpoint:
+                endpoint = account_endpoint
+        except Exception as exc:
+            logger.warning("无法解析账号 %s 的互动 CDP endpoint: %s", account_id, exc)
+    return endpoint
 
 
 def _get_client() -> XHSClient:
@@ -42,8 +68,11 @@ async def comment_replier(
     comment_id: str,
     post_id: str,
     reply_content: str,
+    account_id: str = "",
 ) -> dict[str, Any]:
-    """回复小红书评论.
+    """人工确认后回复一条小红书评论（manual-only）。
+
+    仅允许操作员在核对目标和回复内容后显式调用；不会由工作流 agent 自动触发。
 
     Args:
         comment_id: 评论 ID
@@ -55,7 +84,10 @@ async def comment_replier(
     """
     logger.info(f"Replying to comment: {comment_id}")
 
-    engagement = _get_engagement()
+    engagement = _get_engagement(
+        cdp_endpoint=await _resolve_engagement_cdp_endpoint(account_id),
+        account_id=account_id,
+    )
     try:
         result = await engagement.reply_to_comment(
             note_id=post_id,
@@ -89,8 +121,11 @@ async def dm_handler(
     message_id: str,
     sender_id: str,
     reply_content: str,
+    account_id: str = "",
 ) -> dict[str, Any]:
-    """处理小红书私信.
+    """人工确认后发送一条小红书私信（manual-only）。
+
+    仅允许操作员在核对收件人和消息内容后显式调用；不会由工作流 agent 自动触发。
 
     Args:
         message_id: 消息 ID
@@ -102,7 +137,10 @@ async def dm_handler(
     """
     logger.info(f"Handling DM from: {sender_id}")
 
-    engagement = _get_engagement()
+    engagement = _get_engagement(
+        cdp_endpoint=await _resolve_engagement_cdp_endpoint(account_id),
+        account_id=account_id,
+    )
     try:
         result = await engagement.send_dm(
             target_user_id=sender_id,
@@ -136,7 +174,9 @@ async def escalation_flagger(
     reason: str = "",
     severity: str = "medium",
 ) -> dict[str, Any]:
-    """标记需要人工处理的互动（负面评论、投诉等）.
+    """人工审核后标记需要处理的互动（manual-only）。
+
+    仅允许操作员显式发起，供人工审核流程记录升级事项；不会由工作流 agent 自动触发。
 
     Args:
         content: 需要标记的内容
@@ -189,7 +229,9 @@ async def escalation_flagger(
 
 @tool
 async def fetch_pending_comments(post_id: str, limit: int = 20) -> list[dict[str, Any]]:
-    """获取待回复的评论列表.
+    """人工审核时获取待回复评论（manual-only）。
+
+    必须由操作员明确发起，且结果只能用于人工审核；不会被工作流 agent 自动轮询或调度。
 
     Args:
         post_id: 笔记 ID

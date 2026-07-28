@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Confirm the tool registry and XHS tool export conventions before removing the stale engagement-agent mapping."}
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"Keep the explicit/manual interaction boundary consistent with the browser safety policy."}

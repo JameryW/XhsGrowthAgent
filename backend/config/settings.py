@@ -21,7 +21,6 @@ class ModelSettings(BaseSettings):
             "visual": "mimo-v2.5-pro",
             "analysis": "mimo-v2.5-pro",
             "publishing": "mimo-v2.5-pro",
-            "engagement": "mimo-v2.5-pro",
         }
     )
 
@@ -36,7 +35,9 @@ class XHSPlatformSettings(BaseSettings):
 
     api_base: str = "https://edith.xiaohongshu.com"
     use_browser: bool = False
-    headless: bool = True
+    # Legacy compatibility field. All XHS browser paths are headed; this value
+    # is intentionally ignored by browser services.
+    headless: bool = False
     # CDP 连接真实 Chrome 的端点（如 http://127.0.0.1:9222）。设了则 connect_over_cdp
     # 连常驻真实 Chrome（用户扫码登录的持久 profile）。
     cdp_endpoint: str = ""
@@ -69,7 +70,6 @@ class WorkflowSettings(BaseSettings):
     scout_interval_hours: int = 6
     post_interval_hours: int = 4
     analytics_interval_hours: int = 12
-    engagement_check_interval_min: int = 30
 
     model_config = {"env_prefix": "WORKFLOW_", "env_file": ".env", "extra": "ignore"}
 

@@ -41,7 +41,9 @@ def orchestrator_router(state: XHSGrowthState) -> str:
             WorkflowPhase.PLANNING: "content_strategist",
             WorkflowPhase.CREATING: "copywriter",
             WorkflowPhase.ANALYZING: "analyst",
-            WorkflowPhase.ENGAGING: "engagement",
+            # Legacy checkpoints may still contain ENGAGING; no interaction
+            # node exists anymore, so terminate instead of restarting work.
+            WorkflowPhase.ENGAGING: "__end__",
             WorkflowPhase.ERROR: "__end__",
             WorkflowPhase.COMPLETED: "__end__",
             WorkflowPhase.IDLE: "brief_analyzer",
@@ -52,7 +54,9 @@ def orchestrator_router(state: XHSGrowthState) -> str:
             WorkflowPhase.SCOUTING: "trend_scout",
             WorkflowPhase.PLANNING: "content_strategist",
             WorkflowPhase.ANALYZING: "analyst",
-            WorkflowPhase.ENGAGING: "engagement",
+            # Legacy checkpoints may still contain ENGAGING; no interaction
+            # node exists anymore, so terminate instead of restarting work.
+            WorkflowPhase.ENGAGING: "__end__",
             WorkflowPhase.ERROR: "__end__",
             WorkflowPhase.COMPLETED: "__end__",
             WorkflowPhase.IDLE: "trend_scout",
@@ -119,9 +123,9 @@ def review_outcome(state: XHSGrowthState) -> Literal["evaluator_gate", "revise_c
 # when the RQGM panel is miscalibrated or adversarial (keeps rejecting).
 _MAX_REVISION_COUNT = 2
 
-# Max analyst→orchestrator (or engagement→orchestrator) cycles in continuous
-# execution mode before force-ending. Prevents runaway workflows when the
-# orchestrator keeps routing back to the same phase without making progress.
+# Max analyst→orchestrator cycles in continuous execution mode before
+# force-ending. Prevents runaway workflows when the orchestrator keeps routing
+# back to the same phase without making progress.
 _MAX_CYCLE_COUNT = 5
 
 
@@ -156,7 +160,7 @@ def evaluator_outcome(state: XHSGrowthState) -> Literal["publisher", "revise_con
     return "publisher"
 
 
-def should_continue(state: XHSGrowthState) -> Literal["orchestrator", "engagement", "__end__"]:
+def should_continue(state: XHSGrowthState) -> Literal["orchestrator", "__end__"]:
     """分析后决定是否继续下一个周期
 
     Continuous-mode loop guard: cycle_count >= _MAX_CYCLE_COUNT forces __end__,
@@ -176,29 +180,8 @@ def should_continue(state: XHSGrowthState) -> Literal["orchestrator", "engagemen
             if state.get("cycle_count", 0) >= _MAX_CYCLE_COUNT:
                 return "__end__"
             return "orchestrator"
-        return "engagement"
+        return "__end__"
 
-    return "__end__"
-
-
-def engagement_router(state: XHSGrowthState) -> Literal["orchestrator", "__end__"]:
-    """Engagement completion router — loop back or end based on execution mode.
-
-    In single-execution mode (default), engagement is the final node → END.
-    In continuous mode, engagement feeds back to orchestrator for the next cycle.
-
-    Continuous-mode loop guard: cycle_count >= _MAX_CYCLE_COUNT forces __end__,
-    preventing an unbounded engagement→orchestrator→engagement loop.
-    """
-    if terminal := _check_terminal(state):
-        return terminal
-
-    mode = state.get("execution_mode", "single")
-    if mode == "continuous":
-        # Cap continuous-mode cycles — no infinite orchestrator loop
-        if state.get("cycle_count", 0) >= _MAX_CYCLE_COUNT:
-            return "__end__"
-        return "orchestrator"
     return "__end__"
 
 

@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"Defines headed/CDP-only browser behavior and fail-closed safety expectations for login automation."}
+{"file":".trellis/spec/backend/index.md","reason":"Backend package spec index used to route implementation and testing conventions."}

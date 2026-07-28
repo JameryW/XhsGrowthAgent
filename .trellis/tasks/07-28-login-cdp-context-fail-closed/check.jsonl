@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"Verify the login path does not create an isolated CDP context when the persistent Chrome context is missing."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Verify no directory-level browser lifecycle documentation becomes stale."}

@@ -1225,38 +1225,6 @@ class TestWorkflowAPIIntegration:
         mock_graph.aupdate_state.assert_not_called()
 
 
-# ── Engagement node completion event ownership ─────────────────────────────────
-
-
-class TestEngagementNodeEvents:
-    """Tests for engagement node event ownership."""
-
-    @pytest.mark.asyncio
-    async def test_engagement_node_does_not_emit_workflow_completed(self, monkeypatch, event_bus):
-        """The runner is the single source of WORKFLOW_COMPLETED events."""
-        from backend.agents.nodes import engagement as engagement_module
-
-        async def fake_engagement(state, *, store):
-            return {
-                "phase": WorkflowPhase.COMPLETED,
-                "analytics": {"ok": True},
-            }
-
-        monkeypatch.setattr(engagement_module, "_engagement", fake_engagement)
-
-        result = await engagement_module.engagement_node(
-            {
-                "phase": WorkflowPhase.ENGAGING,
-                "session_id": "xhs_test_engagement_events_001",
-            },
-            store=MagicMock(),
-        )
-
-        assert result["phase"] == WorkflowPhase.COMPLETED
-        assert result["current_agent"] == "engagement"
-        assert [e for e in event_bus._events if e.event_type == EventType.WORKFLOW_COMPLETED] == []
-
-
 # ── Test 10: Draft gate behavior ────────────────────────────────────────────────
 
 

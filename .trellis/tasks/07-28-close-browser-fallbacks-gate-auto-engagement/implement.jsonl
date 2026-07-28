@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"Apply headed persistent-CDP, fail-closed, and bounded automated interaction conventions."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Follow backend typing, linting, formatting, and test conventions."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Return a safe non-terminal workflow result and avoid retries when automation is disabled or unavailable."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Log the automatic-engagement gate and browser configuration failures at the correct levels."}

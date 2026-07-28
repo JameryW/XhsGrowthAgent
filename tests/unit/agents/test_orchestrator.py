@@ -22,8 +22,8 @@ class TestOrchestratorAgent:
         return AsyncMock()
 
     @pytest.mark.asyncio
-    async def test_routes_to_engaging_with_pending_actions(self, agent, mock_store):
-        """Routes to ENGAGING when pending engagement actions exist."""
+    async def test_ignores_legacy_pending_actions(self, agent, mock_store):
+        """Historical engagement actions must not activate automation."""
         state = {
             "engagement_actions": [{"action": "reply", "comment_id": "123"}],
             "content_plan": {},
@@ -31,7 +31,7 @@ class TestOrchestratorAgent:
 
         result = await agent.execute(state, store=mock_store)
 
-        assert result["phase"] == WorkflowPhase.ENGAGING
+        assert result["phase"] == WorkflowPhase.SCOUTING
 
     @pytest.mark.asyncio
     async def test_routes_to_analyzing_with_empty_insights(self, agent, mock_store):
@@ -103,8 +103,8 @@ class TestOrchestratorAgent:
         assert result["phase"] == WorkflowPhase.BRIEFING
 
     @pytest.mark.asyncio
-    async def test_prioritizes_engagement_over_analytics(self, agent, mock_store):
-        """Engagement actions take priority over analytics."""
+    async def test_analytics_still_takes_priority_over_legacy_actions(self, agent, mock_store):
+        """Historical interaction actions do not override analytics routing."""
         state = {
             "engagement_actions": [{"action": "reply"}],
             "analytics": {"views": 1000},
@@ -112,11 +112,11 @@ class TestOrchestratorAgent:
 
         result = await agent.execute(state, store=mock_store)
 
-        assert result["phase"] == WorkflowPhase.ENGAGING
+        assert result["phase"] == WorkflowPhase.ANALYZING
 
     @pytest.mark.asyncio
-    async def test_has_content_plan_skips_engagement(self, agent, mock_store):
-        """Skip engagement route if content_plan exists."""
+    async def test_content_plan_keeps_legacy_actions_inert(self, agent, mock_store):
+        """A content plan must not activate a removed engagement route."""
         state = {
             "engagement_actions": [{"action": "reply"}],
             "content_plan": {"selected_topic": "test"},

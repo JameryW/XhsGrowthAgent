@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"Verify that no public-main-site navigation remains in scheduled or legacy-configured sync paths."}
+{"file":".trellis/spec/backend/index.md","reason":"Verify backend test and type-check expectations for the modified transport and pipeline."}

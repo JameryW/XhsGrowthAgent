@@ -7,7 +7,6 @@ from backend.graph.routers import (
     content_strategist_router,
     copywriter_router,
     draft_gate_router,
-    engagement_router,
     evaluator_outcome,
     orchestrator_router,
     review_outcome,
@@ -43,11 +42,11 @@ class TestOrchestratorRouter:
         result = orchestrator_router(state)
         assert result == "analyst"
 
-    def test_routes_to_engagement_for_engaging(self):
-        """ENGAGING phase routes to engagement."""
+    def test_routes_legacy_engaging_to_end(self):
+        """Removed ENGAGING checkpoints must not invoke an interaction node."""
         state = {"phase": WorkflowPhase.ENGAGING}
         result = orchestrator_router(state)
-        assert result == "engagement"
+        assert result == "__end__"
 
     def test_routes_to_end_for_error(self):
         """ERROR phase routes to END."""
@@ -310,17 +309,17 @@ class TestShouldContinue:
         result = should_continue(state)
         assert result == "__end__"
 
-    def test_continues_on_non_terminal_error(self):
-        """Error string with active phase should not terminate — may retry."""
+    def test_ends_after_analysis_with_non_terminal_error(self):
+        """An analysis error does not activate removed interaction work."""
         state = {"phase": WorkflowPhase.ANALYZING, "error": "Something failed"}
         result = should_continue(state)
-        assert result != "__end__"
+        assert result == "__end__"
 
-    def test_routes_to_engagement_after_analyzing_single(self):
-        """ANALYZING phase with single mode → engagement."""
+    def test_routes_to_end_after_analyzing_single(self):
+        """ANALYZING phase with single mode → END; no auto interaction."""
         state = {"phase": WorkflowPhase.ANALYZING, "error": None}
         result = should_continue(state)
-        assert result == "engagement"
+        assert result == "__end__"
 
     def test_routes_to_orchestrator_after_analyzing_continuous(self):
         """ANALYZING phase with continuous mode → orchestrator (new cycle)."""
@@ -367,69 +366,6 @@ class TestShouldContinue:
         state = {"phase": WorkflowPhase.ERROR, "error": "Failed"}
         result = should_continue(state)
         assert result == "__end__"
-
-
-class TestEngagementRouter:
-    """Tests for engagement_router conditional edge."""
-
-    def test_single_mode_routes_to_end(self):
-        """Single execution mode → END (no infinite loop)."""
-        state = {"execution_mode": "single", "phase": WorkflowPhase.ENGAGING}
-        assert engagement_router(state) == "__end__"
-
-    def test_continuous_mode_routes_to_orchestrator(self):
-        """Continuous execution mode → orchestrator (next cycle)."""
-        state = {"execution_mode": "continuous", "phase": WorkflowPhase.ENGAGING}
-        assert engagement_router(state) == "orchestrator"
-
-    def test_continuous_mode_caps_at_max_cycle_count(self):
-        """Continuous + cycle_count >= _MAX_CYCLE_COUNT → END.
-
-        Prevents an unbounded engagement→orchestrator→engagement loop.
-        """
-        from backend.graph.routers import _MAX_CYCLE_COUNT
-
-        state = {
-            "execution_mode": "continuous",
-            "phase": WorkflowPhase.ENGAGING,
-            "cycle_count": _MAX_CYCLE_COUNT,
-        }
-        assert engagement_router(state) == "__end__"
-
-    def test_continuous_mode_below_cap_still_loops(self):
-        """Continuous + cycle_count < _MAX_CYCLE_COUNT → orchestrator."""
-        state = {
-            "execution_mode": "continuous",
-            "phase": WorkflowPhase.ENGAGING,
-            "cycle_count": 1,
-        }
-        assert engagement_router(state) == "orchestrator"
-
-    def test_cancelled_routes_to_end(self):
-        """CANCELLED phase → END even in continuous mode."""
-        state = {"execution_mode": "continuous", "phase": WorkflowPhase.CANCELLED}
-        assert engagement_router(state) == "__end__"
-
-    def test_default_is_single(self):
-        """No execution_mode specified defaults to single → END."""
-        state = {"phase": WorkflowPhase.ENGAGING}
-        assert engagement_router(state) == "__end__"
-
-    def test_error_phase_routes_to_end(self):
-        """ERROR phase → END even in continuous mode."""
-        state = {"execution_mode": "continuous", "phase": WorkflowPhase.ERROR}
-        assert engagement_router(state) == "__end__"
-
-    def test_paused_routes_to_end(self):
-        """PAUSED phase → END even in continuous mode."""
-        state = {"execution_mode": "continuous", "phase": WorkflowPhase.PAUSED}
-        assert engagement_router(state) == "__end__"
-
-    def test_error_field_with_active_phase_not_terminal(self):
-        """Error field with ENGAGING phase is not terminal — _check_terminal only checks phase."""
-        state = {"execution_mode": "continuous", "phase": WorkflowPhase.ENGAGING, "error": "boom"}
-        # ENGAGING in continuous mode → orchestrator (error field alone is not terminal)
-        assert engagement_router(state) == "orchestrator"
 
 
 class TestShouldPresentChoice:

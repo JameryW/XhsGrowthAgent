@@ -31,7 +31,6 @@ backend/
 │   ├── visual_designer.py              # VisualDesignerAgent
 │   ├── publisher.py                     # PublisherAgent
 │   ├── analyst.py                       # AnalystAgent
-│   ├── engagement.py                    # EngagementAgent
 │   ├── brief_analyzer.py                # BriefAnalyzerAgent
 │   ├── shooting_planner.py              # ShootingPlannerAgent
 │   ├── viral_matcher.py                 # ViralMatcherAgent
@@ -52,7 +51,6 @@ backend/
 │       ├── visual_designer.py           # visual_designer_node
 │       ├── publisher.py                 # publisher_node
 │       ├── analyst.py                   # analyst_node
-│       ├── engagement.py                # engagement_node
 │       ├── review_gate.py               # review_gate_node
 │       ├── revise_content.py            # revise_content_node
 │       ├── brief_analyzer.py            # brief_analyzer_node
@@ -81,7 +79,7 @@ backend/
 │
 ├── tools/                               # Atomic operations (LangChain @tool)
 │   ├── __init__.py                      # Exports: ToolRegistry
-│   ├── registry.py                      # ToolRegistry — maps agents to tools
+│   ├── registry.py                      # ToolRegistry — maps workflow agents to tools
 │   ├── content/                         # Content generation tools
 │   │   ├── __init__.py                  # Exports: hashtag_researcher, title_generator, etc.
 │   │   ├── hashtag_researcher.py        # hashtag_researcher
@@ -102,7 +100,7 @@ backend/
 │   │   ├── trending.py                  # xhs_trending, keyword_monitor, competitor_analyzer
 │   │   ├── publisher.py                 # xhs_publisher, ab_test_manager, post_scheduler
 │   │   ├── analytics.py                 # analytics_reader, pattern_detector
-│   │   └── engagement.py                # comment_replier, dm_handler, escalation_flagger, fetch_pending_comments
+│   │   └── engagement.py                # Manual-only tools; not registered for workflow agents
 │   └── scheduling/                      # Scheduling tools
 │       ├── __init__.py                  # Exports: timing_optimizer
 │       └── calendar.py                  # timing_optimizer
@@ -168,7 +166,6 @@ backend/
 │       ├── visual_designer.yaml
 │       ├── publisher.yaml
 │       ├── analyst.yaml
-│       ├── engagement.yaml
 │       ├── brief_analyzer.yaml
 │       ├── shooting_planner.yaml
 │       ├── content_analyzer.yaml
@@ -245,7 +242,9 @@ from backend.state.substates import TrendData, ContentPlan
 from backend.tools import ToolRegistry
 from backend.tools.content import hashtag_researcher, title_generator
 from backend.tools.ripple import ripple_predict_content_spread
-from backend.tools.xhs import xhs_trending, comment_replier
+from backend.tools.xhs import xhs_trending
+# Manual-only; never supplied to workflow agents.
+from backend.tools.xhs import comment_replier
 
 # Services
 from backend.services import RippleService, OptimizationService
@@ -297,7 +296,9 @@ from backend.memory import MemoryManager, SceneDatabase
 
 1. Create tool file in `backend/tools/<category>/<name>.py` — use `@tool` decorator from `langchain_core.tools`
 2. Export tool function in `backend/tools/<category>/__init__.py`
-3. Register in `ToolRegistry._agent_tools` dict in `backend/tools/registry.py`
+3. For a workflow-agent tool, register it in `ToolRegistry._agent_tools` in
+   `backend/tools/registry.py`; manual-only operator tools must remain importable
+   but unregistered (for example, `backend/tools/xhs/engagement.py`)
 4. Add tool-specific prompt YAML in `backend/config/prompts/tools/<name>.yaml` if LLM-enriched
 
 **Real example — hashtag_researcher tool:**

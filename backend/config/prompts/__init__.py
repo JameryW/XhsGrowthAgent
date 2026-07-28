@@ -8,7 +8,6 @@
 - visual_designer.yaml: 视觉设计提示词
 - publisher.yaml: 发布执行提示词
 - analyst.yaml: 数据分析提示词
-- engagement.yaml: 用户互动提示词
 """
 
 __all__ = []

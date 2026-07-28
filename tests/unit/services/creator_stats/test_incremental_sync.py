@@ -1,8 +1,8 @@
 """Incremental-sync filters and crawl pacing tests.
 
-The CDP crawl re-visits every note page by default.  Incremental sync compares
-the posted-list payload against persisted rows and only visits notes that are
-new, recent, or changed — and never re-scrapes a stored caption.
+The CDP crawl re-visits Creator Center detail pages by default. Incremental
+sync compares the posted-list payload against persisted rows and only visits
+notes that are new, recent, or changed. Public-note body browsing is disabled.
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ async def test_detail_filter_visits_new_recent_and_changed_notes():
     assert detail_filter(_list_note("same", days_ago=60, views=100)) is False
 
 
-async def test_body_filter_never_rescrapes_stored_caption():
+async def test_body_filter_is_permanently_disabled():
     existing = {
         "has-body": _stored("has-body", days_ago=3, body="已有正文"),
         "no-body-recent": _stored("no-body-recent", days_ago=10),
@@ -97,10 +97,10 @@ async def test_body_filter_never_rescrapes_stored_caption():
     _detail_filter, body_filter = _build_incremental_filters(existing)
 
     assert body_filter(_list_note("has-body", days_ago=3)) is False
-    assert body_filter(_list_note("no-body-recent", days_ago=10)) is True
+    assert body_filter(_list_note("no-body-recent", days_ago=10)) is False
     assert body_filter(_list_note("no-body-old", days_ago=60)) is False
-    # A brand-new recent note has no stored caption → scrape it once.
-    assert body_filter(_list_note("brand-new", days_ago=1)) is True
+    # A brand-new recent note must not trigger a public-page visit either.
+    assert body_filter(_list_note("brand-new", days_ago=1)) is False
 
 
 async def test_filters_disabled_when_state_unavailable():
@@ -146,6 +146,7 @@ async def test_sync_from_creator_center_passes_incremental_filters_on_cdp():
     kwargs = client.fetch_all.await_args.kwargs
     assert callable(kwargs["detail_filter"])
     assert callable(kwargs["body_filter"])
+    assert kwargs["body_filter"](_list_note("new", days_ago=1)) is False
     assert result.error is None
 
 

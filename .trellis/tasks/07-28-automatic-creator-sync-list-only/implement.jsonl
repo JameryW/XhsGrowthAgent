@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"Keep automatic creator-stat sync within the existing persistent-CDP and low-risk browser access policy."}
+{"file":".trellis/spec/backend/workflow-state.md","reason":"Verify automatic post-login/scheduled sync is not confused with a workflow interaction phase."}

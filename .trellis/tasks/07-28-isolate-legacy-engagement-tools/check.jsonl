@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Verify registry and tool documentation remain accurate after the boundary cleanup."}
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"Verify no automatic browser interaction path is reintroduced."}
