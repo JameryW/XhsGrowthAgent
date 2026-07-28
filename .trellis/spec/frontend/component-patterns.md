@@ -52,6 +52,11 @@
 
 `Dashboard.vue` orchestrates via computed properties (`showOptimization`, `showShootingPlan`) — no logic in child components beyond display.
 
+Derived visibility for backend-driven controls must combine the explicit
+capability/requirement flag with lifecycle status. A non-terminal state alone
+is not sufficient to render an action or form; component tests should cover
+both flag values and the terminal state.
+
 ---
 
 ## Shared Components
