@@ -343,6 +343,14 @@ async def test_batch_sync_cooldown_disabled_when_zero(monkeypatch):
     assert sync_mock.await_count == 2
 
 
+def test_scheduled_light_default_stays_list_only_without_deep_cadence(monkeypatch):
+    monkeypatch.delenv("CREATOR_STATS_DEEP_EVERY_N_RUNS", raising=False)
+    pipeline_module._scheduled_light_streak = 0
+
+    assert pipeline_module._resolve_force_light(prefer_light=True) is True
+    assert pipeline_module._scheduled_light_streak == 0
+
+
 def test_scheduled_light_streak_allows_deep_run_only_when_due(monkeypatch):
     monkeypatch.setenv("CREATOR_STATS_DEEP_EVERY_N_RUNS", "2")
     monkeypatch.setattr(pipeline_module.random, "random", lambda: 0.1)

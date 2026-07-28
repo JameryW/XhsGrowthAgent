@@ -20,6 +20,9 @@ If the account has no usable CDP endpoint, the operation fails closed.
 - Stop on a risk-control signal; do not automatically retry the same action.
 - The workflow graph does not perform automatic comment/DM actions. Any
   remaining comment/DM browser action is an explicit operator/tool action.
+- Automatic post-login and scheduled creator-statistics syncs are list-only
+  (`force_light=True`); per-note detail enrichment requires an explicit
+  configuration or manual request.
 - Keep creator-statistics collection on Creator Center. Public note pages are
   opt-in only and disabled for scheduled production syncs.
 

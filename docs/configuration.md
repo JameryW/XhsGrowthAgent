@@ -45,7 +45,7 @@
 | `CREATOR_STATS_MAX_DETAIL_VISITS` | 否 | 反风控：单次同步最多打开几篇笔记详情页 | `4` |
 | `CREATOR_STATS_MAX_BODY_VISITS` | 否 | 反风控：单次同步最多抓几篇公开正文（默认 **0=关闭**，公开 explore 风险最高） | `0` |
 | `CREATOR_STATS_SCHEDULED_FORCE_LIGHT` | 否 | 定时同步强制轻量轮（只概览+列表，不点详情）；`0` 关闭强制模式，但仍受普通轻量概率控制 | `1` |
-| `CREATOR_STATS_DEEP_EVERY_N_RUNS` | 否 | 定时连续 N 次轻量后，才有机会做一次深入；`0` 永远轻量 | `5` |
+| `CREATOR_STATS_DEEP_EVERY_N_RUNS` | 否 | 自动同步默认只抓概览+笔记列表；未设置或设为 `0` 时永远轻量，只有显式设置正整数 N 才在连续 N 次轻量后开启一次深入轮 | `0` |
 | `CREATOR_STATS_MIN_REFRESH_HOURS` | 否 | 账号数据仍在该小时内视为新鲜，跳过浏览器同步；`0` 关闭 | `18` |
 | `CREATOR_STATS_SAFE_MODE` | 否 | `1` 时进一步收紧：更高轻量概率、更少翻页/详情、禁止正文、更慢节奏 | `0` |
 | `CREATOR_STATS_DETAIL_CIRCUIT_FAILURES` | 否 | 反风控：详情/正文连续失败几次后熔断本轮深入 | `2` |

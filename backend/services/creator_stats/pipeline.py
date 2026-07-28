@@ -303,6 +303,9 @@ async def sync_after_login(account_id: str, *, store: BaseStore | None = None) -
             period="30d",
             run_creative_analysis=True,
             cdp_endpoint=cdp_endpoint,
+            # Post-login automation is overview/list-only by default; deep
+            # enrichment remains an explicit scheduled configuration choice.
+            force_light=True,
             # Preflight just confirmed login; skip a second cookie probe.
             skip_login_preflight=True,
             # A successful QR login is an explicit refresh request; do not
@@ -782,13 +785,14 @@ def _resolve_force_light(*, prefer_light: bool | None) -> bool:
 
     Scheduled jobs default to force_light. Manual API defaults to chance-based
     light runs inside the transport (prefer_light=False).
-    ``CREATOR_STATS_DEEP_EVERY_N_RUNS`` lets scheduled jobs deep-enrich rarely.
+    ``CREATOR_STATS_DEEP_EVERY_N_RUNS`` lets scheduled jobs deep-enrich rarely
+    when explicitly set to a positive integer; an unset value stays list-only.
     """
     global _scheduled_light_streak
     if prefer_light is False:
         return False
     if prefer_light is True:
-        deep_every = _env_int("CREATOR_STATS_DEEP_EVERY_N_RUNS", 5)
+        deep_every = _env_int("CREATOR_STATS_DEEP_EVERY_N_RUNS", 0)
         if deep_every <= 0:
             return True
         _scheduled_light_streak += 1

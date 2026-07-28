@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"Check that scheduled and post-login syncs do not reintroduce unnecessary note-page browsing."}
+{"file":".trellis/spec/backend/workflow-state.md","reason":"Check compatibility with existing workflow and state boundaries."}
