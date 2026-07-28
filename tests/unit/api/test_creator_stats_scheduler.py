@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import math
 import random
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -13,6 +14,7 @@ from backend.api.app import (
     _CN_TZ,
     _clip_to_active_window,
     _creator_stats_scheduler,
+    _finite_float,
     _weekday_skip_factor,
     app,
     health,
@@ -25,6 +27,38 @@ def _scheduler_app() -> SimpleNamespace:
     return SimpleNamespace(
         state=SimpleNamespace(graph=SimpleNamespace(store=None)),
     )
+
+
+def test_finite_float_rejects_nonfinite_and_malformed_values():
+    assert _finite_float("3.5", 1.0) == 3.5
+    assert _finite_float("nan", 1.0) == 1.0
+    assert _finite_float("inf", 1.0) == 1.0
+    assert _finite_float("not-a-number", 1.0) == 1.0
+
+
+@pytest.mark.asyncio
+async def test_scheduler_nonfinite_interval_falls_back_to_safe_minimum(monkeypatch):
+    app = _scheduler_app()
+    result = {"ok": True, "status": "completed", "active_accounts": 0, "succeeded": 0, "failed": 0}
+    sleep_calls: list[float] = []
+
+    async def stop_after_first_run(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", stop_after_first_run)
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(return_value=result),
+        ),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(app, float("inf"))
+
+    assert len(sleep_calls) == 1
+    assert all(math.isfinite(value) for value in sleep_calls)
+    assert 60.0 * 0.75 * 0.99 <= sleep_calls[0] <= 60.0 * 1.5
 
 
 @pytest.mark.asyncio
@@ -53,7 +87,7 @@ async def test_scheduler_runs_immediately_and_records_batch_summary(monkeypatch)
     ):
         await _creator_stats_scheduler(app, 0.5)
 
-    sync.assert_awaited_once_with(store=None, period="30d")
+    sync.assert_awaited_once_with(store=None, period="30d", prefer_light=None)
     # Scheduler sleep carries a 0.75-1.5x random factor around the interval.
     assert len(sleep_calls) == 1
     assert 1800.0 * 0.75 * 0.99 <= sleep_calls[0] <= 1800.0 * 1.5

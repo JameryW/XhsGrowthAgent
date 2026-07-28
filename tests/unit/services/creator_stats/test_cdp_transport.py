@@ -461,6 +461,10 @@ def _transport_with_page(page: _FakeNotesPage) -> CdpTransport:
 
     transport = CdpTransport("http://127.0.0.1:9222", timeout=1, request_delay=(0, 0))
     transport._ensure_browser = AsyncMock(return_value=FakeBrowser())
+    # Tests that exercise enrichment need body visits enabled (prod default is 0).
+    transport._max_body_visits = 10
+    transport._max_detail_visits = 20
+    transport._session_wind_down = (0.0, 0.0)
     return transport
 
 
@@ -553,6 +557,22 @@ async def test_cdp_fetch_all_forwards_optional_filters():
     )
 
 
+async def test_cdp_fetch_all_forwards_force_light():
+    transport = CdpTransport("http://127.0.0.1:9222")
+    transport.fetch_creator_center = AsyncMock(
+        return_value=(_native_account(), _native_profile(), [_native_note()])
+    )
+    client = CreatorStatsClient(transport=transport)
+
+    await client.fetch_all("acct", force_light=True)
+
+    transport.fetch_creator_center.assert_awaited_once_with(
+        max_pages=transport._max_list_pages,
+        period="30d",
+        force_light=True,
+    )
+
+
 async def test_cdp_caps_detail_and_body_visits(monkeypatch):
     """Per-run hard caps bound how many note pages open even with many candidates."""
     monkeypatch.setenv("CREATOR_STATS_LIGHT_RUN_CHANCE", "0")
@@ -569,6 +589,22 @@ async def test_cdp_caps_detail_and_body_visits(monkeypatch):
 
     assert len(page.detail_urls) <= 2
     assert transport._scrape_public_note_body.await_count <= 1
+
+
+async def test_cdp_nonfinite_env_values_fall_back_to_safe_defaults(monkeypatch):
+    monkeypatch.setenv("CREATOR_STATS_LIGHT_RUN_CHANCE", "nan")
+    monkeypatch.setenv("CREATOR_STATS_REQUEST_DELAY_MIN_S", "inf")
+    monkeypatch.setenv("CREATOR_STATS_MAX_LIST_PAGES", "nan")
+    monkeypatch.setenv("CREATOR_STATS_MAX_DETAIL_VISITS", "inf")
+    monkeypatch.setenv("CREATOR_STATS_MAX_BODY_VISITS", "nan")
+
+    transport = CdpTransport("http://127.0.0.1:9222")
+
+    assert transport._light_run_chance == 0.35
+    assert transport._request_delay == (3.5, 10.0)
+    assert transport._max_list_pages == 5
+    assert transport._max_detail_visits == 4
+    assert transport._max_body_visits == 0
 
 
 # ── 反风控节奏：乱序访问 / 翻页节奏 / 偶发长停顿 ──
@@ -634,7 +670,7 @@ async def test_cdp_paces_between_list_page_turns():
     assert transport._pace.await_count == 3
 
 
-def test_new_run_pace_scales_delay_per_run():
+async def test_new_run_pace_scales_delay_per_run():
     """每轮抓取的节奏基准在配置区间的 0.7-1.6 倍间随机缩放。"""
     transport = CdpTransport("http://127.0.0.1:9222", request_delay=(2.0, 6.0))
 
@@ -685,6 +721,23 @@ async def test_cdp_enrich_skip_chance_one_visits_no_note_pages(monkeypatch):
     transport = _transport_with_page(page)
 
     _account, _profile, notes = await transport.fetch_creator_center(max_pages=1)
+
+    assert page.detail_urls == []
+    assert page.body_urls == []
+    assert len(notes) == 3
+
+
+async def test_cdp_force_light_skips_enrichment_even_when_run_is_configured_deep():
+    """Scheduled force-light mode wins over random/deep enrichment settings."""
+    page = _FakeNotesPage(note_count=3)
+    transport = _transport_with_page(page)
+    transport._light_run_chance = 0.0
+    transport._enrich_skip_chance = 0.0
+
+    _account, _profile, notes = await transport.fetch_creator_center(
+        max_pages=1,
+        force_light=True,
+    )
 
     assert page.detail_urls == []
     assert page.body_urls == []

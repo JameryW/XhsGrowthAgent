@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import math
 import os
 import random
 from collections.abc import Callable
@@ -29,8 +30,16 @@ logger = logging.getLogger("xhs_growth.creator_stats.client")
 
 def _env_float(name: str, default: float) -> float:
     try:
-        return float(os.environ.get(name, "") or default)
-    except ValueError:
+        value = float(os.environ.get(name, "") or default)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return value if math.isfinite(value) else default
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, "") or default)
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
@@ -227,21 +236,35 @@ class CdpTransport:
             0.0, min(1.0, _env_float("CREATOR_STATS_DASHBOARD_BROWSE_CHANCE", 0.30))
         )
         # Hard caps: even with incremental filters, bound per-run page opens.
-        self._max_list_pages = max(1, min(50, int(_env_float("CREATOR_STATS_MAX_LIST_PAGES", 6))))
-        self._max_detail_visits = max(
-            0, min(50, int(_env_float("CREATOR_STATS_MAX_DETAIL_VISITS", 6)))
-        )
-        self._max_body_visits = max(0, min(50, int(_env_float("CREATOR_STATS_MAX_BODY_VISITS", 4))))
-        self._detail_circuit_failures = max(
-            1, int(_env_float("CREATOR_STATS_DETAIL_CIRCUIT_FAILURES", 2))
-        )
-        self._body_empty_circuit = max(1, int(_env_float("CREATOR_STATS_BODY_EMPTY_CIRCUIT", 3)))
+        self._max_list_pages = max(1, min(50, _env_int("CREATOR_STATS_MAX_LIST_PAGES", 5)))
+        self._max_detail_visits = max(0, min(50, _env_int("CREATOR_STATS_MAX_DETAIL_VISITS", 4)))
+        # Default 0: public explore body scrape is the highest risk surface
+        # (leaves creator.xiaohongshu.com). Enable explicitly when needed.
+        self._max_body_visits = max(0, min(50, _env_int("CREATOR_STATS_MAX_BODY_VISITS", 0)))
+        self._detail_circuit_failures = max(1, _env_int("CREATOR_STATS_DETAIL_CIRCUIT_FAILURES", 2))
+        self._body_empty_circuit = max(1, _env_int("CREATOR_STATS_BODY_EMPTY_CIRCUIT", 3))
         # Brief linger before closing the tab so the session does not look like
         # instant open→scrape→close automation.
         self._session_wind_down = (
-            max(0.0, _env_float("CREATOR_STATS_SESSION_WIND_DOWN_MIN_S", 2.0)),
-            max(0.0, _env_float("CREATOR_STATS_SESSION_WIND_DOWN_MAX_S", 8.0)),
+            max(0.0, _env_float("CREATOR_STATS_SESSION_WIND_DOWN_MIN_S", 3.0)),
+            max(0.0, _env_float("CREATOR_STATS_SESSION_WIND_DOWN_MAX_S", 12.0)),
         )
+        # SAFE_MODE=1: clamp caps/chances further for high-risk IPs/environments.
+        if _env_float("CREATOR_STATS_SAFE_MODE", 0) >= 1:
+            self._light_run_chance = max(self._light_run_chance, 0.75)
+            self._enrich_skip_chance = max(self._enrich_skip_chance, 0.55)
+            self._page_stop_chance = max(self._page_stop_chance, 0.4)
+            self._long_pause_chance = max(self._long_pause_chance, 0.18)
+            self._max_list_pages = min(self._max_list_pages, 3)
+            self._max_detail_visits = min(self._max_detail_visits, 2)
+            self._max_body_visits = 0
+            lo, hi = self._request_delay
+            self._request_delay = (lo * 1.4, hi * 1.4)
+            logger.info(
+                f"creator stats SAFE_MODE on: list_pages<={self._max_list_pages} "
+                f"detail<={self._max_detail_visits} body=0 "
+                f"light>={self._light_run_chance:.2f}"
+            )
         # 每轮抓取的节奏基准（在 fetch 开头随机缩放 request_delay 得到）：
         # 有的运行整体偏快、有的偏慢，避免跨运行统一的节奏画像。
         self._run_delay: tuple[float, float] | None = None
@@ -481,6 +504,7 @@ class CdpTransport:
         period: str = "30d",
         detail_filter: Callable[[dict[str, Any]], bool] | None = None,
         body_filter: Callable[[dict[str, Any]], bool] | None = None,
+        force_light: bool = False,
     ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
         """Capture overview, public profile, and up to ``max_pages`` native note pages.
 
@@ -493,6 +517,9 @@ class CdpTransport:
         extra detail-page / public-body visits are worth making.  Incremental
         sync passes filters that skip unchanged notes so the crawl does not
         re-visit every note page on every run (risk-control friendly).
+
+        ``force_light`` skips all per-note detail/body enrichment (scheduled
+        syncs use this by default to minimize risk surface).
         """
         try:
             # Cap list pagination hard — unbounded max_pages is a risk signal.
@@ -505,12 +532,18 @@ class CdpTransport:
             # 每轮换一个节奏基准：本轮整体偏快或偏慢，跨运行无统一节奏。
             self._new_run_pace()
             # 轻量轮：本轮只看概览+列表就离开，不做逐篇详情/正文深入。
-            light_run = self._light_run_chance > 0 and random.random() < self._light_run_chance
+            if force_light:
+                light_run = True
+            else:
+                light_run = self._light_run_chance > 0 and random.random() < self._light_run_chance
             if light_run:
-                logger.info("creator stats light run: skipping per-note enrichment this round")
+                logger.info(
+                    "creator stats light run: skipping per-note enrichment this round"
+                    + (" (forced)" if force_light else "")
+                )
             # 每轮的深入预算也随机缩放——会话总时长不聚类在固定上限。
             # Slightly lower ceiling than before to keep sessions short under risk.
-            detail_budget = self._detail_timeout * random.uniform(0.45, 0.95)
+            detail_budget = self._detail_timeout * random.uniform(0.35, 0.75)
             browser = await self._ensure_browser()
             context = browser.contexts[0]
             page = await context.new_page()
@@ -1427,6 +1460,7 @@ class CreatorStatsClient:
         page_size: int = 50,
         detail_filter: Callable[[dict[str, Any]], bool] | None = None,
         body_filter: Callable[[dict[str, Any]], bool] | None = None,
+        force_light: bool = False,
     ) -> CreatorStatsBundle:
         """Fetch account overview + paginated notes, return normalized bundle."""
         try:
@@ -1452,6 +1486,8 @@ class CreatorStatsClient:
                 cdp_kwargs["detail_filter"] = detail_filter
             if body_filter is not None:
                 cdp_kwargs["body_filter"] = body_filter
+            if force_light:
+                cdp_kwargs["force_light"] = True
             account_raw, profile_raw, notes_raw = await self.transport.fetch_creator_center(
                 **cdp_kwargs
             )

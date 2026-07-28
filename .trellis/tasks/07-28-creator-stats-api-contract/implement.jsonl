@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/omp-integration.md","reason":"Preserve external-client API envelopes and OMP extension contracts while tightening Creator Stats input validation."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace the shared limit and batch metadata contract across backend, frontend, and OMP clients."}

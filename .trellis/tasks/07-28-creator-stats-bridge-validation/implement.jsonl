@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/omp-integration.md","reason":"Keep the Python bridge and TypeScript extension aligned with the external Creator Stats API contract."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Validate the same account/limit contract at the bridge, extension, and backend boundaries."}

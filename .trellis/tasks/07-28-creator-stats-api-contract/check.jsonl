@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/omp-integration.md","reason":"Verify response envelope and external-client behavior remain compatible."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify validation and response metadata stay aligned at every boundary."}

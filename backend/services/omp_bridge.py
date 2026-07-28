@@ -509,10 +509,13 @@ XHS_HOST_TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "account_id": {
                     "type": "string",
+                    "minLength": 1,
                     "description": "Account ID with imported Creator Center statistics",
                 },
                 "limit": {
-                    "type": "number",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200,
                     "default": 20,
                     "description": "Maximum imported notes to inspect (1-200)",
                 },
@@ -949,6 +952,20 @@ def _analytics_percent(value: Any, unit: Any = None) -> str:
     return _creator_percent(rate)
 
 
+def _validate_creator_stats_arguments(arguments: dict[str, Any]) -> tuple[str, int] | str:
+    """Validate Creator Stats arguments before opening the bridge HTTP client."""
+    raw_account_id = arguments.get("account_id")
+    if not isinstance(raw_account_id, str) or not raw_account_id.strip():
+        return "account_id is required and must be a non-empty string"
+
+    raw_limit = arguments.get("limit", 20)
+    if isinstance(raw_limit, bool) or not isinstance(raw_limit, int):
+        return "limit must be an integer between 1 and 200"
+    if not 1 <= raw_limit <= 200:
+        return "limit must be an integer between 1 and 200"
+    return raw_account_id.strip(), raw_limit
+
+
 async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Auto-execute a known XHS host tool by calling the backend API internally.
 
@@ -1008,6 +1025,13 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
             "[publish failed] badges per draft."
         )
         return _make_text_result(guide, {"mode": "free"})
+
+    validated_creator_stats: tuple[str, int] | None = None
+    if tool_name == "xhs_creator_stats":
+        validated = _validate_creator_stats_arguments(arguments)
+        if isinstance(validated, str):
+            return _make_text_result(validated, None, is_error=True)
+        validated_creator_stats = validated
 
     try:
         # Trusted in-mesh call: authenticate with the shared service token so
@@ -1456,8 +1480,8 @@ async def _execute_xhs_host_tool(tool_name: str, arguments: dict[str, Any]) -> d
                 return _make_text_result("\n".join(lines), data)
 
             elif tool_name == "xhs_creator_stats":
-                account_id = arguments.get("account_id", "")
-                limit = arguments.get("limit", 20)
+                assert validated_creator_stats is not None
+                account_id, limit = validated_creator_stats
                 resp = await client.get(
                     f"{url}/analytics/creator-stats/{account_id}",
                     params={"limit": limit},

@@ -296,3 +296,31 @@ See §3 Contracts — the Wrong/Correct pair is the string-vs-dict `recovery`.
 {"overall_score": None, "decision": None, "status": "degraded",
  "degraded": True, "coverage": {"weighted_ratio": 0.0}}
 ```
+
+## Scenario: Risk-gated Creator Stats sync
+
+Creator Center imports use explicit gates because every live CDP session is a
+platform-risk event.
+
+- The account freshness check runs before login preflight and before scheduled
+  light/deep mode selection. A fresh snapshot returns a successful no-op and
+  does not open a browser, start the batch cooldown, or consume the scheduled
+  light-run cadence.
+- Authentication cooldowns are account-scoped. A blocked active account must
+  return `status="cooldown"` with `risk_code` and `retry_after_seconds`; it
+  must not prevent a different account from syncing.
+- Scheduled imports pass `prefer_light=None` and resolve the configured
+  force-light policy only after eligibility checks. Failed scheduled attempts
+  restore the prior light-run streak; only a real successful import starts the
+  global post-sync cooldown.
+- Manual `sync-all` passes `prefer_light=False` and may explicitly bypass the
+  freshness window. Single-account sync honors freshness unless it is the
+  explicit post-login refresh path.
+- Numeric environment values are parsed defensively. Non-finite or malformed
+  values fall back to finite safe defaults before they reach delay, probability,
+  cap, or cooldown calculations.
+
+Tests must cover fresh/empty/failed batches, account-scoped auth gates,
+non-finite configuration, and the scheduler's finite-delay fallback. Browser
+fetch failures return machine-readable `error_code` values and never persist a
+partial bundle.

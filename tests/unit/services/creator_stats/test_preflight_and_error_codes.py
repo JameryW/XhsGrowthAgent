@@ -155,4 +155,5 @@ async def test_sync_after_login_is_once_per_account():
     assert r1 is not None and r1.account_synced
     assert r2 is None
     sync.assert_awaited_once()
+    assert sync.await_args.kwargs["skip_freshness_check"] is True
     clear_post_login_sync_gate("acc-pl")

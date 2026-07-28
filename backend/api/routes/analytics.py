@@ -1127,10 +1127,13 @@ async def sync_all_creator_stats(
 
     graph = getattr(request.app.state, "graph", None)
     store = getattr(graph, "store", None) if graph is not None else None
+    # Manual sync may deep-enrich (prefer_light=False); scheduled jobs force light.
     data = await sync_all_active_accounts(
         store=store,
         period=body.period,
         run_creative_analysis=body.analyze,
+        prefer_light=False,
+        skip_freshness_check=True,
     )
     return success(data=data)
 
