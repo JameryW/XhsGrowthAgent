@@ -32,22 +32,28 @@
 
 | 变量 | 必填 | 说明 | 默认值 |
 |------|------|------|--------|
-| `CREATOR_STATS_SYNC_INTERVAL_HOURS` | 否 | 后台定时导入基准间隔（实际执行间隔在 0.75–1.5× 间按三角分布取值，峰值 1×——模拟人"大致每天看一次"的习惯节律；均匀分布反而是毫无习惯的机器特征）；仅导入当前激活账号（`get_active_account`，切换账号后旧账号不再同步），设为 `0` 可关闭 | `24` |
-| `CREATOR_STATS_SKIP_DAY_CHANCE` | 否 | 反风控：每轮以该概率整天跳过同步（按星期加权——周末创作者更活跃、跳过更少，周一跳过最多），"每天必爬一次"本身是可识别的规律；`0` 从不跳过 | `0.15` |
-| `CREATOR_STATS_STARTUP_DELAY_MIN_SECONDS` / `CREATOR_STATS_STARTUP_DELAY_MAX_SECONDS` | 否 | 反风控：服务启动/重启后首次同步前的随机延迟（秒），避免"启动即爬"的机器模式；设为 `0` 恢复启动即跑 | `300` / `1800` |
-| `CREATOR_STATS_ACTIVE_WINDOW_START_HOUR` / `CREATOR_STATS_ACTIVE_WINDOW_END_HOUR` | 否 | 反风控：每日同步时刻限制在中国本地时间（UTC+8）的该窗口内，窗口外的候选时刻平移到窗口内；窗口内落点按人类活跃度加权（晚间 20-22 点最高、清晨最低），深夜不爬 | `8` / `23` |
-| `CREATOR_STATS_LIGHT_RUN_CHANCE` | 否 | 反风控：每轮以该概率只抓概览+笔记列表就结束（不做逐篇详情/正文深入），模拟人"扫一眼就关掉"的轻量访问；`0` 关闭 | `0.15` |
-| `CREATOR_STATS_ENRICH_SKIP_CHANCE` | 否 | 反风控：深入轮内逐篇笔记以该概率跳过详情/正文访问（被跳过的笔记下轮仍会被增量过滤器选中），避免"候选全扫"的机器人完备性特征；`0` 关闭 | `0.15` |
-| `CREATOR_STATS_HOME_ENTRY_CHANCE` | 否 | 反风控：每轮以该概率先打开创作者主页再进数据页（真人通常从主页点进去），避免"每次会话都以同一个深链开头"的固定模式；`0` 关闭 | `0.5` |
-| `CREATOR_STATS_PAGE_STOP_CHANCE` | 否 | 反风控：笔记列表每翻一页前以该概率停止继续翻页——人很少每次都滚到底，被截断的旧笔记下轮仍会被翻到；`0` 关闭 | `0.15` |
-| `CREATOR_STATS_DASHBOARD_BROWSE_CHANCE` | 否 | 反风控：以该概率在数据页上先点一下别的日期范围 Tab 再进笔记管理（人看数据会切换时间范围对比），避免"每次进数据页只干一件事"的固定模式；`0` 关闭 | `0.25` |
+| `CREATOR_STATS_SYNC_INTERVAL_HOURS` | 否 | 后台定时导入基准间隔（实际执行间隔在 0.75–1.5× 间按三角分布取值，峰值 1×）；仅导入当前激活账号，设为 `0` 可关闭 | `36` |
+| `CREATOR_STATS_SKIP_DAY_CHANCE` | 否 | 反风控：每轮以该概率整天跳过同步（按星期加权）；`0` 从不跳过 | `0.25` |
+| `CREATOR_STATS_STARTUP_DELAY_MIN_SECONDS` / `CREATOR_STATS_STARTUP_DELAY_MAX_SECONDS` | 否 | 反风控：服务启动/重启后首次同步前的随机延迟（秒）；设为 `0` 恢复启动即跑 | `600` / `2400` |
+| `CREATOR_STATS_ACTIVE_WINDOW_START_HOUR` / `CREATOR_STATS_ACTIVE_WINDOW_END_HOUR` | 否 | 反风控：每日同步时刻限制在中国本地时间（UTC+8）窗口内，深夜不爬 | `9` / `22` |
+| `CREATOR_STATS_LIGHT_RUN_CHANCE` | 否 | 反风控：每轮以该概率只抓概览+笔记列表（不深入详情/正文）；`0` 关闭 | `0.35` |
+| `CREATOR_STATS_ENRICH_SKIP_CHANCE` | 否 | 反风控：深入轮内逐篇以该概率跳过详情/正文；`0` 关闭 | `0.30` |
+| `CREATOR_STATS_HOME_ENTRY_CHANCE` | 否 | 反风控：先打开创作者主页再进数据页的概率 | `0.55` |
+| `CREATOR_STATS_PAGE_STOP_CHANCE` | 否 | 反风控：列表翻页提前停止概率 | `0.28` |
+| `CREATOR_STATS_DASHBOARD_BROWSE_CHANCE` | 否 | 反风控：数据页先点日期 Tab 再进笔记管理的概率 | `0.30` |
+| `CREATOR_STATS_MAX_LIST_PAGES` | 否 | 反风控：单次同步最多翻几页笔记列表（硬上限） | `6` |
+| `CREATOR_STATS_MAX_DETAIL_VISITS` | 否 | 反风控：单次同步最多打开几篇笔记详情页 | `6` |
+| `CREATOR_STATS_MAX_BODY_VISITS` | 否 | 反风控：单次同步最多抓几篇公开正文 | `4` |
+| `CREATOR_STATS_DETAIL_CIRCUIT_FAILURES` | 否 | 反风控：详情/正文连续失败几次后熔断本轮深入 | `2` |
+| `CREATOR_STATS_BODY_EMPTY_CIRCUIT` | 否 | 反风控：公开正文连续空结果几次后熔断（疑似风控壳页） | `3` |
+| `CREATOR_STATS_SESSION_WIND_DOWN_MIN_S` / `CREATOR_STATS_SESSION_WIND_DOWN_MAX_S` | 否 | 反风控：抓取结束后关闭页面前的随机停留（秒） | `2` / `8` |
 | `CREATOR_STATS_ENRICH_RECENT_DAYS` | 否 | 增量同步：发布距今不超过该天数的笔记总是重新访问详情页 | `7` |
 | `CREATOR_STATS_BODY_LOOKBACK_DAYS` | 否 | 增量同步：仅为该天数内发布且尚无正文的笔记抓取公开正文（已有正文永不重抓） | `30` |
-| `CREATOR_STATS_REQUEST_DELAY_MIN_S` / `CREATOR_STATS_REQUEST_DELAY_MAX_S` | 否 | 单次同步内逐篇笔记页面访问之间的随机间隔（秒），防风控 | `2.0` / `6.0` |
-| `CREATOR_STATS_LONG_PAUSE_CHANCE` | 否 | 反风控：每次访问停顿以小概率改为长停顿（模拟人走神/切换任务），打乱均匀节奏；`0` 关闭 | `0.08` |
-| `CREATOR_STATS_LONG_PAUSE_MIN_S` / `CREATOR_STATS_LONG_PAUSE_MAX_S` | 否 | 反风控：长停顿的随机区间（秒） | `15.0` / `45.0` |
-| `CREATOR_STATS_SYNC_COOLDOWN_MINUTES` | 否 | 反风控：距上次成功同步不足该分钟数时，再次触发（含手动 sync-all）直接跳过，防止短时间内反复全量爬取；`0` 关闭 | `30` |
-| `CREATOR_STATS_AUTH_FAIL_COOLDOWN_MINUTES` | 否 | 反风控：创作者中心鉴权失败（401/需重登）后，禁止再次同步的分钟数，避免对失效会话连撞；`0` 关闭 | `120` |
+| `CREATOR_STATS_REQUEST_DELAY_MIN_S` / `CREATOR_STATS_REQUEST_DELAY_MAX_S` | 否 | 单次同步内逐篇页面访问之间的随机间隔（秒） | `3.5` / `10.0` |
+| `CREATOR_STATS_LONG_PAUSE_CHANCE` | 否 | 反风控：长停顿概率（走神/切任务） | `0.12` |
+| `CREATOR_STATS_LONG_PAUSE_MIN_S` / `CREATOR_STATS_LONG_PAUSE_MAX_S` | 否 | 反风控：长停顿区间（秒） | `20` / `60` |
+| `CREATOR_STATS_SYNC_COOLDOWN_MINUTES` | 否 | 反风控：距上次成功同步不足该分钟数时跳过（含手动）；`0` 关闭 | `30` |
+| `CREATOR_STATS_AUTH_FAIL_COOLDOWN_MINUTES` | 否 | 反风控：鉴权失败后禁止再同步的分钟数；`0` 关闭 | `120` |
 | `XHS_QR_LOGIN_COOLDOWN_SECONDS` | 否 | 反风控：同一账号两次扫码启动的最小间隔（秒）；短时间反复弹码易触发登录风控；`0` 关闭 | `900` |
 | `XHS_QR_RISK_BLOCK_SECONDS` | 否 | 反风控：检测到 300012/安全限制后禁止再次扫码的秒数；前端同步禁用按钮；`0` 关闭 | `3600` |
 

@@ -245,7 +245,30 @@ async def _creator_stats_scheduler(
             state["consecutive_failures"] = consecutive_failures
         # 4. 失败退避：第二次连续失败起间隔按 1.5-2.5× 随机放大（固定倍数
         # 本身也是可预测的退避节律），成功即复位。
-        backoff = 1.0 if consecutive_failures <= 1 else random.uniform(1.5, 2.5)
+        # Auth/risk-shaped errors get a stronger multi-day-scale pause so we
+        # do not re-hammer creator center right after a ban/401.
+        last_err = str(state.get("last_error") or "").lower()
+        riskish = any(
+            token in last_err
+            for token in (
+                "401",
+                "403",
+                "auth",
+                "login",
+                "re-login",
+                "300012",
+                "risk",
+                "风控",
+                "安全限制",
+                "empty",
+            )
+        )
+        if not succeeded and riskish:
+            backoff = random.uniform(3.0, 6.0)
+        elif consecutive_failures <= 1:
+            backoff = 1.0
+        else:
+            backoff = random.uniform(1.5, 2.5)
         # 2. 间隔按 0.75-1.5× 三角分布取值（峰值 1×，模拟人的习惯节律）；
         # active_window 再把落点限制在人类活动时段。
         if skip_day_chance > 0:
