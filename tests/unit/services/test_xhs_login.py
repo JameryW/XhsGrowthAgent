@@ -898,8 +898,12 @@ class TestInspectProfileLoginStatus:
         assert result["is_logged_in"] is True
         assert result["signals"] == ["access-token-creator.xiaohongshu.com"]
 
-    async def test_logged_in_when_www_session_pair_present(self):
-        """web_session + id_token is the durable Creator Center SSO pair."""
+    async def test_www_session_pair_is_not_creator_logged_in(self):
+        """web_session + id_token without creator token is a partial www session.
+
+        Live profiles often keep this pair after creator SSO expires while
+        creator APIs return 401 — must not show green "已登录".
+        """
         from backend.services.xhs_login import inspect_profile_login_status
 
         mock_module, _, _ = _wire_playwright_mock(
@@ -912,9 +916,9 @@ class TestInspectProfileLoginStatus:
         with patch.dict(sys.modules, {"playwright.async_api": mock_module}):
             result = await inspect_profile_login_status("acc-1", "http://127.0.0.1:9223")
 
-        assert result["status"] == "logged_in"
-        assert result["is_logged_in"] is True
-        assert result["reason"] == "strong_cookie"
+        assert result["status"] == "logged_out"
+        assert result["is_logged_in"] is False
+        assert result["reason"] == "www_only"
         assert set(result["signals"]) == {"id_token", "web_session"}
 
     async def test_logged_out_when_only_stale_id_token_present(self):

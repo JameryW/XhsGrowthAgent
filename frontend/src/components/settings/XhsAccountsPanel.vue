@@ -214,7 +214,16 @@ function loginStatusText(accountId: string): string {
 }
 
 function loginStatusIcon(accountId: string): string {
-  const value: LoginStatusValue = loginStatusFor(accountId).status
+  const status = loginStatusFor(accountId)
+  const value: LoginStatusValue = status.status
+  if (
+    value === 'logged_out'
+    && (status.reason === 'www_only'
+      || status.reason === 'missing_creator_token'
+      || status.reason === 'stale_id_token')
+  ) {
+    return 'AlertCircle'
+  }
   switch (value) {
     case 'logged_in': return 'CheckCircle'
     case 'logged_out': return 'LogOut'
@@ -228,6 +237,15 @@ function loginStatusClass(accountId: string): string {
   const status = loginStatusFor(accountId)
   const value: LoginStatusValue = status.status
   if (status.reason === 'account_inactive') return 'text-slate-400'
+  // Partial www session or stale token — warn, do not look fully logged-out gray.
+  if (
+    value === 'logged_out'
+    && (status.reason === 'www_only'
+      || status.reason === 'missing_creator_token'
+      || status.reason === 'stale_id_token')
+  ) {
+    return 'text-amber-600'
+  }
   switch (value) {
     case 'logged_in': return 'text-emerald-600'
     case 'logged_out': return 'text-slate-400'

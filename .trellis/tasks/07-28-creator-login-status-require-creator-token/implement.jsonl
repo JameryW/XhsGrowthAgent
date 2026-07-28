@@ -1,0 +1,5 @@
+{"file":"backend/services/xhs_login.py","reason":"Cookie heuristic for login status"}
+{"file":"backend/services/creator_stats/pipeline.py","reason":"Preflight uses inspect_profile_login_status reasons"}
+{"file":"frontend/src/components/settings/XhsAccountsPanel.vue","reason":"www_only display copy + styling"}
+{"file":"tests/unit/services/test_xhs_login.py","reason":"Login status unit tests"}
+{"file":"tests/unit/services/creator_stats/test_preflight_and_error_codes.py","reason":"Preflight blocks www_only"}

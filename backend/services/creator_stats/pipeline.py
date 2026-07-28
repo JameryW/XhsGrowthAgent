@@ -186,8 +186,7 @@ async def preflight_creator_login(account_id: str, cdp_endpoint: str) -> SyncRes
         return None
 
     if status.get("is_logged_in"):
-        # inspect_profile_login_status now only reports logged_in when the
-        # creator access token is present — safe to crawl.
+        # logged_in is creator-token only (www pair alone is www_only) — safe.
         return None
 
     reason = str(status.get("reason") or "logged_out")

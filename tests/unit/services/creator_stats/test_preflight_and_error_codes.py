@@ -74,19 +74,24 @@ async def test_preflight_allows_logged_in():
 
 
 @pytest.mark.asyncio
-async def test_preflight_allows_www_session_pair():
+async def test_preflight_blocks_www_session_pair():
+    """www cookies alone must not pass preflight (creator APIs still 401)."""
     with patch(
         "backend.services.xhs_login.inspect_profile_login_status",
         new=AsyncMock(
             return_value={
-                "status": "logged_in",
-                "is_logged_in": True,
-                "reason": "strong_cookie",
+                "status": "logged_out",
+                "is_logged_in": False,
+                "reason": "www_only",
                 "signals": ["id_token", "web_session"],
             }
         ),
     ):
-        assert await preflight_creator_login("acc-1", "http://127.0.0.1:9225") is None
+        blocked = await preflight_creator_login("acc-1", "http://127.0.0.1:9225")
+    assert blocked is not None
+    assert blocked.account_synced is False
+    assert blocked.error_code == ERROR_AUTH_EXPIRED
+    assert "创作者中心" in (blocked.error or "")
 
 
 @pytest.mark.asyncio
