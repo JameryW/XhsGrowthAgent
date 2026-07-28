@@ -201,7 +201,9 @@ def _resume_phase_for_next_nodes(
         "revise_content": WorkflowPhase.REVIEWING,
         "publisher": WorkflowPhase.PUBLISHING,
         "analyst": WorkflowPhase.ANALYZING,
-        "engagement": WorkflowPhase.ENGAGING,
+        # Removed workflow node: old checkpoints must be reported terminal,
+        # never resumed into automatic comment/DM interaction.
+        "engagement": WorkflowPhase.COMPLETED,
     }
     for node in next_nodes:
         if node in phase_by_node:
@@ -1162,6 +1164,17 @@ async def resume_workflow(
                 }
             )
 
+        if resume_node == "engagement":
+            return success(
+                data={
+                    "thread_id": thread_id,
+                    "status": WorkflowStatus.COMPLETED.value,
+                    "phase": WorkflowPhase.COMPLETED,
+                    "recovered": False,
+                    "message": "旧版自动互动节点已移除，工作流不会恢复评论或私信操作。",
+                }
+            )
+
         prev_phase = _resume_phase_for_next_nodes(
             (resume_node,),
             saved.get("prev_phase") or WorkflowPhase.CREATING,
@@ -1295,6 +1308,16 @@ async def resume_workflow(
         )
 
     next_nodes = tuple(state.next or ())
+    if "engagement" in next_nodes:
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": WorkflowStatus.COMPLETED.value,
+                "phase": WorkflowPhase.COMPLETED,
+                "recovered": False,
+                "message": "旧版自动互动节点已移除，工作流不会恢复评论或私信操作。",
+            }
+        )
     can_retry_error = derived == WorkflowStatus.ERROR
     can_resume_stale = derived == WorkflowStatus.STALE
     can_restart_terminal = derived in (WorkflowStatus.COMPLETED, WorkflowStatus.CANCELLED)
@@ -1329,6 +1352,16 @@ async def resume_workflow(
             last_node = state.values.get("_last_node")
             if last_node:
                 infer_nodes = (last_node,)
+        if "engagement" in infer_nodes:
+            return success(
+                data={
+                    "thread_id": thread_id,
+                    "status": WorkflowStatus.COMPLETED.value,
+                    "phase": WorkflowPhase.COMPLETED,
+                    "recovered": False,
+                    "message": "旧版自动互动节点已移除，工作流不会恢复评论或私信操作。",
+                }
+            )
         prev_phase = _resume_phase_for_next_nodes(
             infer_nodes,
             state.values.get("prev_phase") or WorkflowPhase.CREATING,
@@ -1507,6 +1540,18 @@ async def recover_workflow(
             state.values.get("prev_phase") or WorkflowPhase.CREATING,
         )
         input_data = Command(goto=target_node)
+
+    if target_node == "engagement":
+        return success(
+            data={
+                "thread_id": thread_id,
+                "status": WorkflowStatus.COMPLETED.value,
+                "target_node": target_node,
+                "phase": WorkflowPhase.COMPLETED,
+                "recovered": False,
+                "message": "旧版自动互动节点已移除，工作流不会恢复评论或私信操作。",
+            }
+        )
 
     await _start_resume_task(thread_id, graph, config, prev_phase, input_data=input_data)
 

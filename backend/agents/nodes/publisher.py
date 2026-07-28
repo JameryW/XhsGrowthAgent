@@ -17,8 +17,8 @@ async def publisher_node(state: XHSGrowthState, *, store: BaseStore) -> dict[str
 
     The completed event is emitted by _runner._emit_status_transition when
     derive_status returns COMPLETED, which happens only after the graph has
-    fully finished (including analyst → engagement). Emitting it here would
-    prematurely close SSE streams and skip downstream nodes.
+    fully finished (including any manually resumed analyst step). Emitting it
+    here would prematurely close SSE streams and skip downstream nodes.
     """
     _check_cancelled(state)
     thread_id = state.get("session_id")

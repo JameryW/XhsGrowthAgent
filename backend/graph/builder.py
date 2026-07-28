@@ -21,7 +21,6 @@ from backend.agents.nodes import (
     brief_gate_node,
     content_strategist_node,
     copywriter_node,
-    engagement_node,
     evaluator_node,
     orchestrator_node,
     publisher_node,
@@ -48,7 +47,6 @@ from backend.graph.routers import (
     content_strategist_router,
     copywriter_router,
     draft_gate_router,
-    engagement_router,
     evaluator_outcome,
     orchestrator_router,
     review_outcome,
@@ -98,7 +96,6 @@ def build_graph() -> StateGraph[XHSGrowthState]:
     builder.add_node("evaluator_gate", evaluator_node, retry_policy=get_retry_policy("evaluator"))
     builder.add_node("publisher", publisher_node, retry_policy=get_retry_policy("publisher"))
     builder.add_node("analyst", analyst_node, retry_policy=get_retry_policy("analyst"))
-    builder.add_node("engagement", engagement_node, retry_policy=get_retry_policy("engagement"))
     builder.add_node("revise_content", revise_content_node)
     # Ripple gate — conditional interrupt when Ripple results are suboptimal
     builder.add_node("ripple_gate", ripple_gate_node)
@@ -138,7 +135,6 @@ def build_graph() -> StateGraph[XHSGrowthState]:
             "brief_analyzer": "brief_analyzer",
             "content_strategist": "content_strategist",
             "analyst": "analyst",
-            "engagement": "engagement",
             "__end__": END,
         },
     )
@@ -342,17 +338,6 @@ def build_graph() -> StateGraph[XHSGrowthState]:
     builder.add_conditional_edges(
         "analyst",
         should_continue,
-        {
-            "orchestrator": "orchestrator",
-            "engagement": "engagement",
-            "__end__": END,
-        },
-    )
-
-    # ── 互动完成后根据执行模式决定下一步 ──
-    builder.add_conditional_edges(
-        "engagement",
-        engagement_router,
         {
             "orchestrator": "orchestrator",
             "__end__": END,

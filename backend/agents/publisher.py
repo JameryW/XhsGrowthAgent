@@ -120,8 +120,7 @@ class PublisherAgent(BaseAgent):
         #      =False in the approve decision and silently flip it).
         #   2. publish_options["dry_run"] — set by review.py /approve (defaults
         #      to True when the decision omits publish_options).
-        # Either being True triggers the mock path. Mirrors the engagement
-        # agent's is_dry_run check (state.get("dry_run") or mock_ post_id).
+        # Either being True triggers the mock path.
         publish_options = state.get("publish_options") or {}
         is_dry_run = bool(state.get("dry_run")) or publish_options.get("dry_run", False)
 

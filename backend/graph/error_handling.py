@@ -14,7 +14,6 @@ RETRY_POLICIES: dict[str, RetryPolicy] = {
     # 高重试：外部 API 调用可能不稳定
     "trend_scout": RetryPolicy(max_attempts=3),
     "publisher": RetryPolicy(max_attempts=3),
-    "engagement": RetryPolicy(max_attempts=3),
     # 中重试：LLM 调用可能触发限速
     "copywriter": RetryPolicy(max_attempts=2),
     "visual_designer": RetryPolicy(max_attempts=2),

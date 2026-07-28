@@ -11,13 +11,13 @@ def test_execution_mode_continuous():
     assert ExecutionMode.CONTINUOUS == "continuous"
 
 
-def test_should_continue_single_mode_goes_to_engagement():
-    """In single mode, analyzing phase routes to engagement."""
+def test_should_continue_single_mode_ends_without_interaction():
+    """In single mode, analyzing phase ends without automatic interaction."""
     from backend.graph.routers import should_continue
     from backend.state.enums import WorkflowPhase
 
     state = {"phase": WorkflowPhase.ANALYZING, "execution_mode": "single"}
-    assert should_continue(state) == "engagement"
+    assert should_continue(state) == "__end__"
 
 
 def test_should_continue_continuous_mode_loops_to_orchestrator():

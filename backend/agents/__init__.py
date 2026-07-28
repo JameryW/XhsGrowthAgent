@@ -8,7 +8,6 @@ Agents:
 - VisualDesignerAgent: 视觉设计
 - PublisherAgent: 发布执行
 - AnalystAgent: 数据分析
-- EngagementAgent: 用户互动
 - ViralMatcherAgent: 爆款匹配 (发布前优化)
 - ContentAnalyzerAgent: 对比分析 (发布前优化)
 - VersionGeneratorAgent: 版本生成 (发布前优化)
@@ -23,7 +22,6 @@ from backend.agents.brief_analyzer import BriefAnalyzerAgent
 from backend.agents.content_analyzer import ContentAnalyzerAgent
 from backend.agents.content_strategist import ContentStrategistAgent
 from backend.agents.copywriter import CopywriterAgent
-from backend.agents.engagement import EngagementAgent
 from backend.agents.evaluator import EvaluatorAgent
 from backend.agents.orchestrator import OrchestratorAgent
 from backend.agents.publisher import PublisherAgent
@@ -42,7 +40,6 @@ __all__ = [
     "VisualDesignerAgent",
     "PublisherAgent",
     "AnalystAgent",
-    "EngagementAgent",
     "ViralMatcherAgent",
     "ContentAnalyzerAgent",
     "VersionGeneratorAgent",

@@ -18,8 +18,8 @@ If the account has no usable CDP endpoint, the operation fails closed.
 - Detect login shells and platform risk-control pages before and after
   navigation or submission.
 - Stop on a risk-control signal; do not automatically retry the same action.
-- Workflow-level comment/DM automation is opt-in; explicit operator/tool
-  actions are separate from the automatic engagement gate.
+- The workflow graph does not perform automatic comment/DM actions. Any
+  remaining comment/DM browser action is an explicit operator/tool action.
 - Keep creator-statistics collection on Creator Center. Public note pages are
   opt-in only and disabled for scheduled production syncs.
 

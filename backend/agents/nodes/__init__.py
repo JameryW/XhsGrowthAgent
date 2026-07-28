@@ -8,7 +8,6 @@ from backend.agents.nodes.brief_analyzer import brief_analyzer_node
 from backend.agents.nodes.brief_gate import brief_gate_node
 from backend.agents.nodes.content_strategist import content_strategist_node
 from backend.agents.nodes.copywriter import copywriter_node
-from backend.agents.nodes.engagement import engagement_node
 from backend.agents.nodes.evaluator import evaluator_node
 
 # Optimization nodes
@@ -41,7 +40,6 @@ __all__ = [
     "visual_designer_node",
     "publisher_node",
     "analyst_node",
-    "engagement_node",
     "review_gate_node",
     "revise_content_node",
     "evaluator_node",

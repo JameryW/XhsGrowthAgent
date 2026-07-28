@@ -55,6 +55,8 @@ class XHSGrowthState(TypedDict, total=False):
     visual_plan: VisualPlan
     publish_result: PublishResult
     analytics: AnalyticsSnapshot
+    # Legacy interaction history retained for checkpoint/API compatibility;
+    # the workflow no longer creates automatic comment/DM actions.
     engagement_actions: Annotated[list[EngagementAction], _append_list]
 
     # Human review
@@ -68,9 +70,9 @@ class XHSGrowthState(TypedDict, total=False):
     # infinite revision loops when the panel is miscalibrated or adversarial.
     revision_count: int
 
-    # Continuous-mode cycle guard — counts analyst→orchestrator (or engagement→
-    # orchestrator) cycles. should_continue/engagement_router force-end after
-    # _MAX_CYCLE_COUNT to prevent runaway workflows in continuous execution mode.
+    # Continuous-mode cycle guard — counts analyst→orchestrator cycles.
+    # should_continue force-ends after _MAX_CYCLE_COUNT to prevent runaway
+    # workflows in continuous execution mode.
     cycle_count: int
 
     # Ripple CAS engine
@@ -116,12 +118,8 @@ class XHSGrowthState(TypedDict, total=False):
     skip_optimization: bool
     optimization_error: str | None
 
-    # Engagement (post-publish interactions) error — non-fatal: the post was
-    # published successfully, but comment replies / DM handling failed.
-    # Mirrors optimization_error pattern: recorded for observability without
-    # reclassifying a completed workflow as ERROR (derive_status ignores this
-    # field; setting the generic ``error`` field would flip a COMPLETED
-    # workflow to ERROR since engagement has no next_nodes).
+    # Legacy post-publish interaction error retained for checkpoint/API
+    # compatibility. The workflow no longer writes or processes it.
     engagement_error: str | None
 
     # ── 博主参考系统 ──

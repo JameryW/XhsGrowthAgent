@@ -31,7 +31,6 @@ backend/
 │   ├── visual_designer.py              # VisualDesignerAgent
 │   ├── publisher.py                     # PublisherAgent
 │   ├── analyst.py                       # AnalystAgent
-│   ├── engagement.py                    # EngagementAgent
 │   ├── brief_analyzer.py                # BriefAnalyzerAgent
 │   ├── shooting_planner.py              # ShootingPlannerAgent
 │   ├── viral_matcher.py                 # ViralMatcherAgent
@@ -52,7 +51,6 @@ backend/
 │       ├── visual_designer.py           # visual_designer_node
 │       ├── publisher.py                 # publisher_node
 │       ├── analyst.py                   # analyst_node
-│       ├── engagement.py                # engagement_node
 │       ├── review_gate.py               # review_gate_node
 │       ├── revise_content.py            # revise_content_node
 │       ├── brief_analyzer.py            # brief_analyzer_node
@@ -168,7 +166,6 @@ backend/
 │       ├── visual_designer.yaml
 │       ├── publisher.yaml
 │       ├── analyst.yaml
-│       ├── engagement.yaml
 │       ├── brief_analyzer.yaml
 │       ├── shooting_planner.yaml
 │       ├── content_analyzer.yaml

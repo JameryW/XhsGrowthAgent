@@ -133,7 +133,6 @@ const workflowPhases = computed<PhaseNode[]>(() => {
     description: t('dashboard.timeline.publishingDesc'), agent: 'publisher',
     subSteps: [
       { icon: 'Upload', label: t('dashboard.timeline.short.publisher'), agent: 'publisher', description: t('dashboard.timeline.publishingDesc') },
-      { icon: 'MessageCircle', label: t('dashboard.timeline.short.engagement'), agent: 'engagement', description: t('dashboard.timeline.engaging') },
     ],
   })
   phases.push({
@@ -174,8 +173,8 @@ type NodeStatus = 'completed' | 'running' | 'pending' | 'error'
 const phaseOrder = computed<string[]>(() => {
   const isBrief = workflowMode.value === 'brief'
   const base = isBrief
-    ? ['briefing', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging', 'completed']
-    : ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'analyzing', 'engaging', 'completed']
+    ? ['briefing', 'creating', 'reviewing', 'publishing', 'analyzing', 'completed']
+    : ['scouting', 'planning', 'creating', 'reviewing', 'publishing', 'analyzing', 'completed']
   return base
 })
 
@@ -187,14 +186,14 @@ const agentOrder = computed<string[]>(() => {
       'viral_matcher', 'blogger_scout', 'blogger_gate',
       'copywriter', 'draft_gate',
       'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer',
-      'review_gate', 'revise_content', 'publisher', 'engagement', 'analyst',
+      'review_gate', 'revise_content', 'publisher', 'analyst',
     ]
   }
   return [
     'trend_scout', 'content_strategist', 'ripple_gate', 'copywriter', 'draft_gate',
     'viral_matcher', 'blogger_scout', 'blogger_gate',
     'shooting_planner', 'content_analyzer', 'version_generator', 'choice_gate', 'visual_designer',
-    'review_gate', 'revise_content', 'publisher', 'engagement', 'analyst',
+    'review_gate', 'revise_content', 'publisher', 'analyst',
   ]
 })
 
@@ -244,9 +243,6 @@ function isSubStepCompleted(agent: string): boolean {
   if (agent === 'publisher') return hasData(es.value?.publish_result)
   if (agent === 'analyst') return hasData(es.value?.analytics)
   if (agent === 'revise_content') return false
-  if (agent === 'engagement') {
-    return workflowStore.currentPhase === 'completed' || agentIndex(currentAgent.value) > agentIndex('engagement')
-  }
   return false
 }
 
@@ -265,7 +261,7 @@ function getStatus(agent: string): NodeStatus {
   const briefAgents = new Set(['brief_analyzer', 'brief_gate'])
   const planningAgents = new Set(['content_strategist', 'ripple_gate'])
   const reviewAgents = new Set(['review_gate', 'revise_content'])
-  const publishAgents = new Set(['publisher', 'engagement'])
+  const publishAgents = new Set(['publisher'])
   let nodePhase: string
   if (agent === 'trend_scout') nodePhase = 'scouting'
   else if (workflowMode.value === 'brief' && briefAgents.has(agent)) nodePhase = 'briefing'

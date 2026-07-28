@@ -21,7 +21,6 @@ class ModelSettings(BaseSettings):
             "visual": "mimo-v2.5-pro",
             "analysis": "mimo-v2.5-pro",
             "publishing": "mimo-v2.5-pro",
-            "engagement": "mimo-v2.5-pro",
         }
     )
 
@@ -36,9 +35,6 @@ class XHSPlatformSettings(BaseSettings):
 
     api_base: str = "https://edith.xiaohongshu.com"
     use_browser: bool = False
-    # Automatic comment/DM actions are opt-in; explicit engagement tools remain
-    # available regardless of this workflow-level gate.
-    auto_engagement: bool = False
     # Legacy compatibility field. All XHS browser paths are headed; this value
     # is intentionally ignored by browser services.
     headless: bool = False
@@ -74,7 +70,6 @@ class WorkflowSettings(BaseSettings):
     scout_interval_hours: int = 6
     post_interval_hours: int = 4
     analytics_interval_hours: int = 12
-    engagement_check_interval_min: int = 30
 
     model_config = {"env_prefix": "WORKFLOW_", "env_file": ".env", "extra": "ignore"}
 

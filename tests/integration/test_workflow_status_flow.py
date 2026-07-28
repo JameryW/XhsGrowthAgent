@@ -30,8 +30,7 @@ class TestFullWorkflowLifecycle:
     def test_single_mode_happy_path(self):
         """Single mode happy path through all phases.
 
-        scouting → planning → creating → reviewing → publishing →
-        analyzing → engaging → completed.
+        scouting → planning → creating → reviewing → publishing → completed.
         """
         # 1. Start — orchestrator dispatches to trend_scout
         snap = make_snapshot({"phase": WorkflowPhase.SCOUTING}, next=["trend_scout"])
@@ -59,19 +58,8 @@ class TestFullWorkflowLifecycle:
         snap = make_snapshot({"phase": WorkflowPhase.PUBLISHING}, next=["publisher"])
         assert derive_status(snap) == WorkflowStatus.RUNNING
 
-        # 6. Analyzing
-        snap = make_snapshot({"phase": WorkflowPhase.ANALYZING}, next=["analyst"])
-        assert derive_status(snap) == WorkflowStatus.RUNNING
-
-        # 7. Engaging (single mode → sets COMPLETED in engagement node)
-        snap = make_snapshot(
-            {"phase": WorkflowPhase.ENGAGING, "execution_mode": ExecutionMode.SINGLE},
-            next=["engagement"],
-        )
-        assert derive_status(snap) == WorkflowStatus.RUNNING
-
-        # 8. Completed
-        snap = make_snapshot({"phase": WorkflowPhase.COMPLETED})
+        # 6. Publisher ends the normal workflow; analysis is manual.
+        snap = make_snapshot({"phase": WorkflowPhase.PUBLISHING})
         assert derive_status(snap) == WorkflowStatus.COMPLETED
 
     def test_continuous_mode_loops_back(self):

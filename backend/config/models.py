@@ -13,6 +13,8 @@ class TaskType(StrEnum):
     VISUAL = "visual"
     ANALYSIS = "analysis"
     PUBLISHING = "publishing"
+    # Legacy routing key retained for persisted configuration compatibility;
+    # the automatic workflow agent has been removed.
     ENGAGEMENT = "engagement"
     # 新增
     VIRAL_MATCHING = "viral_matching"

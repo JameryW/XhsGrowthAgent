@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"Verify no automatic workflow interaction path is reintroduced."}
+{"file":".trellis/spec/backend/workflow-state.md","reason":"Verify graph routes and stale states terminate without an engagement node."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Run full tests, Ruff, formatting, mypy, and compile checks."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Verify removed-node states fail closed rather than restarting interaction."}
