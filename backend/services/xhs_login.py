@@ -68,6 +68,38 @@ _STRONG_LOGIN_COOKIE_NAMES = {
 _PARTIAL_WWW_AUTH_COOKIE_NAMES = frozenset({"web_session", "id_token"})
 _LOGIN_STATUS_URLS = [_EXPLORE_URL, "https://creator.xiaohongshu.com"]
 _CREATOR_HOME_URL = "https://creator.xiaohongshu.com/new/home"
+_CREATOR_PAGE_READY_SIGNAL = "creator_page_ready"
+_CREATOR_PAGE_STATUS_SCRIPT = r"""
+() => {
+    const host = String(window.location.hostname || '').toLowerCase();
+    const path = String(window.location.pathname || '').toLowerCase();
+    const isLoginPath =
+        path.includes('/login') || path.includes('website-login') || path.includes('passport');
+    if (host !== 'creator.xiaohongshu.com' || isLoginPath) {
+        return { ready: false, signals: [] };
+    }
+
+    const bodyText = String(
+        (document.body && (document.body.innerText || document.body.textContent)) || ''
+    );
+    const loginShellMarkers = ['短信登录', '扫码登录', '发送验证码', '请先登录', '登录即同意'];
+    const loginShellHits = loginShellMarkers.filter((marker) => bodyText.includes(marker)).length;
+    if (loginShellHits >= 2) {
+        return { ready: false, signals: [] };
+    }
+
+    const businessMarkers = [
+        ['creator_publish_note', '发布笔记'],
+        ['creator_dashboard', '数据看板'],
+        ['creator_note_manager', '笔记管理'],
+        ['creator_followers', '粉丝'],
+    ];
+    const matched = businessMarkers
+        .filter(([, marker]) => bodyText.includes(marker))
+        .map(([signal]) => signal);
+    return { ready: matched.length >= 2, signals: matched };
+}
+"""
 
 
 def _cookie_names_mean_logged_in(cookie_names: set[str]) -> tuple[bool, list[str], str]:
@@ -95,6 +127,22 @@ def _cookie_names_mean_logged_in(cookie_names: set[str]) -> tuple[bool, list[str
     if has_session and not has_id:
         return False, ["web_session"], "missing_strong_cookie"
     return False, [], "missing_strong_cookie"
+
+
+def _creator_page_state_is_ready(state: Any) -> bool:
+    """Accept only the boolean page-evidence result, never page text."""
+    return isinstance(state, dict) and state.get("ready") is True
+
+
+def _creator_page_status(account_id: str) -> dict[str, Any]:
+    """Return the stable login result used for Creator Center page evidence."""
+    return {
+        "account_id": account_id,
+        "status": "logged_in",
+        "is_logged_in": True,
+        "reason": _CREATOR_PAGE_READY_SIGNAL,
+        "signals": [_CREATOR_PAGE_READY_SIGNAL],
+    }
 
 
 # codeStatus 语义（spike + reverse-engineered CLI 源码确认）。
@@ -1710,6 +1758,77 @@ async def stop_all_sessions() -> None:
             await session.stop()
 
 
+async def _raw_creator_page_is_ready(session: XhsLoginSession) -> bool:
+    """Check existing Creator Center targets without changing browser state."""
+    try:
+        targets_result = await session._raw_send("Target.getTargets", session_id=None)
+    except Exception as e:
+        logger.debug("raw CDP 枚举创作者中心页面失败 account=%s: %s", session.account_id, e)
+        return False
+
+    target_infos = targets_result.get("targetInfos") if isinstance(targets_result, dict) else None
+    if not isinstance(target_infos, list):
+        return False
+
+    for target_info in target_infos:
+        if not isinstance(target_info, dict) or target_info.get("type") != "page":
+            continue
+        target_id = str(target_info.get("targetId") or "")
+        target_url = str(target_info.get("url") or "")
+        if not target_id or urlparse(target_url).hostname != "creator.xiaohongshu.com":
+            continue
+
+        target_session_id = ""
+        try:
+            attached = await session._raw_send(
+                "Target.attachToTarget",
+                {"targetId": target_id, "flatten": True},
+                session_id=None,
+            )
+            target_session_id = str(attached.get("sessionId") or "")
+            if not target_session_id:
+                continue
+            evaluated = await session._raw_send(
+                "Runtime.evaluate",
+                {
+                    "expression": f"({_CREATOR_PAGE_STATUS_SCRIPT.strip()})()",
+                    "returnByValue": True,
+                    "awaitPromise": True,
+                },
+                session_id=target_session_id,
+            )
+            remote_result = evaluated.get("result") if isinstance(evaluated, dict) else None
+            state = remote_result.get("value") if isinstance(remote_result, dict) else None
+            if _creator_page_state_is_ready(state):
+                return True
+        except Exception as e:
+            logger.debug("raw CDP 读取创作者中心页面证据失败 account=%s: %s", session.account_id, e)
+        finally:
+            if target_session_id:
+                with contextlib.suppress(Exception):
+                    await session._raw_send(
+                        "Target.detachFromTarget",
+                        {"sessionId": target_session_id},
+                        session_id=None,
+                    )
+    return False
+
+
+async def _playwright_creator_page_is_ready(contexts: list[Any], account_id: str) -> bool:
+    """Check existing Playwright pages without navigating or creating tabs."""
+    for context in contexts:
+        pages = getattr(context, "pages", None) or []
+        for page in pages:
+            try:
+                state = await page.evaluate(_CREATOR_PAGE_STATUS_SCRIPT)
+            except Exception as e:
+                logger.debug("Playwright 读取创作者中心页面证据失败 account=%s: %s", account_id, e)
+                continue
+            if _creator_page_state_is_ready(state):
+                return True
+    return False
+
+
 async def _inspect_profile_login_status_raw(account_id: str, cdp_endpoint: str) -> dict[str, Any]:
     """Read durable profile login state through raw browser-level CDP."""
     session = XhsLoginSession(account_id=account_id, profile_path="", cdp_endpoint=cdp_endpoint)
@@ -1718,6 +1837,8 @@ async def _inspect_profile_login_status_raw(account_id: str, cdp_endpoint: str) 
         result = await session._raw_send("Storage.getCookies", session_id=None)
         cookies = result.get("cookies") if isinstance(result, dict) else None
         if not isinstance(cookies, list):
+            if await _raw_creator_page_is_ready(session):
+                return _creator_page_status(account_id)
             return {
                 "account_id": account_id,
                 "status": "unknown",
@@ -1733,6 +1854,16 @@ async def _inspect_profile_login_status_raw(account_id: str, cdp_endpoint: str) 
             and "xiaohongshu.com" in str(cookie.get("domain") or "")
         }
         is_logged_in, signals, reason = _cookie_names_mean_logged_in(cookie_names)
+        if is_logged_in:
+            return {
+                "account_id": account_id,
+                "status": "logged_in",
+                "is_logged_in": True,
+                "reason": reason,
+                "signals": signals,
+            }
+        if await _raw_creator_page_is_ready(session):
+            return _creator_page_status(account_id)
         return {
             "account_id": account_id,
             "status": "logged_in" if is_logged_in else "logged_out",
@@ -1763,11 +1894,12 @@ async def inspect_profile_login_status(account_id: str, cdp_endpoint: str) -> di
     This read-only probe is used by the settings page. It must not start a QR
     flow, navigate tabs, or close the host Chrome instance.
 
-    ``logged_in`` requires the creator access token
-    (``access-token-creator.xiaohongshu.com``). The www pair
-    (``web_session`` + ``id_token``) alone is ``www_only`` / not logged in —
-    it commonly survives after creator SSO expiry and previously caused a
-    false green "已登录" while Creator Center APIs returned 401.
+    ``logged_in`` requires either the creator access token
+    (``access-token-creator.xiaohongshu.com``) or verified evidence from an
+    already-open Creator Center page. The www pair (``web_session`` +
+    ``id_token``) alone is ``www_only`` / not logged in — it commonly survives
+    after creator SSO expiry and previously caused a false green "已登录" while
+    Creator Center APIs returned 401.
     """
     if not cdp_endpoint:
         return {
@@ -1823,6 +1955,16 @@ async def inspect_profile_login_status(account_id: str, cdp_endpoint: str) -> di
             if isinstance(cookie, dict) and bool(cookie.get("value"))
         }
         is_logged_in, signals, reason = _cookie_names_mean_logged_in(cookie_names)
+        if is_logged_in:
+            return {
+                "account_id": account_id,
+                "status": "logged_in",
+                "is_logged_in": True,
+                "reason": reason,
+                "signals": signals,
+            }
+        if await _playwright_creator_page_is_ready(contexts, account_id):
+            return _creator_page_status(account_id)
         return {
             "account_id": account_id,
             "status": "logged_in" if is_logged_in else "logged_out",

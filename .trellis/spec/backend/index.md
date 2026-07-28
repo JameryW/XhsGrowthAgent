@@ -21,6 +21,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [OMP Integration](./omp-integration.md) | Cross-layer API contracts for omp extension + Web TUI | Active |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
+| [Browser Auth Probes](./browser-auth-probes.md) | Read-only browser-backed login evidence | Active |
 
 ---
 
