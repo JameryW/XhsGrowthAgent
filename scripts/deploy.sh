@@ -225,6 +225,7 @@ LLMEOF
     echo "  Ripple LLM config written (credentials redacted)"
 
     echo ">>> 启动 XhsGrowthAgent 后端..."
+    # Production defaults: Creator Center only, list-first, no public-body crawl.
     podman run -d \
         --name xhs-growth \
         --network "$NET" \
@@ -246,7 +247,13 @@ LLMEOF
         -e XHS_USE_BROWSER="${XHS_USE_BROWSER:-false}" \
         -e XHS_CHROME_PROFILES_DIR="${XHS_CHROME_PROFILES_DIR:-$PROJECT_DIR/.chrome-profiles}" \
         -e XHS_CDP_BASE_PORT="${XHS_CDP_BASE_PORT:-9222}" \
+        -e XHS_ENGAGEMENT_COOLDOWN_SECONDS="${XHS_ENGAGEMENT_COOLDOWN_SECONDS:-5}" \
         -e CREATOR_STATS_SYNC_INTERVAL_HOURS="${CREATOR_STATS_SYNC_INTERVAL_HOURS:-24}" \
+        -e CREATOR_STATS_SCHEDULED_FORCE_LIGHT="${CREATOR_STATS_SCHEDULED_FORCE_LIGHT:-1}" \
+        -e CREATOR_STATS_SAFE_MODE="${CREATOR_STATS_SAFE_MODE:-1}" \
+        -e CREATOR_STATS_MAX_LIST_PAGES="${CREATOR_STATS_MAX_LIST_PAGES:-3}" \
+        -e CREATOR_STATS_MAX_DETAIL_VISITS="${CREATOR_STATS_MAX_DETAIL_VISITS:-2}" \
+        -e CREATOR_STATS_MAX_BODY_VISITS="${CREATOR_STATS_MAX_BODY_VISITS:-0}" \
         -e RIPPLE_BASE_URL=http://ripple-service:8080 \
         -e RIPPLE_API_TOKEN="${RIPPLE_API_TOKEN:-}" \
         -e RIPPLE_ENABLED=true \

@@ -76,19 +76,19 @@ class XHSPublisher:
     def __init__(
         self,
         cookie: str,
-        headless: bool = True,
+        headless: bool = False,
         cookie_storage_path: str = "",
         slow_mo: int = 100,  # 每步操作延迟 (ms)
         cdp_endpoint: str = "",
     ):
         self.cookie = cookie
-        self.headless = headless
+        # Keep the argument for older callers, but never allow a headless XHS
+        # browser to be started.
+        self.headless = False
         self.cookie_storage_path = cookie_storage_path or os.path.expanduser("~/.xhs_cookies.json")
         self.slow_mo = slow_mo
         # CDP 模式：连接常驻真实 Chrome（用户扫码登录的持久 profile），而非 launch
-        # 新浏览器。真实 Chrome 无 playwright/stealth 自动化特征，XHS shield/sec
-        # 不拦截——发布提交能正常触发 note/create。设了走 connect_over_cdp，空则
-        # fallback 到 launch（被反爬拦截，仅作兼容/测试）。
+        # 新浏览器。没有 CDP 时保留 headed fallback 供旧调用和测试使用。
         self.cdp_endpoint = cdp_endpoint
         self._browser: Browser | None = None
         self._page: Page | None = None
@@ -105,7 +105,7 @@ class XHSPublisher:
                 logger.info(f"已通过 CDP 连接真实 Chrome: {self.cdp_endpoint}")
             else:
                 self._browser = await playwright.chromium.launch(
-                    headless=self.headless,
+                    headless=False,
                     slow_mo=self.slow_mo,
                     args=[
                         "--disable-blink-features=AutomationControlled",

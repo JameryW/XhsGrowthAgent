@@ -272,14 +272,18 @@ class XHSClient:
         cookie: str = "",
         user_id: str = "",
         use_browser: bool = False,
-        headless: bool = True,
+        headless: bool = False,
         cdp_endpoint: str = "",
+        account_id: str = "",
     ):
         self.cookie = cookie
         self.user_id = user_id
         self.use_browser = use_browser
-        self.headless = headless
+        # Kept for compatibility with older callers; XHS browser services are
+        # always headed and ignore this legacy switch.
+        self.headless = False
         self.cdp_endpoint = cdp_endpoint
+        self.account_id = (account_id or "").strip()
 
         # HTTP API 客户端
         self._http = _HTTPClient(cookie=cookie) if cookie else None
@@ -510,7 +514,7 @@ class XHSClient:
 
             self._publisher = XHSPublisher(
                 cookie=self.cookie,
-                headless=self.headless,
+                headless=False,
                 cdp_endpoint=self.cdp_endpoint,
             )
         return self._publisher
@@ -520,9 +524,24 @@ class XHSClient:
         if self._engagement is None and self.use_browser:
             from backend.services.xhs_engagement import XHSEngagement
 
+            cdp_endpoint = self.cdp_endpoint.strip()
+            if not cdp_endpoint and self.account_id:
+                try:
+                    from backend.db.accounts import get_account_cdp_endpoint
+
+                    cdp_endpoint = (await get_account_cdp_endpoint(self.account_id)).strip()
+                except Exception as exc:
+                    logger.warning("无法解析账号 %s 的互动 CDP endpoint: %s", self.account_id, exc)
+            if not cdp_endpoint:
+                logger.warning(
+                    "互动已闭环：账号 %s 没有持久 CDP endpoint",
+                    self.account_id or "unknown",
+                )
             self._engagement = XHSEngagement(
                 cookie=self.cookie,
-                headless=self.headless,
+                headless=False,
+                cdp_endpoint=cdp_endpoint,
+                account_id=self.account_id,
             )
         return self._engagement
 

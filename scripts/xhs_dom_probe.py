@@ -2,7 +2,7 @@
 """XHS 发布页 DOM 回归探针 — CLI 入口.
 
 用法:
-  python3 scripts/xhs_dom_probe.py [--cdp URL] [--cookie STR] [--no-headless]
+  python3 scripts/xhs_dom_probe.py [--cdp URL] [--cookie STR]
 
 环境变量（CLI 参数优先）:
   XHS_CDP_ENDPOINT  CDP 连接真实 Chrome
@@ -24,7 +24,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="XHS publish page DOM regression probe")
     parser.add_argument("--cdp", default=os.environ.get("XHS_CDP_ENDPOINT", ""))
     parser.add_argument("--cookie", default=os.environ.get("XHS_COOKIE", ""))
-    parser.add_argument("--no-headless", action="store_true", help="show browser window")
     parser.add_argument("--json", action="store_true", help="print full JSON report")
     args = parser.parse_args()
 
@@ -36,7 +35,7 @@ def main() -> int:
         run_probe(
             cookie=args.cookie,
             cdp_endpoint=args.cdp,
-            headless=not args.no_headless,
+            headless=False,
         )
     )
 

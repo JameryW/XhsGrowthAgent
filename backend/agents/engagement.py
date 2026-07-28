@@ -72,9 +72,23 @@ class EngagementAgent(BaseAgent):
         # 调用真实互动服务
         from backend.services.xhs_client import XHSClient
 
+        account_id = str(state.get("account_id", "")).strip()
+        cdp_endpoint = settings.platform.cdp_endpoint.strip()
+        if account_id:
+            try:
+                from backend.db.accounts import get_account_cdp_endpoint
+
+                account_cdp = (await get_account_cdp_endpoint(account_id)).strip()
+                if account_cdp:
+                    cdp_endpoint = account_cdp
+            except Exception as exc:
+                logger.warning("无法解析账号 %s 的互动 CDP endpoint: %s", account_id, exc)
+
         client = XHSClient(
             use_browser=True,
-            headless=settings.platform.headless,
+            headless=False,
+            cdp_endpoint=cdp_endpoint,
+            account_id=account_id,
         )
 
         try:

@@ -692,12 +692,11 @@ async def get_analytics(
 
     from backend.services.xhs_client import XHSClient
 
-    settings = Settings()
     client = XHSClient(
         cookie="",
         user_id="",
         use_browser=True,
-        headless=settings.platform.headless,
+        headless=False,
         cdp_endpoint=cdp_endpoint,
     )
     try:

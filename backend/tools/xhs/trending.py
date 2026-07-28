@@ -25,7 +25,7 @@ async def _get_client(account_id: str = "") -> XHSClient:
     settings = Settings()
     return XHSClient(
         use_browser=settings.platform.use_browser,
-        headless=settings.platform.headless,
+        headless=False,
     )
 
 

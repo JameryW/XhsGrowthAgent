@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("xhs_growth.tools.engagement")
 
 
-def _get_engagement() -> XHSEngagement:
+def _get_engagement(cdp_endpoint: str = "", account_id: str = "") -> XHSEngagement:
     """获取 XHSEngagement 实例"""
     from backend.config.settings import Settings
     from backend.services.xhs_engagement import XHSEngagement
@@ -22,8 +22,29 @@ def _get_engagement() -> XHSEngagement:
     settings = Settings()
     return XHSEngagement(
         cookie="",
-        headless=settings.platform.headless,
+        headless=False,
+        cdp_endpoint=cdp_endpoint or settings.platform.cdp_endpoint,
+        account_id=account_id,
     )
+
+
+async def _resolve_engagement_cdp_endpoint(account_id: str) -> str:
+    """Prefer the dedicated Chrome endpoint bound to the selected account."""
+    from backend.config.settings import Settings
+
+    settings = Settings()
+    endpoint = settings.platform.cdp_endpoint.strip()
+    account_id = account_id.strip()
+    if account_id:
+        try:
+            from backend.db.accounts import get_account_cdp_endpoint
+
+            account_endpoint = (await get_account_cdp_endpoint(account_id)).strip()
+            if account_endpoint:
+                endpoint = account_endpoint
+        except Exception as exc:
+            logger.warning("无法解析账号 %s 的互动 CDP endpoint: %s", account_id, exc)
+    return endpoint
 
 
 def _get_client() -> XHSClient:
@@ -42,6 +63,7 @@ async def comment_replier(
     comment_id: str,
     post_id: str,
     reply_content: str,
+    account_id: str = "",
 ) -> dict[str, Any]:
     """回复小红书评论.
 
@@ -55,7 +77,10 @@ async def comment_replier(
     """
     logger.info(f"Replying to comment: {comment_id}")
 
-    engagement = _get_engagement()
+    engagement = _get_engagement(
+        cdp_endpoint=await _resolve_engagement_cdp_endpoint(account_id),
+        account_id=account_id,
+    )
     try:
         result = await engagement.reply_to_comment(
             note_id=post_id,
@@ -89,6 +114,7 @@ async def dm_handler(
     message_id: str,
     sender_id: str,
     reply_content: str,
+    account_id: str = "",
 ) -> dict[str, Any]:
     """处理小红书私信.
 
@@ -102,7 +128,10 @@ async def dm_handler(
     """
     logger.info(f"Handling DM from: {sender_id}")
 
-    engagement = _get_engagement()
+    engagement = _get_engagement(
+        cdp_endpoint=await _resolve_engagement_cdp_endpoint(account_id),
+        account_id=account_id,
+    )
     try:
         result = await engagement.send_dm(
             target_user_id=sender_id,

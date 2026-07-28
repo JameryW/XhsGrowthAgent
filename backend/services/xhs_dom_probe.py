@@ -156,7 +156,7 @@ async def run_probe(
     *,
     cookie: str = "",
     cdp_endpoint: str = "",
-    headless: bool = True,
+    headless: bool = False,
 ) -> ProbeReport:
     """端到端探针：起浏览器 → 导航发布页 → 跑结构断言 → 关浏览器。
 

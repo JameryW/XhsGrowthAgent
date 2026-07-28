@@ -410,7 +410,7 @@ def run_audit(
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
-            executable_path=browser_path, headless=True, args=["--no-sandbox"]
+            executable_path=browser_path, headless=False, args=["--no-sandbox"]
         )
 
         live_context = browser.new_context(viewport={"width": 390, "height": 844})

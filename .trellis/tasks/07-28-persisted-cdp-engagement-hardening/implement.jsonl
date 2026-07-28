@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Follow Ruff, typing, imports, and backend testing conventions for the service changes."}
+{"file":".trellis/spec/backend/browser-auth-probes.md","reason":"Keep browser-backed account authentication read-only and preserve the existing CDP login-state contract."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Define fail-closed behavior and avoid automatic retries after platform risk-control signals."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Use the project's logger names and levels for engagement cooldown and risk-stop events."}
+{"file":".trellis/spec/backend/browser-automation-safety.md","reason":"Apply the headed-only, persistent-CDP, cooldown, and risk-stop conventions being introduced by this task."}

@@ -607,6 +607,24 @@ async def test_cdp_nonfinite_env_values_fall_back_to_safe_defaults(monkeypatch):
     assert transport._max_body_visits == 0
 
 
+async def test_cdp_safe_mode_clamps_public_body_and_crawl_budgets(monkeypatch):
+    """Production safe mode disables public note bodies and tightens caps."""
+    monkeypatch.setenv("CREATOR_STATS_SAFE_MODE", "1")
+    monkeypatch.setenv("CREATOR_STATS_LIGHT_RUN_CHANCE", "0")
+    monkeypatch.setenv("CREATOR_STATS_ENRICH_SKIP_CHANCE", "0")
+    monkeypatch.setenv("CREATOR_STATS_MAX_LIST_PAGES", "20")
+    monkeypatch.setenv("CREATOR_STATS_MAX_DETAIL_VISITS", "20")
+    monkeypatch.setenv("CREATOR_STATS_MAX_BODY_VISITS", "20")
+
+    transport = CdpTransport("http://127.0.0.1:9222")
+
+    assert transport._max_list_pages == 3
+    assert transport._max_detail_visits == 2
+    assert transport._max_body_visits == 0
+    assert transport._light_run_chance >= 0.75
+    assert transport._enrich_skip_chance >= 0.55
+
+
 # ── 反风控节奏：乱序访问 / 翻页节奏 / 偶发长停顿 ──
 
 

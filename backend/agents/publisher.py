@@ -234,7 +234,7 @@ async def run_publish(state: XHSGrowthState | dict[str, Any], store: BaseStore) 
         cookie="",
         user_id="",
         use_browser=True,
-        headless=settings.platform.headless,
+        headless=False,
         cdp_endpoint=cdp_endpoint,
     )
 

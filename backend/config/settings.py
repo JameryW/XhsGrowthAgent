@@ -36,7 +36,9 @@ class XHSPlatformSettings(BaseSettings):
 
     api_base: str = "https://edith.xiaohongshu.com"
     use_browser: bool = False
-    headless: bool = True
+    # Legacy compatibility field. All XHS browser paths are headed; this value
+    # is intentionally ignored by browser services.
+    headless: bool = False
     # CDP 连接真实 Chrome 的端点（如 http://127.0.0.1:9222）。设了则 connect_over_cdp
     # 连常驻真实 Chrome（用户扫码登录的持久 profile）。
     cdp_endpoint: str = ""
