@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Review the component change and test coverage against frontend component and i18n conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Check that reactive state remains local and the computed display condition has no lifecycle regressions."}
+{"file":".trellis/tasks/07-28-qr-verification-gate/prd.md","reason":"Validate implementation against the QR verification display acceptance criteria."}

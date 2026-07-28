@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/component-patterns.md","reason":"Follow Vue component structure, computed-state display rules, i18n, and component testing conventions."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Keep the derived verification UI state local and reactive without introducing store state."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify the backend verification_required contract is reflected correctly at the frontend display boundary."}
+{"file":".trellis/tasks/07-28-qr-verification-gate/prd.md","reason":"Task requirements and acceptance criteria for the QR verification display gate."}

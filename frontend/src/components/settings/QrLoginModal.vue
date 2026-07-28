@@ -83,7 +83,9 @@ const statusIconVariant = computed(() => {
 
 const showQrImage = computed(() => status.value === 'waiting' || status.value === 'expired' || status.value === null)
 const showSpinner = computed(() => isStarting.value && !qrImgSrc.value)
-const showVerificationCodeInput = computed(() => Boolean(status.value && status.value !== 'confirmed'))
+const showVerificationCodeInput = computed(
+  () => verificationRequired.value && status.value !== 'confirmed'
+)
 
 // ── QR rendering ──
 async function renderQr(url: string) {
