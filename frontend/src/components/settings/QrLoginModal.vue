@@ -11,6 +11,7 @@ import {
   stopQrLogin,
   type QrLoginStatus,
 } from '@/api/accounts'
+import { ApiError } from '@/api/client'
 interface Props {
   accountId: string
   accountName: string
@@ -22,6 +23,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'confirmed'): void
+  (e: 'risk-block', payload: { riskCode: string; retryAfterSeconds: number; message: string }): void
 }>()
 
 const { t } = useI18n()
@@ -136,6 +138,25 @@ async function startSession() {
     if (disposed) return
     errorMsg.value = e?.message || t('settings.xhsAccounts.qrStartError')
     status.value = null
+    if (e instanceof ApiError) {
+      const details = e.details || {}
+      const riskCode = String(details.risk_code || '')
+      const retryAfter = Number(details.retry_after_seconds || 0)
+      if (
+        riskCode === '300012'
+        || riskCode === 'security_risk'
+        || riskCode === 'qr_cooldown'
+        || riskCode === 'qr_timeout'
+        || e.code === 'ERROR_RATE_LIMIT'
+        || /300012|安全限制|冷却|IP/i.test(e.message || '')
+      ) {
+        emit('risk-block', {
+          riskCode: riskCode || 'security_risk',
+          retryAfterSeconds: retryAfter > 0 ? retryAfter : 900,
+          message: e.message,
+        })
+      }
+    }
   } finally {
     if (!disposed) isStarting.value = false
   }

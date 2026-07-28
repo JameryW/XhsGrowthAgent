@@ -130,10 +130,11 @@ export interface QrVerificationCodeResult extends QrLoginStatusResponse {
 }
 
 export async function startQrLogin(accountId: string): Promise<QrLoginStart> {
+  // suppressToast: QrLoginModal owns risk/cooldown messaging (avoid double toast).
   return client.post(
     `/accounts/${accountId}/login/qr`,
     undefined,
-    { timeout: 12000 }
+    { timeout: 12000, suppressToast: true },
   ) as unknown as QrLoginStart
 }
 

@@ -75,9 +75,62 @@ const qrLoginOpen = ref(false)
 const qrLoginAccountId = ref<string>('')
 const qrLoginAccountName = ref<string>('')
 
+/** Per-account anti-risk fuse: block re-scan after 300012 / cooldown. */
+const qrRiskBlocks = ref<Record<string, { until: number; message: string; riskCode: string }>>({})
+let riskTickTimer: ReturnType<typeof setInterval> | null = null
+// Force recompute of remaining seconds every 1s while any block is active.
+const riskTick = ref(0)
+
 const qrLoginAccount = computed(() =>
   store.accounts.find(a => a.id === qrLoginAccountId.value)
 )
+
+function ensureRiskTicker() {
+  if (riskTickTimer) return
+  riskTickTimer = setInterval(() => {
+    riskTick.value += 1
+    const now = Date.now()
+    let any = false
+    for (const [id, block] of Object.entries(qrRiskBlocks.value)) {
+      if (block.until <= now) {
+        const next = { ...qrRiskBlocks.value }
+        delete next[id]
+        qrRiskBlocks.value = next
+      } else {
+        any = true
+      }
+    }
+    if (!any && riskTickTimer) {
+      clearInterval(riskTickTimer)
+      riskTickTimer = null
+    }
+  }, 1000)
+}
+
+function qrRiskFor(accountId: string) {
+  void riskTick.value
+  const block = qrRiskBlocks.value[accountId]
+  if (!block) return null
+  const remaining = Math.max(0, Math.ceil((block.until - Date.now()) / 1000))
+  if (remaining <= 0) return null
+  return { ...block, remainingSeconds: remaining }
+}
+
+function onQrRiskBlock(payload: { riskCode: string; retryAfterSeconds: number; message: string }) {
+  const id = qrLoginAccountId.value
+  if (!id) return
+  const seconds = Math.max(60, payload.retryAfterSeconds || 900)
+  qrRiskBlocks.value = {
+    ...qrRiskBlocks.value,
+    [id]: {
+      until: Date.now() + seconds * 1000,
+      message: payload.message,
+      riskCode: payload.riskCode,
+    },
+  }
+  ensureRiskTicker()
+  toast.warning(payload.message)
+}
 
 onMounted(async () => {
   await store.fetchAccounts()
@@ -264,9 +317,21 @@ function openQrLogin(account: Account) {
     toast.error(t('settings.xhsAccounts.loginStatusUnavailable'))
     return
   }
+  const risk = qrRiskFor(account.id)
+  if (risk) {
+    const minutes = Math.max(1, Math.ceil(risk.remainingSeconds / 60))
+    toast.warning(
+      risk.message || t('settings.xhsAccounts.qrRiskCooldown', { minutes }),
+    )
+    return
+  }
   qrLoginAccountId.value = account.id
   qrLoginAccountName.value = account.name
   qrLoginOpen.value = true
+}
+
+function canOpenQrLogin(account: Account): boolean {
+  return canScanLogin(account) && !qrRiskFor(account.id)
 }
 
 function closeQrLogin() {
@@ -370,6 +435,15 @@ function onQrConfirmed() {
             >
               {{ t('creatorStats.nicheUnbound') }}
             </span>
+            <span
+              v-if="qrRiskFor(account.id)"
+              class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium"
+              :title="qrRiskFor(account.id)?.message"
+            >
+              {{ t('settings.xhsAccounts.qrRiskBadge', {
+                minutes: Math.max(1, Math.ceil((qrRiskFor(account.id)?.remainingSeconds || 60) / 60)),
+              }) }}
+            </span>
           </div>
         </div>
         <span v-if="account.is_active"
@@ -380,15 +454,19 @@ function onQrConfirmed() {
         <div class="flex items-center gap-1" @click.stop>
           <button type="button" @click="openQrLogin(account)"
             class="min-h-11 px-2 py-1 rounded transition-colors flex items-center gap-1"
-            :class="canScanLogin(account)
+            :class="canOpenQrLogin(account)
               ? 'text-rose-500 hover:text-rose-600 hover:bg-rose-50'
               : 'text-slate-300 cursor-not-allowed'"
-            :disabled="!canScanLogin(account)"
-            :title="canScanLogin(account)
-              ? t('settings.xhsAccounts.qrLogin')
-              : account.is_active
-                ? t('settings.xhsAccounts.loginStatusUnavailable')
-                : t('settings.xhsAccounts.loginStatusInactive')"
+            :disabled="!canOpenQrLogin(account)"
+            :title="qrRiskFor(account.id)
+              ? t('settings.xhsAccounts.qrRiskCooldown', {
+                  minutes: Math.max(1, Math.ceil((qrRiskFor(account.id)?.remainingSeconds || 60) / 60)),
+                })
+              : canScanLogin(account)
+                ? t('settings.xhsAccounts.qrLogin')
+                : account.is_active
+                  ? t('settings.xhsAccounts.loginStatusUnavailable')
+                  : t('settings.xhsAccounts.loginStatusInactive')"
           >
             <AppIcon name="LogIn" size="xs" variant="pink" />
             <span>{{ t('settings.xhsAccounts.qrLogin') }}</span>
@@ -425,6 +503,7 @@ function onQrConfirmed() {
       :is-open="qrLoginOpen"
       @close="closeQrLogin"
       @confirmed="onQrConfirmed"
+      @risk-block="onQrRiskBlock"
     />
 
     <ConfirmModal
