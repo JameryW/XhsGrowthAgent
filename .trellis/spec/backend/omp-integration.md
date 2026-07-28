@@ -384,6 +384,11 @@ boundary: `account_id` is trimmed and non-empty, and `limit` is an integer in
 the inclusive `1..200` range. This mirrors `GET /analytics/creator-stats/{id}`
 and prevents invalid requests from reaching the backend.
 
+The Python `OmpBridge` host-tool schema and execution path must enforce the
+same rules, including trimming `account_id` and rejecting invalid values before
+opening its internal HTTP client. The bridge and TypeScript extension are
+parallel clients, not independent contracts.
+
 `CreatorStatsBatchSyncResult` consumers should preserve the backend's optional
 operational metadata: `retry_after_seconds` for cooldowns, `risk_code` for
 machine-readable auth/risk routing, and `force_light` for scheduled mode

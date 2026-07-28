@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/omp-integration.md","reason":"Check both OMP implementations expose the same validation and response behavior."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check invalid values stop at the client boundary and valid values survive round-trip."}

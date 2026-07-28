@@ -21,6 +21,7 @@ from backend.services.omp_bridge import (
     _execute_xhs_host_tool,
     _make_text_result,
     _tools_for_mode,
+    _validate_creator_stats_arguments,
 )
 
 # ── Schema validation ────────────────────────────────────────────────────
@@ -46,6 +47,18 @@ class TestHostToolSchemas:
         names = [t["name"] for t in XHS_HOST_TOOLS]
         assert len(names) == len(set(names)), "Duplicate tool names"
         assert set(names) == _XHS_TOOL_NAMES
+
+    def test_creator_stats_schema_matches_backend_bounds(self):
+        tool = next(item for item in XHS_HOST_TOOLS if item["name"] == "xhs_creator_stats")
+        properties = tool["parameters"]["properties"]
+        assert properties["account_id"]["minLength"] == 1
+        assert properties["limit"] == {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Maximum imported notes to inspect (1-200)",
+        }
 
     def test_all_tools_in_execute_handler(self):
         """Every tool in XHS_HOST_TOOLS should be handled by _execute_xhs_host_tool.
@@ -121,6 +134,27 @@ class TestHelpers:
     def test_make_text_result_error(self):
         result = _make_text_result("fail", None, is_error=True)
         assert result["isError"] is True
+
+    @pytest.mark.parametrize(
+        ("arguments", "expected"),
+        [
+            ({"account_id": " acc1 ", "limit": 20}, ("acc1", 20)),
+            ({"account_id": "acc1"}, ("acc1", 20)),
+            ({"account_id": ""}, "account_id is required"),
+            ({"account_id": "   "}, "account_id is required"),
+            ({"account_id": "acc1", "limit": True}, "limit must be an integer"),
+            ({"account_id": "acc1", "limit": 20.0}, "limit must be an integer"),
+            ({"account_id": "acc1", "limit": 0}, "limit must be an integer"),
+            ({"account_id": "acc1", "limit": 201}, "limit must be an integer"),
+        ],
+    )
+    def test_validate_creator_stats_arguments(self, arguments, expected):
+        result = _validate_creator_stats_arguments(arguments)
+        if isinstance(expected, tuple):
+            assert result == expected
+        else:
+            assert isinstance(result, str)
+            assert result.startswith(expected)
 
 
 # ── _execute_xhs_host_tool with mocked httpx ────────────────────────────
@@ -426,6 +460,25 @@ class TestAnalyticsTools:
         assert "9.70%" in text
         assert client.get.await_args.kwargs["params"] == {"limit": 20}
         assert client.get.await_args.args[0].endswith("/analytics/creator-stats/acc1")
+
+    @pytest.mark.parametrize(
+        "arguments",
+        [
+            {"account_id": ""},
+            {"account_id": "   "},
+            {"account_id": "acc1", "limit": 0},
+            {"account_id": "acc1", "limit": 201},
+            {"account_id": "acc1", "limit": 2.5},
+        ],
+    )
+    async def test_creator_stats_rejects_invalid_arguments_before_http(self, arguments):
+        with patch("httpx.AsyncClient") as http_client:
+            result = await _execute_xhs_host_tool("xhs_creator_stats", arguments)
+
+        assert result["isError"] is True
+        message = result["content"][0]["text"]
+        assert "limit" in message or "account_id" in message
+        http_client.assert_not_called()
 
     async def test_creator_stats_empty(self):
         client = _mock_client_get({"account": None, "notes": [], "total": 0})
