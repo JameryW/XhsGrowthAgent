@@ -58,11 +58,10 @@ _LOGIN_COOKIE_NAMES = {
 _CREATOR_LOGIN_COOKIE_NAMES = {
     "access-token-creator.xiaohongshu.com",
 }
+# Settings / preflight "logged_in" is creator-token only. www cookies alone
+# (web_session + id_token) are a partial session — stats sync still 401s.
 _STRONG_LOGIN_COOKIE_NAMES = {
     "access-token-creator.xiaohongshu.com",
-    # www durable pair — both must be present (see ``_cookie_names_mean_logged_in``).
-    "id_token",
-    "web_session",
 }
 _LOGIN_STATUS_URLS = [_EXPLORE_URL, "https://creator.xiaohongshu.com"]
 _CREATOR_HOME_URL = "https://creator.xiaohongshu.com/new/home"
@@ -71,14 +70,14 @@ _CREATOR_HOME_URL = "https://creator.xiaohongshu.com/new/home"
 def _cookie_names_mean_logged_in(cookie_names: set[str]) -> tuple[bool, list[str], str]:
     """Return (is_logged_in, signal_names, reason) from observed cookie names.
 
-    Rules (2026-07 Creator Center cookie model):
-    - ``access-token-creator.*`` alone is enough when present.
-    - Durable www pair ``web_session`` + ``id_token`` is enough — current
-      creator.xiaohongshu.com SSO uses these; the dedicated creator access
-      cookie is often absent even on a fully working stats dashboard.
-    - Lone ``id_token`` (no ``web_session``) is stale and not logged in —
-      that state previously produced a false green "已登录" while creator
-      APIs returned 401.
+    Rules (creator-center readiness — not mere www presence):
+    - ``access-token-creator.*`` alone is enough → ``logged_in`` / ``strong_cookie``.
+    - Durable www pair ``web_session`` + ``id_token`` without creator token is
+      **not** logged in for Creator Center (``www_only``). Live profiles often
+      keep this pair after creator SSO expires while stats APIs return 401;
+      treating it as green "已登录" misleads operators and skips preflight.
+    - Lone ``id_token`` (no ``web_session``) is stale (``stale_id_token``).
+    - Lone ``web_session`` or no auth cookies → ``missing_strong_cookie``.
     """
     names = {str(n) for n in cookie_names if n}
     creator_hits = sorted(names & _CREATOR_LOGIN_COOKIE_NAMES)
@@ -87,7 +86,7 @@ def _cookie_names_mean_logged_in(cookie_names: set[str]) -> tuple[bool, list[str
     has_id = "id_token" in names
     has_session = "web_session" in names
     if has_id and has_session:
-        return True, sorted({"id_token", "web_session"}), "strong_cookie"
+        return False, sorted({"id_token", "web_session"}), "www_only"
     if has_id and not has_session:
         return False, ["id_token"], "stale_id_token"
     if has_session and not has_id:
@@ -1595,10 +1594,11 @@ async def inspect_profile_login_status(account_id: str, cdp_endpoint: str) -> di
     This read-only probe is used by the settings page. It must not start a QR
     flow, navigate tabs, or close the host Chrome instance.
 
-    ``logged_in`` requires either the creator access token or the durable
-    www pair (``web_session`` + ``id_token``). A lone ``id_token`` is treated
-    as logged out — it commonly survives after session expiry and previously
-    caused a false green "已登录" while Creator Center returned 401.
+    ``logged_in`` requires the creator access token
+    (``access-token-creator.xiaohongshu.com``). The www pair
+    (``web_session`` + ``id_token``) alone is ``www_only`` / not logged in —
+    it commonly survives after creator SSO expiry and previously caused a
+    false green "已登录" while Creator Center APIs returned 401.
     """
     if not cdp_endpoint:
         return {
