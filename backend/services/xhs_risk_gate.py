@@ -7,6 +7,7 @@ expired creator session.
 
 from __future__ import annotations
 
+import math
 import os
 import time
 from dataclasses import dataclass
@@ -18,9 +19,10 @@ def _env_float(name: str, default: float) -> float:
     if raw is None or str(raw).strip() == "":
         return default
     try:
-        return float(raw)
-    except (TypeError, ValueError):
+        value = float(raw)
+    except (TypeError, ValueError, OverflowError):
         return default
+    return value if math.isfinite(value) else default
 
 
 def qr_cooldown_seconds() -> float:

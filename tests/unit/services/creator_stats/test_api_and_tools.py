@@ -32,9 +32,11 @@ from .conftest import grant_test_user
 def _clear_mem():
     _reset_memory_store()
     pipeline_module._last_successful_sync_finished_at = None
+    pipeline_module._scheduled_light_streak = 0
     yield
     _reset_memory_store()
     pipeline_module._last_successful_sync_finished_at = None
+    pipeline_module._scheduled_light_streak = 0
 
 
 def _app() -> FastAPI:
@@ -138,6 +140,158 @@ async def test_batch_sync_returns_already_running_when_postgres_lock_is_busy():
     assert result["status"] == "already_running"
 
 
+@pytest.mark.asyncio
+async def test_empty_batch_does_not_start_success_cooldown():
+    with patch("backend.db.accounts.get_active_account", new_callable=AsyncMock, return_value=None):
+        result = await sync_all_active_accounts(run_creative_analysis=False)
+
+    assert result["ok"] is True
+    assert result["active_accounts"] == 0
+    assert pipeline_module._last_successful_sync_finished_at is None
+
+
+@pytest.mark.asyncio
+async def test_batch_auth_cooldown_is_scoped_to_active_account():
+    sync_mock = AsyncMock(return_value=SyncResult(account_id="active-1", account_synced=True))
+    p1, p2, p3 = _active_account_patches(sync_mock)
+
+    def check(account_id: str = ""):
+        assert account_id == "active-1"
+        return None
+
+    with (
+        p1,
+        p2,
+        p3,
+        patch(
+            "backend.services.xhs_risk_gate.check_sync_auth_cooldown",
+            side_effect=check,
+        ),
+    ):
+        result = await sync_all_active_accounts(run_creative_analysis=False)
+
+    assert result["ok"] is True
+    assert sync_mock.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_auth_cooldown_does_not_consume_scheduled_light_streak():
+    sync_mock = AsyncMock(return_value=SyncResult(account_id="active-1", account_synced=True))
+    p1, p2, p3 = _active_account_patches(sync_mock)
+    blocked = SimpleNamespace(
+        retry_after_seconds=120,
+        message="auth cooldown",
+        risk_code="AUTH_EXPIRED",
+    )
+    pipeline_module._scheduled_light_streak = 0
+
+    with (
+        p1,
+        p2,
+        p3,
+        patch(
+            "backend.services.xhs_risk_gate.check_sync_auth_cooldown",
+            return_value=blocked,
+        ),
+    ):
+        result = await sync_all_active_accounts(
+            prefer_light=True,
+            run_creative_analysis=False,
+        )
+
+    assert result["status"] == "cooldown"
+    assert result["active_accounts"] == 1
+    assert sync_mock.await_count == 0
+    assert pipeline_module._scheduled_light_streak == 0
+
+
+@pytest.mark.asyncio
+async def test_fresh_scheduled_batch_does_not_consume_light_streak():
+    sync_mock = AsyncMock(return_value=SyncResult(account_id="active-1", account_synced=True))
+    p1, p2, p3 = _active_account_patches(sync_mock)
+
+    with (
+        p1,
+        p2,
+        p3,
+        patch(
+            "backend.services.xhs_risk_gate.check_sync_auth_cooldown",
+            return_value=None,
+        ),
+        patch.object(
+            pipeline_module,
+            "_account_freshness_skip",
+            new=AsyncMock(return_value=(True, 300)),
+        ),
+    ):
+        result = await sync_all_active_accounts(
+            prefer_light=True,
+            run_creative_analysis=False,
+        )
+
+    assert result["ok"] is True
+    assert result["succeeded"] == 1
+    assert sync_mock.await_count == 0
+    assert pipeline_module._scheduled_light_streak == 0
+    assert pipeline_module._last_successful_sync_finished_at is None
+
+
+@pytest.mark.asyncio
+async def test_failed_scheduled_sync_does_not_advance_light_streak(monkeypatch):
+    sync_mock = AsyncMock(
+        return_value=SyncResult(account_id="active-1", error="temporary fetch failure")
+    )
+    p1, p2, p3 = _active_account_patches(sync_mock)
+    monkeypatch.setenv("CREATOR_STATS_DEEP_EVERY_N_RUNS", "5")
+
+    with (
+        p1,
+        p2,
+        p3,
+        patch(
+            "backend.services.xhs_risk_gate.check_sync_auth_cooldown",
+            return_value=None,
+        ),
+    ):
+        result = await sync_all_active_accounts(
+            prefer_light=True,
+            run_creative_analysis=False,
+        )
+
+    assert result["ok"] is False
+    assert result["failed"] == 1
+    assert pipeline_module._scheduled_light_streak == 0
+
+
+@pytest.mark.asyncio
+async def test_failed_scheduled_sync_restores_existing_light_streak(monkeypatch):
+    """A failed run must not turn an existing cadence count into a new one."""
+    sync_mock = AsyncMock(
+        return_value=SyncResult(account_id="active-1", error="temporary fetch failure")
+    )
+    p1, p2, p3 = _active_account_patches(sync_mock)
+    monkeypatch.setenv("CREATOR_STATS_DEEP_EVERY_N_RUNS", "5")
+    pipeline_module._scheduled_light_streak = 2
+
+    with (
+        p1,
+        p2,
+        p3,
+        patch(
+            "backend.services.xhs_risk_gate.check_sync_auth_cooldown",
+            return_value=None,
+        ),
+    ):
+        result = await sync_all_active_accounts(
+            prefer_light=True,
+            run_creative_analysis=False,
+        )
+
+    assert result["ok"] is False
+    assert pipeline_module._scheduled_light_streak == 2
+    assert sync_mock.await_args.kwargs["force_light"] is True
+
+
 def _active_account_patches(sync_mock: AsyncMock):
     return (
         patch(
@@ -189,6 +343,27 @@ async def test_batch_sync_cooldown_disabled_when_zero(monkeypatch):
     assert sync_mock.await_count == 2
 
 
+def test_scheduled_light_streak_allows_deep_run_only_when_due(monkeypatch):
+    monkeypatch.setenv("CREATOR_STATS_DEEP_EVERY_N_RUNS", "2")
+    monkeypatch.setattr(pipeline_module.random, "random", lambda: 0.1)
+    pipeline_module._scheduled_light_streak = 0
+
+    assert pipeline_module._resolve_force_light(prefer_light=True) is True
+    assert pipeline_module._scheduled_light_streak == 1
+    # 0.1 < 0.4 means the due run takes the 40% deep-enrichment branch.
+    assert pipeline_module._resolve_force_light(prefer_light=True) is False
+    assert pipeline_module._scheduled_light_streak == 0
+    assert pipeline_module._resolve_force_light(prefer_light=True) is True
+
+
+def test_scheduled_force_light_switch_is_respected(monkeypatch):
+    monkeypatch.setenv("CREATOR_STATS_SCHEDULED_FORCE_LIGHT", "0")
+    pipeline_module._scheduled_light_streak = 0
+
+    assert pipeline_module._resolve_force_light(prefer_light=None) is False
+    assert pipeline_module._scheduled_light_streak == 0
+
+
 def test_batch_sync_endpoint_returns_atomic_batch_summary():
     app = _app()
     client = TestClient(app)
@@ -215,7 +390,13 @@ def test_batch_sync_endpoint_returns_atomic_batch_summary():
 
     assert response.status_code == 200
     assert response.json()["data"] == summary
-    sync_all.assert_awaited_once_with(store=None, period="7d", run_creative_analysis=False)
+    sync_all.assert_awaited_once_with(
+        store=None,
+        period="7d",
+        run_creative_analysis=False,
+        prefer_light=False,
+        skip_freshness_check=True,
+    )
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import math
 import os
 import random
 from collections.abc import AsyncIterator
@@ -55,6 +56,15 @@ _HOUR_ACTIVITY_WEIGHTS: dict[int, float] = {
 # 跳过概率的星期权重（周一→周日）：周末创作者更活跃、更可能看数据，跳过
 # 更少；周一跳过最多。固定的跳过概率本身不区分星期，也是一种规律。
 _WEEKDAY_SKIP_FACTORS: tuple[float, ...] = (1.2, 1.0, 1.0, 1.0, 0.9, 0.8, 0.8)
+
+
+def _finite_float(value: Any, default: float) -> float:
+    """Return a finite float, falling back when configuration is malformed."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return parsed if math.isfinite(parsed) else default
 
 
 def _weekday_skip_factor(weekday: int) -> float:
@@ -112,7 +122,7 @@ async def _creator_stats_scheduler(
       4. 连续失败退避：第二次起连续失败间隔按 1.5-2.5× 随机放大，被风控/登录态
          失效时自动降频，成功一次即复位。
     """
-    interval_seconds = max(60.0, float(interval_hours) * 3600.0)
+    interval_seconds = max(60.0, _finite_float(interval_hours, 0.0) * 3600.0)
     logger = logging.getLogger("xhs_growth.creator_stats.scheduler")
     # Uvicorn's default logging config does not install a root handler for
     # application loggers.  Keep this operational summary visible in
@@ -138,8 +148,8 @@ async def _creator_stats_scheduler(
 
     # 1. 启动随机延迟：部署/重启后不再立刻爬取。
     if startup_delay is not None:
-        delay_min = max(0.0, float(startup_delay[0]))
-        delay_max = max(delay_min, float(startup_delay[1]))
+        delay_min = max(0.0, _finite_float(startup_delay[0], 0.0))
+        delay_max = max(delay_min, _finite_float(startup_delay[1], delay_min))
         if delay_max > 0:
             candidate = datetime.now(UTC) + timedelta(seconds=random.uniform(delay_min, delay_max))
             target = _next_run(candidate)
@@ -180,7 +190,11 @@ async def _creator_stats_scheduler(
 
                 graph = getattr(app.state, "graph", None)
                 store = getattr(graph, "store", None) if graph is not None else None
-                result = await sync_all_active_accounts(store=store, period="30d")
+                # Let CREATOR_STATS_SCHEDULED_FORCE_LIGHT decide whether the
+                # scheduled batch is forced list-only (default remains safe).
+                result = await sync_all_active_accounts(
+                    store=store, period="30d", prefer_light=None
+                )
                 finished_at = datetime.now(UTC)
                 last_error = result.get("error")
                 if not last_error and int(result.get("failed") or 0) > 0:
@@ -393,7 +407,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from backend.db.pool import is_pool_ready
 
         pool_ready = is_pool_ready()
-        interval_hours = float(settings.creator_stats.sync_interval_hours)
+        interval_hours = _finite_float(settings.creator_stats.sync_interval_hours, 0.0)
     except (AttributeError, TypeError, ValueError):
         interval_hours = 0.0
     # 反风控调度参数（启动随机延迟 + 中国时间活跃窗口 + 随机跳过）；
@@ -404,14 +418,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         cs_settings = settings.creator_stats
         startup_delay = (
-            float(cs_settings.startup_delay_min_seconds),
-            float(cs_settings.startup_delay_max_seconds),
+            _finite_float(cs_settings.startup_delay_min_seconds, 600.0),
+            _finite_float(cs_settings.startup_delay_max_seconds, 2400.0),
         )
         active_window = (
             int(cs_settings.active_window_start_hour),
             int(cs_settings.active_window_end_hour),
         )
-        skip_day_chance = max(0.0, min(1.0, float(cs_settings.skip_day_chance)))
+        skip_day_chance = max(0.0, min(1.0, _finite_float(cs_settings.skip_day_chance, 0.25)))
     except (AttributeError, TypeError, ValueError):
         startup_delay = None
         active_window = None

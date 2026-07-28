@@ -42,6 +42,16 @@ def test_is_security_risk_message():
     assert not gate.is_security_risk_message("playwright not installed")
 
 
+def test_nonfinite_gate_config_falls_back_to_defaults(monkeypatch):
+    monkeypatch.setenv("XHS_QR_LOGIN_COOLDOWN_SECONDS", "nan")
+    monkeypatch.setenv("XHS_QR_RISK_BLOCK_SECONDS", "inf")
+    monkeypatch.setenv("CREATOR_STATS_AUTH_FAIL_COOLDOWN_MINUTES", "nan")
+
+    assert gate.qr_cooldown_seconds() == 900.0
+    assert gate.qr_risk_block_seconds() == 3600.0
+    assert gate.sync_auth_fail_cooldown_minutes() == 120.0
+
+
 def test_sync_auth_fail_cooldown():
     assert gate.check_sync_auth_cooldown("acc-3") is None
     gate.note_sync_auth_failure("acc-3", reason="AUTH_EXPIRED")

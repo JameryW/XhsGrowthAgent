@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
+import random
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -49,10 +51,21 @@ _ACTIVE_ACCOUNTS_SYNC_LOCK_KEY = "xhs_growth.creator_stats.active_accounts"
 _post_login_sync_once: set[str] = set()
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return value if math.isfinite(value) else default
+
+
 def _env_int(name: str, default: int) -> int:
     try:
         return int(os.environ.get(name, "") or default)
-    except ValueError:
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
@@ -64,6 +77,58 @@ async def _load_note_sync_state(account_id: str) -> dict[str, NoteStats] | None:
         logger.warning("note sync state lookup failed for %s", account_id, exc_info=True)
         return None
     return {row.note_id: row for row in rows}
+
+
+async def _account_freshness_skip(
+    account_id: str,
+) -> tuple[bool, int]:
+    """Return (should_skip, retry_after_seconds) when account data is still fresh.
+
+    Avoids opening Creator Center when we already imported recently — each
+    browser session is a risk event even for light list-only crawls.
+    """
+    hours = _env_float("CREATOR_STATS_MIN_REFRESH_HOURS", 18.0)
+    if hours <= 0:
+        return False, 0
+    try:
+        account = await stats_db.get_account_stats(account_id)
+    except Exception:
+        return False, 0
+    if account is None:
+        return False, 0
+    raw = str(getattr(account, "synced_at", "") or "").strip()
+    if not raw:
+        return False, 0
+    try:
+        ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
+    except ValueError:
+        return False, 0
+    age = datetime.now(UTC) - ts.astimezone(UTC)
+    remaining = timedelta(hours=hours) - age
+    if remaining.total_seconds() <= 0:
+        return False, 0
+    return True, int(remaining.total_seconds())
+
+
+def _fresh_snapshot_result(account_id: str, retry_after_seconds: int) -> SyncResult:
+    """Build the successful no-op result used when the stored snapshot is fresh."""
+    return SyncResult(
+        account_id=account_id,
+        source="creator_statistics",
+        # Treated as success so scheduler does not backoff; no browser opened.
+        account_synced=True,
+        notes_imported=0,
+        niche_resolution={
+            "skipped": "fresh",
+            "retry_after_seconds": retry_after_seconds,
+            "message": (
+                f"账号数据仍在刷新窗口内（{retry_after_seconds}s 后可再同步），"
+                "跳过本次创作者中心访问以降低风控。"
+            ),
+        },
+    )
 
 
 def _build_incremental_filters(
@@ -239,6 +304,9 @@ async def sync_after_login(account_id: str, *, store: BaseStore | None = None) -
             cdp_endpoint=cdp_endpoint,
             # Preflight just confirmed login; skip a second cookie probe.
             skip_login_preflight=True,
+            # A successful QR login is an explicit refresh request; do not
+            # suppress the first import because the previous snapshot is fresh.
+            skip_freshness_check=True,
         )
         if result.error:
             logger.info(
@@ -517,19 +585,35 @@ async def sync_from_creator_center(
     run_creative_analysis: bool = True,
     cdp_endpoint: str = "",
     skip_login_preflight: bool = False,
+    force_light: bool = False,
+    skip_freshness_check: bool = False,
 ) -> SyncResult:
     """Live pull from creator statistics surface; on failure leave DB untouched.
 
     cdp_endpoint 非空 → 走 CDP 连宿主已登录 Chrome（cookie jar 自带，不用 cookie）。
     否则 fallback cookie（httpx）。注入的 client 优先级最高。
+
+    ``force_light`` skips per-note detail/body pages (default for scheduled sync).
     """
     cdp_endpoint = (cdp_endpoint or "").strip()
+    # An injected client is an explicit caller-owned fetch (tests, retries, or
+    # a custom transport), so do not silently turn it into a freshness no-op.
+    # The refresh window applies only when this function would open a live
+    # Creator Center transport itself.
+    if client is None and not skip_freshness_check:
+        fresh, retry_s = await _account_freshness_skip(account_id)
+        if fresh:
+            logger.info(f"creator stats skip {account_id}: data still fresh (retry in {retry_s}s)")
+            return _fresh_snapshot_result(account_id, retry_s)
+
     if client is None and cdp_endpoint and not skip_login_preflight:
         blocked = await preflight_creator_login(account_id, cdp_endpoint)
         if blocked is not None:
             return blocked
 
     fetch_kwargs: dict[str, Any] = {}
+    if force_light:
+        fetch_kwargs["force_light"] = True
     if client is None:
         if cdp_endpoint:
             client = CreatorStatsClient(cdp_endpoint=cdp_endpoint)
@@ -539,8 +623,8 @@ async def sync_from_creator_center(
             existing = await _load_note_sync_state(account_id)
             fetch_kwargs["detail_filter"], fetch_kwargs["body_filter"] = _build_incremental_filters(
                 existing,
-                recent_days=_env_int("CREATOR_STATS_ENRICH_RECENT_DAYS", 7),
-                body_lookback_days=_env_int("CREATOR_STATS_BODY_LOOKBACK_DAYS", 30),
+                recent_days=_env_int("CREATOR_STATS_ENRICH_RECENT_DAYS", 3),
+                body_lookback_days=_env_int("CREATOR_STATS_BODY_LOOKBACK_DAYS", 14),
             )
         else:
             client = CreatorStatsClient(cookie=cookie)
@@ -584,6 +668,8 @@ async def sync_account_stats(
     run_creative_analysis: bool = True,
     cdp_endpoint: str = "",
     skip_login_preflight: bool = False,
+    force_light: bool = False,
+    skip_freshness_check: bool = False,
 ) -> SyncResult:
     """Primary product entry: dry_run/fixture or live creator-center sync.
 
@@ -621,7 +707,10 @@ async def sync_account_stats(
         )
     if client is not None:
         try:
-            bundle = await client.fetch_all(account_id, period=period)
+            fetch_kw: dict[str, Any] = {"period": period}
+            if force_light:
+                fetch_kw["force_light"] = True
+            bundle = await client.fetch_all(account_id, **fetch_kw)
         except CreatorStatsFetchError as e:
             return SyncResult(
                 account_id=account_id,
@@ -654,6 +743,8 @@ async def sync_account_stats(
             run_creative_analysis=run_creative_analysis,
             cdp_endpoint=cdp_endpoint,
             skip_login_preflight=skip_login_preflight,
+            force_light=force_light,
+            skip_freshness_check=skip_freshness_check,
         )
     if not cookie:
         return SyncResult(
@@ -673,12 +764,59 @@ async def sync_account_stats(
         client=None,
         run_creative_analysis=run_creative_analysis,
         skip_login_preflight=skip_login_preflight,
+        force_light=force_light,
+        skip_freshness_check=skip_freshness_check,
     )
 
 
 # 上次成功完成全量同步的时刻（进程内）。冷却期内再次触发（主要是手动
 # sync-all）直接跳过——短时间内反复全量爬创作者中心是明显的机器/滥用模式。
 _last_successful_sync_finished_at: datetime | None = None
+# Count consecutive list-only scheduled runs; occasionally allow a deep run.
+_scheduled_light_streak: int = 0
+
+
+def _resolve_force_light(*, prefer_light: bool | None) -> bool:
+    """Decide whether this batch must stay list-only (no note detail pages).
+
+    Scheduled jobs default to force_light. Manual API defaults to chance-based
+    light runs inside the transport (prefer_light=False).
+    ``CREATOR_STATS_DEEP_EVERY_N_RUNS`` lets scheduled jobs deep-enrich rarely.
+    """
+    global _scheduled_light_streak
+    if prefer_light is False:
+        return False
+    if prefer_light is True:
+        deep_every = _env_int("CREATOR_STATS_DEEP_EVERY_N_RUNS", 5)
+        if deep_every <= 0:
+            return True
+        _scheduled_light_streak += 1
+        if _scheduled_light_streak >= deep_every:
+            _scheduled_light_streak = 0
+            # Still only 40% chance to deep-enrich when due — keep rare.
+            return random.random() >= 0.4
+        return True
+    # prefer_light is None → env default for scheduled-style safety
+    if _env_int("CREATOR_STATS_SCHEDULED_FORCE_LIGHT", 1) == 1:
+        return _resolve_force_light(prefer_light=True)
+    return False
+
+
+def _has_successful_live_sync(result: dict[str, Any]) -> bool:
+    """Return whether a batch performed at least one real successful import.
+
+    Freshness skips deliberately use ``account_synced=True`` so callers treat
+    them as a successful no-op.  They must not, however, start the global
+    post-sync cooldown because no browser session or remote fetch occurred.
+    """
+    for item in result.get("results") or []:
+        if not isinstance(item, dict) or not item.get("account_synced"):
+            continue
+        resolution = item.get("niche_resolution")
+        if isinstance(resolution, dict) and resolution.get("skipped"):
+            continue
+        return True
+    return False
 
 
 async def sync_all_active_accounts(
@@ -686,12 +824,19 @@ async def sync_all_active_accounts(
     store: BaseStore | None = None,
     period: str = "30d",
     run_creative_analysis: bool = True,
+    prefer_light: bool | None = None,
+    skip_freshness_check: bool = False,
 ) -> dict[str, Any]:
     """Run the active-account batch under local and distributed locks.
 
     冷却：距上次成功同步不足 ``CREATOR_STATS_SYNC_COOLDOWN_MINUTES``（默认
-    30，0 关闭）时返回 ``status="cooldown"`` 而不爬取。调度器把 cooldown
+    45，0 关闭）时返回 ``status="cooldown"`` 而不爬取。调度器把 cooldown
     视为非失败（不触发退避）。
+
+    ``prefer_light``: True = list-only (scheduled default), False = allow deep
+    enrich (manual), None = follow ``CREATOR_STATS_SCHEDULED_FORCE_LIGHT``.
+    ``skip_freshness_check``: explicit manual/login-triggered syncs can bypass
+    the per-account refresh window; scheduled jobs should leave it ``False``.
     """
     global _last_successful_sync_finished_at
     if _active_accounts_sync_lock.locked():
@@ -704,12 +849,11 @@ async def sync_all_active_accounts(
             "results": [],
         }
     from backend.services.xhs_risk_gate import (
-        check_sync_auth_cooldown,
         clear_sync_auth_failure,
         note_sync_auth_failure,
     )
 
-    cooldown_minutes = _env_int("CREATOR_STATS_SYNC_COOLDOWN_MINUTES", 30)
+    cooldown_minutes = _env_int("CREATOR_STATS_SYNC_COOLDOWN_MINUTES", 45)
     if cooldown_minutes > 0 and _last_successful_sync_finished_at is not None:
         elapsed = datetime.now(UTC) - _last_successful_sync_finished_at
         remaining = timedelta(minutes=cooldown_minutes) - elapsed
@@ -732,30 +876,18 @@ async def sync_all_active_accounts(
                 "retry_after_seconds": int(remaining.total_seconds()),
             }
 
-    # Longer block after AUTH_EXPIRED / empty-shell risk (anti hammer).
-    auth_block = check_sync_auth_cooldown()
-    if auth_block is not None:
-        logger.info(
-            "active accounts sync skipped: auth-fail cooldown %ss",
-            auth_block.retry_after_seconds,
-        )
-        return {
-            "ok": False,
-            "status": "cooldown",
-            "active_accounts": 0,
-            "succeeded": 0,
-            "failed": 0,
-            "results": [],
-            "error": auth_block.message,
-            "retry_after_seconds": auth_block.retry_after_seconds,
-            "risk_code": auth_block.risk_code,
-        }
     try:
         async with _distributed_active_accounts_sync_lock():
             result = await _sync_all_active_accounts_locked(
                 store=store,
                 period=period,
                 run_creative_analysis=run_creative_analysis,
+                # Resolve the scheduled mode after the active account and its
+                # auth gate have been checked, so skipped cycles do not consume
+                # one of the light-run slots.
+                force_light=None,
+                prefer_light=prefer_light,
+                skip_freshness_check=skip_freshness_check,
             )
     except _ActiveAccountsSyncBusyError:
         return {
@@ -766,7 +898,9 @@ async def sync_all_active_accounts(
             "failed": 0,
             "results": [],
         }
-    if result.get("ok") or int(result.get("succeeded") or 0) > 0:
+    # Empty, fresh, and other skipped batches are successful no-ops, not
+    # browser syncs; only a real successful import starts the cooldown.
+    if _has_successful_live_sync(result):
         _last_successful_sync_finished_at = datetime.now(UTC)
     # Per-account gates: clear on success, block on auth/shell failures.
     for item in result.get("results") or []:
@@ -797,6 +931,9 @@ async def _sync_all_active_accounts_locked(
     store: BaseStore | None = None,
     period: str = "30d",
     run_creative_analysis: bool = True,
+    force_light: bool | None = False,
+    prefer_light: bool | None = None,
+    skip_freshness_check: bool = False,
 ) -> dict[str, Any]:
     """Import Creator Center data for the currently active account only.
 
@@ -806,6 +943,7 @@ async def _sync_all_active_accounts_locked(
     scheduler and the HTTP trigger, so a second invocation returns
     ``already_running`` instead of starting a duplicate browser crawl.
     """
+    global _scheduled_light_streak
     if _active_accounts_sync_lock.locked():
         return {
             "ok": False,
@@ -819,6 +957,7 @@ async def _sync_all_active_accounts_locked(
     async with _active_accounts_sync_lock:
         started_at = datetime.now(UTC).isoformat()
         from backend.db.accounts import get_account_cdp_endpoint, get_active_account
+        from backend.services.xhs_risk_gate import check_sync_auth_cooldown
 
         try:
             current = await get_active_account()
@@ -836,6 +975,25 @@ async def _sync_all_active_accounts_locked(
                 "finished_at": datetime.now(UTC).isoformat(),
             }
         accounts = [current] if current is not None else []
+
+        if current is not None:
+            auth_block = check_sync_auth_cooldown(str(current.id))
+            if auth_block is not None:
+                logger.info(
+                    f"active account sync skipped: auth-fail cooldown "
+                    f"{auth_block.retry_after_seconds}s"
+                )
+                return {
+                    "ok": False,
+                    "status": "cooldown",
+                    "active_accounts": 1,
+                    "succeeded": 0,
+                    "failed": 0,
+                    "results": [],
+                    "error": auth_block.message,
+                    "retry_after_seconds": auth_block.retry_after_seconds,
+                    "risk_code": auth_block.risk_code,
+                }
 
         results: list[dict[str, Any]] = []
         for account in accounts:
@@ -858,7 +1016,19 @@ async def _sync_all_active_accounts_locked(
                     error_code=ERROR_BROWSER_UNAVAILABLE,
                 )
             else:
+                streak_before: int | None = None
                 try:
+                    # Do not consume a scheduled light-run slot when the
+                    # persisted snapshot is fresh enough to skip the browser.
+                    if force_light is None and not skip_freshness_check:
+                        fresh, retry_s = await _account_freshness_skip(account_id)
+                        if fresh:
+                            result = _fresh_snapshot_result(account_id, retry_s)
+                            results.append(result.to_dict())
+                            continue
+                    if force_light is None:
+                        streak_before = _scheduled_light_streak
+                        force_light = _resolve_force_light(prefer_light=prefer_light)
                     result = await sync_account_stats(
                         account_id,
                         cookie="",
@@ -867,11 +1037,19 @@ async def _sync_all_active_accounts_locked(
                         period=period,
                         run_creative_analysis=run_creative_analysis,
                         cdp_endpoint=cdp_endpoint,
+                        force_light=force_light,
+                        skip_freshness_check=skip_freshness_check,
                     )
+                    if streak_before is not None and (result.error or not result.account_synced):
+                        # A failed attempt is not a completed scheduled run;
+                        # leave the deep-run cadence unchanged for the retry.
+                        _scheduled_light_streak = streak_before
                 except Exception as exc:
+                    if streak_before is not None:
+                        _scheduled_light_streak = streak_before
                     # A single account must not abort the remaining active
                     # accounts in this batch.
-                    logger.exception("creator stats sync failed for active account %s", account_id)
+                    logger.exception(f"creator stats sync failed for active account {account_id}")
                     result = SyncResult(
                         account_id=account_id,
                         source="creator_statistics",
@@ -891,6 +1069,7 @@ async def _sync_all_active_accounts_locked(
             "results": results,
             "started_at": started_at,
             "finished_at": datetime.now(UTC).isoformat(),
+            "force_light": bool(force_light),
         }
 
 

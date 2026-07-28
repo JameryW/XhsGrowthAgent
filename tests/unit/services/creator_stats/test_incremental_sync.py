@@ -149,6 +149,86 @@ async def test_sync_from_creator_center_passes_incremental_filters_on_cdp():
     assert result.error is None
 
 
+async def test_sync_from_creator_center_skips_fresh_snapshot_before_opening_client(monkeypatch):
+    """A scheduled refresh must not create a browser client for fresh data."""
+    monkeypatch.setenv("CREATOR_STATS_MIN_REFRESH_HOURS", "18")
+    with (
+        patch.object(
+            pipeline.stats_db,
+            "get_account_stats",
+            new=AsyncMock(return_value=SimpleNamespace(synced_at=_iso(0.1))),
+        ),
+        patch.object(pipeline, "CreatorStatsClient") as client_cls,
+    ):
+        result = await sync_from_creator_center(
+            "acct_fresh",
+            "",
+            cdp_endpoint="http://127.0.0.1:9222",
+            skip_login_preflight=True,
+            run_creative_analysis=False,
+        )
+
+    assert result.account_synced is True
+    assert result.notes_imported == 0
+    assert result.niche_resolution["skipped"] == "fresh"
+    client_cls.assert_not_called()
+
+
+async def test_fresh_snapshot_skips_login_preflight_too(monkeypatch):
+    monkeypatch.setenv("CREATOR_STATS_MIN_REFRESH_HOURS", "18")
+    with (
+        patch.object(
+            pipeline.stats_db,
+            "get_account_stats",
+            new=AsyncMock(return_value=SimpleNamespace(synced_at=_iso(0.1))),
+        ),
+        patch.object(pipeline, "preflight_creator_login", new=AsyncMock()) as preflight,
+    ):
+        result = await sync_from_creator_center(
+            "acct_fresh",
+            "",
+            cdp_endpoint="http://127.0.0.1:9222",
+            run_creative_analysis=False,
+        )
+
+    assert result.account_synced is True
+    preflight.assert_not_awaited()
+
+
+async def test_nonfinite_refresh_window_config_falls_back_to_default(monkeypatch):
+    monkeypatch.setenv("CREATOR_STATS_MIN_REFRESH_HOURS", "nan")
+    with patch.object(
+        pipeline.stats_db,
+        "get_account_stats",
+        new=AsyncMock(return_value=SimpleNamespace(synced_at=_iso(0.1))),
+    ):
+        should_skip, retry_after = await pipeline._account_freshness_skip("acct_fresh")
+
+    assert should_skip is True
+    assert retry_after > 0
+
+
+async def test_sync_from_creator_center_forces_light_fetch_when_requested():
+    bundle = normalize_bundle({"view_count": 1}, [], "acct_light")
+    with patch.object(pipeline, "CreatorStatsClient") as client_cls:
+        client = client_cls.return_value
+        client.fetch_all = AsyncMock(return_value=bundle)
+        client.aclose = AsyncMock()
+
+        result = await sync_from_creator_center(
+            "acct_light",
+            "",
+            cdp_endpoint="http://127.0.0.1:9222",
+            skip_login_preflight=True,
+            skip_freshness_check=True,
+            force_light=True,
+            run_creative_analysis=False,
+        )
+
+    assert result.error is None
+    assert client.fetch_all.await_args.kwargs["force_light"] is True
+
+
 # ── Current-active-account-only sync ─────────────────────────────────────────
 
 
@@ -175,6 +255,27 @@ async def test_batch_sync_only_syncs_current_active_account():
     assert summary["succeeded"] == 1
     assert sync_mock.await_count == 1
     assert sync_mock.await_args.args[0] == "current-1"
+
+
+async def test_batch_sync_propagates_freshness_override_to_account_sync():
+    with (
+        patch(
+            "backend.db.accounts.get_active_account",
+            AsyncMock(return_value=SimpleNamespace(id="current-1")),
+        ),
+        patch(
+            "backend.db.accounts.get_account_cdp_endpoint",
+            AsyncMock(return_value="http://127.0.0.1:9222"),
+        ),
+        patch.object(
+            pipeline,
+            "sync_account_stats",
+            AsyncMock(return_value=SyncResult(account_id="current-1", account_synced=True)),
+        ) as sync_mock,
+    ):
+        await pipeline._sync_all_active_accounts_locked(skip_freshness_check=True)
+
+    assert sync_mock.await_args.kwargs["skip_freshness_check"] is True
 
 
 async def test_batch_sync_without_active_account_is_empty_success():
