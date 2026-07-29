@@ -122,6 +122,8 @@ XHS_CHROME_PROFILES_DIR=/path/to/.chrome-profiles
 XHS_CDP_BASE_PORT=9222
 # 空闲回收阈值（秒）；reap 只回收无活动 CDP 连接的旧实例
 XHS_CHROME_IDLE_TIMEOUT_SECONDS=1800
+# 默认关闭 crashpad helper 进程以减少每个 Chrome 的进程数；诊断时设为 1
+# XHS_CHROME_CRASH_REPORTING=1
 
 # Database
 POSTGRES_URI=postgresql://user:pass@host:5432/db?sslmode=require
@@ -262,6 +264,8 @@ XHS_CHROME_PROFILES_DIR=/test/xhs/.chrome-profiles
 XHS_CDP_BASE_PORT=9222
 # 空闲回收阈值（秒）；reap 只回收无活动 CDP 连接的旧实例
 XHS_CHROME_IDLE_TIMEOUT_SECONDS=1800
+# 默认关闭 crashpad helper 进程以减少每个 Chrome 的进程数；诊断时设为 1
+# XHS_CHROME_CRASH_REPORTING=1
 # Creator Center background import interval (hours; 0 disables the scheduler)
 CREATOR_STATS_SYNC_INTERVAL_HOURS=36
 # 可选：显式指定 Chrome binary 路径（默认自动探测 google-chrome > google-chrome-stable > chromium）
@@ -327,6 +331,7 @@ launcher 逻辑（`backend/services/chrome_launcher.py`，可单测）：
   --remote-debugging-address=0.0.0.0 --no-first-run --no-default-browser-check &`
   并写 pidfile
 - 每个 profile 有独立 OS flock，阻止并发 launcher 在端口尚未就绪时重复启动 Chrome。
+- 默认追加 `--disable-crash-reporter`，减少每个实例的 crashpad helper；设置 `XHS_CHROME_CRASH_REPORTING=1` 可恢复。
 - `start/status/stop/reap/cleanup` 支持 `--account-id`，日常运维不必触碰全部账号。
 - `reap` 以 pidfile 启动年龄为阈值，并检查 CDP 连接；连接状态无法确认时保守跳过。
 - `cleanup` 默认 dry-run，`--apply` 只删除 allowlist 中的缓存目录，profile 正在运行或锁状态不明时拒绝清理。

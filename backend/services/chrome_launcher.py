@@ -65,10 +65,15 @@ _SAFE_CACHE_DIR_NAMES = frozenset(
         "Cache",
         "Code Cache",
         "DawnCache",
+        "DawnGraphiteCache",
+        "DawnWebGPUCache",
         "GPUCache",
         "GrShaderCache",
         "Media Cache",
         "ShaderCache",
+        "component_crx_cache",
+        "extensions_crx_cache",
+        "optimization_guide_model_store",
     }
 )
 _DEFAULT_IDLE_TIMEOUT_SECONDS = 1800.0
@@ -453,6 +458,15 @@ def _build_launch_cmd(chrome_bin: str, profile_path: str, port: int) -> list[str
         f"--remote-debugging-port={_internal_cdp_port(port)}",
     ]
     cmd.extend(_DEFAULT_FLAGS)
+    if os.environ.get("XHS_CHROME_CRASH_REPORTING", "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        # Crash reporting is opt-in for long-lived automation profiles; Chrome
+        # otherwise starts crashpad helper processes per profile.
+        cmd.append("--disable-crash-reporter")
     return cmd
 
 
@@ -1144,7 +1158,7 @@ async def _cli(
 
 
 def main() -> None:
-    """CLI entry: ``python -m backend.services.chrome_launcher <start|status|stop|reap|cleanup>``."""
+    """CLI entry for the start/status/stop/reap/cleanup commands."""
     import argparse
 
     parser = argparse.ArgumentParser(

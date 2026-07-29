@@ -607,16 +607,25 @@ def test_cleanup_profile_cache_preserves_login_data(tmp_path):
     cache = profile / "Default" / "Cache"
     cache.mkdir(parents=True)
     (cache / "blob").write_bytes(b"cache")
+    extra_caches = {
+        profile / "Default" / "DawnGraphiteCache": b"dawn",
+        profile / "component_crx_cache": b"component",
+        profile / "optimization_guide_model_store": b"model",
+    }
+    for path, data in extra_caches.items():
+        path.mkdir(parents=True)
+        (path / "blob").write_bytes(data)
     cookies = profile / "Default" / "Cookies"
     cookies.write_bytes(b"login")
 
     cache_bytes, removed = cl.cleanup_profile_cache(str(profile))
-    assert cache_bytes == len(b"cache")
+    expected_cache_bytes = len(b"cache") + sum(len(data) for data in extra_caches.values())
+    assert cache_bytes == expected_cache_bytes
     assert removed == 0
     assert (cache / "blob").exists()
 
     _, removed = cl.cleanup_profile_cache(str(profile), apply=True)
-    assert removed == len(b"cache")
+    assert removed == expected_cache_bytes
     assert not cache.exists()
     assert cookies.read_bytes() == b"login"
 
@@ -667,10 +676,11 @@ def test_format_status_table_renders_rows():
 # ── _build_launch_cmd ──
 
 
-def test_build_launch_cmd_includes_core_flags():
+def test_build_launch_cmd_includes_core_flags(monkeypatch):
     """The launch command carries user-data-dir, internal port (cdp_port+OFFSET),
     and the default flags. Chrome listens on internal port (loopback only —
     Chrome 144 ignores --remote-debugging-address); socat exposes cdp_port."""
+    monkeypatch.delenv("XHS_CHROME_CRASH_REPORTING", raising=False)
     cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223)
     assert "/usr/bin/google-chrome" in cmd
     assert "--user-data-dir=/p/acc" in cmd
@@ -681,7 +691,16 @@ def test_build_launch_cmd_includes_core_flags():
     assert "--remote-debugging-address=0.0.0.0" in cmd
     assert "--remote-allow-origins=*" in cmd
     assert "--no-first-run" in cmd
+    assert "--disable-crash-reporter" in cmd
     assert "--headless=new" not in cmd
+
+
+def test_build_launch_cmd_can_enable_crash_reporting(monkeypatch):
+    monkeypatch.setenv("XHS_CHROME_CRASH_REPORTING", "1")
+
+    cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223)
+
+    assert "--disable-crash-reporter" not in cmd
 
 
 def test_internal_cdp_port_offset():

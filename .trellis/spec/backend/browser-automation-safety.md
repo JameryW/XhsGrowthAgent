@@ -47,6 +47,7 @@ Waiting, confirmed, and expired responses must not carry a stale flag.
 - Launcher lifecycle operations for one bound profile use an OS-level flock; never launch or stop the same profile concurrently from separate processes.
 - `reap` may stop only an old profile with no active CDP client; if socket inspection fails, it must fail closed and skip the profile.
 - Cache cleanup is dry-run by default, runs only while the profile is stopped, and may remove only an explicit cache-directory allowlist; login databases and symlinks are protected.
+- Crash reporting is disabled by default for long-lived automation profiles to avoid crashpad helper processes; `XHS_CHROME_CRASH_REPORTING=1` is the explicit diagnostic opt-in.
 
 ## Testing boundary
 
