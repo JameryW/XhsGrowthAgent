@@ -1416,3 +1416,36 @@ showHelp never listed free-mode draft commands (/drafts /draft /delete from #216
 ### Next Steps
 
 - None - task complete
+
+
+## Session 77: Chrome 运行时资源与缓存优化
+
+**Date**: 2026-07-29
+**Task**: Chrome 运行时资源与缓存优化
+**Branch**: `main`
+
+### Summary
+
+量化三账号 Chrome profile 后，默认关闭 crashpad helper 并保留诊断 opt-in；扩展停止后可安全清理的缓存 allowlist。运行中 profile 的 dry-run 保持跳过。完整 unit 1651 passed。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a83c0ac3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
