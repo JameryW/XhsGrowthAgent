@@ -42,6 +42,12 @@ Waiting, confirmed, and expired responses must not carry a stale flag.
 - Preserve `body_text` already supplied by a Creator Center response; do not
   enrich it by opening the public main site.
 
+## Profile lifecycle safety
+
+- Launcher lifecycle operations for one bound profile use an OS-level flock; never launch or stop the same profile concurrently from separate processes.
+- `reap` may stop only an old profile with no active CDP client; if socket inspection fails, it must fail closed and skip the profile.
+- Cache cleanup is dry-run by default, runs only while the profile is stopped, and may remove only an explicit cache-directory allowlist; login databases and symlinks are protected.
+
 ## Testing boundary
 
 Tests should assert that CDP is used, `chromium.launch` is not used by

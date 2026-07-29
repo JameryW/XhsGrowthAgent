@@ -24,10 +24,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import fcntl
 import logging
+import math
 import os
 import shutil
 import signal
+import time
+from collections.abc import AsyncIterator, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,6 +51,27 @@ _CHROME_BIN_CANDIDATES = (
 # SingletonLock files Chrome writes into the user-data-dir to enforce
 # single-instance-per-dir. All three are cleared together on a stale lock.
 _SINGLETON_FILES = ("SingletonLock", "SingletonCookie", "SingletonSocket")
+
+# A separate OS-level lock closes the race where two launcher CLI processes
+# both see a down port before Chrome has created SingletonLock. The file itself
+# is intentionally retained; flock releases it automatically on process exit.
+_PROFILE_LAUNCH_LOCK_FILE = ".chrome-launch.lock"
+_PROFILE_LOCK_TIMEOUT_SECONDS = 15.0
+
+# Cache directories safe to remove after Chrome is stopped. Authentication and
+# storage databases are deliberately not in this allowlist.
+_SAFE_CACHE_DIR_NAMES = frozenset(
+    {
+        "Cache",
+        "Code Cache",
+        "DawnCache",
+        "GPUCache",
+        "GrShaderCache",
+        "Media Cache",
+        "ShaderCache",
+    }
+)
+_DEFAULT_IDLE_TIMEOUT_SECONDS = 1800.0
 
 # Extra flags every per-account Chrome gets. --no-first-run /
 # --no-default-browser-check suppress first-run UX that would block automation.
@@ -75,6 +100,46 @@ class ChromeStatus:
     alive: bool
     action: str  # "skipped" | "launched" | "lock_cleared" | "failed" | "stopped"
     message: str = ""
+
+
+@dataclass
+class ProfileCleanupStatus:
+    """Result of a dry-run or applied safe-cache cleanup for one profile."""
+
+    account_id: str
+    profile_path: str
+    cache_bytes: int
+    removed_bytes: int
+    action: str  # "dry_run" | "cleaned" | "skipped" | "failed"
+    message: str = ""
+
+
+@contextlib.asynccontextmanager
+async def _profile_launch_lock(profile_path: str) -> AsyncIterator[None]:
+    """Serialize launch/stop operations for one profile across processes."""
+    lock_path = Path(profile_path) / _PROFILE_LAUNCH_LOCK_FILE
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    acquired = False
+    deadline = asyncio.get_running_loop().time() + _PROFILE_LOCK_TIMEOUT_SECONDS
+    try:
+        while not acquired:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except BlockingIOError:
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise TimeoutError(
+                        f"timed out waiting for profile lock: {profile_path}"
+                    ) from None
+                await asyncio.sleep(0.05)
+        yield
+    finally:
+        if acquired:
+            with contextlib.suppress(OSError):
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        with contextlib.suppress(OSError):
+            os.close(fd)
 
 
 # ── Chrome binary discovery ──
@@ -272,6 +337,22 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _pid_matches_profile(pid: int, profile_path: str) -> bool:
+    """Return True when a pidfile PID is still Chrome for this profile."""
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    expected = os.path.abspath(profile_path)
+    args = raw.decode("utf-8", errors="replace").split("\x00")
+    return any(
+        arg.startswith("--user-data-dir=") and os.path.abspath(arg.split("=", 1)[1]) == expected
+        for arg in args
+    )
+
+
 def _singleton_lock_pid(profile_path: str) -> int | None:
     """Extract the PID from the SingletonLock symlink target.
 
@@ -376,6 +457,28 @@ def _build_launch_cmd(chrome_bin: str, profile_path: str, port: int) -> list[str
 
 
 async def ensure_chrome(
+    account: AccountRow,
+    *,
+    chrome_bin: str | None = None,
+) -> ChromeStatus:
+    """Ensure one account Chrome is running under a cross-process profile lock."""
+    if account.cdp_port <= 0 or not account.chrome_profile_path:
+        return await _ensure_chrome_unlocked(account, chrome_bin=chrome_bin)
+    try:
+        async with _profile_launch_lock(account.chrome_profile_path):
+            return await _ensure_chrome_unlocked(account, chrome_bin=chrome_bin)
+    except TimeoutError as exc:
+        return ChromeStatus(
+            account_id=account.id,
+            port=account.cdp_port,
+            profile_path=account.chrome_profile_path,
+            alive=False,
+            action="failed",
+            message=str(exc),
+        )
+
+
+async def _ensure_chrome_unlocked(
     account: AccountRow,
     *,
     chrome_bin: str | None = None,
@@ -539,6 +642,24 @@ async def ensure_chrome(
 
 
 async def stop_chrome(account: AccountRow) -> ChromeStatus:
+    """Stop one account Chrome while holding the profile lifecycle lock."""
+    if not account.chrome_profile_path:
+        return await _stop_chrome_unlocked(account)
+    try:
+        async with _profile_launch_lock(account.chrome_profile_path):
+            return await _stop_chrome_unlocked(account)
+    except TimeoutError as exc:
+        return ChromeStatus(
+            account_id=account.id,
+            port=account.cdp_port,
+            profile_path=account.chrome_profile_path,
+            alive=True,
+            action="failed",
+            message=str(exc),
+        )
+
+
+async def _stop_chrome_unlocked(account: AccountRow) -> ChromeStatus:
     """Stop the account's Chrome via its pidfile. SIGTERM, then SIGKILL on timeout.
 
     Clears the pidfile and stale SingletonLock files afterward. Safe to call
@@ -569,6 +690,19 @@ async def stop_chrome(account: AccountRow) -> ChromeStatus:
             alive=False,
             action="stopped",
             message="chrome not running (pidfile absent or pid dead)",
+        )
+
+    if not _pid_matches_profile(pid, profile_path):
+        logger.warning("Refusing to signal pid %d: profile mismatch for %s", pid, profile_path)
+        await _stop_socat_forwarder(profile_path)
+        _clear_pidfile(profile_path)
+        return ChromeStatus(
+            account_id=account.id,
+            port=port,
+            profile_path=profile_path,
+            alive=False,
+            action="failed",
+            message=f"pidfile PID {pid} does not belong to profile",
         )
 
     try:
@@ -610,6 +744,203 @@ async def stop_chrome(account: AccountRow) -> ChromeStatus:
     )
 
 
+def _select_accounts(
+    accounts: list[AccountRow], account_ids: Iterable[str] | None
+) -> list[AccountRow]:
+    """Filter accounts when explicit selectors were supplied."""
+    selected = {value.strip() for value in (account_ids or ()) if value.strip()}
+    if not selected:
+        return accounts
+    return [account for account in accounts if account.id in selected]
+
+
+def _endpoint_port(endpoint: str) -> int | None:
+    try:
+        return int(endpoint.rsplit(":", 1)[-1])
+    except (TypeError, ValueError):
+        return None
+
+
+def _has_active_cdp_connection(port: int) -> bool:
+    """Return True when active or unverified; idle reap must fail closed."""
+    import subprocess
+
+    try:
+        output = subprocess.run(
+            ["ss", "-tnH"], capture_output=True, text=True, timeout=2, check=False
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return True
+    for line in output.splitlines():
+        parts = line.split()
+        if not parts or parts[0] not in {"ESTAB", "SYN-RECV"}:
+            continue
+        if any(_endpoint_port(endpoint) == port for endpoint in parts[-2:]):
+            return True
+    return False
+
+
+def _iter_cache_dirs(profile_path: str) -> Iterator[Path]:
+    """Yield only allowlisted cache directories beneath a Chrome profile."""
+    root = Path(profile_path)
+    if not root.is_dir():
+        return
+    for dirpath, dirnames, _ in os.walk(root, followlinks=False):
+        current = Path(dirpath)
+        for dirname in list(dirnames):
+            candidate = current / dirname
+            if candidate.is_symlink():
+                dirnames.remove(dirname)
+                continue
+            if dirname in _SAFE_CACHE_DIR_NAMES:
+                yield candidate
+                dirnames.remove(dirname)
+
+
+def _directory_bytes(path: Path) -> int:
+    total = 0
+    for child in path.rglob("*"):
+        try:
+            if child.is_file() and not child.is_symlink():
+                total += child.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def _profile_is_live(profile_path: str) -> bool:
+    """Return True if a matching pidfile process or live SingletonLock exists."""
+    pid = _read_pidfile(profile_path)
+    if pid is not None and _pid_alive(pid) and _pid_matches_profile(pid, profile_path):
+        return True
+    lock = Path(profile_path) / "SingletonLock"
+    if not lock.is_symlink() and not lock.exists():
+        return False
+    lock_pid = _singleton_lock_pid(profile_path)
+    return lock_pid is None or _pid_alive(lock_pid)
+
+
+def cleanup_profile_cache(profile_path: str, *, apply: bool = False) -> tuple[int, int]:
+    """Report or remove allowlisted cache bytes; never touch login storage."""
+    if _profile_is_live(profile_path):
+        raise RuntimeError("profile Chrome is running; stop it before cache cleanup")
+    cache_dirs = list(_iter_cache_dirs(profile_path) or ())
+    before = sum(_directory_bytes(path) for path in cache_dirs)
+    if not apply:
+        return before, 0
+    for cache_dir in cache_dirs:
+        with contextlib.suppress(FileNotFoundError):
+            shutil.rmtree(cache_dir)
+    after = sum(_directory_bytes(path) for path in cache_dirs if path.exists())
+    return before, max(0, before - after)
+
+
+async def reap_idle(
+    accounts: list[AccountRow],
+    idle_seconds: float,
+    *,
+    account_ids: Iterable[str] | None = None,
+) -> list[ChromeStatus]:
+    """Stop old profiles only when no active CDP client is connected."""
+    if not math.isfinite(idle_seconds) or idle_seconds <= 0:
+        raise ValueError("idle_seconds must be a finite positive number")
+    now = time.time()
+    targets = [
+        account
+        for account in _select_accounts(accounts, account_ids)
+        if account.chrome_profile_path and account.cdp_port > 0
+    ]
+
+    async def _reap(account: AccountRow) -> ChromeStatus:
+        pidfile = Path(account.chrome_profile_path) / "chrome.pid"
+        pid = _read_pidfile(account.chrome_profile_path)
+        if pid is None or not _pid_alive(pid):
+            return ChromeStatus(
+                account.id,
+                account.cdp_port,
+                account.chrome_profile_path,
+                False,
+                "skipped",
+                "chrome already down",
+            )
+        if _has_active_cdp_connection(account.cdp_port):
+            return ChromeStatus(
+                account.id,
+                account.cdp_port,
+                account.chrome_profile_path,
+                True,
+                "skipped",
+                "active or unverified CDP connection",
+            )
+        try:
+            age = now - pidfile.stat().st_mtime
+        except OSError as exc:
+            return ChromeStatus(
+                account.id,
+                account.cdp_port,
+                account.chrome_profile_path,
+                True,
+                "failed",
+                f"cannot inspect pidfile age: {exc}",
+            )
+        if age < idle_seconds:
+            return ChromeStatus(
+                account.id,
+                account.cdp_port,
+                account.chrome_profile_path,
+                True,
+                "skipped",
+                f"idle for {age:.0f}s (< {idle_seconds:.0f}s)",
+            )
+        return await stop_chrome(account)
+
+    return await asyncio.gather(*(_reap(account) for account in targets))
+
+
+async def cleanup_all(
+    accounts: list[AccountRow],
+    *,
+    apply: bool = False,
+    account_ids: Iterable[str] | None = None,
+) -> list[ProfileCleanupStatus]:
+    """Dry-run or apply safe cache cleanup for selected profiles."""
+    targets = [
+        account
+        for account in _select_accounts(accounts, account_ids)
+        if account.chrome_profile_path
+    ]
+
+    async def _cleanup(account: AccountRow) -> ProfileCleanupStatus:
+        if account.cdp_port > 0 and await probe_port(account.cdp_port):
+            return ProfileCleanupStatus(
+                account.id,
+                account.chrome_profile_path,
+                0,
+                0,
+                "skipped",
+                "public CDP endpoint is live",
+            )
+        try:
+            async with _profile_launch_lock(account.chrome_profile_path):
+                cache_bytes, removed_bytes = cleanup_profile_cache(
+                    account.chrome_profile_path, apply=apply
+                )
+        except (OSError, RuntimeError) as exc:
+            return ProfileCleanupStatus(
+                account.id, account.chrome_profile_path, 0, 0, "failed", str(exc)
+            )
+        return ProfileCleanupStatus(
+            account.id,
+            account.chrome_profile_path,
+            cache_bytes,
+            removed_bytes,
+            "cleaned" if apply else "dry_run",
+            "cache removed" if apply else "cache eligible for cleanup",
+        )
+
+    return await asyncio.gather(*(_cleanup(account) for account in targets))
+
+
 # ── Bulk helpers (used by the bash wrapper) ──
 
 
@@ -617,6 +948,7 @@ async def ensure_all(
     accounts: list[AccountRow],
     *,
     chrome_bin: str | None = None,
+    account_ids: Iterable[str] | None = None,
 ) -> list[ChromeStatus]:
     """Ensure Chrome is up for every account that has a port binding.
 
@@ -624,23 +956,39 @@ async def ensure_all(
     fall back to the global CDP endpoint at publish time). Run concurrently —
     each Chrome launches independently.
     """
-    targets = [a for a in accounts if a.is_active and a.cdp_port > 0 and a.chrome_profile_path]
+    targets = [
+        a
+        for a in _select_accounts(accounts, account_ids)
+        if a.is_active and a.cdp_port > 0 and a.chrome_profile_path
+    ]
     if not targets:
         return []
     return await asyncio.gather(*(ensure_chrome(a, chrome_bin=chrome_bin) for a in targets))
 
 
-async def stop_all(accounts: list[AccountRow]) -> list[ChromeStatus]:
+async def stop_all(
+    accounts: list[AccountRow],
+    *,
+    account_ids: Iterable[str] | None = None,
+) -> list[ChromeStatus]:
     """Stop Chrome for every account that has a profile binding."""
-    targets = [a for a in accounts if a.chrome_profile_path]
+    targets = [a for a in _select_accounts(accounts, account_ids) if a.chrome_profile_path]
     if not targets:
         return []
     return await asyncio.gather(*(stop_chrome(a) for a in targets))
 
 
-async def status_all(accounts: list[AccountRow]) -> list[ChromeStatus]:
+async def status_all(
+    accounts: list[AccountRow],
+    *,
+    account_ids: Iterable[str] | None = None,
+) -> list[ChromeStatus]:
     """Probe each account's port — read-only, no launch/stop."""
-    targets = [a for a in accounts if a.chrome_profile_path and a.cdp_port > 0]
+    targets = [
+        a
+        for a in _select_accounts(accounts, account_ids)
+        if a.chrome_profile_path and a.cdp_port > 0
+    ]
 
     async def _probe(a: AccountRow) -> ChromeStatus:
         alive = await probe_port(a.cdp_port)
@@ -670,6 +1018,11 @@ def format_status_table(statuses: list[ChromeStatus]) -> str:
 
 __all__ = [
     "ChromeStatus",
+    "ProfileCleanupStatus",
+    "cleanup_all",
+    "cleanup_profile_cache",
+    "format_cleanup_table",
+    "reap_idle",
     "clear_stale_lock",
     "ensure_all",
     "ensure_chrome",
@@ -684,7 +1037,7 @@ __all__ = [
 
 # ── CLI entry (called by scripts/chrome-profiles.sh) ──
 #
-# ``python3 -m backend.services.chrome_launcher <start|status|stop>`` loads the
+# ``python3 -m backend.services.chrome_launcher <start|status|stop|reap|cleanup>`` loads the
 # accounts list from the DB (via backend.db.accounts.list_accounts) and runs the
 # matching bulk op. The bash wrapper is intentionally thin — it just forwards
 # the subcommand so operators don't need to remember the python invocation.
@@ -694,6 +1047,35 @@ __all__ = [
 # (deploy.sh publishes 5432 on the host, so localhost:5432 works). If the pool
 # isn't ready, every subcommand degrades gracefully — status reports "no
 # accounts", start/stop report nothing to do.
+
+
+def format_cleanup_table(statuses: list[ProfileCleanupStatus]) -> str:
+    """Render cache cleanup results without exposing profile contents."""
+    if not statuses:
+        return "(no accounts with chrome profile bindings)"
+    lines = ["ACCOUNT PROFILE ACTION CACHE_BYTES REMOVED MESSAGE"]
+    for status in statuses:
+        lines.append(
+            f"{status.account_id} {status.profile_path} {status.action} {status.cache_bytes} "
+            f"{status.removed_bytes} {status.message}"
+        )
+    return "\n".join(lines)
+
+
+def _configured_idle_seconds(value: float | None) -> float:
+    """Resolve and validate the idle threshold for maintenance."""
+    raw = (
+        value
+        if value is not None
+        else os.environ.get("XHS_CHROME_IDLE_TIMEOUT_SECONDS", str(_DEFAULT_IDLE_TIMEOUT_SECONDS))
+    )
+    try:
+        seconds = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("XHS_CHROME_IDLE_TIMEOUT_SECONDS must be numeric") from exc
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("idle timeout must be a finite positive number")
+    return seconds
 
 
 async def _load_accounts() -> list[AccountRow]:
@@ -723,17 +1105,36 @@ async def _load_accounts() -> list[AccountRow]:
         return []
 
 
-async def _cli(subcommand: str) -> int:
+async def _cli(
+    subcommand: str,
+    *,
+    account_ids: Iterable[str] | None = None,
+    idle_seconds: float | None = None,
+    apply_cleanup: bool = False,
+) -> int:
     """Run the requested bulk op against all accounts. Returns exit code."""
     accounts = await _load_accounts()
     if subcommand == "start":
-        statuses = await ensure_all(accounts)
+        statuses = await ensure_all(accounts, account_ids=account_ids)
     elif subcommand == "status":
-        statuses = await status_all(accounts)
+        statuses = await status_all(accounts, account_ids=account_ids)
     elif subcommand == "stop":
-        statuses = await stop_all(accounts)
+        statuses = await stop_all(accounts, account_ids=account_ids)
+    elif subcommand == "reap":
+        try:
+            statuses = await reap_idle(
+                accounts, _configured_idle_seconds(idle_seconds), account_ids=account_ids
+            )
+        except ValueError as exc:
+            print(f"invalid idle timeout: {exc}")
+            return 2
+    elif subcommand == "cleanup":
+        cleanup_statuses = await cleanup_all(accounts, apply=apply_cleanup, account_ids=account_ids)
+        print(format_cleanup_table(cleanup_statuses))
+        return 1 if any(s.action == "failed" for s in cleanup_statuses) else 0
+
     else:  # pragma: no cover — argparse choices() rejects this
-        print(f"unknown subcommand: {subcommand} (use start|status|stop)")
+        print(f"unknown subcommand: {subcommand} (use start|status|stop|reap|cleanup)")
         return 2
 
     print(format_status_table(statuses))
@@ -743,7 +1144,7 @@ async def _cli(subcommand: str) -> int:
 
 
 def main() -> None:
-    """CLI entry: ``python -m backend.services.chrome_launcher <start|status|stop>``."""
+    """CLI entry: ``python -m backend.services.chrome_launcher <start|status|stop|reap|cleanup>``."""
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -752,9 +1153,28 @@ def main() -> None:
     )
     parser.add_argument(
         "subcommand",
-        choices=("start", "status", "stop"),
-        help="start=launch/keepalive, status=probe ports, stop=SIGTERM all",
+        choices=("start", "status", "stop", "reap", "cleanup"),
+        help="start=launch, status=probe, stop=stop, reap=idle cleanup, cleanup=cache cleanup",
     )
+    parser.add_argument(
+        "--account-id",
+        action="append",
+        dest="account_ids",
+        default=[],
+        help="limit the operation to one account; repeat for multiple accounts",
+    )
+    parser.add_argument(
+        "--idle-seconds",
+        type=float,
+        default=None,
+        help="idle threshold for reap (default: XHS_CHROME_IDLE_TIMEOUT_SECONDS or 1800)",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="apply cleanup; without it cleanup is a dry run",
+    )
+
     args = parser.parse_args()
 
     import asyncio
@@ -762,7 +1182,14 @@ def main() -> None:
     from backend.db.pool import close_pool
 
     try:
-        code = asyncio.run(_cli(args.subcommand))
+        code = asyncio.run(
+            _cli(
+                args.subcommand,
+                account_ids=args.account_ids,
+                idle_seconds=args.idle_seconds,
+                apply_cleanup=args.apply,
+            )
+        )
     finally:
         with contextlib.suppress(Exception):  # noqa: BLE001 — best-effort cleanup on the way out
             asyncio.run(close_pool())

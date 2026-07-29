@@ -209,6 +209,27 @@ class TestStart:
         assert session._confirmed is True
         assert session._context is None
 
+    async def test_strict_mode_refuses_persistent_fallback(self, tmp_path):
+        """Service strict mode must not create a second persistent browser."""
+        from backend.services.xhs_login import LoginError, XhsLoginSession
+
+        mock_module, _, _ = _wire_playwright_mock()
+        session = XhsLoginSession(
+            "acc-strict",
+            str(tmp_path / "profile"),
+            allow_persistent_fallback=False,
+        )
+
+        with (
+            patch.dict(sys.modules, {"playwright.async_api": mock_module}),
+            pytest.raises(LoginError, match="第二个浏览器"),
+        ):
+            await session.start()
+
+        launch = mock_module.async_playwright.return_value.start.return_value.chromium
+        launch.launch_persistent_context.assert_not_awaited()
+        await session.stop()
+
     async def test_cdp_without_browser_context_fails_closed(self, tmp_path):
         """CDP login must not create an isolated context when Chrome has none."""
         from backend.services.xhs_login import LoginError, XhsLoginSession

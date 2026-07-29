@@ -7,6 +7,7 @@ helpers' filtering. All OS/subprocess surface is mocked — no real Chrome runs.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import signal
 from pathlib import Path
@@ -383,10 +384,11 @@ async def test_stop_chrome_escalates_to_sigkill(_profile_dir: Path, monkeypatch)
         return alive_checks.pop(0) if alive_checks else False
 
     monkeypatch.setattr(cl, "_pid_alive", _fake_alive)
+    monkeypatch.setattr(cl, "_pid_matches_profile", lambda _pid, _profile: True)
 
     # Loop time advances past the 5.0s deadline so the while-loop exits via
     # condition (not break) — proving the process survived SIGTERM.
-    time_seq = iter([0.0, 0.0, 10.0])  # deadline calc, loop entry, loop recheck
+    time_seq = iter([0.0, 0.0, 0.0, 10.0])  # deadline calc, loop entry, loop recheck
     fake_loop = MagicMock()
     fake_loop.time = MagicMock(side_effect=lambda: next(time_seq))
     monkeypatch.setattr(cl.asyncio, "get_running_loop", lambda: fake_loop)
@@ -518,6 +520,105 @@ async def test_status_all_probes_bound_accounts(monkeypatch):
     assert len(statuses) == 2
     assert statuses[0].alive is True
     assert statuses[1].alive is False
+
+
+@pytest.mark.asyncio
+async def test_profile_launch_lock_serializes_same_profile(tmp_path):
+    """Two in-process callers cannot enter the same profile lifecycle lock."""
+    profile = tmp_path / "profile"
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _holder():
+        async with cl._profile_launch_lock(str(profile)):
+            entered.set()
+            await release.wait()
+
+    async def _waiter():
+        async with cl._profile_launch_lock(str(profile)):
+            return True
+
+    holder = asyncio.create_task(_holder())
+    await entered.wait()
+    waiter = asyncio.create_task(_waiter())
+    await asyncio.sleep(0.05)
+    assert not waiter.done()
+    release.set()
+    await holder
+    assert await asyncio.wait_for(waiter, timeout=1) is True
+
+
+@pytest.mark.asyncio
+async def test_stop_chrome_refuses_pid_profile_mismatch(_profile_dir: Path, monkeypatch):
+    """PID reuse must not let stop signal an unrelated process."""
+    (_profile_dir / "chrome.pid").write_text("1234")
+    monkeypatch.setattr(cl, "_pid_alive", lambda _pid: True)
+    monkeypatch.setattr(cl, "_pid_matches_profile", lambda _pid, _profile: False)
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append((pid, sig)))
+
+    status = await cl.stop_chrome(_account(profile=str(_profile_dir)))
+
+    assert status.action == "failed"
+    assert "does not belong" in status.message
+    assert killed == []
+
+
+@pytest.mark.asyncio
+async def test_ensure_all_selects_requested_accounts(monkeypatch):
+    launched: list[str] = []
+
+    async def _fake_ensure(a: AccountRow, *, chrome_bin: str | None = None) -> ChromeStatus:
+        launched.append(a.id)
+        return ChromeStatus(a.id, a.cdp_port, a.chrome_profile_path, True, "skipped")
+
+    monkeypatch.setattr(cl, "ensure_chrome", _fake_ensure)
+    accounts = [
+        _account(port=9223, profile="/p/a", active=True),
+        AccountRow(id="b", name="b", is_active=True, cdp_port=9224, chrome_profile_path="/p/b"),
+    ]
+
+    statuses = await cl.ensure_all(accounts, account_ids=["b"])
+
+    assert launched == ["b"]
+    assert [status.account_id for status in statuses] == ["b"]
+
+
+@pytest.mark.asyncio
+async def test_reap_idle_keeps_active_cdp_connection(monkeypatch, tmp_path):
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    (profile / "chrome.pid").write_text("1234")
+    account = _account(profile=str(profile))
+    monkeypatch.setattr(cl, "_pid_alive", lambda _pid: True)
+    monkeypatch.setattr(cl, "_has_active_cdp_connection", lambda _port: True)
+    stop = AsyncMock()
+    monkeypatch.setattr(cl, "stop_chrome", stop)
+
+    statuses = await cl.reap_idle([account], idle_seconds=1)
+
+    assert statuses[0].action == "skipped"
+    assert statuses[0].message == "active or unverified CDP connection"
+    stop.assert_not_awaited()
+
+
+def test_cleanup_profile_cache_preserves_login_data(tmp_path):
+    profile = tmp_path / "profile"
+    cache = profile / "Default" / "Cache"
+    cache.mkdir(parents=True)
+    (cache / "blob").write_bytes(b"cache")
+    cookies = profile / "Default" / "Cookies"
+    cookies.write_bytes(b"login")
+
+    cache_bytes, removed = cl.cleanup_profile_cache(str(profile))
+    assert cache_bytes == len(b"cache")
+    assert removed == 0
+    assert (cache / "blob").exists()
+
+    _, removed = cl.cleanup_profile_cache(str(profile), apply=True)
+    assert removed == len(b"cache")
+    assert not cache.exists()
+    assert cookies.read_bytes() == b"login"
 
 
 # ── find_chrome_binary ──
