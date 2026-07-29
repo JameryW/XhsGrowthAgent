@@ -1515,3 +1515,36 @@ showHelp never listed free-mode draft commands (/drafts /draft /delete from #216
 ### Next Steps
 
 - None - task complete
+
+
+## Session 80: Chrome 后台空白页安全清理
+
+**Date**: 2026-07-29
+**Task**: Chrome 后台空白页安全清理
+**Branch**: `main`
+
+### Summary
+
+新增按账号显式 apply 的 Chrome 空白页维护命令：默认 dry-run、活跃 CDP 跳过、锁内二次校验，并保留至少一个 page；完整单测 1669 项通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6ae62471` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
