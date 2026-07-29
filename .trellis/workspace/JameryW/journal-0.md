@@ -1449,3 +1449,36 @@ showHelp never listed free-mode draft commands (/drafts /draft /delete from #216
 ### Next Steps
 
 - None - task complete
+
+
+## Session 78: Chrome 缓存增长上限与资源可观测性
+
+**Date**: 2026-07-29
+**Task**: Chrome 缓存增长上限与资源可观测性
+**Branch**: `main`
+
+### Summary
+
+为每账号 Chrome 增加可配置的 128 MiB HTTP 磁盘缓存提示上限、无效配置回退和只读 safe_cache 状态观测；完整单测 1655 项通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7038689f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
