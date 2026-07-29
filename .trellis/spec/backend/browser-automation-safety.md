@@ -49,6 +49,7 @@ Waiting, confirmed, and expired responses must not carry a stale flag.
 - Cache cleanup is dry-run by default, runs only while the profile is stopped, and may remove only an explicit cache-directory allowlist; login databases and symlinks are protected.
 - Crash reporting is disabled by default for long-lived automation profiles to avoid crashpad helper processes; `XHS_CHROME_CRASH_REPORTING=1` is the explicit diagnostic opt-in.
 - Launcher cache growth is bounded with a per-profile `--disk-cache-size` hint (default 128 MiB); `XHS_CHROME_DISK_CACHE_SIZE_MB=0` explicitly restores Chrome default behavior, and invalid values must fall back without blocking startup.
+- Memory observation must be read-only and derive only from a live pidfile PID that still matches its profile; an RSS threshold may warn in `status` but must never automatically stop, clean, or relaunch a Chrome profile.
 
 ## Testing boundary
 

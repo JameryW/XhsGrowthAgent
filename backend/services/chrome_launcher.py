@@ -78,6 +78,7 @@ _SAFE_CACHE_DIR_NAMES = frozenset(
 )
 _DEFAULT_IDLE_TIMEOUT_SECONDS = 1800.0
 _DEFAULT_DISK_CACHE_SIZE_MB = 128
+_DEFAULT_MEMORY_WARNING_MB = 0
 
 # Extra flags every per-account Chrome gets. --no-first-run /
 # --no-default-browser-check suppress first-run UX that would block automation.
@@ -343,6 +344,22 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _raw_cmdline_has_profile(raw: bytes, profile_path: str) -> bool:
+    """Match an exact user-data-dir argument in normal or flattened procfs argv."""
+    option = f"--user-data-dir={os.path.abspath(profile_path)}".encode()
+    start = 0
+    while True:
+        index = raw.find(option, start)
+        if index < 0:
+            return False
+        end = index + len(option)
+        before_is_boundary = index == 0 or raw[index - 1] in b"\x00 \t\r\n"
+        after_is_boundary = end == len(raw) or raw[end] in b"\x00 \t\r\n"
+        if before_is_boundary and after_is_boundary:
+            return True
+        start = index + 1
+
+
 def _pid_matches_profile(pid: int, profile_path: str) -> bool:
     """Return True when a pidfile PID is still Chrome for this profile."""
     try:
@@ -351,12 +368,7 @@ def _pid_matches_profile(pid: int, profile_path: str) -> bool:
         return True
     except OSError:
         return False
-    expected = os.path.abspath(profile_path)
-    args = raw.decode("utf-8", errors="replace").split("\x00")
-    return any(
-        arg.startswith("--user-data-dir=") and os.path.abspath(arg.split("=", 1)[1]) == expected
-        for arg in args
-    )
+    return _raw_cmdline_has_profile(raw, profile_path)
 
 
 def _singleton_lock_pid(profile_path: str) -> int | None:
@@ -863,6 +875,114 @@ def _format_byte_count(byte_count: int) -> str:
     return f"{byte_count}B"
 
 
+def _memory_warning_threshold_bytes() -> int | None:
+    """Return an optional process-tree RSS warning threshold from the environment."""
+    raw = os.environ.get("XHS_CHROME_MEMORY_WARNING_MB", str(_DEFAULT_MEMORY_WARNING_MB))
+    try:
+        threshold_mb = int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid XHS_CHROME_MEMORY_WARNING_MB=%r; disabling memory warning",
+            raw,
+        )
+        return None
+    if threshold_mb <= 0:
+        if threshold_mb < 0:
+            logger.warning(
+                "Negative XHS_CHROME_MEMORY_WARNING_MB=%d; disabling memory warning",
+                threshold_mb,
+            )
+        return None
+    return threshold_mb * 1024 * 1024
+
+
+def _iter_process_ids() -> Iterator[int]:
+    """Yield process ids available from procfs without failing on races."""
+    try:
+        entries = Path("/proc").iterdir()
+    except OSError:
+        return
+    for entry in entries:
+        try:
+            if entry.is_dir() and entry.name.isdecimal():
+                yield int(entry.name)
+        except OSError:
+            continue
+
+
+def _process_parent_and_rss_bytes(pid: int) -> tuple[int, int] | None:
+    """Read PPid and VmRSS for one Linux process, returning None if unavailable."""
+    try:
+        lines = (Path("/proc") / str(pid) / "status").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    parent_pid: int | None = None
+    rss_bytes: int | None = None
+    for line in lines:
+        if line.startswith("PPid:"):
+            try:
+                parent_pid = int(line.split()[1])
+            except (IndexError, ValueError):
+                return None
+        elif line.startswith("VmRSS:"):
+            try:
+                rss_bytes = int(line.split()[1]) * 1024
+            except (IndexError, ValueError):
+                return None
+    if parent_pid is None or rss_bytes is None:
+        return None
+    return parent_pid, rss_bytes
+
+
+def _process_stats_snapshot() -> dict[int, tuple[int, int]]:
+    """Take one best-effort procfs snapshot for all later tree lookups."""
+    return {
+        pid: stats
+        for pid in _iter_process_ids()
+        if (stats := _process_parent_and_rss_bytes(pid)) is not None
+    }
+
+
+def _process_tree_rss_bytes(
+    root_pid: int, process_snapshot: dict[int, tuple[int, int]] | None = None
+) -> tuple[int, int] | None:
+    """Return process count and summed RSS bytes for a procfs process tree."""
+    processes = process_snapshot if process_snapshot is not None else _process_stats_snapshot()
+    if root_pid not in processes:
+        return None
+    descendants = {root_pid}
+    while True:
+        children = {pid for pid, (parent_pid, _) in processes.items() if parent_pid in descendants}
+        next_descendants = descendants | children
+        if next_descendants == descendants:
+            break
+        descendants = next_descendants
+    return len(descendants), sum(processes[pid][1] for pid in descendants)
+
+
+def _profile_chrome_resources(
+    profile_path: str,
+    *,
+    process_snapshot: dict[int, tuple[int, int]] | None = None,
+) -> tuple[int, int] | None:
+    """Report only a live pidfile Chrome tree that still belongs to this profile."""
+    pid = _read_pidfile(profile_path)
+    if pid is None or not _pid_alive(pid) or not _pid_matches_profile(pid, profile_path):
+        return None
+    return _process_tree_rss_bytes(pid, process_snapshot)
+
+
+def _profile_chrome_resources_for_profiles(
+    profile_paths: Iterable[str],
+) -> dict[str, tuple[int, int] | None]:
+    """Read procfs once, then resolve resource ownership for each profile."""
+    process_snapshot = _process_stats_snapshot()
+    return {
+        profile_path: _profile_chrome_resources(profile_path, process_snapshot=process_snapshot)
+        for profile_path in profile_paths
+    }
+
+
 def _profile_is_live(profile_path: str) -> bool:
     """Return True if a matching pidfile process or live SingletonLock exists."""
     pid = _read_pidfile(profile_path)
@@ -1038,27 +1158,50 @@ async def status_all(
     *,
     account_ids: Iterable[str] | None = None,
 ) -> list[ChromeStatus]:
-    """Probe each account's port — read-only, no launch/stop."""
+    """Probe each account port and read profile resources without mutation."""
     targets = [
         a
         for a in _select_accounts(accounts, account_ids)
         if a.chrome_profile_path and a.cdp_port > 0
     ]
+    if not targets:
+        return []
+
+    memory_warning_bytes = _memory_warning_threshold_bytes()
+    chrome_resources_task = asyncio.create_task(
+        asyncio.to_thread(
+            _profile_chrome_resources_for_profiles,
+            [a.chrome_profile_path for a in targets],
+        )
+    )
 
     async def _probe(a: AccountRow) -> ChromeStatus:
         alive, cache_bytes = await asyncio.gather(
             probe_port(a.cdp_port),
             asyncio.to_thread(_safe_cache_bytes, a.chrome_profile_path),
         )
+        chrome_resources = (await chrome_resources_task)[a.chrome_profile_path]
+        status_text = "alive" if alive else "down"
+        message_parts = [status_text, f"safe_cache={_format_byte_count(cache_bytes)}"]
+        if chrome_resources is None:
+            message_parts.append("chrome_resources=unknown")
+        else:
+            process_count, rss_bytes = chrome_resources
+            message_parts.extend(
+                (
+                    f"chrome_processes={process_count}",
+                    f"chrome_rss={_format_byte_count(rss_bytes)}",
+                )
+            )
+            if memory_warning_bytes is not None and rss_bytes >= memory_warning_bytes:
+                message_parts.append("memory=warning")
         return ChromeStatus(
             account_id=a.id,
             port=a.cdp_port,
             profile_path=a.chrome_profile_path,
             alive=alive,
             action="skipped",
-            message=(
-                f"{'alive' if alive else 'down'}; safe_cache={_format_byte_count(cache_bytes)}"
-            ),
+            message="; ".join(message_parts),
         )
 
     return await asyncio.gather(*(_probe(a) for a in targets))

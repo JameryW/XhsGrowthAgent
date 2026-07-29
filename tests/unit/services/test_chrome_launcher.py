@@ -167,6 +167,17 @@ def test_singleton_lock_pid_none_when_unparseable(_profile_dir: Path):
     assert cl._singleton_lock_pid(str(_profile_dir)) is None
 
 
+def test_raw_cmdline_has_profile_supports_null_and_space_delimiters():
+    profile = "/test/xhs/.chrome-profiles/acc"
+    option = b"--user-data-dir=/test/xhs/.chrome-profiles/acc"
+
+    assert cl._raw_cmdline_has_profile(b"/opt/chrome\x00" + option + b"\x00", profile)
+    assert cl._raw_cmdline_has_profile(b"/opt/chrome " + option + b" --flag", profile)
+    assert not cl._raw_cmdline_has_profile(
+        b"/opt/chrome --user-data-dir=/test/xhs/.chrome-profiles/acc-other", profile
+    )
+
+
 # ── ensure_chrome ──
 
 
@@ -513,6 +524,13 @@ async def test_status_all_probes_bound_accounts(monkeypatch):
         lambda profile: {"/p/a": 1024, "/p/b": 0}[profile],
     )
 
+    monkeypatch.delenv("XHS_CHROME_MEMORY_WARNING_MB", raising=False)
+    monkeypatch.setattr(
+        cl,
+        "_profile_chrome_resources_for_profiles",
+        lambda profiles: {"/p/a": (3, 4 * 1024**2), "/p/b": None},
+    )
+
     accounts = [
         AccountRow(id="a", name="a", cdp_port=9223, chrome_profile_path="/p/a", is_active=True),
         AccountRow(id="b", name="b", cdp_port=9224, chrome_profile_path="/p/b", is_active=True),
@@ -525,8 +543,91 @@ async def test_status_all_probes_bound_accounts(monkeypatch):
     assert len(statuses) == 2
     assert statuses[0].alive is True
     assert statuses[1].alive is False
-    assert statuses[0].message == "alive; safe_cache=1.0KiB"
-    assert statuses[1].message == "down; safe_cache=0B"
+    assert statuses[0].message == (
+        "alive; safe_cache=1.0KiB; chrome_processes=3; chrome_rss=4.0MiB"
+    )
+    assert statuses[1].message == "down; safe_cache=0B; chrome_resources=unknown"
+
+
+@pytest.mark.asyncio
+async def test_status_all_without_targets_skips_procfs_snapshot(monkeypatch):
+    resources = MagicMock()
+    monkeypatch.setattr(cl, "_profile_chrome_resources_for_profiles", resources)
+
+    assert await status_all([]) == []
+    resources.assert_not_called()
+
+
+def test_process_tree_rss_bytes_aggregates_descendants(monkeypatch):
+    monkeypatch.setattr(cl, "_iter_process_ids", lambda: iter([10, 11, 12, 99]))
+    monkeypatch.setattr(
+        cl,
+        "_process_parent_and_rss_bytes",
+        lambda pid: {
+            10: (1, 100),
+            11: (10, 200),
+            12: (11, 300),
+            99: (1, 400),
+        }[pid],
+    )
+
+    assert cl._process_tree_rss_bytes(10) == (3, 600)
+
+
+def test_profile_resources_for_profiles_shares_one_procfs_snapshot(monkeypatch):
+    process_snapshot = {10: (1, 100)}
+    snapshot = MagicMock(return_value=process_snapshot)
+    seen_snapshots: list[dict[int, tuple[int, int]]] = []
+
+    def _fake_resources(
+        profile: str, *, process_snapshot: dict[int, tuple[int, int]] | None = None
+    ) -> tuple[int, int]:
+        assert process_snapshot is not None
+        seen_snapshots.append(process_snapshot)
+        return 1, 100
+
+    monkeypatch.setattr(cl, "_process_stats_snapshot", snapshot)
+    monkeypatch.setattr(cl, "_profile_chrome_resources", _fake_resources)
+
+    resources = cl._profile_chrome_resources_for_profiles(["/p/a", "/p/b"])
+
+    assert resources == {"/p/a": (1, 100), "/p/b": (1, 100)}
+    snapshot.assert_called_once_with()
+    assert seen_snapshots == [process_snapshot, process_snapshot]
+
+
+def test_profile_chrome_resources_rejects_untrusted_pidfile(monkeypatch):
+    monkeypatch.setattr(cl, "_read_pidfile", lambda profile: 123)
+    monkeypatch.setattr(cl, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(cl, "_pid_matches_profile", lambda pid, profile: False)
+    process_tree = MagicMock()
+    monkeypatch.setattr(cl, "_process_tree_rss_bytes", process_tree)
+
+    assert cl._profile_chrome_resources("/p/acc") is None
+    process_tree.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_status_all_marks_memory_threshold_warning(monkeypatch):
+    monkeypatch.setenv("XHS_CHROME_MEMORY_WARNING_MB", "4")
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=True))
+    monkeypatch.setattr(cl, "_safe_cache_bytes", lambda profile: 0)
+    monkeypatch.setattr(
+        cl,
+        "_profile_chrome_resources_for_profiles",
+        lambda profiles: {"/tmp/xhs-test-profile-xyz": (2, 4 * 1024**2)},
+    )
+
+    statuses = await status_all([_account()])
+
+    assert statuses[0].message.endswith("chrome_rss=4.0MiB; memory=warning")
+
+
+def test_memory_warning_threshold_disables_invalid_values(monkeypatch, caplog):
+    monkeypatch.setenv("XHS_CHROME_MEMORY_WARNING_MB", "invalid")
+
+    assert cl._memory_warning_threshold_bytes() is None
+    assert "Invalid XHS_CHROME_MEMORY_WARNING_MB" in caplog.text
 
 
 @pytest.mark.asyncio
