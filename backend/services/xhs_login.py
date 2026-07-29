@@ -465,12 +465,20 @@ class XhsLoginSession:
     CDP 发布复用同 profile，无需单独导出 cookie。
     """
 
-    def __init__(self, account_id: str, profile_path: str, cdp_endpoint: str = "") -> None:
+    def __init__(
+        self,
+        account_id: str,
+        profile_path: str,
+        cdp_endpoint: str = "",
+        *,
+        allow_persistent_fallback: bool = True,
+    ) -> None:
         self.account_id = account_id
         self.profile_path = profile_path
-        # host 真实 Chrome 的 CDP endpoint（connect_over_cdp 用）。空则回退
-        # launch_persistent_context（playwright bundled chromium，会被 xhs 471 风控）。
+        # host 真实 Chrome 的 CDP endpoint（connect_over_cdp 用）。显式允许时
+        # 才回退到另一个持久化浏览器实例。
         self.cdp_endpoint = cdp_endpoint
+        self.allow_persistent_fallback = allow_persistent_fallback
         self._context: BrowserContext | None = None
         self._page: Page | None = None
         # connect_over_cdp 的 browser 句柄（CDP 模式）。None = persistent_context 模式。
@@ -598,6 +606,10 @@ class XhsLoginSession:
                 self._context = contexts[0]
                 logger.info("扫码登录连 host Chrome: %s", self.cdp_endpoint)
             else:
+                if not self.allow_persistent_fallback:
+                    raise LoginError(
+                        "绑定账号缺少可用 CDP endpoint；为避免启动第二个浏览器，请先启动账号 Chrome"
+                    )
                 # 回退：launch_persistent_context（playwright bundled chromium）。
                 # 会被 xhs 471 风控——仅 cdp_endpoint 不可用时兜底。
                 # headless 已完全禁止（风控拦截），固定 headed。
@@ -1836,7 +1848,10 @@ def get_or_create_session(
     session = _sessions.get(account_id)
     if session is None:
         session = XhsLoginSession(
-            account_id=account_id, profile_path=profile_path, cdp_endpoint=cdp_endpoint
+            account_id=account_id,
+            profile_path=profile_path,
+            cdp_endpoint=cdp_endpoint,
+            allow_persistent_fallback=False,
         )
         _sessions[account_id] = session
     return session

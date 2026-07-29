@@ -2,7 +2,7 @@
 # chrome-profiles.sh — manage N always-on per-account Chrome instances (CDP multi-profile)
 #
 # Thin wrapper around `python3 -m backend.services.chrome_launcher`. The python
-# module owns the testable logic (port probe, stale-lock cleanup, launch/stop);
+# module owns the testable logic (port probe, lifecycle, maintenance);
 # this script just forwards the subcommand and loads .env so POSTGRES_URI is set.
 #
 # Usage:
@@ -12,6 +12,12 @@
 #                                       # no X display exists)
 #   scripts/chrome-profiles.sh status   # probe each account's CDP port (read-only)
 #   scripts/chrome-profiles.sh stop     # SIGTERM every account's Chrome (via pidfile)
+#   scripts/chrome-profiles.sh start --account-id <id>  # start only selected accounts
+#   scripts/chrome-profiles.sh reap [--idle-seconds N] # stop old profiles with no CDP client
+#   scripts/chrome-profiles.sh cleanup [--apply]       # dry-run/apply safe cache cleanup
+#   scripts/chrome-profiles.sh prune-pages              # dry-run safe blank page cleanup
+#   scripts/chrome-profiles.sh prune-pages --account-id <id> --apply
+#                                                   # close one verified blank page only
 #
 # headless 模式已完全禁止：小红书风控会拦截 headless Chrome（扫码登录 300012）。
 # 传入 --headless 会直接报错退出；无 X display 时脚本自动启动 Xvfb。
@@ -49,7 +55,7 @@ fi
 # needs an X display: in service/agent shells DISPLAY is often unset even
 # though an Xvfb socket is already available, so pick one; when no X server
 # exists at all, start Xvfb ourselves so headed always works unattended.
-if [[ -z "${DISPLAY:-}" && -d /tmp/.X11-unix ]]; then
+if [[ "${1:-}" == "start" && -z "${DISPLAY:-}" && -d /tmp/.X11-unix ]]; then
     for socket in /tmp/.X11-unix/X99 /tmp/.X11-unix/X97 /tmp/.X11-unix/X*; do
         if [[ -S "$socket" ]]; then
             export DISPLAY=":${socket##*X}"
@@ -58,7 +64,7 @@ if [[ -z "${DISPLAY:-}" && -d /tmp/.X11-unix ]]; then
     done
 fi
 
-if [[ -z "${DISPLAY:-}" ]] && command -v Xvfb >/dev/null 2>&1; then
+if [[ "${1:-}" == "start" && -z "${DISPLAY:-}" ]] && command -v Xvfb >/dev/null 2>&1; then
     for disp in 99 98 97 96 95; do
         if [[ ! -e "/tmp/.X11-unix/X${disp}" ]]; then
             echo ">>> 无 X display，启动 Xvfb :${disp}（headed Chrome 需要）..."

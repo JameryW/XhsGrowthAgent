@@ -7,6 +7,7 @@ helpers' filtering. All OS/subprocess surface is mocked — no real Chrome runs.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import signal
 from pathlib import Path
@@ -103,6 +104,105 @@ async def test_probe_port_returns_false_on_non_200():
     assert result is False
 
 
+def test_list_cdp_targets_filters_malformed_values():
+    fake_resp = MagicMock()
+    fake_resp.status = 200
+    fake_resp.__enter__ = MagicMock(return_value=fake_resp)
+    fake_resp.__exit__ = MagicMock(return_value=False)
+    fake_resp.read.return_value = b'[{"id":"blank","type":"page","url":"about:blank"},{"id":1},{}]'
+
+    with patch("urllib.request.urlopen", return_value=fake_resp):
+        targets = cl._list_cdp_targets(9223)
+
+    assert targets == [cl.CdpTarget("blank", "page", "about:blank")]
+
+
+def test_blank_page_candidates_retain_one_page():
+    targets = [
+        cl.CdpTarget("blank-1", "page", "about:blank"),
+        cl.CdpTarget("new-tab", "page", "chrome://newtab/"),
+        cl.CdpTarget("worker", "service_worker", "https://example.com/sw.js"),
+    ]
+
+    page_count, candidates = cl._blank_page_cleanup_candidates(targets)
+
+    assert page_count == 2
+    assert candidates == [targets[0]]
+
+
+@pytest.mark.asyncio
+async def test_prune_blank_pages_dry_run_never_closes(_profile_dir, monkeypatch):
+    targets = [
+        cl.CdpTarget("business", "page", "https://creator.xiaohongshu.com/new/home"),
+        cl.CdpTarget("blank", "page", "about:blank"),
+    ]
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=True))
+    monkeypatch.setattr(cl, "_has_active_cdp_connection", lambda port: False)
+    monkeypatch.setattr(cl, "_list_cdp_targets", lambda port: targets)
+    close = MagicMock(return_value=True)
+    monkeypatch.setattr(cl, "_close_cdp_target", close)
+
+    statuses = await cl.prune_blank_pages_all([_account(profile=str(_profile_dir))])
+
+    assert statuses[0].action == "dry_run"
+    assert statuses[0].candidate_count == 1
+    close.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_prune_blank_pages_skips_active_cdp_connection(_profile_dir, monkeypatch):
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=True))
+    monkeypatch.setattr(cl, "_has_active_cdp_connection", lambda port: True)
+    targets = MagicMock()
+    monkeypatch.setattr(cl, "_list_cdp_targets", targets)
+
+    statuses = await cl.prune_blank_pages_all([_account(profile=str(_profile_dir))])
+
+    assert statuses[0].action == "skipped"
+    assert "active" in statuses[0].message
+    targets.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_prune_blank_pages_apply_requires_account_selection():
+    with pytest.raises(ValueError, match="requires at least one account id"):
+        await cl.prune_blank_pages_all([_account()], apply=True)
+
+
+@pytest.mark.asyncio
+async def test_prune_blank_pages_apply_rechecks_and_closes_one(_profile_dir, monkeypatch):
+    business = cl.CdpTarget("business", "page", "https://creator.xiaohongshu.com/new/home")
+    blank = cl.CdpTarget("blank", "page", "chrome://newtab/")
+    list_targets = MagicMock(side_effect=[[business, blank], [business, blank], [business]])
+    close = MagicMock(return_value=True)
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=True))
+    monkeypatch.setattr(cl, "_has_active_cdp_connection", lambda port: False)
+    monkeypatch.setattr(cl, "_list_cdp_targets", list_targets)
+    monkeypatch.setattr(cl, "_close_cdp_target", close)
+
+    statuses = await cl.prune_blank_pages_all(
+        [_account(profile=str(_profile_dir))], apply=True, account_ids=["acc-1"]
+    )
+
+    assert statuses[0].action == "cleaned"
+    assert statuses[0].closed_count == 1
+    close.assert_called_once_with(9223, "blank")
+    assert list_targets.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_cli_rejects_global_page_prune_apply(monkeypatch, capsys):
+    monkeypatch.setattr(cl, "_load_accounts", AsyncMock(return_value=[]))
+    prune = AsyncMock()
+    monkeypatch.setattr(cl, "prune_blank_pages_all", prune)
+
+    code = await cl._cli("prune-pages", apply_cleanup=True)
+
+    assert code == 2
+    assert "requires at least one --account-id" in capsys.readouterr().out
+    prune.assert_not_awaited()
+
+
 # ── clear_stale_lock ──
 
 
@@ -164,6 +264,17 @@ def test_singleton_lock_pid_none_when_absent(_profile_dir: Path):
 def test_singleton_lock_pid_none_when_unparseable(_profile_dir: Path):
     os.symlink("no-dash-here", _profile_dir / "SingletonLock")
     assert cl._singleton_lock_pid(str(_profile_dir)) is None
+
+
+def test_raw_cmdline_has_profile_supports_null_and_space_delimiters():
+    profile = "/test/xhs/.chrome-profiles/acc"
+    option = b"--user-data-dir=/test/xhs/.chrome-profiles/acc"
+
+    assert cl._raw_cmdline_has_profile(b"/opt/chrome\x00" + option + b"\x00", profile)
+    assert cl._raw_cmdline_has_profile(b"/opt/chrome " + option + b" --flag", profile)
+    assert not cl._raw_cmdline_has_profile(
+        b"/opt/chrome --user-data-dir=/test/xhs/.chrome-profiles/acc-other", profile
+    )
 
 
 # ── ensure_chrome ──
@@ -383,10 +494,11 @@ async def test_stop_chrome_escalates_to_sigkill(_profile_dir: Path, monkeypatch)
         return alive_checks.pop(0) if alive_checks else False
 
     monkeypatch.setattr(cl, "_pid_alive", _fake_alive)
+    monkeypatch.setattr(cl, "_pid_matches_profile", lambda _pid, _profile: True)
 
     # Loop time advances past the 5.0s deadline so the while-loop exits via
     # condition (not break) — proving the process survived SIGTERM.
-    time_seq = iter([0.0, 0.0, 10.0])  # deadline calc, loop entry, loop recheck
+    time_seq = iter([0.0, 0.0, 0.0, 10.0])  # deadline calc, loop entry, loop recheck
     fake_loop = MagicMock()
     fake_loop.time = MagicMock(side_effect=lambda: next(time_seq))
     monkeypatch.setattr(cl.asyncio, "get_running_loop", lambda: fake_loop)
@@ -505,6 +617,18 @@ async def test_stop_all_stops_all_with_profile(monkeypatch):
 async def test_status_all_probes_bound_accounts(monkeypatch):
     """status_all probes each account with port+profile, returns ChromeStatus list."""
     monkeypatch.setattr(cl, "probe_port", AsyncMock(side_effect=[True, False]))
+    monkeypatch.setattr(
+        cl,
+        "_safe_cache_bytes",
+        lambda profile: {"/p/a": 1024, "/p/b": 0}[profile],
+    )
+
+    monkeypatch.delenv("XHS_CHROME_MEMORY_WARNING_MB", raising=False)
+    monkeypatch.setattr(
+        cl,
+        "_profile_chrome_resources_for_profiles",
+        lambda profiles: {"/p/a": (3, 4 * 1024**2), "/p/b": None},
+    )
 
     accounts = [
         AccountRow(id="a", name="a", cdp_port=9223, chrome_profile_path="/p/a", is_active=True),
@@ -518,6 +642,199 @@ async def test_status_all_probes_bound_accounts(monkeypatch):
     assert len(statuses) == 2
     assert statuses[0].alive is True
     assert statuses[1].alive is False
+    assert statuses[0].message == (
+        "alive; safe_cache=1.0KiB; chrome_processes=3; chrome_rss=4.0MiB"
+    )
+    assert statuses[1].message == "down; safe_cache=0B; chrome_resources=unknown"
+
+
+@pytest.mark.asyncio
+async def test_status_all_without_targets_skips_procfs_snapshot(monkeypatch):
+    resources = MagicMock()
+    monkeypatch.setattr(cl, "_profile_chrome_resources_for_profiles", resources)
+
+    assert await status_all([]) == []
+    resources.assert_not_called()
+
+
+def test_process_tree_rss_bytes_aggregates_descendants(monkeypatch):
+    monkeypatch.setattr(cl, "_iter_process_ids", lambda: iter([10, 11, 12, 99]))
+    monkeypatch.setattr(
+        cl,
+        "_process_parent_and_rss_bytes",
+        lambda pid: {
+            10: (1, 100),
+            11: (10, 200),
+            12: (11, 300),
+            99: (1, 400),
+        }[pid],
+    )
+
+    assert cl._process_tree_rss_bytes(10) == (3, 600)
+
+
+def test_profile_resources_for_profiles_shares_one_procfs_snapshot(monkeypatch):
+    process_snapshot = {10: (1, 100)}
+    snapshot = MagicMock(return_value=process_snapshot)
+    seen_snapshots: list[dict[int, tuple[int, int]]] = []
+
+    def _fake_resources(
+        profile: str, *, process_snapshot: dict[int, tuple[int, int]] | None = None
+    ) -> tuple[int, int]:
+        assert process_snapshot is not None
+        seen_snapshots.append(process_snapshot)
+        return 1, 100
+
+    monkeypatch.setattr(cl, "_process_stats_snapshot", snapshot)
+    monkeypatch.setattr(cl, "_profile_chrome_resources", _fake_resources)
+
+    resources = cl._profile_chrome_resources_for_profiles(["/p/a", "/p/b"])
+
+    assert resources == {"/p/a": (1, 100), "/p/b": (1, 100)}
+    snapshot.assert_called_once_with()
+    assert seen_snapshots == [process_snapshot, process_snapshot]
+
+
+def test_profile_chrome_resources_rejects_untrusted_pidfile(monkeypatch):
+    monkeypatch.setattr(cl, "_read_pidfile", lambda profile: 123)
+    monkeypatch.setattr(cl, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(cl, "_pid_matches_profile", lambda pid, profile: False)
+    process_tree = MagicMock()
+    monkeypatch.setattr(cl, "_process_tree_rss_bytes", process_tree)
+
+    assert cl._profile_chrome_resources("/p/acc") is None
+    process_tree.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_status_all_marks_memory_threshold_warning(monkeypatch):
+    monkeypatch.setenv("XHS_CHROME_MEMORY_WARNING_MB", "4")
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=True))
+    monkeypatch.setattr(cl, "_safe_cache_bytes", lambda profile: 0)
+    monkeypatch.setattr(
+        cl,
+        "_profile_chrome_resources_for_profiles",
+        lambda profiles: {"/tmp/xhs-test-profile-xyz": (2, 4 * 1024**2)},
+    )
+
+    statuses = await status_all([_account()])
+
+    assert statuses[0].message.endswith("chrome_rss=4.0MiB; memory=warning")
+
+
+def test_memory_warning_threshold_disables_invalid_values(monkeypatch, caplog):
+    monkeypatch.setenv("XHS_CHROME_MEMORY_WARNING_MB", "invalid")
+
+    assert cl._memory_warning_threshold_bytes() is None
+    assert "Invalid XHS_CHROME_MEMORY_WARNING_MB" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_profile_launch_lock_serializes_same_profile(tmp_path):
+    """Two in-process callers cannot enter the same profile lifecycle lock."""
+    profile = tmp_path / "profile"
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _holder():
+        async with cl._profile_launch_lock(str(profile)):
+            entered.set()
+            await release.wait()
+
+    async def _waiter():
+        async with cl._profile_launch_lock(str(profile)):
+            return True
+
+    holder = asyncio.create_task(_holder())
+    await entered.wait()
+    waiter = asyncio.create_task(_waiter())
+    await asyncio.sleep(0.05)
+    assert not waiter.done()
+    release.set()
+    await holder
+    assert await asyncio.wait_for(waiter, timeout=1) is True
+
+
+@pytest.mark.asyncio
+async def test_stop_chrome_refuses_pid_profile_mismatch(_profile_dir: Path, monkeypatch):
+    """PID reuse must not let stop signal an unrelated process."""
+    (_profile_dir / "chrome.pid").write_text("1234")
+    monkeypatch.setattr(cl, "_pid_alive", lambda _pid: True)
+    monkeypatch.setattr(cl, "_pid_matches_profile", lambda _pid, _profile: False)
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append((pid, sig)))
+
+    status = await cl.stop_chrome(_account(profile=str(_profile_dir)))
+
+    assert status.action == "failed"
+    assert "does not belong" in status.message
+    assert killed == []
+
+
+@pytest.mark.asyncio
+async def test_ensure_all_selects_requested_accounts(monkeypatch):
+    launched: list[str] = []
+
+    async def _fake_ensure(a: AccountRow, *, chrome_bin: str | None = None) -> ChromeStatus:
+        launched.append(a.id)
+        return ChromeStatus(a.id, a.cdp_port, a.chrome_profile_path, True, "skipped")
+
+    monkeypatch.setattr(cl, "ensure_chrome", _fake_ensure)
+    accounts = [
+        _account(port=9223, profile="/p/a", active=True),
+        AccountRow(id="b", name="b", is_active=True, cdp_port=9224, chrome_profile_path="/p/b"),
+    ]
+
+    statuses = await cl.ensure_all(accounts, account_ids=["b"])
+
+    assert launched == ["b"]
+    assert [status.account_id for status in statuses] == ["b"]
+
+
+@pytest.mark.asyncio
+async def test_reap_idle_keeps_active_cdp_connection(monkeypatch, tmp_path):
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    (profile / "chrome.pid").write_text("1234")
+    account = _account(profile=str(profile))
+    monkeypatch.setattr(cl, "_pid_alive", lambda _pid: True)
+    monkeypatch.setattr(cl, "_has_active_cdp_connection", lambda _port: True)
+    stop = AsyncMock()
+    monkeypatch.setattr(cl, "stop_chrome", stop)
+
+    statuses = await cl.reap_idle([account], idle_seconds=1)
+
+    assert statuses[0].action == "skipped"
+    assert statuses[0].message == "active or unverified CDP connection"
+    stop.assert_not_awaited()
+
+
+def test_cleanup_profile_cache_preserves_login_data(tmp_path):
+    profile = tmp_path / "profile"
+    cache = profile / "Default" / "Cache"
+    cache.mkdir(parents=True)
+    (cache / "blob").write_bytes(b"cache")
+    extra_caches = {
+        profile / "Default" / "DawnGraphiteCache": b"dawn",
+        profile / "component_crx_cache": b"component",
+        profile / "optimization_guide_model_store": b"model",
+    }
+    for path, data in extra_caches.items():
+        path.mkdir(parents=True)
+        (path / "blob").write_bytes(data)
+    cookies = profile / "Default" / "Cookies"
+    cookies.write_bytes(b"login")
+
+    cache_bytes, removed = cl.cleanup_profile_cache(str(profile))
+    expected_cache_bytes = len(b"cache") + sum(len(data) for data in extra_caches.values())
+    assert cache_bytes == expected_cache_bytes
+    assert removed == 0
+    assert (cache / "blob").exists()
+
+    _, removed = cl.cleanup_profile_cache(str(profile), apply=True)
+    assert removed == expected_cache_bytes
+    assert not cache.exists()
+    assert cookies.read_bytes() == b"login"
 
 
 # ── find_chrome_binary ──
@@ -566,10 +883,12 @@ def test_format_status_table_renders_rows():
 # ── _build_launch_cmd ──
 
 
-def test_build_launch_cmd_includes_core_flags():
+def test_build_launch_cmd_includes_core_flags(monkeypatch):
     """The launch command carries user-data-dir, internal port (cdp_port+OFFSET),
     and the default flags. Chrome listens on internal port (loopback only —
     Chrome 144 ignores --remote-debugging-address); socat exposes cdp_port."""
+    monkeypatch.delenv("XHS_CHROME_CRASH_REPORTING", raising=False)
+    monkeypatch.delenv("XHS_CHROME_DISK_CACHE_SIZE_MB", raising=False)
     cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223)
     assert "/usr/bin/google-chrome" in cmd
     assert "--user-data-dir=/p/acc" in cmd
@@ -580,7 +899,51 @@ def test_build_launch_cmd_includes_core_flags():
     assert "--remote-debugging-address=0.0.0.0" in cmd
     assert "--remote-allow-origins=*" in cmd
     assert "--no-first-run" in cmd
+    assert "--disk-cache-size=134217728" in cmd
+    assert "--disable-crash-reporter" in cmd
     assert "--headless=new" not in cmd
+
+
+def test_build_launch_cmd_allows_disk_cache_override(monkeypatch):
+    monkeypatch.setenv("XHS_CHROME_DISK_CACHE_SIZE_MB", "64")
+
+    cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223)
+
+    assert "--disk-cache-size=67108864" in cmd
+
+
+def test_build_launch_cmd_allows_default_cache(monkeypatch):
+    monkeypatch.setenv("XHS_CHROME_DISK_CACHE_SIZE_MB", "0")
+
+    cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223)
+
+    assert not any(flag.startswith("--disk-cache-size=") for flag in cmd)
+
+
+def test_build_launch_cmd_recovers_from_invalid_cache_setting(monkeypatch, caplog):
+    monkeypatch.setenv("XHS_CHROME_DISK_CACHE_SIZE_MB", "not-a-number")
+
+    cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223)
+
+    assert "--disk-cache-size=134217728" in cmd
+    assert "Invalid XHS_CHROME_DISK_CACHE_SIZE_MB" in caplog.text
+
+
+def test_build_launch_cmd_recovers_from_negative_cache_setting(monkeypatch, caplog):
+    monkeypatch.setenv("XHS_CHROME_DISK_CACHE_SIZE_MB", "-1")
+
+    cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223)
+
+    assert "--disk-cache-size=134217728" in cmd
+    assert "Negative XHS_CHROME_DISK_CACHE_SIZE_MB" in caplog.text
+
+
+def test_build_launch_cmd_can_enable_crash_reporting(monkeypatch):
+    monkeypatch.setenv("XHS_CHROME_CRASH_REPORTING", "1")
+
+    cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223)
+
+    assert "--disable-crash-reporter" not in cmd
 
 
 def test_internal_cdp_port_offset():

@@ -42,6 +42,16 @@ Waiting, confirmed, and expired responses must not carry a stale flag.
 - Preserve `body_text` already supplied by a Creator Center response; do not
   enrich it by opening the public main site.
 
+## Profile lifecycle safety
+
+- Launcher lifecycle operations for one bound profile use an OS-level flock; never launch or stop the same profile concurrently from separate processes.
+- `reap` may stop only an old profile with no active CDP client; if socket inspection fails, it must fail closed and skip the profile.
+- Cache cleanup is dry-run by default, runs only while the profile is stopped, and may remove only an explicit cache-directory allowlist; login databases and symlinks are protected.
+- Crash reporting is disabled by default for long-lived automation profiles to avoid crashpad helper processes; `XHS_CHROME_CRASH_REPORTING=1` is the explicit diagnostic opt-in.
+- Launcher cache growth is bounded with a per-profile `--disk-cache-size` hint (default 128 MiB); `XHS_CHROME_DISK_CACHE_SIZE_MB=0` explicitly restores Chrome default behavior, and invalid values must fall back without blocking startup.
+- Memory observation must be read-only and derive only from a live pidfile PID that still matches its profile; an RSS threshold may warn in `status` but must never automatically stop, clean, or relaunch a Chrome profile.
+- Any CDP page cleanup must default to dry-run, require an explicit account-scoped apply, skip when a CDP client is active or unverified, revalidate target identity under the profile lock, close only a recognized blank `page` target, and retain at least one page.
+
 ## Testing boundary
 
 Tests should assert that CDP is used, `chromium.launch` is not used by

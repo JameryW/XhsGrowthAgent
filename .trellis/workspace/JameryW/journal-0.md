@@ -1383,3 +1383,168 @@ showHelp never listed free-mode draft commands (/drafts /draft /delete from #216
 ### Next Steps
 
 - None - task complete
+
+
+## Session 76: Chrome 生命周期与进程资源优化
+
+**Date**: 2026-07-29
+**Task**: Chrome 生命周期与进程资源优化
+**Branch**: `main`
+
+### Summary
+
+为每账号 Chrome 增加 profile flock、PID 归属校验、按账号生命周期控制、空闲回收和安全缓存清理；服务登录严格复用 CDP，status/stop/maintenance 不再启动 Xvfb。1650 个 unit 测试通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `665d1be3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 77: Chrome 运行时资源与缓存优化
+
+**Date**: 2026-07-29
+**Task**: Chrome 运行时资源与缓存优化
+**Branch**: `main`
+
+### Summary
+
+量化三账号 Chrome profile 后，默认关闭 crashpad helper 并保留诊断 opt-in；扩展停止后可安全清理的缓存 allowlist。运行中 profile 的 dry-run 保持跳过。完整 unit 1651 passed。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a83c0ac3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 78: Chrome 缓存增长上限与资源可观测性
+
+**Date**: 2026-07-29
+**Task**: Chrome 缓存增长上限与资源可观测性
+**Branch**: `main`
+
+### Summary
+
+为每账号 Chrome 增加可配置的 128 MiB HTTP 磁盘缓存提示上限、无效配置回退和只读 safe_cache 状态观测；完整单测 1655 项通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7038689f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 79: Chrome profile 内存健康观测与告警
+
+**Date**: 2026-07-29
+**Task**: Chrome profile 内存健康观测与告警
+**Branch**: `main`
+
+### Summary
+
+为每账号 Chrome 的 status 增加可信 pidfile 进程树 RSS 与进程数观测、可选阈值告警和 procfs 快照复用；修正扁平 procfs argv 的 profile 校验，完整单测 1662 项通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3ba5ccfe` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 80: Chrome 后台空白页安全清理
+
+**Date**: 2026-07-29
+**Task**: Chrome 后台空白页安全清理
+**Branch**: `main`
+
+### Summary
+
+新增按账号显式 apply 的 Chrome 空白页维护命令：默认 dry-run、活跃 CDP 跳过、锁内二次校验，并保留至少一个 page；完整单测 1669 项通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6ae62471` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

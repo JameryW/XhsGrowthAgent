@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/browser-automation-safety.md", "reason": "Verify read-only memory observations preserve profile safety."}
+{"file": ".trellis/tasks/07-29-07-29-chrome-memory-observability/prd.md", "reason": "Verify the implementation meets the task acceptance criteria."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify lint, type, and test expectations."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Verify warning behavior is consistent with project logging."}

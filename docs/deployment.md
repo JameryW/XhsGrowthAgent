@@ -120,6 +120,14 @@ DASHSCOPE_API_KEY=your_key
 XHS_USE_BROWSER=true
 XHS_CHROME_PROFILES_DIR=/path/to/.chrome-profiles
 XHS_CDP_BASE_PORT=9222
+# 空闲回收阈值（秒）；reap 只回收无活动 CDP 连接的旧实例
+XHS_CHROME_IDLE_TIMEOUT_SECONDS=1800
+# 每个账号 Chrome 的磁盘缓存提示上限（MB）；设为 0 使用 Chrome 默认值
+XHS_CHROME_DISK_CACHE_SIZE_MB=128
+# Chrome 进程树 RSS 告警阈值（MB）；0 关闭，仅在 status 中标记，不会自动处置
+XHS_CHROME_MEMORY_WARNING_MB=0
+# 默认关闭 crashpad helper 进程以减少每个 Chrome 的进程数；诊断时设为 1
+# XHS_CHROME_CRASH_REPORTING=1
 
 # Database
 POSTGRES_URI=postgresql://user:pass@host:5432/db?sslmode=require
@@ -258,6 +266,14 @@ CDP 模式下，发布连接到常驻真实 Chrome（profile 自带扫码登录�
 XHS_CHROME_PROFILES_DIR=/test/xhs/.chrome-profiles
 # 起始 port（创建账号时从 base+1 递增找首个未占用 port）
 XHS_CDP_BASE_PORT=9222
+# 空闲回收阈值（秒）；reap 只回收无活动 CDP 连接的旧实例
+XHS_CHROME_IDLE_TIMEOUT_SECONDS=1800
+# 每个账号 Chrome 的磁盘缓存提示上限（MB）；设为 0 使用 Chrome 默认值
+XHS_CHROME_DISK_CACHE_SIZE_MB=128
+# Chrome 进程树 RSS 告警阈值（MB）；0 关闭，仅在 status 中标记，不会自动处置
+XHS_CHROME_MEMORY_WARNING_MB=0
+# 默认关闭 crashpad helper 进程以减少每个 Chrome 的进程数；诊断时设为 1
+# XHS_CHROME_CRASH_REPORTING=1
 # Creator Center background import interval (hours; 0 disables the scheduler)
 CREATOR_STATS_SYNC_INTERVAL_HOURS=36
 # 可选：显式指定 Chrome binary 路径（默认自动探测 google-chrome > google-chrome-stable > chromium）
@@ -303,10 +319,19 @@ scripts/chrome-profiles.sh start
 scripts/chrome-profiles.sh status
 # 停止所有（按 pidfile SIGTERM，超时 SIGKILL）
 scripts/chrome-profiles.sh stop
+# 只处理一个账号（start/status/stop/reap/cleanup 都支持，可重复指定）
+scripts/chrome-profiles.sh start --account-id <account_id>
+# 周期性回收超过阈值且无活动 CDP 连接的 Chrome（默认 1800 秒）
+scripts/chrome-profiles.sh reap
+# 清理安全缓存：先 dry-run，再显式 --apply；不会删除 Cookies/Local Storage 等登录数据
+scripts/chrome-profiles.sh cleanup
+scripts/chrome-profiles.sh cleanup --apply
+# 枚举可安全关闭的空白页；默认 dry-run。apply 必须明确选择账号，且只关闭一页
+scripts/chrome-profiles.sh prune-pages
+scripts/chrome-profiles.sh prune-pages --account-id <account_id> --apply
 # Chrome 始终以 headed 模式运行——headless 已完全禁止（小红书风控拦截，
 # 扫码登录 300012）。launcher CLI 与 XHS_LOGIN_HEADLESS 等开关均已移除；
 # 传 --headless 会被脚本直接拒绝。无 DISPLAY 时脚本自动启动 Xvfb 虚拟显示。
-scripts/chrome-profiles.sh start
 ```
 
 launcher 逻辑（`backend/services/chrome_launcher.py`，可单测）：
@@ -316,6 +341,15 @@ launcher 逻辑（`backend/services/chrome_launcher.py`，可单测）：
 - 启 `google-chrome --user-data-dir=<path> --remote-debugging-port=<port>
   --remote-debugging-address=0.0.0.0 --no-first-run --no-default-browser-check &`
   并写 pidfile
+- 每个 profile 有独立 OS flock，阻止并发 launcher 在端口尚未就绪时重复启动 Chrome。
+- 默认追加 `--disable-crash-reporter`，减少每个实例的 crashpad helper；设置 `XHS_CHROME_CRASH_REPORTING=1` 可恢复。
+- 默认追加 `--disk-cache-size=134217728`（128MB）；这是 Chrome 缓存系统的提示上限，设 `XHS_CHROME_DISK_CACHE_SIZE_MB=0` 可恢复默认策略。
+- `scripts/chrome-profiles.sh status` 会显示每个 profile 的 `safe_cache`（仅统计可安全清理的白名单缓存目录）；这是观测值，不会修改正在运行的浏览器。
+- `status` 还显示由可信 pidfile 归属的 Chrome 子进程数与 RSS 合计；`XHS_CHROME_MEMORY_WARNING_MB` 仅标记超阈值，不会自动重启或清理。RSS 会包含共享页的重复计量，适合看单账号趋势，不等同于整机实际内存。
+- `start/status/stop/reap/cleanup` 支持 `--account-id`，日常运维不必触碰全部账号。
+- `reap` 以 pidfile 启动年龄为阈值，并检查 CDP 连接；连接状态无法确认时保守跳过。
+- `cleanup` 默认 dry-run，`--apply` 只删除 allowlist 中的缓存目录，profile 正在运行或锁状态不明时拒绝清理。
+- `prune-pages` 默认仅报告空白 page；`--apply` 必须指定账号、检测不到活跃 CDP 连接、并且只关闭一个二次校验仍为空白的 `about:blank`/新标签页，同时始终保留至少一个 page。
 
 ### 5. 容器网络
 
