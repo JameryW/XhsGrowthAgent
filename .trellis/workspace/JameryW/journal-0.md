@@ -1482,3 +1482,36 @@ showHelp never listed free-mode draft commands (/drafts /draft /delete from #216
 ### Next Steps
 
 - None - task complete
+
+
+## Session 79: Chrome profile 内存健康观测与告警
+
+**Date**: 2026-07-29
+**Task**: Chrome profile 内存健康观测与告警
+**Branch**: `main`
+
+### Summary
+
+为每账号 Chrome 的 status 增加可信 pidfile 进程树 RSS 与进程数观测、可选阈值告警和 procfs 快照复用；修正扁平 procfs argv 的 profile 校验，完整单测 1662 项通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3ba5ccfe` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
