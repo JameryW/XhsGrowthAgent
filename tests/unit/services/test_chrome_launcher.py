@@ -507,6 +507,11 @@ async def test_stop_all_stops_all_with_profile(monkeypatch):
 async def test_status_all_probes_bound_accounts(monkeypatch):
     """status_all probes each account with port+profile, returns ChromeStatus list."""
     monkeypatch.setattr(cl, "probe_port", AsyncMock(side_effect=[True, False]))
+    monkeypatch.setattr(
+        cl,
+        "_safe_cache_bytes",
+        lambda profile: {"/p/a": 1024, "/p/b": 0}[profile],
+    )
 
     accounts = [
         AccountRow(id="a", name="a", cdp_port=9223, chrome_profile_path="/p/a", is_active=True),
@@ -520,6 +525,8 @@ async def test_status_all_probes_bound_accounts(monkeypatch):
     assert len(statuses) == 2
     assert statuses[0].alive is True
     assert statuses[1].alive is False
+    assert statuses[0].message == "alive; safe_cache=1.0KiB"
+    assert statuses[1].message == "down; safe_cache=0B"
 
 
 @pytest.mark.asyncio
@@ -681,6 +688,7 @@ def test_build_launch_cmd_includes_core_flags(monkeypatch):
     and the default flags. Chrome listens on internal port (loopback only —
     Chrome 144 ignores --remote-debugging-address); socat exposes cdp_port."""
     monkeypatch.delenv("XHS_CHROME_CRASH_REPORTING", raising=False)
+    monkeypatch.delenv("XHS_CHROME_DISK_CACHE_SIZE_MB", raising=False)
     cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223)
     assert "/usr/bin/google-chrome" in cmd
     assert "--user-data-dir=/p/acc" in cmd
@@ -691,8 +699,43 @@ def test_build_launch_cmd_includes_core_flags(monkeypatch):
     assert "--remote-debugging-address=0.0.0.0" in cmd
     assert "--remote-allow-origins=*" in cmd
     assert "--no-first-run" in cmd
+    assert "--disk-cache-size=134217728" in cmd
     assert "--disable-crash-reporter" in cmd
     assert "--headless=new" not in cmd
+
+
+def test_build_launch_cmd_allows_disk_cache_override(monkeypatch):
+    monkeypatch.setenv("XHS_CHROME_DISK_CACHE_SIZE_MB", "64")
+
+    cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223)
+
+    assert "--disk-cache-size=67108864" in cmd
+
+
+def test_build_launch_cmd_allows_default_cache(monkeypatch):
+    monkeypatch.setenv("XHS_CHROME_DISK_CACHE_SIZE_MB", "0")
+
+    cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223)
+
+    assert not any(flag.startswith("--disk-cache-size=") for flag in cmd)
+
+
+def test_build_launch_cmd_recovers_from_invalid_cache_setting(monkeypatch, caplog):
+    monkeypatch.setenv("XHS_CHROME_DISK_CACHE_SIZE_MB", "not-a-number")
+
+    cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223)
+
+    assert "--disk-cache-size=134217728" in cmd
+    assert "Invalid XHS_CHROME_DISK_CACHE_SIZE_MB" in caplog.text
+
+
+def test_build_launch_cmd_recovers_from_negative_cache_setting(monkeypatch, caplog):
+    monkeypatch.setenv("XHS_CHROME_DISK_CACHE_SIZE_MB", "-1")
+
+    cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p/acc", 9223)
+
+    assert "--disk-cache-size=134217728" in cmd
+    assert "Negative XHS_CHROME_DISK_CACHE_SIZE_MB" in caplog.text
 
 
 def test_build_launch_cmd_can_enable_crash_reporting(monkeypatch):

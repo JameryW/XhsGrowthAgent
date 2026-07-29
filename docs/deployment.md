@@ -122,6 +122,8 @@ XHS_CHROME_PROFILES_DIR=/path/to/.chrome-profiles
 XHS_CDP_BASE_PORT=9222
 # 空闲回收阈值（秒）；reap 只回收无活动 CDP 连接的旧实例
 XHS_CHROME_IDLE_TIMEOUT_SECONDS=1800
+# 每个账号 Chrome 的磁盘缓存提示上限（MB）；设为 0 使用 Chrome 默认值
+XHS_CHROME_DISK_CACHE_SIZE_MB=128
 # 默认关闭 crashpad helper 进程以减少每个 Chrome 的进程数；诊断时设为 1
 # XHS_CHROME_CRASH_REPORTING=1
 
@@ -264,6 +266,8 @@ XHS_CHROME_PROFILES_DIR=/test/xhs/.chrome-profiles
 XHS_CDP_BASE_PORT=9222
 # 空闲回收阈值（秒）；reap 只回收无活动 CDP 连接的旧实例
 XHS_CHROME_IDLE_TIMEOUT_SECONDS=1800
+# 每个账号 Chrome 的磁盘缓存提示上限（MB）；设为 0 使用 Chrome 默认值
+XHS_CHROME_DISK_CACHE_SIZE_MB=128
 # 默认关闭 crashpad helper 进程以减少每个 Chrome 的进程数；诊断时设为 1
 # XHS_CHROME_CRASH_REPORTING=1
 # Creator Center background import interval (hours; 0 disables the scheduler)
@@ -332,6 +336,8 @@ launcher 逻辑（`backend/services/chrome_launcher.py`，可单测）：
   并写 pidfile
 - 每个 profile 有独立 OS flock，阻止并发 launcher 在端口尚未就绪时重复启动 Chrome。
 - 默认追加 `--disable-crash-reporter`，减少每个实例的 crashpad helper；设置 `XHS_CHROME_CRASH_REPORTING=1` 可恢复。
+- 默认追加 `--disk-cache-size=134217728`（128MB）；这是 Chrome 缓存系统的提示上限，设 `XHS_CHROME_DISK_CACHE_SIZE_MB=0` 可恢复默认策略。
+- `scripts/chrome-profiles.sh status` 会显示每个 profile 的 `safe_cache`（仅统计可安全清理的白名单缓存目录）；这是观测值，不会修改正在运行的浏览器。
 - `start/status/stop/reap/cleanup` 支持 `--account-id`，日常运维不必触碰全部账号。
 - `reap` 以 pidfile 启动年龄为阈值，并检查 CDP 连接；连接状态无法确认时保守跳过。
 - `cleanup` 默认 dry-run，`--apply` 只删除 allowlist 中的缓存目录，profile 正在运行或锁状态不明时拒绝清理。

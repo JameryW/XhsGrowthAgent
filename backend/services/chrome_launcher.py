@@ -77,6 +77,7 @@ _SAFE_CACHE_DIR_NAMES = frozenset(
     }
 )
 _DEFAULT_IDLE_TIMEOUT_SECONDS = 1800.0
+_DEFAULT_DISK_CACHE_SIZE_MB = 128
 
 # Extra flags every per-account Chrome gets. --no-first-run /
 # --no-default-browser-check suppress first-run UX that would block automation.
@@ -438,6 +439,30 @@ def _internal_cdp_port(cdp_port: int) -> int:
     return cdp_port + _INTERNAL_PORT_OFFSET
 
 
+def _disk_cache_size_flag() -> str | None:
+    """Return the configured Chrome disk-cache flag, or None for the default."""
+    raw = os.environ.get("XHS_CHROME_DISK_CACHE_SIZE_MB", str(_DEFAULT_DISK_CACHE_SIZE_MB))
+    try:
+        size_mb = int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid XHS_CHROME_DISK_CACHE_SIZE_MB=%r; using default %d MiB",
+            raw,
+            _DEFAULT_DISK_CACHE_SIZE_MB,
+        )
+        size_mb = _DEFAULT_DISK_CACHE_SIZE_MB
+    if size_mb < 0:
+        logger.warning(
+            "Negative XHS_CHROME_DISK_CACHE_SIZE_MB=%d; using default %d MiB",
+            size_mb,
+            _DEFAULT_DISK_CACHE_SIZE_MB,
+        )
+        size_mb = _DEFAULT_DISK_CACHE_SIZE_MB
+    if size_mb == 0:
+        return None
+    return f"--disk-cache-size={size_mb * 1024 * 1024}"
+
+
 def _build_launch_cmd(chrome_bin: str, profile_path: str, port: int) -> list[str]:
     """Construct the Chrome command line for a per-account instance.
 
@@ -458,6 +483,9 @@ def _build_launch_cmd(chrome_bin: str, profile_path: str, port: int) -> list[str
         f"--remote-debugging-port={_internal_cdp_port(port)}",
     ]
     cmd.extend(_DEFAULT_FLAGS)
+    cache_size_flag = _disk_cache_size_flag()
+    if cache_size_flag is not None:
+        cmd.append(cache_size_flag)
     if os.environ.get("XHS_CHROME_CRASH_REPORTING", "").strip().lower() not in {
         "1",
         "true",
@@ -822,6 +850,19 @@ def _directory_bytes(path: Path) -> int:
     return total
 
 
+def _safe_cache_bytes(profile_path: str) -> int:
+    """Return bytes in the same allowlisted cache paths used by cleanup."""
+    return sum(_directory_bytes(path) for path in _iter_cache_dirs(profile_path))
+
+
+def _format_byte_count(byte_count: int) -> str:
+    """Render a small, human-readable byte count for CLI status output."""
+    for divisor, unit in ((1024**3, "GiB"), (1024**2, "MiB"), (1024, "KiB")):
+        if byte_count >= divisor:
+            return f"{byte_count / divisor:.1f}{unit}"
+    return f"{byte_count}B"
+
+
 def _profile_is_live(profile_path: str) -> bool:
     """Return True if a matching pidfile process or live SingletonLock exists."""
     pid = _read_pidfile(profile_path)
@@ -1005,14 +1046,19 @@ async def status_all(
     ]
 
     async def _probe(a: AccountRow) -> ChromeStatus:
-        alive = await probe_port(a.cdp_port)
+        alive, cache_bytes = await asyncio.gather(
+            probe_port(a.cdp_port),
+            asyncio.to_thread(_safe_cache_bytes, a.chrome_profile_path),
+        )
         return ChromeStatus(
             account_id=a.id,
             port=a.cdp_port,
             profile_path=a.chrome_profile_path,
             alive=alive,
             action="skipped",
-            message="alive" if alive else "down",
+            message=(
+                f"{'alive' if alive else 'down'}; safe_cache={_format_byte_count(cache_bytes)}"
+            ),
         )
 
     return await asyncio.gather(*(_probe(a) for a in targets))
