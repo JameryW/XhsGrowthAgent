@@ -79,6 +79,7 @@ _SAFE_CACHE_DIR_NAMES = frozenset(
 _DEFAULT_IDLE_TIMEOUT_SECONDS = 1800.0
 _DEFAULT_DISK_CACHE_SIZE_MB = 128
 _DEFAULT_MEMORY_WARNING_MB = 0
+_SAFE_BLANK_PAGE_URLS = frozenset({"about:blank", "chrome://newtab/"})
 
 # Extra flags every per-account Chrome gets. --no-first-run /
 # --no-default-browser-check suppress first-run UX that would block automation.
@@ -118,6 +119,28 @@ class ProfileCleanupStatus:
     cache_bytes: int
     removed_bytes: int
     action: str  # "dry_run" | "cleaned" | "skipped" | "failed"
+    message: str = ""
+
+
+@dataclass(frozen=True)
+class CdpTarget:
+    """Minimal validated target data read from a profile public CDP endpoint."""
+
+    target_id: str
+    target_type: str
+    url: str
+
+
+@dataclass
+class PageCleanupStatus:
+    """Result of a dry-run or applied blank-page cleanup for one profile."""
+
+    account_id: str
+    port: int
+    page_count: int
+    candidate_count: int
+    closed_count: int
+    action: str
     message: str = ""
 
 
@@ -214,6 +237,69 @@ async def probe_port(port: int, host: str = "127.0.0.1", timeout: float = 1.0) -
         return await loop.run_in_executor(None, _fetch)
     except Exception:
         return False
+
+
+def _cdp_http_get(port: int, path: str) -> bytes | None:
+    """Read one public CDP HTTP endpoint, returning None on any uncertainty."""
+    import urllib.request
+
+    if port <= 0 or not path.startswith("/"):
+        return None
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=2) as resp:
+            if resp.status != 200:
+                return None
+            data = resp.read()
+            return data if isinstance(data, bytes) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _list_cdp_targets(port: int) -> list[CdpTarget] | None:
+    """Return validated CDP targets, or None if the endpoint cannot be trusted."""
+    import json
+
+    payload = _cdp_http_get(port, "/json/list")
+    if payload is None:
+        return None
+    try:
+        decoded: object = json.loads(payload.decode("utf-8", errors="replace"))
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(decoded, list):
+        return None
+    targets: list[CdpTarget] = []
+    for item in decoded:
+        if not isinstance(item, dict):
+            continue
+        target_id = item.get("id")
+        target_type = item.get("type")
+        target_url = item.get("url")
+        if not isinstance(target_id, str):
+            continue
+        if not isinstance(target_type, str) or not isinstance(target_url, str):
+            continue
+        targets.append(CdpTarget(target_id, target_type, target_url))
+    return targets
+
+
+def _close_cdp_target(port: int, target_id: str) -> bool:
+    """Ask Chrome to close one validated target via the public CDP endpoint."""
+    import urllib.parse
+
+    if not target_id:
+        return False
+    encoded_target_id = urllib.parse.quote(target_id, safe="")
+    return _cdp_http_get(port, f"/json/close/{encoded_target_id}") is not None
+
+
+def _blank_page_cleanup_candidates(targets: Iterable[CdpTarget]) -> tuple[int, list[CdpTarget]]:
+    """Return safe blank-page candidates while always retaining one page target."""
+    pages = [target for target in targets if target.target_type == "page"]
+    if len(pages) <= 1:
+        return len(pages), []
+    blank_pages = [target for target in pages if target.url in _SAFE_BLANK_PAGE_URLS]
+    return len(pages), blank_pages[: len(pages) - 1]
 
 
 async def _wait_for_port(port: int, *, attempts: int = 10, delay: float = 0.2) -> bool:
@@ -1116,6 +1202,159 @@ async def cleanup_all(
     return await asyncio.gather(*(_cleanup(account) for account in targets))
 
 
+async def prune_blank_pages_all(
+    accounts: list[AccountRow],
+    *,
+    apply: bool = False,
+    account_ids: Iterable[str] | None = None,
+) -> list[PageCleanupStatus]:
+    """Dry-run or close one safe blank page per selected profile.
+
+    An apply is fail-closed: it requires no active CDP client, takes the
+    profile lock, re-lists targets, and retains at least one page target.
+    """
+    selected_ids = tuple(value for value in (account_ids or ()) if value.strip())
+    if apply and not selected_ids:
+        raise ValueError("page cleanup apply requires at least one account id")
+
+    targets = [
+        account
+        for account in _select_accounts(accounts, account_ids)
+        if account.chrome_profile_path and account.cdp_port > 0
+    ]
+
+    async def _prune(account: AccountRow) -> PageCleanupStatus:
+        if not await probe_port(account.cdp_port):
+            return PageCleanupStatus(
+                account.id,
+                account.cdp_port,
+                0,
+                0,
+                0,
+                "skipped",
+                "public CDP endpoint is down",
+            )
+        if _has_active_cdp_connection(account.cdp_port):
+            return PageCleanupStatus(
+                account.id,
+                account.cdp_port,
+                0,
+                0,
+                0,
+                "skipped",
+                "active or unverified CDP connection",
+            )
+        cdp_targets = await asyncio.to_thread(_list_cdp_targets, account.cdp_port)
+        if cdp_targets is None:
+            return PageCleanupStatus(
+                account.id, account.cdp_port, 0, 0, 0, "failed", "cannot list CDP targets"
+            )
+        page_count, candidates = _blank_page_cleanup_candidates(cdp_targets)
+        if not candidates:
+            return PageCleanupStatus(
+                account.id,
+                account.cdp_port,
+                page_count,
+                0,
+                0,
+                "skipped",
+                "no safe blank page candidates",
+            )
+        if not apply:
+            return PageCleanupStatus(
+                account.id,
+                account.cdp_port,
+                page_count,
+                len(candidates),
+                0,
+                "dry_run",
+                "safe blank page eligible for cleanup",
+            )
+        try:
+            async with _profile_launch_lock(account.chrome_profile_path):
+                if not await probe_port(account.cdp_port):
+                    return PageCleanupStatus(
+                        account.id,
+                        account.cdp_port,
+                        0,
+                        0,
+                        0,
+                        "skipped",
+                        "public CDP endpoint went down before apply",
+                    )
+                if _has_active_cdp_connection(account.cdp_port):
+                    return PageCleanupStatus(
+                        account.id,
+                        account.cdp_port,
+                        0,
+                        0,
+                        0,
+                        "skipped",
+                        "active or unverified CDP connection",
+                    )
+                verified_targets = await asyncio.to_thread(_list_cdp_targets, account.cdp_port)
+                if verified_targets is None:
+                    return PageCleanupStatus(
+                        account.id,
+                        account.cdp_port,
+                        0,
+                        0,
+                        0,
+                        "failed",
+                        "cannot recheck CDP targets",
+                    )
+                page_count, candidates = _blank_page_cleanup_candidates(verified_targets)
+                if not candidates:
+                    return PageCleanupStatus(
+                        account.id,
+                        account.cdp_port,
+                        page_count,
+                        0,
+                        0,
+                        "skipped",
+                        "no safe blank page candidates after recheck",
+                    )
+                if not await asyncio.to_thread(
+                    _close_cdp_target, account.cdp_port, candidates[0].target_id
+                ):
+                    return PageCleanupStatus(
+                        account.id,
+                        account.cdp_port,
+                        page_count,
+                        len(candidates),
+                        0,
+                        "failed",
+                        "CDP refused safe blank page close",
+                    )
+                post_close_targets = await asyncio.to_thread(_list_cdp_targets, account.cdp_port)
+                if post_close_targets is None:
+                    return PageCleanupStatus(
+                        account.id,
+                        account.cdp_port,
+                        page_count,
+                        len(candidates),
+                        1,
+                        "cleaned",
+                        "closed one safe blank page; post-close verification unavailable",
+                    )
+                remaining_pages, remaining_candidates = _blank_page_cleanup_candidates(
+                    post_close_targets
+                )
+                return PageCleanupStatus(
+                    account.id,
+                    account.cdp_port,
+                    remaining_pages,
+                    len(remaining_candidates),
+                    1,
+                    "cleaned",
+                    "closed one safe blank page",
+                )
+        except (OSError, TimeoutError) as exc:
+            return PageCleanupStatus(account.id, account.cdp_port, 0, 0, 0, "failed", str(exc))
+
+    return await asyncio.gather(*(_prune(account) for account in targets))
+
+
 # ── Bulk helpers (used by the bash wrapper) ──
 
 
@@ -1221,10 +1460,12 @@ def format_status_table(statuses: list[ChromeStatus]) -> str:
 
 __all__ = [
     "ChromeStatus",
+    "PageCleanupStatus",
     "ProfileCleanupStatus",
     "cleanup_all",
     "cleanup_profile_cache",
     "format_cleanup_table",
+    "format_page_cleanup_table",
     "reap_idle",
     "clear_stale_lock",
     "ensure_all",
@@ -1232,6 +1473,7 @@ __all__ = [
     "find_chrome_binary",
     "format_status_table",
     "probe_port",
+    "prune_blank_pages_all",
     "status_all",
     "stop_all",
     "stop_chrome",
@@ -1240,7 +1482,8 @@ __all__ = [
 
 # ── CLI entry (called by scripts/chrome-profiles.sh) ──
 #
-# ``python3 -m backend.services.chrome_launcher <start|status|stop|reap|cleanup>`` loads the
+# ``python3 -m backend.services.chrome_launcher <start|status|stop|reap|cleanup|
+# prune-pages>`` loads the
 # accounts list from the DB (via backend.db.accounts.list_accounts) and runs the
 # matching bulk op. The bash wrapper is intentionally thin — it just forwards
 # the subcommand so operators don't need to remember the python invocation.
@@ -1261,6 +1504,19 @@ def format_cleanup_table(statuses: list[ProfileCleanupStatus]) -> str:
         lines.append(
             f"{status.account_id} {status.profile_path} {status.action} {status.cache_bytes} "
             f"{status.removed_bytes} {status.message}"
+        )
+    return "\n".join(lines)
+
+
+def format_page_cleanup_table(statuses: list[PageCleanupStatus]) -> str:
+    """Render blank-page cleanup results without exposing page URLs or titles."""
+    if not statuses:
+        return "(no accounts with chrome profile bindings)"
+    lines = ["ACCOUNT PORT ACTION PAGES CANDIDATES CLOSED MESSAGE"]
+    for status in statuses:
+        lines.append(
+            f"{status.account_id} {status.port} {status.action} {status.page_count} "
+            f"{status.candidate_count} {status.closed_count} {status.message}"
         )
     return "\n".join(lines)
 
@@ -1336,8 +1592,19 @@ async def _cli(
         print(format_cleanup_table(cleanup_statuses))
         return 1 if any(s.action == "failed" for s in cleanup_statuses) else 0
 
+    elif subcommand == "prune-pages":
+        selected_ids = tuple(value for value in (account_ids or ()) if value.strip())
+        if apply_cleanup and not selected_ids:
+            print("prune-pages --apply requires at least one --account-id")
+            return 2
+        page_statuses = await prune_blank_pages_all(
+            accounts, apply=apply_cleanup, account_ids=selected_ids
+        )
+        print(format_page_cleanup_table(page_statuses))
+        return 1 if any(status.action == "failed" for status in page_statuses) else 0
+
     else:  # pragma: no cover — argparse choices() rejects this
-        print(f"unknown subcommand: {subcommand} (use start|status|stop|reap|cleanup)")
+        print(f"unknown subcommand: {subcommand} (use start|status|stop|reap|cleanup|prune-pages)")
         return 2
 
     print(format_status_table(statuses))
@@ -1347,7 +1614,7 @@ async def _cli(
 
 
 def main() -> None:
-    """CLI entry for the start/status/stop/reap/cleanup commands."""
+    """CLI entry for the start/status/stop/reap/cleanup/prune-pages commands."""
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -1356,8 +1623,11 @@ def main() -> None:
     )
     parser.add_argument(
         "subcommand",
-        choices=("start", "status", "stop", "reap", "cleanup"),
-        help="start=launch, status=probe, stop=stop, reap=idle cleanup, cleanup=cache cleanup",
+        choices=("start", "status", "stop", "reap", "cleanup", "prune-pages"),
+        help=(
+            "start=launch, status=probe, stop=stop, reap=idle cleanup, "
+            "cleanup=cache cleanup, prune-pages=blank page cleanup"
+        ),
     )
     parser.add_argument(
         "--account-id",

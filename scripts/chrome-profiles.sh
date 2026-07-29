@@ -15,6 +15,9 @@
 #   scripts/chrome-profiles.sh start --account-id <id>  # start only selected accounts
 #   scripts/chrome-profiles.sh reap [--idle-seconds N] # stop old profiles with no CDP client
 #   scripts/chrome-profiles.sh cleanup [--apply]       # dry-run/apply safe cache cleanup
+#   scripts/chrome-profiles.sh prune-pages              # dry-run safe blank page cleanup
+#   scripts/chrome-profiles.sh prune-pages --account-id <id> --apply
+#                                                   # close one verified blank page only
 #
 # headless 模式已完全禁止：小红书风控会拦截 headless Chrome（扫码登录 300012）。
 # 传入 --headless 会直接报错退出；无 X display 时脚本自动启动 Xvfb。

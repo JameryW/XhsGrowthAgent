@@ -326,6 +326,9 @@ scripts/chrome-profiles.sh reap
 # 清理安全缓存：先 dry-run，再显式 --apply；不会删除 Cookies/Local Storage 等登录数据
 scripts/chrome-profiles.sh cleanup
 scripts/chrome-profiles.sh cleanup --apply
+# 枚举可安全关闭的空白页；默认 dry-run。apply 必须明确选择账号，且只关闭一页
+scripts/chrome-profiles.sh prune-pages
+scripts/chrome-profiles.sh prune-pages --account-id <account_id> --apply
 # Chrome 始终以 headed 模式运行——headless 已完全禁止（小红书风控拦截，
 # 扫码登录 300012）。launcher CLI 与 XHS_LOGIN_HEADLESS 等开关均已移除；
 # 传 --headless 会被脚本直接拒绝。无 DISPLAY 时脚本自动启动 Xvfb 虚拟显示。
@@ -346,6 +349,7 @@ launcher 逻辑（`backend/services/chrome_launcher.py`，可单测）：
 - `start/status/stop/reap/cleanup` 支持 `--account-id`，日常运维不必触碰全部账号。
 - `reap` 以 pidfile 启动年龄为阈值，并检查 CDP 连接；连接状态无法确认时保守跳过。
 - `cleanup` 默认 dry-run，`--apply` 只删除 allowlist 中的缓存目录，profile 正在运行或锁状态不明时拒绝清理。
+- `prune-pages` 默认仅报告空白 page；`--apply` 必须指定账号、检测不到活跃 CDP 连接、并且只关闭一个二次校验仍为空白的 `about:blank`/新标签页，同时始终保留至少一个 page。
 
 ### 5. 容器网络
 

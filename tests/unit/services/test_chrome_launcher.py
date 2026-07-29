@@ -104,6 +104,105 @@ async def test_probe_port_returns_false_on_non_200():
     assert result is False
 
 
+def test_list_cdp_targets_filters_malformed_values():
+    fake_resp = MagicMock()
+    fake_resp.status = 200
+    fake_resp.__enter__ = MagicMock(return_value=fake_resp)
+    fake_resp.__exit__ = MagicMock(return_value=False)
+    fake_resp.read.return_value = b'[{"id":"blank","type":"page","url":"about:blank"},{"id":1},{}]'
+
+    with patch("urllib.request.urlopen", return_value=fake_resp):
+        targets = cl._list_cdp_targets(9223)
+
+    assert targets == [cl.CdpTarget("blank", "page", "about:blank")]
+
+
+def test_blank_page_candidates_retain_one_page():
+    targets = [
+        cl.CdpTarget("blank-1", "page", "about:blank"),
+        cl.CdpTarget("new-tab", "page", "chrome://newtab/"),
+        cl.CdpTarget("worker", "service_worker", "https://example.com/sw.js"),
+    ]
+
+    page_count, candidates = cl._blank_page_cleanup_candidates(targets)
+
+    assert page_count == 2
+    assert candidates == [targets[0]]
+
+
+@pytest.mark.asyncio
+async def test_prune_blank_pages_dry_run_never_closes(_profile_dir, monkeypatch):
+    targets = [
+        cl.CdpTarget("business", "page", "https://creator.xiaohongshu.com/new/home"),
+        cl.CdpTarget("blank", "page", "about:blank"),
+    ]
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=True))
+    monkeypatch.setattr(cl, "_has_active_cdp_connection", lambda port: False)
+    monkeypatch.setattr(cl, "_list_cdp_targets", lambda port: targets)
+    close = MagicMock(return_value=True)
+    monkeypatch.setattr(cl, "_close_cdp_target", close)
+
+    statuses = await cl.prune_blank_pages_all([_account(profile=str(_profile_dir))])
+
+    assert statuses[0].action == "dry_run"
+    assert statuses[0].candidate_count == 1
+    close.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_prune_blank_pages_skips_active_cdp_connection(_profile_dir, monkeypatch):
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=True))
+    monkeypatch.setattr(cl, "_has_active_cdp_connection", lambda port: True)
+    targets = MagicMock()
+    monkeypatch.setattr(cl, "_list_cdp_targets", targets)
+
+    statuses = await cl.prune_blank_pages_all([_account(profile=str(_profile_dir))])
+
+    assert statuses[0].action == "skipped"
+    assert "active" in statuses[0].message
+    targets.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_prune_blank_pages_apply_requires_account_selection():
+    with pytest.raises(ValueError, match="requires at least one account id"):
+        await cl.prune_blank_pages_all([_account()], apply=True)
+
+
+@pytest.mark.asyncio
+async def test_prune_blank_pages_apply_rechecks_and_closes_one(_profile_dir, monkeypatch):
+    business = cl.CdpTarget("business", "page", "https://creator.xiaohongshu.com/new/home")
+    blank = cl.CdpTarget("blank", "page", "chrome://newtab/")
+    list_targets = MagicMock(side_effect=[[business, blank], [business, blank], [business]])
+    close = MagicMock(return_value=True)
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=True))
+    monkeypatch.setattr(cl, "_has_active_cdp_connection", lambda port: False)
+    monkeypatch.setattr(cl, "_list_cdp_targets", list_targets)
+    monkeypatch.setattr(cl, "_close_cdp_target", close)
+
+    statuses = await cl.prune_blank_pages_all(
+        [_account(profile=str(_profile_dir))], apply=True, account_ids=["acc-1"]
+    )
+
+    assert statuses[0].action == "cleaned"
+    assert statuses[0].closed_count == 1
+    close.assert_called_once_with(9223, "blank")
+    assert list_targets.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_cli_rejects_global_page_prune_apply(monkeypatch, capsys):
+    monkeypatch.setattr(cl, "_load_accounts", AsyncMock(return_value=[]))
+    prune = AsyncMock()
+    monkeypatch.setattr(cl, "prune_blank_pages_all", prune)
+
+    code = await cl._cli("prune-pages", apply_cleanup=True)
+
+    assert code == 2
+    assert "requires at least one --account-id" in capsys.readouterr().out
+    prune.assert_not_awaited()
+
+
 # ── clear_stale_lock ──
 
 
