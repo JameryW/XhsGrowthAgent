@@ -4,8 +4,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 75
-- **Last Active**: 2026-07-14
+- **Total Sessions**: 76
+- **Last Active**: 2026-07-29
 <!-- @@@/auto:current-status -->
 
 ## Active Documents
@@ -13,7 +13,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~1385 | Active |
+| `journal-0.md` | ~1418 | Active |
 <!-- @@@/auto:active-documents -->
 
 ## Session History
@@ -21,6 +21,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 76 | 2026-07-29 | Chrome 生命周期与进程资源优化 | `665d1be3` | `main` |
 | 75 | 2026-07-14 | 解决 main 分叉 + 修复 OfflineRecovery 黄条误报 | `3108d8c7` | `main` |
 | 74 | 2026-07-11 | free draft revise next-step hint | `fe92d589` | `feat/free-draft-revise-next-step-hint` |
 | 73 | 2026-07-10 | free TUI help draft commands | `b4a6811f` | `main` |

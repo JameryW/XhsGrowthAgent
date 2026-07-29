@@ -1383,3 +1383,36 @@ showHelp never listed free-mode draft commands (/drafts /draft /delete from #216
 ### Next Steps
 
 - None - task complete
+
+
+## Session 76: Chrome 生命周期与进程资源优化
+
+**Date**: 2026-07-29
+**Task**: Chrome 生命周期与进程资源优化
+**Branch**: `main`
+
+### Summary
+
+为每账号 Chrome 增加 profile flock、PID 归属校验、按账号生命周期控制、空闲回收和安全缓存清理；服务登录严格复用 CDP，status/stop/maintenance 不再启动 Xvfb。1650 个 unit 测试通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `665d1be3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

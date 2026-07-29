@@ -1,0 +1,7 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/browser-automation-safety.md", "reason": "保留 headed/CDP、profile 隔离和 fail-closed 浏览器安全约束"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "遵守异步清理、失败路径和不吞异常的后端约定"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "遵守 Ruff、类型标注和测试质量门禁"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "为 launcher 生命周期日志选择正确级别并避免敏感信息"}
+{"file": ".trellis/tasks/07-29-chrome-process-optimization/prd.md", "reason": "任务需求、非目标和验收标准"}
+{"file": ".trellis/tasks/07-29-chrome-process-optimization/chrome-optimization-audit.md", "reason": "当前进程证据、约束和技术方案"}
