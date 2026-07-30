@@ -7,6 +7,7 @@ import { useBreakpoints } from '@/composables/useBreakpoints'
 import AppIcon from '@/components/AppIcon.vue'
 import HelpCenter from '@/components/HelpCenter.vue'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
+import NeonButton from '@/components/NeonButton.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import { useCrossAccountHintsStore } from '@/stores/crossAccountHints'
 import { prefetchRouteByPath, prefetchStartWorkspace } from '@/utils/routePrefetch'
@@ -287,20 +288,19 @@ watch(
     </div>
 
     <!-- 开始创作按钮 -->
-    <button
-      type="button"
+    <NeonButton
+      class="group mb-5 min-h-12 w-full"
+      :aria-label="t('nav.startWorkflow')"
+      :title="isTablet ? t('nav.startWorkflow') : undefined"
       @click="goStart"
       @mouseenter="warmStartRoute"
       @focus="warmStartRoute"
       @pointerdown="warmStartRoute"
-      class="group mb-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 p-3 text-sm font-bold text-white shadow-lg shadow-rose-500/25 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-rose-500/40 active:translate-y-0"
-      :aria-label="t('nav.startWorkflow')"
-      :title="isTablet ? t('nav.startWorkflow') : undefined"
     >
       <AppIcon name="Rocket" size="sm" variant="white" />
       <span v-if="!isTablet">{{ t('nav.startWorkflow') }}</span>
       <AppIcon v-if="!isTablet" name="ArrowRight" size="xs" variant="white" class="ml-auto transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
-    </button>
+    </NeonButton>
 
     <!-- Grouped navigation -->
     <div class="app-nav-scroll relative min-h-0 flex-1 space-y-4 overflow-y-auto pr-0.5" role="list" :aria-label="t('nav.home')">

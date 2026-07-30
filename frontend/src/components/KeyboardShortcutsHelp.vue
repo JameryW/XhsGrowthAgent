@@ -78,7 +78,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
         <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="handleClose" aria-hidden="true" />
 
         <!-- Modal -->
-        <div class="relative w-full max-w-md p-6 rounded-2xl bg-white/98 shadow-xl border border-slate-200/50 dark:bg-slate-900/95 dark:border-slate-600/60 dark:shadow-slate-950/50">
+        <div class="relative w-full max-w-md p-6 rounded-2xl bg-white/90 shadow-xl border border-slate-200/50 dark:bg-slate-900/95 dark:border-slate-600/60 dark:shadow-slate-950/50">
           <!-- Header -->
           <div class="flex items-center gap-3 mb-4">
             <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm" aria-hidden="true">

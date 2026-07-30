@@ -857,7 +857,7 @@ function startWithTopic(topic: string, niche?: string) {
       <span class="flex-1">{{ t('analytics.staleNotice') }}</span>
       <button
         type="button"
-        class="rounded-lg px-2.5 py-1 text-xs font-medium bg-amber-600 text-white hover:bg-amber-700 active:scale-95 transition min-h-[36px]"
+        class="rounded-lg px-2.5 py-1 text-xs font-medium bg-amber-600 text-white hover:bg-amber-700 active:scale-95 transition min-h-9"
         @click="refreshData"
       >
         {{ t('analytics.error.retry') }}
@@ -983,7 +983,7 @@ function startWithTopic(topic: string, niche?: string) {
       <div v-if="historicalError" class="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-200" role="alert">
         <AppIcon name="AlertTriangle" size="sm" variant="peach" />
         <span class="flex-1">{{ historicalError }}</span>
-      <button type="button" class="min-h-[36px] rounded-md border border-amber-300 px-2 font-medium hover:bg-amber-100 dark:border-amber-400/40 dark:hover:bg-amber-900/40" @click="loadHistoricalNotes(selectedAnalyticsAccountId)">{{ t('analytics.history.retry') }}</button>
+      <button type="button" class="min-h-9 rounded-md border border-amber-300 px-2 font-medium hover:bg-amber-100 dark:border-amber-400/40 dark:hover:bg-amber-900/40" @click="loadHistoricalNotes(selectedAnalyticsAccountId)">{{ t('analytics.history.retry') }}</button>
       </div>
       <div v-if="showHistoricalDataAsOf" class="mb-2 text-[11px] text-slate-400" role="status">{{ t('analytics.history.dataAsOf', { time: formatDate(historicalDataAsOf) }) }}</div>
       <div v-if="historicalSnapshotMismatch" class="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-700 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-200" role="alert">
@@ -1007,19 +1007,19 @@ function startWithTopic(topic: string, niche?: string) {
         <span>{{ t('analytics.bestPostLegend') }}</span>
       </div>
       <div v-if="tableUsesCanonicalHistory && historicalNotes.length > 10" class="mt-3 flex flex-wrap items-center justify-center gap-2">
-        <button type="button" class="min-h-[44px] px-4 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" @click="showAllHistorical = !showAllHistorical">
+        <button type="button" class="min-h-11 px-4 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300" @click="showAllHistorical = !showAllHistorical">
           <!-- Counts live in the section subtitle above; the button stays an
                action label only. -->
           {{ showAllHistorical ? t('analytics.showLess') : t('analytics.history.showAll') }}
         </button>
-        <button v-if="historicalHasMore" type="button" class="min-h-[44px] px-4 py-1.5 rounded-lg border border-violet-200 bg-violet-50 text-xs font-medium text-violet-700 hover:bg-violet-100 transition dark:border-violet-500/40 dark:bg-violet-950/30 dark:text-violet-200" :disabled="historicalLoading" @click="loadMoreHistorical">
+        <button v-if="historicalHasMore" type="button" class="min-h-11 px-4 py-1.5 rounded-lg border border-violet-200 bg-violet-50 text-xs font-medium text-violet-700 hover:bg-violet-100 transition dark:border-violet-500/40 dark:bg-violet-950/30 dark:text-violet-200" :disabled="historicalLoading" @click="loadMoreHistorical">
           {{ historicalLoading ? t('analytics.refreshing') : t('analytics.history.loadMore') }}
         </button>
       </div>
       <div v-else-if="!tableUsesCanonicalHistory && analyticsStore.posts.length > 10" class="mt-3 flex justify-center">
         <button
           type="button"
-          class="min-h-[44px] px-4 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+          class="min-h-11 px-4 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 transition dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
           @click="showAllPosts = !showAllPosts"
         >
           {{ showAllPosts ? t('analytics.showLess') : t('analytics.showAll', { count: analyticsStore.posts.length }) }}
@@ -1126,8 +1126,8 @@ function startWithTopic(topic: string, niche?: string) {
       <div class="relative w-full max-w-md h-full overflow-y-auto bg-white dark:bg-slate-900 shadow-xl p-4 md:p-6 space-y-4">
         <div class="flex items-start justify-between gap-3">
           <h2 class="text-base md:text-lg font-semibold text-slate-800 dark:text-slate-100 truncate">{{ selectedPost.title || t('analytics.detail.untitled') }}</h2>
-          <button type="button" class="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 min-h-[44px] min-w-[44px]" :aria-label="t('common.close')" @click="closePostDetail">
-            <AppIcon name="X" size="sm" />
+          <button type="button" class="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 min-h-11 min-w-[44px]" :aria-label="t('common.close')" @click="closePostDetail">
+            <AppIcon name="X" size="sm" variant="muted" />
           </button>
         </div>
         <dl v-if="showDetailMetrics" class="grid grid-cols-2 gap-3 text-sm">

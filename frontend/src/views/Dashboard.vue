@@ -392,7 +392,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="dashboard-container">
+  <div>
     <!-- Workflow Tab Bar (sticky) -->
     <div class="pb-1">
       <WorkflowTabBar
@@ -512,7 +512,7 @@ onUnmounted(() => {
           v-for="chip in todoChips"
           :key="chip.anchor"
           type="button"
-          class="rounded-full border border-cyan-200/70 bg-cyan-50/80 px-3 py-1.5 text-xs font-medium text-cyan-700 transition hover:bg-cyan-100 active:scale-95 min-h-[36px] dark:border-cyan-500/30 dark:bg-cyan-950/40 dark:text-cyan-200"
+          class="rounded-full border border-cyan-200/70 bg-cyan-50/80 px-3 py-1.5 text-xs font-medium text-cyan-700 transition hover:bg-cyan-100 active:scale-95 min-h-9 dark:border-cyan-500/30 dark:bg-cyan-950/40 dark:text-cyan-200"
           @click="scrollToPanel(chip.anchor)"
         >
           {{ chip.label }}

@@ -91,7 +91,7 @@ function safeRedirect(raw: unknown): string {
             <AppIcon name="Lock" size="lg" variant="white" :aria-label="t('login.title')" />
           </div>
           <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-rose-400">{{ t('nav.brandEyebrow') }}</p>
-          <h1 id="login-title" class="mt-1 text-2xl font-bold text-slate-800">{{ t('login.title') }}</h1>
+          <h1 id="login-title" class="mt-1 text-3xl font-bold text-slate-800 md:text-4xl">{{ t('login.title') }}</h1>
           <p class="mt-2 text-sm text-slate-500">{{ t('login.subtitle') }}</p>
         </div>
 

@@ -26,7 +26,7 @@ const goHome = () => {
       </div>
 
       <!-- Error code -->
-      <h1 id="not-found-title" class="mb-3 text-5xl font-bold tracking-tight text-slate-800">{{ t('notFound.title') }}</h1>
+      <h1 id="not-found-title" class="mb-3 text-4xl font-bold tracking-tight text-slate-800">{{ t('notFound.title') }}</h1>
 
       <!-- Message -->
       <p class="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-rose-400">{{ t('notFound.label') }}</p>

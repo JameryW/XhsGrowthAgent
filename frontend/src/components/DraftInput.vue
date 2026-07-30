@@ -100,7 +100,7 @@ function toggleViralLinks() {
 </script>
 
 <template>
-  <div class="rounded-xl p-6 bg-white/98 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/85 dark:border-slate-700/50">
+  <div class="rounded-xl p-6 bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/85 dark:border-slate-700/50">
     <!-- Header -->
     <div class="flex items-center gap-3 mb-5">
       <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-sm">

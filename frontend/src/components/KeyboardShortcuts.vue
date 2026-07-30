@@ -112,7 +112,7 @@ onUnmounted(() => {
 
         <!-- Panel -->
         <div
-          class="relative w-full max-w-lg bg-white/98 rounded-2xl shadow-2xl border border-slate-200/50 overflow-hidden dark:bg-slate-900/95 dark:border-slate-600/60 dark:shadow-slate-950/50"
+          class="relative w-full max-w-lg bg-white/90 rounded-2xl shadow-2xl border border-slate-200/50 overflow-hidden dark:bg-slate-900/95 dark:border-slate-600/60 dark:shadow-slate-950/50"
           @click.stop
         >
           <!-- Header -->

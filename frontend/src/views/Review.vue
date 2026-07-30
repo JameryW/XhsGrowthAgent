@@ -1002,7 +1002,7 @@ const handleCancelConfirm = () => {
 </script>
 
 <template>
-  <div class="app-page-content review-page space-y-4 md:space-y-6">
+  <div class="app-page-content space-y-4 md:space-y-6">
   <PageHeader
     :title="t('review.title')"
     :description="t('review.subtitle')"

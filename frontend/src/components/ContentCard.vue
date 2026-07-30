@@ -81,7 +81,7 @@ const styles = {
 </script>
 
 <template>
-  <div :class="['content-card-surface rounded-xl p-5 relative overflow-hidden bg-white/98 backdrop-blur-sm border transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 dark:bg-slate-900/80 dark:border-slate-700/50', styles[props.variant].border]" role="region" :aria-label="`${title} ${t('common.moduleOutput')}`">
+  <div :class="['content-card-surface rounded-xl p-5 relative overflow-hidden bg-white/90 backdrop-blur-sm border transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 dark:bg-slate-900/80 dark:border-slate-700/50', styles[props.variant].border]" role="region" :aria-label="`${title} ${t('common.moduleOutput')}`">
     <!-- Header -->
     <div class="flex items-center gap-3 mb-4">
       <div :class="['w-11 h-11 rounded-xl bg-gradient-to-br flex items-center justify-center shadow-sm', styles[props.variant].iconBg]" aria-hidden="true">

@@ -112,7 +112,7 @@ const iconMap: Record<string, Component> = {
 interface Props {
   name: string
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
-  variant?: 'pink' | 'cyan' | 'purple' | 'peach' | 'white'
+  variant?: 'pink' | 'cyan' | 'purple' | 'peach' | 'white' | 'muted'
   animate?: boolean
   ariaLabel?: string
 }
@@ -138,6 +138,7 @@ const colorClasses = {
   purple: 'text-neon-purple',
   peach: 'text-neon-peach',
   white: 'text-white',
+  muted: 'text-slate-400 dark:text-slate-500',
 }
 
 const iconSize = computed(() => sizeMap[props.size])

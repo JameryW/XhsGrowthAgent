@@ -177,18 +177,10 @@ const confirmStart = async () => {
             <span v-if="hasSelectedAccount" class="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-600">{{ t('home.readyBadge') }}</span>
           </div>
         </div>
-
-        <div class="relative mt-6 flex max-w-md items-center gap-2" role="list" :aria-label="t('home.welcomeSubtitle')">
-          <div v-for="(step, index) in [t('home.stepConfigure'), t('home.stepReview'), t('home.stepCreate')]" :key="step" class="flex min-w-0 flex-1 items-center gap-2" role="listitem">
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-neon-pinkDark ring-1 ring-rose-100 dark:bg-slate-800 dark:ring-rose-500/30">{{ index + 1 }}</span>
-            <span class="truncate text-xs font-semibold text-slate-600">{{ step }}</span>
-            <span v-if="index < 2" class="h-px min-w-3 flex-1 bg-slate-200 dark:bg-slate-600" aria-hidden="true" />
-          </div>
-        </div>
       </section>
 
       <!-- Pre-filled topic from analytics -->
-      <div v-if="prefilledTopic" class="mb-3 md:mb-4 p-2.5 md:p-3 rounded-lg liquid-glass-teal liquid-glass-hover flex items-center gap-2">
+      <div v-if="prefilledTopic" class="mb-3 md:mb-4 p-3 md:p-4 rounded-lg liquid-glass-teal liquid-glass-hover flex items-center gap-2">
         <AppIcon name="Sparkles" size="sm" variant="cyan" />
         <div class="flex-1 min-w-0">
           <span class="text-[10px] md:text-xs text-teal-500 font-medium">{{ t('home.recommendedTopic') }}</span>
@@ -224,7 +216,7 @@ const confirmStart = async () => {
         />
       </section>
 
-      <aside class="rounded-xl border border-slate-200/70 bg-white/80 p-4 shadow-sm md:rounded-2xl md:p-5 dark:border-slate-700/60 dark:bg-slate-900/70" aria-labelledby="home-shortcuts-title">
+      <aside class="rounded-xl border border-slate-200/70 bg-white/80 p-4 shadow-sm md:rounded-2xl md:p-6 dark:border-slate-700/60 dark:bg-slate-900/70" aria-labelledby="home-shortcuts-title">
         <div class="mb-3 flex items-center gap-2">
           <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50 dark:bg-cyan-950/50">
             <AppIcon name="Sparkles" size="sm" variant="cyan" aria-hidden="true" />

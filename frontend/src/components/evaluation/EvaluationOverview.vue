@@ -263,7 +263,7 @@ function formatDataAsOf(value: string | null | undefined): string {
           </template>
           <div v-else-if="trendError" class="trend-error">
             <span>{{ t('evaluation.trend.failed') }}</span>
-            <button type="button" class="retry-btn min-h-[36px]" @click="retryTrend">{{ t('evaluation.trend.retry') }}</button>
+            <button type="button" class="retry-btn min-h-9" @click="retryTrend">{{ t('evaluation.trend.retry') }}</button>
           </div>
           <p v-else class="ov-hint">{{ t('evaluation.trend.empty') }}</p>
           <p v-if="trend?.data_as_of" class="ov-meta">{{ t('evaluation.dataAsOf') }} {{ formatDataAsOf(trend.data_as_of) }}</p>

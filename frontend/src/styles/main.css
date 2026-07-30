@@ -47,42 +47,6 @@
 
 /* Premium components */
 @layer components {
-  /* Hexagonal nodes */
-  .hexagon {
-    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-  }
-
-  /* Premium glass effect */
-  .glass {
-    background: rgba(255, 255, 255, 0.9);
-    backdrop-filter: blur(14px) saturate(160%);
-    -webkit-backdrop-filter: blur(14px) saturate(160%);
-    border: 1px solid rgba(255, 255, 255, 0.52);
-    box-shadow:
-      0 1px 3px rgba(0, 0, 0, 0.04),
-      0 4px 12px rgba(0, 0, 0, 0.03);
-  }
-
-  /* Premium glass with depth */
-  .glass-glow {
-    background: rgba(255, 255, 255, 0.92);
-    backdrop-filter: blur(18px) saturate(170%);
-    -webkit-backdrop-filter: blur(18px) saturate(170%);
-    border: 1px solid rgba(255, 255, 255, 0.58);
-    box-shadow:
-      0 2px 8px rgba(0, 0, 0, 0.04),
-      0 8px 32px rgba(0, 0, 0, 0.06),
-      inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  }
-
-  /* Refined glass border */
-  .glass-border {
-    background: rgba(255, 255, 255, 0.88);
-    backdrop-filter: blur(16px);
-    border: 1px solid rgba(0, 0, 0, 0.04);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
-  }
-
   /* ── Apple Liquid Glass system ── */
 
   /* Light tier: cards, panels — readability first */
@@ -117,37 +81,6 @@
       inset 0 -1px 0 rgba(15, 23, 42, 0.04);
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
                 box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  /* Strong tier: nav bars, hero panels — visual impact first */
-  .liquid-glass-deep {
-    background:
-      linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.36)),
-      rgba(255, 255, 255, 0.5);
-    backdrop-filter: blur(28px) saturate(175%);
-    -webkit-backdrop-filter: blur(28px) saturate(175%);
-    border: 1px solid rgba(255, 255, 255, 0.45);
-    box-shadow:
-      0 0 1px rgba(0, 0, 0, 0.05),
-      0 2px 4px rgba(0, 0, 0, 0.04),
-      inset 0 1px 0 rgba(255, 255, 255, 0.45);
-  }
-
-  /* Liquid: primary work surfaces with visible refraction and soft color drift. */
-  .liquid-glass-liquid {
-    background:
-      radial-gradient(120% 100% at 0% 0%, rgba(255, 255, 255, 0.78), transparent 46%),
-      radial-gradient(90% 110% at 100% 100%, rgba(20, 184, 166, 0.1), transparent 58%),
-      linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.34)),
-      rgba(255, 255, 255, 0.52);
-    backdrop-filter: blur(30px) saturate(185%);
-    -webkit-backdrop-filter: blur(30px) saturate(185%);
-    border: 1px solid rgba(255, 255, 255, 0.68);
-    box-shadow:
-      0 1px 2px rgba(15, 23, 42, 0.035),
-      0 18px 44px rgba(15, 23, 42, 0.065),
-      inset 0 1px 0 rgba(255, 255, 255, 0.82),
-      inset 0 -1px 0 rgba(15, 23, 42, 0.035);
   }
 
   /* Inset: recessed/nested surfaces */
@@ -215,18 +148,10 @@
     border: 1px solid rgba(245, 158, 11, 0.24);
   }
 
-  .liquid-glass-emerald {
-    background:
-      linear-gradient(135deg, rgba(236, 253, 245, 0.82), rgba(255, 255, 255, 0.5)),
-      rgba(236, 253, 245, 0.58);
-    border: 1px solid rgba(52, 211, 153, 0.24);
-  }
-
   .liquid-glass-rose,
   .liquid-glass-teal,
   .liquid-glass-violet,
-  .liquid-glass-amber,
-  .liquid-glass-emerald {
+  .liquid-glass-amber {
     backdrop-filter: blur(18px) saturate(155%);
     -webkit-backdrop-filter: blur(18px) saturate(155%);
     box-shadow:
@@ -237,20 +162,14 @@
   }
 
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .glass,
-    .glass-glow,
-    .glass-border,
     .liquid-glass,
     .liquid-glass-elevated,
-    .liquid-glass-deep,
-    .liquid-glass-liquid,
     .liquid-glass-inset,
     .liquid-glass-nav,
     .liquid-glass-rose,
     .liquid-glass-teal,
     .liquid-glass-violet,
-    .liquid-glass-amber,
-    .liquid-glass-emerald {
+    .liquid-glass-amber {
       background: rgba(255, 255, 255, 0.9);
       backdrop-filter: none;
       -webkit-backdrop-filter: none;
@@ -284,47 +203,6 @@
     letter-spacing: -0.02em;
   }
 
-  /* Premium input styling */
-  .input-neon {
-    @apply bg-white border border-gray-200/80 rounded-lg px-4 py-3;
-    @apply focus:border-neon-cyan/60 focus:ring-1 focus:ring-neon-cyan/10 focus:outline-none;
-    @apply placeholder:text-gray-400 text-text-primary;
-    @apply transition-all duration-200;
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
-  }
-
-  /* Subtle gradient text */
-  .gradient-text-pink {
-    background: linear-gradient(135deg, #F43F5E 0%, #FB7185 50%, #F59E0B 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-
-  .gradient-text-cyan {
-    background: linear-gradient(135deg, #14B8A6 0%, #5EEAD4 50%, #10B981 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-
-  .gradient-text-purple {
-    background: linear-gradient(135deg, #8B5CF6 0%, #A78BFA 50%, #6366F1 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-
-  /* Animated gradient text - refined */
-  .gradient-text-animate {
-    background: linear-gradient(120deg, #F43F5E, #14B8A6, #8B5CF6);
-    background-size: 200% 100%;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    animation: gradient-shift 8s ease infinite;
-  }
-
   /* Premium shimmer */
   .shimmer {
     position: relative;
@@ -345,31 +223,6 @@
       transparent 100%
     );
     animation: shimmer-slide 2.5s ease-in-out infinite;
-  }
-
-  /* Refined card hover */
-  .card-hover {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    border-radius: 12px;
-  }
-
-  .card-hover:hover {
-    transform: translateY(-2px);
-    box-shadow:
-      0 4px 12px rgba(0, 0, 0, 0.08),
-      0 12px 24px rgba(0, 0, 0, 0.04);
-  }
-
-  /* Premium card interaction */
-  .card-bounce {
-    transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-
-  .card-bounce:hover {
-    transform: translateY(-3px) scale(1.01);
-    box-shadow:
-      0 6px 16px rgba(0, 0, 0, 0.1),
-      0 16px 32px rgba(0, 0, 0, 0.06);
   }
 
   /* Refined gradient border */
@@ -403,89 +256,6 @@
     opacity: 1;
   }
 
-  /* Animated gradient border */
-  .gradient-border-animate {
-    position: relative;
-    background: rgba(255, 255, 255, 0.95);
-    border-radius: 12px;
-  }
-
-  .gradient-border-animate::before {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    padding: 1px;
-    border-radius: inherit;
-    background: linear-gradient(120deg, #F43F5E, #14B8A6, #8B5CF6);
-    background-size: 200% 100%;
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    animation: gradient-shift 4s ease infinite;
-    opacity: 0.6;
-  }
-
-  /* Neon border pulse - refined */
-  .neon-border-pulse {
-    position: relative;
-    border: 1px solid transparent;
-    border-radius: 12px;
-  }
-
-  .neon-border-pulse::before {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    border-radius: inherit;
-    background: linear-gradient(120deg, #F43F5E, #14B8A6, #8B5CF6);
-    background-size: 200% 100%;
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    animation: gradient-shift 4s ease infinite;
-    opacity: 0.5;
-  }
-
-  /* Premium gradient background */
-  .gradient-animate {
-    background: linear-gradient(
-      -45deg,
-      rgba(244, 63, 94, 0.03),
-      rgba(20, 184, 166, 0.03),
-      rgba(139, 92, 246, 0.03),
-      rgba(245, 158, 11, 0.02)
-    );
-    background-size: 400% 400%;
-    animation: gradient-shift 12s ease infinite;
-  }
-
-  /* Floating animation - subtle */
-  .float {
-    animation: float 6s ease-in-out infinite;
-  }
-
-  .float-slow {
-    animation: float-slow 8s ease-in-out infinite;
-  }
-
-  /* Scan line - refined */
-  .scan-line {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      rgba(20, 184, 166, 0.3) 50%,
-      transparent 100%
-    );
-    animation: scan 8s ease-in-out infinite;
-  }
-
   /* Grid pattern - subtle */
   .grid-pattern {
     background-image:
@@ -494,311 +264,38 @@
     background-size: 48px 48px;
   }
 
-  /* Particle background - refined */
-  .particle-bg {
-    position: relative;
-  }
-
-  .particle-bg::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(1px 1px at 20px 30px, rgba(244, 63, 94, 0.08), transparent),
-      radial-gradient(1px 1px at 60px 70px, rgba(20, 184, 166, 0.06), transparent),
-      radial-gradient(1px 1px at 100px 140px, rgba(139, 92, 246, 0.07), transparent),
-      radial-gradient(1px 1px at 140px 60px, rgba(245, 158, 11, 0.05), transparent);
-    background-repeat: repeat;
-    background-size: 160px 150px;
-    animation: float-slow 20s linear infinite;
-  }
-
   /* Morphing blob - slower and subtle */
   .morph-blob {
     animation: morph 10s ease-in-out infinite;
   }
 
-  /* Color shift - subtle */
-  .color-shift {
-    animation: color-shift 8s ease infinite;
-  }
-
-  /* Matrix background - refined */
-  .matrix-bg {
-    position: relative;
-  }
-
-  .matrix-bg::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(20, 184, 166, 0.02) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(20, 184, 166, 0.02) 1px, transparent 1px);
-    background-size: 24px 24px;
-    animation: matrix-scroll 25s linear infinite;
-    opacity: 0.5;
-  }
-
-  /* Holographic effect - refined */
-  .holographic {
+  /* Shimmer sweep for skeleton loaders (SkeletonLoader). */
+  .shimmer-animation {
     background: linear-gradient(
-      135deg,
-      rgba(244, 63, 94, 0.04) 0%,
-      rgba(20, 184, 166, 0.06) 33%,
-      rgba(139, 92, 246, 0.04) 66%,
-      rgba(245, 158, 11, 0.06) 100%
+      90deg,
+      #f1f5f9 0%,
+      #e2e8f0 50%,
+      #f1f5f9 100%
     );
-    background-size: 300% 300%;
-    animation: holographic 10s ease infinite;
-  }
-
-  /* Cyber glow - refined */
-  .cyber-glow {
-    box-shadow:
-      0 0 0 1px rgba(244, 63, 94, 0.05),
-      0 2px 8px rgba(0, 0, 0, 0.06);
-    transition: box-shadow 0.3s ease;
-  }
-
-  .cyber-glow:hover {
-    box-shadow:
-      0 0 0 1px rgba(20, 184, 166, 0.1),
-      0 4px 16px rgba(0, 0, 0, 0.08);
-  }
-
-  /* Energy field - refined */
-  .energy-field {
-    position: relative;
-  }
-
-  .energy-field::before {
-    content: '';
-    position: absolute;
-    inset: -6px;
-    border-radius: inherit;
-    background: radial-gradient(
-      ellipse at center,
-      rgba(20, 184, 166, 0.04) 0%,
-      transparent 70%
-    );
-    animation: energy-pulse 3s ease-in-out infinite;
-    z-index: -1;
-  }
-
-  /* Pulse ring - refined */
-  .pulse-ring {
-    position: relative;
-  }
-
-  .pulse-ring::after {
-    content: '';
-    position: absolute;
-    inset: -3px;
-    border-radius: inherit;
-    border: 1px solid rgba(20, 184, 166, 0.15);
-    animation: pulse-ring-expand 3s ease-out infinite;
-  }
-
-  /* Cyber scanlines - very subtle */
-  .cyber-scanlines {
-    position: relative;
-  }
-
-  .cyber-scanlines::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 3px,
-      rgba(0, 0, 0, 0.008) 3px,
-      rgba(0, 0, 0, 0.008) 6px
-    );
-    pointer-events: none;
-    opacity: 0.4;
-  }
-
-  /* Data stream - refined */
-  .data-stream {
-    background: linear-gradient(
-      180deg,
-      transparent 0%,
-      rgba(20, 184, 166, 0.02) 50%,
-      transparent 100%
-    );
-    background-size: 100% 200%;
-    animation: data-stream 4s ease-in-out infinite;
-  }
-
-  /* Energy wave - refined */
-  .energy-wave {
-    position: relative;
-  }
-
-  .energy-wave::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 10%;
-    right: 10%;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(20, 184, 166, 0.2), transparent);
-    animation: energy-wave 3s ease-in-out infinite;
-  }
-
-  /* Typing cursor - refined */
-  .typing-cursor::after {
-    content: '|';
-    animation: cursor-blink 1.5s step-end infinite;
-    color: inherit;
-    opacity: 0.4;
-    margin-left: 2px;
-  }
-
-  /* Star field - very subtle */
-  .star-field::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image:
-      radial-gradient(0.5px 0.5px at 10% 20%, rgba(244, 63, 94, 0.15), transparent),
-      radial-gradient(0.5px 0.5px at 30% 60%, rgba(20, 184, 166, 0.12), transparent),
-      radial-gradient(0.5px 0.5px at 50% 30%, rgba(139, 92, 246, 0.1), transparent),
-      radial-gradient(0.5px 0.5px at 70% 80%, rgba(245, 158, 11, 0.08), transparent),
-      radial-gradient(0.5px 0.5px at 90% 50%, rgba(244, 63, 94, 0.1), transparent);
-    animation: star-twinkle 5s ease-in-out infinite;
-    opacity: 0.5;
-  }
-
-  /* Aurora - refined */
-  .aurora::before {
-    content: '';
-    position: absolute;
-    inset: -30%;
-    background: conic-gradient(
-      from 0deg at 50% 50%,
-      rgba(244, 63, 94, 0.02) 0deg,
-      rgba(20, 184, 166, 0.03) 120deg,
-      rgba(139, 92, 246, 0.02) 240deg,
-      rgba(244, 63, 94, 0.02) 360deg
-    );
-    animation: aurora-rotate 20s linear infinite;
-    filter: blur(60px);
-    opacity: 0.3;
-  }
-
-  /* Circuit board - refined */
-  .circuit-board {
-    background-image:
-      linear-gradient(rgba(20, 184, 166, 0.02) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(20, 184, 166, 0.02) 1px, transparent 1px);
-    background-size: 32px 32px;
-  }
-
-  /* Neon pulse text - refined */
-  .neon-pulse-text {
-    animation: neon-pulse-text 4s ease-in-out infinite;
-  }
-
-  /* Cyber underline - refined */
-  .cyber-underline {
-    position: relative;
-  }
-
-  .cyber-underline::after {
-    content: '';
-    position: absolute;
-    bottom: -1px;
-    left: 0;
-    width: 100%;
-    height: 1px;
-    background: linear-gradient(90deg, rgba(244, 63, 94, 0.3), rgba(20, 184, 166, 0.3));
     background-size: 200% 100%;
-    animation: gradient-shift 4s ease infinite;
-    transform: scaleX(0);
-    transform-origin: left;
-    transition: transform 0.3s ease;
+    animation: skeleton-shimmer 1.5s ease-in-out infinite;
   }
 
-  .cyber-underline:hover::after {
-    transform: scaleX(1);
+  /* Soft pulse for the active step (StepIndicator). */
+  .pulse-animation {
+    animation: pulse-soft 2s ease-in-out infinite;
   }
 
-  /* Glow dots - refined */
-  .glow-dots::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image: radial-gradient(circle, rgba(20, 184, 166, 0.04) 1px, transparent 1px);
-    background-size: 24px 24px;
-  }
-
-  /* Ripple container */
-  .ripple-container {
-    position: relative;
-    overflow: hidden;
-  }
-
-  .ripple-container::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-  }
-
-  .ripple-container:active::after {
-    background: radial-gradient(
-      circle at center,
-      rgba(244, 63, 94, 0.1) 0%,
-      transparent 70%
-    );
-    animation: ripple 0.6s ease-out forwards;
-  }
-
-  /* Floating particles - refined */
-  .floating-particles::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image:
-      radial-gradient(circle at 20% 80%, transparent 0%, rgba(244, 63, 94, 0.02) 2px, transparent 2px),
-      radial-gradient(circle at 80% 20%, transparent 0%, rgba(20, 184, 166, 0.02) 2px, transparent 2px);
-    background-size: 100px 100px;
-    animation: float-particles 12s ease-in-out infinite;
+  /* Steady 360° rotation for the loading spinner (LoadingOverlay). */
+  .rotate-animation {
+    animation: rotate-360 1s linear infinite;
   }
 }
 
 /* Refined keyframes */
-@keyframes float {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-6px) rotate(1deg); }
-}
-
-@keyframes float-slow {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-8px) rotate(0.5deg); }
-}
-
-@keyframes gradient-shift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
 @keyframes shimmer-slide {
   0% { left: -100%; }
   100% { left: 100%; }
-}
-
-@keyframes scan {
-  0% { top: 0%; opacity: 0; }
-  10% { opacity: 0.5; }
-  90% { opacity: 0.5; }
-  100% { top: 100%; opacity: 0; }
 }
 
 @keyframes morph {
@@ -808,71 +305,22 @@
   75% { border-radius: 50% 40% 60% 40% / 60% 40% 50% 50%; }
 }
 
-@keyframes color-shift {
-  0%, 100% { filter: hue-rotate(0deg); }
-  50% { filter: hue-rotate(8deg); }
+/* Keyframes for the component animation classes above. Names avoid the
+ * bare `shimmer`/`rotate`/`pulse` identifiers already used by Tailwind's
+ * own keyframes (tailwind.config.js and the default animate-pulse utility). */
+@keyframes skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
-@keyframes matrix-scroll {
-  0% { background-position: 0 0; }
-  100% { background-position: 0 48px; }
-}
-
-@keyframes holographic {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-@keyframes energy-pulse {
-  0%, 100% { opacity: 0.3; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.02); }
-}
-
-@keyframes pulse-ring-expand {
-  0% { transform: scale(1); opacity: 0.4; }
-  100% { transform: scale(1.3); opacity: 0; }
-}
-
-@keyframes data-stream {
-  0% { background-position: 0% -100%; }
-  100% { background-position: 0% 200%; }
-}
-
-@keyframes cursor-blink {
-  0%, 50% { opacity: 0.4; }
-  51%, 100% { opacity: 0; }
-}
-
-@keyframes star-twinkle {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 0.7; }
-}
-
-@keyframes aurora-rotate {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-@keyframes neon-pulse-text {
+@keyframes pulse-soft {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.85; }
+  50% { opacity: 0.5; }
 }
 
-@keyframes float-particles {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
-}
-
-@keyframes energy-wave {
-  0% { opacity: 0.3; transform: scaleX(0.3); }
-  50% { opacity: 0.5; transform: scaleX(1); }
-  100% { opacity: 0.3; transform: scaleX(0.3); }
-}
-
-@keyframes ripple {
-  0% { transform: scale(0); opacity: 0.3; }
-  100% { transform: scale(2); opacity: 0; }
+@keyframes rotate-360 {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* Liquid Glass background mesh */
@@ -968,22 +416,23 @@
 @media (prefers-reduced-motion: reduce) {
   .page-header-shell::after,
   .liquid-mesh-bg::before,
-  .liquid-mesh-bg::after {
+  .liquid-mesh-bg::after,
+  .shimmer,
+  .morph-blob,
+  .animate-pulse-glow,
+  .shimmer-animation,
+  .pulse-animation,
+  .rotate-animation {
     animation: none !important;
   }
 
   .page-header-shell,
   .card,
-  .card-hover,
-  .btn,
-  .form-input {
+  .btn {
     transition-duration: 0.01ms !important;
   }
 
-  .page-header-shell:hover,
-  .btn-primary:hover,
-  .btn-secondary:hover,
-  .btn-ghost:hover {
+  .page-header-shell:hover {
     transform: none !important;
   }
 }
@@ -1036,13 +485,19 @@ html.dark .liquid-mesh-bg {
     linear-gradient(135deg, #0b1120 0%, #111827 100%);
 }
 
-html.dark .glass,
-html.dark .glass-glow,
-html.dark .glass-border,
+/* Skeleton shimmer base colors were light-only slate tones. */
+html.dark .shimmer-animation {
+  background: linear-gradient(
+    90deg,
+    #334155 0%,
+    #475569 50%,
+    #334155 100%
+  );
+  background-size: 200% 100%;
+}
+
 html.dark .liquid-glass,
 html.dark .liquid-glass-elevated,
-html.dark .liquid-glass-deep,
-html.dark .liquid-glass-liquid,
 html.dark .liquid-glass-inset,
 html.dark .liquid-glass-nav {
   background:
@@ -1073,11 +528,6 @@ html.dark .liquid-glass-violet {
 html.dark .liquid-glass-amber {
   background: linear-gradient(135deg, rgba(69, 26, 3, 0.5), rgba(15, 23, 42, 0.72));
   border-color: rgba(245, 158, 11, 0.34);
-}
-
-html.dark .liquid-glass-emerald {
-  background: linear-gradient(135deg, rgba(6, 78, 59, 0.5), rgba(15, 23, 42, 0.72));
-  border-color: rgba(52, 211, 153, 0.34);
 }
 
 html.dark .scrollbar-thin {
@@ -1111,10 +561,8 @@ html.dark :is(
   [class~="bg-white/80"],
   [class~="bg-white/85"],
   [class~="bg-white/90"],
-  [class~="bg-white/95"],
-  [class~="bg-white/98"]
+  [class~="bg-white/95"]
 ) {
-  background: rgba(15, 23, 42, 0.94) !important;
   background-color: rgba(15, 23, 42, 0.94) !important;
 }
 
@@ -1146,7 +594,6 @@ html.dark :is(
   .bg-light-panelAlt,
   .bg-light-cardHover
 ) {
-  background: rgba(30, 41, 59, 0.92) !important;
   background-color: rgba(30, 41, 59, 0.92) !important;
 }
 
@@ -1346,7 +793,6 @@ html.dark :is(
   .bg-pink-50,
   .bg-pink-100
 ) {
-  background: rgba(136, 19, 55, 0.55) !important;
   background-color: rgba(136, 19, 55, 0.55) !important;
 }
 
@@ -1364,7 +810,6 @@ html.dark :is(
   .bg-cyan-100,
   .bg-emerald-100
 ) {
-  background: rgba(15, 118, 110, 0.48) !important;
   background-color: rgba(15, 118, 110, 0.48) !important;
 }
 
@@ -1378,7 +823,6 @@ html.dark :is(
   .bg-purple-50,
   .bg-fuchsia-50
 ) {
-  background: rgba(76, 29, 149, 0.5) !important;
   background-color: rgba(76, 29, 149, 0.5) !important;
 }
 
@@ -1394,7 +838,6 @@ html.dark :is(
   .bg-orange-50,
   .bg-yellow-50
 ) {
-  background: rgba(146, 64, 14, 0.52) !important;
   background-color: rgba(146, 64, 14, 0.52) !important;
 }
 
@@ -1404,17 +847,14 @@ html.dark :is(
   .bg-sky-50,
   .bg-sky-100
 ) {
-  background: rgba(30, 64, 175, 0.5) !important;
   background-color: rgba(30, 64, 175, 0.5) !important;
 }
 
 html.dark :is(.bg-red-50, [class~="bg-red-50/80"], .bg-red-100) {
-  background: rgba(127, 29, 29, 0.55) !important;
   background-color: rgba(127, 29, 29, 0.55) !important;
 }
 
 html.dark :is(.bg-green-50, [class~="bg-green-50/80"], .bg-green-100) {
-  background: rgba(20, 83, 45, 0.52) !important;
   background-color: rgba(20, 83, 45, 0.52) !important;
 }
 
@@ -1447,9 +887,7 @@ html.dark :is(.border-green-100, .border-green-200) {
 }
 
 /* Base card system from cards.css (not liquid-glass). */
-html.dark .card,
-html.dark .card-hover,
-html.dark .card-compact {
+html.dark .card {
   background:
     linear-gradient(135deg, rgba(30, 41, 59, 0.82), rgba(15, 23, 42, 0.68)),
     rgba(15, 23, 42, 0.78) !important;
@@ -1460,29 +898,8 @@ html.dark .card-compact {
     inset 0 1px 0 rgba(148, 163, 184, 0.12) !important;
 }
 
-html.dark .card-success {
-  background: rgba(6, 78, 59, 0.32) !important;
-  border-color: rgba(52, 211, 153, 0.28) !important;
-}
-
-html.dark .card-warning {
-  background: rgba(146, 64, 14, 0.28) !important;
-  border-color: rgba(251, 191, 36, 0.28) !important;
-}
-
-html.dark .card-error {
-  background: rgba(136, 19, 55, 0.28) !important;
-  border-color: rgba(251, 113, 133, 0.28) !important;
-}
-
-html.dark .card-info {
-  background: rgba(76, 29, 149, 0.28) !important;
-  border-color: rgba(167, 139, 250, 0.28) !important;
-}
-
 /* Indigo pastel chips (workflow header status, etc.) */
 html.dark :is(.bg-indigo-50, .bg-indigo-100) {
-  background: rgba(49, 46, 129, 0.55) !important;
   background-color: rgba(49, 46, 129, 0.55) !important;
 }
 
@@ -1499,57 +916,15 @@ html.dark {
   --tw-ring-offset-color: #0b1120;
 }
 
-html.dark .gradient-border,
-html.dark .gradient-border-animate {
+html.dark .gradient-border {
   background: rgba(15, 23, 42, 0.92) !important;
 }
 
 /* Metric / content cards rely on white panels; keep elevation readable. */
 html.dark .metric-card-surface,
 html.dark .content-card-surface {
-  background: rgba(15, 23, 42, 0.9) !important;
   background-color: rgba(15, 23, 42, 0.9) !important;
   border-color: rgba(100, 116, 139, 0.5) !important;
-}
-
-html.dark .form-input,
-html.dark .form-select,
-html.dark .form-textarea {
-  color: #e2e8f0 !important;
-  background: rgba(15, 23, 42, 0.88) !important;
-  border-color: rgba(100, 116, 139, 0.55) !important;
-  box-shadow: inset 0 1px 2px rgba(2, 6, 23, 0.35) !important;
-}
-
-html.dark .form-input:hover,
-html.dark .form-select:hover,
-html.dark .form-textarea:hover {
-  background: rgba(30, 41, 59, 0.92) !important;
-  border-color: rgba(251, 113, 133, 0.35) !important;
-}
-
-html.dark .form-input:focus,
-html.dark .form-select:focus,
-html.dark .form-textarea:focus {
-  background: rgba(15, 23, 42, 0.98) !important;
-  border-color: rgba(251, 113, 133, 0.55) !important;
-  box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.18), inset 0 1px 2px rgba(2, 6, 23, 0.35) !important;
-}
-
-html.dark .form-input:disabled,
-html.dark .form-select:disabled,
-html.dark .form-textarea:disabled {
-  background: rgba(30, 41, 59, 0.55) !important;
-}
-
-html.dark .table-container {
-  background: rgba(15, 23, 42, 0.55) !important;
-  border-color: rgba(100, 116, 139, 0.42) !important;
-  box-shadow: 0 10px 26px rgba(2, 6, 23, 0.28), inset 0 1px 0 rgba(148, 163, 184, 0.08) !important;
-}
-
-html.dark .table tbody tr:hover {
-  background: rgba(15, 118, 110, 0.12) !important;
 }
 
 html.dark input,
@@ -1715,6 +1090,45 @@ html.dark .blocking-tag {
   color: #fca5a5 !important;
 }
 
+/* Score tiers and decision badges from component scoped styles keep their
+ * light palette in dark mode; brighten text for contrast on dark surfaces. */
+html.dark .score-pass {
+  color: #4ade80 !important;
+}
+
+html.dark .score-warn {
+  color: #fbbf24 !important;
+}
+
+html.dark .score-fail {
+  color: #f87171 !important;
+}
+
+html.dark .decision-approved {
+  color: #6ee7b7 !important;
+}
+
+html.dark .decision-revision {
+  color: #fcd34d !important;
+}
+
+html.dark .decision-rejected {
+  color: #fca5a5 !important;
+}
+
+/* Version badges (ContentCards) use 200-step light backgrounds. */
+html.dark .bg-rose-200 {
+  background-color: rgba(244, 63, 94, 0.2) !important;
+}
+
+html.dark .bg-blue-200 {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+}
+
+html.dark .bg-emerald-200 {
+  background-color: rgba(16, 185, 129, 0.2) !important;
+}
+
 html.dark .bias-card {
   border-color: rgba(251, 191, 36, 0.4) !important;
   background: rgba(69, 26, 3, 0.42) !important;
@@ -1735,22 +1149,6 @@ html.dark .dim-row {
 html.dark .dim-avg-chip {
   background: rgba(51, 65, 85, 0.75) !important;
   color: #e2e8f0 !important;
-}
-
-/* Review decision badges sharing the same class names. */
-html.dark .decision-approved {
-  background: rgba(4, 120, 87, 0.35) !important;
-  color: #6ee7b7 !important;
-}
-
-html.dark .decision-revision {
-  background: rgba(146, 64, 14, 0.38) !important;
-  color: #fcd34d !important;
-}
-
-html.dark .decision-rejected {
-  background: rgba(153, 27, 27, 0.4) !important;
-  color: #fca5a5 !important;
 }
 
 /* WorkflowReplay state banners (scoped light styles). */
@@ -1986,6 +1384,37 @@ html.dark .hover\:bg-slate-100:hover,
 html.dark .hover\:bg-slate-50:hover,
 html.dark .hover\:bg-slate-200:hover {
   background-color: rgba(30, 41, 59, 0.9) !important;
+}
+
+/* Colored hover remaps: light 50/100 washes become the 500 tone at low alpha. */
+html.dark .hover\:bg-rose-50:hover,
+html.dark .hover\:bg-rose-100:hover {
+  background-color: rgba(244, 63, 94, 0.2) !important;
+}
+
+html.dark .hover\:bg-cyan-50:hover,
+html.dark .hover\:bg-cyan-100:hover {
+  background-color: rgba(6, 182, 212, 0.2) !important;
+}
+
+html.dark .hover\:bg-teal-50:hover,
+html.dark .hover\:bg-teal-100:hover {
+  background-color: rgba(20, 184, 166, 0.2) !important;
+}
+
+html.dark .hover\:bg-amber-50:hover,
+html.dark .hover\:bg-amber-100:hover {
+  background-color: rgba(245, 158, 11, 0.2) !important;
+}
+
+html.dark .hover\:bg-violet-50:hover,
+html.dark .hover\:bg-violet-100:hover {
+  background-color: rgba(139, 92, 246, 0.2) !important;
+}
+
+html.dark .hover\:bg-emerald-50:hover,
+html.dark .hover\:bg-emerald-100:hover {
+  background-color: rgba(16, 185, 129, 0.2) !important;
 }
 
 /* Navbar section chips still used translucent white glass. */

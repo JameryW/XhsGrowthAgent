@@ -60,7 +60,7 @@ function statusIcon(status: WorkflowStatus): string {
 
 function statusColor(status: WorkflowStatus): string {
   switch (status) {
-    case 'running': return 'text-emerald-400'
+    case 'running': return 'text-teal-400'
     case 'stale': return 'text-amber-400'
     case 'awaiting_review':
     case 'awaiting_choice':
@@ -70,8 +70,8 @@ function statusColor(status: WorkflowStatus): string {
     case 'awaiting_blogger_selection': return 'text-orange-400'
     case 'paused': return 'text-slate-400'
     case 'cancelled': return 'text-slate-500'
-    case 'error': return 'text-red-400'
-    case 'completed': return 'text-slate-500'
+    case 'error': return 'text-rose-400'
+    case 'completed': return 'text-emerald-500'
     default: return 'text-slate-500'
   }
 }
@@ -172,12 +172,12 @@ function toggleOverflow() {
           @click="onCloseClick(tab.threadId, $event)"
           :title="t('workflow.closeTab')"
         >
-          <AppIcon name="X" size="xs" />
+          <AppIcon name="X" size="xs" variant="muted" />
         </button>
       </div>
 
       <div v-if="hasOverflow" class="tab-overflow-trigger" @click="toggleOverflow">
-        <AppIcon name="ChevronDown" size="sm" />
+        <AppIcon name="ChevronDown" size="sm" variant="muted" />
         <span class="text-xs text-slate-400">{{ overflowTabs.length }}</span>
       </div>
     </div>
@@ -203,7 +203,7 @@ function toggleOverflow() {
           aria-hidden="true"
         />
         <button class="tab-close" @click="onCloseClick(tab.threadId, $event)">
-          <AppIcon name="X" size="xs" />
+          <AppIcon name="X" size="xs" variant="muted" />
         </button>
       </div>
     </div>
@@ -261,7 +261,7 @@ function toggleOverflow() {
 
 .tab-close {
   /* DB-12: tap target ≥44px (icon stays small via inner span). */
-  @apply shrink-0 p-0.5 rounded hover:bg-slate-200/80 text-slate-400 hover:text-slate-600 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center;
+  @apply shrink-0 p-0.5 rounded hover:bg-slate-200/80 text-slate-400 hover:text-slate-600 transition-colors min-w-[44px] min-h-11 flex items-center justify-center;
 }
 
 .tab-overflow-trigger {
