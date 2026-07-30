@@ -5,7 +5,7 @@ import ContentCardSkeleton from './ContentCardSkeleton.vue'
 <template>
   <div class="space-y-4 md:space-y-6">
     <!-- Header skeleton -->
-    <div class="rounded-2xl p-4 md:p-6 bg-white/98 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55">
+    <div class="rounded-2xl p-4 md:p-6 bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55">
       <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
         <div class="w-20 h-20 rounded-xl bg-gradient-to-r from-teal-500/20 to-teal-400/20 animate-pulse" />
         <div class="flex-1 space-y-2">
@@ -17,7 +17,7 @@ import ContentCardSkeleton from './ContentCardSkeleton.vue'
     </div>
 
     <!-- Timeline skeleton -->
-    <div class="bg-white/98 backdrop-blur-sm rounded-2xl p-6 border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55">
+    <div class="bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55">
       <div class="h-4 w-32 rounded bg-gradient-to-r animate-pulse mb-4 from-slate-300/30 to-slate-200/30" />
       <div class="flex justify-between gap-4">
         <div v-for="i in 6" :key="i" class="flex flex-col items-center gap-2">

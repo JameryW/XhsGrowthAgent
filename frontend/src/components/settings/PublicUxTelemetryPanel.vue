@@ -132,7 +132,7 @@ onUnmounted(() => abortController?.abort())
           <option :value="30">{{ t('settings.publicTelemetry.days', { count: 30 }) }}</option>
         </select>
         <button type="button" class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" :aria-label="t('settings.publicTelemetry.refresh')" :title="t('settings.publicTelemetry.refresh')" :disabled="loading" @click="load">
-          <AppIcon name="RefreshCw" size="xs" :class="loading ? 'animate-spin' : ''" aria-hidden="true" />
+          <AppIcon name="RefreshCw" size="xs" variant="muted" :class="loading ? 'animate-spin' : ''" aria-hidden="true" />
         </button>
       </div>
     </div>

@@ -669,7 +669,7 @@ function dimDescription(dim: string): string {
 </script>
 
 <template>
-  <div class="app-page-content evaluation-view page-container">
+  <div class="app-page-content evaluation-view">
     <!-- ════════ 列表视图 ════════ -->
     <template v-if="!isDetailView">
       <PageHeader
@@ -782,7 +782,7 @@ function dimDescription(dim: string): string {
         </div>
 
         <section v-if="sourceTab === 'workflow'" class="filter-chips" role="group" :aria-label="t('evaluation.list.filterLabel')">
-          <button v-for="opt in ['all', 'approved', 'needs_revision', 'rejected']" :key="opt" type="button" class="filter-chip min-h-[36px]" :class="{ 'filter-chip--active': decisionFilter === opt }" :aria-pressed="decisionFilter === opt" @click="setDecisionFilter(opt)">
+          <button v-for="opt in ['all', 'approved', 'needs_revision', 'rejected']" :key="opt" type="button" class="filter-chip min-h-9" :class="{ 'filter-chip--active': decisionFilter === opt }" :aria-pressed="decisionFilter === opt" @click="setDecisionFilter(opt)">
             {{ opt === 'all' ? t('evaluation.list.filterAll') : decisionLabel(opt) }}
           </button>
         </section>
@@ -795,12 +795,12 @@ function dimDescription(dim: string): string {
         </section>
 
         <div v-if="sourceTab === 'workflow' && listError" class="error-card" role="alert">
-          <AppIcon name="AlertCircle" />
+          <AppIcon name="AlertCircle" variant="pink" />
           <span>{{ listError }}</span>
           <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 px-3 text-xs font-medium hover:bg-rose-100" @click="loadList(true, selectedAccountId)">{{ t('evaluation.error.retry') }}</button>
         </div>
         <div v-if="sourceTab === 'historical' && notesError" class="error-card" role="alert">
-          <AppIcon name="AlertCircle" />
+          <AppIcon name="AlertCircle" variant="pink" />
           <span>{{ notesError }}</span>
           <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 px-3 text-xs font-medium hover:bg-rose-100" @click="loadNotes(selectedAccountId, true)">{{ t('evaluation.error.retry') }}</button>
         </div>
@@ -808,7 +808,7 @@ function dimDescription(dim: string): string {
         <EvaluationSkeleton v-if="(sourceTab === 'workflow' ? listLoading && !listItems.length : notesLoading && !notesItems.length)" />
 
         <div v-else-if="visibleRowsCount === 0 && !(sourceTab === 'workflow' ? listError : notesError)" class="empty-state">
-          <AppIcon name="HelpCircle" size="xl" />
+          <AppIcon name="HelpCircle" size="xl" variant="muted" />
           <div class="empty-title">{{ sourceTab === 'workflow' ? t('evaluation.list.empty') : t('evaluation.stream.historicalEmpty') }}</div>
         </div>
 
@@ -832,8 +832,8 @@ function dimDescription(dim: string): string {
           </template>
         </div>
 
-        <div v-if="sourceTab === 'workflow' && hasMore" class="load-more"><button class="load-more-btn min-h-11" type="button" :disabled="listLoading" @click="loadMore"><AppIcon v-if="listLoading" name="Loader2" class="spin" /><span>{{ t('evaluation.list.loadMore') }}</span></button></div>
-        <div v-if="sourceTab === 'historical' && notesHasMore" class="load-more"><button class="load-more-btn min-h-11" type="button" :disabled="notesLoading" @click="loadMoreNotes"><AppIcon v-if="notesLoading" name="Loader2" class="spin" /><span>{{ t('evaluation.list.loadMore') }}</span></button></div>
+        <div v-if="sourceTab === 'workflow' && hasMore" class="load-more"><button class="load-more-btn min-h-11" type="button" :disabled="listLoading" @click="loadMore"><AppIcon v-if="listLoading" name="Loader2" variant="muted" class="spin" /><span>{{ t('evaluation.list.loadMore') }}</span></button></div>
+        <div v-if="sourceTab === 'historical' && notesHasMore" class="load-more"><button class="load-more-btn min-h-11" type="button" :disabled="notesLoading" @click="loadMoreNotes"><AppIcon v-if="notesLoading" name="Loader2" variant="muted" class="spin" /><span>{{ t('evaluation.list.loadMore') }}</span></button></div>
         <div v-if="(sourceTab === 'workflow' ? listItems.length : notesItems.length) > 0 && (sourceTab === 'workflow' ? listDataAsOf : notesDataAsOf)" class="data-as-of" role="status">
           <!-- Counts are on the source tabs; this line carries only the
                snapshot timestamp. -->
@@ -857,14 +857,14 @@ function dimDescription(dim: string): string {
              here showed the same badge twice. -->
         <template v-if="detailThreadId" #meta>
           <span class="font-mono">{{ detailThreadId.slice(-8) }}</span>
-          <button type="button" class="copy-thread min-h-[36px] px-2 text-xs rounded-md border border-slate-200 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800" @click="copyThreadId">
-            <AppIcon name="Copy" size="sm" />
+          <button type="button" class="copy-thread min-h-9 px-2 text-xs rounded-md border border-slate-200 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800" @click="copyThreadId">
+            <AppIcon name="Copy" size="sm" variant="muted" />
             {{ t('evaluation.action.copyId') }}
           </button>
         </template>
         <template #actions>
           <button type="button" class="back-btn min-h-11" @click="backToList">
-            <AppIcon name="ArrowLeft" />
+            <AppIcon name="ArrowLeft" variant="muted" />
             <span>{{ t('evaluation.list.back') }}</span>
           </button>
         </template>
@@ -875,14 +875,14 @@ function dimDescription(dim: string): string {
 
       <!-- 错误 -->
       <div v-else-if="detailError" class="error-card" role="alert">
-        <AppIcon name="AlertCircle" />
+        <AppIcon name="AlertCircle" variant="pink" />
         <span>{{ detailError }}</span>
         <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 px-3 text-xs font-medium hover:bg-rose-100" @click="retryDetail">{{ t('evaluation.error.retry') }}</button>
       </div>
 
       <!-- 空状态：无评估结果 -->
       <div v-else-if="hasResult === false && result" class="empty-state">
-        <AppIcon name="HelpCircle" size="xl" />
+        <AppIcon name="HelpCircle" size="xl" variant="muted" />
         <div class="empty-title">{{ t('evaluation.empty.title') }}</div>
         <div class="empty-desc">{{ t('evaluation.empty.desc') }}</div>
       </div>
@@ -899,7 +899,7 @@ function dimDescription(dim: string): string {
             {{ detailUnavailable ? t('evaluation.status.notReady') : t(DETAIL_DECISION_KEYS[ev.decision || 'unknown'] ?? 'evaluation.decision.unknown') }}
           </div>
           <p class="text-xs text-slate-400">{{ t('evaluation.weightedScoreHint') }}</p>
-          <p v-if="detailUnavailable" class="status-notice" role="status">{{ t('evaluation.status.degradedHint') }} <button type="button" class="retry-btn min-h-[36px]" @click="retryDetail">{{ t('evaluation.error.retry') }}</button></p>
+          <p v-if="detailUnavailable" class="status-notice" role="status">{{ t('evaluation.status.degradedHint') }} <button type="button" class="retry-btn min-h-9" @click="retryDetail">{{ t('evaluation.error.retry') }}</button></p>
           <p v-if="result?.data_as_of || result?.evaluated_at" class="text-xs text-slate-400">{{ t('evaluation.dataAsOf') }} {{ formatDateTime(result?.data_as_of || result?.evaluated_at || '') }}</p>
           <p v-if="result?.evaluation_id || result?.evaluator_fingerprint || result?.snapshot_id" class="text-xs text-slate-400">
             <span v-if="result?.evaluation_id">{{ t('evaluation.evaluationId') }}: {{ result.evaluation_id }}</span>
@@ -918,7 +918,7 @@ function dimDescription(dim: string): string {
         <!-- 偏倚告警 -->
         <section v-if="ev.bias_warning" class="bias-card" :class="biasCardClass">
           <div class="bias-header">
-            <AppIcon name="AlertTriangle" />
+            <AppIcon name="AlertTriangle" variant="peach" />
             <span>{{ t('evaluation.bias.title') }}</span>
             <span v-if="biasSeverity != null" class="bias-severity">{{ t('evaluation.bias.severity') }}: {{ biasSeverity.toFixed(1) }}</span>
           </div>
@@ -991,8 +991,8 @@ function dimDescription(dim: string): string {
         <div class="relative h-full w-full max-w-md space-y-4 overflow-y-auto bg-white p-4 shadow-xl md:max-w-3xl md:p-6 dark:bg-slate-900">
           <div class="flex items-start justify-between gap-3">
             <h2 class="truncate text-base font-semibold text-slate-800 md:text-lg dark:text-slate-100">{{ drawerNoteTitle || t('creatorNoteQuality.untitled') }}</h2>
-            <button type="button" class="min-h-[44px] min-w-[44px] shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" :aria-label="t('common.close')" @click="closeNoteDrawer">
-              <AppIcon name="X" size="sm" />
+            <button type="button" class="min-h-11 min-w-[44px] shrink-0 rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" :aria-label="t('common.close')" @click="closeNoteDrawer">
+              <AppIcon name="X" size="sm" variant="muted" />
             </button>
           </div>
           <CreatorNoteQualityPanel :account-id="selectedAccountId" :note-id="drawerNoteId" compact />
@@ -1003,10 +1003,6 @@ function dimDescription(dim: string): string {
 </template>
 
 <style scoped>
-/* ponytail: 宽度/内边距交由 <main> 的 p-6，与 Analytics/Dashboard 同构——
-   不自定义 max-width，避免评估页两侧留白与其它页不一致 */
-.evaluation-view { }
-
 /* ── 故事线区块：总览 → 诊断 → 单篇 ── */
 .eval-section { margin-top: 1rem; }
 @media (min-width: 768px) {

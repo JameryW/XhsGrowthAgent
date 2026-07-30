@@ -1145,7 +1145,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
             :disabled="isUpdatingShowcase"
             @click="closeShowcaseSettings"
           >
-            <AppIcon name="X" size="sm" aria-hidden="true" />
+            <AppIcon name="X" size="sm" variant="muted" aria-hidden="true" />
           </button>
         </div>
 

@@ -317,7 +317,7 @@ describe('KeyboardShortcuts', () => {
         }
       })
       await wrapper.vm.$nextTick()
-      const panel = wrapper.find('.bg-white\\/98')
+      const panel = wrapper.find('.bg-white\\/90')
       await panel.trigger('click')
       expect(wrapper.emitted('close')).toBeFalsy()
     })

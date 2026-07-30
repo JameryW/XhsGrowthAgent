@@ -43,18 +43,18 @@ const statusStyles: Record<string, {
   badge: BadgeConfig
 }> = {
   completed: {
-    shape: 'bg-gradient-to-br from-rose-400 to-amber-400 shadow-sm',
+    shape: 'bg-gradient-to-br from-emerald-400 to-emerald-500 shadow-sm',
     iconVariant: 'white',
     animate: false,
     labelClass: 'text-slate-800',
-    badge: { show: true, icon: 'Check', color: 'text-teal-600', animate: false },
+    badge: { show: true, icon: 'Check', color: 'text-emerald-600', animate: false },
   },
   running: {
-    shape: 'bg-gradient-to-br from-amber-300 to-amber-400 shadow-sm',
+    shape: 'bg-gradient-to-br from-teal-300 to-teal-400 shadow-sm',
     iconVariant: 'white',
     animate: true,
-    labelClass: 'text-amber-600 font-semibold',
-    badge: { show: true, icon: 'Clock', color: 'text-amber-500', animate: true },
+    labelClass: 'text-teal-600 font-semibold',
+    badge: { show: true, icon: 'Clock', color: 'text-teal-500', animate: true },
   },
   pending: {
     shape: 'bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:border-slate-600',
@@ -106,7 +106,7 @@ const clickableClass = computed(() => {
     ]">
       <AppIcon
         :name="props.status === 'running' ? 'Loader2' : props.icon"
-        :size="props.status === 'running' ? 'lg' : 'lg'"
+        size="lg"
         :variant="currentStyle.iconVariant"
         :animate="currentStyle.animate"
         :aria-label="props.label"

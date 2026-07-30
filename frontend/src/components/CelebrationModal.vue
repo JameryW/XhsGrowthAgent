@@ -111,7 +111,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
         </div>
 
         <!-- Celebration Card -->
-        <div class="relative w-full max-w-md p-8 rounded-2xl bg-white/98 shadow-2xl border border-teal-200/50 text-center dark:bg-slate-900/95 dark:border-teal-500/30 dark:shadow-slate-950/50">
+        <div class="relative w-full max-w-md p-8 rounded-2xl bg-white/90 shadow-2xl border border-teal-200/50 text-center dark:bg-slate-900/95 dark:border-teal-500/30 dark:shadow-slate-950/50">
           <!-- Success Icon with animation -->
           <div class="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-teal-400 to-teal-500 flex items-center justify-center shadow-lg animate-bounce-slow">
             <AppIcon name="CheckCircle" size="xl" variant="white" />

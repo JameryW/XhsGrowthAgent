@@ -131,7 +131,7 @@ onUnmounted(() => {
        by the state hero directly above — this header used to repeat them
        (status badge, stage label, circular + mini progress bars). -->
   <div
-    class="rounded-xl p-3 md:px-4 md:py-3 relative overflow-hidden bg-white/98 backdrop-blur-sm border border-slate-200/50 shadow-sm dark:bg-slate-900/80 dark:border-slate-700/50"
+    class="rounded-xl p-3 md:px-4 md:py-3 relative overflow-hidden bg-white/90 backdrop-blur-sm border border-slate-200/50 shadow-sm dark:bg-slate-900/80 dark:border-slate-700/50"
     role="region"
     :aria-label="t('dashboard.header.status')"
   >

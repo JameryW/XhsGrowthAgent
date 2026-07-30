@@ -89,7 +89,7 @@ function ariaSortFor(key: string): 'ascending' | 'descending' | 'none' {
 </script>
 
 <template>
-  <div class="rounded-xl overflow-x-auto relative bg-white/98 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55" role="table" :aria-label="t('dataTable.title')">
+  <div class="rounded-xl overflow-x-auto relative bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55" role="table" :aria-label="t('dataTable.title')">
     <!-- Header -->
     <div
       class="grid gap-2 md:gap-4 px-3 md:px-4 py-2 md:py-3 bg-slate-50 border-b border-slate-100 text-[10px] md:text-xs text-slate-500 uppercase tracking-wide font-medium min-w-[500px] dark:bg-slate-800/80 dark:border-slate-700/50 dark:text-slate-400"

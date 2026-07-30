@@ -56,7 +56,7 @@ const canReconnect = computed(() => realtimeStore.connectionStatus === 'disconne
 <template>
   <div
     v-if="canReconnect || realtimeStore.connectionStatus === 'connecting' || realtimeStore.connectionStatus === 'reconnecting'"
-    class="fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl flex items-center gap-3 backdrop-blur-sm bg-white/98 border border-slate-200/50 shadow-sm transition-all duration-200 dark:bg-slate-900/90 dark:border-slate-600/50"
+    class="fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl flex items-center gap-3 backdrop-blur-sm bg-white/90 border border-slate-200/50 shadow-sm transition-all duration-200 dark:bg-slate-900/90 dark:border-slate-600/50"
     :class="[currentStyle.borderClass]"
     role="status"
     aria-live="polite"
@@ -77,7 +77,7 @@ const canReconnect = computed(() => realtimeStore.connectionStatus === 'disconne
     <button
       v-if="canReconnect"
       type="button"
-      class="ml-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-900 text-white hover:bg-slate-700 active:scale-95 transition min-w-[44px] min-h-[36px] flex items-center justify-center"
+      class="ml-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-900 text-white hover:bg-slate-700 active:scale-95 transition min-w-[44px] min-h-9 flex items-center justify-center"
       @click="realtimeStore.reconnect()"
     >
       {{ t('connection.reconnect') }}

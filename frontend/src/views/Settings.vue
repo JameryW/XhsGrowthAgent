@@ -43,7 +43,7 @@ const currentTab = computed(() => TABS.find(t => t.id === activeTab.value)!)
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl space-y-4 md:space-y-6">
+  <div class="app-page-content space-y-4 md:space-y-6">
     <PageHeader
       :title="t('settings.title')"
       :description="t('settings.subtitle')"

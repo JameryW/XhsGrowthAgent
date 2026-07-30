@@ -681,7 +681,7 @@ function rqgmDimLabel(dim: string): string {
 
             <div v-else-if="rqgmStatus === 'degraded' || rqgmStatus === 'failed' || rqgmStatus === 'unavailable' || rqgmStatus === 'running'" class="mt-3 rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-[11px] leading-4 text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-200" role="status">
               {{ t('creatorNoteQuality.rqgm.notReady') }}
-              <button type="button" class="ml-2 min-h-[36px] rounded-md border border-amber-300 px-2 py-1 font-semibold hover:bg-amber-100 dark:border-amber-300/40 dark:hover:bg-amber-400/20" @click="runRqgmEvaluation">{{ t('creatorNoteQuality.rqgm.retry') }}</button>
+              <button type="button" class="ml-2 min-h-9 rounded-md border border-amber-300 px-2 py-1 font-semibold hover:bg-amber-100 dark:border-amber-300/40 dark:hover:bg-amber-400/20" @click="runRqgmEvaluation">{{ t('creatorNoteQuality.rqgm.retry') }}</button>
             </div>
             <div v-else-if="rqgmStatus === 'partial'" class="mt-3 rounded-lg border border-sky-200 bg-sky-50/70 p-3 text-[11px] leading-4 text-sky-700 dark:border-sky-400/25 dark:bg-sky-400/10 dark:text-sky-200" role="status">
               {{ t('creatorNoteQuality.rqgm.partial') }}<span v-if="rqgmCoverage?.weighted_ratio != null"> ({{ Math.round(rqgmCoverage.weighted_ratio * 100) }}%)</span>

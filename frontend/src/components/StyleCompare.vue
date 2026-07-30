@@ -72,7 +72,7 @@ function handleConfirm() {
 </script>
 
 <template>
-  <div class="rounded-xl p-5 bg-white/98 backdrop-blur-sm border border-violet-200/50 dark:bg-slate-900/90 dark:border-violet-500/25">
+  <div class="rounded-xl p-5 bg-white/90 backdrop-blur-sm border border-violet-200/50 dark:bg-slate-900/90 dark:border-violet-500/25">
     <div class="flex items-center gap-3 mb-4">
       <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-violet-400 to-violet-500 flex items-center justify-center shadow-sm">
         <AppIcon name="Palette" size="md" variant="white" :aria-label="t('styleCompare.chooseStyle')" />

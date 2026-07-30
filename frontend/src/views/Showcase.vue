@@ -519,7 +519,7 @@ watch(filteredCases, async () => {
 
         <div v-reveal class="glass-panel mt-6 rounded-2xl p-3 shadow-sm md:p-4">
           <div class="flex flex-col gap-3">
-            <label v-if="showSearch" class="relative block"><span class="sr-only">{{ t('showcase.searchPlaceholder') }}</span><AppIcon name="Search" size="sm" variant="cyan" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" /><input v-model="searchInput" type="search" class="min-h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm text-slate-800 outline-none ring-0 placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100" :placeholder="t('showcase.searchPlaceholder')" /></label>
+            <label v-if="showSearch" class="relative block"><span class="sr-only">{{ t('showcase.searchPlaceholder') }}</span><AppIcon name="Search" size="sm" variant="cyan" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" /><input v-model="searchInput" type="search" class="min-h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm text-slate-800 outline-none ring-0 placeholder:text-slate-400 focus:border-rose-400 focus:ring-2 focus:ring-rose-400/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100" :placeholder="t('showcase.searchPlaceholder')" /></label>
             <div class="flex flex-wrap items-center gap-2">
               <button type="button" v-for="chip in statusChips" :key="chip.value" class="min-h-11 rounded-full px-4 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500" :class="statusFilter === chip.value ? 'bg-slate-900 text-white shadow-md shadow-slate-900/20 ring-2 ring-teal-400/40 dark:bg-white dark:text-slate-900' : 'border border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'" :aria-pressed="statusFilter === chip.value" @click="setStatusFilter(chip.value)">{{ chip.label }}</button>
               <span class="ml-auto flex items-center gap-2">
@@ -532,8 +532,8 @@ watch(filteredCases, async () => {
           </div>
         </div>
 
-        <div v-if="loading && !loaded" class="mt-5 grid gap-4 md:grid-cols-2">
-          <div v-for="index in 4" :key="index" class="h-56 animate-pulse rounded-2xl bg-white/80 dark:bg-slate-900/80" aria-busy="true" />
+        <div v-if="loading && !loaded" class="mt-5 grid gap-4 md:grid-cols-3">
+          <div v-for="index in 6" :key="index" class="h-72 animate-pulse rounded-2xl bg-white/80 dark:bg-slate-900/80" :class="index === 1 ? 'md:col-span-2' : ''" aria-busy="true" />
         </div>
         <div v-else-if="loadError && !loaded" class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center dark:border-rose-400/20 dark:bg-rose-400/10">
           <AppIcon name="WifiOff" size="lg" variant="pink" aria-hidden="true" />
