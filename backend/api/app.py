@@ -152,6 +152,59 @@ def _weekly_crawl_budget_exhausted(
     return len(kept) >= max_per_week
 
 
+def _effective_skip_day_chance(base: float, successes_last_7d: int) -> float:
+    """Raise skip probability as the week already has successful crawls.
+
+    Humans rarely open Creator Center many times in one week; after 1–2 real
+    crawls, subsequent timers should more often no-op.
+    """
+    base_c = max(0.0, min(1.0, _finite_float(base, 0.25)))
+    if successes_last_7d <= 0:
+        return base_c
+    if successes_last_7d == 1:
+        return min(0.85, base_c * 1.3)
+    return min(0.90, base_c * 1.75)
+
+
+async def _seed_success_history_from_db(
+    success_history: list[str],
+    last_success_local_hour: int | None,
+) -> tuple[list[str], int | None]:
+    """Merge durable DB history (+ active account synced_at) into memory."""
+    try:
+        from backend.db import creator_stats as stats_db
+
+        stored = await stats_db.load_scheduler_success_history()
+        for raw in stored.get("timestamps") or []:
+            if raw and raw not in success_history:
+                success_history.append(str(raw))
+        hour = stored.get("last_success_local_hour")
+        if isinstance(hour, int):
+            last_success_local_hour = hour
+        # Seed a single success from the active account's last import if history empty.
+        if not success_history:
+            from backend.db.accounts import get_active_account
+
+            account = await get_active_account()
+            if account is not None:
+                overview = await stats_db.get_account_stats(str(account.id))
+                synced = str(getattr(overview, "synced_at", "") or "").strip()
+                if synced:
+                    success_history.append(synced)
+                    try:
+                        ts = datetime.fromisoformat(synced.replace("Z", "+00:00"))
+                        if ts.tzinfo is None:
+                            ts = ts.replace(tzinfo=UTC)
+                        last_success_local_hour = ts.astimezone(_CN_TZ).hour
+                    except ValueError:
+                        pass
+    except Exception:
+        logging.getLogger("xhs_growth.creator_stats.scheduler").debug(
+            "seed success history failed", exc_info=True
+        )
+    return success_history, last_success_local_hour
+
+
 def _pick_scheduled_period(period_7d_chance: float) -> str:
     """Pick a Creator Center stats window for one scheduled run.
 
@@ -242,6 +295,14 @@ async def _creator_stats_scheduler(
             last_success_local_hour = int(last_success_local_hour)
     if not isinstance(last_success_local_hour, int):
         last_success_local_hour = None
+    # Durable history survives deploy restarts (weekly budget must not reset).
+    success_history, last_success_local_hour = await _seed_success_history_from_db(
+        success_history, last_success_local_hour
+    )
+    success_history = _prune_success_timestamps(success_history, now=datetime.now(UTC))
+    state["success_timestamps"] = success_history
+    state["successes_last_7d"] = len(success_history)
+    state["last_success_local_hour"] = last_success_local_hour
 
     def _avoid_hours() -> set[int] | None:
         if last_success_local_hour is None:
@@ -281,6 +342,36 @@ async def _creator_stats_scheduler(
         except Exception as exc:
             logger.debug("scheduler freshness probe skipped: %s", exc)
             return False, 0
+
+    async def _active_auth_cooldown() -> tuple[bool, str, int]:
+        """True when risk-gate auth cooldown blocks another Creator Center open."""
+        try:
+            from backend.db.accounts import get_active_account
+            from backend.services.xhs_risk_gate import check_sync_auth_cooldown
+
+            account = await get_active_account()
+            if account is None:
+                return False, "", 0
+            block = check_sync_auth_cooldown(str(account.id))
+            if block is None:
+                return False, "", 0
+            return True, block.message, int(block.retry_after_seconds or 0)
+        except Exception as exc:
+            logger.debug("scheduler auth-cooldown probe skipped: %s", exc)
+            return False, "", 0
+
+    async def _soft_prune_blank_pages() -> None:
+        """Best-effort blank-tab hygiene before a real crawl (never blocks)."""
+        try:
+            from backend.db.accounts import get_active_account
+            from backend.services.chrome_launcher import prune_blank_pages_all
+
+            account = await get_active_account()
+            if account is None:
+                return
+            await prune_blank_pages_all([account], apply=True, account_ids=[str(account.id)])
+        except Exception as exc:
+            logger.debug("pre-crawl blank page prune skipped: %s", exc)
 
     # 1. 启动随机延迟：部署/重启后不再立刻爬取。
     if startup_delay is not None:
@@ -334,6 +425,7 @@ async def _creator_stats_scheduler(
             )
         else:
             fresh, retry_s = await _active_snapshot_is_fresh()
+            auth_blocked, auth_msg, auth_retry = await _active_auth_cooldown()
             if fresh:
                 state.update(
                     {
@@ -349,8 +441,24 @@ async def _creator_stats_scheduler(
                     "(retry_after≈%ss)",
                     retry_s,
                 )
+            elif auth_blocked:
+                state.update(
+                    {
+                        "status": "skipped",
+                        "last_skipped_at": started_at.isoformat(),
+                        "last_skip_reason": "auth_cooldown",
+                        "last_error": auth_msg,
+                    }
+                )
+                logger.info(
+                    "scheduled creator stats import skipped: auth cooldown "
+                    "(retry_after≈%ss)",
+                    auth_retry,
+                )
             else:
                 ran_crawl = True
+                # Soft hygiene: drop orphan blank tabs so CDP target lists stay human-sized.
+                await _soft_prune_blank_pages()
                 # 5. 醒来后先静默再开浏览器——人从"想起来"到点开页面有空隙。
                 if pre_run_delay is not None:
                     settle_min = max(0.0, _finite_float(pre_run_delay[0], 0.0))
@@ -423,6 +531,13 @@ async def _creator_stats_scheduler(
                         state["last_success_local_hour"] = last_success_local_hour
                         state["success_timestamps"] = success_history
                         state["successes_last_7d"] = len(success_history)
+                        with contextlib.suppress(Exception):
+                            from backend.db import creator_stats as stats_db
+
+                            await stats_db.save_scheduler_success_history(
+                                success_history,
+                                last_success_local_hour=last_success_local_hour,
+                            )
                     state.update(
                         {
                             "status": "completed" if succeeded else "failed",
@@ -497,10 +612,16 @@ async def _creator_stats_scheduler(
             state["last_long_break"] = True
         # 2. 间隔按 0.65-1.75× 三角分布取值（峰值 1×，模拟人的习惯节律）；
         # active_window 再把落点限制在人类活动时段。
-        if skip_day_chance > 0 and not skip_next_run:
-            factor = _weekday_skip_factor(datetime.now(_CN_TZ).weekday())
-            if random.random() < min(1.0, skip_day_chance * factor):
-                skip_next_run = True
+        # 周内已有成功爬取时抬高 skip 概率——人很少一周内反复打开。
+        if not skip_next_run:
+            eff_skip = _effective_skip_day_chance(
+                skip_day_chance, len(success_history)
+            )
+            if eff_skip > 0:
+                factor = _weekday_skip_factor(datetime.now(_CN_TZ).weekday())
+                if random.random() < min(1.0, eff_skip * factor):
+                    skip_next_run = True
+                    state["last_skip_armed_reason"] = "habit_skip"
         candidate = datetime.now(UTC) + timedelta(
             seconds=interval_seconds * random.triangular(0.65, 1.75, 1.0) * backoff
         )
