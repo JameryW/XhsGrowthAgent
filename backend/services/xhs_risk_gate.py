@@ -31,37 +31,195 @@ def _env_float(name: str, default: float) -> float:
     return value if math.isfinite(value) else default
 
 
-def qr_cooldown_seconds() -> float:
+# Per-account override keys (seconds unless *_minutes).
+_POLICY_FIELDS = (
+    "browser_action_seconds",
+    "publish_seconds",
+    "engagement_seconds",
+    "sync_auth_minutes",
+    "qr_cooldown_seconds",
+    "qr_risk_block_seconds",
+)
+
+# account_id -> partial policy overrides
+_policies: dict[str, dict[str, float]] = {}
+
+
+def global_cooldown_defaults() -> dict[str, float]:
+    """Global env-backed defaults (not including per-account overrides)."""
+    return {
+        "browser_action_seconds": max(
+            0.0, _env_float("XHS_BROWSER_ACTION_COOLDOWN_SECONDS", 20.0)
+        ),
+        "publish_seconds": max(0.0, _env_float("XHS_PUBLISH_COOLDOWN_SECONDS", 90.0)),
+        "engagement_seconds": max(
+            0.0, _env_float("XHS_ENGAGEMENT_ACCOUNT_COOLDOWN_SECONDS", 30.0)
+        ),
+        "sync_auth_minutes": max(
+            0.0, _env_float("CREATOR_STATS_AUTH_FAIL_COOLDOWN_MINUTES", 120.0)
+        ),
+        "qr_cooldown_seconds": max(
+            0.0, _env_float("XHS_QR_LOGIN_COOLDOWN_SECONDS", 900.0)
+        ),
+        "qr_risk_block_seconds": max(
+            0.0, _env_float("XHS_QR_RISK_BLOCK_SECONDS", 3600.0)
+        ),
+    }
+
+
+def get_cooldown_policy(account_id: str = "") -> dict[str, Any]:
+    """Effective policy for an account = globals + optional overrides."""
+    account_id = (account_id or "").strip()
+    defaults = global_cooldown_defaults()
+    overrides = dict(_policies.get(account_id) or {}) if account_id else {}
+    effective = dict(defaults)
+    for key, value in overrides.items():
+        if key in _POLICY_FIELDS:
+            try:
+                effective[key] = max(0.0, float(value))
+            except (TypeError, ValueError):
+                continue
+    return {
+        "account_id": account_id or None,
+        "defaults": defaults,
+        "overrides": overrides,
+        "effective": effective,
+    }
+
+
+def set_cooldown_policy(
+    account_id: str,
+    *,
+    browser_action_seconds: float | None = None,
+    publish_seconds: float | None = None,
+    engagement_seconds: float | None = None,
+    sync_auth_minutes: float | None = None,
+    qr_cooldown_seconds: float | None = None,
+    qr_risk_block_seconds: float | None = None,
+    replace: bool = False,
+) -> dict[str, Any]:
+    """Set per-account cool-down overrides. ``None`` fields leave existing values.
+
+    Pass ``replace=True`` to replace the whole override map (missing fields = default).
+    """
+    account_id = (account_id or "").strip()
+    if not account_id:
+        raise ValueError("account_id is required")
+    incoming = {
+        "browser_action_seconds": browser_action_seconds,
+        "publish_seconds": publish_seconds,
+        "engagement_seconds": engagement_seconds,
+        "sync_auth_minutes": sync_auth_minutes,
+        "qr_cooldown_seconds": qr_cooldown_seconds,
+        "qr_risk_block_seconds": qr_risk_block_seconds,
+    }
+    current: dict[str, float] = {} if replace else dict(_policies.get(account_id) or {})
+    for key, value in incoming.items():
+        if value is None:
+            if replace:
+                current.pop(key, None)
+            continue
+        try:
+            current[key] = max(0.0, float(value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid {key}: {value!r}") from exc
+    if current:
+        _policies[account_id] = current
+    else:
+        _policies.pop(account_id, None)
+    _schedule_persist()
+    return get_cooldown_policy(account_id)
+
+
+def clear_cooldown_policy(account_id: str = "") -> dict[str, Any]:
+    """Remove per-account overrides (empty account_id clears all policies)."""
+    account_id = (account_id or "").strip()
+    removed = 0
+    if not account_id:
+        removed = len(_policies)
+        _policies.clear()
+    elif account_id in _policies:
+        _policies.pop(account_id, None)
+        removed = 1
+    if removed:
+        _schedule_persist()
+    return {"account_id": account_id or None, "removed": removed}
+
+
+def _policy_value(account_id: str, field: str, global_default: float) -> float:
+    account_id = (account_id or "").strip()
+    if account_id:
+        raw = (_policies.get(account_id) or {}).get(field)
+        if raw is not None:
+            try:
+                return max(0.0, float(raw))
+            except (TypeError, ValueError):
+                pass
+    return max(0.0, float(global_default))
+
+
+def qr_cooldown_seconds(account_id: str = "") -> float:
     """Min gap between QR start attempts for the same account (0 disables)."""
-    return max(0.0, _env_float("XHS_QR_LOGIN_COOLDOWN_SECONDS", 900.0))
+    return _policy_value(
+        account_id,
+        "qr_cooldown_seconds",
+        _env_float("XHS_QR_LOGIN_COOLDOWN_SECONDS", 900.0),
+    )
 
 
-def qr_risk_block_seconds() -> float:
+def qr_risk_block_seconds(account_id: str = "") -> float:
     """How long to block QR after a security/IP risk hit (0 disables)."""
-    return max(0.0, _env_float("XHS_QR_RISK_BLOCK_SECONDS", 3600.0))
+    return _policy_value(
+        account_id,
+        "qr_risk_block_seconds",
+        _env_float("XHS_QR_RISK_BLOCK_SECONDS", 3600.0),
+    )
 
 
-def sync_auth_fail_cooldown_minutes() -> float:
+def sync_auth_fail_cooldown_minutes(account_id: str = "") -> float:
     """Extra cooldown after creator auth failure / empty-shell risk (0 disables)."""
-    return max(0.0, _env_float("CREATOR_STATS_AUTH_FAIL_COOLDOWN_MINUTES", 120.0))
+    return _policy_value(
+        account_id,
+        "sync_auth_minutes",
+        _env_float("CREATOR_STATS_AUTH_FAIL_COOLDOWN_MINUTES", 120.0),
+    )
 
 
-def browser_action_cooldown_seconds() -> float:
+def browser_action_cooldown_seconds(account_id: str = "") -> float:
     """Min gap after any CDP session ends before another feature starts (0 disables)."""
-    return max(0.0, _env_float("XHS_BROWSER_ACTION_COOLDOWN_SECONDS", 20.0))
+    return _policy_value(
+        account_id,
+        "browser_action_seconds",
+        _env_float("XHS_BROWSER_ACTION_COOLDOWN_SECONDS", 20.0),
+    )
 
 
-def publish_cooldown_seconds() -> float:
+def publish_cooldown_seconds(account_id: str = "") -> float:
     """Min gap between publish attempts for the same account (0 disables)."""
-    return max(0.0, _env_float("XHS_PUBLISH_COOLDOWN_SECONDS", 90.0))
+    return _policy_value(
+        account_id,
+        "publish_seconds",
+        _env_float("XHS_PUBLISH_COOLDOWN_SECONDS", 90.0),
+    )
 
 
-def engagement_account_cooldown_seconds() -> float:
+def engagement_account_cooldown_seconds(account_id: str = "") -> float:
     """Min gap between engagement sessions for the same account (0 disables).
 
     Complements the per-action pacing inside XHSEngagement.
     """
-    return max(0.0, _env_float("XHS_ENGAGEMENT_ACCOUNT_COOLDOWN_SECONDS", 30.0))
+    return _policy_value(
+        account_id,
+        "engagement_seconds",
+        _env_float("XHS_ENGAGEMENT_ACCOUNT_COOLDOWN_SECONDS", 30.0),
+    )
+
+
+def _account_id_from_profile_key(key: str) -> str:
+    text = str(key or "")
+    if text.startswith("account:"):
+        return text[len("account:") :]
+    return ""
 
 
 @dataclass(frozen=True)
@@ -210,7 +368,7 @@ def check_qr_start_allowed(account_id: str) -> GateBlock | None:
             retry_after_seconds=_remaining(risk_until),
         )
 
-    cooldown = qr_cooldown_seconds()
+    cooldown = qr_cooldown_seconds(account_id)
     if cooldown <= 0:
         return None
     last = _qr_last_attempt_at.get(account_id, 0.0)
@@ -241,7 +399,7 @@ def note_qr_risk_block(account_id: str, *, reason: str = "300012") -> None:
     account_id = (account_id or "").strip()
     if not account_id:
         return
-    block_s = qr_risk_block_seconds()
+    block_s = qr_risk_block_seconds(account_id)
     if block_s <= 0:
         return
     _qr_risk_blocked_until[account_id] = _now() + block_s
@@ -314,7 +472,7 @@ def note_sync_auth_failure(account_id: str, *, reason: str = "AUTH_EXPIRED") -> 
     account_id = (account_id or "").strip()
     if not account_id:
         return
-    minutes = sync_auth_fail_cooldown_minutes()
+    minutes = sync_auth_fail_cooldown_minutes(account_id)
     if minutes <= 0:
         return
     block_s = minutes * 60.0
@@ -360,7 +518,10 @@ def check_browser_action_allowed(
     here — the CDP lock already serializes. This gap applies after a session
     releases, before a *different* feature attaches.
     """
-    cooldown = browser_action_cooldown_seconds()
+    aid = (account_id or "").strip() or _account_id_from_profile_key(
+        _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
+    )
+    cooldown = browser_action_cooldown_seconds(aid)
     if cooldown <= 0:
         return None
     key = _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
@@ -396,7 +557,10 @@ def note_publish(account_id: str = "", *, cdp_endpoint: str = "") -> None:
 
 def check_publish_allowed(account_id: str = "", *, cdp_endpoint: str = "") -> GateBlock | None:
     """Min gap between publishes for one account/profile."""
-    cooldown = publish_cooldown_seconds()
+    aid = (account_id or "").strip() or _account_id_from_profile_key(
+        _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
+    )
+    cooldown = publish_cooldown_seconds(aid)
     if cooldown <= 0:
         return None
     key = _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
@@ -426,7 +590,10 @@ def check_engagement_allowed(
     account_id: str = "", *, cdp_endpoint: str = ""
 ) -> GateBlock | None:
     """Min gap between engagement *sessions* for one account/profile."""
-    cooldown = engagement_account_cooldown_seconds()
+    aid = (account_id or "").strip() or _account_id_from_profile_key(
+        _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
+    )
+    cooldown = engagement_account_cooldown_seconds(aid)
     if cooldown <= 0:
         return None
     key = _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
@@ -467,59 +634,65 @@ def list_active_cooldowns(*, account_id: str = "") -> list[dict[str, Any]]:
         return aid == account_id
 
     # browser action (event-based cool-down)
-    browser_cd = browser_action_cooldown_seconds()
-    if browser_cd > 0:
-        for key, last in list(_browser_action_last_at.items()):
-            if not _want_key(key):
-                continue
-            owner = _browser_action_last_owner.get(key, "unknown")
-            # Report full gap remaining (feature-switch baseline).
-            remaining = browser_cd - (now - last)
-            if remaining <= 0:
-                continue
-            rows.append(
-                {
-                    "kind": "browser_action",
-                    "key": key,
-                    "owner": owner,
-                    "retry_after_seconds": int(remaining + 0.999),
-                    "message": f"浏览器操作冷却（上一任务 {owner}）",
-                }
-            )
+    for key, last in list(_browser_action_last_at.items()):
+        if not _want_key(key):
+            continue
+        aid = _account_id_from_profile_key(key)
+        browser_cd = browser_action_cooldown_seconds(aid)
+        if browser_cd <= 0:
+            continue
+        owner = _browser_action_last_owner.get(key, "unknown")
+        # Report full gap remaining (feature-switch baseline).
+        remaining = browser_cd - (now - last)
+        if remaining <= 0:
+            continue
+        rows.append(
+            {
+                "kind": "browser_action",
+                "key": key,
+                "owner": owner,
+                "retry_after_seconds": int(remaining + 0.999),
+                "message": f"浏览器操作冷却（上一任务 {owner}）",
+            }
+        )
 
     # publish / engagement (event-based)
-    pub_cd = publish_cooldown_seconds()
-    if pub_cd > 0:
-        for key, last in list(_publish_last_at.items()):
-            if not _want_key(key):
-                continue
-            remaining = pub_cd - (now - last)
-            if remaining <= 0:
-                continue
-            rows.append(
-                {
-                    "kind": "publish",
-                    "key": key,
-                    "retry_after_seconds": int(remaining + 0.999),
-                    "message": "发布冷却",
-                }
-            )
-    eng_cd = engagement_account_cooldown_seconds()
-    if eng_cd > 0:
-        for key, last in list(_engagement_last_at.items()):
-            if not _want_key(key):
-                continue
-            remaining = eng_cd - (now - last)
-            if remaining <= 0:
-                continue
-            rows.append(
-                {
-                    "kind": "engagement",
-                    "key": key,
-                    "retry_after_seconds": int(remaining + 0.999),
-                    "message": "互动会话冷却",
-                }
-            )
+    for key, last in list(_publish_last_at.items()):
+        if not _want_key(key):
+            continue
+        aid = _account_id_from_profile_key(key)
+        pub_cd = publish_cooldown_seconds(aid)
+        if pub_cd <= 0:
+            continue
+        remaining = pub_cd - (now - last)
+        if remaining <= 0:
+            continue
+        rows.append(
+            {
+                "kind": "publish",
+                "key": key,
+                "retry_after_seconds": int(remaining + 0.999),
+                "message": "发布冷却",
+            }
+        )
+    for key, last in list(_engagement_last_at.items()):
+        if not _want_key(key):
+            continue
+        aid = _account_id_from_profile_key(key)
+        eng_cd = engagement_account_cooldown_seconds(aid)
+        if eng_cd <= 0:
+            continue
+        remaining = eng_cd - (now - last)
+        if remaining <= 0:
+            continue
+        rows.append(
+            {
+                "kind": "engagement",
+                "key": key,
+                "retry_after_seconds": int(remaining + 0.999),
+                "message": "互动会话冷却",
+            }
+        )
 
     # deadline-based blocks
     for aid, until in list(_sync_auth_blocked_until.items()):
@@ -546,22 +719,23 @@ def list_active_cooldowns(*, account_id: str = "") -> list[dict[str, Any]]:
                 "message": "扫码安全限制冷却",
             }
         )
-    qr_cd = qr_cooldown_seconds()
-    if qr_cd > 0:
-        for aid, last in list(_qr_last_attempt_at.items()):
-            if not _want_aid(aid):
-                continue
-            remaining = qr_cd - (now - last)
-            if remaining <= 0:
-                continue
-            rows.append(
-                {
-                    "kind": "qr_attempt",
-                    "key": aid,
-                    "retry_after_seconds": int(remaining + 0.999),
-                    "message": "扫码登录间隔冷却",
-                }
-            )
+    for aid, last in list(_qr_last_attempt_at.items()):
+        if not _want_aid(aid):
+            continue
+        qr_cd = qr_cooldown_seconds(aid)
+        if qr_cd <= 0:
+            continue
+        remaining = qr_cd - (now - last)
+        if remaining <= 0:
+            continue
+        rows.append(
+            {
+                "kind": "qr_attempt",
+                "key": aid,
+                "retry_after_seconds": int(remaining + 0.999),
+                "message": "扫码登录间隔冷却",
+            }
+        )
 
     rows.sort(key=lambda r: int(r.get("retry_after_seconds") or 0), reverse=True)
     return rows
@@ -668,16 +842,18 @@ def snapshot_risk_gates() -> dict[str, Any]:
     """Compact operator-facing gate snapshot for /health."""
     now = _now()
     browser_active = 0
-    for last in _browser_action_last_at.values():
-        if now - last < browser_action_cooldown_seconds():
+    for key, last in _browser_action_last_at.items():
+        aid = _account_id_from_profile_key(key)
+        if now - last < browser_action_cooldown_seconds(aid):
             browser_active += 1
     auth_active = sum(1 for until in _sync_auth_blocked_until.values() if until > now)
     qr_risk_active = sum(1 for until in _qr_risk_blocked_until.values() if until > now)
     active = list_active_cooldowns()
+    defaults = global_cooldown_defaults()
     return {
-        "browser_action_cooldown_seconds": browser_action_cooldown_seconds(),
-        "publish_cooldown_seconds": publish_cooldown_seconds(),
-        "engagement_account_cooldown_seconds": engagement_account_cooldown_seconds(),
+        "browser_action_cooldown_seconds": defaults["browser_action_seconds"],
+        "publish_cooldown_seconds": defaults["publish_seconds"],
+        "engagement_account_cooldown_seconds": defaults["engagement_seconds"],
         "active_browser_cooldowns": browser_active,
         "active_sync_auth_blocks": auth_active,
         "active_qr_risk_blocks": qr_risk_active,
@@ -685,6 +861,7 @@ def snapshot_risk_gates() -> dict[str, Any]:
         "browser_action_keys": len(_browser_action_last_at),
         "publish_keys": len(_publish_last_at),
         "engagement_keys": len(_engagement_last_at),
+        "policy_accounts": len(_policies),
         "active": active,
         "active_count": len(active),
         "max_retry_after_seconds": (
@@ -713,6 +890,9 @@ def export_risk_gate_state() -> dict[str, Any]:
             "until": until,
             "reason": _qr_risk_reason.get(aid, "security_risk"),
         }
+    policies: dict[str, Any] = {}
+    for aid, policy in _policies.items():
+        policies[str(aid)] = dict(policy)
     return {
         "browser_action": browser,
         "publish": dict(_publish_wall),
@@ -720,6 +900,7 @@ def export_risk_gate_state() -> dict[str, Any]:
         "sync_auth": sync_auth,
         "qr_risk": qr_risk,
         "qr_last_attempt": dict(_qr_last_attempt_wall),
+        "policies": policies,
     }
 
 
@@ -782,14 +963,28 @@ async def hydrate_risk_gates() -> None:
             continue
         _qr_last_attempt_at[str(aid)] = at
         _qr_last_attempt_wall[str(aid)] = str(raw_at or "")
+    for aid, raw_policy in (data.get("policies") or {}).items():
+        if not isinstance(raw_policy, dict):
+            continue
+        cleaned: dict[str, float] = {}
+        for field in _POLICY_FIELDS:
+            if field not in raw_policy:
+                continue
+            try:
+                cleaned[field] = max(0.0, float(raw_policy[field]))
+            except (TypeError, ValueError):
+                continue
+        if cleaned:
+            _policies[str(aid)] = cleaned
     _hydrated = True
     logger.info(
-        "risk gates hydrated: browser=%s publish=%s engagement=%s auth=%s qr_risk=%s",
+        "risk gates hydrated: browser=%s publish=%s engagement=%s auth=%s qr_risk=%s policies=%s",
         len(_browser_action_last_at),
         len(_publish_last_at),
         len(_engagement_last_at),
         len(_sync_auth_blocked_until),
         len(_qr_risk_blocked_until),
+        len(_policies),
     )
 
 
@@ -811,6 +1006,7 @@ def reset_gates_for_tests() -> None:
     _browser_action_wall.clear()
     _publish_wall.clear()
     _engagement_wall.clear()
+    _policies.clear()
     _hydrated = False
     if _persist_task is not None and not _persist_task.done():
         _persist_task.cancel()
@@ -826,10 +1022,13 @@ __all__ = [
     "check_qr_start_allowed",
     "check_sync_auth_cooldown",
     "clear_account_cooldowns",
+    "clear_cooldown_policy",
     "clear_qr_risk_block",
     "clear_sync_auth_failure",
     "engagement_account_cooldown_seconds",
     "export_risk_gate_state",
+    "get_cooldown_policy",
+    "global_cooldown_defaults",
     "hydrate_risk_gates",
     "is_security_risk_message",
     "list_active_cooldowns",
@@ -844,6 +1043,7 @@ __all__ = [
     "qr_cooldown_seconds",
     "qr_risk_block_seconds",
     "reset_gates_for_tests",
+    "set_cooldown_policy",
     "snapshot_risk_gates",
     "sync_auth_fail_cooldown_minutes",
 ]
