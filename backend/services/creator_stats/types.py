@@ -415,6 +415,7 @@ ERROR_AUTH_EXPIRED = "AUTH_EXPIRED"
 ERROR_BROWSER_UNAVAILABLE = "BROWSER_UNAVAILABLE"
 ERROR_FETCH_FAILED = "FETCH_FAILED"
 ERROR_ALREADY_RUNNING = "ALREADY_RUNNING"
+ERROR_EMPTY_SHELL = "EMPTY_SHELL"
 
 
 def classify_sync_error(message: str | None, *, status_code: int | None = None) -> str | None:
@@ -424,6 +425,15 @@ def classify_sync_error(message: str | None, *, status_code: int | None = None) 
     if status_code in (401, 403):
         return ERROR_AUTH_EXPIRED
     text = str(message or "").lower()
+    if any(
+        token in text
+        for token in (
+            "empty shell",
+            "empty_shell",
+            "notes collapsed",
+        )
+    ):
+        return ERROR_EMPTY_SHELL
     if any(
         token in text
         for token in (
@@ -471,12 +481,18 @@ class SyncResult:
     error: str | None = None
     error_code: str | None = None
     niche_resolution: dict[str, Any] | None = None
+    # Soft risk: crawl completed but data looks hollow (empty shell after prior notes).
+    # Scheduler should cool down without treating it as a full live success.
+    soft_risk: bool = False
+    soft_risk_reason: str | None = None
 
     def __post_init__(self) -> None:
         # Keep error_code filled for failed results so clients never have to
         # re-parse free-text messages.
         if self.error and not self.error_code:
             self.error_code = classify_sync_error(self.error)
+        if self.soft_risk and not self.error_code:
+            self.error_code = ERROR_EMPTY_SHELL
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -493,4 +509,6 @@ class SyncResult:
             "error": self.error,
             "error_code": self.error_code,
             "niche_resolution": self.niche_resolution,
+            "soft_risk": self.soft_risk,
+            "soft_risk_reason": self.soft_risk_reason,
         }

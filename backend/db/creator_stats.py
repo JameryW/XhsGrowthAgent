@@ -226,6 +226,8 @@ def _normalize_scheduler_state(data: dict[str, Any] | None) -> dict[str, Any]:
         "last_period": None,
         "risk_failures": [],
         "pause_until": None,
+        "quiet_cycles_remaining": 0,
+        "soft_risk_signals": [],
     }
     if not isinstance(data, dict):
         return empty
@@ -241,25 +243,36 @@ def _normalize_scheduler_state(data: dict[str, Any] | None) -> dict[str, Any]:
     risk = data.get("risk_failures")
     if not isinstance(risk, list):
         risk = []
+    soft = data.get("soft_risk_signals")
+    if not isinstance(soft, list):
+        soft = []
     last_period = data.get("last_period")
     if last_period not in {"7d", "30d"}:
         last_period = None
     pause_until = data.get("pause_until")
     if pause_until is not None:
         pause_until = str(pause_until).strip() or None
+    quiet = data.get("quiet_cycles_remaining")
+    try:
+        quiet_cycles = max(0, int(quiet or 0))
+    except (TypeError, ValueError):
+        quiet_cycles = 0
     return {
         "timestamps": [str(t) for t in timestamps if t],
         "last_success_local_hour": hour,
         "last_period": last_period,
         "risk_failures": [str(t) for t in risk if t],
         "pause_until": pause_until,
+        "quiet_cycles_remaining": quiet_cycles,
+        "soft_risk_signals": [str(t) for t in soft if t],
     }
 
 
 async def load_scheduler_success_history() -> dict[str, Any]:
     """Load durable scheduler anti-risk state for the active-account crawler.
 
-    Returns timestamps, last success hour, last period, risk failures, pause_until.
+    Returns timestamps, last success hour, last period, risk failures,
+    pause_until, quiet_cycles_remaining, soft_risk_signals.
     """
     empty = _normalize_scheduler_state(None)
     if not is_pool_ready():
@@ -295,6 +308,8 @@ async def save_scheduler_success_history(
     last_period: str | None = None,
     risk_failures: list[str] | None = None,
     pause_until: str | None = None,
+    quiet_cycles_remaining: int | None = None,
+    soft_risk_signals: list[str] | None = None,
     merge_existing: bool = True,
 ) -> None:
     """Persist scheduler anti-risk state across deploy restarts."""
@@ -318,6 +333,12 @@ async def save_scheduler_success_history(
             "pause_until": pause_until
             if pause_until is not None
             else existing.get("pause_until"),
+            "quiet_cycles_remaining": quiet_cycles_remaining
+            if quiet_cycles_remaining is not None
+            else existing.get("quiet_cycles_remaining"),
+            "soft_risk_signals": list(soft_risk_signals)
+            if soft_risk_signals is not None
+            else list(existing.get("soft_risk_signals") or []),
         }
     )
     if not is_pool_ready():

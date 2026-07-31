@@ -171,14 +171,16 @@ def _risk_pressure_level(
     *,
     successes_last_7d: int = 0,
     pause_until: str | None = None,
+    soft_risk_signals: list[str] | None = None,
     now: datetime | None = None,
 ) -> int:
     """0=normal, 1=elevated, 2=high — drives light-only / quieter scheduling.
 
-    Elevated: any recent risk failure, or already 2+ live successes this week
-    (humans ease off after checking data). High: open circuit pause, or ≥2
-    risk failures still in the window. Higher levels force list-only crawls,
-    prefer lighter 7d windows, and arm longer quiet stretches.
+    Elevated: any recent risk failure / soft-risk (empty shell), or already
+    2+ live successes this week (humans ease off after checking data). High:
+    open circuit pause, or ≥2 hard risk failures still in the window. Higher
+    levels force list-only crawls, prefer lighter 7d windows, and arm longer
+    quiet stretches.
     """
     now_utc = (now or datetime.now(UTC)).astimezone(UTC)
     if pause_until and _circuit_pause_active(pause_until, now=now_utc):
@@ -186,9 +188,12 @@ def _risk_pressure_level(
     failure_n = len(
         _prune_success_timestamps(list(risk_failures or []), now=now_utc, days=3)
     )
-    if failure_n >= 2:
+    soft_n = len(
+        _prune_success_timestamps(list(soft_risk_signals or []), now=now_utc, days=3)
+    )
+    if failure_n >= 2 or soft_n >= 3:
         return 2
-    if failure_n >= 1:
+    if failure_n >= 1 or soft_n >= 1:
         return 1
     if successes_last_7d >= 2:
         return 1
@@ -242,9 +247,13 @@ async def _seed_success_history_from_db(
     last_period: str | None = None,
     risk_failures: list[str] | None = None,
     pause_until: str | None = None,
-) -> tuple[list[str], int | None, str | None, list[str], str | None]:
+    quiet_cycles_remaining: int = 0,
+    soft_risk_signals: list[str] | None = None,
+) -> tuple[list[str], int | None, str | None, list[str], str | None, int, list[str]]:
     """Merge durable DB history (+ active account synced_at) into memory."""
     risk_failures = list(risk_failures or [])
+    soft_risk_signals = list(soft_risk_signals or [])
+    quiet = max(0, int(quiet_cycles_remaining or 0))
     try:
         from backend.db import creator_stats as stats_db
 
@@ -260,8 +269,16 @@ async def _seed_success_history_from_db(
         for raw in stored.get("risk_failures") or []:
             if raw and raw not in risk_failures:
                 risk_failures.append(str(raw))
+        for raw in stored.get("soft_risk_signals") or []:
+            if raw and raw not in soft_risk_signals:
+                soft_risk_signals.append(str(raw))
         if stored.get("pause_until"):
             pause_until = str(stored["pause_until"])
+        stored_quiet = stored.get("quiet_cycles_remaining")
+        try:
+            quiet = max(quiet, int(stored_quiet or 0))
+        except (TypeError, ValueError):
+            pass
         # Seed a single success from the active account's last import if history empty.
         if not success_history:
             from backend.db.accounts import get_active_account
@@ -283,7 +300,15 @@ async def _seed_success_history_from_db(
         logging.getLogger("xhs_growth.creator_stats.scheduler").debug(
             "seed success history failed", exc_info=True
         )
-    return success_history, last_success_local_hour, last_period, risk_failures, pause_until
+    return (
+        success_history,
+        last_success_local_hour,
+        last_period,
+        risk_failures,
+        pause_until,
+        quiet,
+        soft_risk_signals,
+    )
 
 
 def _pick_scheduled_period(
@@ -368,6 +393,9 @@ def _is_riskish_error(message: str | None) -> bool:
             "风控",
             "安全限制",
             "empty",
+            "empty shell",
+            "empty_shell",
+            "notes collapsed",
             "cdp connect failed",
             "socket hang up",
         )
@@ -438,32 +466,46 @@ async def _creator_stats_scheduler(
         last_period = None
     risk_failures: list[str] = list(state.get("risk_failures") or [])
     pause_until: str | None = state.get("pause_until")
-    # Durable history survives deploy restarts (weekly budget must not reset).
+    soft_risk_signals: list[str] = list(state.get("soft_risk_signals") or [])
+    try:
+        quiet_seed = max(0, int(state.get("quiet_cycles_remaining") or 0))
+    except (TypeError, ValueError):
+        quiet_seed = 0
+    # Durable history survives deploy restarts (weekly budget / quiet arms).
     (
         success_history,
         last_success_local_hour,
         last_period,
         risk_failures,
         pause_until,
+        quiet_seed,
+        soft_risk_signals,
     ) = await _seed_success_history_from_db(
         success_history,
         last_success_local_hour,
         last_period=last_period,
         risk_failures=risk_failures,
         pause_until=pause_until,
+        quiet_cycles_remaining=quiet_seed,
+        soft_risk_signals=soft_risk_signals,
     )
-    success_history = _prune_success_timestamps(success_history, now=datetime.now(UTC))
-    risk_failures = _prune_success_timestamps(risk_failures, now=datetime.now(UTC), days=3)
+    now_seed = datetime.now(UTC)
+    success_history = _prune_success_timestamps(success_history, now=now_seed)
+    risk_failures = _prune_success_timestamps(risk_failures, now=now_seed, days=3)
+    soft_risk_signals = _prune_success_timestamps(soft_risk_signals, now=now_seed, days=3)
     state["success_timestamps"] = success_history
     state["successes_last_7d"] = len(success_history)
     state["last_success_local_hour"] = last_success_local_hour
     state["last_period"] = last_period
     state["risk_failures"] = risk_failures
     state["pause_until"] = pause_until
+    state["soft_risk_signals"] = soft_risk_signals
+    state["quiet_cycles_remaining"] = quiet_seed
     state["risk_pressure"] = _risk_pressure_level(
         risk_failures,
         successes_last_7d=len(success_history),
         pause_until=pause_until,
+        soft_risk_signals=soft_risk_signals,
     )
 
     def _avoid_hours() -> set[int] | None:
@@ -577,20 +619,44 @@ async def _creator_stats_scheduler(
             await _sleep_until(target)
 
     consecutive_failures = 0
-    # Multi-cycle quiet arm (int) — survives risk/habit skips without bool race.
-    quiet_cycles_remaining = max(0, int(state.get("quiet_cycles_remaining") or 0))
+    # Multi-cycle quiet arm (int) — durable so deploy restarts keep the calm stretch.
+    quiet_cycles_remaining = max(0, int(state.get("quiet_cycles_remaining") or quiet_seed or 0))
+
+    async def _persist_anti_risk(*, clear_pause: bool = False) -> None:
+        """Best-effort durable write of fuse / quiet / soft-risk state."""
+        with contextlib.suppress(Exception):
+            from backend.db import creator_stats as stats_db
+
+            await stats_db.save_scheduler_success_history(
+                success_history,
+                last_success_local_hour=last_success_local_hour,
+                last_period=last_period,
+                risk_failures=risk_failures,
+                pause_until="" if clear_pause else (pause_until or ""),
+                quiet_cycles_remaining=quiet_cycles_remaining,
+                soft_risk_signals=soft_risk_signals,
+            )
+
     while True:
         started_at = datetime.now(UTC)
         succeeded = False
         ran_crawl = False
         live_success = False
+        soft_risk_hit = False
         success_history = _prune_success_timestamps(success_history, now=started_at)
+        risk_failures = _prune_success_timestamps(risk_failures, now=started_at, days=3)
+        soft_risk_signals = _prune_success_timestamps(
+            soft_risk_signals, now=started_at, days=3
+        )
         state["success_timestamps"] = success_history
         state["successes_last_7d"] = len(success_history)
+        state["risk_failures"] = risk_failures
+        state["soft_risk_signals"] = soft_risk_signals
         pressure = _risk_pressure_level(
             risk_failures,
             successes_last_7d=len(success_history),
             pause_until=pause_until,
+            soft_risk_signals=soft_risk_signals,
             now=started_at,
         )
         state["risk_pressure"] = pressure
@@ -624,6 +690,7 @@ async def _creator_stats_scheduler(
                 "(armed quiet, remaining=%s)",
                 quiet_cycles_remaining,
             )
+            await _persist_anti_risk()
         elif _weekly_crawl_budget_exhausted(
             success_history,
             max_per_week=int(max_successful_crawls_per_week or 0),
@@ -743,6 +810,7 @@ async def _creator_stats_scheduler(
                 )
                 try:
                     from backend.services.creator_stats.pipeline import (
+                        _batch_has_soft_risk,
                         _has_successful_live_sync,
                         sync_all_active_accounts,
                     )
@@ -756,6 +824,17 @@ async def _creator_stats_scheduler(
                     )
                     finished_at = datetime.now(UTC)
                     last_error = result.get("error")
+                    soft_risk_hit = _batch_has_soft_risk(result)
+                    if not last_error and soft_risk_hit:
+                        # Prefer soft-risk reason text for health / riskish scoring.
+                        for item in result.get("results") or []:
+                            if isinstance(item, dict) and item.get("soft_risk"):
+                                last_error = str(
+                                    item.get("soft_risk_reason")
+                                    or item.get("error")
+                                    or "empty shell risk"
+                                )
+                                break
                     if not last_error and int(result.get("failed") or 0) > 0:
                         # Batch completed with per-account failures — surface the first
                         # few messages so /health is actionable (not just failed=N).
@@ -764,7 +843,7 @@ async def _creator_stats_scheduler(
                             if not isinstance(item, dict):
                                 continue
                             err = item.get("error")
-                            if not err or item.get("account_synced"):
+                            if not err or (item.get("account_synced") and not item.get("soft_risk")):
                                 continue
                             account_id = str(item.get("account_id") or "?").strip() or "?"
                             account_errors.append(f"{account_id}: {err}")
@@ -773,7 +852,11 @@ async def _creator_stats_scheduler(
                         if account_errors:
                             last_error = "; ".join(account_errors)
                     # cooldown（冷却期内跳过）不是失败——不计入退避序列。
-                    succeeded = bool(result.get("ok")) or result.get("status") == "cooldown"
+                    # Soft-risk empty shells report ok/synced but still need cooling.
+                    succeeded = (
+                        (bool(result.get("ok")) or result.get("status") == "cooldown")
+                        and not soft_risk_hit
+                    )
                     live_success = _has_successful_live_sync(result)
                     if live_success:
                         success_history.append(finished_at.isoformat())
@@ -782,28 +865,33 @@ async def _creator_stats_scheduler(
                         )
                         last_success_local_hour = finished_at.astimezone(_CN_TZ).hour
                         last_period = period
-                        # A real success clears the risk fuse.
+                        # A real healthy success clears hard + soft risk fuses.
                         risk_failures = []
+                        soft_risk_signals = []
                         pause_until = None
                         state["last_success_local_hour"] = last_success_local_hour
                         state["success_timestamps"] = success_history
                         state["successes_last_7d"] = len(success_history)
                         state["last_period"] = last_period
                         state["risk_failures"] = risk_failures
+                        state["soft_risk_signals"] = soft_risk_signals
                         state["pause_until"] = None
-                        with contextlib.suppress(Exception):
-                            from backend.db import creator_stats as stats_db
-
-                            await stats_db.save_scheduler_success_history(
-                                success_history,
-                                last_success_local_hour=last_success_local_hour,
-                                last_period=last_period,
-                                risk_failures=risk_failures,
-                                pause_until="",
-                            )
+                        await _persist_anti_risk(clear_pause=True)
+                    elif soft_risk_hit:
+                        soft_risk_signals.append(finished_at.isoformat())
+                        soft_risk_signals = _prune_success_timestamps(
+                            soft_risk_signals, now=finished_at, days=3
+                        )
+                        state["soft_risk_signals"] = soft_risk_signals
+                        # Soft empty shell still counts as a "run finished" for ops.
+                        state["last_soft_risk"] = True
                     state.update(
                         {
-                            "status": "completed" if succeeded else "failed",
+                            "status": (
+                                "soft_risk"
+                                if soft_risk_hit
+                                else ("completed" if succeeded else "failed")
+                            ),
                             "last_status": result.get("status"),
                             "last_active_accounts": result.get("active_accounts", 0),
                             "last_succeeded": result.get("succeeded", 0),
@@ -852,10 +940,12 @@ async def _creator_stats_scheduler(
         last_err = str(state.get("last_error") or "")
         # Only score risk/backoff from a crawl we actually attempted this cycle.
         # A skipped window must not re-apply the previous failure's risk backoff.
-        riskish = ran_crawl and (not succeeded) and _is_riskish_error(last_err)
+        riskish = ran_crawl and (not succeeded) and (
+            soft_risk_hit or _is_riskish_error(last_err)
+        )
         if riskish:
             backoff = random.uniform(3.0, 6.0)
-            # Extra quiet window(s) after risk/auth — do not schedule crawl→crawl.
+            # Extra quiet window(s) after risk/auth/empty-shell — do not crawl→crawl.
             # Under pressure, sometimes arm two cycles (multi-day calm stretch).
             armed = _quiet_cycles_to_arm(
                 pressure, risk_skip_next_chance=risk_skip_next_chance
@@ -864,27 +954,38 @@ async def _creator_stats_scheduler(
                 quiet_cycles_remaining = max(quiet_cycles_remaining, armed)
                 state["quiet_cycles_remaining"] = quiet_cycles_remaining
                 state["last_risk_skip_armed"] = True
-            # Durable circuit breaker: ≥2 risk failures in ~72h → multi-day pause.
-            risk_failures, new_pause = _record_risk_failure(
-                risk_failures, now=datetime.now(UTC)
-            )
-            state["risk_failures"] = risk_failures
-            if new_pause:
-                pause_until = new_pause
-                state["pause_until"] = pause_until
-                logger.warning(
-                    "creator stats risk circuit breaker open until %s", pause_until
+            # Soft empty-shell only escalates the hard fuse after repeated hits
+            # (soft_n already drives pressure). Hard auth/risk trips immediately.
+            if soft_risk_hit:
+                soft_kept = _prune_success_timestamps(
+                    soft_risk_signals, now=datetime.now(UTC), days=3
                 )
-            with contextlib.suppress(Exception):
-                from backend.db import creator_stats as stats_db
-
-                await stats_db.save_scheduler_success_history(
-                    success_history,
-                    last_success_local_hour=last_success_local_hour,
-                    last_period=last_period,
-                    risk_failures=risk_failures,
-                    pause_until=pause_until or "",
+                if len(soft_kept) >= 2:
+                    risk_failures, new_pause = _record_risk_failure(
+                        risk_failures, now=datetime.now(UTC)
+                    )
+                    state["risk_failures"] = risk_failures
+                    if new_pause:
+                        pause_until = new_pause
+                        state["pause_until"] = pause_until
+                        logger.warning(
+                            "creator stats risk circuit breaker open until %s "
+                            "(escalated from empty-shell soft risks)",
+                            pause_until,
+                        )
+            else:
+                # Durable circuit breaker: ≥2 hard risk failures in ~72h → multi-day pause.
+                risk_failures, new_pause = _record_risk_failure(
+                    risk_failures, now=datetime.now(UTC)
                 )
+                state["risk_failures"] = risk_failures
+                if new_pause:
+                    pause_until = new_pause
+                    state["pause_until"] = pause_until
+                    logger.warning(
+                        "creator stats risk circuit breaker open until %s", pause_until
+                    )
+            await _persist_anti_risk()
         elif consecutive_failures <= 1:
             backoff = 1.0
         else:
@@ -924,6 +1025,7 @@ async def _creator_stats_scheduler(
                     quiet_cycles_remaining = 1
                     state["quiet_cycles_remaining"] = quiet_cycles_remaining
                     state["last_skip_armed_reason"] = "habit_skip"
+                    await _persist_anti_risk()
         # Circuit pause: if open, sleep at least until pause_until.
         candidate = datetime.now(UTC) + timedelta(
             seconds=interval_seconds * random.triangular(0.65, 1.75, 1.0) * backoff
@@ -1257,6 +1359,8 @@ async def health() -> ApiResponse[Any]:
             "risk_pressure",
             "quiet_cycles_remaining",
             "prefer_light",
+            "soft_risk_signals",
+            "last_soft_risk",
         )
         scheduler = {key: scheduler_state.get(key) for key in health_fields}
     return success(

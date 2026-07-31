@@ -41,6 +41,8 @@ def _empty_scheduler_history() -> dict:
         "last_period": None,
         "risk_failures": [],
         "pause_until": None,
+        "quiet_cycles_remaining": 0,
+        "soft_risk_signals": [],
     }
 
 
@@ -567,6 +569,12 @@ def test_risk_pressure_level_escalates_with_failures_and_budget():
         )
         == 2
     )
+    soft = [(now - timedelta(hours=1)).isoformat()]
+    assert _risk_pressure_level([], soft_risk_signals=soft, now=now) == 1
+    soft3 = [
+        (now - timedelta(hours=i)).isoformat() for i in (3, 2, 1)
+    ]
+    assert _risk_pressure_level([], soft_risk_signals=soft3, now=now) == 2
 
 
 def test_pressure_helpers_tighten_period_skip_and_light():
@@ -995,3 +1003,125 @@ async def test_scheduler_skips_when_snapshot_still_fresh(monkeypatch):
     assert state["last_skip_reason"] == "fresh_snapshot"
     # Only the post-cycle interval sleep — no pre-run settle sleep.
     assert len(sleep_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_scheduler_soft_risk_empty_shell_cools_without_live_success(monkeypatch):
+    """Empty-shell soft risk must not clear the fuse as a healthy success."""
+    app = _scheduler_app()
+    result = {
+        "ok": True,
+        "status": "completed",
+        "active_accounts": 1,
+        "succeeded": 1,
+        "failed": 0,
+        "results": [
+            {
+                "account_id": "acc-1",
+                "account_synced": True,
+                "notes_imported": 0,
+                "soft_risk": True,
+                "soft_risk_reason": "empty shell risk: note list collapsed",
+                "error": "empty shell risk: note list collapsed",
+                "error_code": "EMPTY_SHELL",
+            }
+        ],
+    }
+    saved: list[dict] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        raise asyncio.CancelledError
+
+    async def fake_save(timestamps, **kwargs):
+        saved.append({"timestamps": list(timestamps), **kwargs})
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(app_module.random, "random", lambda: 0.0)
+    monkeypatch.setattr(
+        "backend.db.creator_stats.save_scheduler_success_history", fake_save
+    )
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(return_value=result),
+        ),
+        patch(
+            "backend.services.creator_stats.pipeline._has_successful_live_sync",
+            return_value=False,
+        ),
+        patch(
+            "backend.services.creator_stats.pipeline._batch_has_soft_risk",
+            return_value=True,
+        ),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(
+            app,
+            0.5,
+            pre_run_delay=None,
+            skip_day_chance=0.0,
+            risk_skip_next_chance=1.0,
+            post_success_long_break_chance=0.0,
+            max_successful_crawls_per_week=0,
+            period_7d_chance=0.0,
+        )
+
+    state = app.state.creator_stats_scheduler_status
+    assert state["status"] == "soft_risk"
+    assert state.get("last_soft_risk") is True
+    assert state.get("last_risk_skip_armed") is True
+    assert int(state.get("quiet_cycles_remaining") or 0) >= 1
+    assert state.get("soft_risk_signals")
+    # Soft risk should not append a healthy success timestamp.
+    assert state.get("successes_last_7d", 0) == 0
+    assert saved, "expected durable quiet/soft-risk write"
+
+
+@pytest.mark.asyncio
+async def test_scheduler_restores_quiet_cycles_from_durable_state(monkeypatch):
+    """Quiet arms survive restart via durable scheduler state."""
+    app = _scheduler_app()
+    app.state.creator_stats_scheduler_status = {"quiet_cycles_remaining": 0}
+    sleep_calls: list[float] = []
+
+    async def stop_after_interval(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        raise asyncio.CancelledError
+
+    async def seeded_load():
+        return {
+            "timestamps": [],
+            "last_success_local_hour": None,
+            "last_period": None,
+            "risk_failures": [],
+            "pause_until": None,
+            "quiet_cycles_remaining": 2,
+            "soft_risk_signals": [],
+        }
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", stop_after_interval)
+    monkeypatch.setattr(
+        "backend.db.creator_stats.load_scheduler_success_history", seeded_load
+    )
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(),
+        ) as sync,
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(
+            app,
+            1.0,
+            pre_run_delay=None,
+            skip_day_chance=0.0,
+            risk_skip_next_chance=0.0,
+            post_success_long_break_chance=0.0,
+            max_successful_crawls_per_week=0,
+        )
+
+    sync.assert_not_awaited()
+    state = app.state.creator_stats_scheduler_status
+    assert state["status"] == "skipped"
+    assert state["last_skip_reason"] == "armed"
+    assert state["quiet_cycles_remaining"] == 1
