@@ -595,18 +595,75 @@ async def _creator_stats_scheduler(
             logger.debug("scheduler CDP probe skipped: %s", exc)
             return True, ""
 
-    async def _soft_prune_blank_pages() -> None:
-        """Best-effort blank-tab hygiene before a real crawl (never blocks)."""
+    async def _soft_page_hygiene(*, phase: str = "pre") -> None:
+        """Best-effort excess-tab hygiene (never blocks the scheduler).
+
+        Closes blank/new-tab pages and duplicate Creator Center tabs so the
+        profile does not accumulate open→scrape residue (a risk fingerprint).
+        Requires no active CDP client — only call when Playwright is detached.
+        """
         try:
             from backend.db.accounts import get_active_account
-            from backend.services.chrome_launcher import prune_blank_pages_all
+            from backend.services.chrome_launcher import hygiene_browser_pages_all
 
             account = await get_active_account()
             if account is None:
                 return
-            await prune_blank_pages_all([account], apply=True, account_ids=[str(account.id)])
+            max_pages = max(2, int(os.environ.get("CREATOR_STATS_MAX_OPEN_PAGES", "8") or 8))
+            max_close = max(1, int(os.environ.get("CREATOR_STATS_HYGIENE_MAX_CLOSE", "3") or 3))
+            statuses = await hygiene_browser_pages_all(
+                [account],
+                apply=True,
+                account_ids=[str(account.id)],
+                max_pages=max_pages,
+                max_close=max_close,
+            )
+            for status in statuses or []:
+                if getattr(status, "closed_count", 0):
+                    logger.info(
+                        "creator stats %s-crawl page hygiene: closed=%s pages_now=%s",
+                        phase,
+                        status.closed_count,
+                        status.page_count,
+                    )
         except Exception as exc:
-            logger.debug("pre-crawl blank page prune skipped: %s", exc)
+            logger.debug("%s-crawl page hygiene skipped: %s", phase, exc)
+
+    async def _active_page_budget_ok() -> tuple[bool, int, str]:
+        """False when the profile has too many open tabs even after hygiene."""
+        try:
+            from urllib.parse import urlparse
+
+            from backend.db.accounts import get_active_account, get_account_cdp_endpoint
+            from backend.services.chrome_launcher import count_open_pages
+
+            account = await get_active_account()
+            if account is None:
+                return True, 0, ""
+            endpoint = (await get_account_cdp_endpoint(str(account.id)) or "").strip()
+            if not endpoint:
+                return True, 0, ""
+            parsed = urlparse(endpoint)
+            port = parsed.port
+            if port is None:
+                return True, 0, ""
+            max_pages = max(2, int(os.environ.get("CREATOR_STATS_MAX_OPEN_PAGES", "8") or 8))
+            count = count_open_pages(port)
+            if count is None:
+                return True, 0, ""
+            if count <= max_pages:
+                return True, count, ""
+            # Attempt hygiene once, then re-count.
+            await _soft_page_hygiene(phase="budget")
+            count = count_open_pages(port)
+            if count is None:
+                return True, 0, ""
+            if count > max_pages:
+                return False, count, f"open_pages={count}>max={max_pages}"
+            return True, count, ""
+        except Exception as exc:
+            logger.debug("scheduler page-budget probe skipped: %s", exc)
+            return True, 0, ""
 
     # 1. 启动随机延迟：部署/重启后不再立刻爬取。
     if startup_delay is not None:
@@ -713,6 +770,7 @@ async def _creator_stats_scheduler(
             fresh, retry_s = await _active_snapshot_is_fresh()
             auth_blocked, auth_msg, auth_retry = await _active_auth_cooldown()
             cdp_ready, cdp_reason = await _active_cdp_ready()
+            page_ok, page_count, page_reason = await _active_page_budget_ok()
             if fresh:
                 state.update(
                     {
@@ -757,10 +815,25 @@ async def _creator_stats_scheduler(
                     "scheduled creator stats import skipped: CDP unavailable (%s)",
                     cdp_reason or "unknown",
                 )
+            elif not page_ok:
+                # Too many open tabs after hygiene — skip rather than pile on.
+                state.update(
+                    {
+                        "status": "skipped",
+                        "last_skipped_at": started_at.isoformat(),
+                        "last_skip_reason": "page_budget",
+                        "last_error": page_reason or "page_budget",
+                        "open_page_count": page_count,
+                    }
+                )
+                logger.info(
+                    "scheduled creator stats import skipped: page budget (%s)",
+                    page_reason or f"pages={page_count}",
+                )
             else:
                 ran_crawl = True
-                # Soft hygiene: drop orphan blank tabs so CDP target lists stay human-sized.
-                await _soft_prune_blank_pages()
+                # Soft hygiene: drop orphan blanks / duplicate creator tabs first.
+                await _soft_page_hygiene(phase="pre")
                 # 5. 醒来后先静默再开浏览器——人从"想起来"到点开页面有空隙。
                 # 风险压力下拉长 settle，进一步拉开"定时器响→开页"的机器节拍。
                 if pre_run_delay is not None:
@@ -933,6 +1006,8 @@ async def _creator_stats_scheduler(
                 # 4. 失败退避计数：成功即复位，第二次连续失败起才放大间隔。
                 consecutive_failures = 0 if succeeded else consecutive_failures + 1
                 state["consecutive_failures"] = consecutive_failures
+                # Post-crawl hygiene only after Playwright has detached (aclose).
+                await _soft_page_hygiene(phase="post")
         # 4. 失败退避：第二次连续失败起间隔按 1.5-2.5× 随机放大（固定倍数
         # 本身也是可预测的退避节律），成功即复位。
         # Auth/risk-shaped errors get a stronger multi-day-scale pause so we
@@ -1361,6 +1436,7 @@ async def health() -> ApiResponse[Any]:
             "prefer_light",
             "soft_risk_signals",
             "last_soft_risk",
+            "open_page_count",
         )
         scheduler = {key: scheduler_state.get(key) for key in health_fields}
     return success(

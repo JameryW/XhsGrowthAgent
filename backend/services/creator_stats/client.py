@@ -356,6 +356,35 @@ class CdpTransport:
             raise CreatorStatsFetchError("CDP browser has no logged-in browser context")
         return self._browser
 
+    async def _acquire_page(self, context: Any) -> tuple[Any, bool]:
+        """Pick a page for this crawl.
+
+        Prefer reusing an existing Creator Center tab (humans rarely open a
+        fresh tab every visit). Returns ``(page, owned)`` — when ``owned`` is
+        True the caller must close the page; when False, leave it open after a
+        gentle wind-down so the profile does not look like open→scrape→close.
+        """
+        reuse_chance = max(
+            0.0, min(1.0, _env_float("CREATOR_STATS_REUSE_TAB_CHANCE", 0.65))
+        )
+        if reuse_chance > 0 and random.random() < reuse_chance:
+            pages = list(getattr(context, "pages", None) or [])
+            creator_pages: list[Any] = []
+            for candidate in pages:
+                try:
+                    url = str(getattr(candidate, "url", "") or "")
+                except Exception:
+                    continue
+                low = url.lower()
+                if "creator.xiaohongshu.com" in low and "login" not in low:
+                    creator_pages.append(candidate)
+            if creator_pages:
+                page = random.choice(creator_pages)
+                logger.info("creator stats reusing existing creator tab")
+                return page, False
+        page = await context.new_page()
+        return page, True
+
     @staticmethod
     async def _wait_for(predicate: Any, timeout: float) -> None:
         """Wait for an in-memory predicate without relying on page internals."""
@@ -522,7 +551,7 @@ class CdpTransport:
             detail_budget = self._detail_timeout * random.uniform(0.35, 0.75)
             browser = await self._ensure_browser()
             context = browser.contexts[0]
-            page = await context.new_page()
+            page, page_owned = await self._acquire_page(context)
             account_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
             profile_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
             personal_info_response: tuple[int, dict[str, Any] | list[Any] | None] | None = None
@@ -1018,10 +1047,18 @@ class CdpTransport:
                     }
                     if personal_info_response is not None:
                         account_body["_personal_info"] = personal_info_response[1]
-                # Human-like wind-down: linger briefly before closing the tab.
+                # Human-like wind-down: linger briefly before leaving the tab.
                 wind_min, wind_max = self._session_wind_down
                 if wind_max > 0:
                     await asyncio.sleep(random.uniform(wind_min, max(wind_min, wind_max)))
+                # Reused tabs: park on creator home (not a deep-link leftover).
+                if not page_owned:
+                    with contextlib.suppress(Exception):
+                        await page.goto(
+                            CREATOR_HOME_PAGE,
+                            wait_until="domcontentloaded",
+                            timeout=min(8_000, int(self._timeout * 1000)),
+                        )
                 return (
                     account_body if isinstance(account_body, dict) else {},
                     profile_body if isinstance(profile_body, dict) else {},
@@ -1032,8 +1069,9 @@ class CdpTransport:
                     page.remove_listener("response", on_response)
                 if pending:
                     await asyncio.gather(*pending, return_exceptions=True)
-                with contextlib.suppress(Exception):
-                    await page.close()
+                if page_owned:
+                    with contextlib.suppress(Exception):
+                        await page.close()
 
     async def get(
         self, url: str, *, headers: dict[str, str], params: dict[str, Any] | None = None

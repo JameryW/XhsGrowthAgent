@@ -960,3 +960,58 @@ def test_build_launch_cmd_bans_headless():
     assert "headless" not in inspect.signature(cl._build_launch_cmd).parameters
     cmd = cl._build_launch_cmd("/usr/bin/google-chrome", "/p", 9223)
     assert not any(f.startswith("--headless") for f in cmd)
+
+
+def test_hygiene_candidates_prefer_blanks_then_excess_creator():
+    targets = [
+        cl.CdpTarget("home", "page", "https://creator.xiaohongshu.com/new/home"),
+        cl.CdpTarget("stats", "page", "https://creator.xiaohongshu.com/statistics/account/v2"),
+        cl.CdpTarget("blank", "page", "about:blank"),
+        cl.CdpTarget("blank2", "page", "chrome://newtab/"),
+        cl.CdpTarget("other", "page", "https://www.xiaohongshu.com/explore"),
+    ]
+    page_count, candidates = cl._hygiene_page_cleanup_candidates(targets, max_pages=3)
+    assert page_count == 5
+    ids = [c.target_id for c in candidates]
+    # Blanks first, then one excess creator tab (keep home preferred).
+    assert "blank" in ids or "blank2" in ids
+    assert "home" not in ids  # preferred creator tab retained
+    assert len(candidates) >= 2
+
+
+def test_hygiene_candidates_under_cap_only_return_blanks():
+    targets = [
+        cl.CdpTarget("home", "page", "https://creator.xiaohongshu.com/new/home"),
+        cl.CdpTarget("blank", "page", "about:blank"),
+    ]
+    page_count, candidates = cl._hygiene_page_cleanup_candidates(targets, max_pages=6)
+    assert page_count == 2
+    assert [c.target_id for c in candidates] == ["blank"]
+
+
+@pytest.mark.asyncio
+async def test_hygiene_browser_pages_closes_multiple(_profile_dir, monkeypatch):
+    home = cl.CdpTarget("home", "page", "https://creator.xiaohongshu.com/new/home")
+    stats = cl.CdpTarget("stats", "page", "https://creator.xiaohongshu.com/statistics/account/v2")
+    blank = cl.CdpTarget("blank", "page", "about:blank")
+    # list → recheck → post-close
+    list_targets = MagicMock(
+        side_effect=[[home, stats, blank], [home, stats, blank], [home]]
+    )
+    close = MagicMock(return_value=True)
+    monkeypatch.setattr(cl, "probe_port", AsyncMock(return_value=True))
+    monkeypatch.setattr(cl, "_has_active_cdp_connection", lambda port: False)
+    monkeypatch.setattr(cl, "_list_cdp_targets", list_targets)
+    monkeypatch.setattr(cl, "_close_cdp_target", close)
+
+    statuses = await cl.hygiene_browser_pages_all(
+        [_account(profile=str(_profile_dir))],
+        apply=True,
+        account_ids=["acc-1"],
+        max_pages=2,
+        max_close=3,
+    )
+
+    assert statuses[0].action == "cleaned"
+    assert statuses[0].closed_count >= 1
+    assert close.call_count >= 1

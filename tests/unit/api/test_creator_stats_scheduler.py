@@ -835,11 +835,15 @@ async def test_scheduler_success_history_persists_to_db_helper(monkeypatch):
             new=AsyncMock(return_value=True),
         ),
         patch(
+            "backend.services.chrome_launcher.count_open_pages",
+            return_value=2,
+        ),
+        patch(
             "backend.services.xhs_risk_gate.check_sync_auth_cooldown",
             return_value=None,
         ),
         patch(
-            "backend.services.chrome_launcher.prune_blank_pages_all",
+            "backend.services.chrome_launcher.hygiene_browser_pages_all",
             new=AsyncMock(return_value=[]),
         ),
         pytest.raises(asyncio.CancelledError),
@@ -1075,6 +1079,70 @@ async def test_scheduler_soft_risk_empty_shell_cools_without_live_success(monkey
     # Soft risk should not append a healthy success timestamp.
     assert state.get("successes_last_7d", 0) == 0
     assert saved, "expected durable quiet/soft-risk write"
+
+
+@pytest.mark.asyncio
+async def test_scheduler_skips_when_page_budget_exceeded(monkeypatch):
+    """Too many open tabs after hygiene → skip without crawl or risk trip."""
+    app = _scheduler_app()
+    sleep_calls: list[float] = []
+
+    async def stop_after_interval(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", stop_after_interval)
+    monkeypatch.setenv("CREATOR_STATS_MAX_OPEN_PAGES", "3")
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(),
+        ) as sync,
+        patch(
+            "backend.db.accounts.get_active_account",
+            new=AsyncMock(return_value=SimpleNamespace(id="acc-1", cdp_port=9222, chrome_profile_path="/tmp/p")),
+        ),
+        patch(
+            "backend.services.creator_stats.pipeline._account_freshness_skip",
+            new=AsyncMock(return_value=(False, 0)),
+        ),
+        patch(
+            "backend.services.xhs_risk_gate.check_sync_auth_cooldown",
+            return_value=None,
+        ),
+        patch(
+            "backend.db.accounts.get_account_cdp_endpoint",
+            new=AsyncMock(return_value="http://127.0.0.1:9222"),
+        ),
+        patch(
+            "backend.services.chrome_launcher.probe_port",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "backend.services.chrome_launcher.count_open_pages",
+            side_effect=[12, 10],  # still over after hygiene
+        ),
+        patch(
+            "backend.services.chrome_launcher.hygiene_browser_pages_all",
+            new=AsyncMock(return_value=[]),
+        ),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(
+            app,
+            1.0,
+            pre_run_delay=(30.0, 60.0),
+            skip_day_chance=0.0,
+            risk_skip_next_chance=0.0,
+            post_success_long_break_chance=0.0,
+            max_successful_crawls_per_week=0,
+        )
+
+    sync.assert_not_awaited()
+    state = app.state.creator_stats_scheduler_status
+    assert state["status"] == "skipped"
+    assert state["last_skip_reason"] == "page_budget"
+    assert not state.get("risk_failures")
 
 
 @pytest.mark.asyncio
