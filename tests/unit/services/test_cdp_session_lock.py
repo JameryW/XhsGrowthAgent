@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -11,6 +11,7 @@ from backend.services.cdp_session_lock import (
     cdp_session_holder,
     hold_cdp_session,
     is_cdp_session_busy,
+    is_cdp_session_busy_async,
     reset_cdp_session_locks_for_tests,
 )
 
@@ -51,3 +52,33 @@ async def test_wait_timeout_raises_busy():
                 account_id="a1", owner="other", wait=True, timeout=0.05
             ):
                 pass
+
+
+@pytest.mark.asyncio
+async def test_pg_busy_raises_when_pool_up(monkeypatch):
+    """When Postgres reports the advisory lock is held, fail fast (non-wait)."""
+    monkeypatch.setattr(
+        "backend.services.cdp_session_lock._try_acquire_pg",
+        AsyncMock(return_value=("busy", None)),
+    )
+    with pytest.raises(CdpSessionBusyError) as exc:
+        async with hold_cdp_session(account_id="a1", owner="stats", wait=False):
+            pass
+    assert exc.value.holder == "remote"
+
+
+@pytest.mark.asyncio
+async def test_pg_unavailable_degrades_to_local(monkeypatch):
+    monkeypatch.setattr(
+        "backend.services.cdp_session_lock._try_acquire_pg",
+        AsyncMock(return_value=("unavailable", None)),
+    )
+    async with hold_cdp_session(account_id="a1", owner="stats", wait=False):
+        assert is_cdp_session_busy(account_id="a1")
+
+
+@pytest.mark.asyncio
+async def test_async_busy_probe_uses_local_first():
+    async with hold_cdp_session(account_id="a1", owner="pub", wait=True):
+        assert await is_cdp_session_busy_async(account_id="a1") is True
+    assert await is_cdp_session_busy_async(account_id="a1") is False
