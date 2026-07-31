@@ -111,6 +111,75 @@ def test_note_count_ignores_ambiguous_total_field():
     assert overview2.note_count == 0
 
 
+def test_normalize_bundle_prefers_notes_list_over_inflated_overview_note_count():
+    """Live audit: overview note_count/publish_* can be 14 while Note Manager is 3."""
+    notes_raw = [
+        {
+            "note_id": "n1",
+            "title": "今天的睡姿，你给打几分？",
+            "view_count": 109,
+            "like_count": 9,
+            "comment_count": 0,
+            "collect_count": 4,
+            "share_count": 0,
+        },
+        {
+            "note_id": "n2",
+            "title": "Vlog｜简单快乐，公园里的30分钟",
+            "view_count": 22,
+            "like_count": 5,
+            "collect_count": 2,
+        },
+        {
+            "note_id": "n3",
+            "title": "最美的风景就是不经意之间",
+            "view_count": 18,
+            "like_count": 6,
+            "collect_count": 3,
+        },
+    ]
+    # Inflated overview aliases that previously won and wrote note_count=14.
+    account_raw = {
+        "view_count": 3822,
+        "like_count": 108,
+        "comment_count": 9,
+        "collect_count": 57,
+        "share_count": 5,
+        "fans_count": 8,
+        "note_count": 14,
+        "publish_count": 14,
+        "publish_note_num": 14,
+    }
+    bundle = normalize_bundle(account_raw, notes_raw, "acc_note_count_fix")
+    assert len(bundle.notes) == 3
+    assert bundle.account.note_count == 3
+    # Other metrics stay on the overview fields (not zeroed by reconcile).
+    assert bundle.account.views == 3822
+    assert bundle.account.likes == 108
+    assert bundle.account.fans == 8
+    assert bundle.notes[0].views == 109
+
+
+def test_normalize_bundle_sets_note_count_from_list_when_overview_missing():
+    bundle = normalize_bundle(
+        {"view_count": 10},
+        [{"note_id": "a", "view_count": 1}, {"note_id": "b", "view_count": 2}],
+        "acc_note_count_fill",
+    )
+    assert bundle.account.note_count == 2
+    assert bundle.account.views == 10
+
+
+def test_normalize_bundle_keeps_agreeing_note_count():
+    bundle = normalize_bundle(
+        {"view_count": 5, "note_count": 1},
+        [{"note_id": "only", "view_count": 5, "like_count": 1}],
+        "acc_note_count_agree",
+    )
+    assert len(bundle.notes) == 1
+    assert bundle.account.note_count == 1
+
+
 # ── CLI ─────────────────────────────────────────────────────────────────────
 
 

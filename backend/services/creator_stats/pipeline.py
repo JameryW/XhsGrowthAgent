@@ -248,10 +248,23 @@ async def preflight_creator_login(account_id: str, cdp_endpoint: str) -> SyncRes
 
     if status.get("is_logged_in"):
         # logged_in is creator-token or verified Creator Center page evidence;
-        # the www pair alone remains www_only.
+        # the www pair alone remains www_only (handled below).
         return None
 
     reason = str(status.get("reason") or "logged_out")
+    # www_only means durable www cookies exist but the named creator access
+    # token is absent. Live XHS sessions often keep Creator Center usable
+    # without that cookie (CDP page/API still works after navigate). Blocking
+    # here forces a false AUTH_EXPIRED and skips the only path that can recover
+    # when no creator tab is already open. Let the live CDP crawl decide.
+    if reason == "www_only":
+        logger.info(
+            "creator login preflight www_only for %s; allowing crawl "
+            "(live CDP is authoritative)",
+            account_id,
+        )
+        return None
+
     message = _AUTH_PREFLIGHT_MESSAGES.get(reason) or _AUTH_PREFLIGHT_MESSAGES["logged_out"]
     logger.info(
         "creator login preflight blocked crawl for %s: reason=%s signals=%s",

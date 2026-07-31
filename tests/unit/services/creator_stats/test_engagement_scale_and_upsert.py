@@ -222,6 +222,54 @@ async def test_bundle_persists_one_snapshot_identity_for_account_and_notes():
 
 
 @pytest.mark.asyncio
+async def test_upsert_bundle_reconciles_inflated_note_count_to_snapshot_len():
+    """Persist path must not store overview note_count that outruns the notes list."""
+    account = AccountStatsOverview(
+        account_id="note_count_persist",
+        views=3822,
+        likes=108,
+        fans=8,
+        note_count=14,  # inflated overview alias
+        synced_at="2026-07-31T00:00:00Z",
+    )
+    notes = [
+        NoteStats(
+            note_id="p1",
+            account_id="note_count_persist",
+            title="a",
+            views=109,
+            likes=9,
+            synced_at="2026-07-31T00:00:00Z",
+        ),
+        NoteStats(
+            note_id="p2",
+            account_id="note_count_persist",
+            title="b",
+            views=22,
+            likes=5,
+            synced_at="2026-07-31T00:00:00Z",
+        ),
+        NoteStats(
+            note_id="p3",
+            account_id="note_count_persist",
+            title="c",
+            views=18,
+            likes=6,
+            synced_at="2026-07-31T00:00:00Z",
+        ),
+    ]
+    imported, updated, deleted = await upsert_bundle(account, notes)
+    assert (imported, updated, deleted) == (3, 0, 0)
+    stored = await get_account_stats("note_count_persist")
+    assert stored is not None
+    assert stored.note_count == 3
+    assert stored.views == 3822
+    assert stored.likes == 108
+    assert stored.fans == 8
+    assert len(await list_note_stats("note_count_persist")) == 3
+
+
+@pytest.mark.asyncio
 async def test_upsert_bundle_deletes_notes_missing_from_snapshot():
     """Account-wide snapshot must drop local notes removed on Creator Center."""
     account = AccountStatsOverview(account_id="prune_acc", note_count=2, synced_at="t1")

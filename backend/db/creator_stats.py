@@ -436,6 +436,11 @@ async def upsert_bundle(
         keep_note_ids.add(note_id)
         valid_notes.append(note)
 
+    # Snapshot truth: account.note_count must equal the notes we persist, not a
+    # misleading overview alias that can outrun Note Manager / list length.
+    if valid_notes:
+        bundle_account.note_count = len(valid_notes)
+
     if not is_pool_ready():
         await upsert_account_stats(bundle_account)
         imported, updated = await upsert_notes(valid_notes)
