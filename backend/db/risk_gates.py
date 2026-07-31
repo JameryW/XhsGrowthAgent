@@ -27,6 +27,7 @@ def _empty() -> dict[str, Any]:
         "sync_auth": {},  # account_id -> {until, reason}
         "qr_risk": {},  # account_id -> {until, reason}
         "qr_last_attempt": {},  # account_id -> at
+        "policies": {},  # account_id -> {browser_action_seconds, publish_seconds, ...}
     }
 
 
@@ -37,7 +38,15 @@ def _normalize(data: dict[str, Any] | None) -> dict[str, Any]:
     for field in base:
         raw = data.get(field)
         if isinstance(raw, dict):
-            base[field] = dict(raw)
+            if field == "policies":
+                # Keep only dict-of-dict policies.
+                cleaned: dict[str, Any] = {}
+                for aid, policy in raw.items():
+                    if isinstance(policy, dict):
+                        cleaned[str(aid)] = dict(policy)
+                base[field] = cleaned
+            else:
+                base[field] = dict(raw)
     return base
 
 

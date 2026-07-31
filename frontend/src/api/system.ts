@@ -113,6 +113,44 @@ export async function clearRiskGates(payload?: {
   return client.post('/system/risk-gates/clear', payload || {}) as unknown as Promise<ClearRiskGatesResult>
 }
 
+export interface CooldownPolicy {
+  account_id?: string | null
+  defaults: Record<string, number>
+  overrides: Record<string, number>
+  effective: Record<string, number>
+}
+
+export async function getRiskGatePolicy(accountId?: string): Promise<CooldownPolicy> {
+  const q = accountId ? `?account_id=${encodeURIComponent(accountId)}` : ''
+  return client.get(`/system/risk-gates/policy${q}`) as unknown as Promise<CooldownPolicy>
+}
+
+export async function setRiskGatePolicy(payload: {
+  account_id: string
+  browser_action_seconds?: number | null
+  publish_seconds?: number | null
+  engagement_seconds?: number | null
+  sync_auth_minutes?: number | null
+  qr_cooldown_seconds?: number | null
+  qr_risk_block_seconds?: number | null
+  replace?: boolean
+}): Promise<CooldownPolicy> {
+  return client.put('/system/risk-gates/policy', payload) as unknown as Promise<CooldownPolicy>
+}
+
+export async function deleteRiskGatePolicy(accountId?: string): Promise<{
+  account_id?: string | null
+  removed: number
+  policy: CooldownPolicy
+}> {
+  const q = accountId ? `?account_id=${encodeURIComponent(accountId)}` : ''
+  return client.delete(`/system/risk-gates/policy${q}`) as unknown as Promise<{
+    account_id?: string | null
+    removed: number
+    policy: CooldownPolicy
+  }>
+}
+
 /** Client-side cache so PreLaunchChecklist remounts don't re-hit the API. */
 const HEALTH_CACHE_TTL_MS = 30_000
 let healthCache: { data: HealthCheck; at: number } | null = null

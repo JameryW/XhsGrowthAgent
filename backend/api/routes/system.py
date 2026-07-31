@@ -489,14 +489,18 @@ async def get_risk_gates(
     from backend.services.cdp_session_lock import snapshot_cdp_sessions
     from backend.services.xhs_risk_gate import list_active_cooldowns, snapshot_risk_gates
 
+    from backend.services.xhs_risk_gate import get_cooldown_policy
+
     gates = snapshot_risk_gates()
     active = list_active_cooldowns(account_id=account_id)
+    aid = (account_id or "").strip()
     return success(
         {
             "risk_gates": gates,
             "active": active,
             "cdp_sessions": snapshot_cdp_sessions(),
-            "account_id": (account_id or "").strip() or None,
+            "account_id": aid or None,
+            "policy": get_cooldown_policy(aid) if aid else None,
         }
     )
 
@@ -527,3 +531,105 @@ async def clear_risk_gates(
             "remaining_active": list_active_cooldowns(account_id=body.account_id),
         }
     )
+
+
+class CooldownPolicyRequest(BaseModel):
+    """Per-account cool-down policy overrides (seconds unless noted)."""
+
+    account_id: str = Field(..., min_length=1, description="Account to configure")
+    browser_action_seconds: float | None = Field(default=None, ge=0)
+    publish_seconds: float | None = Field(default=None, ge=0)
+    engagement_seconds: float | None = Field(default=None, ge=0)
+    sync_auth_minutes: float | None = Field(default=None, ge=0)
+    qr_cooldown_seconds: float | None = Field(default=None, ge=0)
+    qr_risk_block_seconds: float | None = Field(default=None, ge=0)
+    replace: bool = Field(
+        default=False,
+        description="When true, replace the whole override map (omit = default).",
+    )
+
+
+@router.get("/risk-gates/policy")
+async def get_risk_gate_policy(
+    account_id: Annotated[str, Query(description="账号 ID；空=仅全局默认")] = "",
+    _: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Return effective cool-down policy (global defaults + account overrides)."""
+    from backend.services.xhs_risk_gate import get_cooldown_policy, global_cooldown_defaults
+
+    if not (account_id or "").strip():
+        return success(
+            {
+                "account_id": None,
+                "defaults": global_cooldown_defaults(),
+                "overrides": {},
+                "effective": global_cooldown_defaults(),
+            }
+        )
+    return success(get_cooldown_policy(account_id))
+
+
+@router.put("/risk-gates/policy")
+async def put_risk_gate_policy(
+    body: CooldownPolicyRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Create/update per-account cool-down policy overrides."""
+    from backend.services.xhs_risk_gate import set_cooldown_policy
+
+    try:
+        policy = set_cooldown_policy(
+            body.account_id,
+            browser_action_seconds=body.browser_action_seconds,
+            publish_seconds=body.publish_seconds,
+            engagement_seconds=body.engagement_seconds,
+            sync_auth_minutes=body.sync_auth_minutes,
+            qr_cooldown_seconds=body.qr_cooldown_seconds,
+            qr_risk_block_seconds=body.qr_risk_block_seconds,
+            replace=bool(body.replace),
+        )
+    except ValueError as exc:
+        from backend.api.responses import error as api_error
+
+        return api_error(code="invalid_policy", message=str(exc))
+    clear_health_cache()
+    logger.info(
+        "risk gate policy updated by user=%s account=%s overrides=%s",
+        user.get("username") or user.get("id"),
+        body.account_id,
+        policy.get("overrides"),
+    )
+    return success(policy)
+
+
+@router.delete("/risk-gates/policy")
+async def delete_risk_gate_policy(
+    account_id: Annotated[str, Query(description="账号 ID；空=清除全部账号策略")] = "",
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Remove per-account cool-down overrides (revert to global defaults)."""
+    from backend.services.xhs_risk_gate import (
+        clear_cooldown_policy,
+        get_cooldown_policy,
+        global_cooldown_defaults,
+    )
+
+    result = clear_cooldown_policy(account_id)
+    clear_health_cache()
+    logger.info(
+        "risk gate policy cleared by user=%s account=%s removed=%s",
+        user.get("username") or user.get("id"),
+        account_id or "*",
+        result.get("removed"),
+    )
+    if (account_id or "").strip():
+        policy = get_cooldown_policy(account_id)
+    else:
+        defaults = global_cooldown_defaults()
+        policy = {
+            "account_id": None,
+            "defaults": defaults,
+            "overrides": {},
+            "effective": defaults,
+        }
+    return success({**result, "policy": policy})
