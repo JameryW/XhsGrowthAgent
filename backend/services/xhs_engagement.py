@@ -203,6 +203,23 @@ class XHSEngagement:
             "error": message,
         }
 
+    async def _hold_cdp(self):
+        """Shared CDP lock so stats/publish/engagement never attach together."""
+        from backend.services.cdp_session_lock import hold_cdp_session
+
+        timeout = 120.0
+        try:
+            timeout = float(os.environ.get("XHS_CDP_ENGAGEMENT_LOCK_TIMEOUT_S", "120") or 120)
+        except (TypeError, ValueError, OverflowError):
+            timeout = 120.0
+        return hold_cdp_session(
+            account_id=self.account_id,
+            cdp_endpoint=self.cdp_endpoint,
+            owner="engagement",
+            wait=True,
+            timeout=timeout,
+        )
+
     async def reply_to_comment(
         self,
         note_id: str,
@@ -210,7 +227,25 @@ class XHSEngagement:
         reply_content: str,
     ) -> dict[str, Any]:
         """回复评论；遇到登录/风控页面后立即停止且不重试。"""
-        async with self._guard.lock:
+        from backend.services.cdp_session_lock import CdpSessionBusyError
+
+        try:
+            async with await self._hold_cdp():
+                async with self._guard.lock:
+                    return await self._reply_to_comment_locked(
+                        note_id, comment_id, reply_content
+                    )
+        except CdpSessionBusyError as exc:
+            return self._blocked_result(
+                "cdp_busy", f"CDP session busy (held by {exc.holder})"
+            )
+
+    async def _reply_to_comment_locked(
+        self,
+        note_id: str,
+        comment_id: str,
+        reply_content: str,
+    ) -> dict[str, Any]:
             try:
                 page = await self._ensure_page()
                 await self._assert_safe_page(page)
@@ -264,81 +299,103 @@ class XHSEngagement:
 
     async def send_dm(self, target_user_id: str, message: str) -> dict[str, Any]:
         """发送私信；遇到登录/风控页面后立即停止且不重试。"""
-        async with self._guard.lock:
-            try:
-                page = await self._ensure_page()
-                await self._assert_safe_page(page)
-                await self._paced(lambda: page.goto(self.DM_URL, wait_until="domcontentloaded"))
-                await self._assert_safe_page(page)
+        from backend.services.cdp_session_lock import CdpSessionBusyError
 
-                new_dm_btn = await page.query_selector("text=新建私信, .new-dm-btn")
-                if new_dm_btn:
-                    await self._paced(new_dm_btn.click)
-                    await self._assert_safe_page(page)
-                search_input = await page.query_selector(
-                    "input[placeholder*=搜索], .dm-search-input"
-                )
-                if search_input:
-                    await self._paced(lambda: search_input.fill(target_user_id))
-                    user_result = await page.query_selector(
-                        f".user-item[data-id='{target_user_id}'], .search-result-item"
-                    )
-                    if user_result:
-                        await self._paced(user_result.click)
+        try:
+            async with await self._hold_cdp():
+                async with self._guard.lock:
+                    try:
+                        page = await self._ensure_page()
+                        await self._assert_safe_page(page)
+                        await self._paced(
+                            lambda: page.goto(self.DM_URL, wait_until="domcontentloaded")
+                        )
                         await self._assert_safe_page(page)
 
-                dm_input = await page.query_selector("textarea[placeholder*=输入], .dm-input")
-                if dm_input is None:
-                    return {"success": False, "error": "无法找到私信输入框"}
-                await self._paced(lambda: dm_input.fill(message))
-                send_btn = await page.query_selector("text=发送, button.send-btn")
-                if send_btn:
-                    await self._paced(send_btn.click)
-                    await self._assert_safe_page(page)
-                return {"success": True, "message_id": f"dm_{int(time.time())}"}
-            except EngagementRiskError as exc:
-                logger.warning(
-                    "engagement stopped without retry account=%s code=%s: %s",
-                    self.account_id or "unknown",
-                    exc.error_code,
-                    exc,
-                )
-                return self._blocked_result(exc.error_code, str(exc))
-            except EngagementConfigurationError as exc:
-                logger.warning("engagement unavailable: %s", exc)
-                return self._blocked_result("configuration", str(exc))
-            except Exception as exc:
-                logger.error("发送私信失败: %s", exc, exc_info=True)
-                return {"success": False, "status": "failed", "error": str(exc)}
+                        new_dm_btn = await page.query_selector("text=新建私信, .new-dm-btn")
+                        if new_dm_btn:
+                            await self._paced(new_dm_btn.click)
+                            await self._assert_safe_page(page)
+                        search_input = await page.query_selector(
+                            "input[placeholder*=搜索], .dm-search-input"
+                        )
+                        if search_input:
+                            await self._paced(lambda: search_input.fill(target_user_id))
+                            user_result = await page.query_selector(
+                                f".user-item[data-id='{target_user_id}'], .search-result-item"
+                            )
+                            if user_result:
+                                await self._paced(user_result.click)
+                                await self._assert_safe_page(page)
+
+                        dm_input = await page.query_selector(
+                            "textarea[placeholder*=输入], .dm-input"
+                        )
+                        if dm_input is None:
+                            return {"success": False, "error": "无法找到私信输入框"}
+                        await self._paced(lambda: dm_input.fill(message))
+                        send_btn = await page.query_selector("text=发送, button.send-btn")
+                        if send_btn:
+                            await self._paced(send_btn.click)
+                            await self._assert_safe_page(page)
+                        return {"success": True, "message_id": f"dm_{int(time.time())}"}
+                    except EngagementRiskError as exc:
+                        logger.warning(
+                            "engagement stopped without retry account=%s code=%s: %s",
+                            self.account_id or "unknown",
+                            exc.error_code,
+                            exc,
+                        )
+                        return self._blocked_result(exc.error_code, str(exc))
+                    except EngagementConfigurationError as exc:
+                        logger.warning("engagement unavailable: %s", exc)
+                        return self._blocked_result("configuration", str(exc))
+                    except Exception as exc:
+                        logger.error("发送私信失败: %s", exc, exc_info=True)
+                        return {"success": False, "status": "failed", "error": str(exc)}
+        except CdpSessionBusyError as exc:
+            return self._blocked_result(
+                "cdp_busy", f"CDP session busy (held by {exc.holder})"
+            )
 
     async def get_unread_messages(self) -> list[dict[str, Any]]:
         """获取未读私信列表；登录/风控页面返回空结果并停止。"""
-        async with self._guard.lock:
-            try:
-                page = await self._ensure_page()
-                await self._assert_safe_page(page)
-                await self._paced(lambda: page.goto(self.DM_URL, wait_until="domcontentloaded"))
-                await self._assert_safe_page(page)
-                unread_items = await page.query_selector_all(".message-item.unread, .unread-badge")
-                messages = []
-                for item in unread_items:
-                    sender = await item.query_selector(".sender-name")
-                    content = await item.query_selector(".message-preview")
-                    if sender and content:
-                        messages.append(
-                            {
-                                "sender_name": await sender.inner_text(),
-                                "preview": await content.inner_text(),
-                                "is_unread": True,
-                            }
+        from backend.services.cdp_session_lock import CdpSessionBusyError
+
+        try:
+            async with await self._hold_cdp():
+                async with self._guard.lock:
+                    try:
+                        page = await self._ensure_page()
+                        await self._assert_safe_page(page)
+                        await self._paced(
+                            lambda: page.goto(self.DM_URL, wait_until="domcontentloaded")
                         )
-                return messages
-            except (EngagementRiskError, EngagementConfigurationError) as exc:
-                logger.warning("message read stopped: %s", exc)
-                return []
-            except Exception as exc:
-                logger.error("获取未读消息失败: %s", exc, exc_info=True)
-                return []
+                        await self._assert_safe_page(page)
+                        unread_items = await page.query_selector_all(
+                            ".message-item.unread, .unread-badge"
+                        )
+                        messages = []
+                        for item in unread_items:
+                            sender = await item.query_selector(".sender-name")
+                            content = await item.query_selector(".message-preview")
+                            if sender and content:
+                                messages.append(
+                                    {
+                                        "sender_name": await sender.inner_text(),
+                                        "preview": await content.inner_text(),
+                                        "is_unread": True,
+                                    }
+                                )
+                        return messages
+                    except (EngagementRiskError, EngagementConfigurationError) as exc:
+                        logger.warning("message read stopped: %s", exc)
+                        return []
+                    except Exception as exc:
+                        logger.error("获取未读消息失败: %s", exc, exc_info=True)
+                        return []
+        except CdpSessionBusyError:
+            return []
 
     async def _stop_playwright(self) -> None:
         if self._playwright is not None:

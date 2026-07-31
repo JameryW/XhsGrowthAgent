@@ -665,6 +665,23 @@ async def _creator_stats_scheduler(
             logger.debug("scheduler page-budget probe skipped: %s", exc)
             return True, 0, ""
 
+    async def _active_cdp_session_busy() -> bool:
+        """True when publisher/engagement already holds the CDP session lock."""
+        try:
+            from backend.db.accounts import get_active_account, get_account_cdp_endpoint
+            from backend.services.cdp_session_lock import is_cdp_session_busy
+
+            account = await get_active_account()
+            if account is None:
+                return False
+            endpoint = (await get_account_cdp_endpoint(str(account.id)) or "").strip()
+            return is_cdp_session_busy(
+                account_id=str(account.id), cdp_endpoint=endpoint
+            )
+        except Exception as exc:
+            logger.debug("scheduler CDP-busy probe skipped: %s", exc)
+            return False
+
     # 1. 启动随机延迟：部署/重启后不再立刻爬取。
     if startup_delay is not None:
         delay_min = max(0.0, _finite_float(startup_delay[0], 0.0))
@@ -830,6 +847,19 @@ async def _creator_stats_scheduler(
                     "scheduled creator stats import skipped: page budget (%s)",
                     page_reason or f"pages={page_count}",
                 )
+            elif await _active_cdp_session_busy():
+                # Publisher/engagement already attached — do not queue a crawl.
+                state.update(
+                    {
+                        "status": "skipped",
+                        "last_skipped_at": started_at.isoformat(),
+                        "last_skip_reason": "cdp_busy",
+                        "last_error": "cdp session held by another feature",
+                    }
+                )
+                logger.info(
+                    "scheduled creator stats import skipped: CDP session busy"
+                )
             else:
                 ran_crawl = True
                 # Soft hygiene: drop orphan blanks / duplicate creator tabs first.
@@ -893,7 +923,10 @@ async def _creator_stats_scheduler(
                     # prefer_light=None → env CREATOR_STATS_SCHEDULED_FORCE_LIGHT;
                     # under pressure we force True (list-only) to cut request surface.
                     result = await sync_all_active_accounts(
-                        store=store, period=period, prefer_light=prefer_light
+                        store=store,
+                        period=period,
+                        prefer_light=prefer_light,
+                        risk_pressure=pressure,
                     )
                     finished_at = datetime.now(UTC)
                     last_error = result.get("error")
