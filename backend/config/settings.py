@@ -126,7 +126,7 @@ class CreatorStatsSettings(BaseSettings):
     # A complete account crawl opens a real logged-in browser tab, so keep the
     # default conservative.  Set to 0 to disable the background worker while
     # retaining the manual ``sync-all`` API.
-    # 36h base + jitter ≈ ~1-2 days between crawls — safer under risk control.
+    # 36h base + jitter ≈ ~1-2.5 days between crawls — safer under risk control.
     sync_interval_hours: float = 36.0
 
     # 反风控调度：部署/重启后不立即爬取，先随机延迟（秒），避免"启动即爬"
@@ -142,6 +142,21 @@ class CreatorStatsSettings(BaseSettings):
     # 反风控调度：每轮以该概率整天跳过同步——"每天必爬一次"本身就是可识别
     # 的规律，人不会每天都看创作者中心。0 表示从不跳过。
     skip_day_chance: float = 0.25
+
+    # 唤醒后、真正开浏览器前再静默一小段时间（秒）。人"想起来要看数据"到
+    # 真正打开页面之间通常有空隙；从 sleep 醒来立刻导航是机器特征。
+    pre_run_delay_min_seconds: float = 45.0
+    pre_run_delay_max_seconds: float = 240.0
+
+    # 定时任务周期随机化：以该概率走 7d（更轻），否则 30d。永远 30d 是可识别
+    # 的请求模式。0 = 始终 30d；1 = 始终 7d。
+    period_7d_chance: float = 0.35
+
+    # 成功后额外长休概率：在正常间隔上再乘 1.8-2.8×，模拟"好几天没打开"。
+    post_success_long_break_chance: float = 0.18
+
+    # 风控/登录类失败后额外强制跳过下一轮的概率（在间隔退避之外再空一窗）。
+    risk_skip_next_chance: float = 0.85
 
     model_config = {
         "env_prefix": "CREATOR_STATS_",
