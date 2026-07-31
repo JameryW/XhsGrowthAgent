@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -92,6 +93,83 @@ def test_period_summary_uses_complete_current_and_previous_windows() -> None:
     assert summary["current"]["shares"] == 3
     assert summary["previous"]["posts"] == 1
     assert summary["previous"]["views"] == 900
+
+
+def test_period_summary_prefers_creator_center_daily_series() -> None:
+    """Headline views must match Creator Center window totals, not sum of note lifetime.
+
+    Live audit: account 30d views=3822 while summing three notes published in
+    the month only yielded 149 — the dashboard was understating official stats.
+    """
+    now = datetime(2026, 7, 31, 12, tzinfo=UTC)
+    # Notes published in-window with low lifetime totals (the old wrong source).
+    posts = [
+        {
+            "published_at": "2026-07-27T10:00:00+00:00",
+            "views": 22,
+            "likes": 5,
+            "comments": 0,
+            "collects": 2,
+            "shares": 0,
+            "engagement_rate": 31.8,
+        },
+        {
+            "published_at": "2026-07-25T10:00:00+00:00",
+            "views": 18,
+            "likes": 6,
+            "comments": 0,
+            "collects": 3,
+            "shares": 0,
+            "engagement_rate": 50.0,
+        },
+        {
+            "published_at": "2026-07-22T10:00:00+00:00",
+            "views": 109,
+            "likes": 9,
+            "comments": 0,
+            "collects": 4,
+            "shares": 0,
+            "engagement_rate": 11.9,
+        },
+    ]
+    # 30 daily points ending at 2026-07-30 16:00 UTC (matches live payloads).
+    def _day(offset: int, count: int) -> dict[str, Any]:
+        day = datetime(2026, 7, 1, 16, tzinfo=UTC) + timedelta(days=offset)
+        return {"date": int(day.timestamp() * 1000), "count": count}
+
+    # 30 days of views; last 7 sum to 80; all 30 sum to 3822-like total.
+    view_counts = [0] * 20 + [105, 2, 81, 15, 14, 20, 4, 20, 4, 3]
+    # pad/trim to 30
+    while len(view_counts) < 30:
+        view_counts.insert(0, 50)
+    view_counts = view_counts[-30:]
+    like_counts = [1 if c else 0 for c in view_counts]
+    detail = {
+        "view_count": sum(view_counts),
+        "like_count": sum(like_counts),
+        "view_list": [_day(i, c) for i, c in enumerate(view_counts)],
+        "like_list": [_day(i, c) for i, c in enumerate(like_counts)],
+        "comment_list": [_day(i, 0) for i in range(30)],
+        "collect_list": [_day(i, 0) for i in range(30)],
+        "share_list": [_day(i, 0) for i in range(30)],
+    }
+
+    summary = analytics_routes._build_period_summary(
+        posts, "weekly", now=now, detail_metrics=detail
+    )
+    assert summary["current"]["metric_source"] == "creator_center_series"
+    # Published-in-window note count still comes from the notes list.
+    assert summary["current"]["posts"] == 2
+    # Views come from the daily series, not 22+18=40.
+    assert summary["current"]["views"] == sum(view_counts[-7:])
+    assert summary["current"]["views"] != 40
+    assert summary["current"]["likes"] == sum(like_counts[-7:])
+
+    monthly = analytics_routes._build_period_summary(
+        posts, "monthly", now=now, detail_metrics=detail
+    )
+    assert monthly["current"]["views"] == sum(view_counts)
+    assert monthly["current"]["views"] != 149
 
 
 def _app() -> FastAPI:
