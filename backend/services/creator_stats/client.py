@@ -253,30 +253,34 @@ class CdpTransport:
         )
         # SAFE_MODE=1: clamp caps/chances further for high-risk IPs/environments.
         if _env_float("CREATOR_STATS_SAFE_MODE", 0) >= 1:
-            self._light_run_chance = max(self._light_run_chance, 0.80)
-            self._enrich_skip_chance = max(self._enrich_skip_chance, 0.60)
-            self._page_stop_chance = max(self._page_stop_chance, 0.45)
-            self._long_pause_chance = max(self._long_pause_chance, 0.22)
-            # Prefer human entry paths more often under risk pressure.
-            self._home_entry_chance = max(self._home_entry_chance, 0.70)
-            self._dashboard_browse_chance = max(self._dashboard_browse_chance, 0.40)
-            self._max_list_pages = min(self._max_list_pages, 3)
-            self._max_detail_visits = min(self._max_detail_visits, 2)
-            lo, hi = self._request_delay
-            self._request_delay = (lo * 1.4, hi * 1.4)
-            wind_lo, wind_hi = self._session_wind_down
-            self._session_wind_down = (max(wind_lo, 4.0), max(wind_hi, 18.0))
-            logger.info(
-                f"creator stats SAFE_MODE on: list_pages<={self._max_list_pages} "
-                f"detail<={self._max_detail_visits} public_note_pages=0 "
-                f"light>={self._light_run_chance:.2f}"
-            )
+            self._apply_safe_mode_clamps()
         # 每轮抓取的节奏基准（在 fetch 开头随机缩放 request_delay 得到）：
         # 有的运行整体偏快、有的偏慢，避免跨运行统一的节奏画像。
         self._run_delay: tuple[float, float] | None = None
         self._playwright: Any = None
         self._browser: Any = None
         self._fetch_lock = asyncio.Lock()
+
+    def _apply_safe_mode_clamps(self) -> None:
+        """Tighten session caps for high-risk environments (SAFE_MODE)."""
+        self._light_run_chance = max(self._light_run_chance, 0.80)
+        self._enrich_skip_chance = max(self._enrich_skip_chance, 0.60)
+        self._page_stop_chance = max(self._page_stop_chance, 0.45)
+        self._long_pause_chance = max(self._long_pause_chance, 0.22)
+        # Prefer human entry paths more often under risk pressure.
+        self._home_entry_chance = max(self._home_entry_chance, 0.70)
+        self._dashboard_browse_chance = max(self._dashboard_browse_chance, 0.40)
+        self._max_list_pages = min(self._max_list_pages, 3)
+        self._max_detail_visits = min(self._max_detail_visits, 2)
+        lo, hi = self._request_delay
+        self._request_delay = (lo * 1.4, hi * 1.4)
+        wind_lo, wind_hi = self._session_wind_down
+        self._session_wind_down = (max(wind_lo, 4.0), max(wind_hi, 18.0))
+        logger.info(
+            f"creator stats SAFE_MODE on: list_pages<={self._max_list_pages} "
+            f"detail<={self._max_detail_visits} public_note_pages=0 "
+            f"light>={self._light_run_chance:.2f}"
+        )
 
     def _new_run_pace(self) -> None:
         """Roll this run's pacing baseline (0.7-1.6× the configured range)."""
@@ -301,11 +305,11 @@ class CdpTransport:
         await asyncio.sleep(random.uniform(delay_min, delay_max))
 
     async def _human_touch(self, page: Any) -> None:
-        """Simulate small random mouse movements on the page.
+        """Simulate small random mouse movements (+ occasional wheel) on the page.
 
         长时间无任何鼠标轨迹的"幽灵浏览"是风控可识别的会话特征；真人浏览
-        创作者中心时指针会无意识移动。移动本身带随机步数/落点，不产生新的
-        固定模式。页面对象为测试替身或无鼠标能力时静默跳过。
+        创作者中心时指针会无意识移动，偶尔滚一下列表。移动本身带随机步数/
+        落点，不产生新的固定模式。页面对象为测试替身或无鼠标能力时静默跳过。
         """
         mouse = getattr(page, "mouse", None)
         if mouse is None:
@@ -321,6 +325,13 @@ class CdpTransport:
                 y = min(max(y + random.uniform(-160.0, 160.0), 8.0), height - 8.0)
                 await mouse.move(x, y, steps=random.randint(3, 12))
                 await asyncio.sleep(random.uniform(0.05, 0.3))
+            # Occasional small wheel nudge — pure pointer-only sessions look flat.
+            if random.random() < 0.35 and hasattr(mouse, "wheel"):
+                await mouse.wheel(
+                    random.uniform(-40.0, 40.0),
+                    random.uniform(80.0, 420.0) * random.choice((-1.0, 1.0)),
+                )
+                await asyncio.sleep(random.uniform(0.08, 0.35))
 
     async def _ensure_browser(self) -> Any:
         if self._browser is not None:
