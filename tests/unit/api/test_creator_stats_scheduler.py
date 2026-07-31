@@ -18,7 +18,12 @@ from backend.api.app import (
     _finite_float,
     _is_riskish_error,
     _pick_scheduled_period,
+    _prefer_light_for_pressure,
+    _pressure_period_7d_chance,
+    _pressure_skip_day_chance,
     _prune_success_timestamps,
+    _quiet_cycles_to_arm,
+    _risk_pressure_level,
     _weekday_skip_factor,
     _weekly_crawl_budget_exhausted,
     app,
@@ -530,6 +535,58 @@ def test_is_riskish_error_detects_auth_and_risk_tokens():
     assert not _is_riskish_error(None)
 
 
+def test_risk_pressure_level_escalates_with_failures_and_budget():
+    now = datetime(2026, 7, 31, 12, tzinfo=UTC)
+    assert _risk_pressure_level([], successes_last_7d=0, now=now) == 0
+    assert _risk_pressure_level([], successes_last_7d=2, now=now) == 1
+    assert (
+        _risk_pressure_level(
+            [(now - timedelta(hours=1)).isoformat()],
+            successes_last_7d=0,
+            now=now,
+        )
+        == 1
+    )
+    assert (
+        _risk_pressure_level(
+            [
+                (now - timedelta(hours=2)).isoformat(),
+                (now - timedelta(hours=1)).isoformat(),
+            ],
+            successes_last_7d=0,
+            now=now,
+        )
+        == 2
+    )
+    assert (
+        _risk_pressure_level(
+            [],
+            successes_last_7d=0,
+            pause_until=(now + timedelta(days=2)).isoformat(),
+            now=now,
+        )
+        == 2
+    )
+
+
+def test_pressure_helpers_tighten_period_skip_and_light():
+    assert _prefer_light_for_pressure(0) is None
+    assert _prefer_light_for_pressure(1) is True
+    assert _pressure_period_7d_chance(0.35, 0) == 0.35
+    assert _pressure_period_7d_chance(0.35, 1) > 0.35
+    assert _pressure_period_7d_chance(0.35, 2) >= 0.80
+    assert _pressure_skip_day_chance(0.25, 1) > 0.25
+    assert _pressure_skip_day_chance(0.25, 2) > _pressure_skip_day_chance(0.25, 1)
+
+
+def test_quiet_cycles_to_arm_respects_chance(monkeypatch):
+    monkeypatch.setattr(app_module.random, "random", lambda: 0.99)
+    assert _quiet_cycles_to_arm(0, risk_skip_next_chance=0.5) == 0
+    monkeypatch.setattr(app_module.random, "random", lambda: 0.0)
+    # Always hit the base arm; pressure path may roll a second cycle.
+    assert _quiet_cycles_to_arm(0, risk_skip_next_chance=1.0) == 1
+
+
 @pytest.mark.asyncio
 async def test_scheduler_settles_before_crawl_when_pre_run_delay_set(monkeypatch):
     """Wake → settle → crawl, not crawl immediately on timer fire."""
@@ -563,9 +620,10 @@ async def test_scheduler_settles_before_crawl_when_pre_run_delay_set(monkeypatch
         )
 
     sync.assert_awaited_once_with(store=None, period="30d", prefer_light=None)
-    # Pre-run settle mid of [60,120] = 90.
+    # Pre-run settle mid of [60,120] = 90 (pressure=0 — no stretch).
     assert sleep_calls[0] == 90.0
     assert app.state.creator_stats_scheduler_status["last_period"] == "30d"
+    assert app.state.creator_stats_scheduler_status.get("risk_pressure") == 0
 
 
 @pytest.mark.asyncio
@@ -761,6 +819,14 @@ async def test_scheduler_success_history_persists_to_db_helper(monkeypatch):
             new=AsyncMock(return_value=SimpleNamespace(id="acc-1")),
         ),
         patch(
+            "backend.db.accounts.get_account_cdp_endpoint",
+            new=AsyncMock(return_value="http://127.0.0.1:9222"),
+        ),
+        patch(
+            "backend.services.chrome_launcher.probe_port",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
             "backend.services.xhs_risk_gate.check_sync_auth_cooldown",
             return_value=None,
         ),
@@ -784,6 +850,108 @@ async def test_scheduler_success_history_persists_to_db_helper(monkeypatch):
     assert saved, "expected durable success history write"
     assert len(saved[0][0]) >= 1
     assert app.state.creator_stats_scheduler_status["successes_last_7d"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_scheduler_skips_when_cdp_unavailable(monkeypatch):
+    """CDP-down is infrastructure — skip without opening the risk circuit."""
+    app = _scheduler_app()
+    sleep_calls: list[float] = []
+
+    async def stop_after_interval(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", stop_after_interval)
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(),
+        ) as sync,
+        patch(
+            "backend.db.accounts.get_active_account",
+            new=AsyncMock(return_value=SimpleNamespace(id="acc-1")),
+        ),
+        patch(
+            "backend.services.creator_stats.pipeline._account_freshness_skip",
+            new=AsyncMock(return_value=(False, 0)),
+        ),
+        patch(
+            "backend.services.xhs_risk_gate.check_sync_auth_cooldown",
+            return_value=None,
+        ),
+        patch(
+            "backend.db.accounts.get_account_cdp_endpoint",
+            new=AsyncMock(return_value="http://127.0.0.1:9222"),
+        ),
+        patch(
+            "backend.services.chrome_launcher.probe_port",
+            new=AsyncMock(return_value=False),
+        ),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(
+            app,
+            1.0,
+            pre_run_delay=(30.0, 60.0),
+            skip_day_chance=0.0,
+            risk_skip_next_chance=0.0,
+            post_success_long_break_chance=0.0,
+            max_successful_crawls_per_week=0,
+        )
+
+    sync.assert_not_awaited()
+    state = app.state.creator_stats_scheduler_status
+    assert state["status"] == "skipped"
+    assert state["last_skip_reason"] == "cdp_unavailable"
+    assert not state.get("risk_failures")
+    # No pre-run settle — only the post-cycle interval sleep.
+    assert len(sleep_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_scheduler_forces_light_under_pressure(monkeypatch):
+    """Recent risk failure → pressure≥1 → prefer_light=True list-only crawl."""
+    app = _scheduler_app()
+    now = datetime.now(UTC)
+    app.state.creator_stats_scheduler_status = {
+        "risk_failures": [(now - timedelta(hours=2)).isoformat()],
+    }
+    result = {
+        "ok": True,
+        "status": "completed",
+        "active_accounts": 1,
+        "succeeded": 1,
+        "failed": 0,
+    }
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", fake_sleep)
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(return_value=result),
+        ) as sync,
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(
+            app,
+            0.5,
+            pre_run_delay=None,
+            skip_day_chance=0.0,
+            risk_skip_next_chance=0.0,
+            post_success_long_break_chance=0.0,
+            max_successful_crawls_per_week=0,
+            period_7d_chance=0.0,
+        )
+
+    sync.assert_awaited_once()
+    assert sync.await_args.kwargs.get("prefer_light") is True
+    assert app.state.creator_stats_scheduler_status.get("risk_pressure") == 1
 
 
 @pytest.mark.asyncio

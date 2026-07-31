@@ -166,6 +166,75 @@ def _effective_skip_day_chance(base: float, successes_last_7d: int) -> float:
     return min(0.90, base_c * 1.75)
 
 
+def _risk_pressure_level(
+    risk_failures: list[str],
+    *,
+    successes_last_7d: int = 0,
+    pause_until: str | None = None,
+    now: datetime | None = None,
+) -> int:
+    """0=normal, 1=elevated, 2=high — drives light-only / quieter scheduling.
+
+    Elevated: any recent risk failure, or already 2+ live successes this week
+    (humans ease off after checking data). High: open circuit pause, or ≥2
+    risk failures still in the window. Higher levels force list-only crawls,
+    prefer lighter 7d windows, and arm longer quiet stretches.
+    """
+    now_utc = (now or datetime.now(UTC)).astimezone(UTC)
+    if pause_until and _circuit_pause_active(pause_until, now=now_utc):
+        return 2
+    failure_n = len(
+        _prune_success_timestamps(list(risk_failures or []), now=now_utc, days=3)
+    )
+    if failure_n >= 2:
+        return 2
+    if failure_n >= 1:
+        return 1
+    if successes_last_7d >= 2:
+        return 1
+    return 0
+
+
+def _pressure_period_7d_chance(base: float, pressure: int) -> float:
+    """Under risk pressure, lean harder into lighter 7d windows."""
+    chance = max(0.0, min(1.0, _finite_float(base, 0.35)))
+    if pressure >= 2:
+        return min(0.95, max(chance, 0.80))
+    if pressure >= 1:
+        return min(0.90, chance * 1.55 + 0.12)
+    return chance
+
+
+def _pressure_skip_day_chance(base_eff: float, pressure: int) -> float:
+    """Raise habit-skip probability when the risk fuse is warm."""
+    chance = max(0.0, min(1.0, _finite_float(base_eff, 0.0)))
+    if pressure >= 2:
+        return min(0.95, max(chance, 0.55) * 1.15)
+    if pressure >= 1:
+        return min(0.92, chance * 1.25 + 0.08)
+    return chance
+
+
+def _prefer_light_for_pressure(pressure: int) -> bool | None:
+    """Force list-only under pressure; otherwise leave to env/default."""
+    if pressure >= 1:
+        return True
+    return None
+
+
+def _quiet_cycles_to_arm(pressure: int, *, risk_skip_next_chance: float) -> int:
+    """How many extra quiet cycles to arm after a riskish failure (0 = none)."""
+    chance = max(0.0, min(1.0, _finite_float(risk_skip_next_chance, 0.85)))
+    if chance <= 0 or random.random() >= chance:
+        return 0
+    # Base: one quiet window. Under pressure, sometimes two (multi-day calm).
+    if pressure >= 2 and random.random() < 0.65:
+        return 2
+    if pressure >= 1 and random.random() < 0.45:
+        return 2
+    return 1
+
+
 async def _seed_success_history_from_db(
     success_history: list[str],
     last_success_local_hour: int | None,
@@ -341,6 +410,8 @@ async def _creator_stats_scheduler(
       6. 成功后以小概率进入长休（间隔再放大），模拟人几天不看数据。
       7. 滚动 7 天成功爬取次数封顶；快照仍新鲜时调度层直接跳过（不开浏览器）。
       8. 下次落点避开最近一次成功爬取的本地小时，打破"永远同一时刻"指纹。
+      9. 风险压力分级：近期风控失败 / 周内多次成功 → 强制 list-only、偏 7d、
+         抬高跳过与静默；CDP 不可用时不开浏览器（基建问题不记风控）。
     """
     interval_seconds = max(60.0, _finite_float(interval_hours, 0.0) * 3600.0)
     logger = logging.getLogger("xhs_growth.creator_stats.scheduler")
@@ -389,6 +460,11 @@ async def _creator_stats_scheduler(
     state["last_period"] = last_period
     state["risk_failures"] = risk_failures
     state["pause_until"] = pause_until
+    state["risk_pressure"] = _risk_pressure_level(
+        risk_failures,
+        successes_last_7d=len(success_history),
+        pause_until=pause_until,
+    )
 
     def _avoid_hours() -> set[int] | None:
         if last_success_local_hour is None:
@@ -446,6 +522,37 @@ async def _creator_stats_scheduler(
             logger.debug("scheduler auth-cooldown probe skipped: %s", exc)
             return False, "", 0
 
+    async def _active_cdp_ready() -> tuple[bool, str]:
+        """True when the active account's CDP port answers (or probe inconclusive).
+
+        CDP-down is infrastructure, not platform risk — skip the browser open
+        instead of burning a crawl that will fail with connect errors.
+        Inconclusive probes return ready=True so a flaky probe never blocks forever.
+        """
+        try:
+            from urllib.parse import urlparse
+
+            from backend.db.accounts import get_active_account, get_account_cdp_endpoint
+            from backend.services.chrome_launcher import probe_port
+
+            account = await get_active_account()
+            if account is None:
+                return True, ""
+            endpoint = (await get_account_cdp_endpoint(str(account.id)) or "").strip()
+            if not endpoint:
+                return False, "no_cdp_endpoint"
+            parsed = urlparse(endpoint)
+            host = parsed.hostname
+            port = parsed.port
+            if not host or port is None:
+                return False, "bad_cdp_endpoint"
+            if not await probe_port(port, host=host):
+                return False, "cdp_port_down"
+            return True, ""
+        except Exception as exc:
+            logger.debug("scheduler CDP probe skipped: %s", exc)
+            return True, ""
+
     async def _soft_prune_blank_pages() -> None:
         """Best-effort blank-tab hygiene before a real crawl (never blocks)."""
         try:
@@ -470,7 +577,8 @@ async def _creator_stats_scheduler(
             await _sleep_until(target)
 
     consecutive_failures = 0
-    skip_next_run = False
+    # Multi-cycle quiet arm (int) — survives risk/habit skips without bool race.
+    quiet_cycles_remaining = max(0, int(state.get("quiet_cycles_remaining") or 0))
     while True:
         started_at = datetime.now(UTC)
         succeeded = False
@@ -479,6 +587,13 @@ async def _creator_stats_scheduler(
         success_history = _prune_success_timestamps(success_history, now=started_at)
         state["success_timestamps"] = success_history
         state["successes_last_7d"] = len(success_history)
+        pressure = _risk_pressure_level(
+            risk_failures,
+            successes_last_7d=len(success_history),
+            pause_until=pause_until,
+            now=started_at,
+        )
+        state["risk_pressure"] = pressure
 
         if pause_until and _circuit_pause_active(pause_until, now=started_at):
             state.update(
@@ -493,9 +608,10 @@ async def _creator_stats_scheduler(
                 "scheduled creator stats import skipped: risk circuit breaker until %s",
                 pause_until,
             )
-        elif skip_next_run:
-            # 3. 随机跳过：本轮不爬，直接排下一轮。跳过不算失败、不触发退避。
-            skip_next_run = False
+        elif quiet_cycles_remaining > 0:
+            # 3. 武装的静默窗：本轮不爬。可叠 1–2 轮以模拟多日不看数据。
+            quiet_cycles_remaining -= 1
+            state["quiet_cycles_remaining"] = quiet_cycles_remaining
             state.update(
                 {
                     "status": "skipped",
@@ -503,7 +619,11 @@ async def _creator_stats_scheduler(
                     "last_skip_reason": "armed",
                 }
             )
-            logger.info("scheduled creator stats import skipped this cycle (irregular cadence)")
+            logger.info(
+                "scheduled creator stats import skipped this cycle "
+                "(armed quiet, remaining=%s)",
+                quiet_cycles_remaining,
+            )
         elif _weekly_crawl_budget_exhausted(
             success_history,
             max_per_week=int(max_successful_crawls_per_week or 0),
@@ -525,6 +645,7 @@ async def _creator_stats_scheduler(
         else:
             fresh, retry_s = await _active_snapshot_is_fresh()
             auth_blocked, auth_msg, auth_retry = await _active_auth_cooldown()
+            cdp_ready, cdp_reason = await _active_cdp_ready()
             if fresh:
                 state.update(
                     {
@@ -554,40 +675,71 @@ async def _creator_stats_scheduler(
                     "(retry_after≈%ss)",
                     auth_retry,
                 )
+            elif not cdp_ready:
+                # Infrastructure gap — do not open a doomed browser session and
+                # do not trip the risk circuit (CDP down ≠ platform ban).
+                state.update(
+                    {
+                        "status": "skipped",
+                        "last_skipped_at": started_at.isoformat(),
+                        "last_skip_reason": "cdp_unavailable",
+                        "last_error": cdp_reason or "cdp_unavailable",
+                    }
+                )
+                logger.info(
+                    "scheduled creator stats import skipped: CDP unavailable (%s)",
+                    cdp_reason or "unknown",
+                )
             else:
                 ran_crawl = True
                 # Soft hygiene: drop orphan blank tabs so CDP target lists stay human-sized.
                 await _soft_prune_blank_pages()
                 # 5. 醒来后先静默再开浏览器——人从"想起来"到点开页面有空隙。
+                # 风险压力下拉长 settle，进一步拉开"定时器响→开页"的机器节拍。
                 if pre_run_delay is not None:
                     settle_min = max(0.0, _finite_float(pre_run_delay[0], 0.0))
                     settle_max = max(settle_min, _finite_float(pre_run_delay[1], settle_min))
+                    if pressure >= 2:
+                        settle_min *= 1.6
+                        settle_max *= 1.8
+                    elif pressure >= 1:
+                        settle_min *= 1.25
+                        settle_max *= 1.4
                     if settle_max > 0:
                         settle = random.uniform(settle_min, settle_max)
                         state["status"] = "settling"
                         state["pre_run_delay_seconds"] = round(settle, 1)
                         logger.info(
-                            "creator stats scheduler settling %.0fs before crawl", settle
+                            "creator stats scheduler settling %.0fs before crawl "
+                            "(pressure=%s)",
+                            settle,
+                            pressure,
                         )
                         await asyncio.sleep(settle)
 
                 period = _pick_scheduled_period(
-                    period_7d_chance, last_period=last_period
+                    _pressure_period_7d_chance(period_7d_chance, pressure),
+                    last_period=last_period,
                 )
+                prefer_light = _prefer_light_for_pressure(pressure)
                 state.update(
                     {
                         "status": "running",
                         "last_started_at": datetime.now(UTC).isoformat(),
                         "last_error": None,
                         "last_period": period,
+                        "prefer_light": prefer_light,
                         "run_count": int(state.get("run_count") or 0) + 1,
                     }
                 )
                 logger.info(
-                    "scheduled creator stats import started: interval_hours=%s run=%s period=%s",
+                    "scheduled creator stats import started: interval_hours=%s "
+                    "run=%s period=%s prefer_light=%s pressure=%s",
                     interval_hours,
                     state["run_count"],
                     period,
+                    prefer_light,
+                    pressure,
                 )
                 try:
                     from backend.services.creator_stats.pipeline import (
@@ -597,10 +749,10 @@ async def _creator_stats_scheduler(
 
                     graph = getattr(app.state, "graph", None)
                     store = getattr(graph, "store", None) if graph is not None else None
-                    # Let CREATOR_STATS_SCHEDULED_FORCE_LIGHT decide whether the
-                    # scheduled batch is forced list-only (default remains safe).
+                    # prefer_light=None → env CREATOR_STATS_SCHEDULED_FORCE_LIGHT;
+                    # under pressure we force True (list-only) to cut request surface.
                     result = await sync_all_active_accounts(
-                        store=store, period=period, prefer_light=None
+                        store=store, period=period, prefer_light=prefer_light
                     )
                     finished_at = datetime.now(UTC)
                     last_error = result.get("error")
@@ -703,11 +855,14 @@ async def _creator_stats_scheduler(
         riskish = ran_crawl and (not succeeded) and _is_riskish_error(last_err)
         if riskish:
             backoff = random.uniform(3.0, 6.0)
-            # Extra quiet window after risk/auth — do not schedule crawl→crawl.
-            if random.random() < max(
-                0.0, min(1.0, _finite_float(risk_skip_next_chance, 0.85))
-            ):
-                skip_next_run = True
+            # Extra quiet window(s) after risk/auth — do not schedule crawl→crawl.
+            # Under pressure, sometimes arm two cycles (multi-day calm stretch).
+            armed = _quiet_cycles_to_arm(
+                pressure, risk_skip_next_chance=risk_skip_next_chance
+            )
+            if armed > 0:
+                quiet_cycles_remaining = max(quiet_cycles_remaining, armed)
+                state["quiet_cycles_remaining"] = quiet_cycles_remaining
                 state["last_risk_skip_armed"] = True
             # Durable circuit breaker: ≥2 risk failures in ~72h → multi-day pause.
             risk_failures, new_pause = _record_risk_failure(
@@ -734,6 +889,12 @@ async def _creator_stats_scheduler(
             backoff = 1.0
         else:
             backoff = random.uniform(1.5, 2.5)
+        # Pressure stretches the base interval even without a hard failure —
+        # soft cooling after a risk mark still in the 72h window.
+        if pressure >= 2 and not riskish:
+            backoff *= random.uniform(1.35, 1.9)
+        elif pressure >= 1 and not riskish:
+            backoff *= random.uniform(1.1, 1.4)
         # 6. 成功后偶尔长休——人不会永远按同一节奏回来。
         if (
             live_success
@@ -751,15 +912,17 @@ async def _creator_stats_scheduler(
             state["near_budget_stretch"] = True
         # 2. 间隔按 0.65-1.75× 三角分布取值（峰值 1×，模拟人的习惯节律）；
         # active_window 再把落点限制在人类活动时段。
-        # 周内已有成功爬取时抬高 skip 概率——人很少一周内反复打开。
-        if not skip_next_run:
-            eff_skip = _effective_skip_day_chance(
-                skip_day_chance, len(success_history)
+        # 周内已有成功爬取 / 风险压力时抬高 skip 概率。
+        if quiet_cycles_remaining <= 0:
+            eff_skip = _pressure_skip_day_chance(
+                _effective_skip_day_chance(skip_day_chance, len(success_history)),
+                pressure,
             )
             if eff_skip > 0:
                 factor = _weekday_skip_factor(datetime.now(_CN_TZ).weekday())
                 if random.random() < min(1.0, eff_skip * factor):
-                    skip_next_run = True
+                    quiet_cycles_remaining = 1
+                    state["quiet_cycles_remaining"] = quiet_cycles_remaining
                     state["last_skip_armed_reason"] = "habit_skip"
         # Circuit pause: if open, sleep at least until pause_until.
         candidate = datetime.now(UTC) + timedelta(
@@ -1091,6 +1254,9 @@ async def health() -> ApiResponse[Any]:
             "last_success_local_hour",
             "pause_until",
             "risk_failures",
+            "risk_pressure",
+            "quiet_cycles_remaining",
+            "prefer_light",
         )
         scheduler = {key: scheduler_state.get(key) for key in health_fields}
     return success(
