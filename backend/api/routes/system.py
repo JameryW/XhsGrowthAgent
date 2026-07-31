@@ -543,6 +543,12 @@ class CooldownPolicyRequest(BaseModel):
     sync_auth_minutes: float | None = Field(default=None, ge=0)
     qr_cooldown_seconds: float | None = Field(default=None, ge=0)
     qr_risk_block_seconds: float | None = Field(default=None, ge=0)
+    min_risk_pressure: float | None = Field(
+        default=None,
+        ge=0,
+        le=2,
+        description="Creator-stats SAFE_MODE floor: 0=normal, 1=safe, 2=list-only",
+    )
     replace: bool = Field(
         default=False,
         description="When true, replace the whole override map (omit = default).",
@@ -586,6 +592,7 @@ async def put_risk_gate_policy(
             sync_auth_minutes=body.sync_auth_minutes,
             qr_cooldown_seconds=body.qr_cooldown_seconds,
             qr_risk_block_seconds=body.qr_risk_block_seconds,
+            min_risk_pressure=body.min_risk_pressure,
             replace=bool(body.replace),
         )
     except ValueError as exc:

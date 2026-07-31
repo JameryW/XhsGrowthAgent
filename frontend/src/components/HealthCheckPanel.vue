@@ -6,7 +6,11 @@ import NeonButton from '@/components/NeonButton.vue'
 import {
   clearRiskGates,
   clearSystemHealthCache,
+  deleteRiskGatePolicy,
+  getRiskGatePolicy,
   getSystemHealth,
+  setRiskGatePolicy,
+  type CooldownPolicy,
   type HealthCheck,
 } from '@/api/system'
 import { useToastStore } from '@/stores/toast'
@@ -17,8 +21,19 @@ const toast = useToastStore()
 const health = ref<HealthCheck | null>(null)
 const isLoading = ref(false)
 const isClearing = ref(false)
+const isSavingPolicy = ref(false)
 const error = ref<string | null>(null)
 const isExpanded = ref(false)
+const showPolicy = ref(false)
+const policy = ref<CooldownPolicy | null>(null)
+
+const policyForm = ref({
+  browser_action_seconds: 20,
+  publish_seconds: 90,
+  engagement_seconds: 30,
+  sync_auth_minutes: 120,
+  min_risk_pressure: 0,
+})
 
 async function fetchHealth() {
   isLoading.value = true
@@ -29,11 +44,34 @@ async function fetchHealth() {
     if (health.value && health.value.status !== 'ok') {
       isExpanded.value = true
     }
+    await loadPolicy()
   } catch (e: any) {
     error.value = e.message
     isExpanded.value = true
   } finally {
     isLoading.value = false
+  }
+}
+
+async function loadPolicy() {
+  const accountId = health.value?.active_account?.id || ''
+  if (!accountId) {
+    policy.value = null
+    return
+  }
+  try {
+    const p = await getRiskGatePolicy(accountId)
+    policy.value = p
+    const eff = p.effective || {}
+    policyForm.value = {
+      browser_action_seconds: Number(eff.browser_action_seconds ?? 20),
+      publish_seconds: Number(eff.publish_seconds ?? 90),
+      engagement_seconds: Number(eff.engagement_seconds ?? 30),
+      sync_auth_minutes: Number(eff.sync_auth_minutes ?? 120),
+      min_risk_pressure: Number(eff.min_risk_pressure ?? 0),
+    }
+  } catch {
+    policy.value = null
   }
 }
 
@@ -57,6 +95,47 @@ async function onClearCooldowns() {
   }
 }
 
+async function onSavePolicy() {
+  const accountId = health.value?.active_account?.id || ''
+  if (!accountId || isSavingPolicy.value) return
+  isSavingPolicy.value = true
+  try {
+    const p = await setRiskGatePolicy({
+      account_id: accountId,
+      browser_action_seconds: Number(policyForm.value.browser_action_seconds),
+      publish_seconds: Number(policyForm.value.publish_seconds),
+      engagement_seconds: Number(policyForm.value.engagement_seconds),
+      sync_auth_minutes: Number(policyForm.value.sync_auth_minutes),
+      min_risk_pressure: Number(policyForm.value.min_risk_pressure),
+      replace: true,
+    })
+    policy.value = p
+    clearSystemHealthCache()
+    toast.success(t('health.policySaved'))
+    await fetchHealth()
+  } catch (e: any) {
+    toast.error(e?.message || t('health.policySaveFail'))
+  } finally {
+    isSavingPolicy.value = false
+  }
+}
+
+async function onResetPolicy() {
+  const accountId = health.value?.active_account?.id || ''
+  if (!accountId || isSavingPolicy.value) return
+  isSavingPolicy.value = true
+  try {
+    await deleteRiskGatePolicy(accountId)
+    clearSystemHealthCache()
+    toast.success(t('health.policyReset'))
+    await fetchHealth()
+  } catch (e: any) {
+    toast.error(e?.message || t('health.policySaveFail'))
+  } finally {
+    isSavingPolicy.value = false
+  }
+}
+
 function formatSeconds(s: number | undefined | null): string {
   const n = Math.max(0, Number(s) || 0)
   if (n < 60) return `${n}s`
@@ -64,6 +143,13 @@ function formatSeconds(s: number | undefined | null): string {
   const r = n % 60
   return r ? `${m}m${r}s` : `${m}m`
 }
+
+const pressureLabel = computed(() => {
+  const p = Number(policyForm.value.min_risk_pressure) || 0
+  if (p >= 2) return t('health.pressureListOnly')
+  if (p >= 1) return t('health.pressureSafe')
+  return t('health.pressureNormal')
+})
 
 onMounted(fetchHealth)
 
@@ -364,7 +450,15 @@ const issueCount = computed(() => {
               </span>
             </div>
           </div>
-          <div class="mt-2 flex justify-end">
+          <div class="mt-2 flex flex-wrap justify-end gap-2">
+            <NeonButton
+              v-if="health.active_account?.id"
+              size="sm"
+              variant="ghost"
+              @click.stop="showPolicy = !showPolicy"
+            >
+              {{ showPolicy ? t('health.hidePolicy') : t('health.editPolicy') }}
+            </NeonButton>
             <NeonButton
               size="sm"
               variant="ghost"
@@ -374,6 +468,87 @@ const issueCount = computed(() => {
             >
               {{ t('health.clearCooldowns') }}
             </NeonButton>
+          </div>
+
+          <!-- Per-account policy editor -->
+          <div
+            v-if="showPolicy && health.active_account?.id"
+            class="mt-3 rounded-lg border border-slate-200/70 bg-slate-50/80 p-3 space-y-2 dark:bg-slate-800/50 dark:border-slate-700"
+            @click.stop
+          >
+            <div class="text-xs font-medium text-slate-600 dark:text-slate-300">
+              {{ t('health.policyFor') }} {{ health.active_account.name || health.active_account.id }}
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <label class="flex flex-col gap-0.5">
+                <span class="text-slate-500">{{ t('health.browserCooldown') }}</span>
+                <input
+                  v-model.number="policyForm.browser_action_seconds"
+                  type="number"
+                  min="0"
+                  class="rounded border border-slate-200 px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-600"
+                >
+              </label>
+              <label class="flex flex-col gap-0.5">
+                <span class="text-slate-500">{{ t('health.publishCooldown') }}</span>
+                <input
+                  v-model.number="policyForm.publish_seconds"
+                  type="number"
+                  min="0"
+                  class="rounded border border-slate-200 px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-600"
+                >
+              </label>
+              <label class="flex flex-col gap-0.5">
+                <span class="text-slate-500">{{ t('health.engagementCooldown') }}</span>
+                <input
+                  v-model.number="policyForm.engagement_seconds"
+                  type="number"
+                  min="0"
+                  class="rounded border border-slate-200 px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-600"
+                >
+              </label>
+              <label class="flex flex-col gap-0.5">
+                <span class="text-slate-500">{{ t('health.authCooldownMin') }}</span>
+                <input
+                  v-model.number="policyForm.sync_auth_minutes"
+                  type="number"
+                  min="0"
+                  class="rounded border border-slate-200 px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-600"
+                >
+              </label>
+              <label class="flex flex-col gap-0.5 col-span-2">
+                <span class="text-slate-500">
+                  {{ t('health.minRiskPressure') }} — {{ pressureLabel }}
+                </span>
+                <select
+                  v-model.number="policyForm.min_risk_pressure"
+                  class="rounded border border-slate-200 px-2 py-1 bg-white dark:bg-slate-900 dark:border-slate-600"
+                >
+                  <option :value="0">{{ t('health.pressureNormal') }} (0)</option>
+                  <option :value="1">{{ t('health.pressureSafe') }} (1)</option>
+                  <option :value="2">{{ t('health.pressureListOnly') }} (2)</option>
+                </select>
+              </label>
+            </div>
+            <div class="flex justify-end gap-2 pt-1">
+              <NeonButton
+                size="sm"
+                variant="ghost"
+                :disabled="isSavingPolicy"
+                @click="onResetPolicy"
+              >
+                {{ t('health.resetPolicy') }}
+              </NeonButton>
+              <NeonButton
+                size="sm"
+                variant="cyan"
+                :loading="isSavingPolicy"
+                :disabled="isSavingPolicy"
+                @click="onSavePolicy"
+              >
+                {{ t('health.savePolicy') }}
+              </NeonButton>
+            </div>
           </div>
         </div>
 

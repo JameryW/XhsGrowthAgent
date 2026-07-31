@@ -636,6 +636,20 @@ async def sync_from_creator_center(
         fetch_kwargs["force_light"] = True
     if client is None:
         if cdp_endpoint:
+            # Per-account SAFE_MODE floor (policy min_risk_pressure) raises clamps
+            # even when the scheduler is at pressure 0.
+            try:
+                from backend.services.xhs_risk_gate import account_min_risk_pressure
+
+                risk_pressure = max(
+                    int(risk_pressure or 0),
+                    account_min_risk_pressure(account_id),
+                )
+            except Exception:
+                pass
+            if risk_pressure >= 1:
+                force_light = True
+                fetch_kwargs["force_light"] = True
             client = CreatorStatsClient(
                 cdp_endpoint=cdp_endpoint,
                 account_id=account_id,
