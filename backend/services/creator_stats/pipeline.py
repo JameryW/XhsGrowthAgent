@@ -605,6 +605,7 @@ async def sync_from_creator_center(
     skip_login_preflight: bool = False,
     force_light: bool = False,
     skip_freshness_check: bool = False,
+    risk_pressure: int = 0,
 ) -> SyncResult:
     """Live pull from creator statistics surface; on failure leave DB untouched.
 
@@ -635,7 +636,11 @@ async def sync_from_creator_center(
         fetch_kwargs["force_light"] = True
     if client is None:
         if cdp_endpoint:
-            client = CreatorStatsClient(cdp_endpoint=cdp_endpoint)
+            client = CreatorStatsClient(
+                cdp_endpoint=cdp_endpoint,
+                account_id=account_id,
+                risk_pressure=risk_pressure,
+            )
             # Incremental sync: skip per-note page visits for notes whose
             # stored state is already fresh, so a daily run only re-visits
             # new/changed notes instead of the whole history.
@@ -703,6 +708,7 @@ async def sync_account_stats(
     skip_login_preflight: bool = False,
     force_light: bool = False,
     skip_freshness_check: bool = False,
+    risk_pressure: int = 0,
 ) -> SyncResult:
     """Primary product entry: dry_run/fixture or live creator-center sync.
 
@@ -778,6 +784,7 @@ async def sync_account_stats(
             skip_login_preflight=skip_login_preflight,
             force_light=force_light,
             skip_freshness_check=skip_freshness_check,
+            risk_pressure=risk_pressure,
         )
     if not cookie:
         return SyncResult(
@@ -904,6 +911,7 @@ async def sync_all_active_accounts(
     run_creative_analysis: bool = True,
     prefer_light: bool | None = None,
     skip_freshness_check: bool = False,
+    risk_pressure: int = 0,
 ) -> dict[str, Any]:
     """Run the active-account batch under local and distributed locks.
 
@@ -915,6 +923,7 @@ async def sync_all_active_accounts(
     enrich (manual), None = follow ``CREATOR_STATS_SCHEDULED_FORCE_LIGHT``.
     ``skip_freshness_check``: explicit manual/login-triggered syncs can bypass
     the per-account refresh window; scheduled jobs should leave it ``False``.
+    ``risk_pressure``: 0–2 adaptive SAFE_MODE / session clamps for the crawl.
     """
     global _last_successful_sync_finished_at
     if _active_accounts_sync_lock.locked():
@@ -966,6 +975,7 @@ async def sync_all_active_accounts(
                 force_light=None,
                 prefer_light=prefer_light,
                 skip_freshness_check=skip_freshness_check,
+                risk_pressure=risk_pressure,
             )
     except _ActiveAccountsSyncBusyError:
         return {
@@ -1018,6 +1028,7 @@ async def _sync_all_active_accounts_locked(
     force_light: bool | None = False,
     prefer_light: bool | None = None,
     skip_freshness_check: bool = False,
+    risk_pressure: int = 0,
 ) -> dict[str, Any]:
     """Import Creator Center data for the currently active account only.
 
@@ -1123,6 +1134,7 @@ async def _sync_all_active_accounts_locked(
                         cdp_endpoint=cdp_endpoint,
                         force_light=force_light,
                         skip_freshness_check=skip_freshness_check,
+                        risk_pressure=risk_pressure,
                     )
                     if streak_before is not None and (result.error or not result.account_synced):
                         # A failed attempt is not a completed scheduled run;

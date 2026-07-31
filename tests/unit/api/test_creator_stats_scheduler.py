@@ -142,6 +142,7 @@ async def test_scheduler_runs_immediately_and_records_batch_summary(monkeypatch)
     sync.assert_awaited_once()
     assert sync.await_args.kwargs["store"] is None
     assert sync.await_args.kwargs["prefer_light"] is None
+    assert sync.await_args.kwargs.get("risk_pressure") == 0
     assert sync.await_args.kwargs["period"] in {"7d", "30d"}
     # Scheduler sleep carries a 0.65-1.75x random factor around the interval
     # (and may include pre_run settle when enabled — disabled by default in tests).
@@ -627,7 +628,9 @@ async def test_scheduler_settles_before_crawl_when_pre_run_delay_set(monkeypatch
             period_7d_chance=0.0,
         )
 
-    sync.assert_awaited_once_with(store=None, period="30d", prefer_light=None)
+    sync.assert_awaited_once_with(
+        store=None, period="30d", prefer_light=None, risk_pressure=0
+    )
     # Pre-run settle mid of [60,120] = 90 (pressure=0 — no stretch).
     assert sleep_calls[0] == 90.0
     assert app.state.creator_stats_scheduler_status["last_period"] == "30d"
@@ -963,6 +966,7 @@ async def test_scheduler_forces_light_under_pressure(monkeypatch):
 
     sync.assert_awaited_once()
     assert sync.await_args.kwargs.get("prefer_light") is True
+    assert sync.await_args.kwargs.get("risk_pressure") == 1
     assert app.state.creator_stats_scheduler_status.get("risk_pressure") == 1
 
 

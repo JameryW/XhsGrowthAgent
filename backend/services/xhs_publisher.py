@@ -219,6 +219,46 @@ class XHSPublisher:
         """
         if hashtags is None:
             hashtags = []
+        from backend.services.cdp_session_lock import CdpSessionBusyError, hold_cdp_session
+
+        try:
+            async with hold_cdp_session(
+                cdp_endpoint=self.cdp_endpoint,
+                owner="publisher",
+                wait=True,
+                timeout=float(os.environ.get("XHS_CDP_PUBLISH_LOCK_TIMEOUT_S", "600") or 600),
+            ):
+                return await self._publish_note_locked(
+                    title=title,
+                    body=body,
+                    image_paths=image_paths,
+                    hashtags=hashtags,
+                    category=category,
+                    location=location,
+                    scheduled_time=scheduled_time,
+                    is_private=is_private,
+                )
+        except CdpSessionBusyError as exc:
+            return {
+                "post_id": "",
+                "status": "failed",
+                "url": "",
+                "error": f"CDP session busy (held by {exc.holder})",
+                "error_type": "cdp_busy",
+            }
+
+    async def _publish_note_locked(
+        self,
+        *,
+        title: str,
+        body: str,
+        image_paths: list[str],
+        hashtags: list[str],
+        category: str,
+        location: str,
+        scheduled_time: str,
+        is_private: bool,
+    ) -> dict[str, Any]:
         page = await self._ensure_page()
 
         # ponytail: 诊断——监听发布相关网络请求，_wait_for_success 失败时 dump，

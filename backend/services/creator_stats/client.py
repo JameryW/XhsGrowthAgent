@@ -185,8 +185,15 @@ class CdpTransport:
         timeout: float = 30.0,
         detail_timeout: float = 120.0,
         request_delay: tuple[float, float] | None = None,
+        risk_pressure: int = 0,
+        account_id: str = "",
     ):
         self.cdp_endpoint = cdp_endpoint
+        self._account_id = (account_id or "").strip()
+        try:
+            self._risk_pressure = max(0, min(2, int(risk_pressure or 0)))
+        except (TypeError, ValueError):
+            self._risk_pressure = 0
         self._timeout = timeout
         self._detail_timeout = max(1.0, float(detail_timeout))
         # Random pause between per-note page visits.  Back-to-back navigations
@@ -251,9 +258,12 @@ class CdpTransport:
             max(0.0, _env_float("CREATOR_STATS_SESSION_WIND_DOWN_MIN_S", 3.0)),
             max(0.0, _env_float("CREATOR_STATS_SESSION_WIND_DOWN_MAX_S", 12.0)),
         )
-        # SAFE_MODE=1: clamp caps/chances further for high-risk IPs/environments.
-        if _env_float("CREATOR_STATS_SAFE_MODE", 0) >= 1:
-            self._apply_safe_mode_clamps()
+        # SAFE_MODE=1 or elevated risk pressure: clamp caps/chances further.
+        env_safe = _env_float("CREATOR_STATS_SAFE_MODE", 0) >= 1
+        if env_safe or self._risk_pressure >= 1:
+            self._apply_safe_mode_clamps(source="env" if env_safe else "pressure")
+        if self._risk_pressure >= 2:
+            self._apply_high_pressure_clamps()
         # 每轮抓取的节奏基准（在 fetch 开头随机缩放 request_delay 得到）：
         # 有的运行整体偏快、有的偏慢，避免跨运行统一的节奏画像。
         self._run_delay: tuple[float, float] | None = None
@@ -261,8 +271,8 @@ class CdpTransport:
         self._browser: Any = None
         self._fetch_lock = asyncio.Lock()
 
-    def _apply_safe_mode_clamps(self) -> None:
-        """Tighten session caps for high-risk environments (SAFE_MODE)."""
+    def _apply_safe_mode_clamps(self, *, source: str = "env") -> None:
+        """Tighten session caps for high-risk environments (SAFE_MODE / pressure)."""
         self._light_run_chance = max(self._light_run_chance, 0.80)
         self._enrich_skip_chance = max(self._enrich_skip_chance, 0.60)
         self._page_stop_chance = max(self._page_stop_chance, 0.45)
@@ -277,9 +287,25 @@ class CdpTransport:
         wind_lo, wind_hi = self._session_wind_down
         self._session_wind_down = (max(wind_lo, 4.0), max(wind_hi, 18.0))
         logger.info(
-            f"creator stats SAFE_MODE on: list_pages<={self._max_list_pages} "
+            f"creator stats SAFE_MODE on ({source}): list_pages<={self._max_list_pages} "
             f"detail<={self._max_detail_visits} public_note_pages=0 "
             f"light>={self._light_run_chance:.2f}"
+        )
+
+    def _apply_high_pressure_clamps(self) -> None:
+        """Extra-tight session when risk pressure is high (circuit / multi-fail)."""
+        self._light_run_chance = 1.0
+        self._enrich_skip_chance = max(self._enrich_skip_chance, 0.85)
+        self._page_stop_chance = max(self._page_stop_chance, 0.55)
+        self._max_list_pages = min(self._max_list_pages, 2)
+        self._max_detail_visits = 0
+        lo, hi = self._request_delay
+        self._request_delay = (lo * 1.2, hi * 1.3)
+        wind_lo, wind_hi = self._session_wind_down
+        self._session_wind_down = (max(wind_lo, 5.0), max(wind_hi, 22.0))
+        logger.info(
+            "creator stats high-pressure clamps: list_pages<=%s detail=0 light=1.0",
+            self._max_list_pages,
         )
 
     def _new_run_pace(self) -> None:
@@ -519,32 +545,70 @@ class CdpTransport:
         period_norm = normalize_period(period)
 
         async with self._fetch_lock:
+            from backend.services.cdp_session_lock import (
+                CdpSessionBusyError,
+                hold_cdp_session,
+            )
+
+            # Serialize against publisher/engagement on the same Chrome profile.
+            try:
+                async with hold_cdp_session(
+                    account_id=self._account_id,
+                    cdp_endpoint=self.cdp_endpoint,
+                    owner="creator_stats",
+                    wait=False,
+                ):
+                    return await self._fetch_creator_center_locked(
+                        max_pages=max_pages,
+                        period_norm=period_norm,
+                        detail_filter=detail_filter,
+                        force_light=force_light,
+                    )
+            except CdpSessionBusyError as exc:
+                raise CreatorStatsFetchError(
+                    f"CDP session busy (held by {exc.holder}); try again later"
+                ) from exc
+
+    async def _fetch_creator_center_locked(
+        self,
+        *,
+        max_pages: int,
+        period_norm: str,
+        detail_filter: Callable[[dict[str, Any]], bool] | None,
+        force_light: bool,
+    ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
             # 每轮换一个节奏基准：本轮整体偏快或偏慢，跨运行无统一节奏。
             self._new_run_pace()
             # 轻量轮：本轮只看概览+列表就离开，不做逐篇详情深入。
-            if force_light:
+            # High pressure always forces light even if caller forgot force_light.
+            if force_light or self._risk_pressure >= 2:
                 light_run = True
             else:
                 light_run = self._light_run_chance > 0 and random.random() < self._light_run_chance
             if light_run:
                 logger.info(
                     "creator stats light run: skipping per-note enrichment this round"
-                    + (" (forced)" if force_light else "")
+                    + (" (forced)" if force_light or self._risk_pressure >= 2 else "")
                 )
             # Hard wall-clock for the whole session — never sit in Creator Center
             # for a long fixed automation window (human visits are short).
             import time as _time
 
             session_limit_s = _env_float("CREATOR_STATS_SESSION_MAX_SECONDS", 240.0)
+            if self._risk_pressure >= 2:
+                session_limit_s = min(session_limit_s, 150.0)
+            elif self._risk_pressure >= 1:
+                session_limit_s = min(session_limit_s, 200.0)
             session_limit_s = max(60.0, session_limit_s) * random.uniform(0.7, 1.15)
             session_deadline = _time.monotonic() + session_limit_s
             logger.info(
                 "creator stats session budget: max_list_pages=%s light=%s period=%s "
-                "wall_clock<=%.0fs",
+                "wall_clock<=%.0fs pressure=%s",
                 max_pages,
                 light_run,
                 period_norm,
                 session_limit_s,
+                self._risk_pressure,
             )
             # 每轮的深入预算也随机缩放——会话总时长不聚类在固定上限。
             # Slightly lower ceiling than before to keep sessions short under risk.
@@ -1303,15 +1367,26 @@ class CreatorStatsClient:
         transport: Transport | None = None,
         base_url: str = XHSApiEndpoints.CREATOR_URL,
         cdp_endpoint: str = "",
+        account_id: str = "",
+        risk_pressure: int = 0,
     ):
         self.cookie = cookie
         self.base_url = base_url.rstrip("/")
+        self._account_id = (account_id or "").strip()
+        try:
+            self._risk_pressure = max(0, min(2, int(risk_pressure or 0)))
+        except (TypeError, ValueError):
+            self._risk_pressure = 0
         # 优先级：注入的 transport > cdp_endpoint（CDP）> cookie（httpx fallback）。
         # CDP 模式连宿主已登录 Chrome，cookie jar 自带，不碰 Cookie header。
         if transport is not None:
             self.transport: Transport = transport
         elif cdp_endpoint:
-            self.transport = CdpTransport(cdp_endpoint)
+            self.transport = CdpTransport(
+                cdp_endpoint,
+                account_id=self._account_id,
+                risk_pressure=self._risk_pressure,
+            )
         else:
             self.transport = HttpxTransport()
 
