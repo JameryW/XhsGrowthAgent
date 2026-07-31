@@ -253,14 +253,19 @@ class CdpTransport:
         )
         # SAFE_MODE=1: clamp caps/chances further for high-risk IPs/environments.
         if _env_float("CREATOR_STATS_SAFE_MODE", 0) >= 1:
-            self._light_run_chance = max(self._light_run_chance, 0.75)
-            self._enrich_skip_chance = max(self._enrich_skip_chance, 0.55)
-            self._page_stop_chance = max(self._page_stop_chance, 0.4)
-            self._long_pause_chance = max(self._long_pause_chance, 0.18)
+            self._light_run_chance = max(self._light_run_chance, 0.80)
+            self._enrich_skip_chance = max(self._enrich_skip_chance, 0.60)
+            self._page_stop_chance = max(self._page_stop_chance, 0.45)
+            self._long_pause_chance = max(self._long_pause_chance, 0.22)
+            # Prefer human entry paths more often under risk pressure.
+            self._home_entry_chance = max(self._home_entry_chance, 0.70)
+            self._dashboard_browse_chance = max(self._dashboard_browse_chance, 0.40)
             self._max_list_pages = min(self._max_list_pages, 3)
             self._max_detail_visits = min(self._max_detail_visits, 2)
             lo, hi = self._request_delay
             self._request_delay = (lo * 1.4, hi * 1.4)
+            wind_lo, wind_hi = self._session_wind_down
+            self._session_wind_down = (max(wind_lo, 4.0), max(wind_hi, 18.0))
             logger.info(
                 f"creator stats SAFE_MODE on: list_pages<={self._max_list_pages} "
                 f"detail<={self._max_detail_visits} public_note_pages=0 "
@@ -467,6 +472,10 @@ class CdpTransport:
             max_pages = max(1, min(int(max_pages), self._max_list_pages))
         except (TypeError, ValueError):
             max_pages = self._max_list_pages
+        # Per-run list depth jitter: always using the hard cap (e.g. always 3
+        # pages) is a session-size fingerprint. Roll 1..cap each crawl.
+        if max_pages > 1:
+            max_pages = random.randint(1, max_pages)
         period_norm = normalize_period(period)
 
         async with self._fetch_lock:
@@ -482,6 +491,12 @@ class CdpTransport:
                     "creator stats light run: skipping per-note enrichment this round"
                     + (" (forced)" if force_light else "")
                 )
+            logger.info(
+                "creator stats session budget: max_list_pages=%s light=%s period=%s",
+                max_pages,
+                light_run,
+                period_norm,
+            )
             # 每轮的深入预算也随机缩放——会话总时长不聚类在固定上限。
             # Slightly lower ceiling than before to keep sessions short under risk.
             detail_budget = self._detail_timeout * random.uniform(0.35, 0.75)

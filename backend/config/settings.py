@@ -158,6 +158,10 @@ class CreatorStatsSettings(BaseSettings):
     # 风控/登录类失败后额外强制跳过下一轮的概率（在间隔退避之外再空一窗）。
     risk_skip_next_chance: float = 0.85
 
+    # 滚动 7 天内成功爬取次数上限。人很少一周内反复打开创作者中心很多次；
+    # 0 = 不限制。与间隔抖动叠加后，正常一周大约 2–3 次。
+    max_successful_crawls_per_week: int = 3
+
     model_config = {
         "env_prefix": "CREATOR_STATS_",
         "env_file": ".env",

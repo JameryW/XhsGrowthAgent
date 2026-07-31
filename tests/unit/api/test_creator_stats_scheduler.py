@@ -17,7 +17,9 @@ from backend.api.app import (
     _finite_float,
     _is_riskish_error,
     _pick_scheduled_period,
+    _prune_success_timestamps,
     _weekday_skip_factor,
+    _weekly_crawl_budget_exhausted,
     app,
     health,
 )
@@ -257,6 +259,38 @@ def test_clip_to_active_window_supports_hours_without_explicit_weights():
     assert 7 <= local.hour < 10
 
 
+def test_clip_to_active_window_avoids_recent_success_hour():
+    """最近一次成功爬取的本地小时应被显著降权。"""
+    # Window-outside candidate so we always re-sample.
+    candidate = datetime(2026, 1, 15, 20, 0, tzinfo=UTC)  # 04:00 CST
+    hits = 0
+    samples = 800
+    for _ in range(samples):
+        local = _clip_to_active_window(
+            candidate, 9, 22, avoid_hours={21}
+        ).astimezone(_CN_TZ)
+        if local.hour == 21:
+            hits += 1
+    # Without avoidance, hour 21 weight 4.0 / sum≈30 ≈ 13%; with *0.12 residual
+    # it should be rare. Allow a small number of residual hits.
+    assert hits < samples * 0.05
+
+
+def test_weekly_crawl_budget_counts_rolling_seven_days():
+    now = datetime(2026, 7, 31, 12, tzinfo=UTC)
+    stamps = [
+        "2026-07-25T10:00:00+00:00",
+        "2026-07-27T10:00:00+00:00",
+        "2026-07-29T10:00:00+00:00",
+        "2026-07-20T10:00:00+00:00",  # outside 7d window
+    ]
+    kept = _prune_success_timestamps(stamps, now=now, days=7)
+    assert len(kept) == 3
+    assert _weekly_crawl_budget_exhausted(stamps, max_per_week=3, now=now) is True
+    assert _weekly_crawl_budget_exhausted(stamps, max_per_week=4, now=now) is False
+    assert _weekly_crawl_budget_exhausted(stamps, max_per_week=0, now=now) is False
+
+
 @pytest.mark.asyncio
 async def test_scheduler_delays_first_run_when_startup_delay_configured(monkeypatch):
     """配置启动延迟后，首次运行前先睡一段随机延迟，不再启动即爬。"""
@@ -282,13 +316,13 @@ async def test_scheduler_delays_first_run_when_startup_delay_configured(monkeypa
     sync.assert_awaited_once()
     # 第一次 sleep 是启动延迟（5-10s 区间内，减去微小耗时）。
     assert 4.0 <= sleep_calls[0] <= 10.0
-    # 第二次 sleep 是周期睡眠（1800s × 0.75-1.5 随机因子）。
-    assert 1800.0 * 0.75 * 0.99 <= sleep_calls[1] <= 1800.0 * 1.5
+    # 第二次 sleep 是周期睡眠（1800s × 0.65-1.75 随机因子，成功后或有长休）。
+    assert 1800.0 * 0.65 * 0.99 <= sleep_calls[1] <= 1800.0 * 1.75 * 2.8 * 1.01
 
 
 @pytest.mark.asyncio
 async def test_scheduler_backs_off_after_consecutive_failures(monkeypatch):
-    """Risk/auth failures use a stronger 3–6× interval multiplier every time."""
+    """Risk/auth failures use a stronger 3–6× interval multiplier and arm a quiet window."""
     app = _scheduler_app()
     sleep_calls: list[float] = []
 
@@ -298,23 +332,33 @@ async def test_scheduler_backs_off_after_consecutive_failures(monkeypatch):
             raise asyncio.CancelledError
 
     monkeypatch.setattr(app_module.asyncio, "sleep", fake_sleep)
+    # Force risk skip arm so the second cycle is a quiet window, not a re-crawl.
+    monkeypatch.setattr(app_module.random, "random", lambda: 0.0)
     with (
         patch(
             "backend.services.creator_stats.pipeline.sync_all_active_accounts",
             new=AsyncMock(side_effect=RuntimeError("risk control 461")),
-        ),
+        ) as sync,
         pytest.raises(asyncio.CancelledError),
     ):
-        await _creator_stats_scheduler(app, 0.5)
+        await _creator_stats_scheduler(
+            app,
+            0.5,
+            risk_skip_next_chance=1.0,
+            skip_day_chance=0.0,
+            post_success_long_break_chance=0.0,
+        )
 
-    # Risk-shaped errors: interval × triangular(0.75,1.5) × uniform(3,6).
-    lo = 1800.0 * 0.75 * 3.0 * 0.99
-    hi = 1800.0 * 1.5 * 6.0
+    # Only one crawl attempt — the next cycle is the armed risk skip.
+    sync.assert_awaited_once()
+    # Risk-shaped errors: interval × triangular(0.65,1.75) × uniform(3,6).
+    lo = 1800.0 * 0.65 * 3.0 * 0.99
+    hi = 1800.0 * 1.75 * 6.0
     assert lo <= sleep_calls[0] <= hi
-    assert lo <= sleep_calls[1] <= hi
     state = app.state.creator_stats_scheduler_status
-    assert state["consecutive_failures"] == 2
-    assert state["status"] == "failed"
+    assert state["consecutive_failures"] == 1
+    assert state["status"] == "skipped"
+    assert state.get("last_risk_skip_armed") is True
 
 
 @pytest.mark.asyncio
@@ -507,3 +551,86 @@ async def test_scheduler_arms_skip_after_riskish_failure(monkeypatch):
     sync.assert_awaited_once()
     assert app.state.creator_stats_scheduler_status["status"] == "skipped"
     assert app.state.creator_stats_scheduler_status.get("last_risk_skip_armed") is True
+
+
+@pytest.mark.asyncio
+async def test_scheduler_skips_when_weekly_budget_exhausted(monkeypatch):
+    app = _scheduler_app()
+    app.state.creator_stats_scheduler_status = {
+        "success_timestamps": [
+            "2026-07-29T10:00:00+00:00",
+            "2026-07-30T10:00:00+00:00",
+            "2026-07-31T01:00:00+00:00",
+        ]
+    }
+    sleep_calls: list[float] = []
+
+    async def stop_after_interval(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", stop_after_interval)
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(),
+        ) as sync,
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(
+            app,
+            1.0,
+            pre_run_delay=None,
+            skip_day_chance=0.0,
+            risk_skip_next_chance=0.0,
+            post_success_long_break_chance=0.0,
+            max_successful_crawls_per_week=3,
+        )
+
+    sync.assert_not_awaited()
+    state = app.state.creator_stats_scheduler_status
+    assert state["status"] == "skipped"
+    assert state["last_skip_reason"] == "weekly_budget"
+
+
+@pytest.mark.asyncio
+async def test_scheduler_skips_when_snapshot_still_fresh(monkeypatch):
+    app = _scheduler_app()
+    sleep_calls: list[float] = []
+
+    async def stop_after_interval(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", stop_after_interval)
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(),
+        ) as sync,
+        patch(
+            "backend.db.accounts.get_active_account",
+            new=AsyncMock(return_value=SimpleNamespace(id="acc-1")),
+        ),
+        patch(
+            "backend.services.creator_stats.pipeline._account_freshness_skip",
+            new=AsyncMock(return_value=(True, 3600)),
+        ),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(
+            app,
+            1.0,
+            pre_run_delay=(30.0, 60.0),  # must not settle if freshness short-circuits
+            skip_day_chance=0.0,
+            risk_skip_next_chance=0.0,
+            post_success_long_break_chance=0.0,
+            max_successful_crawls_per_week=0,
+        )
+
+    sync.assert_not_awaited()
+    state = app.state.creator_stats_scheduler_status
+    assert state["status"] == "skipped"
+    assert state["last_skip_reason"] == "fresh_snapshot"
+    # Only the post-cycle interval sleep — no pre-run settle sleep.
+    assert len(sleep_calls) == 1
