@@ -31,7 +31,7 @@ def _env_float(name: str, default: float) -> float:
     return value if math.isfinite(value) else default
 
 
-# Per-account override keys (seconds unless *_minutes).
+# Per-account override keys (seconds unless *_minutes / min_risk_pressure).
 _POLICY_FIELDS = (
     "browser_action_seconds",
     "publish_seconds",
@@ -39,6 +39,8 @@ _POLICY_FIELDS = (
     "sync_auth_minutes",
     "qr_cooldown_seconds",
     "qr_risk_block_seconds",
+    # Floor for creator-stats crawl clamps (0=normal, 1=SAFE_MODE, 2=list-only).
+    "min_risk_pressure",
 )
 
 # account_id -> partial policy overrides
@@ -47,6 +49,8 @@ _policies: dict[str, dict[str, float]] = {}
 
 def global_cooldown_defaults() -> dict[str, float]:
     """Global env-backed defaults (not including per-account overrides)."""
+    # SAFE_MODE env acts as a global floor of 1 when enabled.
+    env_safe = 1.0 if _env_float("CREATOR_STATS_SAFE_MODE", 0) >= 1 else 0.0
     return {
         "browser_action_seconds": max(
             0.0, _env_float("XHS_BROWSER_ACTION_COOLDOWN_SECONDS", 20.0)
@@ -64,6 +68,7 @@ def global_cooldown_defaults() -> dict[str, float]:
         "qr_risk_block_seconds": max(
             0.0, _env_float("XHS_QR_RISK_BLOCK_SECONDS", 3600.0)
         ),
+        "min_risk_pressure": env_safe,
     }
 
 
@@ -76,9 +81,19 @@ def get_cooldown_policy(account_id: str = "") -> dict[str, Any]:
     for key, value in overrides.items():
         if key in _POLICY_FIELDS:
             try:
-                effective[key] = max(0.0, float(value))
+                num = max(0.0, float(value))
             except (TypeError, ValueError):
                 continue
+            if key == "min_risk_pressure":
+                num = max(0.0, min(2.0, num))
+            effective[key] = num
+    # Always clamp pressure fields for display.
+    try:
+        effective["min_risk_pressure"] = max(
+            0.0, min(2.0, float(effective.get("min_risk_pressure") or 0))
+        )
+    except (TypeError, ValueError):
+        effective["min_risk_pressure"] = 0.0
     return {
         "account_id": account_id or None,
         "defaults": defaults,
@@ -96,11 +111,13 @@ def set_cooldown_policy(
     sync_auth_minutes: float | None = None,
     qr_cooldown_seconds: float | None = None,
     qr_risk_block_seconds: float | None = None,
+    min_risk_pressure: float | None = None,
     replace: bool = False,
 ) -> dict[str, Any]:
     """Set per-account cool-down overrides. ``None`` fields leave existing values.
 
     Pass ``replace=True`` to replace the whole override map (missing fields = default).
+    ``min_risk_pressure`` is clamped to 0–2 (creator-stats SAFE_MODE floor).
     """
     account_id = (account_id or "").strip()
     if not account_id:
@@ -112,6 +129,7 @@ def set_cooldown_policy(
         "sync_auth_minutes": sync_auth_minutes,
         "qr_cooldown_seconds": qr_cooldown_seconds,
         "qr_risk_block_seconds": qr_risk_block_seconds,
+        "min_risk_pressure": min_risk_pressure,
     }
     current: dict[str, float] = {} if replace else dict(_policies.get(account_id) or {})
     for key, value in incoming.items():
@@ -120,15 +138,31 @@ def set_cooldown_policy(
                 current.pop(key, None)
             continue
         try:
-            current[key] = max(0.0, float(value))
+            num = max(0.0, float(value))
         except (TypeError, ValueError) as exc:
             raise ValueError(f"invalid {key}: {value!r}") from exc
+        if key == "min_risk_pressure":
+            num = max(0.0, min(2.0, num))
+        current[key] = num
     if current:
         _policies[account_id] = current
     else:
         _policies.pop(account_id, None)
     _schedule_persist()
     return get_cooldown_policy(account_id)
+
+
+def account_min_risk_pressure(account_id: str = "") -> int:
+    """Per-account floor for creator-stats risk pressure (0–2)."""
+    value = _policy_value(
+        account_id,
+        "min_risk_pressure",
+        1.0 if _env_float("CREATOR_STATS_SAFE_MODE", 0) >= 1 else 0.0,
+    )
+    try:
+        return max(0, min(2, int(value)))
+    except (TypeError, ValueError):
+        return 0
 
 
 def clear_cooldown_policy(account_id: str = "") -> dict[str, Any]:
@@ -971,9 +1005,12 @@ async def hydrate_risk_gates() -> None:
             if field not in raw_policy:
                 continue
             try:
-                cleaned[field] = max(0.0, float(raw_policy[field]))
+                num = max(0.0, float(raw_policy[field]))
             except (TypeError, ValueError):
                 continue
+            if field == "min_risk_pressure":
+                num = max(0.0, min(2.0, num))
+            cleaned[field] = num
         if cleaned:
             _policies[str(aid)] = cleaned
     _hydrated = True
@@ -1043,6 +1080,7 @@ __all__ = [
     "qr_cooldown_seconds",
     "qr_risk_block_seconds",
     "reset_gates_for_tests",
+    "account_min_risk_pressure",
     "set_cooldown_policy",
     "snapshot_risk_gates",
     "sync_auth_fail_cooldown_minutes",

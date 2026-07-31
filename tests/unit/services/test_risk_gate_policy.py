@@ -57,3 +57,14 @@ def test_replace_policy_wipes_unspecified_fields():
     set_cooldown_policy("a1", browser_action_seconds=8, replace=True)
     overrides = get_cooldown_policy("a1")["overrides"]
     assert overrides == {"browser_action_seconds": 8}
+
+
+def test_min_risk_pressure_floor():
+    from backend.services.xhs_risk_gate import account_min_risk_pressure
+
+    assert account_min_risk_pressure("a1") in (0, 1)  # global SAFE_MODE may be on
+    set_cooldown_policy("a1", min_risk_pressure=2)
+    assert account_min_risk_pressure("a1") == 2
+    set_cooldown_policy("a1", min_risk_pressure=0, replace=True)
+    # replace with only 0 still stores override 0
+    assert account_min_risk_pressure("a1") == 0

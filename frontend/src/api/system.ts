@@ -133,6 +133,7 @@ export async function setRiskGatePolicy(payload: {
   sync_auth_minutes?: number | null
   qr_cooldown_seconds?: number | null
   qr_risk_block_seconds?: number | null
+  min_risk_pressure?: number | null
   replace?: boolean
 }): Promise<CooldownPolicy> {
   return client.put('/system/risk-gates/policy', payload) as unknown as Promise<CooldownPolicy>
