@@ -282,12 +282,20 @@ def _filter_by_period(posts: list[dict[str, Any]], period: str) -> list[dict[str
 
 
 def _period_metrics(posts: list[dict[str, Any]]) -> dict[str, float | int]:
-    """Aggregate a complete period without applying the visible table limit."""
+    """Aggregate a complete period without applying the visible table limit.
+
+    Fallback path when Creator Center daily series are unavailable: sum the
+    lifetime metrics of notes *published* in the window. This is not the same
+    as Creator Center period totals (view events in-window across all notes).
+    """
     likes = sum(int(p.get("likes") or 0) for p in posts)
     comments = sum(int(p.get("comments") or 0) for p in posts)
     collects = sum(int(p.get("collects") or 0) for p in posts)
     shares = sum(int(p.get("shares") or 0) for p in posts)
     engagement = likes + comments + collects
+    # Rates are expected as percent-like numbers here (see
+    # ``_imported_notes_as_posts``); keep enough precision for later fraction
+    # serialization instead of rounding the mean to one decimal early.
     rates = [float(p.get("engagement_rate") or 0.0) for p in posts]
     return {
         "posts": len(posts),
@@ -297,19 +305,155 @@ def _period_metrics(posts: list[dict[str, Any]]) -> dict[str, float | int]:
         "collects": collects,
         "shares": shares,
         "engagement": engagement,
-        "avg_engagement_rate": round(sum(rates) / len(rates), 1) if rates else 0.0,
+        "avg_engagement_rate": round(sum(rates) / len(rates), 4) if rates else 0.0,
+    }
+
+
+def _parse_series_point_time(value: Any) -> datetime | None:
+    """Parse Creator Center daily-series point timestamps (unix ms/s or ISO)."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        ts = float(value)
+        # Creator Center uses millisecond epoch; seconds are < 1e12.
+        if ts > 1e12:
+            ts /= 1000.0
+        try:
+            return datetime.fromtimestamp(ts, tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            return None
+    return _parse_published_at(value)
+
+
+def _sum_detail_series(
+    series: Any,
+    *,
+    start: datetime,
+    end: datetime,
+    end_exclusive: bool = False,
+) -> int:
+    """Sum ``count`` for series points whose date falls in [start, end] (or [start, end))."""
+    if not isinstance(series, list):
+        return 0
+    total = 0
+    for point in series:
+        if not isinstance(point, dict):
+            continue
+        point_time = _parse_series_point_time(point.get("date") or point.get("day"))
+        if point_time is None:
+            continue
+        if point_time < start:
+            continue
+        if end_exclusive:
+            if point_time >= end:
+                continue
+        elif point_time > end:
+            continue
+        try:
+            total += max(0, int(point.get("count") or 0))
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
+def _period_metrics_from_detail(
+    detail_metrics: dict[str, Any],
+    period: str,
+    *,
+    posts_in_window: int,
+    now: datetime | None = None,
+    previous: bool = False,
+) -> dict[str, float | int] | None:
+    """Build period metrics from Creator Center daily series when present.
+
+    Account overview ``views`` / ``detail_metrics.view_list`` count *view events
+    in the selected window across all notes* — the same semantics as the
+    Creator Center dashboard. Summing lifetime note metrics for notes published
+    in the window systematically understates that number (e.g. 149 vs 3822).
+    """
+    if not isinstance(detail_metrics, dict) or not detail_metrics:
+        return None
+    view_list = detail_metrics.get("view_list")
+    if not isinstance(view_list, list) or not view_list:
+        return None
+
+    end = (now or datetime.now(UTC)).astimezone(UTC)
+    window = _period_window(period)
+    current_start = end - window
+    previous_start = current_start - window
+    if previous:
+        start, stop, end_exclusive = previous_start, current_start, True
+    else:
+        start, stop, end_exclusive = current_start, end, False
+
+    views = _sum_detail_series(
+        view_list, start=start, end=stop, end_exclusive=end_exclusive
+    )
+    likes = _sum_detail_series(
+        detail_metrics.get("like_list"), start=start, end=stop, end_exclusive=end_exclusive
+    )
+    comments = _sum_detail_series(
+        detail_metrics.get("comment_list"), start=start, end=stop, end_exclusive=end_exclusive
+    )
+    collects = _sum_detail_series(
+        detail_metrics.get("collect_list"), start=start, end=stop, end_exclusive=end_exclusive
+    )
+    shares = _sum_detail_series(
+        detail_metrics.get("share_list"), start=start, end=stop, end_exclusive=end_exclusive
+    )
+    engagement = likes + comments + collects
+    # Percent-like rate so ``_serialize_analytics_rate_units`` can normalize.
+    avg_rate = round((engagement / views) * 100.0, 4) if views > 0 else 0.0
+    return {
+        "posts": posts_in_window,
+        "views": views,
+        "likes": likes,
+        "comments": comments,
+        "collects": collects,
+        "shares": shares,
+        "engagement": engagement,
+        "avg_engagement_rate": avg_rate,
+        "metric_source": "creator_center_series",
     }
 
 
 def _build_period_summary(
-    posts: list[dict[str, Any]], period: str, *, now: datetime | None = None
+    posts: list[dict[str, Any]],
+    period: str,
+    *,
+    now: datetime | None = None,
+    detail_metrics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build the server-owned current/previous aggregate contract."""
+    """Build the server-owned current/previous aggregate contract.
+
+    Prefer Creator Center daily series (``detail_metrics.*_list``) for
+    views/likes/comments/collects/shares so cards match the official
+    dashboard. Fall back to summing note rows when series are missing.
+    ``posts`` still drives how many notes were *published* in each window.
+    """
     current, previous = _split_period_posts(posts, period, now=now)
+    current_metrics = _period_metrics_from_detail(
+        detail_metrics or {},
+        period,
+        posts_in_window=len(current),
+        now=now,
+        previous=False,
+    )
+    previous_metrics = _period_metrics_from_detail(
+        detail_metrics or {},
+        period,
+        posts_in_window=len(previous),
+        now=now,
+        previous=True,
+    )
+    if current_metrics is None:
+        current_metrics = _period_metrics(current)
+    if previous_metrics is None:
+        previous_metrics = _period_metrics(previous)
     return {
         "period": period,
-        "current": _period_metrics(current),
-        "previous": _period_metrics(previous),
+        "current": current_metrics,
+        "previous": previous_metrics,
     }
 
 
@@ -559,8 +703,27 @@ async def get_growth_report(
     )
     for t, c in _topics_from_imported(posts).items():
         topics[t] = topics.get(t, 0) + c
+    account_obj = snapshot_bundle.get("account")
+    detail_metrics: dict[str, Any] = {}
+    if account_obj is not None:
+        raw_dm = getattr(account_obj, "detail_metrics", None)
+        if isinstance(raw_dm, dict):
+            detail_metrics = raw_dm
+        elif isinstance(account_obj, dict) and isinstance(account_obj.get("detail_metrics"), dict):
+            detail_metrics = account_obj["detail_metrics"]
     filtered_posts = _filter_by_period(posts, period)
     report = _build_growth_report(account_id, period, filtered_posts, topics)
+    period_summary = _build_period_summary(
+        posts, period, detail_metrics=detail_metrics or None
+    )
+    current_metrics = period_summary.get("current") or {}
+    if current_metrics.get("metric_source") == "creator_center_series":
+        metrics = report.setdefault("metrics", {})
+        metrics["total_engagement"] = int(current_metrics.get("engagement") or 0)
+        metrics["avg_engagement_rate"] = float(
+            current_metrics.get("avg_engagement_rate") or 0.0
+        )
+        metrics["total_views"] = int(current_metrics.get("views") or 0)
     snapshot = _complete_snapshot_metadata(
         account_id,
         snapshot_bundle,
@@ -917,9 +1080,30 @@ async def get_dashboard(
     for t, c in _topics_from_imported(posts).items():
         topics[t] = topics.get(t, 0) + c
 
-    period_summary = _build_period_summary(posts, period)
+    account_obj = snapshot_bundle.get("account")
+    detail_metrics: dict[str, Any] = {}
+    if account_obj is not None:
+        raw_dm = getattr(account_obj, "detail_metrics", None)
+        if isinstance(raw_dm, dict):
+            detail_metrics = raw_dm
+        elif isinstance(account_obj, dict) and isinstance(account_obj.get("detail_metrics"), dict):
+            detail_metrics = account_obj["detail_metrics"]
+
+    period_summary = _build_period_summary(
+        posts, period, detail_metrics=detail_metrics or None
+    )
     filtered_posts = _filter_by_period(posts, period)
     report = _build_growth_report(account_id, period, filtered_posts, topics)
+    # Align report engagement totals with Creator Center series when available
+    # so the first-screen cards and report block cannot disagree.
+    current_metrics = period_summary.get("current") or {}
+    if current_metrics.get("metric_source") == "creator_center_series":
+        metrics = report.setdefault("metrics", {})
+        metrics["total_engagement"] = int(current_metrics.get("engagement") or 0)
+        metrics["avg_engagement_rate"] = float(
+            current_metrics.get("avg_engagement_rate") or 0.0
+        )
+        metrics["total_views"] = int(current_metrics.get("views") or 0)
 
     # ── Performance ──
     sorted_posts = sorted(filtered_posts, key=lambda p: p.get("published_at", ""), reverse=True)[
