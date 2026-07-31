@@ -14,10 +14,15 @@ from backend.services.xhs_login import LoginError, XhsLoginSession
 
 
 @pytest.fixture(autouse=True)
-def _reset():
+def _reset(monkeypatch):
+    monkeypatch.setenv("XHS_BROWSER_ACTION_COOLDOWN_SECONDS", "0")
+    from backend.services.xhs_risk_gate import reset_gates_for_tests
+
     reset_cdp_session_locks_for_tests()
+    reset_gates_for_tests()
     yield
     reset_cdp_session_locks_for_tests()
+    reset_gates_for_tests()
 
 
 @pytest.mark.asyncio

@@ -848,17 +848,36 @@ async def _creator_stats_scheduler(
                     page_reason or f"pages={page_count}",
                 )
             elif await _active_cdp_session_busy():
-                # Publisher/engagement already attached — do not queue a crawl.
+                # Publisher/engagement/login already attached — do not queue a crawl.
+                holder = None
+                with contextlib.suppress(Exception):
+                    from backend.db.accounts import get_active_account, get_account_cdp_endpoint
+                    from backend.services.cdp_session_lock import cdp_session_holder
+
+                    account = await get_active_account()
+                    if account is not None:
+                        endpoint = (
+                            await get_account_cdp_endpoint(str(account.id)) or ""
+                        ).strip()
+                        holder = cdp_session_holder(
+                            account_id=str(account.id), cdp_endpoint=endpoint
+                        )
                 state.update(
                     {
                         "status": "skipped",
                         "last_skipped_at": started_at.isoformat(),
                         "last_skip_reason": "cdp_busy",
-                        "last_error": "cdp session held by another feature",
+                        "last_error": (
+                            f"cdp session held by {holder}"
+                            if holder
+                            else "cdp session held by another feature"
+                        ),
+                        "last_cdp_busy_holder": holder,
                     }
                 )
                 logger.info(
-                    "scheduled creator stats import skipped: CDP session busy"
+                    "scheduled creator stats import skipped: CDP session busy (holder=%s)",
+                    holder or "unknown",
                 )
             else:
                 ran_crawl = True
@@ -1470,14 +1489,27 @@ async def health() -> ApiResponse[Any]:
             "soft_risk_signals",
             "last_soft_risk",
             "open_page_count",
+            "last_cdp_busy_holder",
         )
         scheduler = {key: scheduler_state.get(key) for key in health_fields}
+    cdp_sessions: list[dict[str, Any]] = []
+    risk_gates: dict[str, Any] | None = None
+    with contextlib.suppress(Exception):
+        from backend.services.cdp_session_lock import snapshot_cdp_sessions
+
+        cdp_sessions = snapshot_cdp_sessions()
+    with contextlib.suppress(Exception):
+        from backend.services.xhs_risk_gate import snapshot_risk_gates
+
+        risk_gates = snapshot_risk_gates()
     return success(
         {
             "status": "ok",
             "version": "0.1.0",
             "db": db_status,
             "creator_stats_scheduler": scheduler,
+            "cdp_sessions": cdp_sessions,
+            "risk_gates": risk_gates,
         }
     )
 

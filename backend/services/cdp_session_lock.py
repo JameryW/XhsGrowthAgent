@@ -31,6 +31,8 @@ _PG_LOCK_CLASS = 8910
 
 _locks: dict[str, asyncio.Lock] = {}
 _holders: dict[str, str] = {}
+_held_since_mono: dict[str, float] = {}
+_held_since_wall: dict[str, str] = {}
 _lock_guard = asyncio.Lock()
 
 
@@ -74,6 +76,27 @@ def cdp_session_holder(*, account_id: str = "", cdp_endpoint: str = "") -> str |
     """Return the current *local* holder label, or None when free in this process."""
     key = _normalize_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
     return _holders.get(key)
+
+
+def snapshot_cdp_sessions() -> list[dict[str, Any]]:
+    """Operator-facing snapshot of local CDP holds (this worker only)."""
+    now_mono = time.monotonic()
+    rows: list[dict[str, Any]] = []
+    for key, holder in list(_holders.items()):
+        since_mono = _held_since_mono.get(key)
+        held_for = (
+            round(max(0.0, now_mono - since_mono), 1) if since_mono is not None else None
+        )
+        rows.append(
+            {
+                "key": key,
+                "holder": holder,
+                "held_since": _held_since_wall.get(key),
+                "held_for_seconds": held_for,
+            }
+        )
+    rows.sort(key=lambda r: str(r.get("key") or ""))
+    return rows
 
 
 def is_cdp_session_busy(*, account_id: str = "", cdp_endpoint: str = "") -> bool:
@@ -229,8 +252,18 @@ async def hold_cdp_session(
     owner_label = (owner or "unknown").strip() or "unknown"
     wait_s = 300.0 if timeout is None else max(0.05, float(timeout))
     local_acquired = False
+    session_entered = False
     pg_hold: _PgAdvisoryHold | None = None
     try:
+        # 0) Cross-feature cool-down after the previous CDP session released.
+        await _respect_browser_action_cooldown(
+            account_id=account_id,
+            cdp_endpoint=cdp_endpoint,
+            owner=owner_label,
+            wait=wait,
+            timeout=wait_s,
+        )
+
         # 1) Process-local lock first (cheap).
         if wait:
             try:
@@ -247,6 +280,13 @@ async def hold_cdp_session(
                 raise CdpSessionBusyError(key, _holders.get(key) or "unknown") from exc
         local_acquired = True
         _holders[key] = owner_label
+        _held_since_mono[key] = time.monotonic()
+        try:
+            from datetime import UTC, datetime
+
+            _held_since_wall[key] = datetime.now(UTC).isoformat()
+        except Exception:
+            _held_since_wall[key] = ""
 
         # 2) Distributed advisory lock (optional; required when pool is up).
         remaining = wait_s
@@ -261,6 +301,7 @@ async def hold_cdp_session(
             owner_label,
             pg_hold is not None,
         )
+        session_entered = True
         yield key
     finally:
         if pg_hold is not None:
@@ -269,15 +310,74 @@ async def hold_cdp_session(
         if local_acquired:
             if _holders.get(key) == owner_label:
                 _holders.pop(key, None)
+                _held_since_mono.pop(key, None)
+                _held_since_wall.pop(key, None)
             with contextlib.suppress(RuntimeError):
                 lock.release()
+            # Cool-down only after a fully established exclusive session.
+            if session_entered:
+                with contextlib.suppress(Exception):
+                    from backend.services.xhs_risk_gate import note_browser_action
+
+                    note_browser_action(
+                        account_id=account_id,
+                        cdp_endpoint=cdp_endpoint,
+                        owner=owner_label,
+                    )
             logger.debug("cdp session released key=%s owner=%s", key, owner_label)
+
+
+async def _respect_browser_action_cooldown(
+    *,
+    account_id: str,
+    cdp_endpoint: str,
+    owner: str,
+    wait: bool,
+    timeout: float,
+) -> None:
+    """Enforce cross-feature gap after previous CDP use on this profile."""
+    try:
+        from backend.services.xhs_risk_gate import check_browser_action_allowed
+    except Exception:
+        return
+    block = check_browser_action_allowed(
+        account_id=account_id, cdp_endpoint=cdp_endpoint, owner=owner
+    )
+    if block is None:
+        return
+    wait_s = int(block.retry_after_seconds or 0)
+    if not wait:
+        raise CdpSessionBusyError(
+            _normalize_key(account_id=account_id, cdp_endpoint=cdp_endpoint),
+            f"cooldown:{block.risk_code}",
+        )
+    # Cap sleep by the outer acquire timeout so callers still fail closed.
+    sleep_s = min(float(max(0, wait_s)), max(0.0, timeout))
+    if sleep_s > 0:
+        logger.info(
+            "cdp session cool-down owner=%s sleep=%.1fs reason=%s",
+            owner,
+            sleep_s,
+            block.reason,
+        )
+        await asyncio.sleep(sleep_s)
+    # Re-check once; if still blocked, fail rather than busy-loop.
+    block2 = check_browser_action_allowed(
+        account_id=account_id, cdp_endpoint=cdp_endpoint, owner=owner
+    )
+    if block2 is not None:
+        raise CdpSessionBusyError(
+            _normalize_key(account_id=account_id, cdp_endpoint=cdp_endpoint),
+            f"cooldown:{block2.risk_code}",
+        )
 
 
 def reset_cdp_session_locks_for_tests() -> None:
     """Test helper — drop all process-local CDP locks."""
     _locks.clear()
     _holders.clear()
+    _held_since_mono.clear()
+    _held_since_wall.clear()
 
 
 __all__ = [
@@ -287,4 +387,5 @@ __all__ = [
     "is_cdp_session_busy",
     "is_cdp_session_busy_async",
     "reset_cdp_session_locks_for_tests",
+    "snapshot_cdp_sessions",
 ]

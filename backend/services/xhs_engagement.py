@@ -206,19 +206,39 @@ class XHSEngagement:
     async def _hold_cdp(self):
         """Shared CDP lock so stats/publish/engagement never attach together."""
         from backend.services.cdp_session_lock import hold_cdp_session
+        from backend.services.xhs_risk_gate import (
+            check_engagement_allowed,
+            note_engagement,
+        )
+
+        block = check_engagement_allowed(
+            self.account_id, cdp_endpoint=self.cdp_endpoint
+        )
+        if block is not None:
+            # Sleep out account-level engagement cool-down when possible.
+            wait_s = max(0, int(block.retry_after_seconds or 0))
+            if wait_s > 0:
+                await asyncio.sleep(min(float(wait_s), 30.0))
+            block2 = check_engagement_allowed(
+                self.account_id, cdp_endpoint=self.cdp_endpoint
+            )
+            if block2 is not None:
+                raise EngagementRiskError(block2.risk_code, block2.message)
 
         timeout = 120.0
         try:
             timeout = float(os.environ.get("XHS_CDP_ENGAGEMENT_LOCK_TIMEOUT_S", "120") or 120)
         except (TypeError, ValueError, OverflowError):
             timeout = 120.0
-        return hold_cdp_session(
+        cm = hold_cdp_session(
             account_id=self.account_id,
             cdp_endpoint=self.cdp_endpoint,
             owner="engagement",
             wait=True,
             timeout=timeout,
         )
+        # Wrap so release notes engagement cool-down for the next session.
+        return _EngagementCdpHold(cm, self.account_id, self.cdp_endpoint)
 
     async def reply_to_comment(
         self,
@@ -235,6 +255,8 @@ class XHSEngagement:
                     return await self._reply_to_comment_locked(
                         note_id, comment_id, reply_content
                     )
+        except EngagementRiskError as exc:
+            return self._blocked_result(exc.error_code, str(exc))
         except CdpSessionBusyError as exc:
             return self._blocked_result(
                 "cdp_busy", f"CDP session busy (held by {exc.holder})"
@@ -353,6 +375,8 @@ class XHSEngagement:
                     except Exception as exc:
                         logger.error("发送私信失败: %s", exc, exc_info=True)
                         return {"success": False, "status": "failed", "error": str(exc)}
+        except EngagementRiskError as exc:
+            return self._blocked_result(exc.error_code, str(exc))
         except CdpSessionBusyError as exc:
             return self._blocked_result(
                 "cdp_busy", f"CDP session busy (held by {exc.holder})"
@@ -425,3 +449,26 @@ class XHSEngagement:
         exc_tb: TracebackType | None,
     ) -> None:
         await self.close()
+
+
+
+class _EngagementCdpHold:
+    """Async context that notes engagement cool-down on exit."""
+
+    def __init__(self, cm: Any, account_id: str, cdp_endpoint: str) -> None:
+        self._cm = cm
+        self._account_id = account_id
+        self._cdp_endpoint = cdp_endpoint
+
+    async def __aenter__(self) -> str:
+        return await self._cm.__aenter__()
+
+    async def __aexit__(self, *exc: Any) -> None:
+        try:
+            await self._cm.__aexit__(*exc)
+        finally:
+            from backend.services.xhs_risk_gate import note_engagement
+
+            note_engagement(self._account_id, cdp_endpoint=self._cdp_endpoint)
+
+

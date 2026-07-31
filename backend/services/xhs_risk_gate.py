@@ -1,8 +1,8 @@
-"""Process-local risk gates for QR login and creator-stats sync.
+"""Process-local risk gates for QR login, browser CDP actions, and sync.
 
 Keeps short-term cooldowns in memory so operators cannot hammer XHS with
-repeated QR starts or auth-failed crawls after a risk hit (300012) or
-expired creator session.
+repeated QR starts, back-to-back browser features, or auth-failed crawls
+after a risk hit (300012) / expired creator session.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import os
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 
 def _env_float(name: str, default: float) -> float:
@@ -40,6 +41,24 @@ def sync_auth_fail_cooldown_minutes() -> float:
     return max(0.0, _env_float("CREATOR_STATS_AUTH_FAIL_COOLDOWN_MINUTES", 120.0))
 
 
+def browser_action_cooldown_seconds() -> float:
+    """Min gap after any CDP session ends before another feature starts (0 disables)."""
+    return max(0.0, _env_float("XHS_BROWSER_ACTION_COOLDOWN_SECONDS", 20.0))
+
+
+def publish_cooldown_seconds() -> float:
+    """Min gap between publish attempts for the same account (0 disables)."""
+    return max(0.0, _env_float("XHS_PUBLISH_COOLDOWN_SECONDS", 90.0))
+
+
+def engagement_account_cooldown_seconds() -> float:
+    """Min gap between engagement sessions for the same account (0 disables).
+
+    Complements the per-action pacing inside XHSEngagement.
+    """
+    return max(0.0, _env_float("XHS_ENGAGEMENT_ACCOUNT_COOLDOWN_SECONDS", 30.0))
+
+
 @dataclass(frozen=True)
 class GateBlock:
     """A temporary block with operator-facing metadata."""
@@ -66,6 +85,11 @@ _qr_risk_blocked_until: dict[str, float] = {}
 _qr_risk_reason: dict[str, str] = {}
 _sync_auth_blocked_until: dict[str, float] = {}
 _sync_auth_reason: dict[str, str] = {}
+# Cross-feature browser CDP cool-down (key -> last release mono + owner)
+_browser_action_last_at: dict[str, float] = {}
+_browser_action_last_owner: dict[str, str] = {}
+_publish_last_at: dict[str, float] = {}
+_engagement_last_at: dict[str, float] = {}
 
 
 def _now() -> float:
@@ -74,6 +98,24 @@ def _now() -> float:
 
 def _remaining(deadline: float) -> int:
     return max(0, int(deadline - _now() + 0.999))
+
+
+def _profile_key(*, account_id: str = "", cdp_endpoint: str = "") -> str:
+    account_id = (account_id or "").strip()
+    if account_id:
+        return f"account:{account_id}"
+    endpoint = (cdp_endpoint or "").strip()
+    if not endpoint:
+        return "default"
+    try:
+        parsed = urlparse(endpoint)
+        host = parsed.hostname or "localhost"
+        port = parsed.port
+        if port is not None:
+            return f"cdp:{host}:{port}"
+    except ValueError:
+        pass
+    return f"cdp:{endpoint}"
 
 
 def check_qr_start_allowed(account_id: str) -> GateBlock | None:
@@ -203,6 +245,130 @@ def clear_sync_auth_failure(account_id: str) -> None:
     _sync_auth_reason.pop(account_id, None)
 
 
+def note_browser_action(
+    *,
+    account_id: str = "",
+    cdp_endpoint: str = "",
+    owner: str = "unknown",
+) -> None:
+    """Record that a CDP session for this profile just ended."""
+    key = _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
+    _browser_action_last_at[key] = _now()
+    _browser_action_last_owner[key] = (owner or "unknown").strip() or "unknown"
+
+
+def check_browser_action_allowed(
+    *,
+    account_id: str = "",
+    cdp_endpoint: str = "",
+    owner: str = "",
+) -> GateBlock | None:
+    """Block rapid successive CDP features on the same profile.
+
+    Same-owner re-entry (e.g. engagement actions in one session) is not gated
+    here — the CDP lock already serializes. This gap applies after a session
+    releases, before a *different* feature attaches.
+    """
+    cooldown = browser_action_cooldown_seconds()
+    if cooldown <= 0:
+        return None
+    key = _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
+    last = _browser_action_last_at.get(key, 0.0)
+    if last <= 0:
+        return None
+    last_owner = _browser_action_last_owner.get(key, "")
+    owner_norm = (owner or "").strip()
+    # Same feature back-to-back still cools down, but shorter (0.4×) — humans
+    # sometimes retry the same action quickly; full gap is for feature switches.
+    effective = cooldown if (not owner_norm or owner_norm != last_owner) else cooldown * 0.4
+    elapsed = _now() - last
+    if elapsed >= effective:
+        return None
+    wait = int(effective - elapsed + 0.999)
+    return GateBlock(
+        reason="browser_action_cooldown",
+        risk_code="browser_action_cooldown",
+        message=(
+            f"浏览器操作冷却中：上一任务（{last_owner or 'unknown'}）刚结束，"
+            f"请 {wait} 秒后再切换功能，避免连续占用创作者中心触发风控。"
+        ),
+        retry_after_seconds=wait,
+    )
+
+
+def note_publish(account_id: str = "", *, cdp_endpoint: str = "") -> None:
+    key = _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
+    _publish_last_at[key] = _now()
+
+
+def check_publish_allowed(account_id: str = "", *, cdp_endpoint: str = "") -> GateBlock | None:
+    """Min gap between publishes for one account/profile."""
+    cooldown = publish_cooldown_seconds()
+    if cooldown <= 0:
+        return None
+    key = _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
+    last = _publish_last_at.get(key, 0.0)
+    if last <= 0:
+        return None
+    elapsed = _now() - last
+    if elapsed >= cooldown:
+        return None
+    wait = int(cooldown - elapsed + 0.999)
+    return GateBlock(
+        reason="publish_cooldown",
+        risk_code="publish_cooldown",
+        message=f"发布冷却中：同一账号请 {wait} 秒后再发，连续发布容易触发平台限制。",
+        retry_after_seconds=wait,
+    )
+
+
+def note_engagement(account_id: str = "", *, cdp_endpoint: str = "") -> None:
+    key = _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
+    _engagement_last_at[key] = _now()
+
+
+def check_engagement_allowed(
+    account_id: str = "", *, cdp_endpoint: str = ""
+) -> GateBlock | None:
+    """Min gap between engagement *sessions* for one account/profile."""
+    cooldown = engagement_account_cooldown_seconds()
+    if cooldown <= 0:
+        return None
+    key = _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
+    last = _engagement_last_at.get(key, 0.0)
+    if last <= 0:
+        return None
+    elapsed = _now() - last
+    if elapsed >= cooldown:
+        return None
+    wait = int(cooldown - elapsed + 0.999)
+    return GateBlock(
+        reason="engagement_cooldown",
+        risk_code="engagement_cooldown",
+        message=f"互动冷却中：同一账号请 {wait} 秒后再进行评论/私信操作。",
+        retry_after_seconds=wait,
+    )
+
+
+def snapshot_risk_gates() -> dict[str, Any]:
+    """Compact operator-facing gate snapshot for /health."""
+    now = _now()
+    browser_active = 0
+    for last in _browser_action_last_at.values():
+        if now - last < browser_action_cooldown_seconds():
+            browser_active += 1
+    auth_active = sum(1 for until in _sync_auth_blocked_until.values() if until > now)
+    qr_risk_active = sum(1 for until in _qr_risk_blocked_until.values() if until > now)
+    return {
+        "browser_action_cooldown_seconds": browser_action_cooldown_seconds(),
+        "publish_cooldown_seconds": publish_cooldown_seconds(),
+        "engagement_account_cooldown_seconds": engagement_account_cooldown_seconds(),
+        "active_browser_cooldowns": browser_active,
+        "active_sync_auth_blocks": auth_active,
+        "active_qr_risk_blocks": qr_risk_active,
+    }
+
+
 def reset_gates_for_tests() -> None:
     """Test helper — clear all in-memory gates."""
     _qr_last_attempt_at.clear()
@@ -210,20 +376,34 @@ def reset_gates_for_tests() -> None:
     _qr_risk_reason.clear()
     _sync_auth_blocked_until.clear()
     _sync_auth_reason.clear()
+    _browser_action_last_at.clear()
+    _browser_action_last_owner.clear()
+    _publish_last_at.clear()
+    _engagement_last_at.clear()
 
 
 __all__ = [
     "GateBlock",
+    "browser_action_cooldown_seconds",
+    "check_browser_action_allowed",
+    "check_engagement_allowed",
+    "check_publish_allowed",
     "check_qr_start_allowed",
     "check_sync_auth_cooldown",
     "clear_qr_risk_block",
     "clear_sync_auth_failure",
+    "engagement_account_cooldown_seconds",
     "is_security_risk_message",
+    "note_browser_action",
+    "note_engagement",
+    "note_publish",
     "note_qr_attempt",
     "note_qr_risk_block",
     "note_sync_auth_failure",
+    "publish_cooldown_seconds",
     "qr_cooldown_seconds",
     "qr_risk_block_seconds",
     "reset_gates_for_tests",
+    "snapshot_risk_gates",
     "sync_auth_fail_cooldown_minutes",
 ]
