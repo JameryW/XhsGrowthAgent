@@ -4,7 +4,7 @@ import asyncio
 import importlib
 import math
 import random
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -24,8 +24,46 @@ from backend.api.app import (
     app,
     health,
 )
+from backend.db.creator_stats import _reset_memory_store
 
 app_module = importlib.import_module("backend.api.app")
+
+
+def _empty_scheduler_history() -> dict:
+    return {
+        "timestamps": [],
+        "last_success_local_hour": None,
+        "last_period": None,
+        "risk_failures": [],
+        "pause_until": None,
+    }
+
+
+@pytest.fixture(autouse=True)
+def _isolate_durable_scheduler_state(monkeypatch):
+    """Prevent real Postgres / leftover memory state from bleeding across tests."""
+    _reset_memory_store()
+
+    async def _empty_load():
+        return _empty_scheduler_history()
+
+    async def _noop_save(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(
+        "backend.db.creator_stats.load_scheduler_success_history", _empty_load
+    )
+    monkeypatch.setattr(
+        "backend.db.creator_stats.save_scheduler_success_history", _noop_save
+    )
+    # Freshness/auth probes often import accounts — default to no active account
+    # so scheduler tests don't hit live DB unless they opt in.
+    monkeypatch.setattr(
+        "backend.db.accounts.get_active_account",
+        AsyncMock(return_value=None),
+    )
+    yield
+    _reset_memory_store()
 
 
 def _scheduler_app() -> SimpleNamespace:
@@ -400,7 +438,7 @@ async def test_scheduler_treats_cooldown_as_non_failure(monkeypatch):
     state = app.state.creator_stats_scheduler_status
     assert state["consecutive_failures"] == 0
     assert state["status"] == "completed"
-    assert 1800.0 * 0.75 * 0.99 <= sleep_calls[0] <= 1800.0 * 1.5
+    assert 1800.0 * 0.65 * 0.99 <= sleep_calls[0] <= 1800.0 * 1.75 * 2.8 * 1.01
 
 
 @pytest.mark.asyncio
@@ -459,6 +497,29 @@ def test_pick_scheduled_period_respects_chance_extremes():
     # Mid chance yields both over enough trials.
     seen = {_pick_scheduled_period(0.5) for _ in range(80)}
     assert seen == {"7d", "30d"}
+
+
+def test_pick_scheduled_period_avoids_back_to_back_same_window():
+    # After a 7d run, next picks should strongly prefer 30d.
+    picks = [_pick_scheduled_period(0.5, last_period="7d") for _ in range(80)]
+    assert picks.count("30d") > picks.count("7d")
+    # After a 30d run, 7d share should rise vs always-30d baseline.
+    picks2 = [_pick_scheduled_period(0.35, last_period="30d") for _ in range(120)]
+    assert "7d" in picks2
+
+
+def test_circuit_pause_and_risk_failure_trip():
+    from backend.api.app import _circuit_pause_active, _record_risk_failure
+
+    now = datetime(2026, 7, 31, 12, tzinfo=UTC)
+    failures, pause = _record_risk_failure([], now=now, trip_count=2)
+    assert len(failures) == 1
+    assert pause is None
+    failures2, pause2 = _record_risk_failure(failures, now=now, trip_count=2)
+    assert len(failures2) == 2
+    assert pause2 is not None
+    assert _circuit_pause_active(pause2, now=now) is True
+    assert _circuit_pause_active(pause2, now=now + timedelta(days=10)) is False
 
 
 def test_is_riskish_error_detects_auth_and_risk_tokens():
@@ -675,10 +736,13 @@ async def test_scheduler_success_history_persists_to_db_helper(monkeypatch):
     async def fake_sleep(seconds: float) -> None:
         raise asyncio.CancelledError
 
-    async def fake_save(timestamps, *, last_success_local_hour=None):
-        saved.append((list(timestamps), last_success_local_hour))
+    async def fake_save(timestamps, **kwargs):
+        saved.append((list(timestamps), kwargs))
 
     monkeypatch.setattr(app_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(
+        "backend.db.creator_stats.save_scheduler_success_history", fake_save
+    )
     with (
         patch(
             "backend.services.creator_stats.pipeline.sync_all_active_accounts",
@@ -687,14 +751,6 @@ async def test_scheduler_success_history_persists_to_db_helper(monkeypatch):
         patch(
             "backend.services.creator_stats.pipeline._has_successful_live_sync",
             return_value=True,
-        ),
-        patch(
-            "backend.db.creator_stats.save_scheduler_success_history",
-            new=fake_save,
-        ),
-        patch(
-            "backend.db.creator_stats.load_scheduler_success_history",
-            new=AsyncMock(return_value={"timestamps": [], "last_success_local_hour": None}),
         ),
         patch(
             "backend.services.creator_stats.pipeline._account_freshness_skip",

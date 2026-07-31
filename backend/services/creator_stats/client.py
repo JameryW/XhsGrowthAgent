@@ -491,11 +491,20 @@ class CdpTransport:
                     "creator stats light run: skipping per-note enrichment this round"
                     + (" (forced)" if force_light else "")
                 )
+            # Hard wall-clock for the whole session — never sit in Creator Center
+            # for a long fixed automation window (human visits are short).
+            import time as _time
+
+            session_limit_s = _env_float("CREATOR_STATS_SESSION_MAX_SECONDS", 240.0)
+            session_limit_s = max(60.0, session_limit_s) * random.uniform(0.7, 1.15)
+            session_deadline = _time.monotonic() + session_limit_s
             logger.info(
-                "creator stats session budget: max_list_pages=%s light=%s period=%s",
+                "creator stats session budget: max_list_pages=%s light=%s period=%s "
+                "wall_clock<=%.0fs",
                 max_pages,
                 light_run,
                 period_norm,
+                session_limit_s,
             )
             # 每轮的深入预算也随机缩放——会话总时长不聚类在固定上限。
             # Slightly lower ceiling than before to keep sessions short under risk.
@@ -768,6 +777,12 @@ class CdpTransport:
                 # instead of replaying a stale signed request.
                 start_page = first_note_page + 1
                 for page_index in range(start_page, start_page + max_pages - 1):
+                    # Hard session wall-clock: leave before the visit looks automated-long.
+                    if _time.monotonic() >= session_deadline:
+                        logger.info(
+                            "creator stats session wall-clock reached; stopping pagination"
+                        )
+                        break
                     # 翻页提前停止：人很少每次都把列表滚到底。每翻一页前掷一次，
                     # 命中就停——被截断的旧笔记下轮仍有机会被翻到。
                     if self._page_stop_chance > 0 and random.random() < self._page_stop_chance:

@@ -169,8 +169,13 @@ def _effective_skip_day_chance(base: float, successes_last_7d: int) -> float:
 async def _seed_success_history_from_db(
     success_history: list[str],
     last_success_local_hour: int | None,
-) -> tuple[list[str], int | None]:
+    *,
+    last_period: str | None = None,
+    risk_failures: list[str] | None = None,
+    pause_until: str | None = None,
+) -> tuple[list[str], int | None, str | None, list[str], str | None]:
     """Merge durable DB history (+ active account synced_at) into memory."""
+    risk_failures = list(risk_failures or [])
     try:
         from backend.db import creator_stats as stats_db
 
@@ -181,6 +186,13 @@ async def _seed_success_history_from_db(
         hour = stored.get("last_success_local_hour")
         if isinstance(hour, int):
             last_success_local_hour = hour
+        if stored.get("last_period") in {"7d", "30d"}:
+            last_period = str(stored["last_period"])
+        for raw in stored.get("risk_failures") or []:
+            if raw and raw not in risk_failures:
+                risk_failures.append(str(raw))
+        if stored.get("pause_until"):
+            pause_until = str(stored["pause_until"])
         # Seed a single success from the active account's last import if history empty.
         if not success_history:
             from backend.db.accounts import get_active_account
@@ -202,18 +214,73 @@ async def _seed_success_history_from_db(
         logging.getLogger("xhs_growth.creator_stats.scheduler").debug(
             "seed success history failed", exc_info=True
         )
-    return success_history, last_success_local_hour
+    return success_history, last_success_local_hour, last_period, risk_failures, pause_until
 
 
-def _pick_scheduled_period(period_7d_chance: float) -> str:
+def _pick_scheduled_period(
+    period_7d_chance: float,
+    *,
+    last_period: str | None = None,
+) -> str:
     """Pick a Creator Center stats window for one scheduled run.
 
     Always requesting ``30d`` is itself a fingerprint. Prefer a mix of lighter
     ``7d`` reads and full ``30d`` windows, weighted toward 30d so analytics
-    monthly cards stay reasonably fresh.
+    monthly cards stay reasonably fresh. Strongly avoid repeating the same
+    period back-to-back (another easy fingerprint).
     """
     chance = max(0.0, min(1.0, _finite_float(period_7d_chance, 0.35)))
+    if last_period == "7d":
+        chance *= 0.3
+    elif last_period == "30d":
+        chance = min(0.75, chance * 1.45)
     return "7d" if random.random() < chance else "30d"
+
+
+def _circuit_pause_active(pause_until: str | None, *, now: datetime | None = None) -> bool:
+    """True when a durable risk circuit breaker is still open."""
+    raw = str(pause_until or "").strip()
+    if not raw:
+        return False
+    try:
+        ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
+    except ValueError:
+        return False
+    return ts.astimezone(UTC) > (now or datetime.now(UTC)).astimezone(UTC)
+
+
+def _record_risk_failure(
+    risk_failures: list[str],
+    *,
+    now: datetime,
+    window_hours: float = 72.0,
+    trip_count: int = 2,
+    pause_hours_range: tuple[float, float] = (48.0, 96.0),
+) -> tuple[list[str], str | None]:
+    """Append a risk failure; open multi-day pause when trip threshold is hit."""
+    now_utc = now.astimezone(UTC)
+    cutoff = now_utc - timedelta(hours=window_hours)
+    kept: list[str] = []
+    for raw in risk_failures:
+        try:
+            ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=UTC)
+            if ts.astimezone(UTC) >= cutoff:
+                kept.append(ts.astimezone(UTC).isoformat())
+        except (TypeError, ValueError):
+            continue
+    kept.append(now_utc.isoformat())
+    pause_until: str | None = None
+    if len(kept) >= max(1, trip_count):
+        lo, hi = pause_hours_range
+        pause_until = (
+            now_utc + timedelta(hours=random.uniform(max(1.0, lo), max(lo, hi)))
+        ).isoformat()
+        kept = kept[-trip_count:]
+    return kept, pause_until
 
 
 def _is_riskish_error(message: str | None) -> bool:
@@ -295,14 +362,33 @@ async def _creator_stats_scheduler(
             last_success_local_hour = int(last_success_local_hour)
     if not isinstance(last_success_local_hour, int):
         last_success_local_hour = None
+    last_period: str | None = state.get("last_period")
+    if last_period not in {"7d", "30d"}:
+        last_period = None
+    risk_failures: list[str] = list(state.get("risk_failures") or [])
+    pause_until: str | None = state.get("pause_until")
     # Durable history survives deploy restarts (weekly budget must not reset).
-    success_history, last_success_local_hour = await _seed_success_history_from_db(
-        success_history, last_success_local_hour
+    (
+        success_history,
+        last_success_local_hour,
+        last_period,
+        risk_failures,
+        pause_until,
+    ) = await _seed_success_history_from_db(
+        success_history,
+        last_success_local_hour,
+        last_period=last_period,
+        risk_failures=risk_failures,
+        pause_until=pause_until,
     )
     success_history = _prune_success_timestamps(success_history, now=datetime.now(UTC))
+    risk_failures = _prune_success_timestamps(risk_failures, now=datetime.now(UTC), days=3)
     state["success_timestamps"] = success_history
     state["successes_last_7d"] = len(success_history)
     state["last_success_local_hour"] = last_success_local_hour
+    state["last_period"] = last_period
+    state["risk_failures"] = risk_failures
+    state["pause_until"] = pause_until
 
     def _avoid_hours() -> set[int] | None:
         if last_success_local_hour is None:
@@ -394,7 +480,20 @@ async def _creator_stats_scheduler(
         state["success_timestamps"] = success_history
         state["successes_last_7d"] = len(success_history)
 
-        if skip_next_run:
+        if pause_until and _circuit_pause_active(pause_until, now=started_at):
+            state.update(
+                {
+                    "status": "skipped",
+                    "last_skipped_at": started_at.isoformat(),
+                    "last_skip_reason": "circuit_breaker",
+                    "pause_until": pause_until,
+                }
+            )
+            logger.info(
+                "scheduled creator stats import skipped: risk circuit breaker until %s",
+                pause_until,
+            )
+        elif skip_next_run:
             # 3. 随机跳过：本轮不爬，直接排下一轮。跳过不算失败、不触发退避。
             skip_next_run = False
             state.update(
@@ -472,7 +571,9 @@ async def _creator_stats_scheduler(
                         )
                         await asyncio.sleep(settle)
 
-                period = _pick_scheduled_period(period_7d_chance)
+                period = _pick_scheduled_period(
+                    period_7d_chance, last_period=last_period
+                )
                 state.update(
                     {
                         "status": "running",
@@ -528,15 +629,25 @@ async def _creator_stats_scheduler(
                             success_history, now=finished_at
                         )
                         last_success_local_hour = finished_at.astimezone(_CN_TZ).hour
+                        last_period = period
+                        # A real success clears the risk fuse.
+                        risk_failures = []
+                        pause_until = None
                         state["last_success_local_hour"] = last_success_local_hour
                         state["success_timestamps"] = success_history
                         state["successes_last_7d"] = len(success_history)
+                        state["last_period"] = last_period
+                        state["risk_failures"] = risk_failures
+                        state["pause_until"] = None
                         with contextlib.suppress(Exception):
                             from backend.db import creator_stats as stats_db
 
                             await stats_db.save_scheduler_success_history(
                                 success_history,
                                 last_success_local_hour=last_success_local_hour,
+                                last_period=last_period,
+                                risk_failures=risk_failures,
+                                pause_until="",
                             )
                     state.update(
                         {
@@ -598,6 +709,27 @@ async def _creator_stats_scheduler(
             ):
                 skip_next_run = True
                 state["last_risk_skip_armed"] = True
+            # Durable circuit breaker: ≥2 risk failures in ~72h → multi-day pause.
+            risk_failures, new_pause = _record_risk_failure(
+                risk_failures, now=datetime.now(UTC)
+            )
+            state["risk_failures"] = risk_failures
+            if new_pause:
+                pause_until = new_pause
+                state["pause_until"] = pause_until
+                logger.warning(
+                    "creator stats risk circuit breaker open until %s", pause_until
+                )
+            with contextlib.suppress(Exception):
+                from backend.db import creator_stats as stats_db
+
+                await stats_db.save_scheduler_success_history(
+                    success_history,
+                    last_success_local_hour=last_success_local_hour,
+                    last_period=last_period,
+                    risk_failures=risk_failures,
+                    pause_until=pause_until or "",
+                )
         elif consecutive_failures <= 1:
             backoff = 1.0
         else:
@@ -610,6 +742,13 @@ async def _creator_stats_scheduler(
         ):
             backoff *= random.uniform(1.8, 2.8)
             state["last_long_break"] = True
+        # Near weekly budget: stretch the next interval instead of dense retries.
+        if (
+            max_successful_crawls_per_week > 0
+            and len(success_history) >= max(1, max_successful_crawls_per_week - 1)
+        ):
+            backoff *= random.uniform(1.25, 1.7)
+            state["near_budget_stretch"] = True
         # 2. 间隔按 0.65-1.75× 三角分布取值（峰值 1×，模拟人的习惯节律）；
         # active_window 再把落点限制在人类活动时段。
         # 周内已有成功爬取时抬高 skip 概率——人很少一周内反复打开。
@@ -622,9 +761,19 @@ async def _creator_stats_scheduler(
                 if random.random() < min(1.0, eff_skip * factor):
                     skip_next_run = True
                     state["last_skip_armed_reason"] = "habit_skip"
+        # Circuit pause: if open, sleep at least until pause_until.
         candidate = datetime.now(UTC) + timedelta(
             seconds=interval_seconds * random.triangular(0.65, 1.75, 1.0) * backoff
         )
+        if pause_until and _circuit_pause_active(pause_until):
+            try:
+                pause_ts = datetime.fromisoformat(pause_until.replace("Z", "+00:00"))
+                if pause_ts.tzinfo is None:
+                    pause_ts = pause_ts.replace(tzinfo=UTC)
+                if pause_ts > candidate:
+                    candidate = pause_ts
+            except ValueError:
+                pass
         await _sleep_until(_next_run(candidate))
 
 
@@ -940,6 +1089,8 @@ async def health() -> ApiResponse[Any]:
             "successes_last_7d",
             "last_skip_reason",
             "last_success_local_hour",
+            "pause_until",
+            "risk_failures",
         )
         scheduler = {key: scheduler_state.get(key) for key in health_fields}
     return success(

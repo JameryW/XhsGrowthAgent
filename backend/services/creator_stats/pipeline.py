@@ -90,6 +90,10 @@ async def _account_freshness_skip(
     hours = _env_float("CREATOR_STATS_MIN_REFRESH_HOURS", 18.0)
     if hours <= 0:
         return False, 0
+    # Jitter the freshness window so "always exactly 18h" is not a cadence.
+    import random
+
+    hours = max(1.0, hours * random.uniform(0.9, 1.2))
     try:
         account = await stats_db.get_account_stats(account_id)
     except Exception:
