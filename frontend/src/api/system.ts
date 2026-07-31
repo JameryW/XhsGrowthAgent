@@ -1,5 +1,25 @@
 import client from './client'
 
+export interface CdpSessionRow {
+  key: string
+  holder: string
+  held_since?: string | null
+  held_for_seconds?: number | null
+}
+
+export interface RiskGatesSnapshot {
+  browser_action_cooldown_seconds?: number
+  publish_cooldown_seconds?: number
+  engagement_account_cooldown_seconds?: number
+  active_browser_cooldowns?: number
+  active_sync_auth_blocks?: number
+  active_qr_risk_blocks?: number
+  durable?: boolean
+  browser_action_keys?: number
+  publish_keys?: number
+  engagement_keys?: number
+}
+
 export interface HealthCheck {
   status: 'ok' | 'degraded' | 'error'
   checks: {
@@ -29,9 +49,27 @@ export interface HealthCheck {
       namespace_counts?: Record<string, number>
       total_items?: number
     }
+    creator_stats_scheduler?: {
+      status: string
+      message?: string
+      interval_hours?: number
+      next_run_at?: string
+      last_finished_at?: string
+      run_count?: number
+    }
+    risk_control?: {
+      status: string
+      message?: string
+      cdp_sessions?: CdpSessionRow[]
+      risk_gates?: RiskGatesSnapshot
+      active_browser_cooldowns?: number
+      active_sync_auth_blocks?: number
+      durable?: boolean
+    }
   }
   version: string
   timestamp: string
+  active_account?: { id: string; name: string }
 }
 
 /** Client-side cache so PreLaunchChecklist remounts don't re-hit the API. */

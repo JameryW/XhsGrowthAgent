@@ -7,12 +7,17 @@ after a risk hit (300012) / expired creator session.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import math
 import os
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
+
+logger = logging.getLogger("xhs_growth.risk_gate")
 
 
 def _env_float(name: str, default: float) -> float:
@@ -90,14 +95,82 @@ _browser_action_last_at: dict[str, float] = {}
 _browser_action_last_owner: dict[str, str] = {}
 _publish_last_at: dict[str, float] = {}
 _engagement_last_at: dict[str, float] = {}
+# Wall-clock ISO mirrors for durable persistence across restarts.
+_qr_last_attempt_wall: dict[str, str] = {}
+_qr_risk_until_wall: dict[str, str] = {}
+_sync_auth_until_wall: dict[str, str] = {}
+_browser_action_wall: dict[str, str] = {}
+_publish_wall: dict[str, str] = {}
+_engagement_wall: dict[str, str] = {}
+_persist_task: asyncio.Task[None] | None = None
+_hydrated = False
 
 
 def _now() -> float:
     return time.monotonic()
 
 
+def _wall_now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
 def _remaining(deadline: float) -> int:
     return max(0, int(deadline - _now() + 0.999))
+
+
+def _parse_wall(raw: str) -> datetime | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    try:
+        ts = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
+        return ts.astimezone(UTC)
+    except ValueError:
+        return None
+
+
+def _mono_from_wall_event(raw: str) -> float | None:
+    """Map a past wall-clock event onto the current monotonic clock."""
+    ts = _parse_wall(raw)
+    if ts is None:
+        return None
+    age = (datetime.now(UTC) - ts).total_seconds()
+    if age < 0:
+        age = 0.0
+    return _now() - age
+
+
+def _mono_deadline_from_wall(raw: str) -> float | None:
+    """Map a future wall-clock deadline onto the current monotonic clock."""
+    ts = _parse_wall(raw)
+    if ts is None:
+        return None
+    remaining = (ts - datetime.now(UTC)).total_seconds()
+    if remaining <= 0:
+        return None
+    return _now() + remaining
+
+
+def _schedule_persist() -> None:
+    """Debounced best-effort durable write (no-op outside a running loop)."""
+    global _persist_task
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    async def _run() -> None:
+        await asyncio.sleep(0.05)
+        try:
+            await persist_risk_gates()
+        except Exception:
+            logger.debug("risk gate persist failed", exc_info=True)
+
+    if _persist_task is not None and not _persist_task.done():
+        _persist_task.cancel()
+    _persist_task = loop.create_task(_run())
 
 
 def _profile_key(*, account_id: str = "", cdp_endpoint: str = "") -> str:
@@ -159,6 +232,8 @@ def note_qr_attempt(account_id: str) -> None:
     account_id = (account_id or "").strip()
     if account_id:
         _qr_last_attempt_at[account_id] = _now()
+        _qr_last_attempt_wall[account_id] = _wall_now()
+        _schedule_persist()
 
 
 def note_qr_risk_block(account_id: str, *, reason: str = "300012") -> None:
@@ -171,14 +246,21 @@ def note_qr_risk_block(account_id: str, *, reason: str = "300012") -> None:
         return
     _qr_risk_blocked_until[account_id] = _now() + block_s
     _qr_risk_reason[account_id] = reason
+    _qr_risk_until_wall[account_id] = (
+        datetime.now(UTC) + timedelta(seconds=block_s)
+    ).isoformat()
     # Also push the attempt clock so cooldown stacks with the risk block.
     _qr_last_attempt_at[account_id] = _now()
+    _qr_last_attempt_wall[account_id] = _wall_now()
+    _schedule_persist()
 
 
 def clear_qr_risk_block(account_id: str) -> None:
     account_id = (account_id or "").strip()
     _qr_risk_blocked_until.pop(account_id, None)
     _qr_risk_reason.pop(account_id, None)
+    _qr_risk_until_wall.pop(account_id, None)
+    _schedule_persist()
 
 
 def is_security_risk_message(message: str) -> bool:
@@ -235,14 +317,21 @@ def note_sync_auth_failure(account_id: str, *, reason: str = "AUTH_EXPIRED") -> 
     minutes = sync_auth_fail_cooldown_minutes()
     if minutes <= 0:
         return
-    _sync_auth_blocked_until[account_id] = _now() + minutes * 60.0
+    block_s = minutes * 60.0
+    _sync_auth_blocked_until[account_id] = _now() + block_s
     _sync_auth_reason[account_id] = reason
+    _sync_auth_until_wall[account_id] = (
+        datetime.now(UTC) + timedelta(seconds=block_s)
+    ).isoformat()
+    _schedule_persist()
 
 
 def clear_sync_auth_failure(account_id: str) -> None:
     account_id = (account_id or "").strip()
     _sync_auth_blocked_until.pop(account_id, None)
     _sync_auth_reason.pop(account_id, None)
+    _sync_auth_until_wall.pop(account_id, None)
+    _schedule_persist()
 
 
 def note_browser_action(
@@ -255,6 +344,8 @@ def note_browser_action(
     key = _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
     _browser_action_last_at[key] = _now()
     _browser_action_last_owner[key] = (owner or "unknown").strip() or "unknown"
+    _browser_action_wall[key] = _wall_now()
+    _schedule_persist()
 
 
 def check_browser_action_allowed(
@@ -299,6 +390,8 @@ def check_browser_action_allowed(
 def note_publish(account_id: str = "", *, cdp_endpoint: str = "") -> None:
     key = _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
     _publish_last_at[key] = _now()
+    _publish_wall[key] = _wall_now()
+    _schedule_persist()
 
 
 def check_publish_allowed(account_id: str = "", *, cdp_endpoint: str = "") -> GateBlock | None:
@@ -325,6 +418,8 @@ def check_publish_allowed(account_id: str = "", *, cdp_endpoint: str = "") -> Ga
 def note_engagement(account_id: str = "", *, cdp_endpoint: str = "") -> None:
     key = _profile_key(account_id=account_id, cdp_endpoint=cdp_endpoint)
     _engagement_last_at[key] = _now()
+    _engagement_wall[key] = _wall_now()
+    _schedule_persist()
 
 
 def check_engagement_allowed(
@@ -366,11 +461,116 @@ def snapshot_risk_gates() -> dict[str, Any]:
         "active_browser_cooldowns": browser_active,
         "active_sync_auth_blocks": auth_active,
         "active_qr_risk_blocks": qr_risk_active,
+        "durable": _hydrated,
+        "browser_action_keys": len(_browser_action_last_at),
+        "publish_keys": len(_publish_last_at),
+        "engagement_keys": len(_engagement_last_at),
     }
+
+
+def export_risk_gate_state() -> dict[str, Any]:
+    """Wall-clock snapshot suitable for durable storage."""
+    browser: dict[str, Any] = {}
+    for key, at in _browser_action_wall.items():
+        browser[key] = {
+            "at": at,
+            "owner": _browser_action_last_owner.get(key, "unknown"),
+        }
+    sync_auth: dict[str, Any] = {}
+    for aid, until in _sync_auth_until_wall.items():
+        sync_auth[aid] = {
+            "until": until,
+            "reason": _sync_auth_reason.get(aid, "AUTH_EXPIRED"),
+        }
+    qr_risk: dict[str, Any] = {}
+    for aid, until in _qr_risk_until_wall.items():
+        qr_risk[aid] = {
+            "until": until,
+            "reason": _qr_risk_reason.get(aid, "security_risk"),
+        }
+    return {
+        "browser_action": browser,
+        "publish": dict(_publish_wall),
+        "engagement": dict(_engagement_wall),
+        "sync_auth": sync_auth,
+        "qr_risk": qr_risk,
+        "qr_last_attempt": dict(_qr_last_attempt_wall),
+    }
+
+
+async def persist_risk_gates() -> None:
+    """Write current cool-downs to durable storage."""
+    from backend.db.risk_gates import save_risk_gate_state
+
+    await save_risk_gate_state(export_risk_gate_state())
+
+
+async def hydrate_risk_gates() -> None:
+    """Load durable cool-downs into process memory (call once at app start)."""
+    global _hydrated
+    from backend.db.risk_gates import load_risk_gate_state
+
+    data = await load_risk_gate_state()
+    # browser_action
+    for key, raw in (data.get("browser_action") or {}).items():
+        if not isinstance(raw, dict):
+            continue
+        at = _mono_from_wall_event(str(raw.get("at") or ""))
+        if at is None:
+            continue
+        _browser_action_last_at[str(key)] = at
+        _browser_action_last_owner[str(key)] = str(raw.get("owner") or "unknown")
+        _browser_action_wall[str(key)] = str(raw.get("at") or "")
+    for key, raw_at in (data.get("publish") or {}).items():
+        at = _mono_from_wall_event(str(raw_at or ""))
+        if at is None:
+            continue
+        _publish_last_at[str(key)] = at
+        _publish_wall[str(key)] = str(raw_at or "")
+    for key, raw_at in (data.get("engagement") or {}).items():
+        at = _mono_from_wall_event(str(raw_at or ""))
+        if at is None:
+            continue
+        _engagement_last_at[str(key)] = at
+        _engagement_wall[str(key)] = str(raw_at or "")
+    for aid, raw in (data.get("sync_auth") or {}).items():
+        if not isinstance(raw, dict):
+            continue
+        until = _mono_deadline_from_wall(str(raw.get("until") or ""))
+        if until is None:
+            continue
+        _sync_auth_blocked_until[str(aid)] = until
+        _sync_auth_reason[str(aid)] = str(raw.get("reason") or "AUTH_EXPIRED")
+        _sync_auth_until_wall[str(aid)] = str(raw.get("until") or "")
+    for aid, raw in (data.get("qr_risk") or {}).items():
+        if not isinstance(raw, dict):
+            continue
+        until = _mono_deadline_from_wall(str(raw.get("until") or ""))
+        if until is None:
+            continue
+        _qr_risk_blocked_until[str(aid)] = until
+        _qr_risk_reason[str(aid)] = str(raw.get("reason") or "security_risk")
+        _qr_risk_until_wall[str(aid)] = str(raw.get("until") or "")
+    for aid, raw_at in (data.get("qr_last_attempt") or {}).items():
+        at = _mono_from_wall_event(str(raw_at or ""))
+        if at is None:
+            continue
+        _qr_last_attempt_at[str(aid)] = at
+        _qr_last_attempt_wall[str(aid)] = str(raw_at or "")
+    _hydrated = True
+    logger.info(
+        "risk gates hydrated: browser=%s publish=%s engagement=%s auth=%s qr_risk=%s",
+        len(_browser_action_last_at),
+        len(_publish_last_at),
+        len(_engagement_last_at),
+        len(_sync_auth_blocked_until),
+        len(_qr_risk_blocked_until),
+    )
 
 
 def reset_gates_for_tests() -> None:
     """Test helper — clear all in-memory gates."""
+    global _hydrated, _persist_task
     _qr_last_attempt_at.clear()
     _qr_risk_blocked_until.clear()
     _qr_risk_reason.clear()
@@ -380,6 +580,16 @@ def reset_gates_for_tests() -> None:
     _browser_action_last_owner.clear()
     _publish_last_at.clear()
     _engagement_last_at.clear()
+    _qr_last_attempt_wall.clear()
+    _qr_risk_until_wall.clear()
+    _sync_auth_until_wall.clear()
+    _browser_action_wall.clear()
+    _publish_wall.clear()
+    _engagement_wall.clear()
+    _hydrated = False
+    if _persist_task is not None and not _persist_task.done():
+        _persist_task.cancel()
+    _persist_task = None
 
 
 __all__ = [
@@ -393,6 +603,8 @@ __all__ = [
     "clear_qr_risk_block",
     "clear_sync_auth_failure",
     "engagement_account_cooldown_seconds",
+    "export_risk_gate_state",
+    "hydrate_risk_gates",
     "is_security_risk_message",
     "note_browser_action",
     "note_engagement",
@@ -400,6 +612,7 @@ __all__ = [
     "note_qr_attempt",
     "note_qr_risk_block",
     "note_sync_auth_failure",
+    "persist_risk_gates",
     "publish_cooldown_seconds",
     "qr_cooldown_seconds",
     "qr_risk_block_seconds",

@@ -381,6 +381,44 @@ async def _build_health_payload() -> dict[str, Any]:
     if overall == "ok" and scheduler_check.get("status") == "warning":
         overall = "degraded"
 
+    # Anti-risk observability: CDP holders + cool-down gates (non-blocking).
+    risk_control: dict[str, Any] = {
+        "status": "ok",
+        "message": "反风控门控正常",
+        "cdp_sessions": [],
+        "risk_gates": {},
+    }
+    try:
+        from backend.services.cdp_session_lock import snapshot_cdp_sessions
+        from backend.services.xhs_risk_gate import snapshot_risk_gates
+
+        sessions = snapshot_cdp_sessions()
+        gates = snapshot_risk_gates()
+        risk_control = {
+            "status": "ok" if not sessions else "warning",
+            "message": (
+                f"CDP 占用中（{len(sessions)}）"
+                if sessions
+                else "无本地 CDP 占用"
+            ),
+            "cdp_sessions": sessions,
+            "risk_gates": gates,
+            "active_browser_cooldowns": gates.get("active_browser_cooldowns", 0),
+            "active_sync_auth_blocks": gates.get("active_sync_auth_blocks", 0),
+            "durable": gates.get("durable", False),
+        }
+        if gates.get("active_sync_auth_blocks"):
+            risk_control["status"] = "warning"
+            risk_control["message"] = "存在鉴权冷却中的账号"
+    except Exception as exc:
+        risk_control = {
+            "status": "warning",
+            "message": f"无法读取反风控状态: {exc}",
+            "cdp_sessions": [],
+            "risk_gates": {},
+        }
+    checks["risk_control"] = risk_control
+
     result_data: dict[str, Any] = {
         "status": overall,
         "checks": checks,
