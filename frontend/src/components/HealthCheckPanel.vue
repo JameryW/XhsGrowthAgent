@@ -3,12 +3,20 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
-import { getSystemHealth, type HealthCheck } from '@/api/system'
+import {
+  clearRiskGates,
+  clearSystemHealthCache,
+  getSystemHealth,
+  type HealthCheck,
+} from '@/api/system'
+import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
+const toast = useToastStore()
 
 const health = ref<HealthCheck | null>(null)
 const isLoading = ref(false)
+const isClearing = ref(false)
 const error = ref<string | null>(null)
 const isExpanded = ref(false)
 
@@ -16,7 +24,7 @@ async function fetchHealth() {
   isLoading.value = true
   error.value = null
   try {
-    health.value = await getSystemHealth()
+    health.value = await getSystemHealth({ fresh: true })
     // Auto-expand if there are issues
     if (health.value && health.value.status !== 'ok') {
       isExpanded.value = true
@@ -27,6 +35,34 @@ async function fetchHealth() {
   } finally {
     isLoading.value = false
   }
+}
+
+async function onClearCooldowns() {
+  if (isClearing.value) return
+  isClearing.value = true
+  try {
+    const accountId = health.value?.active_account?.id || ''
+    const result = await clearRiskGates(
+      accountId ? { account_id: accountId } : {},
+    )
+    clearSystemHealthCache()
+    toast.success(
+      t('health.clearCooldownOk', { n: result.total ?? 0 }),
+    )
+    await fetchHealth()
+  } catch (e: any) {
+    toast.error(e?.message || t('health.clearCooldownFail'))
+  } finally {
+    isClearing.value = false
+  }
+}
+
+function formatSeconds(s: number | undefined | null): string {
+  const n = Math.max(0, Number(s) || 0)
+  if (n < 60) return `${n}s`
+  const m = Math.floor(n / 60)
+  const r = n % 60
+  return r ? `${m}m${r}s` : `${m}m`
 }
 
 onMounted(fetchHealth)
@@ -291,10 +327,10 @@ const issueCount = computed(() => {
               CDP {{ (health.checks.risk_control.cdp_sessions || []).length }}
             </span>
             <span>
-              cool-downs {{ health.checks.risk_control.active_browser_cooldowns ?? 0 }}
+              {{ t('health.activeCooldowns') }} {{ health.checks.risk_control.active_count ?? 0 }}
             </span>
-            <span>
-              auth blocks {{ health.checks.risk_control.active_sync_auth_blocks ?? 0 }}
+            <span v-if="(health.checks.risk_control.max_retry_after_seconds || 0) > 0">
+              max {{ formatSeconds(health.checks.risk_control.max_retry_after_seconds) }}
             </span>
             <span :class="health.checks.risk_control.durable ? 'text-emerald-600' : 'text-amber-500'">
               {{ health.checks.risk_control.durable ? t('health.durableOn') : t('health.durableOff') }}
@@ -310,8 +346,34 @@ const issueCount = computed(() => {
               class="flex justify-between gap-2 font-mono"
             >
               <span class="truncate">{{ row.holder }} · {{ row.key }}</span>
-              <span v-if="row.held_for_seconds != null">{{ row.held_for_seconds }}s</span>
+              <span v-if="row.held_for_seconds != null">{{ formatSeconds(row.held_for_seconds) }}</span>
             </div>
+          </div>
+          <div
+            v-if="(health.checks.risk_control.active || []).length"
+            class="mt-2 space-y-1 text-xs text-slate-500"
+          >
+            <div
+              v-for="(row, idx) in (health.checks.risk_control.active || []).slice(0, 8)"
+              :key="`${row.kind}-${row.key}-${idx}`"
+              class="flex justify-between gap-2"
+            >
+              <span class="truncate">{{ row.message || row.kind }} · {{ row.key }}</span>
+              <span class="font-mono text-amber-600 shrink-0">
+                {{ formatSeconds(row.retry_after_seconds) }}
+              </span>
+            </div>
+          </div>
+          <div class="mt-2 flex justify-end">
+            <NeonButton
+              size="sm"
+              variant="ghost"
+              :loading="isClearing"
+              :disabled="isClearing"
+              @click.stop="onClearCooldowns"
+            >
+              {{ t('health.clearCooldowns') }}
+            </NeonButton>
           </div>
         </div>
 

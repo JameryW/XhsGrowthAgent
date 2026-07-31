@@ -9,8 +9,10 @@ import time
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 
+from backend.api.deps import get_current_user
 from backend.api.responses import ApiResponse, success
 
 logger = logging.getLogger("xhs_growth.api.system")
@@ -394,15 +396,23 @@ async def _build_health_payload() -> dict[str, Any]:
 
         sessions = snapshot_cdp_sessions()
         gates = snapshot_risk_gates()
+        active = list(gates.get("active") or [])
         risk_control = {
-            "status": "ok" if not sessions else "warning",
+            "status": "ok" if not sessions and not active else "warning",
             "message": (
                 f"CDP 占用中（{len(sessions)}）"
                 if sessions
-                else "无本地 CDP 占用"
+                else (
+                    f"冷却中 {len(active)} 项"
+                    if active
+                    else "无本地 CDP 占用"
+                )
             ),
             "cdp_sessions": sessions,
             "risk_gates": gates,
+            "active": active[:20],
+            "active_count": len(active),
+            "max_retry_after_seconds": gates.get("max_retry_after_seconds", 0),
             "active_browser_cooldowns": gates.get("active_browser_cooldowns", 0),
             "active_sync_auth_blocks": gates.get("active_sync_auth_blocks", 0),
             "durable": gates.get("durable", False),
@@ -455,3 +465,65 @@ async def system_health(
     _health_cache = result_data
     _health_cache_at = now
     return success(data=result_data)
+
+
+class ClearRiskGatesRequest(BaseModel):
+    """Clear cool-downs for one account or the whole process."""
+
+    account_id: str = Field(default="", description="Empty = all accounts/keys")
+    kinds: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional kinds: browser_action, publish, engagement, "
+            "sync_auth, qr_risk, qr_attempt. Empty = all kinds."
+        ),
+    )
+
+
+@router.get("/risk-gates")
+async def get_risk_gates(
+    account_id: Annotated[str, Query(description="可选，仅返回该账号相关冷却")] = "",
+    _: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """List active anti-risk cool-downs with remaining seconds."""
+    from backend.services.cdp_session_lock import snapshot_cdp_sessions
+    from backend.services.xhs_risk_gate import list_active_cooldowns, snapshot_risk_gates
+
+    gates = snapshot_risk_gates()
+    active = list_active_cooldowns(account_id=account_id)
+    return success(
+        {
+            "risk_gates": gates,
+            "active": active,
+            "cdp_sessions": snapshot_cdp_sessions(),
+            "account_id": (account_id or "").strip() or None,
+        }
+    )
+
+
+@router.post("/risk-gates/clear")
+async def clear_risk_gates(
+    body: ClearRiskGatesRequest,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> ApiResponse[Any]:
+    """Manually clear cool-downs (ops escape hatch after false positives)."""
+    from backend.services.xhs_risk_gate import clear_account_cooldowns, list_active_cooldowns
+
+    result = clear_account_cooldowns(
+        body.account_id,
+        kinds=list(body.kinds or []),
+    )
+    clear_health_cache()
+    logger.info(
+        "risk gates cleared by user=%s account=%s kinds=%s total=%s",
+        user.get("username") or user.get("id"),
+        body.account_id or "*",
+        body.kinds or ["*"],
+        result.get("total"),
+    )
+    return success(
+        {
+            **result,
+            "remaining_active": list_active_cooldowns(account_id=body.account_id),
+        }
+    )
