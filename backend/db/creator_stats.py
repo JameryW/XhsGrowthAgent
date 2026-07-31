@@ -35,12 +35,6 @@ _PROFILE_FIELD_NAMES = (
 )
 
 
-def _reset_memory_store() -> None:
-    """Test helper: clear in-memory rows."""
-    _mem_accounts.clear()
-    _mem_notes.clear()
-
-
 _CREATE_ACCOUNT_SQL = """
 CREATE TABLE IF NOT EXISTS creator_account_stats (
     account_id       TEXT PRIMARY KEY,
@@ -62,6 +56,14 @@ CREATE TABLE IF NOT EXISTS creator_account_stats (
     synced_at        TEXT NOT NULL DEFAULT '',
     source           TEXT NOT NULL DEFAULT 'creator_statistics',
     raw_json         TEXT NOT NULL DEFAULT '{}'
+);
+"""
+
+_CREATE_SCHEDULER_STATE_SQL = """
+CREATE TABLE IF NOT EXISTS creator_stats_scheduler_state (
+    key_name   TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -202,11 +204,102 @@ async def ensure_tables() -> None:
         await conn.execute(_CREATE_ACCOUNT_SQL)
         await conn.execute(_CREATE_NOTE_SQL)
         await conn.execute(_CREATE_NOTE_INDEX_SQL)
+        await conn.execute(_CREATE_SCHEDULER_STATE_SQL)
         # Upgrade path for pre-body_text tables
         await conn.execute(_ADD_BODY_TEXT_COL_SQL)
         for sql in _ADD_PROFILE_COLUMNS_SQL:
             await conn.execute(sql)
     logger.info("creator_stats tables ensured")
+
+
+# ── Scheduler durable state (anti-risk budget across restarts) ───────────────
+
+_SCHEDULER_SUCCESS_KEY = "success_history"
+_mem_scheduler_state: dict[str, dict[str, Any]] = {}
+
+
+async def load_scheduler_success_history() -> dict[str, Any]:
+    """Load durable success timestamps / last hour for the active-account crawler.
+
+    Returns ``{"timestamps": list[str], "last_success_local_hour": int|None}``.
+    """
+    empty: dict[str, Any] = {"timestamps": [], "last_success_local_hour": None}
+    if not is_pool_ready():
+        raw = _mem_scheduler_state.get(_SCHEDULER_SUCCESS_KEY)
+        return dict(raw) if isinstance(raw, dict) else empty
+    try:
+        pool = get_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(
+                "SELECT value_json FROM creator_stats_scheduler_state WHERE key_name = %s",
+                (_SCHEDULER_SUCCESS_KEY,),
+            )
+            row = await cur.fetchone()
+        if not row:
+            return empty
+        payload = row[0] if not isinstance(row, dict) else row.get("value_json")
+        if isinstance(payload, str):
+            data = json.loads(payload or "{}")
+        elif isinstance(payload, dict):
+            data = payload
+        else:
+            return empty
+        timestamps = data.get("timestamps") if isinstance(data, dict) else None
+        hour = data.get("last_success_local_hour") if isinstance(data, dict) else None
+        if not isinstance(timestamps, list):
+            timestamps = []
+        if hour is not None:
+            try:
+                hour = int(hour)
+            except (TypeError, ValueError):
+                hour = None
+        return {
+            "timestamps": [str(t) for t in timestamps if t],
+            "last_success_local_hour": hour,
+        }
+    except Exception:
+        logger.debug("load_scheduler_success_history failed", exc_info=True)
+        return empty
+
+
+async def save_scheduler_success_history(
+    timestamps: list[str],
+    *,
+    last_success_local_hour: int | None = None,
+) -> None:
+    """Persist success history so deploy restarts do not reset the weekly budget."""
+    from datetime import UTC, datetime
+
+    payload = {
+        "timestamps": list(timestamps),
+        "last_success_local_hour": last_success_local_hour,
+    }
+    if not is_pool_ready():
+        _mem_scheduler_state[_SCHEDULER_SUCCESS_KEY] = payload
+        return
+    try:
+        now = datetime.now(UTC).isoformat()
+        pool = get_pool()
+        async with pool.connection() as conn:
+            await conn.execute(
+                """
+                INSERT INTO creator_stats_scheduler_state (key_name, value_json, updated_at)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (key_name) DO UPDATE SET
+                    value_json = EXCLUDED.value_json,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                (_SCHEDULER_SUCCESS_KEY, json.dumps(payload, ensure_ascii=False), now),
+            )
+    except Exception:
+        logger.debug("save_scheduler_success_history failed", exc_info=True)
+
+
+def _reset_memory_store() -> None:
+    """Test helper: clear in-memory rows."""
+    _mem_accounts.clear()
+    _mem_notes.clear()
+    _mem_scheduler_state.clear()
 
 
 def _account_values(overview: AccountStatsOverview) -> tuple[Any, ...]:

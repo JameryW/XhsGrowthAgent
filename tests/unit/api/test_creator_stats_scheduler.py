@@ -14,6 +14,7 @@ from backend.api.app import (
     _CN_TZ,
     _clip_to_active_window,
     _creator_stats_scheduler,
+    _effective_skip_day_chance,
     _finite_float,
     _is_riskish_error,
     _pick_scheduled_period,
@@ -289,6 +290,14 @@ def test_weekly_crawl_budget_counts_rolling_seven_days():
     assert _weekly_crawl_budget_exhausted(stamps, max_per_week=3, now=now) is True
     assert _weekly_crawl_budget_exhausted(stamps, max_per_week=4, now=now) is False
     assert _weekly_crawl_budget_exhausted(stamps, max_per_week=0, now=now) is False
+
+
+def test_effective_skip_day_chance_escalates_with_weekly_successes():
+    base = 0.25
+    assert _effective_skip_day_chance(base, 0) == base
+    assert _effective_skip_day_chance(base, 1) > base
+    assert _effective_skip_day_chance(base, 2) > _effective_skip_day_chance(base, 1)
+    assert _effective_skip_day_chance(base, 2) <= 0.90
 
 
 @pytest.mark.asyncio
@@ -591,6 +600,134 @@ async def test_scheduler_skips_when_weekly_budget_exhausted(monkeypatch):
     state = app.state.creator_stats_scheduler_status
     assert state["status"] == "skipped"
     assert state["last_skip_reason"] == "weekly_budget"
+
+
+@pytest.mark.asyncio
+async def test_scheduler_skips_when_auth_cooldown_active(monkeypatch):
+    app = _scheduler_app()
+    sleep_calls: list[float] = []
+
+    async def stop_after_interval(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", stop_after_interval)
+    block = SimpleNamespace(
+        message="auth cooldown active",
+        retry_after_seconds=900,
+        risk_code="sync_auth_cooldown",
+    )
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(),
+        ) as sync,
+        patch(
+            "backend.db.accounts.get_active_account",
+            new=AsyncMock(return_value=SimpleNamespace(id="acc-1")),
+        ),
+        patch(
+            "backend.services.creator_stats.pipeline._account_freshness_skip",
+            new=AsyncMock(return_value=(False, 0)),
+        ),
+        patch(
+            "backend.services.xhs_risk_gate.check_sync_auth_cooldown",
+            return_value=block,
+        ),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(
+            app,
+            1.0,
+            pre_run_delay=(30.0, 60.0),
+            skip_day_chance=0.0,
+            risk_skip_next_chance=0.0,
+            post_success_long_break_chance=0.0,
+            max_successful_crawls_per_week=0,
+        )
+
+    sync.assert_not_awaited()
+    state = app.state.creator_stats_scheduler_status
+    assert state["status"] == "skipped"
+    assert state["last_skip_reason"] == "auth_cooldown"
+
+
+@pytest.mark.asyncio
+async def test_scheduler_success_history_persists_to_db_helper(monkeypatch):
+    """Live success should call durable save so weekly budget survives restarts."""
+    app = _scheduler_app()
+    result = {
+        "ok": True,
+        "status": "completed",
+        "active_accounts": 1,
+        "succeeded": 1,
+        "failed": 0,
+        "results": [
+            {
+                "account_id": "acc-1",
+                "account_synced": True,
+                "notes_imported": 1,
+            }
+        ],
+    }
+    saved: list[tuple] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        raise asyncio.CancelledError
+
+    async def fake_save(timestamps, *, last_success_local_hour=None):
+        saved.append((list(timestamps), last_success_local_hour))
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", fake_sleep)
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(return_value=result),
+        ),
+        patch(
+            "backend.services.creator_stats.pipeline._has_successful_live_sync",
+            return_value=True,
+        ),
+        patch(
+            "backend.db.creator_stats.save_scheduler_success_history",
+            new=fake_save,
+        ),
+        patch(
+            "backend.db.creator_stats.load_scheduler_success_history",
+            new=AsyncMock(return_value={"timestamps": [], "last_success_local_hour": None}),
+        ),
+        patch(
+            "backend.services.creator_stats.pipeline._account_freshness_skip",
+            new=AsyncMock(return_value=(False, 0)),
+        ),
+        patch(
+            "backend.db.accounts.get_active_account",
+            new=AsyncMock(return_value=SimpleNamespace(id="acc-1")),
+        ),
+        patch(
+            "backend.services.xhs_risk_gate.check_sync_auth_cooldown",
+            return_value=None,
+        ),
+        patch(
+            "backend.services.chrome_launcher.prune_blank_pages_all",
+            new=AsyncMock(return_value=[]),
+        ),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(
+            app,
+            0.5,
+            pre_run_delay=None,
+            skip_day_chance=0.0,
+            risk_skip_next_chance=0.0,
+            post_success_long_break_chance=0.0,
+            max_successful_crawls_per_week=0,
+            period_7d_chance=0.0,
+        )
+
+    assert saved, "expected durable success history write"
+    assert len(saved[0][0]) >= 1
+    assert app.state.creator_stats_scheduler_status["successes_last_7d"] >= 1
 
 
 @pytest.mark.asyncio

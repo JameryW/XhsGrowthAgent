@@ -644,6 +644,11 @@ class CdpTransport:
                         await page.get_by_text("笔记管理", exact=True).click(
                             timeout=min(15_000, int(self._timeout * 1000))
                         )
+                        # Linger on the note list like a human skimming titles
+                        # before scrolling — open→instant-scroll is bot-shaped.
+                        with contextlib.suppress(Exception):
+                            await page.wait_for_timeout(random.uniform(800.0, 2800.0))
+                            await self._human_touch(page)
                     except Exception:
                         # A direct route is a compatibility fallback for a
                         # Creator Center navigation redesign.  The account
