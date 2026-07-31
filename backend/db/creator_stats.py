@@ -218,15 +218,53 @@ _SCHEDULER_SUCCESS_KEY = "success_history"
 _mem_scheduler_state: dict[str, dict[str, Any]] = {}
 
 
-async def load_scheduler_success_history() -> dict[str, Any]:
-    """Load durable success timestamps / last hour for the active-account crawler.
+def _normalize_scheduler_state(data: dict[str, Any] | None) -> dict[str, Any]:
+    """Coerce durable scheduler JSON into a stable shape."""
+    empty: dict[str, Any] = {
+        "timestamps": [],
+        "last_success_local_hour": None,
+        "last_period": None,
+        "risk_failures": [],
+        "pause_until": None,
+    }
+    if not isinstance(data, dict):
+        return empty
+    timestamps = data.get("timestamps")
+    if not isinstance(timestamps, list):
+        timestamps = []
+    hour = data.get("last_success_local_hour")
+    if hour is not None:
+        try:
+            hour = int(hour)
+        except (TypeError, ValueError):
+            hour = None
+    risk = data.get("risk_failures")
+    if not isinstance(risk, list):
+        risk = []
+    last_period = data.get("last_period")
+    if last_period not in {"7d", "30d"}:
+        last_period = None
+    pause_until = data.get("pause_until")
+    if pause_until is not None:
+        pause_until = str(pause_until).strip() or None
+    return {
+        "timestamps": [str(t) for t in timestamps if t],
+        "last_success_local_hour": hour,
+        "last_period": last_period,
+        "risk_failures": [str(t) for t in risk if t],
+        "pause_until": pause_until,
+    }
 
-    Returns ``{"timestamps": list[str], "last_success_local_hour": int|None}``.
+
+async def load_scheduler_success_history() -> dict[str, Any]:
+    """Load durable scheduler anti-risk state for the active-account crawler.
+
+    Returns timestamps, last success hour, last period, risk failures, pause_until.
     """
-    empty: dict[str, Any] = {"timestamps": [], "last_success_local_hour": None}
+    empty = _normalize_scheduler_state(None)
     if not is_pool_ready():
         raw = _mem_scheduler_state.get(_SCHEDULER_SUCCESS_KEY)
-        return dict(raw) if isinstance(raw, dict) else empty
+        return _normalize_scheduler_state(raw if isinstance(raw, dict) else None)
     try:
         pool = get_pool()
         async with pool.connection() as conn, conn.cursor() as cur:
@@ -244,19 +282,7 @@ async def load_scheduler_success_history() -> dict[str, Any]:
             data = payload
         else:
             return empty
-        timestamps = data.get("timestamps") if isinstance(data, dict) else None
-        hour = data.get("last_success_local_hour") if isinstance(data, dict) else None
-        if not isinstance(timestamps, list):
-            timestamps = []
-        if hour is not None:
-            try:
-                hour = int(hour)
-            except (TypeError, ValueError):
-                hour = None
-        return {
-            "timestamps": [str(t) for t in timestamps if t],
-            "last_success_local_hour": hour,
-        }
+        return _normalize_scheduler_state(data if isinstance(data, dict) else None)
     except Exception:
         logger.debug("load_scheduler_success_history failed", exc_info=True)
         return empty
@@ -266,14 +292,34 @@ async def save_scheduler_success_history(
     timestamps: list[str],
     *,
     last_success_local_hour: int | None = None,
+    last_period: str | None = None,
+    risk_failures: list[str] | None = None,
+    pause_until: str | None = None,
+    merge_existing: bool = True,
 ) -> None:
-    """Persist success history so deploy restarts do not reset the weekly budget."""
+    """Persist scheduler anti-risk state across deploy restarts."""
     from datetime import UTC, datetime
 
-    payload = {
-        "timestamps": list(timestamps),
-        "last_success_local_hour": last_success_local_hour,
-    }
+    existing: dict[str, Any] = {}
+    if merge_existing:
+        existing = await load_scheduler_success_history()
+    payload = _normalize_scheduler_state(
+        {
+            "timestamps": list(timestamps),
+            "last_success_local_hour": last_success_local_hour
+            if last_success_local_hour is not None
+            else existing.get("last_success_local_hour"),
+            "last_period": last_period
+            if last_period is not None
+            else existing.get("last_period"),
+            "risk_failures": list(risk_failures)
+            if risk_failures is not None
+            else list(existing.get("risk_failures") or []),
+            "pause_until": pause_until
+            if pause_until is not None
+            else existing.get("pause_until"),
+        }
+    )
     if not is_pool_ready():
         _mem_scheduler_state[_SCHEDULER_SUCCESS_KEY] = payload
         return
@@ -1156,7 +1202,4 @@ async def get_note_stats(account_id: str, note_id: str) -> NoteStats | None:
             """,
             (account_id, note_id),
         )
-        row: Any = await cur.fetchone()
-    if not row:
-        return None
-    return _note_from_row(row)
+        row: Any = awai
