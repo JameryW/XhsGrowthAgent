@@ -302,6 +302,65 @@ def _blank_page_cleanup_candidates(targets: Iterable[CdpTarget]) -> tuple[int, l
     return len(pages), blank_pages[: len(pages) - 1]
 
 
+def _is_creator_center_url(url: str) -> bool:
+    text = (url or "").lower()
+    return "creator.xiaohongshu.com" in text and "login" not in text
+
+
+def _hygiene_page_cleanup_candidates(
+    targets: Iterable[CdpTarget],
+    *,
+    max_pages: int = 6,
+) -> tuple[int, list[CdpTarget]]:
+    """Candidates to close when a profile has too many open pages.
+
+    Priority: blank/new-tab first, then excess Creator Center tabs (keep one).
+    Always retains at least one page target so Chrome stays usable for humans.
+    """
+    pages = [target for target in targets if target.target_type == "page"]
+    page_count = len(pages)
+    if page_count <= 1:
+        return page_count, []
+    cap = max(1, int(max_pages or 1))
+    blanks = [p for p in pages if p.url in _SAFE_BLANK_PAGE_URLS]
+    creator = [p for p in pages if _is_creator_center_url(p.url)]
+
+    # Prefer keeping a home/stats tab; close duplicate creator tabs first.
+    def _creator_keep_score(t: CdpTarget) -> tuple[int, str]:
+        url = t.url or ""
+        preferred = any(
+            token in url
+            for token in ("/new/home", "/statistics/account", "/new/note-manager")
+        )
+        return (0 if preferred else 1, url)
+
+    creator_sorted = sorted(creator, key=_creator_keep_score)
+    excess_creator = creator_sorted[1:] if len(creator_sorted) > 1 else []
+    ordered: list[CdpTarget] = []
+    seen: set[str] = set()
+    for candidate in blanks + excess_creator:
+        if candidate.target_id in seen:
+            continue
+        seen.add(candidate.target_id)
+        ordered.append(candidate)
+    # If still over cap, allow closing other non-critical blanks already listed.
+    max_close = max(0, page_count - 1)
+    if page_count > cap:
+        # Close enough to get under cap, but never more than max_close.
+        need = min(max_close, page_count - cap)
+        return page_count, ordered[: max(need, min(len(ordered), max_close))]
+    # Under cap: still return blank-only candidates (safe hygiene).
+    return page_count, blanks[:max_close]
+
+
+def count_open_pages(port: int) -> int | None:
+    """Return page-target count for a CDP port, or None when listing fails."""
+    targets = _list_cdp_targets(port)
+    if targets is None:
+        return None
+    return sum(1 for t in targets if t.target_type == "page")
+
+
 async def _wait_for_port(port: int, *, attempts: int = 10, delay: float = 0.2) -> bool:
     """Poll a CDP port briefly until Chrome/socat is ready."""
     for attempt in range(attempts):
@@ -1355,6 +1414,155 @@ async def prune_blank_pages_all(
     return await asyncio.gather(*(_prune(account) for account in targets))
 
 
+async def hygiene_browser_pages_all(
+    accounts: list[AccountRow],
+    *,
+    apply: bool = False,
+    account_ids: Iterable[str] | None = None,
+    max_pages: int = 6,
+    max_close: int = 3,
+) -> list[PageCleanupStatus]:
+    """Close excess blank / duplicate Creator Center tabs (anti-risk hygiene).
+
+    Unlike ``prune_blank_pages_all`` (one blank only), this pass may close
+    multiple safe targets per profile — blanks first, then extra creator tabs —
+    while still retaining at least one page and refusing to run under an active
+    CDP client attachment.
+    """
+    selected_ids = tuple(value for value in (account_ids or ()) if value.strip())
+    if apply and not selected_ids:
+        raise ValueError("page hygiene apply requires at least one account id")
+
+    targets = [
+        account
+        for account in _select_accounts(accounts, account_ids)
+        if account.chrome_profile_path and account.cdp_port > 0
+    ]
+    close_limit = max(1, int(max_close or 1))
+    page_cap = max(1, int(max_pages or 1))
+
+    async def _hygiene(account: AccountRow) -> PageCleanupStatus:
+        if not await probe_port(account.cdp_port):
+            return PageCleanupStatus(
+                account.id,
+                account.cdp_port,
+                0,
+                0,
+                0,
+                "skipped",
+                "public CDP endpoint is down",
+            )
+        if _has_active_cdp_connection(account.cdp_port):
+            return PageCleanupStatus(
+                account.id,
+                account.cdp_port,
+                0,
+                0,
+                0,
+                "skipped",
+                "active or unverified CDP connection",
+            )
+        cdp_targets = await asyncio.to_thread(_list_cdp_targets, account.cdp_port)
+        if cdp_targets is None:
+            return PageCleanupStatus(
+                account.id, account.cdp_port, 0, 0, 0, "failed", "cannot list CDP targets"
+            )
+        page_count, candidates = _hygiene_page_cleanup_candidates(
+            cdp_targets, max_pages=page_cap
+        )
+        candidates = candidates[:close_limit]
+        if not candidates:
+            return PageCleanupStatus(
+                account.id,
+                account.cdp_port,
+                page_count,
+                0,
+                0,
+                "skipped",
+                "no excess page candidates",
+            )
+        if not apply:
+            return PageCleanupStatus(
+                account.id,
+                account.cdp_port,
+                page_count,
+                len(candidates),
+                0,
+                "dry_run",
+                "excess pages eligible for hygiene",
+            )
+        try:
+            async with _profile_launch_lock(account.chrome_profile_path):
+                if not await probe_port(account.cdp_port):
+                    return PageCleanupStatus(
+                        account.id,
+                        account.cdp_port,
+                        0,
+                        0,
+                        0,
+                        "skipped",
+                        "public CDP endpoint went down before apply",
+                    )
+                if _has_active_cdp_connection(account.cdp_port):
+                    return PageCleanupStatus(
+                        account.id,
+                        account.cdp_port,
+                        0,
+                        0,
+                        0,
+                        "skipped",
+                        "active or unverified CDP connection",
+                    )
+                verified = await asyncio.to_thread(_list_cdp_targets, account.cdp_port)
+                if verified is None:
+                    return PageCleanupStatus(
+                        account.id,
+                        account.cdp_port,
+                        0,
+                        0,
+                        0,
+                        "failed",
+                        "cannot recheck CDP targets",
+                    )
+                page_count, candidates = _hygiene_page_cleanup_candidates(
+                    verified, max_pages=page_cap
+                )
+                candidates = candidates[:close_limit]
+                if not candidates:
+                    return PageCleanupStatus(
+                        account.id,
+                        account.cdp_port,
+                        page_count,
+                        0,
+                        0,
+                        "skipped",
+                        "no excess page candidates after recheck",
+                    )
+                closed = 0
+                for candidate in candidates:
+                    if await asyncio.to_thread(
+                        _close_cdp_target, account.cdp_port, candidate.target_id
+                    ):
+                        closed += 1
+                post = await asyncio.to_thread(_list_cdp_targets, account.cdp_port)
+                remaining = (
+                    sum(1 for t in post if t.target_type == "page") if post is not None else page_count
+                )
+                return PageCleanupStatus(
+                    account.id,
+                    account.cdp_port,
+                    remaining,
+                    len(candidates),
+                    closed,
+                    "cleaned" if closed else "failed",
+                    f"closed {closed} excess page(s)" if closed else "CDP refused page close",
+                )
+        except (OSError, TimeoutError) as exc:
+            return PageCleanupStatus(account.id, account.cdp_port, 0, 0, 0, "failed", str(exc))
+
+    return await asyncio.gather(*(_hygiene(account) for account in targets))
+
+
 # ── Bulk helpers (used by the bash wrapper) ──
 
 
@@ -1472,6 +1680,8 @@ __all__ = [
     "ensure_chrome",
     "find_chrome_binary",
     "format_status_table",
+    "count_open_pages",
+    "hygiene_browser_pages_all",
     "probe_port",
     "prune_blank_pages_all",
     "status_all",
