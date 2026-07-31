@@ -666,16 +666,16 @@ async def _creator_stats_scheduler(
             return True, 0, ""
 
     async def _active_cdp_session_busy() -> bool:
-        """True when publisher/engagement already holds the CDP session lock."""
+        """True when publisher/engagement/login holds the CDP session lock."""
         try:
             from backend.db.accounts import get_active_account, get_account_cdp_endpoint
-            from backend.services.cdp_session_lock import is_cdp_session_busy
+            from backend.services.cdp_session_lock import is_cdp_session_busy_async
 
             account = await get_active_account()
             if account is None:
                 return False
             endpoint = (await get_account_cdp_endpoint(str(account.id)) or "").strip()
-            return is_cdp_session_busy(
+            return await is_cdp_session_busy_async(
                 account_id=str(account.id), cdp_endpoint=endpoint
             )
         except Exception as exc:

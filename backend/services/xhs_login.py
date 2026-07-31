@@ -24,6 +24,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import time
 import urllib.request
 from pathlib import Path
@@ -505,6 +506,9 @@ class XhsLoginSession:
         self._raw_target_id: str = ""
         self._raw_session_id: str = ""
         self._raw_msg_id: int = 0
+        # Shared CDP mutex held from start() until stop() so stats/publish
+        # cannot attach while the QR session owns the profile.
+        self._cdp_hold: Any = None
 
     @property
     def qr_id(self) -> str:
@@ -513,6 +517,40 @@ class XhsLoginSession:
     @property
     def qr_url(self) -> str:
         return self._qr_url
+
+    async def _ensure_cdp_hold(self) -> None:
+        """Acquire the shared CDP session lock for the lifetime of this QR session."""
+        if self._cdp_hold is not None:
+            return
+        from backend.services.cdp_session_lock import CdpSessionBusyError, hold_cdp_session
+
+        timeout = 45.0
+        try:
+            timeout = float(os.environ.get("XHS_CDP_LOGIN_LOCK_TIMEOUT_S", "45") or 45)
+        except (TypeError, ValueError, OverflowError):
+            timeout = 45.0
+        cm = hold_cdp_session(
+            account_id=self.account_id,
+            cdp_endpoint=self.cdp_endpoint,
+            owner="qr_login",
+            wait=True,
+            timeout=timeout,
+        )
+        try:
+            await cm.__aenter__()
+        except CdpSessionBusyError as exc:
+            raise LoginError(
+                f"浏览器正被其他任务占用（{exc.holder}），请稍后再扫码登录。"
+            ) from exc
+        self._cdp_hold = cm
+
+    async def _release_cdp_hold(self) -> None:
+        cm = self._cdp_hold
+        self._cdp_hold = None
+        if cm is None:
+            return
+        with contextlib.suppress(Exception):
+            await cm.__aexit__(None, None, None)
 
     async def start(self) -> dict[str, Any]:
         """启动 Chrome（headed），拦截 qrcode/create，返回 ``{qr_id, url}``.
@@ -527,6 +565,9 @@ class XhsLoginSession:
                 "url": "",
                 "account_id": self.account_id,
             }
+
+        # Serialize against creator-stats / publish / engagement on this profile.
+        await self._ensure_cdp_hold()
 
         # Raw-CDP sessions do not populate _context. Treat them as active
         # sessions here as well, otherwise repeated start() calls open a new
@@ -970,6 +1011,7 @@ class XhsLoginSession:
             with contextlib.suppress(Exception):
                 await self._playwright.stop()
             self._playwright = None
+        await self._release_cdp_hold()
         logger.info("扫码登录会话已关闭: account=%s", self.account_id)
 
     # ── 内部方法 ──
