@@ -1196,6 +1196,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             from backend.db.creative_memory import ensure_tables as ensure_creative_memory
             from backend.db.creator_stats import ensure_tables as ensure_creator_stats
+            # risk gate durable cool-downs hydrate after creator_stats tables exist
             from backend.db.evaluator_config import (
                 ensure_tables as ensure_evaluator_config,
             )
@@ -1254,6 +1255,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.graph = graph
         # Expose checkpointer for health check (SQLite in dev mode)
         app.state.checkpointer = graph.checkpointer
+
+    # Restore anti-risk cool-downs so deploys do not reset publish/browser gaps.
+    # Uses Postgres when pool is ready; otherwise in-memory KV (dev).
+    with contextlib.suppress(Exception):
+        from backend.services.xhs_risk_gate import hydrate_risk_gates
+
+        await hydrate_risk_gates()
 
     # Start Ripple background health check
     settings = Settings()

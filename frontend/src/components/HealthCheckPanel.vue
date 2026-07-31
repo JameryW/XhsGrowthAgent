@@ -241,6 +241,80 @@ const issueCount = computed(() => {
           </div>
         </div>
 
+        <!-- Creator stats scheduler -->
+        <div
+          v-if="health.checks.creator_stats_scheduler"
+          class="rounded-lg p-3 border"
+          :class="statusBg(health.checks.creator_stats_scheduler.status)"
+        >
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <AppIcon name="Clock" size="sm" variant="peach" />
+              <span class="text-sm font-medium text-slate-700">{{ t('health.scheduler') }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span :class="[statusColor(health.checks.creator_stats_scheduler.status), 'w-2 h-2 rounded-full']" />
+              <span class="text-xs text-slate-500">{{ health.checks.creator_stats_scheduler.message }}</span>
+            </div>
+          </div>
+          <div class="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
+            <span v-if="health.checks.creator_stats_scheduler.interval_hours != null">
+              every {{ health.checks.creator_stats_scheduler.interval_hours }}h
+            </span>
+            <span v-if="health.checks.creator_stats_scheduler.run_count != null">
+              runs {{ health.checks.creator_stats_scheduler.run_count }}
+            </span>
+            <span v-if="health.checks.creator_stats_scheduler.next_run_at" class="truncate max-w-[14rem]">
+              next {{ health.checks.creator_stats_scheduler.next_run_at }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Risk control / CDP -->
+        <div
+          v-if="health.checks.risk_control"
+          class="rounded-lg p-3 border"
+          :class="statusBg(health.checks.risk_control.status)"
+        >
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <AppIcon name="Lock" size="sm" variant="cyan" />
+              <span class="text-sm font-medium text-slate-700">{{ t('health.riskControl') }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span :class="[statusColor(health.checks.risk_control.status), 'w-2 h-2 rounded-full']" />
+              <span class="text-xs text-slate-500">{{ health.checks.risk_control.message }}</span>
+            </div>
+          </div>
+          <div class="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
+            <span>
+              CDP {{ (health.checks.risk_control.cdp_sessions || []).length }}
+            </span>
+            <span>
+              cool-downs {{ health.checks.risk_control.active_browser_cooldowns ?? 0 }}
+            </span>
+            <span>
+              auth blocks {{ health.checks.risk_control.active_sync_auth_blocks ?? 0 }}
+            </span>
+            <span :class="health.checks.risk_control.durable ? 'text-emerald-600' : 'text-amber-500'">
+              {{ health.checks.risk_control.durable ? t('health.durableOn') : t('health.durableOff') }}
+            </span>
+          </div>
+          <div
+            v-if="(health.checks.risk_control.cdp_sessions || []).length"
+            class="mt-2 space-y-1 text-xs text-slate-500"
+          >
+            <div
+              v-for="row in health.checks.risk_control.cdp_sessions"
+              :key="row.key"
+              class="flex justify-between gap-2 font-mono"
+            >
+              <span class="truncate">{{ row.holder }} · {{ row.key }}</span>
+              <span v-if="row.held_for_seconds != null">{{ row.held_for_seconds }}s</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Version & refresh -->
         <div class="flex items-center justify-between text-xs text-slate-400 pt-1">
           <span>v{{ health.version }}</span>
