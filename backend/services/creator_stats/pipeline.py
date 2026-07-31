@@ -31,6 +31,7 @@ from backend.services.creator_stats.suggestions import suggestions_from_analysis
 from backend.services.creator_stats.types import (
     ERROR_AUTH_EXPIRED,
     ERROR_BROWSER_UNAVAILABLE,
+    ERROR_EMPTY_SHELL,
     CreatorStatsBundle,
     NoteStats,
     SyncResult,
@@ -646,6 +647,16 @@ async def sync_from_creator_center(
             )
         else:
             client = CreatorStatsClient(cookie=cookie)
+    prior_note_count = 0
+    try:
+        from backend.db import creator_stats as stats_db
+
+        prior = await stats_db.get_account_stats(account_id)
+        if prior is not None:
+            prior_note_count = max(0, int(getattr(prior, "note_count", 0) or 0))
+    except Exception:
+        logger.debug("prior note_count lookup failed for %s", account_id, exc_info=True)
+
     try:
         bundle = await client.fetch_all(account_id, period=period, **fetch_kwargs)
     except CreatorStatsFetchError as e:
@@ -671,7 +682,11 @@ async def sync_from_creator_center(
     # Only persist after successful fetch/normalize
     result = await import_bundle(bundle, store=store, run_creative_analysis=run_creative_analysis)
     result.source = "creator_statistics"
-    return result
+    return _mark_empty_shell_soft_risk(
+        result,
+        prior_note_count=prior_note_count,
+        fetched_note_count=len(bundle.notes or []),
+    )
 
 
 async def sync_account_stats(
@@ -827,15 +842,59 @@ def _has_successful_live_sync(result: dict[str, Any]) -> bool:
     Freshness skips deliberately use ``account_synced=True`` so callers treat
     them as a successful no-op.  They must not, however, start the global
     post-sync cooldown because no browser session or remote fetch occurred.
+
+    Empty-shell soft-risk imports also look ``account_synced`` but must not
+    clear the risk fuse or count as a healthy weekly success.
     """
     for item in result.get("results") or []:
         if not isinstance(item, dict) or not item.get("account_synced"):
+            continue
+        if item.get("soft_risk"):
             continue
         resolution = item.get("niche_resolution")
         if isinstance(resolution, dict) and resolution.get("skipped"):
             continue
         return True
     return False
+
+
+def _batch_has_soft_risk(result: dict[str, Any]) -> bool:
+    """True when any account in the batch was marked empty-shell soft risk."""
+    for item in result.get("results") or []:
+        if isinstance(item, dict) and item.get("soft_risk"):
+            return True
+    return False
+
+
+def _mark_empty_shell_soft_risk(
+    result: SyncResult,
+    *,
+    prior_note_count: int,
+    fetched_note_count: int,
+) -> SyncResult:
+    """Flag hollow imports when prior notes collapsed to an empty list.
+
+    Brand-new accounts (prior_note_count=0) are never soft-risk — an empty
+    first crawl is a legitimate cold start.
+    """
+    if prior_note_count <= 0 or fetched_note_count > 0:
+        return result
+    if not result.account_synced:
+        return result
+    resolution = result.niche_resolution
+    if isinstance(resolution, dict) and resolution.get("skipped"):
+        return result
+    reason = (
+        f"empty shell risk: note list collapsed "
+        f"(prior_note_count={prior_note_count}, fetched=0)"
+    )
+    result.soft_risk = True
+    result.soft_risk_reason = reason
+    result.error_code = ERROR_EMPTY_SHELL
+    # Surface for ops without failing the persist path entirely.
+    if not result.error:
+        result.error = reason
+    return result
 
 
 async def sync_all_active_accounts(
@@ -921,12 +980,16 @@ async def sync_all_active_accounts(
     # browser syncs; only a real successful import starts the cooldown.
     if _has_successful_live_sync(result):
         _last_successful_sync_finished_at = datetime.now(UTC)
-    # Per-account gates: clear on success, block on auth/shell failures.
+    # Per-account gates: clear on healthy success; block on auth/shell failures.
+    # Empty-shell soft risk keeps the auth cooldown warm so we do not re-hammer.
     for item in result.get("results") or []:
         if not isinstance(item, dict):
             continue
         aid = str(item.get("account_id") or "")
         if not aid:
+            continue
+        if item.get("soft_risk") or item.get("error_code") == ERROR_EMPTY_SHELL:
+            note_sync_auth_failure(aid, reason=ERROR_EMPTY_SHELL)
             continue
         if item.get("account_synced"):
             clear_sync_auth_failure(aid)
@@ -936,10 +999,12 @@ async def sync_all_active_accounts(
         text = f"{code} {err}".lower()
         if (
             code == ERROR_AUTH_EXPIRED
+            or code == ERROR_EMPTY_SHELL
             or "401" in text
             or "auth" in text
             or "re-login" in text
             or "登录" in err
+            or "empty shell" in text
         ):
             note_sync_auth_failure(aid, reason=code or "AUTH_EXPIRED")
     return result
