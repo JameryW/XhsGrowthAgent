@@ -445,6 +445,225 @@ def check_engagement_allowed(
     )
 
 
+def list_active_cooldowns(*, account_id: str = "") -> list[dict[str, Any]]:
+    """Return active cool-downs with remaining seconds (newest first).
+
+    When ``account_id`` is set, only entries for that account/profile are
+    returned (``account:{id}`` keys and bare account-id auth/QR blocks).
+    """
+    now = _now()
+    account_id = (account_id or "").strip()
+    account_key = f"account:{account_id}" if account_id else ""
+    rows: list[dict[str, Any]] = []
+
+    def _want_key(key: str) -> bool:
+        if not account_id:
+            return True
+        return key == account_key or key == account_id or key.endswith(f":{account_id}")
+
+    def _want_aid(aid: str) -> bool:
+        if not account_id:
+            return True
+        return aid == account_id
+
+    # browser action (event-based cool-down)
+    browser_cd = browser_action_cooldown_seconds()
+    if browser_cd > 0:
+        for key, last in list(_browser_action_last_at.items()):
+            if not _want_key(key):
+                continue
+            owner = _browser_action_last_owner.get(key, "unknown")
+            # Report full gap remaining (feature-switch baseline).
+            remaining = browser_cd - (now - last)
+            if remaining <= 0:
+                continue
+            rows.append(
+                {
+                    "kind": "browser_action",
+                    "key": key,
+                    "owner": owner,
+                    "retry_after_seconds": int(remaining + 0.999),
+                    "message": f"浏览器操作冷却（上一任务 {owner}）",
+                }
+            )
+
+    # publish / engagement (event-based)
+    pub_cd = publish_cooldown_seconds()
+    if pub_cd > 0:
+        for key, last in list(_publish_last_at.items()):
+            if not _want_key(key):
+                continue
+            remaining = pub_cd - (now - last)
+            if remaining <= 0:
+                continue
+            rows.append(
+                {
+                    "kind": "publish",
+                    "key": key,
+                    "retry_after_seconds": int(remaining + 0.999),
+                    "message": "发布冷却",
+                }
+            )
+    eng_cd = engagement_account_cooldown_seconds()
+    if eng_cd > 0:
+        for key, last in list(_engagement_last_at.items()):
+            if not _want_key(key):
+                continue
+            remaining = eng_cd - (now - last)
+            if remaining <= 0:
+                continue
+            rows.append(
+                {
+                    "kind": "engagement",
+                    "key": key,
+                    "retry_after_seconds": int(remaining + 0.999),
+                    "message": "互动会话冷却",
+                }
+            )
+
+    # deadline-based blocks
+    for aid, until in list(_sync_auth_blocked_until.items()):
+        if not _want_aid(aid) or until <= now:
+            continue
+        rows.append(
+            {
+                "kind": "sync_auth",
+                "key": aid,
+                "reason": _sync_auth_reason.get(aid, "AUTH_EXPIRED"),
+                "retry_after_seconds": _remaining(until),
+                "message": "创作者中心鉴权冷却",
+            }
+        )
+    for aid, until in list(_qr_risk_blocked_until.items()):
+        if not _want_aid(aid) or until <= now:
+            continue
+        rows.append(
+            {
+                "kind": "qr_risk",
+                "key": aid,
+                "reason": _qr_risk_reason.get(aid, "security_risk"),
+                "retry_after_seconds": _remaining(until),
+                "message": "扫码安全限制冷却",
+            }
+        )
+    qr_cd = qr_cooldown_seconds()
+    if qr_cd > 0:
+        for aid, last in list(_qr_last_attempt_at.items()):
+            if not _want_aid(aid):
+                continue
+            remaining = qr_cd - (now - last)
+            if remaining <= 0:
+                continue
+            rows.append(
+                {
+                    "kind": "qr_attempt",
+                    "key": aid,
+                    "retry_after_seconds": int(remaining + 0.999),
+                    "message": "扫码登录间隔冷却",
+                }
+            )
+
+    rows.sort(key=lambda r: int(r.get("retry_after_seconds") or 0), reverse=True)
+    return rows
+
+
+def clear_account_cooldowns(account_id: str = "", *, kinds: list[str] | None = None) -> dict[str, Any]:
+    """Clear cool-downs for one account (or all keys when account_id empty).
+
+    ``kinds`` optional filter: browser_action, publish, engagement, sync_auth,
+    qr_risk, qr_attempt. None/empty clears all kinds.
+    """
+    account_id = (account_id or "").strip()
+    kind_set = {k.strip() for k in (kinds or []) if k and str(k).strip()}
+    clear_all_kinds = not kind_set
+    account_key = f"account:{account_id}" if account_id else ""
+    cleared: dict[str, int] = {}
+
+    def _match_profile_key(key: str) -> bool:
+        if not account_id:
+            return True
+        return key == account_key or key == account_id
+
+    def _match_aid(aid: str) -> bool:
+        if not account_id:
+            return True
+        return aid == account_id
+
+    def _do(kind: str) -> bool:
+        return clear_all_kinds or kind in kind_set
+
+    if _do("browser_action"):
+        n = 0
+        for key in list(_browser_action_last_at.keys()):
+            if not _match_profile_key(key):
+                continue
+            _browser_action_last_at.pop(key, None)
+            _browser_action_last_owner.pop(key, None)
+            _browser_action_wall.pop(key, None)
+            n += 1
+        cleared["browser_action"] = n
+
+    if _do("publish"):
+        n = 0
+        for key in list(_publish_last_at.keys()):
+            if not _match_profile_key(key):
+                continue
+            _publish_last_at.pop(key, None)
+            _publish_wall.pop(key, None)
+            n += 1
+        cleared["publish"] = n
+
+    if _do("engagement"):
+        n = 0
+        for key in list(_engagement_last_at.keys()):
+            if not _match_profile_key(key):
+                continue
+            _engagement_last_at.pop(key, None)
+            _engagement_wall.pop(key, None)
+            n += 1
+        cleared["engagement"] = n
+
+    if _do("sync_auth"):
+        n = 0
+        for aid in list(_sync_auth_blocked_until.keys()):
+            if not _match_aid(aid):
+                continue
+            _sync_auth_blocked_until.pop(aid, None)
+            _sync_auth_reason.pop(aid, None)
+            _sync_auth_until_wall.pop(aid, None)
+            n += 1
+        cleared["sync_auth"] = n
+
+    if _do("qr_risk"):
+        n = 0
+        for aid in list(_qr_risk_blocked_until.keys()):
+            if not _match_aid(aid):
+                continue
+            _qr_risk_blocked_until.pop(aid, None)
+            _qr_risk_reason.pop(aid, None)
+            _qr_risk_until_wall.pop(aid, None)
+            n += 1
+        cleared["qr_risk"] = n
+
+    if _do("qr_attempt"):
+        n = 0
+        for aid in list(_qr_last_attempt_at.keys()):
+            if not _match_aid(aid):
+                continue
+            _qr_last_attempt_at.pop(aid, None)
+            _qr_last_attempt_wall.pop(aid, None)
+            n += 1
+        cleared["qr_attempt"] = n
+
+    _schedule_persist()
+    total = sum(cleared.values())
+    return {
+        "account_id": account_id or None,
+        "cleared": cleared,
+        "total": total,
+    }
+
+
 def snapshot_risk_gates() -> dict[str, Any]:
     """Compact operator-facing gate snapshot for /health."""
     now = _now()
@@ -454,6 +673,7 @@ def snapshot_risk_gates() -> dict[str, Any]:
             browser_active += 1
     auth_active = sum(1 for until in _sync_auth_blocked_until.values() if until > now)
     qr_risk_active = sum(1 for until in _qr_risk_blocked_until.values() if until > now)
+    active = list_active_cooldowns()
     return {
         "browser_action_cooldown_seconds": browser_action_cooldown_seconds(),
         "publish_cooldown_seconds": publish_cooldown_seconds(),
@@ -465,6 +685,11 @@ def snapshot_risk_gates() -> dict[str, Any]:
         "browser_action_keys": len(_browser_action_last_at),
         "publish_keys": len(_publish_last_at),
         "engagement_keys": len(_engagement_last_at),
+        "active": active,
+        "active_count": len(active),
+        "max_retry_after_seconds": (
+            max((int(r.get("retry_after_seconds") or 0) for r in active), default=0)
+        ),
     }
 
 
@@ -600,12 +825,14 @@ __all__ = [
     "check_publish_allowed",
     "check_qr_start_allowed",
     "check_sync_auth_cooldown",
+    "clear_account_cooldowns",
     "clear_qr_risk_block",
     "clear_sync_auth_failure",
     "engagement_account_cooldown_seconds",
     "export_risk_gate_state",
     "hydrate_risk_gates",
     "is_security_risk_message",
+    "list_active_cooldowns",
     "note_browser_action",
     "note_engagement",
     "note_publish",

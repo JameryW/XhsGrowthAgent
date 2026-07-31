@@ -7,6 +7,15 @@ export interface CdpSessionRow {
   held_for_seconds?: number | null
 }
 
+export interface ActiveCooldownEntry {
+  kind: string
+  key: string
+  owner?: string
+  reason?: string
+  retry_after_seconds: number
+  message?: string
+}
+
 export interface RiskGatesSnapshot {
   browser_action_cooldown_seconds?: number
   publish_cooldown_seconds?: number
@@ -18,6 +27,9 @@ export interface RiskGatesSnapshot {
   browser_action_keys?: number
   publish_keys?: number
   engagement_keys?: number
+  active?: ActiveCooldownEntry[]
+  active_count?: number
+  max_retry_after_seconds?: number
 }
 
 export interface HealthCheck {
@@ -62,6 +74,9 @@ export interface HealthCheck {
       message?: string
       cdp_sessions?: CdpSessionRow[]
       risk_gates?: RiskGatesSnapshot
+      active?: ActiveCooldownEntry[]
+      active_count?: number
+      max_retry_after_seconds?: number
       active_browser_cooldowns?: number
       active_sync_auth_blocks?: number
       durable?: boolean
@@ -70,6 +85,32 @@ export interface HealthCheck {
   version: string
   timestamp: string
   active_account?: { id: string; name: string }
+}
+
+export interface RiskGatesResponse {
+  risk_gates: RiskGatesSnapshot
+  active: ActiveCooldownEntry[]
+  cdp_sessions: CdpSessionRow[]
+  account_id?: string | null
+}
+
+export interface ClearRiskGatesResult {
+  account_id?: string | null
+  cleared: Record<string, number>
+  total: number
+  remaining_active: ActiveCooldownEntry[]
+}
+
+export async function getRiskGates(accountId?: string): Promise<RiskGatesResponse> {
+  const q = accountId ? `?account_id=${encodeURIComponent(accountId)}` : ''
+  return client.get(`/system/risk-gates${q}`) as unknown as Promise<RiskGatesResponse>
+}
+
+export async function clearRiskGates(payload?: {
+  account_id?: string
+  kinds?: string[]
+}): Promise<ClearRiskGatesResult> {
+  return client.post('/system/risk-gates/clear', payload || {}) as unknown as Promise<ClearRiskGatesResult>
 }
 
 /** Client-side cache so PreLaunchChecklist remounts don't re-hit the API. */
