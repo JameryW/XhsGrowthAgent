@@ -17,10 +17,16 @@ from backend.services.cdp_session_lock import (
 
 
 @pytest.fixture(autouse=True)
-def _reset_locks():
+def _reset_locks(monkeypatch):
+    # Disable cross-feature cool-down so lock unit tests stay fast.
+    monkeypatch.setenv("XHS_BROWSER_ACTION_COOLDOWN_SECONDS", "0")
+    from backend.services.xhs_risk_gate import reset_gates_for_tests
+
     reset_cdp_session_locks_for_tests()
+    reset_gates_for_tests()
     yield
     reset_cdp_session_locks_for_tests()
+    reset_gates_for_tests()
 
 
 @pytest.mark.asyncio
@@ -82,3 +88,16 @@ async def test_async_busy_probe_uses_local_first():
     async with hold_cdp_session(account_id="a1", owner="pub", wait=True):
         assert await is_cdp_session_busy_async(account_id="a1") is True
     assert await is_cdp_session_busy_async(account_id="a1") is False
+
+@pytest.mark.asyncio
+async def test_snapshot_cdp_sessions_shows_holder(monkeypatch):
+    monkeypatch.setattr(
+        "backend.services.cdp_session_lock._try_acquire_pg",
+        AsyncMock(return_value=("unavailable", None)),
+    )
+    from backend.services.cdp_session_lock import snapshot_cdp_sessions
+
+    async with hold_cdp_session(account_id="a1", owner="publisher", wait=True):
+        rows = snapshot_cdp_sessions()
+        assert any(r["holder"] == "publisher" and "account:a1" in r["key"] for r in rows)
+    assert snapshot_cdp_sessions() == []

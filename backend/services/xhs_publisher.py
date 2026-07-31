@@ -220,6 +220,18 @@ class XHSPublisher:
         if hashtags is None:
             hashtags = []
         from backend.services.cdp_session_lock import CdpSessionBusyError, hold_cdp_session
+        from backend.services.xhs_risk_gate import check_publish_allowed, note_publish
+
+        publish_block = check_publish_allowed(cdp_endpoint=self.cdp_endpoint)
+        if publish_block is not None:
+            return {
+                "post_id": "",
+                "status": "failed",
+                "url": "",
+                "error": publish_block.message,
+                "error_type": "publish_cooldown",
+                "retry_after_seconds": publish_block.retry_after_seconds,
+            }
 
         try:
             async with hold_cdp_session(
@@ -228,7 +240,7 @@ class XHSPublisher:
                 wait=True,
                 timeout=float(os.environ.get("XHS_CDP_PUBLISH_LOCK_TIMEOUT_S", "600") or 600),
             ):
-                return await self._publish_note_locked(
+                result = await self._publish_note_locked(
                     title=title,
                     body=body,
                     image_paths=image_paths,
@@ -238,6 +250,10 @@ class XHSPublisher:
                     scheduled_time=scheduled_time,
                     is_private=is_private,
                 )
+                # Count real publish attempts toward cool-down (including soft fails
+                # after the browser opened — still a risk surface).
+                note_publish(cdp_endpoint=self.cdp_endpoint)
+                return result
         except CdpSessionBusyError as exc:
             return {
                 "post_id": "",
