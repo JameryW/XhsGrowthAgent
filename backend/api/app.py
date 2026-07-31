@@ -95,6 +95,39 @@ def _clip_to_active_window(candidate: datetime, start_hour: int, end_hour: int) 
     return picked.astimezone(UTC)
 
 
+def _pick_scheduled_period(period_7d_chance: float) -> str:
+    """Pick a Creator Center stats window for one scheduled run.
+
+    Always requesting ``30d`` is itself a fingerprint. Prefer a mix of lighter
+    ``7d`` reads and full ``30d`` windows, weighted toward 30d so analytics
+    monthly cards stay reasonably fresh.
+    """
+    chance = max(0.0, min(1.0, _finite_float(period_7d_chance, 0.35)))
+    return "7d" if random.random() < chance else "30d"
+
+
+def _is_riskish_error(message: str | None) -> bool:
+    """True when the error text looks like auth / platform risk control."""
+    text = str(message or "").lower()
+    return any(
+        token in text
+        for token in (
+            "401",
+            "403",
+            "auth",
+            "login",
+            "re-login",
+            "300012",
+            "risk",
+            "风控",
+            "安全限制",
+            "empty",
+            "cdp connect failed",
+            "socket hang up",
+        )
+    )
+
+
 async def _creator_stats_scheduler(
     app: FastAPI,
     interval_hours: float,
@@ -102,6 +135,10 @@ async def _creator_stats_scheduler(
     startup_delay: tuple[float, float] | None = None,
     active_window: tuple[int, int] | None = None,
     skip_day_chance: float = 0.0,
+    pre_run_delay: tuple[float, float] | None = None,
+    period_7d_chance: float = 0.35,
+    post_success_long_break_chance: float = 0.18,
+    risk_skip_next_chance: float = 0.85,
 ) -> None:
     """Import active-account data on a human-looking schedule.
 
@@ -112,7 +149,7 @@ async def _creator_stats_scheduler(
     反风控调度策略（核心：不允许任何可被识别的规律性）：
       1. 启动后不立即爬——先随机延迟 ``startup_delay``，避免"部署/重启即爬"
          的机器模式；``None`` 表示启动即跑（测试/手动语义）。
-      2. 间隔不固定：每轮间隔在 0.75-1.5× ``interval_hours`` 间按三角分布
+      2. 间隔不固定：每轮间隔在 0.65-1.75× ``interval_hours`` 间按三角分布
          取值（峰值 1×——人有"大致每天看一次"的习惯，均匀分布反而是毫无
          习惯的机器特征），且运行时刻被 ``active_window`` 限制在中国本地
          时间的每日活跃窗口内，深夜不爬；``None`` 表示不限制。
@@ -120,7 +157,10 @@ async def _creator_stats_scheduler(
          周末创作者更活跃、跳过更少），"每天必爬一次"本身就是规律。
          跳过不算失败。
       4. 连续失败退避：第二次起连续失败间隔按 1.5-2.5× 随机放大，被风控/登录态
-         失效时自动降频，成功一次即复位。
+         失效时自动降频，成功一次即复位；风控失败还可强制再空一窗。
+      5. 唤醒后开浏览器前再静默 ``pre_run_delay``；周期在 7d/30d 间随机，
+         避免永远同一深链参数。
+      6. 成功后以小概率进入长休（间隔再放大），模拟人几天不看数据。
     """
     interval_seconds = max(60.0, _finite_float(interval_hours, 0.0) * 3600.0)
     logger = logging.getLogger("xhs_growth.creator_stats.scheduler")
@@ -160,6 +200,8 @@ async def _creator_stats_scheduler(
     skip_next_run = False
     while True:
         started_at = datetime.now(UTC)
+        succeeded = False
+        ran_crawl = False
         if skip_next_run:
             # 3. 随机跳过：本轮不爬，直接排下一轮。跳过不算失败、不触发退避。
             skip_next_run = False
@@ -171,20 +213,36 @@ async def _creator_stats_scheduler(
             )
             logger.info("scheduled creator stats import skipped this cycle (irregular cadence)")
         else:
+            ran_crawl = True
+            # 5. 醒来后先静默再开浏览器——人从"想起来"到点开页面有空隙。
+            if pre_run_delay is not None:
+                settle_min = max(0.0, _finite_float(pre_run_delay[0], 0.0))
+                settle_max = max(settle_min, _finite_float(pre_run_delay[1], settle_min))
+                if settle_max > 0:
+                    settle = random.uniform(settle_min, settle_max)
+                    state["status"] = "settling"
+                    state["pre_run_delay_seconds"] = round(settle, 1)
+                    logger.info(
+                        "creator stats scheduler settling %.0fs before crawl", settle
+                    )
+                    await asyncio.sleep(settle)
+
+            period = _pick_scheduled_period(period_7d_chance)
             state.update(
                 {
                     "status": "running",
-                    "last_started_at": started_at.isoformat(),
+                    "last_started_at": datetime.now(UTC).isoformat(),
                     "last_error": None,
+                    "last_period": period,
                     "run_count": int(state.get("run_count") or 0) + 1,
                 }
             )
             logger.info(
-                "scheduled creator stats import started: interval_hours=%s run=%s",
+                "scheduled creator stats import started: interval_hours=%s run=%s period=%s",
                 interval_hours,
                 state["run_count"],
+                period,
             )
-            succeeded = False
             try:
                 from backend.services.creator_stats.pipeline import sync_all_active_accounts
 
@@ -193,7 +251,7 @@ async def _creator_stats_scheduler(
                 # Let CREATOR_STATS_SCHEDULED_FORCE_LIGHT decide whether the
                 # scheduled batch is forced list-only (default remains safe).
                 result = await sync_all_active_accounts(
-                    store=store, period="30d", prefer_light=None
+                    store=store, period=period, prefer_light=None
                 )
                 finished_at = datetime.now(UTC)
                 last_error = result.get("error")
@@ -225,15 +283,17 @@ async def _creator_stats_scheduler(
                         "last_started_at": started_at.isoformat(),
                         "last_finished_at": finished_at.isoformat(),
                         "last_error": last_error,
+                        "last_period": period,
                     }
                 )
                 logger.info(
                     "scheduled creator stats import finished: status=%s active=%s "
-                    "succeeded=%s failed=%s error=%s",
+                    "succeeded=%s failed=%s period=%s error=%s",
                     result.get("status"),
                     result.get("active_accounts", 0),
                     result.get("succeeded", 0),
                     result.get("failed", 0),
+                    period,
                     last_error,
                 )
             except asyncio.CancelledError:
@@ -261,36 +321,38 @@ async def _creator_stats_scheduler(
         # 本身也是可预测的退避节律），成功即复位。
         # Auth/risk-shaped errors get a stronger multi-day-scale pause so we
         # do not re-hammer creator center right after a ban/401.
-        last_err = str(state.get("last_error") or "").lower()
-        riskish = any(
-            token in last_err
-            for token in (
-                "401",
-                "403",
-                "auth",
-                "login",
-                "re-login",
-                "300012",
-                "risk",
-                "风控",
-                "安全限制",
-                "empty",
-            )
-        )
-        if not succeeded and riskish:
+        last_err = str(state.get("last_error") or "")
+        # Only score risk/backoff from a crawl we actually attempted this cycle.
+        # A skipped window must not re-apply the previous failure's risk backoff.
+        riskish = ran_crawl and (not succeeded) and _is_riskish_error(last_err)
+        if riskish:
             backoff = random.uniform(3.0, 6.0)
+            # Extra quiet window after risk/auth — do not schedule crawl→crawl.
+            if random.random() < max(
+                0.0, min(1.0, _finite_float(risk_skip_next_chance, 0.85))
+            ):
+                skip_next_run = True
+                state["last_risk_skip_armed"] = True
         elif consecutive_failures <= 1:
             backoff = 1.0
         else:
             backoff = random.uniform(1.5, 2.5)
-        # 2. 间隔按 0.75-1.5× 三角分布取值（峰值 1×，模拟人的习惯节律）；
+        # 6. 成功后偶尔长休——人不会永远按同一节奏回来。
+        if (
+            succeeded
+            and random.random()
+            < max(0.0, min(1.0, _finite_float(post_success_long_break_chance, 0.18)))
+        ):
+            backoff *= random.uniform(1.8, 2.8)
+            state["last_long_break"] = True
+        # 2. 间隔按 0.65-1.75× 三角分布取值（峰值 1×，模拟人的习惯节律）；
         # active_window 再把落点限制在人类活动时段。
-        if skip_day_chance > 0:
+        if skip_day_chance > 0 and not skip_next_run:
             factor = _weekday_skip_factor(datetime.now(_CN_TZ).weekday())
             if random.random() < min(1.0, skip_day_chance * factor):
                 skip_next_run = True
         candidate = datetime.now(UTC) + timedelta(
-            seconds=interval_seconds * random.triangular(0.75, 1.5, 1.0) * backoff
+            seconds=interval_seconds * random.triangular(0.65, 1.75, 1.0) * backoff
         )
         await _sleep_until(_next_run(candidate))
 
@@ -410,11 +472,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         interval_hours = _finite_float(settings.creator_stats.sync_interval_hours, 0.0)
     except (AttributeError, TypeError, ValueError):
         interval_hours = 0.0
-    # 反风控调度参数（启动随机延迟 + 中国时间活跃窗口 + 随机跳过）；
-    # 读取失败时退化为旧行为（启动即跑、不限窗口、不跳过），不影响可用性。
+    # 反风控调度参数（启动随机延迟 + 中国时间活跃窗口 + 随机跳过 + 唤醒静默
+    # + 周期随机）；读取失败时退化为旧行为（启动即跑、不限窗口、不跳过）。
     startup_delay: tuple[float, float] | None = None
     active_window: tuple[int, int] | None = None
     skip_day_chance = 0.0
+    pre_run_delay: tuple[float, float] | None = None
+    period_7d_chance = 0.35
+    post_success_long_break_chance = 0.18
+    risk_skip_next_chance = 0.85
     try:
         cs_settings = settings.creator_stats
         startup_delay = (
@@ -426,10 +492,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             int(cs_settings.active_window_end_hour),
         )
         skip_day_chance = max(0.0, min(1.0, _finite_float(cs_settings.skip_day_chance, 0.25)))
+        pre_run_delay = (
+            _finite_float(cs_settings.pre_run_delay_min_seconds, 45.0),
+            _finite_float(cs_settings.pre_run_delay_max_seconds, 240.0),
+        )
+        period_7d_chance = max(
+            0.0, min(1.0, _finite_float(cs_settings.period_7d_chance, 0.35))
+        )
+        post_success_long_break_chance = max(
+            0.0,
+            min(1.0, _finite_float(cs_settings.post_success_long_break_chance, 0.18)),
+        )
+        risk_skip_next_chance = max(
+            0.0, min(1.0, _finite_float(cs_settings.risk_skip_next_chance, 0.85))
+        )
     except (AttributeError, TypeError, ValueError):
         startup_delay = None
         active_window = None
         skip_day_chance = 0.0
+        pre_run_delay = None
+        period_7d_chance = 0.35
+        post_success_long_break_chance = 0.18
+        risk_skip_next_chance = 0.85
     app.state.creator_stats_scheduler_status = {
         "enabled": bool(db_uri and interval_hours > 0 and pool_ready),
         "interval_hours": interval_hours,
@@ -443,6 +527,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         "last_failed": 0,
         "last_error": None,
         "next_run_at": None,
+        "last_period": None,
     }
     if db_uri and interval_hours > 0 and pool_ready:
         app.state.creator_stats_scheduler_status["status"] = "scheduled"
@@ -453,6 +538,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 startup_delay=startup_delay,
                 active_window=active_window,
                 skip_day_chance=skip_day_chance,
+                pre_run_delay=pre_run_delay,
+                period_7d_chance=period_7d_chance,
+                post_success_long_break_chance=post_success_long_break_chance,
+                risk_skip_next_chance=risk_skip_next_chance,
             ),
             name="creator-stats-active-account-scheduler",
         )
@@ -566,6 +655,7 @@ async def health() -> ApiResponse[Any]:
             "last_succeeded",
             "last_failed",
             "last_error",
+            "last_period",
             "next_run_at",
         )
         scheduler = {key: scheduler_state.get(key) for key in health_fields}

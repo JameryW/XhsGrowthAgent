@@ -15,6 +15,8 @@ from backend.api.app import (
     _clip_to_active_window,
     _creator_stats_scheduler,
     _finite_float,
+    _is_riskish_error,
+    _pick_scheduled_period,
     _weekday_skip_factor,
     app,
     health,
@@ -58,7 +60,8 @@ async def test_scheduler_nonfinite_interval_falls_back_to_safe_minimum(monkeypat
 
     assert len(sleep_calls) == 1
     assert all(math.isfinite(value) for value in sleep_calls)
-    assert 60.0 * 0.75 * 0.99 <= sleep_calls[0] <= 60.0 * 1.5
+    # Non-finite interval falls back to 60s floor; jitter 0.65–1.75× (+ optional long break).
+    assert 60.0 * 0.65 * 0.99 <= sleep_calls[0] <= 60.0 * 1.75 * 2.8 * 1.01
 
 
 @pytest.mark.asyncio
@@ -87,10 +90,15 @@ async def test_scheduler_runs_immediately_and_records_batch_summary(monkeypatch)
     ):
         await _creator_stats_scheduler(app, 0.5)
 
-    sync.assert_awaited_once_with(store=None, period="30d", prefer_light=None)
-    # Scheduler sleep carries a 0.75-1.5x random factor around the interval.
+    # Period is randomly 7d or 30d; always prefer_light=None for scheduled path.
+    sync.assert_awaited_once()
+    assert sync.await_args.kwargs["store"] is None
+    assert sync.await_args.kwargs["prefer_light"] is None
+    assert sync.await_args.kwargs["period"] in {"7d", "30d"}
+    # Scheduler sleep carries a 0.65-1.75x random factor around the interval
+    # (and may include pre_run settle when enabled — disabled by default in tests).
     assert len(sleep_calls) == 1
-    assert 1800.0 * 0.75 * 0.99 <= sleep_calls[0] <= 1800.0 * 1.5
+    assert 1800.0 * 0.65 * 0.99 <= sleep_calls[0] <= 1800.0 * 1.75 * 2.8 * 1.01
     state = app.state.creator_stats_scheduler_status
     assert state["status"] == "completed"
     assert state["run_count"] == 1
@@ -99,6 +107,7 @@ async def test_scheduler_runs_immediately_and_records_batch_summary(monkeypatch)
     assert state["last_failed"] == 0
     assert state["last_finished_at"]
     assert state["next_run_at"]
+    assert state["last_period"] in {"7d", "30d"}
 
 
 @pytest.mark.asyncio
@@ -383,9 +392,118 @@ def test_weekday_skip_factor_weekends_lower_than_monday():
 
 
 def test_interval_jitter_stays_within_triangular_bounds():
-    """三角分布的间隔抖动仍在 0.75-1.5× 区间内（既有调度测试的边界前提）。"""
-    samples = [random.triangular(0.75, 1.5, 1.0) for _ in range(2000)]
-    assert all(0.75 <= s <= 1.5 for s in samples)
-    # 峰值在 1×：样本均值应明显偏离均匀分布的 1.125，靠近 1.083。
+    """三角分布的间隔抖动在 0.65-1.75× 区间内（峰值 1×）。"""
+    samples = [random.triangular(0.65, 1.75, 1.0) for _ in range(2000)]
+    assert all(0.65 <= s <= 1.75 for s in samples)
+    # 峰值在 1×：样本均值应靠近 mode，明显低于区间中点 1.2。
     mean = sum(samples) / len(samples)
-    assert 1.05 <= mean <= 1.12
+    assert 1.0 <= mean <= 1.2
+
+
+def test_pick_scheduled_period_respects_chance_extremes():
+    assert _pick_scheduled_period(0.0) == "30d"
+    assert _pick_scheduled_period(1.0) == "7d"
+    # Mid chance yields both over enough trials.
+    seen = {_pick_scheduled_period(0.5) for _ in range(80)}
+    assert seen == {"7d", "30d"}
+
+
+def test_is_riskish_error_detects_auth_and_risk_tokens():
+    assert _is_riskish_error("401 unauthorized re-login")
+    assert _is_riskish_error("触发风控 300012")
+    assert _is_riskish_error("CDP connect failed: socket hang up")
+    assert not _is_riskish_error("database unavailable")
+    assert not _is_riskish_error(None)
+
+
+@pytest.mark.asyncio
+async def test_scheduler_settles_before_crawl_when_pre_run_delay_set(monkeypatch):
+    """Wake → settle → crawl, not crawl immediately on timer fire."""
+    app = _scheduler_app()
+    result = {"ok": True, "status": "completed", "active_accounts": 1, "succeeded": 1, "failed": 0}
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        # First sleep is pre-run settle; second is post-run interval → stop.
+        if len(sleep_calls) >= 2:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(app_module.random, "uniform", lambda a, b: (a + b) / 2)
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(return_value=result),
+        ) as sync,
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(
+            app,
+            0.5,
+            pre_run_delay=(60.0, 120.0),
+            post_success_long_break_chance=0.0,
+            risk_skip_next_chance=0.0,
+            skip_day_chance=0.0,
+            period_7d_chance=0.0,
+        )
+
+    sync.assert_awaited_once_with(store=None, period="30d", prefer_light=None)
+    # Pre-run settle mid of [60,120] = 90.
+    assert sleep_calls[0] == 90.0
+    assert app.state.creator_stats_scheduler_status["last_period"] == "30d"
+
+
+@pytest.mark.asyncio
+async def test_scheduler_arms_skip_after_riskish_failure(monkeypatch):
+    """Auth/risk failures should often force an extra quiet window."""
+    app = _scheduler_app()
+    result = {
+        "ok": False,
+        "status": "completed",
+        "active_accounts": 1,
+        "succeeded": 0,
+        "failed": 1,
+        "results": [
+            {
+                "account_id": "acc-1",
+                "account_synced": False,
+                "error": "re-login required / 风控",
+            }
+        ],
+    }
+    sleep_calls: list[float] = []
+    phases: list[str] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        state = app.state.creator_stats_scheduler_status
+        phases.append(str(state.get("status")))
+        if len(sleep_calls) >= 2:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(app_module.random, "random", lambda: 0.0)  # always arm skip / no long-break chance roll fail
+    monkeypatch.setattr(app_module.random, "uniform", lambda a, b: a)
+    monkeypatch.setattr(app_module.random, "triangular", lambda a, b, c: 1.0)
+    with (
+        patch(
+            "backend.services.creator_stats.pipeline.sync_all_active_accounts",
+            new=AsyncMock(return_value=result),
+        ) as sync,
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _creator_stats_scheduler(
+            app,
+            1.0,
+            pre_run_delay=None,
+            post_success_long_break_chance=0.0,
+            risk_skip_next_chance=1.0,
+            skip_day_chance=0.0,
+            period_7d_chance=0.0,
+        )
+
+    # First cycle crawl failed; second cycle should be skipped without another sync.
+    sync.assert_awaited_once()
+    assert app.state.creator_stats_scheduler_status["status"] == "skipped"
+    assert app.state.creator_stats_scheduler_status.get("last_risk_skip_armed") is True
