@@ -154,7 +154,7 @@ function safeRedirect(raw: unknown): string {
         </NeonButton>
       </form>
 
-      <div class="mt-6 text-center text-xs text-slate-400">
+      <div class="mt-6 text-center text-xs text-slate-400 lg:hidden">
         <p>{{ t('login.version') }}</p>
       </div>
       </section>

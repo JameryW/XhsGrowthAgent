@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
 import BriefFileUpload from '@/components/BriefFileUpload.vue'
@@ -10,6 +11,7 @@ import { prefetchAgentTuiChunk, prewarmAgentSession } from '@/api/agent'
 import type { WorkflowPhase } from '@/types/workflow'
 
 const { t } = useI18n()
+const router = useRouter()
 const workflowStore = useWorkflowStore()
 const accountsStore = useAccountsStore()
 
@@ -78,24 +80,50 @@ function selectNiche(value: string) {
   hasManualNiche.value = true
 }
 
-// Load accounts and auto-select the active one
-onMounted(async () => {
+// Load accounts and auto-select the active one. A failed or empty account
+// list surfaces a localized error/empty state with a Settings entry — never a
+// 'default' pseudo-account (spec: multi-account "Do not").
+const accountsLoaded = ref(false)
+const accountsFetchFailed = ref(false)
+const accountsLoadFailed = computed(() =>
+  accountsLoaded.value && (accountsFetchFailed.value || Boolean(accountsStore.error))
+)
+const hasNoAccounts = computed(() =>
+  accountsLoaded.value && !accountsLoadFailed.value && accountsStore.accountOptions.length === 0
+)
+
+async function loadAccounts(options?: { force?: boolean }) {
+  accountsFetchFailed.value = false
+  try {
+    // fetchAccounts records failures in accountsStore.error instead of throwing.
+    await accountsStore.fetchAccounts(options)
+  } catch {
+    accountsFetchFailed.value = true
+  } finally {
+    accountsLoaded.value = true
+  }
+  if (accountsLoadFailed.value) return
+  // Auto-select active account
+  if (accountsStore.activeAccountId) {
+    accountId.value = accountsStore.activeAccountId
+  } else if (accountsStore.accountOptions.length > 0) {
+    accountId.value = accountsStore.accountOptions[0].id
+  }
+  applyNicheDefault()
+}
+
+function retryLoadAccounts() {
+  void loadAccounts({ force: true })
+}
+
+function goToAccountSettings() {
+  router.push('/settings?tab=xhs-accounts')
+}
+
+onMounted(() => {
   // Warm free-mode assets early — TUI chunk is ~500KB; omp cold start up to 60s.
   prefetchAgentTuiChunk()
-  try {
-    await accountsStore.fetchAccounts()
-    // Auto-select active account
-    if (accountsStore.activeAccountId) {
-      accountId.value = accountsStore.activeAccountId
-    } else if (accountsStore.accountOptions.length > 0) {
-      accountId.value = accountsStore.accountOptions[0].id
-    }
-    applyNicheDefault()
-  } catch {
-    // Accounts API unavailable — fallback to 'default'
-    accountId.value = 'default'
-    applyNicheDefault()
-  }
+  void loadAccounts()
 })
 
 // Follow the global active account when it changes while this form is alive.
@@ -256,13 +284,14 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
         <AppIcon name="Workflow" size="sm" variant="pink" />
         {{ t('home.form.workflowMode') }}
       </label>
-      <div class="grid grid-cols-3 gap-2" role="group" :aria-label="t('home.form.workflowMode')">
+      <div class="grid grid-cols-1 gap-2 min-[420px]:grid-cols-3" role="radiogroup" :aria-label="t('home.form.workflowMode')">
         <button
           v-for="m in modes"
           :key="m.value"
           type="button"
+          role="radio"
           @click="workflowMode = m.value"
-          :aria-pressed="workflowMode === m.value"
+          :aria-checked="workflowMode === m.value"
           :aria-label="`${t(m.labelKey)}: ${t(modeDescriptionKeys[m.value])}`"
           :class="[
             'relative flex min-h-[112px] flex-col items-center gap-1.5 rounded-xl border-2 p-3 text-center',
@@ -299,39 +328,71 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
 
     <!-- Account ID -->
     <div class="group">
-      <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
+      <label for="start-account" class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
         <AppIcon name="Lock" size="sm" variant="cyan" />
         {{ t('home.form.accountId') }}
       </label>
-      <div class="relative">
-        <select
-          v-model="accountId"
-          class="w-full pl-4 pr-10 py-3 rounded-xl border-2 border-slate-100 bg-slate-50/50 text-sm text-slate-700 font-medium
-                 transition-all duration-300 ease-out appearance-none dark:border-slate-700/55 dark:bg-slate-900/70 dark:text-slate-200
-                 focus:outline-none focus:border-neon-pink/40 focus:bg-white focus:shadow-neon-pink-sm dark:focus:bg-slate-900"
-        >
-          <option value="" disabled>{{ t('home.form.accountIdPlaceholder') }}</option>
-          <option v-for="acc in accountsStore.accountOptions" :key="acc.id" :value="acc.id">
-            {{ acc.name }}{{ acc.isActive ? ` (${t('settings.active')})` : '' }}
-          </option>
-        </select>
-        <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-          <AppIcon name="ChevronDown" size="sm" variant="cyan" />
+      <!-- Accounts failed to load: explicit error + recovery, never a silent 'default' pseudo-account. -->
+      <div v-if="accountsLoadFailed" role="alert" class="flex items-start gap-2 rounded-xl border-2 border-rose-100 bg-rose-50/60 p-3 dark:border-rose-500/25 dark:bg-rose-950/30">
+        <AppIcon name="WifiOff" size="sm" variant="pink" class="mt-0.5 shrink-0" />
+        <div class="min-w-0 flex-1">
+          <p class="text-xs font-medium text-rose-600 dark:text-rose-300">{{ t('home.form.accountsUnavailable') }}</p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <button type="button" class="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 dark:border-rose-500/30 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-950/40" @click="retryLoadAccounts">
+              <AppIcon name="RefreshCw" size="xs" variant="pink" aria-hidden="true" />
+              {{ t('common.retry') }}
+            </button>
+            <button type="button" class="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800" @click="goToAccountSettings">
+              <AppIcon name="Settings" size="xs" variant="cyan" aria-hidden="true" />
+              {{ t('home.form.manageAccounts') }}
+            </button>
+          </div>
         </div>
-        <div class="absolute inset-0 rounded-xl bg-gradient-to-r from-neon-pink/5 to-neon-cyan/5 opacity-0 group-focus-within:opacity-100 transition-opacity duration-300 pointer-events-none" />
       </div>
-      <p class="text-xs text-slate-400 mt-1.5 pl-1">{{ t('home.form.accountIdHelp') }}</p>
+      <!-- Loaded fine but no account exists yet: guide to account management. -->
+      <div v-else-if="hasNoAccounts" class="flex items-start gap-2 rounded-xl border-2 border-slate-100 bg-slate-50/50 p-3 dark:border-slate-700/55 dark:bg-slate-900/70">
+        <AppIcon name="Info" size="sm" variant="cyan" class="mt-0.5 shrink-0" />
+        <div class="min-w-0 flex-1">
+          <p class="text-xs font-medium text-slate-500 dark:text-slate-400">{{ t('home.form.noAccounts') }}</p>
+          <button type="button" class="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800" @click="goToAccountSettings">
+            <AppIcon name="Settings" size="xs" variant="cyan" aria-hidden="true" />
+            {{ t('home.form.manageAccounts') }}
+          </button>
+        </div>
+      </div>
+      <template v-else>
+        <div class="relative">
+          <select
+            id="start-account"
+            v-model="accountId"
+            class="w-full pl-4 pr-10 py-3 rounded-xl border-2 border-slate-100 bg-slate-50/50 text-sm text-slate-700 font-medium
+                   transition-all duration-300 ease-out appearance-none dark:border-slate-700/55 dark:bg-slate-900/70 dark:text-slate-200
+                   focus:outline-none focus:border-neon-pink/40 focus:bg-white focus:shadow-neon-pink-sm dark:focus:bg-slate-900"
+          >
+            <option value="" disabled>{{ t('home.form.accountIdPlaceholder') }}</option>
+            <option v-for="acc in accountsStore.accountOptions" :key="acc.id" :value="acc.id">
+              {{ acc.name }}{{ acc.isActive ? ` (${t('settings.active')})` : '' }}
+            </option>
+          </select>
+          <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+            <AppIcon name="ChevronDown" size="sm" variant="cyan" />
+          </div>
+          <div class="absolute inset-0 rounded-xl bg-gradient-to-r from-neon-pink/5 to-neon-cyan/5 opacity-0 group-focus-within:opacity-100 transition-opacity duration-300 pointer-events-none" />
+        </div>
+        <p class="text-xs text-slate-400 mt-1.5 pl-1">{{ t('home.form.accountIdHelp') }}</p>
+      </template>
     </div>
 
     <!-- Topic (optional, trend mode only) -->
     <div v-if="workflowMode === 'trend'" class="group">
-      <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
+      <label for="start-topic" class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
         <AppIcon name="Sparkles" size="sm" variant="purple" />
         {{ t('home.form.topic') }}
         <span class="text-[10px] font-normal tracking-normal normal-case text-slate-300 bg-slate-100 px-1.5 py-0.5 rounded-full dark:bg-slate-800 dark:text-slate-400">{{ t('common.optional') }}</span>
       </label>
       <div class="relative">
         <input
+          id="start-topic"
           v-model="topic"
           type="text"
           class="w-full pl-4 pr-4 py-3 rounded-xl border-2 border-slate-100 bg-slate-50/50 text-sm text-slate-700 font-medium
@@ -367,12 +428,13 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
 
       <!-- Text input (disabled when PDF is uploaded) -->
       <div class="group">
-        <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
+        <label for="start-brief-text" class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
           <AppIcon name="FileText" size="sm" variant="pink" />
           {{ t('home.form.briefText') }}
         </label>
         <div class="relative">
           <textarea
+            id="start-brief-text"
             v-model="briefText"
             rows="6"
             :disabled="hasPdfUpload"
@@ -407,7 +469,7 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
           :key="n.value"
           @click="selectNiche(n.value)"
           :class="[
-            'group/chip relative flex items-center gap-2 px-3.5 py-2 rounded-full border-2 text-sm font-medium',
+            'group/chip relative flex min-h-11 items-center gap-2 px-3.5 py-2 rounded-full border-2 text-sm font-medium',
             'transition-all duration-300 ease-out cursor-pointer select-none',
             niche === n.value
               ? 'border-neon-pink/50 bg-gradient-to-r from-neon-pink/10 to-neon-peach/10 text-neon-pinkDark shadow-neon-pink-sm scale-[1.02]'
@@ -524,22 +586,28 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
             <span class="text-xs font-semibold text-slate-700 truncate">{{ t('home.form.dryRun') }}</span>
           </div>
           <button
+            type="button"
             @click="dryRun = !dryRun"
-            :class="[
-              'relative w-10 h-6 rounded-full transition-all duration-300 ease-out cursor-pointer shrink-0',
-              dryRun
-                ? 'bg-gradient-to-r from-teal-400 to-teal-500 shadow-neon-cyan-sm'
-                : 'bg-slate-200'
-            ]"
+            class="flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center"
             role="switch"
             :aria-checked="dryRun"
+            :aria-label="t('home.form.dryRun')"
           >
             <span
               :class="[
-                'absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-md transition-all duration-300 ease-out',
-                dryRun ? 'translate-x-4' : 'translate-x-0'
+                'relative block w-10 h-6 rounded-full transition-all duration-300 ease-out',
+                dryRun
+                  ? 'bg-gradient-to-r from-teal-400 to-teal-500 shadow-neon-cyan-sm'
+                  : 'bg-slate-200'
               ]"
-            />
+            >
+              <span
+                :class="[
+                  'absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-md transition-all duration-300 ease-out',
+                  dryRun ? 'translate-x-4' : 'translate-x-0'
+                ]"
+              />
+            </span>
           </button>
         </div>
 
@@ -553,22 +621,28 @@ defineExpose({ getConfig, uploadPendingPdf, pendingPdfFile })
             <span class="text-xs font-semibold text-slate-700 truncate">{{ t('home.form.autoPublish') }}</span>
           </div>
           <button
+            type="button"
             @click="autoPublish = !autoPublish"
-            :class="[
-              'relative w-10 h-6 rounded-full transition-all duration-300 ease-out cursor-pointer shrink-0',
-              autoPublish
-                ? 'bg-gradient-to-r from-neon-pink to-neon-peach shadow-neon-pink-sm'
-                : 'bg-slate-200'
-            ]"
+            class="flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center"
             role="switch"
             :aria-checked="autoPublish"
+            :aria-label="t('home.form.autoPublish')"
           >
             <span
               :class="[
-                'absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-md transition-all duration-300 ease-out',
-                autoPublish ? 'translate-x-4' : 'translate-x-0'
+                'relative block w-10 h-6 rounded-full transition-all duration-300 ease-out',
+                autoPublish
+                  ? 'bg-gradient-to-r from-neon-pink to-neon-peach shadow-neon-pink-sm'
+                  : 'bg-slate-200'
               ]"
-            />
+            >
+              <span
+                :class="[
+                  'absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-md transition-all duration-300 ease-out',
+                  autoPublish ? 'translate-x-4' : 'translate-x-0'
+                ]"
+              />
+            </span>
           </button>
         </div>
       </div>

@@ -52,6 +52,9 @@ const selectedAccountNiche = computed(() =>
 )
 const hasSelectedAccount = computed(() => Boolean(formConfig.value.accountId && selectedAccountName.value))
 
+// Surface required-check failures near the primary CTA (hint only, no gating).
+const checklistBlocked = computed(() => checklistRef.value?.readiness?.status === 'blocked')
+
 const handleAccountChange = (accountId: string) => {
   // Keep the summary Hero in sync with the form's internal selection. The form
   // remains the source of truth for the complete submitted configuration.
@@ -180,7 +183,7 @@ const confirmStart = async () => {
       </section>
 
       <!-- Pre-filled topic from analytics -->
-      <div v-if="prefilledTopic" class="mb-3 md:mb-4 p-3 md:p-4 rounded-lg liquid-glass-teal liquid-glass-hover flex items-center gap-2">
+      <div v-if="prefilledTopic" class="p-3 md:p-4 rounded-lg liquid-glass-teal liquid-glass-hover flex items-center gap-2">
         <AppIcon name="Sparkles" size="sm" variant="cyan" />
         <div class="flex-1 min-w-0">
           <span class="text-[10px] md:text-xs text-teal-500 font-medium">{{ t('home.recommendedTopic') }}</span>
@@ -214,6 +217,14 @@ const confirmStart = async () => {
           @account-change="handleAccountChange"
           @submit="handleSubmit"
         />
+        <p
+          v-if="checklistBlocked"
+          role="status"
+          class="mt-3 flex items-start gap-1.5 rounded-lg border border-amber-200/70 bg-amber-50/80 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-300"
+        >
+          <AppIcon name="AlertTriangle" size="sm" variant="peach" class="mt-0.5 shrink-0" aria-hidden="true" />
+          <span>{{ t('home.checklistBlockedHint') }}</span>
+        </p>
       </section>
 
       <aside class="rounded-xl border border-slate-200/70 bg-white/80 p-4 shadow-sm md:rounded-2xl md:p-6 dark:border-slate-700/60 dark:bg-slate-900/70" aria-labelledby="home-shortcuts-title">

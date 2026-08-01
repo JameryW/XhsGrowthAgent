@@ -93,10 +93,12 @@ describe('WorkflowStartForm account niche defaults', () => {
     expect(wrapper.text()).toContain('上传商单 Brief，让 AI 按要求完成创作')
     expect(wrapper.text()).toContain('与智能体对话，自由创作、评估并发布')
 
-    const modeButtons = wrapper.findAll('button[aria-pressed]')
+    const modeButtons = wrapper.findAll('button[role="radio"]')
     expect(modeButtons).toHaveLength(3)
     expect(modeButtons[0].classes()).toContain('min-h-[112px]')
+    expect(modeButtons[0].attributes('aria-checked')).toBe('true')
     await modeButtons[2].trigger('click')
     expect((wrapper.vm as any).getConfig().workflowMode).toBe('free')
+    expect(modeButtons[2].attributes('aria-checked')).toBe('true')
   })
 })

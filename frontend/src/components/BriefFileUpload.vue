@@ -104,27 +104,20 @@ function clear() {
         {{ t('brief.uploadLabel') }}
       </label>
 
-      <div
+      <button
+        type="button"
         @dragover.prevent="isDragging = true"
         @dragleave.prevent="isDragging = false"
         @drop.prevent="handleDrop"
         @click="fileInputRef?.click()"
         :class="[
-          'relative flex flex-col items-center justify-center gap-3 p-6 rounded-xl border-2 cursor-pointer',
+          'relative flex w-full flex-col items-center justify-center gap-3 p-6 rounded-xl border-2 cursor-pointer',
           'transition-all duration-300 ease-out',
           isDragging
             ? 'border-neon-pink/50 bg-gradient-to-br from-neon-pink/10 to-neon-peach/5'
             : 'border-slate-100 bg-slate-50/50 hover:border-neon-pink/30 hover:bg-neon-pink/[0.02] hover:shadow-sm dark:border-slate-700/55 dark:bg-slate-900/70 dark:hover:border-neon-pink/40'
         ]"
       >
-        <input
-          ref="fileInputRef"
-          type="file"
-          accept=".pdf"
-          class="hidden"
-          @change="handleFileSelect"
-        />
-
         <div class="flex items-center justify-center w-10 h-10 rounded-full bg-neon-pink/10">
           <AppIcon name="Upload" size="md" variant="pink" />
         </div>
@@ -145,7 +138,16 @@ function clear() {
             <span class="text-sm font-medium">{{ t('brief.extracting') }}</span>
           </div>
         </div>
-      </div>
+      </button>
+
+      <!-- Hidden file picker opened by the dropzone button above (keyboard reachable). -->
+      <input
+        ref="fileInputRef"
+        type="file"
+        accept=".pdf"
+        class="hidden"
+        @change="handleFileSelect"
+      />
 
       <!-- Error display -->
       <div v-if="displayError" class="flex items-center gap-2 mt-2 p-3 rounded-xl bg-rose-50 border border-rose-200">
@@ -197,11 +199,12 @@ function clear() {
 
       <!-- Editable text preview -->
       <div>
-        <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
+        <label for="brief-preview-text" class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
           <AppIcon name="Pencil" size="sm" variant="cyan" />
           {{ t('brief.previewLabel') }}
         </label>
         <textarea
+          id="brief-preview-text"
           v-model="editableText"
           rows="8"
           class="w-full pl-4 pr-4 py-3 rounded-xl border-2 border-slate-100 bg-slate-50/50 text-sm text-slate-700 font-medium dark:border-slate-700/55 dark:bg-slate-900/70 dark:text-slate-200

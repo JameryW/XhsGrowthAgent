@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
 import NeonButton from '@/components/NeonButton.vue'
+import { useFocusTrap } from '@/composables/useFocusTrap'
 
 const { t } = useI18n()
 
@@ -23,6 +24,23 @@ const emit = defineEmits<{
   confirm: []
   cancel: []
 }>()
+
+// Dialog semantics: trap Tab inside while open, focus the primary action on
+// open, and restore focus to the trigger element on close (composable-owned).
+const focusTrap = useFocusTrap()
+const modalRef = ref<HTMLElement | null>(null)
+const confirmButtonRef = ref<InstanceType<typeof NeonButton> | null>(null)
+
+watch(() => props.isOpen, async (isOpen) => {
+  if (isOpen) {
+    await nextTick()
+    await focusTrap.activate(modalRef.value)
+    // Focus the primary action rather than the first focusable (cancel).
+    ;(confirmButtonRef.value?.$el as HTMLElement | undefined)?.focus()
+  } else {
+    focusTrap.deactivate()
+  }
+})
 
 const phaseLabel = (phase: string) => {
   const map: Record<string, string> = {
@@ -70,12 +88,19 @@ const expectedSteps = computed(() => {
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="isOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div
+        v-if="isOpen"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-start-title"
+        @keydown.esc="emit('cancel')"
+      >
         <!-- Backdrop -->
-        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="emit('cancel')" />
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" aria-hidden="true" @click="emit('cancel')" />
 
         <!-- Modal -->
-        <div class="relative liquid-glass-elevated rounded-2xl max-w-md w-full overflow-hidden">
+        <div ref="modalRef" class="relative liquid-glass-elevated rounded-2xl max-w-md w-full overflow-hidden">
           <!-- Header -->
           <div class="p-5 border-b border-slate-100">
             <div class="flex items-center gap-3">
@@ -83,7 +108,7 @@ const expectedSteps = computed(() => {
                 <AppIcon name="Rocket" size="md" variant="white" />
               </div>
               <div>
-                <h3 class="text-lg font-semibold text-slate-800">{{ t('home.confirm.title') }}</h3>
+                <h3 id="confirm-start-title" class="text-lg font-semibold text-slate-800">{{ t('home.confirm.title') }}</h3>
                 <p class="text-xs text-slate-400">{{ t('home.confirm.subtitle') }}</p>
               </div>
             </div>
@@ -160,7 +185,7 @@ const expectedSteps = computed(() => {
             <NeonButton variant="ghost" class="flex-1" @click="emit('cancel')" :disabled="isLoading">
               {{ t('common.cancel') }}
             </NeonButton>
-            <NeonButton variant="pink" class="flex-1" @click="emit('confirm')" :loading="isLoading">
+            <NeonButton ref="confirmButtonRef" variant="pink" class="flex-1" @click="emit('confirm')" :loading="isLoading">
               <span class="inline-flex items-center gap-2">
                 <AppIcon name="Rocket" size="sm" variant="white" />
                 {{ t('home.confirm.start') }}

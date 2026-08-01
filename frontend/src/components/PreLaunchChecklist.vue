@@ -195,14 +195,15 @@ defineExpose({ readiness })
     </div>
 
     <!-- Checklist items -->
-    <div v-else class="grid grid-cols-2 gap-0">
+    <div v-else class="grid grid-cols-1 gap-0 sm:grid-cols-2">
       <div
         v-for="(item, idx) in checklistItems"
         :key="item.id"
-        class="px-3 py-2 md:px-4 md:py-2.5 hover:bg-slate-50/50 transition-colors dark:bg-slate-800/70 dark:border-slate-700/50"
+        class="border-slate-100 px-3 py-2 md:px-4 md:py-2.5 hover:bg-slate-50/50 transition-colors dark:border-slate-700/50 dark:hover:bg-slate-800/70"
         :class="{
-          'border-r border-slate-100': idx % 2 === 0,
-          'border-b border-slate-100': idx < checklistItems.length - 2
+          'border-b': idx < checklistItems.length - 1,
+          'sm:border-b-0': idx >= checklistItems.length - 2,
+          'sm:border-r': idx % 2 === 0
         }"
       >
         <div class="flex items-start gap-2">
