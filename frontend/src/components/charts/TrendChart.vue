@@ -39,6 +39,15 @@ const neonColors = {
   purple: { main: '#8B5CF6', gradient: ['rgba(139,92,246,0.2)', 'rgba(139,92,246,0)'] },
 }
 
+// Static variant → border-class map. Interpolated classes like
+// `border-${variant}-200/30` are invisible to Tailwind's content scan and get
+// purged, so the tint never rendered.
+const VARIANT_BORDER_CLASS: Record<NonNullable<Props['variant']>, string> = {
+  pink: 'border-rose-200/30',
+  cyan: 'border-teal-200/30',
+  purple: 'border-violet-200/30',
+}
+
 // Accessibility: compute chart description for screen readers
 const chartDescription = computed(() => {
   if (props.data.length === 0) return t('charts.noData')
@@ -47,8 +56,12 @@ const chartDescription = computed(() => {
   const max = Math.max(...values)
   const avg = Math.round(values.reduce((a, b) => a + b, 0) / values.length)
   const trend = values[values.length - 1] > values[0] ? t('charts.trend.rising') : values[values.length - 1] < values[0] ? t('charts.trend.falling') : t('charts.trend.stable')
-  return `${props.title || t('charts.trendChart')}: ${min}-${max}, avg ${avg}, ${trend}`
+  return t('charts.trendSummary', { title: props.title || t('charts.trendChart'), min, max, avg, trend })
 })
+
+// Compact mode (mini charts under 140px, e.g. EvaluationOverview's 110px
+// trend): axis labels and split lines are crowded noise at that size.
+const isCompact = computed(() => props.height < 140)
 
 const chartOption = computed(() => {
   const colors = neonColors[props.variant]
@@ -69,6 +82,7 @@ const chartOption = computed(() => {
         lineStyle: { color: th.axisLine },
       },
       axisLabel: {
+        show: !isCompact.value,
         color: th.axisLabel,
         fontSize: 10,
       },
@@ -79,9 +93,11 @@ const chartOption = computed(() => {
         show: false,
       },
       splitLine: {
+        show: !isCompact.value,
         lineStyle: { color: th.splitLine },
       },
       axisLabel: {
+        show: !isCompact.value,
         color: th.axisLabel,
         fontSize: 10,
       },
@@ -129,8 +145,8 @@ const chartOption = computed(() => {
 
 <template>
   <div
-    class="rounded-xl p-6 transition-all duration-200 hover:shadow-lg bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55"
-    :class="`border-${props.variant === 'pink' ? 'rose' : props.variant === 'cyan' ? 'teal' : 'violet'}-200/30`"
+    class="rounded-xl md:rounded-2xl p-3 md:p-6 transition-all duration-200 hover:shadow-lg bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55"
+    :class="VARIANT_BORDER_CLASS[props.variant]"
     role="figure"
     :aria-label="chartDescription"
   >
@@ -140,8 +156,9 @@ const chartOption = computed(() => {
     </div>
 
     <!-- Empty state: without it, a no-data series rendered as a blank axes
-         box (EngagementChart already shows a placeholder). -->
-    <div v-if="props.data.length === 0" class="flex h-[220px] items-center justify-center rounded-lg border border-dashed border-slate-200 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500" role="status">
+         box (EngagementChart already shows a placeholder). Height follows the
+         chart's own height prop so the swap doesn't jump. -->
+    <div v-if="props.data.length === 0" class="flex items-center justify-center rounded-lg border border-dashed border-slate-200 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500" :style="{ height: `${props.height}px` }" role="status">
       {{ t('charts.noData') }}
     </div>
 

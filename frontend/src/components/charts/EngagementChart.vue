@@ -45,12 +45,25 @@ const neonColors = {
 // distinct, not a single monochrome bar set. Anchored to the metric palette.
 const CATEGORY_COLORS = ['#F43F5E', '#8B5CF6', '#14B8A6', '#F59E0B']
 
+// Static variant → border-class map. Interpolated classes like
+// `border-${variant}-200/30` are invisible to Tailwind's content scan and get
+// purged, so the tint never rendered.
+const VARIANT_BORDER_CLASS: Record<NonNullable<Props['variant']>, string> = {
+  pink: 'border-rose-200/30',
+  cyan: 'border-teal-200/30',
+  purple: 'border-violet-200/30',
+  peach: 'border-amber-200/30',
+}
+
 const totalValue = computed(() => props.data.reduce((sum, d) => sum + d.value, 0))
+// All-zero data is as empty as no data: four 0-height bars read as a broken
+// chart, so the template and the SR summary both treat it as the empty state.
+const hasChartData = computed(() => props.data.length > 0 && totalValue.value > 0)
 
 // Accessibility: compute chart description for screen readers
 const chartDescription = computed(() => {
-  if (props.data.length === 0) return t('charts.noData')
-  const total = props.data.reduce((sum, d) => sum + d.value, 0)
+  if (!hasChartData.value) return t('charts.noEngagementData')
+  const total = totalValue.value
   const maxCategory = props.data.reduce((max, d) => d.value > max.value ? d : max, props.data[0])
   return t('charts.engagementSummary', {
     total: formatNumber(total, locale.value),
@@ -126,8 +139,8 @@ const chartOption = computed(() => {
 
 <template>
   <div
-    class="rounded-xl p-6 transition-all duration-200 hover:shadow-lg bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55"
-    :class="`border-${props.variant === 'pink' ? 'rose' : props.variant === 'cyan' ? 'teal' : props.variant === 'purple' ? 'violet' : 'amber'}-200/30`"
+    class="rounded-xl md:rounded-2xl p-3 md:p-6 transition-all duration-200 hover:shadow-lg bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55"
+    :class="VARIANT_BORDER_CLASS[props.variant]"
     role="figure"
     :aria-label="chartDescription"
   >
@@ -140,7 +153,7 @@ const chartOption = computed(() => {
       <span v-if="totalValue > 0" class="text-slate-400 normal-case tracking-normal font-semibold tabular-nums">{{ formatNumber(totalValue, locale) }}</span>
     </div>
 
-    <div v-if="props.data.length === 0" class="flex h-[220px] items-center justify-center rounded-lg border border-dashed border-slate-200 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500" role="status">
+    <div v-if="!hasChartData" class="flex items-center justify-center rounded-lg border border-dashed border-slate-200 text-sm text-slate-400 dark:border-slate-700 dark:text-slate-500" :style="{ height: `${props.height}px` }" role="status">
       {{ t('charts.noEngagementData') }}
     </div>
 

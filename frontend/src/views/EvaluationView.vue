@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
@@ -17,6 +17,7 @@ import type { CreatorNoteStats, CreatorNotesPayload } from '@/api/analytics'
 import { useAccountsStore } from '@/stores/accounts'
 import { useToastStore } from '@/stores/toast'
 import { useLocalAccountBrowse } from '@/composables/useLocalAccountBrowse'
+import { useFocusTrap } from '@/composables/useFocusTrap'
 import {
   EVALUATION_VIEW_ACCOUNT_KEY,
   accountQuery,
@@ -508,6 +509,17 @@ const historicalRows = computed(() => {
 
 const visibleRowsCount = computed(() => sourceTab.value === 'workflow' ? workflowRows.value.length : historicalRows.value.length)
 const visibleRowsTotal = computed(() => sourceTab.value === 'workflow' ? listTotal.value : notesTotal.value)
+// 空态分流：有行但被当前搜索/筛选滤光 ≠ 账号下本来没有行（文档要求分开表达）。
+const underlyingRowsCount = computed(() => (sourceTab.value === 'workflow' ? listItems.value : notesItems.value).length)
+
+function clearFilters() {
+  searchQuery.value = ''
+  decisionFilter.value = 'all'
+}
+
+function goStartCreating() {
+  void router.push('/start')
+}
 
 function setSourceTab(tab: SourceTab) {
   sourceTab.value = tab
@@ -525,6 +537,19 @@ function openNoteDrawer(note: CreatorNoteStats) {
 function closeNoteDrawer() {
   drawerNoteId.value = ''
 }
+
+// Trap focus inside the note drawer while it is open and restore it on close
+// (same useFocusTrap pattern as the Analytics drill-down drawer).
+const noteDrawerFocusTrap = useFocusTrap()
+const noteDrawerRef = ref<HTMLElement | null>(null)
+watch(drawerNoteId, async (noteId) => {
+  if (noteId) {
+    await nextTick()
+    noteDrawerFocusTrap.activate(noteDrawerRef.value)
+  } else {
+    noteDrawerFocusTrap.deactivate()
+  }
+})
 
 function formatCompact(value: number | undefined): string {
   if (value == null) return '0'
@@ -782,7 +807,7 @@ function dimDescription(dim: string): string {
         </div>
 
         <section v-if="sourceTab === 'workflow'" class="filter-chips" role="group" :aria-label="t('evaluation.list.filterLabel')">
-          <button v-for="opt in ['all', 'approved', 'needs_revision', 'rejected']" :key="opt" type="button" class="filter-chip min-h-9" :class="{ 'filter-chip--active': decisionFilter === opt }" :aria-pressed="decisionFilter === opt" @click="setDecisionFilter(opt)">
+          <button v-for="opt in ['all', 'approved', 'needs_revision', 'rejected']" :key="opt" type="button" class="filter-chip min-h-11" :class="{ 'filter-chip--active': decisionFilter === opt }" :aria-pressed="decisionFilter === opt" @click="setDecisionFilter(opt)">
             {{ opt === 'all' ? t('evaluation.list.filterAll') : decisionLabel(opt) }}
           </button>
         </section>
@@ -805,11 +830,29 @@ function dimDescription(dim: string): string {
           <button type="button" class="min-h-11 shrink-0 rounded-lg border border-rose-200 px-3 text-xs font-medium hover:bg-rose-100" @click="loadNotes(selectedAccountId, true)">{{ t('evaluation.error.retry') }}</button>
         </div>
 
-        <EvaluationSkeleton v-if="(sourceTab === 'workflow' ? listLoading && !listItems.length : notesLoading && !notesItems.length)" />
+        <EvaluationSkeleton v-if="(sourceTab === 'workflow' ? listLoading && !listItems.length : notesLoading && !notesItems.length)" variant="list" />
 
+        <!-- 筛选无结果：有数据但被当前搜索/筛选滤光，给出清除筛选动作 -->
+        <div v-else-if="visibleRowsCount === 0 && underlyingRowsCount > 0 && !(sourceTab === 'workflow' ? listError : notesError)" class="empty-state">
+          <AppIcon name="SearchX" size="xl" variant="muted" />
+          <div class="empty-title">{{ t('evaluation.list.noMatch') }}</div>
+          <button type="button" class="load-more-btn min-h-11" @click="clearFilters">
+            {{ t('showcase.resetFilters') }}
+          </button>
+        </div>
+
+        <!-- 真空列表：按来源给出下一步动作 -->
         <div v-else-if="visibleRowsCount === 0 && !(sourceTab === 'workflow' ? listError : notesError)" class="empty-state">
           <AppIcon name="HelpCircle" size="xl" variant="muted" />
           <div class="empty-title">{{ sourceTab === 'workflow' ? t('evaluation.list.empty') : t('evaluation.stream.historicalEmpty') }}</div>
+          <button v-if="sourceTab === 'workflow'" type="button" class="min-h-11 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-md" @click="goStartCreating">
+            <AppIcon name="Plus" size="sm" variant="white" />
+            {{ t('nav.startWorkflow') }}
+          </button>
+          <button v-else type="button" class="min-h-11 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-md" @click="openSettings">
+            <AppIcon name="Settings" size="sm" variant="white" />
+            {{ t('creatorQuality.page.manageAccounts') }}
+          </button>
         </div>
 
         <div v-else class="eval-list">
@@ -871,7 +914,7 @@ function dimDescription(dim: string): string {
       </PageHeader>
 
       <!-- 加载中 -->
-      <EvaluationSkeleton v-if="detailLoading" />
+      <EvaluationSkeleton v-if="detailLoading" variant="detail" />
 
       <!-- 错误 -->
       <div v-else-if="detailError" class="error-card" role="alert">
@@ -982,10 +1025,12 @@ function dimDescription(dim: string): string {
     <Teleport to="body">
       <div
         v-if="drawerNoteId && selectedAccountId"
+        ref="noteDrawerRef"
         class="fixed inset-0 z-50 flex justify-end"
         role="dialog"
         aria-modal="true"
         :aria-label="t('creatorNoteQuality.title')"
+        @keydown.esc="closeNoteDrawer"
       >
         <div class="absolute inset-0 bg-black/40" @click="closeNoteDrawer" />
         <div class="relative h-full w-full max-w-md space-y-4 overflow-y-auto bg-white p-4 shadow-xl md:max-w-3xl md:p-6 dark:bg-slate-900">

@@ -243,7 +243,11 @@ function formatDataAsOf(value: string | null | undefined): string {
         <!-- RQGM 评估趋势（单篇视角） -->
         <div class="ov-card">
           <p class="ov-label">{{ t('evaluation.rqgmTrendLabel') }}</p>
-          <p v-if="trendLoading" class="ov-hint">{{ t('evaluation.trend.loading') }}</p>
+          <!-- Fixed 110px skeleton (the TrendChart below renders at height 110)
+               so the card doesn't jump when the trend arrives. -->
+          <div v-if="trendLoading" class="rounded-xl border border-slate-200/50 bg-white/90 p-3 dark:border-slate-700/55 dark:bg-slate-900/90" aria-busy="true">
+            <div class="h-[110px] animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
+          </div>
           <template v-else-if="hasTrend">
             <TrendChart :data="trendData" :height="110" />
             <div

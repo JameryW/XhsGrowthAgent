@@ -508,39 +508,52 @@ function csvCell(value: unknown): string {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
 
+// CSV export walks the full row set and builds a Blob — guard re-entry and
+// always report the outcome so the click is never silent.
+const isExportingCsv = ref(false)
+
 function exportPostsCsv() {
-  const headers = [
-    t('analytics.table.title'),
-    t('analytics.table.views'),
-    t('analytics.table.likes'),
-    t('analytics.table.comments'),
-    t('analytics.table.collects'),
-    t('analytics.table.shares'),
-    t('analytics.table.engagementRate'),
-    t('analytics.table.publishedAt'),
-  ]
-  const exportRows = tableUsesCanonicalHistory.value ? historicalNotes.value : analyticsStore.posts
-  const rows = exportRows.map(post => [
-    post.title,
-    post.views,
-    post.likes,
-    post.comments,
-    post.collects,
-    post.shares,
-    engagementRatePercent(
-      post.engagement_rate,
-      tableUsesCanonicalHistory.value ? 'fraction' : analyticsStore.performanceData?.engagement_rate_unit,
-    ),
-    post.published_at,
-  ])
-  const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n')
-  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `analytics-${analyticsStore.period}.csv`
-  link.click()
-  URL.revokeObjectURL(url)
+  if (isExportingCsv.value) return
+  isExportingCsv.value = true
+  try {
+    const headers = [
+      t('analytics.table.title'),
+      t('analytics.table.views'),
+      t('analytics.table.likes'),
+      t('analytics.table.comments'),
+      t('analytics.table.collects'),
+      t('analytics.table.shares'),
+      t('analytics.table.engagementRate'),
+      t('analytics.table.publishedAt'),
+    ]
+    const exportRows = tableUsesCanonicalHistory.value ? historicalNotes.value : analyticsStore.posts
+    const rows = exportRows.map(post => [
+      post.title,
+      post.views,
+      post.likes,
+      post.comments,
+      post.collects,
+      post.shares,
+      engagementRatePercent(
+        post.engagement_rate,
+        tableUsesCanonicalHistory.value ? 'fraction' : analyticsStore.performanceData?.engagement_rate_unit,
+      ),
+      post.published_at,
+    ])
+    const csv = [headers, ...rows].map(row => row.map(csvCell).join('\n'))
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `analytics-${analyticsStore.period}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+    toastStore.success(t('analytics.exportSuccess', { count: rows.length }))
+  } catch {
+    toastStore.error(t('analytics.exportFailed'))
+  } finally {
+    isExportingCsv.value = false
+  }
 }
 
 // Model cost bar data
@@ -863,12 +876,14 @@ function startWithTopic(topic: string, niche?: string) {
         {{ t('analytics.error.retry') }}
       </button>
     </div>
-    <!-- Metric cards (5 columns on xl) -->
+    <!-- Metric cards (5 columns on xl; on mobile the 5th card spans the full
+         orphan row instead of sitting alone in one column) -->
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-5">
       <MetricCard
-        v-for="metric in metrics"
+        v-for="(metric, index) in metrics"
         :key="metric.title"
         v-bind="metric"
+        :class="index === metrics.length - 1 ? 'col-span-2 sm:col-span-1' : ''"
       />
     </div>
 
@@ -928,19 +943,25 @@ function startWithTopic(topic: string, niche?: string) {
 
     <!-- Charts -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-5">
-      <Suspense>
-        <TrendChart
-          :data="trendData"
-          :title="t('analytics.recentPerformanceTrend')"
-          variant="cyan"
-          :height="220"
-        />
-        <template #fallback>
-          <div class="rounded-xl md:rounded-2xl p-3 md:p-6 liquid-glass">
-            <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
-          </div>
-        </template>
-      </Suspense>
+      <div>
+        <Suspense>
+          <TrendChart
+            :data="trendData"
+            :title="t('analytics.recentPerformanceTrend')"
+            variant="cyan"
+            :height="220"
+          />
+          <template #fallback>
+            <div class="rounded-xl md:rounded-2xl p-3 md:p-6 bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55">
+              <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
+            </div>
+          </template>
+        </Suspense>
+        <!-- The trend is computed from the ≤20 loaded posts while the
+             engagement chart uses server period totals — note the differing
+             scopes so the two are not read as the same measure. -->
+        <p class="mt-1.5 px-1 text-[11px] leading-4 text-slate-400 dark:text-slate-500">{{ t('analytics.trendScopeNote') }}</p>
+      </div>
       <Suspense>
         <EngagementChart
           :data="engagementData"
@@ -949,7 +970,7 @@ function startWithTopic(topic: string, niche?: string) {
           :height="220"
         />
         <template #fallback>
-          <div class="rounded-xl md:rounded-2xl p-3 md:p-6 liquid-glass">
+          <div class="rounded-xl md:rounded-2xl p-3 md:p-6 bg-white/90 backdrop-blur-sm border border-slate-200/50 dark:bg-slate-900/90 dark:border-slate-700/55">
             <div class="h-[220px] rounded-lg bg-slate-100 animate-pulse dark:bg-slate-800" />
           </div>
         </template>
@@ -972,7 +993,8 @@ function startWithTopic(topic: string, niche?: string) {
         </div>
         <button
           type="button"
-          class="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          class="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          :disabled="isExportingCsv"
           @click="exportPostsCsv"
         >
           <AppIcon name="Download" size="sm" variant="cyan" aria-hidden="true" />
@@ -1121,6 +1143,7 @@ function startWithTopic(topic: string, niche?: string) {
       role="dialog"
       aria-modal="true"
       :aria-label="t('analytics.detail.title')"
+      @keydown.esc="closePostDetail"
     >
       <div class="absolute inset-0 bg-black/40" @click="closePostDetail" />
       <div class="relative w-full max-w-md h-full overflow-y-auto bg-white dark:bg-slate-900 shadow-xl p-4 md:p-6 space-y-4">
