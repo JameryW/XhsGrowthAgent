@@ -195,6 +195,41 @@ For horizontal layouts that overflow on mobile (< 320px viewport):
 
 ---
 
+## Tailwind Class Names Must Be Static (No Dynamic Interpolation)
+
+> **Forbidden**: composing utility class names by interpolation, e.g.
+> `` `shadow-${color}-500/20` `` or `` `border-${variant}-200/30` ``. Tailwind
+> scans source files as plain text at build time; interpolated fragments are
+> never seen, so the class is purged silently and the style simply never
+> renders — no build error, no warning.
+
+Use a static lookup map with every class name written out in full:
+
+```vue
+<script setup lang="ts">
+// Correct — full class names visible to Tailwind's content scan
+const variantStyles = {
+  pink: { iconShadow: 'shadow-rose-500/20', border: 'border-rose-200/30' },
+  cyan: { iconShadow: 'shadow-teal-500/20', border: 'border-teal-200/30' },
+  purple: { iconShadow: 'shadow-violet-500/20', border: 'border-violet-200/30' },
+} as const
+</script>
+
+<template>
+  <!-- Wrong — purged at build time, shadow never renders -->
+  <!-- <div :class="`shadow-${variantColor}-500/20`"> -->
+
+  <div :class="variantStyles[props.variant].iconShadow">...</div>
+</template>
+```
+
+Fixed under this rule: `MetricCard.vue`, `MiniProgress.vue`,
+`skeletons/ContentCardSkeleton.vue`, `charts/TrendChart.vue`,
+`charts/EngagementChart.vue`. When adding a variant-driven style, audit the
+template for interpolated class fragments in the same commit.
+
+---
+
 ## AgentTUI tool_result Display (Terminal TUI)
 
 `AgentTUI.vue` renders tool results into an xterm.js terminal (not the Vue template), so it uses ANSI colors + `term.writeln` — **not** `t()` i18n keys or `<template>` strings. The terminal domain is exempt from the i18n rule above.

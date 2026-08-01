@@ -46,6 +46,29 @@ This shrinks the **duration** but does **not** cancel `animation-delay`. With `a
 
 ---
 
+## Convention: Global reduced-motion registry in `main.css`
+
+**What**: All blanket reduced-motion degradation lives in a single
+`@media (prefers-reduced-motion: reduce)` block in `src/styles/main.css`.
+It currently covers:
+
+- Tailwind animated utilities: `animate-pulse`, `animate-spin`, `animate-spin-slow`.
+- Component-level custom animation classes: `scale-bounce-animation`, `mesh-drift-3`, and Review's scoped loading spinner `.spin` (`@keyframes review-spin`).
+- Modal scale/fade transitions (`.modal-enter-active` / `.modal-leave-active`), killed via `transition: none`.
+- `html { scroll-behavior }`, downgraded to `auto`.
+
+**Rule for new animations**: register the new class name in that block in the
+same commit — do **not** write a per-component media query. Per-component
+entrance animations that use `animation-delay` + `fill-mode: backwards` still
+need their explicit `animation: none` entry (see the delay-hold gotcha above);
+the registry is the single place where both kinds live.
+
+**JS side**: `scrollIntoView` and other smooth-scroll calls must choose
+`behavior` via `useReducedMotion()` (`prefersReduced ? 'auto' : 'smooth'`,
+see `AccountScopeBar.vue`) instead of hardcoding `'smooth'`.
+
+---
+
 ## Pattern: Initial count-up with `AnimatedCounter.vue`
 
 **Problem**: `AnimatedCounter.vue` watches its `value` prop and animates from the previous value to the new one — but it **skips animation when `oldValue === undefined`** (the initial mount). So binding `:value="stats.total"` directly renders the final number with no count-up on first paint.

@@ -65,4 +65,8 @@ Publish approve default account = current review view account (not workspace).
 - Aggregate private content across accounts in a single list response
 - Retry `POST /workflow/start` (create-once)
 - Use `default` as a real account id for scoped queries
+- Fall back to a `default` pseudo-account when the accounts API fails or
+  returns empty — surface a localized error/empty state with retry and a
+  Settings entry (`/settings?tab=xhs-accounts`) instead (see
+  `WorkflowStartForm.vue`)
 - Soft auto-browse when the user arrived via `/review/:threadId`
