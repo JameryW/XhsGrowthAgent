@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed, watch, type WatchStopHandle } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, computed, watch, type WatchStopHandle } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import NeonButton from '@/components/NeonButton.vue'
@@ -31,6 +31,7 @@ import {
 import { accountIdFromThreadId } from '@/utils/threadAccount'
 import { useCrossAccountHintsStore } from '@/stores/crossAccountHints'
 import { navigateToStart, prefetchStartWorkspace } from '@/utils/routePrefetch'
+import { useFocusTrap } from '@/composables/useFocusTrap'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -44,6 +45,7 @@ const destroyed = ref(false)
 const workflows = ref<WorkflowListItem[]>([])
 const workflowDetails = ref<Map<string, WorkflowStateResponse>>(new Map())
 const loadingDetailIds = ref<Set<string>>(new Set())
+const failedDetailIds = ref<Set<string>>(new Set())
 const listLoaded = ref(false)
 const error = ref<string | null>(null)
 const expandedThreadId = ref<string | null>(null)
@@ -160,6 +162,8 @@ const DETAIL_CONCURRENCY = 3
 
 function queueDetail(threadId: string) {
   if (workflowDetails.value.has(threadId) || loadingDetailIds.value.has(threadId)) return
+  // A fresh attempt clears any earlier failure marker for this thread.
+  failedDetailIds.value.delete(threadId)
   pendingDetailIds.add(threadId)
   loadingDetailIds.value.add(threadId)
   scheduleDetailPump()
@@ -180,13 +184,18 @@ function pumpDetailQueue() {
     activeDetailLoads += 1
     getWorkflowStatus(tid, { suppressToast: true })
       .then((state) => { if (!destroyed.value) workflowDetails.value.set(tid, state) })
-      .catch(() => {})
+      .catch(() => { if (!destroyed.value) failedDetailIds.value.add(tid) })
       .finally(() => {
         loadingDetailIds.value.delete(tid)
         activeDetailLoads -= 1
         if (!destroyed.value && pendingDetailIds.size > 0) scheduleDetailPump()
       })
   }
+}
+
+/** Manual retry for a card whose detail fetch failed (collapsed inline row). */
+function retryDetail(threadId: string) {
+  queueDetail(threadId)
 }
 
 // Also lazy-load review content when expanded
@@ -660,7 +669,7 @@ function getEvaluationThresholds(tid: string): ScoreThresholds {
   return cardEvaluationThresholds.value.get(tid) ?? SCORE_THRESHOLDS
 }
 
-// Decision badge color tier
+// Decision badge color tier (Tailwind classes — dark variants included)
 const DECISION_KEYS: Record<string, string> = {
   approved: 'review.evaluation.decision.approved',
   needs_revision: 'review.evaluation.decision.needs_revision',
@@ -668,13 +677,17 @@ const DECISION_KEYS: Record<string, string> = {
 }
 
 function decisionClass(d: string | null | undefined): string {
-  if (d === 'approved') return 'decision-approved'
-  if (d === 'needs_revision') return 'decision-revision'
-  return 'decision-rejected'
+  if (d === 'approved') return 'bg-green-100 text-green-700 dark:bg-green-950/60 dark:text-green-300'
+  if (d === 'needs_revision') return 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+  return 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300'
 }
 
 function scoreClass(s: number | null | undefined, thresholds: ScoreThresholds = SCORE_THRESHOLDS): string {
-  return `score-${scoreTier(s, thresholds)}`
+  const tier = scoreTier(s, thresholds)
+  if (tier === 'pass') return 'text-green-600 dark:text-green-400'
+  if (tier === 'warn') return 'text-amber-600 dark:text-amber-400'
+  if (tier === 'fail') return 'text-red-600 dark:text-red-400'
+  return 'text-slate-400'
 }
 
 // Dimension i18n label keys (mirror EvaluationView)
@@ -772,6 +785,27 @@ const publishAccountId = ref<string | null>(null)
 // Celebration effect
 const showCelebration = ref(false)
 
+// Publish modal a11y: focus first control on open, restore focus on close.
+const publishModalRef = ref<HTMLElement | null>(null)
+const publishModalTrap = useFocusTrap()
+watch(showPublishConfirm, async (open) => {
+  if (open) {
+    await nextTick()
+    publishModalTrap.activate(publishModalRef.value)
+  } else {
+    publishModalTrap.deactivate()
+  }
+})
+
+/** Spinner bound to the in-flight decision for this card (not the whole queue). */
+function isDecisionPending(tid: string, decision: ContentStatus): boolean {
+  return (
+    pendingDecisionThreadId.value === tid
+    && pendingDecision.value === decision
+    && reviewStore.isQueueItemSubmitting(tid)
+  )
+}
+
 // ── Image upload state ──
 const imageUploadMap = ref<Map<string, string[]>>(new Map())  // thread_id -> preview URLs
 const imageUploading = ref<Map<string, boolean>>(new Map())
@@ -839,6 +873,9 @@ function formatDate(iso: string) {
   const d = new Date(iso)
   return d.toLocaleString(locale.value || undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
+
+// Localized workflow-mode badge (mirrors History.vue modeLabel)
+const modeLabel = (mode: string) => mode === 'brief' ? t('home.briefMode') : t('home.trendMode')
 
 function goDashboard() {
   router.push({
@@ -1165,7 +1202,7 @@ const handleCancelConfirm = () => {
     </div>
 
     <!-- Card list -->
-    <div class="space-y-3">
+    <TransitionGroup name="review-card" tag="div" class="space-y-3">
       <div
         v-for="wf in workflows"
         :key="wf.thread_id"
@@ -1174,7 +1211,7 @@ const handleCancelConfirm = () => {
       >
         <!-- Card header: click to expand/collapse -->
         <div
-          class="px-4 md:px-5 py-3 flex min-h-11 items-center justify-between cursor-pointer liquid-glass-inset border-b border-white/10"
+          class="px-4 md:px-5 py-3 flex min-h-11 items-center justify-between cursor-pointer liquid-glass-inset border-b border-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900"
           @click="toggleExpand(wf.thread_id)"
           role="button"
           tabindex="0"
@@ -1187,7 +1224,7 @@ const handleCancelConfirm = () => {
             <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
             <span class="text-sm font-semibold text-slate-800 truncate">{{ wf.label || t('review.emptyState.phaseReviewing') }}</span>
             <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 shrink-0">{{ t('review.emptyState.phaseReviewing') }}</span>
-            <span v-if="wf.workflow_mode" class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 shrink-0">{{ wf.workflow_mode }}</span>
+            <span v-if="wf.workflow_mode" class="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 shrink-0">{{ modeLabel(wf.workflow_mode) }}</span>
           </div>
           <div class="flex items-center gap-2 shrink-0 ml-2">
             <span class="text-[10px] text-slate-400">{{ formatDate(wf.updated_at || wf.created_at) }}</span>
@@ -1208,6 +1245,16 @@ const handleCancelConfirm = () => {
           <div v-else-if="loadingDetailIds.has(wf.thread_id)" class="px-4 py-3 space-y-2">
             <div class="h-3 w-3/4 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
             <div class="h-3 w-1/2 rounded bg-slate-100 animate-pulse dark:bg-slate-700" />
+          </div>
+          <div v-else-if="failedDetailIds.has(wf.thread_id)" class="flex items-center justify-between gap-2 px-4 py-2 md:px-5">
+            <span class="text-xs text-slate-400">{{ t('review.detailLoadFailed') }}</span>
+            <button
+              type="button"
+              class="min-h-11 px-3 text-xs font-medium text-rose-500 hover:text-rose-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900 rounded-lg"
+              @click="retryDetail(wf.thread_id)"
+            >
+              {{ t('common.retry') }}
+            </button>
           </div>
         </div>
 
@@ -1339,18 +1386,22 @@ const handleCancelConfirm = () => {
                     >
                       <img :src="url" class="w-full h-full object-cover" alt="" />
                       <button @click="removeImage(wf.thread_id, idx)"
-                        class="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-500 text-white flex items-center justify-center text-[8px] leading-none shadow hover:bg-rose-600 transition-colors"
-                      >×</button>
+                        type="button"
+                        :aria-label="t('review.removeImage', { n: idx + 1 })"
+                        class="group absolute top-0 right-0 flex h-11 w-11 items-start justify-end p-1 focus:outline-none"
+                      >
+                        <span class="flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[8px] leading-none text-white shadow transition-colors group-hover:bg-rose-600 group-focus-visible:bg-rose-600 group-focus-visible:ring-2 group-focus-visible:ring-rose-300">×</span>
+                      </button>
                     </div>
                   </div>
                   <!-- Upload trigger -->
                   <label v-if="getUploadedImages(wf.thread_id).length < 9"
-                    class="flex items-center justify-center gap-1.5 py-2 rounded-md border border-dashed border-slate-300 hover:border-amber-400 hover:bg-amber-50/30 transition-colors cursor-pointer text-xs text-slate-400 hover:text-amber-600"
+                    class="flex items-center justify-center gap-1.5 py-2 min-h-11 rounded-md border border-dashed border-slate-300 hover:border-amber-400 hover:bg-amber-50/30 transition-colors cursor-pointer text-xs text-slate-400 hover:text-amber-600 has-[:focus-visible]:border-amber-400 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-amber-300/50"
                     :class="imageUploading.get(wf.thread_id) ? 'opacity-50 pointer-events-none' : ''"
                   >
                     <AppIcon name="Upload" size="sm" variant="cyan" />
                     <span>{{ imageUploading.get(wf.thread_id) ? t('common.loadingState') : t('review.addImages') }}</span>
-                    <input type="file" accept="image/jpeg,image/png,image/webp" multiple class="hidden" :disabled="imageUploading.get(wf.thread_id)"
+                    <input type="file" accept="image/jpeg,image/png,image/webp" multiple class="sr-only" :disabled="imageUploading.get(wf.thread_id)"
                       @change="handleImageUpload(wf.thread_id, $event)" />
                   </label>
                 </div>
@@ -1526,13 +1577,13 @@ const handleCancelConfirm = () => {
                 </div>
               </div>
 
-              <!-- Action buttons -->
-              <div class="sticky bottom-0 z-10 -mx-1 flex flex-wrap gap-2 border-t border-slate-200/70 bg-white/90 px-1 py-3 pt-3 backdrop-blur-sm dark:bg-slate-950/90 dark:border-slate-700/60">
+              <!-- Action buttons (offset above the fixed mobile tab bar) -->
+              <div class="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:bottom-0 z-10 -mx-1 flex flex-wrap gap-2 border-t border-slate-200/70 bg-white/90 px-1 py-3 pt-3 backdrop-blur-sm dark:bg-slate-950/90 dark:border-slate-700/60">
                 <NeonButton
                   variant="cyan"
                   size="sm"
-                  :loading="reviewStore.isQueueItemSubmitting(wf.thread_id)"
-                  :disabled="reviewStore.isLoading"
+                  :loading="isDecisionPending(wf.thread_id, 'approved')"
+                  :disabled="reviewStore.isLoading || reviewStore.isQueueItemSubmitting(wf.thread_id)"
                   @click="requestDecision(wf.thread_id, 'approved')"
                 >
                   <span class="inline-flex items-center gap-1.5">
@@ -1544,8 +1595,8 @@ const handleCancelConfirm = () => {
                 <NeonButton
                   variant="purple"
                   size="sm"
-                  :loading="reviewStore.isQueueItemSubmitting(wf.thread_id)"
-                  :disabled="reviewStore.isLoading"
+                  :loading="isDecisionPending(wf.thread_id, 'needs_revision')"
+                  :disabled="reviewStore.isLoading || reviewStore.isQueueItemSubmitting(wf.thread_id)"
                   @click="setMSS(wf.thread_id, true); requestDecision(wf.thread_id, 'needs_revision')"
                 >
                   <span class="inline-flex items-center gap-1.5">
@@ -1558,7 +1609,8 @@ const handleCancelConfirm = () => {
                   variant="ghost"
                   size="sm"
                   class="border border-rose-200 !text-rose-500 hover:bg-rose-50"
-                  :disabled="reviewStore.isLoading"
+                  :loading="isDecisionPending(wf.thread_id, 'rejected')"
+                  :disabled="reviewStore.isLoading || reviewStore.isQueueItemSubmitting(wf.thread_id)"
                   @click="setMSS(wf.thread_id, true); requestDecision(wf.thread_id, 'rejected')"
                 >
                   <span class="inline-flex items-center gap-1.5">
@@ -1576,7 +1628,7 @@ const handleCancelConfirm = () => {
           </div>
         </div>
       </div>
-    </div>
+    </TransitionGroup>
   </div>
 
   <!-- Confirmation Modal -->
@@ -1593,16 +1645,23 @@ const handleCancelConfirm = () => {
   <!-- Publish Confirmation Modal -->
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="showPublishConfirm" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div
+        v-if="showPublishConfirm"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="review-publish-title"
+        @keydown.esc="showPublishConfirm = false"
+      >
         <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showPublishConfirm = false" />
-        <div class="relative liquid-glass-elevated rounded-xl md:rounded-2xl max-w-md w-full overflow-hidden">
+        <div ref="publishModalRef" class="relative liquid-glass-elevated rounded-xl md:rounded-2xl max-w-md w-full overflow-hidden">
           <div class="p-4 md:p-5 border-b border-slate-100">
             <div class="flex items-center gap-2 md:gap-3">
               <div class="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-gradient-to-br from-emerald-400 to-teal-400 flex items-center justify-center">
                 <AppIcon name="CheckCircle" size="md" variant="white" />
               </div>
               <div>
-                <h3 class="text-base md:text-lg font-semibold text-slate-800">{{ t('review.publishConfirm.title') }}</h3>
+                <h3 id="review-publish-title" class="text-base md:text-lg font-semibold text-slate-800">{{ t('review.publishConfirm.title') }}</h3>
                 <p class="text-xs text-slate-400">{{ t('review.publishConfirm.subtitle') }}</p>
               </div>
             </div>
@@ -1639,22 +1698,26 @@ const handleCancelConfirm = () => {
                 <button
                   type="button"
                   @click="publishMode = 'dry'"
+                  :aria-pressed="publishMode === 'dry'"
                   :class="['p-3 rounded-lg border text-left transition-all duration-200', publishMode === 'dry' ? 'border-teal-400 bg-teal-50 ring-1 ring-teal-300 dark:bg-teal-950/40 dark:ring-teal-500/40' : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/80 dark:hover:border-slate-600']"
                 >
                   <div class="flex items-center gap-1.5 mb-1">
                     <AppIcon name="FlaskConical" size="sm" variant="cyan" />
                     <span class="text-xs md:text-sm font-medium text-slate-700">{{ t('review.publishConfirm.dryCardTitle') }}</span>
+                    <AppIcon v-if="publishMode === 'dry'" name="CheckCircle" size="sm" variant="cyan" class="ml-auto" aria-hidden="true" />
                   </div>
                   <p class="text-[10px] text-slate-400">{{ t('review.publishConfirm.dryCardDesc') }}</p>
                 </button>
                 <button
                   type="button"
                   @click="publishMode = 'live'"
+                  :aria-pressed="publishMode === 'live'"
                   :class="['p-3 rounded-lg border text-left transition-all duration-200', publishMode === 'live' ? 'border-rose-400 bg-rose-50 ring-1 ring-rose-300 dark:bg-rose-950/40 dark:ring-rose-500/40' : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/80 dark:hover:border-slate-600']"
                 >
                   <div class="flex items-center gap-1.5 mb-1">
                     <AppIcon name="Send" size="sm" variant="pink" />
                     <span class="text-xs md:text-sm font-medium text-slate-700">{{ t('review.publishConfirm.liveCardTitle') }}</span>
+                    <AppIcon v-if="publishMode === 'live'" name="CheckCircle" size="sm" variant="pink" class="ml-auto" aria-hidden="true" />
                   </div>
                   <p class="text-[10px] text-slate-400">{{ t('review.publishConfirm.liveCardDesc') }}</p>
                 </button>
@@ -1694,15 +1757,18 @@ const handleCancelConfirm = () => {
 </template>
 
 <style scoped>
-/* Score color tiers (mirror EvaluationView) */
-.score-pass { color: #16a34a; }
-.score-warn { color: #d97706; }
-.score-fail { color: #dc2626; }
-
-/* Decision badge backgrounds */
-.decision-approved { background: #dcfce7; color: #15803d; }
-.decision-revision { background: #fef3c7; color: #b45309; }
-.decision-rejected { background: #fee2e2; color: #b91c1c; }
+/* Card list leave/reorder transition (decision removes a card from the queue).
+   The prefers-reduced-motion fallback is owned by the global block in main.css. */
+.review-card-leave-active {
+  transition: opacity 0.25s ease-in, transform 0.25s ease-in;
+}
+.review-card-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.review-card-move {
+  transition: transform 0.3s ease;
+}
 
 /* Spinner for loading icons */
 .spin { animation: review-spin 1s linear infinite; }

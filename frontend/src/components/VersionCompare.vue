@@ -43,16 +43,16 @@ const bestVersion = computed(() => {
 
 const gapSeverityClass = (severity: string): string => {
   switch (severity) {
-    case 'high': return 'text-rose-500 border-rose-300'
-    case 'medium': return 'text-amber-500 border-amber-300'
-    case 'low': return 'text-slate-400 border-slate-200'
-    default: return 'text-slate-400 border-slate-200'
+    case 'high': return 'text-rose-500 border-rose-300 dark:text-rose-300 dark:border-rose-500/30 dark:bg-rose-950/40'
+    case 'medium': return 'text-amber-500 border-amber-300 dark:text-amber-300 dark:border-amber-500/30 dark:bg-amber-950/40'
+    case 'low': return 'text-slate-400 border-slate-200 dark:text-slate-400 dark:border-slate-600/50 dark:bg-slate-800/50'
+    default: return 'text-slate-400 border-slate-200 dark:text-slate-400 dark:border-slate-600/50 dark:bg-slate-800/50'
   }
 }
 
 const suggestionPriorityClass = (priority: number): string => {
-  if (priority >= 8) return 'bg-rose-50 border-rose-300'
-  if (priority >= 5) return 'bg-amber-50 border-amber-200'
+  if (priority >= 8) return 'bg-rose-50 border-rose-300 dark:bg-rose-950/40 dark:border-rose-500/30'
+  if (priority >= 5) return 'bg-amber-50 border-amber-200 dark:bg-amber-950/40 dark:border-amber-500/30'
   return 'bg-slate-50 border-slate-200 dark:bg-slate-800/70 dark:border-slate-600/50'
 }
 
@@ -75,12 +75,12 @@ function handleConfirm() {
 
 function getVersionTypeColor(type: string): string {
   switch (type) {
-    case 'A': return 'border-teal-200 bg-teal-50 text-teal-600'
-    case 'B': return 'border-cyan-200 bg-cyan-50 text-cyan-600'
-    case 'C': return 'border-rose-200 bg-rose-50 text-rose-600'
-    case 'style_a': return 'border-violet-200 bg-violet-50 text-violet-600'
-    case 'style_b': return 'border-amber-200 bg-amber-50 text-amber-600'
-    case 'style_c': return 'border-emerald-200 bg-emerald-50 text-emerald-600'
+    case 'A': return 'border-teal-200 bg-teal-50 text-teal-600 dark:border-teal-500/30 dark:bg-teal-950/40 dark:text-teal-300'
+    case 'B': return 'border-cyan-200 bg-cyan-50 text-cyan-600 dark:border-cyan-500/30 dark:bg-cyan-950/40 dark:text-cyan-300'
+    case 'C': return 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-500/30 dark:bg-rose-950/40 dark:text-rose-300'
+    case 'style_a': return 'border-violet-200 bg-violet-50 text-violet-600 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300'
+    case 'style_b': return 'border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-300'
+    case 'style_c': return 'border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-300'
     default: return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-600/50 dark:bg-slate-800/70 dark:text-slate-300'
   }
 }
@@ -89,12 +89,15 @@ function getCardClass(version: ContentVersion): string[] {
   const isSelected = selectedVersionId.value === version.version_id
   const isBest = version.version_id === bestVersion.value?.version_id
 
-  const classes = ['relative rounded-lg p-4 border-2 cursor-pointer transition-all duration-300']
+  const classes = [
+    'relative rounded-lg p-4 border-2 cursor-pointer transition-all duration-300',
+    'focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900',
+  ]
 
   if (isSelected) {
-    classes.push('border-teal-400 bg-teal-50/80 scale-[1.02]', 'shadow-lg shadow-teal-500/20', 'ring-2 ring-teal-400/30')
+    classes.push('border-teal-400 bg-teal-50/80 scale-[1.02] dark:border-teal-500/60 dark:bg-teal-950/40', 'shadow-lg shadow-teal-500/20', 'ring-2 ring-teal-400/30')
   } else if (isBest) {
-    classes.push('border-amber-300 bg-amber-50/50 hover:border-amber-400 hover:bg-amber-50/80', 'hover:scale-[1.01]', 'ring-1 ring-amber-300/20')
+    classes.push('border-amber-300 bg-amber-50/50 hover:border-amber-400 hover:bg-amber-50/80 dark:border-amber-500/40 dark:bg-amber-950/30 dark:hover:border-amber-500/60 dark:hover:bg-amber-950/50', 'hover:scale-[1.01]', 'ring-1 ring-amber-300/20')
   } else {
     classes.push('border-slate-100 hover:border-slate-200 hover:bg-slate-50/50 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800/50', 'hover:scale-[1.01]')
   }
@@ -129,7 +132,7 @@ function getCardClass(version: ContentVersion): string[] {
             <div class="flex items-center justify-between">
               <span class="text-xs font-medium text-slate-700">{{ gap.dimension }}</span>
               <span :class="['text-xs px-2 py-0.5 rounded-full', gapSeverityClass(gap.severity)]">
-                {{ gap.severity }}
+                {{ t(`versionCompare.severity.${gap.severity}`) }}
               </span>
             </div>
             <p class="text-xs text-slate-500 mt-1">{{ gap.description }}</p>
@@ -157,7 +160,7 @@ function getCardClass(version: ContentVersion): string[] {
       </div>
 
       <!-- Viral Patterns -->
-      <div v-if="props.analysis.viral_patterns.length > 0" class="mt-4 pt-4 border-t border-slate-100">
+      <div v-if="props.analysis.viral_patterns.length > 0" class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700/60">
         <h4 class="text-xs text-slate-500 font-medium mb-2">{{ t('versionCompare.viralPatterns') }}</h4>
         <div class="flex flex-wrap gap-2">
           <span
@@ -182,7 +185,7 @@ function getCardClass(version: ContentVersion): string[] {
           <div class="text-xs text-slate-400 uppercase tracking-wide">{{ t('versionCompare.chooseVersion') }}</div>
         </div>
         <!-- Best recommendation badge -->
-        <div v-if="bestVersion" class="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-600 text-xs font-medium flex items-center gap-1.5">
+        <div v-if="bestVersion" class="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-600 text-xs font-medium flex items-center gap-1.5 dark:bg-amber-950/40 dark:border-amber-500/30 dark:text-amber-300">
           <AppIcon name="Star" size="sm" variant="peach" aria-hidden="true" />
           {{ t('versionCompare.bestRecommendation') }}: {{ bestVersion.version_type }}
         </div>
@@ -260,7 +263,7 @@ function getCardClass(version: ContentVersion): string[] {
           </div>
 
           <!-- Changes Summary -->
-          <div class="mt-3 pt-3 border-t border-slate-100">
+          <div class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700/60">
             <p class="text-xs text-slate-400">{{ version.changes_summary }}</p>
           </div>
 
@@ -273,10 +276,10 @@ function getCardClass(version: ContentVersion): string[] {
 
       <!-- Selection Indicator -->
       <Transition name="fade">
-        <div v-if="selectedVersion" class="mt-4 p-3 rounded-lg bg-teal-50 border border-teal-200">
+        <div v-if="selectedVersion" class="mt-4 p-3 rounded-lg bg-teal-50 border border-teal-200 dark:bg-teal-950/40 dark:border-teal-500/30">
           <div class="flex items-center gap-2">
             <AppIcon name="CheckCircle" size="sm" variant="cyan" />
-            <span class="text-xs text-teal-600 font-medium">
+            <span class="text-xs text-teal-600 font-medium dark:text-teal-300">
               {{ t('versionCompare.selected', { type: selectedVersion.version_type, title: selectedVersion.title }) }}
             </span>
           </div>
@@ -284,7 +287,7 @@ function getCardClass(version: ContentVersion): string[] {
       </Transition>
 
       <!-- Actions -->
-      <div class="flex gap-3 mt-5 pt-4 border-t border-slate-100">
+      <div class="flex gap-3 mt-5 pt-4 border-t border-slate-100 dark:border-slate-700/60">
         <NeonButton
           variant="cyan"
           :disabled="!selectedVersionId || props.isLoading"

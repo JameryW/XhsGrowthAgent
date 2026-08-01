@@ -133,7 +133,7 @@ const styles = {
                   </span>
                 </div>
               </div>
-              <div v-if="value.length > 5" class="text-[11px] text-slate-300 ml-1">+{{ value.length - 5 }} more</div>
+              <div v-if="value.length > 5" class="text-[11px] text-slate-300 ml-1">{{ t('contentCard.moreItems', { count: value.length - 5 }) }}</div>
             </div>
           </div>
 

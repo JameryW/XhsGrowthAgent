@@ -36,18 +36,21 @@ const orderedVersions = computed(() => [...props.versions])
 // Variant accent color by style index — mirrors VersionCompare's style_a/b/c palette
 function getStyleColor(version: ContentVersion): string {
   switch (version.version_id) {
-    case 'style_a': return 'border-violet-200 bg-violet-50 text-violet-600'
-    case 'style_b': return 'border-amber-200 bg-amber-50 text-amber-600'
-    case 'style_c': return 'border-emerald-200 bg-emerald-50 text-emerald-600'
+    case 'style_a': return 'border-violet-200 bg-violet-50 text-violet-600 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300'
+    case 'style_b': return 'border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-300'
+    case 'style_c': return 'border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-300'
     default: return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-600 dark:bg-slate-800/70 dark:text-slate-300'
   }
 }
 
 function getCardClass(version: ContentVersion): string[] {
   const isSelected = selectedVersionId.value === version.version_id
-  const classes = ['relative rounded-lg p-4 border-2 cursor-pointer transition-all duration-300']
+  const classes = [
+    'relative rounded-lg p-4 border-2 cursor-pointer transition-all duration-300',
+    'focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/30 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900',
+  ]
   if (isSelected) {
-    classes.push('border-teal-400 bg-teal-50/80 scale-[1.02]', 'shadow-lg shadow-teal-500/20', 'ring-2 ring-teal-400/30')
+    classes.push('border-teal-400 bg-teal-50/80 scale-[1.02] dark:border-teal-500/60 dark:bg-teal-950/40', 'shadow-lg shadow-teal-500/20', 'ring-2 ring-teal-400/30')
   } else {
     classes.push('border-slate-100 hover:border-slate-200 hover:bg-slate-50/50 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800/50', 'hover:scale-[1.01]')
   }
@@ -148,7 +151,7 @@ function handleConfirm() {
         </div>
 
         <!-- Style suggestion -->
-        <div v-if="version.style_suggestion" class="mt-3 pt-3 border-t border-slate-100">
+        <div v-if="version.style_suggestion" class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700/60">
           <p class="text-xs text-teal-600">💡 {{ version.style_suggestion }}</p>
         </div>
       </div>
@@ -156,10 +159,10 @@ function handleConfirm() {
 
     <!-- Selection indicator -->
     <Transition name="fade">
-      <div v-if="selectedVersion" class="mt-4 p-3 rounded-lg bg-teal-50 border border-teal-200">
+      <div v-if="selectedVersion" class="mt-4 p-3 rounded-lg bg-teal-50 border border-teal-200 dark:bg-teal-950/40 dark:border-teal-500/30">
         <div class="flex items-center gap-2">
           <AppIcon name="CheckCircle" size="sm" variant="cyan" />
-          <span class="text-xs text-teal-600 font-medium">
+          <span class="text-xs text-teal-600 font-medium dark:text-teal-300">
             {{ t('styleCompare.selected', { style: selectedVersion.style_name || selectedVersion.title, title: selectedVersion.title }) }}
           </span>
         </div>
@@ -167,7 +170,7 @@ function handleConfirm() {
     </Transition>
 
     <!-- Actions -->
-    <div class="flex gap-3 mt-5 pt-4 border-t border-slate-100">
+    <div class="flex gap-3 mt-5 pt-4 border-t border-slate-100 dark:border-slate-700/60">
       <NeonButton
         variant="cyan"
         :disabled="!selectedVersionId || props.isLoading"

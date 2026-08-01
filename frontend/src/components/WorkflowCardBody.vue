@@ -86,12 +86,12 @@ const has = (v: unknown) => !!v && typeof v === 'object' && Object.keys(v as Rec
         <div v-for="color in (detail.visual_plan as any).color_palette.slice(0, 4)" :key="color" class="w-2.5 h-2.5 rounded-full border border-white shadow-sm" :style="{ backgroundColor: color }" />
       </div>
       <template v-if="has(detail.analytics)">
-        <span v-if="(detail.analytics as any).views !== undefined" class="text-[10px] text-slate-300">{{ formatNum((detail.analytics as any).views) }} <span class="text-slate-200">views</span></span>
-        <span v-if="(detail.analytics as any).likes !== undefined" class="text-[10px] text-pink-400">{{ formatNum((detail.analytics as any).likes) }} <span class="text-slate-200">likes</span></span>
+        <span v-if="(detail.analytics as any).views !== undefined" class="text-[10px] text-slate-300">{{ formatNum((detail.analytics as any).views) }} <span class="text-slate-200">{{ t('replay.views') }}</span></span>
+        <span v-if="(detail.analytics as any).likes !== undefined" class="text-[10px] text-pink-400">{{ formatNum((detail.analytics as any).likes) }} <span class="text-slate-200">{{ t('replay.likes') }}</span></span>
         <span v-if="(detail.analytics as any).engagement_rate !== undefined" class="text-[10px] text-violet-400">{{ ((detail.analytics as any).engagement_rate * 100).toFixed(1) }}%</span>
       </template>
       <template v-if="has(detail.ripple_prediction)">
-        <span v-if="detail.ripple_prediction!.viral_probability != null" class="text-[10px] text-violet-400">{{ (detail.ripple_prediction!.viral_probability * 100).toFixed(0) }}% viral</span>
+        <span v-if="detail.ripple_prediction!.viral_probability != null" class="text-[10px] text-violet-400">{{ t('workflowCardBody.viralProbability', { pct: (detail.ripple_prediction!.viral_probability * 100).toFixed(0) }) }}</span>
       </template>
     </div>
   </div>
