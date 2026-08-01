@@ -99,6 +99,12 @@ const isPromotingWorkspace = ref(false)
 /** True while showing cached rows and a background revalidate is in flight. */
 const isRevalidating = ref(false)
 
+/** Server-side offset pagination — the first page comes from fetchWorkflows. */
+const HISTORY_PAGE_SIZE = 50
+const isLoadingMore = ref(false)
+const loadMoreFailed = ref(false)
+const hasMoreWorkflows = computed(() => workflows.value.length < total.value)
+
 /** Client-side status filter for the currently viewed account list (also in ?status=). */
 type StatusFilter = 'all' | WorkflowStatus
 const VALID_STATUS_FILTERS = new Set<string>([
@@ -354,7 +360,7 @@ async function fetchWorkflows(opts: FetchOpts = {}) {
 
     const result = await listWorkflows(
       {
-        limit: 50,
+        limit: HISTORY_PAGE_SIZE,
         ...(accountId ? { account_id: accountId } : {}),
       },
       { signal: abort.signal },
@@ -363,6 +369,7 @@ async function fetchWorkflows(opts: FetchOpts = {}) {
 
     workflows.value = result.workflows
     total.value = result.total
+    loadMoreFailed.value = false
     if (accountId) {
       setAccountTotal(accountId, result.total)
       setCachedList(accountId, result.workflows, result.total)
@@ -392,6 +399,41 @@ async function fetchWorkflows(opts: FetchOpts = {}) {
       isRefreshing.value = false
       isRevalidating.value = false
     }
+  }
+}
+
+/** Append the next offset page; a newer fetch/account switch invalidates it. */
+async function loadMoreWorkflows() {
+  if (!hasMoreWorkflows.value || isLoadingMore.value || isLoading.value) return
+  const gen = fetchGeneration
+  const accountId = resolveHistoryAccountId()
+  isLoadingMore.value = true
+  loadMoreFailed.value = false
+  try {
+    const result = await listWorkflows(
+      {
+        limit: HISTORY_PAGE_SIZE,
+        offset: workflows.value.length,
+        ...(accountId ? { account_id: accountId } : {}),
+      },
+      { suppressToast: true },
+    )
+    if (gen !== fetchGeneration) return
+    const seen = new Set(workflows.value.map(w => w.thread_id))
+    workflows.value = [
+      ...workflows.value,
+      ...result.workflows.filter(w => !seen.has(w.thread_id)),
+    ]
+    total.value = result.total
+    if (accountId) {
+      setAccountTotal(accountId, result.total)
+      setCachedList(accountId, workflows.value, result.total)
+    }
+  } catch (e: any) {
+    if (gen !== fetchGeneration || isAbortError(e)) return
+    loadMoreFailed.value = true
+  } finally {
+    if (gen === fetchGeneration) isLoadingMore.value = false
   }
 }
 
@@ -601,26 +643,42 @@ function dashboardQuery(extra?: Record<string, string>) {
   }
 }
 
-async function resumeWorkflow(threadId: string) {
+/** Row action in flight — gives feedback and blocks double-clicks/sibling actions. */
+type RowAction = 'resume' | 'view' | 'replay'
+const pendingRowAction = ref<{ threadId: string; action: RowAction } | null>(null)
+
+const isRowActionPending = (threadId: string, action: RowAction) =>
+  pendingRowAction.value?.threadId === threadId && pendingRowAction.value?.action === action
+
+async function runRowAction(threadId: string, action: RowAction, navigate: () => void) {
+  if (pendingRowAction.value) return
+  pendingRowAction.value = { threadId, action }
   workflowStore.setThreadId(threadId)
-  await workflowStore.refreshStatus()
-  router.push({ name: 'dashboard', params: { threadId }, query: dashboardQuery() })
+  try {
+    await workflowStore.refreshStatus()
+    navigate()
+  } finally {
+    pendingRowAction.value = null
+  }
 }
 
-async function viewWorkflow(threadId: string) {
-  workflowStore.setThreadId(threadId)
-  await workflowStore.refreshStatus()
-  router.push({ name: 'dashboard', params: { threadId }, query: dashboardQuery() })
+function resumeWorkflow(threadId: string) {
+  void runRowAction(threadId, 'resume', () =>
+    router.push({ name: 'dashboard', params: { threadId }, query: dashboardQuery() }))
 }
 
-async function replayWorkflow(threadId: string) {
-  workflowStore.setThreadId(threadId)
-  await workflowStore.refreshStatus()
-  router.push({
-    name: 'dashboard',
-    params: { threadId },
-    query: dashboardQuery({ replay: 'true' }),
-  })
+function viewWorkflow(threadId: string) {
+  void runRowAction(threadId, 'view', () =>
+    router.push({ name: 'dashboard', params: { threadId }, query: dashboardQuery() }))
+}
+
+function replayWorkflow(threadId: string) {
+  void runRowAction(threadId, 'replay', () =>
+    router.push({
+      name: 'dashboard',
+      params: { threadId },
+      query: dashboardQuery({ replay: 'true' }),
+    }))
 }
 
 function requestDelete(threadId: string) {
@@ -1028,6 +1086,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
               </div>
               <div class="flex items-center gap-2 md:gap-3 mt-0.5 md:mt-1 text-[10px] md:text-xs text-slate-400">
                 <span>{{ phaseLabel(wf.phase) }}</span>
+                <span class="sm:hidden">{{ wf.progress_percent }}%</span>
                 <span v-if="statusLabel(wf.status) !== phaseLabel(wf.phase)">{{ statusLabel(wf.status) }}</span>
                 <span>{{ formatDate(wf.created_at) }}</span>
               </div>
@@ -1051,6 +1110,8 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
                 variant="cyan"
                 size="sm"
                 class="min-h-11"
+                :loading="isRowActionPending(wf.thread_id, 'resume')"
+                :disabled="!!pendingRowAction"
                 @click.stop="resumeWorkflow(wf.thread_id)"
               >
                 {{ t('history.resume') }}
@@ -1060,6 +1121,8 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
                 variant="ghost"
                 size="sm"
                 class="min-h-11"
+                :loading="isRowActionPending(wf.thread_id, 'view')"
+                :disabled="!!pendingRowAction"
                 @click.stop="viewWorkflow(wf.thread_id)"
               >
                 {{ t('history.view') }}
@@ -1069,6 +1132,8 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
                 variant="cyan"
                 size="sm"
                 class="min-h-11"
+                :loading="isRowActionPending(wf.thread_id, 'replay')"
+                :disabled="!!pendingRowAction"
                 @click.stop="replayWorkflow(wf.thread_id)"
               >
                 {{ t('history.replay') }}
@@ -1078,6 +1143,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
                 variant="cyan"
                 size="sm"
                 class="min-h-11"
+                :aria-label="t('history.showcaseOpenPublic')"
                 @click.stop="openPublicShowcase(wf)"
               >
                 <AppIcon name="ExternalLink" size="sm" variant="white" />
@@ -1087,6 +1153,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
                 variant="ghost"
                 size="sm"
                 class="min-h-11"
+                :aria-label="t('history.showcaseManage')"
                 @click.stop="openShowcaseSettings(wf)"
               >
                 <AppIcon name="Eye" size="sm" variant="cyan" />
@@ -1108,6 +1175,36 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
           {{ wf.error }}
         </div>
       </article>
+    </div>
+
+    <!-- Offset pagination: load more / loaded-vs-total / end-of-list -->
+    <div
+      v-if="!showListSkeleton && !error && workflows.length > 0"
+      class="flex flex-col items-center gap-2 pt-1"
+      aria-live="polite"
+      data-testid="history-pagination"
+    >
+      <NeonButton
+        v-if="hasMoreWorkflows"
+        variant="ghost"
+        size="sm"
+        class="min-h-11"
+        :loading="isLoadingMore"
+        @click="loadMoreWorkflows"
+      >
+        {{ t('history.loadMore') }}
+      </NeonButton>
+      <p v-if="loadMoreFailed" class="flex items-center gap-2 text-xs text-rose-600" role="alert">
+        <span>{{ t('history.loadMoreFailed') }}</span>
+        <button type="button" class="min-h-11 rounded-lg px-3 font-semibold underline" @click="loadMoreWorkflows">
+          {{ t('common.retry') }}
+        </button>
+      </p>
+      <p class="text-[10px] md:text-xs text-slate-400">
+        {{ hasMoreWorkflows
+          ? t('history.loadedCount', { loaded: workflows.length, total })
+          : t('history.allLoaded', { total }) }}
+      </p>
     </div>
 
     <ConfirmModal

@@ -130,6 +130,8 @@ function restoreQuery() {
   modeFilter.value = ['all', 'trend', 'brief'].includes(mode || '') ? mode || 'all' : 'all'
   sortKey.value = ['recent', 'title'].includes(sort || '') ? sort || 'recent' : 'recent'
   search.value = q || ''
+  // Keep the visible search box in sync with ?q= restores.
+  searchInput.value = q || ''
 }
 
 function queryState() {
@@ -563,13 +565,18 @@ watch(filteredCases, async () => {
             <div class="mt-auto flex items-center justify-between gap-3 pt-5"><span class="text-xs text-slate-500 dark:text-slate-400">{{ t('showcase.caseUpdated', { date: formatDate(item.updated_at) }) }}</span><a :href="replayHref(item.public_id)" class="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-400/10" @click.prevent="openReplay(item.public_id)">{{ t('showcase.caseReplay') }}<AppIcon name="ArrowRight" size="xs" class="transition group-hover:translate-x-0.5" aria-hidden="true" /></a></div>
           </article>
         </div>
-        <div v-if="hasMoreCases" class="mt-5 flex flex-col items-center gap-3">
-          <button type="button" class="min-h-11 rounded-xl border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800" :disabled="loadingMore" @click="loadMoreCases">
+        <div v-if="loaded && cases.length" class="mt-5 flex flex-col items-center gap-3" aria-live="polite">
+          <button v-if="hasMoreCases" type="button" class="min-h-11 rounded-xl border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800" :disabled="loadingMore" @click="loadMoreCases">
             {{ loadingMore ? t('common.loadingState') : t('showcase.loadMore') }}
           </button>
-          <p v-if="loadMoreError" class="flex items-center gap-2 text-xs text-rose-600 dark:text-rose-300" role="alert">
+          <p v-if="hasMoreCases && loadMoreError" class="flex items-center gap-2 text-xs text-rose-600 dark:text-rose-300" role="alert">
             <span>{{ t('showcase.loadMoreFailed') }}</span>
             <button type="button" class="min-h-11 rounded-lg px-3 font-semibold underline" @click="loadMoreCases">{{ t('common.retry') }}</button>
+          </p>
+          <p class="text-xs text-slate-500 dark:text-slate-400">
+            {{ hasMoreCases
+              ? t('showcase.loadedCount', { loaded: cases.length, total: totalCases })
+              : t('showcase.allLoaded', { total: totalCases }) }}
           </p>
         </div>
       </section>

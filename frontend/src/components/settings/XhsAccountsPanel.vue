@@ -359,7 +359,7 @@ function onQrConfirmed() {
 
     <!-- Account list + creation -->
     <div class="rounded-xl border border-slate-200/50 bg-white/90 backdrop-blur-sm p-4 space-y-3 dark:bg-slate-900/90 dark:border-slate-700/55">
-      <div class="flex items-center justify-between">
+      <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex items-center gap-2">
           <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">{{ t('settings.accounts') }}</h3>
           <button
@@ -401,11 +401,15 @@ function onQrConfirmed() {
       </div>
 
       <div v-for="account in store.accounts" :key="account.id"
-        class="rounded-lg border p-3 flex items-center gap-3 transition-all cursor-pointer"
+        class="rounded-lg border p-3 flex items-center gap-3 transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/60"
         :class="editingAccountId === account.id
           ? 'border-rose-200 bg-rose-50/50 shadow-sm'
           : 'border-slate-100 hover:border-slate-200 hover:bg-slate-50/50 dark:border-slate-700 dark:hover:border-slate-600 dark:hover:bg-slate-800/50'"
+        role="button"
+        tabindex="0"
         @click="editingAccountId = account.id"
+        @keydown.enter="editingAccountId = account.id"
+        @keydown.space.prevent="editingAccountId = account.id"
       >
         <div class="w-2 h-2 rounded-full shrink-0" :class="account.is_active ? 'bg-emerald-500' : 'bg-slate-300'" />
         <div class="flex-1 min-w-0">

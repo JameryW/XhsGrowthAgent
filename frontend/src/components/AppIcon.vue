@@ -155,11 +155,13 @@ const iconClasses = computed(() =>
 </script>
 
 <template>
+  <!-- Decorative by default: only icons with an explicit label are exposed as images. -->
   <component
     :is="IconComponent"
     :size="iconSize"
     :class="iconClasses"
     :aria-label="ariaLabel || undefined"
-    role="img"
+    :role="ariaLabel ? 'img' : undefined"
+    :aria-hidden="ariaLabel ? undefined : 'true'"
   />
 </template>

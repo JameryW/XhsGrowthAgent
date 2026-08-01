@@ -22,7 +22,11 @@ const faqItems = [1, 2, 3, 4].map((id) => ({
 }))
 
 function selectSection(section: 'faq' | 'feedback') {
-  router.replace({ query: section === 'faq' ? {} : { section } })
+  // Preserve unrelated query params; only the section key changes.
+  const query = { ...route.query }
+  if (section === 'faq') delete query.section
+  else query.section = section
+  void router.replace({ query })
 }
 
 function openShortcuts() {
@@ -46,7 +50,7 @@ async function copyFeedbackTemplate() {
 </script>
 
 <template>
-  <div class="mx-auto max-w-4xl space-y-4 md:space-y-6">
+  <div class="app-page-content space-y-4 md:space-y-6">
     <PageHeader
       :title="t('help.pageTitle')"
       :description="t('help.pageDesc')"
@@ -63,19 +67,17 @@ async function copyFeedbackTemplate() {
       </template>
     </PageHeader>
 
-    <div class="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200/60 bg-white/80 px-3 shadow-sm backdrop-blur-sm dark:border-slate-700/60 dark:bg-slate-900/70" role="tablist" aria-labelledby="help-title">
+    <div class="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200/60 bg-white/80 px-3 shadow-sm backdrop-blur-sm dark:border-slate-700/60 dark:bg-slate-900/70" role="group" aria-labelledby="help-title">
         <button
           class="min-h-11 shrink-0 border-b-2 px-3 text-sm font-medium transition-colors"
           :class="activeSection === 'faq' ? 'border-cyan-500 text-cyan-700 dark:text-cyan-300' : 'border-transparent text-slate-400 hover:text-slate-600'"
-          role="tab"
-          :aria-selected="activeSection === 'faq'"
+          :aria-pressed="activeSection === 'faq'"
           @click="selectSection('faq')"
         >{{ t('help.faq') }}</button>
         <button
           class="min-h-11 shrink-0 border-b-2 px-3 text-sm font-medium transition-colors"
           :class="activeSection === 'feedback' ? 'border-cyan-500 text-cyan-700 dark:text-cyan-300' : 'border-transparent text-slate-400 hover:text-slate-600'"
-          role="tab"
-          :aria-selected="activeSection === 'feedback'"
+          :aria-pressed="activeSection === 'feedback'"
           @click="selectSection('feedback')"
         >{{ t('help.feedback') }}</button>
     </div>

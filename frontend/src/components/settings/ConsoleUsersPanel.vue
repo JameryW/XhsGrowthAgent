@@ -144,7 +144,7 @@ function formatDate(iso: string | null): string {
         {{ t('settings.consoleUsers.empty') }}
       </div>
       <div v-for="user in store.users" :key="user.id"
-        class="px-4 py-3 border-b border-slate-50 last:border-b-0 flex items-center gap-3"
+        class="px-4 py-3 border-b border-slate-50 last:border-b-0 flex flex-wrap items-center gap-3"
       >
         <div class="w-8 h-8 rounded-full bg-gradient-to-br from-rose-100 to-pink-100 flex items-center justify-center shrink-0">
           <AppIcon name="User" size="xs" variant="pink" />
@@ -170,7 +170,7 @@ function formatDate(iso: string | null): string {
             v-model="newPasswordValue"
             type="password"
             :placeholder="t('settings.consoleUsers.newPasswordPlaceholder')"
-            class="w-44 px-2 py-1 text-sm rounded border border-rose-200 bg-white focus:border-rose-400 outline-none dark:border-rose-500/40 dark:bg-slate-900 dark:text-slate-200"
+            class="w-44 max-w-full px-2 py-1 text-sm rounded border border-rose-200 bg-white focus:border-rose-400 outline-none dark:border-rose-500/40 dark:bg-slate-900 dark:text-slate-200"
             @keydown.escape="cancelChangePassword"
           />
           <NeonButton variant="cyan" size="sm" :loading="isChangingPwd" @click="submitChangePassword">

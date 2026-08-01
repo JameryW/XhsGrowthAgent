@@ -11,6 +11,12 @@ const router = useRouter()
 const goHome = () => {
   router.push('/start')
 }
+
+const goBack = () => {
+  // Direct hits on a bad link have no in-app history — fall back to /start.
+  if (window.history.state?.back) router.back()
+  else router.push('/start')
+}
 </script>
 
 <template>
@@ -40,7 +46,7 @@ const goHome = () => {
             <span>{{ t('notFound.backHome') }}</span>
           </span>
         </NeonButton>
-        <NeonButton variant="ghost" size="lg" class="min-h-11" @click="router.back()">
+        <NeonButton variant="ghost" size="lg" class="min-h-11" @click="goBack">
           <span class="inline-flex items-center gap-2">
             <AppIcon name="ArrowLeft" size="md" variant="cyan" />
             <span>{{ t('notFound.backPrev') }}</span>

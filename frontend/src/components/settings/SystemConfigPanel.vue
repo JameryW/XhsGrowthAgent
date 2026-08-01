@@ -115,10 +115,10 @@ async function confirmDeleteKey() {
       </h3>
       <div class="space-y-1">
         <div v-for="keyName in group.keys" :key="keyName"
-          class="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-slate-50/80 transition-colors dark:hover:bg-slate-800/50"
+          class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 px-3 rounded-lg hover:bg-slate-50/80 transition-colors dark:hover:bg-slate-800/50"
           :class="isParam(keyName) ? 'bg-slate-50/40 dark:bg-slate-800/40' : ''"
         >
-          <span class="text-xs font-mono w-44 shrink-0" :class="isParam(keyName) ? 'text-teal-600' : 'text-slate-500'">{{ keyName }}</span>
+          <span class="text-xs font-mono w-full sm:w-44 shrink-0 break-all" :class="isParam(keyName) ? 'text-teal-600' : 'text-slate-500'">{{ keyName }}</span>
 
           <div class="flex-1 min-w-0">
             <!-- ponytail: param keys use text input (visible value), secrets use password -->

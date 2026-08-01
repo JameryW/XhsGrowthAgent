@@ -132,10 +132,11 @@ function ariaSortFor(key: string): 'ascending' | 'descending' | 'none' {
       v-for="(row, idx) in sortedData"
       :key="getRowKey(row, idx)"
       class="grid gap-2 md:gap-4 px-3 md:px-4 py-2 md:py-3 border-b border-slate-50 text-[10px] md:text-xs hover:bg-slate-50/50 transition-colors duration-150 min-w-[500px] dark:border-slate-800 dark:hover:bg-slate-800/40"
-      :class="{ 'bg-rose-50/50': highlightRowKey && highlightKeyValue && row[highlightRowKey] === highlightKeyValue, 'cursor-pointer': props.rowClickable }"
+      :class="{ 'bg-rose-50/50': highlightRowKey && highlightKeyValue && row[highlightRowKey] === highlightKeyValue, 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500': props.rowClickable }"
       :tabindex="props.rowClickable ? 0 : undefined"
       @click="props.rowClickable ? emit('row-click', row) : undefined"
       @keydown.enter="props.rowClickable ? emit('row-click', row) : undefined"
+      @keydown.space.prevent="props.rowClickable ? emit('row-click', row) : undefined"
       :style="{ gridTemplateColumns: `repeat(${props.columns.length}, 1fr)` }"
       role="row"
     >
