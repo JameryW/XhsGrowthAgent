@@ -1,6 +1,7 @@
 {
   "common": {
     "loading": "加载中...",
+    "loadingPage": "页面加载中",
     "optional": "可选",
     "skipToContent": "跳转到主内容",
     "error": "错误",
@@ -203,6 +204,9 @@
       "accountId": "账号",
       "accountIdPlaceholder": "选择账号",
       "accountIdHelp": "选择运行此工作流的账号；可在「设置」中管理账号和扫码登录状态",
+      "accountsUnavailable": "账号列表加载失败，请重试或前往设置检查账号。",
+      "noAccounts": "还没有小红书账号，请先在设置中添加后再开始。",
+      "manageAccounts": "前往设置管理账号",
       "startPhase": "起始阶段",
       "options": "运行选项",
       "advancedOptions": "高级选项",
@@ -266,10 +270,15 @@
       "expectedSteps": "预期执行步骤",
       "start": "开始固定工作流"
     },
-    "completedCta": "查看历史记录"
+    "completedCta": "查看历史记录",
+    "checklistBlockedHint": "有必检项未通过，请先查看下方启动前检查清单。"
   },
   "dashboard": {
     "title": "工作流仪表盘",
+    "tabBar": {
+      "ariaLabel": "工作流标签页",
+      "overflow": "更多工作流标签页"
+    },
     "crossAccountBanner": "当前工作流属于「{view}」，工作区账号是「{workspace}」。审核/发布将按该工作流所属账号执行。",
     "openAccountHistory": "查看该账号历史",
     "tabOtherAccount": "非当前工作区账号的工作流",
@@ -347,7 +356,12 @@
       "collects": "收藏",
       "engagement": "互动率",
       "runAnalytics": "分析传播效果",
-      "runAnalyticsDesc": "使用 Ripple 分析预测与实际数据对比"
+      "runAnalyticsDesc": "使用 Ripple 分析预测与实际数据对比",
+      "severity": {
+        "high": "高",
+        "medium": "中",
+        "low": "低"
+      }
     },
     "actionButtons": {
       "ariaLabel": "工作流操作按钮",
@@ -534,7 +548,16 @@
       "postUrl": "帖子链接",
       "publishedAt": "发布时间",
       "status": "状态",
-      "viewPost": "查看帖子"
+      "viewPost": "查看帖子",
+      "statusValues": {
+        "published": "已发布",
+        "mock_published": "已发布（模拟）",
+        "pending": "发布中",
+        "failed": "发布失败",
+        "auth_failed": "登录已失效",
+        "error": "出错",
+        "unknown": "未知"
+      }
     },
     "blogger": {
       "title": "选择参考博主",
@@ -595,6 +618,8 @@
     "addImages": "添加图片",
     "imagesSaved": "已保存",
     "imagesUploaded": "张图片已上传",
+    "removeImage": "移除第 {n} 张图片",
+    "detailLoadFailed": "工作流详情加载失败",
     "actions": "审核操作",
     "selectAction": "选择操作",
     "feedbackInput": "反馈输入",
@@ -817,6 +842,9 @@
       "publishedAt": "发布时间"
     },
     "exportCsv": "导出 CSV",
+    "exportSuccess": "已导出 {count} 条笔记到 CSV",
+    "exportFailed": "导出失败，请重试",
+    "trendScopeNote": "趋势图仅基于最近加载的最多 20 条笔记；互动分布使用服务端统计的完整周期总量。",
     "detail": {
       "title": "笔记详情",
       "untitled": "无标题笔记",
@@ -1080,7 +1108,12 @@
     "version": "版",
     "confirmSelection": "确认选择",
     "selected": "已选择 {type} 版 - {title}",
-    "scoreUnit": "分"
+    "scoreUnit": "分",
+    "severity": {
+      "high": "高",
+      "medium": "中",
+      "low": "低"
+    }
   },
   "styleCompare": {
     "styleComparison": "风格对比",
@@ -1100,6 +1133,7 @@
     "noData": "无数据",
     "noTrendData": "暂无趋势数据",
     "trendChart": "趋势图",
+    "trendSummary": "{title}：{min}–{max}，平均 {avg}，{trend}",
     "type": "类型",
     "count": "次数",
     "date": "日期",
@@ -1183,6 +1217,12 @@
   },
   "metricCard": {
     "ariaLabel": "统计指标: {title}"
+  },
+  "contentCard": {
+    "moreItems": "+{count} 更多"
+  },
+  "workflowCardBody": {
+    "viralProbability": "爆款率 {pct}%"
   },
   "retryIndicator": {
     "retryStatus": "重试状态",
@@ -1294,6 +1334,10 @@
     "filterEmpty": "当前筛选下没有工作流",
     "autoBrowseNotice": "「{from}」暂无记录，已自动查看「{to}」的 {count} 条历史（未切换工作区）",
     "refresh": "刷新历史",
+    "loadMore": "加载更多",
+    "loadMoreFailed": "更多记录加载失败。",
+    "loadedCount": "已加载 {loaded} / 共 {total}",
+    "allLoaded": "已加载全部 {total} 条",
     "empty": "该账号暂无工作流",
     "emptyDesc": "「{name}」下还没有工作流记录。可点上方账号查看其他账号，或开始新的创作。",
     "emptyOtherAccounts": "其他账号有历史记录：",
@@ -1706,6 +1750,8 @@
     "featuredAttention": "需关注的工作流",
     "loadMore": "加载更多",
     "loadMoreFailed": "更多案例加载失败，请重试。",
+    "loadedCount": "已加载 {loaded} / 共 {total}",
+    "allLoaded": "已加载全部 {total} 个案例",
     "noResults": "没有匹配的工作流",
     "noResultsWithFilters": "当前筛选：{status} · {mode}",
     "viewDetail": "查看详情",
@@ -2378,6 +2424,7 @@
     "radarTitle": "9 维评分雷达",
     "radarTitleDynamic": "{count} 维评分雷达",
     "radarSeries": "RQGM 内容评审分",
+    "radarSummary": "{title}：平均 {avg} 分，范围 {min}–{max}",
     "dimensionsTitle": "维度详情",
     "weightedScoreHint": "RQGM 内容评审分由下方可用维度加权计算；不可用维度显示为 —。",
     "radarScore": "评分",
