@@ -17,12 +17,13 @@ const props = withDefaults(defineProps<Props>(), {
   animated: true,
 })
 
-// Refined color scheme matching tailwind config
+// Static neon-token classes (purge-safe) — bar gradient reuses the same
+// neon palette as tailwind.config; label keeps the slate-family text tones.
 const colorMap = {
-  pink: { from: '#F43F5E', to: '#FB7185' },
-  cyan: { from: '#14B8A6', to: '#5EEAD4' },
-  purple: { from: '#8B5CF6', to: '#A78BFA' },
-  peach: { from: '#F59E0B', to: '#FBBF24' },
+  pink: { bar: 'from-neon-pink to-neon-pinkLight', label: 'text-rose-600' },
+  cyan: { bar: 'from-neon-cyan to-neon-cyanLight', label: 'text-teal-600' },
+  purple: { bar: 'from-neon-purple to-neon-purpleLight', label: 'text-violet-600' },
+  peach: { bar: 'from-neon-peach to-neon-peachLight', label: 'text-amber-600' },
 }
 
 const colors = computed(() => colorMap[props.variant])
@@ -34,11 +35,8 @@ const percentage = computed(() => Math.min(100, Math.max(0, props.value)))
     <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden relative dark:bg-slate-800">
       <!-- Progress bar -->
       <div
-        :class="['h-full rounded-full relative overflow-hidden transition-all', animated ? 'duration-500 ease-out' : '',]"
-        :style="{
-          width: `${percentage}%`,
-          background: `linear-gradient(90deg, ${colors.from}, ${colors.to})`,
-        }"
+        :class="['h-full rounded-full relative overflow-hidden transition-all bg-gradient-to-r', colors.bar, animated ? 'duration-500 ease-out' : '',]"
+        :style="{ width: `${percentage}%` }"
       >
         <!-- Subtle glow -->
         <div
@@ -52,7 +50,7 @@ const percentage = computed(() => Math.min(100, Math.max(0, props.value)))
 
     <div v-if="showLabel" class="text-xs text-slate-500 mt-1 flex justify-between font-medium">
       <span>{{ t('miniProgress.label') }}</span>
-      <span :class="`text-${props.variant === 'pink' ? 'rose' : props.variant === 'cyan' ? 'teal' : props.variant === 'purple' ? 'violet' : 'amber'}-600`">{{ percentage }}%</span>
+      <span :class="colors.label">{{ percentage }}%</span>
     </div>
   </div>
 </template>

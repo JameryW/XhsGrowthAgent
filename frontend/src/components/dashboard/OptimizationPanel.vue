@@ -96,7 +96,7 @@ const handleVersionSelect = (choice: VersionChoice) => {
 </script>
 
 <template>
-  <div v-if="shouldShowDraftInput || isOptimizationPending" class="space-y-4" role="region" :aria-label="t('dashboard.optimization.title')">
+  <div v-if="shouldShowDraftInput || isOptimizationPending" id="panel-optimization" class="space-y-4" role="region" :aria-label="t('dashboard.optimization.title')">
     <!-- Draft input when awaiting draft -->
     <div v-if="isDraftInputPending && !showDraftInput" class="rounded-xl p-3 md:p-5 bg-gradient-to-r from-neon-cyan/5 to-neon-purple/5 border border-neon-cyan/20" role="status" aria-live="polite">
       <div class="flex items-center justify-between">

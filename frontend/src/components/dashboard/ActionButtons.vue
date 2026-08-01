@@ -8,6 +8,7 @@ import { useWorkflowStore, useReviewStore, useRealtimeStore, useAccountsStore } 
 import { accountIdFromThreadId } from '@/utils/threadAccount'
 import { accountQuery } from '@/utils/accountViewSession'
 import { prefetchStartWorkspace } from '@/utils/routePrefetch'
+import { prefersReducedMotion } from '@/composables/useReducedMotion'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -19,7 +20,6 @@ const accountsStore = useAccountsStore()
 // Check if workflow is active
 const hasActiveWorkflow = computed(() => !!workflowStore.currentThreadId)
 const isPaused = computed(() => workflowStore.currentPhase === 'paused')
-const isStale = computed(() => workflowStore.isStale)
 // Prefer status for terminal flags — phase can lag after graph ends.
 const isCancelled = computed(
   () =>
@@ -121,13 +121,6 @@ const goToReview = () => {
   })
 }
 
-const goToHistory = () => {
-  const q = accountQuery(threadOwnerId.value, {
-    omitIfEquals: accountsStore.activeAccountId,
-  })
-  router.push({ name: 'history', query: q })
-}
-
 const resumeWorkflow = () => {
   workflowStore.resumeWorkflow()
 }
@@ -136,6 +129,19 @@ const openPostUrl = () => {
   if (publishResult.value?.post_url) {
     window.open(publishResult.value.post_url, '_blank', 'noopener,noreferrer')
   }
+}
+
+// "Edit Draft" jumps to the OptimizationPanel draft input on this page (the
+// old router.push('/dashboard') was a no-op dead end). Mirrors Dashboard's
+// scrollToPanel: instant jump under prefers-reduced-motion.
+const scrollToDraftInput = () => {
+  const el = document.getElementById('panel-optimization')
+  if (!el) return
+  el.scrollIntoView({ behavior: prefersReducedMotion.value ? 'auto' : 'smooth', block: 'center' })
+  const focusable = el.querySelector<HTMLElement>(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+  )
+  focusable?.focus()
 }
 </script>
 
@@ -211,7 +217,7 @@ const openPostUrl = () => {
         size="lg"
         class="w-full sm:w-auto animate-pulse"
         :aria-label="t('dashboard.actionButtons.editDraft')"
-        @click="router.push('/dashboard')"
+        @click="scrollToDraftInput"
       >
         <span class="inline-flex items-center gap-2">
           <AppIcon name="Pencil" size="lg" variant="white" />
@@ -226,23 +232,6 @@ const openPostUrl = () => {
         size="lg"
         class="w-full sm:w-auto"
         :title="t('dashboard.actionButtons.resumeDesc')"
-        :aria-label="t('dashboard.actionButtons.resume')"
-        :loading="workflowStore.isLoading"
-        @click="resumeWorkflow"
-      >
-        <span class="inline-flex items-center gap-2">
-          <AppIcon name="Play" size="lg" variant="white" />
-          <span class="font-bold">{{ t('dashboard.actionButtons.resume') }}</span>
-        </span>
-      </NeonButton>
-
-      <!-- Resume button when stale -->
-      <NeonButton
-        v-if="isStale"
-        variant="peach"
-        size="lg"
-        class="w-full sm:w-auto"
-        :title="t('workflow.staleHint')"
         :aria-label="t('dashboard.actionButtons.resume')"
         :loading="workflowStore.isLoading"
         @click="resumeWorkflow"
@@ -272,21 +261,8 @@ const openPostUrl = () => {
         </span>
       </NeonButton>
 
-      <!-- Completed: primary outlets match Dashboard nextAction -->
-      <NeonButton
-        v-if="isCompleted && !workflowStore.isReplayMode"
-        variant="cyan"
-        size="lg"
-        class="w-full sm:w-auto"
-        :title="t('dashboard.hero.completedDescription')"
-        :aria-label="t('dashboard.hero.completedCta')"
-        @click="goToHistory"
-      >
-        <span class="inline-flex items-center gap-2">
-          <AppIcon name="History" size="lg" variant="white" />
-          <span class="font-bold">{{ t('dashboard.hero.completedCta') }}</span>
-        </span>
-      </NeonButton>
+      <!-- Completed: "start new" stays as the secondary outlet; the History
+           CTA lives only on the Dashboard nextAction card (CTA dedup). -->
       <NeonButton
         v-if="isCompleted && !workflowStore.isReplayMode"
         variant="pink"

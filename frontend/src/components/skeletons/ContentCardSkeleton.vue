@@ -13,10 +13,18 @@ const shimmerColors = {
   purple: 'from-neon-purple/20 via-neon-purple/10 to-neon-purple/20',
   peach: 'from-neon-peach/20 via-neon-peach/10 to-neon-peach/20',
 }
+
+// Static purge-safe border classes (template interpolation never renders).
+const borderColors = {
+  pink: 'border-neon-pink/30',
+  cyan: 'border-neon-cyan/30',
+  purple: 'border-neon-purple/30',
+  peach: 'border-neon-peach/30',
+}
 </script>
 
 <template>
-  <div class="gradient-border rounded-xl p-4 shimmer animate-pulse-glow" :class="`border-neon-${props.variant}/30`">
+  <div class="gradient-border rounded-xl p-4 shimmer animate-pulse-glow" :class="borderColors[props.variant]">
     <!-- Animated background -->
     <div class="absolute inset-0 grid-pattern opacity-10 -z-10" />
 

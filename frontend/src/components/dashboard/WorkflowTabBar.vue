@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
+import { useFocusTrap } from '@/composables/useFocusTrap'
 import type { WorkflowStatus, WorkflowPhase } from '@/types/workflow'
 import i18n from '@/locales'
 
@@ -39,6 +40,12 @@ const showOverflow = ref(false)
 const editingTabId = ref<string | null>(null)
 const editingLabel = ref('')
 const confirmCloseTabId = ref<string | null>(null)
+
+const rootEl = ref<HTMLElement | null>(null)
+const overflowTriggerEl = ref<HTMLElement | null>(null)
+const confirmDialogEl = ref<HTMLElement | null>(null)
+// Shared INF-06 trap: initial focus, Tab containment, focus restore on close.
+const { activate: activateConfirmTrap, deactivate: deactivateConfirmTrap } = useFocusTrap()
 
 function statusIcon(status: WorkflowStatus): string {
   switch (status) {
@@ -128,27 +135,54 @@ function cancelClose() {
 function toggleOverflow() {
   showOverflow.value = !showOverflow.value
 }
+
+function closeOverflow(restoreFocus = false) {
+  if (!showOverflow.value) return
+  showOverflow.value = false
+  if (restoreFocus) overflowTriggerEl.value?.focus()
+}
+
+function onDocumentClick(e: MouseEvent) {
+  if (!showOverflow.value) return
+  if (rootEl.value && !rootEl.value.contains(e.target as Node)) closeOverflow()
+}
+
+function onDocumentKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Escape') return
+  closeOverflow(true)
+}
+
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+  document.addEventListener('keydown', onDocumentKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
+  document.removeEventListener('keydown', onDocumentKeydown)
+})
+
+// Open/close the close-tab confirm through the focus trap so it gets initial
+// focus and the trigger's focus is restored afterwards.
+watch(confirmCloseTabId, async (id) => {
+  if (id) {
+    await nextTick()
+    activateConfirmTrap(confirmDialogEl.value)
+  } else {
+    deactivateConfirmTrap()
+  }
+})
 </script>
 
 <template>
-  <div class="workflow-tab-bar">
-    <div class="tabs-scroll">
+  <div class="workflow-tab-bar" ref="rootEl">
+    <div class="tabs-scroll" role="tablist" :aria-label="t('dashboard.tabBar.ariaLabel')">
       <div
         v-for="tab in tabs"
         :key="tab.threadId"
         class="tab-item"
         :class="{ active: isActive(tab.threadId) }"
-        @click="onTabClick(tab.threadId)"
-        @dblclick="onTabDblClick(tab.threadId, tab.label)"
-        :title="tab.label"
       >
-        <AppIcon
-          :name="statusIcon(tab.status)"
-          size="xs"
-          :class="[statusColor(tab.status), tab.status === 'running' ? 'animate-pulse' : '']"
-          class="tab-icon"
-        />
-
         <input
           v-if="editingTabId === tab.threadId"
           v-model="editingLabel"
@@ -159,50 +193,93 @@ function toggleOverflow() {
           autofocus
           @click.stop
         />
-        <span v-else class="tab-label">{{ tab.label }}</span>
-        <span
-          v-if="isOtherAccount(tab)"
-          class="ml-0.5 inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400"
-          :title="t('dashboard.tabOtherAccount')"
-          aria-hidden="true"
-        />
+        <button
+          v-else
+          type="button"
+          role="tab"
+          class="tab-main"
+          :aria-selected="isActive(tab.threadId)"
+          :title="tab.label"
+          @click="onTabClick(tab.threadId)"
+          @dblclick="onTabDblClick(tab.threadId, tab.label)"
+        >
+          <AppIcon
+            :name="statusIcon(tab.status)"
+            size="xs"
+            :class="[statusColor(tab.status), tab.status === 'running' ? 'animate-pulse' : '']"
+            class="tab-icon"
+          />
+          <span class="tab-label">{{ tab.label }}</span>
+          <span
+            v-if="isOtherAccount(tab)"
+            class="ml-0.5 inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400"
+            :title="t('dashboard.tabOtherAccount')"
+            aria-hidden="true"
+          />
+        </button>
 
         <button
+          type="button"
           class="tab-close"
-          @click="onCloseClick(tab.threadId, $event)"
           :title="t('workflow.closeTab')"
+          :aria-label="t('workflow.closeTab')"
+          @click="onCloseClick(tab.threadId, $event)"
         >
           <AppIcon name="X" size="xs" variant="muted" />
         </button>
       </div>
 
-      <div v-if="hasOverflow" class="tab-overflow-trigger" @click="toggleOverflow">
+      <button
+        v-if="hasOverflow"
+        type="button"
+        ref="overflowTriggerEl"
+        class="tab-overflow-trigger"
+        aria-haspopup="true"
+        :aria-expanded="showOverflow"
+        :aria-label="t('dashboard.tabBar.overflow')"
+        :title="t('dashboard.tabBar.overflow')"
+        @click="toggleOverflow"
+      >
         <AppIcon name="ChevronDown" size="sm" variant="muted" />
         <span class="text-xs text-slate-400">{{ overflowTabs.length }}</span>
-      </div>
+      </button>
     </div>
 
-    <div v-if="hasOverflow && showOverflow" class="overflow-dropdown">
+    <div v-if="hasOverflow && showOverflow" class="overflow-dropdown" role="menu" :aria-label="t('dashboard.tabBar.overflow')">
       <div
         v-for="tab in overflowTabs"
         :key="tab.threadId"
         class="overflow-item"
         :class="{ active: isActive(tab.threadId) }"
-        @click="onTabClick(tab.threadId); showOverflow = false"
       >
-        <AppIcon
-          :name="statusIcon(tab.status)"
-          size="xs"
-          :class="[statusColor(tab.status), tab.status === 'running' ? 'animate-pulse' : '']"
-        />
-        <span class="tab-label">{{ tab.label }}</span>
-        <span
-          v-if="isOtherAccount(tab)"
-          class="ml-0.5 inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400"
-          :title="t('dashboard.tabOtherAccount')"
-          aria-hidden="true"
-        />
-        <button class="tab-close" @click="onCloseClick(tab.threadId, $event)">
+        <button
+          type="button"
+          role="menuitem"
+          class="overflow-main"
+          :aria-current="isActive(tab.threadId) ? 'true' : undefined"
+          :title="tab.label"
+          @click="onTabClick(tab.threadId); showOverflow = false"
+        >
+          <AppIcon
+            :name="statusIcon(tab.status)"
+            size="xs"
+            :class="[statusColor(tab.status), tab.status === 'running' ? 'animate-pulse' : '']"
+          />
+          <span class="tab-label">{{ tab.label }}</span>
+          <span
+            v-if="isOtherAccount(tab)"
+            class="ml-0.5 inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400"
+            :title="t('dashboard.tabOtherAccount')"
+            aria-hidden="true"
+          />
+        </button>
+        <button
+          type="button"
+          class="tab-close"
+          :title="t('workflow.closeTab')"
+          :aria-label="t('workflow.closeTab')"
+          @click="onCloseClick(tab.threadId, $event)"
+        >
           <AppIcon name="X" size="xs" variant="muted" />
         </button>
       </div>
@@ -210,14 +287,21 @@ function toggleOverflow() {
 
     <Teleport to="body">
       <div v-if="confirmCloseTabId" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" @click.self="cancelClose">
-        <div class="bg-white rounded-xl p-5 shadow-2xl max-w-sm w-full border border-slate-200 dark:bg-slate-900 dark:border-slate-700">
-          <h3 class="text-slate-800 font-medium mb-2">{{ t('workflow.closeTabConfirm') }}</h3>
+        <div
+          ref="confirmDialogEl"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="tab-close-confirm-title"
+          class="bg-white rounded-xl p-5 shadow-2xl max-w-sm w-full border border-slate-200 dark:bg-slate-900 dark:border-slate-700"
+          @keydown.escape="cancelClose"
+        >
+          <h3 id="tab-close-confirm-title" class="text-slate-800 font-medium mb-2">{{ t('workflow.closeTabConfirm') }}</h3>
           <p class="text-slate-500 text-sm mb-4">{{ t('workflow.closeTabHint') }}</p>
           <div class="flex gap-3 justify-end">
-            <button class="px-3 py-1.5 text-sm rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" @click="cancelClose">
+            <button type="button" class="px-3 py-1.5 text-sm rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700" @click="cancelClose">
               {{ t('common.cancel') }}
             </button>
-            <button class="px-3 py-1.5 text-sm rounded-lg bg-rose-500 text-white hover:bg-rose-600" @click="confirmClose">
+            <button type="button" class="px-3 py-1.5 text-sm rounded-lg bg-rose-500 text-white hover:bg-rose-600" @click="confirmClose">
               {{ t('workflow.closeTab') }}
             </button>
           </div>
@@ -238,13 +322,21 @@ function toggleOverflow() {
 }
 
 .tab-item {
-  @apply flex items-center gap-1.5 px-3 py-1.5 rounded-lg cursor-pointer
+  @apply flex items-center gap-1.5 px-3 py-1.5 rounded-lg
          bg-slate-100/80 text-slate-500 hover:bg-slate-200/80 hover:text-slate-700
          transition-colors max-w-[180px] min-w-[100px] shrink-0 select-none;
 }
 
 .tab-item.active {
   @apply bg-white/[.98] text-slate-800 shadow-sm ring-1 ring-slate-200/60;
+}
+
+.tab-main {
+  @apply flex items-center gap-1.5 min-w-0 flex-1 rounded;
+}
+
+.tab-main:focus-visible {
+  @apply outline-none ring-2 ring-teal-400;
 }
 
 .tab-icon {
@@ -265,8 +357,13 @@ function toggleOverflow() {
 }
 
 .tab-overflow-trigger {
-  @apply flex items-center gap-1 px-2 py-1.5 rounded-lg cursor-pointer
-         hover:bg-slate-200/80 text-slate-400 hover:text-slate-600 transition-colors shrink-0;
+  @apply flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg
+         hover:bg-slate-200/80 text-slate-400 hover:text-slate-600 transition-colors shrink-0
+         min-w-[44px] min-h-11;
+}
+
+.tab-overflow-trigger:focus-visible {
+  @apply outline-none ring-2 ring-teal-400;
 }
 
 .overflow-dropdown {
@@ -275,12 +372,20 @@ function toggleOverflow() {
 }
 
 .overflow-item {
-  @apply flex items-center gap-1.5 px-3 py-2 cursor-pointer text-slate-500
+  @apply flex items-center gap-1.5 px-3 py-2 text-slate-500
          hover:bg-slate-50 hover:text-slate-700 transition-colors;
 }
 
 .overflow-item.active {
   @apply bg-slate-50/80 text-slate-800;
+}
+
+.overflow-main {
+  @apply flex items-center gap-1.5 min-w-0 flex-1 text-left rounded;
+}
+
+.overflow-main:focus-visible {
+  @apply outline-none ring-2 ring-teal-400;
 }
 
 :global(html.dark) .tab-item {

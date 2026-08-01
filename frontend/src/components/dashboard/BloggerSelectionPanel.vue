@@ -10,7 +10,11 @@ import type { BloggerProfile } from '@/types/workflow'
 const { t } = useI18n()
 const workflowStore = useWorkflowStore()
 
-const isLoading = ref(false)
+// Per-action loading: clicking one candidate must not spin every Select
+// button or block Skip with a shared flag.
+const loadingUserId = ref<string | null>(null)
+const isSkipping = ref(false)
+const isBusy = computed(() => loadingUserId.value !== null || isSkipping.value)
 const error = ref('')
 
 const candidates = computed<BloggerProfile[]>(() =>
@@ -30,7 +34,7 @@ function formatNumber(n: number | undefined): string {
 
 async function handleSelect(candidate: BloggerProfile) {
   if (!activeThreadId.value) return
-  isLoading.value = true
+  loadingUserId.value = candidate.user_id
   error.value = ''
   try {
     await selectBlogger(activeThreadId.value, {
@@ -42,13 +46,13 @@ async function handleSelect(candidate: BloggerProfile) {
   } catch (e: any) {
     error.value = e?.message || t('blogger.selectError')
   } finally {
-    isLoading.value = false
+    loadingUserId.value = null
   }
 }
 
 async function handleSkip() {
   if (!activeThreadId.value) return
-  isLoading.value = true
+  isSkipping.value = true
   error.value = ''
   try {
     await selectBlogger(activeThreadId.value, { skip: true })
@@ -57,7 +61,7 @@ async function handleSkip() {
   } catch (e: any) {
     error.value = e?.message || t('blogger.selectError')
   } finally {
-    isLoading.value = false
+    isSkipping.value = false
   }
 }
 </script>
@@ -121,7 +125,8 @@ async function handleSkip() {
           <NeonButton
             size="sm"
             variant="cyan"
-            :loading="isLoading"
+            :loading="loadingUserId === candidate.user_id"
+            :disabled="isBusy && loadingUserId !== candidate.user_id"
             @click="handleSelect(candidate)"
           >
             {{ t('blogger.select') }}
@@ -130,13 +135,15 @@ async function handleSkip() {
       </div>
     </div>
 
-    <!-- Skip button -->
+    <!-- Skip button (44px touch target) -->
     <div class="flex justify-center pt-1">
       <button
-        class="text-xs text-slate-400 hover:text-slate-600 transition-colors"
-        :disabled="isLoading"
+        type="button"
+        class="inline-flex items-center justify-center gap-1.5 min-h-11 min-w-[44px] px-4 text-xs text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-50"
+        :disabled="isBusy"
         @click="handleSkip"
       >
+        <AppIcon v-if="isSkipping" name="Loader2" size="xs" :animate="true" aria-hidden="true" />
         {{ t('blogger.skip') }}
       </button>
     </div>

@@ -144,6 +144,22 @@ async function handleTriggerAnalytics() {
     console.error('Failed to trigger analytics:', e)
   }
 }
+
+// Raw enums never render directly — map through i18n with a raw-value
+// fallback for values the backend adds later.
+function severityLabel(severity?: string): string {
+  if (!severity) return '—'
+  const key = `dashboard.contentCards.severity.${severity}`
+  const translated = t(key)
+  return translated === key ? severity : translated
+}
+
+function publishStatusLabel(status?: string): string {
+  if (!status) return '—'
+  const key = `dashboard.publishResult.statusValues.${status}`
+  const translated = t(key)
+  return translated === key ? status : translated
+}
 </script>
 
 <template>
@@ -419,7 +435,7 @@ async function handleTriggerAnalytics() {
           <div class="text-[10px] text-violet-400 mb-0.5">{{ t('replay.gapAnalysis') }}</div>
           <div class="space-y-1">
             <div v-for="(gap, i) in optimizationAnalysis.gaps" :key="i" class="text-xs flex gap-1.5">
-              <span class="shrink-0 px-1 rounded text-[10px] font-medium" :class="gap.severity === 'high' ? 'bg-red-100 text-red-600' : gap.severity === 'medium' ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-600'">{{ gap.severity }}</span>
+              <span class="shrink-0 px-1 rounded text-[10px] font-medium" :class="gap.severity === 'high' ? 'bg-red-100 text-red-600' : gap.severity === 'medium' ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-600'">{{ severityLabel(gap.severity) }}</span>
               <div>
                 <div class="text-slate-700 font-medium">{{ gap.dimension }}</div>
                 <div class="text-slate-500">{{ gap.description }}</div>
@@ -580,7 +596,7 @@ async function handleTriggerAnalytics() {
         <div v-if="publishResult.status" class="flex items-center justify-between text-sm">
           <span class="text-slate-500">{{ t('dashboard.publishResult.status') }}</span>
           <span :class="['px-2 py-0.5 rounded text-xs font-medium', publishResult.status === 'published' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600']">
-            {{ publishResult.status }}
+            {{ publishStatusLabel(publishResult.status) }}
           </span>
         </div>
         <div v-if="publishResult.published_at" class="flex items-center justify-between text-sm">
@@ -597,13 +613,13 @@ async function handleTriggerAnalytics() {
     </div>
 
     <!-- ═══ Manual analyst trigger (after publish, before analytics) ═══ -->
-    <div v-if="hasPublishResult && !hasAnalytics && (workflowStore.currentPhase === 'completed' || workflowStore.currentPhase === 'analyzing')" class="mt-4 rounded-xl p-4 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200/60">
+    <div v-if="!workflowStore.isReplayMode && hasPublishResult && !hasAnalytics && (workflowStore.currentPhase === 'completed' || workflowStore.currentPhase === 'analyzing')" class="mt-4 rounded-xl p-4 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200/60 dark:from-amber-950/50 dark:to-orange-950/40 dark:border-amber-500/30">
       <div class="flex items-center gap-3">
         <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-orange-400 flex items-center justify-center">
           <AppIcon name="BarChart3" size="sm" variant="white" />
         </div>
         <div class="flex-1">
-          <div class="text-sm font-semibold text-slate-800">{{ t('dashboard.contentCards.runAnalytics') || '分析传播效果' }}</div>
+          <div class="text-sm font-semibold text-slate-800 dark:text-amber-100">{{ t('dashboard.contentCards.runAnalytics') || '分析传播效果' }}</div>
           <div class="text-[10px] text-slate-400">{{ t('dashboard.contentCards.runAnalyticsDesc') || '使用 Ripple 分析预测与实际数据对比' }}</div>
         </div>
         <NeonButton variant="peach" size="sm" :loading="workflowStore.currentPhase === 'analyzing'" @click="handleTriggerAnalytics">

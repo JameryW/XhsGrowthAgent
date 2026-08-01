@@ -140,7 +140,9 @@ onUnmounted(() => {
       <span v-if="workflowStore.workflowState?.label" class="text-sm font-medium text-slate-700 truncate dark:text-slate-200">{{ workflowStore.workflowState.label }}</span>
       <span v-else class="text-xs text-slate-400 truncate">{{ workflowStore.currentThreadId || '—' }}</span>
       <span v-if="workflowStore.workflowState?.label && workflowStore.currentThreadId" class="text-[10px] text-slate-400 font-mono truncate">{{ workflowStore.currentThreadId.slice(-8) }}</span>
-      <div v-if="runningAgentElapsedDisplay" class="flex items-center gap-1.5 text-xs text-slate-500" aria-live="polite">
+      <!-- Agent elapsed ticks every second — deliberately NOT an aria-live
+           region, otherwise screen readers re-announce it on every tick. -->
+      <div v-if="runningAgentElapsedDisplay" class="flex items-center gap-1.5 text-xs text-slate-500">
         <AppIcon name="Clock" size="sm" variant="cyan" aria-hidden="true" />
         <span>{{ runningAgentElapsedDisplay }}</span>
       </div>

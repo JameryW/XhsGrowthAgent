@@ -26,6 +26,7 @@ const colors = {
     text: 'text-rose-600',
     border: 'border-rose-100',
     shadow: 'shadow-rose-500/10',
+    iconShadow: 'shadow-rose-500/20',
     bgLight: 'bg-rose-50',
   },
   cyan: {
@@ -33,6 +34,7 @@ const colors = {
     text: 'text-teal-600',
     border: 'border-teal-100',
     shadow: 'shadow-teal-500/10',
+    iconShadow: 'shadow-teal-500/20',
     bgLight: 'bg-teal-50',
   },
   purple: {
@@ -40,6 +42,7 @@ const colors = {
     text: 'text-violet-600',
     border: 'border-violet-100',
     shadow: 'shadow-violet-500/10',
+    iconShadow: 'shadow-violet-500/20',
     bgLight: 'bg-violet-50',
   },
   peach: {
@@ -47,6 +50,7 @@ const colors = {
     text: 'text-amber-600',
     border: 'border-amber-100',
     shadow: 'shadow-amber-500/10',
+    iconShadow: 'shadow-amber-500/20',
     bgLight: 'bg-amber-50',
   },
 }
@@ -58,7 +62,7 @@ const colors = {
     <div class="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 -z-10" :style="{ background: `radial-gradient(circle at 50% 0%, ${props.variant === 'pink' ? 'rgba(244,63,94,0.08)' : props.variant === 'cyan' ? 'rgba(20,184,166,0.08)' : props.variant === 'purple' ? 'rgba(139,92,246,0.08)' : 'rgba(245,158,11,0.08)'} 0%, transparent 50%)` }" aria-hidden="true" />
 
     <div class="flex items-center gap-2 md:gap-3 mb-3 md:mb-5">
-      <div :class="['w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-gradient-to-br flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:-translate-y-0.5', colors[props.variant].bg, `shadow-${props.variant === 'pink' ? 'rose' : props.variant === 'cyan' ? 'teal' : props.variant === 'purple' ? 'violet' : 'amber'}-500/20`]" aria-hidden="true">
+      <div :class="['w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-gradient-to-br flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:-translate-y-0.5', colors[props.variant].bg, colors[props.variant].iconShadow]" aria-hidden="true">
         <AppIcon :name="props.icon" size="sm" variant="white" class="md:hidden" />
         <AppIcon :name="props.icon" size="md" variant="white" class="hidden md:block" />
       </div>

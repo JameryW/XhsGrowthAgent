@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import WorkflowNode from '@/components/WorkflowNode.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { useWorkflowStore } from '@/stores'
@@ -34,10 +34,13 @@ function isNodeSelected(agent: string): boolean {
   return cpId === activeCheckpointId.value
 }
 
-// Keyboard navigation state
+// Keyboard navigation state — roving tabindex: exactly one phase node is
+// tabbable (the last focused one, defaulting to the first); arrow keys move
+// both focusedIndex and real DOM focus so the advertised hint actually works.
 const focusedIndex = ref(-1)
 const showTimelineDetails = ref(false)
 const now = ref(Date.now())
+const regionEl = ref<HTMLElement | null>(null)
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
 // ── Phase + sub-step structure ──
@@ -330,24 +333,48 @@ function formatTime(iso: string): string {
   }
 }
 
+const tabbableIndex = computed(() => (focusedIndex.value >= 0 ? focusedIndex.value : 0))
+
+function focusPhaseNode(index: number) {
+  focusedIndex.value = index
+  nextTick(() => {
+    regionEl.value
+      ?.querySelectorAll<HTMLElement>('[data-phase-node]')
+      [index]?.focus()
+  })
+}
+
 const handleKeyDown = (e: KeyboardEvent) => {
+  // Only hijack keys while a phase node has focus — the details toggle and
+  // other controls keep their native behavior.
+  const target = e.target as HTMLElement | null
+  if (!target?.closest('[data-phase-node]')) return
   const nodeCount = workflowPhases.value.length
   switch (e.key) {
     case 'ArrowRight':
       e.preventDefault()
-      focusedIndex.value = Math.min(nodeCount - 1, focusedIndex.value + 1)
+      focusPhaseNode(Math.min(nodeCount - 1, focusedIndex.value + 1))
       break
     case 'ArrowLeft':
       e.preventDefault()
-      focusedIndex.value = Math.max(0, focusedIndex.value - 1)
+      focusPhaseNode(Math.max(0, focusedIndex.value - 1))
       break
     case 'Home':
       e.preventDefault()
-      focusedIndex.value = 0
+      focusPhaseNode(0)
       break
     case 'End':
       e.preventDefault()
-      focusedIndex.value = nodeCount - 1
+      focusPhaseNode(nodeCount - 1)
+      break
+    case 'Enter':
+    case ' ':
+      // Replay mode: activate the focused node like a click (checkpoint jump).
+      e.preventDefault()
+      if (focusedIndex.value >= 0) {
+        const phase = workflowPhases.value[focusedIndex.value]
+        if (phase) handleNodeClick(phase.agent)
+      }
       break
   }
 }
@@ -377,6 +404,7 @@ onUnmounted(() => {
 
 <template>
   <div
+    ref="regionEl"
     class="bg-white/90 backdrop-blur-sm rounded-xl p-3 md:p-6 md:rounded-2xl border border-slate-200/50 shadow-sm dark:bg-slate-900/90 dark:border-slate-700/55 dark:shadow-slate-950/40"
     role="region"
     :aria-label="t('dashboard.timeline.title')"
@@ -397,36 +425,44 @@ onUnmounted(() => {
       <span class="text-sm text-rose-600">{{ errorMessage || t('dashboard.timeline.workflowError') }}</span>
     </div>
 
-    <!-- Progress line -->
-    <div class="relative py-4" role="progressbar" :aria-valuenow="workflowProgress" aria-valuemin="0" aria-valuemax="100" :aria-label="`${t('dashboard.timeline.progress')} ${workflowProgress}%`">
-      <div class="absolute top-1/2 left-0 right-0 h-1 bg-slate-100 rounded-full dark:bg-slate-700/70" aria-hidden="true" />
-      <div
-        class="absolute top-1/2 left-0 h-1 rounded-full transition-all duration-500"
-        :class="hasError ? 'bg-rose-400' : 'bg-gradient-to-r from-rose-400 to-teal-400'"
-        :style="{ width: `${workflowProgress}%` }"
-        aria-hidden="true"
-      />
-    </div>
+    <!-- Progress line + phase nodes share one scroll container so the line
+         scrolls with the nodes below 360px. The line visually duplicates the
+         hero progressbar, so it is hidden from AT (single progressbar). -->
+    <div class="overflow-x-auto -mx-3 md:mx-0 scrollbar-thin">
+      <div class="min-w-max md:min-w-0 px-1 md:px-4">
+        <div class="relative py-4" aria-hidden="true">
+          <div class="absolute top-1/2 left-0 right-0 h-1 bg-slate-100 rounded-full dark:bg-slate-700/70" aria-hidden="true" />
+          <div
+            class="absolute top-1/2 left-0 h-1 rounded-full transition-all duration-500"
+            :class="hasError ? 'bg-rose-400' : 'bg-gradient-to-r from-rose-400 to-teal-400'"
+            :style="{ width: `${workflowProgress}%` }"
+            aria-hidden="true"
+          />
+        </div>
 
-    <!-- Main phase nodes -->
-    <div class="flex justify-between items-start relative px-1 md:px-4 overflow-x-auto -mx-3 md:mx-0 scrollbar-thin" role="list" :aria-label="t('dashboard.timeline.stages')">
-      <div
-        v-for="(phase, index) in workflowPhases"
-        :key="phase.phase"
-        class="min-w-[56px] md:min-w-0 flex-1 shrink-0 md:shrink"
-        role="listitem"
-      >
-        <WorkflowNode
-          :icon="phase.subSteps.length > 0 && shouldExpandSubSteps(phase) ? 'ChevronDown' : phase.icon"
-          :label="phase.label"
-          :status="getPhaseStatus(phase)"
-          :focused="isFocused(index)"
-          :clickable="isReplayMode"
-          :selected="isNodeSelected(phase.agent)"
-          :tabindex="isFocused(index) ? 0 : -1"
-          :aria-label="`${phase.label} - ${getPhaseStatus(phase) === 'completed' ? t('dashboard.timeline.completed') : getPhaseStatus(phase) === 'running' ? t('dashboard.timeline.running') : getPhaseStatus(phase) === 'error' ? t('dashboard.timeline.error') : t('dashboard.timeline.pending')}`"
-          @click="handleNodeClick(phase.agent)"
-        />
+        <!-- Main phase nodes -->
+        <div class="flex justify-between items-start relative" role="list" :aria-label="t('dashboard.timeline.stages')">
+          <div
+            v-for="(phase, index) in workflowPhases"
+            :key="phase.phase"
+            class="min-w-[56px] md:min-w-0 flex-1 shrink-0 md:shrink"
+            role="listitem"
+          >
+            <WorkflowNode
+              :icon="phase.subSteps.length > 0 && shouldExpandSubSteps(phase) ? 'ChevronDown' : phase.icon"
+              :label="phase.label"
+              :status="getPhaseStatus(phase)"
+              :focused="isFocused(index)"
+              :clickable="isReplayMode"
+              :selected="isNodeSelected(phase.agent)"
+              :tabindex="index === tabbableIndex ? 0 : -1"
+              data-phase-node
+              :aria-label="`${phase.label} - ${getPhaseStatus(phase) === 'completed' ? t('dashboard.timeline.completed') : getPhaseStatus(phase) === 'running' ? t('dashboard.timeline.running') : getPhaseStatus(phase) === 'error' ? t('dashboard.timeline.error') : t('dashboard.timeline.pending')}`"
+              @click="handleNodeClick(phase.agent)"
+              @focus="focusedIndex = index"
+            />
+          </div>
+        </div>
       </div>
     </div>
 

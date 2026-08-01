@@ -464,7 +464,6 @@ onUnmounted(() => {
           'from-cyan-50/80 via-white to-emerald-50/60 dark:from-cyan-950/40 dark:via-slate-900/90 dark:to-emerald-950/30': dashboardHero.tone === 'cyan',
           'from-fuchsia-50/80 via-white to-amber-50/60 dark:from-fuchsia-950/40 dark:via-slate-900/90 dark:to-amber-950/30': dashboardHero.tone === 'pink',
         }"
-        aria-live="polite"
         :aria-label="t('dashboard.hero.eyebrow')"
       >
         <div class="pointer-events-none absolute -right-14 -top-16 h-40 w-40 rounded-full bg-white/70 blur-2xl dark:bg-slate-700/30" aria-hidden="true" />
@@ -480,22 +479,14 @@ onUnmounted(() => {
             </div>
           </div>
           <div class="flex shrink-0 items-center gap-3 sm:flex-col sm:items-end sm:gap-1">
-            <span class="rounded-full border border-white/90 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 shadow-sm dark:border-slate-600/70 dark:bg-slate-800/80">{{ dashboardHero.status }}</span>
+            <!-- Status pill flips only on state transitions — the one polite
+                 live region in the hero (progress % ticks stay silent). -->
+            <span class="rounded-full border border-white/90 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 shadow-sm dark:border-slate-600/70 dark:bg-slate-800/80" role="status">{{ dashboardHero.status }}</span>
             <span class="text-xs font-semibold text-slate-400">{{ t('dashboard.hero.progressLabel', { percent: dashboardHero.progress }) }}</span>
           </div>
         </div>
         <div class="relative mt-4 h-2 overflow-hidden rounded-full bg-white/80 ring-1 ring-slate-200/60 dark:bg-slate-800/80 dark:ring-slate-600/50" role="progressbar" :aria-valuenow="dashboardHero.progress" aria-valuemin="0" aria-valuemax="100" :aria-label="t('dashboard.header.progress')">
           <div class="h-full rounded-full bg-gradient-to-r from-neon-pink via-neon-peach to-neon-cyan motion-safe:transition-[width] motion-safe:duration-500" :style="{ width: `${dashboardHero.progress}%` }" />
-        </div>
-        <div v-if="workflowStore.currentPhase === 'completed'" class="relative mt-4 flex justify-end">
-          <NeonButton
-            variant="cyan"
-            size="sm"
-            class="min-h-11"
-            @click="router.push({ name: 'history', query: accountQuery(threadAccountId, { omitIfEquals: accountsStore.activeAccountId }) })"
-          >
-            <span class="inline-flex items-center gap-2"><AppIcon name="History" size="sm" variant="white" aria-hidden="true" />{{ t('dashboard.hero.completedCta') }}</span>
-          </NeonButton>
         </div>
       </section>
 
@@ -512,7 +503,7 @@ onUnmounted(() => {
           v-for="chip in todoChips"
           :key="chip.anchor"
           type="button"
-          class="rounded-full border border-cyan-200/70 bg-cyan-50/80 px-3 py-1.5 text-xs font-medium text-cyan-700 transition hover:bg-cyan-100 active:scale-95 min-h-9 dark:border-cyan-500/30 dark:bg-cyan-950/40 dark:text-cyan-200"
+          class="rounded-full border border-cyan-200/70 bg-cyan-50/80 px-3 py-1.5 text-xs font-medium text-cyan-700 transition hover:bg-cyan-100 active:scale-95 min-h-11 dark:border-cyan-500/30 dark:bg-cyan-950/40 dark:text-cyan-200"
           @click="scrollToPanel(chip.anchor)"
         >
           {{ chip.label }}
