@@ -435,12 +435,16 @@ watch(
       <!-- Tablet: compact bottom section -->
       <template v-else>
         <div class="flex flex-col items-center gap-2">
-          <!-- WS status dot -->
+          <!-- WS status dot (color + accessible text, not color alone) -->
           <div
             class="h-2 w-2 rounded-full"
             :class="statusDotClass"
             :title="connectionLabel"
-          />
+            role="status"
+            :aria-label="connectionLabel"
+          >
+            <span class="sr-only">{{ connectionLabel }}</span>
+          </div>
           <button
             class="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-50 text-xs font-bold text-cyan-600 transition hover:bg-cyan-100"
             :aria-label="t('nav.account')"
@@ -460,6 +464,8 @@ watch(
           </button>
           <!-- Theme -->
           <ThemeToggle />
+          <!-- Language -->
+          <LanguageSwitcher class="flex-col [&_button]:min-h-11 [&_button]:w-10" />
           <!-- Logout -->
           <button
             v-if="authStore.isAuthenticated"

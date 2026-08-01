@@ -63,7 +63,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="fixed top-12 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none" role="region" :aria-label="t('toast.notifications')">
+  <div class="fixed top-16 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none" role="region" :aria-label="t('toast.notifications')">
     <TransitionGroup name="toast">
       <div
         v-for="toast in toastStore.toasts"

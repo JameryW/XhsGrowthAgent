@@ -77,7 +77,7 @@ const canReconnect = computed(() => realtimeStore.connectionStatus === 'disconne
     <button
       v-if="canReconnect"
       type="button"
-      class="ml-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-900 text-white hover:bg-slate-700 active:scale-95 transition min-w-[44px] min-h-9 flex items-center justify-center"
+      class="ml-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-900 text-white hover:bg-slate-700 active:scale-95 transition min-w-[44px] min-h-11 flex items-center justify-center"
       @click="realtimeStore.reconnect()"
     >
       {{ t('connection.reconnect') }}

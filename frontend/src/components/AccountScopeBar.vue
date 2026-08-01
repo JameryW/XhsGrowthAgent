@@ -4,6 +4,7 @@
  * Selects a *view* account only — does not flip the workspace active account.
  */
 import { nextTick, ref, watch } from 'vue'
+import { useReducedMotion } from '@/composables/useReducedMotion'
 
 export type AccountScopeChip = {
   id: string
@@ -44,6 +45,7 @@ const emit = defineEmits<{
 }>()
 
 const liveMessage = ref('')
+const { prefersReduced } = useReducedMotion()
 
 const activeClasses = {
   violet:
@@ -100,7 +102,7 @@ watch(
     if (!id || id === prev) return
     await nextTick()
     document.getElementById(`${props.idPrefix}-${id}`)?.scrollIntoView({
-      behavior: 'smooth',
+      behavior: prefersReduced.value ? 'auto' : 'smooth',
       block: 'nearest',
       inline: 'center',
     })

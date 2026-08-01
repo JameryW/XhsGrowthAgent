@@ -8,6 +8,7 @@
  * route components asynchronously and out-in can remove the old page before
  * the new component has a renderable vnode, leaving a blank RouterView.
  */
+import { useI18n } from 'vue-i18n'
 
 interface Props {
   /** Transition duration in milliseconds */
@@ -17,6 +18,8 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   duration: 200
 })
+
+const { t } = useI18n()
 
 // Compute transition style based on duration
 const transitionStyle = {
@@ -33,7 +36,7 @@ const transitionStyle = {
       <Suspense timeout="0">
         <component :is="Component" :key="route.fullPath" />
         <template #fallback>
-          <div class="page-transition-loading" role="status" aria-busy="true" aria-label="Loading page">
+          <div class="page-transition-loading" role="status" aria-busy="true" :aria-label="t('common.loadingPage')">
             <span class="h-8 w-8 rounded-full border-2 border-slate-200 border-t-teal-500 animate-spin dark:border-slate-700 dark:border-t-teal-400" aria-hidden="true" />
           </div>
         </template>
@@ -50,6 +53,11 @@ const transitionStyle = {
 
 .fade-slide-leave-active {
   animation: fade-slide-out var(--transition-duration, 200ms) ease-out;
+  /* No out-in mode (see script note), so the leaving page overlaps the
+     entering one: pull it out of flow to avoid stacking/scroll jumps. */
+  position: absolute;
+  inset: 0;
+  width: 100%;
 }
 
 .page-transition-loading {

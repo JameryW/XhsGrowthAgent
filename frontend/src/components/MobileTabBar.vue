@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppIcon from '@/components/AppIcon.vue'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import { useAccountsStore, useAuthStore, useRealtimeStore } from '@/stores'
 import { useCrossAccountHintsStore } from '@/stores/crossAccountHints'
 import { prefetchRouteByPath, prefetchStartWorkspace } from '@/utils/routePrefetch'
@@ -15,6 +16,9 @@ const accountsStore = useAccountsStore()
 const realtimeStore = useRealtimeStore()
 const crossAccountHints = useCrossAccountHintsStore()
 const showMore = ref(false)
+const moreButtonRef = ref<HTMLButtonElement | null>(null)
+const moreMenuRef = ref<HTMLElement | null>(null)
+const firstMoreItemRef = ref<HTMLButtonElement | null>(null)
 
 const reviewAwaitingCount = computed(() => crossAccountHints.reviewAwaitingCount)
 
@@ -53,6 +57,21 @@ function handleMenuKeydown(event: KeyboardEvent) {
     showMore.value = false
   }
 }
+
+// Disclosure focus management: on open move focus to the first menu item;
+// on close return it to the trigger while focus is still inside the menu
+// (route navigation hands focus to #main-content afterwards).
+watch(showMore, async (open) => {
+  if (open) {
+    await nextTick()
+    firstMoreItemRef.value?.focus()
+    return
+  }
+  const active = document.activeElement
+  if (moreMenuRef.value && active && moreMenuRef.value.contains(active)) {
+    moreButtonRef.value?.focus()
+  }
+})
 
 watch(() => route.path, () => {
   showMore.value = false
@@ -127,12 +146,15 @@ const handleLogout = async () => {
       </button>
 
       <button
+        ref="moreButtonRef"
+        type="button"
         @click="showMore = !showMore"
         :class="[
           'flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors duration-200 relative',
           showMore || moreActive ? 'text-rose-500' : 'text-slate-400'
         ]"
         :aria-expanded="showMore"
+        aria-controls="mobile-more-menu"
         :aria-label="t('nav.more')"
       >
         <span :class="['flex h-8 w-10 items-center justify-center rounded-xl transition-all duration-200', showMore || moreActive ? 'bg-rose-50 shadow-sm ring-1 ring-rose-100' : '']" aria-hidden="true">
@@ -142,10 +164,24 @@ const handleLogout = async () => {
         <span v-if="moreActive" class="absolute bottom-1 h-1 w-1 rounded-full bg-rose-500" aria-hidden="true" />
       </button>
 
+      <!-- Transparent scrim: tapping outside closes the menu. Teleported to
+           body because liquid-glass-nav's backdrop-filter would trap a fixed
+           scrim inside the tab bar box. -->
+      <Teleport to="body">
+        <div
+          v-if="showMore"
+          class="fixed inset-0 z-40"
+          aria-hidden="true"
+          @click="showMore = false"
+        />
+      </Teleport>
+
       <div
         v-if="showMore"
+        id="mobile-more-menu"
+        ref="moreMenuRef"
         class="app-mobile-more-menu absolute bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-2 w-64 overflow-hidden rounded-2xl border border-white/70 bg-white/95 shadow-xl shadow-slate-900/10 backdrop-blur-md dark:border-slate-700/60 dark:bg-slate-900/95"
-        role="menu"
+        :aria-label="t('nav.more')"
       >
         <div class="border-b border-slate-100 bg-gradient-to-r from-cyan-50/80 to-white px-4 py-3 dark:border-slate-700/60 dark:from-cyan-950/40 dark:to-slate-900/90" role="status" :aria-label="t('nav.activeAccount')">
           <div class="flex items-center gap-3">
@@ -160,10 +196,14 @@ const handleLogout = async () => {
             </div>
           </div>
         </div>
+        <div class="flex min-h-11 items-center justify-between gap-2 border-b border-slate-100 px-4 py-1.5 dark:border-slate-700/60 [&_button]:min-h-11 [&_button]:min-w-11">
+          <span class="text-xs font-medium text-slate-500 dark:text-slate-400">{{ t('nav.language') }}</span>
+          <LanguageSwitcher />
+        </div>
         <button
+          ref="firstMoreItemRef"
           type="button"
           class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
-          role="menuitem"
           @mouseenter="warmNavPath('/analytics')"
           @focus="warmNavPath('/analytics')"
           @click="navigate('/analytics')"
@@ -174,7 +214,6 @@ const handleLogout = async () => {
         <button
           type="button"
           class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
-          role="menuitem"
           @mouseenter="warmNavPath('/evaluation')"
           @focus="warmNavPath('/evaluation')"
           @click="navigate('/evaluation')"
@@ -185,7 +224,6 @@ const handleLogout = async () => {
         <button
           type="button"
           class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
-          role="menuitem"
           @mouseenter="warmNavPath('/history')"
           @focus="warmNavPath('/history')"
           @click="navigate('/history')"
@@ -196,7 +234,6 @@ const handleLogout = async () => {
         <button
           type="button"
           class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
-          role="menuitem"
           @mouseenter="warmNavPath('/settings')"
           @focus="warmNavPath('/settings')"
           @click="openSettings"
@@ -205,8 +242,8 @@ const handleLogout = async () => {
           <span>{{ t('nav.settings') }}</span>
         </button>
         <button
+          type="button"
           class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-60"
-          role="menuitem"
           :disabled="authStore.isLoading"
           @click="handleLogout"
         >

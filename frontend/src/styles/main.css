@@ -342,6 +342,11 @@
   66% { transform: translate(-20px, -15px) scale(1.04); }
 }
 
+/* Third mesh orb (App.vue) — class form so reduced-motion can null it. */
+.mesh-drift-3 {
+  animation: mesh-drift-3 22s ease-in-out infinite;
+}
+
 .liquid-mesh-bg {
   position: fixed;
   inset: 0;
@@ -414,6 +419,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   .page-header-shell::after,
   .liquid-mesh-bg::before,
   .liquid-mesh-bg::after,
@@ -422,7 +431,15 @@
   .animate-pulse-glow,
   .shimmer-animation,
   .pulse-animation,
-  .rotate-animation {
+  .rotate-animation,
+  /* Tailwind animated utilities and component-level loops */
+  .animate-pulse,
+  .animate-spin,
+  .animate-spin-slow,
+  .scale-bounce-animation,
+  .mesh-drift-3,
+  /* Review.vue loading spinner (@keyframes review-spin, scoped .spin class) */
+  .spin {
     animation: none !important;
   }
 
@@ -430,6 +447,12 @@
   .card,
   .btn {
     transition-duration: 0.01ms !important;
+  }
+
+  /* Modal scale/fade transitions (ConfirmModal, ConfirmStartModal, QrLoginModal, Review) */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: none !important;
   }
 
   .page-header-shell:hover {
@@ -1019,7 +1042,8 @@ html.dark .overview-card,
 html.dark .radar-card,
 html.dark .dims-card,
 html.dark .hints-card,
-html.dark .trend-card {
+html.dark .trend-card,
+html.dark .action-card {
   background: rgba(15, 23, 42, 0.82) !important;
   border-color: rgba(100, 116, 139, 0.45) !important;
   color: #e2e8f0 !important;

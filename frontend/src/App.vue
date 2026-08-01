@@ -157,10 +157,10 @@ const handleErrorBoundaryRefresh = () => {
 </script>
 
 <template>
-  <div class="app-shell h-screen min-w-0 flex relative overflow-hidden">
+  <div class="app-shell h-screen h-dvh min-w-0 flex relative overflow-hidden">
     <!-- Liquid glass background mesh (hidden on showcase — it has its own) -->
     <div v-if="!isImmersivePage" class="liquid-mesh-bg">
-      <div class="absolute w-[55vw] h-[55vw] top-[30%] left-[30%] rounded-full" style="background: radial-gradient(circle, rgba(139,92,246,0.20) 0%, transparent 60%); animation: mesh-drift-3 22s ease-in-out infinite;" />
+      <div class="mesh-drift-3 absolute w-[55vw] h-[55vw] top-[30%] left-[30%] rounded-full" style="background: radial-gradient(circle, rgba(139,92,246,0.20) 0%, transparent 60%);" />
     </div>
 
     <!-- Skip to main content link for keyboard users -->
@@ -173,9 +173,10 @@ const handleErrorBoundaryRefresh = () => {
 
     <!-- Status indicators (always visible). Hidden on /tui: the terminal page
          has its own fixed palette and the floating toggle covers its status
-         bar's search button on mobile. -->
+         bar's search button on mobile. On mobile the toggle docks to the left
+         so it cannot cover the ConnectionStatus pill or toast close button. -->
     <Toast />
-    <ThemeToggle v-if="!isImmersivePage && route.name !== 'tui' && (!showChrome || isMobile)" class="fixed right-3 top-3 z-[80]" />
+    <ThemeToggle v-if="!isImmersivePage && route.name !== 'tui' && (!showChrome || isMobile)" class="fixed left-3 right-auto top-3 z-[80] md:left-auto md:right-3" />
 
     <!-- Authenticated chrome -->
     <template v-if="showChrome">
