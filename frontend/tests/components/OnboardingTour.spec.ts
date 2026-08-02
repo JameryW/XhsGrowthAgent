@@ -59,7 +59,7 @@ describe('OnboardingTour', () => {
       })
       await wrapper.vm.$nextTick()
       const overlay = wrapper.find('.fixed.inset-0')
-      expect(overlay.classes()).toContain('z-50')
+      expect(overlay.classes()).toContain('z-modal')
     })
 
     it('renders backdrop with blur effect', async () => {

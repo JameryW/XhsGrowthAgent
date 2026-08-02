@@ -417,8 +417,8 @@ watch(filteredCases, async () => {
 <template>
   <div class="showcase-v2 min-h-screen overflow-x-clip bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50">
     <AuroraBackground variant="rose" />
-    <a href="#cases" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-slate-900 focus:px-4 focus:py-3 focus:text-sm focus:font-semibold focus:text-white">{{ t('common.skipToContent') }}</a>
-    <nav class="glass-panel relative z-10 border-b border-slate-200/60 dark:border-slate-800/60">
+    <a href="#cases" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-modal focus:rounded-lg focus:bg-slate-900 focus:px-4 focus:py-3 focus:text-sm focus:font-semibold focus:text-white">{{ t('common.skipToContent') }}</a>
+    <nav class="glass-panel relative z-sticky border-b border-slate-200/60 dark:border-slate-800/60">
       <div class="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-4 px-4 md:px-8">
         <button type="button" class="flex min-h-11 items-center gap-3 rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500" @click="router.push({ name: 'showcase' })">
           <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-rose-500 to-amber-400 shadow-lg shadow-rose-500/30"><AppIcon name="Rocket" size="sm" variant="white" aria-hidden="true" /></span>
@@ -434,7 +434,7 @@ watch(filteredCases, async () => {
       </div>
     </nav>
 
-    <main id="main-content" class="relative z-10 mx-auto max-w-7xl px-4 py-10 md:px-8 md:py-14">
+    <main id="main-content" class="relative z-sticky mx-auto max-w-7xl px-4 py-10 md:px-8 md:py-14">
       <section class="grid items-center gap-8 lg:grid-cols-[1.05fr_.95fr] lg:gap-14" aria-labelledby="showcase-title">
         <div>
           <p class="hero-enter inline-flex items-center gap-2 rounded-full border border-teal-200/80 bg-teal-50/90 px-3 py-1.5 text-xs font-semibold text-teal-700 shadow-sm dark:border-teal-400/20 dark:bg-teal-400/10 dark:text-teal-200" style="--enter-delay: 0ms">
@@ -596,7 +596,7 @@ watch(filteredCases, async () => {
       </section>
     </main>
 
-    <footer class="relative z-10 border-t border-slate-200/70 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">{{ t('showcase.footer') }}</footer>
+    <footer class="relative z-sticky border-t border-slate-200/70 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">{{ t('showcase.footer') }}</footer>
   </div>
 </template>
 

@@ -76,7 +76,7 @@ describe('KeyboardShortcuts', () => {
       })
       await wrapper.vm.$nextTick()
       const modal = wrapper.find('.fixed.inset-0')
-      expect(modal.classes()).toContain('z-50')
+      expect(modal.classes()).toContain('z-modal')
     })
 
     it('renders backdrop with blur', async () => {

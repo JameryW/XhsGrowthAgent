@@ -650,8 +650,8 @@ watch(locale, () => {
 <template>
   <div class="replay-v2 min-h-screen overflow-x-clip bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50">
     <AuroraBackground variant="teal" />
-    <a href="#replay-results" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-slate-900 focus:px-4 focus:py-3 focus:text-sm focus:font-semibold focus:text-white">{{ t('common.skipToContent') }}</a>
-    <nav class="glass-panel relative z-10 border-b border-slate-200/60 dark:border-slate-800/60">
+    <a href="#replay-results" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-modal focus:rounded-lg focus:bg-slate-900 focus:px-4 focus:py-3 focus:text-sm focus:font-semibold focus:text-white">{{ t('common.skipToContent') }}</a>
+    <nav class="glass-panel relative z-sticky border-b border-slate-200/60 dark:border-slate-800/60">
       <div class="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-3 px-4 md:px-8">
         <div class="flex min-w-0 items-center gap-3">
           <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-600 transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 dark:text-slate-300 dark:hover:bg-slate-800" :aria-label="t('replay.publicBack')" @click="goBack"><AppIcon name="ArrowLeft" size="sm" aria-hidden="true" /></button>
@@ -665,7 +665,7 @@ watch(locale, () => {
       </div>
     </nav>
 
-    <main class="relative z-10 mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-10">
+    <main class="relative z-sticky mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-10">
       <section v-if="loading" class="glass-panel rounded-3xl p-6" aria-busy="true"><div class="shimmer-surface h-5 w-2/3 rounded bg-slate-200 dark:bg-slate-800" /><div class="shimmer-surface mt-4 h-3 w-full rounded bg-slate-100 dark:bg-slate-800" /><div class="shimmer-surface mt-8 h-64 rounded-2xl bg-slate-100 dark:bg-slate-800" /><p class="mt-4 text-sm text-slate-500">{{ t('replay.loadingWorkflow') }}</p></section>
       <section v-else-if="notFound" class="rounded-3xl border border-dashed border-slate-300 bg-white/80 p-10 text-center dark:border-slate-700 dark:bg-slate-900/80" role="alert"><AppIcon name="HelpCircle" size="lg" variant="cyan" aria-hidden="true" /><h1 class="mt-4 text-xl font-semibold">{{ t('replay.threadNotFound') }}</h1><p class="mt-2 text-sm text-slate-500 dark:text-slate-400">{{ t('replay.threadNotFoundDesc') }}</p><button type="button" class="mt-5 min-h-11 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white dark:bg-white dark:text-slate-900" @click="goBack">{{ t('replay.publicBack') }}</button></section>
       <section v-else-if="manifestError" class="rounded-3xl border border-rose-200 bg-rose-50 p-8 text-center dark:border-rose-400/20 dark:bg-rose-400/10" role="alert"><AppIcon name="WifiOff" size="lg" variant="pink" aria-hidden="true" /><h1 class="mt-4 text-xl font-semibold">{{ t('replay.publicLoadFailed') }}</h1><p class="mt-2 text-sm text-slate-600 dark:text-slate-300">{{ t('replay.publicLoadFailedDesc') }}</p><button type="button" class="mt-5 min-h-11 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white dark:bg-white dark:text-slate-900" :disabled="retrying" @click="retryReplay">{{ retrying ? t('common.loadingState') : t('common.retry') }}</button></section>

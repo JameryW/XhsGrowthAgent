@@ -2674,7 +2674,7 @@ onUnmounted(() => {
     <!-- Context menu -->
     <div
       v-if="contextMenuVisible"
-      class="tui-context-menu fixed py-1 z-50 min-w-[160px]"
+      class="tui-context-menu fixed py-1 z-modal min-w-[160px]"
       :style="{ left: `${contextMenuPos.x}px`, top: `${contextMenuPos.y}px` }"
       @click.stop
     >

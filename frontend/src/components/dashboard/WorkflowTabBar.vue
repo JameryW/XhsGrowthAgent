@@ -286,7 +286,7 @@ watch(confirmCloseTabId, async (id) => {
     </div>
 
     <Teleport to="body">
-      <div v-if="confirmCloseTabId" class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" @click.self="cancelClose">
+      <div v-if="confirmCloseTabId" class="fixed inset-0 z-modal flex items-center justify-center bg-black/30 backdrop-blur-sm" @click.self="cancelClose">
         <div
           ref="confirmDialogEl"
           role="dialog"
@@ -368,7 +368,7 @@ watch(confirmCloseTabId, async (id) => {
 
 .overflow-dropdown {
   @apply absolute right-2 top-full mt-1 bg-white/[.98] backdrop-blur-sm rounded-xl border border-slate-200/50 shadow-xl
-         py-1 min-w-[200px] max-h-[300px] overflow-y-auto z-40;
+         py-1 min-w-[200px] max-h-[300px] overflow-y-auto z-dropdown;
 }
 
 .overflow-item {

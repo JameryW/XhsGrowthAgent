@@ -79,8 +79,11 @@ export default {
         base: '0',
         sticky: '10',
         overlay: '20',
+        dropdown: '40',
         modal: '50',
         toast: '60',
+        chrome: '80',
+        max: '100',
       },
       animation: {
         'pulse-glow': 'pulse-glow 3s ease-in-out infinite',

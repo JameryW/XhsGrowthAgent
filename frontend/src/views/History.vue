@@ -1219,7 +1219,7 @@ const modeColor = (mode: string) => mode === 'brief' ? 'bg-pink-50 text-pink-600
 
     <div
       v-if="showcaseTarget"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
+      class="fixed inset-0 z-modal flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
       role="presentation"
       @click.self="closeShowcaseSettings"
     >

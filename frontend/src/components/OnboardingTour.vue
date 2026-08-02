@@ -159,7 +159,7 @@ const isLastStep = computed(() => props.currentStep === 3)
     <Transition name="onboarding">
       <div
         v-if="isActive"
-        class="fixed inset-0 z-50 pointer-events-none"
+        class="fixed inset-0 z-modal pointer-events-none"
         role="dialog"
         aria-modal="true"
         aria-labelledby="tour-title"

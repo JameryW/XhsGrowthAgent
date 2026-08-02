@@ -193,7 +193,7 @@ describe('OfflineRecovery', () => {
       })
 
       expect(wrapper.find('.fixed.top-0.left-0.right-0').exists()).toBe(true)
-      expect(wrapper.find('.z-50').exists()).toBe(true)
+      expect(wrapper.find('.z-modal').exists()).toBe(true)
     })
 
     it('has WifiOff icon', () => {

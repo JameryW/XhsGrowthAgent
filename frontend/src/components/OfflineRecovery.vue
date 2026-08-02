@@ -104,7 +104,7 @@ onUnmounted(() => {
     <!-- Only show offline warning after initialization AND when truly offline -->
     <div
       v-if="initialized && isOffline"
-      class="fixed top-0 left-0 right-0 z-50 px-4 py-3 bg-gradient-to-r from-amber-500 to-amber-400 text-white shadow-lg"
+      class="fixed top-0 left-0 right-0 z-modal px-4 py-3 bg-gradient-to-r from-amber-500 to-amber-400 text-white shadow-lg"
       role="status"
       aria-live="assertive"
       :aria-label="t('offline.warning')"

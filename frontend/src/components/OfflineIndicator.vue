@@ -16,7 +16,7 @@ const pendingCount = computed(() => offlineStore.pendingActionCount)
   <Transition name="offline-indicator">
     <div
       v-if="isOffline"
-      class="fixed top-0 left-0 right-0 z-40 px-4 py-2 bg-gradient-to-r from-rose-500 to-rose-400 text-white text-sm flex items-center justify-center gap-2 shadow-md"
+      class="fixed top-0 left-0 right-0 z-dropdown px-4 py-2 bg-gradient-to-r from-rose-500 to-rose-400 text-white text-sm flex items-center justify-center gap-2 shadow-md"
       role="status"
       aria-live="assertive"
       :aria-label="t('offlineIndicator.networkOffline')"

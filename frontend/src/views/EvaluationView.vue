@@ -1026,7 +1026,7 @@ function dimDescription(dim: string): string {
       <div
         v-if="drawerNoteId && selectedAccountId"
         ref="noteDrawerRef"
-        class="fixed inset-0 z-50 flex justify-end"
+        class="fixed inset-0 z-modal flex justify-end"
         role="dialog"
         aria-modal="true"
         :aria-label="t('creatorNoteQuality.title')"

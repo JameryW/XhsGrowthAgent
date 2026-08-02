@@ -1578,7 +1578,7 @@ const handleCancelConfirm = () => {
               </div>
 
               <!-- Action buttons (offset above the fixed mobile tab bar) -->
-              <div class="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:bottom-0 z-10 -mx-1 flex flex-wrap gap-2 border-t border-slate-200/70 bg-white/90 px-1 py-3 pt-3 backdrop-blur-sm dark:bg-slate-950/90 dark:border-slate-700/60">
+              <div class="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:bottom-0 z-sticky -mx-1 flex flex-wrap gap-2 border-t border-slate-200/70 bg-white/90 px-1 py-3 pt-3 backdrop-blur-sm dark:bg-slate-950/90 dark:border-slate-700/60">
                 <NeonButton
                   variant="cyan"
                   size="sm"
@@ -1647,7 +1647,7 @@ const handleCancelConfirm = () => {
     <Transition name="modal">
       <div
         v-if="showPublishConfirm"
-        class="fixed inset-0 z-50 flex items-center justify-center p-4"
+        class="fixed inset-0 z-modal flex items-center justify-center p-4"
         role="dialog"
         aria-modal="true"
         aria-labelledby="review-publish-title"

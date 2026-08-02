@@ -853,7 +853,7 @@ function startWithTopic(topic: string, niche?: string) {
     <!-- AN-12: busy overlay while switching period — keeps the old data visible. -->
     <div
       v-if="isRefreshing"
-      class="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-white/50 backdrop-blur-[1px] dark:bg-slate-900/50"
+      class="absolute inset-0 z-overlay flex items-center justify-center rounded-2xl bg-white/50 backdrop-blur-[1px] dark:bg-slate-900/50"
       role="status"
       aria-live="polite"
     >
@@ -1139,7 +1139,7 @@ function startWithTopic(topic: string, niche?: string) {
     <div
       v-if="selectedPost"
       ref="drawerRef"
-      class="fixed inset-0 z-50 flex justify-end"
+      class="fixed inset-0 z-modal flex justify-end"
       role="dialog"
       aria-modal="true"
       :aria-label="t('analytics.detail.title')"

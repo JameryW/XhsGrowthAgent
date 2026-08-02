@@ -88,6 +88,6 @@ describe('LoadingOverlay', () => {
     const overlay = wrapper.find('.loading-overlay')
     expect(overlay.classes()).toContain('fixed')
     expect(overlay.classes()).toContain('inset-0')
-    expect(overlay.classes()).toContain('z-50')
+    expect(overlay.classes()).toContain('z-modal')
   })
 })

@@ -166,7 +166,7 @@ const handleErrorBoundaryRefresh = () => {
     <!-- Skip to main content link for keyboard users -->
     <a
       href="#main-content"
-      class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-teal-500 focus:text-white focus:rounded-lg focus:shadow-lg focus:outline-none"
+      class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-max focus:px-4 focus:py-2 focus:bg-teal-500 focus:text-white focus:rounded-lg focus:shadow-lg focus:outline-none"
     >
       {{ t('common.skipToContent') }}
     </a>
@@ -176,7 +176,7 @@ const handleErrorBoundaryRefresh = () => {
          bar's search button on mobile. On mobile the toggle docks to the left
          so it cannot cover the ConnectionStatus pill or toast close button. -->
     <Toast />
-    <ThemeToggle v-if="!isImmersivePage && route.name !== 'tui' && (!showChrome || isMobile)" class="fixed left-3 right-auto top-3 z-[80] md:left-auto md:right-3" />
+    <ThemeToggle v-if="!isImmersivePage && route.name !== 'tui' && (!showChrome || isMobile)" class="fixed left-3 right-auto top-3 z-chrome md:left-auto md:right-3" />
 
     <!-- Authenticated chrome -->
     <template v-if="showChrome">
@@ -207,7 +207,7 @@ const handleErrorBoundaryRefresh = () => {
     <!-- 主内容区 -->
     <main
       id="main-content"
-      class="app-main min-w-0 w-full flex-1 overflow-y-auto relative z-10"
+      class="app-main min-w-0 w-full flex-1 overflow-y-auto relative z-sticky"
       :class="isImmersivePage ? 'app-main-immersive' : (isMobile ? 'p-3 pb-20' : isTablet ? 'p-4' : 'p-6')"
       tabindex="-1"
     >
