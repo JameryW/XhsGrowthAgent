@@ -56,11 +56,11 @@ const tone = computed(() => toneClasses[props.tone])
 
 <template>
   <header
-    class="page-header-shell relative isolate overflow-hidden rounded-2xl border bg-gradient-to-br p-4 shadow-sm md:rounded-3xl md:p-6"
+    class="page-header-shell dark-explicit relative isolate overflow-hidden rounded-2xl border bg-gradient-to-br p-4 shadow-sm md:rounded-3xl md:p-6"
     :class="tone.shell"
     :aria-labelledby="titleId"
   >
-    <div class="pointer-events-none absolute -right-14 -top-16 h-44 w-44 rounded-full blur-3xl" :class="tone.glow" aria-hidden="true" />
+    <div class="pointer-events-none dark-explicit absolute -right-14 -top-16 h-44 w-44 rounded-full blur-3xl" :class="tone.glow" aria-hidden="true" />
     <div class="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div class="flex min-w-0 items-start gap-3 md:gap-4">
         <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br shadow-lg md:h-14 md:w-14" :class="tone.icon" aria-hidden="true">
@@ -68,8 +68,8 @@ const tone = computed(() => toneClasses[props.tone])
         </div>
         <div class="min-w-0">
           <p v-if="eyebrow" class="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{{ eyebrow }}</p>
-          <h1 :id="titleId" class="mt-0.5 text-xl font-bold tracking-tight text-slate-800 md:text-2xl">{{ title }}</h1>
-          <p v-if="description" class="mt-1 max-w-2xl text-xs leading-5 text-slate-500 md:text-sm">{{ description }}</p>
+          <h1 :id="titleId" class="dark-explicit mt-0.5 text-xl font-bold tracking-tight text-slate-800 md:text-2xl dark:text-slate-200">{{ title }}</h1>
+          <p v-if="description" class="dark-explicit mt-1 max-w-2xl text-xs leading-5 text-slate-500 md:text-sm dark:text-slate-300">{{ description }}</p>
           <div v-if="slots.meta" class="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-slate-400 md:text-xs">
             <slot name="meta" />
           </div>

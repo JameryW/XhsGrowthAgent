@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Global focus ring for keyboard users (moved from cards.css, unchanged
+   layer so per-component focus-visible:* utilities still win). */
+@layer utilities {
+  :focus-visible {
+    @apply outline-none ring-2 ring-rose-500 ring-offset-2;
+  }
+}
+
 /* Global styles */
 @layer base {
   html, body {
@@ -49,8 +57,11 @@
 @layer components {
   /* ── Apple Liquid Glass system ── */
 
-  /* Light tier: cards, panels — readability first */
-  .liquid-glass {
+  /* Light tier: cards, panels — readability first.
+     `.card` shares this exact glass body (single source; cards.css only adds
+     layout via @apply, and `html.dark .card` below owns the dark override). */
+  .liquid-glass,
+  .card {
     background:
       linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.46)),
       rgba(255, 255, 255, 0.58);
@@ -281,11 +292,6 @@
     animation: skeleton-shimmer 1.5s ease-in-out infinite;
   }
 
-  /* Soft pulse for the active step (StepIndicator). */
-  .pulse-animation {
-    animation: pulse-soft 2s ease-in-out infinite;
-  }
-
   /* Steady 360° rotation for the loading spinner (LoadingOverlay). */
   .rotate-animation {
     animation: rotate-360 1s linear infinite;
@@ -311,11 +317,6 @@
 @keyframes skeleton-shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
-}
-
-@keyframes pulse-soft {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
 }
 
 @keyframes rotate-360 {
@@ -430,7 +431,6 @@
   .morph-blob,
   .animate-pulse-glow,
   .shimmer-animation,
-  .pulse-animation,
   .rotate-animation,
   /* Tailwind animated utilities and component-level loops */
   .animate-pulse,
@@ -462,9 +462,21 @@
 
 /* Dark theme ------------------------------------------------------------- */
 /*
- * The product uses Tailwind utility classes extensively. These selectors
- * provide a small compatibility layer for existing light-only surfaces while
- * new components can opt into the same palette through the CSS variables.
+ * 遗留兜底层 (legacy fallback): the product uses Tailwind utility classes
+ * extensively. These `html.dark` selectors remap exact light utility tokens
+ * for existing light-only surfaces (older views and scoped styles) that have
+ * no dark: variant of their own.
+ *
+ * 约定 (contract for new code):
+ * - 新组件必须使用自身的显式 `dark:` 变体，不要依赖本层。
+ * - 向本层新增规则需在注释里说明理由（服务哪些无 dark: 变体的遗留页面）。
+ * - 本层规则带 !important，会压制组件里同属性的 `dark:` 变体；若组件已写好
+ *   显式 dark: 意图，给该元素加 `dark-explicit` 标记类即可豁免本层重映射，
+ *   让组件自身的 dark: 变体生效（见 shell 组件：Navbar/MobileTabBar/Toast/
+ *   ConnectionStatus/PageHeader）。豁免只作用于下面的通用 utility-token
+ *   重映射；组件专属类（.card/.liquid-glass/showcase/replay 等）的暗色覆盖
+ *   不受 dark-explicit 影响。
+ * - 无 dark-explicit 标记的元素渲染结果与本层引入豁免前完全一致。
  */
 :root {
   --theme-bg: #f8fafc;
@@ -585,7 +597,7 @@ html.dark :is(
   [class~="bg-white/85"],
   [class~="bg-white/90"],
   [class~="bg-white/95"]
-) {
+):not(.dark-explicit) {
   background-color: rgba(15, 23, 42, 0.94) !important;
 }
 
@@ -616,12 +628,12 @@ html.dark :is(
   .bg-light-card,
   .bg-light-panelAlt,
   .bg-light-cardHover
-) {
+):not(.dark-explicit) {
   background-color: rgba(30, 41, 59, 0.92) !important;
 }
 
 /* Keep pure black/near-black text readable on dark surfaces. */
-html.dark :is(.text-slate-900, .text-gray-900, .text-text-primary) {
+html.dark :is(.text-slate-900, .text-gray-900, .text-text-primary):not(.dark-explicit) {
   color: #f1f5f9 !important;
 }
 
@@ -633,32 +645,32 @@ html.dark :is(
   .text-gray-700,
   .text-gray-600,
   .text-text-secondary
-) {
+):not(.dark-explicit) {
   color: #e2e8f0 !important;
 }
 
-html.dark :is(.text-slate-500, .text-gray-500, .text-text-tertiary) {
+html.dark :is(.text-slate-500, .text-gray-500, .text-text-tertiary):not(.dark-explicit) {
   color: #cbd5e1 !important;
 }
 
-html.dark :is(.text-slate-400, .text-gray-400, .text-text-muted) {
+html.dark :is(.text-slate-400, .text-gray-400, .text-text-muted):not(.dark-explicit) {
   color: #94a3b8 !important;
 }
 
-html.dark :is(.text-slate-300, .text-gray-300) {
+html.dark :is(.text-slate-300, .text-gray-300):not(.dark-explicit) {
   color: #cbd5e1 !important;
 }
 
 /* Soft tint text on pastel badges — brighten for dark tinted backgrounds. */
-html.dark :is(.text-rose-700, .text-rose-600, .text-pink-700, .text-pink-600) {
+html.dark :is(.text-rose-700, .text-rose-600, .text-pink-700, .text-pink-600):not(.dark-explicit) {
   color: #fda4af !important;
 }
 
-html.dark :is(.text-amber-800, .text-amber-700, .text-amber-600) {
+html.dark :is(.text-amber-800, .text-amber-700, .text-amber-600):not(.dark-explicit) {
   color: #fcd34d !important;
 }
 
-html.dark :is(.text-orange-700, .text-orange-600) {
+html.dark :is(.text-orange-700, .text-orange-600):not(.dark-explicit) {
   color: #fdba74 !important;
 }
 
@@ -669,11 +681,11 @@ html.dark :is(
   .text-cyan-600,
   .text-emerald-700,
   .text-emerald-600
-) {
+):not(.dark-explicit) {
   color: #5eead4 !important;
 }
 
-html.dark :is(.text-blue-700, .text-blue-600, .text-sky-700, .text-sky-600) {
+html.dark :is(.text-blue-700, .text-blue-600, .text-sky-700, .text-sky-600):not(.dark-explicit) {
   color: #7dd3fc !important;
 }
 
@@ -684,16 +696,16 @@ html.dark :is(
   .text-purple-600,
   .text-fuchsia-700,
   .text-fuchsia-600
-) {
+):not(.dark-explicit) {
   color: #c4b5fd !important;
 }
 
-html.dark :is(.text-red-700, .text-red-600) {
+html.dark :is(.text-red-700, .text-red-600):not(.dark-explicit) {
   color: #fca5a5 !important;
 }
 
 /* Do not remap neon brand text — keep accent identity. */
-html.dark .text-neon-pinkDark {
+html.dark .text-neon-pinkDark:not(.dark-explicit) {
   color: #fb7185 !important;
 }
 
@@ -710,7 +722,7 @@ html.dark :is(
   .border-gray-200,
   [class~="border-gray-200/80"],
   .border-gray-300
-) {
+):not(.dark-explicit) {
   border-color: rgba(100, 116, 139, 0.48) !important;
 }
 
@@ -726,7 +738,7 @@ html.dark :is(
   [class~="border-white/75"],
   [class~="border-white/80"],
   [class~="border-white/90"]
-) {
+):not(.dark-explicit) {
   border-color: rgba(100, 116, 139, 0.42) !important;
 }
 
@@ -741,7 +753,7 @@ html.dark :is(
   .border-pink-100,
   [class~="border-pink-100/50"],
   .border-pink-200
-) {
+):not(.dark-explicit) {
   border-color: rgba(251, 113, 133, 0.38) !important;
 }
 
@@ -756,7 +768,7 @@ html.dark :is(
   .border-amber-300,
   .border-orange-100,
   .border-orange-200
-) {
+):not(.dark-explicit) {
   border-color: rgba(251, 191, 36, 0.38) !important;
 }
 
@@ -774,7 +786,7 @@ html.dark :is(
   .border-emerald-100,
   [class~="border-emerald-100/50"],
   .border-emerald-200
-) {
+):not(.dark-explicit) {
   border-color: rgba(45, 212, 191, 0.36) !important;
 }
 
@@ -787,7 +799,7 @@ html.dark :is(
   [class~="border-violet-200/70"],
   .border-purple-100,
   .border-fuchsia-100
-) {
+):not(.dark-explicit) {
   border-color: rgba(167, 139, 250, 0.36) !important;
 }
 
@@ -796,11 +808,11 @@ html.dark :is(
   .border-blue-200,
   .border-sky-100,
   .border-sky-200
-) {
+):not(.dark-explicit) {
   border-color: rgba(56, 189, 248, 0.36) !important;
 }
 
-html.dark :is(.border-red-100, [class~="border-red-200/50"], .border-red-200) {
+html.dark :is(.border-red-100, [class~="border-red-200/50"], .border-red-200):not(.dark-explicit) {
   border-color: rgba(248, 113, 113, 0.38) !important;
 }
 
@@ -815,7 +827,7 @@ html.dark :is(
   [class~="bg-rose-100/60"],
   .bg-pink-50,
   .bg-pink-100
-) {
+):not(.dark-explicit) {
   background-color: rgba(136, 19, 55, 0.55) !important;
 }
 
@@ -832,7 +844,7 @@ html.dark :is(
   .bg-teal-100,
   .bg-cyan-100,
   .bg-emerald-100
-) {
+):not(.dark-explicit) {
   background-color: rgba(15, 118, 110, 0.48) !important;
 }
 
@@ -845,7 +857,7 @@ html.dark :is(
   .bg-violet-100,
   .bg-purple-50,
   .bg-fuchsia-50
-) {
+):not(.dark-explicit) {
   background-color: rgba(76, 29, 149, 0.5) !important;
 }
 
@@ -860,7 +872,7 @@ html.dark :is(
   [class~="bg-amber-100/60"],
   .bg-orange-50,
   .bg-yellow-50
-) {
+):not(.dark-explicit) {
   background-color: rgba(146, 64, 14, 0.52) !important;
 }
 
@@ -869,20 +881,20 @@ html.dark :is(
   .bg-blue-100,
   .bg-sky-50,
   .bg-sky-100
-) {
+):not(.dark-explicit) {
   background-color: rgba(30, 64, 175, 0.5) !important;
 }
 
-html.dark :is(.bg-red-50, [class~="bg-red-50/80"], .bg-red-100) {
+html.dark :is(.bg-red-50, [class~="bg-red-50/80"], .bg-red-100):not(.dark-explicit) {
   background-color: rgba(127, 29, 29, 0.55) !important;
 }
 
-html.dark :is(.bg-green-50, [class~="bg-green-50/80"], .bg-green-100) {
+html.dark :is(.bg-green-50, [class~="bg-green-50/80"], .bg-green-100):not(.dark-explicit) {
   background-color: rgba(20, 83, 45, 0.52) !important;
 }
 
 /* Gradient light stops still used on card shells (from-white / via-slate-50). */
-html.dark :is(.from-white, .via-white, .to-white) {
+html.dark :is(.from-white, .via-white, .to-white):not(.dark-explicit) {
   --tw-gradient-from: rgba(15, 23, 42, 0.95) var(--tw-gradient-from-position) !important;
   --tw-gradient-to: rgba(15, 23, 42, 0.55) var(--tw-gradient-to-position) !important;
   --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
@@ -895,17 +907,17 @@ html.dark :is(
   .from-slate-100,
   .via-slate-100,
   .to-slate-100
-) {
+):not(.dark-explicit) {
   --tw-gradient-from: rgba(30, 41, 59, 0.95) var(--tw-gradient-from-position) !important;
   --tw-gradient-to: rgba(15, 23, 42, 0.7) var(--tw-gradient-to-position) !important;
   --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
 }
 
-html.dark :is(.text-green-700, .text-green-600) {
+html.dark :is(.text-green-700, .text-green-600):not(.dark-explicit) {
   color: #86efac !important;
 }
 
-html.dark :is(.border-green-100, .border-green-200) {
+html.dark :is(.border-green-100, .border-green-200):not(.dark-explicit) {
   border-color: rgba(74, 222, 128, 0.36) !important;
 }
 
@@ -922,15 +934,15 @@ html.dark .card {
 }
 
 /* Indigo pastel chips (workflow header status, etc.) */
-html.dark :is(.bg-indigo-50, .bg-indigo-100) {
+html.dark :is(.bg-indigo-50, .bg-indigo-100):not(.dark-explicit) {
   background-color: rgba(49, 46, 129, 0.55) !important;
 }
 
-html.dark :is(.border-indigo-100, .border-indigo-200) {
+html.dark :is(.border-indigo-100, .border-indigo-200):not(.dark-explicit) {
   border-color: rgba(129, 140, 248, 0.36) !important;
 }
 
-html.dark :is(.text-indigo-700, .text-indigo-600) {
+html.dark :is(.text-indigo-700, .text-indigo-600):not(.dark-explicit) {
   color: #a5b4fc !important;
 }
 
@@ -1141,15 +1153,15 @@ html.dark .decision-rejected {
 }
 
 /* Version badges (ContentCards) use 200-step light backgrounds. */
-html.dark .bg-rose-200 {
+html.dark .bg-rose-200:not(.dark-explicit) {
   background-color: rgba(244, 63, 94, 0.2) !important;
 }
 
-html.dark .bg-blue-200 {
+html.dark .bg-blue-200:not(.dark-explicit) {
   background-color: rgba(59, 130, 246, 0.2) !important;
 }
 
-html.dark .bg-emerald-200 {
+html.dark .bg-emerald-200:not(.dark-explicit) {
   background-color: rgba(16, 185, 129, 0.2) !important;
 }
 
@@ -1404,45 +1416,43 @@ html.dark :is(.shadow-sm, .shadow, .shadow-md):not(
 }
 
 /* Hover slate remaps when only hover:bg-slate-* is present (no base bg class). */
-html.dark .hover\:bg-slate-100:hover,
-html.dark .hover\:bg-slate-50:hover,
-html.dark .hover\:bg-slate-200:hover {
+html.dark .hover\:bg-slate-100:hover:not(.dark-explicit),
+html.dark .hover\:bg-slate-50:hover:not(.dark-explicit),
+html.dark .hover\:bg-slate-200:hover:not(.dark-explicit) {
   background-color: rgba(30, 41, 59, 0.9) !important;
 }
 
 /* Colored hover remaps: light 50/100 washes become the 500 tone at low alpha. */
-html.dark .hover\:bg-rose-50:hover,
-html.dark .hover\:bg-rose-100:hover {
+html.dark .hover\:bg-rose-50:hover:not(.dark-explicit),
+html.dark .hover\:bg-rose-100:hover:not(.dark-explicit) {
   background-color: rgba(244, 63, 94, 0.2) !important;
 }
 
-html.dark .hover\:bg-cyan-50:hover,
-html.dark .hover\:bg-cyan-100:hover {
+html.dark .hover\:bg-cyan-50:hover:not(.dark-explicit),
+html.dark .hover\:bg-cyan-100:hover:not(.dark-explicit) {
   background-color: rgba(6, 182, 212, 0.2) !important;
 }
 
-html.dark .hover\:bg-teal-50:hover,
-html.dark .hover\:bg-teal-100:hover {
+html.dark .hover\:bg-teal-50:hover:not(.dark-explicit),
+html.dark .hover\:bg-teal-100:hover:not(.dark-explicit) {
   background-color: rgba(20, 184, 166, 0.2) !important;
 }
 
-html.dark .hover\:bg-amber-50:hover,
-html.dark .hover\:bg-amber-100:hover {
+html.dark .hover\:bg-amber-50:hover:not(.dark-explicit),
+html.dark .hover\:bg-amber-100:hover:not(.dark-explicit) {
   background-color: rgba(245, 158, 11, 0.2) !important;
 }
 
-html.dark .hover\:bg-violet-50:hover,
-html.dark .hover\:bg-violet-100:hover {
+html.dark .hover\:bg-violet-50:hover:not(.dark-explicit),
+html.dark .hover\:bg-violet-100:hover:not(.dark-explicit) {
   background-color: rgba(139, 92, 246, 0.2) !important;
 }
 
-html.dark .hover\:bg-emerald-50:hover,
-html.dark .hover\:bg-emerald-100:hover {
+html.dark .hover\:bg-emerald-50:hover:not(.dark-explicit),
+html.dark .hover\:bg-emerald-100:hover:not(.dark-explicit) {
   background-color: rgba(16, 185, 129, 0.2) !important;
 }
 
-/* Navbar section chips still used translucent white glass. */
-html.dark .app-nav-section {
-  border-color: rgba(100, 116, 139, 0.4) !important;
-  background: rgba(15, 23, 42, 0.55) !important;
-}
+/* NOTE: the `html.dark .app-nav-section` override used to live here. Navbar.vue
+ * now owns that surface via its scoped `:global(html.dark) .app-nav-section`
+ * rule, so the global !important stomp was removed (P2 dark-remap shrink). */

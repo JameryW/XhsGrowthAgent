@@ -63,7 +63,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="fixed top-16 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none" role="region" :aria-label="t('toast.notifications')">
+  <div class="fixed top-16 right-4 z-modal flex flex-col gap-2 max-w-sm pointer-events-none" role="region" :aria-label="t('toast.notifications')">
     <TransitionGroup name="toast">
       <div
         v-for="toast in toastStore.toasts"
@@ -75,7 +75,7 @@ onUnmounted(() => {
       >
         <div class="flex items-start gap-3">
           <!-- Icon -->
-          <div class="w-8 h-8 rounded-lg flex items-center justify-center bg-slate-50 dark:bg-slate-800">
+          <div class="dark-explicit w-8 h-8 rounded-lg flex items-center justify-center bg-slate-50 dark:bg-slate-800">
             <AppIcon
               :name="toastStyles[toast.type].icon"
               size="md"
@@ -86,17 +86,17 @@ onUnmounted(() => {
 
           <!-- Content -->
           <div class="flex-1 min-w-0">
-            <h4 class="text-sm font-semibold text-slate-800 truncate">
+            <h4 class="dark-explicit text-sm font-semibold text-slate-800 truncate dark:text-slate-200">
               {{ toast.title }}
             </h4>
-            <p v-if="toast.message" class="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
+            <p v-if="toast.message" class="dark-explicit text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed dark:text-slate-300">
               {{ toast.message }}
             </p>
           </div>
 
           <!-- Close button -->
           <button
-            class="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-150 dark:hover:text-slate-200 dark:hover:bg-slate-800"
+            class="dark-explicit w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all duration-150 dark:hover:text-slate-200 dark:hover:bg-slate-800"
             @click="closeToast(toast.id)"
             :aria-label="t('common.close')"
           >
@@ -105,7 +105,7 @@ onUnmounted(() => {
         </div>
 
         <!-- Progress bar for auto-dismiss -->
-        <div class="mt-3 h-1 bg-slate-100 rounded-full overflow-hidden dark:bg-slate-800">
+        <div class="dark-explicit mt-3 h-1 bg-slate-100 rounded-full overflow-hidden dark:bg-slate-800">
           <div
             class="h-full rounded-full animate-progress"
             :class="toast.type === 'error' ? 'bg-rose-400' : toast.type === 'warning' ? 'bg-amber-400' : toast.type === 'success' ? 'bg-teal-400' : 'bg-teal-500'"

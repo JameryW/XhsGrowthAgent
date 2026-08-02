@@ -112,7 +112,7 @@ const handleLogout = async () => {
 
 <template>
   <nav
-    class="app-mobile-tabbar fixed bottom-0 left-0 right-0 z-50 liquid-glass-nav border-t border-white/15 safe-area-bottom"
+    class="app-mobile-tabbar fixed bottom-0 left-0 right-0 z-modal liquid-glass-nav border-t border-white/15 safe-area-bottom dark-explicit dark:border-slate-500/[0.42]"
     role="navigation"
     :aria-label="t('nav.home')"
   >
@@ -132,7 +132,7 @@ const handleLogout = async () => {
         :aria-current="isActiveTab(tab.path) ? 'page' : undefined"
         :aria-label="tab.label"
       >
-        <span :class="['relative flex h-8 w-10 items-center justify-center rounded-xl transition-all duration-200', isActiveTab(tab.path) ? 'bg-rose-50 shadow-sm ring-1 ring-rose-100' : '']" aria-hidden="true">
+        <span :class="['relative flex h-8 w-10 items-center justify-center rounded-xl transition-all duration-200', isActiveTab(tab.path) ? 'bg-rose-50 shadow-sm ring-1 ring-rose-100 dark-explicit dark:bg-rose-900/55' : '']" aria-hidden="true">
           <AppIcon :name="tab.icon" size="md" :variant="isActiveTab(tab.path) ? 'pink' : 'cyan'" />
           <span
             v-if="tab.badgeCount"
@@ -157,7 +157,7 @@ const handleLogout = async () => {
         aria-controls="mobile-more-menu"
         :aria-label="t('nav.more')"
       >
-        <span :class="['flex h-8 w-10 items-center justify-center rounded-xl transition-all duration-200', showMore || moreActive ? 'bg-rose-50 shadow-sm ring-1 ring-rose-100' : '']" aria-hidden="true">
+        <span :class="['flex h-8 w-10 items-center justify-center rounded-xl transition-all duration-200', showMore || moreActive ? 'bg-rose-50 shadow-sm ring-1 ring-rose-100 dark-explicit dark:bg-rose-900/55' : '']" aria-hidden="true">
           <AppIcon name="MoreHorizontal" size="md" :variant="showMore || moreActive ? 'pink' : 'cyan'" />
         </span>
         <span class="max-w-full truncate px-0.5 text-[10px] font-medium leading-tight">{{ t('nav.more') }}</span>
@@ -170,7 +170,7 @@ const handleLogout = async () => {
       <Teleport to="body">
         <div
           v-if="showMore"
-          class="fixed inset-0 z-40"
+          class="fixed inset-0 z-dropdown"
           aria-hidden="true"
           @click="showMore = false"
         />
@@ -180,15 +180,15 @@ const handleLogout = async () => {
         v-if="showMore"
         id="mobile-more-menu"
         ref="moreMenuRef"
-        class="app-mobile-more-menu absolute bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-2 w-64 overflow-hidden rounded-2xl border border-white/70 bg-white/95 shadow-xl shadow-slate-900/10 backdrop-blur-md dark:border-slate-700/60 dark:bg-slate-900/95"
+        class="app-mobile-more-menu dark-explicit absolute bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-2 w-64 overflow-hidden rounded-2xl border border-white/70 bg-white/95 shadow-xl shadow-slate-900/10 backdrop-blur-md dark:border-slate-700/60 dark:bg-slate-900/95"
         :aria-label="t('nav.more')"
       >
-        <div class="border-b border-slate-100 bg-gradient-to-r from-cyan-50/80 to-white px-4 py-3 dark:border-slate-700/60 dark:from-cyan-950/40 dark:to-slate-900/90" role="status" :aria-label="t('nav.activeAccount')">
+        <div class="dark-explicit border-b border-slate-100 bg-gradient-to-r from-cyan-50/80 to-white px-4 py-3 dark:border-slate-700/60 dark:from-cyan-950/40 dark:to-slate-900/90" role="status" :aria-label="t('nav.activeAccount')">
           <div class="flex items-center gap-3">
             <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-emerald-400 text-xs font-bold text-white" aria-hidden="true">{{ accountInitial }}</span>
             <div class="min-w-0 flex-1">
               <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">{{ t('nav.activeAccount') }}</div>
-              <div class="truncate text-xs font-bold text-slate-700">{{ activeAccountName }}</div>
+              <div class="truncate text-xs font-bold text-slate-700 dark-explicit dark:text-slate-200">{{ activeAccountName }}</div>
               <div class="flex items-center gap-1.5 text-[10px] text-slate-400">
                 <span class="h-1.5 w-1.5 rounded-full" :class="realtimeStore.connectionStatus === 'connected' ? 'bg-emerald-400' : realtimeStore.connectionStatus === 'disconnected' ? 'bg-rose-400' : 'bg-amber-400'" aria-hidden="true" />
                 {{ connectionLabel }}
@@ -196,14 +196,14 @@ const handleLogout = async () => {
             </div>
           </div>
         </div>
-        <div class="flex min-h-11 items-center justify-between gap-2 border-b border-slate-100 px-4 py-1.5 dark:border-slate-700/60 [&_button]:min-h-11 [&_button]:min-w-11">
-          <span class="text-xs font-medium text-slate-500 dark:text-slate-400">{{ t('nav.language') }}</span>
+        <div class="dark-explicit flex min-h-11 items-center justify-between gap-2 border-b border-slate-100 px-4 py-1.5 dark:border-slate-700/60 [&_button]:min-h-11 [&_button]:min-w-11">
+          <span class="text-xs font-medium text-slate-500 dark-explicit dark:text-slate-400">{{ t('nav.language') }}</span>
           <LanguageSwitcher />
         </div>
         <button
           ref="firstMoreItemRef"
           type="button"
-          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+          class="dark-explicit flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
           @mouseenter="warmNavPath('/analytics')"
           @focus="warmNavPath('/analytics')"
           @click="navigate('/analytics')"
@@ -213,7 +213,7 @@ const handleLogout = async () => {
         </button>
         <button
           type="button"
-          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+          class="dark-explicit flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
           @mouseenter="warmNavPath('/evaluation')"
           @focus="warmNavPath('/evaluation')"
           @click="navigate('/evaluation')"
@@ -223,7 +223,7 @@ const handleLogout = async () => {
         </button>
         <button
           type="button"
-          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+          class="dark-explicit flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
           @mouseenter="warmNavPath('/history')"
           @focus="warmNavPath('/history')"
           @click="navigate('/history')"
@@ -233,7 +233,7 @@ const handleLogout = async () => {
         </button>
         <button
           type="button"
-          class="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+          class="dark-explicit flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
           @mouseenter="warmNavPath('/settings')"
           @focus="warmNavPath('/settings')"
           @click="openSettings"

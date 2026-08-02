@@ -241,7 +241,7 @@ watch(
 
 <template>
   <nav
-    class="app-sidebar liquid-glass-nav relative flex flex-col overflow-hidden border-r border-white/30 transition-all duration-300"
+    class="app-sidebar liquid-glass-nav relative flex flex-col overflow-hidden border-r border-white/30 transition-all duration-300 dark-explicit dark:border-slate-500/[0.42]"
     :class="isTablet ? 'w-[76px] p-3' : 'w-[264px] p-4'"
     role="navigation"
     :aria-label="t('nav.home')"
@@ -257,10 +257,10 @@ watch(
         </div>
         <div v-if="!isTablet">
           <div class="text-[10px] font-bold uppercase tracking-[0.2em] text-neon-pinkDark">{{ t('nav.brandEyebrow') }}</div>
-          <div class="mt-0.5 text-lg font-bold tracking-tight text-slate-800">{{ t('nav.appName') }}</div>
+          <div class="mt-0.5 text-lg font-bold tracking-tight text-slate-800 dark-explicit dark:text-slate-200">{{ t('nav.appName') }}</div>
         </div>
       </div>
-      <div v-if="!isTablet" class="mt-4 rounded-2xl border border-white/70 bg-white/60 p-3 shadow-sm backdrop-blur-sm dark:border-slate-700/55 dark:bg-slate-900/75" role="status" aria-live="polite" :aria-label="t('nav.workspaceStatus')">
+      <div v-if="!isTablet" class="dark-explicit mt-4 rounded-2xl border border-white/70 bg-white/60 p-3 shadow-sm backdrop-blur-sm dark:border-slate-700/55 dark:bg-slate-900/75" role="status" aria-live="polite" :aria-label="t('nav.workspaceStatus')">
         <div class="flex items-center gap-2">
           <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900/90" aria-hidden="true">
             <AppIcon :name="workspaceStatus.icon" size="sm" variant="white" />
@@ -270,7 +270,7 @@ watch(
               <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">{{ t('nav.workspaceStatus') }}</span>
               <span class="h-2 w-2 rounded-full" :class="workspaceStatus.tone === 'rose' ? 'bg-rose-400' : workspaceStatus.tone === 'amber' ? 'bg-amber-400' : workspaceStatus.tone === 'cyan' ? 'bg-cyan-400' : workspaceStatus.tone === 'emerald' ? 'bg-emerald-400' : 'bg-slate-300'" aria-hidden="true" />
             </div>
-            <div class="truncate text-xs font-bold text-slate-700">{{ workspaceStatus.label }}</div>
+            <div class="truncate text-xs font-bold text-slate-700 dark-explicit dark:text-slate-200">{{ workspaceStatus.label }}</div>
           </div>
         </div>
         <div class="mt-2 flex items-center justify-between gap-2 text-[10px] text-slate-400">
@@ -322,7 +322,7 @@ watch(
               'app-nav-item group relative flex min-h-12 w-full items-center rounded-2xl border text-left transition-all duration-200',
               isTablet ? 'justify-center px-2' : 'gap-3 px-3',
               isItemActive(item.path)
-                ? 'border-white/80 bg-white/85 shadow-md shadow-slate-900/5 ring-1 ring-slate-200/60 dark:border-slate-600/70 dark:bg-slate-800/90 dark:ring-slate-600/50'
+                ? 'border-white/80 bg-white/85 shadow-md shadow-slate-900/5 ring-1 ring-slate-200/60 dark-explicit dark:border-slate-600/70 dark:bg-slate-800/90 dark:ring-slate-600/50'
                 : 'border-transparent hover:border-white/70 hover:bg-white/55 hover:shadow-sm dark:hover:border-slate-600/50 dark:hover:bg-slate-800/60'
             ]"
             :aria-current="isItemActive(item.path) ? 'page' : undefined"
@@ -337,13 +337,13 @@ watch(
             />
             <span
               class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 transition-all duration-200"
-              :class="isItemActive(item.path) ? navColorClasses[item.color].activeIcon : 'bg-slate-100/80 ring-slate-200/60 group-hover:bg-white dark:bg-slate-800/80 dark:ring-slate-600/50 dark:group-hover:bg-slate-700'"
+              :class="isItemActive(item.path) ? navColorClasses[item.color].activeIcon : 'bg-slate-100/80 ring-slate-200/60 group-hover:bg-white dark-explicit dark:bg-slate-800/80 dark:ring-slate-600/50 dark:group-hover:bg-slate-700'"
               aria-hidden="true"
             >
               <AppIcon :name="item.icon" size="md" :variant="isItemActive(item.path) ? item.color : 'cyan'" :class="!isItemActive(item.path) ? navColorClasses[item.color].icon : ''" />
             </span>
             <span v-if="!isTablet" class="min-w-0 flex-1">
-              <span :class="['block truncate text-sm font-bold', isItemActive(item.path) ? 'text-slate-800' : 'text-slate-600 group-hover:text-slate-800']">{{ item.label }}</span>
+              <span :class="['block truncate text-sm font-bold dark-explicit dark:text-slate-200', isItemActive(item.path) ? 'text-slate-800' : 'text-slate-600 group-hover:text-slate-800 dark:group-hover:text-slate-200']">{{ item.label }}</span>
               <span class="mt-0.5 block truncate text-[10px] text-slate-400">{{ item.hint }}</span>
             </span>
             <span
@@ -367,11 +367,11 @@ watch(
     </div>
 
     <!-- 底部信息 -->
-    <div class="mt-4 border-t border-slate-200/70 pt-4" :aria-label="t('nav.systemInfo')">
+    <div class="dark-explicit mt-4 border-t border-slate-200/70 pt-4 dark:border-slate-500/[0.48]" :aria-label="t('nav.systemInfo')">
       <!-- Desktop: compact bottom section -->
       <template v-if="!isTablet">
         <button
-          class="group mb-3 flex min-h-14 w-full items-center gap-3 rounded-2xl border border-white/75 bg-white/65 px-3 text-left shadow-sm dark:border-slate-700/55 dark:bg-slate-900/80 transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-200/70 hover:bg-cyan-50/70"
+          class="group dark-explicit mb-3 flex min-h-14 w-full items-center gap-3 rounded-2xl border border-white/75 bg-white/65 px-3 text-left shadow-sm dark:border-slate-700/55 dark:bg-slate-900/80 transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-200/70 hover:bg-cyan-50/70"
           :aria-label="t('nav.account')"
           :title="t('nav.accountManage')"
           @click="handleAccountClick"
@@ -379,17 +379,17 @@ watch(
           <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-emerald-400 text-xs font-bold text-white shadow-sm" aria-hidden="true">{{ accountInitial }}</span>
           <span class="min-w-0 flex-1">
             <span class="block text-[10px] font-bold uppercase tracking-wider text-slate-400">{{ t('nav.activeAccount') }}</span>
-            <span class="block truncate text-xs font-bold text-slate-700">{{ activeAccountName }}</span>
+            <span class="block truncate text-xs font-bold text-slate-700 dark-explicit dark:text-slate-200">{{ activeAccountName }}</span>
             <span class="block truncate text-[10px] text-slate-400">{{ activeAccountNiche ? t('nav.accountNiche', { niche: activeAccountNiche }) : t('nav.accountPending') }}</span>
           </span>
           <AppIcon name="Settings" size="sm" variant="cyan" class="opacity-60 transition-opacity group-hover:opacity-100" aria-hidden="true" />
         </button>
 
         <!-- Utilities row: realtime + language + theme -->
-        <div class="mb-2 flex items-center justify-between gap-2 rounded-xl bg-slate-50/70 px-2.5 py-2 dark:bg-slate-800/70">
+        <div class="dark-explicit mb-2 flex items-center justify-between gap-2 rounded-xl bg-slate-50/70 px-2.5 py-2 dark:bg-slate-800/70">
           <div class="flex min-w-0 items-center gap-2">
             <span class="h-2 w-2 shrink-0 rounded-full" :class="statusDotClass" aria-hidden="true" />
-            <span class="truncate text-[10px] font-medium text-slate-500">{{ connectionLabel }}</span>
+            <span class="truncate text-[10px] font-medium text-slate-500 dark-explicit dark:text-slate-300">{{ connectionLabel }}</span>
             <button
               v-if="realtimeStore.connectionStatus === 'disconnected'"
               @click="realtimeStore.connect()"
@@ -509,7 +509,10 @@ watch(
   background: rgba(255, 255, 255, 0.16);
 }
 
-:global(html.dark) .app-nav-section {
+/* NOTE: `:global(html.dark) .x` in scoped styles compiles to bare `html.dark`
+ * in this toolchain (the trailing class is dropped), so the dark override
+ * never matched. Plain `html.dark .x` scopes correctly. */
+html.dark .app-nav-section {
   border-color: rgba(100, 116, 139, 0.35);
   background: rgba(15, 23, 42, 0.45);
 }
