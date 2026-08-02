@@ -38,6 +38,34 @@ const steps = [
   { public_id: 'step-2', step: 2, phase: 'creating', title: '内容产出', summary: '完成标题和正文', created_at: null, has_result: true, result_kind: 'creating', result: { title: '测试标题', summary: '测试产出' } },
 ]
 
+function buildManifest(stepList: unknown[] = steps) {
+  return {
+    public_id: 'case-1',
+    view: 'key' as const,
+    steps: stepList,
+    offset: 0,
+    limit: 20,
+    total_steps: stepList.length,
+    key_step_count: stepList.length,
+    technical_step_count: stepList.length,
+    has_more: false,
+    technical_steps_available: false,
+    workflow: {
+      public_id: 'case-1',
+      title: '公开案例',
+      summary: '案例摘要',
+      status: 'completed' as const,
+      phase: 'completed',
+      workflow_mode: 'trend' as const,
+      created_at: '2026-07-16T10:00:00Z',
+      updated_at: '2026-07-16T10:00:00Z',
+      featured: true,
+      replay_available: true,
+      result_preview: { title: '测试标题' },
+    },
+  }
+}
+
 describe('WorkflowReplay public UX contract', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -46,31 +74,7 @@ describe('WorkflowReplay public UX contract', () => {
     routeMock.query = {}
     authState.isAuthenticated = false
     authState.isInitialized = true
-    getManifestMock.mockResolvedValue({
-      public_id: 'case-1',
-      view: 'key',
-      steps,
-      offset: 0,
-      limit: 20,
-      total_steps: steps.length,
-      key_step_count: steps.length,
-      technical_step_count: steps.length,
-      has_more: false,
-      technical_steps_available: false,
-      workflow: {
-        public_id: 'case-1',
-        title: '公开案例',
-        summary: '案例摘要',
-        status: 'completed',
-        phase: 'completed',
-        workflow_mode: 'trend',
-        created_at: '2026-07-16T10:00:00Z',
-        updated_at: '2026-07-16T10:00:00Z',
-        featured: true,
-        replay_available: true,
-        result_preview: { title: '测试标题' },
-      },
-    })
+    getManifestMock.mockResolvedValue(buildManifest(steps))
     getCheckpointMock.mockImplementation(async (_publicId: string, stepId: string) => steps.find(step => step.public_id === stepId))
     getSummaryMock.mockResolvedValue({ public_id: 'case-1', status: 'completed', result: { title: '最终标题' }, stable: true })
   })
@@ -92,7 +96,8 @@ describe('WorkflowReplay public UX contract', () => {
 
     await flushPromises()
     expect(getManifestMock).toHaveBeenCalledWith('case-1', false, expect.objectContaining({ suppressToast: true, limit: 20, offset: 0, signal: expect.any(AbortSignal) }))
-    expect(getCheckpointMock).toHaveBeenCalledWith('case-1', 'step-1', false, expect.objectContaining({ suppressToast: true, signal: expect.any(AbortSignal) }))
+    // Key steps embed their result in the manifest — the first result paints without a checkpoint round-trip.
+    expect(getCheckpointMock).not.toHaveBeenCalled()
     expect(wrapper.find('#replay-steps-heading').exists()).toBe(true)
     expect(wrapper.findAll('[data-step-id][aria-current="step"]')).toHaveLength(1)
     expect(wrapper.findAll('[data-phase-index]')).toHaveLength(2)
@@ -102,6 +107,8 @@ describe('WorkflowReplay public UX contract', () => {
 
   it('prefetches the next step during idle time', async () => {
     vi.useFakeTimers()
+    // Only steps without an embedded manifest result need a network prefetch.
+    getManifestMock.mockResolvedValue(buildManifest([steps[0], { ...steps[1], result: null }]))
     const wrapper = mount(WorkflowReplay, {
       global: {
         stubs: {
@@ -125,6 +132,8 @@ describe('WorkflowReplay public UX contract', () => {
   })
 
   it('moves to the next key step and updates the deep link', async () => {
+    // Step without an embedded manifest result is fetched on demand.
+    getManifestMock.mockResolvedValue(buildManifest([steps[0], { ...steps[1], result: null }]))
     const wrapper = mount(WorkflowReplay, {
       global: {
         stubs: {
