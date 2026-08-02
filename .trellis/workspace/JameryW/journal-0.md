@@ -1614,3 +1614,36 @@ P2 五件事：死代码删除（StepIndicator/ProgressPhase）、cards.css 单�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 83: 修复剩余前端技术债：global-dark 陷阱、dark 变体全量迁移、WorkflowReplay 测试
+
+**Date**: 2026-08-02
+**Task**: 修复剩余前端技术债：global-dark 陷阱、dark 变体全量迁移、WorkflowReplay 测试
+**Branch**: `main`
+
+### Summary
+
+WorkflowReplay spec 适配 manifest 内嵌结果优化（696 全绿）；:global(html.dark) 17 处编译陷阱修复/移除；dark-explicit 全量迁移 8 批约 1400 处标记，失效 dark: 变体清零，检测脚本零残留；修正 5 处错误/缺失 dark: 变体。type-check/test/build 全绿，4 个 commit
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ca2e5c63` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
