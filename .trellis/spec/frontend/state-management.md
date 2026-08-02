@@ -119,6 +119,13 @@ compatibility CSS should use exact utility class selectors (or component-scoped
 selectors); avoid broad [class*="..."] rules because changing the root theme
 class forces those selectors to re-match the whole document.
 
+`toggle()` is a **tri-state cycle** `light → dark → system` (via a `MODE_CYCLE`
+map), not a light/dark flip — the persisted preference already supports
+`system` (follow `prefers-color-scheme`), so UI toggles must let users return
+to it. Theme UI derives its icon and label from `themeStore.mode`
+(Sun/Moon/Monitor, i18n keys `theme.light` / `theme.dark` / `theme.system`),
+not from `isDark`.
+
 ---
 
 ## State ↔ Backend Sync

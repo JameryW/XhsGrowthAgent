@@ -49,6 +49,13 @@
 - `AppIcon` 在无 `ariaLabel` 时默认 `aria-hidden`（装饰性图标不进无障碍树），只有显式给出标签才暴露 `role="img"`。
 - 所有模板文案都进入 `en.json` 和 `zh-CN.json`。AgentTUI 的终端输出属于 ANSI 渲染域，仍需通过 `t()` 生成可见文案。
 
+## 主题、暗色与层级约定
+
+- 主题切换为三态循环 light → dark → system（`themeStore.toggle()`），ThemeToggle 用 Sun/Moon/Monitor 图标区分，aria-label 走 `theme.light/dark/system`；新增主题相关交互不要退回二态切换。
+- 暗色模式：新组件必须使用自身的显式 `dark:` 变体，不得依赖 `main.css` 末尾 `html.dark` 全局重映射兜底层。该层规则带 `!important`，会压制组件里同属性的 `dark:` 变体——若元素同时带被重映射的基础类和自己的 `dark:` 意图，给该元素加 `dark-explicit` 标记类即可豁免重映射（shell 高频表面 Navbar/MobileTabBar/Toast/ConnectionStatus/PageHeader 已按此迁移）。不得向重映射层新增规则，除非在注释里说明服务的遗留页面。
+- z-index 一律使用 `tailwind.config.js` 的语义 token（`z-base/sticky/overlay/dropdown/modal/toast/chrome/max`），禁止 `z-[...]` 魔法值和裸数字层级；token 与使用场景见 `.trellis/spec/frontend/component-patterns.md`。
+- 已知陷阱：scoped 样式里的 `:global(html.dark) .x` 在本工具链编译后尾部类名被丢弃，规则从未生效（Navbar、WorkflowTabBar、EvaluationView 仍有存量未修实例）。暗色覆盖应写组件自身的 `dark:` 变体或依赖 `dark-explicit` 机制；scoped CSS 需要全局暗色规则时用普通 `html.dark .x` 写法。
+
 ## 本地验证
 
 ```bash

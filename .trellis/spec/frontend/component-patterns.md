@@ -230,6 +230,67 @@ template for interpolated class fragments in the same commit.
 
 ---
 
+## Dark Mode Convention: explicit `dark:` variants + `dark-explicit`
+
+`src/styles/main.css` ends with a **legacy fallback layer** (~900 lines of
+`html.dark` selectors) that remaps exact light utility tokens with `!important`
+for older views and scoped styles that have no `dark:` variant of their own.
+
+Rules for new code:
+
+1. **New components must use their own explicit `dark:` variants.** Do not rely
+   on the global remap layer to fix your colors.
+2. **Exemption mechanism**: the remap layer carries `!important`, so it beats a
+   component-level `dark:` variant for the same property. If an element has both
+   a remapped base class and its own `dark:` intent, add the `dark-explicit`
+   marker class to that element — every generic utility-token remap rule ends in
+   `:not(.dark-explicit)`, so the marker opts the element out and lets the
+   component's own `dark:` variants win. (Migrated examples: Navbar,
+   MobileTabBar, Toast, ConnectionStatus, PageHeader.) The exemption only covers
+   the generic utility-token remaps; component-specific dark overrides in
+   `main.css` (`.card`, `.liquid-glass`, showcase/replay, etc.) are unaffected.
+3. **Do not add rules to the remap layer** unless the change comments explain
+   which legacy pages without `dark:` variants it serves. The layer is a
+   fallback to shrink, not to grow.
+4. Elements without `dark-explicit` render exactly as before the exemption
+   existed, so marking is always opt-in and safe.
+
+### Gotcha: `:global(html.dark) .x` in scoped styles never matches
+
+In this toolchain, a scoped-style selector written as
+`:global(html.dark) .x` compiles to bare `html.dark` — the trailing class is
+dropped, so the rule matches nothing and silently never applies. Known
+unrepaired instances: `Navbar.vue` (2), `WorkflowTabBar.vue` (4),
+`EvaluationView.vue` (10, as `:global(.dark) .x`).
+
+For dark overrides either write the component's own `dark:` utility variants
+(preferred), or use a plain `html.dark .x` selector inside the scoped block
+(which Vue scopes correctly), or rely on the `dark-explicit` mechanism above.
+
+---
+
+## z-index: semantic tokens only
+
+All z-index values must come from the semantic scale in `tailwind.config.js`
+(`theme.extend.zIndex`). **Forbidden**: `z-[...]` arbitrary values and bare
+numeric utilities (`z-50`, `z-40`, ...).
+
+| Token | Value | Use case |
+|-------|-------|----------|
+| `z-base` | 0 | Default document flow |
+| `z-sticky` | 10 | In-flow surfaces above page background: main content layer, sticky action bars (Review), showcase/replay nav & footer |
+| `z-overlay` | 20 | In-page overlay on a single surface (e.g. Analytics chart loading veil) |
+| `z-dropdown` | 40 | Dropdown/overflow menus, tooltips, popovers (WorkflowTabBar overflow, MobileTabBar menu, HelpCenter, TooltipHelper, OfflineIndicator) |
+| `z-modal` | 50 | Modals, drawers, dialogs and the toast stack (ConfirmModal, LoadingOverlay, EvaluationView drawer, Toast) |
+| `z-toast` | 60 | Reserved for notifications above modals — currently unused; promoting notification components to this tier is a pending product decision |
+| `z-chrome` | 80 | Floating app chrome above content (fixed ThemeToggle) |
+| `z-max` | 100 | Topmost accessibility utilities (skip-to-content link) |
+
+When a new surface needs a layer, pick the token whose semantics match; if none
+fits, extend the config with a named token instead of inventing a number.
+
+---
+
 ## AgentTUI tool_result Display (Terminal TUI)
 
 `AgentTUI.vue` renders tool results into an xterm.js terminal (not the Vue template), so it uses ANSI colors + `term.writeln` — **not** `t()` i18n keys or `<template>` strings. The terminal domain is exempt from the i18n rule above.
